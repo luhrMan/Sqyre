@@ -10,6 +10,7 @@ mod display;
 mod highlight;
 mod icons;
 mod runtime_vars;
+mod taxonomy;
 
 pub use action_log::*;
 pub use colors::*;
@@ -17,6 +18,7 @@ pub use display::*;
 pub use highlight::*;
 pub use icons::*;
 pub use runtime_vars::*;
+pub use taxonomy::*;
 
 #[cfg(test)]
 mod tests {

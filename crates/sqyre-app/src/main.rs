@@ -1,10 +1,14 @@
 // Release GUI: no console window on Windows. Debug keeps a console for stderr.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 fn main() -> eframe::Result<()> {
-    // Before egui/winit: physical pixels for capture, metrics, and input (Windows).
     sqyre_capture::enable_per_monitor_dpi_v2();
+    sqyre_app::run()
+}
+
+#[cfg(all(not(target_arch = "wasm32"), not(feature = "native-runtime")))]
+fn main() -> eframe::Result<()> {
     sqyre_app::run()
 }
 

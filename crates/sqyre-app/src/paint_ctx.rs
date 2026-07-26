@@ -5,7 +5,7 @@ use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
 use crate::preview_tooltip::PreviewTooltipCache;
 use sqyre_domain::{ActionId, KnownVariableNames};
-use sqyre_executor::HighlightSnapshot;
+use sqyre_ui_model::HighlightSnapshot;
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;

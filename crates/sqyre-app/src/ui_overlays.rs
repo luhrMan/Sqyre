@@ -4,6 +4,7 @@ use crate::add_action::AddActionPicker;
 use crate::catalog::apply_main_monitor_resolution;
 use crate::data_editor::DataEditor;
 use crate::icon_cache::IconCache;
+#[cfg(feature = "native-runtime")]
 use crate::pixel_color;
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::variables_panel;
@@ -24,8 +25,7 @@ pub fn handle_close_to_tray(app: &mut SqyreApp, ctx: &egui::Context) {
 }
 
 /// Always-on-top macro buttons (settings-backed); hidden while recording is armed.
-/// While the Data Editor Overlay tab is editing a button, that button is previewed
-/// live (even if that button is disabled / focus-gated).
+#[cfg(feature = "native-runtime")]
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     if app.screen_click.is_armed() {
         return;
@@ -233,7 +233,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     // Sample color before restoring visibility so the app isn't under the cursor.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     {
         use std::sync::mpsc::TryRecvError;
 
@@ -267,7 +267,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             }
         }
     }
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(all(target_arch = "wasm32", feature = "native-runtime"))]
     if let Some((x, y)) = app.screen_click.take_color_point() {
         match pixel_color::sample_pixel_hex(x, y) {
             Ok(hex) => {
@@ -279,6 +279,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
     app.update_recording_visibility(ctx);
     app.sync_recording_overlay(ctx);
+    #[cfg(feature = "native-runtime")]
     sync_macro_overlay(app, ctx);
     // Windows Raw Input suppresses WH_KEYBOARD_LL while we are focused; mirror
     // egui keys into the hotkey bridges so Record / Esc / chords still work.

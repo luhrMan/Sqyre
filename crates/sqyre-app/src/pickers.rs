@@ -7,7 +7,7 @@ use crate::image_view::{self, ImageViewTransform};
 use crate::paint_ctx::CatalogPaint;
 use crate::preview_tooltip::PreviewKind;
 use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
-use sqyre_capture::WindowInfo;
+use crate::window_types::WindowInfo;
 use sqyre_domain::{CoordinateRef, PROGRAM_DELIMITER};
 use sqyre_persist::ProgramCatalog;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -181,9 +181,19 @@ pub fn refresh_window_picker(picker: &mut ActivePicker) {
     }
     *load_error = None;
     let (tx, rx) = mpsc::channel();
+    #[cfg(feature = "native-runtime")]
     thread::spawn(move || {
-        let _ = tx.send(sqyre_capture::list_open_windows());
+        let list = sqyre_capture::list_open_windows().map(|rows| {
+            rows.into_iter()
+                .map(crate::window_types::window_info_from_capture)
+                .collect()
+        });
+        let _ = tx.send(list);
     });
+    #[cfg(not(feature = "native-runtime"))]
+    {
+        let _ = tx.send(Ok(Vec::new()));
+    }
     *pending = Some(rx);
 }
 
@@ -1374,9 +1384,19 @@ pub fn show_active_picker(
                     if refresh_clicked && pending.is_none() {
                         *load_error = None;
                         let (tx, rx) = mpsc::channel();
+                        #[cfg(feature = "native-runtime")]
                         thread::spawn(move || {
-                            let _ = tx.send(sqyre_capture::list_open_windows());
+                            let list = sqyre_capture::list_open_windows().map(|rows| {
+                                rows.into_iter()
+                                    .map(crate::window_types::window_info_from_capture)
+                                    .collect()
+                            });
+                            let _ = tx.send(list);
                         });
+                        #[cfg(not(feature = "native-runtime"))]
+                        {
+                            let _ = tx.send(Ok(Vec::new()));
+                        }
                         *pending = Some(rx);
                         *scroll_to_selection = true;
                         ui.ctx().request_repaint();
@@ -1507,7 +1527,7 @@ mod tests {
         item_tooltip_parts, query_matches_name_or_tags, query_matches_window, sort_by_display_name,
         toggle_select_all_filtered,
     };
-    use sqyre_capture::WindowInfo;
+    use crate::window_types::WindowInfo;
     use sqyre_persist::{ProgramCatalog, ProgramData, ProgramItem};
     use std::collections::BTreeMap;
 
