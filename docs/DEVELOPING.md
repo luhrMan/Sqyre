@@ -65,15 +65,18 @@ Build caches (all gitignored):
 
 Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` / `make release` / `make windows` to stamp the AppImage name and embed `SQYRE_VERSION` in the binary for auto-update checks. Local builds without either default to `0.0.0-dev` (update checks disabled).
 
-### Windows OCR data
+### OCR data (`eng.traineddata`)
 
-The bare Windows `.exe` does not bundle Tesseract's `eng.traineddata`. Download it with `make tessdata` for development, or from the [Tesseract tessdata repository](https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata) for an installed release. Then use one of these locations (earlier entries take precedence):
+On native startup Sqyre resolves Tesseract English data, then **downloads** it if nothing usable is found:
 
-1. Set `SQYRE_TESSDATA` to the directory containing `eng.traineddata`.
-2. Place `eng.traineddata` beside `sqyre.exe`, or in `tessdata\eng.traineddata` beside it.
-3. Place it in `%APPDATA%\sqyre\tessdata\eng.traineddata`.
+| Platform | Auto-download location |
+|----------|------------------------|
+| Windows | `%APPDATA%\sqyre\tessdata\eng.traineddata` |
+| Linux / macOS | `~/.sqyre/tessdata/eng.traineddata` |
 
-Sqyre also detects a standard `C:\Program Files\Tesseract-OCR\tessdata` install. On Windows startup it probes OCR once; missing or unreadable data is a non-fatal warning in the app and on stderr, and OCR actions remain unavailable until data can be found.
+Discovery order (earlier entries win): `SQYRE_TESSDATA`, platform system paths (and beside `sqyre.exe` on Windows), workspace `assets/tessdata` (dev), then the auto-download path above.
+
+`make tessdata` still fills `assets/tessdata/` for packaging / CI. A failed download is a non-fatal warning in the app and on stderr; OCR actions stay unavailable until data can be found.
 
 ### WASM editor (`make wasm`)
 
@@ -137,7 +140,7 @@ CI caches: Linux Docker Buildx (GHA + GHCR), Windows cross-image Buildx + pushed
 | [crates/sqyre-app/assets/icons/](../crates/sqyre-app/assets/icons/) | Brand icons (embedded SVG) |
 | [assets/tessdata/](../assets/tessdata/) | Optional local `eng.traineddata` fallback |
 
-OCR uses system tessdata when available, or `SQYRE_TESSDATA` / `assets/tessdata` when developing. Windows discovery and deployment locations are documented above.
+OCR uses system tessdata when available, or `SQYRE_TESSDATA` / `assets/tessdata` when developing. If none are found, startup downloads `eng.traineddata` into the user data path (see above).
 
 ---
 

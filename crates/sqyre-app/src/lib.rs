@@ -283,25 +283,35 @@ impl SqyreApp {
         };
 
         let platform_warning = {
-            #[cfg(all(target_os = "linux", not(target_arch = "wasm32")))]
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                any(target_os = "linux", target_os = "windows")
+            ))]
             {
-                sqyre_capture::linux_session_capture_warning().or_else(|| {
-                    // Soft probe: if DISPLAY is set but capturer still fails, surface the error.
-                    match sqyre_capture::shared_capturer() {
-                        Ok(_) => None,
-                        Err(e) => Some(format!("Screen capture unavailable: {e}")),
-                    }
-                })
-            }
-            #[cfg(all(target_os = "windows", not(target_arch = "wasm32")))]
-            {
-                match sqyre_vision::LeptessOcr::from_env_or_system() {
+                // Ensure OCR data exists (downloads eng.traineddata when missing).
+                let ocr_warning = match sqyre_vision::LeptessOcr::from_env_or_system() {
                     Ok(_) => None,
                     Err(e) => {
                         let warning = format!("OCR unavailable: {e}");
                         eprintln!("sqyre: {warning}");
                         Some(warning)
                     }
+                };
+                #[cfg(target_os = "linux")]
+                {
+                    sqyre_capture::linux_session_capture_warning()
+                        .or_else(|| {
+                            // Soft probe: if DISPLAY is set but capturer still fails, surface the error.
+                            match sqyre_capture::shared_capturer() {
+                                Ok(_) => None,
+                                Err(e) => Some(format!("Screen capture unavailable: {e}")),
+                            }
+                        })
+                        .or(ocr_warning)
+                }
+                #[cfg(target_os = "windows")]
+                {
+                    ocr_warning
                 }
             }
             #[cfg(not(any(

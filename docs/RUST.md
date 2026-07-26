@@ -68,4 +68,4 @@ Host binary: `./bin/sqyre` after `make`, or `./target/debug/sqyre` from cargo. E
 
 Still improving: Wayland, macOS capture / window focus / releases. Windows ships without an MSI. CI also `cargo check`s macOS on PRs.
 
-OCR uses Tesseract (`leptess`). Override tessdata with `SQYRE_TESSDATA` if needed (dev fallback: `assets/tessdata`).
+OCR uses Tesseract (`leptess`). Override with `SQYRE_TESSDATA` if needed (dev fallback: `assets/tessdata`). Missing data is downloaded on native startup into `~/.sqyre/tessdata` (or `%APPDATA%\sqyre\tessdata` on Windows).
