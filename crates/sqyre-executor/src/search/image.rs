@@ -1,7 +1,8 @@
 //! Image search action: capture → match template variants → run children per hit.
 
 use super::common::{
-    apply_detection_hits, run_detection_shell, sort_hits, DetectionExtras, DetectionHit,
+    apply_detection_hits, capture_search_buf, close_matches_distance, run_detection_shell,
+    sort_hits, DetectionExtras, DetectionHit,
 };
 use crate::action_log::{crop_match_preview, draw_rect_rgb};
 use crate::backends::{DesktopRect, ItemMeta};
@@ -12,11 +13,9 @@ use rayon::prelude::*;
 use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};
 use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_integrals, prepare_search_integrals,
-    search_blur_kernel, ImageBuf, MatchMethod, Point, DEFAULT_CLOSE_MATCHES_DISTANCE,
+    search_blur_kernel, ImageBuf, MatchMethod, Point,
 };
-use sqyre_vision::{
-    get_cached_blurred_template, get_cached_image_mask, load_rgb_image, rgb_capture_to_image_buf,
-};
+use sqyre_vision::{get_cached_blurred_template, get_cached_image_mask, load_rgb_image};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -156,26 +155,6 @@ struct VariantMatchOutcome {
     match_ms: f64,
 }
 
-fn close_matches_distance(exec: &Executor<'_>) -> i32 {
-    let d = exec.deps.close_matches_distance;
-    if d > 0 {
-        d
-    } else {
-        DEFAULT_CLOSE_MATCHES_DISTANCE
-    }
-}
-
-fn to_match_method(m: sqyre_domain::TemplateMatchMethod) -> MatchMethod {
-    match m {
-        sqyre_domain::TemplateMatchMethod::Sqdiff => MatchMethod::Sqdiff,
-        sqyre_domain::TemplateMatchMethod::SqdiffNormed => MatchMethod::SqdiffNormed,
-        sqyre_domain::TemplateMatchMethod::Ccorr => MatchMethod::Ccorr,
-        sqyre_domain::TemplateMatchMethod::CcorrNormed => MatchMethod::CcorrNormed,
-        sqyre_domain::TemplateMatchMethod::Ccoeff => MatchMethod::Ccoeff,
-        sqyre_domain::TemplateMatchMethod::CcoeffNormed => MatchMethod::CcoeffNormed,
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 fn capture_and_match(
     exec: &mut Executor<'_>,
@@ -184,60 +163,37 @@ fn capture_and_match(
     search_area: &sqyre_domain::CoordinateRef,
     tolerance: f64,
     blur: i32,
-    match_method: sqyre_domain::TemplateMatchMethod,
+    match_method: MatchMethod,
     order: &MatchOrder,
     macro_: &Macro,
 ) -> Result<Vec<DetectionHit>> {
     // Capture/resolve/blur failures are logged as misses so wait-until-found can retry
     // instead of aborting the macro (same policy as OCR / Find Pixel).
-    let Some(resolver) = exec.deps.resolver else {
-        exec.log(action_id, "Image Search: missing CoordinateResolver");
-        return Ok(Vec::new());
-    };
-    if exec.deps.capturer.is_none() {
-        exec.log(action_id, "Image Search: missing ScreenCapturer");
-        return Ok(Vec::new());
-    }
     let Some(icons) = exec.deps.icons else {
         exec.log(action_id, "Image Search: missing IconStore");
         return Ok(Vec::new());
     };
 
-    let (lx, ty, rx, by) = match resolver.resolve_search_area(search_area, macro_) {
-        Ok(v) => v,
-        Err(e) => {
+    let capture_started = Instant::now();
+    let Some((search, origin)) = capture_search_buf(
+        exec,
+        action_id,
+        "Image Search",
+        search_area,
+        macro_,
+        |exec, lx, ty, rx, by| {
+            let w = (rx - lx).max(0);
+            let h = (by - ty).max(0);
             exec.log(
                 action_id,
                 format!(
-                    "Image Search: resolve search area {}: {e}",
-                    search_area.display_label()
+                    "Image Searching | {targets:?} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}, width:{w} height:{h}"
                 ),
             );
-            return Ok(Vec::new());
-        }
-    };
-    let w = (rx - lx).max(0);
-    let h = (by - ty).max(0);
-    exec.log(
-        action_id,
-        format!(
-            "Image Searching | {targets:?} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}, width:{w} height:{h}"
-        ),
-    );
-
-    let capture_started = Instant::now();
-    let Some(capturer) = exec.deps.capturer.as_mut() else {
-        exec.log(action_id, "Image Search: missing ScreenCapturer");
+        },
+    ) else {
         return Ok(Vec::new());
     };
-    let (img, origin) = match capturer.capture_search_area_rgb(lx, ty, rx, by) {
-        Ok(v) => v,
-        Err(e) => {
-            exec.log(action_id, format!("Image Search: capture: {e}"));
-            return Ok(Vec::new());
-        }
-    };
-    let search = rgb_capture_to_image_buf(img);
     exec.log_image(action_id, "1. Capture (search area)", &search);
     let kernel = search_blur_kernel(blur);
     let want_pipeline = exec.log_images_enabled();
@@ -287,7 +243,7 @@ fn capture_and_match(
     let match_started = Instant::now();
     let stop_flag: Option<&AtomicBool> = exec.deps.stop_flag;
     let search_integrals = std::sync::Arc::new(prepare_search_integrals(&search_blurred));
-    let method = to_match_method(match_method);
+    let method = match_method;
 
     let outcomes: Vec<VariantMatchOutcome> = jobs
         .into_par_iter()
