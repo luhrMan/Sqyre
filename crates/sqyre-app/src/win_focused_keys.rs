@@ -63,7 +63,7 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
         if app.screen_click.on_escape() {
             // Recording takes Esc; don't also stop macros.
         } else if sqyre_hotkeys::failsafe_modifiers_held(&pressed) {
-            eprintln!("failsafe {} — exiting", sqyre_hotkeys::FAILSAFE_LABEL);
+            crate::log::warn(format_args!("failsafe {} — exiting", sqyre_hotkeys::FAILSAFE_LABEL));
             sqyre_input::release_held_inputs();
             std::process::exit(0);
         } else if !ctrl && !shift && !app.run_session.continue_wait.continue_is_escape() {

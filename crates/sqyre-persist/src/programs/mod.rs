@@ -270,10 +270,14 @@ impl ProgramCatalog {
         }
         let key = self.resolution_key().to_string();
         let (sa, src_key, data) = self.lookup_search_area_sourced(r, &key)?;
-        let lx = resolve_scalar_int(&sa.left_x, &macro_.variables).map_err(PortError::invalid)?;
-        let ty = resolve_scalar_int(&sa.top_y, &macro_.variables).map_err(PortError::invalid)?;
-        let rx = resolve_scalar_int(&sa.right_x, &macro_.variables).map_err(PortError::invalid)?;
-        let by = resolve_scalar_int(&sa.bottom_y, &macro_.variables).map_err(PortError::invalid)?;
+        let lx = resolve_scalar_int(&sa.left_x, &macro_.variables)
+            .map_err(|e| PortError::invalid(e.to_string()))?;
+        let ty = resolve_scalar_int(&sa.top_y, &macro_.variables)
+            .map_err(|e| PortError::invalid(e.to_string()))?;
+        let rx = resolve_scalar_int(&sa.right_x, &macro_.variables)
+            .map_err(|e| PortError::invalid(e.to_string()))?;
+        let by = resolve_scalar_int(&sa.bottom_y, &macro_.variables)
+            .map_err(|e| PortError::invalid(e.to_string()))?;
         let (lx, ty) = self.remap_xy(lx, ty, src_key, data)?;
         let (rx, by) = self.remap_xy(rx, by, src_key, data)?;
         Ok((lx, ty, rx, by))
