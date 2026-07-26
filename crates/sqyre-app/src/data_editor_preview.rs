@@ -262,10 +262,7 @@ pub(crate) fn variant_display_label(name: &str) -> &str {
 
 pub(crate) fn fit_thumbnail(w: f32, h: f32) -> egui::Vec2 {
     const MAX: f32 = 96.0;
-    let w = w.max(1.0);
-    let h = h.max(1.0);
-    let scale = (MAX / w).min(MAX / h).min(1.0);
-    egui::vec2(w * scale, h * scale)
+    image_view::fit_in_box_no_upscale(w, h, MAX, MAX)
 }
 
 /// 1px Sqyre yellow border around a Data Editor image preview.
