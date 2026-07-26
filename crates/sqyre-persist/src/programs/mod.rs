@@ -143,7 +143,8 @@ impl ProgramCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::ScalarValue;
+    use serde_yaml::Mapping;
+    use sqyre_domain::{CoordinateRef, Macro, ScalarValue};
 
     #[test]
     fn parses_points_and_resolves() {

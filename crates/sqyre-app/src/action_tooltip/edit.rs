@@ -20,7 +20,7 @@ use crate::widgets::{
 use eframe::egui;
 use sqyre_domain::{
     Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs, CoordinateRef,
-    DetectionBranch, KnownVariableNames, ListColumn, LoopJumpMode, Macro, MatchMode, MatchOrder,
+    DetectionBranch, KnownVariableNames, ListColumn, Macro, MatchMode, MatchOrder,
     RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
