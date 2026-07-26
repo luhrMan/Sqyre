@@ -33,6 +33,7 @@ pub use settings::{
     MIN_OVERLAY_CORNER_RADIUS, MIN_RUN_MACRO_MAX_DEPTH, MIN_WHILE_MAX_ITERATIONS,
 };
 pub use sqyre_domain::resolve_scalar_int;
+pub use sqyre_serialize::{check_yaml_nesting_depth, MAX_YAML_NESTING_DEPTH};
 
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::Macro;
@@ -41,7 +42,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use thiserror::Error;
 
 const SQYRE_DIR: &str = ".sqyre";
@@ -50,34 +51,6 @@ const DB_FILE: &str = "db.yaml";
 pub const MAX_DB_YAML_BYTES: usize = 32 * 1024 * 1024;
 /// Soft cap on macro count in one database.
 pub const MAX_MACROS: usize = 2_000;
-/// Max nesting depth for YAML mappings/sequences in `db.yaml` (DoS guard).
-pub const MAX_YAML_NESTING_DEPTH: usize = 64;
-
-/// Walk `value` and error if mapping/sequence nesting exceeds [`MAX_YAML_NESTING_DEPTH`].
-pub fn check_yaml_nesting_depth(value: &Value) -> Result<()> {
-    fn walk(v: &Value, depth: usize) -> Result<()> {
-        if depth > MAX_YAML_NESTING_DEPTH {
-            return Err(PersistError::Message(format!(
-                "db.yaml nesting too deep (max {MAX_YAML_NESTING_DEPTH})"
-            )));
-        }
-        match v {
-            Value::Mapping(m) => {
-                for (_, child) in m {
-                    walk(child, depth + 1)?;
-                }
-            }
-            Value::Sequence(s) => {
-                for child in s {
-                    walk(child, depth + 1)?;
-                }
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-    walk(value, 0)
-}
 
 static DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
@@ -217,16 +190,20 @@ pub struct Database {
     /// Programs remain as raw YAML; use [`Self::program_catalog`] for lookups.
     pub programs: Value,
     /// Parsed catalog cache; invalidated when `programs` is replaced via known mutators.
-    catalog_cache: RefCell<Option<ProgramCatalog>>,
+    catalog_cache: RefCell<Option<Arc<ProgramCatalog>>>,
 }
 
 impl Database {
-    pub fn program_catalog(&self) -> Result<ProgramCatalog> {
+    /// Parse (or reuse the cached parse of) `programs` into a [`ProgramCatalog`].
+    ///
+    /// Returns a shared `Arc` so cache hits are a refcount bump rather than a deep clone;
+    /// callers that need an owned, mutable catalog should use `Arc::unwrap_or_clone`.
+    pub fn program_catalog(&self) -> Result<Arc<ProgramCatalog>> {
         if let Some(cached) = self.catalog_cache.borrow().as_ref() {
-            return Ok(cached.clone());
+            return Ok(Arc::clone(cached));
         }
-        let catalog = ProgramCatalog::from_yaml_value(&self.programs)?;
-        *self.catalog_cache.borrow_mut() = Some(catalog.clone());
+        let catalog = Arc::new(ProgramCatalog::from_yaml_value(&self.programs)?);
+        *self.catalog_cache.borrow_mut() = Some(Arc::clone(&catalog));
         Ok(catalog)
     }
 
