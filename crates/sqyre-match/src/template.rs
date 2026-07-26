@@ -2,10 +2,15 @@ use crate::image::ImageBuf;
 use rayon::prelude::*;
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// OpenCV `cv::TemplateMatchModes` (methods 0–5).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+///
+/// The single template-match-method enum shared by the domain action model
+/// (wire format) and the matching engine itself.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MatchMethod {
     Sqdiff = 0,
     SqdiffNormed = 1,
@@ -17,6 +22,26 @@ pub enum MatchMethod {
 }
 
 impl MatchMethod {
+    pub const ALL: [Self; 6] = [
+        Self::Sqdiff,
+        Self::SqdiffNormed,
+        Self::Ccorr,
+        Self::CcorrNormed,
+        Self::Ccoeff,
+        Self::CcoeffNormed,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Sqdiff => "SQDIFF",
+            Self::SqdiffNormed => "SQDIFF_NORMED",
+            Self::Ccorr => "CCORR",
+            Self::CcorrNormed => "CCORR_NORMED",
+            Self::Ccoeff => "CCOEFF",
+            Self::CcoeffNormed => "CCOEFF_NORMED",
+        }
+    }
+
     /// `false` for `SQDIFF` / `SQDIFF_NORMED` (lower score is better).
     #[inline]
     pub fn higher_is_better(self) -> bool {
@@ -34,17 +59,6 @@ impl MatchMethod {
     #[inline]
     fn is_ccoeff_family(self) -> bool {
         matches!(self, Self::Ccoeff | Self::CcoeffNormed)
-    }
-
-    pub fn all() -> [Self; 6] {
-        [
-            Self::Sqdiff,
-            Self::SqdiffNormed,
-            Self::Ccorr,
-            Self::CcorrNormed,
-            Self::Ccoeff,
-            Self::CcoeffNormed,
-        ]
     }
 }
 

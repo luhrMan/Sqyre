@@ -12,4 +12,5 @@ workspace = true
 serde = { workspace = true }
 serde_yaml = { workspace = true }
 uuid = { workspace = true }
+sqyre-match = { path = "../sqyre-match" }
 sqyre-varref = { path = "../sqyre-varref" }
