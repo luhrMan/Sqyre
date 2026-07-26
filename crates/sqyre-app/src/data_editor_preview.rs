@@ -324,6 +324,7 @@ pub(crate) fn paint_disk_preview(
 }
 
 /// Collection-tab preview with wheel zoom / drag pan.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_zoomable_collection_preview(
     ui: &mut egui::Ui,
     icons: &mut IconCache,
