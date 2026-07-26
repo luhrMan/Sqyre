@@ -31,13 +31,14 @@ impl SerializeError {
     }
 }
 
-/// Max nesting depth for YAML mappings/sequences (DoS guard). Shared by
-/// action/macro decode paths here and by `sqyre-persist`'s `db.yaml` loader.
+/// Max nesting depth for YAML mappings/sequences in action/macro decode
+/// paths (DoS guard). Kept independent from `sqyre-persist`'s copy since
+/// `sqyre-serialize` must not depend on `sqyre-persist`.
 pub const MAX_YAML_NESTING_DEPTH: usize = 64;
 
 /// Walk `value` and error if mapping/sequence nesting exceeds
 /// [`MAX_YAML_NESTING_DEPTH`].
-pub fn check_yaml_nesting_depth(value: &Value) -> Result<()> {
+pub(crate) fn check_yaml_nesting_depth(value: &Value) -> Result<()> {
     fn walk(v: &Value, depth: usize) -> Result<()> {
         if depth > MAX_YAML_NESTING_DEPTH {
             return Err(SerializeError::msg(format!(
