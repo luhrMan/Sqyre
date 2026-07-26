@@ -1482,23 +1482,7 @@ pub enum PickerResult {
 
 /// Static option lists for ComboBox fields (>2 options).
 pub mod options {
-    use sqyre_domain::OP_EQUALS;
-
     pub const LOOP_JUMP_MODES: &[(&str, &str)] = &[("break", "Break"), ("continue", "Continue")];
-
-    pub const CONDITIONAL_OPERATORS: &[&str] = &[
-        OP_EQUALS,
-        "!=",
-        "<",
-        "<=",
-        ">",
-        ">=",
-        "contains",
-        "starts with",
-        "ends with",
-        "is set",
-        "is empty",
-    ];
 
     /// Match-order options as `(stored value, display label)`.
     pub const ORDER_GROUPING: &[(&str, &str)] =

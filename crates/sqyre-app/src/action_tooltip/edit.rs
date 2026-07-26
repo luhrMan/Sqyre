@@ -12,7 +12,8 @@ use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
 use crate::var_pills;
 use crate::widgets::{
-    combo_str, combo_str_labeled, drag_field, drag_field_enabled, searchable_combo,
+    combo_condition_operator, combo_str, combo_str_labeled, drag_field, drag_field_enabled,
+    searchable_combo,
     searchable_combo_with, text_field, W_MULTILINE, W_TEXT, W_VAR,
 };
 use eframe::egui;
@@ -1252,13 +1253,7 @@ fn clauses_editor(
                     is_dark,
                     active_macro,
                 );
-                combo_str(
-                    ui,
-                    "op",
-                    h::CLAUSE_OP,
-                    &mut clause.operator,
-                    options::CONDITIONAL_OPERATORS,
-                );
+                combo_condition_operator(ui, "op", h::CLAUSE_OP, &mut clause.operator);
                 scalar_field(
                     ui,
                     "R",
