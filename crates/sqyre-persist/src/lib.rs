@@ -42,7 +42,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock, RwLock};
+use std::sync::{Arc, Mutex, OnceLock, RwLock};
 use thiserror::Error;
 
 const SQYRE_DIR: &str = ".sqyre";
@@ -190,16 +190,20 @@ pub struct Database {
     /// Programs remain as raw YAML; use [`Self::program_catalog`] for lookups.
     pub programs: Value,
     /// Parsed catalog cache; invalidated when `programs` is replaced via known mutators.
-    catalog_cache: RefCell<Option<ProgramCatalog>>,
+    catalog_cache: RefCell<Option<Arc<ProgramCatalog>>>,
 }
 
 impl Database {
-    pub fn program_catalog(&self) -> Result<ProgramCatalog> {
+    /// Parse (or reuse the cached parse of) `programs` into a [`ProgramCatalog`].
+    ///
+    /// Returns a shared `Arc` so cache hits are a refcount bump rather than a deep clone;
+    /// callers that need an owned, mutable catalog should use `Arc::unwrap_or_clone`.
+    pub fn program_catalog(&self) -> Result<Arc<ProgramCatalog>> {
         if let Some(cached) = self.catalog_cache.borrow().as_ref() {
-            return Ok(cached.clone());
+            return Ok(Arc::clone(cached));
         }
-        let catalog = ProgramCatalog::from_yaml_value(&self.programs)?;
-        *self.catalog_cache.borrow_mut() = Some(catalog.clone());
+        let catalog = Arc::new(ProgramCatalog::from_yaml_value(&self.programs)?);
+        *self.catalog_cache.borrow_mut() = Some(Arc::clone(&catalog));
         Ok(catalog)
     }
 

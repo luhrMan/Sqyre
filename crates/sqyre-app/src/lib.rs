@@ -254,7 +254,7 @@ impl SqyreApp {
         let (db, macros, catalog, load_error) = match Database::load_default_with_warnings() {
             #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
             Ok((mut db, load_warnings)) => {
-                let mut catalog = db.program_catalog().unwrap_or_default();
+                let mut catalog = Arc::unwrap_or_clone(db.program_catalog().unwrap_or_default());
                 apply_main_monitor_resolution(&mut catalog);
                 let mut macros: Vec<_> = db.macros.values().cloned().collect();
                 macros.sort_by(|a, b| a.name.cmp(&b.name));
@@ -411,7 +411,7 @@ impl SqyreApp {
     ) -> Result<(), String> {
         let previous_generation = catalog.generation();
         sync_and_save_database(db, macros, catalog)?;
-        *catalog = db.program_catalog().map_err(|e| e.to_string())?;
+        *catalog = Arc::unwrap_or_clone(db.program_catalog().map_err(|e| e.to_string())?);
         // YAML reload resets generation to 0; keep ListCache invalidation working.
         catalog.continue_generation_after_reload(previous_generation);
         Ok(())
