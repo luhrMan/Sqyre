@@ -2,7 +2,7 @@
 
 use super::{
     Action, ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode,
-    MatchMethod, MouseButton, PressState, ScalarValue, VariableAssignment, NavigateSelectData,
+    MatchMethod, MouseButton, NavigateSelectData, PressState, ScalarValue, VariableAssignment,
 };
 
 #[derive(Debug, Clone, PartialEq)]
