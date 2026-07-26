@@ -298,7 +298,7 @@ impl PreviewTooltipCache {
                     self.pending.remove(key);
                     let e = e.to_string();
                     self.remember_failure(key, e.clone(), now);
-                    return Err(e);
+                    return Err(e.to_string());
                 }
                 Err(TryRecvError::Empty) => {
                     ctx.request_repaint();
@@ -308,7 +308,7 @@ impl PreviewTooltipCache {
                     self.pending.remove(key);
                     let e = "capture failed".to_string();
                     self.remember_failure(key, e.clone(), now);
-                    return Err(e);
+                    return Err(e.to_string());
                 }
             }
         }
@@ -381,7 +381,7 @@ impl PreviewTooltipCache {
             }
             Err(e) => {
                 self.capturer_failed = true;
-                Err(e)
+                Err(e.to_string())
             }
         }
     }

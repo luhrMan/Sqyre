@@ -1,7 +1,7 @@
 //! Linux X11 window list + activate.
 
 use crate::window_match::{paths_equal, pick_matching_icon, titles_equal};
-use crate::{ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
+use crate::{CaptureError, ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use parking_lot::Mutex;
 use sqyre_ports::{AutomationError, WindowFocuser};
 use std::collections::HashSet;
@@ -61,14 +61,14 @@ impl WindowFocuser for OsWindowFocuser {
 }
 
 /// List open top-level windows with title + executable path.
-pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     // SAFETY: `display` comes from `with_display`, which guarantees a live,
     // non-null `XOpenDisplay` connection for the duration of this call.
-    with_display(|display| unsafe { list_on_display(display) })
+    with_display(|display| unsafe { list_on_display(display) }).map_err(CaptureError::Message)
 }
 
 /// Currently focused top-level window (`_NET_ACTIVE_WINDOW`), if any.
-pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
+pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
     crate::diag::mark_site("x11:get_active_window:before_open");
     let result = with_display(|display| {
         crate::diag::mark_site("x11:get_active_window:on_display");
@@ -80,7 +80,7 @@ pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:get_active_window err: {e}"));
     }
-    result
+    result.map_err(CaptureError::Message)
 }
 
 /// Icon for a bound process: matching open window's `_NET_WM_ICON`, if any.
@@ -119,7 +119,7 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
 /// `_NET_WM_STATE_SKIP_PAGER` on top-level windows we own whose title matches
 /// [`OVERLAY_WM_TITLE`], and re-assert `_NET_WM_WINDOW_TYPE_DOCK` in case the WM
 /// remapped the type.
-pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
+pub fn skip_taskbar_for_overlay_windows() -> Result<(), CaptureError> {
     crate::diag::mark_site("x11:skip_taskbar:before_open");
     let result = with_display(|display| {
         crate::diag::mark_site("x11:skip_taskbar:on_display");
@@ -131,7 +131,7 @@ pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:skip_taskbar err: {e}"));
     }
-    result
+    result.map_err(CaptureError::Message)
 }
 
 fn activate_window(process_path: &str, window_title: &str) -> Result<(), AutomationError> {

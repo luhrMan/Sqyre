@@ -147,7 +147,7 @@ mod native_run {
                     let focuser = OsWindowFocuser;
                     let ocr_engine = shared_leptess()
                         .map_err(|e| {
-                            eprintln!("sqyre: {e}");
+                            crate::log::warn(format_args!("{e}"));
                             e
                         })
                         .ok();

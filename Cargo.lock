@@ -4346,6 +4346,7 @@ dependencies = [
  "serde",
  "serde_yaml",
  "sqyre-varref",
+ "thiserror 2.0.19",
  "uuid",
 ]
 
@@ -4373,6 +4374,7 @@ dependencies = [
  "parking_lot",
  "rdev",
  "sqyre-domain",
+ "thiserror 2.0.19",
  "web-time",
  "windows",
 ]

@@ -87,7 +87,18 @@ macro_rules! string_enum {
         impl<'de> serde::Deserialize<'de> for $Name {
             fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
                 let s = <String as serde::Deserialize>::deserialize(deserializer)?;
-                Ok(Self::parse(&s))
+                Self::try_parse(&s).ok_or_else(|| {
+                    serde::de::Error::custom(format!(
+                        "unknown {} {:?}; expected one of: {}",
+                        stringify!($Name),
+                        s.trim(),
+                        Self::ALL
+                            .iter()
+                            .map(|v| v.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))
+                })
             }
         }
     };
@@ -226,12 +237,17 @@ impl PressState {
         }
     }
 
-    pub fn parse(s: &str) -> Self {
+    pub fn try_parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
-            "up" => Self::Up,
-            "tap" => Self::Tap,
-            _ => Self::Down,
+            "up" => Some(Self::Up),
+            "down" => Some(Self::Down),
+            "tap" => Some(Self::Tap),
+            _ => None,
         }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        Self::try_parse(s).unwrap_or_default()
     }
 
     pub const fn is_down(self) -> bool {
@@ -242,6 +258,19 @@ impl PressState {
 impl std::fmt::Display for PressState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for PressState {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_parse(s).ok_or_else(|| {
+            format!(
+                "unknown PressState {:?}; expected one of: up, down, tap",
+                s.trim()
+            )
+        })
     }
 }
 
@@ -273,7 +302,7 @@ impl<'de> serde::Deserialize<'de> for PressState {
             }
 
             fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                Ok(PressState::parse(v))
+                v.parse().map_err(serde::de::Error::custom)
             }
         }
 
@@ -1062,6 +1091,7 @@ mod tests {
             serde_yaml::from_str::<PressState>("down").unwrap(),
             PressState::Down
         );
+        assert!(serde_yaml::from_str::<PressState>("bogus").is_err());
     }
 
     #[test]

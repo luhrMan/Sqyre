@@ -20,7 +20,7 @@ impl SystemTray {
         match install_inner(ctx) {
             Ok(tray) => tray,
             Err(err) => {
-                eprintln!("system tray unavailable: {err}");
+                crate::log::warn(format_args!("system tray unavailable: {err}"));
                 Self::inactive()
             }
         }
