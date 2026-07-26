@@ -31,18 +31,8 @@ pub fn capture_search_area_to_png(
     capture_rect_and_save_png_with(&mut wrap, left, top, right, bottom, path)
 }
 
-/// Open the platform capturer, capture the collection's search area, and save PNG.
-pub fn capture_and_save_collection_image(
-    catalog: &ProgramCatalog,
-    program: &str,
-    collection: &ProgramCollection,
-) -> Result<(), String> {
-    let capturer = shared_capturer().map_err(|e| format!("collection capture: {e}"))?;
-    let mut wrap = sqyre_capture::SharedRunCapturer(capturer);
-    capture_and_save_collection_image_with(&mut wrap, catalog, program, collection)
-}
-
 /// Capture using an injected [`ScreenCapturer`] (tests use `SolidCapturer`).
+#[cfg(test)]
 pub fn capture_and_save_collection_image_with(
     capturer: &mut dyn ScreenCapturer,
     catalog: &ProgramCatalog,
