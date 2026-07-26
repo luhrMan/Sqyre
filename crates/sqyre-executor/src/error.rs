@@ -1,5 +1,5 @@
 use sqyre_match::MatchError;
-use sqyre_ports::{AutomationError, CaptureError};
+use sqyre_ports::{AutomationError, CaptureError, PortError};
 use thiserror::Error;
 
 /// Control-flow signals consumed by loop / foreach / while / imagesearch.
@@ -34,6 +34,8 @@ pub enum ExecError {
     Automation(#[from] AutomationError),
     #[error(transparent)]
     Search(#[from] SearchError),
+    #[error(transparent)]
+    Port(#[from] PortError),
     /// Domain / macro-configuration failure with no typed port error behind it.
     #[error("{0}")]
     Message(String),

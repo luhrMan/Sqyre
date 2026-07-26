@@ -394,14 +394,14 @@ fn find_pixel_uses_collection_cell_search_area() {
             &self,
             _r: &CoordinateRef,
             _macro_: &Macro,
-        ) -> std::result::Result<(i32, i32), String> {
-            Err("point".into())
+        ) -> std::result::Result<(i32, i32), crate::backends::PortError> {
+            Err(crate::backends::PortError::invalid("point"))
         }
         fn resolve_search_area(
             &self,
             r: &CoordinateRef,
             _macro_: &Macro,
-        ) -> std::result::Result<(i32, i32, i32, i32), String> {
+        ) -> std::result::Result<(i32, i32, i32, i32), crate::backends::PortError> {
             assert!(r.is_collection(), "expected collection ref, got {r:?}");
             assert_eq!(r.as_str(), "Demo~bag@1,2-1,2");
             Ok((50, 60, 54, 64))
