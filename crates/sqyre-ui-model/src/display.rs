@@ -1,8 +1,8 @@
 //! Display params and tree summary pills for actions.
 
 use sqyre_domain::{
-    Action, ActionKind, ConditionClause, LoopJumpMode, MatchMode, RepeatMode, ScalarValue,
-    WaitTilFoundConfig,
+    Action, ActionKind, ConditionClause, ConditionOperator, LoopJumpMode, MatchMode, RepeatMode,
+    ScalarValue, WaitTilFoundConfig,
 };
 
 /// One display parameter.
@@ -121,8 +121,10 @@ impl ConditionDisplay for ConditionClause {
     fn summary(&self) -> String {
         let left = self.left.as_display();
         let right = self.right.as_display();
-        match self.operator.as_str() {
-            "is set" | "is empty" => format!("{left} {}", self.operator),
+        match self.operator {
+            ConditionOperator::IsSet | ConditionOperator::IsEmpty => {
+                format!("{left} {}", self.operator)
+            }
             _ => format!("{left} {} {right}", self.operator),
         }
     }

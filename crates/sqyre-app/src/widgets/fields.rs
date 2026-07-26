@@ -96,6 +96,30 @@ pub fn combo_str(
     });
 }
 
+pub fn combo_condition_operator(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut sqyre_domain::ConditionOperator,
+) {
+    use sqyre_domain::ConditionOperator;
+
+    ui.horizontal(|ui| {
+        help::label(ui, label, help_text);
+        help::tip(
+            egui::ComboBox::from_id_salt(label)
+                .selected_text(value.to_string())
+                .show_ui(ui, |ui| {
+                    for op in ConditionOperator::ALL {
+                        ui.selectable_value(value, *op, op.as_str());
+                    }
+                })
+                .response,
+            help_text,
+        );
+    });
+}
+
 /// Like [`combo_str`], but each option is `(stored value, display label)`.
 ///
 /// When `value` is empty, the closed button and open-list highlight use
