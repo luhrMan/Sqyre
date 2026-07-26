@@ -289,7 +289,7 @@ impl SqyreApp {
             ))]
             {
                 // Ensure OCR data exists (downloads eng.traineddata when missing).
-                let ocr_warning = match sqyre_vision::LeptessOcr::from_env_or_system() {
+                let ocr_warning = match sqyre_vision::shared_leptess() {
                     Ok(_) => None,
                     Err(e) => {
                         let warning = format!("OCR unavailable: {e}");
