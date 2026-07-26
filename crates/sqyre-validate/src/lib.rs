@@ -376,7 +376,7 @@ fn yaml_string_value(v: &sqyre_domain::ScalarValue) -> Option<&str> {
 }
 
 fn validate_continue_key(keys: &[String]) -> Result<()> {
-    sqyre_hotkeys::validate_continue_key(keys)
+    sqyre_domain::validate_continue_key(keys)
         .map(|_| ())
         .map_err(ValidateError::Message)
 }

@@ -10,10 +10,10 @@ use crate::error::{ExecError, Result, SearchError};
 use crate::highlight::{highlight_clear, highlight_fill};
 use crate::run::Executor;
 use rayon::prelude::*;
-use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchOrder};
+use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchMethod, MatchOrder};
 use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_prepared, prepare_search,
-    search_blur_kernel, ImageBuf, MatchMethod, Point,
+    search_blur_kernel, ImageBuf, Point,
 };
 use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
