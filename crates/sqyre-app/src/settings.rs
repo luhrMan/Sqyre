@@ -22,6 +22,7 @@ use sqyre_ui_model::{
     default_action_pastel_color, sample_action_type_for_color_key, set_custom_action_color,
 };
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone)]
@@ -770,7 +771,7 @@ impl SettingsUi {
 
         match Database::load_default() {
             Ok(loaded) => {
-                let mut cat = loaded.program_catalog().unwrap_or_default();
+                let mut cat = Arc::unwrap_or_clone(loaded.program_catalog().unwrap_or_default());
                 crate::catalog::apply_main_monitor_resolution(&mut cat);
                 let mut list: Vec<_> = loaded.macros.values().cloned().collect();
                 list.sort_by(|a, b| a.name.cmp(&b.name));
@@ -827,7 +828,7 @@ impl SettingsUi {
 
         match Database::load_default() {
             Ok(loaded) => {
-                let mut cat = loaded.program_catalog().unwrap_or_default();
+                let mut cat = Arc::unwrap_or_clone(loaded.program_catalog().unwrap_or_default());
                 crate::catalog::apply_main_monitor_resolution(&mut cat);
                 let mut list: Vec<_> = loaded.macros.values().cloned().collect();
                 list.sort_by(|a, b| a.name.cmp(&b.name));
