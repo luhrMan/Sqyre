@@ -948,7 +948,10 @@ fn ocr_runs_branch_when_target_found() {
     use sqyre_vision::OcrWordBox;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrRecognition {
@@ -985,7 +988,10 @@ fn ocr_no_find_runs_branch_when_flag_set() {
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrRecognition {
@@ -1028,7 +1034,10 @@ fn ocr_skips_branch_when_target_missing() {
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrRecognition {
@@ -1649,7 +1658,10 @@ fn ocr_wait_until_found_retries_then_succeeds() {
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = QueuedOcrEngine {
         queue: std::sync::Mutex::new(vec![
@@ -1697,7 +1709,10 @@ fn ocr_repeat_while_found_then_stops_on_miss() {
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = QueuedOcrEngine {
         queue: std::sync::Mutex::new(vec![
@@ -1737,7 +1752,10 @@ fn ocr_runs_children_per_occurrence() {
     use sqyre_vision::OcrWordBox;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrRecognition {

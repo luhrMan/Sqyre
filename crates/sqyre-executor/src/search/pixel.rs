@@ -1,8 +1,8 @@
 //! Find-pixel action.
 
 use super::common::{
-    apply_detection_hits, capture_search_buf, close_matches_distance, run_detection_shell,
-    sort_hits, DetectionHit,
+    apply_detection_hits, capture_search_buf, close_matches_distance, frame_fingerprint,
+    run_detection_shell, sort_hits, DetectionHit, FrameCache,
 };
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
@@ -38,6 +38,7 @@ pub(crate) fn execute_find_pixel(
     let label = action_type_label(action.type_key());
     let order = order.clone();
     let targets: &[String] = &[];
+    let mut cache = FrameCache::default();
     run_detection_shell(
         exec,
         macro_,
@@ -54,6 +55,7 @@ pub(crate) fn execute_find_pixel(
                 *color_tolerance,
                 &order,
                 macro_,
+                &mut cache,
             ))
         },
         |hits| !hits.is_empty(),
@@ -106,7 +108,9 @@ fn try_find_pixels(
     color_tolerance: i32,
     order: &MatchOrder,
     macro_: &Macro,
+    cache: &mut FrameCache<Vec<DetectionHit>>,
 ) -> Vec<DetectionHit> {
+    let capture_started = Instant::now();
     let Some((buf, origin)) = capture_search_buf(
         exec,
         action_id,
@@ -117,6 +121,15 @@ fn try_find_pixels(
     ) else {
         return Vec::new();
     };
+    let fp = frame_fingerprint(&buf);
+    if let Some(cached) = cache.get(fp, origin) {
+        exec.log_timing(action_id, "capture", capture_started.elapsed());
+        exec.log(
+            action_id,
+            format!("{label}: capture unchanged since last attempt; reusing pixel scan result"),
+        );
+        return cached;
+    }
     let scan_started = Instant::now();
     let locals = find_pixels(&buf, target_color, color_tolerance);
     let clustered = cluster_points(&locals, close_matches_distance(exec));
@@ -126,5 +139,6 @@ fn try_find_pixels(
         .map(|p| DetectionHit::plain(p.x + origin.x, p.y + origin.y, ""))
         .collect();
     sort_hits(&mut hits, order);
+    cache.set(fp, origin, hits.clone());
     hits
 }

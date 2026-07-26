@@ -193,6 +193,9 @@ pub struct SqyreApp {
     /// In-flight automatic backup (native only).
     #[cfg(not(target_arch = "wasm32"))]
     backup_task: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
+    /// Background Find Pixel color sample (native only).
+    #[cfg(not(target_arch = "wasm32"))]
+    pixel_sample_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// Background update check / download (native only).
     #[cfg(not(target_arch = "wasm32"))]
     update: update::UpdateManager,
@@ -372,6 +375,8 @@ impl SqyreApp {
             #[cfg(not(target_arch = "wasm32"))]
             backup_task: None,
             #[cfg(not(target_arch = "wasm32"))]
+            pixel_sample_pending: None,
+            #[cfg(not(target_arch = "wasm32"))]
             update: update::UpdateManager::default(),
         };
         app.refresh_macro_hotkey_bindings();
@@ -398,14 +403,10 @@ impl SqyreApp {
         }
     }
 
-    /// Persist `db` as currently held (caller already updated `db.macros` / programs).
+    /// Persist `db.yaml` from the workspace Vec/catalog (single source of truth).
     pub(crate) fn save_database(&mut self) {
-        match self.workspace.db.save_default() {
-            Ok(()) => self.workspace.save_error = None,
-            Err(e) => {
-                eprintln!("sqyre: save database: {e}");
-                self.workspace.save_error = Some(e.to_string());
-            }
+        if let Err(e) = self.persist_database() {
+            eprintln!("sqyre: save database: {e}");
         }
     }
 

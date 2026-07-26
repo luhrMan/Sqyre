@@ -12,6 +12,68 @@ use sqyre_match::{ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
 use sqyre_vision::rgb_capture_to_image_buf;
 use std::time::{Duration, Instant};
 
+/// Cheap sampled fingerprint of a captured frame, far cheaper than the full
+/// match/OCR/pixel-scan passes it gates. Wait/repeat loops in Image Search, OCR,
+/// and Find Pixel use this to detect an unchanged capture across retries and reuse
+/// the previous pass's result instead of redoing expensive work every iteration.
+///
+/// Sampling (rather than hashing every byte) keeps the cost roughly constant
+/// regardless of search-area resolution. Width/height/len are folded in so a
+/// same-length-but-resized buffer never collides with a stale fingerprint.
+pub(super) fn frame_fingerprint(buf: &ImageBuf) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0100_0000_01b3;
+    const MAX_SAMPLES: usize = 4096;
+
+    let bytes = buf.data.as_slice();
+    let mut hash = FNV_OFFSET;
+    for v in [buf.width as u64, buf.height as u64, bytes.len() as u64] {
+        hash ^= v;
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    if bytes.is_empty() {
+        return hash;
+    }
+    let stride = (bytes.len() / MAX_SAMPLES).max(1);
+    let mut i = 0;
+    while i < bytes.len() {
+        hash ^= bytes[i] as u64;
+        hash = hash.wrapping_mul(FNV_PRIME);
+        i += stride;
+    }
+    hash
+}
+
+/// Per-action cache keyed on [`frame_fingerprint`] + capture origin, letting a
+/// wait/repeat loop reuse the previous attempt's result when the latest capture
+/// is indistinguishable from the last one (same fingerprint, same search-area
+/// rect). Lives for a single action invocation — constructed fresh per call.
+pub(super) struct FrameCache<T> {
+    last: Option<(u64, DesktopRect, T)>,
+}
+
+impl<T> Default for FrameCache<T> {
+    fn default() -> Self {
+        Self { last: None }
+    }
+}
+
+impl<T: Clone> FrameCache<T> {
+    /// Returns the cached value when `fp`/`origin` match the previous attempt.
+    pub(super) fn get(&self, fp: u64, origin: DesktopRect) -> Option<T> {
+        match &self.last {
+            Some((last_fp, last_origin, value)) if *last_fp == fp && *last_origin == origin => {
+                Some(value.clone())
+            }
+            _ => None,
+        }
+    }
+
+    pub(super) fn set(&mut self, fp: u64, origin: DesktopRect, value: T) {
+        self.last = Some((fp, origin, value));
+    }
+}
+
 /// Spatial dedup distance for match/pixel peaks, falling back to the library default
 /// when the configured value is `0`. Shared by Image Search and Find Pixel.
 pub(super) fn close_matches_distance(exec: &Executor<'_>) -> i32 {

@@ -233,6 +233,41 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     // Sample color before restoring visibility so the app isn't under the cursor.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        use std::sync::mpsc::TryRecvError;
+
+        if let Some(rx) = app.pixel_sample_pending.as_ref() {
+            match rx.try_recv() {
+                Ok(Ok(hex)) => {
+                    app.pixel_sample_pending = None;
+                    app.tree.tooltip.apply_recorded_color(hex.clone());
+                    app.add_action_picker.apply_recorded_color(hex);
+                }
+                Ok(Err(e)) => {
+                    app.pixel_sample_pending = None;
+                    eprintln!("sqyre: sample pixel color: {e}");
+                }
+                Err(TryRecvError::Empty) => ctx.request_repaint(),
+                Err(TryRecvError::Disconnected) => {
+                    app.pixel_sample_pending = None;
+                    eprintln!("sqyre: sample pixel color: capture failed");
+                }
+            }
+        }
+        if app.pixel_sample_pending.is_none() {
+            if let Some((x, y)) = app.screen_click.take_color_point() {
+                match pixel_color::spawn_sample_pixel_hex(x, y) {
+                    Ok(rx) => {
+                        app.pixel_sample_pending = Some(rx);
+                        ctx.request_repaint();
+                    }
+                    Err(e) => eprintln!("sqyre: sample pixel color: {e}"),
+                }
+            }
+        }
+    }
+    #[cfg(target_arch = "wasm32")]
     if let Some((x, y)) = app.screen_click.take_color_point() {
         match pixel_color::sample_pixel_hex(x, y) {
             Ok(hex) => {
