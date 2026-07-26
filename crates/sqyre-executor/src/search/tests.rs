@@ -1,8 +1,8 @@
 use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionHit};
 use super::ocr::ocr_target_matched;
-use crate::backends::{DesktopRect, IconStore, ItemMeta, RecordingBackend, RecordingCapturer};
+use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
-use crate::test_support::SEARCH_FIXED_AREA;
+use crate::test_support::{RecordingBackend, RecordingCapturer, SEARCH_FIXED_AREA};
 use crate::SharedActionLog;
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
@@ -809,7 +809,7 @@ fn find_template_matches_sqdiff_normed_peak() {
 
 #[test]
 fn ocr_writes_text_and_target_coords() {
-    use crate::backends::FixedOcrEngine;
+    use crate::test_support::FixedOcrEngine;
     use sqyre_vision::OcrRecognition;
     use sqyre_vision::OcrWordBox;
 
@@ -942,7 +942,7 @@ fn ocr_writes_text_and_target_coords() {
 
 #[test]
 fn ocr_runs_branch_when_target_found() {
-    use crate::backends::FixedOcrEngine;
+    use crate::test_support::FixedOcrEngine;
     use sqyre_vision::OcrRecognition;
     use sqyre_vision::OcrWordBox;
 
@@ -980,7 +980,7 @@ fn ocr_runs_branch_when_target_found() {
 
 #[test]
 fn ocr_no_find_runs_branch_when_flag_set() {
-    use crate::backends::FixedOcrEngine;
+    use crate::test_support::FixedOcrEngine;
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
@@ -1023,7 +1023,7 @@ fn ocr_no_find_runs_branch_when_flag_set() {
 
 #[test]
 fn ocr_skips_branch_when_target_missing() {
-    use crate::backends::FixedOcrEngine;
+    use crate::test_support::FixedOcrEngine;
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
@@ -1647,7 +1647,7 @@ fn image_search_uses_mask_path_when_present() {
 
 #[test]
 fn ocr_wait_until_found_retries_then_succeeds() {
-    use crate::backends::QueuedOcrEngine;
+    use crate::test_support::QueuedOcrEngine;
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
@@ -1695,7 +1695,7 @@ fn ocr_wait_until_found_retries_then_succeeds() {
 
 #[test]
 fn ocr_repeat_while_found_then_stops_on_miss() {
-    use crate::backends::QueuedOcrEngine;
+    use crate::test_support::QueuedOcrEngine;
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
@@ -1734,7 +1734,7 @@ fn ocr_repeat_while_found_then_stops_on_miss() {
 
 #[test]
 fn ocr_runs_children_per_occurrence() {
-    use crate::backends::FixedOcrEngine;
+    use crate::test_support::FixedOcrEngine;
     use sqyre_vision::OcrRecognition;
     use sqyre_vision::OcrWordBox;
 
