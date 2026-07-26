@@ -147,6 +147,31 @@ pub fn zoom_image_at_cursor(
     (new_zoom, pan)
 }
 
+/// Aspect-preserving scale that fits `w`×`h` inside a `max_w`×`max_h` box.
+///
+/// Dimensions below 1.0 are treated as 1.0 to avoid a divide-by-zero or
+/// negative scale for degenerate source sizes.
+pub fn fit_scale(w: f32, h: f32, max_w: f32, max_h: f32) -> f32 {
+    let w = w.max(1.0);
+    let h = h.max(1.0);
+    (max_w / w).min(max_h / h)
+}
+
+/// Fit `w`×`h` inside a `max_w`×`max_h` box, preserving aspect ratio.
+///
+/// May scale up past the source size; see [`fit_in_box_no_upscale`] to cap at 1×.
+pub fn fit_in_box(w: f32, h: f32, max_w: f32, max_h: f32) -> Vec2 {
+    let scale = fit_scale(w, h, max_w, max_h);
+    Vec2::new(w.max(1.0) * scale, h.max(1.0) * scale)
+}
+
+/// Fit `w`×`h` inside a `max_w`×`max_h` box, preserving aspect ratio, without
+/// enlarging sources that are already smaller than the box.
+pub fn fit_in_box_no_upscale(w: f32, h: f32, max_w: f32, max_h: f32) -> Vec2 {
+    let scale = fit_scale(w, h, max_w, max_h).min(1.0);
+    Vec2::new(w.max(1.0) * scale, h.max(1.0) * scale)
+}
+
 /// Apply wheel zoom while the pointer hovers `viewport`; updates `view` in place.
 pub fn handle_scroll_zoom(
     ui: &egui::Ui,
@@ -230,6 +255,35 @@ mod tests {
         assert!(z.shows_zoom_label());
         z.reset();
         assert_eq!(z.zoom, IMAGE_ZOOM_DEFAULT);
+    }
+
+    #[test]
+    fn fit_in_box_preserves_aspect_and_bounds() {
+        let wide = fit_in_box(64.0, 32.0, 30.0, 18.0);
+        assert!((wide.x / wide.y - 2.0).abs() < 0.01);
+        assert!(wide.x <= 30.0 + 0.01 && wide.y <= 18.0 + 0.01);
+
+        let tall = fit_in_box(16.0, 32.0, 30.0, 18.0);
+        assert!((tall.x / tall.y - 0.5).abs() < 0.01);
+        assert!((tall.y - 18.0).abs() < 0.01);
+
+        // A square box degenerates to the common "fit_thumb(w, h, max)" shape.
+        let square = fit_in_box(200.0, 100.0, 50.0, 50.0);
+        assert!((square.x - 50.0).abs() < 0.01);
+        assert!((square.y - 25.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn fit_in_box_no_upscale_never_grows_small_sources() {
+        let grown = fit_in_box(10.0, 10.0, 96.0, 96.0);
+        assert!(grown.x > 10.0);
+
+        let capped = fit_in_box_no_upscale(10.0, 10.0, 96.0, 96.0);
+        assert_eq!(capped, Vec2::splat(10.0));
+
+        let shrunk = fit_in_box_no_upscale(200.0, 100.0, 96.0, 96.0);
+        assert!((shrunk.x - 96.0).abs() < 0.01);
+        assert!((shrunk.y - 48.0).abs() < 0.01);
     }
 
     #[test]
