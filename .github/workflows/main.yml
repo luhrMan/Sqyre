@@ -253,7 +253,8 @@ jobs:
             -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
-              make coverage'
+              make coverage
+              make coverage-floors'
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
