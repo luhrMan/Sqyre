@@ -358,15 +358,15 @@ impl ProgramCatalog {
         }
     }
 
-    pub fn item_meta(&self, target: &str) -> Option<(String, i32, i32, i32)> {
+    pub fn item_meta(&self, target: &str) -> Option<sqyre_ports::ItemMeta> {
         let (program, item) = split_target(target)?;
         let item = self.programs.get(program)?.items.get(item)?;
-        Some((
-            item.name.clone(),
-            item.stack_max,
-            item.grid_cols,
-            item.grid_rows,
-        ))
+        Some(sqyre_ports::ItemMeta {
+            name: item.name.clone(),
+            stack_max: item.stack_max,
+            cols: item.grid_cols,
+            rows: item.grid_rows,
+        })
     }
 
     pub fn programs_mut(&mut self) -> &mut BTreeMap<String, ProgramData> {

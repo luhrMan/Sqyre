@@ -58,14 +58,7 @@ impl IconStore for CatalogIcons<'_> {
     }
 
     fn item_meta(&self, target: &str) -> Option<ItemMeta> {
-        self.0
-            .item_meta(target)
-            .map(|(name, stack_max, cols, rows)| ItemMeta {
-                name,
-                stack_max,
-                cols,
-                rows,
-            })
+        self.0.item_meta(target)
     }
 }
 
