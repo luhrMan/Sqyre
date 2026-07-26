@@ -16,9 +16,9 @@ pub use icons::*;
 mod tests {
     use super::*;
     use sqyre_domain::{
-        root_loop, Action, ActionId, ActionKind, ConditionBlock, CoordinateOutputs, CoordinateRef,
-        DetectionBranch, MatchMode, MouseButton, PressState, RepeatMode, ScalarValue,
-        VariableAssignment, WaitTilFoundConfig,
+        root_loop, Action, ActionId, ActionKind, ConditionBlock, ConditionOperator,
+        CoordinateOutputs, CoordinateRef, DetectionBranch, MatchMode, MouseButton, PressState,
+        RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig,
     };
 
     #[test]
@@ -215,12 +215,12 @@ mod tests {
                     clauses: vec![
                         sqyre_domain::ConditionClause {
                             left: ScalarValue::String("${a}".into()),
-                            operator: "==".into(),
+                            operator: ConditionOperator::Equals,
                             right: ScalarValue::String("1".into()),
                         },
                         sqyre_domain::ConditionClause {
                             left: ScalarValue::String("${b}".into()),
-                            operator: "is set".into(),
+                            operator: ConditionOperator::IsSet,
                             right: ScalarValue::Null,
                         },
                     ],
@@ -252,7 +252,7 @@ mod tests {
                     match_mode: MatchMode::All,
                     clauses: vec![sqyre_domain::ConditionClause {
                         left: ScalarValue::String("${n}".into()),
-                        operator: "<".into(),
+                        operator: ConditionOperator::LessThan,
                         right: ScalarValue::Int(10),
                     }],
                 },
@@ -483,7 +483,7 @@ mod tests {
         );
         let clause = sqyre_domain::ConditionClause {
             left: ScalarValue::String("name".into()),
-            operator: "contains".into(),
+            operator: ConditionOperator::Contains,
             right: ScalarValue::String("foo".into()),
         };
         assert_eq!(clause.summary(), "name contains foo");
