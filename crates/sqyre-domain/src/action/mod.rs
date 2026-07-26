@@ -1047,9 +1047,6 @@ impl Action {
     }
 }
 
-
-
-
 /// Creates the empty macro root loop (`name: root`, nil UID, count 1).
 pub fn root_loop(subactions: Vec<Action>) -> Action {
     Action {
@@ -1232,7 +1229,6 @@ mod tests {
         assert_eq!(MaskShape::parse("circle"), MaskShape::Circle);
         assert_eq!(format!("{}", MouseButton::Scroll), "scroll");
     }
-
 
     #[test]
     fn action_id_deserialize_rejects_malformed_uuid_instead_of_reminting() {

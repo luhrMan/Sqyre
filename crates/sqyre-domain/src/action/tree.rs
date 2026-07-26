@@ -451,7 +451,8 @@ fn resolve_slot_around_moving_sources(
 mod tests {
     use super::*;
     use crate::{
-        ActionKind, ConditionBlock, DetectionBranch, ScalarValue,
+        root_loop, Action, ActionId, ActionKind, ConditionBlock, DetectionBranch,
+        InsertSlot, ScalarValue, TreeNodeRef,
     };
 
     fn wait(id: ActionId) -> Action {
@@ -468,7 +469,7 @@ mod tests {
         let detection_id = ActionId::new();
         let then_id = ActionId::new();
         let else_id = ActionId::new();
-        let mut root = crate::root_loop(vec![Action {
+        let mut root = root_loop(vec![Action {
             id: detection_id,
             kind: ActionKind::FindPixel {
                 name: String::new(),
@@ -506,7 +507,7 @@ mod tests {
     fn conditional_else_insert_and_run_path() {
         let cond_id = ActionId::new();
         let else_id = ActionId::new();
-        let mut root = crate::root_loop(vec![Action {
+        let mut root = root_loop(vec![Action {
             id: cond_id,
             kind: ActionKind::Conditional {
                 condition: ConditionBlock::default(),
@@ -534,7 +535,7 @@ mod tests {
         let a = ActionId::new();
         let b = ActionId::new();
         let c = ActionId::new();
-        let mut root = crate::root_loop(vec![wait(a), wait(b), wait(c)]);
+        let mut root = root_loop(vec![wait(a), wait(b), wait(c)]);
         root.move_action(c, ActionId::root(), InsertSlot::Before(a))
             .unwrap();
         let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
@@ -547,7 +548,7 @@ mod tests {
         let b = ActionId::new();
         let c = ActionId::new();
         let d = ActionId::new();
-        let mut root = crate::root_loop(vec![wait(a), wait(b), wait(c), wait(d)]);
+        let mut root = root_loop(vec![wait(a), wait(b), wait(c), wait(d)]);
         root.move_actions(&[b, c], ActionId::root(), InsertSlot::After(d))
             .unwrap();
         let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
@@ -560,7 +561,7 @@ mod tests {
         let b = ActionId::new();
         let c = ActionId::new();
         let d = ActionId::new();
-        let mut root = crate::root_loop(vec![wait(a), wait(b), wait(c), wait(d)]);
+        let mut root = root_loop(vec![wait(a), wait(b), wait(c), wait(d)]);
         root.move_actions(&[c, d], ActionId::root(), InsertSlot::Before(a))
             .unwrap();
         let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
@@ -571,7 +572,7 @@ mod tests {
     fn move_action_rejects_into_self_descendant() {
         let branch_id = ActionId::new();
         let child_id = ActionId::new();
-        let mut root = crate::root_loop(vec![Action {
+        let mut root = root_loop(vec![Action {
             id: branch_id,
             kind: ActionKind::Loop {
                 name: "inner".into(),
