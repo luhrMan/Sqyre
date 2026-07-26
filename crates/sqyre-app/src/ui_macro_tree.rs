@@ -9,7 +9,7 @@ use crate::tree_history::{TreeHistory, TreeSnapshot};
 use crate::SqyreApp;
 use eframe::egui;
 use egui_ltreeview::{Action as TreeAction, NodeBuilder, TreeView, TreeViewBuilder, TreeViewState};
-use sqyre_domain::{collect_known_variable_names, Action, ActionId, InsertSlot};
+use sqyre_domain::{Action, ActionId, InsertSlot};
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
@@ -136,10 +136,14 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     let icons = &mut app.icon_cache;
                     let root = &app.workspace.macros[idx].root;
                     let root_children = root.children();
-                    let known_vars = collect_known_variable_names(&app.workspace.macros[idx]);
+                    let known_vars = app
+                        .tree
+                        .known_vars_cached(&app.workspace.macros[idx])
+                        .clone();
                     let interact_y = ui.spacing().interact_size.y;
                     let primary_id = app.tree.selected_actions.last().copied();
                     let selected_action = primary_id.and_then(|id| root.find_by_id(id));
+                    let paint_revision = app.tree.paint_revision;
                     let mut tree_paint = TreePaint {
                         catalog,
                         icons,
@@ -151,6 +155,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         hl_snap: &hl_snap,
                         selected: &app.tree.selected_actions,
                         selected_action,
+                        pills_cache: &mut app.tree.pills_cache,
+                        paint_revision,
                     };
                     // egui_ltreeview sizes to max(available, content). Inside ScrollArea
                     // that fills the viewport and trips a permanent vertical scrollbar
@@ -311,7 +317,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             .collect();
         // Snapshot before tooltip may mutate; record via borrow-split.
         let mut pending_record: Option<TreeSnapshot> = None;
-        let known_vars = collect_known_variable_names(&app.workspace.macros[idx]);
+        let known_vars = app
+            .tree
+            .known_vars_cached(&app.workspace.macros[idx])
+            .clone();
         let discarded = {
             let macro_ = &mut app.workspace.macros[idx];
             let mut tip_ui = TipUiCtx {
@@ -353,6 +362,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 .entry(name.clone())
                 .or_default()
                 .push_snapshot(snap);
+            app.tree.invalidate_paint_cache();
             // Saved an edit (including first save of a provisional insert).
             app.persist_macro_at(idx);
         }
@@ -622,6 +632,8 @@ fn build_tree(
             tree.theme.known_vars,
             tree.theme.is_dark,
             highlight,
+            tree.pills_cache,
+            tree.paint_revision,
         );
         if should_scroll {
             ui.scroll_to_rect(interaction.row_rect, Some(egui::Align::Center));

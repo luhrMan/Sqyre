@@ -8,6 +8,7 @@ use sqyre_domain::{ActionId, KnownVariableNames};
 use sqyre_executor::HighlightSnapshot;
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
+use std::collections::HashMap;
 
 pub struct CatalogPaint<'a> {
     pub catalog: &'a ProgramCatalog,
@@ -38,6 +39,9 @@ pub struct TreePaint<'a> {
     pub selected: &'a [ActionId],
     /// Primary selected action when it is a real node (not an Else folder sentinel).
     pub selected_action: Option<&'a sqyre_domain::Action>,
+    /// Per-frame summary-pill cache (keyed by action id; filled on demand).
+    pub pills_cache: &'a mut HashMap<ActionId, (u64, Vec<sqyre_ui_model::SummaryPill>)>,
+    pub paint_revision: u64,
 }
 
 /// Catalog paint + var theme + recording bridges (action tooltip / defaults edit).
