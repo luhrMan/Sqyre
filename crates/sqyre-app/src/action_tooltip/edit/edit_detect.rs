@@ -3,8 +3,8 @@
 //! All three share the same name / output-coords / search-area / wait+order
 //! branch header; only the middle, kind-specific fields differ.
 
-use super::{coords_editor, detection_branch_editor, search_area_section, targets_editor};
 use super::var_ref_field;
+use super::{coords_editor, detection_branch_editor, search_area_section, targets_editor};
 use crate::action_tooltip::help as h;
 use crate::action_tooltip::sections::{tip_section, tip_wrapped_section};
 use crate::paint_ctx::{CatalogPaint, VarTheme};
@@ -14,7 +14,7 @@ use crate::tree_chrome;
 use crate::var_pills;
 use crate::widgets::{combo_str, drag_field, text_field, W_VAR};
 use eframe::egui;
-use sqyre_domain::{parse_hex_color, CoordinateRef, DetectionBranch, MatchMethod, Macro};
+use sqyre_domain::{parse_hex_color, CoordinateRef, DetectionBranch, Macro, MatchMethod};
 use sqyre_hotkeys::ScreenClickBridge;
 
 /// Name + output coords + search area + wait/order branch, identical across

@@ -95,4 +95,3 @@ impl OcrEngine for sqyre_vision::LeptessOcr {
         sqyre_vision::LeptessOcr::recognize(self, image).map_err(PortError::Message)
     }
 }
-

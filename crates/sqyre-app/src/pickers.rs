@@ -351,7 +351,12 @@ fn paint_item_icon_tooltip(
                     continue;
                 };
                 let [tw, th] = tex.size();
-                let size = image_view::fit_in_box(tw as f32, th as f32, VARIANT_TIP_THUMB, VARIANT_TIP_THUMB);
+                let size = image_view::fit_in_box(
+                    tw as f32,
+                    th as f32,
+                    VARIANT_TIP_THUMB,
+                    VARIANT_TIP_THUMB,
+                );
                 ui.add(
                     egui::Image::new((tex.id(), size))
                         .fit_to_exact_size(size)

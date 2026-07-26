@@ -221,7 +221,8 @@ fn paint_target_thumb(
     let (slot_rect, slot_resp) = ui.allocate_exact_size(slot, Sense::hover());
     if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
         let [tw, th] = tex.size();
-        let size = image_view::fit_in_box(tw as f32, th as f32, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
+        let size =
+            image_view::fit_in_box(tw as f32, th as f32, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         let inner = egui::Rect::from_center_size(slot_rect.center(), size);
         let _ = ui.put(
             inner,
@@ -317,6 +318,7 @@ fn floating_scrollbar_overlay_width(ui: &egui::Ui) -> f32 {
 }
 
 /// Full tree-row label content. Tooltip show/hide is handled by `action_tooltip`.
+#[allow(clippy::too_many_arguments)]
 pub fn paint_action_row(
     ui: &mut egui::Ui,
     action: &Action,
@@ -413,7 +415,10 @@ pub fn paint_action_row(
                             if stale {
                                 pills_cache.insert(id, (rev, action.tree_summary_pills()));
                             }
-                            pills_cache.get(&id).map(|(_, p)| p.as_slice()).unwrap_or(&[])
+                            pills_cache
+                                .get(&id)
+                                .map(|(_, p)| p.as_slice())
+                                .unwrap_or(&[])
                         };
                         for pill in pills {
                             let resp = ui
@@ -434,7 +439,7 @@ pub fn paint_action_row(
                                             ui, catalog, icons, &pill.text,
                                         );
                                     }
-                                    paint_summary_pill(ui, action, &pill, known_vars, is_dark);
+                                    paint_summary_pill(ui, action, pill, known_vars, is_dark);
                                 })
                                 .response;
                             extend_drag_handle(&mut drag_handle_rect, resp.rect);

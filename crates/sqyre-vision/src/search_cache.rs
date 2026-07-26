@@ -96,19 +96,35 @@ impl SearchCache {
     /// Finds the globally least-recently-used entry across all maps.
     fn least_recently_used(&self) -> Option<(EntryKind, String)> {
         let mut best: Option<(u64, EntryKind, String)> = None;
-        let consider = |best: &mut Option<(u64, EntryKind, String)>, tick: u64, kind: EntryKind, key: &str| {
-            if best.as_ref().is_none_or(|(bt, _, _)| tick < *bt) {
-                *best = Some((tick, kind, key.to_string()));
-            }
-        };
+        let consider =
+            |best: &mut Option<(u64, EntryKind, String)>, tick: u64, kind: EntryKind, key: &str| {
+                if best.as_ref().is_none_or(|(bt, _, _)| tick < *bt) {
+                    *best = Some((tick, kind, key.to_string()));
+                }
+            };
         for (k, e) in &self.templates {
-            consider(&mut best, e.last_used.load(Ordering::Relaxed), EntryKind::Template, k);
+            consider(
+                &mut best,
+                e.last_used.load(Ordering::Relaxed),
+                EntryKind::Template,
+                k,
+            );
         }
         for (k, e) in &self.image_masks {
-            consider(&mut best, e.last_used.load(Ordering::Relaxed), EntryKind::Mask, k);
+            consider(
+                &mut best,
+                e.last_used.load(Ordering::Relaxed),
+                EntryKind::Mask,
+                k,
+            );
         }
         for (k, e) in &self.prepared {
-            consider(&mut best, e.last_used.load(Ordering::Relaxed), EntryKind::Prepared, k);
+            consider(
+                &mut best,
+                e.last_used.load(Ordering::Relaxed),
+                EntryKind::Prepared,
+                k,
+            );
         }
         best.map(|(_, kind, key)| (kind, key))
     }
@@ -280,7 +296,11 @@ pub fn invalidate_search_masks_under(mask_prefix: &Path) {
     let prepared_keys: Vec<String> = guard
         .prepared
         .iter()
-        .filter(|(_, e)| e.mask_path.as_deref().is_some_and(|p| p.starts_with(mask_prefix)))
+        .filter(|(_, e)| {
+            e.mask_path
+                .as_deref()
+                .is_some_and(|p| p.starts_with(mask_prefix))
+        })
         .map(|(k, _)| k.clone())
         .collect();
     for key in prepared_keys {
