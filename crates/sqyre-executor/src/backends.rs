@@ -10,28 +10,28 @@ use std::sync::Arc;
 
 pub use sqyre_ports::{
     clamp_search_rect, AutomationBackend, AutomationError, CaptureError, DesktopRect, MoveOptions,
-    RgbCapture, ScreenCapturer, WindowFocuser,
+    PortError, RgbCapture, ScreenCapturer, WindowFocuser,
 };
 
 /// Resolve `program~point` / search-area refs using the loaded program catalog.
 pub trait CoordinateResolver {
-    fn resolve_point(&self, r: &CoordinateRef, macro_: &Macro) -> Result<(i32, i32), String>;
+    fn resolve_point(&self, r: &CoordinateRef, macro_: &Macro) -> Result<(i32, i32), PortError>;
     fn resolve_search_area(
         &self,
         r: &CoordinateRef,
         macro_: &Macro,
-    ) -> Result<(i32, i32, i32, i32), String>;
+    ) -> Result<(i32, i32, i32, i32), PortError>;
 
     /// Collection grid size `(rows, cols)` for `program` + collection name.
-    fn collection_grid(&self, program: &str, collection: &str) -> Result<(i32, i32), String> {
+    fn collection_grid(&self, program: &str, collection: &str) -> Result<(i32, i32), PortError> {
         let _ = (program, collection);
-        Err("collection grid lookup not configured".into())
+        Err(PortError::not_configured("collection grid lookup"))
     }
 
     /// Member Collection names for `program` + atlas name.
-    fn atlas_members(&self, program: &str, atlas: &str) -> Result<Vec<String>, String> {
+    fn atlas_members(&self, program: &str, atlas: &str) -> Result<Vec<String>, PortError> {
         let _ = (program, atlas);
-        Err("atlas lookup not configured".into())
+        Err(PortError::not_configured("atlas lookup"))
     }
 }
 
@@ -64,7 +64,7 @@ pub trait ContinueKeyWaiter: Send + Sync {
         keys: &[String],
         pass_through: bool,
         stop: &AtomicBool,
-    ) -> Result<(), String>;
+    ) -> Result<(), PortError>;
 
     /// Wait until one of `chords` is pressed. Returns the matched index.
     /// `hold_repeat` is parallel to `chords` (missing = false).
@@ -74,10 +74,10 @@ pub trait ContinueKeyWaiter: Send + Sync {
         hold_repeat: &[bool],
         pass_through: bool,
         stop: &AtomicBool,
-    ) -> Result<usize, String> {
+    ) -> Result<usize, PortError> {
         let _ = hold_repeat;
         if chords.is_empty() {
-            return Err("key wait: no chords configured".into());
+            return Err(PortError::invalid("key wait: no chords configured"));
         }
         // Default: only the first chord (used by tests / simple waiters).
         self.wait_for_continue(&chords[0], pass_through, stop)?;
@@ -87,15 +87,21 @@ pub trait ContinueKeyWaiter: Send + Sync {
 
 /// Run OCR on a preprocessed image buffer.
 pub trait OcrEngine: Send + Sync {
-    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<sqyre_vision::OcrRecognition, String>;
+    fn recognize(
+        &self,
+        image: &sqyre_match::ImageBuf,
+    ) -> Result<sqyre_vision::OcrRecognition, PortError>;
 }
 
 /// Tesseract-backed engine (native only; not available on wasm32) — the sole real
 /// [`OcrEngine`] implementation, so no field-copy adapter is needed at the call site.
 #[cfg(not(target_arch = "wasm32"))]
 impl OcrEngine for sqyre_vision::LeptessOcr {
-    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<sqyre_vision::OcrRecognition, String> {
-        self.recognize(image)
+    fn recognize(
+        &self,
+        image: &sqyre_match::ImageBuf,
+    ) -> Result<sqyre_vision::OcrRecognition, PortError> {
+        sqyre_vision::LeptessOcr::recognize(self, image).map_err(PortError::Message)
     }
 }
 
@@ -107,7 +113,10 @@ pub struct FixedOcrEngine {
 }
 
 impl OcrEngine for FixedOcrEngine {
-    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<sqyre_vision::OcrRecognition, String> {
+    fn recognize(
+        &self,
+        image: &sqyre_match::ImageBuf,
+    ) -> Result<sqyre_vision::OcrRecognition, PortError> {
         if let Ok(mut g) = self.log.lock() {
             g.push(format!(
                 "ocr:{}x{}c{}",
@@ -126,7 +135,10 @@ pub struct QueuedOcrEngine {
 }
 
 impl OcrEngine for QueuedOcrEngine {
-    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<sqyre_vision::OcrRecognition, String> {
+    fn recognize(
+        &self,
+        image: &sqyre_match::ImageBuf,
+    ) -> Result<sqyre_vision::OcrRecognition, PortError> {
         if let Ok(mut g) = self.log.lock() {
             g.push(format!(
                 "ocr:{}x{}c{}",
@@ -136,9 +148,9 @@ impl OcrEngine for QueuedOcrEngine {
         let mut q = self
             .queue
             .lock()
-            .map_err(|_| "QueuedOcrEngine: lock poisoned".to_string())?;
+            .map_err(|_| PortError::Message("QueuedOcrEngine: lock poisoned".into()))?;
         if q.is_empty() {
-            return Err("QueuedOcrEngine: empty queue".into());
+            return Err(PortError::invalid("QueuedOcrEngine: empty queue"));
         }
         if q.len() == 1 {
             return Ok(q[0].clone());
@@ -253,9 +265,9 @@ impl ContinueKeyWaiter for ImmediateContinueWaiter {
         keys: &[String],
         pass_through: bool,
         _stop: &AtomicBool,
-    ) -> Result<(), String> {
+    ) -> Result<(), PortError> {
         if keys.is_empty() {
-            return Err("pause: continue key not set".into());
+            return Err(PortError::invalid("pause: continue key not set"));
         }
         if let Ok(mut g) = self.log.lock() {
             g.push(format!(
@@ -272,9 +284,9 @@ impl ContinueKeyWaiter for ImmediateContinueWaiter {
         hold_repeat: &[bool],
         pass_through: bool,
         _stop: &AtomicBool,
-    ) -> Result<usize, String> {
+    ) -> Result<usize, PortError> {
         if chords.is_empty() || chords.iter().all(|c| c.is_empty()) {
-            return Err("key wait: no chords configured".into());
+            return Err(PortError::invalid("key wait: no chords configured"));
         }
         let idx = self
             .any_queue

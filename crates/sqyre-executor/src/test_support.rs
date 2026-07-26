@@ -1,6 +1,6 @@
 //! Shared test doubles for executor unit/integration tests.
 
-use crate::backends::CoordinateResolver;
+use crate::backends::{CoordinateResolver, PortError};
 use sqyre_domain::{CoordinateRef, Macro};
 use std::collections::HashMap;
 
@@ -72,7 +72,7 @@ pub const SEARCH_FIXED_AREA: FixedResolver =
     FixedResolver::point_area((0, 0), (100, 200, 110, 210));
 
 impl CoordinateResolver for FixedResolver {
-    fn resolve_point(&self, r: &CoordinateRef, _macro_: &Macro) -> Result<(i32, i32), String> {
+    fn resolve_point(&self, r: &CoordinateRef, _macro_: &Macro) -> Result<(i32, i32), PortError> {
         if let Some((r1, c1, _, _)) = r.cell_range() {
             if let Some(cols) = &self.collections {
                 if let Some(FixedCollection {
@@ -99,7 +99,7 @@ impl CoordinateResolver for FixedResolver {
         &self,
         r: &CoordinateRef,
         _macro_: &Macro,
-    ) -> Result<(i32, i32, i32, i32), String> {
+    ) -> Result<(i32, i32, i32, i32), PortError> {
         if r.cell_range().is_some() {
             if let Some(cols) = &self.collections {
                 if let Some(FixedCollection { bounds, .. }) = cols.get(r.name()) {
@@ -110,19 +110,19 @@ impl CoordinateResolver for FixedResolver {
         Ok(self.area)
     }
 
-    fn collection_grid(&self, _program: &str, collection: &str) -> Result<(i32, i32), String> {
+    fn collection_grid(&self, _program: &str, collection: &str) -> Result<(i32, i32), PortError> {
         if let Some(cols) = &self.collections {
             if let Some(FixedCollection { rows, cols, .. }) = cols.get(collection) {
                 return Ok((*rows, *cols));
             }
         }
         self.grid
-            .ok_or_else(|| "collection grid lookup not configured".into())
+            .ok_or_else(|| PortError::not_configured("collection grid lookup"))
     }
 
-    fn atlas_members(&self, _program: &str, _atlas: &str) -> Result<Vec<String>, String> {
+    fn atlas_members(&self, _program: &str, _atlas: &str) -> Result<Vec<String>, PortError> {
         self.atlas_members
             .clone()
-            .ok_or_else(|| "atlas lookup not configured".into())
+            .ok_or_else(|| PortError::not_configured("atlas lookup"))
     }
 }
