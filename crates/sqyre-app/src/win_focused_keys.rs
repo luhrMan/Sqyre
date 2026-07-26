@@ -13,21 +13,21 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
         if !i.focused {
             return None;
         }
-        let mut pressed = HashSet::new();
+        let mut pressed: HashSet<&'static str> = HashSet::new();
         // Use physical modifiers only. On Windows egui sets `command` == `ctrl`
         // for cross-platform shortcuts — do not map that to Sqyre "cmd".
         if i.modifiers.ctrl {
-            pressed.insert("ctrl".into());
+            pressed.insert("ctrl");
         }
         if i.modifiers.shift {
-            pressed.insert("shift".into());
+            pressed.insert("shift");
         }
         if i.modifiers.alt {
-            pressed.insert("alt".into());
+            pressed.insert("alt");
         }
         for key in &i.keys_down {
             if let Some(name) = egui_key_name(*key) {
-                pressed.insert(name.into());
+                pressed.insert(name);
             }
         }
         Some((pressed, i.key_pressed(Key::Escape)))
@@ -38,10 +38,10 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
     // egui-winit drops the Win key on non-macOS; read it directly.
     let (lwin, rwin) = win_logo_down();
     if lwin {
-        pressed.insert("cmd".into());
+        pressed.insert("cmd");
     }
     if rwin {
-        pressed.insert("rcmd".into());
+        pressed.insert("rcmd");
     }
 
     app.run_session.continue_wait.on_pressed_keys(&pressed);
