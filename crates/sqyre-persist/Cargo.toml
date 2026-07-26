@@ -13,6 +13,7 @@ name = "migrate_db_yaml"
 path = "src/bin/migrate_db_yaml.rs"
 
 [dependencies]
+parking_lot = { workspace = true }
 serde = { workspace = true }
 serde_yaml = { workspace = true }
 thiserror = { workspace = true }

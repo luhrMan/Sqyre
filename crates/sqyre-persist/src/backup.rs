@@ -8,8 +8,9 @@ use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process;
-use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use parking_lot::Mutex;
 
 use thiserror::Error;
 use zip::write::SimpleFileOptions;
@@ -93,10 +94,9 @@ fn should_skip_entry(name: &str) -> bool {
     SKIP_NAMES.contains(&name)
 }
 
-fn backup_ops_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
+/// Serializes backup create/restore so concurrent callers cannot interleave
+/// writes to the same scratch and archive directories.
+static BACKUP_OPS_LOCK: Mutex<()> = Mutex::new(());
 
 /// Unique suffix for restore scratch directories (`pid` + subsecond time).
 fn unique_scratch_suffix() -> String {
@@ -197,7 +197,7 @@ fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
 ///
 /// Skips `backups/`, lock, and diagnostic logs. Builds via temp file + rename.
 pub fn create_backup() -> Result<PathBuf> {
-    let _guard = backup_ops_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = BACKUP_OPS_LOCK.lock();
     let root = sqyre_dir();
     if !root.exists() {
         return Err(BackupError::Message(format!(
@@ -321,7 +321,7 @@ fn safe_extract_path(dest: &Path, name: &str) -> Result<PathBuf> {
 /// live directory is left unchanged. After a successful commit the previous
 /// snapshot is deleted.
 pub fn restore_backup(zip_path: &Path) -> Result<()> {
-    let _guard = backup_ops_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = BACKUP_OPS_LOCK.lock();
     if !zip_path.is_file() {
         return Err(BackupError::Message(format!(
             "backup file not found: {}",

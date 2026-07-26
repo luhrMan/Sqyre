@@ -4305,7 +4305,6 @@ dependencies = [
  "sqyre-executor",
  "sqyre-hotkeys",
  "sqyre-input",
- "sqyre-match",
  "sqyre-persist",
  "sqyre-serialize",
  "sqyre-ui-model",
@@ -4390,6 +4389,7 @@ dependencies = [
 name = "sqyre-match"
 version = "0.1.0"
 dependencies = [
+ "parking_lot",
  "pulp",
  "purecv",
  "rayon",
@@ -4403,6 +4403,7 @@ name = "sqyre-persist"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "parking_lot",
  "serde",
  "serde_yaml",
  "sqyre-domain",
@@ -4438,7 +4439,9 @@ dependencies = [
 name = "sqyre-ui-model"
 version = "0.1.0"
 dependencies = [
+ "parking_lot",
  "sqyre-domain",
+ "sqyre-varref",
 ]
 
 [[package]]

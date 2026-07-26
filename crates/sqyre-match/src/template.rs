@@ -1,10 +1,11 @@
 use crate::image::ImageBuf;
+use parking_lot::Mutex;
 use rayon::prelude::*;
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use thiserror::Error;
 
 /// OpenCV `cv::TemplateMatchModes` (methods 0–5).
@@ -735,13 +736,12 @@ type SearchFft = Vec<Vec<Complex<f32>>>;
 
 impl SearchPrep {
     fn fft_for_size(&self, search: &ImageBuf, dft_w: usize, dft_h: usize) -> Arc<SearchFft> {
-        if let Some(hit) = self.fft_cache.lock().unwrap().get(&(dft_w, dft_h)) {
+        if let Some(hit) = self.fft_cache.lock().get(&(dft_w, dft_h)) {
             return Arc::clone(hit);
         }
         let built = Arc::new(forward_fft_search(search, dft_w, dft_h));
         self.fft_cache
             .lock()
-            .unwrap()
             .insert((dft_w, dft_h), Arc::clone(&built));
         built
     }

@@ -3,13 +3,13 @@
 //! Hex parse/format helpers and category keys live in [`sqyre_domain::color`]
 //! so vision and persist can use them without depending on UI chrome.
 
+use parking_lot::RwLock;
 use sqyre_domain::{
     action_color_key as taxonomy_color_key, ACTION_COLOR_KEY_CONTROL_FLOW,
     ACTION_COLOR_KEY_DETECTION, ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD,
     ACTION_COLOR_KEY_VARIABLES, ACTION_COLOR_KEY_WAIT,
 };
 use std::collections::HashMap;
-use std::sync::RwLock;
 
 static CUSTOM_ACTION_COLORS: RwLock<Option<HashMap<String, [u8; 4]>>> = RwLock::new(None);
 
@@ -32,14 +32,14 @@ pub fn sample_action_type_for_color_key(category_key: &str) -> &'static str {
 
 /// Store a user-chosen color for a category key.
 pub fn set_custom_action_color(category_key: &str, rgba: [u8; 4]) {
-    let mut guard = CUSTOM_ACTION_COLORS.write().unwrap();
+    let mut guard = CUSTOM_ACTION_COLORS.write();
     let map = guard.get_or_insert_with(HashMap::new);
     map.insert(category_key.to_string(), rgba);
 }
 
 /// Remove a user override for a category key.
 pub fn clear_custom_action_color(category_key: &str) {
-    let mut guard = CUSTOM_ACTION_COLORS.write().unwrap();
+    let mut guard = CUSTOM_ACTION_COLORS.write();
     if let Some(map) = guard.as_mut() {
         map.remove(category_key);
     }
@@ -47,7 +47,7 @@ pub fn clear_custom_action_color(category_key: &str) {
 
 /// Remove every user override.
 pub fn clear_all_custom_action_colors() {
-    *CUSTOM_ACTION_COLORS.write().unwrap() = None;
+    *CUSTOM_ACTION_COLORS.write() = None;
 }
 
 /// Category pastel color, light/dark theme.
@@ -58,7 +58,6 @@ pub fn action_pastel_color(action_type: &str, is_dark: bool) -> [u8; 4] {
         let key = action_color_key(&t);
         if let Some(c) = CUSTOM_ACTION_COLORS
             .read()
-            .unwrap()
             .as_ref()
             .and_then(|m| m.get(key).copied())
         {
