@@ -1,7 +1,8 @@
 //! Process-wide capturer singleton and Arc [`ScreenCapturer`] wrapper.
 //!
 //! Platform modules provide `OsCapturer` with `*_ref` methods; this macro adds
-//! `shared_capturer`, `SharedRunCapturer`, and the `&mut self` trait forwards.
+//! `shared_capturer`, `SharedRunCapturer`, and a shared [`ScreenCapturer`] forwarder
+//! used by both `OsCapturer` and `SharedRunCapturer`.
 
 /// Define `shared_capturer`, `SharedRunCapturer`, and `ScreenCapturer` for `OsCapturer`.
 ///
@@ -28,49 +29,23 @@ macro_rules! define_shared_run_capturer {
             }
         }
 
-        impl ::sqyre_ports::ScreenCapturer for OsCapturer {
-            fn capture_monitor(
-                &mut self,
-                display_index: i32,
-            ) -> Result<::image::RgbaImage, ::sqyre_ports::CaptureError> {
-                if display_index != 0 {
-                    return Err(::sqyre_ports::CaptureError::UnsupportedDisplay(
-                        display_index,
-                    ));
-                }
-                let vb = self.virtual_bounds_ref()?;
-                self.capture_rect_ref(vb)
-            }
-
-            fn capture_rect(
-                &mut self,
-                rect: ::sqyre_ports::DesktopRect,
-            ) -> Result<::image::RgbaImage, ::sqyre_ports::CaptureError> {
-                self.capture_rect_ref(rect)
-            }
-
-            fn capture_rect_rgb(
-                &mut self,
-                rect: ::sqyre_ports::DesktopRect,
-            ) -> Result<::sqyre_ports::RgbCapture, ::sqyre_ports::CaptureError> {
-                self.capture_rect_rgb_ref(rect)
-            }
-
-            fn virtual_bounds(
-                &mut self,
-            ) -> Result<::sqyre_ports::DesktopRect, ::sqyre_ports::CaptureError> {
-                self.virtual_bounds_ref()
-            }
-
-            fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, ::sqyre_ports::CaptureError> {
-                self.monitor_sizes_ref()
-            }
-        }
-
         /// [`ScreenCapturer`] over a shared [`Arc`] capturer (macro run thread).
         pub struct SharedRunCapturer(pub ::std::sync::Arc<OsCapturer>);
 
-        impl ::sqyre_ports::ScreenCapturer for SharedRunCapturer {
+        $crate::__impl_screen_capturer_forward!(OsCapturer);
+        $crate::__impl_screen_capturer_forward!(SharedRunCapturer, 0);
+    };
+}
+
+/// Private [`ScreenCapturer`] forwarder shared by `OsCapturer` (accessed as `self`) and
+/// `SharedRunCapturer` (accessed as `self.0`, passed as the optional tuple-field index),
+/// so [`define_shared_run_capturer`] only has to write the capture logic once instead of
+/// two nearly identical trait impls.
+#[macro_export]
+#[doc(hidden)]
+macro_rules! __impl_screen_capturer_forward {
+    ($ty:ty $(, $field:tt)?) => {
+        impl ::sqyre_ports::ScreenCapturer for $ty {
             fn capture_monitor(
                 &mut self,
                 display_index: i32,
@@ -80,32 +55,32 @@ macro_rules! define_shared_run_capturer {
                         display_index,
                     ));
                 }
-                let vb = self.0.virtual_bounds_ref()?;
-                self.0.capture_rect_ref(vb)
+                let vb = self $(.$field)? .virtual_bounds_ref()?;
+                self $(.$field)? .capture_rect_ref(vb)
             }
 
             fn capture_rect(
                 &mut self,
                 rect: ::sqyre_ports::DesktopRect,
             ) -> Result<::image::RgbaImage, ::sqyre_ports::CaptureError> {
-                self.0.capture_rect_ref(rect)
+                self $(.$field)? .capture_rect_ref(rect)
             }
 
             fn capture_rect_rgb(
                 &mut self,
                 rect: ::sqyre_ports::DesktopRect,
             ) -> Result<::sqyre_ports::RgbCapture, ::sqyre_ports::CaptureError> {
-                self.0.capture_rect_rgb_ref(rect)
+                self $(.$field)? .capture_rect_rgb_ref(rect)
             }
 
             fn virtual_bounds(
                 &mut self,
             ) -> Result<::sqyre_ports::DesktopRect, ::sqyre_ports::CaptureError> {
-                self.0.virtual_bounds_ref()
+                self $(.$field)? .virtual_bounds_ref()
             }
 
             fn monitor_sizes(&mut self) -> Result<Vec<(i32, i32)>, ::sqyre_ports::CaptureError> {
-                self.0.monitor_sizes_ref()
+                self $(.$field)? .monitor_sizes_ref()
             }
         }
     };
