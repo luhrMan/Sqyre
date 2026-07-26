@@ -550,7 +550,11 @@ enum ActionKindWireRef<'a> {
         condition: &'a ConditionBlock,
         #[serde(default, skip_serializing_if = "is_empty_slice")]
         subactions: &'a [Action],
-        #[serde(rename = "elseactions", default, skip_serializing_if = "is_empty_slice")]
+        #[serde(
+            rename = "elseactions",
+            default,
+            skip_serializing_if = "is_empty_slice"
+        )]
         else_actions: &'a [Action],
     },
     ImageSearch {
@@ -665,7 +669,11 @@ enum ActionKindWireRef<'a> {
         type_: TagPause,
         #[serde(default, skip_serializing_if = "str::is_empty")]
         message: &'a str,
-        #[serde(rename = "continuekey", default, skip_serializing_if = "is_empty_slice")]
+        #[serde(
+            rename = "continuekey",
+            default,
+            skip_serializing_if = "is_empty_slice"
+        )]
         continue_key: &'a [String],
         #[serde(rename = "passthrough", default, skip_serializing_if = "is_false")]
         pass_through: bool,
@@ -721,7 +729,10 @@ enum ActionKindWireRef<'a> {
     SetVariable {
         #[serde(rename = "type")]
         type_: TagSetVariable,
-        #[serde(default = "default_assignments", skip_serializing_if = "is_empty_slice")]
+        #[serde(
+            default = "default_assignments",
+            skip_serializing_if = "is_empty_slice"
+        )]
         assignments: &'a [VariableAssignment],
     },
     SaveVariable {
@@ -739,27 +750,15 @@ enum ActionKindWireRef<'a> {
     FocusWindow {
         #[serde(rename = "type")]
         type_: TagFocusWindow,
-        #[serde(
-            rename = "processpath",
-            default,
-            skip_serializing_if = "str::is_empty"
-        )]
+        #[serde(rename = "processpath", default, skip_serializing_if = "str::is_empty")]
         process_path: &'a str,
-        #[serde(
-            rename = "windowtitle",
-            default,
-            skip_serializing_if = "str::is_empty"
-        )]
+        #[serde(rename = "windowtitle", default, skip_serializing_if = "str::is_empty")]
         window_title: &'a str,
     },
     RunMacro {
         #[serde(rename = "type")]
         type_: TagRunMacro,
-        #[serde(
-            rename = "macroname",
-            default,
-            skip_serializing_if = "str::is_empty"
-        )]
+        #[serde(rename = "macroname", default, skip_serializing_if = "str::is_empty")]
         macro_name: &'a str,
     },
     NavigateSelect {
