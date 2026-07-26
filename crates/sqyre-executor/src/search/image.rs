@@ -10,7 +10,7 @@ use crate::error::{ExecError, Result, SearchError};
 use crate::highlight::{highlight_clear, highlight_fill};
 use crate::run::Executor;
 use rayon::prelude::*;
-use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};
+use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchOrder};
 use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_prepared, prepare_search,
     search_blur_kernel, ImageBuf, MatchMethod, Point,
@@ -51,6 +51,7 @@ pub(crate) fn execute_image_search(
 
     highlight_fill(exec.deps.highlighter, &macro_.name, action.id, 0.0);
     let action_id = action.id;
+    let label = action_type_label(action.type_key());
     let macro_name = macro_.name.clone();
     let order = order.clone();
     let result = (|| {
@@ -58,6 +59,7 @@ pub(crate) fn execute_image_search(
         let results0 = capture_and_match(
             exec,
             action_id,
+            label,
             targets,
             search_area,
             *tolerance,
@@ -70,7 +72,7 @@ pub(crate) fn execute_image_search(
             exec.log(
                 action_id,
                 format!(
-                    "Image Search: waiting up to {}s until found",
+                    "{label}: waiting up to {}s until found",
                     wait.wait_til_found_seconds
                 ),
             );
@@ -78,7 +80,7 @@ pub(crate) fn execute_image_search(
             exec.log(
                 action_id,
                 format!(
-                    "Image Search: waiting up to {}s while found",
+                    "{label}: waiting up to {}s while found",
                     wait.wait_til_found_seconds
                 ),
             );
@@ -98,6 +100,7 @@ pub(crate) fn execute_image_search(
                 capture_and_match(
                     exec,
                     action_id,
+                    label,
                     targets,
                     search_area,
                     *tolerance,
@@ -162,6 +165,7 @@ struct VariantMatchOutcome {
 fn capture_and_match(
     exec: &mut Executor<'_>,
     action_id: sqyre_domain::ActionId,
+    label: &str,
     targets: &[String],
     search_area: &sqyre_domain::CoordinateRef,
     tolerance: f64,
@@ -173,7 +177,7 @@ fn capture_and_match(
     // Capture/resolve/blur failures are logged as misses so wait-until-found can retry
     // instead of aborting the macro (same policy as OCR / Find Pixel).
     let Some(icons) = exec.deps.icons else {
-        exec.log(action_id, "Image Search: missing IconStore");
+        exec.log(action_id, format!("{label}: missing IconStore"));
         return Ok(Vec::new());
     };
 
@@ -181,7 +185,7 @@ fn capture_and_match(
     let Some((search, origin)) = capture_search_buf(
         exec,
         action_id,
-        "Image Search",
+        label,
         search_area,
         macro_,
         |exec, lx, ty, rx, by| {
@@ -190,7 +194,7 @@ fn capture_and_match(
             exec.log(
                 action_id,
                 format!(
-                    "Image Searching | {targets:?} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}, width:{w} height:{h}"
+                    "{label}: searching {targets:?} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}, width:{w} height:{h}"
                 ),
             );
         },
@@ -205,7 +209,7 @@ fn capture_and_match(
     let search_blurred = match blur_image_owned(search, kernel) {
         Ok(b) => b,
         Err(e) => {
-            exec.log(action_id, format!("Image Search: blur: {e}"));
+            exec.log(action_id, format!("{label}: blur: {e}"));
             return Ok(Vec::new());
         }
     };
@@ -224,7 +228,7 @@ fn capture_and_match(
         if paths.is_empty() {
             exec.log(
                 action_id,
-                format!("Image Search: no icon variants for {target}"),
+                format!("{label}: no icon variants for {target}"),
             );
             continue;
         }
@@ -344,7 +348,7 @@ fn capture_and_match(
 
         if outcome.tmpl_w == 0 {
             if let Err(e) = &outcome.matches {
-                exec.log(action_id, format!("Image Search: {e}"));
+                exec.log(action_id, format!("{label}: {e}"));
             }
             continue;
         }
@@ -352,7 +356,7 @@ fn capture_and_match(
         exec.log(
             action_id,
             format!(
-                "Image Search: matching {variant_label} ({}x{}) against {}x{}",
+                "{label}: matching {variant_label} ({}x{}) against {}x{}",
                 outcome.tmpl_w, outcome.tmpl_h, search_blurred.width, search_blurred.height
             ),
         );
@@ -374,7 +378,7 @@ fn capture_and_match(
         let matches = match outcome.matches {
             Ok(m) => m,
             Err(e) => {
-                exec.log(action_id, format!("Image Search match: {e}"));
+                exec.log(action_id, format!("{label} match: {e}"));
                 if want_pipeline {
                     let mut steps: Vec<(&str, &ImageBuf)> = vec![
                         ("0. Search area (match input)", &search_blurred),
@@ -404,7 +408,7 @@ fn capture_and_match(
         exec.log(
             action_id,
             format!(
-                "Image Search: {variant_label} → {} match(es) in {:.0}ms",
+                "{label}: {variant_label} → {} match(es) in {:.0}ms",
                 matches.len(),
                 outcome.match_ms
             ),
@@ -529,7 +533,7 @@ fn capture_and_match(
     exec.log(
         action_id,
         format!(
-            "Image Search: capture+match done in {:.0}ms ({} raw hit(s))",
+            "{label}: capture+match done in {:.0}ms ({} raw hit(s))",
             match_started.elapsed().as_secs_f64() * 1000.0,
             out.len()
         ),

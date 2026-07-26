@@ -661,7 +661,7 @@ fn image_search_no_find_runs_branch() {
     assert!(backend.log.iter().any(|e| e == "sleep:13"));
     let lines = logger.lines_for(search_id);
     assert!(
-        lines.iter().any(|l| l.contains("Image Searching")),
+        lines.iter().any(|l| l.contains("Image Search: searching")),
         "expected search-area log before match: {lines:?}"
     );
     assert!(
@@ -747,7 +747,7 @@ fn image_search_break_stops_match_loop() {
 
 #[test]
 fn find_template_matches_exact_peak() {
-    // blur=0 still maps to kernel 5; pattern must survive that.
+    // blur=0 means no blur (kernel 0); pattern must still be found unblurred.
     let mut tmpl = ImageBuf::new(10, 10, 3, 40);
     for y in 0..10 {
         for x in 0..10 {
