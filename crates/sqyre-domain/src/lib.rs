@@ -45,7 +45,7 @@ pub use set_value::{
 };
 pub use taxonomy::{
     action_color_category, action_color_key, action_delay_class, action_icon,
-    action_picker_category, action_type_description, action_type_label, action_type_table,
-    ActionTypeMeta, DelayClass, ACTION_KIND_COUNT, ACTION_PICKER_CATEGORIES,
+action_type_description, action_type_label, action_type_table,
+    ActionTypeMeta, DelayClass, ACTION_KIND_COUNT,
 };
 pub use variables::*;
