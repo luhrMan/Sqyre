@@ -4,7 +4,32 @@ use sqyre_capture::shared_capturer;
 use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
 use sqyre_executor::ScreenCapturer;
 use sqyre_persist::{ProgramCatalog, ProgramCollection};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Resolve paths/coords on the UI thread; capture runs on a worker.
+pub fn collection_capture_job(
+    catalog: &ProgramCatalog,
+    program: &str,
+    collection: &ProgramCollection,
+) -> Result<(PathBuf, i32, i32, i32, i32), String> {
+    let (left, top, right, bottom) =
+        resolve_collection_capture_rect(catalog, program, collection)?;
+    let path = catalog.collection_image_path(program, &collection.name);
+    Ok((path, left, top, right, bottom))
+}
+
+/// Blocking capture+save used by tests and worker threads.
+pub fn capture_search_area_to_png(
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    path: &Path,
+) -> Result<(), String> {
+    let capturer = shared_capturer().map_err(|e| format!("collection capture: {e}"))?;
+    let mut wrap = sqyre_capture::SharedRunCapturer(capturer);
+    capture_rect_and_save_png_with(&mut wrap, left, top, right, bottom, path)
+}
 
 /// Open the platform capturer, capture the collection's search area, and save PNG.
 pub fn capture_and_save_collection_image(
@@ -24,6 +49,16 @@ pub fn capture_and_save_collection_image_with(
     program: &str,
     collection: &ProgramCollection,
 ) -> Result<(), String> {
+    let (path, left, top, right, bottom) = collection_capture_job(catalog, program, collection)?;
+    capture_rect_and_save_png_with(capturer, left, top, right, bottom, &path)
+}
+
+/// Resolve the collection's linked search area to screen coordinates.
+pub fn resolve_collection_capture_rect(
+    catalog: &ProgramCatalog,
+    program: &str,
+    collection: &ProgramCollection,
+) -> Result<(i32, i32, i32, i32), String> {
     if collection.search_area.is_empty() {
         return Err("collection has no search area".into());
     }
@@ -33,16 +68,27 @@ pub fn capture_and_save_collection_image_with(
     ));
     // Data-editor capture uses literal coords only (no macro variable scope).
     let empty = Macro::new("", 0, vec![]);
-    let (left, top, right, bottom) = catalog
+    catalog
         .resolve_search_area(&sa_ref, &empty)
-        .map_err(|e| format!("collection capture: {e}"))?;
+        .map_err(|e| format!("collection capture: {e}"))
+}
+
+/// Capture a search-area rectangle and write PNG to `path`.
+pub fn capture_rect_and_save_png_with(
+    capturer: &mut dyn ScreenCapturer,
+    left: i32,
+    top: i32,
+    right: i32,
+    bottom: i32,
+    path: &Path,
+) -> Result<(), String> {
     let (img, _) = capturer
         .capture_search_area(left, top, right, bottom)
         .map_err(|e| format!("collection capture: {e}"))?;
-    let dir = catalog.collections_dir(program);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create collections dir: {e}"))?;
-    let path = catalog.collection_image_path(program, &collection.name);
-    save_png(&img, &path)
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create collections dir: {e}"))?;
+    }
+    save_png(&img, path)
 }
 
 fn save_png(img: &image::RgbaImage, path: &Path) -> Result<(), String> {
@@ -58,7 +104,6 @@ mod tests {
     use sqyre_domain::ScalarValue;
     use sqyre_executor::DesktopRect;
     use sqyre_persist::ProgramSearchArea;
-    use std::path::PathBuf;
 
     fn catalog_with_sa(root: PathBuf) -> ProgramCatalog {
         let mut cat = ProgramCatalog::default();
