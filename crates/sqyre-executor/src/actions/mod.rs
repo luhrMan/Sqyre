@@ -12,7 +12,7 @@ pub(crate) use window::execute_focus_window;
 
 #[cfg(test)]
 mod tests {
-    use crate::backends::RecordingBackend;
+    use crate::test_support::RecordingBackend;
     use crate::run::{execute_macro, execute_macro_with, ExecDeps};
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, ConditionClause, ListColumn, LoopJumpMode, Macro,
@@ -318,7 +318,7 @@ mod tests {
 
     #[test]
     fn run_macro_executes_target_children() {
-        use crate::backends::MapMacroLookup;
+        use crate::test_support::MapMacroLookup;
         use std::collections::BTreeMap;
         use std::sync::Arc;
 
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn run_macro_rejects_nesting_beyond_max_depth() {
-        use crate::backends::MapMacroLookup;
+        use crate::test_support::MapMacroLookup;
         use std::collections::BTreeMap;
         use std::sync::Arc;
 
@@ -489,7 +489,7 @@ mod tests {
 
     #[test]
     fn run_macro_rejects_cycles() {
-        use crate::backends::MapMacroLookup;
+        use crate::test_support::MapMacroLookup;
         use std::collections::BTreeMap;
         use std::sync::Arc;
 
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn run_macro_respects_root_loop_count() {
-        use crate::backends::MapMacroLookup;
+        use crate::test_support::MapMacroLookup;
         use std::collections::BTreeMap;
         use std::sync::Arc;
 
@@ -609,7 +609,7 @@ mod tests {
 
     #[test]
     fn pause_uses_continue_waiter() {
-        use crate::backends::ImmediateContinueWaiter;
+        use crate::test_support::ImmediateContinueWaiter;
 
         let waiter = ImmediateContinueWaiter::default();
         let mut backend = RecordingBackend::default();
@@ -651,7 +651,7 @@ mod tests {
 
     #[test]
     fn focus_window_uses_focuser() {
-        use crate::backends::RecordingWindowFocuser;
+        use crate::test_support::RecordingWindowFocuser;
 
         let focuser = RecordingWindowFocuser::default();
         let mut backend = RecordingBackend::default();
