@@ -75,7 +75,7 @@ mod native_run {
     use sqyre_executor::{execute_macro_with, ExecDeps, OcrEngine};
     use sqyre_input::OsAutomation;
     use sqyre_persist::variables_path;
-    use sqyre_vision::LeptessOcr;
+    use sqyre_vision::shared_leptess;
     use std::collections::BTreeMap;
     use std::sync::atomic::Ordering;
     use std::sync::Arc;
@@ -145,7 +145,7 @@ mod native_run {
                     let resolver = CatalogResolver(&catalog);
                     let icons = CatalogIcons(&catalog);
                     let focuser = OsWindowFocuser;
-                    let ocr_engine = LeptessOcr::from_env_or_system()
+                    let ocr_engine = shared_leptess()
                         .map_err(|e| {
                             eprintln!("sqyre: {e}");
                             e
@@ -171,7 +171,7 @@ mod native_run {
                             macros: Some(&macro_lookup),
                             continue_waiter: Some(&continue_wait),
                             window_focuser: Some(&focuser),
-                            ocr: ocr_engine.as_ref().map(|e| e as &dyn OcrEngine),
+                            ocr: ocr_engine.as_ref().map(|e| e.as_ref() as &dyn OcrEngine),
                             stop_flag: Some(stop_raw.as_ref()),
                             logger: Some(&action_log),
                             highlighter: Some(&highlighter),

@@ -6,6 +6,7 @@ use sqyre_match::ImageBuf;
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 /// Official English traineddata used when system / env / workspace data is absent.
 const ENG_TRAINEDDATA_URL: &str =
@@ -97,6 +98,18 @@ impl LeptessOcr {
     pub fn recognize(&self, img: &ImageBuf) -> Result<OcrRecognition, String> {
         let mut api = self.engine.lock();
         recognize_with(&mut api, img)
+    }
+}
+
+/// Process-wide OCR engine (cloned via [`Arc`]; access serialized by inner Mutex).
+static SHARED_OCR: OnceLock<Result<Arc<LeptessOcr>, String>> = OnceLock::new();
+
+/// Shared [`LeptessOcr`], initialized once and reused by the startup probe and macro
+/// runs so tessdata isn't reloaded from disk on every run.
+pub fn shared_leptess() -> Result<Arc<LeptessOcr>, String> {
+    match SHARED_OCR.get_or_init(|| LeptessOcr::from_env_or_system().map(Arc::new)) {
+        Ok(engine) => Ok(Arc::clone(engine)),
+        Err(e) => Err(e.clone()),
     }
 }
 
