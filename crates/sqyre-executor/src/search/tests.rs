@@ -1,6 +1,6 @@
 use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionHit};
 use super::ocr::ocr_target_matched;
-use crate::action_log::lines_for;
+use sqyre_ui_model::lines_for;
 use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
 use crate::test_support::{RecordingBackend, RecordingCapturer, SEARCH_FIXED_AREA};

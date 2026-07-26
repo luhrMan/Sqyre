@@ -4,7 +4,7 @@ use super::common::{
     apply_detection_hits, capture_search_buf, frame_fingerprint, run_detection_shell, sort_hits,
     DetectionHit, FrameCache,
 };
-use crate::action_log::draw_rect_rgb;
+use crate::log_draw::draw_rect_rgb;
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
 use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchOrder, ScalarValue};

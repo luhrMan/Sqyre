@@ -2,7 +2,7 @@
 
 use crate::backends::PortError;
 use crate::error::{ExecError, FlowSignal, Result};
-use crate::highlight::{highlight_clear, highlight_fill};
+use sqyre_ui_model::{highlight_clear, highlight_fill};
 use crate::path_confine::resolve_under_dir;
 use crate::run::{eval_clauses, resolve_int, resolve_text, run_children, Executor};
 use sqyre_domain::{
