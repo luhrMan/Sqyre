@@ -2,7 +2,7 @@
 //!
 //! Hand-rolled recursive-descent parser — avoids `meval` → ancient `nom`.
 
-use crate::{Macro, ScalarValue};
+use crate::{ScalarValue, VariableStore};
 use std::f64::consts::{E, PI};
 
 type Result<T> = std::result::Result<T, String>;
@@ -13,8 +13,8 @@ pub const MAX_EXPR_RECURSION_DEPTH: usize = 64;
 /// Evaluate a math expression after `${var}` substitution.
 /// Supports `+ - * / ^`, unary `+/-`, parentheses, functions (`sqrt`, `abs`,
 /// `round`, `floor`, `ceil`, `trunc`, `sin`, `cos`, `tan`, `ln`), and `~pi` / `~e`.
-pub fn evaluate_expression(expr: &str, macro_: &Macro) -> Result<f64> {
-    let resolved = crate::expand_variable_refs(expr, macro_)?;
+pub fn evaluate_expression(expr: &str, vars: &VariableStore) -> Result<f64> {
+    let resolved = crate::expand_variable_refs(expr, vars)?;
     evaluate_numeric(&resolved)
 }
 
@@ -266,28 +266,28 @@ mod tests {
 
     #[test]
     fn evaluates_basic_and_functions() {
-        let macro_ = Macro::new("t", 0, vec![]);
-        assert_eq!(evaluate_expression("1+2*3", &macro_).unwrap(), 7.0);
-        assert_eq!(evaluate_expression("abs(-4)", &macro_).unwrap(), 4.0);
-        assert_eq!(evaluate_expression("floor(3.9)", &macro_).unwrap(), 3.0);
-        assert_eq!(evaluate_expression("ceil(3.1)", &macro_).unwrap(), 4.0);
-        assert_eq!(evaluate_expression("trunc(3.9)", &macro_).unwrap(), 3.0);
-        assert_eq!(evaluate_expression("round(2.5)", &macro_).unwrap(), 3.0);
-        assert!((evaluate_expression("sqrt(4)", &macro_).unwrap() - 2.0).abs() < 1e-9);
-        assert!((evaluate_expression("2^3", &macro_).unwrap() - 8.0).abs() < 1e-9);
-        assert!((evaluate_expression("(1+2)*3", &macro_).unwrap() - 9.0).abs() < 1e-9);
+        let vars = VariableStore::new();
+        assert_eq!(evaluate_expression("1+2*3", &vars).unwrap(), 7.0);
+        assert_eq!(evaluate_expression("abs(-4)", &vars).unwrap(), 4.0);
+        assert_eq!(evaluate_expression("floor(3.9)", &vars).unwrap(), 3.0);
+        assert_eq!(evaluate_expression("ceil(3.1)", &vars).unwrap(), 4.0);
+        assert_eq!(evaluate_expression("trunc(3.9)", &vars).unwrap(), 3.0);
+        assert_eq!(evaluate_expression("round(2.5)", &vars).unwrap(), 3.0);
+        assert!((evaluate_expression("sqrt(4)", &vars).unwrap() - 2.0).abs() < 1e-9);
+        assert!((evaluate_expression("2^3", &vars).unwrap() - 8.0).abs() < 1e-9);
+        assert!((evaluate_expression("(1+2)*3", &vars).unwrap() - 9.0).abs() < 1e-9);
     }
 
     #[test]
     fn substitutes_vars_and_constants() {
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.variables.set("x", ScalarValue::Int(-5));
-        assert_eq!(evaluate_expression("${x}+3", &macro_).unwrap(), -2.0);
-        assert_eq!(evaluate_expression("${x}-250", &macro_).unwrap(), -255.0);
-        assert_eq!(evaluate_expression("-30", &macro_).unwrap(), -30.0);
-        let pi = evaluate_expression("~pi", &macro_).unwrap();
+        let mut vars = VariableStore::new();
+        vars.set("x", ScalarValue::Int(-5));
+        assert_eq!(evaluate_expression("${x}+3", &vars).unwrap(), -2.0);
+        assert_eq!(evaluate_expression("${x}-250", &vars).unwrap(), -255.0);
+        assert_eq!(evaluate_expression("-30", &vars).unwrap(), -30.0);
+        let pi = evaluate_expression("~pi", &vars).unwrap();
         assert!((pi - PI).abs() < 1e-6);
-        let e = evaluate_expression("~e", &macro_).unwrap();
+        let e = evaluate_expression("~e", &vars).unwrap();
         assert!((e - E).abs() < 1e-6);
     }
 
@@ -311,10 +311,10 @@ mod tests {
 
     #[test]
     fn rejects_deeply_nested_parens() {
-        let macro_ = Macro::new("t", 0, vec![]);
-        assert!(evaluate_expression(&nested_parens(MAX_EXPR_RECURSION_DEPTH - 1), &macro_).is_ok());
+        let vars = VariableStore::new();
+        assert!(evaluate_expression(&nested_parens(MAX_EXPR_RECURSION_DEPTH - 1), &vars).is_ok());
         let err =
-            evaluate_expression(&nested_parens(MAX_EXPR_RECURSION_DEPTH + 1), &macro_).unwrap_err();
+            evaluate_expression(&nested_parens(MAX_EXPR_RECURSION_DEPTH + 1), &vars).unwrap_err();
         assert!(
             err.contains("too deeply nested"),
             "expected depth error, got {err:?}"
@@ -323,10 +323,10 @@ mod tests {
 
     #[test]
     fn rejects_deeply_nested_function_calls() {
-        let macro_ = Macro::new("t", 0, vec![]);
-        assert!(evaluate_expression(&nested_sqrt(MAX_EXPR_RECURSION_DEPTH - 1), &macro_).is_ok());
+        let vars = VariableStore::new();
+        assert!(evaluate_expression(&nested_sqrt(MAX_EXPR_RECURSION_DEPTH - 1), &vars).is_ok());
         let err =
-            evaluate_expression(&nested_sqrt(MAX_EXPR_RECURSION_DEPTH + 1), &macro_).unwrap_err();
+            evaluate_expression(&nested_sqrt(MAX_EXPR_RECURSION_DEPTH + 1), &vars).unwrap_err();
         assert!(
             err.contains("too deeply nested"),
             "expected depth error, got {err:?}"

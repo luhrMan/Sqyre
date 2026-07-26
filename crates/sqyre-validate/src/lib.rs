@@ -2,6 +2,7 @@
 
 use sqyre_domain::{
     collect_known_variable_names, evaluate_expression, Action, ActionKind, Macro, ScalarValue,
+    VariableStore,
 };
 use thiserror::Error;
 
@@ -248,17 +249,9 @@ fn validate_expression_structure(expr: &str, macro_: Option<&Macro>) -> Result<(
         return Ok(());
     }
 
-    let mut scratch = match macro_ {
-        Some(m) => {
-            let mut scratch = Macro::new(m.name.clone(), m.global_delay, vec![]);
-            scratch.variable_decls = m.variable_decls.clone();
-            scratch.init_runtime_variables();
-            for (name, val) in m.variables.iter() {
-                scratch.variables.set(name, val.clone());
-            }
-            scratch
-        }
-        None => Macro::new(String::new(), 0, vec![]),
+    let mut vars = match macro_ {
+        Some(m) => scratch_variables(m),
+        None => VariableStore::new(),
     };
     // Seed missing refs as 0 so structure (not unknown-var) is what we check.
     for name in sqyre_varref::names(expr) {
@@ -266,12 +259,29 @@ fn validate_expression_structure(expr: &str, macro_: Option<&Macro>) -> Result<(
         if name.is_empty() {
             continue;
         }
-        if scratch.variables.get(name).is_none() {
-            scratch.variables.set(name, ScalarValue::Int(0));
+        if vars.get(name).is_none() {
+            vars.set(name, ScalarValue::Int(0));
         }
     }
-    evaluate_expression(expr, &scratch).map_err(ValidateError::Message)?;
+    evaluate_expression(expr, &vars).map_err(ValidateError::Message)?;
     Ok(())
+}
+
+/// Runtime variables for `macro_`, falling back to declared initial values for any
+/// decl not yet present in its live store (e.g. never-initialized macros).
+fn scratch_variables(macro_: &Macro) -> VariableStore {
+    let mut vars = VariableStore::new();
+    for d in &macro_.variable_decls {
+        let name = d.name.trim();
+        if name.is_empty() || d.initial_value.trim().is_empty() {
+            continue;
+        }
+        vars.set(name, d.initial_stored_value());
+    }
+    for (name, val) in macro_.variables.iter() {
+        vars.set(name, val.clone());
+    }
+    vars
 }
 
 /// Live expression preview for Set-value editing.
@@ -284,13 +294,7 @@ pub fn preview_calculate(expr: &str, macro_: &Macro) -> std::result::Result<Stri
         return Ok(String::new());
     }
 
-    let mut scratch = Macro::new(macro_.name.clone(), macro_.global_delay, vec![]);
-    scratch.variable_decls = macro_.variable_decls.clone();
-    scratch.root = macro_.root.clone();
-    scratch.init_runtime_variables();
-    for (name, val) in macro_.variables.iter() {
-        scratch.variables.set(name, val.clone());
-    }
+    let mut vars = scratch_variables(macro_);
 
     let mut runtime_dependent = false;
     for name in sqyre_varref::names(expr) {
@@ -298,13 +302,13 @@ pub fn preview_calculate(expr: &str, macro_: &Macro) -> std::result::Result<Stri
         if name.is_empty() {
             continue;
         }
-        if scratch.variables.get(name).is_none() {
-            scratch.variables.set(name, ScalarValue::Int(0));
+        if vars.get(name).is_none() {
+            vars.set(name, ScalarValue::Int(0));
             runtime_dependent = true;
         }
     }
 
-    let res = evaluate_expression(expr, &scratch)?;
+    let res = evaluate_expression(expr, &vars)?;
     if runtime_dependent || !unknown_variable_warning(expr, Some(macro_)).is_empty() {
         return Ok("valid (result depends on runtime values)".into());
     }
