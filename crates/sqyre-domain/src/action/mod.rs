@@ -7,6 +7,7 @@ pub use wire_keys::WIRE_TYPE_KEYS;
 
 use crate::{CoordinateRef, ScalarValue};
 use serde::{Deserialize, Serialize};
+pub use sqyre_match::MatchMethod;
 use uuid::Uuid;
 
 /// Declares a C-like string enum with `as_str`, `parse`, `Display`, `From`, and serde.
@@ -484,54 +485,8 @@ impl CoordinateOutputs {
     }
 }
 
-/// OpenCV-style template match method for [`ActionKind::ImageSearch`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TemplateMatchMethod {
-    Sqdiff,
-    SqdiffNormed,
-    Ccorr,
-    CcorrNormed,
-    Ccoeff,
-    #[default]
-    CcoeffNormed,
-}
-
-impl TemplateMatchMethod {
-    pub const ALL: [Self; 6] = [
-        Self::Sqdiff,
-        Self::SqdiffNormed,
-        Self::Ccorr,
-        Self::CcorrNormed,
-        Self::Ccoeff,
-        Self::CcoeffNormed,
-    ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Sqdiff => "SQDIFF",
-            Self::SqdiffNormed => "SQDIFF_NORMED",
-            Self::Ccorr => "CCORR",
-            Self::CcorrNormed => "CCORR_NORMED",
-            Self::Ccoeff => "CCOEFF",
-            Self::CcoeffNormed => "CCOEFF_NORMED",
-        }
-    }
-
-    pub fn higher_is_better(self) -> bool {
-        !matches!(self, Self::Sqdiff | Self::SqdiffNormed)
-    }
-
-    pub fn is_normed(self) -> bool {
-        matches!(
-            self,
-            Self::SqdiffNormed | Self::CcorrNormed | Self::CcoeffNormed
-        )
-    }
-}
-
-pub(crate) fn is_default_match_method(v: &TemplateMatchMethod) -> bool {
-    *v == TemplateMatchMethod::CcoeffNormed
+pub(crate) fn is_default_match_method(v: &MatchMethod) -> bool {
+    *v == MatchMethod::CcoeffNormed
 }
 
 /// Optional match-order fields present in newer `~/.sqyre` data.
@@ -1401,7 +1356,7 @@ pub enum ActionKind {
         search_area: CoordinateRef,
         tolerance: f64,
         blur: i32,
-        match_method: TemplateMatchMethod,
+        match_method: MatchMethod,
         detection: DetectionBranch,
     },
     Ocr {

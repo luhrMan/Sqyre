@@ -8,8 +8,8 @@ use super::{
     default_ocr_text, default_resize, default_target_color, default_true, default_wait_time,
     is_default_image_blur, is_default_match_method, is_default_ocr_blur, is_default_ocr_text,
     is_default_resize, is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind,
-    ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, MouseButton,
-    NavigateSelectData, PressState, ScalarValue, TemplateMatchMethod, VariableAssignment,
+    ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, MatchMethod,
+    MouseButton, NavigateSelectData, PressState, ScalarValue, VariableAssignment,
     DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 use serde::{Deserialize, Serialize};
@@ -82,7 +82,7 @@ enum ActionKindWire {
             default,
             skip_serializing_if = "is_default_match_method"
         )]
-        match_method: TemplateMatchMethod,
+        match_method: MatchMethod,
         #[serde(flatten)]
         detection: DetectionBranch,
     },
