@@ -4406,6 +4406,7 @@ dependencies = [
  "serde",
  "serde_yaml",
  "sqyre-domain",
+ "sqyre-ports",
  "sqyre-serialize",
  "sqyre-validate",
  "tempfile",
