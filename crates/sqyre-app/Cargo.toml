@@ -15,8 +15,10 @@ name = "sqyre"
 path = "src/main.rs"
 
 [features]
+# Full desktop runtime: macro execution, screen capture, OCR/vision.
+default = ["native-runtime", "hooks"]
+native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-capture"]
 # OS global hotkeys (rdev). Disabled for wasm builds (`--no-default-features`).
-default = ["hooks"]
 hooks = ["sqyre-hotkeys/hooks"]
 
 [lints]
@@ -35,14 +37,15 @@ image = { workspace = true }
 resvg = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-ui-model = { path = "../sqyre-ui-model" }
+sqyre-ports = { path = "../sqyre-ports" }
 sqyre-persist = { path = "../sqyre-persist" }
 sqyre-validate = { path = "../sqyre-validate" }
 sqyre-varref = { path = "../sqyre-varref" }
-sqyre-executor = { path = "../sqyre-executor" }
+sqyre-executor = { path = "../sqyre-executor", optional = true }
 sqyre-serialize = { path = "../sqyre-serialize" }
-sqyre-capture = { path = "../sqyre-capture" }
+sqyre-capture = { path = "../sqyre-capture", optional = true }
 sqyre-hotkeys = { path = "../sqyre-hotkeys" }
-sqyre-vision = { path = "../sqyre-vision" }
+sqyre-vision = { path = "../sqyre-vision", optional = true }
 serde_yaml = { workspace = true }
 rfd = { workspace = true }
 parking_lot = { workspace = true }
@@ -75,3 +78,5 @@ console_error_panic_hook = "0.1"
 tempfile = { workspace = true }
 egui_kittest = { version = "0.35", features = ["wgpu", "snapshot", "eframe"] }
 image = { workspace = true }
+sqyre-executor = { path = "../sqyre-executor" }
+sqyre-capture = { path = "../sqyre-capture" }

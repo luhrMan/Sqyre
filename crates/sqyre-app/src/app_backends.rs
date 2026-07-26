@@ -1,8 +1,8 @@
 //! Runtime adapters shared by macro execution (OCR, continue-wait, stop-watch).
 
 use parking_lot::Mutex;
-use sqyre_executor::PortError;
 use sqyre_hotkeys::{ContinueWaitBridge, MacroHotkeyBridge, StopFlag};
+use sqyre_ports::PortError;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -21,7 +21,8 @@ fn to_port_error(e: String) -> PortError {
     }
 }
 
-impl sqyre_executor::ContinueKeyWaiter for BridgeContinueWait {
+#[cfg(feature = "native-runtime")]
+impl sqyre_ports::ContinueKeyWaiter for BridgeContinueWait {
     fn wait_for_continue(
         &self,
         keys: &[String],
@@ -68,10 +69,10 @@ impl Default for RunState {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
 mod native {
     use super::StopFlag;
-    use sqyre_executor::AutomationError;
+    use sqyre_ports::{AutomationBackend, AutomationError, MoveOptions};
     use sqyre_input::OsAutomation;
 
     /// Forwards automation but surfaces stop via milli_sleep / between calls.
@@ -80,7 +81,7 @@ mod native {
         pub(crate) stop: &'a StopFlag,
     }
 
-    impl sqyre_executor::AutomationBackend for StopWatchAutomation<'_> {
+    impl AutomationBackend for StopWatchAutomation<'_> {
         fn milli_sleep(&mut self, ms: i32) {
             let mut left = ms.max(0);
             while left > 0 {
@@ -92,13 +93,12 @@ mod native {
                 left -= chunk;
             }
         }
-        fn move_to(&mut self, x: i32, y: i32, opts: sqyre_executor::MoveOptions) {
+        fn move_to(&mut self, x: i32, y: i32, opts: MoveOptions) {
             if !self.stop.is_stopped() {
                 self.inner.move_to(x, y, opts);
             }
         }
         fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
-            // Always forward releases so end-of-macro cleanup can unstick buttons.
             if down && self.stop.is_stopped() {
                 return Ok(());
             }
@@ -117,7 +117,6 @@ mod native {
             self.inner.key_down(key)
         }
         fn key_up(&mut self, key: &str) -> Result<(), AutomationError> {
-            // Always forward releases so end-of-macro cleanup can unstick keys.
             self.inner.key_up(key)
         }
         fn type_char(&mut self, ch: char) {
@@ -147,5 +146,5 @@ mod native {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
 pub(crate) use native::{trim_process_heap, StopWatchAutomation};

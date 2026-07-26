@@ -4,7 +4,7 @@
 use crate::image_view;
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use sqyre_domain::ActionId;
-use sqyre_executor::{lines_for, ActionLogEntry, LogImage, SharedActionLog};
+use sqyre_ui_model::{lines_for, ActionLogEntry, LogImage, SharedActionLog};
 use std::collections::HashMap;
 
 /// Texture key for a log image (entry index + optional step within an item pipeline).

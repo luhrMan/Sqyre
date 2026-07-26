@@ -2,8 +2,8 @@
 //! icon, color key, delay class).
 //!
 //! Labels are used by the executor (action logs) as well as the UI. Picker column
-//! order ([`ACTION_PICKER_CATEGORIES`]) is presentation-oriented and may move to
-//! an app-facing module later; keep wire `type_key` values stable.
+//! order lives in `sqyre-ui-model` ([`sqyre_ui_model::ACTION_PICKER_CATEGORIES`]);
+//! keep wire `type_key` values stable.
 //!
 //! # Adding a kind
 //!
@@ -24,15 +24,6 @@ use crate::color::{
 ///
 /// Derived from [`ACTION_TYPE_TABLE`].
 pub const ACTION_KIND_COUNT: usize = ACTION_TYPE_TABLE.len();
-
-/// Picker column order (also used as color-bucket keys for most types).
-pub const ACTION_PICKER_CATEGORIES: &[&str] = &[
-    "Mouse & Keyboard",
-    "Detection",
-    "Variables",
-    "Control flow",
-    "Miscellaneous",
-];
 
 /// Post-action delay bucket for macro mouse/keyboard delay settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

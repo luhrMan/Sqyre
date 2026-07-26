@@ -1,23 +1,31 @@
 use sqyre_domain::{CoordinateRef, Macro};
-use sqyre_executor::{CoordinateResolver, IconStore, ItemMeta, MacroLookup, PortError};
+use sqyre_ports::{CoordinateResolver, IconStore, ItemMeta, MacroLookup, PortError};
 use sqyre_persist::{ensure_general_program, Database, MonitorRect, ProgramCatalog};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Set catalog resolution + DPI scale from the primary monitor.
-/// No-op when capture is unavailable (headless).
+/// No-op when capture is unavailable (headless / WASM editor).
 pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
-    if let Some(key) = sqyre_capture::main_monitor_resolution_key() {
-        catalog.set_resolution_key(key);
+    #[cfg(feature = "native-runtime")]
+    {
+        if let Some(key) = sqyre_capture::main_monitor_resolution_key() {
+            catalog.set_resolution_key(key);
+        }
+        if let Some(scale) = sqyre_capture::main_monitor_scale() {
+            catalog.set_runtime_scale(scale);
+        }
     }
-    if let Some(scale) = sqyre_capture::main_monitor_scale() {
-        catalog.set_runtime_scale(scale);
+    #[cfg(not(feature = "native-runtime"))]
+    {
+        let _ = catalog;
     }
 }
 
 /// Live monitor rects for seeding, or a single display from the catalog resolution key.
 pub fn seed_monitor_rects(catalog: &ProgramCatalog) -> Vec<MonitorRect> {
+    #[cfg(feature = "native-runtime")]
     if let Ok(capturer) = sqyre_capture::shared_capturer() {
         if let Ok(rects) = capturer.monitor_rects_ref() {
             let usable: Vec<MonitorRect> = rects

@@ -8,9 +8,13 @@ use crate::data_editor_preview::{
 use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
 use eframe::egui;
-use sqyre_executor::DesktopRect;
+use sqyre_ports::DesktopRect;
 use sqyre_persist::{auto_pic_path, ProgramCatalog, UserSettings};
+#[cfg(feature = "native-runtime")]
 use sqyre_vision::invalidate_search_masks_under;
+
+#[cfg(not(feature = "native-runtime"))]
+fn invalidate_search_masks_under(_path: &std::path::Path) {}
 use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
 
@@ -261,6 +265,13 @@ impl DataEditor {
     }
 
     pub(crate) fn save_autopix(&mut self) {
+        #[cfg(not(feature = "native-runtime"))]
+        {
+            self.set_err("AutoPic requires the desktop app.");
+            return;
+        }
+        #[cfg(feature = "native-runtime")]
+        {
         if self.autopix_pending.is_some() {
             self.set_ok("AutoPic: capturing…");
             return;
@@ -339,6 +350,7 @@ impl DataEditor {
         });
         self.autopix_pending = Some(result_rx);
         self.set_ok("AutoPic: capturing…");
+        }
     }
 
     pub(crate) fn poll_autopix(&mut self, ctx: &egui::Context) {
@@ -371,6 +383,13 @@ impl DataEditor {
         collection: &sqyre_persist::ProgramCollection,
         rollback_collection: Option<(String, String)>,
     ) -> Result<(), String> {
+        #[cfg(not(feature = "native-runtime"))]
+        {
+            self.set_err("Collection capture requires the desktop app.");
+            return Ok(());
+        }
+        #[cfg(feature = "native-runtime")]
+        {
         use crate::collection_capture::{capture_search_area_to_png, collection_capture_job};
         use std::sync::mpsc;
         use std::thread;
@@ -394,6 +413,7 @@ impl DataEditor {
         });
         self.set_ok("Collection: capturing…");
         Ok(())
+        }
     }
 
     pub(crate) fn poll_collection_capture(

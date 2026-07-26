@@ -4306,6 +4306,7 @@ dependencies = [
  "sqyre-hotkeys",
  "sqyre-input",
  "sqyre-persist",
+ "sqyre-ports",
  "sqyre-serialize",
  "sqyre-ui-model",
  "sqyre-update",

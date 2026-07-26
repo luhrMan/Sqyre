@@ -3,7 +3,7 @@
 use crate::action_logs_ui::LogsImageCache;
 use crate::app_backends::RunState;
 use sqyre_domain::ActionId;
-use sqyre_executor::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
+use sqyre_ui_model::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use sqyre_hotkeys::{ContinueWaitBridge, MacroHotkeyBridge};
 
 pub(crate) struct RunSession {

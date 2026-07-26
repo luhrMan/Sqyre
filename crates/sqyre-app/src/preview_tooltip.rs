@@ -5,7 +5,7 @@ use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
 use sqyre_capture::{shared_capturer, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
-use sqyre_executor::{CaptureError, DesktopRect};
+use sqyre_ports::{CaptureError, DesktopRect};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, TryRecvError};

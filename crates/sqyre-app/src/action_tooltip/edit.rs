@@ -1,5 +1,6 @@
 //! Staged field editors and draft apply (preserve `subactions`).
 
+#[path = "edit/edit_detect.rs"]
 mod edit_detect;
 
 use super::sections::{tip_section, tip_wrapped_section};
