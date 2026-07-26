@@ -226,10 +226,7 @@ fn capture_and_match(
     for target in targets {
         let paths = icons.variant_paths(target);
         if paths.is_empty() {
-            exec.log(
-                action_id,
-                format!("{label}: no icon variants for {target}"),
-            );
+            exec.log(action_id, format!("{label}: no icon variants for {target}"));
             continue;
         }
         let meta = icons.item_meta(target);
