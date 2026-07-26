@@ -308,14 +308,15 @@ pub fn show(
         }
     }
 
-    match state.clone() {
+    match state {
         TooltipState::Hidden => Vec::new(),
         TooltipState::View { action_id } => {
-            let Some(action) = macro_.root.find_by_id(action_id).cloned() else {
+            let action_id = *action_id;
+            let Some(action) = macro_.root.find_by_id(action_id) else {
                 *state = TooltipState::Hidden;
                 return Vec::new();
             };
-            show_view_tip(ctx, &action, paint, *theme);
+            show_view_tip(ctx, action, paint, *theme);
             Vec::new()
         }
         TooltipState::Edit { .. } => {
