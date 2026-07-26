@@ -94,6 +94,9 @@ pub(crate) fn execute_find_pixel(
     )
 }
 
+// Mirrors `capture_and_match`'s shape (capture/scan preamble args plus label/order); same
+// allow used for the shared detection helpers in `common.rs`.
+#[allow(clippy::too_many_arguments)]
 fn try_find_pixels(
     exec: &mut Executor<'_>,
     action_id: sqyre_domain::ActionId,
