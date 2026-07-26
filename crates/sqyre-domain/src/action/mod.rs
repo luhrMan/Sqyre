@@ -121,11 +121,15 @@ impl ActionId {
 const ELSE_FOLDER_ID_XOR: u128 = 0xE15E_A11C_E000_0000_0000_0000_0000_0001;
 
 impl<'de> Deserialize<'de> for ActionId {
+    /// Fails on a malformed `uid` rather than silently minting a fresh id —
+    /// a corrupt id must surface as a decode error so callers (e.g.
+    /// `Database::from_yaml_with_warnings`) can warn and skip the action's
+    /// macro, instead of quietly renaming an action out from under the user.
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
-        Ok(Uuid::parse_str(&s)
+        Uuid::parse_str(&s)
             .map(ActionId)
-            .unwrap_or_else(|_| ActionId::new()))
+            .map_err(|e| serde::de::Error::custom(format!("invalid action id {s:?}: {e}")))
     }
 }
 
@@ -1927,6 +1931,31 @@ mod tests {
         assert!(root
             .move_action(branch_id, branch_id, InsertSlot::Last)
             .is_err());
+    }
+
+    #[test]
+    fn action_id_deserialize_rejects_malformed_uuid_instead_of_reminting() {
+        let err = serde_yaml::from_str::<ActionId>("\"not-a-uuid\"").unwrap_err();
+        assert!(err.to_string().contains("invalid action id"), "{err}");
+    }
+
+    #[test]
+    fn action_id_deserialize_accepts_valid_uuid() {
+        let id = ActionId::new();
+        let yaml = format!("\"{id}\"");
+        let decoded: ActionId = serde_yaml::from_str(&yaml).unwrap();
+        assert_eq!(decoded, id);
+    }
+
+    #[test]
+    fn action_with_malformed_uid_fails_to_decode() {
+        let yaml = r#"
+uid: "not-a-uuid"
+type: wait
+time: 1
+"#;
+        let err = serde_yaml::from_str::<Action>(yaml).unwrap_err();
+        assert!(err.to_string().contains("invalid action id"), "{err}");
     }
 
     #[test]
