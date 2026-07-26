@@ -231,16 +231,18 @@ fn run_ocr_once(
         action_id,
         format!("OCR words found: {}", recognized.words.len()),
     );
-    for (i, w) in recognized.words.iter().enumerate() {
-        let ww = (w.right - w.left).max(0);
-        let wh = (w.bottom - w.top).max(0);
-        exec.log(
-            action_id,
-            format!(
-                "  word[{i}] {:?} box=({},{})-({},{}) size={ww}×{wh}",
-                w.word, w.left, w.top, w.right, w.bottom
-            ),
-        );
+    if collect {
+        for (i, w) in recognized.words.iter().enumerate() {
+            let ww = (w.right - w.left).max(0);
+            let wh = (w.bottom - w.top).max(0);
+            exec.log(
+                action_id,
+                format!(
+                    "  word[{i}] {:?} box=({},{})-({},{}) size={ww}×{wh}",
+                    w.word, w.left, w.top, w.right, w.bottom
+                ),
+            );
+        }
     }
 
     if collect && !recognized.words.is_empty() {
@@ -292,16 +294,26 @@ fn run_ocr_once(
                 Vec::new()
             }
         } else {
-            for (bx, by) in &occurrences {
-                let sx = origin.x + (*bx as f64 / resize_scale) as i32;
-                let sy = origin.y + (*by as f64 / resize_scale) as i32;
-                exec.log(
-                    action_id,
-                    format!(
-                        "OCR target {:?} matched at image ({bx}, {by}) → screen ({sx}, {sy}) (scale={resize_scale:.3})",
-                        params.target
-                    ),
-                );
+            exec.log(
+                action_id,
+                format!(
+                    "OCR target {:?} matched {} occurrence(s)",
+                    params.target,
+                    occurrences.len()
+                ),
+            );
+            if collect {
+                for (bx, by) in &occurrences {
+                    let sx = origin.x + (*bx as f64 / resize_scale) as i32;
+                    let sy = origin.y + (*by as f64 / resize_scale) as i32;
+                    exec.log(
+                        action_id,
+                        format!(
+                            "OCR target {:?} matched at image ({bx}, {by}) → screen ({sx}, {sy}) (scale={resize_scale:.3})",
+                            params.target
+                        ),
+                    );
+                }
             }
             occurrences
                 .into_iter()
