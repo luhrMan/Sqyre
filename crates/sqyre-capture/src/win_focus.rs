@@ -1,7 +1,7 @@
 //! Windows window list + activate + process icons.
 
 use crate::window_match::{paths_equal, pick_matching_icon, titles_equal};
-use crate::{ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
+use crate::{CaptureError, ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use sqyre_ports::{AutomationError, WindowFocuser};
 use std::collections::HashSet;
 use std::mem::size_of;
@@ -40,8 +40,8 @@ impl WindowFocuser for OsWindowFocuser {
 }
 
 /// List open top-level windows with title + executable path.
-pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
-    let hwnds = enum_top_level_windows()?;
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
+    let hwnds = enum_top_level_windows().map_err(CaptureError::Message)?;
     let mut out = Vec::with_capacity(hwnds.len());
     let mut seen = HashSet::new();
     for hwnd in hwnds {
@@ -58,7 +58,7 @@ pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
 }
 
 /// Currently focused top-level window, if any.
-pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
+pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
     // SAFETY: GetForegroundWindow is always safe to call.
     let hwnd = unsafe { GetForegroundWindow() };
     if hwnd.is_invalid() {
@@ -127,7 +127,7 @@ fn enum_top_level_windows() -> Result<Vec<HWND>, String> {
             Some(enum_windows_proc),
             LPARAM(&mut hwnds as *mut Vec<HWND> as isize),
         )
-        .map_err(|e| format!("EnumWindows failed: {e}"))?;
+        .map_err(|e| CaptureError::Message(format!("EnumWindows failed: {e}")))?;
     }
     Ok(hwnds)
 }
@@ -457,7 +457,7 @@ fn set_foreground(hwnd: HWND) -> Result<(), String> {
 /// (`glutin_winit::finalize_window` + false `supports_transparency`), so winit never
 /// calls [`DwmEnableBlurBehindWindow`]. Re-apply the same empty-region blur-behind
 /// winit uses for the root window so clear alpha and button α settings composite.
-pub fn enable_overlay_window_transparency() -> Result<(), String> {
+pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
     let our_pid = unsafe { GetCurrentProcessId() };
     let mut hwnds: Vec<HWND> = Vec::new();
     // SAFETY: callback only touches the Vec via lparam for the duration of EnumWindows.
@@ -466,7 +466,7 @@ pub fn enable_overlay_window_transparency() -> Result<(), String> {
             Some(enum_overlay_windows_proc),
             LPARAM(&mut hwnds as *mut Vec<HWND> as isize),
         )
-        .map_err(|e| format!("EnumWindows failed: {e}"))?;
+        .map_err(|e| CaptureError::Message(format!("EnumWindows failed: {e}")))?;
     }
 
     let mut hinted = 0usize;
@@ -485,7 +485,7 @@ pub fn enable_overlay_window_transparency() -> Result<(), String> {
         if title.trim() != crate::OVERLAY_WM_TITLE {
             continue;
         }
-        enable_dwm_per_pixel_alpha(hwnd)?;
+        enable_dwm_per_pixel_alpha(hwnd).map_err(CaptureError::Message)?;
         hinted += 1;
     }
     if hinted > 0 {

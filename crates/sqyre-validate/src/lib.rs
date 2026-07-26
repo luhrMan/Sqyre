@@ -263,7 +263,7 @@ fn validate_expression_structure(expr: &str, macro_: Option<&Macro>) -> Result<(
             vars.set(name, ScalarValue::Int(0));
         }
     }
-    evaluate_expression(expr, &vars).map_err(ValidateError::Message)?;
+    evaluate_expression(expr, &vars).map_err(|e| ValidateError::Message(e.to_string()))?;
     Ok(())
 }
 
@@ -308,7 +308,7 @@ pub fn preview_calculate(expr: &str, macro_: &Macro) -> std::result::Result<Stri
         }
     }
 
-    let res = evaluate_expression(expr, &vars)?;
+    let res = evaluate_expression(expr, &vars).map_err(|e| e.to_string())?;
     if runtime_dependent || !unknown_variable_warning(expr, Some(macro_)).is_empty() {
         return Ok("valid (result depends on runtime values)".into());
     }

@@ -6,7 +6,7 @@ use sqyre_ports::{DesktopRect, ScreenCapturer};
 /// Capture the 1×1 pixel at `(x, y)` and return lowercase hex without `#`.
 #[cfg(target_arch = "wasm32")]
 pub fn sample_pixel_hex(x: i32, y: i32) -> Result<String, String> {
-    let capturer = shared_capturer()?;
+    let capturer = shared_capturer().map_err(|e| e.to_string())?;
     let mut wrap = sqyre_capture::SharedRunCapturer(capturer);
     sample_pixel_hex_with(&mut wrap, x, y)
 }
@@ -38,7 +38,7 @@ pub fn spawn_sample_pixel_hex(
     use std::sync::mpsc;
     use std::thread;
 
-    let capturer = shared_capturer()?;
+    let capturer = shared_capturer().map_err(|e| e.to_string())?;
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let result = (|| -> Result<String, String> {

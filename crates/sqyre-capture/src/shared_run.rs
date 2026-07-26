@@ -6,7 +6,7 @@
 
 /// Define `shared_capturer`, `SharedRunCapturer`, and `ScreenCapturer` for `OsCapturer`.
 ///
-/// `$capturer` must implement `open() -> Result<Self, E: ToString>` and the
+/// `$capturer` must implement `open() -> Result<Self, ::sqyre_ports::CaptureError>` and the
 /// `capture_rect_ref` / `capture_rect_rgb_ref` / `virtual_bounds_ref` /
 /// `monitor_sizes_ref` / `monitor_rects_ref` methods used below.
 #[macro_export]
@@ -14,16 +14,16 @@ macro_rules! define_shared_run_capturer {
     () => {
         /// Process-wide capturer for UI offload (cloned via [`Arc`]; access serialized by inner Mutex).
         static SHARED_UI_CAPTURER: ::std::sync::OnceLock<
-            Result<::std::sync::Arc<OsCapturer>, String>,
+            Result<
+                ::std::sync::Arc<OsCapturer>,
+                ::sqyre_ports::CaptureError,
+            >,
         > = ::std::sync::OnceLock::new();
 
         /// Shared capturer for UI-thread offload (preview tooltips, AutoPic, etc.).
-        pub fn shared_capturer() -> Result<::std::sync::Arc<OsCapturer>, String> {
-            match SHARED_UI_CAPTURER.get_or_init(|| {
-                OsCapturer::open()
-                    .map(::std::sync::Arc::new)
-                    .map_err(|e| e.to_string())
-            }) {
+        pub fn shared_capturer(
+        ) -> Result<::std::sync::Arc<OsCapturer>, ::sqyre_ports::CaptureError> {
+            match SHARED_UI_CAPTURER.get_or_init(|| OsCapturer::open().map(::std::sync::Arc::new)) {
                 Ok(c) => Ok(::std::sync::Arc::clone(c)),
                 Err(e) => Err(e.clone()),
             }

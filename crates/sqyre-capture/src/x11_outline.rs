@@ -16,6 +16,7 @@ use x11::xlib::{
 };
 
 use crate::outline_geometry::{edge_placements, outline_should_clear};
+use crate::CaptureError;
 pub use crate::outline_rect::OutlineRect;
 
 /// Selection stroke color (gold).
@@ -37,14 +38,16 @@ pub struct SelectionOutline {
 unsafe impl Send for SelectionOutline {}
 
 impl SelectionOutline {
-    pub fn open() -> Result<Self, String> {
+    pub fn open() -> Result<Self, CaptureError> {
         // SAFETY: `XOpenDisplay(null)` connects to the default display and its
         // result is null-checked before any other Xlib call; every early return
         // destroys the windows created so far and closes the connection.
         unsafe {
             let display = XOpenDisplay(ptr::null());
             if display.is_null() {
-                return Err("XOpenDisplay failed (need X11)".into());
+                return Err(CaptureError::Message(
+                    "XOpenDisplay failed (need X11)".into(),
+                ));
             }
             crate::x11_secondary::register(display);
             let screen = XDefaultScreen(display);
@@ -54,7 +57,7 @@ impl SelectionOutline {
                 Err(e) => {
                     crate::x11_secondary::unregister(display);
                     XCloseDisplay(display);
-                    return Err(e);
+                    return Err(CaptureError::Message(e));
                 }
             };
             let mut edges = [0 as Window; 4];
@@ -69,7 +72,7 @@ impl SelectionOutline {
                         }
                         crate::x11_secondary::unregister(display);
                         XCloseDisplay(display);
-                        return Err(e);
+                        return Err(CaptureError::Message(e));
                     }
                 }
             }

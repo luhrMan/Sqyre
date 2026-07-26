@@ -183,11 +183,13 @@ pub fn refresh_window_picker(picker: &mut ActivePicker) {
     let (tx, rx) = mpsc::channel();
     #[cfg(feature = "native-runtime")]
     thread::spawn(move || {
-        let list = sqyre_capture::list_open_windows().map(|rows| {
-            rows.into_iter()
-                .map(crate::window_types::window_info_from_capture)
-                .collect()
-        });
+        let list = sqyre_capture::list_open_windows()
+            .map(|rows| {
+                rows.into_iter()
+                    .map(crate::window_types::window_info_from_capture)
+                    .collect()
+            })
+            .map_err(|e| e.to_string());
         let _ = tx.send(list);
     });
     #[cfg(not(feature = "native-runtime"))]
@@ -1386,11 +1388,13 @@ pub fn show_active_picker(
                         let (tx, rx) = mpsc::channel();
                         #[cfg(feature = "native-runtime")]
                         thread::spawn(move || {
-                            let list = sqyre_capture::list_open_windows().map(|rows| {
-                                rows.into_iter()
-                                    .map(crate::window_types::window_info_from_capture)
-                                    .collect()
-                            });
+                            let list = sqyre_capture::list_open_windows()
+                                .map(|rows| {
+                                    rows.into_iter()
+                                        .map(crate::window_types::window_info_from_capture)
+                                        .collect()
+                                })
+                                .map_err(|e| e.to_string());
                             let _ = tx.send(list);
                         });
                         #[cfg(not(feature = "native-runtime"))]

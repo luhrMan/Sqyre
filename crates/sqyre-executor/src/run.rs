@@ -737,11 +737,12 @@ fn compare_ordered(left: &str, right: &str, op: OrderingOp) -> bool {
 }
 
 pub(crate) fn resolve_int(v: &ScalarValue, macro_: &Macro) -> Result<i32> {
-    resolve_scalar_int(v, &macro_.variables).map_err(ExecError::Message)
+    resolve_scalar_int(v, &macro_.variables).map_err(|e| ExecError::Message(e.to_string()))
 }
 
 pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
-    sqyre_domain::expand_variable_refs(text, &macro_.variables).map_err(ExecError::Message)
+    sqyre_domain::expand_variable_refs(text, &macro_.variables)
+        .map_err(|e| ExecError::Message(e.to_string()))
 }
 
 #[cfg(test)]
