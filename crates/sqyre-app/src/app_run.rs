@@ -68,7 +68,7 @@ impl SqyreApp {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_run {
     use super::*;
-    use crate::app_backends::{trim_process_heap, AppOcr, BridgeContinueWait, StopWatchAutomation};
+    use crate::app_backends::{trim_process_heap, BridgeContinueWait, StopWatchAutomation};
     use crate::catalog::{CatalogIcons, CatalogResolver, SnapshotMacros};
     use sqyre_capture::{shared_capturer, OsWindowFocuser, SharedRunCapturer};
     use sqyre_domain::Macro;
@@ -150,8 +150,7 @@ mod native_run {
                             eprintln!("sqyre: {e}");
                             e
                         })
-                        .ok()
-                        .map(AppOcr);
+                        .ok();
                     let stop_raw = stop_flag.raw();
                     let mut watched = StopWatchAutomation {
                         inner: &mut automation,

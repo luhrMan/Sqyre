@@ -1,16 +1,9 @@
 //! Leptess-backed OCR engine (native only; not available on wasm32).
 
-use crate::ocr_boxes::{parse_tsv_word_boxes, text_from_ocr_boxes, OcrWordBox};
+use crate::ocr_boxes::{parse_tsv_word_boxes, text_from_ocr_boxes, OcrRecognition};
 use parking_lot::Mutex;
 use sqyre_match::ImageBuf;
 use std::path::PathBuf;
-
-/// Recognized page text plus word boxes in image coordinates.
-#[derive(Debug, Clone, Default)]
-pub struct OcrRecognition {
-    pub text: String,
-    pub words: Vec<OcrWordBox>,
-}
 
 fn recognize_with(
     api: &mut leptess::tesseract::TessApi,

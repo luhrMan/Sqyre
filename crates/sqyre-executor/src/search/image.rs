@@ -6,7 +6,7 @@ use super::common::{
 };
 use crate::action_log::{crop_match_preview, draw_rect_rgb};
 use crate::backends::{DesktopRect, ItemMeta};
-use crate::error::{ExecError, Result};
+use crate::error::{ExecError, Result, SearchError};
 use crate::highlight::{highlight_clear, highlight_fill};
 use crate::run::Executor;
 use rayon::prelude::*;
@@ -151,7 +151,7 @@ struct VariantMatchOutcome {
     template_blurred: Arc<ImageBuf>,
     /// Mask bytes (kept as Arc until logging builds a preview ImageBuf).
     mask_bytes: Option<Arc<Vec<u8>>>,
-    matches: std::result::Result<Vec<Point>, String>,
+    matches: std::result::Result<Vec<Point>, SearchError>,
     match_ms: f64,
 }
 
@@ -270,7 +270,7 @@ fn capture_and_match(
                         template_raw: None,
                         template_blurred: Arc::new(ImageBuf::new(1, 1, 3, 0)),
                         mask_bytes: None,
-                        matches: Err(format!("load {:?}: {e}", job.path)),
+                        matches: Err(SearchError::Template(format!("load {:?}: {e}", job.path))),
                         match_ms: 0.0,
                         job,
                     };
@@ -300,7 +300,7 @@ fn capture_and_match(
                 method,
                 Some(search_integrals.as_ref()),
             )
-            .map_err(|e| e.to_string());
+            .map_err(SearchError::from);
             let match_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
             VariantMatchOutcome {

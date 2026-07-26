@@ -85,27 +85,29 @@ pub trait ContinueKeyWaiter: Send + Sync {
     }
 }
 
-/// OCR recognition result (word boxes + joined text).
-#[derive(Debug, Clone, Default)]
-pub struct OcrResult {
-    pub text: String,
-    pub words: Vec<sqyre_vision::OcrWordBox>,
-}
-
 /// Run OCR on a preprocessed image buffer.
 pub trait OcrEngine: Send + Sync {
-    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<OcrResult, String>;
+    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<sqyre_vision::OcrRecognition, String>;
+}
+
+/// Tesseract-backed engine (native only; not available on wasm32) — the sole real
+/// [`OcrEngine`] implementation, so no field-copy adapter is needed at the call site.
+#[cfg(not(target_arch = "wasm32"))]
+impl OcrEngine for sqyre_vision::LeptessOcr {
+    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<sqyre_vision::OcrRecognition, String> {
+        self.recognize(image)
+    }
 }
 
 /// Test OCR engine that returns a fixed result.
 #[derive(Debug, Default)]
 pub struct FixedOcrEngine {
-    pub result: OcrResult,
+    pub result: sqyre_vision::OcrRecognition,
     pub log: std::sync::Mutex<Vec<String>>,
 }
 
 impl OcrEngine for FixedOcrEngine {
-    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<OcrResult, String> {
+    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<sqyre_vision::OcrRecognition, String> {
         if let Ok(mut g) = self.log.lock() {
             g.push(format!(
                 "ocr:{}x{}c{}",
@@ -119,12 +121,12 @@ impl OcrEngine for FixedOcrEngine {
 /// Test OCR engine that pops results from a FIFO queue (then repeats the last).
 #[derive(Debug, Default)]
 pub struct QueuedOcrEngine {
-    pub queue: std::sync::Mutex<Vec<OcrResult>>,
+    pub queue: std::sync::Mutex<Vec<sqyre_vision::OcrRecognition>>,
     pub log: std::sync::Mutex<Vec<String>>,
 }
 
 impl OcrEngine for QueuedOcrEngine {
-    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<OcrResult, String> {
+    fn recognize(&self, image: &sqyre_match::ImageBuf) -> Result<sqyre_vision::OcrRecognition, String> {
         if let Ok(mut g) = self.log.lock() {
             g.push(format!(
                 "ocr:{}x{}c{}",

@@ -1,3 +1,4 @@
+use sqyre_match::MatchError;
 use sqyre_ports::{AutomationError, CaptureError};
 use thiserror::Error;
 
@@ -12,6 +13,17 @@ pub enum FlowSignal {
     Stopped,
 }
 
+/// Image Search per-variant failure: template load (icon cache / decode) or
+/// template matching. Keeps [`MatchError`] intact instead of erasing it to a
+/// `String` at the point it's produced.
+#[derive(Debug, Error)]
+pub enum SearchError {
+    #[error("{0}")]
+    Template(String),
+    #[error(transparent)]
+    Match(#[from] MatchError),
+}
+
 #[derive(Debug, Error)]
 pub enum ExecError {
     #[error(transparent)]
@@ -20,6 +32,8 @@ pub enum ExecError {
     Capture(#[from] CaptureError),
     #[error(transparent)]
     Automation(#[from] AutomationError),
+    #[error(transparent)]
+    Search(#[from] SearchError),
     /// Domain / macro-configuration failure with no typed port error behind it.
     #[error("{0}")]
     Message(String),
