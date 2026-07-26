@@ -24,6 +24,6 @@ pub use ocr_preprocess::{
 };
 pub use search_cache::{
     clear_search_cache, get_cached_blurred_template, get_cached_image_mask,
-    invalidate_search_masks_under, invalidate_search_templates_under,
+    get_cached_prepared_template, invalidate_search_masks_under, invalidate_search_templates_under,
     reset_search_cache_for_testing, with_search_cache_test_lock,
 };

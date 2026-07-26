@@ -7,20 +7,21 @@
 
 use crate::image_util::{load_rgb_image, mask_as_u8, resize_mask};
 use parking_lot::{Mutex, RwLock};
-use sqyre_match::{blur_image_owned, ImageBuf};
+use sqyre_match::{blur_image_owned, prepare_template, ImageBuf, MatchMethod, PreparedTemplate};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::SystemTime;
 
-/// Soft cap on cached template + mask bytes (evict oldest on insert).
+/// Soft cap on cached template + mask + prepared-template bytes (evict oldest on insert).
 const MAX_CACHE_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Clone, Copy)]
 enum EntryKind {
     Template,
     Mask,
+    Prepared,
 }
 
 /// Monotonic "clock" used to stamp recency without a write lock: a hit stores
@@ -49,10 +50,25 @@ struct MaskEntry {
     last_used: AtomicU64,
 }
 
+/// Packed/sparse template samples for a (template, mask, method) triple — the
+/// per-match-attempt work `build_packed_template` + `SparseTemplate::from_packed`
+/// would otherwise redo on every match attempt against the same icon.
+struct PreparedEntry {
+    prepared: Arc<PreparedTemplate>,
+    icon_path: std::path::PathBuf,
+    mask_path: Option<std::path::PathBuf>,
+    tmpl_mod_time: SystemTime,
+    mask_mod_time: Option<SystemTime>,
+    blur_kernel: i32,
+    bytes: usize,
+    last_used: AtomicU64,
+}
+
 #[derive(Default)]
 struct SearchCache {
     templates: HashMap<String, TemplateEntry>,
     image_masks: HashMap<String, MaskEntry>,
+    prepared: HashMap<String, PreparedEntry>,
     bytes: usize,
 }
 
@@ -69,31 +85,32 @@ impl SearchCache {
                     self.bytes = self.bytes.saturating_sub(e.bytes);
                 }
             }
+            EntryKind::Prepared => {
+                if let Some(e) = self.prepared.remove(key) {
+                    self.bytes = self.bytes.saturating_sub(e.bytes);
+                }
+            }
         }
     }
 
-    /// Finds the globally least-recently-used entry across both maps.
+    /// Finds the globally least-recently-used entry across all maps.
     fn least_recently_used(&self) -> Option<(EntryKind, String)> {
-        let oldest_template = self
-            .templates
-            .iter()
-            .map(|(k, e)| (e.last_used.load(Ordering::Relaxed), k));
-        let oldest_mask = self
-            .image_masks
-            .iter()
-            .map(|(k, e)| (e.last_used.load(Ordering::Relaxed), k));
-        let template_min = oldest_template.min_by_key(|(t, _)| *t);
-        let mask_min = oldest_mask.min_by_key(|(t, _)| *t);
-        match (template_min, mask_min) {
-            (Some((tt, tk)), Some((mt, mk))) => Some(if tt <= mt {
-                (EntryKind::Template, tk.clone())
-            } else {
-                (EntryKind::Mask, mk.clone())
-            }),
-            (Some((_, tk)), None) => Some((EntryKind::Template, tk.clone())),
-            (None, Some((_, mk))) => Some((EntryKind::Mask, mk.clone())),
-            (None, None) => None,
+        let mut best: Option<(u64, EntryKind, String)> = None;
+        let consider = |best: &mut Option<(u64, EntryKind, String)>, tick: u64, kind: EntryKind, key: &str| {
+            if best.as_ref().is_none_or(|(bt, _, _)| tick < *bt) {
+                *best = Some((tick, kind, key.to_string()));
+            }
+        };
+        for (k, e) in &self.templates {
+            consider(&mut best, e.last_used.load(Ordering::Relaxed), EntryKind::Template, k);
         }
+        for (k, e) in &self.image_masks {
+            consider(&mut best, e.last_used.load(Ordering::Relaxed), EntryKind::Mask, k);
+        }
+        for (k, e) in &self.prepared {
+            consider(&mut best, e.last_used.load(Ordering::Relaxed), EntryKind::Prepared, k);
+        }
+        best.map(|(_, kind, key)| (kind, key))
     }
 
     fn evict_until_fits(&mut self, extra: usize) {
@@ -119,9 +136,17 @@ impl SearchCache {
         self.image_masks.insert(key, entry);
     }
 
+    fn insert_prepared(&mut self, key: String, entry: PreparedEntry) {
+        self.remove_key(EntryKind::Prepared, &key);
+        self.evict_until_fits(entry.bytes);
+        self.bytes += entry.bytes;
+        self.prepared.insert(key, entry);
+    }
+
     fn clear(&mut self) {
         self.templates.clear();
         self.image_masks.clear();
+        self.prepared.clear();
         self.bytes = 0;
     }
 }
@@ -138,6 +163,11 @@ fn template_inflight() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
 }
 
 fn mask_inflight() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
+    static GATES: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    GATES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn prepared_inflight() -> &'static Mutex<HashMap<String, Arc<Mutex<()>>>> {
     static GATES: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
     GATES.get_or_init(|| Mutex::new(HashMap::new()))
 }
@@ -166,15 +196,33 @@ fn mask_cache_key(path: &Path, rows: usize, cols: usize) -> String {
     format!("{}\0{rows}\0{cols}", path.display())
 }
 
+/// Prepared-template cache key: template identity (path + blur) is the same as
+/// [`template_cache_key`]; mask path and match method also select distinct packing.
+fn prepared_cache_key(
+    icon_path: &Path,
+    blur_kernel: i32,
+    mask_path: Option<&Path>,
+    method: MatchMethod,
+) -> String {
+    let mask_part = mask_path.map(|p| p.display().to_string());
+    format!(
+        "{}\0{blur_kernel}\0{:?}\0{}",
+        icon_path.display(),
+        method,
+        mask_part.as_deref().unwrap_or("")
+    )
+}
+
 fn file_mtime(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).ok()?.modified().ok()
 }
 
-/// Clears all cached templates and masks (call after a macro finishes).
+/// Clears all cached templates, masks, and prepared templates (call after a macro finishes).
 pub fn clear_search_cache() {
     cache().write().clear();
     template_inflight().lock().clear();
     mask_inflight().lock().clear();
+    prepared_inflight().lock().clear();
 }
 
 /// Clears all cached templates and masks (tests).
@@ -205,6 +253,15 @@ pub fn invalidate_search_templates_under(icon_prefix: &Path) {
     for key in keys {
         guard.remove_key(EntryKind::Template, &key);
     }
+    let prepared_keys: Vec<String> = guard
+        .prepared
+        .iter()
+        .filter(|(_, e)| e.icon_path.starts_with(icon_prefix))
+        .map(|(k, _)| k.clone())
+        .collect();
+    for key in prepared_keys {
+        guard.remove_key(EntryKind::Prepared, &key);
+    }
 }
 
 /// Drop cached masks whose path starts with `mask_prefix`.
@@ -219,6 +276,15 @@ pub fn invalidate_search_masks_under(mask_prefix: &Path) {
         .collect();
     for key in keys {
         guard.remove_key(EntryKind::Mask, &key);
+    }
+    let prepared_keys: Vec<String> = guard
+        .prepared
+        .iter()
+        .filter(|(_, e)| e.mask_path.as_deref().is_some_and(|p| p.starts_with(mask_prefix)))
+        .map(|(k, _)| k.clone())
+        .collect();
+    for key in prepared_keys {
+        guard.remove_key(EntryKind::Prepared, &key);
     }
 }
 
@@ -327,6 +393,80 @@ pub fn get_cached_image_mask(
     drop(_busy);
     drop_inflight_gate(mask_inflight(), &key);
     Some(mask)
+}
+
+fn prepared_cache_hit(
+    key: &str,
+    tmpl_mod_time: SystemTime,
+    mask_mod_time: Option<SystemTime>,
+    blur_kernel: i32,
+) -> Option<Arc<PreparedTemplate>> {
+    let guard = cache().read();
+    let entry = guard.prepared.get(key)?;
+    if entry.tmpl_mod_time == tmpl_mod_time
+        && entry.mask_mod_time == mask_mod_time
+        && entry.blur_kernel == blur_kernel
+    {
+        entry.last_used.store(next_tick(), Ordering::Relaxed);
+        Some(Arc::clone(&entry.prepared))
+    } else {
+        None
+    }
+}
+
+/// Load (or reuse) the packed/sparse template for `icon_path` at `blur_kernel`, masked
+/// by the (already resized) `mask` from `mask_path` if any, for `method`.
+///
+/// Caches `build_packed_template` + `SparseTemplate::from_packed` alongside the blurred
+/// template cache, so repeated match attempts against the same icon (wait/repeat loops)
+/// skip re-packing.
+pub fn get_cached_prepared_template(
+    icon_path: &Path,
+    blur_kernel: i32,
+    template: &ImageBuf,
+    mask_path: Option<&Path>,
+    mask: Option<&[u8]>,
+    method: MatchMethod,
+) -> Result<Arc<PreparedTemplate>, String> {
+    let tmpl_mod_time =
+        file_mtime(icon_path).ok_or_else(|| format!("stat {}: missing", icon_path.display()))?;
+    let mask_mod_time = mask_path.and_then(file_mtime);
+    let key = prepared_cache_key(icon_path, blur_kernel, mask_path, method);
+
+    if let Some(hit) = prepared_cache_hit(&key, tmpl_mod_time, mask_mod_time, blur_kernel) {
+        return Ok(hit);
+    }
+
+    let gate = inflight_gate(prepared_inflight(), &key);
+    let _busy = gate.lock();
+    if let Some(hit) = prepared_cache_hit(&key, tmpl_mod_time, mask_mod_time, blur_kernel) {
+        drop(_busy);
+        drop_inflight_gate(prepared_inflight(), &key);
+        return Ok(hit);
+    }
+
+    let prepared = Arc::new(
+        prepare_template(template, mask, method)
+            .map_err(|e| format!("prepare template {}: {e}", icon_path.display()))?,
+    );
+    let bytes = prepared.approx_bytes();
+
+    cache().write().insert_prepared(
+        key.clone(),
+        PreparedEntry {
+            prepared: Arc::clone(&prepared),
+            icon_path: icon_path.to_path_buf(),
+            mask_path: mask_path.map(Path::to_path_buf),
+            tmpl_mod_time,
+            mask_mod_time,
+            blur_kernel,
+            bytes,
+            last_used: AtomicU64::new(next_tick()),
+        },
+    );
+    drop(_busy);
+    drop_inflight_gate(prepared_inflight(), &key);
+    Ok(prepared)
 }
 
 #[cfg(test)]
