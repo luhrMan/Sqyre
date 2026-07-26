@@ -4,10 +4,10 @@ use super::common::{
     apply_detection_hits, capture_search_buf, close_matches_distance, frame_fingerprint,
     run_detection_shell, sort_hits, DetectionExtras, DetectionHit, FrameCache,
 };
-use crate::action_log::{crop_match_preview, draw_rect_rgb};
+use crate::log_draw::{crop_match_preview, draw_rect_rgb};
 use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, Result, SearchError};
-use crate::highlight::{highlight_clear, highlight_fill};
+use sqyre_ui_model::{highlight_clear, highlight_fill};
 use crate::run::Executor;
 use rayon::prelude::*;
 use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchMethod, MatchOrder};
