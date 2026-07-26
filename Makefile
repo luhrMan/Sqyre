@@ -119,7 +119,7 @@ test:
 	else \
 		echo "cargo-nextest not found; falling back to cargo test"; \
 		echo "  Install: cargo install cargo-nextest --locked"; \
-		$(CARGO) test $(CARGO_FLAGS); \
+		$(CARGO) test --workspace $(CARGO_FLAGS); \
 	fi
 
 check-fmt:

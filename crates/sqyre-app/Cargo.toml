@@ -33,7 +33,6 @@ egui-phosphor = { workspace = true }
 egui_ltreeview = { workspace = true }
 image = { workspace = true }
 resvg = { workspace = true }
-sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-ui-model = { path = "../sqyre-ui-model" }
 sqyre-persist = { path = "../sqyre-persist" }
