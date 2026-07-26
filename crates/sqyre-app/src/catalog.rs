@@ -1,5 +1,5 @@
 use sqyre_domain::{CoordinateRef, Macro};
-use sqyre_executor::{CoordinateResolver, IconStore, ItemMeta, MacroLookup};
+use sqyre_executor::{CoordinateResolver, IconStore, ItemMeta, MacroLookup, PortError};
 use sqyre_persist::ProgramCatalog;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -19,7 +19,7 @@ pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
 pub struct CatalogResolver<'a>(pub &'a ProgramCatalog);
 
 impl CoordinateResolver for CatalogResolver<'_> {
-    fn resolve_point(&self, r: &CoordinateRef, macro_: &Macro) -> Result<(i32, i32), String> {
+    fn resolve_point(&self, r: &CoordinateRef, macro_: &Macro) -> Result<(i32, i32), PortError> {
         self.0.resolve_point(r, macro_)
     }
 
@@ -27,11 +27,11 @@ impl CoordinateResolver for CatalogResolver<'_> {
         &self,
         r: &CoordinateRef,
         macro_: &Macro,
-    ) -> Result<(i32, i32, i32, i32), String> {
+    ) -> Result<(i32, i32, i32, i32), PortError> {
         self.0.resolve_search_area(r, macro_)
     }
 
-    fn collection_grid(&self, program: &str, collection: &str) -> Result<(i32, i32), String> {
+    fn collection_grid(&self, program: &str, collection: &str) -> Result<(i32, i32), PortError> {
         let r = if program.is_empty() {
             CoordinateRef(collection.to_string())
         } else {
@@ -41,7 +41,7 @@ impl CoordinateResolver for CatalogResolver<'_> {
         Ok((col.rows, col.cols))
     }
 
-    fn atlas_members(&self, program: &str, atlas: &str) -> Result<Vec<String>, String> {
+    fn atlas_members(&self, program: &str, atlas: &str) -> Result<Vec<String>, PortError> {
         Ok(self.0.lookup_atlas(program, atlas)?.collections.clone())
     }
 }
