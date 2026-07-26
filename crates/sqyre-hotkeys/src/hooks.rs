@@ -3,7 +3,7 @@
 use crate::continue_wait::{rdev_key_name, ContinueWaitBridge};
 use crate::macro_hotkeys::MacroHotkeyBridge;
 use crate::screen_click::ScreenClickBridge;
-use crate::{HotkeyCallbacks, HotkeyService};
+use crate::{HotkeyCallbacks, HotkeyError, HotkeyService};
 use parking_lot::Mutex;
 use rdev::{listen, Button, Event, EventType, Key};
 use std::collections::HashSet;
@@ -36,7 +36,7 @@ impl RdevHotkeys {
 }
 
 impl HotkeyService for RdevHotkeys {
-    fn start(&mut self, callbacks: HotkeyCallbacks) -> Result<(), String> {
+    fn start(&mut self, callbacks: HotkeyCallbacks) -> Result<(), HotkeyError> {
         self.stop();
         let stop = Arc::clone(&self.stop);
         stop.store(false, Ordering::SeqCst);
@@ -92,7 +92,7 @@ impl HotkeyService for RdevHotkeys {
                     }
                 });
             })
-            .map_err(|e| format!("hotkey thread: {e}"))?;
+            .map_err(|e| HotkeyError::ThreadSpawn(e.to_string()))?;
         *self.join.lock() = Some(handle);
         Ok(())
     }

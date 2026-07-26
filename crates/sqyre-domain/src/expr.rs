@@ -2,10 +2,8 @@
 //!
 //! Hand-rolled recursive-descent parser — avoids `meval` → ancient `nom`.
 
-use crate::{ScalarValue, VariableStore};
+use crate::{ExprError, ResolveError, ScalarValue, VariableStore};
 use std::f64::consts::{E, PI};
-
-type Result<T> = std::result::Result<T, String>;
 
 /// Max recursive-descent depth for parentheses, unary chains, `^`, and function calls.
 pub const MAX_EXPR_RECURSION_DEPTH: usize = 64;
@@ -13,15 +11,15 @@ pub const MAX_EXPR_RECURSION_DEPTH: usize = 64;
 /// Evaluate a math expression after `${var}` substitution.
 /// Supports `+ - * / ^`, unary `+/-`, parentheses, functions (`sqrt`, `abs`,
 /// `round`, `floor`, `ceil`, `trunc`, `sin`, `cos`, `tan`, `ln`), and `~pi` / `~e`.
-pub fn evaluate_expression(expr: &str, vars: &VariableStore) -> Result<f64> {
+pub fn evaluate_expression(expr: &str, vars: &VariableStore) -> Result<f64, ResolveError> {
     let resolved = crate::expand_variable_refs(expr, vars)?;
-    evaluate_numeric(&resolved)
+    evaluate_numeric(&resolved).map_err(ResolveError::from)
 }
 
-fn evaluate_numeric(expr: &str) -> Result<f64> {
+fn evaluate_numeric(expr: &str) -> Result<f64, ExprError> {
     let mut expr = expr.trim().to_string();
     if expr.is_empty() {
-        return Err("empty expression".into());
+        return Err(ExprError::Empty);
     }
     expr = expr.replace("~pi", &format!("{PI}"));
     expr = expr.replace("~e", &format!("{E}"));
@@ -30,10 +28,9 @@ fn evaluate_numeric(expr: &str) -> Result<f64> {
     let val = p.parse_expr()?;
     p.skip_ws();
     if p.pos < p.bytes.len() {
-        return Err(format!(
-            "failed to evaluate expression: unexpected input at {:?}",
-            &expr[p.pos..]
-        ));
+        return Err(ExprError::UnexpectedInput {
+            tail: expr[p.pos..].to_string(),
+        });
     }
     Ok(val)
 }
@@ -62,11 +59,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn recurse<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+    fn recurse<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, ExprError>) -> Result<T, ExprError> {
         if self.depth >= MAX_EXPR_RECURSION_DEPTH {
-            return Err(format!(
-                "expression too deeply nested (max {MAX_EXPR_RECURSION_DEPTH})"
-            ));
+            return Err(ExprError::TooDeep {
+                max: MAX_EXPR_RECURSION_DEPTH,
+            });
         }
         self.depth += 1;
         let out = f(self);
@@ -92,19 +89,18 @@ impl<'a> Parser<'a> {
         Some(c)
     }
 
-    fn expect(&mut self, want: u8) -> Result<()> {
+    fn expect(&mut self, want: u8) -> Result<(), ExprError> {
         match self.bump() {
             Some(c) if c == want => Ok(()),
-            other => Err(format!(
-                "failed to evaluate expression: expected '{}', got {:?}",
-                want as char,
-                other.map(|c| c as char)
-            )),
+            other => Err(ExprError::ExpectedToken {
+                expected: want as char,
+                got: other.map(|c| c as char),
+            }),
         }
     }
 
     /// expr := term (('+' | '-') term)*
-    fn parse_expr(&mut self) -> Result<f64> {
+    fn parse_expr(&mut self) -> Result<f64, ExprError> {
         let mut left = self.parse_term()?;
         loop {
             match self.peek() {
@@ -123,7 +119,7 @@ impl<'a> Parser<'a> {
     }
 
     /// term := power (('*' | '/') power)*
-    fn parse_term(&mut self) -> Result<f64> {
+    fn parse_term(&mut self) -> Result<f64, ExprError> {
         let mut left = self.parse_power()?;
         loop {
             match self.peek() {
@@ -143,7 +139,7 @@ impl<'a> Parser<'a> {
     }
 
     /// power := unary ('^' power)?  — right-associative
-    fn parse_power(&mut self) -> Result<f64> {
+    fn parse_power(&mut self) -> Result<f64, ExprError> {
         let base = self.parse_unary()?;
         if self.peek() == Some(b'^') {
             self.bump();
@@ -155,7 +151,7 @@ impl<'a> Parser<'a> {
     }
 
     /// unary := ('+' | '-') unary | primary
-    fn parse_unary(&mut self) -> Result<f64> {
+    fn parse_unary(&mut self) -> Result<f64, ExprError> {
         match self.peek() {
             Some(b'+') => {
                 self.bump();
@@ -170,7 +166,7 @@ impl<'a> Parser<'a> {
     }
 
     /// primary := number | ident '(' expr ')' | '(' expr ')'
-    fn parse_primary(&mut self) -> Result<f64> {
+    fn parse_primary(&mut self) -> Result<f64, ExprError> {
         match self.peek() {
             Some(b'(') => {
                 self.bump();
@@ -180,14 +176,13 @@ impl<'a> Parser<'a> {
             }
             Some(b'0'..=b'9') | Some(b'.') => self.parse_number(),
             Some(b'a'..=b'z') | Some(b'A'..=b'Z') | Some(b'_') => self.parse_call_or_ident(),
-            other => Err(format!(
-                "failed to evaluate expression: unexpected {:?}",
-                other.map(|c| c as char)
-            )),
+            other => Err(ExprError::UnexpectedToken {
+                token: other.map(|c| c as char),
+            }),
         }
     }
 
-    fn parse_number(&mut self) -> Result<f64> {
+    fn parse_number(&mut self) -> Result<f64, ExprError> {
         self.skip_ws();
         let start = self.pos;
         while self.pos < self.bytes.len()
@@ -210,12 +205,13 @@ impl<'a> Parser<'a> {
             }
         }
         let s = std::str::from_utf8(&self.bytes[start..self.pos])
-            .map_err(|_| "failed to evaluate expression: invalid number".to_string())?;
-        s.parse::<f64>()
-            .map_err(|_| format!("failed to evaluate expression: invalid number {s:?}"))
+            .map_err(|_| ExprError::InvalidNumber)?;
+        s.parse::<f64>().map_err(|_| ExprError::InvalidNumberValue {
+            value: s.to_string(),
+        })
     }
 
-    fn parse_call_or_ident(&mut self) -> Result<f64> {
+    fn parse_call_or_ident(&mut self) -> Result<f64, ExprError> {
         self.skip_ws();
         let start = self.pos;
         while self.pos < self.bytes.len()
@@ -224,13 +220,11 @@ impl<'a> Parser<'a> {
             self.pos += 1;
         }
         let name = std::str::from_utf8(&self.bytes[start..self.pos])
-            .map_err(|_| "failed to evaluate expression: bad ident".to_string())?
+            .map_err(|_| ExprError::BadIdent)?
             .to_ascii_lowercase();
 
         if self.peek() != Some(b'(') {
-            return Err(format!(
-                "failed to evaluate expression: unknown identifier {name:?}"
-            ));
+            return Err(ExprError::UnknownIdent { name });
         }
         self.bump(); // '('
         let arg = self.recurse(|p| p.parse_expr())?;
@@ -239,7 +233,7 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn apply_fn(name: &str, x: f64) -> Result<f64> {
+fn apply_fn(name: &str, x: f64) -> Result<f64, ExprError> {
     let v = match name {
         "sqrt" => x.sqrt(),
         "abs" => x.abs(),
@@ -252,9 +246,9 @@ fn apply_fn(name: &str, x: f64) -> Result<f64> {
         "tan" => x.tan(),
         "ln" => x.ln(),
         _ => {
-            return Err(format!(
-                "failed to evaluate expression: unknown function {name:?}"
-            ));
+            return Err(ExprError::UnknownFunction {
+                name: name.to_string(),
+            });
         }
     };
     Ok(v)
@@ -316,7 +310,7 @@ mod tests {
         let err =
             evaluate_expression(&nested_parens(MAX_EXPR_RECURSION_DEPTH + 1), &vars).unwrap_err();
         assert!(
-            err.contains("too deeply nested"),
+            err.to_string().contains("too deeply nested"),
             "expected depth error, got {err:?}"
         );
     }
@@ -328,7 +322,7 @@ mod tests {
         let err =
             evaluate_expression(&nested_sqrt(MAX_EXPR_RECURSION_DEPTH + 1), &vars).unwrap_err();
         assert!(
-            err.contains("too deeply nested"),
+            err.to_string().contains("too deeply nested"),
             "expected depth error, got {err:?}"
         );
     }

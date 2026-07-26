@@ -67,8 +67,8 @@ pub use outline_stub::SelectionOutline;
 pub type OsCapturer = NullCapturer;
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub fn shared_capturer() -> Result<std::sync::Arc<OsCapturer>, String> {
-    Err("screen capture: not supported on this platform".into())
+pub fn shared_capturer() -> Result<std::sync::Arc<OsCapturer>, CaptureError> {
+    Err(CaptureError::UnsupportedPlatform)
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -223,44 +223,44 @@ pub fn monitor_count() -> usize {
 
 /// Open top-level windows with stable executable path and title.
 #[cfg(target_os = "linux")]
-pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     x11_focus::list_open_windows()
 }
 
 #[cfg(target_os = "windows")]
-pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     win_focus::list_open_windows()
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
-    Err("list windows: not supported on this platform".into())
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
+    Err(CaptureError::UnsupportedPlatform)
 }
 
 /// Currently focused top-level window, if any.
 #[cfg(target_os = "linux")]
-pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
+pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
     x11_focus::get_active_window()
 }
 
 #[cfg(target_os = "windows")]
-pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
+pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
     win_focus::get_active_window()
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
-    Err("active window: not supported on this platform".into())
+pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
+    Err(CaptureError::UnsupportedPlatform)
 }
 
 /// X11: hide overlay tool windows from Alt-Tab / taskbar (no-op elsewhere).
 #[cfg(target_os = "linux")]
-pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
+pub fn skip_taskbar_for_overlay_windows() -> Result<(), CaptureError> {
     x11_focus::skip_taskbar_for_overlay_windows()
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
+pub fn skip_taskbar_for_overlay_windows() -> Result<(), CaptureError> {
     Ok(())
 }
 
@@ -268,12 +268,12 @@ pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
 ///
 /// Needed because eframe/glow strips `transparent` when creating deferred viewports.
 #[cfg(target_os = "windows")]
-pub fn enable_overlay_window_transparency() -> Result<(), String> {
+pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
     win_focus::enable_overlay_window_transparency()
 }
 
 #[cfg(not(target_os = "windows"))]
-pub fn enable_overlay_window_transparency() -> Result<(), String> {
+pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
     Ok(())
 }
 

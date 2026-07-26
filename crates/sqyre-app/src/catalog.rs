@@ -53,7 +53,7 @@ pub fn ensure_general_program_seeded(catalog: &mut ProgramCatalog) -> bool {
     match ensure_general_program(catalog, &monitors) {
         Ok(created) => created,
         Err(e) => {
-            eprintln!("sqyre: failed to seed General program: {e}");
+            crate::log::warn(format_args!("failed to seed General program: {e}"));
             false
         }
     }
@@ -68,7 +68,7 @@ pub fn prepare_catalog(catalog: &mut ProgramCatalog, db: &mut Database) -> bool 
     }
     db.set_programs_from_catalog(catalog);
     if let Err(e) = db.save_default() {
-        eprintln!("sqyre: failed to save seeded General program: {e}");
+        crate::log::warn(format_args!("failed to save seeded General program: {e}"));
         return false;
     }
     true

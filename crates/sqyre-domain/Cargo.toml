@@ -11,5 +11,6 @@ workspace = true
 [dependencies]
 serde = { workspace = true }
 serde_yaml = { workspace = true }
+thiserror = { workspace = true }
 uuid = { workspace = true }
 sqyre-varref = { path = "../sqyre-varref" }

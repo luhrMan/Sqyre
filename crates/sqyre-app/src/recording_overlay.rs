@@ -54,7 +54,7 @@ impl RecordingOverlay {
             let mut outline = match SelectionOutline::open() {
                 Ok(o) => Some(o),
                 Err(e) => {
-                    eprintln!("sqyre: selection outline unavailable: {e}");
+                    crate::log::warn(format_args!("selection outline unavailable: {e}"));
                     None
                 }
             };

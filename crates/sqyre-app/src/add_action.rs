@@ -89,7 +89,7 @@ impl AddActionPicker {
                 Err(e) => {
                     // Corrupt/incompatible default in user settings; skip it
                     // rather than fail the whole load.
-                    eprintln!("sqyre: dropping invalid action default for {ty:?}: {e}");
+                    crate::log::warn(format_args!("dropping invalid action default for {ty:?}: {e}"));
                 }
             }
         }

@@ -115,7 +115,7 @@ impl SqyreApp {
             return;
         }
         if let Err(e) = self.persist_database() {
-            eprintln!("sqyre: persist macro: {e}");
+            crate::log::warn(format_args!("persist macro: {e}"));
         }
         self.refresh_macro_hotkey_bindings();
     }
@@ -151,7 +151,7 @@ impl SqyreApp {
         self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
         if let Err(e) = self.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
-            eprintln!("sqyre: create macro: {e}");
+            crate::log::warn(format_args!("create macro: {e}"));
             return;
         }
         self.refresh_macro_hotkey_bindings();
@@ -177,7 +177,7 @@ impl SqyreApp {
         self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
         if let Err(e) = self.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
-            eprintln!("sqyre: duplicate macro: {e}");
+            crate::log::warn(format_args!("duplicate macro: {e}"));
             return;
         }
         self.refresh_macro_hotkey_bindings();
@@ -189,7 +189,7 @@ impl SqyreApp {
         self.tree.histories.remove(name);
         self.workspace.macros.retain(|m| m.name != name);
         if let Err(e) = self.persist_database() {
-            eprintln!("sqyre: delete macro: {e}");
+            crate::log::warn(format_args!("delete macro: {e}"));
         }
         self.refresh_macro_hotkey_bindings();
         self.play_ui_delete_sound();
@@ -233,7 +233,7 @@ impl SqyreApp {
             self.tree.histories.insert(new_name.clone(), hist);
         }
         if let Err(e) = self.persist_database() {
-            eprintln!("sqyre: rename macro: {e}");
+            crate::log::warn(format_args!("rename macro: {e}"));
         }
         self.refresh_macro_hotkey_bindings();
 
@@ -316,7 +316,7 @@ impl SqyreApp {
                 self.persist_macro_at(idx);
             }
             Err(e) => {
-                eprintln!("sqyre: undo: {e}");
+                crate::log::warn(format_args!("undo: {e}"));
                 *self.run_session.state.status.lock() = format!("Undo failed: {e}");
             }
         }
@@ -343,7 +343,7 @@ impl SqyreApp {
                 self.persist_macro_at(idx);
             }
             Err(e) => {
-                eprintln!("sqyre: redo: {e}");
+                crate::log::warn(format_args!("redo: {e}"));
                 *self.run_session.state.status.lock() = format!("Redo failed: {e}");
             }
         }
