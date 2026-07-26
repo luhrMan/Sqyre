@@ -657,24 +657,47 @@ pub(crate) fn eval_clauses(
 }
 
 fn eval_one_clause(c: &sqyre_domain::ConditionClause, macro_: &Macro) -> Result<bool> {
-    // `is set` looks up the variable *name* without expanding its value.
-    if c.operator.as_str() == "is set" {
+    use sqyre_domain::ConditionOperator;
+
+    if c.operator.reads_variable_name() {
         let raw = c.left.as_display();
         let name = variable_name_for_is_set(&raw);
         return Ok(macro_.variables.get(name).is_some());
     }
 
     let left = resolve_text(&c.left.as_display(), macro_)?;
-    let right = resolve_text(&c.right.as_display(), macro_)?;
-    Ok(match c.operator.as_str() {
-        "==" => left == right,
-        "!=" => left != right,
-        "is empty" => left.trim().is_empty(),
-        "contains" => left.contains(&right),
-        "starts with" => left.starts_with(&right),
-        "ends with" => left.ends_with(&right),
-        "<" | "<=" | ">" | ">=" => compare_ordered(&left, &right, c.operator.as_str()),
-        _ => false,
+    Ok(match c.operator {
+        ConditionOperator::IsEmpty => left.trim().is_empty(),
+        ConditionOperator::Equals
+        | ConditionOperator::NotEquals
+        | ConditionOperator::Contains
+        | ConditionOperator::StartsWith
+        | ConditionOperator::EndsWith
+        | ConditionOperator::LessThan
+        | ConditionOperator::LessOrEqual
+        | ConditionOperator::GreaterThan
+        | ConditionOperator::GreaterOrEqual => {
+            let right = resolve_text(&c.right.as_display(), macro_)?;
+            match c.operator {
+                ConditionOperator::Equals => left == right,
+                ConditionOperator::NotEquals => left != right,
+                ConditionOperator::Contains => left.contains(&right),
+                ConditionOperator::StartsWith => left.starts_with(&right),
+                ConditionOperator::EndsWith => left.ends_with(&right),
+                ConditionOperator::LessThan => compare_ordered(&left, &right, OrderingOp::Less),
+                ConditionOperator::LessOrEqual => {
+                    compare_ordered(&left, &right, OrderingOp::LessOrEqual)
+                }
+                ConditionOperator::GreaterThan => {
+                    compare_ordered(&left, &right, OrderingOp::Greater)
+                }
+                ConditionOperator::GreaterOrEqual => {
+                    compare_ordered(&left, &right, OrderingOp::GreaterOrEqual)
+                }
+                _ => unreachable!(),
+            }
+        }
+        ConditionOperator::IsSet => unreachable!("handled above"),
     })
 }
 
@@ -690,19 +713,26 @@ fn variable_name_for_is_set(raw: &str) -> &str {
     t
 }
 
+#[derive(Clone, Copy)]
+enum OrderingOp {
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+}
+
 /// Numeric compare when both sides parse as `f64`; otherwise lexicographic.
-fn compare_ordered(left: &str, right: &str, op: &str) -> bool {
+fn compare_ordered(left: &str, right: &str, op: OrderingOp) -> bool {
     use std::cmp::Ordering;
     let ord = match (left.trim().parse::<f64>(), right.trim().parse::<f64>()) {
         (Ok(a), Ok(b)) => a.partial_cmp(&b).unwrap_or(Ordering::Equal),
         _ => left.cmp(right),
     };
     match op {
-        "<" => ord == Ordering::Less,
-        "<=" => ord != Ordering::Greater,
-        ">" => ord == Ordering::Greater,
-        ">=" => ord != Ordering::Less,
-        _ => false,
+        OrderingOp::Less => ord == Ordering::Less,
+        OrderingOp::LessOrEqual => ord != Ordering::Greater,
+        OrderingOp::Greater => ord == Ordering::Greater,
+        OrderingOp::GreaterOrEqual => ord != Ordering::Less,
     }
 }
 
@@ -722,7 +752,8 @@ mod tests {
     use crate::test_support::FixedResolver;
     use crate::test_support::{RecordingBackend, RecordingCapturer};
     use sqyre_domain::{
-        root_loop, Action, ActionId, ActionKind, CoordinateRef, ScalarValue, VariableAssignment,
+        root_loop, Action, ActionId, ActionKind, ConditionOperator, CoordinateRef, ScalarValue,
+        VariableAssignment,
     };
 
     const RUN_RESOLVER: FixedResolver = FixedResolver::point_area((42, 99), (0, 0, 10, 10));
@@ -1238,7 +1269,7 @@ mod tests {
                         match_mode: "all".into(),
                         clauses: vec![sqyre_domain::ConditionClause {
                             left: ScalarValue::String("${flag}".into()),
-                            operator: "==".into(),
+                            operator: ConditionOperator::Equals,
                             right: ScalarValue::String("yes".into()),
                         }],
                     },
@@ -1259,7 +1290,7 @@ mod tests {
                         match_mode: "all".into(),
                         clauses: vec![sqyre_domain::ConditionClause {
                             left: ScalarValue::String("${flag}".into()),
-                            operator: "==".into(),
+                            operator: ConditionOperator::Equals,
                             right: ScalarValue::String("no".into()),
                         }],
                     },
@@ -1302,12 +1333,12 @@ mod tests {
             &[
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("x".into()),
-                    operator: "==".into(),
+                    operator: ConditionOperator::Equals,
                     right: ScalarValue::String("y".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("${name}".into()),
-                    operator: "contains".into(),
+                    operator: ConditionOperator::Contains,
                     right: ScalarValue::String("ell".into()),
                 },
             ],
@@ -1319,22 +1350,22 @@ mod tests {
             &[
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("${name}".into()),
-                    operator: "starts with".into(),
+                    operator: ConditionOperator::StartsWith,
                     right: ScalarValue::String("he".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("${name}".into()),
-                    operator: "ends with".into(),
+                    operator: ConditionOperator::EndsWith,
                     right: ScalarValue::String("lo".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("name".into()),
-                    operator: "is set".into(),
+                    operator: ConditionOperator::IsSet,
                     right: ScalarValue::Null,
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("${empty}".into()),
-                    operator: "is empty".into(),
+                    operator: ConditionOperator::IsEmpty,
                     right: ScalarValue::Null,
                 },
             ],
@@ -1345,7 +1376,7 @@ mod tests {
             MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("a".into()),
-                operator: "!=".into(),
+                operator: ConditionOperator::NotEquals,
                 right: ScalarValue::String("a".into()),
             }],
             &macro_
@@ -1361,22 +1392,22 @@ mod tests {
             &[
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("10".into()),
-                    operator: ">".into(),
+                    operator: ConditionOperator::GreaterThan,
                     right: ScalarValue::String("2".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("3".into()),
-                    operator: "<=".into(),
+                    operator: ConditionOperator::LessOrEqual,
                     right: ScalarValue::String("3.0".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("1".into()),
-                    operator: "<".into(),
+                    operator: ConditionOperator::LessThan,
                     right: ScalarValue::String("2".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("5".into()),
-                    operator: ">=".into(),
+                    operator: ConditionOperator::GreaterOrEqual,
                     right: ScalarValue::String("5".into()),
                 },
             ],
@@ -1387,7 +1418,7 @@ mod tests {
             MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("1".into()),
-                operator: ">".into(),
+                operator: ConditionOperator::GreaterThan,
                 right: ScalarValue::String("2".into()),
             }],
             &macro_
@@ -1406,7 +1437,7 @@ mod tests {
             MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("${flag}".into()),
-                operator: "is set".into(),
+                operator: ConditionOperator::IsSet,
                 right: ScalarValue::Null,
             }],
             &macro_
@@ -1416,7 +1447,7 @@ mod tests {
             MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("${missing}".into()),
-                operator: "is set".into(),
+                operator: ConditionOperator::IsSet,
                 right: ScalarValue::Null,
             }],
             &macro_
@@ -1427,7 +1458,7 @@ mod tests {
             MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("flag".into()),
-                operator: "is set".into(),
+                operator: ConditionOperator::IsSet,
                 right: ScalarValue::Null,
             }],
             &macro_
