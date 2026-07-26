@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub use crate::match_method::MatchMethod;
 use uuid::Uuid;
 
-/// Declares a C-like string enum with `as_str`, `parse`, `Display`, `From`, and serde.
+/// Declares a C-like string enum with `ALL`, `as_str`, `try_parse`, `parse`, `Display`, `From`, and serde.
 ///
 /// The first literal for each variant is the canonical wire/UI string. Additional
 /// `| "alias"` literals are accepted by `parse` only. Parsing is case-insensitive
@@ -36,17 +36,23 @@ macro_rules! string_enum {
         }
 
         impl $Name {
+            pub const ALL: &'static [Self] = &[$(Self::$Variant,)+];
+
             pub const fn as_str(self) -> &'static str {
                 match self {
                     $(Self::$Variant => $first,)+
                 }
             }
 
-            pub fn parse(s: &str) -> Self {
+            pub fn try_parse(s: &str) -> Option<Self> {
                 match s.trim().to_ascii_lowercase().as_str() {
-                    $($first $(| $rest)* => Self::$Variant,)+
-                    _ => Self::default(),
+                    $($first $(| $rest)* => Some(Self::$Variant),)+
+                    _ => None,
                 }
+            }
+
+            pub fn parse(s: &str) -> Self {
+                Self::try_parse(s).unwrap_or_default()
             }
         }
 
@@ -148,8 +154,6 @@ impl Default for ActionId {
         Self::new()
     }
 }
-
-pub const OP_EQUALS: &str = "==";
 
 pub const DEFAULT_SMOOTH_LOW: f64 = 0.05;
 pub const DEFAULT_SMOOTH_HIGH: f64 = 0.20;
@@ -282,18 +286,134 @@ string_enum! {
     }
 }
 
+/// Comparison used by a [`ConditionClause`].
+///
+/// Strict wire decode: an unrecognized operator fails to deserialize rather than
+/// collapsing into [`Self::Equals`], so a typo cannot silently change branch logic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ConditionOperator {
+    #[default]
+    Equals,
+    NotEquals,
+    LessThan,
+    LessOrEqual,
+    GreaterThan,
+    GreaterOrEqual,
+    Contains,
+    StartsWith,
+    EndsWith,
+    IsSet,
+    IsEmpty,
+}
+
+impl ConditionOperator {
+    pub const ALL: &'static [Self] = &[
+        Self::Equals,
+        Self::NotEquals,
+        Self::LessThan,
+        Self::LessOrEqual,
+        Self::GreaterThan,
+        Self::GreaterOrEqual,
+        Self::Contains,
+        Self::StartsWith,
+        Self::EndsWith,
+        Self::IsSet,
+        Self::IsEmpty,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Equals => "==",
+            Self::NotEquals => "!=",
+            Self::LessThan => "<",
+            Self::LessOrEqual => "<=",
+            Self::GreaterThan => ">",
+            Self::GreaterOrEqual => ">=",
+            Self::Contains => "contains",
+            Self::StartsWith => "starts with",
+            Self::EndsWith => "ends with",
+            Self::IsSet => "is set",
+            Self::IsEmpty => "is empty",
+        }
+    }
+
+    pub fn try_parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "==" => Some(Self::Equals),
+            "!=" => Some(Self::NotEquals),
+            "<" => Some(Self::LessThan),
+            "<=" => Some(Self::LessOrEqual),
+            ">" => Some(Self::GreaterThan),
+            ">=" => Some(Self::GreaterOrEqual),
+            "contains" => Some(Self::Contains),
+            "starts with" => Some(Self::StartsWith),
+            "ends with" => Some(Self::EndsWith),
+            "is set" => Some(Self::IsSet),
+            "is empty" => Some(Self::IsEmpty),
+            _ => None,
+        }
+    }
+
+    pub fn accepted_values() -> String {
+        Self::ALL
+            .iter()
+            .map(|v| v.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
+    /// True when the operator only looks at the left operand (`is set`, `is empty`).
+    pub const fn is_unary(self) -> bool {
+        matches!(self, Self::IsSet | Self::IsEmpty)
+    }
+
+    /// True when the operator reads the *name* of the left operand rather than its value.
+    pub const fn reads_variable_name(self) -> bool {
+        matches!(self, Self::IsSet)
+    }
+}
+
+impl std::fmt::Display for ConditionOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for ConditionOperator {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::try_parse(s).ok_or_else(|| {
+            format!(
+                "unknown ConditionOperator {:?}; expected one of: {}",
+                s.trim(),
+                Self::accepted_values()
+            )
+        })
+    }
+}
+
+impl serde::Serialize for ConditionOperator {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for ConditionOperator {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let s = <String as serde::Deserialize>::deserialize(deserializer)?;
+        s.parse().map_err(serde::de::Error::custom)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ConditionClause {
     #[serde(default)]
     pub left: ScalarValue,
-    #[serde(default = "default_equals_op")]
-    pub operator: String,
+    #[serde(default)]
+    pub operator: ConditionOperator,
     #[serde(default)]
     pub right: ScalarValue,
-}
-
-fn default_equals_op() -> String {
-    OP_EQUALS.to_string()
 }
 
 pub(crate) fn default_true() -> bool {
@@ -380,7 +500,7 @@ impl Default for ConditionClause {
     fn default() -> Self {
         Self {
             left: ScalarValue::String(String::new()),
-            operator: OP_EQUALS.to_string(),
+            operator: ConditionOperator::Equals,
             right: ScalarValue::String(String::new()),
         }
     }
@@ -1779,6 +1899,30 @@ mod tests {
         };
         assert!(click_down.is_press_pair_of(&click_up));
         assert!(!click_down.is_press_pair_of(&down));
+    }
+
+    #[test]
+    fn condition_operator_strict_rejects_unknown() {
+        use std::str::FromStr;
+        assert_eq!(
+            ConditionOperator::try_parse("=="),
+            Some(ConditionOperator::Equals)
+        );
+        assert_eq!(
+            ConditionOperator::try_parse("CONTAINS"),
+            Some(ConditionOperator::Contains)
+        );
+        assert!(ConditionOperator::from_str("nope").is_err());
+    }
+
+    #[test]
+    fn condition_operator_deserialize_rejects_unknown() {
+        let err = serde_yaml::from_str::<ConditionClause>("operator: bogus\nleft: a\nright: b")
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("unknown ConditionOperator"),
+            "{err}"
+        );
     }
 
     #[test]
