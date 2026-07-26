@@ -242,8 +242,10 @@ impl ProgramCatalog {
         }
         let key = self.resolution_key().to_string();
         let (pt, src_key, data) = self.lookup_point_sourced(r, &key)?;
-        let x = resolve_scalar_int(&pt.x, macro_).map_err(|e| format!("point X: {e}"))?;
-        let y = resolve_scalar_int(&pt.y, macro_).map_err(|e| format!("point Y: {e}"))?;
+        let x =
+            resolve_scalar_int(&pt.x, &macro_.variables).map_err(|e| format!("point X: {e}"))?;
+        let y =
+            resolve_scalar_int(&pt.y, &macro_.variables).map_err(|e| format!("point Y: {e}"))?;
         self.remap_xy(x, y, src_key, data)
     }
 
@@ -257,10 +259,10 @@ impl ProgramCatalog {
         }
         let key = self.resolution_key().to_string();
         let (sa, src_key, data) = self.lookup_search_area_sourced(r, &key)?;
-        let lx = resolve_scalar_int(&sa.left_x, macro_)?;
-        let ty = resolve_scalar_int(&sa.top_y, macro_)?;
-        let rx = resolve_scalar_int(&sa.right_x, macro_)?;
-        let by = resolve_scalar_int(&sa.bottom_y, macro_)?;
+        let lx = resolve_scalar_int(&sa.left_x, &macro_.variables)?;
+        let ty = resolve_scalar_int(&sa.top_y, &macro_.variables)?;
+        let rx = resolve_scalar_int(&sa.right_x, &macro_.variables)?;
+        let by = resolve_scalar_int(&sa.bottom_y, &macro_.variables)?;
         let (lx, ty) = self.remap_xy(lx, ty, src_key, data)?;
         let (rx, by) = self.remap_xy(rx, by, src_key, data)?;
         Ok((lx, ty, rx, by))
