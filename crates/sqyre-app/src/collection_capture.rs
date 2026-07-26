@@ -2,7 +2,7 @@
 
 use sqyre_capture::shared_capturer;
 use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
-use sqyre_executor::ScreenCapturer;
+use sqyre_ports::ScreenCapturer;
 use sqyre_persist::{ProgramCatalog, ProgramCollection};
 use std::path::{Path, PathBuf};
 
@@ -92,7 +92,7 @@ mod tests {
     use image::Rgba;
     use sqyre_capture::SolidCapturer;
     use sqyre_domain::ScalarValue;
-    use sqyre_executor::DesktopRect;
+    use sqyre_ports::DesktopRect;
     use sqyre_persist::ProgramSearchArea;
 
     fn catalog_with_sa(root: PathBuf) -> ProgramCatalog {

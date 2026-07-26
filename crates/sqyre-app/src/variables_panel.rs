@@ -3,7 +3,7 @@
 use crate::action_tooltip::help;
 use eframe::egui;
 use sqyre_domain::{builtin_variable_catalog, Macro, VariableDecl, VariableType};
-use sqyre_executor::SharedRuntimeVars;
+use sqyre_ui_model::SharedRuntimeVars;
 use sqyre_validate::validate_variable_assignment_name;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -52,7 +52,16 @@ impl VariablesPanelUi {
     fn resolve_monitor_count(&mut self) -> usize {
         *self
             .cached_monitor_count
-            .get_or_insert_with(sqyre_capture::monitor_count)
+            .get_or_insert_with(|| {
+                #[cfg(feature = "native-runtime")]
+                {
+                    sqyre_capture::monitor_count()
+                }
+                #[cfg(not(feature = "native-runtime"))]
+                {
+                    1
+                }
+            })
     }
 
     /// Returns true when the caller should persist the macro.
