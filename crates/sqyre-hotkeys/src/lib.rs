@@ -1,6 +1,7 @@
 //! Global hotkey service with injectable no-op stub.
 
 mod continue_wait;
+mod error;
 mod macro_hotkeys;
 mod screen_click;
 
@@ -14,6 +15,8 @@ pub use macro_hotkeys::{
     MacroHotkeyBinding, MacroHotkeyBridge,
 };
 pub use screen_click::ScreenClickBridge;
+
+pub use error::HotkeyError;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -60,7 +63,7 @@ impl StopFlag {
 }
 
 pub trait HotkeyService: Send {
-    fn start(&mut self, callbacks: HotkeyCallbacks) -> Result<(), String>;
+    fn start(&mut self, callbacks: HotkeyCallbacks) -> Result<(), HotkeyError>;
     fn stop(&mut self);
 }
 
@@ -71,7 +74,7 @@ pub struct NullHotkeys {
 }
 
 impl HotkeyService for NullHotkeys {
-    fn start(&mut self, _callbacks: HotkeyCallbacks) -> Result<(), String> {
+    fn start(&mut self, _callbacks: HotkeyCallbacks) -> Result<(), HotkeyError> {
         self.running = true;
         Ok(())
     }
