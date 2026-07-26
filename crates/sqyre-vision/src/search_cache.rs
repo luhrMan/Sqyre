@@ -8,18 +8,29 @@
 use crate::image_util::{load_rgb_image, mask_as_u8, resize_mask};
 use parking_lot::{Mutex, RwLock};
 use sqyre_match::{blur_image_owned, ImageBuf};
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::SystemTime;
 
 /// Soft cap on cached template + mask bytes (evict oldest on insert).
 const MAX_CACHE_BYTES: usize = 64 * 1024 * 1024;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy)]
 enum EntryKind {
     Template,
     Mask,
+}
+
+/// Monotonic "clock" used to stamp recency without a write lock: a hit stores
+/// the next tick into the entry's atomic field via a shared reference, so
+/// touching an entry never needs to upgrade the cache's read lock to a write
+/// lock. Recency order is only consulted (via an O(n) scan) when evicting on
+/// insert, which is far rarer than lookups.
+fn next_tick() -> u64 {
+    static CLOCK: AtomicU64 = AtomicU64::new(0);
+    CLOCK.fetch_add(1, Ordering::Relaxed)
 }
 
 struct TemplateEntry {
@@ -27,6 +38,7 @@ struct TemplateEntry {
     mod_time: SystemTime,
     blur_kernel: i32,
     bytes: usize,
+    last_used: AtomicU64,
 }
 
 struct MaskEntry {
@@ -34,30 +46,17 @@ struct MaskEntry {
     mask: Arc<Vec<u8>>,
     mod_time: SystemTime,
     bytes: usize,
+    last_used: AtomicU64,
 }
 
 #[derive(Default)]
 struct SearchCache {
     templates: HashMap<String, TemplateEntry>,
     image_masks: HashMap<String, MaskEntry>,
-    /// Oldest at front; newest / most recently used at back.
-    lru: VecDeque<(EntryKind, String)>,
     bytes: usize,
 }
 
 impl SearchCache {
-    fn touch(&mut self, kind: EntryKind, key: &str) {
-        let Some(i) = self.lru.iter().position(|(k, s)| *k == kind && s == key) else {
-            return;
-        };
-        if i + 1 == self.lru.len() {
-            return; // already most recent
-        }
-        if let Some(item) = self.lru.remove(i) {
-            self.lru.push_back(item);
-        }
-    }
-
     fn remove_key(&mut self, kind: EntryKind, key: &str) {
         match kind {
             EntryKind::Template => {
@@ -71,26 +70,38 @@ impl SearchCache {
                 }
             }
         }
-        self.lru.retain(|(k, s)| !(*k == kind && s == key));
+    }
+
+    /// Finds the globally least-recently-used entry across both maps.
+    fn least_recently_used(&self) -> Option<(EntryKind, String)> {
+        let oldest_template = self
+            .templates
+            .iter()
+            .map(|(k, e)| (e.last_used.load(Ordering::Relaxed), k));
+        let oldest_mask = self
+            .image_masks
+            .iter()
+            .map(|(k, e)| (e.last_used.load(Ordering::Relaxed), k));
+        let template_min = oldest_template.min_by_key(|(t, _)| *t);
+        let mask_min = oldest_mask.min_by_key(|(t, _)| *t);
+        match (template_min, mask_min) {
+            (Some((tt, tk)), Some((mt, mk))) => Some(if tt <= mt {
+                (EntryKind::Template, tk.clone())
+            } else {
+                (EntryKind::Mask, mk.clone())
+            }),
+            (Some((_, tk)), None) => Some((EntryKind::Template, tk.clone())),
+            (None, Some((_, mk))) => Some((EntryKind::Mask, mk.clone())),
+            (None, None) => None,
+        }
     }
 
     fn evict_until_fits(&mut self, extra: usize) {
         while self.bytes + extra > MAX_CACHE_BYTES {
-            let Some((kind, key)) = self.lru.pop_front() else {
+            let Some((kind, key)) = self.least_recently_used() else {
                 break;
             };
-            match kind {
-                EntryKind::Template => {
-                    if let Some(e) = self.templates.remove(&key) {
-                        self.bytes = self.bytes.saturating_sub(e.bytes);
-                    }
-                }
-                EntryKind::Mask => {
-                    if let Some(e) = self.image_masks.remove(&key) {
-                        self.bytes = self.bytes.saturating_sub(e.bytes);
-                    }
-                }
-            }
+            self.remove_key(kind, &key);
         }
     }
 
@@ -98,22 +109,19 @@ impl SearchCache {
         self.remove_key(EntryKind::Template, &key);
         self.evict_until_fits(entry.bytes);
         self.bytes += entry.bytes;
-        self.templates.insert(key.clone(), entry);
-        self.lru.push_back((EntryKind::Template, key));
+        self.templates.insert(key, entry);
     }
 
     fn insert_mask(&mut self, key: String, entry: MaskEntry) {
         self.remove_key(EntryKind::Mask, &key);
         self.evict_until_fits(entry.bytes);
         self.bytes += entry.bytes;
-        self.image_masks.insert(key.clone(), entry);
-        self.lru.push_back((EntryKind::Mask, key));
+        self.image_masks.insert(key, entry);
     }
 
     fn clear(&mut self) {
         self.templates.clear();
         self.image_masks.clear();
-        self.lru.clear();
         self.bytes = 0;
     }
 }
@@ -218,10 +226,9 @@ fn template_cache_hit(key: &str, mod_time: SystemTime, blur_kernel: i32) -> Opti
     let guard = cache().read();
     let entry = guard.templates.get(key)?;
     if entry.mod_time == mod_time && entry.blur_kernel == blur_kernel {
-        let out = Arc::clone(&entry.blurred);
-        drop(guard);
-        cache().write().touch(EntryKind::Template, key);
-        Some(out)
+        // Stamp recency through the atomic field only: no write-lock upgrade needed.
+        entry.last_used.store(next_tick(), Ordering::Relaxed);
+        Some(Arc::clone(&entry.blurred))
     } else {
         None
     }
@@ -231,10 +238,8 @@ fn mask_cache_hit(key: &str, mod_time: SystemTime) -> Option<Arc<Vec<u8>>> {
     let guard = cache().read();
     let entry = guard.image_masks.get(key)?;
     if entry.mod_time == mod_time {
-        let out = Arc::clone(&entry.mask);
-        drop(guard);
-        cache().write().touch(EntryKind::Mask, key);
-        Some(out)
+        entry.last_used.store(next_tick(), Ordering::Relaxed);
+        Some(Arc::clone(&entry.mask))
     } else {
         None
     }
@@ -276,6 +281,7 @@ pub fn get_cached_blurred_template(
             mod_time,
             blur_kernel,
             bytes,
+            last_used: AtomicU64::new(next_tick()),
         },
     );
     drop(_busy);
@@ -315,6 +321,7 @@ pub fn get_cached_image_mask(
             mask: Arc::clone(&mask),
             mod_time,
             bytes,
+            last_used: AtomicU64::new(next_tick()),
         },
     );
     drop(_busy);
