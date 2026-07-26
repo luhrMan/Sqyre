@@ -18,7 +18,7 @@ use eframe::egui;
 use sqyre_domain::{
     parse_hex_color, Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs,
     CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, Macro, MatchMode, MatchOrder,
-    RepeatMode, ScalarValue, TemplateMatchMethod, VariableAssignment, WaitTilFoundConfig,
+    MatchMethod, RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
@@ -422,9 +422,9 @@ pub fn paint_edit_fields(
             tip_wrapped_section(ui, |ui| {
                 let mut method_label = match_method.label().to_string();
                 let method_opts: Vec<&str> =
-                    TemplateMatchMethod::ALL.iter().map(|m| m.label()).collect();
+                    MatchMethod::ALL.iter().map(|m| m.label()).collect();
                 combo_str(ui, "Method", h::IS_METHOD, &mut method_label, &method_opts);
-                if let Some(m) = TemplateMatchMethod::ALL
+                if let Some(m) = MatchMethod::ALL
                     .iter()
                     .copied()
                     .find(|m| m.label() == method_label)
@@ -433,7 +433,7 @@ pub fn paint_edit_fields(
                 }
                 let tol_help = if matches!(
                     *match_method,
-                    TemplateMatchMethod::Sqdiff | TemplateMatchMethod::SqdiffNormed
+                    MatchMethod::Sqdiff | MatchMethod::SqdiffNormed
                 ) {
                     h::IS_TOLERANCE_SQDIFF
                 } else if match_method.is_normed() {
