@@ -1,5 +1,7 @@
 //! Staged field editors and draft apply (preserve `subactions`).
 
+mod edit_detect;
+
 use super::sections::{tip_section, tip_wrapped_section};
 use super::{help, help as h};
 use crate::data_editor_preview::show_file_hover;
@@ -8,7 +10,6 @@ use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use crate::pickers::{self, options, ActivePicker, CoordKind};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
-use crate::tree_chrome;
 use crate::var_pills;
 use crate::widgets::{
     combo_str, combo_str_labeled, drag_field, drag_field_enabled, searchable_combo,
@@ -16,9 +17,9 @@ use crate::widgets::{
 };
 use eframe::egui;
 use sqyre_domain::{
-    parse_hex_color, Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs,
-    CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, Macro, MatchMode, MatchOrder,
-    MatchMethod, RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig,
+    Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs, CoordinateRef,
+    DetectionBranch, ListColumn, LoopJumpMode, Macro, MatchMode, MatchOrder, RepeatMode,
+    ScalarValue, VariableAssignment, WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
@@ -400,57 +401,23 @@ pub fn paint_edit_fields(
             match_method,
             detection,
         } => {
-            tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Name", h::NAME, name);
-            });
-            tip_wrapped_section(ui, |ui| {
-                coords_editor(ui, &mut detection.coords, known_vars, is_dark);
-            });
-            tip_section(ui, |ui| {
-                targets_editor(ui, catalog, icons, targets, picker);
-            });
-            search_area_section(
+            edit_detect::paint_image_search_fields(
                 ui,
                 &mut CatalogPaint {
                     catalog,
                     icons,
                     previews,
                 },
-                search_area,
                 picker,
+                VarTheme { known_vars, is_dark },
+                name,
+                targets,
+                search_area,
+                tolerance,
+                blur,
+                match_method,
+                detection,
             );
-            tip_wrapped_section(ui, |ui| {
-                let mut method_label = match_method.label().to_string();
-                let method_opts: Vec<&str> =
-                    MatchMethod::ALL.iter().map(|m| m.label()).collect();
-                combo_str(ui, "Method", h::IS_METHOD, &mut method_label, &method_opts);
-                if let Some(m) = MatchMethod::ALL
-                    .iter()
-                    .copied()
-                    .find(|m| m.label() == method_label)
-                {
-                    *match_method = m;
-                }
-                let tol_help = if matches!(
-                    *match_method,
-                    MatchMethod::Sqdiff | MatchMethod::SqdiffNormed
-                ) {
-                    h::IS_TOLERANCE_SQDIFF
-                } else if match_method.is_normed() {
-                    h::IS_TOLERANCE
-                } else {
-                    h::IS_TOLERANCE_UNNORMED
-                };
-                if match_method.is_normed() {
-                    drag_field(ui, "Tolerance", tol_help, tolerance, |d| {
-                        d.speed(0.01).range(0.0..=1.0)
-                    });
-                } else {
-                    drag_field(ui, "Tolerance", tol_help, tolerance, |d| d.speed(1.0));
-                }
-                drag_field(ui, "Blur", h::IS_BLUR, blur, |d| d);
-            });
-            detection_branch_editor(ui, detection);
         }
         ActionKind::Ocr {
             name,
@@ -465,61 +432,28 @@ pub fn paint_edit_fields(
             threshold_invert,
             detection,
         } => {
-            tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Name", h::NAME, name);
-            });
-            tip_wrapped_section(ui, |ui| {
-                var_pills::var_name_text_edit(
-                    ui,
-                    "Output variable",
-                    output_variable,
-                    known_vars,
-                    is_dark,
-                    W_VAR,
-                    h::OCR_OUTPUT,
-                );
-                coords_editor(ui, &mut detection.coords, known_vars, is_dark);
-            });
-            tip_wrapped_section(ui, |ui| {
-                var_ref_field(
-                    ui,
-                    "Target",
-                    h::OCR_TARGET,
-                    target,
-                    known_vars,
-                    is_dark,
-                    W_VAR,
-                    active_macro,
-                );
-            });
-            search_area_section(
+            edit_detect::paint_ocr_fields(
                 ui,
                 &mut CatalogPaint {
                     catalog,
                     icons,
                     previews,
                 },
-                search_area,
                 picker,
+                VarTheme { known_vars, is_dark },
+                active_macro,
+                name,
+                target,
+                search_area,
+                output_variable,
+                blur,
+                min_threshold,
+                resize,
+                grayscale,
+                threshold_otsu,
+                threshold_invert,
+                detection,
             );
-            detection_branch_editor(ui, detection);
-            tip_wrapped_section(ui, |ui| {
-                drag_field(ui, "Blur", h::OCR_BLUR, blur, |d| d);
-                drag_field(
-                    ui,
-                    "Min threshold",
-                    h::OCR_MIN_THRESHOLD,
-                    min_threshold,
-                    |d| d,
-                );
-                drag_field(ui, "Resize", h::OCR_RESIZE, resize, |d| d.speed(0.01));
-                help::tip(ui.checkbox(grayscale, "Grayscale"), h::OCR_GRAYSCALE);
-                help::tip(ui.checkbox(threshold_otsu, "Threshold Otsu"), h::OCR_OTSU);
-                help::tip(
-                    ui.checkbox(threshold_invert, "Threshold invert"),
-                    h::OCR_INVERT,
-                );
-            });
         }
         ActionKind::FindPixel {
             name,
@@ -528,64 +462,23 @@ pub fn paint_edit_fields(
             color_tolerance,
             detection,
         } => {
-            tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Name", h::NAME, name);
-            });
-            tip_wrapped_section(ui, |ui| {
-                coords_editor(ui, &mut detection.coords, known_vars, is_dark);
-            });
-            search_area_section(
+            edit_detect::paint_find_pixel_fields(
                 ui,
                 &mut CatalogPaint {
                     catalog,
                     icons,
                     previews,
                 },
-                search_area,
                 picker,
+                VarTheme { known_vars, is_dark },
+                active_macro,
+                screen_click,
+                name,
+                search_area,
+                target_color,
+                color_tolerance,
+                detection,
             );
-            tip_wrapped_section(ui, |ui| {
-                ui.horizontal(|ui| {
-                    var_ref_field(
-                        ui,
-                        "Target color",
-                        h::PIXEL_COLOR,
-                        target_color,
-                        known_vars,
-                        is_dark,
-                        W_VAR,
-                        active_macro,
-                    );
-                    if let Some(rgba) = parse_hex_color(target_color) {
-                        let size = egui::vec2(16.0, 16.0);
-                        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                        ui.painter().rect(
-                            rect,
-                            3.0,
-                            tree_chrome::rgba_pub(rgba),
-                            egui::Stroke::new(1.0, egui::Color32::from_gray(80)),
-                            egui::StrokeKind::Outside,
-                        );
-                    }
-                    if theme::record_icon_button(
-                        ui,
-                        "Click on screen to sample pixel color",
-                        !screen_click.is_armed(),
-                    )
-                    .clicked()
-                    {
-                        screen_click.arm_color();
-                    }
-                });
-                drag_field(
-                    ui,
-                    "Color tolerance",
-                    h::PIXEL_TOLERANCE,
-                    color_tolerance,
-                    |d| d,
-                );
-            });
-            detection_branch_editor(ui, detection);
         }
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
