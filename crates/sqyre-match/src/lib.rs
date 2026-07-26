@@ -18,8 +18,10 @@ pub use peaks::{
 };
 pub use template::{
     match_template, match_template_with_prepared, prepare_search, prepare_template, MatchError,
-    MatchMap, MatchMethod, PreparedTemplate, SearchPrep,
+    MatchMap, PreparedTemplate, SearchPrep,
 };
+
+pub use sqyre_domain::MatchMethod;
 
 /// Full path used by image search when the search image is already blurred and the
 /// template is not: blur template with `blur`, run matching, extract peaks.

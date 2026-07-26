@@ -4344,7 +4344,6 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_yaml",
- "sqyre-match",
  "sqyre-varref",
  "uuid",
 ]
@@ -4371,6 +4370,7 @@ version = "0.1.0"
 dependencies = [
  "parking_lot",
  "rdev",
+ "sqyre-domain",
  "web-time",
  "windows",
 ]
@@ -4394,7 +4394,7 @@ dependencies = [
  "purecv",
  "rayon",
  "rustfft",
- "serde",
+ "sqyre-domain",
  "thiserror 2.0.19",
 ]
 
@@ -4463,7 +4463,6 @@ name = "sqyre-validate"
 version = "0.1.0"
 dependencies = [
  "sqyre-domain",
- "sqyre-hotkeys",
  "sqyre-varref",
  "thiserror 2.0.19",
 ]

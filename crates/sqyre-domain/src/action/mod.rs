@@ -7,7 +7,7 @@ pub use wire_keys::WIRE_TYPE_KEYS;
 
 use crate::{CoordinateRef, ScalarValue};
 use serde::{Deserialize, Serialize};
-pub use sqyre_match::MatchMethod;
+pub use crate::match_method::MatchMethod;
 use uuid::Uuid;
 
 /// Declares a C-like string enum with `as_str`, `parse`, `Display`, `From`, and serde.

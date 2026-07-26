@@ -3,7 +3,8 @@
 //! Compares [`match_template`] against naive OpenCV formulas at a fixed ROI point,
 //! and checks all-ones binary mask ≈ no mask.
 
-use sqyre_match::{match_template, ImageBuf, MatchMethod};
+use sqyre_domain::MatchMethod;
+use sqyre_match::{match_template, ImageBuf};
 
 const IMG_W: usize = 160;
 const IMG_H: usize = 100;
