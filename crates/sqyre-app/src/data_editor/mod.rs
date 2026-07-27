@@ -21,8 +21,9 @@ use helpers::{overlay_hex_or_empty, rgba_color};
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    Database, OverlayButtonConfig, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BORDER_WIDTH,
-    DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS,
+    default_overlay_position, Database, OverlayButtonConfig, ProgramCatalog, UserSettings,
+    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS,
+    DEFAULT_OVERLAY_FALLBACK_SCREEN_H, DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -204,6 +205,14 @@ pub(super) struct CollectionCapturePending {
 
 impl Default for DataEditor {
     fn default() -> Self {
+        let (overlay_x, overlay_y) = default_overlay_position(
+            0.0,
+            0.0,
+            DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
+            DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
+            DEFAULT_OVERLAY_BUTTON_SIZE,
+            0,
+        );
         Self {
             open: false,
             tab: EditorTab::Programs,
@@ -238,8 +247,8 @@ impl Default for DataEditor {
             form_overlay_enabled: true,
             form_overlay_icon: overlay_icons::DEFAULT_ICON_ID.into(),
             form_overlay_point: String::new(),
-            form_overlay_x: 48.0,
-            form_overlay_y: 48.0,
+            form_overlay_x: overlay_x,
+            form_overlay_y: overlay_y,
             form_overlay_size: DEFAULT_OVERLAY_BUTTON_SIZE,
             form_overlay_corner_radius: DEFAULT_OVERLAY_CORNER_RADIUS,
             form_overlay_border_width: DEFAULT_OVERLAY_BORDER_WIDTH,
@@ -375,7 +384,7 @@ impl DataEditor {
         self.open = open;
         self.draw_confirm(ctx, db, macros, catalog, icons, previews, settings);
         self.draw_overlay_icon_picker(ctx, settings);
-        self.poll_form_picker(ctx, catalog, icons, previews, macros);
+        self.poll_form_picker(ctx, catalog, icons, previews, macros, settings);
         self.poll_autopix(ctx);
         self.poll_collection_capture(ctx, catalog, icons);
     }
@@ -387,6 +396,7 @@ impl DataEditor {
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
         macros: &[Macro],
+        settings: &mut UserSettings,
     ) {
         if !self.window_picker.is_open() {
             return;
@@ -418,6 +428,17 @@ impl DataEditor {
                     self.form_overlay_y = y as f32;
                 }
                 self.form_overlay_point = coord.0;
+                if matches!(self.tab, EditorTab::Overlay) {
+                    if let Some(id) = self.selected_entity.clone() {
+                        if let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == id)
+                        {
+                            btn.point = self.form_overlay_point.clone();
+                            btn.x = self.form_overlay_x;
+                            btn.y = self.form_overlay_y;
+                            self.persist_overlay_settings(settings);
+                        }
+                    }
+                }
             }
             _ => {}
         }

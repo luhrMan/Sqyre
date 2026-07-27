@@ -263,8 +263,9 @@ impl DataEditor {
                     .count();
                 let mut btn = OverlayButtonConfig::new(new_overlay_button_id(), &prog);
                 btn.icon = overlay_icons::DEFAULT_ICON_ID.into();
-                btn.x = 48.0 + (n as f32) * 60.0;
-                btn.y = 48.0;
+                let (x, y) = super::overlay::default_overlay_xy(catalog, n);
+                btn.x = x;
+                btn.y = y;
                 btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;
                 if let Some(first) = macros.first() {
                     btn.macro_name = first.name.clone();

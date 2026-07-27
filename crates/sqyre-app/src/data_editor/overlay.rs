@@ -3,7 +3,44 @@
 use super::DataEditor;
 use crate::overlay_icons;
 use eframe::egui;
-use sqyre_persist::UserSettings;
+use sqyre_persist::{
+    default_overlay_position, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
+    DEFAULT_OVERLAY_FALLBACK_SCREEN_H, DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
+};
+
+/// Primary-monitor desktop rect `(x, y, w, h)` for centering new overlay buttons.
+pub(crate) fn primary_overlay_screen_rect(catalog: &ProgramCatalog) -> (f32, f32, f32, f32) {
+    #[cfg(feature = "native-runtime")]
+    {
+        if let Ok(capturer) = sqyre_capture::shared_capturer() {
+            if let Ok(rects) = capturer.monitor_rects_ref() {
+                if let Some(r) = rects.into_iter().find(|r| r.w > 1 && r.h > 1) {
+                    return (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+                }
+            }
+        }
+    }
+    let key = catalog.resolution_key();
+    if let Some((w, h)) = key.split_once('x') {
+        if let (Ok(w), Ok(h)) = (w.parse::<f32>(), h.parse::<f32>()) {
+            if w > 1.0 && h > 1.0 {
+                return (0.0, 0.0, w, h);
+            }
+        }
+    }
+    (
+        0.0,
+        0.0,
+        DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
+        DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
+    )
+}
+
+/// Centered default `(x, y)` for a new overlay button on the primary monitor.
+pub(crate) fn default_overlay_xy(catalog: &ProgramCatalog, index: usize) -> (f32, f32) {
+    let (sx, sy, sw, sh) = primary_overlay_screen_rect(catalog);
+    default_overlay_position(sx, sy, sw, sh, DEFAULT_OVERLAY_BUTTON_SIZE, index)
+}
 
 impl DataEditor {
     pub(crate) fn persist_overlay_settings(&mut self, settings: &mut UserSettings) -> bool {
