@@ -256,6 +256,10 @@ fn show_button_viewport(
     // Outside stroke needs room; hover thickens border by ~4/3.
     let pad = VIEWPORT_PAD_MIN.max(style.border_width * (2.0 / 1.5) + 1.0);
     let outer = size + pad * 2.0;
+    // Catalog / settings x,y are physical desktop pixels (same as Points).
+    // egui viewport position is logical points — same conversion as recording_overlay.
+    let ppp = ctx.pixels_per_point().max(0.01);
+    let btn_pos = Pos2::new(btn.x / ppp, btn.y / ppp);
     let builder = ViewportBuilder::default()
         // Fixed title so X11 skip-taskbar can find these; avoids N distinct "Sqyre: …" Alt-Tab entries.
         .with_title(OVERLAY_WM_TITLE)
@@ -269,9 +273,8 @@ fn show_button_viewport(
         .with_transparent(true)
         .with_inner_size([outer, outer])
         .with_min_inner_size([outer, outer])
-        .with_position(Pos2::new(btn.x, btn.y));
+        .with_position(btn_pos);
 
-    let btn_pos = Pos2::new(btn.x, btn.y);
     ctx.show_viewport_deferred(id, builder, move |ui, class| {
         paint_button(
             ui,
