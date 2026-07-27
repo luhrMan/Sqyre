@@ -127,7 +127,7 @@ fn enum_top_level_windows() -> Result<Vec<HWND>, String> {
             Some(enum_windows_proc),
             LPARAM(&mut hwnds as *mut Vec<HWND> as isize),
         )
-        .map_err(|e| CaptureError::Message(format!("EnumWindows failed: {e}")))?;
+        .map_err(|e| format!("EnumWindows failed: {e}"))?;
     }
     Ok(hwnds)
 }

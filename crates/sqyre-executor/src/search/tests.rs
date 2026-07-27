@@ -1,6 +1,5 @@
 use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionHit};
 use super::ocr::ocr_target_matched;
-use sqyre_ui_model::lines_for;
 use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
 use crate::test_support::{RecordingBackend, RecordingCapturer, SEARCH_FIXED_AREA};
@@ -11,6 +10,7 @@ use sqyre_domain::{
     MatchOrder, RepeatMode, ScalarValue, WaitTilFoundConfig,
 };
 use sqyre_match::{search_blur_kernel, ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
+use sqyre_ui_model::lines_for;
 use sqyre_vision::get_cached_blurred_template;
 use std::collections::HashMap;
 use std::path::PathBuf;

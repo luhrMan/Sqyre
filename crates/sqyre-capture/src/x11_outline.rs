@@ -16,8 +16,8 @@ use x11::xlib::{
 };
 
 use crate::outline_geometry::{edge_placements, outline_should_clear};
-use crate::CaptureError;
 pub use crate::outline_rect::OutlineRect;
+use crate::CaptureError;
 
 /// Selection stroke color (gold).
 const STROKE_R: u16 = 255;

@@ -225,6 +225,9 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
             app.persist_macro_at(idx);
         }
     }
+    if let Err(e) = sqyre_validate::validate_macro(&app.workspace.macros[idx]) {
+        ui.colored_label(crate::theme::error_fg(), format!("Validation: {e}"));
+    }
     // Selection / length may have changed after rename.
     let idx = app
         .workspace

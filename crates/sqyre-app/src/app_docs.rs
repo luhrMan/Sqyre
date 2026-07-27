@@ -9,19 +9,19 @@ use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
 use crate::macro_meta::MacroMetaUi;
 use crate::preview_tooltip::PreviewTooltipCache;
-#[cfg(feature = "native-runtime")]
-use crate::{macro_overlay::MacroOverlay, recording_overlay::RecordingOverlay};
 use crate::run_session::RunSession;
 use crate::settings::SettingsUi;
 use crate::tree_state::TreeState;
 use crate::variables_panel;
 use crate::workspace::Workspace;
 use crate::{docs_fixture, tray, SqyreApp};
+#[cfg(feature = "native-runtime")]
+use crate::{macro_overlay::MacroOverlay, recording_overlay::RecordingOverlay};
 use eframe::egui;
 use parking_lot::Mutex;
-use sqyre_ui_model::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use sqyre_hotkeys::{HotkeyService, NullHotkeys, ScreenClickBridge};
 use sqyre_persist::UserSettings;
+use sqyre_ui_model::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
 
 impl SqyreApp {

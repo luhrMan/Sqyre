@@ -381,16 +381,18 @@ fn validate_continue_key(keys: &[String]) -> Result<()> {
         .map_err(ValidateError::Message)
 }
 
-fn validate_coordinate_ref(label: &str, coord: &CoordinateRef, macro_: Option<&Macro>) -> Result<()> {
+fn validate_coordinate_ref(
+    label: &str,
+    coord: &CoordinateRef,
+    _macro_: Option<&Macro>,
+) -> Result<()> {
     if coord.0.trim().is_empty() {
         return Err(ValidateError::Message(format!(
             "{label}: set a coordinate before saving"
         )));
     }
-    let v = validate_numeric_expression(&coord.0, macro_);
-    if v.blocks_submit() {
-        return Err(ValidateError::Message(format!("{label}: {}", v.error)));
-    }
+    // Catalog refs are `program~entity` (or legacy bare names), resolved at runtime —
+    // not math expressions. Do not run expression evaluation on them.
     Ok(())
 }
 
@@ -486,7 +488,9 @@ fn validate_chord_keys(label: &str, keys: &[String]) -> Result<()> {
 
 fn validate_target_color(label: &str, target_color: &str) -> Result<()> {
     if target_color.trim().is_empty() {
-        return Err(ValidateError::Message(format!("{label}: set a target color")));
+        return Err(ValidateError::Message(format!(
+            "{label}: set a target color"
+        )));
     }
     if !sqyre_varref::contains(target_color) && parse_hex_color(target_color).is_none() {
         return Err(ValidateError::Message(format!(
@@ -563,7 +567,12 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
             validate_target_color("find pixel", target_color)?;
             validate_wait_config("find pixel", &detection.wait)?;
         }
-        ActionKind::ForEachRow { sources, start_row, end_row, .. } => {
+        ActionKind::ForEachRow {
+            sources,
+            start_row,
+            end_row,
+            ..
+        } => {
             if sources.is_empty() || sources.iter().all(|s| s.source.trim().is_empty()) {
                 return Err(ValidateError::Message(
                     "for each row: add at least one source column".into(),
@@ -1054,6 +1063,21 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("coordinate"));
+    }
+
+    #[test]
+    fn validate_move_accepts_catalog_point_ref() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Move {
+                point: CoordinateRef("General~Windows".into()),
+                smooth: false,
+                smooth_low: 0.05,
+                smooth_high: 0.2,
+                smooth_delay_ms: 1,
+            },
+        };
+        assert!(validate_action(&a, None).is_ok());
     }
 
     #[test]

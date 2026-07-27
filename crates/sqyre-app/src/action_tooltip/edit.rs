@@ -14,14 +14,13 @@ use crate::theme;
 use crate::var_pills;
 use crate::widgets::{
     combo_condition_operator, combo_str, combo_str_labeled, drag_field, drag_field_enabled,
-    searchable_combo,
-    searchable_combo_with, text_field, W_MULTILINE, W_TEXT, W_VAR,
+    searchable_combo, searchable_combo_with, text_field, W_MULTILINE, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
     Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs, CoordinateRef,
-    DetectionBranch, KnownVariableNames, ListColumn, Macro, MatchMode, MatchOrder,
-    RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig,
+    DetectionBranch, KnownVariableNames, ListColumn, Macro, MatchMode, MatchOrder, RepeatMode,
+    ScalarValue, VariableAssignment, WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{

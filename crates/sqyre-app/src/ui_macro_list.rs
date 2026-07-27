@@ -57,27 +57,36 @@ fn elide_to_width(ui: &egui::Ui, text: &str, max_width: f32, font_id: egui::Font
 
 /// Macro name on the first line; hotkey as a weak small hint below when set.
 /// Each line is shown in full when it fits `max_text_width`, otherwise elided with `…`.
-fn macro_list_item_text(ui: &egui::Ui, m: &Macro, max_text_width: f32) -> egui::WidgetText {
+/// When `validation_error` is set, the name is tinted and callers should attach hover text.
+fn macro_list_item_text(
+    ui: &egui::Ui,
+    m: &Macro,
+    max_text_width: f32,
+    validation_error: Option<&str>,
+) -> egui::WidgetText {
     let style = ui.style();
     let name_font = egui::FontSelection::Default.resolve(style);
     let name = elide_to_width(ui, &m.name, max_text_width, name_font);
+    let name_color = if validation_error.is_some() {
+        crate::theme::error_fg()
+    } else {
+        style.visuals.text_color()
+    };
 
     if m.hotkey.is_empty() {
-        return name.into();
+        return egui::RichText::new(name).color(name_color).into();
     }
 
     let hotkey_font = egui::TextStyle::Small.resolve(style);
     let hotkey = elide_to_width(ui, &format_hotkey(&m.hotkey), max_text_width, hotkey_font);
 
     let mut job = egui::text::LayoutJob::default();
-    egui::RichText::new(name)
-        .color(style.visuals.text_color())
-        .append_to(
-            &mut job,
-            style,
-            egui::FontSelection::Default,
-            egui::Align::LEFT,
-        );
+    egui::RichText::new(name).color(name_color).append_to(
+        &mut job,
+        style,
+        egui::FontSelection::Default,
+        egui::Align::LEFT,
+    );
     egui::RichText::new(format!("\n{hotkey}"))
         .small()
         .color(style.visuals.weak_text_color())
@@ -135,21 +144,22 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             ui.set_max_width(pane_w);
 
             ui.heading("Macros");
+            // True load failures only (corrupt db / undecodable macros). Per-macro
+            // validation issues are shown on the macro rows and action tree.
             if let Some(err) = &app.workspace.load_error {
                 ui.colored_label(crate::theme::error_fg(), format!("Load error: {err}"));
-            } else {
-                #[cfg(target_arch = "wasm32")]
-                ui.small(format!(
-                    "{} (browser — import/export db.yaml)",
-                    app.workspace.macros.len()
-                ));
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    let path = sqyre_persist::db_path();
-                    let status = format!("{} from {}", app.workspace.macros.len(), path.display());
-                    let font = egui::TextStyle::Small.resolve(ui.style());
-                    ui.small(elide_to_width(ui, &status, pane_w, font));
-                }
+            }
+            #[cfg(target_arch = "wasm32")]
+            ui.small(format!(
+                "{} (browser — import/export db.yaml)",
+                app.workspace.macros.len()
+            ));
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                let path = sqyre_persist::db_path();
+                let status = format!("{} from {}", app.workspace.macros.len(), path.display());
+                let font = egui::TextStyle::Small.resolve(ui.style());
+                ui.small(elide_to_width(ui, &status, pane_w, font));
             }
             if let Some(warn) = &app.workspace.platform_warning {
                 ui.colored_label(crate::theme::warn_fg(), warn);
@@ -275,18 +285,27 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                                 let width = ui.available_width().min(list_w).max(0.0);
                                 let text_width =
                                     (width - ui.spacing().button_padding.x * 2.0).max(0.0);
-                                let label = macro_list_item_text(ui, m, text_width);
-                                if ui
-                                    .add(
-                                        egui::Button::selectable(
-                                            app.workspace.selected_macro == i,
-                                            label,
-                                        )
-                                        .wrap_mode(egui::TextWrapMode::Extend)
-                                        .min_size(egui::vec2(width, 0.0)),
+                                let validation_err = sqyre_validate::validate_macro(m)
+                                    .err()
+                                    .map(|e| e.to_string());
+                                let label = macro_list_item_text(
+                                    ui,
+                                    m,
+                                    text_width,
+                                    validation_err.as_deref(),
+                                );
+                                let mut resp = ui.add(
+                                    egui::Button::selectable(
+                                        app.workspace.selected_macro == i,
+                                        label,
                                     )
-                                    .clicked()
-                                {
+                                    .wrap_mode(egui::TextWrapMode::Extend)
+                                    .min_size(egui::vec2(width, 0.0)),
+                                );
+                                if let Some(err) = validation_err.as_deref() {
+                                    resp = resp.on_hover_text(format!("Validation: {err}"));
+                                }
+                                if resp.clicked() {
                                     clicked_macro = Some(i);
                                 }
                             }

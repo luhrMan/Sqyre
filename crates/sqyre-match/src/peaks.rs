@@ -1,7 +1,7 @@
 use crate::image::Point;
 use crate::template::MatchMap;
-use sqyre_domain::MatchMethod;
 use rayon::prelude::*;
+use sqyre_domain::MatchMethod;
 use std::collections::HashMap;
 
 /// Default distance for spatially deduplicating nearby match peaks.

@@ -496,5 +496,4 @@ mod tests {
         assert!(err.contains("stopped"));
         handle.join().unwrap();
     }
-
 }
