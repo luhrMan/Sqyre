@@ -199,6 +199,7 @@ impl MacroOverlay {
         if let Err(e) = enable_overlay_window_transparency() {
             note(&format!("overlay: enable transparency failed: {e}"));
         }
+        mark_site("overlay:hint_windows:done");
     }
 }
 
