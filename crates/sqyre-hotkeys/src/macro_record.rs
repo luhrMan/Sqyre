@@ -239,6 +239,11 @@ impl MacroRecordBridge {
         g.started_at = None;
     }
 
+    /// Snapshot of events recorded so far (while armed or until taken).
+    pub fn peek_events(&self) -> Vec<MacroRecordEvent> {
+        self.inner.lock().events.clone()
+    }
+
     pub fn take_cancelled(&self) -> bool {
         let mut g = self.inner.lock();
         let c = g.cancelled;
