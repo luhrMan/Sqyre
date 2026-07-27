@@ -1,6 +1,6 @@
 use sqyre_domain::{CoordinateRef, Macro};
-use sqyre_ports::{CoordinateResolver, IconStore, ItemMeta, MacroLookup, PortError};
 use sqyre_persist::{ensure_general_program, Database, MonitorRect, ProgramCatalog};
+use sqyre_ports::{CoordinateResolver, IconStore, ItemMeta, MacroLookup, PortError};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;

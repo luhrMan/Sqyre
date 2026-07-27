@@ -329,6 +329,7 @@ pub fn paint_action_row(
     highlight: RowHighlight,
     pills_cache: &mut HashMap<ActionId, (u64, Vec<SummaryPill>)>,
     paint_revision: u64,
+    validation_error: Option<&str>,
 ) -> RowInteraction {
     let mut action_click = RowAction::None;
     let mut chrome_hovered = false;
@@ -465,12 +466,30 @@ pub fn paint_action_row(
                         {
                             tip_hovered = true;
                         }
+
+                        if let Some(err) = validation_error {
+                            let badge = ui
+                                .label(
+                                    egui::RichText::new("⚠")
+                                        .color(crate::theme::error_fg())
+                                        .strong(),
+                                )
+                                .on_hover_text(err);
+                            extend_drag_handle(&mut drag_handle_rect, badge.rect);
+                            if badge.hovered() {
+                                tip_hovered = true;
+                            }
+                        }
                     },
                 );
             }
         },
     );
 
+    if validation_error.is_some() {
+        ui.painter()
+            .rect_filled(row.response.rect, 0.0, highlight_invalid_color());
+    }
     paint_row_highlight(ui, row.response.rect, highlight);
 
     // Keep row click/hover sense off the logs/delete chrome so they win interaction.
@@ -533,6 +552,11 @@ fn highlight_fill_color() -> Color32 {
 /// Soft gold tint for related selection (Else owner/folder, key/click press pair).
 fn highlight_owner_color() -> Color32 {
     Color32::from_rgba_unmultiplied(0xdc, 0x9d, 0x2e, 0x28)
+}
+
+/// Soft red tint behind rows with validation errors (under execution highlights).
+fn highlight_invalid_color() -> Color32 {
+    Color32::from_rgba_unmultiplied(220, 70, 70, 45)
 }
 
 pub(crate) fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighlight) {
@@ -657,6 +681,7 @@ mod tests {
                 RowHighlight::None,
                 &mut HashMap::new(),
                 0,
+                None,
             );
             assert_eq!(result.action, RowAction::None);
         });
@@ -687,6 +712,7 @@ mod tests {
                     RowHighlight::None,
                     &mut HashMap::new(),
                     0,
+                    None,
                 );
                 assert!(
                     result.drag_handle_rect.width() > 0.0 && result.drag_handle_rect.height() > 0.0,
@@ -729,6 +755,7 @@ mod tests {
                     RowHighlight::None,
                     &mut HashMap::new(),
                     0,
+                    None,
                 )
                 .action,
                 RowAction::None
@@ -761,6 +788,7 @@ mod tests {
                     RowHighlight::None,
                     &mut HashMap::new(),
                     0,
+                    None,
                 )
                 .action,
                 RowAction::None
@@ -858,6 +886,7 @@ mod tests {
             RowHighlight::None,
             &mut HashMap::new(),
             0,
+            None,
         )
     }
 

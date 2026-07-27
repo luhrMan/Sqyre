@@ -6,15 +6,15 @@ mod macro_hotkeys;
 mod screen_click;
 
 pub use continue_wait::ContinueWaitBridge;
-pub use sqyre_domain::{
-    failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
-    validate_continue_key, validate_not_failsafe, FAILSAFE_KEYS, FAILSAFE_LABEL,
-};
 pub use macro_hotkeys::{
     chord_all_pressed, chord_fully_released, format_hotkey, parse_hotkey, HotkeyTrigger,
     MacroHotkeyBinding, MacroHotkeyBridge,
 };
 pub use screen_click::ScreenClickBridge;
+pub use sqyre_domain::{
+    failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
+    validate_continue_key, validate_not_failsafe, FAILSAFE_KEYS, FAILSAFE_LABEL,
+};
 
 pub use error::HotkeyError;
 

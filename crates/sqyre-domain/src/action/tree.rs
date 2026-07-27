@@ -450,8 +450,8 @@ fn resolve_slot_around_moving_sources(
 #[cfg(test)]
 mod tests {
     use crate::{
-        root_loop, Action, ActionId, ActionKind, ConditionBlock, DetectionBranch,
-        InsertSlot, ScalarValue, TreeNodeRef,
+        root_loop, Action, ActionId, ActionKind, ConditionBlock, DetectionBranch, InsertSlot,
+        ScalarValue, TreeNodeRef,
     };
 
     fn wait(id: ActionId) -> Action {

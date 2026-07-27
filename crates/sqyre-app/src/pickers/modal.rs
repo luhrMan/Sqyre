@@ -3,14 +3,14 @@ use super::coord_list::paint_coord_ref_list;
 use super::items_grid::paint_items_icon_grid;
 use super::query::{query_matches_name_or_tags, query_matches_window};
 use super::scroll::{maybe_scroll_to, picker_searchable_scroll, PickerScrollOpts};
-use super::types::{ActivePicker, CoordKind, HEADER_SIZE, PickerResult};
+use super::types::{ActivePicker, CoordKind, PickerResult, HEADER_SIZE};
+#[cfg(feature = "native-runtime")]
+use super::window::fetch_open_windows;
 use super::window::poll_window_picker_load;
 use crate::paint_ctx::CatalogPaint;
 use eframe::egui;
 use sqyre_domain::CoordinateRef;
 use std::sync::mpsc;
-#[cfg(feature = "native-runtime")]
-use super::window::fetch_open_windows;
 #[cfg(feature = "native-runtime")]
 use std::thread;
 

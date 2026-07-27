@@ -171,7 +171,10 @@ pub enum PickerResult {
     Point(CoordinateRef),
     SearchArea(CoordinateRef),
     MacroName(String),
-    Window { process_path: String, window_title: String },
+    Window {
+        process_path: String,
+        window_title: String,
+    },
 }
 
 impl ActivePicker {
@@ -193,4 +196,3 @@ impl ActivePicker {
         }
     }
 }
-

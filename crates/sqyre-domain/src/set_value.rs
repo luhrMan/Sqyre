@@ -1,8 +1,6 @@
 //! Set-variable value resolution.
 
-use crate::{
-    evaluate_expression, numeric_to_scalar, ResolveError, ScalarValue, VariableStore,
-};
+use crate::{evaluate_expression, numeric_to_scalar, ResolveError, ScalarValue, VariableStore};
 
 type Result<T> = std::result::Result<T, ResolveError>;
 
@@ -59,9 +57,11 @@ pub fn expand_variable_refs(text: &str, vars: &VariableStore) -> Result<String> 
             out.push_str(&sqyre_varref::unescape_plain(&seg.text));
             continue;
         }
-        let val = vars.get(&seg.name).ok_or_else(|| ResolveError::UnresolvedVariable {
-            name: seg.name.clone(),
-        })?;
+        let val = vars
+            .get(&seg.name)
+            .ok_or_else(|| ResolveError::UnresolvedVariable {
+                name: seg.name.clone(),
+            })?;
         out.push_str(&val.as_display());
     }
     Ok(out)
@@ -136,11 +136,9 @@ fn resolve_int_string(text: &str, vars: &VariableStore) -> Result<i32> {
         let f = evaluate_expression(resolved, vars)?;
         return Ok(f as i32);
     }
-    resolved
-        .parse()
-        .map_err(|_| ResolveError::ParseInt {
-            value: resolved.to_string(),
-        })
+    resolved.parse().map_err(|_| ResolveError::ParseInt {
+        value: resolved.to_string(),
+    })
 }
 
 #[cfg(test)]

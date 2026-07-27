@@ -99,13 +99,13 @@ impl HotkeyService for WinHotkeys {
                     // SAFETY: LL hooks; callback is valid for the lifetime of this thread.
                     let key =
                         unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), None, 0) }
-                            .map_err(|e| HotkeyError::Install(HotkeyError::Install(format!("WH_KEYBOARD_LL: {e}"))))?;
+                            .map_err(|e| HotkeyError::Install(format!("WH_KEYBOARD_LL: {e}")))?;
                     // SAFETY: same as above for mouse.
                     let mouse =
                         unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), None, 0) }
                             .map_err(|e| {
                                 let _ = unsafe { UnhookWindowsHookEx(key) };
-                                HotkeyError::Install(HotkeyError::Install(format!("WH_MOUSE_LL: {e}")))
+                                HotkeyError::Install(format!("WH_MOUSE_LL: {e}"))
                             })?;
                     store_hhook(&KEY_HOOK, key);
                     store_hhook(&MOUSE_HOOK, mouse);

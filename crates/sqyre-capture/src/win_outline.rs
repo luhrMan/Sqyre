@@ -21,8 +21,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::outline_geometry::{edge_placements, outline_should_clear};
-use crate::CaptureError;
 pub use crate::outline_rect::OutlineRect;
+use crate::CaptureError;
 
 /// Selection stroke color (gold) — same as X11 outline.
 const STROKE_R: u8 = 255;

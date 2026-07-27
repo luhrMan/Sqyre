@@ -1,8 +1,8 @@
 //! Action kind enum and tree-shape helpers.
 
 use super::{
-    Action, ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode,
-    MatchMethod, MouseButton, NavigateSelectData, PressState, ScalarValue, VariableAssignment,
+    Action, ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, MatchMethod,
+    MouseButton, NavigateSelectData, PressState, ScalarValue, VariableAssignment,
 };
 
 #[derive(Debug, Clone, PartialEq)]

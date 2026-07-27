@@ -50,18 +50,16 @@ impl VariablesPanelUi {
 
     /// Cached display count for the Built-ins tab (queries capture once).
     fn resolve_monitor_count(&mut self) -> usize {
-        *self
-            .cached_monitor_count
-            .get_or_insert_with(|| {
-                #[cfg(feature = "native-runtime")]
-                {
-                    sqyre_capture::monitor_count()
-                }
-                #[cfg(not(feature = "native-runtime"))]
-                {
-                    1
-                }
-            })
+        *self.cached_monitor_count.get_or_insert_with(|| {
+            #[cfg(feature = "native-runtime")]
+            {
+                sqyre_capture::monitor_count()
+            }
+            #[cfg(not(feature = "native-runtime"))]
+            {
+                1
+            }
+        })
     }
 
     /// Returns true when the caller should persist the macro.

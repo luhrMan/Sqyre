@@ -7,14 +7,14 @@ use crate::backends::{
     OcrEngine, ScreenCapturer, WindowFocuser,
 };
 use crate::error::{ExecError, FlowSignal, Result};
-use sqyre_ui_model::{
-    clear_highlights, highlight_cursor, ActionHighlighter, ActionLogger, RuntimeVarSink,
-};
 use crate::navigate::{execute_navigate_key, execute_navigate_select};
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
 use sqyre_domain::{
     action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, LoopJumpMode, Macro,
     MatchMode, MouseButton, PressState, ScalarValue,
+};
+use sqyre_ui_model::{
+    clear_highlights, highlight_cursor, ActionHighlighter, ActionLogger, RuntimeVarSink,
 };
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -748,7 +748,6 @@ pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_ui_model::lines_for;
     use crate::backends::DesktopRect;
     use crate::test_support::FixedResolver;
     use crate::test_support::{RecordingBackend, RecordingCapturer};
@@ -756,6 +755,7 @@ mod tests {
         root_loop, Action, ActionId, ActionKind, ConditionOperator, CoordinateRef, ScalarValue,
         VariableAssignment,
     };
+    use sqyre_ui_model::lines_for;
 
     const RUN_RESOLVER: FixedResolver = FixedResolver::point_area((42, 99), (0, 0, 10, 10));
 

@@ -72,8 +72,8 @@ impl Default for RunState {
 #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
 mod native {
     use super::StopFlag;
-    use sqyre_ports::{AutomationBackend, AutomationError, MoveOptions};
     use sqyre_input::OsAutomation;
+    use sqyre_ports::{AutomationBackend, AutomationError, MoveOptions};
 
     /// Forwards automation but surfaces stop via milli_sleep / between calls.
     pub(crate) struct StopWatchAutomation<'a> {

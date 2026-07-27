@@ -5,9 +5,9 @@ use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
 use crate::preview_tooltip::PreviewTooltipCache;
 use sqyre_domain::{ActionId, KnownVariableNames};
-use sqyre_ui_model::HighlightSnapshot;
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
+use sqyre_ui_model::HighlightSnapshot;
 use std::collections::HashMap;
 
 pub struct CatalogPaint<'a> {
@@ -33,6 +33,7 @@ pub struct TreePaint<'a> {
     pub catalog: &'a ProgramCatalog,
     pub icons: &'a mut IconCache,
     pub theme: VarTheme<'a>,
+    pub active_macro: &'a sqyre_domain::Macro,
     pub macro_name: &'a str,
     pub hl_snap: &'a HighlightSnapshot,
     /// Currently selected tree nodes (action or Else folder sentinels).

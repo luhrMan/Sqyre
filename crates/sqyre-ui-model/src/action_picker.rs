@@ -16,12 +16,7 @@ fn lookup_category(type_key: &str) -> Option<&'static str> {
         "imagesearch" | "ocr" | "findpixel" => "Detection",
         "setvariable" | "savevariable" => "Variables",
         "loop" | "while" | "conditional" | "foreachrow" => "Control flow",
-        "wait"
-        | "pause"
-        | "focuswindow"
-        | "runmacro"
-        | "navigateselect"
-        | "navigatekey"
+        "wait" | "pause" | "focuswindow" | "runmacro" | "navigateselect" | "navigatekey"
         | "loopjump" => "Miscellaneous",
         _ => return None,
     })

@@ -2,8 +2,8 @@
 
 use sqyre_capture::shared_capturer;
 use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
-use sqyre_ports::ScreenCapturer;
 use sqyre_persist::{ProgramCatalog, ProgramCollection};
+use sqyre_ports::ScreenCapturer;
 use std::path::{Path, PathBuf};
 
 /// Resolve paths/coords on the UI thread; capture runs on a worker.
@@ -12,8 +12,7 @@ pub fn collection_capture_job(
     program: &str,
     collection: &ProgramCollection,
 ) -> Result<(PathBuf, i32, i32, i32, i32), String> {
-    let (left, top, right, bottom) =
-        resolve_collection_capture_rect(catalog, program, collection)?;
+    let (left, top, right, bottom) = resolve_collection_capture_rect(catalog, program, collection)?;
     let path = catalog.collection_image_path(program, &collection.name);
     Ok((path, left, top, right, bottom))
 }
@@ -92,8 +91,8 @@ mod tests {
     use image::Rgba;
     use sqyre_capture::SolidCapturer;
     use sqyre_domain::ScalarValue;
-    use sqyre_ports::DesktopRect;
     use sqyre_persist::ProgramSearchArea;
+    use sqyre_ports::DesktopRect;
 
     fn catalog_with_sa(root: PathBuf) -> ProgramCatalog {
         let mut cat = ProgramCatalog::default();

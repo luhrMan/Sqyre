@@ -7,9 +7,7 @@ mod port_error;
 
 pub use automation_error::AutomationError;
 pub use capture_error::CaptureError;
-pub use domain_ports::{
-    ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup,
-};
+pub use domain_ports::{ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup};
 pub use port_error::PortError;
 
 use image::RgbaImage;

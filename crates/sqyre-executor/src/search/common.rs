@@ -2,13 +2,13 @@
 
 use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, FlowSignal, Result};
-use sqyre_ui_model::{highlight_clear, highlight_fill};
 use crate::run::{run_children, Executor};
 use sqyre_domain::{
     Action, ActionId, CoordinateOutputs, CoordinateRef, Macro, MatchOrder, ScalarValue,
     WaitTilFoundConfig,
 };
 use sqyre_match::{ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
+use sqyre_ui_model::{highlight_clear, highlight_fill};
 use sqyre_vision::rgb_capture_to_image_buf;
 use std::time::{Duration, Instant};
 

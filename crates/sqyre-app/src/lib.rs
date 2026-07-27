@@ -69,8 +69,8 @@ mod wasm_io;
 mod widgets;
 #[cfg(target_os = "windows")]
 mod win_focused_keys;
-mod workspace;
 mod window_types;
+mod workspace;
 
 pub use settings::SettingsUi;
 
@@ -87,9 +87,9 @@ use parking_lot::Mutex;
 use preview_tooltip::PreviewTooltipCache;
 use run_session::RunSession;
 use sqyre_domain::Macro;
-use sqyre_ui_model::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use sqyre_hotkeys::{default_hotkeys, HotkeyCallbacks, HotkeyService, ScreenClickBridge};
 use sqyre_persist::{Database, ProgramCatalog, UserSettings};
+use sqyre_ui_model::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
 use tree_state::TreeState;
 use wasm_io::PendingImport;
@@ -102,7 +102,11 @@ pub fn run() -> eframe::Result<()> {
     #[cfg(feature = "native-runtime")]
     diag::install(sqyre_persist::sqyre_dir());
     sqyre_update::cleanup_stale_update();
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "native-runtime",
+        target_os = "linux"
+    ))]
     install_x11_secondary_error_hook();
 
     let instance_lock = match single_instance::try_acquire() {
@@ -145,7 +149,11 @@ pub fn run() -> eframe::Result<()> {
 }
 
 /// Keep winit from storing X errors that originate on Sqyre's secondary Displays.
-#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    feature = "native-runtime",
+    target_os = "linux"
+))]
 fn install_x11_secondary_error_hook() {
     winit::platform::x11::register_xlib_error_hook(Box::new(|display, _event| {
         sqyre_capture::owns_secondary_x_display(display)
@@ -323,11 +331,9 @@ impl SqyreApp {
                     #[cfg(target_os = "linux")]
                     {
                         sqyre_capture::linux_session_capture_warning()
-                            .or_else(|| {
-                                match sqyre_capture::shared_capturer() {
-                                    Ok(_) => None,
-                                    Err(e) => Some(format!("Screen capture unavailable: {e}")),
-                                }
+                            .or_else(|| match sqyre_capture::shared_capturer() {
+                                Ok(_) => None,
+                                Err(e) => Some(format!("Screen capture unavailable: {e}")),
                             })
                             .or(ocr_warning)
                     }

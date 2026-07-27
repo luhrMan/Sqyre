@@ -46,9 +46,7 @@ mod tests {
 
     #[test]
     fn expr_error_display_roundtrip() {
-        let err = ExprError::UnknownFunction {
-            name: "foo".into(),
-        };
+        let err = ExprError::UnknownFunction { name: "foo".into() };
         assert!(err.to_string().contains("unknown function"));
     }
 

@@ -2,8 +2,8 @@
 
 use crate::assets;
 use crate::demo_icons;
-use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use crate::window_types::ProcessIcon;
+use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;
@@ -114,13 +114,13 @@ impl IconCache {
         }
         #[cfg(feature = "native-runtime")]
         {
-            let Some(icon) = sqyre_capture::process_icon(process_path, window_title).map(|i| {
-                ProcessIcon {
+            let Some(icon) =
+                sqyre_capture::process_icon(process_path, window_title).map(|i| ProcessIcon {
                     width: i.width,
                     height: i.height,
                     rgba: i.rgba,
-                }
-            }) else {
+                })
+            else {
                 self.process_missing.insert(key, ());
                 return None;
             };
