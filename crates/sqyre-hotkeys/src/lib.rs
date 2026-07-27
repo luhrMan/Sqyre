@@ -3,13 +3,17 @@
 mod continue_wait;
 mod error;
 mod macro_hotkeys;
+mod macro_record;
 mod screen_click;
 
+#[cfg(all(feature = "hooks", target_os = "windows"))]
+pub use continue_wait::vk_key_name;
 pub use continue_wait::ContinueWaitBridge;
 pub use macro_hotkeys::{
     chord_all_pressed, chord_fully_released, format_hotkey, parse_hotkey, HotkeyTrigger,
     MacroHotkeyBinding, MacroHotkeyBridge,
 };
+pub use macro_record::{MacroRecordBridge, MacroRecordEvent, RecordMouseButton};
 pub use screen_click::ScreenClickBridge;
 pub use sqyre_domain::{
     failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
@@ -95,14 +99,16 @@ mod win_hooks;
 #[cfg(all(feature = "hooks", target_os = "windows"))]
 pub use win_hooks::WinHotkeys;
 
-/// Default hotkeys + bridges (continue-wait, screen-click, macro chords).
+/// Default hotkeys + bridges (continue-wait, screen-click, macro record, chords).
 pub fn default_hotkeys() -> (
     Box<dyn HotkeyService>,
     ContinueWaitBridge,
     ScreenClickBridge,
+    MacroRecordBridge,
     MacroHotkeyBridge,
 ) {
     let screen_click = ScreenClickBridge::new();
+    let macro_record = MacroRecordBridge::new();
     let macro_hotkeys = MacroHotkeyBridge::new();
     #[cfg(all(feature = "hooks", target_os = "windows"))]
     {
@@ -111,10 +117,12 @@ pub fn default_hotkeys() -> (
             Box::new(WinHotkeys::new(
                 bridge.clone(),
                 screen_click.clone(),
+                macro_record.clone(),
                 macro_hotkeys.clone(),
             )),
             bridge,
             screen_click,
+            macro_record,
             macro_hotkeys,
         )
     }
@@ -125,10 +133,12 @@ pub fn default_hotkeys() -> (
             Box::new(RdevHotkeys::new(
                 bridge.clone(),
                 screen_click.clone(),
+                macro_record.clone(),
                 macro_hotkeys.clone(),
             )),
             bridge,
             screen_click,
+            macro_record,
             macro_hotkeys,
         )
     }
@@ -138,6 +148,7 @@ pub fn default_hotkeys() -> (
             Box::new(NullHotkeys::default()),
             ContinueWaitBridge::new(false),
             screen_click,
+            macro_record,
             macro_hotkeys,
         )
     }
