@@ -1,13 +1,12 @@
 # CI on push/PR to main. Daily release at 23:00 UTC when main has changed.
 # Releases: Linux binary + AppImage, Windows .exe (MinGW cross), WASM editor zip.
-# Also compile-checks macOS (stub capture) on PRs/pushes.
 # Release tag / artifact names: vYYYY.MM.DD (e.g. v2026.03.03); HHMM suffix if that tag exists.
 #
 # Caching (share what can be shared):
 # - Cargo registry (.cache/cargo): one key for all Linux jobs — warmed once per run
 # - Cargo target/: per triple (linux host / windows-gnu / wasm32) — not cross-shareable
 # - Linux/Windows Docker images: content-hash tags on GHCR; Buildx layers as fallback
-# - tessdata / macOS brew: shared keys across runs
+# - tessdata: shared keys across runs
 
 name: Build and Release
 
@@ -265,49 +264,6 @@ jobs:
             target/coverage/lcov.info
           if-no-files-found: warn
           retention-days: 14
-
-  check-macos:
-    if: github.event_name == 'push' || github.event_name == 'pull_request'
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.92.0
-
-      - name: Cache Homebrew bottles
-        uses: actions/cache@v6
-        with:
-          path: ~/Library/Caches/Homebrew
-          key: ${{ runner.os }}-brew-tesseract-leptonica-v1
-          restore-keys: |
-            ${{ runner.os }}-brew-tesseract-leptonica-
-
-      - name: Install Tesseract / Leptonica
-        run: brew install tesseract leptonica
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-reg-v3-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-reg-v3-
-            ${{ runner.os }}-cargo-reg-
-
-      - name: Cache Cargo target
-        uses: actions/cache@v6
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-target-macos-v3-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-target-macos-v3-
-            ${{ runner.os }}-cargo-target-
-
-      - name: cargo check (sqyre-app)
-        run: cargo check -p sqyre-app
 
   build-linux:
     if: |

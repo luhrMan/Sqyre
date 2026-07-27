@@ -101,7 +101,7 @@ Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make rel
 
 ### CI and GitHub Releases
 
-Push/PR to `main` runs tests and a macOS `cargo check` (capture still stubbed) — **not** a GitHub Release.
+Push/PR to `main` runs tests — **not** a GitHub Release.
 
 Releases come from [`.github/workflows/main.yml`](../.github/workflows/main.yml) on **schedule** or **manual dispatch** only:
 
