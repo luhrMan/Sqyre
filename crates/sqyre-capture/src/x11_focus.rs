@@ -1,7 +1,7 @@
 //! Linux X11 window list + activate.
 
 use crate::window_match::{paths_equal, pick_matching_icon, titles_equal};
-use crate::{ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
+use crate::{CaptureError, ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use parking_lot::Mutex;
 use sqyre_ports::{AutomationError, WindowFocuser};
 use std::collections::HashSet;
@@ -23,7 +23,8 @@ struct SharedFocusDisplay {
     display: *mut _XDisplay,
 }
 
-// X11 display pointer: all access goes through SHARED_FOCUS Mutex.
+// SAFETY: the raw display pointer is only ever touched while `SHARED_FOCUS`
+// (a `Mutex`) is held, so concurrent access from another thread never overlaps.
 unsafe impl Send for SharedFocusDisplay {}
 
 static SHARED_FOCUS: Mutex<Option<SharedFocusDisplay>> = Mutex::new(None);
@@ -34,6 +35,8 @@ where
 {
     let mut guard = SHARED_FOCUS.lock();
     if guard.is_none() {
+        // SAFETY: `XOpenDisplay(null)` connects to the default display; the
+        // returned pointer is null-checked before being stored.
         unsafe {
             let display = XOpenDisplay(ptr::null());
             if display.is_null() {
@@ -58,22 +61,26 @@ impl WindowFocuser for OsWindowFocuser {
 }
 
 /// List open top-level windows with title + executable path.
-pub fn list_open_windows() -> Result<Vec<WindowInfo>, String> {
-    with_display(|display| unsafe { list_on_display(display) })
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
+    // SAFETY: `display` comes from `with_display`, which guarantees a live,
+    // non-null `XOpenDisplay` connection for the duration of this call.
+    with_display(|display| unsafe { list_on_display(display) }).map_err(CaptureError::Message)
 }
 
 /// Currently focused top-level window (`_NET_ACTIVE_WINDOW`), if any.
-pub fn get_active_window() -> Result<Option<WindowInfo>, String> {
+pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
     crate::diag::mark_site("x11:get_active_window:before_open");
     let result = with_display(|display| {
         crate::diag::mark_site("x11:get_active_window:on_display");
+        // SAFETY: `display` comes from `with_display`, which guarantees a live,
+        // non-null `XOpenDisplay` connection for the duration of this call.
         unsafe { active_on_display(display) }
     });
     crate::diag::mark_site("x11:get_active_window:done");
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:get_active_window err: {e}"));
     }
-    result
+    result.map_err(CaptureError::Message)
 }
 
 /// Icon for a bound process: matching open window's `_NET_WM_ICON`, if any.
@@ -83,6 +90,8 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
         return None;
     }
     with_display(|display| -> Result<Option<ProcessIcon>, String> {
+        // SAFETY: `display` comes from `with_display`, which guarantees a live,
+        // non-null `XOpenDisplay` connection for the duration of this call.
         let infos = unsafe {
             let root = XDefaultRootWindow(display);
             let clients = client_list(display, root)?;
@@ -110,17 +119,19 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
 /// `_NET_WM_STATE_SKIP_PAGER` on top-level windows we own whose title matches
 /// [`OVERLAY_WM_TITLE`], and re-assert `_NET_WM_WINDOW_TYPE_DOCK` in case the WM
 /// remapped the type.
-pub fn skip_taskbar_for_overlay_windows() -> Result<(), String> {
+pub fn skip_taskbar_for_overlay_windows() -> Result<(), CaptureError> {
     crate::diag::mark_site("x11:skip_taskbar:before_open");
     let result = with_display(|display| {
         crate::diag::mark_site("x11:skip_taskbar:on_display");
+        // SAFETY: `display` comes from `with_display`, which guarantees a live,
+        // non-null `XOpenDisplay` connection for the duration of this call.
         unsafe { skip_taskbar_on_display(display) }
     });
     crate::diag::mark_site("x11:skip_taskbar:done");
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:skip_taskbar err: {e}"));
     }
-    result
+    result.map_err(CaptureError::Message)
 }
 
 fn activate_window(process_path: &str, window_title: &str) -> Result<(), AutomationError> {
@@ -132,6 +143,8 @@ fn activate_window(process_path: &str, window_title: &str) -> Result<(), Automat
         ));
     }
 
+    // SAFETY: `display` comes from `with_display`, which guarantees a live,
+    // non-null `XOpenDisplay` connection for the duration of this call.
     let activated = with_display(|display| unsafe { activate_on_display(display, path, title) })
         .map_err(AutomationError::Backend)?;
     if activated {
@@ -144,6 +157,9 @@ fn activate_window(process_path: &str, window_title: &str) -> Result<(), Automat
     }
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection that
+// outlives this call; all Xlib calls inside are otherwise self-contained
+// (properties are null/status-checked and freed with `XFree`).
 unsafe fn list_on_display(display: *mut _XDisplay) -> Result<Vec<WindowInfo>, String> {
     let root = XDefaultRootWindow(display);
     let clients = client_list(display, root)?;
@@ -162,6 +178,8 @@ unsafe fn list_on_display(display: *mut _XDisplay) -> Result<Vec<WindowInfo>, St
     Ok(out)
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection that
+// outlives this call.
 unsafe fn active_on_display(display: *mut _XDisplay) -> Result<Option<WindowInfo>, String> {
     let root = XDefaultRootWindow(display);
     let Some(win) = active_window_id(display, root)? else {
@@ -170,6 +188,9 @@ unsafe fn active_on_display(display: *mut _XDisplay) -> Result<Option<WindowInfo
     Ok(window_info_of(display, win))
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a
+// valid `root` window; `prop`/`nitems` are status- and null-checked before the
+// `Window` read, and `XFree` is called on every path that allocates `prop`.
 unsafe fn active_window_id(display: *mut Display, root: Window) -> Result<Option<Window>, String> {
     let atom = intern(display, "_NET_ACTIVE_WINDOW")?;
     let mut actual_type: Atom = 0;
@@ -206,6 +227,8 @@ unsafe fn active_window_id(display: *mut Display, root: Window) -> Result<Option
     }
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a
+// valid `win` window.
 unsafe fn window_info_of(display: *mut Display, win: Window) -> Option<WindowInfo> {
     let title = window_title_of(display, win)?;
     if title.trim().is_empty() {
@@ -229,6 +252,9 @@ unsafe fn window_info_of(display: *mut Display, win: Window) -> Option<WindowInf
 }
 
 /// Read `_NET_WM_ICON` and pick the size closest to [`PROCESS_ICON_TARGET_PX`].
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a
+// valid `win` window; `prop`/`nitems`/`actual_format` are checked before the
+// slice is built, and `XFree` is called on every path that allocates `prop`.
 unsafe fn window_icon(display: *mut Display, win: Window) -> Option<ProcessIcon> {
     let atom = intern(display, "_NET_WM_ICON").ok()?;
     let mut actual_type: Atom = 0;
@@ -319,6 +345,8 @@ fn icon_size_score(w: u32, h: u32) -> u32 {
 }
 
 /// `Ok(false)` when no window matched; `Err` only for X11 failures.
+// SAFETY: callers must pass a live, non-null Xlib `display` connection that
+// outlives this call.
 unsafe fn activate_on_display(
     display: *mut _XDisplay,
     process_path: &str,
@@ -347,6 +375,9 @@ unsafe fn activate_on_display(
     Ok(false)
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a
+// valid `root` window; `prop`/`nitems` are status- and null-checked before the
+// slice is built, and `XFree` is called on every path that allocates `prop`.
 unsafe fn client_list(display: *mut Display, root: Window) -> Result<Vec<Window>, String> {
     let atom = intern(display, "_NET_CLIENT_LIST")?;
     let mut actual_type: Atom = 0;
@@ -380,6 +411,9 @@ unsafe fn client_list(display: *mut Display, root: Window) -> Result<Vec<Window>
     Ok(out)
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a
+// valid `win` window; `name.value` is null-checked before `CStr::from_ptr`,
+// and `XFree` is called after the C string is copied into an owned `String`.
 unsafe fn window_title_of(display: *mut Display, win: Window) -> Option<String> {
     if let Ok(atom) = intern(display, "_NET_WM_NAME") {
         if let Some(s) = get_string_prop(display, win, atom) {
@@ -400,6 +434,9 @@ unsafe fn window_title_of(display: *mut Display, win: Window) -> Option<String> 
     None
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a
+// valid `win` window; `prop`/`nitems` are status- and null-checked before the
+// slice is built, and `XFree` is called on every path that allocates `prop`.
 unsafe fn get_string_prop(display: *mut Display, win: Window, atom: Atom) -> Option<String> {
     let utf8 = intern(display, "UTF8_STRING").ok()?;
     let mut actual_type: Atom = 0;
@@ -435,6 +472,9 @@ unsafe fn get_string_prop(display: *mut Display, win: Window, atom: Atom) -> Opt
     Some(s)
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a
+// valid `win` window; `prop`/`nitems` are status- and null-checked before the
+// `u32` read, and `XFree` is called on every path that allocates `prop`.
 unsafe fn window_pid(display: *mut Display, win: Window) -> Option<u32> {
     let atom = intern(display, "_NET_WM_PID").ok()?;
     let mut actual_type: Atom = 0;
@@ -488,6 +528,9 @@ fn process_comm(pid: u32) -> Option<String> {
     }
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection plus a
+// valid `root` and `win`; the `XEvent` is zeroed before its `client_message`
+// variant is written, and it outlives the `XSendEvent` call that borrows it.
 unsafe fn set_active_window(
     display: *mut Display,
     root: Window,
@@ -524,6 +567,9 @@ unsafe fn set_active_window(
     Ok(())
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection that
+// outlives this call; the windows passed on come from `_NET_CLIENT_LIST` on
+// that same connection.
 unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), String> {
     let our_pid = std::process::id();
     let root = XDefaultRootWindow(display);
@@ -560,6 +606,9 @@ unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), String>
     Ok(())
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection, a valid
+// `win`, and atoms interned on that connection; the single-element `atom` buffer
+// matches the `format: 32` / `nelements: 1` passed to `XChangeProperty`.
 unsafe fn set_window_type_dock(
     display: *mut Display,
     win: Window,
@@ -579,6 +628,9 @@ unsafe fn set_window_type_dock(
     );
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection, valid
+// `root`/`win` windows, and atoms interned on that connection; the `XEvent` is
+// zeroed before its `client_message` variant is written and outlives `XSendEvent`.
 unsafe fn send_net_wm_state_add(
     display: *mut Display,
     root: Window,
@@ -613,6 +665,8 @@ unsafe fn send_net_wm_state_add(
     let _ = XSendEvent(display, root, False, mask, &mut event);
 }
 
+// SAFETY: callers must pass a live, non-null Xlib `display` connection; the
+// `CString` outlives the `XInternAtom` call that reads its pointer.
 unsafe fn intern(display: *mut Display, name: &str) -> Result<Atom, String> {
     let c = CString::new(name).map_err(|e| e.to_string())?;
     let atom = XInternAtom(display, c.as_ptr(), False);

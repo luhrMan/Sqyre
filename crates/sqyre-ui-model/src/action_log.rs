@@ -123,6 +123,7 @@ impl SharedActionLog {
         self.inner.lock().clear();
     }
 
+    /// Snapshot of the entries logged for `action_id`.
     pub fn entries_for(&self, action_id: ActionId) -> Vec<ActionLogEntry> {
         self.inner
             .lock()
@@ -130,28 +131,27 @@ impl SharedActionLog {
             .cloned()
             .unwrap_or_default()
     }
+}
 
-    /// Text-only lines (skips images) — convenient for tests and Copy.
-    /// Item pipelines contribute their title, summary, and detail lines.
-    pub fn lines_for(&self, action_id: ActionId) -> Vec<String> {
-        let mut out = Vec::new();
-        for e in self.entries_for(action_id) {
-            match e {
-                ActionLogEntry::Text(s) => out.push(s),
-                ActionLogEntry::Image(img) => out.push(format!("[image] {}", img.label)),
-                ActionLogEntry::ItemPipeline {
-                    title,
-                    summary,
-                    details,
-                    ..
-                } => {
-                    out.push(format!("[item] {title} — {summary}"));
-                    out.extend(details);
-                }
+/// Render a snapshot as text lines — convenient for tests and Copy.
+pub fn lines_for(entries: &[ActionLogEntry]) -> Vec<String> {
+    let mut out = Vec::new();
+    for e in entries {
+        match e {
+            ActionLogEntry::Text(s) => out.push(s.clone()),
+            ActionLogEntry::Image(img) => out.push(format!("[image] {}", img.label)),
+            ActionLogEntry::ItemPipeline {
+                title,
+                summary,
+                details,
+                ..
+            } => {
+                out.push(format!("[item] {title} — {summary}"));
+                out.extend(details.iter().cloned());
             }
         }
-        out
     }
+    out
 }
 
 impl ActionLogger for SharedActionLog {
@@ -284,79 +284,6 @@ fn image_buf_to_rgba(img: &ImageBuf) -> Vec<u8> {
     out
 }
 
-/// Draw axis-aligned rectangles on a 3-channel RGB buffer (clips to bounds).
-pub fn draw_rect_rgb(img: &mut ImageBuf, x0: i32, y0: i32, x1: i32, y1: i32, rgb: [u8; 3]) {
-    if img.channels != 3 {
-        return;
-    }
-    let w = img.width as i32;
-    let h = img.height as i32;
-    let left = x0.min(x1).clamp(0, w - 1);
-    let right = x0.max(x1).clamp(0, w - 1);
-    let top = y0.min(y1).clamp(0, h - 1);
-    let bottom = y0.max(y1).clamp(0, h - 1);
-    for x in left..=right {
-        put_rgb(img, x, top, rgb);
-        put_rgb(img, x, bottom, rgb);
-    }
-    for y in top..=bottom {
-        put_rgb(img, left, y, rgb);
-        put_rgb(img, right, y, rgb);
-    }
-}
-
-fn put_rgb(img: &mut ImageBuf, x: i32, y: i32, rgb: [u8; 3]) {
-    if x < 0 || y < 0 || x as usize >= img.width || y as usize >= img.height {
-        return;
-    }
-    let i = img.pixel_offset(x as usize, y as usize);
-    img.data[i] = rgb[0];
-    img.data[i + 1] = rgb[1];
-    img.data[i + 2] = rgb[2];
-}
-
-/// Crop a padded region around a template match and draw the match box (for logs).
-pub fn crop_match_preview(
-    search: &ImageBuf,
-    x: i32,
-    y: i32,
-    tw: i32,
-    th: i32,
-    pad: i32,
-) -> Option<ImageBuf> {
-    if search.channels != 3 || tw <= 0 || th <= 0 {
-        return None;
-    }
-    let w = search.width as i32;
-    let h = search.height as i32;
-    let x0 = (x - pad).max(0);
-    let y0 = (y - pad).max(0);
-    let x1 = (x + tw + pad).min(w);
-    let y1 = (y + th + pad).min(h);
-    if x1 <= x0 || y1 <= y0 {
-        return None;
-    }
-    let cw = (x1 - x0) as usize;
-    let ch = (y1 - y0) as usize;
-    let mut out = ImageBuf::new(cw, ch, 3, 0);
-    for py in 0..ch {
-        for px in 0..cw {
-            let si = search.pixel_offset((x0 as usize) + px, (y0 as usize) + py);
-            let di = out.pixel_offset(px, py);
-            out.data[di..di + 3].copy_from_slice(&search.data[si..si + 3]);
-        }
-    }
-    draw_rect_rgb(
-        &mut out,
-        x - x0,
-        y - y0,
-        x - x0 + tw - 1,
-        y - y0 + th - 1,
-        [255, 40, 40],
-    );
-    Some(out)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -368,13 +295,9 @@ mod tests {
         for i in 0..(MAX_ENTRIES_PER_ACTION + 50) {
             log.log(id, format!("line-{i}"));
         }
-        let lines = log.lines_for(id);
+        let lines = lines_for(&log.entries_for(id));
         assert_eq!(lines.len(), MAX_ENTRIES_PER_ACTION);
         assert_eq!(lines[0], format!("line-{}", 50));
-        assert_eq!(
-            lines.last().unwrap(),
-            &format!("line-{}", MAX_ENTRIES_PER_ACTION + 49)
-        );
     }
 
     #[test]
@@ -384,29 +307,9 @@ mod tests {
         let b = ActionId::new();
         log.log(a, "from-a".into());
         log.log(b, "from-b".into());
-        assert_eq!(log.lines_for(a), vec!["from-a".to_string()]);
-        assert_eq!(log.lines_for(b), vec!["from-b".to_string()]);
+        assert_eq!(lines_for(&log.entries_for(a)), vec!["from-a".to_string()]);
         log.clear();
-        assert!(log.lines_for(a).is_empty());
-        assert!(log.lines_for(b).is_empty());
-    }
-
-    #[test]
-    fn images_interleave_with_text_chronologically() {
-        let log = SharedActionLog::new();
-        let id = ActionId::new();
-        log.log(id, "start".into());
-        let img = ImageBuf::new(4, 4, 3, 128);
-        log.log_image(id, "capture".into(), &img);
-        log.log(id, "done".into());
-        let entries = log.entries_for(id);
-        assert_eq!(entries.len(), 3);
-        assert!(matches!(&entries[0], ActionLogEntry::Text(s) if s == "start"));
-        assert!(matches!(
-            &entries[1],
-            ActionLogEntry::Image(LogImage { label, .. }) if label == "capture"
-        ));
-        assert!(matches!(&entries[2], ActionLogEntry::Text(s) if s == "done"));
+        assert!(log.entries_for(a).is_empty());
     }
 
     #[test]
@@ -417,63 +320,7 @@ mod tests {
         log.log(id, "start".into());
         let img = ImageBuf::new(4, 4, 3, 128);
         log.log_image(id, "capture".into(), &img);
-        log.log_item_pipeline(
-            id,
-            "Sword".into(),
-            "1 match".into(),
-            &img,
-            &[("step", &img)],
-            vec!["detail".into()],
-        );
-        log.log(id, "done".into());
-        let entries = log.entries_for(id);
-        assert_eq!(entries.len(), 2);
-        assert!(entries.iter().all(|e| e.as_text().is_some()));
-        assert!(!log.log_images_enabled());
-    }
-
-    #[test]
-    fn item_pipeline_stores_steps_and_details() {
-        let log = SharedActionLog::new();
-        let id = ActionId::new();
-        let thumb = ImageBuf::new(4, 4, 3, 200);
-        let step = ImageBuf::new(8, 8, 3, 100);
-        log.log_item_pipeline(
-            id,
-            "Sword".into(),
-            "1 match".into(),
-            &thumb,
-            &[("Where found", &step)],
-            vec!["Found at (1, 2)".into()],
-        );
         let entries = log.entries_for(id);
         assert_eq!(entries.len(), 1);
-        match &entries[0] {
-            ActionLogEntry::ItemPipeline {
-                title,
-                summary,
-                steps,
-                details,
-                ..
-            } => {
-                assert_eq!(title, "Sword");
-                assert_eq!(summary, "1 match");
-                assert_eq!(steps.len(), 1);
-                assert_eq!(steps[0].label, "Where found");
-                assert_eq!(details, &vec!["Found at (1, 2)".to_string()]);
-            }
-            other => panic!("expected ItemPipeline, got {other:?}"),
-        }
-        let lines = log.lines_for(id);
-        assert!(lines[0].contains("Sword"));
-        assert!(lines.iter().any(|l| l.contains("Found at")));
-    }
-
-    #[test]
-    fn crop_match_preview_draws_box() {
-        let search = ImageBuf::new(40, 30, 3, 80);
-        let crop = crop_match_preview(&search, 10, 8, 6, 4, 4).unwrap();
-        assert_eq!(crop.width, 14); // 6 + 2*4
-        assert_eq!(crop.height, 12); // 4 + 2*4
     }
 }

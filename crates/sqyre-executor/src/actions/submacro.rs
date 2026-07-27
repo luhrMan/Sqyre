@@ -1,9 +1,9 @@
 //! Nested macro orchestration: RunMacro.
 
 use crate::error::{ExecError, Result};
-use crate::highlight::{highlight_clear, highlight_cursor, highlight_fill};
 use crate::run::{execute_action, Executor};
 use sqyre_domain::{ActionId, ActionKind, Macro};
+use sqyre_ui_model::{highlight_clear, highlight_cursor, highlight_fill};
 
 pub(crate) fn execute_run_macro(
     exec: &mut Executor<'_>,

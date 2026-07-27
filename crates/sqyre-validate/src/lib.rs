@@ -1,8 +1,8 @@
 //! Validation helpers for macro entries and actions.
 
 use sqyre_domain::{
-    collect_known_variable_names, evaluate_expression, Action, ActionKind, Macro, ScalarValue,
-    VariableStore,
+    collect_known_variable_names, evaluate_expression, parse_hex_color, Action, ActionKind,
+    ConditionBlock, ConditionClause, CoordinateRef, Macro, NavChords, ScalarValue, VariableStore,
 };
 use thiserror::Error;
 
@@ -263,7 +263,7 @@ fn validate_expression_structure(expr: &str, macro_: Option<&Macro>) -> Result<(
             vars.set(name, ScalarValue::Int(0));
         }
     }
-    evaluate_expression(expr, &vars).map_err(ValidateError::Message)?;
+    evaluate_expression(expr, &vars).map_err(|e| ValidateError::Message(e.to_string()))?;
     Ok(())
 }
 
@@ -308,7 +308,7 @@ pub fn preview_calculate(expr: &str, macro_: &Macro) -> std::result::Result<Stri
         }
     }
 
-    let res = evaluate_expression(expr, &vars)?;
+    let res = evaluate_expression(expr, &vars).map_err(|e| e.to_string())?;
     if runtime_dependent || !unknown_variable_warning(expr, Some(macro_)).is_empty() {
         return Ok("valid (result depends on runtime values)".into());
     }
@@ -376,9 +376,128 @@ fn yaml_string_value(v: &sqyre_domain::ScalarValue) -> Option<&str> {
 }
 
 fn validate_continue_key(keys: &[String]) -> Result<()> {
-    sqyre_hotkeys::validate_continue_key(keys)
+    sqyre_domain::validate_continue_key(keys)
         .map(|_| ())
         .map_err(ValidateError::Message)
+}
+
+fn validate_coordinate_ref(
+    label: &str,
+    coord: &CoordinateRef,
+    _macro_: Option<&Macro>,
+) -> Result<()> {
+    if coord.0.trim().is_empty() {
+        return Err(ValidateError::Message(format!(
+            "{label}: set a coordinate before saving"
+        )));
+    }
+    // Catalog refs are `program~entity` (or legacy bare names), resolved at runtime —
+    // not math expressions. Do not run expression evaluation on them.
+    Ok(())
+}
+
+fn validate_scalar_field(label: &str, value: &ScalarValue, macro_: Option<&Macro>) -> Result<()> {
+    if let ScalarValue::String(s) = value {
+        let v = validate_numeric_expression(s, macro_);
+        if v.blocks_submit() {
+            return Err(ValidateError::Message(format!("{label}: {}", v.error)));
+        }
+    }
+    Ok(())
+}
+
+fn validate_scalar_expression_field(
+    label: &str,
+    value: &ScalarValue,
+    macro_: Option<&Macro>,
+) -> Result<()> {
+    if let Some(text) = yaml_string_value(value) {
+        if looks_like_arithmetic(text) {
+            validate_expression_structure(text, macro_)
+                .map_err(|e| ValidateError::Message(format!("{label}: {e}")))?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_condition_block(
+    label: &str,
+    block: &ConditionBlock,
+    macro_: Option<&Macro>,
+) -> Result<()> {
+    if block.clauses.is_empty() {
+        return Err(ValidateError::Message(format!(
+            "{label}: add at least one condition clause"
+        )));
+    }
+    for (i, clause) in block.clauses.iter().enumerate() {
+        let clause_label = if block.clauses.len() == 1 {
+            label.to_string()
+        } else {
+            format!("{label} clause {}", i + 1)
+        };
+        validate_condition_clause(&clause_label, clause, macro_)?;
+    }
+    Ok(())
+}
+
+fn validate_condition_clause(
+    label: &str,
+    clause: &ConditionClause,
+    macro_: Option<&Macro>,
+) -> Result<()> {
+    let left = clause.left.as_display();
+    if left.trim().is_empty() {
+        return Err(ValidateError::Message(format!(
+            "{label}: left operand cannot be empty"
+        )));
+    }
+    if !clause.operator.is_unary() {
+        let right = clause.right.as_display();
+        if right.trim().is_empty() {
+            return Err(ValidateError::Message(format!(
+                "{label}: right operand required for `{}`",
+                clause.operator
+            )));
+        }
+    }
+    validate_scalar_expression_field(&format!("{label} left"), &clause.left, macro_)?;
+    if !clause.operator.is_unary() {
+        validate_scalar_expression_field(&format!("{label} right"), &clause.right, macro_)?;
+    }
+    Ok(())
+}
+
+fn validate_nav_chords(label: &str, chords: &NavChords) -> Result<()> {
+    validate_chord_keys(&format!("{label} up"), &chords.up)?;
+    validate_chord_keys(&format!("{label} down"), &chords.down)?;
+    validate_chord_keys(&format!("{label} left"), &chords.left)?;
+    validate_chord_keys(&format!("{label} right"), &chords.right)?;
+    validate_chord_keys(&format!("{label} select"), &chords.select)?;
+    Ok(())
+}
+
+fn validate_chord_keys(label: &str, keys: &[String]) -> Result<()> {
+    if keys.is_empty() || keys.iter().all(|k| k.trim().is_empty()) {
+        return Err(ValidateError::Message(format!(
+            "{label}: record a chord before saving"
+        )));
+    }
+    Ok(())
+}
+
+fn validate_target_color(label: &str, target_color: &str) -> Result<()> {
+    if target_color.trim().is_empty() {
+        return Err(ValidateError::Message(format!(
+            "{label}: set a target color"
+        )));
+    }
+    if !sqyre_varref::contains(target_color) && parse_hex_color(target_color).is_none() {
+        return Err(ValidateError::Message(format!(
+            "{label}: invalid color {target_color:?} (use #RRGGBB or variable ref)"
+        )));
+    }
+    Ok(())
 }
 
 /// Checks minimum fields required to save/run an action.
@@ -397,10 +516,92 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
     }
 
     match &action.kind {
+        ActionKind::Loop { count, .. } => {
+            validate_scalar_field("loop count", count, macro_)?;
+        }
+        ActionKind::While { condition, .. } => {
+            validate_condition_block("while", condition, macro_)?;
+        }
+        ActionKind::Conditional { condition, .. } => {
+            validate_condition_block("conditional", condition, macro_)?;
+        }
+        ActionKind::ImageSearch {
+            targets, detection, ..
+        } => {
+            if targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()) {
+                return Err(ValidateError::Message(
+                    "image search: add at least one target item".into(),
+                ));
+            }
+            validate_wait_config("image search", &detection.wait)?;
+        }
+        ActionKind::Ocr {
+            detection,
+            blur,
+            min_threshold,
+            resize,
+            ..
+        } => {
+            validate_wait_config("ocr", &detection.wait)?;
+            if *blur < 0 {
+                return Err(ValidateError::Message(
+                    "ocr: blur cannot be negative".into(),
+                ));
+            }
+            if !(*min_threshold >= 0 && *min_threshold <= 255) {
+                return Err(ValidateError::Message(
+                    "ocr: min threshold must be between 0 and 255".into(),
+                ));
+            }
+            if *resize <= 0.0 {
+                return Err(ValidateError::Message(
+                    "ocr: resize must be positive".into(),
+                ));
+            }
+        }
+        ActionKind::FindPixel {
+            target_color,
+            detection,
+            ..
+        } => {
+            validate_target_color("find pixel", target_color)?;
+            validate_wait_config("find pixel", &detection.wait)?;
+        }
+        ActionKind::ForEachRow {
+            sources,
+            start_row,
+            end_row,
+            ..
+        } => {
+            if sources.is_empty() || sources.iter().all(|s| s.source.trim().is_empty()) {
+                return Err(ValidateError::Message(
+                    "for each row: add at least one source column".into(),
+                ));
+            }
+            validate_scalar_field("for each row start row", start_row, macro_)?;
+            validate_scalar_field("for each row end row", end_row, macro_)?;
+        }
+        ActionKind::Wait { time } => {
+            validate_scalar_field("wait time", time, macro_)?;
+        }
+        ActionKind::Pause { continue_key, .. } => {
+            validate_continue_key(continue_key)?;
+        }
+        ActionKind::Move { point, .. } => {
+            validate_coordinate_ref("move", point, macro_)?;
+        }
+        ActionKind::Click { .. } => {}
         ActionKind::Key { key, .. } => {
             if key.trim().is_empty() {
                 return Err(ValidateError::Message(
                     "key: record a key before saving".into(),
+                ));
+            }
+        }
+        ActionKind::Type { delay_ms, .. } => {
+            if *delay_ms < 0 {
+                return Err(ValidateError::Message(
+                    "type: delay cannot be negative".into(),
                 ));
             }
         }
@@ -421,42 +622,53 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
                 }
             }
         }
-        ActionKind::Pause { continue_key, .. } => {
-            validate_continue_key(continue_key)?;
-        }
-        ActionKind::ImageSearch {
-            targets, detection, ..
-        } => {
-            if targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()) {
-                return Err(ValidateError::Message(
-                    "image search: add at least one target item".into(),
-                ));
-            }
-            validate_wait_config("image search", &detection.wait)?;
-        }
-        ActionKind::Ocr { detection, .. } => {
-            validate_wait_config("ocr", &detection.wait)?;
-        }
-        ActionKind::FindPixel {
-            target_color,
-            detection,
+        ActionKind::SaveVariable {
+            variable_name,
+            destination,
             ..
         } => {
-            if target_color.trim().is_empty() {
+            if variable_name.trim().is_empty() {
                 return Err(ValidateError::Message(
-                    "find pixel: set a target color".into(),
+                    "save variable: choose a variable".into(),
                 ));
             }
-            validate_wait_config("find pixel", &detection.wait)?;
+            validate_variable_assignment_name(variable_name)
+                .map_err(|e| ValidateError::Message(format!("save variable: {e}")))?;
+            if destination.trim().is_empty() {
+                return Err(ValidateError::Message(
+                    "save variable: set a destination path or clipboard".into(),
+                ));
+            }
+        }
+        ActionKind::FocusWindow {
+            process_path,
+            window_title,
+        } => {
+            if process_path.trim().is_empty() {
+                return Err(ValidateError::Message(
+                    "focus window: set an executable path".into(),
+                ));
+            }
+            if window_title.trim().is_empty() {
+                return Err(ValidateError::Message(
+                    "focus window: set a window title".into(),
+                ));
+            }
+        }
+        ActionKind::RunMacro { macro_name } => {
+            if macro_name.trim().is_empty() {
+                return Err(ValidateError::Message(
+                    "run macro: choose a macro name".into(),
+                ));
+            }
+        }
+        ActionKind::NavigateSelect(data) => {
+            validate_nav_chords("navigate select", &data.chords)?;
         }
         ActionKind::NavigateKey { chord, .. } => {
-            if chord.is_empty() || chord.iter().all(|k| k.trim().is_empty()) {
-                return Err(ValidateError::Message(
-                    "navigate key: record a chord before saving".into(),
-                ));
-            }
+            validate_chord_keys("navigate key", chord)?;
         }
-        _ => {}
+        ActionKind::LoopJump { .. } => {}
     }
     Ok(())
 }
@@ -505,7 +717,8 @@ pub fn validate_macro(macro_: &Macro) -> Result<()> {
 mod tests {
     use super::*;
     use sqyre_domain::{
-        ActionId, PressState, ScalarValue, VariableAssignment, VariableDecl, VariableType,
+        ActionId, CoordinateRef, PressState, ScalarValue, VariableAssignment, VariableDecl,
+        VariableType,
     };
 
     #[test]
@@ -832,5 +1045,76 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("chord"));
+    }
+
+    #[test]
+    fn validate_move_requires_point() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Move {
+                point: CoordinateRef(String::new()),
+                smooth: false,
+                smooth_low: 0.05,
+                smooth_high: 0.2,
+                smooth_delay_ms: 1,
+            },
+        };
+        assert!(validate_action(&a, None)
+            .unwrap_err()
+            .to_string()
+            .contains("coordinate"));
+    }
+
+    #[test]
+    fn validate_move_accepts_catalog_point_ref() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Move {
+                point: CoordinateRef("General~Windows".into()),
+                smooth: false,
+                smooth_low: 0.05,
+                smooth_high: 0.2,
+                smooth_delay_ms: 1,
+            },
+        };
+        assert!(validate_action(&a, None).is_ok());
+    }
+
+    #[test]
+    fn validate_run_macro_requires_name() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::RunMacro {
+                macro_name: String::new(),
+            },
+        };
+        assert!(validate_action(&a, None)
+            .unwrap_err()
+            .to_string()
+            .contains("macro name"));
+    }
+
+    #[test]
+    fn validate_conditional_requires_clause_operands() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Conditional {
+                condition: sqyre_domain::ConditionBlock {
+                    name: "c".into(),
+                    match_mode: sqyre_domain::MatchMode::All,
+                    clauses: vec![sqyre_domain::ConditionClause {
+                        left: ScalarValue::String(String::new()),
+                        operator: sqyre_domain::ConditionOperator::Equals,
+                        right: ScalarValue::String("x".into()),
+                    }],
+                },
+                subactions: vec![],
+                else_actions: vec![],
+            },
+        };
+        assert!(validate_action(&a, None)
+            .unwrap_err()
+            .to_string()
+            .contains("left operand"));
     }
 }

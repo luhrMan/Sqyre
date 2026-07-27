@@ -22,6 +22,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::outline_geometry::{edge_placements, outline_should_clear};
 pub use crate::outline_rect::OutlineRect;
+use crate::CaptureError;
 
 /// Selection stroke color (gold) — same as X11 outline.
 const STROKE_R: u8 = 255;
@@ -41,15 +42,15 @@ pub struct SelectionOutline {
 unsafe impl Send for SelectionOutline {}
 
 impl SelectionOutline {
-    pub fn open() -> Result<Self, String> {
-        ensure_class()?;
+    pub fn open() -> Result<Self, CaptureError> {
+        ensure_class().map_err(CaptureError::Message)?;
         let mut edges = [HWND::default(); 4];
         for i in 0..edges.len() {
             match create_edge() {
                 Ok(hwnd) => edges[i] = hwnd,
                 Err(e) => {
                     destroy_edges(&edges);
-                    return Err(e);
+                    return Err(CaptureError::Message(e));
                 }
             }
         }

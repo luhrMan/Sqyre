@@ -36,6 +36,7 @@ pub use settings::{
 pub use sqyre_domain::resolve_scalar_int;
 pub use sqyre_serialize::{check_yaml_nesting_depth, MAX_YAML_NESTING_DEPTH};
 
+use parking_lot::{Mutex, RwLock};
 use serde_yaml::{Mapping, Value};
 use sqyre_domain::Macro;
 use sqyre_serialize::{decode_macro_from_map, encode_macro_to_map};
@@ -43,7 +44,7 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock, RwLock};
+use std::sync::Arc;
 use thiserror::Error;
 
 const SQYRE_DIR: &str = ".sqyre";
@@ -56,10 +57,7 @@ pub const MAX_MACROS: usize = 2_000;
 static DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
 /// Serializes tests that mutate [`set_sqyre_dir_override`].
-fn dir_override_test_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
+static DIR_OVERRIDE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Debug, Error)]
 pub enum PersistError {
@@ -102,7 +100,7 @@ pub(crate) fn atomic_write(path: &Path, bytes: impl AsRef<[u8]>) -> std::io::Res
 
 /// Override the Sqyre data directory (empty clears → `~/.sqyre`).
 pub fn set_sqyre_dir_override(path: Option<PathBuf>) {
-    *DIR_OVERRIDE.write().unwrap() = path;
+    *DIR_OVERRIDE.write() = path;
 }
 
 /// Per-user config directory for Sqyre (`~/.config/sqyre` on Linux).
@@ -122,9 +120,7 @@ pub fn sqyre_config_dir() -> PathBuf {
 
 /// Run `f` with a temporary Sqyre dir override, serialized against other override users.
 pub fn with_sqyre_dir_override<R>(path: PathBuf, f: impl FnOnce() -> R) -> R {
-    let _guard = dir_override_test_lock()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let _guard = DIR_OVERRIDE_TEST_LOCK.lock();
     set_sqyre_dir_override(Some(path));
     let result = f();
     set_sqyre_dir_override(None);
@@ -132,7 +128,7 @@ pub fn with_sqyre_dir_override<R>(path: PathBuf, f: impl FnOnce() -> R) -> R {
 }
 
 pub fn sqyre_dir() -> PathBuf {
-    if let Some(p) = DIR_OVERRIDE.read().unwrap().clone() {
+    if let Some(p) = DIR_OVERRIDE.read().clone() {
         return p;
     }
     // `std::env::temp_dir()` panics on wasm32-unknown-unknown ("no filesystem").
@@ -313,11 +309,8 @@ impl Database {
                         if macro_.name.is_empty() {
                             macro_.name = key.clone();
                         }
-                        if let Err(e) = sqyre_validate::validate_macro(&macro_) {
-                            warnings.push(format!(
-                                "macro \"{key}\" loaded with validation issues: {e}"
-                            ));
-                        }
+                        // Structural validation is surfaced in the UI on the macro /
+                        // action rows — do not turn it into an app-wide load banner.
                         macros.insert(key, macro_);
                     }
                     Err(e) => {

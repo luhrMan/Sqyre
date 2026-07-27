@@ -1,0 +1,55 @@
+---
+description: Ask clarifying questions when a request is ambiguous before acting
+alwaysApply: true
+---
+
+# Ask on Ambiguity
+
+When a request is underspecified in a way that would change the approach, scope, or outcome, ask before implementing. Do not silently guess on consequential choices.
+
+## When to ask
+
+Ask if any of these are unclear and would materially change the work:
+
+- Goal or success criteria (what “done” means)
+- Scope boundary (which files, crates, platforms, or surfaces)
+- Approach when multiple valid options have different trade-offs
+- Destructive or hard-to-reverse actions (deletes, renames, schema breaks, force push)
+- Missing inputs that cannot be inferred from the repo or conversation
+
+## When not to ask
+
+- The ambiguity is trivial and a project convention or existing code already picks a default
+- You can discover the answer quickly by reading the codebase
+- The user already answered it earlier in the conversation
+- Only cosmetic or naming details with an obvious local precedent
+
+Prefer inferring from context and conventions over interrupting. Prefer one short clarifying round over guessing wrong and redoing work.
+
+## How to ask
+
+- Ask early, before large edits or irreversible steps
+- Batch related questions in one message; do not drip-feed one question per turn
+- Keep questions concrete and answerable (options or a yes/no when useful)
+- If part of the request is clear, state what you will proceed with and only ask about the ambiguous part
+- Do not pad with “just checking” questions that do not change the plan
+
+## Examples
+
+```
+❌ User: “Fix the capture bug on Windows”
+   Agent: Implements a speculative Win32 fix without confirming which bug or repro
+
+✅ User: “Fix the capture bug on Windows”
+   Agent: “Which failure are you seeing — black frames, wrong window, or focus not sticking? Any repro steps?”
+
+❌ User: “Clean up the serializer”
+   Agent: Rewrites the whole crate and renames public types
+
+✅ User: “Clean up the serializer”
+   Agent: “Do you mean dead-code removal and clippy cleanup, or a broader API reshape? Any types that must stay?”
+```
+
+## Relationship to concision
+
+Stay concise: fewer, sharper questions. Asking on ambiguity overrides “pick one and proceed” only when the choice is consequential; otherwise still pick the conventional path and move.

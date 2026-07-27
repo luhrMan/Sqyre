@@ -15,6 +15,8 @@ workspace = true
 
 [dependencies]
 parking_lot = { workspace = true }
+sqyre-domain = { path = "../sqyre-domain" }
+thiserror = { workspace = true }
 rdev = { workspace = true, optional = true }
 web-time = { workspace = true }
 

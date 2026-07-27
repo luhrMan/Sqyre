@@ -2,13 +2,13 @@
 
 use crate::backends::PortError;
 use crate::error::{ExecError, FlowSignal, Result};
-use crate::highlight::{highlight_clear, highlight_fill};
 use crate::path_confine::resolve_under_dir;
 use crate::run::{eval_clauses, resolve_int, resolve_text, run_children, Executor};
 use sqyre_domain::{
     Action, ActionId, ConditionClause, ListColumn, Macro, MatchMode, ScalarValue,
     FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
 };
+use sqyre_ui_model::{highlight_clear, highlight_fill};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};

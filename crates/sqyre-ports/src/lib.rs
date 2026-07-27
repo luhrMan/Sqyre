@@ -1,14 +1,13 @@
 //! OS-facing port traits shared by platform adapters and the macro executor.
-//!
-//! Domain-coupled ports (`CoordinateResolver`, `MacroLookup`, `OcrEngine`, …)
-//! stay in `sqyre-executor`.
 
 mod automation_error;
 mod capture_error;
+mod domain_ports;
 mod port_error;
 
 pub use automation_error::AutomationError;
 pub use capture_error::CaptureError;
+pub use domain_ports::{ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup};
 pub use port_error::PortError;
 
 use image::RgbaImage;

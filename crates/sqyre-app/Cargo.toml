@@ -15,8 +15,10 @@ name = "sqyre"
 path = "src/main.rs"
 
 [features]
+# Full desktop runtime: macro execution, screen capture, OCR/vision.
+default = ["native-runtime", "hooks"]
+native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-capture"]
 # OS global hotkeys (rdev). Disabled for wasm builds (`--no-default-features`).
-default = ["hooks"]
 hooks = ["sqyre-hotkeys/hooks"]
 
 [lints]
@@ -33,17 +35,17 @@ egui-phosphor = { workspace = true }
 egui_ltreeview = { workspace = true }
 image = { workspace = true }
 resvg = { workspace = true }
-sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-ui-model = { path = "../sqyre-ui-model" }
+sqyre-ports = { path = "../sqyre-ports" }
 sqyre-persist = { path = "../sqyre-persist" }
 sqyre-validate = { path = "../sqyre-validate" }
 sqyre-varref = { path = "../sqyre-varref" }
-sqyre-executor = { path = "../sqyre-executor" }
+sqyre-executor = { path = "../sqyre-executor", optional = true }
 sqyre-serialize = { path = "../sqyre-serialize" }
-sqyre-capture = { path = "../sqyre-capture" }
+sqyre-capture = { path = "../sqyre-capture", optional = true }
 sqyre-hotkeys = { path = "../sqyre-hotkeys" }
-sqyre-vision = { path = "../sqyre-vision" }
+sqyre-vision = { path = "../sqyre-vision", optional = true }
 serde_yaml = { workspace = true }
 rfd = { workspace = true }
 parking_lot = { workspace = true }
@@ -69,10 +71,12 @@ windows = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse"] }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
 web-sys = { version = "0.3", features = ["Window", "Document", "HtmlCanvasElement", "Element"] }
-log = "0.4"
+log = { workspace = true }
 console_error_panic_hook = "0.1"
 
 [dev-dependencies]
 tempfile = { workspace = true }
 egui_kittest = { version = "0.35", features = ["wgpu", "snapshot", "eframe"] }
 image = { workspace = true }
+sqyre-executor = { path = "../sqyre-executor" }
+sqyre-capture = { path = "../sqyre-capture" }

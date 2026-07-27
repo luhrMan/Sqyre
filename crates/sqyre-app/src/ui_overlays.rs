@@ -4,6 +4,7 @@ use crate::add_action::AddActionPicker;
 use crate::catalog::apply_main_monitor_resolution;
 use crate::data_editor::DataEditor;
 use crate::icon_cache::IconCache;
+#[cfg(feature = "native-runtime")]
 use crate::pixel_color;
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::variables_panel;
@@ -24,8 +25,7 @@ pub fn handle_close_to_tray(app: &mut SqyreApp, ctx: &egui::Context) {
 }
 
 /// Always-on-top macro buttons (settings-backed); hidden while recording is armed.
-/// While the Data Editor Overlay tab is editing a button, that button is previewed
-/// live (even if that button is disabled / focus-gated).
+#[cfg(feature = "native-runtime")]
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     if app.screen_click.is_armed() {
         return;
@@ -182,7 +182,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             app.add_action_picker
                 .store_into_settings(app.settings_ui.settings_mut());
             if let Err(e) = app.settings_ui.save_settings() {
-                eprintln!("sqyre: save action defaults: {e}");
+                crate::log::warn(format!("save action defaults: {e}"));
             }
         }
         picked
@@ -233,17 +233,53 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     // Sample color before restoring visibility so the app isn't under the cursor.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    {
+        use std::sync::mpsc::TryRecvError;
+
+        if let Some(rx) = app.pixel_sample_pending.as_ref() {
+            match rx.try_recv() {
+                Ok(Ok(hex)) => {
+                    app.pixel_sample_pending = None;
+                    app.tree.tooltip.apply_recorded_color(hex.clone());
+                    app.add_action_picker.apply_recorded_color(hex);
+                }
+                Ok(Err(e)) => {
+                    app.pixel_sample_pending = None;
+                    crate::log::warn(format!("sample pixel color: {e}"));
+                }
+                Err(TryRecvError::Empty) => ctx.request_repaint(),
+                Err(TryRecvError::Disconnected) => {
+                    app.pixel_sample_pending = None;
+                    crate::log::warn("sample pixel color: capture failed");
+                }
+            }
+        }
+        if app.pixel_sample_pending.is_none() {
+            if let Some((x, y)) = app.screen_click.take_color_point() {
+                match pixel_color::spawn_sample_pixel_hex(x, y) {
+                    Ok(rx) => {
+                        app.pixel_sample_pending = Some(rx);
+                        ctx.request_repaint();
+                    }
+                    Err(e) => crate::log::warn(format!("sample pixel color: {e}")),
+                }
+            }
+        }
+    }
+    #[cfg(all(target_arch = "wasm32", feature = "native-runtime"))]
     if let Some((x, y)) = app.screen_click.take_color_point() {
         match pixel_color::sample_pixel_hex(x, y) {
             Ok(hex) => {
                 app.tree.tooltip.apply_recorded_color(hex.clone());
                 app.add_action_picker.apply_recorded_color(hex);
             }
-            Err(e) => eprintln!("sqyre: sample pixel color: {e}"),
+            Err(e) => crate::log::warn(format!("sample pixel color: {e}")),
         }
     }
     app.update_recording_visibility(ctx);
     app.sync_recording_overlay(ctx);
+    #[cfg(feature = "native-runtime")]
     sync_macro_overlay(app, ctx);
     // Windows Raw Input suppresses WH_KEYBOARD_LL while we are focused; mirror
     // egui keys into the hotkey bridges so Record / Esc / chords still work.
@@ -308,7 +344,7 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
                 app.settings_ui.note_backup_success(&path);
             }
             Ok(Err(e)) => {
-                eprintln!("sqyre: automatic backup failed: {e}");
+                crate::log::warn(format!("automatic backup failed: {e}"));
             }
             Err(mpsc::TryRecvError::Empty) => {
                 app.backup_task = Some(rx);

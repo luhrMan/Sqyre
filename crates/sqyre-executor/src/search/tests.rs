@@ -10,6 +10,7 @@ use sqyre_domain::{
     MatchOrder, RepeatMode, ScalarValue, WaitTilFoundConfig,
 };
 use sqyre_match::{search_blur_kernel, ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
+use sqyre_ui_model::lines_for;
 use sqyre_vision::get_cached_blurred_template;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -495,7 +496,7 @@ fn find_pixel_sets_coords_and_logs() {
         macro_.variables.get("foundY").map(|v| v.as_display()),
         Some("205".into()) // 200 origin + 5
     );
-    let lines = logger.lines_for(find_id);
+    let lines = lines_for(&logger.entries_for(find_id));
     assert!(
         lines.iter().any(|l| l.contains("found matching pixel")),
         "{lines:?}"
@@ -526,7 +527,7 @@ fn find_pixel_not_found_logs() {
         },
     }]);
     run_search_logged(&mut macro_, &mut backend, &mut capturer, &resolver, &logger);
-    let lines = logger.lines_for(find_id);
+    let lines = lines_for(&logger.entries_for(find_id));
     assert!(
         lines.iter().any(|l| l.contains("pixel not found")),
         "{lines:?}"
@@ -659,9 +660,9 @@ fn image_search_no_find_runs_branch() {
     .unwrap();
 
     assert!(backend.log.iter().any(|e| e == "sleep:13"));
-    let lines = logger.lines_for(search_id);
+    let lines = lines_for(&logger.entries_for(search_id));
     assert!(
-        lines.iter().any(|l| l.contains("Image Searching")),
+        lines.iter().any(|l| l.contains("Image Search: searching")),
         "expected search-area log before match: {lines:?}"
     );
     assert!(
@@ -747,7 +748,7 @@ fn image_search_break_stops_match_loop() {
 
 #[test]
 fn find_template_matches_exact_peak() {
-    // blur=0 still maps to kernel 5; pattern must survive that.
+    // blur=0 means no blur (kernel 0); pattern must still be found unblurred.
     let mut tmpl = ImageBuf::new(10, 10, 3, 40);
     for y in 0..10 {
         for x in 0..10 {
@@ -768,7 +769,7 @@ fn find_template_matches_exact_peak() {
         0.7,
         0,
         DEFAULT_CLOSE_MATCHES_DISTANCE,
-        sqyre_match::MatchMethod::CcoeffNormed,
+        sqyre_domain::MatchMethod::CcoeffNormed,
     )
     .unwrap();
     assert!(
@@ -797,7 +798,7 @@ fn find_template_matches_sqdiff_normed_peak() {
         None,
         0.1,
         DEFAULT_CLOSE_MATCHES_DISTANCE,
-        sqyre_match::MatchMethod::SqdiffNormed,
+        sqyre_domain::MatchMethod::SqdiffNormed,
     )
     .unwrap();
     assert!(
@@ -921,7 +922,7 @@ fn ocr_writes_text_and_target_coords() {
         image_labels.iter().any(|l| l.contains("word boxes")),
         "expected OCR word-box overlay: {image_labels:?}"
     );
-    let lines = log.lines_for(ocr_id);
+    let lines = lines_for(&entries);
     assert!(
         lines.iter().any(|l| l.contains("OCR full text")),
         "expected full OCR text log: {lines:?}"
@@ -947,7 +948,10 @@ fn ocr_runs_branch_when_target_found() {
     use sqyre_vision::OcrWordBox;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrRecognition {
@@ -984,7 +988,10 @@ fn ocr_no_find_runs_branch_when_flag_set() {
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrRecognition {
@@ -1027,7 +1034,10 @@ fn ocr_skips_branch_when_target_missing() {
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrRecognition {
@@ -1091,13 +1101,10 @@ fn find_pixel_wait_until_found_retries_then_succeeds() {
         macro_.variables.get("foundX").map(|v| v.as_display()),
         Some("102".into())
     );
+    let lines = lines_for(&logger.entries_for(find_id));
     assert!(
-        logger
-            .lines_for(find_id)
-            .iter()
-            .any(|l| l.starts_with("timing: total ")),
-        "{:?}",
-        logger.lines_for(find_id)
+        lines.iter().any(|l| l.starts_with("timing: total ")),
+        "{lines:?}"
     );
 }
 
@@ -1562,7 +1569,7 @@ fn image_search_multi_variant_matches_either_template() {
             macro_.variables.get("StackMax").map(|v| v.as_display()),
             Some("3".into())
         );
-        let lines = logger.lines_for(search_id);
+        let lines = lines_for(&logger.entries_for(search_id));
         assert!(
             lines.iter().any(|l| l.contains("Total # found:")),
             "{lines:?}"
@@ -1651,7 +1658,10 @@ fn ocr_wait_until_found_retries_then_succeeds() {
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = QueuedOcrEngine {
         queue: std::sync::Mutex::new(vec![
@@ -1699,7 +1709,10 @@ fn ocr_repeat_while_found_then_stops_on_miss() {
     use sqyre_vision::OcrRecognition;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = QueuedOcrEngine {
         queue: std::sync::Mutex::new(vec![
@@ -1739,7 +1752,10 @@ fn ocr_runs_children_per_occurrence() {
     use sqyre_vision::OcrWordBox;
 
     let mut backend = RecordingBackend::default();
-    let mut capturer = capturer_next(RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])));
+    let mut capturer = capturer_queue(vec![
+        RgbaImage::from_pixel(20, 10, Rgba([255, 255, 255, 255])),
+        RgbaImage::from_pixel(20, 10, Rgba([254, 255, 255, 255])),
+    ]);
     let resolver = SEARCH_FIXED_AREA;
     let ocr = FixedOcrEngine {
         result: OcrRecognition {

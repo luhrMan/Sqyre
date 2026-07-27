@@ -2,8 +2,8 @@
 //! icon, color key, delay class).
 //!
 //! Labels are used by the executor (action logs) as well as the UI. Picker column
-//! order ([`ACTION_PICKER_CATEGORIES`]) is presentation-oriented and may move to
-//! an app-facing module later; keep wire `type_key` values stable.
+//! order lives in `sqyre-ui-model` ([`sqyre_ui_model::ACTION_PICKER_CATEGORIES`]);
+//! keep wire `type_key` values stable.
 //!
 //! # Adding a kind
 //!
@@ -25,15 +25,6 @@ use crate::color::{
 /// Derived from [`ACTION_TYPE_TABLE`].
 pub const ACTION_KIND_COUNT: usize = ACTION_TYPE_TABLE.len();
 
-/// Picker column order (also used as color-bucket keys for most types).
-pub const ACTION_PICKER_CATEGORIES: &[&str] = &[
-    "Mouse & Keyboard",
-    "Detection",
-    "Variables",
-    "Control flow",
-    "Miscellaneous",
-];
-
 /// Post-action delay bucket for macro mouse/keyboard delay settings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DelayClass {
@@ -48,8 +39,6 @@ pub struct ActionTypeMeta {
     pub type_key: &'static str,
     pub label: &'static str,
     pub description: &'static str,
-    /// Add Action picker column.
-    pub picker_category: &'static str,
     /// Pastel color bucket label (may differ from picker for loop/nav types).
     pub color_category: &'static str,
     /// Settings pastel override key ([`ACTION_COLOR_KEY_*`](crate::color)).
@@ -64,7 +53,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "move",
         label: "Mouse Move",
         description: "Moves the mouse cursor to a target position.",
-        picker_category: "Mouse & Keyboard",
         color_category: "Mouse & Keyboard",
         color_key: ACTION_COLOR_KEY_MOUSE_KEYBOARD,
         icon: "➔",
@@ -74,7 +62,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "click",
         label: "Click",
         description: "Clicks a mouse button at the current cursor position.",
-        picker_category: "Mouse & Keyboard",
         color_category: "Mouse & Keyboard",
         color_key: ACTION_COLOR_KEY_MOUSE_KEYBOARD,
         icon: "⬇",
@@ -84,7 +71,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "key",
         label: "Key",
         description: "Presses or releases a single keyboard key.",
-        picker_category: "Mouse & Keyboard",
         color_category: "Mouse & Keyboard",
         color_key: ACTION_COLOR_KEY_MOUSE_KEYBOARD,
         icon: "⬇",
@@ -94,7 +80,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "type",
         label: "Type",
         description: "Types out a string of text, one character at a time.",
-        picker_category: "Mouse & Keyboard",
         color_category: "Mouse & Keyboard",
         color_key: ACTION_COLOR_KEY_MOUSE_KEYBOARD,
         icon: "⌨",
@@ -104,7 +89,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "imagesearch",
         label: "Image Search",
         description: "Searches a screen region for images and saves match coordinates.",
-        picker_category: "Detection",
         color_category: "Detection",
         color_key: ACTION_COLOR_KEY_DETECTION,
         icon: "🔍",
@@ -115,7 +99,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         label: "OCR",
         description:
             "Reads text from a screen region; runs nested actions when the target is found.",
-        picker_category: "Detection",
         color_category: "Detection",
         color_key: ACTION_COLOR_KEY_DETECTION,
         icon: "🔤",
@@ -125,7 +108,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "findpixel",
         label: "Find pixel",
         description: "Scans a region for a pixel color; runs nested actions when found.",
-        picker_category: "Detection",
         color_category: "Detection",
         color_key: ACTION_COLOR_KEY_DETECTION,
         icon: "🎨",
@@ -136,7 +118,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         label: "Set",
         description:
             "Assigns a value to a variable; arithmetic expressions and ${refs} are evaluated.",
-        picker_category: "Variables",
         color_category: "Variables",
         color_key: ACTION_COLOR_KEY_VARIABLES,
         icon: "x",
@@ -146,7 +127,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "savevariable",
         label: "Save to",
         description: "Writes a variable's value out to a file or the clipboard.",
-        picker_category: "Variables",
         color_category: "Variables",
         color_key: ACTION_COLOR_KEY_VARIABLES,
         icon: "💾",
@@ -156,7 +136,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "loop",
         label: "Loop",
         description: "Repeats its sub-actions a set number of times.",
-        picker_category: "Control flow",
         color_category: "Control flow",
         color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
         icon: "↻",
@@ -166,7 +145,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "while",
         label: "While",
         description: "Repeats its sub-actions while conditions remain true.",
-        picker_category: "Control flow",
         color_category: "Control flow",
         color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
         icon: "↻",
@@ -176,7 +154,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "loopjump",
         label: "Break / Continue",
         description: "Break exits the innermost loop; Continue skips to its next iteration.",
-        picker_category: "Control flow",
         color_category: "Control flow",
         color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
         icon: "⏹",
@@ -186,7 +163,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "foreachrow",
         label: "For each row",
         description: "Runs its sub-actions once per row of a list source.",
-        picker_category: "Control flow",
         color_category: "Control flow",
         color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
         icon: "☰",
@@ -196,7 +172,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "conditional",
         label: "If",
         description: "Runs its sub-actions only when the conditions are true.",
-        picker_category: "Control flow",
         color_category: "Control flow",
         color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
         icon: "?",
@@ -206,7 +181,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "wait",
         label: "Wait",
         description: "Pauses for a fixed number of milliseconds, then continues.",
-        picker_category: "Miscellaneous",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_WAIT,
         icon: "⏱",
@@ -216,7 +190,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "pause",
         label: "Pause",
         description: "Halts the macro until you press the continue key.",
-        picker_category: "Miscellaneous",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_WAIT,
         icon: "⏸",
@@ -226,7 +199,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "focuswindow",
         label: "Focus window",
         description: "Brings a window to the front, matched by program and title.",
-        picker_category: "Miscellaneous",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
         icon: "👁",
@@ -236,7 +208,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "runmacro",
         label: "Run macro",
         description: "Runs another macro inline as a sub-routine.",
-        picker_category: "Miscellaneous",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
         icon: "▶",
@@ -247,7 +218,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         label: "Navigate Select",
         description:
             "Navigates an Atlas of Collections with chords; Nav Key children branch on custom keys.",
-        picker_category: "Miscellaneous",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
         icon: "⌖",
@@ -257,7 +227,6 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "navigatekey",
         label: "Nav Key",
         description: "Under Navigate Select: when this chord is pressed, runs nested actions.",
-        picker_category: "Miscellaneous",
         color_category: "Miscellaneous",
         color_key: ACTION_COLOR_KEY_MISCELLANEOUS,
         // ⌨-family / Misc Technical glyphs (⎇) often tofu in egui fonts.
@@ -283,14 +252,6 @@ pub fn action_type_label(action_type: &str) -> &'static str {
 pub fn action_type_description(action_type: &str) -> &'static str {
     lookup(action_type).map(|m| m.description).unwrap_or("")
 }
-
-/// Category for the Add Action picker grid.
-pub fn action_picker_category(action_type: &str) -> &'static str {
-    lookup(action_type)
-        .map(|m| m.picker_category)
-        .unwrap_or("Miscellaneous")
-}
-
 /// Pastel color bucket label for tree/UI badges.
 pub fn action_color_category(action_type: &str) -> &'static str {
     lookup(action_type).map(|m| m.color_category).unwrap_or("")
@@ -333,7 +294,6 @@ mod tests {
     fn table_covers_picker_templates() {
         for m in ACTION_TYPE_TABLE {
             assert_eq!(action_type_label(m.type_key), m.label);
-            assert_eq!(action_picker_category(m.type_key), m.picker_category);
             assert_eq!(action_color_category(m.type_key), m.color_category);
             assert_eq!(action_color_key(m.type_key), m.color_key);
             assert_eq!(action_icon(m.type_key), m.icon);
@@ -395,27 +355,24 @@ mod tests {
     }
 
     #[test]
-    fn control_flow_picker_and_color_buckets() {
-        assert_eq!(action_picker_category("loop"), "Control flow");
+    fn control_flow_color_buckets() {
         assert_eq!(action_color_category("loop"), "Control flow");
         assert_eq!(action_color_key("loop"), ACTION_COLOR_KEY_CONTROL_FLOW);
-        assert_eq!(action_picker_category("foreachrow"), "Control flow");
         assert_eq!(action_color_category("foreachrow"), "Control flow");
         assert_eq!(
             action_color_key("foreachrow"),
             ACTION_COLOR_KEY_CONTROL_FLOW
         );
-        assert_eq!(action_picker_category("conditional"), "Control flow");
+        assert_eq!(action_color_category("conditional"), "Control flow");
         assert_eq!(
             action_color_key("conditional"),
             ACTION_COLOR_KEY_CONTROL_FLOW
         );
-        assert_eq!(action_picker_category("navigateselect"), "Miscellaneous");
+        assert_eq!(action_color_category("navigateselect"), "Miscellaneous");
         assert_eq!(
             action_color_key("navigateselect"),
             ACTION_COLOR_KEY_MISCELLANEOUS
         );
-        assert_eq!(action_picker_category("navigatekey"), "Miscellaneous");
         assert_eq!(action_icon("navigatekey"), "🔑");
     }
 

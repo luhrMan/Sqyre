@@ -216,6 +216,6 @@ pub fn restart_app(instance_lock: &mut Option<crate::single_instance::InstanceLo
     // Release lock before the new process tries to acquire it.
     *instance_lock = None;
     if let Err(e) = sqyre_update::restart() {
-        eprintln!("sqyre: restart after update failed: {e}");
+        crate::log::warn(format_args!("restart after update failed: {e}"));
     }
 }

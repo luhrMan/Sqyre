@@ -1,20 +1,20 @@
 //! Image search action: capture → match template variants → run children per hit.
 
 use super::common::{
-    apply_detection_hits, capture_search_buf, close_matches_distance, run_detection_shell,
-    sort_hits, DetectionExtras, DetectionHit,
+    apply_detection_hits, capture_search_buf, close_matches_distance, frame_fingerprint,
+    run_detection_shell, sort_hits, DetectionExtras, DetectionHit, FrameCache,
 };
-use crate::action_log::{crop_match_preview, draw_rect_rgb};
 use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, Result, SearchError};
-use crate::highlight::{highlight_clear, highlight_fill};
+use crate::log_draw::{crop_match_preview, draw_rect_rgb};
 use crate::run::Executor;
 use rayon::prelude::*;
-use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};
+use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchMethod, MatchOrder};
 use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_prepared, prepare_search,
-    search_blur_kernel, ImageBuf, MatchMethod, Point,
+    search_blur_kernel, ImageBuf, Point,
 };
+use sqyre_ui_model::{highlight_clear, highlight_fill};
 use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
     load_rgb_image,
@@ -51,13 +51,16 @@ pub(crate) fn execute_image_search(
 
     highlight_fill(exec.deps.highlighter, &macro_.name, action.id, 0.0);
     let action_id = action.id;
+    let label = action_type_label(action.type_key());
     let macro_name = macro_.name.clone();
     let order = order.clone();
+    let mut cache = FrameCache::default();
     let result = (|| {
         // Log wait intent once before the shared shell arms retries.
         let results0 = capture_and_match(
             exec,
             action_id,
+            label,
             targets,
             search_area,
             *tolerance,
@@ -65,12 +68,13 @@ pub(crate) fn execute_image_search(
             *match_method,
             &order,
             macro_,
+            &mut cache,
         )?;
         if wait.wait_until_found_active() && results0.is_empty() {
             exec.log(
                 action_id,
                 format!(
-                    "Image Search: waiting up to {}s until found",
+                    "{label}: waiting up to {}s until found",
                     wait.wait_til_found_seconds
                 ),
             );
@@ -78,7 +82,7 @@ pub(crate) fn execute_image_search(
             exec.log(
                 action_id,
                 format!(
-                    "Image Search: waiting up to {}s while found",
+                    "{label}: waiting up to {}s while found",
                     wait.wait_til_found_seconds
                 ),
             );
@@ -98,6 +102,7 @@ pub(crate) fn execute_image_search(
                 capture_and_match(
                     exec,
                     action_id,
+                    label,
                     targets,
                     search_area,
                     *tolerance,
@@ -105,6 +110,7 @@ pub(crate) fn execute_image_search(
                     *match_method,
                     &order,
                     macro_,
+                    &mut cache,
                 )
             },
             |results| !results.is_empty(),
@@ -162,6 +168,7 @@ struct VariantMatchOutcome {
 fn capture_and_match(
     exec: &mut Executor<'_>,
     action_id: sqyre_domain::ActionId,
+    label: &str,
     targets: &[String],
     search_area: &sqyre_domain::CoordinateRef,
     tolerance: f64,
@@ -169,11 +176,12 @@ fn capture_and_match(
     match_method: MatchMethod,
     order: &MatchOrder,
     macro_: &Macro,
+    cache: &mut FrameCache<Vec<DetectionHit>>,
 ) -> Result<Vec<DetectionHit>> {
     // Capture/resolve/blur failures are logged as misses so wait-until-found can retry
     // instead of aborting the macro (same policy as OCR / Find Pixel).
     let Some(icons) = exec.deps.icons else {
-        exec.log(action_id, "Image Search: missing IconStore");
+        exec.log(action_id, format!("{label}: missing IconStore"));
         return Ok(Vec::new());
     };
 
@@ -181,7 +189,7 @@ fn capture_and_match(
     let Some((search, origin)) = capture_search_buf(
         exec,
         action_id,
-        "Image Search",
+        label,
         search_area,
         macro_,
         |exec, lx, ty, rx, by| {
@@ -190,13 +198,22 @@ fn capture_and_match(
             exec.log(
                 action_id,
                 format!(
-                    "Image Searching | {targets:?} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}, width:{w} height:{h}"
+                    "{label}: searching {targets:?} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}, width:{w} height:{h}"
                 ),
             );
         },
     ) else {
         return Ok(Vec::new());
     };
+    let fp = frame_fingerprint(&search);
+    if let Some(cached) = cache.get(fp, origin) {
+        exec.log_timing(action_id, "capture", capture_started.elapsed());
+        exec.log(
+            action_id,
+            format!("{label}: capture unchanged since last attempt; reusing match result"),
+        );
+        return Ok(cached);
+    }
     exec.log_image(action_id, "1. Capture (search area)", &search);
     let kernel = search_blur_kernel(blur);
     let want_pipeline = exec.log_images_enabled();
@@ -205,7 +222,7 @@ fn capture_and_match(
     let search_blurred = match blur_image_owned(search, kernel) {
         Ok(b) => b,
         Err(e) => {
-            exec.log(action_id, format!("Image Search: blur: {e}"));
+            exec.log(action_id, format!("{label}: blur: {e}"));
             return Ok(Vec::new());
         }
     };
@@ -222,10 +239,7 @@ fn capture_and_match(
     for target in targets {
         let paths = icons.variant_paths(target);
         if paths.is_empty() {
-            exec.log(
-                action_id,
-                format!("Image Search: no icon variants for {target}"),
-            );
+            exec.log(action_id, format!("{label}: no icon variants for {target}"));
             continue;
         }
         let meta = icons.item_meta(target);
@@ -344,7 +358,7 @@ fn capture_and_match(
 
         if outcome.tmpl_w == 0 {
             if let Err(e) = &outcome.matches {
-                exec.log(action_id, format!("Image Search: {e}"));
+                exec.log(action_id, format!("{label}: {e}"));
             }
             continue;
         }
@@ -352,7 +366,7 @@ fn capture_and_match(
         exec.log(
             action_id,
             format!(
-                "Image Search: matching {variant_label} ({}x{}) against {}x{}",
+                "{label}: matching {variant_label} ({}x{}) against {}x{}",
                 outcome.tmpl_w, outcome.tmpl_h, search_blurred.width, search_blurred.height
             ),
         );
@@ -374,7 +388,7 @@ fn capture_and_match(
         let matches = match outcome.matches {
             Ok(m) => m,
             Err(e) => {
-                exec.log(action_id, format!("Image Search match: {e}"));
+                exec.log(action_id, format!("{label} match: {e}"));
                 if want_pipeline {
                     let mut steps: Vec<(&str, &ImageBuf)> = vec![
                         ("0. Search area (match input)", &search_blurred),
@@ -404,7 +418,7 @@ fn capture_and_match(
         exec.log(
             action_id,
             format!(
-                "Image Search: {variant_label} → {} match(es) in {:.0}ms",
+                "{label}: {variant_label} → {} match(es) in {:.0}ms",
                 matches.len(),
                 outcome.match_ms
             ),
@@ -529,7 +543,7 @@ fn capture_and_match(
     exec.log(
         action_id,
         format!(
-            "Image Search: capture+match done in {:.0}ms ({} raw hit(s))",
+            "{label}: capture+match done in {:.0}ms ({} raw hit(s))",
             match_started.elapsed().as_secs_f64() * 1000.0,
             out.len()
         ),
@@ -549,5 +563,6 @@ fn capture_and_match(
         })
         .collect();
     sort_hits(&mut hits, order);
+    cache.set(fp, origin, hits.clone());
     Ok(hits)
 }

@@ -10,10 +10,12 @@ mod app_run;
 mod assets;
 mod catalog;
 mod chord_record;
+#[cfg(feature = "native-runtime")]
 mod collection_capture;
 mod data_editor;
 mod data_editor_preview;
 mod demo_icons;
+#[cfg(feature = "native-runtime")]
 mod diag;
 pub mod docs_fixture;
 mod file_dialogs;
@@ -22,14 +24,23 @@ mod icon_cache;
 mod icon_variants;
 mod image_view;
 mod key_record;
+mod log;
 mod macro_meta;
+#[cfg(feature = "native-runtime")]
 mod macro_overlay;
 mod overlay_icons;
 mod paint_ctx;
 mod pickers;
+#[cfg(feature = "native-runtime")]
 mod pixel_color;
+#[cfg(feature = "native-runtime")]
+#[path = "preview_tooltip.rs"]
+mod preview_tooltip;
+#[cfg(not(feature = "native-runtime"))]
+#[path = "preview_tooltip_stub.rs"]
 mod preview_tooltip;
 mod recorded_action;
+#[cfg(feature = "native-runtime")]
 mod recording_overlay;
 mod run_session;
 mod settings;
@@ -58,6 +69,7 @@ mod wasm_io;
 mod widgets;
 #[cfg(target_os = "windows")]
 mod win_focused_keys;
+mod window_types;
 mod workspace;
 
 pub use settings::SettingsUi;
@@ -71,15 +83,13 @@ use hotkey_record::HotkeyRecordUi;
 use icon_cache::IconCache;
 use key_record::KeyRecordUi;
 use macro_meta::MacroMetaUi;
-use macro_overlay::MacroOverlay;
 use parking_lot::Mutex;
 use preview_tooltip::PreviewTooltipCache;
-use recording_overlay::RecordingOverlay;
 use run_session::RunSession;
 use sqyre_domain::Macro;
-use sqyre_executor::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use sqyre_hotkeys::{default_hotkeys, HotkeyCallbacks, HotkeyService, ScreenClickBridge};
 use sqyre_persist::{Database, ProgramCatalog, UserSettings};
+use sqyre_ui_model::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
 use tree_state::TreeState;
 use wasm_io::PendingImport;
@@ -89,19 +99,24 @@ use workspace::Workspace;
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run() -> eframe::Result<()> {
     let _ = sqyre_persist::initialize_directories();
+    #[cfg(feature = "native-runtime")]
     diag::install(sqyre_persist::sqyre_dir());
     sqyre_update::cleanup_stale_update();
-    #[cfg(target_os = "linux")]
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "native-runtime",
+        target_os = "linux"
+    ))]
     install_x11_secondary_error_hook();
 
     let instance_lock = match single_instance::try_acquire() {
         Ok(Some(lock)) => Some(lock),
         Ok(None) => {
-            eprintln!("Sqyre is already running");
+            crate::log::warn("Sqyre is already running");
             std::process::exit(0);
         }
         Err(e) => {
-            eprintln!("failed to acquire instance lock: {e}");
+            crate::log::warn(format!("failed to acquire instance lock: {e}"));
             std::process::exit(1);
         }
     };
@@ -134,7 +149,11 @@ pub fn run() -> eframe::Result<()> {
 }
 
 /// Keep winit from storing X errors that originate on Sqyre's secondary Displays.
-#[cfg(all(not(target_arch = "wasm32"), target_os = "linux"))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    feature = "native-runtime",
+    target_os = "linux"
+))]
 fn install_x11_secondary_error_hook() {
     winit::platform::x11::register_xlib_error_hook(Box::new(|display, _event| {
         sqyre_capture::owns_secondary_x_display(display)
@@ -175,9 +194,11 @@ pub struct SqyreApp {
     /// Window was hidden because a point/search-area recording is armed.
     hidden_for_recording: bool,
     /// Outline windows for live search-area selection rect.
-    recording_overlay: RecordingOverlay,
+    #[cfg(feature = "native-runtime")]
+    recording_overlay: crate::recording_overlay::RecordingOverlay,
     /// Always-on-top floating buttons that start macros.
-    macro_overlay: MacroOverlay,
+    #[cfg(feature = "native-runtime")]
+    macro_overlay: crate::macro_overlay::MacroOverlay,
     /// Left macro-list side panel visibility.
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
@@ -193,6 +214,9 @@ pub struct SqyreApp {
     /// In-flight automatic backup (native only).
     #[cfg(not(target_arch = "wasm32"))]
     backup_task: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
+    /// Background Find Pixel color sample (native only).
+    #[cfg(not(target_arch = "wasm32"))]
+    pixel_sample_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
     /// Background update check / download (native only).
     #[cfg(not(target_arch = "wasm32"))]
     update: update::UpdateManager,
@@ -201,7 +225,7 @@ pub struct SqyreApp {
 impl SqyreApp {
     fn load() -> Self {
         let settings = UserSettings::load_default().unwrap_or_else(|e| {
-            eprintln!("sqyre: failed to load settings: {e}");
+            crate::log::warn(format!("failed to load settings: {e}"));
             UserSettings::default()
         });
         settings.apply_sqyre_dir_override();
@@ -219,7 +243,10 @@ impl SqyreApp {
         if let Err(e) = hotkeys.start(HotkeyCallbacks {
             on_escape_stop: Arc::new(move || stop.request_stop()),
             on_failsafe: Arc::new(|| {
-                eprintln!("failsafe {} — exiting", sqyre_hotkeys::FAILSAFE_LABEL);
+                crate::log::warn(format!(
+                    "failsafe {} — exiting",
+                    sqyre_hotkeys::FAILSAFE_LABEL
+                ));
                 sqyre_input::release_held_inputs();
                 std::process::exit(0);
             }),
@@ -230,7 +257,7 @@ impl SqyreApp {
                 }
             }),
         }) {
-            eprintln!("sqyre: failed to start global hotkeys: {e}");
+            crate::log::warn(format!("failed to start global hotkeys: {e}"));
         }
         #[cfg(target_arch = "wasm32")]
         {
@@ -285,41 +312,45 @@ impl SqyreApp {
         };
 
         let platform_warning = {
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                any(target_os = "linux", target_os = "windows")
-            ))]
+            #[cfg(feature = "native-runtime")]
             {
-                // Ensure OCR data exists (downloads eng.traineddata when missing).
-                let ocr_warning = match sqyre_vision::shared_leptess() {
-                    Ok(_) => None,
-                    Err(e) => {
-                        let warning = format!("OCR unavailable: {e}");
-                        eprintln!("sqyre: {warning}");
-                        Some(warning)
-                    }
-                };
-                #[cfg(target_os = "linux")]
+                #[cfg(all(
+                    not(target_arch = "wasm32"),
+                    any(target_os = "linux", target_os = "windows")
+                ))]
                 {
-                    sqyre_capture::linux_session_capture_warning()
-                        .or_else(|| {
-                            // Soft probe: if DISPLAY is set but capturer still fails, surface the error.
-                            match sqyre_capture::shared_capturer() {
+                    // Ensure OCR data exists (downloads eng.traineddata when missing).
+                    let ocr_warning = match sqyre_vision::shared_leptess() {
+                        Ok(_) => None,
+                        Err(e) => {
+                            let warning = format!("OCR unavailable: {e}");
+                            crate::log::warn(&warning);
+                            Some(warning)
+                        }
+                    };
+                    #[cfg(target_os = "linux")]
+                    {
+                        sqyre_capture::linux_session_capture_warning()
+                            .or_else(|| match sqyre_capture::shared_capturer() {
                                 Ok(_) => None,
                                 Err(e) => Some(format!("Screen capture unavailable: {e}")),
-                            }
-                        })
-                        .or(ocr_warning)
+                            })
+                            .or(ocr_warning)
+                    }
+                    #[cfg(target_os = "windows")]
+                    {
+                        ocr_warning
+                    }
                 }
-                #[cfg(target_os = "windows")]
+                #[cfg(not(any(
+                    all(target_os = "linux", not(target_arch = "wasm32")),
+                    all(target_os = "windows", not(target_arch = "wasm32"))
+                )))]
                 {
-                    ocr_warning
+                    None
                 }
             }
-            #[cfg(not(any(
-                all(target_os = "linux", not(target_arch = "wasm32")),
-                all(target_os = "windows", not(target_arch = "wasm32"))
-            )))]
+            #[cfg(not(feature = "native-runtime"))]
             {
                 None
             }
@@ -361,8 +392,10 @@ impl SqyreApp {
             settings_ui,
             variables_panel: variables_panel::VariablesPanelUi::default(),
             hidden_for_recording: false,
-            recording_overlay: RecordingOverlay::new(),
-            macro_overlay: MacroOverlay::new(),
+            #[cfg(feature = "native-runtime")]
+            recording_overlay: recording_overlay::RecordingOverlay::new(),
+            #[cfg(feature = "native-runtime")]
+            macro_overlay: macro_overlay::MacroOverlay::new(),
             macro_list_open: true,
             macro_list_filter: String::new(),
             tray: tray::SystemTray::default(),
@@ -371,6 +404,8 @@ impl SqyreApp {
             pending_import: wasm_io::new_pending_import(),
             #[cfg(not(target_arch = "wasm32"))]
             backup_task: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            pixel_sample_pending: None,
             #[cfg(not(target_arch = "wasm32"))]
             update: update::UpdateManager::default(),
         };
@@ -394,17 +429,6 @@ impl SqyreApp {
             Err(msg) => {
                 self.workspace.save_error = Some(msg.clone());
                 Err(msg)
-            }
-        }
-    }
-
-    /// Persist `db` as currently held (caller already updated `db.macros` / programs).
-    pub(crate) fn save_database(&mut self) {
-        match self.workspace.db.save_default() {
-            Ok(()) => self.workspace.save_error = None,
-            Err(e) => {
-                eprintln!("sqyre: save database: {e}");
-                self.workspace.save_error = Some(e.to_string());
             }
         }
     }

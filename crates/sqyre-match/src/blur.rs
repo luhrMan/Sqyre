@@ -1,13 +1,13 @@
 use crate::image::ImageBuf;
 use crate::template::MatchError;
 
-/// Normalizes a blur amount to a positive odd Gaussian kernel size.
-/// Blur kernel size for image search (odd; minimum 5).
+/// Normalizes a blur amount to a positive odd Gaussian kernel size, or `0` when
+/// `blur <= 0` — the caller should skip blurring entirely in that case.
 pub fn search_blur_kernel(blur: i32) -> i32 {
-    let mut blur = blur;
     if blur <= 0 {
-        blur = 5;
+        return 0;
     }
+    let mut blur = blur;
     if blur % 2 == 0 {
         blur += 1;
     }
@@ -23,10 +23,10 @@ pub fn blur_image(img: &ImageBuf, blur: i32) -> Result<ImageBuf, MatchError> {
 }
 
 /// Like [`blur_image`] but takes ownership so the pixel buffer moves into PureCV
-/// without an extra clone.
+/// without an extra clone. No-op (identity) when `blur <= 0`.
 pub fn blur_image_owned(img: ImageBuf, blur: i32) -> Result<ImageBuf, MatchError> {
     let k = search_blur_kernel(blur);
-    if k as usize > img.width || k as usize > img.height {
+    if k <= 0 || k as usize > img.width || k as usize > img.height {
         return Ok(img);
     }
 
@@ -49,11 +49,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn search_blur_kernel_defaults_and_odd() {
-        assert_eq!(search_blur_kernel(0), 5);
-        assert_eq!(search_blur_kernel(-3), 5);
+    fn search_blur_kernel_no_blur_and_odd() {
+        assert_eq!(search_blur_kernel(0), 0);
+        assert_eq!(search_blur_kernel(-3), 0);
         assert_eq!(search_blur_kernel(4), 5);
         assert_eq!(search_blur_kernel(5), 5);
         assert_eq!(search_blur_kernel(6), 7);
+    }
+
+    #[test]
+    fn blur_image_owned_is_identity_when_blur_not_positive() {
+        let img = ImageBuf::new(4, 4, 3, 42);
+        let out = blur_image_owned(img.clone(), 0).unwrap();
+        assert_eq!(out.data, img.data);
     }
 }

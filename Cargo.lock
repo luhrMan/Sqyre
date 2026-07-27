@@ -4305,8 +4305,8 @@ dependencies = [
  "sqyre-executor",
  "sqyre-hotkeys",
  "sqyre-input",
- "sqyre-match",
  "sqyre-persist",
+ "sqyre-ports",
  "sqyre-serialize",
  "sqyre-ui-model",
  "sqyre-update",
@@ -4345,8 +4345,8 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_yaml",
- "sqyre-match",
  "sqyre-varref",
+ "thiserror 2.0.19",
  "uuid",
 ]
 
@@ -4361,6 +4361,7 @@ dependencies = [
  "sqyre-hotkeys",
  "sqyre-match",
  "sqyre-ports",
+ "sqyre-ui-model",
  "sqyre-vision",
  "tempfile",
  "thiserror 2.0.19",
@@ -4372,6 +4373,8 @@ version = "0.1.0"
 dependencies = [
  "parking_lot",
  "rdev",
+ "sqyre-domain",
+ "thiserror 2.0.19",
  "web-time",
  "windows",
 ]
@@ -4390,11 +4393,12 @@ dependencies = [
 name = "sqyre-match"
 version = "0.1.0"
 dependencies = [
+ "parking_lot",
  "pulp",
  "purecv",
  "rayon",
  "rustfft",
- "serde",
+ "sqyre-domain",
  "thiserror 2.0.19",
 ]
 
@@ -4403,6 +4407,7 @@ name = "sqyre-persist"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "parking_lot",
  "serde",
  "serde_yaml",
  "sqyre-domain",
@@ -4420,6 +4425,7 @@ version = "0.1.0"
 dependencies = [
  "image",
  "rayon",
+ "sqyre-domain",
  "thiserror 2.0.19",
 ]
 
@@ -4438,7 +4444,10 @@ dependencies = [
 name = "sqyre-ui-model"
 version = "0.1.0"
 dependencies = [
+ "parking_lot",
  "sqyre-domain",
+ "sqyre-match",
+ "sqyre-varref",
 ]
 
 [[package]]
@@ -4460,7 +4469,6 @@ name = "sqyre-validate"
 version = "0.1.0"
 dependencies = [
  "sqyre-domain",
- "sqyre-hotkeys",
  "sqyre-varref",
  "thiserror 2.0.19",
 ]

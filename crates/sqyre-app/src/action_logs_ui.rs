@@ -4,7 +4,7 @@
 use crate::image_view;
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use sqyre_domain::ActionId;
-use sqyre_executor::{ActionLogEntry, LogImage, SharedActionLog};
+use sqyre_ui_model::{lines_for, ActionLogEntry, LogImage, SharedActionLog};
 use std::collections::HashMap;
 
 /// Texture key for a log image (entry index + optional step within an item pipeline).
@@ -77,7 +77,6 @@ pub fn show_logs_window(
 ) -> bool {
     image_cache.ensure_action(action_id);
     let entries = action_log.entries_for(action_id);
-    let copy_text = action_log.lines_for(action_id).join("\n");
     let text_count = entries.iter().filter(|e| e.as_text().is_some()).count();
     let image_count = entries.iter().filter(|e| e.is_image()).count();
     let item_count = entries.iter().filter(|e| e.is_item_pipeline()).count();
@@ -99,7 +98,7 @@ pub fn show_logs_window(
         .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("Copy text").clicked() {
-                    ui.ctx().copy_text(copy_text.clone());
+                    ui.ctx().copy_text(lines_for(&entries).join("\n"));
                 }
                 if ui.button("Clear logs").clicked() {
                     action_log.clear();

@@ -1,68 +1,12 @@
 use crate::image::ImageBuf;
+use parking_lot::Mutex;
 use rayon::prelude::*;
 use rustfft::num_complex::Complex;
 use rustfft::FftPlanner;
-use serde::{Deserialize, Serialize};
+use sqyre_domain::MatchMethod;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use thiserror::Error;
-
-/// OpenCV `cv::TemplateMatchModes` (methods 0–5).
-///
-/// The single template-match-method enum shared by the domain action model
-/// (wire format) and the matching engine itself.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MatchMethod {
-    Sqdiff = 0,
-    SqdiffNormed = 1,
-    Ccorr = 2,
-    CcorrNormed = 3,
-    Ccoeff = 4,
-    #[default]
-    CcoeffNormed = 5,
-}
-
-impl MatchMethod {
-    pub const ALL: [Self; 6] = [
-        Self::Sqdiff,
-        Self::SqdiffNormed,
-        Self::Ccorr,
-        Self::CcorrNormed,
-        Self::Ccoeff,
-        Self::CcoeffNormed,
-    ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Sqdiff => "SQDIFF",
-            Self::SqdiffNormed => "SQDIFF_NORMED",
-            Self::Ccorr => "CCORR",
-            Self::CcorrNormed => "CCORR_NORMED",
-            Self::Ccoeff => "CCOEFF",
-            Self::CcoeffNormed => "CCOEFF_NORMED",
-        }
-    }
-
-    /// `false` for `SQDIFF` / `SQDIFF_NORMED` (lower score is better).
-    #[inline]
-    pub fn higher_is_better(self) -> bool {
-        !matches!(self, Self::Sqdiff | Self::SqdiffNormed)
-    }
-
-    #[inline]
-    pub fn is_normed(self) -> bool {
-        matches!(
-            self,
-            Self::SqdiffNormed | Self::CcorrNormed | Self::CcoeffNormed
-        )
-    }
-
-    #[inline]
-    fn is_ccoeff_family(self) -> bool {
-        matches!(self, Self::Ccoeff | Self::CcoeffNormed)
-    }
-}
 
 /// Correlation result map: size `(W−w+1)×(H−h+1)`, row-major `f32`.
 #[derive(Clone, Debug)]
@@ -735,13 +679,12 @@ type SearchFft = Vec<Vec<Complex<f32>>>;
 
 impl SearchPrep {
     fn fft_for_size(&self, search: &ImageBuf, dft_w: usize, dft_h: usize) -> Arc<SearchFft> {
-        if let Some(hit) = self.fft_cache.lock().unwrap().get(&(dft_w, dft_h)) {
+        if let Some(hit) = self.fft_cache.lock().get(&(dft_w, dft_h)) {
             return Arc::clone(hit);
         }
         let built = Arc::new(forward_fft_search(search, dft_w, dft_h));
         self.fft_cache
             .lock()
-            .unwrap()
             .insert((dft_w, dft_h), Arc::clone(&built));
         built
     }

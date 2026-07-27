@@ -324,6 +324,7 @@ pub(crate) fn paint_disk_preview(
 }
 
 /// Collection-tab preview with wheel zoom / drag pan.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn paint_zoomable_collection_preview(
     ui: &mut egui::Ui,
     icons: &mut IconCache,
@@ -332,6 +333,7 @@ pub(crate) fn paint_zoomable_collection_preview(
     cols: i32,
     view: &mut ImageViewTransform,
     replace_clicked: &mut bool,
+    capturing: bool,
 ) {
     ui.add_space(8.0);
     ui.separator();
@@ -343,7 +345,17 @@ pub(crate) fn paint_zoomable_collection_preview(
         {
             icons.invalidate_path(path);
         }
-        if ui.button("Replace Image").clicked() {
+        if ui
+            .add_enabled(
+                !capturing,
+                egui::Button::new(if capturing {
+                    "Capturing…"
+                } else {
+                    "Replace Image"
+                }),
+            )
+            .clicked()
+        {
             *replace_clicked = true;
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -480,6 +492,7 @@ pub(crate) fn paint_grid_overlay_painter(
 /// Per-monitor `(x, y, w, h)` in virtual-desktop coordinates for the atlas plane.
 /// Prefers real positions from the capturer; falls back to L→R layout from sizes.
 fn atlas_monitor_rects(catalog: &sqyre_persist::ProgramCatalog) -> Vec<(i32, i32, i32, i32)> {
+    #[cfg(feature = "native-runtime")]
     if let Ok(capturer) = sqyre_capture::shared_capturer() {
         if let Ok(rects) = capturer.monitor_rects_ref() {
             let out: Vec<_> = rects

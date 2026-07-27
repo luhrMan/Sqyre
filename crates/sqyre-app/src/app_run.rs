@@ -52,20 +52,20 @@ impl SqyreApp {
 
     /// Live selection outline + coords HUD while screen-click recording is armed.
     pub(crate) fn sync_recording_overlay(&mut self, ctx: &egui::Context) {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
         self.recording_overlay.sync(ctx, &self.screen_click);
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]
         let _ = ctx;
     }
 
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(not(feature = "native-runtime"))]
     pub(crate) fn start_macro_by_name(&mut self, _name: &str, _ctx: &egui::Context) {
         *self.run_session.state.status.lock() =
             "Run is not available in the browser editor.".into();
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod native_run {
     use super::*;
     use crate::app_backends::{trim_process_heap, BridgeContinueWait, StopWatchAutomation};
@@ -147,7 +147,7 @@ mod native_run {
                     let focuser = OsWindowFocuser;
                     let ocr_engine = shared_leptess()
                         .map_err(|e| {
-                            eprintln!("sqyre: {e}");
+                            crate::log::warn(format_args!("{e}"));
                             e
                         })
                         .ok();

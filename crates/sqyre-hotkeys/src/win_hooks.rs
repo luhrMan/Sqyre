@@ -6,7 +6,7 @@
 use crate::continue_wait::{vk_key_name, ContinueWaitBridge};
 use crate::macro_hotkeys::MacroHotkeyBridge;
 use crate::screen_click::ScreenClickBridge;
-use crate::{HotkeyCallbacks, HotkeyService};
+use crate::{HotkeyCallbacks, HotkeyError, HotkeyService};
 use parking_lot::Mutex;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicU32, Ordering};
@@ -73,12 +73,12 @@ impl WinHotkeys {
 }
 
 impl HotkeyService for WinHotkeys {
-    fn start(&mut self, callbacks: HotkeyCallbacks) -> Result<(), String> {
+    fn start(&mut self, callbacks: HotkeyCallbacks) -> Result<(), HotkeyError> {
         self.stop();
         let stop = Arc::clone(&self.stop);
         stop.store(false, Ordering::SeqCst);
 
-        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), String>>();
+        let (ready_tx, ready_rx) = mpsc::channel::<Result<(), HotkeyError>>();
         let continue_wait = self.continue_wait.clone();
         let screen_click = self.screen_click.clone();
         let macro_hotkeys = self.macro_hotkeys.clone();
@@ -95,17 +95,17 @@ impl HotkeyService for WinHotkeys {
                     pressed: HashSet::new(),
                 });
 
-                let install = (|| -> Result<(), String> {
+                let install = (|| -> Result<(), HotkeyError> {
                     // SAFETY: LL hooks; callback is valid for the lifetime of this thread.
                     let key =
                         unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard_proc), None, 0) }
-                            .map_err(|e| format!("WH_KEYBOARD_LL: {e}"))?;
+                            .map_err(|e| HotkeyError::Install(format!("WH_KEYBOARD_LL: {e}")))?;
                     // SAFETY: same as above for mouse.
                     let mouse =
                         unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), None, 0) }
                             .map_err(|e| {
                                 let _ = unsafe { UnhookWindowsHookEx(key) };
-                                format!("WH_MOUSE_LL: {e}")
+                                HotkeyError::Install(format!("WH_MOUSE_LL: {e}"))
                             })?;
                     store_hhook(&KEY_HOOK, key);
                     store_hhook(&MOUSE_HOOK, mouse);
@@ -137,7 +137,7 @@ impl HotkeyService for WinHotkeys {
                 *CTX.lock() = None;
                 HOOK_THREAD_ID.store(0, Ordering::SeqCst);
             })
-            .map_err(|e| format!("hotkey thread: {e}"))?;
+            .map_err(|e| HotkeyError::ThreadSpawn(e.to_string()))?;
 
         match ready_rx.recv() {
             Ok(Ok(())) => {
@@ -150,7 +150,9 @@ impl HotkeyService for WinHotkeys {
             }
             Err(_) => {
                 let _ = handle.join();
-                Err("hotkey thread exited before ready".into())
+                Err(HotkeyError::Install(
+                    "hotkey thread exited before ready".into(),
+                ))
             }
         }
     }

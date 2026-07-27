@@ -1,18 +1,22 @@
 //! Global hotkey service with injectable no-op stub.
 
 mod continue_wait;
+mod error;
 mod macro_hotkeys;
 mod screen_click;
 
-pub use continue_wait::{
-    failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, validate_continue_key,
-    ContinueWaitBridge, FAILSAFE_KEYS, FAILSAFE_LABEL,
-};
+pub use continue_wait::ContinueWaitBridge;
 pub use macro_hotkeys::{
     chord_all_pressed, chord_fully_released, format_hotkey, parse_hotkey, HotkeyTrigger,
     MacroHotkeyBinding, MacroHotkeyBridge,
 };
 pub use screen_click::ScreenClickBridge;
+pub use sqyre_domain::{
+    failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
+    validate_continue_key, validate_not_failsafe, FAILSAFE_KEYS, FAILSAFE_LABEL,
+};
+
+pub use error::HotkeyError;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -59,7 +63,7 @@ impl StopFlag {
 }
 
 pub trait HotkeyService: Send {
-    fn start(&mut self, callbacks: HotkeyCallbacks) -> Result<(), String>;
+    fn start(&mut self, callbacks: HotkeyCallbacks) -> Result<(), HotkeyError>;
     fn stop(&mut self);
 }
 
@@ -70,7 +74,7 @@ pub struct NullHotkeys {
 }
 
 impl HotkeyService for NullHotkeys {
-    fn start(&mut self, _callbacks: HotkeyCallbacks) -> Result<(), String> {
+    fn start(&mut self, _callbacks: HotkeyCallbacks) -> Result<(), HotkeyError> {
         self.running = true;
         Ok(())
     }
@@ -200,6 +204,12 @@ mod tests {
         let mut h = NullHotkeys::default();
         h.start(HotkeyCallbacks::default()).unwrap();
         h.stop();
+    }
+
+    #[test]
+    fn hotkey_error_display() {
+        let err = HotkeyError::ThreadSpawn("spawn failed".into());
+        assert!(err.to_string().contains("hotkey thread"));
     }
 
     #[test]

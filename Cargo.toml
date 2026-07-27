@@ -69,3 +69,7 @@ windows = "0.62"
 serde_json = "1"
 # Instant/SystemTime that work on wasm32-unknown-unknown (std panics there).
 web-time = "1"
+# Blocking HTTPS with rustls+ring (MinGW-friendly; avoids aws-lc-sys).
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+sha2 = "0.10"
+log = "0.4"
