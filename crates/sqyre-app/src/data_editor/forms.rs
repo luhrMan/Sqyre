@@ -4,7 +4,6 @@ use super::form_state;
 use super::helpers::{collect_program_item_tags, form_coord_literal, parse_i32};
 use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
-use crate::collection_capture::capture_and_save_collection_image;
 use crate::data_editor_preview::{
     paint_disk_preview, paint_preview_coord_chip, paint_preview_toolbar,
     paint_zoomable_atlas_preview, paint_zoomable_collection_preview, show_file_hover, CardinalEdge,
@@ -705,6 +704,7 @@ impl DataEditor {
                         self.collection_preview_key = Some(key);
                     }
                     let mut replace = false;
+                    let capturing = self.collection_capture_pending.is_some();
                     paint_zoomable_collection_preview(
                         ui,
                         icons,
@@ -713,21 +713,17 @@ impl DataEditor {
                         cols,
                         &mut self.collection_preview,
                         &mut replace,
+                        capturing,
                     );
-                    if replace {
+                    if replace && !capturing {
                         let col = ProgramCollection {
                             name: col_name.clone(),
                             search_area: self.form_search_area.trim().to_string(),
                             rows,
                             cols,
                         };
-                        match capture_and_save_collection_image(catalog, &prog, &col) {
-                            Ok(()) => {
-                                icons.invalidate_path(&path);
-                                self.collection_preview.reset();
-                                self.set_ok("Replaced collection image.");
-                            }
-                            Err(e) => self.set_err(e),
+                        if let Err(e) = self.start_collection_capture(catalog, &prog, &col, None) {
+                            self.set_err(e);
                         }
                     }
                 }

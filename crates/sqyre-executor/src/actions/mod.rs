@@ -15,8 +15,8 @@ mod tests {
     use crate::run::{execute_macro, execute_macro_with, ExecDeps};
     use crate::test_support::RecordingBackend;
     use sqyre_domain::{
-        root_loop, Action, ActionId, ActionKind, ConditionClause, ListColumn, LoopJumpMode, Macro,
-        ScalarValue, VariableAssignment,
+        root_loop, Action, ActionId, ActionKind, ConditionClause, ConditionOperator, ListColumn,
+        LoopJumpMode, Macro, ScalarValue, VariableAssignment,
     };
     use std::fs;
     use std::sync::atomic::AtomicBool;
@@ -126,7 +126,7 @@ mod tests {
                     match_mode: "all".into(),
                     clauses: vec![ConditionClause {
                         left: ScalarValue::String("${i}".into()),
-                        operator: "!=".into(),
+                        operator: ConditionOperator::NotEquals,
                         right: ScalarValue::String("3".into()),
                     }],
                 },

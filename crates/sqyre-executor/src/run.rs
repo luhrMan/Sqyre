@@ -1,4 +1,3 @@
-use crate::action_log::ActionLogger;
 use crate::actions::{
     execute_focus_window, execute_for_each_row, execute_pause, execute_run_macro,
     execute_save_variable, execute_set_variable, execute_while,
@@ -8,13 +7,14 @@ use crate::backends::{
     OcrEngine, ScreenCapturer, WindowFocuser,
 };
 use crate::error::{ExecError, FlowSignal, Result};
-use crate::highlight::{clear_highlights, highlight_cursor, ActionHighlighter};
 use crate::navigate::{execute_navigate_key, execute_navigate_select};
-use crate::runtime_vars::RuntimeVarSink;
 use crate::search::{execute_find_pixel, execute_image_search, execute_ocr};
 use sqyre_domain::{
     action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, LoopJumpMode, Macro,
     MatchMode, MouseButton, PressState, ScalarValue,
+};
+use sqyre_ui_model::{
+    clear_highlights, highlight_cursor, ActionHighlighter, ActionLogger, RuntimeVarSink,
 };
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -32,6 +32,10 @@ pub struct Executor<'a> {
     held_buttons: BTreeSet<String>,
     /// Nested [`ActionKind::RunMacro`] call stack (includes the top-level macro name).
     pub(crate) run_macro_stack: Vec<String>,
+    /// [`VariableStore::revision`] last handed to [`ExecDeps::runtime_vars`];
+    /// `None` until the first publish. Skips re-publishing unchanged variables
+    /// after every action.
+    published_vars_revision: Option<u64>,
 }
 
 /// Hard default for nested RunMacro depth when callers omit a custom budget.
@@ -48,6 +52,7 @@ impl<'a> Executor<'a> {
             held_keys: BTreeSet::new(),
             held_buttons: BTreeSet::new(),
             run_macro_stack: Vec::new(),
+            published_vars_revision: None,
         }
     }
 
@@ -110,6 +115,25 @@ impl<'a> Executor<'a> {
             left -= chunk;
         }
         self.check_stopped()
+    }
+
+    /// Push the macro's variables to the live-variables sink, unless they are
+    /// unchanged since the last publish (this runs after every action).
+    fn publish_runtime_vars(&mut self, macro_: &Macro) {
+        let Some(sink) = self.deps.runtime_vars else {
+            return;
+        };
+        let revision = macro_.variables.revision();
+        if self.published_vars_revision == Some(revision) {
+            return;
+        }
+        let pairs: Vec<(String, String)> = macro_
+            .variables
+            .iter()
+            .map(|(n, v)| (n.to_string(), v.as_display()))
+            .collect();
+        sink.publish(&pairs);
+        self.published_vars_revision = Some(revision);
     }
 
     pub fn log(&self, action_id: ActionId, message: impl Into<String>) {
@@ -299,6 +323,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         held_keys: BTreeSet::new(),
         held_buttons: BTreeSet::new(),
         run_macro_stack: vec![macro_.name.clone()],
+        published_vars_revision: None,
     };
     macro_.init_runtime_variables();
     let monitor_sizes = match exec.deps.capturer.as_mut() {
@@ -306,7 +331,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         None => vec![(0, 0)],
     };
     apply_monitor_sizes(macro_, &monitor_sizes);
-    publish_runtime_vars(exec.deps.runtime_vars, macro_);
+    exec.publish_runtime_vars(macro_);
     let root = macro_.root.clone();
     let root_id = root.id;
     let result = match execute_action(&mut exec, &root, macro_) {
@@ -363,7 +388,7 @@ pub fn execute_action(exec: &mut Executor<'_>, action: &Action, macro_: &mut Mac
         Ok(())
         | Err(ExecError::Flow(FlowSignal::Break))
         | Err(ExecError::Flow(FlowSignal::Continue)) => {
-            publish_runtime_vars(exec.deps.runtime_vars, macro_);
+            exec.publish_runtime_vars(macro_);
             let delay_started = Instant::now();
             let delay_out = apply_delay(exec, action, macro_);
             exec.log_timing(action.id, "post-delay", delay_started.elapsed());
@@ -376,18 +401,6 @@ pub fn execute_action(exec: &mut Executor<'_>, action: &Action, macro_: &mut Mac
         Ok(()) => result,
         Err(e) => Err(e),
     }
-}
-
-fn publish_runtime_vars(sink: Option<&dyn RuntimeVarSink>, macro_: &Macro) {
-    let Some(sink) = sink else {
-        return;
-    };
-    let pairs: Vec<(String, String)> = macro_
-        .variables
-        .iter()
-        .map(|(n, v)| (n.to_string(), v.as_display()))
-        .collect();
-    sink.publish(&pairs);
 }
 
 fn apply_delay(exec: &mut Executor<'_>, action: &Action, macro_: &Macro) -> Result<()> {
@@ -644,24 +657,47 @@ pub(crate) fn eval_clauses(
 }
 
 fn eval_one_clause(c: &sqyre_domain::ConditionClause, macro_: &Macro) -> Result<bool> {
-    // `is set` looks up the variable *name* without expanding its value.
-    if c.operator.as_str() == "is set" {
+    use sqyre_domain::ConditionOperator;
+
+    if c.operator.reads_variable_name() {
         let raw = c.left.as_display();
         let name = variable_name_for_is_set(&raw);
         return Ok(macro_.variables.get(name).is_some());
     }
 
     let left = resolve_text(&c.left.as_display(), macro_)?;
-    let right = resolve_text(&c.right.as_display(), macro_)?;
-    Ok(match c.operator.as_str() {
-        "==" => left == right,
-        "!=" => left != right,
-        "is empty" => left.trim().is_empty(),
-        "contains" => left.contains(&right),
-        "starts with" => left.starts_with(&right),
-        "ends with" => left.ends_with(&right),
-        "<" | "<=" | ">" | ">=" => compare_ordered(&left, &right, c.operator.as_str()),
-        _ => false,
+    Ok(match c.operator {
+        ConditionOperator::IsEmpty => left.trim().is_empty(),
+        ConditionOperator::Equals
+        | ConditionOperator::NotEquals
+        | ConditionOperator::Contains
+        | ConditionOperator::StartsWith
+        | ConditionOperator::EndsWith
+        | ConditionOperator::LessThan
+        | ConditionOperator::LessOrEqual
+        | ConditionOperator::GreaterThan
+        | ConditionOperator::GreaterOrEqual => {
+            let right = resolve_text(&c.right.as_display(), macro_)?;
+            match c.operator {
+                ConditionOperator::Equals => left == right,
+                ConditionOperator::NotEquals => left != right,
+                ConditionOperator::Contains => left.contains(&right),
+                ConditionOperator::StartsWith => left.starts_with(&right),
+                ConditionOperator::EndsWith => left.ends_with(&right),
+                ConditionOperator::LessThan => compare_ordered(&left, &right, OrderingOp::Less),
+                ConditionOperator::LessOrEqual => {
+                    compare_ordered(&left, &right, OrderingOp::LessOrEqual)
+                }
+                ConditionOperator::GreaterThan => {
+                    compare_ordered(&left, &right, OrderingOp::Greater)
+                }
+                ConditionOperator::GreaterOrEqual => {
+                    compare_ordered(&left, &right, OrderingOp::GreaterOrEqual)
+                }
+                _ => unreachable!(),
+            }
+        }
+        ConditionOperator::IsSet => unreachable!("handled above"),
     })
 }
 
@@ -677,28 +713,36 @@ fn variable_name_for_is_set(raw: &str) -> &str {
     t
 }
 
+#[derive(Clone, Copy)]
+enum OrderingOp {
+    Less,
+    LessOrEqual,
+    Greater,
+    GreaterOrEqual,
+}
+
 /// Numeric compare when both sides parse as `f64`; otherwise lexicographic.
-fn compare_ordered(left: &str, right: &str, op: &str) -> bool {
+fn compare_ordered(left: &str, right: &str, op: OrderingOp) -> bool {
     use std::cmp::Ordering;
     let ord = match (left.trim().parse::<f64>(), right.trim().parse::<f64>()) {
         (Ok(a), Ok(b)) => a.partial_cmp(&b).unwrap_or(Ordering::Equal),
         _ => left.cmp(right),
     };
     match op {
-        "<" => ord == Ordering::Less,
-        "<=" => ord != Ordering::Greater,
-        ">" => ord == Ordering::Greater,
-        ">=" => ord != Ordering::Less,
-        _ => false,
+        OrderingOp::Less => ord == Ordering::Less,
+        OrderingOp::LessOrEqual => ord != Ordering::Greater,
+        OrderingOp::Greater => ord == Ordering::Greater,
+        OrderingOp::GreaterOrEqual => ord != Ordering::Less,
     }
 }
 
 pub(crate) fn resolve_int(v: &ScalarValue, macro_: &Macro) -> Result<i32> {
-    resolve_scalar_int(v, &macro_.variables).map_err(ExecError::Message)
+    resolve_scalar_int(v, &macro_.variables).map_err(|e| ExecError::Message(e.to_string()))
 }
 
 pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
-    sqyre_domain::expand_variable_refs(text, &macro_.variables).map_err(ExecError::Message)
+    sqyre_domain::expand_variable_refs(text, &macro_.variables)
+        .map_err(|e| ExecError::Message(e.to_string()))
 }
 
 #[cfg(test)]
@@ -708,8 +752,10 @@ mod tests {
     use crate::test_support::FixedResolver;
     use crate::test_support::{RecordingBackend, RecordingCapturer};
     use sqyre_domain::{
-        root_loop, Action, ActionId, ActionKind, CoordinateRef, ScalarValue, VariableAssignment,
+        root_loop, Action, ActionId, ActionKind, ConditionOperator, CoordinateRef, ScalarValue,
+        VariableAssignment,
     };
+    use sqyre_ui_model::lines_for;
 
     const RUN_RESOLVER: FixedResolver = FixedResolver::point_area((42, 99), (0, 0, 10, 10));
 
@@ -910,6 +956,7 @@ mod tests {
             held_keys: BTreeSet::new(),
             held_buttons: BTreeSet::new(),
             run_macro_stack: Vec::new(),
+            published_vars_revision: None,
         };
         let err = exec.interruptible_sleep(1000).unwrap_err();
         assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));
@@ -1175,8 +1222,8 @@ mod tests {
             },
         )
         .unwrap();
-        let wait_lines = logger.lines_for(wait_id);
-        let click_lines = logger.lines_for(click_id);
+        let wait_lines = lines_for(&logger.entries_for(wait_id));
+        let click_lines = lines_for(&logger.entries_for(click_id));
         assert!(
             wait_lines.iter().any(|l| l.starts_with("Wait:")),
             "wait lines: {wait_lines:?}"
@@ -1193,7 +1240,7 @@ mod tests {
             click_lines.iter().any(|l| l.starts_with("timing: total ")),
             "click timing: {click_lines:?}"
         );
-        let root_lines = logger.lines_for(macro_.root.id);
+        let root_lines = lines_for(&logger.entries_for(macro_.root.id));
         assert!(
             root_lines
                 .iter()
@@ -1223,7 +1270,7 @@ mod tests {
                         match_mode: "all".into(),
                         clauses: vec![sqyre_domain::ConditionClause {
                             left: ScalarValue::String("${flag}".into()),
-                            operator: "==".into(),
+                            operator: ConditionOperator::Equals,
                             right: ScalarValue::String("yes".into()),
                         }],
                     },
@@ -1244,7 +1291,7 @@ mod tests {
                         match_mode: "all".into(),
                         clauses: vec![sqyre_domain::ConditionClause {
                             left: ScalarValue::String("${flag}".into()),
-                            operator: "==".into(),
+                            operator: ConditionOperator::Equals,
                             right: ScalarValue::String("no".into()),
                         }],
                     },
@@ -1287,12 +1334,12 @@ mod tests {
             &[
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("x".into()),
-                    operator: "==".into(),
+                    operator: ConditionOperator::Equals,
                     right: ScalarValue::String("y".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("${name}".into()),
-                    operator: "contains".into(),
+                    operator: ConditionOperator::Contains,
                     right: ScalarValue::String("ell".into()),
                 },
             ],
@@ -1304,22 +1351,22 @@ mod tests {
             &[
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("${name}".into()),
-                    operator: "starts with".into(),
+                    operator: ConditionOperator::StartsWith,
                     right: ScalarValue::String("he".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("${name}".into()),
-                    operator: "ends with".into(),
+                    operator: ConditionOperator::EndsWith,
                     right: ScalarValue::String("lo".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("name".into()),
-                    operator: "is set".into(),
+                    operator: ConditionOperator::IsSet,
                     right: ScalarValue::Null,
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("${empty}".into()),
-                    operator: "is empty".into(),
+                    operator: ConditionOperator::IsEmpty,
                     right: ScalarValue::Null,
                 },
             ],
@@ -1330,7 +1377,7 @@ mod tests {
             MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("a".into()),
-                operator: "!=".into(),
+                operator: ConditionOperator::NotEquals,
                 right: ScalarValue::String("a".into()),
             }],
             &macro_
@@ -1346,22 +1393,22 @@ mod tests {
             &[
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("10".into()),
-                    operator: ">".into(),
+                    operator: ConditionOperator::GreaterThan,
                     right: ScalarValue::String("2".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("3".into()),
-                    operator: "<=".into(),
+                    operator: ConditionOperator::LessOrEqual,
                     right: ScalarValue::String("3.0".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("1".into()),
-                    operator: "<".into(),
+                    operator: ConditionOperator::LessThan,
                     right: ScalarValue::String("2".into()),
                 },
                 sqyre_domain::ConditionClause {
                     left: ScalarValue::String("5".into()),
-                    operator: ">=".into(),
+                    operator: ConditionOperator::GreaterOrEqual,
                     right: ScalarValue::String("5".into()),
                 },
             ],
@@ -1372,7 +1419,7 @@ mod tests {
             MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("1".into()),
-                operator: ">".into(),
+                operator: ConditionOperator::GreaterThan,
                 right: ScalarValue::String("2".into()),
             }],
             &macro_
@@ -1391,7 +1438,7 @@ mod tests {
             MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("${flag}".into()),
-                operator: "is set".into(),
+                operator: ConditionOperator::IsSet,
                 right: ScalarValue::Null,
             }],
             &macro_
@@ -1401,7 +1448,7 @@ mod tests {
             MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("${missing}".into()),
-                operator: "is set".into(),
+                operator: ConditionOperator::IsSet,
                 right: ScalarValue::Null,
             }],
             &macro_
@@ -1412,7 +1459,7 @@ mod tests {
             MatchMode::All,
             &[sqyre_domain::ConditionClause {
                 left: ScalarValue::String("flag".into()),
-                operator: "is set".into(),
+                operator: ConditionOperator::IsSet,
                 right: ScalarValue::Null,
             }],
             &macro_

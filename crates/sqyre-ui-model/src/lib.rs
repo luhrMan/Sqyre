@@ -4,21 +4,29 @@
 //! [`sqyre_domain::VariableBinding`]) stay in `sqyre-domain`; this crate only
 //! adds presentation (pill/tree/color) on top.
 
+mod action_log;
+mod action_picker;
 mod colors;
 mod display;
+mod highlight;
 mod icons;
+mod runtime_vars;
 
+pub use action_log::*;
+pub use action_picker::*;
 pub use colors::*;
 pub use display::*;
+pub use highlight::*;
 pub use icons::*;
+pub use runtime_vars::*;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use sqyre_domain::{
-        root_loop, Action, ActionId, ActionKind, ConditionBlock, CoordinateOutputs, CoordinateRef,
-        DetectionBranch, MatchMode, MouseButton, PressState, RepeatMode, ScalarValue,
-        VariableAssignment, WaitTilFoundConfig,
+        root_loop, Action, ActionId, ActionKind, ConditionBlock, ConditionOperator,
+        CoordinateOutputs, CoordinateRef, DetectionBranch, MatchMode, MouseButton, PressState,
+        RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig,
     };
 
     #[test]
@@ -158,6 +166,19 @@ mod tests {
     }
 
     #[test]
+    fn looks_like_var_ref_matches_real_expansion_grammar() {
+        // Escaped forms never expand, so they must not look like a var ref.
+        assert!(!looks_like_var_ref("$${foo}"));
+        assert!(!looks_like_var_ref("{{foo}}"));
+        // Non-identifier brace contents never expand either.
+        assert!(!looks_like_var_ref("{0}"));
+        assert!(!looks_like_var_ref("{not-a-var}"));
+        // Mixed plain text + ref is not a *whole-string* ref.
+        assert!(!looks_like_var_ref("prefix ${foo}"));
+        assert!(!looks_like_var_ref("${foo} suffix"));
+    }
+
+    #[test]
     fn split_filters_type_empty_and_splits_extra() {
         let params = vec![
             DisplayParam::new("Type", "move"),
@@ -202,12 +223,12 @@ mod tests {
                     clauses: vec![
                         sqyre_domain::ConditionClause {
                             left: ScalarValue::String("${a}".into()),
-                            operator: "==".into(),
+                            operator: ConditionOperator::Equals,
                             right: ScalarValue::String("1".into()),
                         },
                         sqyre_domain::ConditionClause {
                             left: ScalarValue::String("${b}".into()),
-                            operator: "is set".into(),
+                            operator: ConditionOperator::IsSet,
                             right: ScalarValue::Null,
                         },
                     ],
@@ -239,7 +260,7 @@ mod tests {
                     match_mode: MatchMode::All,
                     clauses: vec![sqyre_domain::ConditionClause {
                         left: ScalarValue::String("${n}".into()),
-                        operator: "<".into(),
+                        operator: ConditionOperator::LessThan,
                         right: ScalarValue::Int(10),
                     }],
                 },
@@ -470,7 +491,7 @@ mod tests {
         );
         let clause = sqyre_domain::ConditionClause {
             left: ScalarValue::String("name".into()),
-            operator: "contains".into(),
+            operator: ConditionOperator::Contains,
             right: ScalarValue::String("foo".into()),
         };
         assert_eq!(clause.summary(), "name contains foo");

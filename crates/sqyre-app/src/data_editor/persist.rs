@@ -2,7 +2,6 @@
 
 use super::helpers::{new_overlay_button_id, parse_i32, unique_name};
 use super::{DataEditor, EditorTab, PendingConfirm};
-use crate::collection_capture::capture_and_save_collection_image;
 use crate::icon_cache::IconCache;
 use crate::overlay_icons;
 use crate::preview_tooltip::PreviewTooltipCache;
@@ -42,7 +41,7 @@ impl DataEditor {
         db: &mut Database,
         macros: &mut [Macro],
         catalog: &mut ProgramCatalog,
-        icons: &mut IconCache,
+        _icons: &mut IconCache,
         screen_click: &ScreenClickBridge,
         settings: &mut UserSettings,
     ) {
@@ -204,13 +203,16 @@ impl DataEditor {
                     cols,
                 };
                 match catalog.upsert_collection(&prog, col.clone()) {
-                    Ok(()) => match capture_and_save_collection_image(catalog, &prog, &col) {
+                    Ok(()) => match self.start_collection_capture(
+                        catalog,
+                        &prog,
+                        &col,
+                        Some((prog.clone(), name.clone())),
+                    ) {
                         Ok(()) => {
-                            let path = catalog.collection_image_path(&prog, &name);
-                            icons.invalidate_path(&path);
                             self.selected_entity = Some(name);
                             self.load_form(catalog, settings);
-                            Ok("Created collection.")
+                            Ok("Created collection; capturing image…")
                         }
                         Err(e) => {
                             let _ = catalog.delete_collection(&prog, &name);

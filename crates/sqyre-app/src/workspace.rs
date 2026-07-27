@@ -6,6 +6,7 @@ use sqyre_persist::{Database, ProgramCatalog};
 
 pub(crate) struct Workspace {
     pub(crate) db: Database,
+    /// Mutable source of truth for macro trees; synced into `db` only at save time.
     pub(crate) macros: Vec<Macro>,
     pub(crate) catalog: ProgramCatalog,
     pub(crate) selected_macro: usize,

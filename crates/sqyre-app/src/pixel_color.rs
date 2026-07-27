@@ -1,28 +1,64 @@
 //! Sample a screen pixel as `rrggbb` (Find Pixel dropper).
 
 use sqyre_capture::shared_capturer;
-use sqyre_executor::{DesktopRect, ScreenCapturer};
+use sqyre_ports::DesktopRect;
+
+#[cfg(any(test, target_arch = "wasm32"))]
+use sqyre_ports::ScreenCapturer;
 
 /// Capture the 1×1 pixel at `(x, y)` and return lowercase hex without `#`.
+#[cfg(target_arch = "wasm32")]
 pub fn sample_pixel_hex(x: i32, y: i32) -> Result<String, String> {
-    let capturer = shared_capturer()?;
+    let capturer = shared_capturer().map_err(|e| e.to_string())?;
     let mut wrap = sqyre_capture::SharedRunCapturer(capturer);
     sample_pixel_hex_with(&mut wrap, x, y)
 }
 
+#[cfg(any(test, target_arch = "wasm32"))]
 pub fn sample_pixel_hex_with(
     capturer: &mut dyn ScreenCapturer,
     x: i32,
     y: i32,
 ) -> Result<String, String> {
-    let img = capturer
-        .capture_rect(DesktopRect { x, y, w: 1, h: 1 })
+    let rgb = capturer
+        .capture_rect_rgb(DesktopRect { x, y, w: 1, h: 1 })
         .map_err(|e| e.to_string())?;
-    if img.width() < 1 || img.height() < 1 {
+    if rgb.data.len() < 3 {
         return Err("empty pixel capture".into());
     }
-    let px = img.get_pixel(0, 0).0;
-    Ok(format!("{:02x}{:02x}{:02x}", px[0], px[1], px[2]))
+    Ok(format!(
+        "{:02x}{:02x}{:02x}",
+        rgb.data[0], rgb.data[1], rgb.data[2]
+    ))
+}
+
+/// Spawn a background 1×1 capture; poll the receiver from the UI thread.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn spawn_sample_pixel_hex(
+    x: i32,
+    y: i32,
+) -> Result<std::sync::mpsc::Receiver<Result<String, String>>, String> {
+    use std::sync::mpsc;
+    use std::thread;
+
+    let capturer = shared_capturer().map_err(|e| e.to_string())?;
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let result = (|| -> Result<String, String> {
+            let rgb = capturer
+                .capture_rect_rgb_ref(DesktopRect { x, y, w: 1, h: 1 })
+                .map_err(|e| e.to_string())?;
+            if rgb.data.len() < 3 {
+                return Err("empty pixel capture".into());
+            }
+            Ok(format!(
+                "{:02x}{:02x}{:02x}",
+                rgb.data[0], rgb.data[1], rgb.data[2]
+            ))
+        })();
+        let _ = tx.send(result);
+    });
+    Ok(rx)
 }
 
 #[cfg(test)]
@@ -31,7 +67,7 @@ mod tests {
     use image::Rgba;
     use sqyre_capture::SolidCapturer;
     use sqyre_domain::normalize_hex_rgb;
-    use sqyre_executor::DesktopRect;
+    use sqyre_ports::DesktopRect;
 
     #[test]
     fn samples_solid_pixel() {

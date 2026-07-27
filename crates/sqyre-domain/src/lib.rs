@@ -10,7 +10,10 @@ mod bindings;
 mod blank;
 mod color;
 mod expr;
+mod expr_error;
+mod keys;
 mod macro_model;
+mod match_method;
 mod rename;
 mod scalar;
 mod set_value;
@@ -29,7 +32,13 @@ pub use color::{
     ACTION_COLOR_KEY_WAIT,
 };
 pub use expr::{evaluate_expression, numeric_to_scalar};
+pub use expr_error::{ExprError, ResolveError};
+pub use keys::{
+    failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
+    validate_continue_key, validate_not_failsafe, FAILSAFE_KEYS, FAILSAFE_LABEL,
+};
 pub use macro_model::*;
+pub use match_method::MatchMethod;
 pub use rename::*;
 pub use scalar::*;
 pub use set_value::{
@@ -38,7 +47,7 @@ pub use set_value::{
 };
 pub use taxonomy::{
     action_color_category, action_color_key, action_delay_class, action_icon,
-    action_picker_category, action_type_description, action_type_label, action_type_table,
-    ActionTypeMeta, DelayClass, ACTION_KIND_COUNT, ACTION_PICKER_CATEGORIES,
+    action_type_description, action_type_label, action_type_table, ActionTypeMeta, DelayClass,
+    ACTION_KIND_COUNT,
 };
 pub use variables::*;

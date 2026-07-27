@@ -16,6 +16,7 @@ make check      # fmt --check + clippy (-D warnings) + cargo deny
 make machete    # unused crate deps
 make test       # cargo nextest (falls back to cargo test)
 make coverage   # llvm-cov HTML + lcov under target/coverage/
+make coverage-floors  # line-% gates for pure crates (needs cargo-llvm-cov)
 make docs-media # regenerate docs/images screenshots
 make appimage   # fmt + check, then bin/*.AppImage (Linux)
 make windows    # fmt + check, then bin/sqyre.exe (Docker MinGW cross / native on Windows)
@@ -54,7 +55,8 @@ Build caches (all gitignored):
 | `machete` | `cargo machete` (unused dependencies) |
 | `check` | `check-fmt` + `clippy` + `deny` (CI quality gates) |
 | `test` | `cargo nextest run --workspace` (falls back to `cargo test`) |
-| `coverage` | llvm-cov HTML + `lcov.info` under `target/coverage/` (no % gate) |
+| `coverage` | llvm-cov HTML + `lcov.info` under `target/coverage/` (report only; no % gate) |
+| `coverage-floors` | Line-coverage floors for pure crates only (`sqyre-domain`, `sqyre-varref`, `path_confine`, `migrate`; see `scripts/coverage-floors.json`) |
 | `run` | `cargo run -p sqyre-app` |
 | `docs-media` | Regenerate `docs/images/` screenshots |
 | `appimage` | `bin/Sqyre-*.AppImage` |
@@ -176,6 +178,21 @@ make test
 ```
 
 Headless CI uses Null* backends / stub hotkeys where hooks are unavailable.
+
+### Coverage
+
+`make coverage` instruments the full workspace and writes HTML + LCOV under `target/coverage/` with **no** percentage gate. Requires `cargo-llvm-cov` and `llvm-tools-preview` (preinstalled in the dev container). Normal `make test` does **not** need these tools.
+
+`make coverage-floors` runs a separate, smaller instrumented test pass over pure crates only (`sqyre-domain`, `sqyre-varref`, `sqyre-persist`, `sqyre-executor`) and fails when line coverage drops below the floors in [`scripts/coverage-floors.json`](../scripts/coverage-floors.json):
+
+| Target | Scope | Default floor |
+|--------|-------|---------------|
+| `sqyre-domain` | whole crate | 70% |
+| `sqyre-varref` | whole crate | 90% |
+| `path_confine` | `sqyre-executor` path confinement | 85% |
+| `migrate` | `sqyre-persist` db.yaml migration | 80% |
+
+OS-specific crates (`sqyre-capture`, etc.) are intentionally **not** gated. Set `COVERAGE_FLOORS=1` when running `make coverage` to also run the floor check after the report. CI runs `make coverage-floors` after the report-only coverage step.
 
 ### README screenshots
 

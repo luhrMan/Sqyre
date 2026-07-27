@@ -3,8 +3,9 @@
 use crate::demo_icons;
 use sqyre_domain::{
     blank_action, root_loop, Action, ActionKind, ConditionBlock, ConditionClause,
-    CoordinateOutputs, CoordinateRef, DetectionBranch, Macro, MaskShape, MatchMode, MouseButton,
-    RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig, PROGRAM_DELIMITER,
+    ConditionOperator, CoordinateOutputs, CoordinateRef, DetectionBranch, Macro, MaskShape,
+    MatchMode, MouseButton, RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig,
+    PROGRAM_DELIMITER,
 };
 use sqyre_persist::{
     Database, ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask,
@@ -437,7 +438,7 @@ fn conditional_contains(name: &str, left: &str, right: &str, subactions: Vec<Act
             match_mode: MatchMode::All,
             clauses: vec![ConditionClause {
                 left: ScalarValue::String(left.into()),
-                operator: "contains".into(),
+                operator: ConditionOperator::Contains,
                 right: ScalarValue::String(right.into()),
             }],
         };

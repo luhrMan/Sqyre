@@ -5,8 +5,8 @@ use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
 use sqyre_capture::{shared_capturer, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
-use sqyre_executor::{CaptureError, DesktopRect};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
+use sqyre_ports::{CaptureError, DesktopRect};
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::sync::Arc;
@@ -298,7 +298,7 @@ impl PreviewTooltipCache {
                     self.pending.remove(key);
                     let e = e.to_string();
                     self.remember_failure(key, e.clone(), now);
-                    return Err(e);
+                    return Err(e.to_string());
                 }
                 Err(TryRecvError::Empty) => {
                     ctx.request_repaint();
@@ -308,7 +308,7 @@ impl PreviewTooltipCache {
                     self.pending.remove(key);
                     let e = "capture failed".to_string();
                     self.remember_failure(key, e.clone(), now);
-                    return Err(e);
+                    return Err(e.to_string());
                 }
             }
         }
@@ -381,7 +381,7 @@ impl PreviewTooltipCache {
             }
             Err(e) => {
                 self.capturer_failed = true;
-                Err(e)
+                Err(e.to_string())
             }
         }
     }

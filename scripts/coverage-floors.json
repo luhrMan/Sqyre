@@ -1,0 +1,28 @@
+{
+  "targets": [
+    {
+      "name": "sqyre-domain",
+      "path": "/sqyre-domain/",
+      "floor": 70.0,
+      "note": "whole crate (pure domain logic)"
+    },
+    {
+      "name": "sqyre-varref",
+      "path": "/sqyre-varref/",
+      "floor": 90.0,
+      "note": "whole crate (variable-ref grammar)"
+    },
+    {
+      "name": "path_confine",
+      "path": "path_confine.rs",
+      "floor": 85.0,
+      "note": "sqyre-executor path confinement helper"
+    },
+    {
+      "name": "migrate",
+      "path": "migrate.rs",
+      "floor": 80.0,
+      "note": "sqyre-persist db.yaml migration"
+    }
+  ]
+}

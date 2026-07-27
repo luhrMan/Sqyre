@@ -1,12 +1,12 @@
 //! Find-pixel action.
 
 use super::common::{
-    apply_detection_hits, capture_search_buf, close_matches_distance, run_detection_shell,
-    sort_hits, DetectionHit,
+    apply_detection_hits, capture_search_buf, close_matches_distance, frame_fingerprint,
+    run_detection_shell, sort_hits, DetectionHit, FrameCache,
 };
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
-use sqyre_domain::{Action, ActionKind, Macro, MatchOrder};
+use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchOrder};
 use sqyre_match::cluster_points;
 use sqyre_vision::find_pixels;
 use std::time::Instant;
@@ -35,8 +35,10 @@ pub(crate) fn execute_find_pixel(
     } = detection;
 
     let action_id = action.id;
+    let label = action_type_label(action.type_key());
     let order = order.clone();
     let targets: &[String] = &[];
+    let mut cache = FrameCache::default();
     run_detection_shell(
         exec,
         macro_,
@@ -47,22 +49,24 @@ pub(crate) fn execute_find_pixel(
             Ok(try_find_pixels(
                 exec,
                 action_id,
+                label,
                 search_area,
                 target_color,
                 *color_tolerance,
                 &order,
                 macro_,
+                &mut cache,
             ))
         },
         |hits| !hits.is_empty(),
         |exec, macro_, hits, pass| {
             if hits.is_empty() {
-                exec.log(action_id, "FindPixel: pixel not found");
+                exec.log(action_id, format!("{label}: pixel not found"));
             } else if hits.len() == 1 {
                 exec.log(
                     action_id,
                     format!(
-                        "FindPixel: found matching pixel at screen ({}, {})",
+                        "{label}: found matching pixel at screen ({}, {})",
                         hits[0].screen_x, hits[0].screen_y
                     ),
                 );
@@ -70,7 +74,7 @@ pub(crate) fn execute_find_pixel(
                 exec.log(
                     action_id,
                     format!(
-                        "FindPixel: {} clustered match(es); first at ({}, {})",
+                        "{label}: {} clustered match(es); first at ({}, {})",
                         hits.len(),
                         hits[0].screen_x,
                         hits[0].screen_y
@@ -92,25 +96,40 @@ pub(crate) fn execute_find_pixel(
     )
 }
 
+// Mirrors `capture_and_match`'s shape (capture/scan preamble args plus label/order); same
+// allow used for the shared detection helpers in `common.rs`.
+#[allow(clippy::too_many_arguments)]
 fn try_find_pixels(
     exec: &mut Executor<'_>,
     action_id: sqyre_domain::ActionId,
+    label: &str,
     search_area: &sqyre_domain::CoordinateRef,
     target_color: &str,
     color_tolerance: i32,
     order: &MatchOrder,
     macro_: &Macro,
+    cache: &mut FrameCache<Vec<DetectionHit>>,
 ) -> Vec<DetectionHit> {
+    let capture_started = Instant::now();
     let Some((buf, origin)) = capture_search_buf(
         exec,
         action_id,
-        "FindPixel",
+        label,
         search_area,
         macro_,
         |_, _, _, _, _| {},
     ) else {
         return Vec::new();
     };
+    let fp = frame_fingerprint(&buf);
+    if let Some(cached) = cache.get(fp, origin) {
+        exec.log_timing(action_id, "capture", capture_started.elapsed());
+        exec.log(
+            action_id,
+            format!("{label}: capture unchanged since last attempt; reusing pixel scan result"),
+        );
+        return cached;
+    }
     let scan_started = Instant::now();
     let locals = find_pixels(&buf, target_color, color_tolerance);
     let clustered = cluster_points(&locals, close_matches_distance(exec));
@@ -120,5 +139,6 @@ fn try_find_pixels(
         .map(|p| DetectionHit::plain(p.x + origin.x, p.y + origin.y, ""))
         .collect();
     sort_hits(&mut hits, order);
+    cache.set(fp, origin, hits.clone());
     hits
 }

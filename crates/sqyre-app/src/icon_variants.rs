@@ -2,6 +2,7 @@
 
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
+#[cfg(feature = "native-runtime")]
 use sqyre_vision::invalidate_search_templates_under;
 use std::path::{Path, PathBuf};
 use thiserror::Error;
@@ -190,8 +191,9 @@ pub fn delete_variant(
 }
 
 fn invalidate_item_templates(catalog: &ProgramCatalog, program: &str, item: &str) {
-    let prefix = catalog.icons_dir(program).join(item);
-    invalidate_search_templates_under(&prefix);
+    let _prefix = catalog.icons_dir(program).join(item);
+    #[cfg(feature = "native-runtime")]
+    invalidate_search_templates_under(&_prefix);
 }
 
 #[cfg(test)]

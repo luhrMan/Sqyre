@@ -4,6 +4,7 @@ use crate::{
     Action, ActionKind, Macro, ScalarValue, FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
 };
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Image Search builtins set inside sub-actions.
 pub const IMAGE_SEARCH_BUILTIN_VARS: &[&str] = &[
@@ -266,17 +267,45 @@ impl VariableDecl {
     }
 }
 
+/// Process-wide source of [`VariableStore::revision`] stamps.
+///
+/// Global (not per-store) so revisions from different stores never collide —
+/// observers such as the live-variables sink compare a single last-seen stamp
+/// while the executor switches between a caller's and a sub-macro's store.
+static NEXT_STORE_REVISION: AtomicU64 = AtomicU64::new(1);
+
 /// Case-insensitive runtime variable store (not persisted).
 ///
 /// Keyed internally by ascii-lowercased name for O(1) get/set/delete.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct VariableStore {
     entries: HashMap<String, (String, ScalarValue)>,
+    /// Bumped whenever the contents actually change; see [`Self::revision`].
+    revision: u64,
+}
+
+/// Contents only — [`VariableStore::revision`] is observer bookkeeping, not state.
+impl PartialEq for VariableStore {
+    fn eq(&self, other: &Self) -> bool {
+        self.entries == other.entries
+    }
 }
 
 impl VariableStore {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Opaque stamp that changes whenever the contents change.
+    ///
+    /// Lets observers skip work when nothing has been written since last time.
+    /// Only equality is meaningful — do not compare with `<` / `>`.
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn touch(&mut self) {
+        self.revision = NEXT_STORE_REVISION.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn get(&self, name: &str) -> Option<&ScalarValue> {
@@ -288,11 +317,17 @@ impl VariableStore {
         let name = name.into();
         let key = name.trim().to_ascii_lowercase();
         match self.entries.get_mut(&key) {
-            Some((_, v)) => *v = value,
+            Some((_, v)) => {
+                if *v == value {
+                    return;
+                }
+                *v = value;
+            }
             None => {
                 self.entries.insert(key, (name, value));
             }
         }
+        self.touch();
     }
 
     /// Remove a variable by name (case-insensitive). No-op when name is empty or missing.
@@ -301,11 +336,16 @@ impl VariableStore {
         if key.is_empty() {
             return;
         }
-        self.entries.remove(&key);
+        if self.entries.remove(&key).is_some() {
+            self.touch();
+        }
     }
 
     pub fn clear(&mut self) {
-        self.entries.clear();
+        if !self.entries.is_empty() {
+            self.entries.clear();
+            self.touch();
+        }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&str, &ScalarValue)> {

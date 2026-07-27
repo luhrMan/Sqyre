@@ -7,7 +7,8 @@
 
 use crate::image_util::{load_rgb_image, mask_as_u8, resize_mask};
 use parking_lot::{Mutex, RwLock};
-use sqyre_match::{blur_image_owned, prepare_template, ImageBuf, MatchMethod, PreparedTemplate};
+use sqyre_domain::MatchMethod;
+use sqyre_match::{blur_image_owned, prepare_template, ImageBuf, PreparedTemplate};
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};

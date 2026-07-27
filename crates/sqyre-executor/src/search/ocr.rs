@@ -1,12 +1,13 @@
 //! OCR action: capture → preprocess → recognize → write vars → run children per hit.
 
 use super::common::{
-    apply_detection_hits, capture_search_buf, run_detection_shell, sort_hits, DetectionHit,
+    apply_detection_hits, capture_search_buf, frame_fingerprint, run_detection_shell, sort_hits,
+    DetectionHit, FrameCache,
 };
-use crate::action_log::draw_rect_rgb;
 use crate::error::{ExecError, Result};
+use crate::log_draw::draw_rect_rgb;
 use crate::run::Executor;
-use sqyre_domain::{Action, ActionKind, Macro, MatchOrder, ScalarValue};
+use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchOrder, ScalarValue};
 use std::time::Instant;
 
 /// OCR branch action: capture → preprocess → recognize → write vars → run children per hit
@@ -41,8 +42,10 @@ pub(crate) fn execute_ocr(
     } = detection;
 
     let action_id = action.id;
+    let label = action_type_label(action.type_key());
     let order = order.clone();
     let ocr_params = OcrRunParams {
+        label,
         search_area,
         target,
         blur: *blur,
@@ -58,13 +61,14 @@ pub(crate) fn execute_ocr(
         vec![target.clone()]
     };
 
+    let mut cache = FrameCache::default();
     // Log wait intent once before the shared shell arms retries.
-    let attempt0 = ocr_attempt(exec, action_id, &ocr_params, &order, macro_);
+    let attempt0 = ocr_attempt(exec, action_id, &ocr_params, &order, macro_, &mut cache);
     if wait.wait_until_found_active() && attempt0.hits.is_empty() {
         exec.log(
             action_id,
             format!(
-                "OCR: waiting up to {}s until text contains {target:?}",
+                "{label}: waiting up to {}s until text contains {target:?}",
                 wait.wait_til_found_seconds
             ),
         );
@@ -72,7 +76,7 @@ pub(crate) fn execute_ocr(
         exec.log(
             action_id,
             format!(
-                "OCR: waiting up to {}s while text contains {target:?}",
+                "{label}: waiting up to {}s while text contains {target:?}",
                 wait.wait_til_found_seconds
             ),
         );
@@ -89,7 +93,14 @@ pub(crate) fn execute_ocr(
             if let Some(first) = initial.take() {
                 return Ok(first);
             }
-            Ok(ocr_attempt(exec, action_id, &ocr_params, &order, macro_))
+            Ok(ocr_attempt(
+                exec,
+                action_id,
+                &ocr_params,
+                &order,
+                macro_,
+                &mut cache,
+            ))
         },
         |attempt| !attempt.hits.is_empty(),
         |exec, macro_, attempt, pass| {
@@ -110,6 +121,7 @@ pub(crate) fn execute_ocr(
 }
 
 struct OcrRunParams<'a> {
+    label: &'a str,
     search_area: &'a sqyre_domain::CoordinateRef,
     target: &'a str,
     blur: i32,
@@ -120,6 +132,7 @@ struct OcrRunParams<'a> {
     threshold_invert: bool,
 }
 
+#[derive(Clone)]
 struct OcrAttempt {
     text: Option<String>,
     hits: Vec<DetectionHit>,
@@ -145,8 +158,9 @@ fn ocr_attempt(
     params: &OcrRunParams<'_>,
     order: &MatchOrder,
     macro_: &Macro,
+    cache: &mut FrameCache<OcrAttempt>,
 ) -> OcrAttempt {
-    match run_ocr_once(exec, action_id, params, order, macro_) {
+    match run_ocr_once(exec, action_id, params, order, macro_, cache) {
         Some(a) => a,
         None => OcrAttempt {
             text: None,
@@ -161,29 +175,39 @@ fn run_ocr_once(
     params: &OcrRunParams<'_>,
     order: &MatchOrder,
     macro_: &Macro,
+    cache: &mut FrameCache<OcrAttempt>,
 ) -> Option<OcrAttempt> {
+    let label = params.label;
     let Some(ocr) = exec.deps.ocr else {
-        exec.log(action_id, "OCR: missing OcrEngine");
+        exec.log(action_id, format!("{label}: missing OcrEngine"));
         return None;
     };
 
     let (rgb, origin) = capture_search_buf(
         exec,
         action_id,
-        "OCR",
+        label,
         params.search_area,
         macro_,
         |exec, lx, ty, rx, by| {
             exec.log(
                 action_id,
                 format!(
-                    "{} OCR search | {} in X1:{lx} Y1:{ty} X2:{rx} Y2:{by}",
+                    "{label}: searching {:?} in {} X1:{lx} Y1:{ty} X2:{rx} Y2:{by}",
                     params.target,
                     params.search_area.display_label()
                 ),
             );
         },
     )?;
+    let fp = frame_fingerprint(&rgb);
+    if let Some(cached) = cache.get(fp, origin) {
+        exec.log(
+            action_id,
+            format!("{label}: capture unchanged since last attempt; reusing OCR result"),
+        );
+        return Some(cached);
+    }
     let search_center_x = origin.x + origin.w / 2;
     let search_center_y = origin.y + origin.h / 2;
     exec.log_image(action_id, "Capture (raw)", &rgb);
@@ -201,7 +225,7 @@ fn run_ocr_once(
         match sqyre_vision::preprocess_for_ocr_with_steps(&rgb, opts, collect) {
             Ok(v) => v,
             Err(e) => {
-                exec.log(action_id, format!("OCR: preprocess: {e}"));
+                exec.log(action_id, format!("{label}: preprocess: {e}"));
                 return None;
             }
         };
@@ -213,7 +237,7 @@ fn run_ocr_once(
     let recognized = match ocr.recognize(&processed) {
         Ok(v) => v,
         Err(e) => {
-            exec.log(action_id, format!("OCR: {e}"));
+            exec.log(action_id, format!("{label}: {e}"));
             return None;
         }
     };
@@ -222,14 +246,14 @@ fn run_ocr_once(
     exec.log(
         action_id,
         format!(
-            "OCR full text ({} chars): {}",
+            "{label} full text ({} chars): {}",
             recognized.text.len(),
             recognized.text
         ),
     );
     exec.log(
         action_id,
-        format!("OCR words found: {}", recognized.words.len()),
+        format!("{label} words found: {}", recognized.words.len()),
     );
     if collect {
         for (i, w) in recognized.words.iter().enumerate() {
@@ -261,7 +285,7 @@ fn run_ocr_once(
                 [40, 220, 80],
             );
         }
-        exec.log_image(action_id, "OCR word boxes", &overlay);
+        exec.log_image(action_id, format!("{label} word boxes"), &overlay);
     }
 
     let resize_scale = if scale > 0.0 { scale } else { 1.0 };
@@ -273,7 +297,10 @@ fn run_ocr_once(
         if occurrences.is_empty() {
             exec.log(
                 action_id,
-                format!("OCR target {:?} not found among word boxes", params.target),
+                format!(
+                    "{label} target {:?} not found among word boxes",
+                    params.target
+                ),
             );
             // Text-contains can still succeed when boxes miss; treat as miss for coords/hits
             // unless full text contains the target — then one synthetic center hit.
@@ -281,7 +308,7 @@ fn run_ocr_once(
                 exec.log(
                     action_id,
                     format!(
-                        "OCR target {:?} in full text but no word-box occurrence; using search center",
+                        "{label} target {:?} in full text but no word-box occurrence; using search center",
                         params.target
                     ),
                 );
@@ -297,7 +324,7 @@ fn run_ocr_once(
             exec.log(
                 action_id,
                 format!(
-                    "OCR target {:?} matched {} occurrence(s)",
+                    "{label} target {:?} matched {} occurrence(s)",
                     params.target,
                     occurrences.len()
                 ),
@@ -309,7 +336,7 @@ fn run_ocr_once(
                     exec.log(
                         action_id,
                         format!(
-                            "OCR target {:?} matched at image ({bx}, {by}) → screen ({sx}, {sy}) (scale={resize_scale:.3})",
+                            "{label} target {:?} matched at image ({bx}, {by}) → screen ({sx}, {sy}) (scale={resize_scale:.3})",
                             params.target
                         ),
                     );
@@ -329,10 +356,12 @@ fn run_ocr_once(
     };
     sort_hits(&mut hits, order);
 
-    Some(OcrAttempt {
+    let attempt = OcrAttempt {
         text: Some(recognized.text),
         hits,
-    })
+    };
+    cache.set(fp, origin, attempt.clone());
+    Some(attempt)
 }
 
 /// Substring match: empty target always matches

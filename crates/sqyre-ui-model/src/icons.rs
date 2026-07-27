@@ -17,9 +17,16 @@ pub fn action_icon_glyph(action: &Action) -> &'static str {
     }
 }
 
-/// True when the pill value looks like a `${name}` / `{name}` var ref.
+/// True when the whole (trimmed) pill value is a single `${name}` / `{name}`
+/// var ref, using the real `sqyre_varref` expansion grammar (identifier-like
+/// names only, escapes like `$${name}` excluded) rather than brace shape alone.
 pub fn looks_like_var_ref(text: &str) -> bool {
     let t = text.trim();
-    (t.starts_with("${") && t.ends_with('}'))
-        || (t.starts_with('{') && t.ends_with('}') && !t.starts_with("${"))
+    if t.is_empty() {
+        return false;
+    }
+    match sqyre_varref::segments(t).as_slice() {
+        [seg] => seg.is_ref && seg.text.len() == t.len(),
+        _ => false,
+    }
 }

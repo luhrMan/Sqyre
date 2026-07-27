@@ -11,7 +11,6 @@ use crate::{
 pub struct ActionTemplate {
     pub label: &'static str,
     pub action_type: &'static str,
-    pub category: &'static str,
 }
 
 impl ActionTemplate {
@@ -27,7 +26,6 @@ pub fn action_templates() -> Vec<ActionTemplate> {
         .map(|m| ActionTemplate {
             label: m.label,
             action_type: m.type_key,
-            category: m.picker_category,
         })
         .collect()
 }
@@ -171,7 +169,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{action_picker_category, action_type_label, ACTION_KIND_COUNT};
+    use crate::{action_type_label, ACTION_KIND_COUNT};
 
     #[test]
     fn templates_cover_all_kinds() {
@@ -185,7 +183,6 @@ mod tests {
             let a = tmpl.create();
             assert_eq!(a.type_key(), tmpl.action_type);
             assert!(!a.id.is_root());
-            assert_eq!(action_picker_category(tmpl.action_type), tmpl.category);
             assert_ne!(
                 action_type_label(tmpl.action_type),
                 "Unknown",

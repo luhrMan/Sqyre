@@ -121,6 +121,8 @@ fn move_mouse_windows(x: i32, y: i32, moving_time: f32) {
     use windows::Win32::Foundation::POINT;
     use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetCursorPos};
 
+    // SAFETY: SetCursorPos takes plain coordinates and GetCursorPos writes into
+    // a stack-local POINT that outlives the call; neither has other preconditions.
     unsafe {
         if moving_time <= 0.0 {
             let _ = SetCursorPos(x, y);
