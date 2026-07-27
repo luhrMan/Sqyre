@@ -304,7 +304,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             .iter()
             .map(|m| (m.name.clone(), m.tags.clone()))
             .collect();
-        app.macro_record.show(crate::macro_record::MacroRecordShow {
+        let result = app.macro_record.show(crate::macro_record::MacroRecordShow {
             ctx,
             macro_hotkeys: &app.run_session.macro_hotkeys,
             bridge: &app.macro_record_bridge,
@@ -315,12 +315,15 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             hotkey_record: &mut app.hotkey_record,
             screen_click: &app.screen_click,
             macros: &macros,
-        })
+        });
+        if result.catalog_changed {
+            if let Err(e) = app.persist_database() {
+                crate::log::warn(format!("persist after macro-record points: {e}"));
+            }
+        }
+        result.copy
     } {
         app.set_action_clipboard(ctx, copied.maps, &copied.yaml);
-        if let Err(e) = app.persist_database() {
-            crate::log::warn(format!("persist after macro-record points: {e}"));
-        }
     }
 
     let running = app.run_session.state.running.load(Ordering::SeqCst);
