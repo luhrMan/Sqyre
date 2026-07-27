@@ -87,7 +87,7 @@ impl ProgramCatalog {
         self.generation
     }
 
-    fn bump_generation(&mut self) {
+    pub(crate) fn bump_generation(&mut self) {
         self.generation = self.generation.wrapping_add(1);
     }
 

@@ -350,7 +350,7 @@ impl ProgramCatalog {
             .ok_or_else(|| PortError::not_found(format!("atlas {name:?} not in {program}")))
     }
 
-    pub(super) fn program_mut(&mut self, name: &str) -> Result<&mut ProgramData> {
+    pub(crate) fn program_mut(&mut self, name: &str) -> Result<&mut ProgramData> {
         if !self.programs.contains_key(name) {
             return Err(PersistError::Message(format!("program {name:?} not found")));
         }
@@ -358,7 +358,7 @@ impl ProgramCatalog {
         Ok(self.programs.get_mut(name).expect("program exists"))
     }
 
-    pub(super) fn default_resolution_key(&self) -> String {
+    pub(crate) fn default_resolution_key(&self) -> String {
         let key = self.resolution_key();
         if key.is_empty() {
             "1920x1080".into()
