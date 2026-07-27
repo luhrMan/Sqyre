@@ -16,7 +16,7 @@
 //! (no Rust panic / `crash.log`).
 
 use crate::theme;
-use eframe::egui::{self, Pos2, ViewportBuilder, ViewportClass, ViewportId};
+use eframe::egui::{self, Pos2, TextStyle, Vec2, ViewportBuilder, ViewportClass, ViewportId};
 use sqyre_capture::{mark_site, SelectionOutline};
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_ports::DesktopRect;
@@ -27,9 +27,14 @@ use std::time::Duration;
 
 const POLL_MS: u64 = 16;
 const HUD_ID: &str = "sqyre_recording_coords_hud";
-const HUD_W: f32 = 560.0;
-const HUD_H: f32 = 44.0;
 const HUD_MARGIN: f32 = 12.0;
+const HUD_PAD_X: f32 = 24.0;
+const HUD_PAD_Y: f32 = 16.0;
+const HUD_MIN_W: f32 = 200.0;
+const HUD_MIN_H: f32 = 36.0;
+/// Fraction of monitor height used as dead-band so the HUD does not flip every
+/// frame when the cursor skims the vertical midline.
+const HUD_FLIP_HYSTERESIS: f32 = 0.18;
 
 type OutlineCorners = (i32, i32, i32, i32);
 
@@ -41,6 +46,8 @@ pub struct RecordingOverlay {
     /// Created lazily on the UI thread; never touched from the wake poller.
     outline: Option<SelectionOutline>,
     outline_failed: bool,
+    /// Sticky vertical edge (`true` = top). Cleared when recording ends.
+    hud_at_top: Option<bool>,
 }
 
 impl RecordingOverlay {
@@ -71,7 +78,9 @@ impl RecordingOverlay {
 
         if recording {
             self.ensure_wake_poller(ctx.clone(), screen_click.clone(), macro_record.cloned());
-            show_coords_hud(ctx, screen_click, macro_record);
+            self.show_coords_hud(ctx, screen_click, macro_record);
+        } else {
+            self.hud_at_top = None;
         }
     }
 
@@ -125,6 +134,65 @@ impl RecordingOverlay {
             }
         }));
     }
+
+    fn show_coords_hud(
+        &mut self,
+        ctx: &egui::Context,
+        screen_click: &ScreenClickBridge,
+        macro_record: Option<&sqyre_hotkeys::MacroRecordBridge>,
+    ) {
+        let text = macro_record
+            .and_then(|b| b.status_label())
+            .or_else(|| screen_click.status_label());
+        let Some(text) = text else {
+            return;
+        };
+        let (mx, my) = match macro_record {
+            Some(b) if b.is_armed() => b.last_pos(),
+            _ => screen_click.last_pos(),
+        };
+        let monitor = monitor_for_pointer(mx, my);
+        let hud_at_top = pick_hud_edge(self.hud_at_top, my, monitor);
+        self.hud_at_top = Some(hud_at_top);
+
+        // Pointer / monitor rects are physical pixels; egui viewport position/size
+        // are logical points (`physical / pixels_per_point`).
+        let ppp = ctx.pixels_per_point().max(0.01);
+        let mon_w_pts = monitor.w as f32 / ppp;
+        let max_w = (mon_w_pts - HUD_MARGIN * 2.0).max(HUD_MIN_W);
+
+        let style = ctx.global_style();
+        let font = TextStyle::Body.resolve(&style);
+        let color = theme::PRIMARY;
+        let text_max_w = (max_w - HUD_PAD_X).max(1.0);
+        let galley = ctx.fonts_mut(|f| f.layout(text.clone(), font, color, text_max_w));
+        let hud_w = (galley.size().x + HUD_PAD_X).ceil().clamp(HUD_MIN_W, max_w);
+        let hud_h = (galley.size().y + HUD_PAD_Y).ceil().max(HUD_MIN_H);
+        let pos = hud_position(monitor, hud_at_top, hud_w, hud_h, ppp);
+
+        let text_owned = text;
+        let id = ViewportId::from_hash_of(HUD_ID);
+        let builder = ViewportBuilder::default()
+            .with_title("Sqyre recording")
+            .with_decorations(false)
+            .with_resizable(false)
+            .with_always_on_top()
+            .with_taskbar(false)
+            // Must not steal keyboard focus — otherwise keys are not delivered to the
+            // global hook / focused-key feed until the user clicks another window.
+            .with_active(false)
+            .with_mouse_passthrough(true)
+            .with_inner_size([hud_w, hud_h])
+            .with_min_inner_size([hud_w, hud_h])
+            .with_position(pos);
+
+        // Deferred: independent of the (possibly hidden) root viewport paint cycle,
+        // as long as the parent keeps registering it each frame via request_repaint.
+        ctx.show_viewport_deferred(id, builder, move |ui, class| {
+            paint_hud_label(ui, class, &text_owned, hud_at_top, Vec2::new(hud_w, hud_h));
+            ui.ctx().request_repaint();
+        });
+    }
 }
 
 impl Drop for RecordingOverlay {
@@ -139,48 +207,6 @@ impl Drop for RecordingOverlay {
             outline.clear();
         }
     }
-}
-
-fn show_coords_hud(
-    ctx: &egui::Context,
-    screen_click: &ScreenClickBridge,
-    macro_record: Option<&sqyre_hotkeys::MacroRecordBridge>,
-) {
-    let text = macro_record
-        .and_then(|b| b.status_label())
-        .or_else(|| screen_click.status_label());
-    let Some(text) = text else {
-        return;
-    };
-    let (mx, my) = match macro_record {
-        Some(b) if b.is_armed() => b.last_pos(),
-        _ => screen_click.last_pos(),
-    };
-    let monitor = monitor_for_pointer(mx, my);
-    let hud_at_top = my >= monitor.y + monitor.h / 2;
-    let pos = hud_position(monitor, hud_at_top);
-    let text_owned = text;
-    let id = ViewportId::from_hash_of(HUD_ID);
-    let builder = ViewportBuilder::default()
-        .with_title("Sqyre recording")
-        .with_decorations(false)
-        .with_resizable(false)
-        .with_always_on_top()
-        .with_taskbar(false)
-        // Must not steal keyboard focus — otherwise keys are not delivered to the
-        // global hook / focused-key feed until the user clicks another window.
-        .with_active(false)
-        .with_mouse_passthrough(true)
-        .with_inner_size([HUD_W, HUD_H])
-        .with_min_inner_size([200.0, 36.0])
-        .with_position(pos);
-
-    // Deferred: independent of the (possibly hidden) root viewport paint cycle,
-    // as long as the parent keeps registering it each frame via request_repaint.
-    ctx.show_viewport_deferred(id, builder, move |ui, class| {
-        paint_hud_label(ui, class, &text_owned, hud_at_top);
-        ui.ctx().request_repaint();
-    });
 }
 
 /// Monitor containing `(x, y)`, else the first usable display, else a 1920×1080 fallback.
@@ -208,17 +234,34 @@ fn monitor_for_pointer(x: i32, y: i32) -> DesktopRect {
     }
 }
 
-fn hud_position(monitor: DesktopRect, at_top: bool) -> Pos2 {
-    let x = monitor.x as f32 + (monitor.w as f32 - HUD_W).max(0.0) * 0.5;
+/// Prefer the edge opposite the cursor, with hysteresis so midline motion is stable.
+fn pick_hud_edge(current: Option<bool>, pointer_y: i32, monitor: DesktopRect) -> bool {
+    let mid = monitor.y as f32 + monitor.h as f32 * 0.5;
+    let band = (monitor.h as f32 * HUD_FLIP_HYSTERESIS).max(1.0);
+    // `true` = banner on top (cursor is in the lower portion of the monitor).
+    match current {
+        Some(true) => (pointer_y as f32) >= mid - band,
+        Some(false) => (pointer_y as f32) >= mid + band,
+        None => (pointer_y as f32) >= mid,
+    }
+}
+
+/// Convert a physical-pixel monitor placement into egui points.
+fn hud_position(monitor: DesktopRect, at_top: bool, hud_w: f32, hud_h: f32, ppp: f32) -> Pos2 {
+    let mon_x = monitor.x as f32 / ppp;
+    let mon_y = monitor.y as f32 / ppp;
+    let mon_w = monitor.w as f32 / ppp;
+    let mon_h = monitor.h as f32 / ppp;
+    let x = mon_x + (mon_w - hud_w).max(0.0) * 0.5;
     let y = if at_top {
-        monitor.y as f32 + HUD_MARGIN
+        mon_y + HUD_MARGIN
     } else {
-        monitor.y as f32 + monitor.h as f32 - HUD_H - HUD_MARGIN
+        mon_y + (mon_h - hud_h - HUD_MARGIN).max(0.0)
     };
     Pos2::new(x, y)
 }
 
-fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: bool) {
+fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: bool, size: Vec2) {
     let frame = egui::Frame::NONE
         .fill(crate::theme::overlay_panel_fill())
         .stroke(egui::Stroke::new(1.0, theme::PRIMARY))
@@ -249,6 +292,7 @@ fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: 
     }
 
     frame.show(ui, |ui| {
+        ui.set_min_size(size);
         ui.centered_and_justified(|ui| {
             ui.label(egui::RichText::new(text).color(theme::PRIMARY).strong());
         });
@@ -260,19 +304,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hud_position_centers_and_flips_vertical_edge() {
+    fn hud_position_converts_physical_to_points() {
         let mon = DesktopRect {
             x: 100,
             y: 50,
             w: 1920,
             h: 1080,
         };
-        let top = hud_position(mon, true);
-        assert!((top.x - (100.0 + (1920.0 - HUD_W) * 0.5)).abs() < 0.01);
-        assert!((top.y - (50.0 + HUD_MARGIN)).abs() < 0.01);
+        let ppp = 1.7;
+        let hud_w = 400.0;
+        let hud_h = 40.0;
+        let top = hud_position(mon, true, hud_w, hud_h, ppp);
+        assert!((top.x - (100.0 / ppp + (1920.0 / ppp - hud_w) * 0.5)).abs() < 0.01);
+        assert!((top.y - (50.0 / ppp + HUD_MARGIN)).abs() < 0.01);
 
-        let bottom = hud_position(mon, false);
+        let bottom = hud_position(mon, false, hud_w, hud_h, ppp);
         assert!((bottom.x - top.x).abs() < 0.01);
-        assert!((bottom.y - (50.0 + 1080.0 - HUD_H - HUD_MARGIN)).abs() < 0.01);
+        let expect_y = 50.0 / ppp + (1080.0 / ppp - hud_h - HUD_MARGIN);
+        assert!((bottom.y - expect_y).abs() < 0.01);
+    }
+
+    #[test]
+    fn pick_hud_edge_uses_hysteresis() {
+        let mon = DesktopRect {
+            x: 0,
+            y: 0,
+            w: 1000,
+            h: 1000,
+        };
+        // Mid = 500, band = 180.
+        assert!(pick_hud_edge(None, 600, mon)); // lower → top
+        assert!(!pick_hud_edge(None, 400, mon)); // upper → bottom
+
+        // Sticky top until cursor moves well into the upper half.
+        assert!(pick_hud_edge(Some(true), 400, mon)); // still within band
+        assert!(!pick_hud_edge(Some(true), 300, mon)); // past band → flip
+
+        // Sticky bottom until cursor moves well into the lower half.
+        assert!(!pick_hud_edge(Some(false), 600, mon));
+        assert!(pick_hud_edge(Some(false), 700, mon));
     }
 }
