@@ -309,11 +309,8 @@ impl Database {
                         if macro_.name.is_empty() {
                             macro_.name = key.clone();
                         }
-                        if let Err(e) = sqyre_validate::validate_macro(&macro_) {
-                            warnings.push(format!(
-                                "macro \"{key}\" loaded with validation issues: {e}"
-                            ));
-                        }
+                        // Structural validation is surfaced in the UI on the macro /
+                        // action rows — do not turn it into an app-wide load banner.
                         macros.insert(key, macro_);
                     }
                     Err(e) => {

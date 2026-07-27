@@ -61,10 +61,9 @@ impl PreviewTooltipCache {
         _kind: PreviewKind,
     ) {
         if response.hovered() {
-            response.clone().on_hover_text(format!(
-                "{}\n{UNAVAILABLE}",
-                coord_ref.as_str()
-            ));
+            response
+                .clone()
+                .on_hover_text(format!("{}\n{UNAVAILABLE}", coord_ref.as_str()));
         }
     }
 

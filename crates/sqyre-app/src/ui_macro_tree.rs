@@ -151,6 +151,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                             known_vars: &known_vars,
                             is_dark,
                         },
+                        active_macro: &app.workspace.macros[idx],
                         macro_name: &macro_name,
                         hl_snap: &hl_snap,
                         selected: &app.tree.selected_actions,
@@ -624,6 +625,9 @@ fn build_tree(
                           delete_action: &mut Option<ActionId>,
                           row_events: &mut Vec<(ActionId, RowInteraction)>,
                           scrolled_follow: &mut bool| {
+        let validation_error = sqyre_validate::validate_action(action, Some(tree.active_macro))
+            .err()
+            .map(|e| e.to_string());
         let interaction = tree_chrome::paint_action_row(
             ui,
             action,
@@ -634,6 +638,7 @@ fn build_tree(
             highlight,
             tree.pills_cache,
             tree.paint_revision,
+            validation_error.as_deref(),
         );
         if should_scroll {
             ui.scroll_to_rect(interaction.row_rect, Some(egui::Align::Center));
@@ -832,7 +837,7 @@ pub(crate) fn press_pair_highlight(action: &Action, selected: Option<&Action>) -
 mod highlight_ui_tests {
     use super::*;
     use sqyre_domain::{ActionKind, PressState};
-use sqyre_ui_model::HighlightSnapshot;
+    use sqyre_ui_model::HighlightSnapshot;
     use std::collections::HashMap;
 
     #[test]

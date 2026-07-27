@@ -4,10 +4,9 @@ use super::common::{
     apply_detection_hits, capture_search_buf, close_matches_distance, frame_fingerprint,
     run_detection_shell, sort_hits, DetectionExtras, DetectionHit, FrameCache,
 };
-use crate::log_draw::{crop_match_preview, draw_rect_rgb};
 use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, Result, SearchError};
-use sqyre_ui_model::{highlight_clear, highlight_fill};
+use crate::log_draw::{crop_match_preview, draw_rect_rgb};
 use crate::run::Executor;
 use rayon::prelude::*;
 use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchMethod, MatchOrder};
@@ -15,6 +14,7 @@ use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_prepared, prepare_search,
     search_blur_kernel, ImageBuf, Point,
 };
+use sqyre_ui_model::{highlight_clear, highlight_fill};
 use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
     load_rgb_image,

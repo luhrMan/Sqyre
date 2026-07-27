@@ -9,19 +9,13 @@ pub use sqyre_ports::{
 
 /// Run OCR on a preprocessed image buffer.
 pub trait OcrEngine: Send + Sync {
-    fn recognize(
-        &self,
-        image: &ImageBuf,
-    ) -> Result<sqyre_vision::OcrRecognition, PortError>;
+    fn recognize(&self, image: &ImageBuf) -> Result<sqyre_vision::OcrRecognition, PortError>;
 }
 
 /// Tesseract-backed engine (native only; not available on wasm32).
 #[cfg(not(target_arch = "wasm32"))]
 impl OcrEngine for sqyre_vision::LeptessOcr {
-    fn recognize(
-        &self,
-        image: &ImageBuf,
-    ) -> Result<sqyre_vision::OcrRecognition, PortError> {
+    fn recognize(&self, image: &ImageBuf) -> Result<sqyre_vision::OcrRecognition, PortError> {
         sqyre_vision::LeptessOcr::recognize(self, image).map_err(PortError::Message)
     }
 }

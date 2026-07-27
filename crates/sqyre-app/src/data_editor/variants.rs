@@ -8,8 +8,8 @@ use crate::data_editor_preview::{
 use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
 use eframe::egui;
-use sqyre_ports::DesktopRect;
 use sqyre_persist::{auto_pic_path, ProgramCatalog, UserSettings};
+use sqyre_ports::DesktopRect;
 #[cfg(feature = "native-runtime")]
 use sqyre_vision::invalidate_search_masks_under;
 
@@ -272,84 +272,85 @@ impl DataEditor {
         }
         #[cfg(feature = "native-runtime")]
         {
-        if self.autopix_pending.is_some() {
-            self.set_ok("AutoPic: capturing…");
-            return;
-        }
-        let name = self.form_name.trim().to_string();
-        if name.is_empty() {
-            self.set_err("AutoPic: select a search area first.");
-            return;
-        }
-        let lx = form_coord_i32(&self.form_left);
-        let ty = form_coord_i32(&self.form_top);
-        let rx = form_coord_i32(&self.form_right);
-        let by = form_coord_i32(&self.form_bottom);
-        let (lx, rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
-        let (ty, by) = if ty <= by { (ty, by) } else { (by, ty) };
-        if rx - lx <= 0 || by - ty <= 0 {
-            self.set_err("AutoPic: invalid search area dimensions.");
-            return;
-        }
-
-        let capturer = match sqyre_capture::shared_capturer() {
-            Ok(c) => c,
-            Err(e) => {
-                self.set_err(format!("AutoPic: {e}"));
+            if self.autopix_pending.is_some() {
+                self.set_ok("AutoPic: capturing…");
                 return;
             }
-        };
-        let right = rx;
-        let bottom = by;
-        let (tx, result_rx) = mpsc::channel();
-        let area_name = name.clone();
-        thread::spawn(move || {
-            let result = (|| -> Result<String, String> {
-                let img = capturer
-                    .capture_rect_ref(DesktopRect {
-                        x: lx,
-                        y: ty,
-                        w: right - lx,
-                        h: bottom - ty,
-                    })
-                    .map_err(|e| format!("AutoPic: {e} (area: {area_name})"))?;
-                let dir = auto_pic_path();
-                std::fs::create_dir_all(&dir).map_err(|e| format!("AutoPic: create dir: {e}"))?;
-                let stamp = {
-                    use web_time::{SystemTime, UNIX_EPOCH};
-                    let dur = SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default();
-                    // Timestamp without chrono: YYYYMMDD_HHMMSS UTC.
-                    let secs = dur.as_secs() as i64;
-                    let days = secs.div_euclid(86_400);
-                    let day_secs = secs.rem_euclid(86_400) as u32;
-                    let hh = day_secs / 3600;
-                    let mm = (day_secs % 3600) / 60;
-                    let ss = day_secs % 60;
-                    // Civil date from Unix days (algorithm from civil_from_days / Howard Hinnant).
-                    let z = days + 719_468;
-                    let era = z.div_euclid(146_097);
-                    let doe = (z - era * 146_097) as u32;
-                    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-                    let y = yoe as i64 + era * 400;
-                    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-                    let mp = (5 * doy + 2) / 153;
-                    let d = doy - (153 * mp + 2) / 5 + 1;
-                    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-                    let y = if m <= 2 { y + 1 } else { y };
-                    format!("{y:04}{m:02}{d:02}_{hh:02}{mm:02}{ss:02}")
-                };
-                let filename = format!("{stamp}_{area_name}.png");
-                let full = dir.join(&filename);
-                img.save(&full)
-                    .map_err(|e| format!("AutoPic: save {}: {e}", full.display()))?;
-                Ok(format!("AutoPic: saved {}", full.display()))
-            })();
-            let _ = tx.send(result);
-        });
-        self.autopix_pending = Some(result_rx);
-        self.set_ok("AutoPic: capturing…");
+            let name = self.form_name.trim().to_string();
+            if name.is_empty() {
+                self.set_err("AutoPic: select a search area first.");
+                return;
+            }
+            let lx = form_coord_i32(&self.form_left);
+            let ty = form_coord_i32(&self.form_top);
+            let rx = form_coord_i32(&self.form_right);
+            let by = form_coord_i32(&self.form_bottom);
+            let (lx, rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
+            let (ty, by) = if ty <= by { (ty, by) } else { (by, ty) };
+            if rx - lx <= 0 || by - ty <= 0 {
+                self.set_err("AutoPic: invalid search area dimensions.");
+                return;
+            }
+
+            let capturer = match sqyre_capture::shared_capturer() {
+                Ok(c) => c,
+                Err(e) => {
+                    self.set_err(format!("AutoPic: {e}"));
+                    return;
+                }
+            };
+            let right = rx;
+            let bottom = by;
+            let (tx, result_rx) = mpsc::channel();
+            let area_name = name.clone();
+            thread::spawn(move || {
+                let result = (|| -> Result<String, String> {
+                    let img = capturer
+                        .capture_rect_ref(DesktopRect {
+                            x: lx,
+                            y: ty,
+                            w: right - lx,
+                            h: bottom - ty,
+                        })
+                        .map_err(|e| format!("AutoPic: {e} (area: {area_name})"))?;
+                    let dir = auto_pic_path();
+                    std::fs::create_dir_all(&dir)
+                        .map_err(|e| format!("AutoPic: create dir: {e}"))?;
+                    let stamp = {
+                        use web_time::{SystemTime, UNIX_EPOCH};
+                        let dur = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default();
+                        // Timestamp without chrono: YYYYMMDD_HHMMSS UTC.
+                        let secs = dur.as_secs() as i64;
+                        let days = secs.div_euclid(86_400);
+                        let day_secs = secs.rem_euclid(86_400) as u32;
+                        let hh = day_secs / 3600;
+                        let mm = (day_secs % 3600) / 60;
+                        let ss = day_secs % 60;
+                        // Civil date from Unix days (algorithm from civil_from_days / Howard Hinnant).
+                        let z = days + 719_468;
+                        let era = z.div_euclid(146_097);
+                        let doe = (z - era * 146_097) as u32;
+                        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+                        let y = yoe as i64 + era * 400;
+                        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+                        let mp = (5 * doy + 2) / 153;
+                        let d = doy - (153 * mp + 2) / 5 + 1;
+                        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+                        let y = if m <= 2 { y + 1 } else { y };
+                        format!("{y:04}{m:02}{d:02}_{hh:02}{mm:02}{ss:02}")
+                    };
+                    let filename = format!("{stamp}_{area_name}.png");
+                    let full = dir.join(&filename);
+                    img.save(&full)
+                        .map_err(|e| format!("AutoPic: save {}: {e}", full.display()))?;
+                    Ok(format!("AutoPic: saved {}", full.display()))
+                })();
+                let _ = tx.send(result);
+            });
+            self.autopix_pending = Some(result_rx);
+            self.set_ok("AutoPic: capturing…");
         }
     }
 
@@ -390,29 +391,29 @@ impl DataEditor {
         }
         #[cfg(feature = "native-runtime")]
         {
-        use crate::collection_capture::{capture_search_area_to_png, collection_capture_job};
-        use std::sync::mpsc;
-        use std::thread;
+            use crate::collection_capture::{capture_search_area_to_png, collection_capture_job};
+            use std::sync::mpsc;
+            use std::thread;
 
-        if self.collection_capture_pending.is_some() {
+            if self.collection_capture_pending.is_some() {
+                self.set_ok("Collection: capturing…");
+                return Ok(());
+            }
+            let (path, left, top, right, bottom) =
+                collection_capture_job(catalog, program, collection)?;
+            let path_for_thread = path.clone();
+            let (tx, rx) = mpsc::channel();
+            thread::spawn(move || {
+                let result = capture_search_area_to_png(left, top, right, bottom, &path_for_thread);
+                let _ = tx.send(result);
+            });
+            self.collection_capture_pending = Some(super::CollectionCapturePending {
+                path,
+                rollback_collection,
+                rx,
+            });
             self.set_ok("Collection: capturing…");
-            return Ok(());
-        }
-        let (path, left, top, right, bottom) =
-            collection_capture_job(catalog, program, collection)?;
-        let path_for_thread = path.clone();
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let result = capture_search_area_to_png(left, top, right, bottom, &path_for_thread);
-            let _ = tx.send(result);
-        });
-        self.collection_capture_pending = Some(super::CollectionCapturePending {
-            path,
-            rollback_collection,
-            rx,
-        });
-        self.set_ok("Collection: capturing…");
-        Ok(())
+            Ok(())
         }
     }
 

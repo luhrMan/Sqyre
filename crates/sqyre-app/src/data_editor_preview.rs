@@ -346,11 +346,14 @@ pub(crate) fn paint_zoomable_collection_preview(
             icons.invalidate_path(path);
         }
         if ui
-            .add_enabled(!capturing, egui::Button::new(if capturing {
-                "Capturing…"
-            } else {
-                "Replace Image"
-            }))
+            .add_enabled(
+                !capturing,
+                egui::Button::new(if capturing {
+                    "Capturing…"
+                } else {
+                    "Replace Image"
+                }),
+            )
             .clicked()
         {
             *replace_clicked = true;

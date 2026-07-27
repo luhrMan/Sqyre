@@ -9,9 +9,9 @@ pub use kind::ActionKind;
 pub use tree::{InsertSlot, TreeNodeRef};
 pub use wire_keys::WIRE_TYPE_KEYS;
 
+pub use crate::match_method::MatchMethod;
 use crate::{CoordinateRef, ScalarValue};
 use serde::{Deserialize, Serialize};
-pub use crate::match_method::MatchMethod;
 use uuid::Uuid;
 
 /// Declares a C-like string enum with `ALL`, `as_str`, `try_parse`, `parse`, `Display`, `From`, and serde.
@@ -1233,15 +1233,9 @@ mod tests {
     #[test]
     fn string_enums_deserialize_reject_unknown_wire() {
         let err = serde_yaml::from_str::<MouseButton>("bogus").unwrap_err();
-        assert!(
-            err.to_string().contains("unknown MouseButton"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("unknown MouseButton"), "{err}");
         let err = serde_yaml::from_str::<RepeatMode>("not-a-mode").unwrap_err();
-        assert!(
-            err.to_string().contains("unknown RepeatMode"),
-            "{err}"
-        );
+        assert!(err.to_string().contains("unknown RepeatMode"), "{err}");
     }
 
     #[test]

@@ -59,7 +59,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn recurse<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, ExprError>) -> Result<T, ExprError> {
+    fn recurse<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, ExprError>,
+    ) -> Result<T, ExprError> {
         if self.depth >= MAX_EXPR_RECURSION_DEPTH {
             return Err(ExprError::TooDeep {
                 max: MAX_EXPR_RECURSION_DEPTH,

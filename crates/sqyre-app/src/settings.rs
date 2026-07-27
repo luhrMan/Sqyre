@@ -765,7 +765,9 @@ impl SettingsUi {
                 self.settings = loaded;
             }
             Err(e) => {
-                crate::log::warn(format_args!("restore succeeded but settings reload failed: {e}"));
+                crate::log::warn(format_args!(
+                    "restore succeeded but settings reload failed: {e}"
+                ));
             }
         }
 

@@ -23,7 +23,9 @@ use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
 use sqyre_persist::UserSettings;
 use sqyre_serialize::{action_from_map, action_to_map};
-use sqyre_ui_model::{action_icon_glyph, action_pastel_color, action_picker_category, ACTION_PICKER_CATEGORIES};
+use sqyre_ui_model::{
+    action_icon_glyph, action_pastel_color, action_picker_category, ACTION_PICKER_CATEGORIES,
+};
 use sqyre_validate::validate_action;
 use std::collections::HashMap;
 use web_time::{Duration, Instant};
@@ -89,7 +91,9 @@ impl AddActionPicker {
                 Err(e) => {
                     // Corrupt/incompatible default in user settings; skip it
                     // rather than fail the whole load.
-                    crate::log::warn(format_args!("dropping invalid action default for {ty:?}: {e}"));
+                    crate::log::warn(format_args!(
+                        "dropping invalid action default for {ty:?}: {e}"
+                    ));
                 }
             }
         }
