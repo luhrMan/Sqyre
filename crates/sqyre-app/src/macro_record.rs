@@ -15,7 +15,7 @@ use sqyre_domain::{
 use sqyre_hotkeys::{
     MacroHotkeyBridge, MacroRecordBridge, MacroRecordEvent, RecordMouseButton, ScreenClickBridge,
 };
-use sqyre_persist::{ProgramCatalog, ProgramPoint, GENERAL_PROGRAM};
+use sqyre_persist::{ProgramCatalog, ProgramPoint, GENERAL_PROGRAM, TEMPORARY_PROGRAM};
 use sqyre_ui_model::SummaryPill;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
@@ -34,18 +34,27 @@ pub(crate) struct TempPoint {
     pub name: String,
     pub x: i32,
     pub y: i32,
-    /// Editable text for X (committed to `x` when a valid integer).
-    pub x_text: String,
-    /// Editable text for Y (committed to `y` when a valid integer).
-    pub y_text: String,
     /// When true, Copy / Save points will upsert into the catalog and draw on screen.
     pub save: bool,
+    /// When set, Move actions link to this existing catalog point (`Program~Name`)
+    /// instead of `{TEMPORARY_PROGRAM}~{name}`.
+    pub link_to: Option<String>,
 }
+
+/// Max Chebyshev distance (px) to surface a nearby saved-point recommendation.
+const NEARBY_POINT_PX: i32 = 24;
 
 /// Result of Copy from the review window.
 pub(crate) struct MacroRecordCopy {
     pub maps: Vec<serde_yaml::Mapping>,
     pub yaml: String,
+}
+
+/// Outcome of one [`MacroRecordUi::show`] frame.
+pub(crate) struct MacroRecordShowResult {
+    pub copy: Option<MacroRecordCopy>,
+    /// Catalog was mutated (temporary program wipe / point upsert) — persist `db.yaml`.
+    pub catalog_changed: bool,
 }
 
 /// Borrowed UI deps for the recorded-actions review popup.
@@ -84,13 +93,20 @@ pub(crate) enum MacroRecordUi {
 }
 
 impl MacroRecordUi {
-    pub fn open(&mut self, macro_hotkeys: &MacroHotkeyBridge, bridge: &MacroRecordBridge) {
+    pub fn open(
+        &mut self,
+        macro_hotkeys: &MacroHotkeyBridge,
+        bridge: &MacroRecordBridge,
+        catalog: &mut ProgramCatalog,
+    ) -> bool {
         if !matches!(self, Self::Closed) {
-            return;
+            return false;
         }
         macro_hotkeys.suspend();
         bridge.arm();
         *self = Self::Recording;
+        // Each new recording overwrites the scratch `temporary` program.
+        reset_temporary_program(catalog).is_ok()
     }
 
     pub fn is_open(&self) -> bool {
@@ -99,8 +115,8 @@ impl MacroRecordUi {
 
     /// Draw recording chrome / review popup.
     ///
-    /// On Copy: upserts checked temp points and returns clipboard payload.
-    pub fn show(&mut self, ui: MacroRecordShow<'_>) -> Option<MacroRecordCopy> {
+    /// On Copy / Save points: replaces [`TEMPORARY_PROGRAM`] points with the checked set.
+    pub fn show(&mut self, ui: MacroRecordShow<'_>) -> MacroRecordShowResult {
         let MacroRecordShow {
             ctx,
             macro_hotkeys,
@@ -114,12 +130,18 @@ impl MacroRecordUi {
             macros,
         } = ui;
         match self {
-            Self::Closed => None,
+            Self::Closed => MacroRecordShowResult {
+                copy: None,
+                catalog_changed: false,
+            },
             Self::Recording => {
                 if bridge.take_cancelled() {
                     macro_hotkeys.resume();
                     *self = Self::Closed;
-                    return None;
+                    return MacroRecordShowResult {
+                        copy: None,
+                        catalog_changed: false,
+                    };
                 }
                 // Pull keys from the hotkey bridge each frame (same source as Key
                 // Record). Avoids missing presses when the HUD briefly steals focus
@@ -152,11 +174,23 @@ impl MacroRecordUi {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
                     }
                     ctx.request_repaint();
-                    return None;
+                    return MacroRecordShowResult {
+                        copy: None,
+                        catalog_changed: false,
+                    };
+                }
+                // Live crosshairs for move points captured so far.
+                #[cfg(feature = "native-runtime")]
+                {
+                    let live = live_record_points(&bridge.peek_events());
+                    sync_temp_point_markers(ctx, &live, None, None);
                 }
                 // Status lives on the recording HUD (main window may be hidden).
                 ctx.request_repaint_after(Duration::from_millis(16));
-                None
+                MacroRecordShowResult {
+                    copy: None,
+                    catalog_changed: false,
+                }
             }
             Self::Review(review) => match paint_review(
                 review,
@@ -170,11 +204,20 @@ impl MacroRecordUi {
                 screen_click,
                 macros,
             ) {
-                ReviewFrame::Continue => None,
-                ReviewFrame::Copied(copy) => Some(copy),
+                ReviewFrame::Continue { catalog_changed } => MacroRecordShowResult {
+                    copy: None,
+                    catalog_changed,
+                },
+                ReviewFrame::Copied(copy) => MacroRecordShowResult {
+                    copy: Some(copy),
+                    catalog_changed: true,
+                },
                 ReviewFrame::Close => {
                     *self = Self::Closed;
-                    None
+                    MacroRecordShowResult {
+                        copy: None,
+                        catalog_changed: false,
+                    }
                 }
             },
         }
@@ -182,7 +225,7 @@ impl MacroRecordUi {
 }
 
 enum ReviewFrame {
-    Continue,
+    Continue { catalog_changed: bool },
     Copied(MacroRecordCopy),
     Close,
 }
@@ -217,6 +260,8 @@ fn paint_review(
     let mut is_dark = false;
     let mut hovered_point: Option<usize> = None;
     let mut editing_point: Option<usize> = None;
+    // Adopt nearby: (temp index, full CoordinateRef string, display name).
+    let mut adopt_nearby: Option<(usize, String, String)> = None;
     let known_vars = collect_known_variable_names(draft);
 
     let screen = ctx.content_rect();
@@ -244,10 +289,10 @@ fn paint_review(
             if !points.is_empty() {
                 ui.heading("Temporary points");
                 ui.label(format!(
-                    "Saved into program “{GENERAL_PROGRAM}” at the current resolution. Enabled points are drawn on screen."
+                    "Saved into program “{TEMPORARY_PROGRAM}” at the current resolution (replaced each recording). Enabled points are drawn on screen."
                 ));
                 let points_h = (ui.available_height() * 0.28).clamp(96.0, 220.0);
-                egui::ScrollArea::vertical()
+                crate::pickers::scroll_vertical()
                     .id_salt("macro_record_points")
                     .max_height(points_h)
                     .auto_shrink([false, false])
@@ -255,34 +300,30 @@ fn paint_review(
                         for (i, pt) in points.iter_mut().enumerate() {
                             let mut row_hovered = false;
                             let mut row_editing = false;
+                            let nearby = nearby_saved_point(catalog, pt);
                             ui.horizontal(|ui| {
-                                let enabled = ui.checkbox(&mut pt.save, "");
+                                let enabled = ui
+                                    .checkbox(&mut pt.save, "")
+                                    .on_hover_text("Save into catalog on Copy / Save selected");
+                                if enabled.changed() && pt.save {
+                                    pt.link_to = None;
+                                }
                                 let name = ui.add(
                                     egui::TextEdit::singleline(&mut pt.name).desired_width(120.0),
                                 );
+                                // Editing the name after linking drops the link so refs
+                                // follow temporary~name again.
+                                if name.changed() {
+                                    pt.link_to = None;
+                                }
                                 ui.label("X");
-                                let x_valid = pt.x_text.trim().parse::<i32>().ok();
-                                let mut x_edit = egui::TextEdit::singleline(&mut pt.x_text)
-                                    .desired_width(56.0);
-                                if x_valid.is_none() {
-                                    x_edit = x_edit.text_color(crate::theme::MACRO_STOP);
-                                }
-                                let x_resp = ui.add(x_edit).on_hover_text("Integer screen X");
+                                let x_resp = ui
+                                    .add(egui::DragValue::new(&mut pt.x).speed(1).suffix(" px"))
+                                    .on_hover_text("Screen X (physical pixels)");
                                 ui.label("Y");
-                                let y_valid = pt.y_text.trim().parse::<i32>().ok();
-                                let mut y_edit = egui::TextEdit::singleline(&mut pt.y_text)
-                                    .desired_width(56.0);
-                                if y_valid.is_none() {
-                                    y_edit = y_edit.text_color(crate::theme::MACRO_STOP);
-                                }
-                                let y_resp = ui.add(y_edit).on_hover_text("Integer screen Y");
-
-                                if let Some(v) = x_valid {
-                                    pt.x = v;
-                                }
-                                if let Some(v) = y_valid {
-                                    pt.y = v;
-                                }
+                                let y_resp = ui
+                                    .add(egui::DragValue::new(&mut pt.y).speed(1).suffix(" px"))
+                                    .on_hover_text("Screen Y (physical pixels)");
 
                                 row_hovered = enabled.contains_pointer()
                                     || name.contains_pointer()
@@ -292,6 +333,29 @@ fn paint_review(
                                     || x_resp.has_focus()
                                     || y_resp.has_focus();
                             });
+                            if let Some(near) = nearby {
+                                ui.horizontal(|ui| {
+                                    ui.add_space(24.0);
+                                    ui.weak(format!(
+                                        "Nearby: {} ({} px)",
+                                        near.display, near.dist
+                                    ));
+                                    let linked = pt.link_to.as_deref() == Some(near.coord_ref.as_str());
+                                    if linked {
+                                        ui.weak("linked");
+                                    } else if ui
+                                        .small_button("Use")
+                                        .on_hover_text(format!(
+                                            "Link Move to {} and skip saving a new point",
+                                            near.display
+                                        ))
+                                        .clicked()
+                                    {
+                                        adopt_nearby =
+                                            Some((i, near.coord_ref.clone(), near.name.clone()));
+                                    }
+                                });
+                            }
                             if row_editing {
                                 editing_point = Some(i);
                             }
@@ -310,7 +374,7 @@ fn paint_review(
             // Leave room for Copy/Close (+ status) so the list grows with the window.
             let footer_reserve = if status.is_empty() { 40.0 } else { 60.0 };
             let actions_h = (ui.available_height() - footer_reserve).max(80.0);
-            egui::ScrollArea::vertical()
+            crate::pickers::scroll_vertical()
                 .id_salt("macro_record_actions")
                 .max_height(actions_h)
                 .auto_shrink([false, false])
@@ -353,6 +417,18 @@ fn paint_review(
 
     #[cfg(feature = "native-runtime")]
     sync_temp_point_markers(ctx, points, hovered_point, editing_point);
+
+    if let Some((i, coord_ref, name)) = adopt_nearby {
+        if let Some(pt) = points.get_mut(i) {
+            pt.link_to = Some(coord_ref);
+            pt.name = name;
+            pt.save = false;
+        }
+        if let Some(kids) = draft.root.children_mut() {
+            sync_move_refs_to_points(kids, points);
+        }
+        *paint_revision = paint_revision.wrapping_add(1);
+    }
 
     if let Some(aid) = delete_id {
         let _ = draft.root.remove_by_id(aid);
@@ -400,12 +476,17 @@ fn paint_review(
         *paint_revision = paint_revision.wrapping_add(1);
     }
 
+    let mut catalog_changed = false;
+
     if save_points {
         if let Some(kids) = draft.root.children_mut() {
             sync_move_refs_to_points(kids, points);
         }
-        match upsert_selected_points(catalog, points) {
-            Ok(n) => *status = format!("Saved {n} point(s)"),
+        match replace_temporary_points(catalog, points) {
+            Ok(n) => {
+                *status = format!("Saved {n} point(s) into “{TEMPORARY_PROGRAM}”");
+                catalog_changed = true;
+            }
             Err(e) => *status = format!("Save points failed: {e}"),
         }
     }
@@ -414,16 +495,17 @@ fn paint_review(
         if let Some(kids) = draft.root.children_mut() {
             sync_move_refs_to_points(kids, points);
         }
-        if let Err(e) = upsert_selected_points(catalog, points) {
+        if let Err(e) = replace_temporary_points(catalog, points) {
             *status = format!("Copy failed (points): {e}");
-            return ReviewFrame::Continue;
+            return ReviewFrame::Continue { catalog_changed };
         }
+        catalog_changed = true;
         let actions = draft.root.children();
         let maps = match actions_to_clipboard(actions) {
             Ok(m) => m,
             Err(e) => {
                 *status = format!("Copy failed: {e}");
-                return ReviewFrame::Continue;
+                return ReviewFrame::Continue { catalog_changed };
             }
         };
         let yaml = actions_to_yaml_text(actions).unwrap_or_default();
@@ -437,38 +519,38 @@ fn paint_review(
     if close {
         ReviewFrame::Close
     } else {
-        ReviewFrame::Continue
+        ReviewFrame::Continue { catalog_changed }
     }
 }
 
-fn upsert_selected_points(
+fn reset_temporary_program(catalog: &mut ProgramCatalog) -> Result<(), String> {
+    if catalog.get(TEMPORARY_PROGRAM).is_none() {
+        catalog
+            .create_program(TEMPORARY_PROGRAM)
+            .map_err(|e| e.to_string())?;
+    } else {
+        catalog
+            .clear_points(TEMPORARY_PROGRAM)
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Wipe [`TEMPORARY_PROGRAM`] and upsert checked points (full replace).
+fn replace_temporary_points(
     catalog: &mut ProgramCatalog,
     points: &[TempPoint],
 ) -> Result<usize, String> {
+    reset_temporary_program(catalog)?;
     let mut n = 0;
-    let saving: Vec<_> = points.iter().filter(|p| p.save).collect();
-    if saving.is_empty() {
-        return Ok(0);
-    }
-    if catalog.get(GENERAL_PROGRAM).is_none() {
-        catalog
-            .create_program(GENERAL_PROGRAM)
-            .map_err(|e| e.to_string())?;
-    }
-    for pt in saving {
+    for pt in points.iter().filter(|p| p.save) {
         let name = pt.name.trim();
         if name.is_empty() {
             return Err("point name cannot be empty".into());
         }
-        if pt.x_text.trim().parse::<i32>().is_err() {
-            return Err(format!("point “{name}”: X must be an integer"));
-        }
-        if pt.y_text.trim().parse::<i32>().is_err() {
-            return Err(format!("point “{name}”: Y must be an integer"));
-        }
         catalog
             .upsert_point(
-                GENERAL_PROGRAM,
+                TEMPORARY_PROGRAM,
                 ProgramPoint {
                     name: name.to_string(),
                     x: ScalarValue::Int(pt.x as i64),
@@ -487,18 +569,36 @@ fn sync_move_refs_to_points(actions: &mut [Action], points: &mut [TempPoint]) {
             continue;
         };
         let entity = point.name().to_string();
+        let full = point.as_str().to_string();
         for pt in points.iter() {
-            if entity == pt.original_name || entity == pt.name.trim() {
-                *point = CoordinateRef(format!(
-                    "{GENERAL_PROGRAM}{PROGRAM_DELIMITER}{}",
-                    pt.name.trim()
-                ));
-                break;
+            let matches = entity == pt.original_name
+                || entity == pt.name.trim()
+                || full == pt.original_name
+                || pt.link_to.as_deref() == Some(full.as_str());
+            if !matches {
+                continue;
             }
+            let target = pt
+                .link_to
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    format!(
+                        "{TEMPORARY_PROGRAM}{PROGRAM_DELIMITER}{}",
+                        pt.name.trim()
+                    )
+                });
+            *point = CoordinateRef(target);
+            break;
         }
     }
     for pt in points.iter_mut() {
-        pt.original_name = pt.name.trim().to_string();
+        if let Some(link) = pt.link_to.as_deref() {
+            pt.original_name = link.to_string();
+        } else {
+            pt.original_name = pt.name.trim().to_string();
+        }
     }
 }
 
@@ -569,14 +669,13 @@ fn events_to_actions(
             name: name.clone(),
             x,
             y,
-            x_text: x.to_string(),
-            y_text: y.to_string(),
             save: true,
+            link_to: None,
         });
         actions.push(Action {
             id: ActionId::new(),
             kind: ActionKind::Move {
-                point: CoordinateRef(format!("{GENERAL_PROGRAM}{PROGRAM_DELIMITER}{name}")),
+                point: CoordinateRef(format!("{TEMPORARY_PROGRAM}{PROGRAM_DELIMITER}{name}")),
                 smooth: true,
                 smooth_low: 0.05,
                 smooth_high: 0.20,
@@ -751,7 +850,7 @@ fn compress_events(events: &[MacroRecordEvent]) -> Vec<MacroRecordEvent> {
 
 fn existing_point_names(catalog: &ProgramCatalog) -> HashSet<String> {
     let mut names = HashSet::new();
-    if let Some(prog) = catalog.get(GENERAL_PROGRAM) {
+    if let Some(prog) = catalog.get(TEMPORARY_PROGRAM) {
         for bucket in prog.points.values() {
             for name in bucket.keys() {
                 names.insert(name.clone());
@@ -759,6 +858,69 @@ fn existing_point_names(catalog: &ProgramCatalog) -> HashSet<String> {
         }
     }
     names
+}
+
+struct NearbyPoint {
+    /// Full `Program~Name` coordinate ref.
+    coord_ref: String,
+    /// Catalog point key / name for the TempPoint name field.
+    name: String,
+    /// UI label, e.g. `General~Rec001` or just the name when in General.
+    display: String,
+    dist: i32,
+}
+
+/// Nearest saved catalog point within [`NEARBY_POINT_PX`] (Chebyshev), if any.
+fn nearby_saved_point(catalog: &ProgramCatalog, pt: &TempPoint) -> Option<NearbyPoint> {
+    let empty = Macro::new("", 0, vec![]);
+    let mut best: Option<NearbyPoint> = None;
+    for prog in catalog.program_names() {
+        if prog == TEMPORARY_PROGRAM {
+            continue;
+        }
+        let Some(pdata) = catalog.get(prog) else {
+            continue;
+        };
+        let Some(bucket) = pdata
+            .points
+            .get(catalog.resolution_key())
+            .or_else(|| pdata.points.values().next())
+        else {
+            continue;
+        };
+        for (key, saved) in bucket {
+            let display_name = if saved.name.trim().is_empty() {
+                key.as_str()
+            } else {
+                saved.name.as_str()
+            };
+            let coord = format!("{prog}{PROGRAM_DELIMITER}{key}");
+            let Ok((sx, sy)) = catalog.resolve_point(&CoordinateRef(coord.clone()), &empty) else {
+                continue;
+            };
+            let dist = (sx - pt.x).abs().max((sy - pt.y).abs());
+            if dist > NEARBY_POINT_PX {
+                continue;
+            }
+            let better = best
+                .as_ref()
+                .is_none_or(|b| dist < b.dist || (dist == b.dist && coord < b.coord_ref));
+            if better {
+                let display = if prog == GENERAL_PROGRAM {
+                    display_name.to_string()
+                } else {
+                    format!("{prog}{PROGRAM_DELIMITER}{display_name}")
+                };
+                best = Some(NearbyPoint {
+                    coord_ref: coord,
+                    name: key.clone(),
+                    display,
+                    dist,
+                });
+            }
+        }
+    }
+    best
 }
 
 fn next_temp_point_name(used: &HashSet<String>) -> String {
@@ -791,6 +953,50 @@ fn key_action(key: &str, state: PressState) -> Action {
     }
 }
 
+/// Move points that would be created from the live event stream (same distance
+/// rules as [`events_to_actions`]), for on-screen crosshairs while recording.
+fn live_record_points(events: &[MacroRecordEvent]) -> Vec<TempPoint> {
+    let compressed = compress_events(events);
+    let mut out = Vec::new();
+    let mut last_move: Option<(i32, i32)> = None;
+    let push = |out: &mut Vec<TempPoint>, last_move: &mut Option<(i32, i32)>, x: i32, y: i32| {
+        if *last_move == Some((x, y)) {
+            return;
+        }
+        let name = format!("Rec{:03}", out.len() + 1);
+        out.push(TempPoint {
+            original_name: name.clone(),
+            name,
+            x,
+            y,
+            save: true,
+            link_to: None,
+        });
+        *last_move = Some((x, y));
+    };
+    for ev in &compressed {
+        match ev {
+            MacroRecordEvent::MouseMove { x, y, .. } => {
+                if last_move.is_none_or(|(lx, ly)| {
+                    (x - lx).abs() >= MOVE_MIN_DISTANCE || (y - ly).abs() >= MOVE_MIN_DISTANCE
+                }) {
+                    push(&mut out, &mut last_move, *x, *y);
+                }
+            }
+            MacroRecordEvent::Button {
+                x,
+                y,
+                pressed: true,
+                ..
+            } => {
+                push(&mut out, &mut last_move, *x, *y);
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
 /// Default / hover / editing colors for on-screen temp-point markers.
 const MARKER_DEFAULT: egui::Color32 = crate::theme::PRIMARY;
 const MARKER_HOVER: egui::Color32 = crate::theme::MACRO_START;
@@ -810,7 +1016,8 @@ fn sync_temp_point_markers(
 
     let mut any = false;
     for (i, pt) in points.iter().enumerate() {
-        if !pt.save {
+        // Enabled saves and linked (reused) points get markers.
+        if !pt.save && pt.link_to.is_none() {
             continue;
         }
         any = true;
@@ -847,10 +1054,10 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
     };
     use sqyre_capture::OVERLAY_WM_TITLE;
 
-    const CROSS: f32 = 18.0;
-    const ARM: f32 = 7.0;
-    const LABEL_H: f32 = 16.0;
-    const PAD: f32 = 4.0;
+    const CROSS: f32 = 14.0;
+    const ARM: f32 = 6.0;
+    const LABEL_GAP: f32 = 2.0;
+    const LABEL_H: f32 = 14.0;
 
     let label = if pt.name.trim().is_empty() {
         format!("#{index}")
@@ -860,13 +1067,16 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
     let font = FontId::proportional(11.0);
     let galley = ctx.fonts_mut(|f| f.layout_no_wrap(label.clone(), font.clone(), color));
     let label_w = galley.size().x.max(CROSS);
-    let outer_w = label_w + PAD * 2.0;
-    let outer_h = LABEL_H + CROSS + PAD;
-    // Position so the crosshair center sits on (x, y).
-    let pos = Pos2::new(
-        pt.x as f32 - outer_w * 0.5,
-        pt.y as f32 - (LABEL_H + CROSS * 0.5),
-    );
+    let outer_w = label_w.ceil().max(CROSS);
+    let outer_h = (LABEL_H + LABEL_GAP + CROSS).ceil();
+
+    // Recorded coords are physical desktop pixels; egui viewport position is logical
+    // points (`physical / pixels_per_point`). Without this divide, markers land at
+    // `recorded * ppp` and only near-origin points remain on-screen.
+    let ppp = ctx.pixels_per_point().max(0.01);
+    let cx = pt.x as f32 / ppp;
+    let cy = pt.y as f32 / ppp;
+    let pos = Pos2::new(cx - outer_w * 0.5, cy - (LABEL_H + LABEL_GAP + CROSS * 0.5));
 
     let id = ViewportId::from_hash_of(format!("sqyre_temp_point_marker_{index}"));
     let builder = ViewportBuilder::default()
@@ -883,22 +1093,22 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
         .with_position(pos);
 
     ctx.show_viewport_deferred(id, builder, move |ui, _class| {
-        let fill = crate::theme::overlay_panel_fill();
+        // Transparent — label + crosshair only (no filled panel).
         Frame::NONE
-            .fill(fill)
-            .stroke(Stroke::new(1.0, color))
-            .corner_radius(egui::CornerRadius::same(3))
+            .fill(egui::Color32::TRANSPARENT)
             .inner_margin(Margin::ZERO)
             .show(ui, |ui| {
                 ui.set_min_size(Vec2::new(outer_w, outer_h));
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(outer_w, outer_h), Sense::hover());
                 let painter = ui.painter();
                 let galley = painter.layout_no_wrap(label.clone(), font.clone(), color);
-                let label_pos =
-                    Pos2::new(rect.center().x - galley.size().x * 0.5, rect.top() + 1.0);
+                let label_pos = Pos2::new(rect.center().x - galley.size().x * 0.5, rect.top());
                 painter.galley(label_pos, galley, color);
-                let c = Pos2::new(rect.center().x, rect.top() + LABEL_H + CROSS * 0.5);
-                let stroke = Stroke::new(2.0, color);
+                let c = Pos2::new(
+                    rect.center().x,
+                    rect.top() + LABEL_H + LABEL_GAP + CROSS * 0.5,
+                );
+                let stroke = Stroke::new(1.5, color);
                 painter.line_segment(
                     [Pos2::new(c.x - ARM, c.y), Pos2::new(c.x + ARM, c.y)],
                     stroke,
@@ -907,8 +1117,8 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
                     [Pos2::new(c.x, c.y - ARM), Pos2::new(c.x, c.y + ARM)],
                     stroke,
                 );
-                painter.circle_stroke(c, 3.0, stroke);
             });
+        ui.ctx().request_repaint();
     });
 }
 
@@ -954,6 +1164,49 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn live_record_points_match_final_moves() {
+        let t0 = Instant::now();
+        let events = vec![
+            MacroRecordEvent::MouseMove {
+                x: 100,
+                y: 100,
+                at: t0,
+            },
+            MacroRecordEvent::MouseMove {
+                x: 102,
+                y: 100,
+                at: t0 + Duration::from_millis(5),
+            },
+            MacroRecordEvent::MouseMove {
+                x: 200,
+                y: 200,
+                at: t0 + Duration::from_millis(10),
+            },
+            MacroRecordEvent::Button {
+                button: RecordMouseButton::Left,
+                pressed: true,
+                x: 200,
+                y: 200,
+                at: t0 + Duration::from_millis(15),
+            },
+            MacroRecordEvent::Button {
+                button: RecordMouseButton::Left,
+                pressed: false,
+                x: 200,
+                y: 200,
+                at: t0 + Duration::from_millis(20),
+            },
+        ];
+        let live = live_record_points(&events);
+        let cat = ProgramCatalog::default();
+        let (_, points) = events_to_actions(&events, t0, &cat);
+        assert_eq!(live.len(), points.len());
+        for (a, b) in live.iter().zip(points.iter()) {
+            assert_eq!((a.x, a.y), (b.x, b.y));
+        }
     }
 
     #[test]
