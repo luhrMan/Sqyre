@@ -22,8 +22,8 @@ pub(crate) struct TreeState {
     pub(crate) selected_actions: Vec<ActionId>,
     /// Per-macro undo/redo stacks keyed by macro name.
     pub(crate) histories: HashMap<String, TreeHistory>,
-    /// Process-local action clipboard (YAML map without UIDs).
-    pub(crate) clipboard: Option<serde_yaml::Mapping>,
+    /// Process-local action clipboard (one or more YAML maps without UIDs).
+    pub(crate) clipboard: Option<Vec<serde_yaml::Mapping>>,
     /// Branches that were collapsed before execution expand.
     pub(crate) pre_exec_closed: HashSet<ActionId>,
     /// True while branches are force-opened for the active run.

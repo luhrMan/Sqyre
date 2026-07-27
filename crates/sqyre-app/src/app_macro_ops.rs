@@ -4,7 +4,7 @@ use crate::tree_clipboard;
 use crate::tree_history::TreeHistory;
 use crate::SqyreApp;
 use eframe::egui;
-use sqyre_domain::{Action, ActionId, Macro};
+use sqyre_domain::{Action, ActionId, InsertSlot, Macro};
 use sqyre_hotkeys::{HotkeyTrigger, MacroHotkeyBinding};
 
 /// Whether `m` should receive hotkeys under `filter`.
@@ -392,7 +392,8 @@ impl SqyreApp {
     }
 
     pub(crate) fn can_paste_clipboard(&self) -> bool {
-        self.tree.clipboard.is_some() && !self.workspace.macros.is_empty()
+        self.tree.clipboard.as_ref().is_some_and(|c| !c.is_empty())
+            && !self.workspace.macros.is_empty()
     }
 
     pub(crate) fn copy_selection(&mut self, ctx: &egui::Context) -> bool {
@@ -422,10 +423,37 @@ impl SqyreApp {
             *self.run_session.state.status.lock() = format!("Copy failed: {e}");
             return false;
         }
-        self.tree.clipboard = Some(map);
+        self.tree.clipboard = Some(vec![map]);
         // egui-winit only emits Event::Paste when the OS clipboard is non-empty.
         // Action data stays process-local; this sentinel just unblocks Ctrl+V.
         ctx.copy_text(String::from("sqyre-action"));
+        true
+    }
+
+    /// Set the process-local clipboard to a list of action maps (macro record Copy).
+    pub(crate) fn set_action_clipboard(
+        &mut self,
+        ctx: &egui::Context,
+        maps: Vec<serde_yaml::Mapping>,
+        yaml_preview: &str,
+    ) -> bool {
+        if maps.is_empty() {
+            return false;
+        }
+        for map in &maps {
+            if let Err(e) = sqyre_serialize::action_from_map(map) {
+                *self.run_session.state.status.lock() = format!("Copy failed: {e}");
+                return false;
+            }
+        }
+        self.tree.clipboard = Some(maps);
+        // Prefer human-readable YAML so the OS clipboard is useful; paste still
+        // uses the process-local maps.
+        if yaml_preview.is_empty() {
+            ctx.copy_text(String::from("sqyre-action"));
+        } else {
+            ctx.copy_text(yaml_preview.to_string());
+        }
         true
     }
 
@@ -436,24 +464,34 @@ impl SqyreApp {
         let Some(clip) = self.tree.clipboard.clone() else {
             return false;
         };
-        let new_action = match sqyre_serialize::action_from_map(&clip) {
-            Ok(a) => a,
-            Err(e) => {
+        if clip.is_empty() {
+            return false;
+        }
+        let mut new_actions = Vec::with_capacity(clip.len());
+        for map in &clip {
+            let new_action = match sqyre_serialize::action_from_map(map) {
+                Ok(a) => a,
+                Err(e) => {
+                    *self.run_session.state.status.lock() = format!("Paste failed: {e}");
+                    return false;
+                }
+            };
+            let idx = self
+                .workspace
+                .selected_macro
+                .min(self.workspace.macros.len() - 1);
+            if let Err(e) =
+                sqyre_validate::validate_action_tree(&new_action, Some(&self.workspace.macros[idx]))
+            {
                 *self.run_session.state.status.lock() = format!("Paste failed: {e}");
                 return false;
             }
-        };
+            new_actions.push(new_action);
+        }
         let idx = self
             .workspace
             .selected_macro
             .min(self.workspace.macros.len() - 1);
-        if let Err(e) =
-            sqyre_validate::validate_action_tree(&new_action, Some(&self.workspace.macros[idx]))
-        {
-            *self.run_session.state.status.lock() = format!("Paste failed: {e}");
-            return false;
-        }
-        let new_id = new_action.id;
         let selected = self.selected_action_id();
         let Some((parent, slot)) = tree_clipboard::insert_location_below_selection(
             &self.workspace.macros[idx].root,
@@ -463,15 +501,25 @@ impl SqyreApp {
             return false;
         };
         self.record_tree_mutation();
-        if self.workspace.macros[idx]
-            .root
-            .insert_at(parent, slot, new_action)
-            .is_err()
-        {
-            *self.run_session.state.status.lock() = "Paste failed: could not insert action".into();
-            return false;
+        let mut anchor_slot = slot;
+        let mut last_id = None;
+        for new_action in new_actions {
+            let id = new_action.id;
+            if self.workspace.macros[idx]
+                .root
+                .insert_at(parent, anchor_slot, new_action)
+                .is_err()
+            {
+                *self.run_session.state.status.lock() =
+                    "Paste failed: could not insert action".into();
+                return false;
+            }
+            last_id = Some(id);
+            anchor_slot = InsertSlot::After(id);
         }
-        self.select_one_action(new_id);
+        if let Some(id) = last_id {
+            self.select_one_action(id);
+        }
         self.tree.tooltip.cancel();
         self.persist_macro_at(idx);
         self.play_ui_add_sound();
