@@ -9,8 +9,7 @@ mod types;
 mod util;
 
 pub use seed_general::{
-    ensure_general_program, MonitorRect, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
-    TEMPORARY_PROGRAM,
+    ensure_general_program, MonitorRect, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE, TEMPORARY_PROGRAM,
 };
 pub use types::{
     ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask,
