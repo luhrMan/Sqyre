@@ -313,15 +313,15 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         {
             app.add_action_picker.open();
         }
-        if theme::record_icon_button(ui, "Record actions (Esc to finish)", !running).clicked() {
-            if app.macro_record.open(
+        if theme::record_icon_button(ui, "Record actions (Esc to finish)", !running).clicked()
+            && app.macro_record.open(
                 &app.run_session.macro_hotkeys,
                 &app.macro_record_bridge,
                 &mut app.workspace.catalog,
-            ) {
-                if let Err(e) = app.persist_database() {
-                    crate::log::warn(format!("persist after temporary program reset: {e}"));
-                }
+            )
+        {
+            if let Err(e) = app.persist_database() {
+                crate::log::warn(format!("persist after temporary program reset: {e}"));
             }
         }
         // Light-theme variables pastel reads better as a glyph on dark chrome.

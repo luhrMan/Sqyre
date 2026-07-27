@@ -584,10 +584,7 @@ fn sync_move_refs_to_points(actions: &mut [Action], points: &mut [TempPoint]) {
                 .filter(|s| !s.trim().is_empty())
                 .map(str::to_string)
                 .unwrap_or_else(|| {
-                    format!(
-                        "{TEMPORARY_PROGRAM}{PROGRAM_DELIMITER}{}",
-                        pt.name.trim()
-                    )
+                    format!("{TEMPORARY_PROGRAM}{PROGRAM_DELIMITER}{}", pt.name.trim())
                 });
             *point = CoordinateRef(target);
             break;
