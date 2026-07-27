@@ -1,7 +1,8 @@
 //! Macro tree copy/paste.
 //!
 //! Clipboard is process-local YAML maps via [`sqyre_serialize::action_to_map`]
-//! (no UIDs) so paste assigns fresh identities.
+//! (no UIDs) so paste assigns fresh identities. A clipboard may hold one or more
+//! sibling actions (e.g. a macro-record capture).
 
 use sqyre_domain::{Action, ActionId, InsertSlot};
 
