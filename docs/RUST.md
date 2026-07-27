@@ -1,6 +1,6 @@
 # Sqyre Rust workspace
 
-Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux binary + AppImage, Windows `sqyre.exe` (MinGW cross), and the WASM editor zip. macOS is compile-check only for now.
+Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux binary + AppImage, Windows `sqyre.exe` (MinGW cross), and the WASM editor zip. macOS is not CI-checked yet.
 
 ## Layout
 
@@ -66,6 +66,6 @@ Do not expect X11 inside the container — build there, run the binary on the ho
 
 Host binary: `./bin/sqyre` after `make`, or `./target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Alt+Shift exits (failsafe).
 
-Still improving: Wayland, macOS capture / window focus / releases. Windows ships without an MSI. CI also `cargo check`s macOS on PRs.
+Still improving: Wayland, macOS capture / window focus / releases. Windows ships without an MSI.
 
 OCR uses Tesseract (`leptess`). Override with `SQYRE_TESSDATA` if needed (dev fallback: `assets/tessdata`). Missing data is downloaded on native startup into `~/.sqyre/tessdata` (or `%APPDATA%\sqyre\tessdata` on Windows).
