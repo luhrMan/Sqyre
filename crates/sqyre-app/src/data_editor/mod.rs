@@ -624,7 +624,7 @@ impl DataEditor {
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
                         ui.set_max_size(egui::vec2(right_w, body_h));
-                        egui::ScrollArea::vertical()
+                        pickers::scroll_vertical()
                             .id_salt("data_editor_form")
                             .auto_shrink([false, false])
                             .max_height(body_h)

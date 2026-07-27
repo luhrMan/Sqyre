@@ -1,5 +1,26 @@
 use super::types::HEADER_SIZE;
 use eframe::egui;
+use egui::containers::scroll_area::{DragScroll, ScrollSource};
+
+/// Wheel + scrollbar + click-drag. egui's default drag is touch-only (`OnTouch`).
+pub(crate) const SCROLL_SOURCE: ScrollSource = ScrollSource::ALL;
+
+/// Scroll source for areas that implement their own drag-scroll (e.g. macro tree).
+pub(crate) const SCROLL_SOURCE_NO_DRAG: ScrollSource = ScrollSource {
+    scroll_bar: true,
+    drag: DragScroll::Never,
+    mouse_wheel: true,
+};
+
+/// Vertical [`ScrollArea`] with click-drag scrolling enabled.
+pub(crate) fn scroll_vertical() -> egui::ScrollArea {
+    egui::ScrollArea::vertical().scroll_source(SCROLL_SOURCE)
+}
+
+/// Bidirectional [`ScrollArea`] with click-drag scrolling enabled.
+pub(crate) fn scroll_both() -> egui::ScrollArea {
+    egui::ScrollArea::both().scroll_source(SCROLL_SOURCE)
+}
 
 pub(crate) fn maybe_scroll_to(ui: &mut egui::Ui, resp: &egui::Response, scroll: &mut bool) {
     if *scroll {
@@ -66,7 +87,7 @@ pub fn picker_searchable_scroll(
     } else {
         popup_scroll_max_height(ui, opts.footer_reserve)
     };
-    let mut scroll = egui::ScrollArea::vertical().auto_shrink([false, false]);
+    let mut scroll = scroll_vertical().auto_shrink([false, false]);
     if let Some(salt) = opts.id_salt {
         scroll = scroll.id_salt(salt);
     }

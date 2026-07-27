@@ -230,7 +230,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     .layout(egui::Layout::top_down(egui::Align::Min)),
             );
             list_ui.set_clip_rect(list_rect.intersect(ui.clip_rect()));
-            egui::ScrollArea::vertical()
+            crate::pickers::scroll_vertical()
                 .auto_shrink([false, false])
                 .show(&mut list_ui, |ui| {
                     let list_w = ui.available_width().min(pane_w);
