@@ -1,7 +1,8 @@
 //! Check GitHub Releases for a newer Sqyre build and self-replace the running binary.
 //!
 //! Supported install shapes: Linux raw binary, Linux AppImage (`$APPIMAGE`), Windows `.exe`.
-//! macOS compiles but returns [`UpdateError::Unsupported`].
+//! On Windows the install is always written as `sqyre.exe` (even if the running file was a
+//! versioned release name). macOS compiles but returns [`UpdateError::Unsupported`].
 //!
 //! Updates require a `SHA256SUMS` asset plus `SHA256SUMS.sig` (Ed25519 over the
 //! checksums file bytes). The selected zip is size-capped and hash-verified before staging.
@@ -25,6 +26,8 @@ const USER_AGENT: &str = "Sqyre-Updater";
 const API_LATEST: &str = "https://api.github.com/repos/luhrMan/Squire/releases/latest";
 const CHECKSUMS_NAME: &str = "SHA256SUMS";
 const CHECKSUMS_SIG_NAME: &str = "SHA256SUMS.sig";
+/// Canonical Windows install name (release zips ship a versioned `.exe`).
+const WINDOWS_EXE_NAME: &str = "sqyre.exe";
 /// Hard cap on release zip downloads (bytes).
 const MAX_ASSET_BYTES: u64 = 200 * 1024 * 1024;
 /// Cap for the checksums text file.
@@ -170,10 +173,39 @@ fn update_target_path(kind: InstallKind) -> Result<PathBuf, UpdateError> {
                 .ok_or_else(|| UpdateError::CurrentExe("APPIMAGE unset".into()))?;
             Ok(path)
         }
-        InstallKind::LinuxBinary | InstallKind::WindowsExe => {
+        InstallKind::LinuxBinary => {
             std::env::current_exe().map_err(|e| UpdateError::CurrentExe(e.to_string()))
         }
+        InstallKind::WindowsExe => {
+            let exe = std::env::current_exe().map_err(|e| UpdateError::CurrentExe(e.to_string()))?;
+            Ok(windows_install_path(&exe)?)
+        }
     }
+}
+
+/// Windows installs always land on `sqyre.exe` beside the running binary.
+fn windows_install_path(current_exe: &Path) -> Result<PathBuf, UpdateError> {
+    let parent = current_exe.parent().ok_or_else(|| {
+        UpdateError::CurrentExe(format!(
+            "executable has no parent directory: {}",
+            current_exe.display()
+        ))
+    })?;
+    Ok(parent.join(WINDOWS_EXE_NAME))
+}
+
+#[cfg(any(test, target_os = "windows"))]
+fn path_file_name_eq_ignore_ascii_case(path: &Path, name: &str) -> bool {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.eq_ignore_ascii_case(name))
+}
+
+#[cfg(target_os = "windows")]
+fn sibling_dot_old(path: &Path) -> PathBuf {
+    let mut old_os = path.as_os_str().to_owned();
+    old_os.push(".old");
+    PathBuf::from(old_os)
 }
 
 fn assert_allowed_download_url(url: &str) -> Result<(), UpdateError> {
@@ -368,24 +400,32 @@ pub fn cleanup_stale_update() {
     #[cfg(target_os = "windows")]
     {
         if let Ok(exe) = std::env::current_exe() {
-            let mut old_os = exe.as_os_str().to_owned();
-            old_os.push(".old");
-            let _ = fs::remove_file(PathBuf::from(old_os));
+            let _ = fs::remove_file(sibling_dot_old(&exe));
+            if let Some(dir) = exe.parent() {
+                let _ = fs::remove_file(sibling_dot_old(&dir.join(WINDOWS_EXE_NAME)));
+                // Versioned download renamed aside when installing as sqyre.exe.
+                if let Ok(entries) = fs::read_dir(dir) {
+                    for entry in entries.flatten() {
+                        let name = entry.file_name();
+                        let Some(s) = name.to_str() else {
+                            continue;
+                        };
+                        if s.starts_with("sqyre") && s.ends_with(".old") {
+                            let _ = fs::remove_file(entry.path());
+                        }
+                    }
+                }
+            }
         }
     }
 }
 
-/// Re-exec (Unix) or spawn + exit (Windows) the current binary. Does not return on success.
+/// Re-exec (Unix) or spawn + exit (Windows) the installed binary. Does not return on success.
 ///
 /// Caller must drop the single-instance lock first.
 pub fn restart() -> Result<(), UpdateError> {
-    let exe = std::env::current_exe().map_err(|e| UpdateError::CurrentExe(e.to_string()))?;
-    // AppImage: re-exec the AppImage path, not the squashfs-mounted current_exe.
-    let launch = if let Ok(appimage) = std::env::var("APPIMAGE") {
-        PathBuf::from(appimage)
-    } else {
-        exe
-    };
+    let kind = InstallKind::detect()?;
+    let launch = update_target_path(kind)?;
     let args: Vec<String> = std::env::args().skip(1).collect();
 
     #[cfg(unix)]
@@ -576,17 +616,28 @@ fn apply_unix(staged: &Path, target: &Path) -> Result<(), UpdateError> {
 
 #[cfg(target_os = "windows")]
 fn apply_windows(staged: &Path, target: &Path) -> Result<(), UpdateError> {
-    let mut old_os = target.as_os_str().to_owned();
-    old_os.push(".old");
-    let old_path = PathBuf::from(old_os);
+    let old_path = sibling_dot_old(target);
     let _ = fs::remove_file(&old_path);
-    fs::rename(target, &old_path)?;
+    if target.exists() {
+        fs::rename(target, &old_path)?;
+    }
     if let Err(_e) = fs::rename(staged, target) {
         if let Err(copy_err) = fs::copy(staged, target) {
-            let _ = fs::rename(&old_path, target);
+            if old_path.exists() {
+                let _ = fs::rename(&old_path, target);
+            }
             return Err(UpdateError::Io(copy_err));
         }
         let _ = fs::remove_file(staged);
+    }
+    // Release zip uses a versioned name; move the running file aside so the
+    // install is just sqyre.exe after restart + cleanup.
+    if let Ok(current) = std::env::current_exe() {
+        if !path_file_name_eq_ignore_ascii_case(&current, WINDOWS_EXE_NAME) {
+            let runner_old = sibling_dot_old(&current);
+            let _ = fs::remove_file(&runner_old);
+            let _ = fs::rename(&current, &runner_old);
+        }
     }
     Ok(())
 }
@@ -666,6 +717,24 @@ fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 *Sqyre.AppImage
         )
         .is_ok());
         assert!(assert_allowed_download_url("https://evil.example/a.zip").is_err());
+    }
+
+    #[test]
+    fn windows_install_path_is_sqyre_exe() {
+        let versioned = PathBuf::from("/tmp/Downloads/sqyre-v2026.07.26-windows-amd64.exe");
+        assert_eq!(
+            windows_install_path(&versioned).unwrap(),
+            PathBuf::from("/tmp/Downloads/sqyre.exe")
+        );
+        let already = PathBuf::from("/opt/Sqyre/sqyre.exe");
+        assert_eq!(
+            windows_install_path(&already).unwrap(),
+            PathBuf::from("/opt/Sqyre/sqyre.exe")
+        );
+        assert!(path_file_name_eq_ignore_ascii_case(
+            Path::new("/opt/Sqyre/Sqyre.EXE"),
+            WINDOWS_EXE_NAME
+        ));
     }
 
     #[test]
