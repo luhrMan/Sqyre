@@ -25,6 +25,10 @@ impl PreviewTooltipCache {
 
     pub fn clear(&mut self) {}
 
+    pub fn take_desktop_outline(&mut self) -> Option<(i32, i32, i32, i32)> {
+        None
+    }
+
     pub fn show_for_entity(
         &mut self,
         ui: &mut egui::Ui,

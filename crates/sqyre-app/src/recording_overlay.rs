@@ -1,18 +1,25 @@
 //! Search-area selection outline + recording coords HUD.
 //!
-//! Driven by [`sqyre_hotkeys::ScreenClickBridge`]:
+//! Driven by [`sqyre_hotkeys::ScreenClickBridge`] and tooltip preview requests:
 //! - OS edge windows ([`sqyre_capture::SelectionOutline`]) for the live search-area
-//!   rect — not a fullscreen desktop snapshot (X11 on Linux, Win32 popups on Windows).
+//!   rect or a hovered point / search-area preview — not a fullscreen desktop
+//!   snapshot (X11 on Linux, Win32 popups on Windows).
 //! - A small always-on-top egui viewport for live coords / status while recording
 //!   (needed when the main window is hidden via `hide_app_during_recording`).
+//!   The HUD sits on the opposite vertical edge of the monitor from the cursor so
+//!   it stays out of the way while pointing / selecting.
 //!
-//! A short poller owns the outline and keeps requesting egui repaints so the
-//! HUD stays alive even when the root viewport is `Visible(false)`.
+//! Outline HWNDs / X11 windows are updated on the UI thread only. A short poller
+//! only `request_repaint`s while recording is armed so the HUD keeps updating when
+//! the root viewport is `Visible(false)`. Driving Win32 outline windows from a
+//! background thread while glow paints preview textures hard-crashed on Windows
+//! (no Rust panic / `crash.log`).
 
 use crate::theme;
-use eframe::egui::{self, ViewportBuilder, ViewportClass, ViewportId};
-use sqyre_capture::SelectionOutline;
+use eframe::egui::{self, Pos2, ViewportBuilder, ViewportClass, ViewportId};
+use sqyre_capture::{mark_site, SelectionOutline};
 use sqyre_hotkeys::ScreenClickBridge;
+use sqyre_ports::DesktopRect;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -20,12 +27,20 @@ use std::time::Duration;
 
 const POLL_MS: u64 = 16;
 const HUD_ID: &str = "sqyre_recording_coords_hud";
+const HUD_W: f32 = 560.0;
+const HUD_H: f32 = 44.0;
+const HUD_MARGIN: f32 = 12.0;
 
-/// Owns the outline poller and syncs it to the armed search-area draft.
+type OutlineCorners = (i32, i32, i32, i32);
+
+/// Owns the selection outline (UI thread) and a repaint poller for recording HUD.
 #[derive(Default)]
 pub struct RecordingOverlay {
     stop: Option<Arc<AtomicBool>>,
     join: Option<JoinHandle<()>>,
+    /// Created lazily on the UI thread; never touched from the wake poller.
+    outline: Option<SelectionOutline>,
+    outline_failed: bool,
 }
 
 impl RecordingOverlay {
@@ -35,45 +50,78 @@ impl RecordingOverlay {
 
     /// Call every frame while the app is running.
     ///
-    /// Starts the outline/repaint poller once any screen-click recording arms, and
-    /// shows the coords HUD viewport while armed.
-    pub fn sync(&mut self, ctx: &egui::Context, screen_click: &ScreenClickBridge) {
-        if screen_click.is_armed() {
-            self.ensure_worker(ctx.clone(), screen_click.clone());
-            show_coords_hud(ctx, screen_click);
+    /// Updates the desktop outline for recording selection or tooltip preview,
+    /// starts the repaint poller while recording is armed, and shows the coords HUD.
+    pub fn sync_with_macro_record(
+        &mut self,
+        ctx: &egui::Context,
+        screen_click: &ScreenClickBridge,
+        macro_record: Option<&sqyre_hotkeys::MacroRecordBridge>,
+        preview_outline: Option<OutlineCorners>,
+    ) {
+        let macro_armed = macro_record.is_some_and(|b| b.is_armed());
+        let recording = screen_click.is_armed() || macro_armed;
+        let rect = screen_click
+            .peek_search_area_selection()
+            .or(preview_outline);
+
+        if rect.is_some() || self.outline.is_some() {
+            self.apply_outline(rect);
+        }
+
+        if recording {
+            self.ensure_wake_poller(ctx.clone(), screen_click.clone(), macro_record.cloned());
+            show_coords_hud(ctx, screen_click, macro_record);
         }
     }
 
-    fn ensure_worker(&mut self, ctx: egui::Context, bridge: ScreenClickBridge) {
+    fn apply_outline(&mut self, rect: Option<OutlineCorners>) {
+        if rect.is_none() {
+            if let Some(outline) = self.outline.as_mut() {
+                mark_site("outline:clear");
+                outline.clear();
+            }
+            return;
+        }
+        let Some((lx, ty, rx, by)) = rect else {
+            return;
+        };
+        if self.outline.is_none() && !self.outline_failed {
+            mark_site("outline:open");
+            match SelectionOutline::open() {
+                Ok(o) => self.outline = Some(o),
+                Err(e) => {
+                    self.outline_failed = true;
+                    crate::log::warn(format_args!("selection outline unavailable: {e}"));
+                }
+            }
+        }
+        if let Some(outline) = self.outline.as_mut() {
+            outline.set_rect(lx, ty, rx, by);
+        }
+    }
+
+    fn ensure_wake_poller(
+        &mut self,
+        ctx: egui::Context,
+        bridge: ScreenClickBridge,
+        macro_record: Option<sqyre_hotkeys::MacroRecordBridge>,
+    ) {
         if self.join.is_some() {
             return;
         }
         let stop = Arc::new(AtomicBool::new(false));
         self.stop = Some(Arc::clone(&stop));
         self.join = Some(thread::spawn(move || {
-            let mut outline = match SelectionOutline::open() {
-                Ok(o) => Some(o),
-                Err(e) => {
-                    crate::log::warn(format_args!("selection outline unavailable: {e}"));
-                    None
-                }
-            };
             while !stop.load(Ordering::Relaxed) {
-                if let Some(outline) = outline.as_mut() {
-                    match bridge.peek_search_area_selection() {
-                        Some((lx, ty, rx, by)) => outline.set_rect(lx, ty, rx, by),
-                        None => outline.clear(),
-                    }
-                }
-                // Wake the UI loop so the HUD viewport keeps updating while the
-                // main window is hidden for recording.
-                if bridge.is_armed() {
+                // Wake the UI loop so outline + HUD update while the main window
+                // is hidden for recording. Outline Win32/X11 calls stay on the UI
+                // thread via `sync_with_macro_record`.
+                let macro_armed = macro_record.as_ref().is_some_and(|b| b.is_armed());
+                if bridge.is_armed() || macro_armed {
                     ctx.request_repaint();
                 }
                 thread::sleep(Duration::from_millis(POLL_MS));
-            }
-            if let Some(mut outline) = outline {
-                outline.clear();
             }
         }));
     }
@@ -87,14 +135,31 @@ impl Drop for RecordingOverlay {
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
+        if let Some(mut outline) = self.outline.take() {
+            outline.clear();
+        }
     }
 }
 
-fn show_coords_hud(ctx: &egui::Context, screen_click: &ScreenClickBridge) {
-    if screen_click.status_label().is_none() {
+fn show_coords_hud(
+    ctx: &egui::Context,
+    screen_click: &ScreenClickBridge,
+    macro_record: Option<&sqyre_hotkeys::MacroRecordBridge>,
+) {
+    let text = macro_record
+        .and_then(|b| b.status_label())
+        .or_else(|| screen_click.status_label());
+    let Some(text) = text else {
         return;
-    }
-    let bridge = screen_click.clone();
+    };
+    let (mx, my) = match macro_record {
+        Some(b) if b.is_armed() => b.last_pos(),
+        _ => screen_click.last_pos(),
+    };
+    let monitor = monitor_for_pointer(mx, my);
+    let hud_at_top = my >= monitor.y + monitor.h / 2;
+    let pos = hud_position(monitor, hud_at_top);
+    let text_owned = text;
     let id = ViewportId::from_hash_of(HUD_ID);
     let builder = ViewportBuilder::default()
         .with_title("Sqyre recording")
@@ -102,21 +167,58 @@ fn show_coords_hud(ctx: &egui::Context, screen_click: &ScreenClickBridge) {
         .with_resizable(false)
         .with_always_on_top()
         .with_taskbar(false)
-        .with_inner_size([560.0, 44.0])
-        .with_min_inner_size([200.0, 36.0]);
+        // Must not steal keyboard focus — otherwise keys are not delivered to the
+        // global hook / focused-key feed until the user clicks another window.
+        .with_active(false)
+        .with_mouse_passthrough(true)
+        .with_inner_size([HUD_W, HUD_H])
+        .with_min_inner_size([200.0, 36.0])
+        .with_position(pos);
 
     // Deferred: independent of the (possibly hidden) root viewport paint cycle,
     // as long as the parent keeps registering it each frame via request_repaint.
     ctx.show_viewport_deferred(id, builder, move |ui, class| {
-        let Some(text) = bridge.status_label() else {
-            return;
-        };
-        paint_hud_label(ui, class, &text);
+        paint_hud_label(ui, class, &text_owned, hud_at_top);
         ui.ctx().request_repaint();
     });
 }
 
-fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str) {
+/// Monitor containing `(x, y)`, else the first usable display, else a 1920×1080 fallback.
+fn monitor_for_pointer(x: i32, y: i32) -> DesktopRect {
+    if let Ok(capturer) = sqyre_capture::shared_capturer() {
+        if let Ok(rects) = capturer.monitor_rects_ref() {
+            let usable: Vec<_> = rects.into_iter().filter(|r| r.w > 1 && r.h > 1).collect();
+            if let Some(r) = usable
+                .iter()
+                .find(|r| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
+                .copied()
+            {
+                return r;
+            }
+            if let Some(r) = usable.first().copied() {
+                return r;
+            }
+        }
+    }
+    DesktopRect {
+        x: 0,
+        y: 0,
+        w: 1920,
+        h: 1080,
+    }
+}
+
+fn hud_position(monitor: DesktopRect, at_top: bool) -> Pos2 {
+    let x = monitor.x as f32 + (monitor.w as f32 - HUD_W).max(0.0) * 0.5;
+    let y = if at_top {
+        monitor.y as f32 + HUD_MARGIN
+    } else {
+        monitor.y as f32 + monitor.h as f32 - HUD_H - HUD_MARGIN
+    };
+    Pos2::new(x, y)
+}
+
+fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: bool) {
     let frame = egui::Frame::NONE
         .fill(crate::theme::overlay_panel_fill())
         .stroke(egui::Stroke::new(1.0, theme::PRIMARY))
@@ -124,11 +226,21 @@ fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str) {
         .inner_margin(egui::Margin::symmetric(12, 8));
 
     if class == ViewportClass::EmbeddedWindow {
+        let anchor = if at_top {
+            egui::Align2::CENTER_TOP
+        } else {
+            egui::Align2::CENTER_BOTTOM
+        };
+        let offset = if at_top {
+            [0.0, HUD_MARGIN]
+        } else {
+            [0.0, -HUD_MARGIN]
+        };
         egui::Window::new("Recording")
             .collapsible(false)
             .resizable(false)
             .title_bar(false)
-            .anchor(egui::Align2::CENTER_TOP, [0.0, 12.0])
+            .anchor(anchor, offset)
             .frame(frame)
             .show(ui.ctx(), |ui| {
                 ui.label(egui::RichText::new(text).color(theme::PRIMARY).strong());
@@ -141,4 +253,26 @@ fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str) {
             ui.label(egui::RichText::new(text).color(theme::PRIMARY).strong());
         });
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hud_position_centers_and_flips_vertical_edge() {
+        let mon = DesktopRect {
+            x: 100,
+            y: 50,
+            w: 1920,
+            h: 1080,
+        };
+        let top = hud_position(mon, true);
+        assert!((top.x - (100.0 + (1920.0 - HUD_W) * 0.5)).abs() < 0.01);
+        assert!((top.y - (50.0 + HUD_MARGIN)).abs() < 0.01);
+
+        let bottom = hud_position(mon, false);
+        assert!((bottom.x - top.x).abs() < 0.01);
+        assert!((bottom.y - (50.0 + 1080.0 - HUD_H - HUD_MARGIN)).abs() < 0.01);
+    }
 }
