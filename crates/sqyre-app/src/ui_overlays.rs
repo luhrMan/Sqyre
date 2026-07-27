@@ -27,7 +27,7 @@ pub fn handle_close_to_tray(app: &mut SqyreApp, ctx: &egui::Context) {
 /// Always-on-top macro buttons (settings-backed); hidden while recording is armed.
 #[cfg(feature = "native-runtime")]
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
-    if app.screen_click.is_armed() {
+    if app.screen_click.is_armed() || app.macro_record_bridge.is_armed() {
         return;
     }
     let buttons = app.settings_ui.settings().overlay_buttons.clone();
@@ -278,7 +278,6 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         }
     }
     app.update_recording_visibility(ctx);
-    app.sync_recording_overlay(ctx);
     #[cfg(feature = "native-runtime")]
     sync_macro_overlay(app, ctx);
     // Windows Raw Input suppresses WH_KEYBOARD_LL while we are focused; mirror
@@ -298,12 +297,39 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         app.tree.tooltip.apply_recorded_key(key.clone());
         app.add_action_picker.apply_recorded_key(key);
     }
+    if let Some(copied) = {
+        let macros: Vec<(String, Vec<String>)> = app
+            .workspace
+            .macros
+            .iter()
+            .map(|m| (m.name.clone(), m.tags.clone()))
+            .collect();
+        app.macro_record.show(crate::macro_record::MacroRecordShow {
+            ctx,
+            macro_hotkeys: &app.run_session.macro_hotkeys,
+            bridge: &app.macro_record_bridge,
+            catalog: &mut app.workspace.catalog,
+            icons: &mut app.icon_cache,
+            previews: &mut app.preview_tooltips,
+            key_record: &mut app.key_record,
+            hotkey_record: &mut app.hotkey_record,
+            screen_click: &app.screen_click,
+            macros: &macros,
+        })
+    } {
+        app.set_action_clipboard(ctx, copied.maps, &copied.yaml);
+        if let Err(e) = app.persist_database() {
+            crate::log::warn(format!("persist after macro-record points: {e}"));
+        }
+    }
 
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     if running
         || app.hotkey_record.is_open()
         || app.key_record.is_open()
+        || app.macro_record.is_open()
         || app.screen_click.is_armed()
+        || app.macro_record_bridge.is_armed()
     {
         ctx.request_repaint();
     } else if app
@@ -424,6 +450,7 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
     if !app.tree.tooltip.is_editing()
         && !app.hotkey_record.is_open()
         && !app.key_record.is_open()
+        && !app.macro_record.is_open()
         && !ui.ctx().text_edit_focused()
     {
         let (copy, cut, paste, undo, redo, add_action) = ui.ctx().input(|i| {

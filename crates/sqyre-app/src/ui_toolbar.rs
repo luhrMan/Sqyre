@@ -313,6 +313,10 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         {
             app.add_action_picker.open();
         }
+        if theme::record_icon_button(ui, "Record actions (Esc to finish)", !running).clicked() {
+            app.macro_record
+                .open(&app.run_session.macro_hotkeys, &app.macro_record_bridge);
+        }
         // Light-theme variables pastel reads better as a glyph on dark chrome.
         let vars_color = theme::rgba(action_pastel_color("setvariable", false));
         if toolbar_icon_colored(ui, "x", "Variables", true, Some(vars_color)).clicked() {

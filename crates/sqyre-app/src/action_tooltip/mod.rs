@@ -296,7 +296,7 @@ pub fn show(
         theme,
         bridges,
     } = ui;
-    // Esc while recording a key / chord / screen sample is captured by the recorder.
+    // Esc while recording a key / chord / screen sample / macro is captured by the recorder.
     if !bridges.key_record.is_open()
         && !bridges.hotkey_record.is_open()
         && !bridges.screen_click.is_armed()
