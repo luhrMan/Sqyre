@@ -1,8 +1,9 @@
 //! Panic hook + crash dump for the desktop shell.
 //!
 //! Writes [`sqyre_capture::CRASH_LOG_FILE`] under the Sqyre data dir and includes
-//! the last [`sqyre_capture::mark_site`] breadcrumb. Continuous `diag.log` /
-//! `last_site.txt` disk writes require `SQYRE_DIAG=1`.
+//! the last [`sqyre_capture::mark_site`] breadcrumb. [`sqyre_capture::LAST_SITE_FILE`]
+//! is always updated by `mark_site` (hard-abort breadcrumb). Continuous
+//! [`sqyre_capture::DIAG_LOG_FILE`] appends require `SQYRE_DIAG=1`.
 
 use sqyre_capture::{
     disk_logging_enabled, note, read_last_site, set_log_dir, CRASH_LOG_FILE, DIAG_LOG_FILE,
@@ -24,7 +25,7 @@ pub fn install(dir: PathBuf) {
         ));
     } else {
         note(&format!(
-            "diag: stderr only (set SQYRE_DIAG=1 for {DIAG_LOG_FILE}/{LAST_SITE_FILE}; panics → {})",
+            "diag: {LAST_SITE_FILE}+stderr (set SQYRE_DIAG=1 for {DIAG_LOG_FILE}; panics → {})",
             dir.join(CRASH_LOG_FILE).display()
         ));
     }
