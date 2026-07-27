@@ -309,47 +309,6 @@ jobs:
       - name: cargo check (sqyre-app)
         run: cargo check -p sqyre-app
 
-  check-windows:
-    if: |
-      github.event_name == 'push' ||
-      github.event_name == 'pull_request' ||
-      github.event_name == 'schedule' ||
-      github.event_name == 'workflow_dispatch'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.92.0
-
-      - name: Cache Cargo registry
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-cargo-reg-v3-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-reg-v3-
-            ${{ runner.os }}-cargo-reg-
-
-      - name: Cache Cargo target
-        uses: actions/cache@v6
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-target-windows-v3-${{ hashFiles('Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-target-windows-v3-
-            ${{ runner.os }}-cargo-target-
-
-      # Native Windows compile gate (GDI capture / focus). Full OCR-linked app
-      # tests stay on the Linux Docker job; pure crates still get unit tests here.
-      - name: cargo check (sqyre-app)
-        run: cargo check -p sqyre-app
-
-      - name: cargo test (pure crates)
-        run: cargo test -p sqyre-domain -p sqyre-varref -p sqyre-validate -p sqyre-serialize -p sqyre-persist -p sqyre-ui-model -p sqyre-update -p sqyre-ports -p sqyre-hotkeys -p sqyre-match -p sqyre-executor --offline
-
   build-linux:
     if: |
       always() && !cancelled() &&
@@ -629,11 +588,10 @@ jobs:
       always() && !cancelled() &&
       needs.version.result == 'success' &&
       needs.version.outputs.should_release == 'true' &&
-      needs.check-windows.result == 'success' &&
       needs.build-linux.result == 'success' &&
       needs.build-windows.result == 'success' &&
       needs.build-wasm.result == 'success'
-    needs: [version, check-windows, build-linux, build-windows, build-wasm]
+    needs: [version, build-linux, build-windows, build-wasm]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
