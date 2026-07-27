@@ -10,6 +10,7 @@ mod util;
 
 pub use seed_general::{
     ensure_general_program, MonitorRect, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
+    TEMPORARY_PROGRAM,
 };
 pub use types::{
     ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask,
@@ -556,6 +557,35 @@ Game:
         assert_eq!(cat.get("Beta").unwrap().name, "Beta");
         cat.delete_program("Beta").unwrap();
         assert!(cat.get("Beta").is_none());
+    }
+
+    #[test]
+    fn clear_points_wipes_all_resolution_buckets() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.create_program(TEMPORARY_PROGRAM).unwrap();
+        cat.upsert_point(
+            TEMPORARY_PROGRAM,
+            ProgramPoint {
+                name: "A".into(),
+                x: ScalarValue::Int(1),
+                y: ScalarValue::Int(2),
+            },
+        )
+        .unwrap();
+        cat.set_resolution_key("2560x1440");
+        cat.upsert_point(
+            TEMPORARY_PROGRAM,
+            ProgramPoint {
+                name: "B".into(),
+                x: ScalarValue::Int(3),
+                y: ScalarValue::Int(4),
+            },
+        )
+        .unwrap();
+        cat.clear_points(TEMPORARY_PROGRAM).unwrap();
+        let p = cat.get(TEMPORARY_PROGRAM).unwrap();
+        assert!(p.points.values().all(|b| b.is_empty()));
     }
 
     #[test]

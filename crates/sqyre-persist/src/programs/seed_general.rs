@@ -5,6 +5,9 @@ use sqyre_domain::ScalarValue;
 
 pub const GENERAL_PROGRAM: &str = "General";
 
+/// Scratch program for macro-recording temp points; overwritten each recording.
+pub const TEMPORARY_PROGRAM: &str = "temporary";
+
 /// Point that resolves to Image Search match coordinates (`foundX` / `foundY`).
 pub const IMAGE_SEARCH_REFERENCE: &str = "Image Search Reference";
 

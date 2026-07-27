@@ -16,7 +16,7 @@ pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
     ensure_general_program, MonitorRect, ProgramAtlas, ProgramCatalog, ProgramCollection,
     ProgramData, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea, GENERAL_PROGRAM,
-    IMAGE_SEARCH_REFERENCE,
+    IMAGE_SEARCH_REFERENCE, TEMPORARY_PROGRAM,
 };
 pub use settings::{
     default_overlay_position, move_dir, open_path_in_file_manager, open_sqyre_dir, settings_path,
