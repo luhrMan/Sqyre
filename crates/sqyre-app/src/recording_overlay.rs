@@ -32,6 +32,8 @@ const HUD_PAD_X: f32 = 24.0;
 const HUD_PAD_Y: f32 = 16.0;
 const HUD_MIN_W: f32 = 200.0;
 const HUD_MIN_H: f32 = 36.0;
+/// Frame stroke is drawn outside the content; include it in the OS window size.
+const HUD_STROKE: f32 = 1.0;
 /// Fraction of monitor height used as dead-band so the HUD does not flip every
 /// frame when the cursor skims the vertical midline.
 const HUD_FLIP_HYSTERESIS: f32 = 0.18;
@@ -164,10 +166,16 @@ impl RecordingOverlay {
         let style = ctx.global_style();
         let font = TextStyle::Body.resolve(&style);
         let color = theme::PRIMARY;
-        let text_max_w = (max_w - HUD_PAD_X).max(1.0);
+        let text_max_w = (max_w - HUD_PAD_X - HUD_STROKE * 2.0).max(1.0);
         let galley = ctx.fonts_mut(|f| f.layout(text.clone(), font, color, text_max_w));
-        let hud_w = (galley.size().x + HUD_PAD_X).ceil().clamp(HUD_MIN_W, max_w);
-        let hud_h = (galley.size().y + HUD_PAD_Y).ceil().max(HUD_MIN_H);
+        // Panel size is text + padding; OS window adds stroke room so bottom/right
+        // borders are not clipped (egui Frame stroke draws outside the content).
+        let panel_w = (galley.size().x + HUD_PAD_X)
+            .ceil()
+            .clamp(HUD_MIN_W, (max_w - HUD_STROKE * 2.0).max(HUD_MIN_W));
+        let panel_h = (galley.size().y + HUD_PAD_Y).ceil().max(HUD_MIN_H);
+        let hud_w = panel_w + HUD_STROKE * 2.0;
+        let hud_h = panel_h + HUD_STROKE * 2.0;
         let pos = hud_position(monitor, hud_at_top, hud_w, hud_h, ppp);
 
         let text_owned = text;
@@ -189,7 +197,13 @@ impl RecordingOverlay {
         // Deferred: independent of the (possibly hidden) root viewport paint cycle,
         // as long as the parent keeps registering it each frame via request_repaint.
         ctx.show_viewport_deferred(id, builder, move |ui, class| {
-            paint_hud_label(ui, class, &text_owned, hud_at_top, Vec2::new(hud_w, hud_h));
+            paint_hud_label(
+                ui,
+                class,
+                &text_owned,
+                hud_at_top,
+                Vec2::new(panel_w, panel_h),
+            );
             ui.ctx().request_repaint();
         });
     }
@@ -261,10 +275,10 @@ fn hud_position(monitor: DesktopRect, at_top: bool, hud_w: f32, hud_h: f32, ppp:
     Pos2::new(x, y)
 }
 
-fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: bool, size: Vec2) {
+fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: bool, panel: Vec2) {
     let frame = egui::Frame::NONE
         .fill(crate::theme::overlay_panel_fill())
-        .stroke(egui::Stroke::new(1.0, theme::PRIMARY))
+        .stroke(egui::Stroke::new(HUD_STROKE, theme::PRIMARY))
         .corner_radius(egui::CornerRadius::same(6))
         .inner_margin(egui::Margin::symmetric(12, 8));
 
@@ -292,7 +306,11 @@ fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: 
     }
 
     frame.show(ui, |ui| {
-        ui.set_min_size(size);
+        // Content area inside margins — not the full OS window (stroke lives outside).
+        ui.set_min_size(Vec2::new(
+            (panel.x - HUD_PAD_X).max(1.0),
+            (panel.y - HUD_PAD_Y).max(1.0),
+        ));
         ui.centered_and_justified(|ui| {
             ui.label(egui::RichText::new(text).color(theme::PRIMARY).strong());
         });
