@@ -459,7 +459,7 @@ fn show_var_ref_autocomplete(
         .show(|ui| {
             ui.set_min_width(popup_width);
             ui.set_max_height(180.0);
-            egui::ScrollArea::vertical().show(ui, |ui| {
+            crate::pickers::scroll_vertical().show(ui, |ui| {
                 for (i, name) in suggestions.iter().enumerate() {
                     let selected = i == nav.selected;
                     let label = format!("${{{name}}}");

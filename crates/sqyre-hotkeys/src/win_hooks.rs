@@ -5,6 +5,7 @@
 
 use crate::continue_wait::{vk_key_name, ContinueWaitBridge};
 use crate::macro_hotkeys::MacroHotkeyBridge;
+use crate::macro_record::{MacroRecordBridge, RecordMouseButton};
 use crate::screen_click::ScreenClickBridge;
 use crate::{HotkeyCallbacks, HotkeyError, HotkeyService};
 use parking_lot::Mutex;
@@ -19,7 +20,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
     TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, MSG,
     MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
-    WM_MOUSEMOVE, WM_QUIT, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_QUIT, WM_RBUTTONDOWN,
+    WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 struct HookCtx {
@@ -27,6 +29,7 @@ struct HookCtx {
     callbacks: HotkeyCallbacks,
     continue_wait: ContinueWaitBridge,
     screen_click: ScreenClickBridge,
+    macro_record: MacroRecordBridge,
     macro_hotkeys: MacroHotkeyBridge,
     pressed: HashSet<&'static str>,
 }
@@ -53,6 +56,7 @@ pub struct WinHotkeys {
     join: Mutex<Option<JoinHandle<()>>>,
     continue_wait: ContinueWaitBridge,
     screen_click: ScreenClickBridge,
+    macro_record: MacroRecordBridge,
     macro_hotkeys: MacroHotkeyBridge,
 }
 
@@ -60,6 +64,7 @@ impl WinHotkeys {
     pub fn new(
         continue_wait: ContinueWaitBridge,
         screen_click: ScreenClickBridge,
+        macro_record: MacroRecordBridge,
         macro_hotkeys: MacroHotkeyBridge,
     ) -> Self {
         Self {
@@ -67,6 +72,7 @@ impl WinHotkeys {
             join: Mutex::new(None),
             continue_wait,
             screen_click,
+            macro_record,
             macro_hotkeys,
         }
     }
@@ -81,6 +87,7 @@ impl HotkeyService for WinHotkeys {
         let (ready_tx, ready_rx) = mpsc::channel::<Result<(), HotkeyError>>();
         let continue_wait = self.continue_wait.clone();
         let screen_click = self.screen_click.clone();
+        let macro_record = self.macro_record.clone();
         let macro_hotkeys = self.macro_hotkeys.clone();
 
         let handle = thread::Builder::new()
@@ -91,6 +98,7 @@ impl HotkeyService for WinHotkeys {
                     callbacks,
                     continue_wait,
                     screen_click,
+                    macro_record,
                     macro_hotkeys,
                     pressed: HashSet::new(),
                 });
@@ -234,12 +242,20 @@ fn handle_keyboard(wparam: WPARAM, lparam: LPARAM) {
     ctx.continue_wait.on_pressed_keys(&ctx.pressed);
     let on_fire = Arc::clone(&ctx.callbacks.on_macro_hotkey);
     ctx.macro_hotkeys.on_pressed_keys(&ctx.pressed, &*on_fire);
+    // When LL hooks deliver keys (Sqyre not focused), record immediately.
+    // While focused, win_focused_keys polls GetAsyncKeyState instead.
+    if ctx.macro_record.is_armed() {
+        let keys: HashSet<&str> = ctx.pressed.iter().copied().collect();
+        ctx.macro_record.sync_pressed_keys(&keys);
+    }
 
     if is_press && name == "esc" {
         let ctrl = ctx.pressed.contains("ctrl");
         let shift = ctx.pressed.contains("shift") || ctx.pressed.contains("rshift");
-        if ctx.screen_click.on_escape() {
-            // Recording takes Esc; don't also stop macros.
+        if ctx.macro_record.on_escape() {
+            // Macro recording takes Esc.
+        } else if ctx.screen_click.on_escape() {
+            // Point/area recording takes Esc; don't also stop macros.
         } else if crate::failsafe_modifiers_held(&ctx.pressed) {
             let on_failsafe = Arc::clone(&ctx.callbacks.on_failsafe);
             drop(guard);
@@ -266,7 +282,21 @@ fn handle_mouse(wparam: WPARAM, lparam: LPARAM) {
         // SAFETY: lparam points at MSLLHOOKSTRUCT for the duration of the hook call.
         let mouse = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
         ctx.screen_click.on_mouse_move(mouse.pt.x, mouse.pt.y);
-    } else if msg == WM_LBUTTONDOWN && ctx.screen_click.is_armed() {
+        ctx.macro_record.on_mouse_move(mouse.pt.x, mouse.pt.y);
+        return;
+    }
+
+    let (button, pressed) = match msg {
+        WM_LBUTTONDOWN => (RecordMouseButton::Left, true),
+        WM_LBUTTONUP => (RecordMouseButton::Left, false),
+        WM_RBUTTONDOWN => (RecordMouseButton::Right, true),
+        WM_RBUTTONUP => (RecordMouseButton::Right, false),
+        WM_MBUTTONDOWN => (RecordMouseButton::Middle, true),
+        WM_MBUTTONUP => (RecordMouseButton::Middle, false),
+        _ => return,
+    };
+    ctx.macro_record.on_button(button, pressed);
+    if pressed && button == RecordMouseButton::Left && ctx.screen_click.is_armed() {
         ctx.screen_click.on_left_click();
     }
 }

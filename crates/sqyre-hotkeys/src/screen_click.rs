@@ -80,6 +80,11 @@ impl ScreenClickBridge {
         self.inner.lock().armed.is_some()
     }
 
+    /// Last known pointer position (updated by the hotkey thread).
+    pub fn last_pos(&self) -> (i32, i32) {
+        self.inner.lock().last_pos
+    }
+
     pub fn status_label(&self) -> Option<String> {
         let g = self.inner.lock();
         let (x, y) = g.last_pos;

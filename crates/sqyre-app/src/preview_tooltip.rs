@@ -3,13 +3,14 @@
 use crate::image_view::{self, ImageViewTransform};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
-use sqyre_capture::{shared_capturer, OsCapturer};
+use sqyre_capture::{mark_site, shared_capturer, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use sqyre_ports::{CaptureError, DesktopRect};
 use std::collections::HashMap;
-use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::Arc;
+#[cfg(not(target_os = "windows"))]
 use std::thread;
 use web_time::{Duration, Instant};
 
@@ -30,6 +31,8 @@ const CACHE_MAX: usize = 24;
 const FAIL_CACHE_TTL: Duration = Duration::from_secs(60);
 const OVERLAY: Rgba<u8> = Rgba([255, 0, 0, 255]);
 const LITERAL_COORDS_MSG: &str = "Preview needs literal coordinates";
+/// Half-size of the desktop outline box drawn around a point (px).
+const POINT_OUTLINE_HALF: i32 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewKind {
@@ -63,6 +66,8 @@ pub struct PreviewTooltipCache {
     pending: HashMap<String, PendingCapture>,
     /// Failed captures — avoids respawning on every repaint for permanent errors.
     failures: HashMap<String, FailureEntry>,
+    /// Desktop outline requested by a tooltip preview this frame (absolute corners).
+    desktop_outline: Option<(i32, i32, i32, i32)>,
 }
 
 impl PreviewTooltipCache {
@@ -89,6 +94,19 @@ impl PreviewTooltipCache {
         self.order.clear();
         self.pending.clear();
         self.failures.clear();
+        self.desktop_outline = None;
+    }
+
+    /// Absolute desktop corners requested by a tooltip preview last frame, if any.
+    ///
+    /// Consumed by the recording overlay so the gold selection outline is drawn on
+    /// the real desktop at the point / search-area location while the tip is open.
+    pub fn take_desktop_outline(&mut self) -> Option<(i32, i32, i32, i32)> {
+        self.desktop_outline.take()
+    }
+
+    fn request_desktop_outline(&mut self, coords: PreviewCoords) {
+        self.desktop_outline = Some(desktop_outline_rect(coords));
     }
 
     /// Paint an egui hover tooltip for a program entity list row.
@@ -106,6 +124,7 @@ impl PreviewTooltipCache {
         }
         match entity_preview_spec(catalog, program, name, kind) {
             Ok((key, caption, coords)) => {
+                self.request_desktop_outline(coords);
                 let preview =
                     self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
                 response.clone().on_hover_ui(|ui| match &preview {
@@ -139,6 +158,7 @@ impl PreviewTooltipCache {
     ) {
         let preview = match ref_preview_spec(catalog, coord_ref, kind) {
             Ok((key, caption, coords)) => {
+                self.request_desktop_outline(coords);
                 self.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM)
             }
             Err(err) => Err(err),
@@ -168,6 +188,7 @@ impl PreviewTooltipCache {
         let label = coord_ref.as_str().to_string();
         let preview = match ref_preview_spec(catalog, coord_ref, kind) {
             Ok((key, caption, coords)) => {
+                self.request_desktop_outline(coords);
                 match self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM) {
                     Ok((tex, cap)) => Ok((tex, cap)),
                     Err(err) => Err((caption, err)),
@@ -315,19 +336,42 @@ impl PreviewTooltipCache {
 
         self.ensure_capturer()?;
         let capturer = Arc::clone(self.capturer.as_ref().unwrap());
-        let (tx, rx) = mpsc::channel();
-        thread::spawn(move || {
-            let _ = tx.send(capture_preview(capturer.as_ref(), coords, max_dim));
-        });
-        self.pending.insert(
-            key.to_string(),
-            PendingCapture {
-                caption: caption.to_string(),
-                rx,
-            },
-        );
-        ctx.request_repaint();
-        Err("Capturing…".into())
+
+        // Windows + glow: GDI BitBlt off the UI thread races the GL context and can
+        // hard-abort the process when the result is uploaded as a texture (no Rust
+        // panic hook / crash.log). Capture synchronously on this thread instead.
+        #[cfg(target_os = "windows")]
+        {
+            mark_site("preview:capture_sync");
+            match capture_preview(capturer.as_ref(), coords, max_dim) {
+                Ok(img) => {
+                    self.failures.remove(key);
+                    return self.finish_texture(ctx, key, caption, img, max_dim);
+                }
+                Err(e) => {
+                    let e = e.to_string();
+                    self.remember_failure(key, e.clone(), Instant::now());
+                    return Err(e);
+                }
+            }
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let (tx, rx) = std::sync::mpsc::channel();
+            thread::spawn(move || {
+                let _ = tx.send(capture_preview(capturer.as_ref(), coords, max_dim));
+            });
+            self.pending.insert(
+                key.to_string(),
+                PendingCapture {
+                    caption: caption.to_string(),
+                    rx,
+                },
+            );
+            ctx.request_repaint();
+            Err("Capturing…".into())
+        }
     }
 
     fn remember_failure(&mut self, key: &str, error: String, now: Instant) {
@@ -349,6 +393,7 @@ impl PreviewTooltipCache {
         max_dim: u32,
     ) -> Result<(TextureHandle, String), String> {
         let size = [img.width() as usize, img.height() as usize];
+        mark_site(&format!("preview:finish_texture:{}x{}", size[0], size[1]));
         let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
         // Mipmaps help panel zoom; tooltips stay cheap without them.
         let opts = if max_dim >= PANEL_MAX_DIM {
@@ -364,6 +409,7 @@ impl PreviewTooltipCache {
                 caption: caption.to_string(),
             },
         );
+        mark_site("preview:finish_texture:done");
         Ok((tex, caption.to_string()))
     }
 
@@ -719,6 +765,21 @@ fn fit_display(w: f32, h: f32) -> Vec2 {
 
 fn normalize_rect(lx: i32, ty: i32, rx: i32, by: i32) -> (i32, i32, i32, i32) {
     DesktopRect::normalize_corners(lx, ty, rx, by)
+}
+
+fn desktop_outline_rect(coords: PreviewCoords) -> (i32, i32, i32, i32) {
+    match coords {
+        PreviewCoords::Point { x, y } => {
+            let h = POINT_OUTLINE_HALF;
+            (x - h, y - h, x + h + 1, y + h + 1)
+        }
+        PreviewCoords::SearchArea {
+            left,
+            top,
+            right,
+            bottom,
+        } => normalize_rect(left, top, right, bottom),
+    }
 }
 
 fn preview_bounds_for_point(px: i32, py: i32, vb: DesktopRect) -> DesktopRect {

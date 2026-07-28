@@ -38,7 +38,7 @@ impl SqyreApp {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let should_hide = self.settings_ui.settings().hide_app_during_recording
-                && self.screen_click.is_armed();
+                && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed());
             if should_hide && !self.hidden_for_recording {
                 self.hidden_for_recording = true;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
@@ -50,10 +50,19 @@ impl SqyreApp {
         }
     }
 
-    /// Live selection outline + coords HUD while screen-click recording is armed.
+    /// Live selection outline + coords HUD while recording, or while a tooltip
+    /// preview requests the desktop outline for a point / search area.
     pub(crate) fn sync_recording_overlay(&mut self, ctx: &egui::Context) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-        self.recording_overlay.sync(ctx, &self.screen_click);
+        {
+            let preview_outline = self.preview_tooltips.take_desktop_outline();
+            self.recording_overlay.sync_with_macro_record(
+                ctx,
+                &self.screen_click,
+                Some(&self.macro_record_bridge),
+                preview_outline,
+            );
+        }
         #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]
         let _ = ctx;
     }

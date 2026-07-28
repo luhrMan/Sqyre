@@ -215,7 +215,7 @@ impl SettingsUi {
             0.0
         };
         let list_h = (ui.available_height() - footer).max(40.0);
-        egui::ScrollArea::vertical()
+        crate::pickers::scroll_vertical()
             .auto_shrink([false, false])
             .max_height(list_h)
             .show(ui, |ui| {

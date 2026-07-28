@@ -1,5 +1,5 @@
 use super::query::fuzzy_match_fold;
-use super::scroll::{maybe_scroll_to, popup_scroll_max_height};
+use super::scroll::{maybe_scroll_to, popup_scroll_max_height, scroll_vertical};
 use super::types::{CollectionCellPick, CoordKind};
 use crate::data_editor_preview::show_file_hover;
 use crate::paint_ctx::CatalogPaint;
@@ -30,7 +30,7 @@ pub fn paint_coord_ref_list(
     let current_ref = CoordinateRef(current.clone());
     let mut did_scroll = false;
     let list_h = popup_scroll_max_height(ui, 52.0);
-    egui::ScrollArea::vertical()
+    scroll_vertical()
         .auto_shrink([false, false])
         .max_height(list_h)
         .show(ui, |ui| {

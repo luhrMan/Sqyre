@@ -177,7 +177,8 @@ fn update_target_path(kind: InstallKind) -> Result<PathBuf, UpdateError> {
             std::env::current_exe().map_err(|e| UpdateError::CurrentExe(e.to_string()))
         }
         InstallKind::WindowsExe => {
-            let exe = std::env::current_exe().map_err(|e| UpdateError::CurrentExe(e.to_string()))?;
+            let exe =
+                std::env::current_exe().map_err(|e| UpdateError::CurrentExe(e.to_string()))?;
             Ok(windows_install_path(&exe)?)
         }
     }

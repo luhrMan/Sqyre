@@ -19,10 +19,11 @@ use eframe::egui;
 use sqyre_domain::{collect_known_variable_names, KnownVariableNames, Macro, PROGRAM_DELIMITER};
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    auto_pic_path, OverlayButtonConfig, ProgramCatalog, ProgramCollection, UserSettings,
-    DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BUTTON_SIZE,
-    MAX_OVERLAY_CORNER_RADIUS, MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE,
-    MIN_OVERLAY_CORNER_RADIUS,
+    auto_pic_path, default_overlay_position, OverlayButtonConfig, ProgramCatalog,
+    ProgramCollection, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
+    DEFAULT_OVERLAY_FALLBACK_SCREEN_H, DEFAULT_OVERLAY_FALLBACK_SCREEN_W, MAX_OVERLAY_BORDER_WIDTH,
+    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MIN_OVERLAY_BORDER_WIDTH,
+    MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
 };
 use sqyre_validate::validate_numeric_expression;
 
@@ -143,8 +144,16 @@ impl DataEditor {
     pub(crate) fn reset_overlay_form(&mut self) {
         self.form_name.clear();
         self.form_overlay_point.clear();
-        self.form_overlay_x = 48.0;
-        self.form_overlay_y = 48.0;
+        let (x, y) = default_overlay_position(
+            0.0,
+            0.0,
+            DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
+            DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
+            DEFAULT_OVERLAY_BUTTON_SIZE,
+            0,
+        );
+        self.form_overlay_x = x;
+        self.form_overlay_y = y;
         self.form_overlay_macro.clear();
         self.form_overlay_enabled = true;
         self.form_overlay_icon = overlay_icons::DEFAULT_ICON_ID.into();
@@ -900,20 +909,6 @@ impl DataEditor {
                 if self.selected_entity.is_none() {
                     ui.weak("Select a button from the list, or click New.");
                     return;
-                }
-                ui.add_space(6.0);
-                if ui
-                    .checkbox(&mut self.form_overlay_enabled, "Enabled")
-                    .on_hover_text(help::DE_OVERLAY_ENABLED)
-                    .changed()
-                {
-                    if let Some(id) = self.selected_entity.as_deref() {
-                        if let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == id)
-                        {
-                            btn.enabled = self.form_overlay_enabled;
-                            self.persist_overlay_settings(settings);
-                        }
-                    }
                 }
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {

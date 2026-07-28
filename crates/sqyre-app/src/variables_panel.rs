@@ -121,7 +121,7 @@ impl VariablesPanelUi {
             });
             return;
         }
-        egui::ScrollArea::vertical()
+        crate::pickers::scroll_vertical()
             .max_height(180.0)
             .show(ui, |ui| {
                 for (name, value) in snap {
@@ -143,7 +143,7 @@ impl VariablesPanelUi {
         );
         ui.add_space(4.0);
         let catalog = builtin_variable_catalog(num_monitors);
-        egui::ScrollArea::vertical()
+        crate::pickers::scroll_vertical()
             .max_height(220.0)
             .show(ui, |ui| {
                 for info in &catalog {
@@ -185,7 +185,7 @@ impl VariablesPanelUi {
         let mut remove_idx: Option<usize> = None;
         let mut start_edit: Option<usize> = None;
 
-        egui::ScrollArea::vertical()
+        crate::pickers::scroll_vertical()
             .max_height(220.0)
             .show(ui, |ui| {
                 if macro_.variable_decls.is_empty() {

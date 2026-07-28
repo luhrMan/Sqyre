@@ -88,20 +88,12 @@ fn virtual_screen_metrics() -> Result<DesktopRect, CaptureError> {
 fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
     let (mut bgra, w, h) = capture_rect_bgra(rect)?;
 
-    // BGRA → RGBA in place (parallel rows; pulp dispatch per row for SIMD-friendly swaps)
-    {
-        use pulp::Arch;
-        use rayon::prelude::*;
-        let stride = (w as usize) * 4;
-        bgra.par_chunks_exact_mut(stride).for_each(|row| {
-            let arch = Arch::new();
-            arch.dispatch(|| {
-                for pixel in row.chunks_exact_mut(4) {
-                    pixel.swap(0, 2);
-                    pixel[3] = 255;
-                }
-            });
-        });
+    // Sequential BGRA→RGBA: avoid rayon/pulp here. Preview captures can run on the
+    // UI thread (glow), and off-thread SIMD pools have hard-crashed some Windows
+    // setups without a Rust panic hook.
+    for pixel in bgra.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+        pixel[3] = 255;
     }
 
     RgbaImage::from_raw(w, h, bgra)

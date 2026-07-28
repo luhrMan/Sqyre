@@ -457,7 +457,14 @@ fn set_foreground(hwnd: HWND) -> Result<(), String> {
 /// (`glutin_winit::finalize_window` + false `supports_transparency`), so winit never
 /// calls [`DwmEnableBlurBehindWindow`]. Re-apply the same empty-region blur-behind
 /// winit uses for the root window so clear alpha and button α settings composite.
+///
+/// Each HWND is hinted at most once — re-applying DWM every poll raced glow texture
+/// uploads and hard-crashed on some setups.
 pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
+    use std::sync::{Mutex, OnceLock};
+    static HINTED: OnceLock<Mutex<HashSet<isize>>> = OnceLock::new();
+    let hinted = HINTED.get_or_init(|| Mutex::new(HashSet::new()));
+
     let our_pid = unsafe { GetCurrentProcessId() };
     let mut hwnds: Vec<HWND> = Vec::new();
     // SAFETY: callback only touches the Vec via lparam for the duration of EnumWindows.
@@ -469,8 +476,13 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
         .map_err(|e| CaptureError::Message(format!("EnumWindows failed: {e}")))?;
     }
 
-    let mut hinted = 0usize;
+    let mut hinted = hinted.lock().unwrap_or_else(|e| e.into_inner());
+    let mut newly = 0usize;
     for hwnd in hwnds {
+        let key = hwnd.0 as isize;
+        if hinted.contains(&key) {
+            continue;
+        }
         let mut pid = 0u32;
         // SAFETY: hwnd came from EnumWindows; GetWindowThreadProcessId is always safe.
         unsafe {
@@ -485,12 +497,12 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
         if title.trim() != crate::OVERLAY_WM_TITLE {
             continue;
         }
+        crate::diag::mark_site(&format!("win:overlay_transparency:apply:{key}"));
         enable_dwm_per_pixel_alpha(hwnd).map_err(CaptureError::Message)?;
-        hinted += 1;
+        hinted.insert(key);
+        newly += 1;
     }
-    if hinted > 0 {
-        crate::diag::mark_site(&format!("win:overlay_transparency:hinted={hinted}"));
-    }
+    crate::diag::mark_site(&format!("win:overlay_transparency:done:new={newly}"));
     Ok(())
 }
 

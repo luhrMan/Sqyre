@@ -1,13 +1,14 @@
 //! Left entity list + program selector (cached against catalog generation).
 
 use super::{DataEditor, EditorTab, ListCache};
+use crate::action_tooltip::help;
 use crate::data_editor_preview::show_file_hover;
 use crate::icon_cache::IconCache;
 use crate::pickers::{self, PickerScrollOpts};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::widgets::searchable_combo_with;
 use eframe::egui;
-use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, UserSettings};
+use sqyre_persist::{ProgramCatalog, UserSettings};
 use std::collections::HashMap;
 
 impl DataEditor {
@@ -17,7 +18,7 @@ impl DataEditor {
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
         previews: &mut PreviewTooltipCache,
-        settings: &UserSettings,
+        settings: &mut UserSettings,
     ) {
         let id_salt = match self.tab {
             EditorTab::Programs => "data_editor_programs",
@@ -74,6 +75,8 @@ impl DataEditor {
             _ => Vec::new(),
         };
         let mut clicked_program: Option<String> = None;
+        let mut clicked_overlay: Option<(String, String)> = None;
+        let mut overlay_enabled_updates: Vec<(String, bool)> = Vec::new();
 
         // Take search out so the scroll body can borrow `&mut self`.
         let mut search = std::mem::take(&mut self.search);
@@ -192,21 +195,23 @@ impl DataEditor {
             }
             EditorTab::Overlay => {
                 for prog in catalog.program_names() {
-                    let buttons: Vec<&OverlayButtonConfig> = settings
+                    let buttons: Vec<(String, String, bool)> = settings
                         .overlay_buttons
                         .iter()
                         .filter(|b| b.program == *prog)
+                        .map(|b| (b.id.clone(), b.display_name().to_string(), b.enabled))
                         .collect();
                     let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
-                    let any_btn = buttons.iter().any(|b| {
+                    let any_btn = buttons.iter().any(|(id, name, _)| {
                         q.is_empty()
-                            || pickers::fuzzy_match_fold(q, b.display_name())
-                            || pickers::fuzzy_match_fold(q, &b.id)
+                            || pickers::fuzzy_match_fold(q, name)
+                            || pickers::fuzzy_match_fold(q, id)
                     });
                     if !prog_match && !any_btn {
                         continue;
                     }
                     let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
+                    let child_count = buttons.len();
                     let id = data_editor_list_collapse_id(EditorTab::Overlay, prog);
                     egui::collapsing_header::CollapsingState::load_with_default_open(
                         ui.ctx(),
@@ -221,7 +226,7 @@ impl DataEditor {
                             prog,
                             crate::icon_cache::ProgramLabelStyle::Header {
                                 selected: Some(prog_selected),
-                                child_count: buttons.len(),
+                                child_count,
                             },
                         )
                         .clicked()
@@ -231,19 +236,29 @@ impl DataEditor {
                     })
                     .body(|ui| {
                         ui.set_max_width(ui.available_width());
-                        for btn in buttons {
+                        for (btn_id, display_name, enabled) in &buttons {
                             if !q.is_empty()
-                                && !pickers::fuzzy_match_fold(q, btn.display_name())
-                                && !pickers::fuzzy_match_fold(q, &btn.id)
+                                && !pickers::fuzzy_match_fold(q, display_name)
+                                && !pickers::fuzzy_match_fold(q, btn_id)
                                 && !prog_match
                             {
                                 continue;
                             }
                             let selected = self.selected_program.as_deref() == Some(prog.as_str())
-                                && self.selected_entity.as_deref() == Some(btn.id.as_str());
-                            if ui.selectable_label(selected, btn.display_name()).clicked() {
-                                self.select_entity(prog, &btn.id, catalog, settings);
-                            }
+                                && self.selected_entity.as_deref() == Some(btn_id.as_str());
+                            ui.horizontal(|ui| {
+                                let mut enabled = *enabled;
+                                if ui
+                                    .checkbox(&mut enabled, "")
+                                    .on_hover_text(help::DE_OVERLAY_ENABLED)
+                                    .changed()
+                                {
+                                    overlay_enabled_updates.push((btn_id.clone(), enabled));
+                                }
+                                if ui.selectable_label(selected, display_name).clicked() {
+                                    clicked_overlay = Some((prog.clone(), btn_id.clone()));
+                                }
+                            });
                         }
                     });
                 }
@@ -251,8 +266,22 @@ impl DataEditor {
         });
         self.search = search;
 
+        if !overlay_enabled_updates.is_empty() {
+            for (id, enabled) in &overlay_enabled_updates {
+                if let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == *id) {
+                    btn.enabled = *enabled;
+                }
+                if self.selected_entity.as_deref() == Some(id.as_str()) {
+                    self.form_overlay_enabled = *enabled;
+                }
+            }
+            self.persist_overlay_settings(settings);
+        }
+
         if let Some(prog) = clicked_program {
             self.select_program(&prog, catalog, settings);
+        } else if let Some((prog, id)) = clicked_overlay {
+            self.select_entity(&prog, &id, catalog, settings);
         } else if matches!(self.tab, EditorTab::Items) {
             if let Some(target) = item_selection.first() {
                 if let Some((prog, item)) = target.split_once(sqyre_domain::PROGRAM_DELIMITER) {
