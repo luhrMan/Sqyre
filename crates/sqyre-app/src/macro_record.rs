@@ -1051,21 +1051,26 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
     };
     use sqyre_capture::OVERLAY_WM_TITLE;
 
-    const CROSS: f32 = 14.0;
-    const ARM: f32 = 6.0;
-    const LABEL_GAP: f32 = 2.0;
-    const LABEL_H: f32 = 14.0;
+    const DIAMETER: f32 = 12.0;
+    const ARM: f32 = 3.5;
+    const CROSS_STROKE: f32 = 1.25;
+    const RING_STROKE: f32 = 1.25;
+    const LABEL_GAP: f32 = 1.0;
+    const LABEL_H: f32 = 10.0;
 
     let label = if pt.name.trim().is_empty() {
         format!("#{index}")
     } else {
         pt.name.trim().to_string()
     };
-    let font = FontId::proportional(11.0);
+    let font = FontId::proportional(9.0);
     let galley = ctx.fonts_mut(|f| f.layout_no_wrap(label.clone(), font.clone(), color));
-    let label_w = galley.size().x.max(CROSS);
-    let outer_w = label_w.ceil().max(CROSS);
-    let outer_h = (LABEL_H + LABEL_GAP + CROSS).ceil();
+    let radius = DIAMETER * 0.5;
+    let content_w = galley.size().x.max(DIAMETER).ceil();
+    let content_h = (LABEL_H + LABEL_GAP + DIAMETER).ceil();
+    // Ring stroke is centered on the circle edge — pad so it stays inside the window.
+    let outer_w = (content_w + RING_STROKE).ceil();
+    let outer_h = (content_h + RING_STROKE).ceil();
 
     // Recorded coords are physical desktop pixels; egui viewport position is logical
     // points (`physical / pixels_per_point`). Without this divide, markers land at
@@ -1073,7 +1078,9 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
     let ppp = ctx.pixels_per_point().max(0.01);
     let cx = pt.x as f32 / ppp;
     let cy = pt.y as f32 / ppp;
-    let pos = Pos2::new(cx - outer_w * 0.5, cy - (LABEL_H + LABEL_GAP + CROSS * 0.5));
+    // Circle center sits on the recorded point (below the label).
+    let cross_y_offset = RING_STROKE * 0.5 + LABEL_H + LABEL_GAP + radius;
+    let pos = Pos2::new(cx - outer_w * 0.5, cy - cross_y_offset);
 
     let id = ViewportId::from_hash_of(format!("sqyre_temp_point_marker_{index}"));
     let builder = ViewportBuilder::default()
@@ -1090,7 +1097,6 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
         .with_position(pos);
 
     ctx.show_viewport_deferred(id, builder, move |ui, _class| {
-        // Transparent — label + crosshair only (no filled panel).
         Frame::NONE
             .fill(egui::Color32::TRANSPARENT)
             .inner_margin(Margin::ZERO)
@@ -1099,13 +1105,18 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
                 let (rect, _) = ui.allocate_exact_size(Vec2::new(outer_w, outer_h), Sense::hover());
                 let painter = ui.painter();
                 let galley = painter.layout_no_wrap(label.clone(), font.clone(), color);
-                let label_pos = Pos2::new(rect.center().x - galley.size().x * 0.5, rect.top());
+                let label_pos = Pos2::new(
+                    rect.center().x - galley.size().x * 0.5,
+                    rect.top() + RING_STROKE * 0.5,
+                );
                 painter.galley(label_pos, galley, color);
                 let c = Pos2::new(
                     rect.center().x,
-                    rect.top() + LABEL_H + LABEL_GAP + CROSS * 0.5,
+                    rect.top() + RING_STROKE * 0.5 + LABEL_H + LABEL_GAP + radius,
                 );
-                let stroke = Stroke::new(1.5, color);
+                painter.circle_filled(c, radius, crate::theme::overlay_panel_fill());
+                painter.circle_stroke(c, radius, Stroke::new(RING_STROKE, color));
+                let stroke = Stroke::new(CROSS_STROKE, color);
                 painter.line_segment(
                     [Pos2::new(c.x - ARM, c.y), Pos2::new(c.x + ARM, c.y)],
                     stroke,
