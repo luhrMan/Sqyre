@@ -218,7 +218,7 @@ pub const DE_MASK_SHAPE: &str = "Rectangle or circle geometry for the mask.";
 pub const DE_OVERLAY_LABEL: &str = "Text shown on the overlay button.";
 pub const DE_OVERLAY_MACRO: &str = "Macro launched when the overlay button is clicked.";
 pub const DE_OVERLAY_ENABLED: &str =
-    "When off, this button is hidden from the screen (still editable here).";
+    "When off, this button is hidden from the screen (still editable in the detail form).";
 pub const DE_OVERLAY_POINT: &str =
     "Optional catalog point for button location. When set, X/Y are used only if the point cannot be resolved.";
 pub const DE_OVERLAY_X: &str = "Button X on the desktop (pixels). Ignored when a point is set.";

@@ -180,6 +180,15 @@ impl ProgramCatalog {
         delete_resolution_entity(self, program, name, "point", |p| &mut p.points)
     }
 
+    /// Remove every point in `program` (all resolution buckets).
+    pub fn clear_points(&mut self, program: &str) -> Result<()> {
+        let p = self.program_mut(program)?;
+        for bucket in p.points.values_mut() {
+            bucket.clear();
+        }
+        Ok(())
+    }
+
     pub fn upsert_search_area(&mut self, program: &str, area: ProgramSearchArea) -> Result<()> {
         let key = area.name.clone();
         upsert_resolution_entity(self, program, key, area, |p| &mut p.search_areas)

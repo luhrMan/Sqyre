@@ -1,9 +1,9 @@
-//! Best-effort crash breadcrumbs for native / X11 abort diagnosis.
+//! Best-effort crash breadcrumbs for native / X11 / Win32 abort diagnosis.
 //!
-//! By default, sites stay in memory and [`note`] only prints to stderr — no
-//! hot-path disk I/O. Set `SQYRE_DIAG=1` to also write [`LAST_SITE_FILE`] and
-//! append [`DIAG_LOG_FILE`] (useful when diagnosing X11 fatal aborts that never
-//! reach a Rust panic hook).
+//! [`mark_site`] always updates in-memory state and overwrites [`LAST_SITE_FILE`]
+//! (one small line — needed when a hard abort never reaches the Rust panic hook /
+//! `crash.log`). [`note`] prints to stderr; set `SQYRE_DIAG=1` to also append
+//! [`DIAG_LOG_FILE`].
 
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -84,14 +84,11 @@ fn ensure_parent(path: &Path) {
     }
 }
 
-/// Record the current code site (memory always; disk only when [`disk_logging_enabled`]).
+/// Record the current code site (memory + [`LAST_SITE_FILE`] always).
 pub fn mark_site(site: &str) {
     let line = format!("{}\t{site}", stamp());
     if let Ok(mut g) = LAST_SITE.lock() {
         *g = Some(line.clone());
-    }
-    if !disk_logging_enabled() {
-        return;
     }
     let path = log_dir().join(LAST_SITE_FILE);
     ensure_parent(&path);
@@ -142,19 +139,49 @@ pub fn read_last_site() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn mark_and_read_site_memory_only() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!("sqyre-diag-mem-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        set_log_dir(Some(dir.clone()));
         set_disk_logging(Some(false));
-        set_log_dir(None);
         mark_site("x11:get_active_window:before_open");
         let site = read_last_site().unwrap();
         assert!(site.contains("get_active_window"));
         set_disk_logging(None);
+        set_log_dir(None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mark_site_always_writes_last_site_file() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join(format!("sqyre-diag-site-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        set_log_dir(Some(dir.clone()));
+        set_disk_logging(Some(false));
+        mark_site("preview:finish_texture:done");
+        let on_disk = fs::read_to_string(dir.join(LAST_SITE_FILE)).unwrap();
+        assert!(on_disk.contains("preview:finish_texture:done"));
+        assert!(
+            !dir.join(DIAG_LOG_FILE).exists(),
+            "diag.log stays off without SQYRE_DIAG"
+        );
+        set_disk_logging(None);
+        set_log_dir(None);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn mark_and_read_site_disk() {
+        let _guard = TEST_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("sqyre-diag-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();

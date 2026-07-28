@@ -173,6 +173,9 @@ pub fn fit_in_box_no_upscale(w: f32, h: f32, max_w: f32, max_h: f32) -> Vec2 {
 }
 
 /// Apply wheel zoom while the pointer hovers `viewport`; updates `view` in place.
+///
+/// Consumes [`egui::InputState::smooth_scroll_delta`] so a nesting
+/// [`egui::ScrollArea`] does not also scroll when the user zooms the preview.
 pub fn handle_scroll_zoom(
     ui: &egui::Ui,
     viewport: egui::Rect,
@@ -194,6 +197,8 @@ pub fn handle_scroll_zoom(
     let (z, p) = zoom_image_at_cursor(viewport, image_size, view.zoom, view.pan, cursor, factor);
     view.zoom = z;
     view.pan = p;
+    // Content runs before ScrollArea applies wheel offset; clear so parents stay put.
+    ui.input_mut(|i| i.smooth_scroll_delta = Vec2::ZERO);
 }
 
 /// Primary-drag pans when zoomed. Returns true if this interaction consumed the drag.

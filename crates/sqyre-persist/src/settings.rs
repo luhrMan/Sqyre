@@ -200,7 +200,7 @@ pub struct OverlayButtonConfig {
     pub icon_hover_color: String,
 }
 
-pub const DEFAULT_OVERLAY_BUTTON_SIZE: f32 = 52.0;
+pub const DEFAULT_OVERLAY_BUTTON_SIZE: f32 = 26.0;
 pub const MIN_OVERLAY_BUTTON_SIZE: f32 = 12.0;
 pub const MAX_OVERLAY_BUTTON_SIZE: f32 = 128.0;
 pub const DEFAULT_OVERLAY_CORNER_RADIUS: f32 = 8.0;
@@ -209,6 +209,9 @@ pub const MAX_OVERLAY_CORNER_RADIUS: f32 = 64.0;
 pub const DEFAULT_OVERLAY_BORDER_WIDTH: f32 = 1.5;
 pub const MIN_OVERLAY_BORDER_WIDTH: f32 = 0.0;
 pub const MAX_OVERLAY_BORDER_WIDTH: f32 = 8.0;
+/// Fallback primary-monitor size when live display metrics are unavailable.
+pub const DEFAULT_OVERLAY_FALLBACK_SCREEN_W: f32 = 1920.0;
+pub const DEFAULT_OVERLAY_FALLBACK_SCREEN_H: f32 = 1080.0;
 /// Default border / hover icon when `border_color` / `icon_hover_color` is empty (`#dc9d2e`).
 pub const DEFAULT_OVERLAY_ACCENT_HEX: &str = "#dc9d2e";
 /// Default idle icon when `icon_color` is empty (`#f5e6c0`).
@@ -216,6 +219,23 @@ pub const DEFAULT_OVERLAY_ICON_HEX: &str = "#f5e6c0";
 
 fn default_overlay_button_size() -> f32 {
     DEFAULT_OVERLAY_BUTTON_SIZE
+}
+
+/// Top-left for an overlay button centered on a desktop rect.
+///
+/// `index` offsets subsequent buttons horizontally so new ones do not stack.
+pub fn default_overlay_position(
+    screen_x: f32,
+    screen_y: f32,
+    screen_w: f32,
+    screen_h: f32,
+    size: f32,
+    index: usize,
+) -> (f32, f32) {
+    let gap = size + 8.0;
+    let x = screen_x + (screen_w - size) * 0.5 + (index as f32) * gap;
+    let y = screen_y + (screen_h - size) * 0.5;
+    (x.max(screen_x), y.max(screen_y))
 }
 
 fn default_overlay_button_enabled() -> bool {
@@ -236,6 +256,14 @@ fn default_overlay_full_alpha() -> u8 {
 
 impl OverlayButtonConfig {
     pub fn new(id: impl Into<String>, program: impl Into<String>) -> Self {
+        let (x, y) = default_overlay_position(
+            0.0,
+            0.0,
+            DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
+            DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
+            DEFAULT_OVERLAY_BUTTON_SIZE,
+            0,
+        );
         Self {
             id: id.into(),
             program: program.into(),
@@ -244,8 +272,8 @@ impl OverlayButtonConfig {
             macro_name: String::new(),
             icon: String::new(),
             point: String::new(),
-            x: 48.0,
-            y: 48.0,
+            x,
+            y,
             size: DEFAULT_OVERLAY_BUTTON_SIZE,
             corner_radius: DEFAULT_OVERLAY_CORNER_RADIUS,
             border_width: DEFAULT_OVERLAY_BORDER_WIDTH,

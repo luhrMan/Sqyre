@@ -213,7 +213,7 @@ impl AddActionPicker {
                 let list_h = pickers::popup_scroll_max_height(ui, 0.0);
                 // Content-sized columns (not equal-split) so shrinking the window
                 // yields horizontal scroll instead of squashing tiles.
-                egui::ScrollArea::both()
+                pickers::scroll_both()
                     .auto_shrink([false, false])
                     .max_height(list_h)
                     .show(ui, |ui| {
@@ -467,7 +467,7 @@ impl AddActionPicker {
                     SaveCancel::None => {}
                 }
                 let list_h = pickers::popup_scroll_max_height(ui, 0.0);
-                egui::ScrollArea::vertical()
+                pickers::scroll_vertical()
                     .auto_shrink([false, false])
                     .max_height(list_h)
                     .show(ui, |ui| {

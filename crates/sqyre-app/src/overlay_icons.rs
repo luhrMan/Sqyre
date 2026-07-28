@@ -274,7 +274,7 @@ pub fn show_icon_picker_grid(
 
     let mut picked = None;
     let cols = 10;
-    egui::ScrollArea::vertical()
+    crate::pickers::scroll_vertical()
         .max_height(360.0)
         .show(ui, |ui| {
             egui::Grid::new("overlay_icon_picker_grid")

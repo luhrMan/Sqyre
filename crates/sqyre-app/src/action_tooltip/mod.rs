@@ -296,7 +296,7 @@ pub fn show(
         theme,
         bridges,
     } = ui;
-    // Esc while recording a key / chord / screen sample is captured by the recorder.
+    // Esc while recording a key / chord / screen sample / macro is captured by the recorder.
     if !bridges.key_record.is_open()
         && !bridges.hotkey_record.is_open()
         && !bridges.screen_click.is_armed()
@@ -621,7 +621,7 @@ fn show_edit_window(
                 // ScrollArea so the user can shrink/grow.
                 let need_scroll = !fitting || edit.fields_height > max_scroll_h;
                 let measured = if need_scroll {
-                    let out = egui::ScrollArea::vertical()
+                    let out = crate::pickers::scroll_vertical()
                         .id_salt("edit_fields")
                         .auto_shrink([false, false])
                         .max_height(max_scroll_h)

@@ -8,6 +8,7 @@ use crate::hotkey_record::HotkeyRecordUi;
 use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
 use crate::macro_meta::MacroMetaUi;
+use crate::macro_record::MacroRecordUi;
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::run_session::RunSession;
 use crate::settings::SettingsUi;
@@ -19,7 +20,7 @@ use crate::{docs_fixture, tray, SqyreApp};
 use crate::{macro_overlay::MacroOverlay, recording_overlay::RecordingOverlay};
 use eframe::egui;
 use parking_lot::Mutex;
-use sqyre_hotkeys::{HotkeyService, NullHotkeys, ScreenClickBridge};
+use sqyre_hotkeys::{HotkeyService, MacroRecordBridge, NullHotkeys, ScreenClickBridge};
 use sqyre_persist::UserSettings;
 use sqyre_ui_model::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
@@ -86,10 +87,12 @@ impl SqyreApp {
             tree,
             hotkeys,
             screen_click,
+            macro_record_bridge: MacroRecordBridge::new(),
             pending_hotkey_macros,
             hotkey_repaint,
             hotkey_record: HotkeyRecordUi::default(),
             key_record: KeyRecordUi::default(),
+            macro_record: MacroRecordUi::default(),
             icon_cache: IconCache::new(),
             preview_tooltips: PreviewTooltipCache::new(),
             add_action_picker,

@@ -28,6 +28,7 @@ mod log;
 mod macro_meta;
 #[cfg(feature = "native-runtime")]
 mod macro_overlay;
+mod macro_record;
 mod overlay_icons;
 mod paint_ctx;
 mod pickers;
@@ -83,11 +84,14 @@ use hotkey_record::HotkeyRecordUi;
 use icon_cache::IconCache;
 use key_record::KeyRecordUi;
 use macro_meta::MacroMetaUi;
+use macro_record::MacroRecordUi;
 use parking_lot::Mutex;
 use preview_tooltip::PreviewTooltipCache;
 use run_session::RunSession;
 use sqyre_domain::Macro;
-use sqyre_hotkeys::{default_hotkeys, HotkeyCallbacks, HotkeyService, ScreenClickBridge};
+use sqyre_hotkeys::{
+    default_hotkeys, HotkeyCallbacks, HotkeyService, MacroRecordBridge, ScreenClickBridge,
+};
 use sqyre_persist::{Database, ProgramCatalog, UserSettings};
 use sqyre_ui_model::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
@@ -179,12 +183,14 @@ pub struct SqyreApp {
     pub(crate) tree: TreeState,
     hotkeys: Box<dyn HotkeyService>,
     screen_click: ScreenClickBridge,
+    macro_record_bridge: MacroRecordBridge,
     /// Macro names requested by the hotkey thread (drained each frame).
     pending_hotkey_macros: Arc<Mutex<Vec<String>>>,
     /// egui context for waking the UI when a hotkey queues a macro while idle/unfocused.
     hotkey_repaint: Arc<Mutex<Option<egui::Context>>>,
     hotkey_record: HotkeyRecordUi,
     key_record: KeyRecordUi,
+    macro_record: MacroRecordUi,
     icon_cache: IconCache,
     preview_tooltips: PreviewTooltipCache,
     add_action_picker: AddActionPicker,
@@ -231,7 +237,8 @@ impl SqyreApp {
         settings.apply_sqyre_dir_override();
         SettingsUi::apply_action_colors(&settings);
 
-        let (mut hotkeys, continue_wait, screen_click, macro_hotkeys) = default_hotkeys();
+        let (mut hotkeys, continue_wait, screen_click, macro_record_bridge, macro_hotkeys) =
+            default_hotkeys();
         let run = RunState::default();
         let stop = run.stop.clone();
         let pending_hotkey_macros = Arc::new(Mutex::new(Vec::new()));
@@ -381,10 +388,12 @@ impl SqyreApp {
             tree: TreeState::default(),
             hotkeys,
             screen_click,
+            macro_record_bridge,
             pending_hotkey_macros,
             hotkey_repaint,
             hotkey_record: HotkeyRecordUi::default(),
             key_record: KeyRecordUi::default(),
+            macro_record: MacroRecordUi::default(),
             icon_cache: IconCache::new(),
             preview_tooltips: PreviewTooltipCache::new(),
             add_action_picker,
@@ -499,6 +508,8 @@ impl eframe::App for SqyreApp {
             let force_openness = ui_toolbar::action_toolbar(self, ui);
             ui_macro_tree::show(self, ui, force_openness);
         });
+        // After tips/panels paint so tooltip preview outlines apply this frame.
+        self.sync_recording_overlay(ui.ctx());
     }
 
     /// Fully transparent clear so deferred overlay viewports (`with_transparent(true)`)
