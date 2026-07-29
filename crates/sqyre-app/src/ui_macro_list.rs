@@ -253,7 +253,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         egui::collapsing_header::CollapsingState::load_with_default_open(
                             ui.ctx(),
                             id,
-                            true,
+                            false,
                         )
                         .show_header(ui, |ui| {
                             let selected =
