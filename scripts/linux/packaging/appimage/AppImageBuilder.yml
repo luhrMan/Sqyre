@@ -3,6 +3,9 @@
 #
 # Script installs the binary and metadata; appimage-builder then
 # traces the binary and bundles required .so files (Tesseract, X11, etc.).
+# Wayland portal APIs use the host session D-Bus (xdg-desktop-portal); do not
+# expect a bundled portal. PipeWire client libs may be pulled in via strace when
+# present on the build host.
 # We do not use the recipe "apt" section because appimage-builder has a bug comparing
 # Ubuntu package versions (e.g. "1.22.6ubuntu6") with packaging.version.parse().
 

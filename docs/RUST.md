@@ -25,7 +25,7 @@ Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux bin
 | `sqyre-match` | All six OpenCV `TM_*` methods + mask + peak/dedup |
 | `sqyre-vision` | RGB load, match façade, find-pixel, OCR preprocess / Tesseract |
 | `sqyre-input` | `AutomationBackend` (rustautogui lite + arboard) |
-| `sqyre-capture` | `ScreenCapturer` / focus / selection outline (`OsCapturer`, `OsWindowFocuser`: Linux X11, Windows GDI, macOS stub) |
+| `sqyre-capture` | `ScreenCapturer` / focus / selection outline (`OsCapturer`, `OsWindowFocuser`: Linux X11 or Wayland portals, Windows GDI, macOS stub) |
 | `sqyre-hotkeys` | Esc stop / failsafe / macro hotkeys (`hooks` feature; stub default) |
 | `sqyre-update` | GitHub Releases check + self-replace (Linux binary/AppImage, Windows `.exe`) |
 | `sqyre-app` | egui shell; Run/Stop macros |
@@ -34,7 +34,7 @@ Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux bin
 
 Requires **Rust ≥ 1.92** (egui 0.35 / PureCV). The repo pins `1.92.0` via [`rust-toolchain.toml`](../rust-toolchain.toml); the `.devcontainer` matches that plus clang/Tesseract for OCR.
 
-Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`). Windows uses GDI capture plus Win32 focus, selection outline, and low-level hotkey hooks (`windows` crate). macOS capture/focus remain stubbed.
+Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`) or a pure Wayland session with **xdg-desktop-portal** (ScreenCast / Screenshot / RemoteDesktop / GlobalShortcuts). Windows uses GDI capture plus Win32 focus, selection outline, and low-level hotkey hooks (`windows` crate). macOS capture/focus remain stubbed.
 
 From the repo root:
 
@@ -66,6 +66,6 @@ Do not expect X11 inside the container — build there, run the binary on the ho
 
 Host binary: `./bin/sqyre` after `make`, or `./target/debug/sqyre` from cargo. Esc stops a running macro; Esc+Ctrl+Alt+Shift exits (failsafe).
 
-Still improving: Wayland, macOS capture / window focus / releases. Windows ships without an MSI.
+Still improving: deeper Wayland PipeWire frame paths and foreign-toplevel focus, macOS capture / window focus / releases. Windows ships without an MSI.
 
 OCR uses Tesseract (`leptess`). Override with `SQYRE_TESSDATA` if needed (dev fallback: `assets/tessdata`). Missing data is downloaded on native startup into `~/.sqyre/tessdata` (or `%APPDATA%\sqyre\tessdata` on Windows).

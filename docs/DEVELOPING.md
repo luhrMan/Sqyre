@@ -2,7 +2,7 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.92, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows` and AppImage Docker fallbacks work inside the container.
+Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.92, clang, Tesseract/Leptonica, X11 link deps, PipeWire headers (Wayland portal capture), AppImage packaging tools (`appimage-builder`, squashfs-tools), **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows` and AppImage Docker fallbacks work inside the container.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
 
@@ -79,6 +79,21 @@ On native startup Sqyre resolves Tesseract English data, then **downloads** it i
 Discovery order (earlier entries win): `SQYRE_TESSDATA`, platform system paths (and beside `sqyre.exe` on Windows), workspace `assets/tessdata` (dev), then the auto-download path above.
 
 `make tessdata` still fills `assets/tessdata/` for packaging / CI. A failed download is a non-fatal warning in the app and on stderr; OCR actions stay unavailable until data can be found.
+
+### Linux Wayland
+
+Pure Wayland sessions (`WAYLAND_DISPLAY` set, no `DISPLAY`) use XDG Desktop Portals instead of X11:
+
+| Capability | Portal / approach |
+|------------|-------------------|
+| Screen capture | ScreenCast (layout + persist) + Screenshot frames |
+| Mouse / keyboard | RemoteDesktop |
+| Macro hotkeys | GlobalShortcuts |
+| Window focus / list | Best-effort; clear errors until foreign-toplevel is available |
+
+On first start Sqyre prompts for these permissions; User Settings → **Desktop permissions** can toggle or re-request them. AppImage builds talk to the **host** session bus (`xdg-desktop-portal`); they cannot bundle the portal itself. Prefer GNOME or KDE with a working portal stack.
+
+X11 and XWayland (`DISPLAY` set) keep the existing X11 capture / rdev / rustautogui path.
 
 ### WASM editor (`make wasm`)
 

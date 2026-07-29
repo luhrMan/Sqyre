@@ -3,7 +3,7 @@
 # Docker CLI comes from the docker-outside-of-docker feature (host daemon via socket)
 # so `make windows` and nested AppImage builds work inside the container.
 # Trunk + wasm32-unknown-unknown support `make wasm` (GUI-only browser editor).
-# Build and test in-container; run the GUI binary on the host (needs X11).
+# Build and test in-container; run the GUI binary on the host (needs X11 or a Wayland session with xdg-desktop-portal).
 FROM ubuntu:22.04
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -24,6 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mesa-vulkan-drivers libvulkan1 \
     # rustautogui / X11 capture & input
     libxtst-dev libxrandr-dev libxinerama-dev libxi-dev \
+    # Wayland portal capture (ScreenCast layout + future PipeWire stream consumer)
+    libpipewire-0.3-dev \
     # AppImage packaging
     python3 python3-pip python3-setuptools \
     squashfs-tools patchelf zsync file desktop-file-utils \

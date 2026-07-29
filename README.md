@@ -14,7 +14,7 @@
 
 Sqyre lets you build and run macros without writing code. Each macro is a tree of actions: loops and branches for flow control, detection steps when the screen matters, and leaf actions for concrete input. Macros, images, masks, and data tables live under **`~/.sqyre/`** (config in `db.yaml`).
 
-**Platforms:** Linux X11 (shipped). Windows `.exe` is released (GDI capture, window focus, selection outline, hotkeys; no MSI). macOS capture/focus and macOS releases are not shipped yet. WASM editor zip is released for browser editing.
+**Platforms:** Linux X11 (shipped) and pure Wayland via XDG Desktop Portals (ScreenCast/Screenshot, RemoteDesktop, GlobalShortcuts; grant on first start or in User Settings). Windows `.exe` is released (GDI capture, window focus, selection outline, hotkeys; no MSI). macOS capture/focus and macOS releases are not shipped yet. WASM editor zip is released for browser editing.
 
 ---
 
@@ -60,7 +60,7 @@ Assets under `docs/images/` are generated from in-memory egui tests (`make docs-
 
 ## Build (quick start)
 
-**Recommended:** open the repo in the **dev container** — Rust, Tesseract/Leptonica, and X11 link deps are preinstalled.
+**Recommended:** open the repo in the **dev container** — Rust, Tesseract/Leptonica, X11 link deps, and PipeWire headers (for Wayland capture work) are preinstalled.
 
 | Goal | Command |
 |------|---------|
