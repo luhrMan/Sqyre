@@ -183,6 +183,15 @@ pub type ComboOptionHover<'a> = dyn FnMut(&mut egui::Ui, &egui::Response, &str) 
 pub type ComboOptionIcon<'a> =
     dyn FnMut(&egui::Context, &str) -> Option<eframe::egui::TextureHandle> + 'a;
 
+/// Popup list height for searchable combos (egui default [`Spacing::combo_height`] is only 200).
+///
+/// Sized from the window so long catalogs (programs, masks, macros) stay easy to browse.
+/// Does not use [`Ui::available_height`] — that is usually one form row when the combo is closed.
+fn searchable_combo_popup_height(ctx: &egui::Context) -> f32 {
+    const MIN: f32 = 320.0;
+    (ctx.content_rect().height() * 0.55).max(MIN)
+}
+
 /// Searchable combo for unbounded / growing option lists (programs, masks, macros, …).
 ///
 /// Uses fuzzy subsequence matching. `empty_text` is the closed-button label when `value` is
@@ -265,6 +274,7 @@ pub fn searchable_combo_with(
             }
             let mut combo = egui::ComboBox::from_id_salt(&id_salt)
                 .selected_text(display)
+                .height(searchable_combo_popup_height(ui.ctx()))
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
             if let Some(w) = width {
                 combo = combo.width(w);
