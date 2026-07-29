@@ -30,7 +30,7 @@ pub fn set_collapsing_openness(
 ) {
     for id in ids {
         let mut state =
-            egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, true);
+            egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, false);
         state.set_open(open);
         state.store(ctx);
     }
@@ -109,7 +109,7 @@ pub fn paint_items_icon_grid(
 
         // Absolute id so expand/collapse-all (outside this ui stack) can target the same state.
         let id = items_icon_grid_collapse_id(prog);
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
             .show_header(ui, |ui| {
                 let prog_selected = selected_program == Some(prog.as_str());
                 if crate::icon_cache::paint_program_label(

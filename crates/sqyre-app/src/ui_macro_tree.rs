@@ -79,7 +79,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         app.tree.scroll_vel = pointer_vel_y;
                     }
                     if !primary_down {
-                        app.tree.drag_mode = TreeDragMode::Idle;
+                        // Keep Scroll through TreeView + Move handling this frame.
+                        // Clearing early re-enables DnD on drag_stopped and egui_ltreeview
+                        // emits a spurious Move (often empty sources) that records undo.
+                        if app.tree.drag_mode != TreeDragMode::Scroll {
+                            app.tree.drag_mode = TreeDragMode::Idle;
+                        }
                     } else if app.tree.drag_mode == TreeDragMode::Idle {
                         let become_drag = ui.input(|i| !i.pointer.could_any_button_be_click());
                         if become_drag {
@@ -412,11 +417,17 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         }
     }
     if let Some((sources, parent, slot)) = pending_move {
-        app.record_tree_mutation();
-        let _ = app.workspace.macros[idx]
-            .root
-            .move_actions(&sources, parent, slot);
-        app.persist_macro_at(idx);
+        if !sources.is_empty() {
+            app.record_tree_mutation();
+            let _ = app.workspace.macros[idx]
+                .root
+                .move_actions(&sources, parent, slot);
+            app.persist_macro_at(idx);
+        }
+    }
+    // Finish deferred Scroll→Idle now that TreeView Move/Drag are handled.
+    if app.tree.drag_mode == TreeDragMode::Scroll && !ui.input(|i| i.pointer.primary_down()) {
+        app.tree.drag_mode = TreeDragMode::Idle;
     }
 
     match app.tree.selected_actions.as_slice() {

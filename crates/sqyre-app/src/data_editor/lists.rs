@@ -140,7 +140,7 @@ impl DataEditor {
                     egui::collapsing_header::CollapsingState::load_with_default_open(
                         ui.ctx(),
                         id,
-                        true,
+                        false,
                     )
                     .show_header(ui, |ui| {
                         if crate::icon_cache::paint_program_label(
@@ -216,7 +216,7 @@ impl DataEditor {
                     egui::collapsing_header::CollapsingState::load_with_default_open(
                         ui.ctx(),
                         id,
-                        true,
+                        false,
                     )
                     .show_header(ui, |ui| {
                         if crate::icon_cache::paint_program_label(
