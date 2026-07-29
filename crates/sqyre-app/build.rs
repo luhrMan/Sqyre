@@ -19,8 +19,10 @@ fn main() {
     let mut res = winresource::WindowsResource::new();
     res.set_icon("assets/icons/sqyre.ico");
     // Prefer the branded product name over the crate name in file properties.
+    // OriginalFilename helps Task Manager / shell associate the process with this EXE.
     res.set("ProductName", "Sqyre");
     res.set("FileDescription", "Sqyre");
+    res.set("OriginalFilename", "sqyre.exe");
     if let Err(err) = res.compile() {
         panic!("embed Windows icon resource: {err}");
     }
