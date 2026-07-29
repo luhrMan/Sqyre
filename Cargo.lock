@@ -275,6 +275,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "ashpd"
+version = "0.13.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fb8421aaa9644a5faf26735f258b669b15f063313ef8f8e2bdb28912a1a6f111"
+dependencies = [
+ "enumflags2",
+ "futures-util",
+ "getrandom 0.4.3",
+ "serde",
+ "serde_repr",
+ "zbus",
+]
+
+[[package]]
 name = "async-broadcast"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1699,8 +1713,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a77a90a256fce34da66415271e30f94ee91c57b04b8a2c042d9cf3220179deaa"
 dependencies = [
  "futures-core",
+ "futures-io",
  "futures-macro",
  "futures-task",
+ "memchr",
  "pin-project-lite",
  "slab",
 ]
@@ -4328,8 +4344,10 @@ dependencies = [
 name = "sqyre-capture"
 version = "0.1.0"
 dependencies = [
+ "ashpd",
  "image",
  "parking_lot",
+ "pollster",
  "pulp",
  "rayon",
  "sqyre-ports",
@@ -4373,6 +4391,7 @@ version = "0.1.0"
 dependencies = [
  "parking_lot",
  "rdev",
+ "sqyre-capture",
  "sqyre-domain",
  "thiserror 2.0.19",
  "web-time",
@@ -4385,6 +4404,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "rustautogui",
+ "sqyre-capture",
  "sqyre-ports",
  "windows",
 ]

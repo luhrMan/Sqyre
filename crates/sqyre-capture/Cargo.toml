@@ -3,7 +3,7 @@ name = "sqyre-capture"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "ScreenCapturer for absolute virtual-desktop rects (Linux X11; Windows GDI; macOS stub); selection outline + window focus on Linux/Windows"
+description = "ScreenCapturer for absolute virtual-desktop rects (Linux X11/Wayland portals; Windows GDI; macOS stub); selection outline + window focus on Linux/Windows"
 
 [lints]
 workspace = true
@@ -19,6 +19,8 @@ web-time = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11 = { workspace = true }
+ashpd = { workspace = true }
+pollster = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [

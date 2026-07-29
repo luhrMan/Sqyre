@@ -64,6 +64,16 @@ parking_lot = "0.12"
 ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
 tray-icon = { version = "0.24", default-features = false }
 rfd = "0.17"
+# async-io (not default tokio): keep zbus off tokio so ksni / pollster portal calls stay safe.
+ashpd = { version = "0.13", default-features = false, features = [
+    "async-io",
+    "screencast",
+    "screenshot",
+    "remote_desktop",
+    "global_shortcuts",
+    "input_capture",
+] }
+pollster = "0.4"
 rustfft = "6.4"
 windows = "0.62"
 serde_json = "1"

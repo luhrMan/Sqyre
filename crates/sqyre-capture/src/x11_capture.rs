@@ -16,8 +16,8 @@ use x11::xlib::{
 
 const ALLPLANES: u64 = !0;
 
-/// Shared X11 display connection (public type [`OsCapturer`]; mutex serializes access).
-pub struct OsCapturer {
+/// Shared X11 display connection (mutex serializes access).
+pub struct X11Capturer {
     inner: Mutex<X11State>,
 }
 
@@ -28,13 +28,11 @@ struct X11State {
     height: i32,
 }
 
-// SAFETY: the raw display pointer is only ever touched while `OsCapturer::inner`
+// SAFETY: the raw display pointer is only ever touched while `X11Capturer::inner`
 // (a `Mutex`) is held, so concurrent access from another thread never overlaps.
 unsafe impl Send for X11State {}
 
-crate::define_shared_run_capturer!();
-
-impl OsCapturer {
+impl X11Capturer {
     pub fn open() -> Result<Self, CaptureError> {
         // SAFETY: `XOpenDisplay(null)` connects to the default display; the
         // returned pointer is checked for null before any other Xlib call uses it.
@@ -63,7 +61,7 @@ impl OsCapturer {
     pub fn pointer_position(&self) -> Result<(i32, i32), CaptureError> {
         let st = self.inner.lock();
         // SAFETY: `st.display`/`st.root` are the live display/root opened by
-        // `OsCapturer::open`; all out-params are stack-local and correctly sized.
+        // `X11Capturer::open`; all out-params are stack-local and correctly sized.
         unsafe {
             let mut root_ret = 0u64;
             let mut child_ret = 0u64;
@@ -245,7 +243,7 @@ impl Drop for X11State {
 /// Primary monitor DPI scale from `Xft.dpi` (`dpi / 96`), else `1.0`.
 /// Returns `None` when the display cannot be opened.
 pub(crate) fn primary_monitor_scale() -> Option<f32> {
-    if let Ok(cap) = shared_capturer() {
+    if let Ok(cap) = X11Capturer::open() {
         let st = cap.inner.lock();
         return Some(xft_dpi_scale(st.display));
     }
@@ -299,6 +297,6 @@ mod tests {
     #[test]
     fn open_or_skip() {
         // CI / headless: open may fail — that's ok.
-        let _ = OsCapturer::open();
+        let _ = X11Capturer::open();
     }
 }

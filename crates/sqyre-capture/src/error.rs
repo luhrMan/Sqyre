@@ -1,19 +1,15 @@
-//! Linux session advisory for X11 capture (typed capture errors live in `sqyre-ports`).
+//! Human-readable warning when the Linux session needs attention.
 
 pub use sqyre_ports::CaptureError;
 
-/// Human-readable warning when the Linux session cannot support X11 capture.
+/// Advisory when pure Wayland is active (permissions / portal backends apply).
 ///
-/// Returns `None` on non-Linux targets and when `DISPLAY` is available.
+/// Returns `None` on non-Linux targets and when `DISPLAY` is available (X11 path).
 #[cfg(target_os = "linux")]
 pub fn linux_session_capture_warning() -> Option<String> {
-    let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
-    let wayland =
-        session.eq_ignore_ascii_case("wayland") || std::env::var_os("WAYLAND_DISPLAY").is_some();
-    let has_x11 = std::env::var_os("DISPLAY").is_some();
-    if wayland && !has_x11 {
+    if crate::linux_session::is_wayland_backend() {
         Some(
-            "Pure Wayland session detected (no DISPLAY). Sqyre needs X11 or XWayland for screen capture, window focus, and overlays."
+            "Pure Wayland session detected. Sqyre uses XDG Desktop Portals for capture, input, and shortcuts — grant permissions on first start or in User Settings."
                 .into(),
         )
     } else {

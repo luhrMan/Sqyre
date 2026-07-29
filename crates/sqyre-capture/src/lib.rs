@@ -18,6 +18,20 @@ mod win_focus;
 mod win_outline;
 mod window_match;
 #[cfg(target_os = "linux")]
+mod linux_os;
+#[cfg(target_os = "linux")]
+mod linux_session;
+#[cfg(target_os = "linux")]
+mod wayland_capture;
+#[cfg(target_os = "linux")]
+mod wayland_focus;
+#[cfg(target_os = "linux")]
+mod wayland_outline;
+#[cfg(target_os = "linux")]
+mod wayland_permissions;
+#[cfg(target_os = "linux")]
+mod wayland_portal;
+#[cfg(target_os = "linux")]
 mod x11_capture;
 #[cfg(target_os = "linux")]
 mod x11_focus;
@@ -36,19 +50,29 @@ pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 pub use stub::{NullCapturer, SolidCapturer};
 
 #[cfg(target_os = "linux")]
-pub use x11_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
+pub use linux_os::{shared_capturer, OsCapturer, OsWindowFocuser, SelectionOutline, SharedRunCapturer};
+#[cfg(target_os = "linux")]
+pub use linux_session::{is_wayland_backend, linux_display_backend, LinuxDisplayBackend};
+#[cfg(target_os = "linux")]
+pub use wayland_permissions::{
+    apply_from_settings as apply_wayland_permission_settings, global_shortcuts_enabled,
+    input_control_enabled, screen_capture_enabled, window_management_enabled,
+};
+#[cfg(target_os = "linux")]
+pub use wayland_portal::{
+    drop_screencast_session, request_all_permissions, request_global_shortcuts,
+    request_input_control, request_screen_capture, WaylandPermissionResults,
+};
+#[cfg(target_os = "linux")]
+pub use wayland_portal::wayland_input_session;
+#[cfg(target_os = "linux")]
+pub use wayland_portal::wayland_shortcuts_session;
 
 #[cfg(target_os = "windows")]
 pub use win_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
 
-#[cfg(target_os = "linux")]
-pub use x11_focus::OsWindowFocuser;
-
 #[cfg(target_os = "windows")]
 pub use win_focus::OsWindowFocuser;
-
-#[cfg(target_os = "linux")]
-pub use x11_outline::SelectionOutline;
 
 #[cfg(target_os = "windows")]
 pub use win_outline::SelectionOutline;
@@ -152,11 +176,11 @@ pub const PROCESS_ICON_TARGET_PX: u32 = 48;
 
 /// Best-effort icon for a bound process (`process_path` + optional `window_title`).
 ///
-/// Linux: `_NET_WM_ICON` from a matching open window. Windows: icon resource from the
-/// executable (works even when the app is not running). Other platforms: always `None`.
+/// Linux: `_NET_WM_ICON` from a matching open window (X11) or none on Wayland yet.
+/// Windows: icon resource from the executable. Other platforms: always `None`.
 #[cfg(target_os = "linux")]
 pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIcon> {
-    x11_focus::process_icon(process_path, window_title)
+    linux_os::process_icon(process_path, window_title)
 }
 
 #[cfg(target_os = "windows")]
@@ -190,7 +214,7 @@ pub fn main_monitor_resolution_key() -> Option<String> {
 pub fn main_monitor_scale() -> Option<f32> {
     #[cfg(target_os = "linux")]
     {
-        x11_capture::primary_monitor_scale()
+        linux_os::primary_monitor_scale()
     }
     #[cfg(target_os = "windows")]
     {
@@ -224,7 +248,7 @@ pub fn monitor_count() -> usize {
 /// Open top-level windows with stable executable path and title.
 #[cfg(target_os = "linux")]
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
-    x11_focus::list_open_windows()
+    linux_os::list_open_windows()
 }
 
 #[cfg(target_os = "windows")]
@@ -240,7 +264,7 @@ pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
 /// Currently focused top-level window, if any.
 #[cfg(target_os = "linux")]
 pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
-    x11_focus::get_active_window()
+    linux_os::get_active_window()
 }
 
 #[cfg(target_os = "windows")]
@@ -253,10 +277,10 @@ pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
     Err(CaptureError::UnsupportedPlatform)
 }
 
-/// X11: hide overlay tool windows from Alt-Tab / taskbar (no-op elsewhere).
+/// X11: hide overlay tool windows from Alt-Tab / taskbar. Wayland: no-op (layer roles).
 #[cfg(target_os = "linux")]
 pub fn skip_taskbar_for_overlay_windows() -> Result<(), CaptureError> {
-    x11_focus::skip_taskbar_for_overlay_windows()
+    linux_os::skip_taskbar_for_overlay_windows()
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -279,7 +303,7 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
 
 /// Stable WM title used by floating macro-overlay viewports.
 #[cfg(target_os = "linux")]
-pub use x11_focus::OVERLAY_WM_TITLE;
+pub use linux_os::OVERLAY_WM_TITLE;
 
 #[cfg(not(target_os = "linux"))]
 pub const OVERLAY_WM_TITLE: &str = "sqyre-overlay";
