@@ -80,8 +80,29 @@ impl ProgramCatalog {
             .ok_or_else(|| PersistError::Message(format!("program {old:?} not found")))?;
         data.name = new.to_string();
         self.programs.insert(new.to_string(), data);
+        // Move item icons / masks / collections with the program so nested assets stay reachable.
+        if is_safe_fs_entity_name(old) {
+            self.rename_program_asset_dirs(old, new);
+        }
         self.bump_generation();
         Ok(())
+    }
+
+    /// Rename `images/{icons|masks|Collections}/{old}` → `{new}` (best-effort).
+    fn rename_program_asset_dirs(&self, old: &str, new: &str) {
+        for (src, dst) in [
+            (self.icons_dir(old), self.icons_dir(new)),
+            (self.masks_dir(old), self.masks_dir(new)),
+            (self.collections_dir(old), self.collections_dir(new)),
+        ] {
+            if !src.is_dir() {
+                continue;
+            }
+            if dst.exists() {
+                let _ = std::fs::remove_dir_all(&dst);
+            }
+            let _ = std::fs::rename(&src, &dst);
+        }
     }
 
     pub fn delete_program(&mut self, name: &str) -> Result<()> {
@@ -375,4 +396,58 @@ impl ProgramCatalog {
             key.to_string()
         }
     }
+
+    /// Union catalogs; on name clashes, prefer `imported` (scalars and nested entities).
+    pub fn merge_prefer_imported(&self, imported: &Self) -> Self {
+        let mut out = Self {
+            images_root: self.images_root.clone(),
+            resolution_key: self.resolution_key.clone(),
+            runtime_scale: self.runtime_scale,
+            ..Default::default()
+        };
+        for (name, data) in &self.programs {
+            out.programs.insert(name.clone(), data.clone());
+        }
+        for (name, imported_data) in &imported.programs {
+            match out.programs.get_mut(name) {
+                Some(live) => merge_program_data_prefer_imported(live, imported_data),
+                None => {
+                    out.programs.insert(name.clone(), imported_data.clone());
+                }
+            }
+        }
+        out.bump_generation();
+        out
+    }
+}
+
+fn merge_map_prefer_imported<V: Clone>(
+    live: &mut BTreeMap<String, V>,
+    imported: &BTreeMap<String, V>,
+) {
+    for (k, v) in imported {
+        live.insert(k.clone(), v.clone());
+    }
+}
+
+fn merge_nested_maps_prefer_imported<V: Clone>(
+    live: &mut BTreeMap<String, BTreeMap<String, V>>,
+    imported: &BTreeMap<String, BTreeMap<String, V>>,
+) {
+    for (outer_key, imported_inner) in imported {
+        let entry = live.entry(outer_key.clone()).or_default();
+        merge_map_prefer_imported(entry, imported_inner);
+    }
+}
+
+fn merge_program_data_prefer_imported(live: &mut ProgramData, imported: &ProgramData) {
+    live.process_path = imported.process_path.clone();
+    live.window_title = imported.window_title.clone();
+    merge_nested_maps_prefer_imported(&mut live.points, &imported.points);
+    merge_nested_maps_prefer_imported(&mut live.search_areas, &imported.search_areas);
+    merge_map_prefer_imported(&mut live.coord_scales, &imported.coord_scales);
+    merge_map_prefer_imported(&mut live.items, &imported.items);
+    merge_map_prefer_imported(&mut live.masks, &imported.masks);
+    merge_map_prefer_imported(&mut live.collections, &imported.collections);
+    merge_map_prefer_imported(&mut live.atlases, &imported.atlases);
 }

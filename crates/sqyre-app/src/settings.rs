@@ -6,11 +6,11 @@ use sqyre_domain::Macro;
 use sqyre_domain::{format_hex_color, parse_hex_color, ACTION_COLOR_CATEGORIES};
 #[cfg(not(target_arch = "wasm32"))]
 use sqyre_persist::{
-    backups_dir, create_backup, list_backups, open_sqyre_dir, prune_backups, restore_backup,
+    backups_dir, create_backup, import_backup, list_backups, open_sqyre_dir, prune_backups,
 };
 use sqyre_persist::{
-    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ProgramCatalog, UserSettings,
-    DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ImportMode, ProgramCatalog,
+    UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use sqyre_persist::{
@@ -725,19 +725,24 @@ impl SettingsUi {
                 });
             }
             PendingConfirm::RestoreBackup { path } => {
-                ui.label("Restore from backup?");
+                ui.label("Import backup?");
                 ui.label(format!(
-                    "Replace the current data directory contents with:\n{}\n\nThis overwrites macros, settings, images, and variables from the archive. Automatic backups in the backups folder are not removed.",
+                    "Archive:\n{}\n\nOverwrite replaces all macros, settings, images, and variables with the archive.\n\nMerge keeps live-only items, prefers the archive on name conflicts, replaces settings, and merges other assets. Automatic backups in the backups folder are not removed.",
                     path.display()
                 ));
                 ui.horizontal(|ui| {
                     if ui.button("Cancel").clicked() {
                         self.confirm = None;
                     }
-                    if ui.button("Restore").clicked() {
+                    if ui.button("Overwrite").clicked() {
                         let path = path.clone();
                         self.confirm = None;
-                        self.apply_restore_backup(path, db, macros, catalog);
+                        self.apply_restore_backup(path, ImportMode::Overwrite, db, macros, catalog);
+                    }
+                    if ui.button("Merge").clicked() {
+                        let path = path.clone();
+                        self.confirm = None;
+                        self.apply_restore_backup(path, ImportMode::Merge, db, macros, catalog);
                     }
                 });
             }
@@ -748,12 +753,13 @@ impl SettingsUi {
     fn apply_restore_backup(
         &mut self,
         path: PathBuf,
+        mode: ImportMode,
         db: &mut Database,
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
     ) {
-        if let Err(e) = restore_backup(&path) {
-            self.set_err(format!("Restore failed: {e}"));
+        if let Err(e) = import_backup(&path, mode) {
+            self.set_err(format!("Import failed: {e}"));
             return;
         }
 
@@ -766,7 +772,7 @@ impl SettingsUi {
             }
             Err(e) => {
                 crate::log::warn(format_args!(
-                    "restore succeeded but settings reload failed: {e}"
+                    "import succeeded but settings reload failed: {e}"
                 ));
             }
         }
@@ -785,7 +791,11 @@ impl SettingsUi {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .unwrap_or("backup");
-                self.set_ok(format!("Restored from {name}."));
+                let mode_label = match mode {
+                    ImportMode::Overwrite => "Overwrote from",
+                    ImportMode::Merge => "Merged from",
+                };
+                self.set_ok(format!("{mode_label} {name}."));
             }
             Err(e) => {
                 *db = Database::default();
@@ -794,7 +804,7 @@ impl SettingsUi {
                 crate::catalog::apply_main_monitor_resolution(catalog);
                 let _ = crate::catalog::ensure_general_program_seeded(catalog);
                 self.reload_requested = true;
-                self.set_err(format!("Restored archive but failed to load db.yaml: {e}"));
+                self.set_err(format!("Imported archive but failed to load db.yaml: {e}"));
             }
         }
     }
@@ -803,6 +813,7 @@ impl SettingsUi {
     fn apply_restore_backup(
         &mut self,
         _path: PathBuf,
+        _mode: ImportMode,
         _db: &mut Database,
         _macros: &mut Vec<Macro>,
         _catalog: &mut ProgramCatalog,

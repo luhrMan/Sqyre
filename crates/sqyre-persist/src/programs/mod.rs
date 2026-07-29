@@ -559,6 +559,59 @@ Game:
     }
 
     #[test]
+    fn rename_program_moves_asset_dirs() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let icons_old = images.join("icons").join("Alpha");
+        let masks_old = images.join("masks").join("Alpha");
+        let cols_old = images.join("Collections").join("Alpha");
+        std::fs::create_dir_all(&icons_old).unwrap();
+        std::fs::create_dir_all(&masks_old).unwrap();
+        std::fs::create_dir_all(&cols_old).unwrap();
+        std::fs::write(icons_old.join("Potion.png"), b"icon").unwrap();
+        std::fs::write(icons_old.join("Potion~Alt.png"), b"alt").unwrap();
+        std::fs::write(masks_old.join("circle.png"), b"mask").unwrap();
+        std::fs::write(cols_old.join("Bag.png"), b"col").unwrap();
+
+        cat.rename_program("Alpha", "Beta").unwrap();
+
+        assert!(!icons_old.exists());
+        assert!(!masks_old.exists());
+        assert!(!cols_old.exists());
+        let icons_new = images.join("icons").join("Beta");
+        assert_eq!(
+            std::fs::read(icons_new.join("Potion.png")).unwrap(),
+            b"icon"
+        );
+        assert_eq!(
+            std::fs::read(icons_new.join("Potion~Alt.png")).unwrap(),
+            b"alt"
+        );
+        assert_eq!(
+            std::fs::read(images.join("masks").join("Beta").join("circle.png")).unwrap(),
+            b"mask"
+        );
+        assert_eq!(
+            std::fs::read(images.join("Collections").join("Beta").join("Bag.png")).unwrap(),
+            b"col"
+        );
+        // Items stay under the renamed program entry (names unchanged).
+        assert!(cat.get("Beta").unwrap().items.contains_key("Potion"));
+    }
+
+    #[test]
     fn clear_points_wipes_all_resolution_buckets() {
         let mut cat = ProgramCatalog::default();
         cat.set_resolution_key("1920x1080");
