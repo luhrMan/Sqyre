@@ -38,7 +38,7 @@ pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
 
         let (response, _) = egui::containers::menu::MenuButton::from_button(button).ui(ui, |ui| {
             if ui.button("📁  Data Editor").clicked() {
-                app.data_editor.open = true;
+                app.data_editor.request_open(ui.ctx());
                 ui.close();
             }
             if ui.button("Variables").clicked() {
@@ -140,7 +140,7 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             }
         }
         if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
-            app.data_editor.open = true;
+            app.data_editor.request_open(ui.ctx());
         }
 
         let status = app.run_session.state.status.lock().clone();

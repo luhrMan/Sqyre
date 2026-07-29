@@ -56,9 +56,16 @@ struct HoverPending {
 struct DefaultsEdit {
     action_type: String,
     draft: Action,
+    baseline: Action,
     error: Option<String>,
     anchor: egui::Pos2,
     picker: ActivePicker,
+}
+
+impl DefaultsEdit {
+    fn save_enabled(&self) -> bool {
+        self.draft != self.baseline
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -142,6 +149,7 @@ impl AddActionPicker {
         };
         self.tip = Some(DefaultsTip::Edit(Box::new(DefaultsEdit {
             action_type,
+            baseline: draft.clone(),
             draft,
             error: None,
             anchor,
@@ -443,6 +451,8 @@ impl AddActionPicker {
             Some(DefaultsTip::Edit(edit)) => edit.error.clone(),
             _ => None,
         };
+        let save_enabled =
+            matches!(&self.tip, Some(DefaultsTip::Edit(edit)) if edit.save_enabled());
 
         egui::Window::new(format!("Default: {label}"))
             .id(egui::Id::new(("action_default_edit", type_key.as_str())))
@@ -461,6 +471,7 @@ impl AddActionPicker {
                     pastel,
                     Some("New actions of this type start with these values"),
                     err_msg.as_deref(),
+                    save_enabled,
                 ) {
                     SaveCancel::Cancel => cancel = true,
                     SaveCancel::Save => save = true,

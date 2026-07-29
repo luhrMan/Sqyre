@@ -1,5 +1,7 @@
 //! Floating Data Editor: Programs / Items (Masks, AutoPic) / Coordinates / Overlay.
 
+const WINDOW_TITLE: &str = "Data Editor";
+
 mod form_state;
 mod forms;
 mod helpers;
@@ -280,6 +282,20 @@ impl Default for DataEditor {
 }
 
 impl DataEditor {
+    /// Open the editor, expanding it if it was collapsed to the title bar.
+    pub fn request_open(&mut self, ctx: &egui::Context) {
+        self.open = true;
+        let area_id = egui::Id::new(WINDOW_TITLE);
+        let mut collapsing = egui::collapsing_header::CollapsingState::load_with_default_open(
+            ctx,
+            area_id.with("collapsing"),
+            true,
+        );
+        collapsing.set_open(true);
+        collapsing.store(ctx);
+        ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, area_id));
+    }
+
     /// Live Overlay-tab form as an on-screen button preview (position, size, icon, label, style).
     ///
     /// Shown while a button is selected for editing, even before Update is clicked.
@@ -361,7 +377,7 @@ impl DataEditor {
         }
         self.poll_screen_click(screen_click, previews, db, macros, catalog, settings);
         let mut open = self.open;
-        egui::Window::new("Data Editor")
+        egui::Window::new(WINDOW_TITLE)
             .open(&mut open)
             .default_size([880.0, 560.0])
             .min_size([520.0, 280.0])
@@ -668,8 +684,7 @@ impl DataEditor {
                     let dirty = self.is_dirty(catalog, settings);
                     let valid = self.form_valid(macros.get(selected_macro));
                     let can_update = !matches!(self.tab, EditorTab::AutoPic);
-                    if ui
-                        .add_enabled(can_update && dirty && valid, egui::Button::new("Update"))
+                    if crate::theme::dirty_action_button(ui, "Update", can_update && dirty && valid)
                         .clicked()
                     {
                         self.on_update(db, macros, catalog, previews, settings);
