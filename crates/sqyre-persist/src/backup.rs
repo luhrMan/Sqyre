@@ -16,11 +16,14 @@ use thiserror::Error;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
-use crate::{sqyre_dir, Database};
+use crate::import::{merge_databases_prefer_imported, ImportMode};
+use crate::{db_path, sqyre_dir, Database};
 
 const BACKUPS_SUBDIR: &str = "backups";
 const BACKUP_PREFIX: &str = "sqyre-backup-";
 const BACKUP_SUFFIX: &str = ".zip";
+const SETTINGS_FILE: &str = "settings.yaml";
+const DB_FILE: &str = "db.yaml";
 
 /// Max on-disk size of a backup `.zip` before restore refuses to open it.
 const MAX_ARCHIVE_FILE_BYTES: usize = 256 * 1024 * 1024;
@@ -313,7 +316,53 @@ fn safe_extract_path(dest: &Path, name: &str) -> Result<PathBuf> {
     Ok(dest.join(rel))
 }
 
-/// Extract a backup zip into the current data directory.
+fn is_restore_scratch_name(name: &str) -> bool {
+    name.starts_with(".restore-staging-") || name.starts_with(".restore-prev-")
+}
+
+/// Extract and validate a backup zip into `staging`. Caller removes `staging` on error.
+fn extract_backup_to_staging(zip_path: &Path, staging: &Path) -> Result<()> {
+    fs::create_dir_all(staging)?;
+    let file = File::open(zip_path)?;
+    let mut archive = ZipArchive::new(file)?;
+    reject_if_too_many_entries(archive.len())?;
+    let mut expanded_total = 0usize;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i)?;
+        let name = entry.name().to_string();
+        if name.ends_with('/') {
+            let dir = safe_extract_path(staging, name.trim_end_matches('/'))?;
+            fs::create_dir_all(dir)?;
+            continue;
+        }
+        let out_path = safe_extract_path(staging, &name)?;
+        if let Some(parent) = out_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let mut out = File::create(&out_path)?;
+        copy_with_expanded_limit(&mut entry, &mut out, &mut expanded_total)?;
+    }
+    let db_file = staging.join(DB_FILE);
+    if !db_file.is_file() {
+        return Err(BackupError::Message(
+            "backup is missing db.yaml (refusing restore)".into(),
+        ));
+    }
+    let db_text = fs::read_to_string(&db_file)?;
+    Database::from_yaml_with_warnings(&db_text)
+        .map_err(|e| BackupError::Message(format!("restored db.yaml is invalid: {e}")))?;
+    Ok(())
+}
+
+/// Import a backup archive using [`ImportMode`].
+pub fn import_backup(zip_path: &Path, mode: ImportMode) -> Result<()> {
+    match mode {
+        ImportMode::Overwrite => restore_backup(zip_path),
+        ImportMode::Merge => merge_backup(zip_path),
+    }
+}
+
+/// Extract a backup zip into the current data directory (full overwrite).
 ///
 /// Staging + snapshot commit: the zip is fully extracted to a temporary staging
 /// directory first; on success, the live data tree (except `backups/` and restore
@@ -339,40 +388,7 @@ pub fn restore_backup(zip_path: &Path) -> Result<()> {
     let _ = fs::remove_dir_all(&staging);
     let _ = fs::remove_dir_all(&prev);
 
-    let extract = || -> Result<()> {
-        fs::create_dir_all(&staging)?;
-        let file = File::open(zip_path)?;
-        let mut archive = ZipArchive::new(file)?;
-        reject_if_too_many_entries(archive.len())?;
-        let mut expanded_total = 0usize;
-        for i in 0..archive.len() {
-            let mut entry = archive.by_index(i)?;
-            let name = entry.name().to_string();
-            if name.ends_with('/') {
-                let dir = safe_extract_path(&staging, name.trim_end_matches('/'))?;
-                fs::create_dir_all(dir)?;
-                continue;
-            }
-            let out_path = safe_extract_path(&staging, &name)?;
-            if let Some(parent) = out_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let mut out = File::create(&out_path)?;
-            copy_with_expanded_limit(&mut entry, &mut out, &mut expanded_total)?;
-        }
-        let db_path = staging.join("db.yaml");
-        if !db_path.is_file() {
-            return Err(BackupError::Message(
-                "backup is missing db.yaml (refusing restore)".into(),
-            ));
-        }
-        let db_text = fs::read_to_string(&db_path)?;
-        Database::from_yaml_with_warnings(&db_text)
-            .map_err(|e| BackupError::Message(format!("restored db.yaml is invalid: {e}")))?;
-        Ok(())
-    };
-
-    if let Err(e) = extract() {
+    if let Err(e) = extract_backup_to_staging(zip_path, &staging) {
         let _ = fs::remove_dir_all(&staging);
         return Err(e);
     }
@@ -383,10 +399,7 @@ pub fn restore_backup(zip_path: &Path) -> Result<()> {
         let entry = entry?;
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str == BACKUPS_SUBDIR
-            || name_str.starts_with(".restore-staging-")
-            || name_str.starts_with(".restore-prev-")
-        {
+        if name_str == BACKUPS_SUBDIR || is_restore_scratch_name(&name_str) {
             continue;
         }
         let from = entry.path();
@@ -420,6 +433,102 @@ pub fn restore_backup(zip_path: &Path) -> Result<()> {
 
     let _ = fs::remove_dir_all(&staging);
     let _ = fs::remove_dir_all(&prev);
+    Ok(())
+}
+
+/// Merge a backup into the live data directory.
+///
+/// - `db.yaml`: deep-merge preferring imported macros/programs
+/// - `settings.yaml`: replace from archive when present
+/// - other files: copy from archive over live (live-only paths kept)
+fn merge_backup(zip_path: &Path) -> Result<()> {
+    let _guard = BACKUP_OPS_LOCK.lock();
+    if !zip_path.is_file() {
+        return Err(BackupError::Message(format!(
+            "backup file not found: {}",
+            zip_path.display()
+        )));
+    }
+    reject_if_archive_too_large(fs::metadata(zip_path)?.len())?;
+    let dest = sqyre_dir();
+    fs::create_dir_all(&dest)?;
+
+    let tag = unique_scratch_suffix();
+    let staging = dest.join(format!(".restore-staging-{tag}"));
+    let _ = fs::remove_dir_all(&staging);
+
+    if let Err(e) = extract_backup_to_staging(zip_path, &staging) {
+        let _ = fs::remove_dir_all(&staging);
+        return Err(e);
+    }
+
+    let commit = || -> Result<()> {
+        let live_db = Database::load_default().map_err(|e| {
+            BackupError::Message(format!("failed to load live db.yaml for merge: {e}"))
+        })?;
+        let imported_db = Database::load_from_path(staging.join(DB_FILE)).map_err(|e| {
+            BackupError::Message(format!("failed to load imported db.yaml for merge: {e}"))
+        })?;
+        let merged = merge_databases_prefer_imported(&live_db, &imported_db)
+            .map_err(|e| BackupError::Message(format!("db merge failed: {e}")))?;
+        merged
+            .save_to_path(db_path())
+            .map_err(|e| BackupError::Message(format!("failed to write merged db.yaml: {e}")))?;
+
+        let staged_settings = staging.join(SETTINGS_FILE);
+        if staged_settings.is_file() {
+            fs::copy(&staged_settings, dest.join(SETTINGS_FILE))?;
+        }
+
+        merge_copy_tree(&staging, &dest)?;
+        Ok(())
+    };
+
+    let result = commit();
+    let _ = fs::remove_dir_all(&staging);
+    result
+}
+
+/// Copy files from `src` into `dest`, overwriting on conflict. Skips `db.yaml`
+/// (already written merged), `backups/`, and restore scratch dirs. Live-only
+/// paths are left untouched.
+fn merge_copy_tree(src: &Path, dest: &Path) -> Result<()> {
+    let mut stack = vec![src.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            let rel = path
+                .strip_prefix(src)
+                .map_err(|e| BackupError::Message(e.to_string()))?;
+
+            // Top-level skips under the staging root.
+            if dir == src
+                && (name_str == BACKUPS_SUBDIR
+                    || name_str == DB_FILE
+                    || is_restore_scratch_name(&name_str))
+            {
+                continue;
+            }
+
+            let file_type = entry.file_type()?;
+            if file_type.is_symlink() {
+                continue;
+            }
+            let target = dest.join(rel);
+            if file_type.is_dir() {
+                fs::create_dir_all(&target)?;
+                stack.push(path);
+            } else if file_type.is_file() {
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::copy(&path, &target)?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -589,6 +698,155 @@ mod tests {
             let err = restore_backup(&bad_zip).unwrap_err();
             assert!(err.to_string().contains("invalid"), "got {err}");
             assert_eq!(fs::read_to_string(data.join("db.yaml")).unwrap(), original);
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn import_merge_prefers_imported_keeps_live_only_assets() -> Result<()> {
+        let tmp = tempfile::tempdir().map_err(BackupError::from)?;
+        let data = tmp.path().join(".sqyre");
+        fs::create_dir_all(data.join("images/icons"))?;
+        fs::create_dir_all(data.join("variables"))?;
+        fs::write(
+            data.join("db.yaml"),
+            r#"
+macros:
+  A:
+    name: A
+    globaldelay: 10
+    hotkey: []
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions: []
+programs: {}
+"#,
+        )?;
+        fs::write(data.join("settings.yaml"), "backup_enabled: false\n")?;
+        fs::write(data.join("images/icons/shared.png"), b"live-shared")?;
+        fs::write(data.join("images/icons/live-only.png"), b"live-only")?;
+        fs::write(data.join("variables/keep.txt"), b"keep")?;
+
+        // Build a backup archive with overlapping + new content.
+        let backup_root = tmp.path().join("backup-src");
+        fs::create_dir_all(backup_root.join("images/icons"))?;
+        fs::write(
+            backup_root.join("db.yaml"),
+            r#"
+macros:
+  A:
+    name: A
+    globaldelay: 99
+    hotkey: []
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions: []
+  B:
+    name: B
+    globaldelay: 0
+    hotkey: []
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions: []
+programs: {}
+"#,
+        )?;
+        fs::write(backup_root.join("settings.yaml"), "backup_enabled: true\n")?;
+        fs::write(
+            backup_root.join("images/icons/shared.png"),
+            b"imported-shared",
+        )?;
+        fs::write(
+            backup_root.join("images/icons/imported-only.png"),
+            b"imported",
+        )?;
+
+        let zip_path = tmp.path().join("merge.zip");
+        {
+            let file = File::create(&zip_path)?;
+            let mut zip = ZipWriter::new(file);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            for rel in [
+                "db.yaml",
+                "settings.yaml",
+                "images/icons/shared.png",
+                "images/icons/imported-only.png",
+            ] {
+                zip.start_file(rel, opts)?;
+                zip.write_all(&fs::read(backup_root.join(rel))?)?;
+            }
+            zip.finish()?;
+        }
+
+        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+            import_backup(&zip_path, ImportMode::Merge)?;
+
+            let db = Database::load_default().map_err(|e| BackupError::Message(e.to_string()))?;
+            assert_eq!(db.macros["A"].global_delay, 99);
+            assert!(db.macros.contains_key("B"));
+            assert_eq!(
+                fs::read_to_string(data.join("settings.yaml")).unwrap(),
+                "backup_enabled: true\n"
+            );
+            assert_eq!(
+                fs::read(data.join("images/icons/shared.png")).unwrap(),
+                b"imported-shared"
+            );
+            assert_eq!(
+                fs::read(data.join("images/icons/live-only.png")).unwrap(),
+                b"live-only"
+            );
+            assert_eq!(
+                fs::read(data.join("images/icons/imported-only.png")).unwrap(),
+                b"imported"
+            );
+            assert_eq!(fs::read(data.join("variables/keep.txt")).unwrap(), b"keep");
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn import_overwrite_replaces_live_only_assets() -> Result<()> {
+        let tmp = tempfile::tempdir().map_err(BackupError::from)?;
+        let data = tmp.path().join(".sqyre");
+        fs::create_dir_all(data.join("images/icons"))?;
+        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
+        fs::write(data.join("settings.yaml"), "backup_enabled: false\n")?;
+        fs::write(data.join("images/icons/live-only.png"), b"gone")?;
+
+        let zip_path = tmp.path().join("overwrite.zip");
+        {
+            let file = File::create(&zip_path)?;
+            let mut zip = ZipWriter::new(file);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            zip.start_file("db.yaml", opts)?;
+            zip.write_all(b"macros: {}\nprograms: {}\n")?;
+            zip.start_file("settings.yaml", opts)?;
+            zip.write_all(b"backup_enabled: true\n")?;
+            zip.start_file("images/icons/from-backup.png", opts)?;
+            zip.write_all(b"new")?;
+            zip.finish()?;
+        }
+
+        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+            import_backup(&zip_path, ImportMode::Overwrite)?;
+            assert!(!data.join("images/icons/live-only.png").exists());
+            assert_eq!(
+                fs::read(data.join("images/icons/from-backup.png")).unwrap(),
+                b"new"
+            );
+            assert_eq!(
+                fs::read_to_string(data.join("settings.yaml")).unwrap(),
+                "backup_enabled: true\n"
+            );
             Ok(())
         })?;
         Ok(())

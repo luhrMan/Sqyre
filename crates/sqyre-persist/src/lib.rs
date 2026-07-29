@@ -3,15 +3,18 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod backup;
 mod fs_name;
+mod import;
 mod migrate;
 mod programs;
 mod settings;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use backup::{
-    backups_dir, create_backup, list_backups, prune_backups, restore_backup, BackupError,
+    backups_dir, create_backup, import_backup, list_backups, prune_backups, restore_backup,
+    BackupError,
 };
 pub use fs_name::{confined_join, is_safe_fs_entity_name, validate_fs_entity_name};
+pub use import::{merge_databases_prefer_imported, ImportMode};
 pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
     ensure_general_program, MonitorRect, ProgramAtlas, ProgramCatalog, ProgramCollection,
