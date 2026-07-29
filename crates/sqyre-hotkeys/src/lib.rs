@@ -93,6 +93,12 @@ mod hooks;
 #[cfg(all(feature = "hooks", not(target_os = "windows")))]
 pub use hooks::RdevHotkeys;
 
+#[cfg(all(feature = "hooks", target_os = "linux"))]
+mod wayland_hooks;
+
+#[cfg(all(feature = "hooks", target_os = "linux"))]
+pub use wayland_hooks::WaylandHotkeys;
+
 #[cfg(all(feature = "hooks", target_os = "windows"))]
 mod win_hooks;
 
@@ -126,7 +132,38 @@ pub fn default_hotkeys() -> (
             macro_hotkeys,
         )
     }
-    #[cfg(all(feature = "hooks", not(target_os = "windows")))]
+    #[cfg(all(feature = "hooks", target_os = "linux"))]
+    {
+        let bridge = ContinueWaitBridge::new(true);
+        if sqyre_capture::is_wayland_backend() {
+            (
+                Box::new(WaylandHotkeys::new(
+                    bridge.clone(),
+                    screen_click.clone(),
+                    macro_record.clone(),
+                    macro_hotkeys.clone(),
+                )),
+                bridge,
+                screen_click,
+                macro_record,
+                macro_hotkeys,
+            )
+        } else {
+            (
+                Box::new(RdevHotkeys::new(
+                    bridge.clone(),
+                    screen_click.clone(),
+                    macro_record.clone(),
+                    macro_hotkeys.clone(),
+                )),
+                bridge,
+                screen_click,
+                macro_record,
+                macro_hotkeys,
+            )
+        }
+    }
+    #[cfg(all(feature = "hooks", not(target_os = "windows"), not(target_os = "linux")))]
     {
         let bridge = ContinueWaitBridge::new(true);
         (

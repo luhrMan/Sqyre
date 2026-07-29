@@ -3,7 +3,7 @@ name = "sqyre-hotkeys"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "Global hotkeys (Esc stop / failsafe); stubs for CI"
+description = "Global hotkeys (Esc stop / failsafe); rdev on X11, GlobalShortcuts portal on Wayland, Win32 LL hooks on Windows"
 
 [features]
 default = []
@@ -19,6 +19,9 @@ sqyre-domain = { path = "../sqyre-domain" }
 thiserror = { workspace = true }
 rdev = { workspace = true, optional = true }
 web-time = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+sqyre-capture = { path = "../sqyre-capture" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [
