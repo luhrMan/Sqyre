@@ -1,9 +1,8 @@
 //! Native file / folder dialogs via `rfd`.
 //!
-//! On Linux, `rfd` uses the XDG portal (`ashpd` / `zbus`) and blocks with
-//! `pollster`. Keep `ksni` (and anything else using zbus) on the `async-io`
-//! backend so nothing enables `zbus`'s `tokio` feature — otherwise sync
-//! portal calls panic with "no reactor running".
+//! On Linux, `rfd` and Sqyre's Wayland portals use ashpd/zbus. Keep `ksni`
+//! (and ashpd) on the `async-io` backend — enabling `zbus`'s `tokio` feature
+//! makes sync portal calls panic with "no reactor running".
 //!
 //! On WASM, sync `FileDialog` is unavailable — use `wasm_io` async dialogs.
 

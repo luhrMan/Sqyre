@@ -1083,18 +1083,30 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
     let pos = Pos2::new(cx - outer_w * 0.5, cy - cross_y_offset);
 
     let id = ViewportId::from_hash_of(format!("sqyre_temp_point_marker_{index}"));
-    let builder = ViewportBuilder::default()
-        .with_title(OVERLAY_WM_TITLE)
-        .with_decorations(false)
-        .with_resizable(false)
-        .with_always_on_top()
-        .with_taskbar(false)
-        .with_mouse_passthrough(true)
-        .with_window_type(egui::X11WindowType::Dock)
-        .with_transparent(true)
-        .with_inner_size([outer_w, outer_h])
-        .with_min_inner_size([outer_w, outer_h])
-        .with_position(pos);
+    let builder = {
+        let mut b = ViewportBuilder::default()
+            .with_title(OVERLAY_WM_TITLE)
+            .with_decorations(false)
+            .with_resizable(false)
+            .with_always_on_top()
+            .with_taskbar(false)
+            .with_mouse_passthrough(true)
+            .with_transparent(true)
+            .with_inner_size([outer_w, outer_h])
+            .with_min_inner_size([outer_w, outer_h])
+            .with_position(pos);
+        #[cfg(target_os = "linux")]
+        {
+            if !sqyre_capture::is_wayland_backend() {
+                b = b.with_window_type(egui::X11WindowType::Dock);
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            b = b.with_window_type(egui::X11WindowType::Dock);
+        }
+        b
+    };
 
     ctx.show_viewport_deferred(id, builder, move |ui, _class| {
         Frame::NONE

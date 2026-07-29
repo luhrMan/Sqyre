@@ -68,6 +68,8 @@ mod variables_panel;
 mod wasm_demo_seed;
 mod wasm_io;
 mod widgets;
+#[cfg(all(target_os = "linux", feature = "native-runtime"))]
+mod wayland_permissions_ui;
 #[cfg(target_os = "windows")]
 mod win_focused_keys;
 mod window_types;
@@ -196,6 +198,8 @@ pub struct SqyreApp {
     add_action_picker: AddActionPicker,
     data_editor: DataEditor,
     settings_ui: SettingsUi,
+    #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+    wayland_permissions_ui: wayland_permissions_ui::WaylandPermissionsUi,
     variables_panel: variables_panel::VariablesPanelUi,
     /// Window was hidden because a point/search-area recording is armed.
     hidden_for_recording: bool,
@@ -236,6 +240,23 @@ impl SqyreApp {
         });
         settings.apply_sqyre_dir_override();
         SettingsUi::apply_action_colors(&settings);
+        #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+        {
+            sqyre_capture::apply_wayland_permission_settings(
+                settings.wayland_screen_capture,
+                settings.wayland_input_control,
+                settings.wayland_global_shortcuts,
+                settings.wayland_window_management,
+            );
+        }
+
+        #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+        let wayland_permissions_ui = {
+            let mut ui = wayland_permissions_ui::WaylandPermissionsUi::default();
+            ui.open =
+                wayland_permissions_ui::WaylandPermissionsUi::should_prompt_on_startup(&settings);
+            ui
+        };
 
         let (mut hotkeys, continue_wait, screen_click, macro_record_bridge, macro_hotkeys) =
             default_hotkeys();
@@ -399,6 +420,8 @@ impl SqyreApp {
             add_action_picker,
             data_editor: DataEditor::default(),
             settings_ui,
+            #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+            wayland_permissions_ui,
             variables_panel: variables_panel::VariablesPanelUi::default(),
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]

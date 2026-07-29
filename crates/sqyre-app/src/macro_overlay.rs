@@ -260,20 +260,33 @@ fn show_button_viewport(
     // egui viewport position is logical points — same conversion as recording_overlay.
     let ppp = ctx.pixels_per_point().max(0.01);
     let btn_pos = Pos2::new(btn.x / ppp, btn.y / ppp);
-    let builder = ViewportBuilder::default()
-        // Fixed title so X11 skip-taskbar can find these; avoids N distinct "Sqyre: …" Alt-Tab entries.
-        .with_title(OVERLAY_WM_TITLE)
-        .with_decorations(false)
-        .with_resizable(false)
-        .with_always_on_top()
-        // Windows: omit from taskbar. X11: Dock is omitted from GNOME Alt-Tab;
-        // skip_taskbar_for_overlay_windows reinforces SKIP_TASKBAR/SKIP_PAGER.
-        .with_taskbar(false)
-        .with_window_type(egui::X11WindowType::Dock)
-        .with_transparent(true)
-        .with_inner_size([outer, outer])
-        .with_min_inner_size([outer, outer])
-        .with_position(btn_pos);
+    let builder = {
+        let mut b = ViewportBuilder::default()
+            // Fixed title so X11 skip-taskbar can find these; avoids N distinct "Sqyre: …" Alt-Tab entries.
+            .with_title(OVERLAY_WM_TITLE)
+            .with_decorations(false)
+            .with_resizable(false)
+            .with_always_on_top()
+            // Windows: omit from taskbar. X11: Dock is omitted from GNOME Alt-Tab;
+            // skip_taskbar_for_overlay_windows reinforces SKIP_TASKBAR/SKIP_PAGER.
+            // Wayland: rely on compositor layer/role hints via skip_taskbar helper.
+            .with_taskbar(false)
+            .with_transparent(true)
+            .with_inner_size([outer, outer])
+            .with_min_inner_size([outer, outer])
+            .with_position(btn_pos);
+        #[cfg(target_os = "linux")]
+        {
+            if !sqyre_capture::is_wayland_backend() {
+                b = b.with_window_type(egui::X11WindowType::Dock);
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            b = b.with_window_type(egui::X11WindowType::Dock);
+        }
+        b
+    };
 
     ctx.show_viewport_deferred(id, builder, move |ui, class| {
         paint_button(
@@ -341,17 +354,29 @@ fn show_overlay_tip_viewport(
     let id = ViewportId::from_hash_of(format!("sqyre_macro_overlay_tip_{btn_id}"));
     let tip = tip.to_owned();
     let tip_window_id = format!("overlay-tip-{btn_id}");
-    let builder = ViewportBuilder::default()
-        .with_title(OVERLAY_WM_TITLE)
-        .with_decorations(false)
-        .with_resizable(false)
-        .with_always_on_top()
-        .with_taskbar(false)
-        .with_window_type(egui::X11WindowType::Tooltip)
-        .with_transparent(true)
-        .with_inner_size([tip_w, tip_h])
-        .with_min_inner_size([tip_w, tip_h])
-        .with_position(tip_pos);
+    let builder = {
+        let mut b = ViewportBuilder::default()
+            .with_title(OVERLAY_WM_TITLE)
+            .with_decorations(false)
+            .with_resizable(false)
+            .with_always_on_top()
+            .with_taskbar(false)
+            .with_transparent(true)
+            .with_inner_size([tip_w, tip_h])
+            .with_min_inner_size([tip_w, tip_h])
+            .with_position(tip_pos);
+        #[cfg(target_os = "linux")]
+        {
+            if !sqyre_capture::is_wayland_backend() {
+                b = b.with_window_type(egui::X11WindowType::Tooltip);
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            b = b.with_window_type(egui::X11WindowType::Tooltip);
+        }
+        b
+    };
 
     ctx.show_viewport_deferred(id, builder, move |ui, class| {
         let frame = egui::Frame::NONE

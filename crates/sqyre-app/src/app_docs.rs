@@ -98,6 +98,8 @@ impl SqyreApp {
             add_action_picker,
             data_editor: DataEditor::default(),
             settings_ui,
+            #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+            wayland_permissions_ui: Default::default(),
             variables_panel: variables_panel::VariablesPanelUi::default(),
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]

@@ -53,6 +53,26 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     );
 }
 
+#[cfg(all(target_os = "linux", feature = "native-runtime"))]
+pub fn show_wayland_permissions(app: &mut SqyreApp, ctx: &egui::Context) {
+    let mut settings = app.settings_ui.settings().clone();
+    let mut changed: Option<sqyre_persist::UserSettings> = None;
+    app.wayland_permissions_ui
+        .show(ctx, &mut settings, &mut |s| {
+            changed = Some(s.clone());
+        });
+    if let Some(s) = changed {
+        *app.settings_ui.settings_mut() = s.clone();
+        sqyre_capture::apply_wayland_permission_settings(
+            s.wayland_screen_capture,
+            s.wayland_input_control,
+            s.wayland_global_shortcuts,
+            s.wayland_window_management,
+        );
+        let _ = app.settings_ui.save_settings();
+    }
+}
+
 fn action_display_name(app: &SqyreApp, action_id: ActionId) -> String {
     if app.workspace.macros.is_empty() {
         return action_id.as_str();
@@ -280,6 +300,8 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     app.update_recording_visibility(ctx);
     #[cfg(feature = "native-runtime")]
     sync_macro_overlay(app, ctx);
+    #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+    show_wayland_permissions(app, ctx);
     // Windows Raw Input suppresses WH_KEYBOARD_LL while we are focused; mirror
     // egui keys into the hotkey bridges so Record / Esc / chords still work.
     #[cfg(target_os = "windows")]

@@ -138,6 +138,15 @@ impl SettingsUi {
 
     pub fn persist(&mut self) {
         self.settings.clamp();
+        #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+        {
+            sqyre_capture::apply_wayland_permission_settings(
+                self.settings.wayland_screen_capture,
+                self.settings.wayland_input_control,
+                self.settings.wayland_global_shortcuts,
+                self.settings.wayland_window_management,
+            );
+        }
         if let Err(e) = self.settings.save_default() {
             self.set_err(format!("Failed to save settings: {e}"));
             return;
@@ -260,6 +269,16 @@ impl SettingsUi {
                     12.0,
                     |ui| self.draw_appearance(ui, ctx),
                 );
+                #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+                if sqyre_capture::is_wayland_backend() {
+                    crate::theme::titled_section(
+                        ui,
+                        "Desktop permissions",
+                        "XDG Desktop Portal access for capture, input, shortcuts, and window focus on Wayland.",
+                        12.0,
+                        |ui| self.draw_wayland_permissions(ui),
+                    );
+                }
             });
 
         if self.status_banner.status.is_some() {
@@ -865,6 +884,111 @@ impl SettingsUi {
                     new_dir.display()
                 ));
             }
+        }
+    }
+
+    #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+    fn draw_wayland_permissions(&mut self, ui: &mut egui::Ui) {
+        ui.label(
+            egui::RichText::new(
+                "These toggles control whether Sqyre requests and uses each XDG Desktop Portal. Turning one off stops Sqyre from using that capability; your desktop may still remember a prior grant.",
+            )
+            .weak()
+            .small(),
+        );
+        ui.add_space(6.0);
+
+        let mut screen = self.settings.wayland_screen_capture;
+        if ui
+            .checkbox(&mut screen, "Screen capture")
+            .on_hover_text("ScreenCast / Screenshot portals for image search, OCR, and previews.")
+            .changed()
+        {
+            self.settings.wayland_screen_capture = screen;
+            if screen {
+                match sqyre_capture::request_screen_capture() {
+                    Ok(()) => self.set_ok("Screen capture permission granted."),
+                    Err(e) => self.set_err(format!("Screen capture: {e}")),
+                }
+            } else {
+                sqyre_capture::drop_screencast_session();
+            }
+            self.mark_dirty();
+        }
+
+        let mut input = self.settings.wayland_input_control;
+        if ui
+            .checkbox(&mut input, "Input control")
+            .on_hover_text("RemoteDesktop portal for mouse and keyboard injection.")
+            .changed()
+        {
+            self.settings.wayland_input_control = input;
+            if input {
+                match sqyre_capture::request_input_control() {
+                    Ok(()) => self.set_ok("Input control permission granted."),
+                    Err(e) => self.set_err(format!("Input control: {e}")),
+                }
+            } else {
+                sqyre_capture::wayland_input_session::drop_session();
+            }
+            self.mark_dirty();
+        }
+
+        let mut shortcuts = self.settings.wayland_global_shortcuts;
+        if ui
+            .checkbox(&mut shortcuts, "Global shortcuts")
+            .on_hover_text("GlobalShortcuts portal for macro hotkeys, Esc stop, and failsafe.")
+            .changed()
+        {
+            self.settings.wayland_global_shortcuts = shortcuts;
+            if shortcuts {
+                match sqyre_capture::request_global_shortcuts() {
+                    Ok(()) => self.set_ok("Global shortcuts portal available."),
+                    Err(e) => self.set_err(format!("Global shortcuts: {e}")),
+                }
+            } else {
+                sqyre_capture::wayland_shortcuts_session::drop_session();
+            }
+            self.mark_dirty();
+        }
+
+        let mut windows = self.settings.wayland_window_management;
+        if ui
+            .checkbox(&mut windows, "Window management")
+            .on_hover_text(
+                "Foreign-toplevel / activation for Focus Window and overlay program gating (compositor-dependent).",
+            )
+            .changed()
+        {
+            self.settings.wayland_window_management = windows;
+            self.mark_dirty();
+        }
+
+        ui.add_space(8.0);
+        if ui.button("Request permissions again").clicked() {
+            let results = sqyre_capture::request_all_permissions();
+            self.settings.wayland_screen_capture = results.screen_capture;
+            self.settings.wayland_input_control = results.input_control;
+            self.settings.wayland_global_shortcuts = results.global_shortcuts;
+            self.settings.wayland_permissions_prompted = true;
+            self.mark_dirty();
+            let mut msg: Vec<String> = Vec::new();
+            if results.screen_capture {
+                msg.push("screen ok".into());
+            } else if let Some(e) = results.screen_error {
+                msg.push(e);
+            }
+            if results.input_control {
+                msg.push("input ok".into());
+            } else if let Some(e) = results.input_error {
+                msg.push(e);
+            }
+            if results.global_shortcuts {
+                msg.push("shortcuts ok".into());
+            } else if let Some(e) = results.shortcuts_error {
+                msg.push(e);
+            }
+            self.set_ok(msg.join(" · "));
         }
     }
 
