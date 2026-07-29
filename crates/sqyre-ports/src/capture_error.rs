@@ -5,8 +5,14 @@ use thiserror::Error;
 /// Failure capturing screen pixels or querying display geometry.
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum CaptureError {
-    #[error("open display failed (need X11 or XWayland; Wayland-only sessions are not supported)")]
+    #[error("open display failed (need X11, XWayland, or a Wayland portal session)")]
     OpenDisplay,
+    /// User denied or disabled a required desktop permission (Wayland portals).
+    #[error("permission denied for {capability}")]
+    PermissionDenied { capability: &'static str },
+    /// XDG Desktop Portal is missing or returned an error.
+    #[error("desktop portal unavailable: {0}")]
+    PortalUnavailable(String),
     #[error("query pointer failed")]
     QueryPointer,
     #[error("empty capture rect")]
@@ -44,5 +50,14 @@ mod tests {
     fn open_display_mentions_wayland() {
         let msg = CaptureError::OpenDisplay.to_string();
         assert!(msg.contains("XWayland") || msg.contains("Wayland"), "{msg}");
+    }
+
+    #[test]
+    fn permission_denied_names_capability() {
+        let msg = CaptureError::PermissionDenied {
+            capability: "screen capture",
+        }
+        .to_string();
+        assert!(msg.contains("screen capture"), "{msg}");
     }
 }

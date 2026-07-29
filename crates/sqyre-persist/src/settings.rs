@@ -33,6 +33,11 @@ pub const MIN_BACKUP_MAX_KEEP: i32 = 1;
 pub const MAX_BACKUP_MAX_KEEP: i32 = 100;
 pub const DEFAULT_AUTO_UPDATE_CHECK: bool = true;
 pub const DEFAULT_RELEASE_HELD_INPUTS_ON_END: bool = true;
+/// Default: Wayland portal capabilities enabled until the user turns them off.
+pub const DEFAULT_WAYLAND_SCREEN_CAPTURE: bool = true;
+pub const DEFAULT_WAYLAND_INPUT_CONTROL: bool = true;
+pub const DEFAULT_WAYLAND_GLOBAL_SHORTCUTS: bool = true;
+pub const DEFAULT_WAYLAND_WINDOW_MANAGEMENT: bool = true;
 /// Default While budget when a macro sets `max_iterations` ≤ 0.
 pub const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
 pub const MIN_WHILE_MAX_ITERATIONS: i32 = 1;
@@ -432,6 +437,21 @@ pub struct UserSettings {
     /// Unix seconds of the last successful update check (0 = never).
     #[serde(default, skip_serializing_if = "is_zero_i64")]
     pub last_update_check_unix: i64,
+    /// First-run Wayland desktop-permission wizard has been shown.
+    #[serde(default)]
+    pub wayland_permissions_prompted: bool,
+    /// Use ScreenCast / Screenshot portals for capture on pure Wayland.
+    #[serde(default = "default_wayland_screen_capture")]
+    pub wayland_screen_capture: bool,
+    /// Use RemoteDesktop portal for mouse/keyboard injection on pure Wayland.
+    #[serde(default = "default_wayland_input_control")]
+    pub wayland_input_control: bool,
+    /// Use GlobalShortcuts portal for macro chords / failsafe on pure Wayland.
+    #[serde(default = "default_wayland_global_shortcuts")]
+    pub wayland_global_shortcuts: bool,
+    /// Use foreign-toplevel / activation for window list and Focus Window.
+    #[serde(default = "default_wayland_window_management")]
+    pub wayland_window_management: bool,
 }
 
 fn default_hide_recording() -> bool {
@@ -476,6 +496,18 @@ fn default_backup_max_keep() -> i32 {
 fn default_auto_update_check() -> bool {
     DEFAULT_AUTO_UPDATE_CHECK
 }
+fn default_wayland_screen_capture() -> bool {
+    DEFAULT_WAYLAND_SCREEN_CAPTURE
+}
+fn default_wayland_input_control() -> bool {
+    DEFAULT_WAYLAND_INPUT_CONTROL
+}
+fn default_wayland_global_shortcuts() -> bool {
+    DEFAULT_WAYLAND_GLOBAL_SHORTCUTS
+}
+fn default_wayland_window_management() -> bool {
+    DEFAULT_WAYLAND_WINDOW_MANAGEMENT
+}
 fn is_zero_i64(v: &i64) -> bool {
     *v == 0
 }
@@ -506,6 +538,11 @@ impl Default for UserSettings {
             last_backup_unix: 0,
             auto_update_check: DEFAULT_AUTO_UPDATE_CHECK,
             last_update_check_unix: 0,
+            wayland_permissions_prompted: false,
+            wayland_screen_capture: DEFAULT_WAYLAND_SCREEN_CAPTURE,
+            wayland_input_control: DEFAULT_WAYLAND_INPUT_CONTROL,
+            wayland_global_shortcuts: DEFAULT_WAYLAND_GLOBAL_SHORTCUTS,
+            wayland_window_management: DEFAULT_WAYLAND_WINDOW_MANAGEMENT,
         }
     }
 }

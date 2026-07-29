@@ -17,6 +17,12 @@ pub enum AutomationError {
     /// The underlying OS input / window-manager call failed.
     #[error("{0}")]
     Backend(String),
+    /// User denied or disabled a required desktop permission (Wayland portals).
+    #[error("permission denied for {capability}")]
+    PermissionDenied { capability: &'static str },
+    /// XDG Desktop Portal is missing or returned an error.
+    #[error("desktop portal unavailable: {0}")]
+    PortalUnavailable(String),
 }
 
 #[cfg(test)]
