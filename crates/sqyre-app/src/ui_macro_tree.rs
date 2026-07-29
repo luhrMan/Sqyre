@@ -719,7 +719,12 @@ fn build_else_dir(
             .drop_allowed(true)
             .height(row_h)
             .label_ui(|ui| {
-                let resp = help::tip(ui.strong("Else"), help::ELSE_BRANCH);
+                let resp = help::tip(
+                    ui.add(
+                        egui::Label::new(egui::RichText::new("Else").strong()).selectable(false),
+                    ),
+                    help::ELSE_BRANCH,
+                );
                 let mut row_rect = resp.rect;
                 row_rect.set_right(ui.max_rect().right());
                 tree_chrome::paint_row_highlight(
@@ -741,7 +746,8 @@ fn build_else_dir(
                         double_clicked: false,
                         primary_clicked: resp.clicked(),
                         row_rect,
-                        drag_handle_rect: row_rect,
+                        // Else folders are fixed under their owner — drag scrolls.
+                        drag_handle_rect: egui::Rect::NOTHING,
                     },
                 ));
             }),
