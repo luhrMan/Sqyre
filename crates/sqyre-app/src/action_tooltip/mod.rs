@@ -27,6 +27,8 @@ pub(crate) use edit_header::paint_action_edit_header;
 pub struct TooltipEdit {
     pub action_id: ActionId,
     pub draft: Action,
+    /// Snapshot at open; Save enables when `draft` differs (or provisional insert).
+    baseline: Action,
     pub error: Option<String>,
     /// Screen position when edit opened (pinned, not mouse-follow).
     pub anchor: egui::Pos2,
@@ -41,6 +43,13 @@ pub struct TooltipEdit {
     /// While true, size the window height to content (capped at screen max).
     /// Cleared after the initial fit settles, or when the user resizes.
     auto_fit: bool,
+}
+
+impl TooltipEdit {
+    /// Provisional inserts are always saveable; otherwise require a draft change.
+    fn save_enabled(&self) -> bool {
+        self.discard_on_cancel || self.draft != self.baseline
+    }
 }
 
 /// Tooltip lifecycle (editing flag + hover ownership).
@@ -78,6 +87,7 @@ impl TooltipState {
         *self = Self::Edit(Box::new(TooltipEdit {
             action_id: action.id,
             draft: action.clone(),
+            baseline: action.clone(),
             error: None,
             anchor,
             picker: ActivePicker::None,
@@ -98,6 +108,7 @@ impl TooltipState {
         *self = Self::Edit(Box::new(TooltipEdit {
             action_id: action.id,
             draft: action.clone(),
+            baseline: action.clone(),
             error: None,
             anchor,
             picker: ActivePicker::None,
@@ -587,11 +598,11 @@ fn show_edit_window(
                 .inner_margin(egui::Margin::symmetric(10, 8)),
         )
         .show(ctx, |ui| {
-            let err = match state {
-                TooltipState::Edit(edit) => edit.error.as_deref(),
-                _ => None,
+            let (err, save_enabled) = match state {
+                TooltipState::Edit(edit) => (edit.error.as_deref(), edit.save_enabled()),
+                _ => (None, false),
             };
-            match paint_action_edit_header(ui, label, pastel, None, err) {
+            match paint_action_edit_header(ui, label, pastel, None, err, save_enabled) {
                 SaveCancel::Cancel => cancel = true,
                 SaveCancel::Save => save = true,
                 SaveCancel::None => {}

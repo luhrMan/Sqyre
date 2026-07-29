@@ -10,13 +10,15 @@ pub enum SaveCancel {
 }
 
 /// Right-aligned Cancel then Save (Save on the right in LTR via right_to_left).
-pub fn save_cancel_row(ui: &mut egui::Ui) -> SaveCancel {
+///
+/// Save glows while `save_enabled` (dirty pending work).
+pub fn save_cancel_row(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
     let mut out = SaveCancel::None;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         if ui.button("Cancel").clicked() {
             out = SaveCancel::Cancel;
         }
-        if ui.button("Save").clicked() {
+        if crate::theme::dirty_action_button(ui, "Save", save_enabled).clicked() {
             out = SaveCancel::Save;
         }
     });
@@ -24,10 +26,12 @@ pub fn save_cancel_row(ui: &mut egui::Ui) -> SaveCancel {
 }
 
 /// Left-to-right Cancel + Save (variables / forms that prefer that order).
-pub fn save_cancel_row_ltr(ui: &mut egui::Ui) -> SaveCancel {
+///
+/// Save glows while `save_enabled` (dirty pending work).
+pub fn save_cancel_row_ltr(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
     let mut out = SaveCancel::None;
     ui.horizontal(|ui| {
-        if ui.button("Save").clicked() {
+        if crate::theme::dirty_action_button(ui, "Save", save_enabled).clicked() {
             out = SaveCancel::Save;
         }
         if ui.button("Cancel").clicked() {
