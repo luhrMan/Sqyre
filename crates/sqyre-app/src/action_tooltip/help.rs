@@ -210,6 +210,8 @@ pub const DE_AREA_LEFT: &str = "Left edge X of the search area.";
 pub const DE_AREA_TOP: &str = "Top edge Y of the search area.";
 pub const DE_AREA_RIGHT: &str = "Right edge X of the search area.";
 pub const DE_AREA_BOTTOM: &str = "Bottom edge Y of the search area.";
+pub const DE_AUTOPIC_REF: &str =
+    "Starting search area or collection cell. Picking one loads its bounds into LeftX/TopY/RightX/BottomY for editing.";
 pub const DE_COLLECTION_AREA: &str = "Search area used when capturing this collection.";
 pub const DE_COLLECTION_ROWS: &str = "Number of rows in the collection grid.";
 pub const DE_COLLECTION_COLS: &str = "Number of columns in the collection grid.";

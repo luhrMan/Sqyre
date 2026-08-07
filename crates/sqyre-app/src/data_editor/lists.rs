@@ -119,11 +119,10 @@ impl DataEditor {
             | EditorTab::SearchAreas
             | EditorTab::Masks
             | EditorTab::Collections
-            | EditorTab::Atlases
-            | EditorTab::AutoPic => {
+            | EditorTab::Atlases => {
                 let kind = match self.tab {
                     EditorTab::Points => Some(PreviewKind::Point),
-                    EditorTab::SearchAreas | EditorTab::AutoPic => Some(PreviewKind::SearchArea),
+                    EditorTab::SearchAreas => Some(PreviewKind::SearchArea),
                     _ => None,
                 };
                 self.ensure_list_cache(catalog);
@@ -191,6 +190,115 @@ impl DataEditor {
                             }
                             if resp.clicked() {
                                 self.select_entity(prog, &ent, catalog, settings);
+                            }
+                        }
+                    });
+                }
+            }
+            EditorTab::AutoPic => {
+                self.ensure_list_cache(catalog);
+                let program_names = self.list_cache.program_names.clone();
+                for prog in &program_names {
+                    let search_areas = self.entity_names(catalog, prog);
+                    let collections: Vec<sqyre_persist::ProgramCollection> = catalog
+                        .get(prog)
+                        .map(|p| p.collections.values().cloned().collect())
+                        .unwrap_or_default();
+                    let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
+                    let any_sa = search_areas
+                        .iter()
+                        .any(|e| q.is_empty() || pickers::fuzzy_match_fold(q, e));
+                    let any_col = collections
+                        .iter()
+                        .any(|c| q.is_empty() || pickers::fuzzy_match_fold(q, &c.name));
+                    if !prog_match && !any_sa && !any_col {
+                        continue;
+                    }
+                    let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
+                    let child_count = search_areas.len() + collections.len();
+                    let id = data_editor_list_collapse_id(self.tab, prog);
+                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                        ui.ctx(),
+                        id,
+                        false,
+                    )
+                    .show_header(ui, |ui| {
+                        if crate::icon_cache::paint_program_label(
+                            ui,
+                            catalog,
+                            icons,
+                            prog,
+                            crate::icon_cache::ProgramLabelStyle::Header {
+                                selected: Some(prog_selected),
+                                child_count,
+                            },
+                            settings.compact_program_headers,
+                        )
+                        .clicked()
+                        {
+                            clicked_program = Some(prog.clone());
+                        }
+                    })
+                    .body(|ui| {
+                        ui.set_max_width(ui.available_width());
+                        for ent in &search_areas {
+                            if !q.is_empty() && !pickers::fuzzy_match_fold(q, ent) && !prog_match {
+                                continue;
+                            }
+                            let selected = self.selected_program.as_deref() == Some(prog.as_str())
+                                && self.selected_entity.as_deref() == Some(ent.as_str())
+                                && !sqyre_domain::CoordinateRef(self.form_search_area.clone())
+                                    .is_collection();
+                            let resp = ui.selectable_label(selected, ent);
+                            previews.show_for_entity(
+                                ui,
+                                &resp,
+                                catalog,
+                                prog,
+                                ent,
+                                PreviewKind::SearchArea,
+                            );
+                            if resp.clicked() {
+                                self.select_entity(prog, ent, catalog, settings);
+                            }
+                        }
+                        for col in &collections {
+                            if !q.is_empty()
+                                && !pickers::fuzzy_match_fold(q, &col.name)
+                                && !prog_match
+                            {
+                                continue;
+                            }
+                            let current =
+                                sqyre_domain::CoordinateRef(self.form_search_area.clone());
+                            let selected = current.is_collection()
+                                && current.program() == Some(prog.as_str())
+                                && current.name() == col.name;
+                            let label = format!("{} (collection)", col.name);
+                            let resp = ui.selectable_label(selected, label);
+                            show_file_hover(
+                                ui,
+                                &resp,
+                                icons,
+                                &catalog.collection_image_path(prog, &col.name),
+                                &format!("{prog}~{}", col.name),
+                            );
+                            if resp.clicked() {
+                                let initial = if selected { current.cell_range() } else { None };
+                                self.selected_program = Some(prog.clone());
+                                self.selected_entity = Some(col.name.clone());
+                                self.window_picker = pickers::ActivePicker::Coord {
+                                    kind: pickers::CoordKind::SearchArea,
+                                    search: String::new(),
+                                    value: self.form_search_area.clone(),
+                                    cell_pick: Some(
+                                        pickers::CollectionCellPick::new(
+                                            prog, &col.name, col.rows, col.cols,
+                                        )
+                                        .with_initial_sel(initial),
+                                    ),
+                                    scroll_to_selection: false,
+                                };
                             }
                         }
                     });

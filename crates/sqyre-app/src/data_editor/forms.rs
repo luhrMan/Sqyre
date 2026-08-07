@@ -876,15 +876,73 @@ impl DataEditor {
             }
             EditorTab::AutoPic => {
                 ui.heading("AutoPic");
-                ui.weak("Select a search area, preview, then save a PNG into images/AutoPic.");
-                if self.selected_program.is_some() && self.selected_entity.is_some() {
+                ui.weak(
+                    "Pick a search area or collection cell as a starting reference, adjust the coordinates, then save a PNG into images/AutoPic.",
+                );
+                ui.add_space(4.0);
+                {
+                    use crate::pickers::{ActivePicker, CoordKind};
+                    use sqyre_domain::CoordinateRef;
+                    let reference = CoordinateRef(self.form_search_area.clone());
+                    let display = if reference.is_empty() {
+                        "(unset — pick a reference or select from the list)"
+                    } else {
+                        reference.as_str()
+                    };
+                    ui.horizontal(|ui| {
+                        help::label(ui, "Reference", help::DE_AUTOPIC_REF);
+                        if let Some(prog) = reference.program() {
+                            crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
+                        }
+                        let resp = ui.monospace(display);
+                        if !reference.is_empty() {
+                            if reference.is_collection() {
+                                if let Some(prog) = reference.program() {
+                                    show_file_hover(
+                                        ui,
+                                        &resp,
+                                        icons,
+                                        &catalog.collection_image_path(prog, reference.name()),
+                                        reference.as_str(),
+                                    );
+                                }
+                            } else {
+                                previews.show_for_coordinate_ref(
+                                    ui,
+                                    &resp,
+                                    catalog,
+                                    &reference,
+                                    PreviewKind::SearchArea,
+                                );
+                            }
+                        }
+                        if crate::theme::icon_button(ui, "☰")
+                            .on_hover_text("Pick search area or collection cell…")
+                            .clicked()
+                        {
+                            self.window_picker = ActivePicker::Coord {
+                                kind: CoordKind::SearchArea,
+                                search: String::new(),
+                                value: self.form_search_area.clone(),
+                                cell_pick: None,
+                                scroll_to_selection: true,
+                            };
+                        }
+                    });
+                }
+                ui.weak("Bounds overlay the preview edges; edit them to crop the capture.");
+                let has_coords = !self.form_left.trim().is_empty()
+                    || !self.form_top.trim().is_empty()
+                    || !self.form_right.trim().is_empty()
+                    || !self.form_bottom.trim().is_empty();
+                if has_coords {
                     let lx = form_coord_literal(&self.form_left);
                     let ty = form_coord_literal(&self.form_top);
                     let rx = form_coord_literal(&self.form_right);
                     let by = form_coord_literal(&self.form_bottom);
                     self.sync_coord_preview_view();
                     let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
-                    previews.paint_search_area_panel(
+                    let rect = previews.paint_search_area_panel(
                         ui,
                         lx,
                         ty,
@@ -892,6 +950,39 @@ impl DataEditor {
                         by,
                         force,
                         &mut self.coord_preview,
+                    );
+                    paint_coord_chips(
+                        ui,
+                        rect,
+                        &known,
+                        is_dark,
+                        active_macro,
+                        &mut [
+                            (
+                                &mut self.form_top,
+                                CardinalEdge::Top,
+                                "TopY",
+                                help::DE_AREA_TOP,
+                            ),
+                            (
+                                &mut self.form_bottom,
+                                CardinalEdge::Bottom,
+                                "BottomY",
+                                help::DE_AREA_BOTTOM,
+                            ),
+                            (
+                                &mut self.form_left,
+                                CardinalEdge::Left,
+                                "LeftX",
+                                help::DE_AREA_LEFT,
+                            ),
+                            (
+                                &mut self.form_right,
+                                CardinalEdge::Right,
+                                "RightX",
+                                help::DE_AREA_RIGHT,
+                            ),
+                        ],
                     );
                     ui.add_space(8.0);
                     let saving = self.autopix_pending.is_some();
@@ -907,7 +998,9 @@ impl DataEditor {
                     }
                     ui.weak(format!("Saves to {}", auto_pic_path().display()));
                 } else {
-                    ui.weak("Select a search area from the list.");
+                    ui.weak(
+                        "Select a search area from the list, or use ☰ to pick a search area or collection cell.",
+                    );
                 }
             }
             EditorTab::Overlay => {
