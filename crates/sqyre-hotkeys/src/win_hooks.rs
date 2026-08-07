@@ -254,6 +254,8 @@ fn handle_keyboard(wparam: WPARAM, lparam: LPARAM) {
         let shift = ctx.pressed.contains("shift") || ctx.pressed.contains("rshift");
         if ctx.macro_record.on_escape() {
             // Macro recording takes Esc.
+        } else if ctx.screen_click.grab_owns_input() && ctx.screen_click.is_armed() {
+            // SelectionGrab delivers Esc; swallow so we don't stop macros.
         } else if ctx.screen_click.on_escape() {
             // Point/area recording takes Esc; don't also stop macros.
         } else if crate::failsafe_modifiers_held(&ctx.pressed) {
@@ -281,7 +283,9 @@ fn handle_mouse(wparam: WPARAM, lparam: LPARAM) {
     if msg == WM_MOUSEMOVE {
         // SAFETY: lparam points at MSLLHOOKSTRUCT for the duration of the hook call.
         let mouse = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
-        ctx.screen_click.on_mouse_move(mouse.pt.x, mouse.pt.y);
+        if !ctx.screen_click.grab_owns_input() {
+            ctx.screen_click.on_mouse_move(mouse.pt.x, mouse.pt.y);
+        }
         ctx.macro_record.on_mouse_move(mouse.pt.x, mouse.pt.y);
         return;
     }
@@ -296,7 +300,11 @@ fn handle_mouse(wparam: WPARAM, lparam: LPARAM) {
         _ => return,
     };
     ctx.macro_record.on_button(button, pressed);
-    if pressed && button == RecordMouseButton::Left && ctx.screen_click.is_armed() {
+    if pressed
+        && button == RecordMouseButton::Left
+        && ctx.screen_click.is_armed()
+        && !ctx.screen_click.grab_owns_input()
+    {
         ctx.screen_click.on_left_click();
     }
 }

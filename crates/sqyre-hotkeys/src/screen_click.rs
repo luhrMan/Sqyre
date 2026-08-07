@@ -24,6 +24,9 @@ struct Inner {
     color_point: Option<(i32, i32)>,
     search_area: Option<(i32, i32, i32, i32)>,
     cancelled: bool,
+    /// When true, the fullscreen [`SelectionGrab`] owns mouse/Esc — hotkey hooks
+    /// must not also deliver those events (would double-count clicks).
+    grab_owns_input: bool,
 }
 
 fn normalize_rect(ax: i32, ay: i32, bx: i32, by: i32) -> (i32, i32, i32, i32) {
@@ -74,6 +77,15 @@ impl ScreenClickBridge {
     pub fn disarm(&self) {
         let mut g = self.inner.lock();
         g.armed = None;
+    }
+
+    /// When the fullscreen selection grab is active, hooks skip mouse/Esc delivery.
+    pub fn set_grab_owns_input(&self, owns: bool) {
+        self.inner.lock().grab_owns_input = owns;
+    }
+
+    pub fn grab_owns_input(&self) -> bool {
+        self.inner.lock().grab_owns_input
     }
 
     pub fn is_armed(&self) -> bool {
@@ -288,5 +300,20 @@ mod tests {
         assert_eq!(b.take_color_point(), Some((7, 9)));
         assert!(b.take_point().is_none());
         assert!(b.status_label().is_none());
+    }
+
+    #[test]
+    fn grab_owns_input_flag_roundtrip() {
+        let b = ScreenClickBridge::new();
+        assert!(!b.grab_owns_input());
+        b.set_grab_owns_input(true);
+        assert!(b.grab_owns_input());
+        b.arm_point();
+        // Arming resets bridge state including the grab flag.
+        assert!(!b.grab_owns_input());
+        b.set_grab_owns_input(true);
+        assert!(b.grab_owns_input());
+        b.set_grab_owns_input(false);
+        assert!(!b.grab_owns_input());
     }
 }
