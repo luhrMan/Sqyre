@@ -248,7 +248,7 @@ impl DataEditor {
                 }
             }
             EditorTab::AutoPic => {
-                self.set_err("Use Save on the AutoPic tab to capture a search area.");
+                self.set_err("Use Save on the AutoPic tab to capture the preview region.");
                 return;
             }
             EditorTab::Overlay => {

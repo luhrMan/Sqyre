@@ -441,25 +441,46 @@ impl FormState for AtlasesForm {
 impl FormState for AutoPicForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
         let (prog, name) = match (
-            ed.selected_program.as_deref(),
-            ed.selected_entity.as_deref(),
+            ed.selected_program.clone(),
+            ed.selected_entity.clone(),
         ) {
             (Some(p), Some(n)) => (p, n),
             _ => return,
         };
+        // Collection rows open a cell picker; skip until a cell range is chosen.
+        let is_collection_only = catalog.get(&prog).is_some_and(|p| {
+            let has_col = p.collections.contains_key(&name);
+            let has_sa = p
+                .search_areas
+                .get(catalog.resolution_key())
+                .or_else(|| p.search_areas.values().next())
+                .is_some_and(|m| m.contains_key(&name));
+            has_col && !has_sa
+        });
+        if is_collection_only {
+            return;
+        }
+        let coord = sqyre_domain::CoordinateRef(format!(
+            "{prog}{}{name}",
+            sqyre_domain::PROGRAM_DELIMITER
+        ));
+        if ed.apply_autopix_reference(catalog, coord) {
+            return;
+        }
         let res = catalog.resolution_key();
         let Some(sa) = catalog
-            .get(prog)
+            .get(&prog)
             .and_then(|p| {
                 p.search_areas
                     .get(res)
                     .or_else(|| p.search_areas.values().next())
             })
-            .and_then(|m| m.get(name))
+            .and_then(|m| m.get(&name))
         else {
             return;
         };
         ed.form_name = sa.name.clone();
+        ed.form_search_area = format!("{prog}{}{name}", sqyre_domain::PROGRAM_DELIMITER);
         ed.form_left = sa.left_x.as_display();
         ed.form_top = sa.top_y.as_display();
         ed.form_right = sa.right_x.as_display();

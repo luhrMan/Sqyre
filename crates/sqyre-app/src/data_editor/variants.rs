@@ -8,6 +8,7 @@ use crate::data_editor_preview::{
 use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
 use eframe::egui;
+use sqyre_domain::{CoordinateRef, Macro};
 use sqyre_persist::{auto_pic_path, ProgramCatalog, UserSettings};
 use sqyre_ports::DesktopRect;
 #[cfg(feature = "native-runtime")]
@@ -264,6 +265,44 @@ impl DataEditor {
         }
     }
 
+    /// Seed AutoPic form buffers from a search-area or collection-cell reference.
+    /// Returns `true` when the reference resolved to desktop bounds.
+    pub(crate) fn apply_autopix_reference(
+        &mut self,
+        catalog: &ProgramCatalog,
+        coord: CoordinateRef,
+    ) -> bool {
+        let macro_ = Macro::new("", 0, vec![]);
+        let (lx, ty, rx, by) = match catalog.resolve_search_area(&coord, &macro_) {
+            Ok(bounds) => bounds,
+            Err(e) => {
+                self.set_err(format!("AutoPic: {e}"));
+                return false;
+            }
+        };
+        self.form_left = lx.to_string();
+        self.form_top = ty.to_string();
+        self.form_right = rx.to_string();
+        self.form_bottom = by.to_string();
+        self.form_search_area = coord.0.clone();
+        self.form_name = match coord.cell_range() {
+            Some((r1, c1, r2, c2)) if r1 == r2 && c1 == c2 => {
+                format!("{}_r{}c{}", coord.name(), r1, c1)
+            }
+            Some((r1, c1, r2, c2)) => {
+                format!("{}_r{}c{}-r{}c{}", coord.name(), r1, c1, r2, c2)
+            }
+            None => coord.name().to_string(),
+        };
+        if let Some(prog) = coord.program() {
+            self.selected_program = Some(prog.to_string());
+        }
+        self.selected_entity = Some(coord.name().to_string());
+        self.coord_preview.reset();
+        self.coord_preview_key = None;
+        true
+    }
+
     pub(crate) fn save_autopix(&mut self) {
         #[cfg(not(feature = "native-runtime"))]
         {
@@ -278,7 +317,7 @@ impl DataEditor {
             }
             let name = self.form_name.trim().to_string();
             if name.is_empty() {
-                self.set_err("AutoPic: select a search area first.");
+                self.set_err("AutoPic: pick a search area or collection cell first.");
                 return;
             }
             if let Err(e) = sqyre_validate::validate_entity_name(&name) {
@@ -294,7 +333,7 @@ impl DataEditor {
             let (lx, rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
             let (ty, by) = if ty <= by { (ty, by) } else { (by, ty) };
             if rx - lx <= 0 || by - ty <= 0 {
-                self.set_err("AutoPic: invalid search area dimensions.");
+                self.set_err("AutoPic: invalid capture dimensions.");
                 return;
             }
 

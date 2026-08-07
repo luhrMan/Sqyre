@@ -457,6 +457,9 @@ impl DataEditor {
                     }
                 }
             }
+            PickerResult::SearchArea(coord) if matches!(self.tab, EditorTab::AutoPic) => {
+                self.apply_autopix_reference(catalog, coord);
+            }
             _ => {}
         }
     }
