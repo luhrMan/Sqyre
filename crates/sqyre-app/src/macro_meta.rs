@@ -194,9 +194,7 @@ fn validate_rename(
     current: &str,
     other_macro_names: &[String],
 ) -> Result<(), String> {
-    if new_name.is_empty() {
-        return Err("macro name cannot be empty".into());
-    }
+    sqyre_validate::validate_entity_name(new_name).map_err(|e| e.to_string())?;
     if new_name == current {
         return Ok(());
     }
@@ -236,6 +234,7 @@ mod tests {
         assert!(validate_rename("b", "a", &others).is_err());
         assert!(validate_rename("c", "a", &others).is_ok());
         assert!(validate_rename("a", "a", &others).is_ok());
+        assert!(validate_rename("bad:name", "a", &others).is_err());
     }
 
     #[test]

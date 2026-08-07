@@ -281,6 +281,12 @@ impl DataEditor {
                 self.set_err("AutoPic: select a search area first.");
                 return;
             }
+            if let Err(e) = sqyre_validate::validate_entity_name(&name) {
+                self.set_err(format!(
+                    "AutoPic: {e}. Rename the search area or collection first."
+                ));
+                return;
+            }
             let lx = form_coord_i32(&self.form_left);
             let ty = form_coord_i32(&self.form_top);
             let rx = form_coord_i32(&self.form_right);

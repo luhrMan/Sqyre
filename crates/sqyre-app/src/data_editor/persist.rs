@@ -419,8 +419,8 @@ impl DataEditor {
             return;
         }
         let new_name = self.form_name.trim().to_string();
-        if validate_entity_name(&new_name).is_err() {
-            self.set_err("Invalid name.");
+        if let Err(e) = validate_entity_name(&new_name) {
+            self.set_err(format!("Invalid name: {e}"));
             return;
         }
 

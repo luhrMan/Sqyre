@@ -18,10 +18,18 @@ pub enum ValidateError {
 
 pub type Result<T> = std::result::Result<T, ValidateError>;
 
+/// Characters illegal in Windows filenames. Linux forbids `/` and NUL (included here /
+/// via the control-char check). Used for any catalog name that becomes a path component
+/// under `images/` (programs, items, search areas, masks, collections, icon variants, …).
+pub const FS_FORBIDDEN_FILENAME_CHARS: &[char] =
+    &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+
 /// True when `name` is safe to use as a single path component under a managed directory.
 ///
-/// Rejects empty/whitespace names, `.` / `..`, separators, absolute forms, and control chars
-/// so catalog keys cannot escape `images/` via join + `remove_dir_all` / rename.
+/// Rejects empty/whitespace names, `.` / `..`, Windows/Linux forbidden filename characters,
+/// absolute forms, trailing `.`, reserved Windows device names, and control chars so catalog
+/// keys cannot escape `images/` via join + `remove_dir_all` / rename, and cannot produce
+/// empty or extensionless files (e.g. `:` Alternate Data Streams on Windows).
 pub fn is_safe_fs_entity_name(name: &str) -> bool {
     validate_entity_name(name).is_ok()
 }
@@ -41,23 +49,56 @@ pub fn validate_entity_name(name: &str) -> Result<()> {
             "name cannot be an absolute path".into(),
         ));
     }
-    // Windows drive / UNC prefixes (`C:`, `\\server`, …).
-    if name.len() >= 2 && name.as_bytes()[1] == b':' {
+    if let Some(c) = name
+        .chars()
+        .find(|c| *c == '\0' || c.is_control() || FS_FORBIDDEN_FILENAME_CHARS.contains(c))
+    {
+        return Err(ValidateError::Message(format!(
+            "name cannot contain forbidden file character {c:?} (disallowed: < > : \" / \\ | ? * and controls)"
+        )));
+    }
+    // Windows strips / rejects trailing periods in file names.
+    if name.ends_with('.') {
         return Err(ValidateError::Message(
-            "name cannot include a drive prefix".into(),
+            "name cannot end with a period".into(),
         ));
     }
-    if name.contains(['/', '\\', '\0']) {
-        return Err(ValidateError::Message(
-            "name cannot contain path separators or NUL".into(),
-        ));
-    }
-    if name.chars().any(|c| c.is_control()) {
-        return Err(ValidateError::Message(
-            "name cannot contain control characters".into(),
-        ));
+    if is_windows_reserved_device_name(name) {
+        return Err(ValidateError::Message(format!(
+            "name {name:?} is a reserved Windows device name"
+        )));
     }
     Ok(())
+}
+
+/// `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9` (optionally with an extension).
+fn is_windows_reserved_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name);
+    matches!(
+        stem.to_ascii_uppercase().as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
 }
 
 pub fn parse_positive_i32(s: &str) -> Result<i32> {
@@ -724,6 +765,8 @@ mod tests {
     #[test]
     fn entity_name_rejects_path_escape() {
         assert!(validate_entity_name("Demo").is_ok());
+        assert!(validate_entity_name("Item Name").is_ok());
+        assert!(validate_entity_name("Item-v2").is_ok());
         assert!(validate_entity_name("").is_err());
         assert!(validate_entity_name(".").is_err());
         assert!(validate_entity_name("..").is_err());
@@ -733,6 +776,33 @@ mod tests {
         assert!(validate_entity_name("/abs").is_err());
         assert!(validate_entity_name("C:foo").is_err());
         assert!(validate_entity_name("has\0nul").is_err());
+    }
+
+    #[test]
+    fn entity_name_rejects_windows_linux_forbidden_chars() {
+        for c in FS_FORBIDDEN_FILENAME_CHARS {
+            let name = format!("item{c}name");
+            assert!(
+                validate_entity_name(&name).is_err(),
+                "expected reject for {c:?} in {name:?}"
+            );
+        }
+        // Colon mid-name previously slipped past the drive-prefix-only check and
+        // produced 0-byte / extensionless AutoPic files via Windows ADS.
+        assert!(validate_entity_name("Potion:Red").is_err());
+        assert!(validate_entity_name("a<b").is_err());
+        assert!(validate_entity_name("a>b").is_err());
+        assert!(validate_entity_name("a\"b").is_err());
+        assert!(validate_entity_name("a|b").is_err());
+        assert!(validate_entity_name("a?b").is_err());
+        assert!(validate_entity_name("a*b").is_err());
+        assert!(validate_entity_name("ends.").is_err());
+        assert!(validate_entity_name("CON").is_err());
+        assert!(validate_entity_name("nul.txt").is_err());
+        assert!(validate_entity_name("com1").is_err());
+        assert!(validate_entity_name("LPT9").is_err());
+        assert!(validate_entity_name("console").is_ok());
+        assert!(validate_entity_name("Item.v2").is_ok());
     }
 
     #[test]
