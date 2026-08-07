@@ -374,6 +374,9 @@ pub struct UserSettings {
     pub save_meta_images: bool,
     #[serde(default)]
     pub highlight_active_action: bool,
+    /// In catalog lists, programs with a process icon omit the name (icon + child count only).
+    #[serde(default)]
+    pub compact_program_headers: bool,
     #[serde(default = "default_hide_recording")]
     pub hide_app_during_recording: bool,
     /// Release keys/buttons still held from Down/hold actions when a macro ends.
@@ -485,6 +488,7 @@ impl Default for UserSettings {
         Self {
             save_meta_images: false,
             highlight_active_action: false,
+            compact_program_headers: false,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
             release_held_inputs_on_end: DEFAULT_RELEASE_HELD_INPUTS_ON_END,
             while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,

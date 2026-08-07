@@ -20,6 +20,7 @@ pub fn show_active_picker(
     paint: &mut CatalogPaint<'_>,
     // `(name, tags)` — tags are used by the macro search bar.
     macros: &[(String, Vec<String>)],
+    compact_program_headers: bool,
 ) -> PickerResult {
     let mut result = PickerResult::None;
     let mut open = picker.is_open();
@@ -80,6 +81,7 @@ pub fn show_active_picker(
                             true,
                             None,
                             &mut header_click,
+                            compact_program_headers,
                         );
                     });
                     ui.separator();
@@ -115,6 +117,7 @@ pub fn show_active_picker(
                             *kind,
                             cell_pick,
                             scroll_to_selection,
+                            compact_program_headers,
                         );
                     }
                 }

@@ -197,6 +197,7 @@ impl AddActionPicker {
         hotkey_record: &mut HotkeyRecordUi,
         macro_hotkeys: &MacroHotkeyBridge,
         screen_click: &ScreenClickBridge,
+        compact_program_headers: bool,
         mut on_defaults_saved: impl FnMut(&AddActionPicker),
     ) -> Option<Action> {
         if !self.open {
@@ -328,6 +329,7 @@ impl AddActionPicker {
                 hotkey_record,
                 macro_hotkeys,
                 screen_click,
+                compact_program_headers,
             ),
             None => false,
         };
@@ -394,6 +396,7 @@ impl AddActionPicker {
         hotkey_record: &mut HotkeyRecordUi,
         macro_hotkeys: &MacroHotkeyBridge,
         screen_click: &ScreenClickBridge,
+        compact_program_headers: bool,
     ) -> bool {
         if !matches!(&self.tip, Some(DefaultsTip::Edit { .. })) {
             return false;
@@ -440,6 +443,7 @@ impl AddActionPicker {
                     previews,
                 },
                 macros,
+                compact_program_headers,
             );
             apply_picker_result(&mut edit.draft, result);
         }

@@ -69,6 +69,7 @@ pub(crate) struct MacroRecordShow<'a> {
     pub hotkey_record: &'a mut HotkeyRecordUi,
     pub screen_click: &'a ScreenClickBridge,
     pub macros: &'a [(String, Vec<String>)],
+    pub compact_program_headers: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +129,7 @@ impl MacroRecordUi {
             hotkey_record,
             screen_click,
             macros,
+            compact_program_headers,
         } = ui;
         match self {
             Self::Closed => MacroRecordShowResult {
@@ -203,6 +205,7 @@ impl MacroRecordUi {
                 hotkey_record,
                 screen_click,
                 macros,
+                compact_program_headers,
             ) {
                 ReviewFrame::Continue { catalog_changed } => MacroRecordShowResult {
                     copy: None,
@@ -242,6 +245,7 @@ fn paint_review(
     hotkey_record: &mut HotkeyRecordUi,
     screen_click: &ScreenClickBridge,
     macros: &[(String, Vec<String>)],
+    compact_program_headers: bool,
 ) -> ReviewFrame {
     let ReviewState {
         draft,
@@ -469,6 +473,7 @@ fn paint_review(
                 macro_hotkeys,
                 screen_click,
             },
+            compact_program_headers,
         };
         let _ = action_tooltip::show(tooltip, ctx, draft, macros, &mut tip_ui, |_| {});
     }

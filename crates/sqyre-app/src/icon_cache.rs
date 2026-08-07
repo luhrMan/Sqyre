@@ -224,41 +224,80 @@ pub enum ProgramLabelStyle {
     },
 }
 
-/// Paint optional process icon + program name; returns the name widget response.
+/// Paint optional process icon + program name as one selectable (or label) widget.
+///
+/// When `compact` is true and the program has a process icon, header styles omit the
+/// name and show only `({child_count})` (full name on hover).
 pub fn paint_program_label(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     program: &str,
     style: ProgramLabelStyle,
+    compact: bool,
 ) -> egui::Response {
     let tex = icons.for_program(ui.ctx(), catalog, program);
-    ui.horizontal(|ui| {
-        if let Some(tex) = tex.as_ref() {
-            paint_process_icon(ui, tex, PROCESS_ICON_SIDE);
+    let hide_name = compact && tex.is_some();
+
+    let (selected, text, interactive) = match style {
+        ProgramLabelStyle::Selectable { selected } => {
+            // Flat program rows have no child count; always keep the name.
+            (selected, program.to_string(), true)
         }
-        match style {
-            ProgramLabelStyle::Selectable { selected } => ui.selectable_label(selected, program),
-            ProgramLabelStyle::Header {
-                selected: Some(selected),
-                child_count,
-            } => ui.selectable_label(
-                selected,
-                egui::RichText::new(format!("({child_count}) {program}"))
-                    .size(PROCESS_ICON_SIDE)
-                    .strong(),
-            ),
-            ProgramLabelStyle::Header {
-                selected: None,
-                child_count,
-            } => ui.label(
-                egui::RichText::new(format!("({child_count}) {program}"))
-                    .size(PROCESS_ICON_SIDE)
-                    .strong(),
-            ),
+        ProgramLabelStyle::Header {
+            selected: Some(selected),
+            child_count,
+        } => {
+            let text = if hide_name {
+                format!("({child_count})")
+            } else {
+                format!("({child_count}) {program}")
+            };
+            (selected, text, true)
         }
-    })
-    .inner
+        ProgramLabelStyle::Header {
+            selected: None,
+            child_count,
+        } => {
+            let text = if hide_name {
+                format!("({child_count})")
+            } else {
+                format!("({child_count}) {program}")
+            };
+            (false, text, false)
+        }
+    };
+
+    let rich = match style {
+        ProgramLabelStyle::Selectable { .. } => egui::RichText::new(text),
+        ProgramLabelStyle::Header { .. } => egui::RichText::new(text)
+            .size(PROCESS_ICON_SIDE)
+            .strong(),
+    };
+
+    let icon = tex.as_ref().map(|tex| {
+        egui::Image::new((tex.id(), Vec2::splat(PROCESS_ICON_SIDE)))
+            .fit_to_exact_size(Vec2::splat(PROCESS_ICON_SIDE))
+            .maintain_aspect_ratio(true)
+    });
+
+    let response = match (icon, interactive) {
+        (Some(icon), true) => ui.selectable_label(selected, (icon, rich)),
+        (None, true) => ui.selectable_label(selected, rich),
+        (Some(icon), false) => ui
+            .horizontal(|ui| {
+                ui.add(icon);
+                ui.label(rich);
+            })
+            .response,
+        (None, false) => ui.label(rich),
+    };
+
+    if hide_name {
+        response.on_hover_text(program)
+    } else {
+        response
+    }
 }
 
 /// Paint a program's process icon when bound; returns whether an icon was drawn.

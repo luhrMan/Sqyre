@@ -347,6 +347,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     macro_hotkeys: &app.run_session.macro_hotkeys,
                     screen_click: &app.screen_click,
                 },
+                compact_program_headers: app.settings_ui.settings().compact_program_headers,
             };
             action_tooltip::show(
                 &mut app.tree.tooltip,

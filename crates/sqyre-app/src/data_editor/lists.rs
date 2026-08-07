@@ -93,6 +93,7 @@ impl DataEditor {
                         icons,
                         name,
                         crate::icon_cache::ProgramLabelStyle::Selectable { selected },
+                        settings.compact_program_headers,
                     )
                     .clicked()
                     {
@@ -111,6 +112,7 @@ impl DataEditor {
                     false,
                     self.selected_program.as_deref(),
                     &mut clicked_program,
+                    settings.compact_program_headers,
                 );
             }
             EditorTab::Points
@@ -152,6 +154,7 @@ impl DataEditor {
                                 selected: Some(prog_selected),
                                 child_count: entities.len(),
                             },
+                            settings.compact_program_headers,
                         )
                         .clicked()
                         {
@@ -228,6 +231,7 @@ impl DataEditor {
                                 selected: Some(prog_selected),
                                 child_count,
                             },
+                            settings.compact_program_headers,
                         )
                         .clicked()
                         {

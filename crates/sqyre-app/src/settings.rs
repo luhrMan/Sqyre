@@ -869,6 +869,21 @@ impl SettingsUi {
     }
 
     fn draw_appearance(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        if ui
+            .checkbox(
+                &mut self.settings.compact_program_headers,
+                "Compact program headers with icons",
+            )
+            .on_hover_text(
+                "When a program has a process icon, list headers show only the icon and child count (name on hover).",
+            )
+            .changed()
+        {
+            self.mark_dirty();
+        }
+
+        ui.add_space(6.0);
+
         ui.horizontal(|ui| {
             ui.label("Font size:");
             let mut v = self.settings.ui_font_size;

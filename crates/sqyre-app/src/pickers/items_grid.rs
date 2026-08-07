@@ -53,6 +53,7 @@ pub fn paint_items_icon_grid(
     multi: bool,
     selected_program: Option<&str>,
     clicked_program: &mut Option<String>,
+    compact_program_headers: bool,
 ) {
     let q = search.trim().to_ascii_lowercase();
     let pane_w = ui.available_width();
@@ -121,6 +122,7 @@ pub fn paint_items_icon_grid(
                         selected: Some(prog_selected),
                         child_count: pdata.items.len(),
                     },
+                    compact_program_headers,
                 )
                 .clicked()
                 {

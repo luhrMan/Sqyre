@@ -174,6 +174,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             &mut app.hotkey_record,
             &app.run_session.macro_hotkeys,
             &app.screen_click,
+            app.settings_ui.settings().compact_program_headers,
             |_| {
                 defaults_to_persist = true;
             },
@@ -315,6 +316,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             hotkey_record: &mut app.hotkey_record,
             screen_click: &app.screen_click,
             macros: &macros,
+            compact_program_headers: app.settings_ui.settings().compact_program_headers,
         });
         if result.catalog_changed {
             if let Err(e) = app.persist_database() {
