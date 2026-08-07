@@ -195,7 +195,8 @@ pub const NAV_KEY_CHORD: &str = "Keys that trigger this branch (one per line).";
 
 // --- Data editor ---
 
-pub const DE_NAME: &str = "Unique name within this program.";
+pub const DE_NAME: &str =
+    "Unique name within this program. Cannot contain < > : \" / \\ | ? * or end with a period.";
 pub const DE_RUNNING_PROGRAM: &str =
     "Process and window title that must be focused for overlay buttons.";
 pub const DE_COLS: &str = "Grid columns for this item (0 = unset).";

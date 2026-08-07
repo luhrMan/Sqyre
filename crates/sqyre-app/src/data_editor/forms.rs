@@ -25,7 +25,17 @@ use sqyre_persist::{
     MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MIN_OVERLAY_BORDER_WIDTH,
     MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
 };
-use sqyre_validate::validate_numeric_expression;
+use sqyre_validate::{validate_entity_name, validate_numeric_expression};
+
+fn paint_fs_name_hint(ui: &mut egui::Ui, name: &str) {
+    let name = name.trim();
+    if name.is_empty() {
+        return;
+    }
+    if let Err(e) = validate_entity_name(name) {
+        ui.colored_label(ui.visuals().error_fg_color, e.to_string());
+    }
+}
 
 fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
     ui.label(label);
@@ -106,6 +116,7 @@ impl DataEditor {
                 screen_click.disarm();
             }
         });
+        paint_fs_name_hint(ui, &self.form_name);
     }
 
     pub(crate) fn load_form(&mut self, catalog: &ProgramCatalog, settings: &UserSettings) {
@@ -228,6 +239,7 @@ impl DataEditor {
                     ),
                     help::DE_NAME,
                 );
+                paint_fs_name_hint(ui, &self.form_name);
                 ui.add_space(8.0);
                 help::label(ui, "Running program", help::DE_RUNNING_PROGRAM);
                 ui.weak(
@@ -293,6 +305,7 @@ impl DataEditor {
                     ),
                     help::DE_NAME,
                 );
+                paint_fs_name_hint(ui, &self.form_name);
                 ui.add_space(4.0);
                 help::label(ui, "Cols", help::DE_COLS);
                 help::tip(
@@ -502,6 +515,7 @@ impl DataEditor {
                     ),
                     help::DE_NAME,
                 );
+                paint_fs_name_hint(ui, &self.form_name);
                 let has_image = self
                     .selected_program
                     .as_deref()
@@ -639,6 +653,7 @@ impl DataEditor {
                     ),
                     help::DE_NAME,
                 );
+                paint_fs_name_hint(ui, &self.form_name);
                 ui.add_space(4.0);
                 help::label(ui, "Search area", help::DE_COLLECTION_AREA);
                 {
@@ -749,6 +764,7 @@ impl DataEditor {
                     ),
                     help::DE_NAME,
                 );
+                paint_fs_name_hint(ui, &self.form_name);
                 ui.add_space(4.0);
                 help::label(ui, "Collections", help::DE_ATLAS_MEMBERS);
                 let available: Vec<String> = self
