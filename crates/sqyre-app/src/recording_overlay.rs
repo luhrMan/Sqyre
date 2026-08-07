@@ -1,6 +1,9 @@
-//! Search-area selection outline + recording coords HUD.
+//! Screen-click selection outline, mouse-owning grab, and recording coords HUD.
 //!
 //! Driven by [`sqyre_hotkeys::ScreenClickBridge`] and tooltip preview requests:
+//! - A fullscreen OS grab ([`sqyre_capture::SelectionGrab`]) that takes the pointer
+//!   while Point / Color / SearchArea recording is armed, so games that confine or
+//!   relative-capture the mouse cannot block selection.
 //! - OS edge windows ([`sqyre_capture::SelectionOutline`]) for the live search-area
 //!   rect or a hovered point / search-area preview — not a fullscreen desktop
 //!   snapshot (X11 on Linux, Win32 popups on Windows).
@@ -9,15 +12,15 @@
 //!   The HUD sits on the opposite vertical edge of the monitor from the cursor so
 //!   it stays out of the way while pointing / selecting.
 //!
-//! Outline HWNDs / X11 windows are updated on the UI thread only. A short poller
-//! only `request_repaint`s while recording is armed so the HUD keeps updating when
-//! the root viewport is `Visible(false)`. Driving Win32 outline windows from a
+//! Outline / grab HWNDs and X11 windows are updated on the UI thread only. A short
+//! poller only `request_repaint`s while recording is armed so the HUD keeps updating
+//! when the root viewport is `Visible(false)`. Driving Win32 outline windows from a
 //! background thread while glow paints preview textures hard-crashed on Windows
 //! (no Rust panic / `crash.log`).
 
 use crate::theme;
 use eframe::egui::{self, Pos2, TextStyle, Vec2, ViewportBuilder, ViewportClass, ViewportId};
-use sqyre_capture::{mark_site, SelectionOutline};
+use sqyre_capture::{mark_site, SelectionGrab, SelectionOutline};
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_ports::DesktopRect;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -40,7 +43,7 @@ const HUD_FLIP_HYSTERESIS: f32 = 0.18;
 
 type OutlineCorners = (i32, i32, i32, i32);
 
-/// Owns the selection outline (UI thread) and a repaint poller for recording HUD.
+/// Owns the selection grab + outline (UI thread) and a repaint poller for recording HUD.
 #[derive(Default)]
 pub struct RecordingOverlay {
     stop: Option<Arc<AtomicBool>>,
@@ -48,6 +51,9 @@ pub struct RecordingOverlay {
     /// Created lazily on the UI thread; never touched from the wake poller.
     outline: Option<SelectionOutline>,
     outline_failed: bool,
+    /// Fullscreen mouse-owning layer while Point / Color / SearchArea is armed.
+    grab: Option<SelectionGrab>,
+    grab_failed: bool,
     /// Sticky vertical edge (`true` = top). Cleared when recording ends.
     hud_at_top: Option<bool>,
 }
@@ -70,6 +76,7 @@ impl RecordingOverlay {
     ) {
         let macro_armed = macro_record.is_some_and(|b| b.is_armed());
         let recording = screen_click.is_armed() || macro_armed;
+        self.sync_selection_grab(screen_click);
         let rect = screen_click
             .peek_search_area_selection()
             .or(preview_outline);
@@ -83,6 +90,88 @@ impl RecordingOverlay {
             self.show_coords_hud(ctx, screen_click, macro_record);
         } else {
             self.hud_at_top = None;
+        }
+    }
+
+    /// Arm / poll / disarm the fullscreen grab for any screen-click recording mode.
+    fn sync_selection_grab(&mut self, screen_click: &ScreenClickBridge) {
+        if !screen_click.is_armed() {
+            self.release_selection_grab(screen_click);
+            return;
+        }
+
+        if self.grab.is_none() && !self.grab_failed {
+            mark_site("grab:open");
+            match SelectionGrab::open() {
+                Ok(mut grab) => match grab.arm() {
+                    Ok(()) => {
+                        screen_click.set_grab_owns_input(true);
+                        self.grab = Some(grab);
+                    }
+                    Err(e) => {
+                        self.grab_failed = true;
+                        crate::log::warn(format_args!("selection grab arm failed: {e}"));
+                    }
+                },
+                Err(e) => {
+                    self.grab_failed = true;
+                    crate::log::warn(format_args!("selection grab unavailable: {e}"));
+                }
+            }
+        }
+
+        let rearm_failed = {
+            let Some(grab) = self.grab.as_mut() else {
+                return;
+            };
+            if !grab.is_armed() {
+                if let Err(e) = grab.arm() {
+                    crate::log::warn(format_args!("selection grab re-arm failed: {e}"));
+                    true
+                } else {
+                    screen_click.set_grab_owns_input(true);
+                    false
+                }
+            } else {
+                false
+            }
+        };
+        if rearm_failed {
+            self.release_selection_grab(screen_click);
+            return;
+        }
+
+        let poll = {
+            let Some(grab) = self.grab.as_mut() else {
+                return;
+            };
+            grab.poll()
+        };
+        if poll.moved {
+            screen_click.on_mouse_move(poll.x, poll.y);
+        }
+        for _ in 0..poll.left_clicks {
+            screen_click.on_left_click();
+        }
+        if poll.escape {
+            let _ = screen_click.on_escape();
+        }
+
+        // Recording completed or cancelled by the poll above.
+        if !screen_click.is_armed() {
+            self.release_selection_grab(screen_click);
+        }
+    }
+
+    fn release_selection_grab(&mut self, screen_click: &ScreenClickBridge) {
+        if let Some(mut grab) = self.grab.take() {
+            mark_site("grab:release");
+            grab.disarm();
+        }
+        screen_click.set_grab_owns_input(false);
+        // Allow a later recording session to retry after a transient failure.
+        if !screen_click.is_armed() {
+            self.grab_failed = false;
         }
     }
 
@@ -216,6 +305,9 @@ impl Drop for RecordingOverlay {
         }
         if let Some(join) = self.join.take() {
             let _ = join.join();
+        }
+        if let Some(mut grab) = self.grab.take() {
+            grab.disarm();
         }
         if let Some(mut outline) = self.outline.take() {
             outline.clear();
