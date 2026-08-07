@@ -430,6 +430,7 @@ impl DataEditor {
                 previews,
             },
             &macro_opts,
+            settings.compact_program_headers,
         ) {
             PickerResult::Window {
                 process_path,

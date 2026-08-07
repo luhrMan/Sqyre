@@ -306,8 +306,8 @@ pub fn show(
         paint,
         theme,
         bridges,
+        ..
     } = ui;
-    // Esc while recording a key / chord / screen sample / macro is captured by the recorder.
     if !bridges.key_record.is_open()
         && !bridges.hotkey_record.is_open()
         && !bridges.screen_click.is_armed()
@@ -539,6 +539,7 @@ fn show_edit_window(
         paint,
         theme,
         bridges,
+        compact_program_headers,
     } = ui;
     let VarTheme { is_dark, .. } = *theme;
     let (action_id, anchor, type_key, has_coord_preview) = match state {
@@ -561,7 +562,13 @@ fn show_edit_window(
 
     // Picker modal first (foreground); apply result onto draft.
     if let TooltipState::Edit(edit) = state {
-        let result = pickers::show_active_picker(ctx, &mut edit.picker, paint, macros);
+        let result = pickers::show_active_picker(
+            ctx,
+            &mut edit.picker,
+            paint,
+            macros,
+            *compact_program_headers,
+        );
         apply_picker_result(&mut edit.draft, result);
     }
 

@@ -7,6 +7,7 @@ use crate::preview_tooltip::PreviewKind;
 use eframe::egui;
 use sqyre_domain::{CoordinateRef, PROGRAM_DELIMITER};
 
+#[allow(clippy::too_many_arguments)]
 pub fn paint_coord_ref_list(
     ui: &mut egui::Ui,
     paint: &mut CatalogPaint<'_>,
@@ -15,6 +16,7 @@ pub fn paint_coord_ref_list(
     kind: CoordKind,
     cell_pick: &mut Option<CollectionCellPick>,
     scroll_to_selection: &mut bool,
+    compact_program_headers: bool,
 ) {
     let CatalogPaint {
         catalog,
@@ -131,6 +133,7 @@ pub fn paint_coord_ref_list(
                         selected: None,
                         child_count: rows.len(),
                     },
+                    compact_program_headers,
                 );
                 for (_, row) in rows {
                     match row {
