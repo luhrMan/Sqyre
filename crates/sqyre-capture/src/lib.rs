@@ -2,11 +2,14 @@
 
 mod diag;
 mod error;
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+mod grab_stub;
 mod outline_geometry;
 mod outline_rect;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod outline_stub;
 mod pixel_convert;
+mod selection_grab;
 #[macro_use]
 mod shared_run;
 mod stub;
@@ -15,12 +18,16 @@ mod win_capture;
 #[cfg(target_os = "windows")]
 mod win_focus;
 #[cfg(target_os = "windows")]
+mod win_grab;
+#[cfg(target_os = "windows")]
 mod win_outline;
 mod window_match;
 #[cfg(target_os = "linux")]
 mod x11_capture;
 #[cfg(target_os = "linux")]
 mod x11_focus;
+#[cfg(target_os = "linux")]
+mod x11_grab;
 #[cfg(target_os = "linux")]
 mod x11_outline;
 #[cfg(target_os = "linux")]
@@ -33,6 +40,7 @@ pub use diag::{
 pub use error::{linux_session_capture_warning, CaptureError};
 pub use outline_rect::OutlineRect;
 pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
+pub use selection_grab::GrabPoll;
 pub use stub::{NullCapturer, SolidCapturer};
 
 #[cfg(target_os = "linux")]
@@ -53,6 +61,12 @@ pub use x11_outline::SelectionOutline;
 #[cfg(target_os = "windows")]
 pub use win_outline::SelectionOutline;
 
+#[cfg(target_os = "linux")]
+pub use x11_grab::SelectionGrab;
+
+#[cfg(target_os = "windows")]
+pub use win_grab::SelectionGrab;
+
 /// True if `display` is a Sqyre secondary X11 connection (for winit error hooks).
 #[cfg(target_os = "linux")]
 pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
@@ -61,6 +75,9 @@ pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub use outline_stub::SelectionOutline;
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub use grab_stub::SelectionGrab;
 
 /// macOS / other: capture not implemented yet.
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
