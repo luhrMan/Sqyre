@@ -67,14 +67,19 @@ impl HotkeyService for RdevHotkeys {
                     }
                     match event.event_type {
                         EventType::MouseMove { x, y } => {
-                            screen_click.on_mouse_move(x as i32, y as i32);
+                            if !screen_click.grab_owns_input() {
+                                screen_click.on_mouse_move(x as i32, y as i32);
+                            }
                             macro_record.on_mouse_move(x as i32, y as i32);
                         }
                         EventType::ButtonPress(button) => {
                             if let Some(btn) = record_button(button) {
                                 macro_record.on_button(btn, true);
                             }
-                            if matches!(button, Button::Left) && screen_click.is_armed() {
+                            if matches!(button, Button::Left)
+                                && screen_click.is_armed()
+                                && !screen_click.grab_owns_input()
+                            {
                                 screen_click.on_left_click();
                             }
                         }
@@ -103,6 +108,9 @@ impl HotkeyService for RdevHotkeys {
                             if matches!(key, Key::Escape) {
                                 if macro_record.on_escape() {
                                     // Macro recording takes Esc.
+                                } else if screen_click.grab_owns_input() && screen_click.is_armed()
+                                {
+                                    // SelectionGrab delivers Esc; swallow so we don't stop macros.
                                 } else if screen_click.on_escape() {
                                     // Point/area recording takes Esc; don't also stop macros.
                                 } else if crate::failsafe_modifiers_held(&pressed) {
