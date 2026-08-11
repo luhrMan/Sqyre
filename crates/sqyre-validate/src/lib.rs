@@ -21,8 +21,7 @@ pub type Result<T> = std::result::Result<T, ValidateError>;
 /// Characters illegal in Windows filenames. Linux forbids `/` and NUL (included here /
 /// via the control-char check). Used for any catalog name that becomes a path component
 /// under `images/` (programs, items, search areas, masks, collections, icon variants, …).
-pub const FS_FORBIDDEN_FILENAME_CHARS: &[char] =
-    &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+pub const FS_FORBIDDEN_FILENAME_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 
 /// True when `name` is safe to use as a single path component under a managed directory.
 ///
@@ -541,12 +540,40 @@ fn validate_target_color(label: &str, target_color: &str) -> Result<()> {
     Ok(())
 }
 
-/// Checks minimum fields required to save/run an action.
+/// How strictly to validate an action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActionValidationMode {
+    /// Fields that must be sound to keep the action in the tree (edit Save,
+    /// paste, undo). Incomplete-but-editable cases (e.g. image search with no
+    /// target items) are allowed; the tree surfaces those via [`validate_action`].
+    Persist,
+    /// Full readiness check for run gates and per-row tree diagnostics.
+    Complete,
+}
+
+/// Checks minimum fields required to run an action (and for tree diagnostics).
+///
+/// Image search with no target items fails here so the macro tree can show the
+/// error; use [`validate_action_persist`] when applying an edit Save.
 ///
 /// `macro_` enables Set expression structure checks; when
 /// `None`, those structure checks are skipped (empty-expression / name rules
 /// still apply).
 pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
+    validate_action_with(action, macro_, ActionValidationMode::Complete)
+}
+
+/// Like [`validate_action`], but allows incomplete image-search targets so the
+/// user can save and fix them later (tree still flags via [`validate_action`]).
+pub fn validate_action_persist(action: &Action, macro_: Option<&Macro>) -> Result<()> {
+    validate_action_with(action, macro_, ActionValidationMode::Persist)
+}
+
+fn validate_action_with(
+    action: &Action,
+    macro_: Option<&Macro>,
+    mode: ActionValidationMode,
+) -> Result<()> {
     for b in action.variable_bindings() {
         if b.name.trim().is_empty() {
             continue;
@@ -569,12 +596,14 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
         ActionKind::ImageSearch {
             targets, detection, ..
         } => {
-            if targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()) {
+            validate_wait_config("image search", &detection.wait)?;
+            if mode == ActionValidationMode::Complete
+                && (targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()))
+            {
                 return Err(ValidateError::Message(
                     "image search: add at least one target item".into(),
                 ));
             }
-            validate_wait_config("image search", &detection.wait)?;
         }
         ActionKind::Ocr {
             detection,
@@ -735,13 +764,26 @@ fn validate_wait_config(label: &str, wait: &sqyre_domain::WaitTilFoundConfig) ->
 
 /// Recursively validate `action` and every descendant via then/else children.
 pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<()> {
-    validate_action(action, macro_)?;
+    validate_action_tree_with(action, macro_, ActionValidationMode::Complete)
+}
+
+/// Like [`validate_action_tree`] using [`validate_action_persist`] at each node.
+pub fn validate_action_tree_persist(action: &Action, macro_: Option<&Macro>) -> Result<()> {
+    validate_action_tree_with(action, macro_, ActionValidationMode::Persist)
+}
+
+fn validate_action_tree_with(
+    action: &Action,
+    macro_: Option<&Macro>,
+    mode: ActionValidationMode,
+) -> Result<()> {
+    validate_action_with(action, macro_, mode)?;
     for child in action.children() {
-        validate_action_tree(child, macro_)?;
+        validate_action_tree_with(child, macro_, mode)?;
     }
     if let Some(else_kids) = action.else_children() {
         for child in else_kids {
-            validate_action_tree(child, macro_)?;
+            validate_action_tree_with(child, macro_, mode)?;
         }
     }
     Ok(())
@@ -1055,6 +1097,8 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("target"));
+        // Persist allows saving without items; tree/run still flag via Complete.
+        assert!(validate_action_persist(&empty, None).is_ok());
 
         let bad_wait = Action {
             id: ActionId::new(),
@@ -1077,6 +1121,36 @@ mod tests {
             },
         };
         assert!(validate_action(&bad_wait, None)
+            .unwrap_err()
+            .to_string()
+            .contains("timeout"));
+        assert!(validate_action_persist(&bad_wait, None)
+            .unwrap_err()
+            .to_string()
+            .contains("timeout"));
+
+        // Empty targets must not mask a bad wait on persist.
+        let empty_bad_wait = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec![],
+                search_area: Default::default(),
+                tolerance: 0.95,
+                blur: 5,
+                match_method: Default::default(),
+                detection: sqyre_domain::DetectionBranch {
+                    wait: WaitTilFoundConfig {
+                        repeat_mode: RepeatMode::WaitUntilFound,
+                        wait_til_found_seconds: 0,
+                        wait_til_found_interval_ms: 0,
+                        max_iterations: 0,
+                    },
+                    ..Default::default()
+                },
+            },
+        };
+        assert!(validate_action_persist(&empty_bad_wait, None)
             .unwrap_err()
             .to_string()
             .contains("timeout"));
