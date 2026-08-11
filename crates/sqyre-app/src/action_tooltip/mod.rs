@@ -12,7 +12,7 @@ use sqyre_domain::{
     action_type_description, action_type_label, Action, ActionId, ActionKind, Macro,
 };
 use sqyre_ui_model::{action_pastel_color, split_display_params, ActionDisplay};
-use sqyre_validate::validate_action;
+use sqyre_validate::validate_action_persist;
 
 use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, TipUiCtx, VarTheme};
 use crate::var_pills;
@@ -141,6 +141,8 @@ impl TooltipState {
     }
 
     /// Validate draft (with live children) then apply. On failure keeps Edit + error.
+    /// Image search may persist with no target items; the macro tree shows that
+    /// incompleteness via [`sqyre_validate::validate_action`].
     /// `before_mutate` runs after validation succeeds and before the tree is changed
     /// (for undo snapshots); it receives the pre-mutation root.
     pub fn try_save_validated(
@@ -171,7 +173,7 @@ impl TooltipState {
         }
         candidate.id = live.id;
 
-        if let Err(e) = validate_action(&candidate, macro_) {
+        if let Err(e) = validate_action_persist(&candidate, macro_) {
             edit.error = Some(e.to_string());
             return false;
         }
@@ -863,6 +865,39 @@ mod tests {
             ActionKind::Key { key, .. } => assert_eq!(key, "a"),
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn image_search_saves_without_targets() {
+        let child = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec!["Game~Item".into()],
+                search_area: Default::default(),
+                tolerance: 0.95,
+                blur: 5,
+                match_method: Default::default(),
+                detection: DetectionBranch::default(),
+            },
+        };
+        let id = child.id;
+        let mut root = root_loop(vec![child]);
+        let live = root.find_by_id(id).unwrap().clone();
+        let mut state = TooltipState::Hidden;
+        state.open_edit(&live, egui::pos2(0.0, 0.0));
+        if let TooltipState::Edit(edit) = &mut state {
+            if let ActionKind::ImageSearch { targets, .. } = &mut edit.draft.kind {
+                targets.clear();
+            }
+        }
+        assert!(state.try_save_validated(&mut root, None, |_| {}));
+        assert!(matches!(state, TooltipState::View { action_id } if action_id == id));
+        match &root.find_by_id(id).unwrap().kind {
+            ActionKind::ImageSearch { targets, .. } => assert!(targets.is_empty()),
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(sqyre_validate::validate_action(root.find_by_id(id).unwrap(), None).is_err());
     }
 
     #[test]

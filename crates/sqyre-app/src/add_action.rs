@@ -26,7 +26,7 @@ use sqyre_serialize::{action_from_map, action_to_map};
 use sqyre_ui_model::{
     action_icon_glyph, action_pastel_color, action_picker_category, ACTION_PICKER_CATEGORIES,
 };
-use sqyre_validate::validate_action;
+use sqyre_validate::validate_action_persist;
 use std::collections::HashMap;
 use web_time::{Duration, Instant};
 
@@ -521,7 +521,7 @@ impl AddActionPicker {
                 Some(DefaultsTip::Edit(edit)) => (edit.action_type.clone(), edit.draft.clone()),
                 _ => return false,
             };
-            if let Err(e) = validate_action(&draft, None) {
+            if let Err(e) = validate_action_persist(&draft, None) {
                 if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
                     edit.error = Some(e.to_string());
                 }

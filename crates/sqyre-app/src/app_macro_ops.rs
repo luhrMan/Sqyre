@@ -480,9 +480,10 @@ impl SqyreApp {
                 .workspace
                 .selected_macro
                 .min(self.workspace.macros.len() - 1);
-            if let Err(e) =
-                sqyre_validate::validate_action_tree(&new_action, Some(&self.workspace.macros[idx]))
-            {
+            if let Err(e) = sqyre_validate::validate_action_tree_persist(
+                &new_action,
+                Some(&self.workspace.macros[idx]),
+            ) {
                 *self.run_session.state.status.lock() = format!("Paste failed: {e}");
                 return false;
             }
