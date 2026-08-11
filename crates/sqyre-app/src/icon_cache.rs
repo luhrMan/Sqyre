@@ -176,6 +176,15 @@ impl IconCache {
         self.textures.remove(path);
     }
 
+    /// Forget a sticky miss for `program~item` so listings recheck disk.
+    ///
+    /// Call this after adding, overwriting, or deleting icon variants. Path-only
+    /// invalidation is not enough: [`for_target`] remembers empty results and
+    /// would keep showing the fallback until restart.
+    pub fn invalidate_target(&mut self, target: &str) {
+        self.missing.remove(target);
+    }
+
     fn insert_process_icon(
         &mut self,
         ctx: &egui::Context,
@@ -270,9 +279,9 @@ pub fn paint_program_label(
 
     let rich = match style {
         ProgramLabelStyle::Selectable { .. } => egui::RichText::new(text),
-        ProgramLabelStyle::Header { .. } => egui::RichText::new(text)
-            .size(PROCESS_ICON_SIDE)
-            .strong(),
+        ProgramLabelStyle::Header { .. } => {
+            egui::RichText::new(text).size(PROCESS_ICON_SIDE).strong()
+        }
     };
 
     let icon = tex.as_ref().map(|tex| {
@@ -284,12 +293,13 @@ pub fn paint_program_label(
     let response = match (icon, interactive) {
         (Some(icon), true) => ui.selectable_label(selected, (icon, rich)),
         (None, true) => ui.selectable_label(selected, rich),
-        (Some(icon), false) => ui
-            .horizontal(|ui| {
+        (Some(icon), false) => {
+            ui.horizontal(|ui| {
                 ui.add(icon);
                 ui.label(rich);
             })
-            .response,
+            .response
+        }
         (None, false) => ui.label(rich),
     };
 
@@ -379,4 +389,29 @@ fn load_png_bytes(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<Textu
     let size = [img.width() as usize, img.height() as usize];
     let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
     Some(ctx.load_texture(name.to_owned(), color, TextureOptions::LINEAR))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalidate_target_clears_sticky_miss() {
+        let mut cache = IconCache::new();
+        cache.missing.insert("Prog~Item".into(), ());
+        cache.invalidate_target("Prog~Item");
+        assert!(!cache.missing.contains_key("Prog~Item"));
+    }
+
+    #[test]
+    fn invalidate_path_does_not_clear_sticky_miss() {
+        let mut cache = IconCache::new();
+        let path = PathBuf::from("/tmp/Prog/Item~Original.png");
+        cache.missing.insert("Prog~Item".into(), ());
+        cache.invalidate_path(&path);
+        assert!(
+            cache.missing.contains_key("Prog~Item"),
+            "path invalidation alone must not imply a target recheck"
+        );
+    }
 }

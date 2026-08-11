@@ -8,7 +8,7 @@ use crate::data_editor_preview::{
 use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
 use eframe::egui;
-use sqyre_domain::{CoordinateRef, Macro};
+use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
 use sqyre_persist::{auto_pic_path, ProgramCatalog, UserSettings};
 use sqyre_ports::DesktopRect;
 #[cfg(feature = "native-runtime")]
@@ -38,6 +38,7 @@ impl DataEditor {
                 .on_hover_text("Refresh")
                 .clicked()
             {
+                icons.invalidate_target(target);
                 for path in &paths {
                     icons.invalidate_path(path);
                 }
@@ -142,7 +143,9 @@ impl DataEditor {
         match icon_variants::add_variant(catalog, &prog, &item, name, source) {
             Ok(added) => {
                 let path = icon_variants::variant_path(catalog, &prog, &item, &added);
+                let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
                 icons.invalidate_path(&path);
+                icons.invalidate_target(&target);
                 self.set_ok(format!("Added variant “{added}”."));
                 #[cfg(not(target_arch = "wasm32"))]
                 crate::sound::play_add_sound_if(settings.play_ui_sounds, settings.sound_volume);
@@ -174,7 +177,9 @@ impl DataEditor {
         match icon_variants::overwrite_variant(catalog, &prog, &item, variant, source) {
             Ok(()) => {
                 let path = icon_variants::variant_path(catalog, &prog, &item, variant);
+                let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
                 icons.invalidate_path(&path);
+                icons.invalidate_target(&target);
                 self.set_ok(format!("Overwrote variant “{variant}”."));
             }
             Err(e) => self.set_err(e),
@@ -205,7 +210,9 @@ impl DataEditor {
         match icon_variants::delete_variant(catalog, &prog, &item, variant) {
             Ok(()) => {
                 let path = icon_variants::variant_path(catalog, &prog, &item, variant);
+                let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
                 icons.invalidate_path(&path);
+                icons.invalidate_target(&target);
                 self.set_ok(format!("Deleted variant “{variant}”."));
                 #[cfg(not(target_arch = "wasm32"))]
                 crate::sound::play_delete_sound_if(settings.play_ui_sounds, settings.sound_volume);
@@ -317,13 +324,11 @@ impl DataEditor {
             }
             let name = self.form_name.trim().to_string();
             if name.is_empty() {
-                self.set_err("AutoPic: pick a search area or collection cell first.");
+                self.set_err("AutoPic: enter a name for the saved image.");
                 return;
             }
             if let Err(e) = sqyre_validate::validate_entity_name(&name) {
-                self.set_err(format!(
-                    "AutoPic: {e}. Rename the search area or collection first."
-                ));
+                self.set_err(format!("AutoPic: {e}"));
                 return;
             }
             let lx = form_coord_i32(&self.form_left);
