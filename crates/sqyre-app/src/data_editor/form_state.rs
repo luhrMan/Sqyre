@@ -440,10 +440,7 @@ impl FormState for AtlasesForm {
 
 impl FormState for AutoPicForm {
     fn load(ed: &mut DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) {
-        let (prog, name) = match (
-            ed.selected_program.clone(),
-            ed.selected_entity.clone(),
-        ) {
+        let (prog, name) = match (ed.selected_program.clone(), ed.selected_entity.clone()) {
             (Some(p), Some(n)) => (p, n),
             _ => return,
         };
@@ -460,10 +457,8 @@ impl FormState for AutoPicForm {
         if is_collection_only {
             return;
         }
-        let coord = sqyre_domain::CoordinateRef(format!(
-            "{prog}{}{name}",
-            sqyre_domain::PROGRAM_DELIMITER
-        ));
+        let coord =
+            sqyre_domain::CoordinateRef(format!("{prog}{}{name}", sqyre_domain::PROGRAM_DELIMITER));
         if ed.apply_autopix_reference(catalog, coord) {
             return;
         }

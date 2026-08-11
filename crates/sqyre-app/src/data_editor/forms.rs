@@ -877,15 +877,22 @@ impl DataEditor {
             EditorTab::AutoPic => {
                 ui.heading("AutoPic");
                 ui.weak(
-                    "Pick a search area or collection cell as a starting reference, adjust the coordinates, then save a PNG into images/AutoPic.",
+                    "Set LeftX/TopY/RightX/BottomY (type, screen-record, or optional reference), name the file, then save a PNG into images/AutoPic.",
                 );
                 ui.add_space(4.0);
+                self.paint_name_record_row(
+                    ui,
+                    screen_click,
+                    "Two clicks: opposite corners of the capture region",
+                    "Recording… click two corners.",
+                    ScreenClickBridge::arm_search_area,
+                );
                 {
                     use crate::pickers::{ActivePicker, CoordKind};
                     use sqyre_domain::CoordinateRef;
                     let reference = CoordinateRef(self.form_search_area.clone());
                     let display = if reference.is_empty() {
-                        "(unset — pick a reference or select from the list)"
+                        "(optional — seed coords from a search area or cell)"
                     } else {
                         reference.as_str()
                     };
@@ -931,77 +938,79 @@ impl DataEditor {
                     });
                 }
                 ui.weak("Bounds overlay the preview edges; edit them to crop the capture.");
-                let has_coords = !self.form_left.trim().is_empty()
-                    || !self.form_top.trim().is_empty()
-                    || !self.form_right.trim().is_empty()
-                    || !self.form_bottom.trim().is_empty();
-                if has_coords {
-                    let lx = form_coord_literal(&self.form_left);
-                    let ty = form_coord_literal(&self.form_top);
-                    let rx = form_coord_literal(&self.form_right);
-                    let by = form_coord_literal(&self.form_bottom);
-                    self.sync_coord_preview_view();
-                    let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
-                    let rect = previews.paint_search_area_panel(
-                        ui,
-                        lx,
-                        ty,
-                        rx,
-                        by,
-                        force,
-                        &mut self.coord_preview,
-                    );
-                    paint_coord_chips(
-                        ui,
-                        rect,
-                        &known,
-                        is_dark,
-                        active_macro,
-                        &mut [
-                            (
-                                &mut self.form_top,
-                                CardinalEdge::Top,
-                                "TopY",
-                                help::DE_AREA_TOP,
-                            ),
-                            (
-                                &mut self.form_bottom,
-                                CardinalEdge::Bottom,
-                                "BottomY",
-                                help::DE_AREA_BOTTOM,
-                            ),
-                            (
-                                &mut self.form_left,
-                                CardinalEdge::Left,
-                                "LeftX",
-                                help::DE_AREA_LEFT,
-                            ),
-                            (
-                                &mut self.form_right,
-                                CardinalEdge::Right,
-                                "RightX",
-                                help::DE_AREA_RIGHT,
-                            ),
-                        ],
-                    );
-                    ui.add_space(8.0);
-                    let saving = self.autopix_pending.is_some();
-                    if ui
-                        .add_enabled(
-                            !saving,
-                            egui::Button::new(if saving { "Saving…" } else { "Save" }),
-                        )
-                        .clicked()
-                    {
-                        self.save_autopix();
-                        ui.ctx().request_repaint();
-                    }
-                    ui.weak(format!("Saves to {}", auto_pic_path().display()));
-                } else {
-                    ui.weak(
-                        "Select a search area from the list, or use ☰ to pick a search area or collection cell.",
-                    );
+                let lx = form_coord_literal(&self.form_left);
+                let ty = form_coord_literal(&self.form_top);
+                let rx = form_coord_literal(&self.form_right);
+                let by = form_coord_literal(&self.form_bottom);
+                self.sync_coord_preview_view();
+                let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
+                // Keep Save + path hint below the preview (panel fills remaining height).
+                let footer_h = 8.0
+                    + ui.spacing().interact_size.y
+                    + ui.spacing().item_spacing.y
+                    + ui.text_style_height(&egui::TextStyle::Body);
+                let preview_h = (ui.available_height() - footer_h).max(120.0);
+                ui.allocate_ui_with_layout(
+                    egui::vec2(ui.available_width(), preview_h),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        let rect = previews.paint_search_area_panel(
+                            ui,
+                            lx,
+                            ty,
+                            rx,
+                            by,
+                            force,
+                            &mut self.coord_preview,
+                        );
+                        paint_coord_chips(
+                            ui,
+                            rect,
+                            &known,
+                            is_dark,
+                            active_macro,
+                            &mut [
+                                (
+                                    &mut self.form_top,
+                                    CardinalEdge::Top,
+                                    "TopY",
+                                    help::DE_AREA_TOP,
+                                ),
+                                (
+                                    &mut self.form_bottom,
+                                    CardinalEdge::Bottom,
+                                    "BottomY",
+                                    help::DE_AREA_BOTTOM,
+                                ),
+                                (
+                                    &mut self.form_left,
+                                    CardinalEdge::Left,
+                                    "LeftX",
+                                    help::DE_AREA_LEFT,
+                                ),
+                                (
+                                    &mut self.form_right,
+                                    CardinalEdge::Right,
+                                    "RightX",
+                                    help::DE_AREA_RIGHT,
+                                ),
+                            ],
+                        );
+                    },
+                );
+                ui.add_space(8.0);
+                let saving = self.autopix_pending.is_some();
+                if ui
+                    .add_enabled(
+                        !saving,
+                        egui::Button::new(if saving { "Saving…" } else { "Save" }),
+                    )
+                    .clicked()
+                {
+                    self.save_autopix();
+                    ui.ctx().request_repaint();
                 }
+                ui.weak(format!("Saves to {}", auto_pic_path().display()));
             }
             EditorTab::Overlay => {
                 ui.heading("Overlay Button");
