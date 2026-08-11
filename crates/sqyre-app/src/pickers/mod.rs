@@ -13,6 +13,7 @@ mod tests;
 mod types;
 mod window;
 
+pub use coord_list::set_coord_list_openness;
 pub use icon_grid::*;
 pub use items_grid::*;
 pub use modal::*;

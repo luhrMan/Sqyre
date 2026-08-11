@@ -71,7 +71,20 @@ pub fn show_active_picker(
             match picker {
                 ActivePicker::Items { search, staged } => {
                     let mut header_click = None;
-                    picker_searchable_scroll(ui, search, PickerScrollOpts::list(ui), |ui, q| {
+                    let program_names: Vec<String> =
+                        paint.catalog.program_names().cloned().collect();
+                    let mut opts = PickerScrollOpts::list(ui);
+                    let mut trailing = |ui: &mut egui::Ui| {
+                        super::collapse_all_buttons(ui, |ctx, open| {
+                            super::set_items_icon_grid_openness(
+                                ctx,
+                                program_names.iter().map(|n| n.as_str()),
+                                open,
+                            );
+                        });
+                    };
+                    opts.trailing = Some(&mut trailing);
+                    picker_searchable_scroll(ui, search, opts, |ui, q| {
                         paint_items_icon_grid(
                             ui,
                             paint.catalog,
@@ -97,6 +110,9 @@ pub fn show_active_picker(
                     if let Some(pick) = cell_pick.as_mut() {
                         paint_collection_cell_picker(ui, paint.catalog, paint.icons, pick);
                     } else {
+                        let kind = *kind;
+                        let program_names: Vec<String> =
+                            paint.catalog.program_names().cloned().collect();
                         // Search chrome only — list owns its own ScrollArea (program groups).
                         ui.horizontal(|ui| {
                             ui.label(
@@ -107,6 +123,14 @@ pub fn show_active_picker(
                             if ui.text_edit_singleline(search).changed() {
                                 *scroll_to_selection = true;
                             }
+                            super::collapse_all_buttons(ui, |ctx, open| {
+                                super::set_coord_list_openness(
+                                    ctx,
+                                    kind,
+                                    program_names.iter().map(|n| n.as_str()),
+                                    open,
+                                );
+                            });
                         });
                         ui.separator();
                         paint_coord_ref_list(
@@ -114,7 +138,7 @@ pub fn show_active_picker(
                             paint,
                             search,
                             value,
-                            *kind,
+                            kind,
                             cell_pick,
                             scroll_to_selection,
                             compact_program_headers,

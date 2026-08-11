@@ -43,7 +43,7 @@ impl DataEditor {
             if !show_collapse_chrome {
                 return;
             }
-            collapse_all_buttons(ui, |ctx, open| match tab {
+            pickers::collapse_all_buttons(ui, |ctx, open| match tab {
                 EditorTab::Items => {
                     pickers::set_items_icon_grid_openness(
                         ctx,
@@ -531,19 +531,6 @@ fn tab_collapse_key(tab: EditorTab) -> &'static str {
         EditorTab::Atlases => "atlases",
         EditorTab::AutoPic => "autopix",
         EditorTab::Overlay => "overlay",
-    }
-}
-
-fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Context, bool)) {
-    let expand = crate::theme::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_DOWN)
-        .on_hover_text("Expand all");
-    let collapse = crate::theme::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_UP)
-        .on_hover_text("Collapse all");
-    if expand.clicked() {
-        on_set(ui.ctx(), true);
-    }
-    if collapse.clicked() {
-        on_set(ui.ctx(), false);
     }
 }
 
