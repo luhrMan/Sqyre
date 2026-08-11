@@ -144,8 +144,10 @@ pub(crate) fn paint_preview_coord_chip(
     ui.painter()
         .rect_stroke(edit_rect, radius, border, egui::StrokeKind::Outside);
 
+    // Use `place` (not `put`) so overlay chips do not advance the form cursor
+    // into the preview — widgets after the panel must stay below it.
     if let (Some(minus), Some(n)) = (minus_rect, pure) {
-        let resp = ui.put(
+        let resp = ui.place(
             minus,
             egui::Button::new("−")
                 .fill(fill)
@@ -159,7 +161,7 @@ pub(crate) fn paint_preview_coord_chip(
         resp.on_hover_text("Decrement");
     }
     if let (Some(plus), Some(n)) = (plus_rect, pure) {
-        let resp = ui.put(
+        let resp = ui.place(
             plus,
             egui::Button::new("+")
                 .fill(fill)
@@ -178,14 +180,12 @@ pub(crate) fn paint_preview_coord_chip(
 
     let resp = if show_overlay {
         let plain_fg = egui::Color32::from_gray(230);
-        ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
-            ui.set_min_size(inner.size());
-            ui.centered_and_justified(|ui| {
-                var_pills::paint_var_ref_content(ui, value, known, is_dark, plain_fg);
-            });
-        })
-        .response
-        .interact(egui::Sense::click())
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(
+            egui::Layout::centered_and_justified(egui::Direction::TopDown),
+        ));
+        child.set_min_size(inner.size());
+        var_pills::paint_var_ref_content(&mut child, value, known, is_dark, plain_fg);
+        ui.interact(edit_rect, id.with("overlay"), egui::Sense::click())
     } else if let Some(n) = pure.filter(|_| !focused) {
         // Unfocused pure number: drag to adjust, click to edit.
         let resp = ui.interact(edit_rect, id.with("drag"), egui::Sense::click_and_drag());
@@ -220,7 +220,7 @@ pub(crate) fn paint_preview_coord_chip(
         }
         resp
     } else {
-        ui.put(
+        ui.place(
             inner,
             egui::TextEdit::singleline(value)
                 .id(id)
