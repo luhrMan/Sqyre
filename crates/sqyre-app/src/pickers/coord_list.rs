@@ -1,3 +1,4 @@
+use super::items_grid::set_collapsing_openness;
 use super::query::fuzzy_match_fold;
 use super::scroll::{maybe_scroll_to, popup_scroll_max_height, scroll_vertical};
 use super::types::{CollectionCellPick, CoordKind};
@@ -6,6 +7,30 @@ use crate::paint_ctx::CatalogPaint;
 use crate::preview_tooltip::PreviewKind;
 use eframe::egui;
 use sqyre_domain::{CoordinateRef, PROGRAM_DELIMITER};
+
+pub fn coord_list_collapse_id(kind: CoordKind, program: &str) -> egui::Id {
+    let kind_key = match kind {
+        CoordKind::Point => "point",
+        CoordKind::SearchArea => "search_area",
+    };
+    egui::Id::new(("coord_ref_list", kind_key, program))
+}
+
+/// Set open/closed for every program group in a coord picker list.
+pub fn set_coord_list_openness<'a>(
+    ctx: &egui::Context,
+    kind: CoordKind,
+    programs: impl IntoIterator<Item = &'a str>,
+    open: bool,
+) {
+    set_collapsing_openness(
+        ctx,
+        programs
+            .into_iter()
+            .map(|p| coord_list_collapse_id(kind, p)),
+        open,
+    );
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn paint_coord_ref_list(
@@ -124,70 +149,114 @@ pub fn paint_coord_ref_list(
                         })
                 });
 
-                crate::icon_cache::paint_program_label(
-                    ui,
-                    catalog,
-                    icons,
-                    prog,
-                    crate::icon_cache::ProgramLabelStyle::Header {
-                        selected: None,
-                        child_count: rows.len(),
-                    },
-                    compact_program_headers,
-                );
-                for (_, row) in rows {
-                    match row {
-                        Row::Coord { key, display } => {
-                            let target = format!("{prog}{PROGRAM_DELIMITER}{key}");
-                            let selected = current == &target;
-                            let label = if display == key {
-                                format!("  {key}")
-                            } else {
-                                format!("  {display}")
-                            };
-                            let resp = ui
-                                .selectable_label(selected, egui::RichText::new(label).size(13.0));
-                            previews.show_for_entity(ui, &resp, catalog, prog, &key, preview_kind);
-                            if selected && *scroll_to_selection && !did_scroll {
-                                maybe_scroll_to(ui, &resp, scroll_to_selection);
-                                did_scroll = true;
-                            }
-                            if resp.clicked() {
-                                *current = target;
-                            }
-                        }
-                        Row::Collection(col) => {
-                            let selected = current_ref.is_collection()
-                                && current_ref.program() == Some(prog.as_str())
-                                && current_ref.name() == col.name;
-                            let label = format!("  {} (collection)", col.name);
-                            let resp = ui
-                                .selectable_label(selected, egui::RichText::new(label).size(13.0));
-                            show_file_hover(
-                                ui,
-                                &resp,
-                                icons,
-                                &catalog.collection_image_path(prog, &col.name),
-                                &format!("{prog}~{}", col.name),
-                            );
-                            if selected && *scroll_to_selection && !did_scroll {
-                                maybe_scroll_to(ui, &resp, scroll_to_selection);
-                                did_scroll = true;
-                            }
-                            if resp.clicked() {
-                                let initial = if selected {
-                                    current_ref.cell_range()
-                                } else {
-                                    None
-                                };
-                                *cell_pick = Some(
-                                    CollectionCellPick::new(prog, &col.name, col.rows, col.cols)
-                                        .with_initial_sel(initial),
-                                );
-                            }
-                        }
+                let contains_selection = rows.iter().any(|(_, row)| match row {
+                    Row::Coord { key, .. } => {
+                        current
+                            .strip_prefix(prog)
+                            .and_then(|rest| rest.strip_prefix(PROGRAM_DELIMITER))
+                            == Some(key.as_str())
                     }
+                    Row::Collection(col) => {
+                        current_ref.is_collection()
+                            && current_ref.program() == Some(prog.as_str())
+                            && current_ref.name() == col.name
+                    }
+                });
+
+                // Absolute id so expand/collapse-all (outside this ui stack) can target the same state.
+                let id = coord_list_collapse_id(kind, prog);
+                let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
+                    ui.ctx(),
+                    id,
+                    false,
+                );
+                // Open the group that holds the current selection so scroll-to can find it.
+                if *scroll_to_selection && contains_selection && !state.is_open() {
+                    state.set_open(true);
+                    state.store(ui.ctx());
                 }
+                state
+                    .show_header(ui, |ui| {
+                        crate::icon_cache::paint_program_label(
+                            ui,
+                            catalog,
+                            icons,
+                            prog,
+                            crate::icon_cache::ProgramLabelStyle::Header {
+                                selected: None,
+                                child_count: rows.len(),
+                            },
+                            compact_program_headers,
+                        );
+                    })
+                    .body(|ui| {
+                        for (_, row) in &rows {
+                            match row {
+                                Row::Coord { key, display } => {
+                                    let target = format!("{prog}{PROGRAM_DELIMITER}{key}");
+                                    let selected = current == &target;
+                                    let label = if display == key {
+                                        format!("  {key}")
+                                    } else {
+                                        format!("  {display}")
+                                    };
+                                    let resp = ui.selectable_label(
+                                        selected,
+                                        egui::RichText::new(label).size(13.0),
+                                    );
+                                    previews.show_for_entity(
+                                        ui,
+                                        &resp,
+                                        catalog,
+                                        prog,
+                                        key,
+                                        preview_kind,
+                                    );
+                                    if selected && *scroll_to_selection && !did_scroll {
+                                        maybe_scroll_to(ui, &resp, scroll_to_selection);
+                                        did_scroll = true;
+                                    }
+                                    if resp.clicked() {
+                                        *current = target;
+                                    }
+                                }
+                                Row::Collection(col) => {
+                                    let selected = current_ref.is_collection()
+                                        && current_ref.program() == Some(prog.as_str())
+                                        && current_ref.name() == col.name;
+                                    let label = format!("  {} (collection)", col.name);
+                                    let resp = ui.selectable_label(
+                                        selected,
+                                        egui::RichText::new(label).size(13.0),
+                                    );
+                                    show_file_hover(
+                                        ui,
+                                        &resp,
+                                        icons,
+                                        &catalog.collection_image_path(prog, &col.name),
+                                        &format!("{prog}~{}", col.name),
+                                    );
+                                    if selected && *scroll_to_selection && !did_scroll {
+                                        maybe_scroll_to(ui, &resp, scroll_to_selection);
+                                        did_scroll = true;
+                                    }
+                                    if resp.clicked() {
+                                        let initial = if selected {
+                                            current_ref.cell_range()
+                                        } else {
+                                            None
+                                        };
+                                        *cell_pick = Some(
+                                            CollectionCellPick::new(
+                                                prog, &col.name, col.rows, col.cols,
+                                            )
+                                            .with_initial_sel(initial),
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                    });
                 ui.add_space(6.0);
             }
         });

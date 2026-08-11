@@ -36,6 +36,20 @@ pub fn set_collapsing_openness(
     }
 }
 
+/// Expand-all / collapse-all icon pair for program-header lists.
+pub fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Context, bool)) {
+    let expand = crate::theme::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_DOWN)
+        .on_hover_text("Expand all");
+    let collapse = crate::theme::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_UP)
+        .on_hover_text("Collapse all");
+    if expand.clicked() {
+        on_set(ui.ctx(), true);
+    }
+    if collapse.clicked() {
+        on_set(ui.ctx(), false);
+    }
+}
+
 /// Program accordion of item icon grids. Click toggles membership in `selected` when
 /// `multi` is true; otherwise replaces selection with the clicked target.
 /// When `multi`, each program header includes an All control over filtered targets
