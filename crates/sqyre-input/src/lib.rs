@@ -81,6 +81,278 @@ pub fn release_held_inputs() {
     }
 }
 
+/// Clear OS mouse-capture / stuck button state before a macro run.
+///
+/// Call from the **UI thread** (e.g. inside the Start click handler). winit's
+/// `SetCapture` / `ReleaseCapture` are thread-affine — calling this on the run
+/// worker never clears capture taken by the Start button. No-op on other platforms.
+pub fn prepare_for_automation() {
+    #[cfg(target_os = "windows")]
+    prepare_windows_automation();
+}
+
+#[cfg(target_os = "windows")]
+fn prepare_windows_automation() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, ReleaseCapture, SendInput, INPUT, INPUT_0, INPUT_MOUSE,
+        MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_RIGHTUP, MOUSEINPUT, VK_LBUTTON,
+        VK_MBUTTON, VK_RBUTTON,
+    };
+
+    // Warm the unlock HWND on the UI thread so Move workers never pay CreateWindow.
+    let _ = win_cursor::ensure_unlock_hwnd();
+
+    // SAFETY: ReleaseCapture / GetAsyncKeyState / SendInput use process-global input
+    // state; INPUT values are stack locals.
+    unsafe {
+        let _ = ReleaseCapture();
+
+        // MSDN: SendInput does not clear already-pressed buttons — correct them first.
+        for flag in [
+            MOUSEEVENTF_LEFTUP,
+            MOUSEEVENTF_RIGHTUP,
+            MOUSEEVENTF_MIDDLEUP,
+        ] {
+            let input = INPUT {
+                r#type: INPUT_MOUSE,
+                Anonymous: INPUT_0 {
+                    mi: MOUSEINPUT {
+                        dx: 0,
+                        dy: 0,
+                        mouseData: 0,
+                        dwFlags: flag,
+                        time: 0,
+                        dwExtraInfo: 0,
+                    },
+                },
+            };
+            let _ = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+        }
+
+        let deadline = std::time::Instant::now() + Duration::from_millis(500);
+        while std::time::Instant::now() < deadline {
+            let down = ((GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16) & 0x8000) != 0
+                || ((GetAsyncKeyState(VK_RBUTTON.0 as i32) as u16) & 0x8000) != 0
+                || ((GetAsyncKeyState(VK_MBUTTON.0 as i32) as u16) & 0x8000) != 0;
+            if !down {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        // Let the Start-button mouse-up / capture release fully settle.
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// Windows cursor unlock + absolute move helpers.
+///
+/// Relative-mouse games reject `SetCursorPos` until another window takes
+/// activation. A process-lifetime 1×1 tool HWND (created on the UI thread in
+/// [`prepare_for_automation`]) is shown briefly to break that lock.
+#[cfg(target_os = "windows")]
+mod win_cursor {
+    use std::sync::{Mutex, OnceLock};
+    use windows::core::w;
+    use windows::Win32::Foundation::{
+        GetLastError, COLORREF, ERROR_CLASS_ALREADY_EXISTS, HWND, LPARAM, LRESULT, WPARAM,
+    };
+    use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        ReleaseCapture, SendInput, SetCapture, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE,
+        KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_MOVE,
+        MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY, VK_MENU,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        ClipCursor, CreateWindowExW, DefWindowProcW, GetForegroundWindow, GetSystemMetrics,
+        GetWindowThreadProcessId, IsWindow, RegisterClassW, SetCursorPos, SetForegroundWindow,
+        SetLayeredWindowAttributes, SetWindowPos, ShowCursor, ShowWindow, CS_HREDRAW, CS_VREDRAW,
+        HWND_TOPMOST, LWA_ALPHA, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+        SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SW_HIDE, SW_SHOWNA, WM_DESTROY, WNDCLASSW,
+        WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    };
+
+    use super::virtual_desk_normalized;
+
+    const UNLOCK_CLASS: windows::core::PCWSTR = w!("SqyreCursorUnlock");
+
+    unsafe extern "system" fn unlock_wnd_proc(
+        hwnd: HWND,
+        msg: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        if msg == WM_DESTROY {
+            return LRESULT(0);
+        }
+        // SAFETY: standard DefWindowProc forwarding for unused messages.
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+    }
+
+    /// Process-lifetime unlock HWND (prefer create on UI thread via prepare).
+    pub(super) fn ensure_unlock_hwnd() -> Option<HWND> {
+        static HWND_CELL: OnceLock<Mutex<isize>> = OnceLock::new();
+        let cell = HWND_CELL.get_or_init(|| Mutex::new(0));
+        let mut guard = cell.lock().ok()?;
+        if *guard != 0 {
+            let hwnd = HWND(*guard as *mut _);
+            // SAFETY: IsWindow on a cached HWND.
+            if unsafe { IsWindow(Some(hwnd)).as_bool() } {
+                return Some(hwnd);
+            }
+            *guard = 0;
+        }
+        // SAFETY: register class once; CreateWindowEx for a process-owned tool popup.
+        unsafe {
+            let module = GetModuleHandleW(None).ok()?;
+            let class = WNDCLASSW {
+                style: CS_HREDRAW | CS_VREDRAW,
+                lpfnWndProc: Some(unlock_wnd_proc),
+                hInstance: module.into(),
+                lpszClassName: UNLOCK_CLASS,
+                ..Default::default()
+            };
+            let atom = RegisterClassW(&class);
+            if atom == 0 {
+                let err = GetLastError();
+                if err != ERROR_CLASS_ALREADY_EXISTS {
+                    return None;
+                }
+            }
+            let hwnd = CreateWindowExW(
+                WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
+                UNLOCK_CLASS,
+                w!("Sqyre cursor unlock"),
+                WS_POPUP,
+                0,
+                0,
+                1,
+                1,
+                None,
+                None,
+                Some(module.into()),
+                None,
+            )
+            .ok()?;
+            if hwnd.is_invalid() {
+                return None;
+            }
+            let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 1, LWA_ALPHA);
+            *guard = hwnd.0 as isize;
+            Some(hwnd)
+        }
+    }
+
+    fn key_input(vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) -> INPUT {
+        INPUT {
+            r#type: INPUT_KEYBOARD,
+            Anonymous: INPUT_0 {
+                ki: windows::Win32::UI::Input::KeyboardAndMouse::KEYBDINPUT {
+                    wVk: vk,
+                    wScan: 0,
+                    dwFlags: flags,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        }
+    }
+
+    /// Steal activation long enough for `SetCursorPos` to succeed.
+    pub(super) fn unlock_cursor() {
+        let Some(hwnd) = ensure_unlock_hwnd() else {
+            return;
+        };
+        // SAFETY: focus/capture APIs; AttachThreadInput pairs always detached below.
+        unsafe {
+            let _ = ShowWindow(hwnd, SW_SHOWNA);
+            let _ = ClipCursor(None);
+            // Bound the ShowCursor loop — games can drive the display count very negative.
+            for _ in 0..32 {
+                if ShowCursor(true) >= 0 {
+                    break;
+                }
+            }
+
+            let foreground = GetForegroundWindow();
+            let fg_tid = if foreground.is_invalid() {
+                0
+            } else {
+                GetWindowThreadProcessId(foreground, None)
+            };
+            let cur = GetCurrentThreadId();
+            let attached =
+                fg_tid != 0 && fg_tid != cur && AttachThreadInput(cur, fg_tid, true).as_bool();
+
+            // Momentary Alt lets a background thread call SetForegroundWindow repeatedly.
+            let alt = [
+                key_input(VK_MENU, KEYBD_EVENT_FLAGS(0)),
+                key_input(VK_MENU, KEYEVENTF_KEYUP),
+            ];
+            let _ = SendInput(&alt, std::mem::size_of::<INPUT>() as i32);
+            let _ = SetForegroundWindow(hwnd);
+            let _ = SetCapture(hwnd);
+
+            if attached {
+                let _ = AttachThreadInput(cur, fg_tid, false);
+            }
+        }
+    }
+
+    pub(super) fn hide_unlock() {
+        let Some(hwnd) = ensure_unlock_hwnd() else {
+            return;
+        };
+        // SAFETY: release capture taken during unlock; hide without activating others.
+        unsafe {
+            let _ = ReleaseCapture();
+            let _ = ShowWindow(hwnd, SW_HIDE);
+            let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 1, 1, SWP_NOACTIVATE);
+        }
+    }
+
+    /// Returns whether `SetCursorPos` accepted the request (cursor is movable).
+    pub(super) fn set_pos(px: i32, py: i32) -> bool {
+        // SAFETY: SetCursorPos is process-global.
+        unsafe { SetCursorPos(px, py).is_ok() }
+    }
+
+    /// Absolute SendInput backup (used after unlock when SetCursorPos alone is flaky).
+    pub(super) fn set_pos_absolute_inject(px: i32, py: i32) {
+        // SAFETY: GetSystemMetrics desktop extents are process-global.
+        let (vx, vy, vw, vh) = unsafe {
+            (
+                GetSystemMetrics(SM_XVIRTUALSCREEN),
+                GetSystemMetrics(SM_YVIRTUALSCREEN),
+                GetSystemMetrics(SM_CXVIRTUALSCREEN),
+                GetSystemMetrics(SM_CYVIRTUALSCREEN),
+            )
+        };
+        let Some((nx, ny)) = virtual_desk_normalized(px, py, vx, vy, vw, vh) else {
+            let _ = set_pos(px, py);
+            return;
+        };
+        let input = INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx: nx,
+                    dy: ny,
+                    mouseData: 0,
+                    dwFlags: MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK,
+                    time: 0,
+                    dwExtraInfo: 0,
+                },
+            },
+        };
+        // SAFETY: stack-local INPUT.
+        unsafe {
+            let _ = SendInput(&[input], std::mem::size_of::<INPUT>() as i32);
+            let _ = SetCursorPos(px, py);
+        }
+    }
+}
+
 pub struct OsAutomation {
     gui: RustAutoGui,
     clipboard: Option<Clipboard>,
@@ -115,37 +387,76 @@ impl OsAutomation {
     }
 }
 
+/// Map a virtual-desktop pixel into SendInput's 0..65535 absolute range.
+///
+/// `None` when the virtual desktop metrics are unusable (caller should fall back).
+#[cfg(any(test, target_os = "windows"))]
+fn virtual_desk_normalized(
+    x: i32,
+    y: i32,
+    virt_x: i32,
+    virt_y: i32,
+    virt_w: i32,
+    virt_h: i32,
+) -> Option<(i32, i32)> {
+    if virt_w <= 1 || virt_h <= 1 {
+        return None;
+    }
+    let nx = ((x - virt_x) as i64 * 65535) / (virt_w as i64 - 1);
+    let ny = ((y - virt_y) as i64 * 65535) / (virt_h as i64 - 1);
+    Some((nx.clamp(0, 65535) as i32, ny.clamp(0, 65535) as i32))
+}
+
 /// Absolute move with signed virtual-desktop coords (Windows origin may be negative).
+///
+/// Fast path is a single `SetCursorPos`. Only if that fails (exclusive/relative mouse
+/// lock) do we briefly activate the unlock popup — that path is ~tens of ms, so it
+/// must not run when the cursor is already free.
 #[cfg(target_os = "windows")]
 fn move_mouse_windows(x: i32, y: i32, moving_time: f32) {
     use windows::Win32::Foundation::POINT;
-    use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, SetCursorPos};
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
-    // SAFETY: SetCursorPos takes plain coordinates and GetCursorPos writes into
-    // a stack-local POINT that outlives the call; neither has other preconditions.
-    unsafe {
-        if moving_time <= 0.0 {
-            let _ = SetCursorPos(x, y);
+    fn move_instant(px: i32, py: i32) {
+        // Trust SetCursorPos's BOOL — do not also require GetCursorPos match.
+        // Games often warp the cursor after a successful set; re-checking would
+        // falsely trigger the expensive unlock path every Move (~60–70ms).
+        if win_cursor::set_pos(px, py) {
             return;
         }
-        let mut start = POINT::default();
+        win_cursor::unlock_cursor();
+        win_cursor::set_pos_absolute_inject(px, py);
+        win_cursor::hide_unlock();
+    }
+
+    if moving_time <= 0.0 {
+        move_instant(x, y);
+        return;
+    }
+
+    let mut start = POINT::default();
+    // SAFETY: GetCursorPos writes into stack-local POINT.
+    let start = unsafe {
         if GetCursorPos(&mut start).is_err() {
-            let _ = SetCursorPos(x, y);
+            move_instant(x, y);
             return;
         }
-        let start_t = std::time::Instant::now();
-        let dx = x - start.x;
-        let dy = y - start.y;
-        loop {
-            let t = start_t.elapsed().as_secs_f32() / moving_time;
-            if t >= 1.0 {
-                let _ = SetCursorPos(x, y);
-                break;
-            }
-            let nx = start.x as f32 + t * dx as f32;
-            let ny = start.y as f32 + t * dy as f32;
-            let _ = SetCursorPos(nx as i32, ny as i32);
+        start
+    };
+    let start_t = std::time::Instant::now();
+    let dx = x - start.x;
+    let dy = y - start.y;
+    let step = Duration::from_millis(10);
+    loop {
+        let t = start_t.elapsed().as_secs_f32() / moving_time;
+        if t >= 1.0 {
+            move_instant(x, y);
+            break;
         }
+        let nx = start.x as f32 + t * dx as f32;
+        let ny = start.y as f32 + t * dy as f32;
+        let _ = win_cursor::set_pos(nx as i32, ny as i32);
+        std::thread::sleep(step);
     }
 }
 
@@ -170,10 +481,7 @@ impl AutomationBackend for OsAutomation {
         };
         // Absolute virtual-desktop coords (Windows origin may be negative).
         #[cfg(target_os = "windows")]
-        {
-            move_mouse_windows(x, y, moving_time);
-            return;
-        }
+        move_mouse_windows(x, y, moving_time);
         #[cfg(not(target_os = "windows"))]
         {
             // rustautogui's public API is u32; X11 virtual desktop starts at (0,0).
@@ -292,6 +600,24 @@ mod tests {
         assert!((default_smooth - 0.2).abs() < f32::EPSILON);
         let instant = 0.0_f32;
         assert_eq!(instant, 0.0);
+    }
+
+    #[test]
+    fn virtual_desk_normalized_primary_and_negative_origin() {
+        // Primary corners → absolute range endpoints.
+        assert_eq!(
+            virtual_desk_normalized(0, 0, 0, 0, 1920, 1080),
+            Some((0, 0))
+        );
+        assert_eq!(
+            virtual_desk_normalized(1919, 1079, 0, 0, 1920, 1080),
+            Some((65535, 65535))
+        );
+        // Secondary monitor left of primary (virt origin negative).
+        let (nx, ny) = virtual_desk_normalized(-100, 10, -1920, 0, 3840, 1080).unwrap();
+        assert!((1..65535).contains(&nx));
+        assert!((0..65535).contains(&ny));
+        assert!(virtual_desk_normalized(0, 0, 0, 0, 0, 0).is_none());
     }
 
     #[test]
