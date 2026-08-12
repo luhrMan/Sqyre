@@ -24,6 +24,7 @@ fn toolbar_icon_colored(
     ui.add_enabled_ui(enabled, |ui| theme::icon_button_colored(ui, glyph, color))
         .inner
         .on_hover_text(tip)
+        .on_disabled_hover_text(tip)
 }
 
 pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
@@ -126,7 +127,18 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             {
                 app.start_macro(ui.ctx());
             }
-            if toolbar_icon_colored(ui, "⏹", "Stop", running, Some(theme::MACRO_STOP)).clicked() {
+            if toolbar_icon_colored(
+                ui,
+                "⏹",
+                &format!(
+                    "Esc stops the running macro; {} exits Sqyre (failsafe).",
+                    sqyre_hotkeys::FAILSAFE_LABEL
+                ),
+                running,
+                Some(theme::MACRO_STOP),
+            )
+            .clicked()
+            {
                 app.request_stop();
             }
         }
@@ -158,11 +170,6 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             },
         );
     });
-    #[cfg(not(target_arch = "wasm32"))]
-    ui.small(format!(
-        "Esc stops the running macro; {} exits (failsafe). Macro hotkeys launch from anywhere.",
-        sqyre_hotkeys::FAILSAFE_LABEL
-    ));
     #[cfg(target_arch = "wasm32")]
     ui.small(
         "Browser editor: import/export db.yaml. Run, capture, and global hotkeys are desktop-only.",
