@@ -496,10 +496,21 @@ impl eframe::App for SqyreApp {
             ui_toolbar::brand_header(self, ui);
             ui_toolbar::main_toolbar(self, ui);
             if self.workspace.macros.is_empty() {
-                #[cfg(target_arch = "wasm32")]
-                ui.label("No macros loaded. Use Import to open a db.yaml.");
-                #[cfg(not(target_arch = "wasm32"))]
-                ui.label("No macros loaded. Place a db.yaml under ~/.sqyre.");
+                ui.horizontal(|ui| {
+                    ui.label("Please");
+                    if ui.button("create a new macro").clicked() {
+                        self.create_macro();
+                    }
+                    ui.label("or");
+                    #[cfg(not(target_arch = "wasm32"))]
+                    if ui.button("import a backup").clicked() {
+                        self.settings_ui.request_restore_backup();
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    if ui.button("import a backup").clicked() {
+                        self.request_db_import();
+                    }
+                });
                 return;
             }
             if !ui_toolbar::show_meta_and_hotkey(self, ui) {

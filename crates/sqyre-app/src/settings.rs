@@ -675,6 +675,15 @@ impl SettingsUi {
         self.set_ok(format!("Backup saved: {name}"));
     }
 
+    /// Pick a backup zip and open Settings on the restore confirm dialog.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn request_restore_backup(&mut self) {
+        self.choose_restore_backup();
+        if self.confirm.is_some() {
+            self.open = true;
+        }
+    }
+
     #[cfg(not(target_arch = "wasm32"))]
     fn choose_restore_backup(&mut self) {
         let start = backups_dir();
