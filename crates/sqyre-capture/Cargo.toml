@@ -13,7 +13,6 @@ sqyre-ports = { path = "../sqyre-ports" }
 image = { workspace = true }
 pulp = { workspace = true }
 rayon = { workspace = true }
-thiserror = { workspace = true }
 parking_lot = { workspace = true }
 web-time = { workspace = true }
 

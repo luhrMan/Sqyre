@@ -12,11 +12,7 @@ all-features = false
 # transitive via egui/winit until upstream migrates).
 unmaintained = "workspace"
 yanked = "warn"
-ignore = [
-    # Transitive via wayland-scanner (build-time protocol XML), not untrusted user XML.
-    { id = "RUSTSEC-2026-0194", reason = "quick-xml via wayland-scanner; no untrusted XML at runtime" },
-    { id = "RUSTSEC-2026-0195", reason = "quick-xml via wayland-scanner; no untrusted XML at runtime" },
-]
+ignore = []
 
 [licenses]
 # GPL-3.0 app: allow common OSI licenses compatible with distributing Sqyre.

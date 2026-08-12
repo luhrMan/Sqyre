@@ -4333,7 +4333,6 @@ dependencies = [
  "pulp",
  "rayon",
  "sqyre-ports",
- "thiserror 2.0.19",
  "web-time",
  "windows",
  "x11",
@@ -4355,7 +4354,6 @@ name = "sqyre-executor"
 version = "0.1.0"
 dependencies = [
  "image",
- "parking_lot",
  "rayon",
  "sqyre-domain",
  "sqyre-hotkeys",
