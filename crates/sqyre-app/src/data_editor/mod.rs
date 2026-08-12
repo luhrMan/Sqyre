@@ -398,6 +398,7 @@ impl DataEditor {
                 );
             });
         self.open = open;
+        self.draw_variant_name_prompt(ctx, catalog, icons, settings);
         self.draw_confirm(ctx, db, macros, catalog, icons, previews, settings);
         self.draw_overlay_icon_picker(ctx, settings);
         self.poll_form_picker(ctx, catalog, icons, previews, macros, settings);
@@ -577,18 +578,9 @@ impl DataEditor {
         // Claim exactly the remaining window area once (body + footer).
         // Allocating body then drawing footer separately made min_size > window size,
         // so egui's Resize auto-expand ratcheted toward max every frame.
-        // Variant name prompts must also claim this area — otherwise the window
-        // shrinks to the small dialog content. Delete/overwrite confirms are separate
-        // popup windows (see draw_confirm).
         let rem = ui.available_size();
         let (outer, _) = ui.allocate_exact_size(rem, egui::Sense::hover());
 
-        if let Some(VariantPrompt::Name { source }) = self.variant_prompt.clone() {
-            ui.scope_builder(egui::UiBuilder::new().max_rect(outer), |ui| {
-                self.draw_variant_name_prompt(ui, catalog, icons, settings, source);
-            });
-            return;
-        }
         let footer_h = (ui.spacing().interact_size.y + ui.spacing().item_spacing.y * 3.0 + 8.0)
             .min(rem.y * 0.4);
         let body_h = (rem.y - footer_h).max(40.0);
@@ -829,32 +821,49 @@ impl DataEditor {
 
     fn draw_variant_name_prompt(
         &mut self,
-        ui: &mut egui::Ui,
+        ctx: &egui::Context,
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
         settings: &UserSettings,
-        source: PathBuf,
     ) {
-        ui.heading("Add Icon Variant");
-        ui.label("Variant name");
-        ui.add(
-            egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(f32::INFINITY),
-        );
-        ui.horizontal(|ui| {
-            if ui.button("Cancel").clicked() {
-                self.variant_prompt = None;
-                self.variant_name_draft.clear();
-            }
-            if ui
-                .button(egui::RichText::new("Add").color(crate::theme::MACRO_START))
-                .clicked()
-            {
-                let name = self.variant_name_draft.trim().to_string();
-                self.variant_prompt = None;
-                self.variant_name_draft.clear();
-                self.add_icon_variant(catalog, icons, settings, &name, &source);
+        let Some(VariantPrompt::Name { source }) = self.variant_prompt.clone() else {
+            return;
+        };
+        let mut submit = false;
+        let mut cancel = false;
+        let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", |ui| {
+            ui.label("Variant name");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(220.0),
+            );
+            ui.horizontal(|ui| {
+                if ui.button("Cancel").clicked() {
+                    cancel = true;
+                }
+                if ui
+                    .button(egui::RichText::new("Add").color(crate::theme::MACRO_START))
+                    .clicked()
+                {
+                    submit = true;
+                }
+            });
+            match crate::widgets::poll_confirm_keys(ui) {
+                crate::widgets::ConfirmCancel::Cancel => cancel = true,
+                crate::widgets::ConfirmCancel::Confirm => submit = true,
+                crate::widgets::ConfirmCancel::None => {}
             }
         });
+        if !open || cancel {
+            self.variant_prompt = None;
+            self.variant_name_draft.clear();
+            return;
+        }
+        if submit {
+            let name = self.variant_name_draft.trim().to_string();
+            self.variant_prompt = None;
+            self.variant_name_draft.clear();
+            self.add_icon_variant(catalog, icons, settings, &name, &source);
+        }
     }
 
     pub(crate) fn set_ok(&mut self, msg: impl Into<String>) {
