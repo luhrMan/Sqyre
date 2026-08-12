@@ -307,23 +307,40 @@ impl DataEditor {
                 );
                 paint_fs_name_hint(ui, &self.form_name);
                 ui.add_space(4.0);
-                help::label(ui, "Cols", help::DE_COLS);
-                help::tip(
-                    ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0)),
-                    help::DE_COLS,
+                help::label(ui, "Tags", help::DE_TAGS);
+                let program_tags = self
+                    .selected_program
+                    .as_deref()
+                    .map(|prog| collect_program_item_tags(catalog, prog))
+                    .unwrap_or_default();
+                crate::widgets::tag_chip_editor(
+                    ui,
+                    &mut self.form_tags,
+                    &mut self.tag_draft,
+                    &program_tags,
+                    crate::widgets::TagChipOptions::default(),
                 );
-                help::label(ui, "Rows", help::DE_ROWS);
-                help::tip(
-                    ui.add(egui::TextEdit::singleline(&mut self.form_rows).desired_width(80.0)),
-                    help::DE_ROWS,
-                );
-                help::label(ui, "Stack max", help::DE_STACK_MAX);
-                help::tip(
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_stack_max).desired_width(80.0),
-                    ),
-                    help::DE_STACK_MAX,
-                );
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    help::label(ui, "Cols", help::DE_COLS);
+                    help::tip(
+                        ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0)),
+                        help::DE_COLS,
+                    );
+                    help::label(ui, "Rows", help::DE_ROWS);
+                    help::tip(
+                        ui.add(egui::TextEdit::singleline(&mut self.form_rows).desired_width(80.0)),
+                        help::DE_ROWS,
+                    );
+                    help::label(ui, "Stack max", help::DE_STACK_MAX);
+                    help::tip(
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.form_stack_max)
+                                .desired_width(80.0),
+                        ),
+                        help::DE_STACK_MAX,
+                    );
+                });
                 ui.add_space(4.0);
                 help::label(ui, "Mask", help::DE_MASK);
                 {
@@ -387,20 +404,6 @@ impl DataEditor {
                         }
                     }
                 }
-                ui.add_space(4.0);
-                help::label(ui, "Tags", help::DE_TAGS);
-                let program_tags = self
-                    .selected_program
-                    .as_deref()
-                    .map(|prog| collect_program_item_tags(catalog, prog))
-                    .unwrap_or_default();
-                crate::widgets::tag_chip_editor(
-                    ui,
-                    &mut self.form_tags,
-                    &mut self.tag_draft,
-                    &program_tags,
-                    crate::widgets::TagChipOptions::default(),
-                );
                 if let (Some(prog), Some(item)) =
                     (self.selected_program.clone(), self.selected_entity.clone())
                 {
