@@ -36,6 +36,8 @@ pub struct PickerScrollOpts<'a> {
     /// Extra widgets after the search field (e.g. Refresh).
     pub trailing: Option<&'a mut dyn FnMut(&mut egui::Ui)>,
     pub id_salt: Option<&'static str>,
+    /// Placeholder text inside the search field.
+    pub hint_text: Option<&'a str>,
 }
 
 impl PickerScrollOpts<'_> {
@@ -45,6 +47,7 @@ impl PickerScrollOpts<'_> {
             footer_reserve: 52.0,
             trailing: None,
             id_salt: None,
+            hint_text: None,
         }
     }
 
@@ -54,6 +57,7 @@ impl PickerScrollOpts<'_> {
             footer_reserve: 0.0,
             trailing: None,
             id_salt: None,
+            hint_text: None,
         }
     }
 }
@@ -72,7 +76,11 @@ pub fn picker_searchable_scroll(
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(egui_phosphor::regular::MAGNIFYING_GLASS).size(HEADER_SIZE))
             .on_hover_text("Search");
-        if ui.text_edit_singleline(search).changed() {
+        let mut edit = egui::TextEdit::singleline(search);
+        if let Some(hint) = opts.hint_text {
+            edit = edit.hint_text(hint);
+        }
+        if ui.add(edit).changed() {
             search_changed = true;
         }
         if let Some(trailing) = opts.trailing.as_mut() {
