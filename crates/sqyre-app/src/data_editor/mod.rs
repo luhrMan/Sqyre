@@ -833,9 +833,7 @@ impl DataEditor {
         let mut cancel = false;
         let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", |ui| {
             ui.label("Variant name");
-            ui.add(
-                egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(220.0),
-            );
+            ui.add(egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(220.0));
             ui.horizontal(|ui| {
                 if ui.button("Cancel").clicked() {
                     cancel = true;
