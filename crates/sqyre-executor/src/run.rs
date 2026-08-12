@@ -522,6 +522,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
                     "Move: coordinate resolver not configured".into(),
                 ));
             };
+            exec.log(action.id, format!("Move → ({x}, {y}) [{}]", point.as_str()));
             exec.deps.automation.move_to(
                 x,
                 y,

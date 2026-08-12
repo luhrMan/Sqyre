@@ -472,6 +472,34 @@ Game:
     }
 
     #[test]
+    fn resolve_skips_remap_for_runtime_var_refs() {
+        // Image Search Reference style: live screen pixels must not be DPI-scaled.
+        let yaml = r#"
+General:
+  name: General
+  coordinates:
+    1920x1080:
+      scale: 1.0
+      points:
+        Image Search Reference:
+          name: Image Search Reference
+          x: ${foundX}
+          y: ${foundY}
+"#;
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        cat.set_resolution_key("1920x1080");
+        cat.set_runtime_scale(1.5);
+        let mut m = Macro::new("t", 0, vec![]);
+        m.variables.set("foundX", ScalarValue::Int(500));
+        m.variables.set("foundY", ScalarValue::Int(400));
+        let (x, y) = cat
+            .resolve_point(&CoordinateRef("General~Image Search Reference".into()), &m)
+            .unwrap();
+        assert_eq!((x, y), (500, 400));
+    }
+
+    #[test]
     fn resolve_remaps_resolution_and_scale() {
         let yaml = r#"
 Game:

@@ -145,6 +145,10 @@ mod native_run {
             running.store(true, Ordering::SeqCst);
             *status.lock() = format!("Running {}…", macro_.name);
 
+            // Must run on the UI thread: winit's SetCapture/ReleaseCapture are
+            // thread-affine. Doing this only on the worker never clears Start-click capture.
+            sqyre_input::prepare_for_automation();
+
             thread::spawn(move || {
                 let result = (|| -> Result<(), String> {
                     let mut automation =
