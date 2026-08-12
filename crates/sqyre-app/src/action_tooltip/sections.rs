@@ -4,6 +4,7 @@
 //!
 //! - [`tip_wrapped_section`] — compact labeled fields, combos, checkboxes, DragValues.
 //! - [`tip_section`] — multiline editors, icon grids, previews, repeatable list editors.
+//! - [`tip_advanced`] — collapsed-by-default “Advanced” header; fill with tip_* sections.
 //! - Field labels use `help::label` + control (not `DragValue.prefix`).
 //! - Do not nest `ui.group` inside a tip section; list headers + rows (optional light
 //!   per-item frame only for multi-line list items).
@@ -30,4 +31,14 @@ pub fn tip_wrapped_section(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egu
             add_contents(ui);
         });
     });
+}
+
+/// Collapsed-by-default Advanced header. Prefer tip_* sections inside for framing.
+pub fn tip_advanced(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
+    egui::CollapsingHeader::new("Advanced")
+        .default_open(false)
+        .show(ui, |ui| {
+            add_contents(ui);
+        });
+    ui.add_space(SECTION_GAP);
 }
