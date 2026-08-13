@@ -227,7 +227,7 @@ fn paint_picker_chrome(ui: &mut egui::Ui, rect: egui::Rect, selected: bool, hove
     let stroke = if selected || hovered {
         egui::Stroke::new(1.5, crate::theme::PRIMARY)
     } else {
-        egui::Stroke::new(1.0, crate::theme::PRIMARY)
+        crate::theme::inner_stroke()
     };
     ui.painter()
         .rect_filled(rect, egui::CornerRadius::same(8), fill);
