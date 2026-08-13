@@ -123,19 +123,19 @@ fn detection_branch(
     }
 }
 
-fn wait_until_found(seconds: i32, interval_ms: i32) -> WaitTilFoundConfig {
+fn wait_until_found(seconds: impl Into<f64>, interval_ms: i32) -> WaitTilFoundConfig {
     WaitTilFoundConfig {
         repeat_mode: RepeatMode::WaitUntilFound,
-        wait_til_found_seconds: seconds,
+        wait_til_found_seconds: seconds.into(),
         wait_til_found_interval_ms: interval_ms,
         max_iterations: 0,
     }
 }
 
-fn wait_while_found(seconds: i32, interval_ms: i32) -> WaitTilFoundConfig {
+fn wait_while_found(seconds: impl Into<f64>, interval_ms: i32) -> WaitTilFoundConfig {
     WaitTilFoundConfig {
         repeat_mode: RepeatMode::WaitWhileFound,
-        wait_til_found_seconds: seconds,
+        wait_til_found_seconds: seconds.into(),
         wait_til_found_interval_ms: interval_ms,
         max_iterations: 0,
     }
@@ -144,7 +144,7 @@ fn wait_while_found(seconds: i32, interval_ms: i32) -> WaitTilFoundConfig {
 fn while_found(interval_ms: i32, max_iterations: i32) -> WaitTilFoundConfig {
     WaitTilFoundConfig {
         repeat_mode: RepeatMode::RepeatWhileFound,
-        wait_til_found_seconds: 0,
+        wait_til_found_seconds: 0.0,
         wait_til_found_interval_ms: interval_ms,
         max_iterations,
     }
@@ -153,7 +153,7 @@ fn while_found(interval_ms: i32, max_iterations: i32) -> WaitTilFoundConfig {
 fn until_found(interval_ms: i32, max_iterations: i32) -> WaitTilFoundConfig {
     WaitTilFoundConfig {
         repeat_mode: RepeatMode::RepeatUntilFound,
-        wait_til_found_seconds: 0,
+        wait_til_found_seconds: 0.0,
         wait_til_found_interval_ms: interval_ms,
         max_iterations,
     }

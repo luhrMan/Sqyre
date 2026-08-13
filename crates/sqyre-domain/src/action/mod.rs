@@ -465,6 +465,10 @@ pub(crate) fn is_zero_i32(v: &i32) -> bool {
     *v == 0
 }
 
+pub(crate) fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
+}
+
 pub(crate) fn is_default_image_blur(v: &i32) -> bool {
     *v == 5
 }
@@ -546,9 +550,9 @@ pub struct WaitTilFoundConfig {
     #[serde(
         rename = "waittilfoundseconds",
         default,
-        skip_serializing_if = "is_zero_i32"
+        skip_serializing_if = "is_zero_f64"
     )]
-    pub wait_til_found_seconds: i32,
+    pub wait_til_found_seconds: f64,
     #[serde(
         rename = "waittilfoundintervalms",
         default,
@@ -563,7 +567,7 @@ impl Default for WaitTilFoundConfig {
     fn default() -> Self {
         Self {
             repeat_mode: RepeatMode::Once,
-            wait_til_found_seconds: 0,
+            wait_til_found_seconds: 0.0,
             wait_til_found_interval_ms: 0,
             max_iterations: 0,
         }
@@ -571,14 +575,21 @@ impl Default for WaitTilFoundConfig {
 }
 
 impl WaitTilFoundConfig {
+    /// Wall-clock timeout when `wait_til_found_seconds` is a positive finite value.
+    pub fn timeout(&self) -> Option<std::time::Duration> {
+        std::time::Duration::try_from_secs_f64(self.wait_til_found_seconds)
+            .ok()
+            .filter(|d| !d.is_zero())
+    }
+
     /// Silent poll until found (or timeout).
     pub fn wait_until_found_active(&self) -> bool {
-        self.repeat_mode == RepeatMode::WaitUntilFound && self.wait_til_found_seconds > 0
+        self.repeat_mode == RepeatMode::WaitUntilFound && self.timeout().is_some()
     }
 
     /// Silent poll while found (or timeout).
     pub fn wait_while_found_active(&self) -> bool {
-        self.repeat_mode == RepeatMode::WaitWhileFound && self.wait_til_found_seconds > 0
+        self.repeat_mode == RepeatMode::WaitWhileFound && self.timeout().is_some()
     }
 
     /// Run the branch each pass while the target remains found.
@@ -1271,5 +1282,19 @@ time: 1
             _ => panic!("expected loop"),
         }
         assert!(root.id.is_root());
+    }
+
+    #[test]
+    fn wait_timeout_accepts_fractional_seconds() {
+        let mut wait = WaitTilFoundConfig {
+            repeat_mode: RepeatMode::WaitUntilFound,
+            wait_til_found_seconds: 0.5,
+            ..Default::default()
+        };
+        assert_eq!(wait.timeout(), Some(std::time::Duration::from_millis(500)));
+        assert!(wait.wait_until_found_active());
+        wait.wait_til_found_seconds = 0.0;
+        assert!(wait.timeout().is_none());
+        assert!(!wait.wait_until_found_active());
     }
 }

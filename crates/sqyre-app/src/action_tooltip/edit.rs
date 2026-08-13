@@ -1130,7 +1130,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
         h::WAIT_SECONDS,
         &mut wait.wait_til_found_seconds,
         timing_enabled,
-        |d| d,
+        |d| d.speed(0.1).range(0.0..=1_000_000.0).max_decimals(3),
     );
     drag_field_enabled(
         ui,

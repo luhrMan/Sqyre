@@ -80,28 +80,28 @@ impl WaitDisplay for WaitTilFoundConfig {
     fn display_wait_mode(&self, instant_label: &str) -> String {
         match self.repeat_mode {
             RepeatMode::WaitUntilFound => {
-                if self.wait_til_found_seconds > 0 {
+                if self.timeout().is_some() {
                     format!("{} seconds or until found", self.wait_til_found_seconds)
                 } else {
                     format!("wait {}s", self.wait_til_found_seconds)
                 }
             }
             RepeatMode::WaitWhileFound => {
-                if self.wait_til_found_seconds > 0 {
+                if self.timeout().is_some() {
                     format!("{} seconds or while found", self.wait_til_found_seconds)
                 } else {
                     format!("wait while found ({}s)", self.wait_til_found_seconds)
                 }
             }
             RepeatMode::RepeatUntilFound => {
-                if self.wait_til_found_seconds > 0 {
+                if self.timeout().is_some() {
                     format!("repeat until found ({}s)", self.wait_til_found_seconds)
                 } else {
                     "repeat until found".to_string()
                 }
             }
             RepeatMode::RepeatWhileFound => {
-                if self.wait_til_found_seconds > 0 {
+                if self.timeout().is_some() {
                     format!("repeat while found ({}s)", self.wait_til_found_seconds)
                 } else {
                     "repeat while found".to_string()
