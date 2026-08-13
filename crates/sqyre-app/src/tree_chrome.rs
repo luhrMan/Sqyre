@@ -329,6 +329,7 @@ pub fn paint_action_row(
     pills_cache: &mut HashMap<ActionId, (u64, Vec<SummaryPill>)>,
     paint_revision: u64,
     validation_error: Option<&str>,
+    show_logs: bool,
 ) -> RowInteraction {
     let mut action_click = RowAction::None;
     let mut chrome_hovered = false;
@@ -363,16 +364,19 @@ pub fn paint_action_row(
             if del.clicked() {
                 action_click = RowAction::Delete;
             }
+            chrome_rect = del.rect;
 
-            let logs = row_action_btn(ui, "📋", "Logs", None);
-            // contains_pointer: the full-row sense below steals `.hovered()` over these buttons.
-            if logs.contains_pointer() {
-                chrome_hovered = true;
+            if show_logs {
+                let logs = row_action_btn(ui, "📋", "Logs", None);
+                // contains_pointer: the full-row sense below steals `.hovered()` over these buttons.
+                if logs.contains_pointer() {
+                    chrome_hovered = true;
+                }
+                if logs.clicked() {
+                    action_click = RowAction::Logs;
+                }
+                chrome_rect = logs.rect.union(del.rect);
             }
-            if logs.clicked() {
-                action_click = RowAction::Logs;
-            }
-            chrome_rect = logs.rect.union(del.rect);
             ui.spacing_mut().item_spacing.x = spacing;
 
             let content_w = ui.available_width().max(0.0);
@@ -681,6 +685,7 @@ mod tests {
                 &mut HashMap::new(),
                 0,
                 None,
+                true,
             );
             assert_eq!(result.action, RowAction::None);
         });
@@ -712,6 +717,7 @@ mod tests {
                     &mut HashMap::new(),
                     0,
                     None,
+                    true,
                 );
                 assert!(
                     result.drag_handle_rect.width() > 0.0 && result.drag_handle_rect.height() > 0.0,
@@ -755,6 +761,7 @@ mod tests {
                     &mut HashMap::new(),
                     0,
                     None,
+                    true,
                 )
                 .action,
                 RowAction::None
@@ -788,6 +795,7 @@ mod tests {
                     &mut HashMap::new(),
                     0,
                     None,
+                    true,
                 )
                 .action,
                 RowAction::None
@@ -886,6 +894,7 @@ mod tests {
             &mut HashMap::new(),
             0,
             None,
+            true,
         )
     }
 

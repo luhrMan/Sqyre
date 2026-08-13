@@ -397,6 +397,7 @@ fn paint_review(
                             pills_cache,
                             *paint_revision,
                             None,
+                            false,
                         );
                         if interaction.action == RowAction::Delete {
                             delete_id = Some(action.id);
