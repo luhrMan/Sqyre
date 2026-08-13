@@ -122,7 +122,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
         "ocr" => ActionKind::Ocr {
             name: String::new(),
             target: "template".into(),
-            search_area: CoordinateRef("template search area".into()),
+            search_area: CoordinateRef::default(),
             output_variable: String::new(),
             blur: 0,
             min_threshold: 0,

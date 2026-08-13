@@ -25,7 +25,7 @@ use sqyre_domain::{
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
     preview_calculate, validate_numeric_expression, validate_set_variable_value,
-    validate_variable_references,
+    validate_variable_references, EntryValidation,
 };
 
 /// Copy draft fields onto `live`, keeping `live`'s then/else children.
@@ -768,20 +768,27 @@ fn coord_picker_row(
         icons,
         previews,
     } = paint;
-    let display = if coord.is_empty() {
-        "(unset)"
-    } else {
-        coord.as_str()
-    };
+    let display = coord.display_label();
+    let validation = coord_unset_validation(kind, coord);
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
         if let Some(prog) = coord.program() {
             crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
         }
-        let resp = ui.monospace(display);
+        let color = if !validation.error.is_empty() {
+            theme::error_fg()
+        } else if !validation.warning.is_empty() {
+            theme::warn_fg()
+        } else {
+            ui.visuals().text_color()
+        };
+        let resp = ui.label(egui::RichText::new(display).monospace().color(color));
         if !coord.is_empty() {
             attach_coord_hover(ui, &resp, catalog, icons, previews, coord, kind);
+        } else if let Some(tip) = var_pills::entry_validation_tip(&validation) {
+            let _ = resp.on_hover_text(tip);
         }
+        var_pills::paint_entry_validation_icon(ui, &validation);
         if pick_icon_btn(ui).clicked() {
             *picker = ActivePicker::Coord {
                 kind,
@@ -792,6 +799,22 @@ fn coord_picker_row(
             };
         }
     });
+}
+
+fn coord_unset_validation(kind: CoordKind, coord: &CoordinateRef) -> EntryValidation {
+    if !coord.is_empty() {
+        return EntryValidation::default();
+    }
+    match kind {
+        CoordKind::Point => EntryValidation {
+            error: "set a point before saving".into(),
+            warning: String::new(),
+        },
+        CoordKind::SearchArea => EntryValidation {
+            warning: "set a search area".into(),
+            error: String::new(),
+        },
+    }
 }
 
 fn attach_coord_hover(

@@ -161,7 +161,11 @@ pub fn paint_value_pill(
     known: &KnownVariableNames,
     is_dark: bool,
 ) -> egui::Response {
-    let fill = rgba_pub(action_pastel_color(action_type, is_dark));
+    let fill = if text == sqyre_domain::CoordinateRef::UNSET_LABEL {
+        rgba_pub(action_pastel_color("warning", is_dark))
+    } else {
+        rgba_pub(action_pastel_color(action_type, is_dark))
+    };
     // Plain text: single centered chip (avoids Label top-bias inside a composite frame).
     if !sqyre_varref::contains(text) {
         return paint_text_chip(

@@ -9,7 +9,7 @@ use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::tree_chrome::{self, RowInteraction};
 use eframe::egui::{self, Key, Order, Vec2};
 use sqyre_domain::{
-    action_type_description, action_type_label, Action, ActionId, ActionKind, Macro,
+    action_type_description, action_type_label, Action, ActionId, ActionKind, CoordinateRef, Macro,
 };
 use sqyre_ui_model::{action_pastel_color, split_display_params, ActionDisplay};
 use sqyre_validate::validate_action_persist;
@@ -141,8 +141,8 @@ impl TooltipState {
     }
 
     /// Validate draft (with live children) then apply. On failure keeps Edit + error.
-    /// Image search may persist with no target items; the macro tree shows that
-    /// incompleteness via [`sqyre_validate::validate_action`].
+    /// Image search may persist with no target items or search area; the macro
+    /// tree shows that incompleteness via [`sqyre_validate::validate_action`].
     /// `before_mutate` runs after validation succeeds and before the tree is changed
     /// (for undo snapshots); it receives the pre-mutation root.
     pub fn try_save_validated(
@@ -504,7 +504,11 @@ pub(crate) fn show_action_view_tip(
                                         p.minimal(),
                                         known_vars,
                                         is_dark,
-                                        ui.visuals().text_color(),
+                                        if p.minimal() == CoordinateRef::UNSET_LABEL {
+                                            crate::theme::warn_fg()
+                                        } else {
+                                            ui.visuals().text_color()
+                                        },
                                     );
                                 });
                             }
