@@ -3,7 +3,7 @@ use super::coord_list::paint_coord_ref_list;
 use super::items_grid::paint_items_icon_grid;
 use super::query::{query_matches_name_or_tags, query_matches_window};
 use super::scroll::{maybe_scroll_to, picker_searchable_scroll, PickerScrollOpts};
-use super::types::{ActivePicker, CoordKind, PickerResult, HEADER_SIZE};
+use super::types::{ActivePicker, CoordKind, PickerResult};
 #[cfg(feature = "native-runtime")]
 use super::window::fetch_open_windows;
 use super::window::poll_window_picker_load;
@@ -115,10 +115,9 @@ pub fn show_active_picker(
                             paint.catalog.program_names().cloned().collect();
                         // Search chrome only — list owns its own ScrollArea (program groups).
                         ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(egui_phosphor::regular::MAGNIFYING_GLASS)
-                                    .size(HEADER_SIZE),
-                            )
+                            ui.label(egui::RichText::new(
+                                egui_phosphor::regular::MAGNIFYING_GLASS,
+                            ))
                             .on_hover_text("Search");
                             if ui.text_edit_singleline(search).changed() {
                                 *scroll_to_selection = true;
@@ -163,7 +162,7 @@ pub fn show_active_picker(
                                 let selected = value == name;
                                 let resp = ui.selectable_label(
                                     selected,
-                                    egui::RichText::new(name.as_str()).size(13.0),
+                                    egui::RichText::new(name.as_str()).small(),
                                 );
                                 if selected && *scroll_to_selection && !did_scroll {
                                     maybe_scroll_to(ui, &resp, scroll_to_selection);
@@ -235,7 +234,7 @@ pub fn show_active_picker(
                                     }
                                     ui.selectable_label(
                                         selected,
-                                        egui::RichText::new(w.label()).size(13.0),
+                                        egui::RichText::new(w.label()).small(),
                                     )
                                 })
                                 .inner;

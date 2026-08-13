@@ -51,7 +51,7 @@ fn paint_item_icon_tooltip(
     tags: &[String],
 ) {
     ui.set_max_width(280.0);
-    ui.label(egui::RichText::new(name).strong().size(13.0));
+    ui.label(egui::RichText::new(name).strong().small());
 
     let paths = crate::demo_icons::merged_variant_paths(catalog, target);
     if !paths.is_empty() {
@@ -84,7 +84,7 @@ fn paint_item_icon_tooltip(
     ui.add_space(4.0);
     let color = ui.visuals().hyperlink_color;
     for tag in tags {
-        ui.label(egui::RichText::new(tag).size(11.0).italics().color(color));
+        ui.label(egui::RichText::new(tag).small().italics().color(color));
     }
 }
 
@@ -170,7 +170,7 @@ pub fn icon_grid_cell_ex(
             ui,
             btn_rect,
             "×",
-            egui::FontId::proportional(9.0),
+            egui::FontId::proportional(REMOVE_BTN * 0.75),
             Color32::WHITE,
         );
         remove_clicked = btn_resp.clicked();

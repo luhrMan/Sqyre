@@ -202,7 +202,7 @@ pub fn paint_coord_ref_list(
                                     };
                                     let resp = ui.selectable_label(
                                         selected,
-                                        egui::RichText::new(label).size(13.0),
+                                        egui::RichText::new(label).small(),
                                     );
                                     previews.show_for_entity(
                                         ui,
@@ -227,7 +227,7 @@ pub fn paint_coord_ref_list(
                                     let label = format!("  {} (collection)", col.name);
                                     let resp = ui.selectable_label(
                                         selected,
-                                        egui::RichText::new(label).size(13.0),
+                                        egui::RichText::new(label).small(),
                                     );
                                     show_file_hover(
                                         ui,

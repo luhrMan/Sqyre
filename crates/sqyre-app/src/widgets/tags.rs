@@ -95,6 +95,7 @@ pub fn tag_chip_editor(
 
 fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, changed: &mut bool) {
     let mut remove: Option<String> = None;
+    let small_h = ui.text_style_height(&egui::TextStyle::Small);
     let fill = if enabled {
         crate::theme::PRIMARY
     } else {
@@ -112,19 +113,19 @@ fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, cha
         chip.show(ui, |ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
             ui.spacing_mut().button_padding = egui::vec2(0.0, 0.0);
-            ui.spacing_mut().interact_size.y = 8.0;
+            ui.spacing_mut().interact_size.y = small_h;
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(tag.as_str()).size(8.0).color(fg));
+                ui.label(egui::RichText::new(tag.as_str()).small().color(fg));
                 if ui
                     .add_enabled(
                         enabled,
                         egui::Button::new(
                             egui::RichText::new("×")
-                                .size(8.0)
+                                .small()
                                 .color(crate::theme::MACRO_STOP),
                         )
                         .frame(false)
-                        .min_size(egui::vec2(8.0, 8.0)),
+                        .min_size(egui::vec2(small_h, small_h)),
                     )
                     .on_hover_text("Remove tag")
                     .clicked()

@@ -105,7 +105,7 @@ fn paint_unavailable_panel(ui: &mut egui::Ui, _view: &mut ImageViewTransform) ->
         rect.center(),
         egui::Align2::CENTER_CENTER,
         UNAVAILABLE,
-        egui::FontId::proportional(13.0),
+        egui::TextStyle::Small.resolve(ui.style()),
         crate::theme::error_fg(),
     );
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);

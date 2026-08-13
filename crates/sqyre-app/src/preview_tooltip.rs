@@ -749,7 +749,7 @@ fn paint_preview_panel_placeholder(
         rect.center(),
         egui::Align2::CENTER_CENTER,
         err,
-        egui::FontId::proportional(13.0),
+        egui::TextStyle::Small.resolve(ui.style()),
         crate::theme::error_fg(),
     );
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);

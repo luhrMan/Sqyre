@@ -15,7 +15,6 @@ pub(crate) const EDIT_CELL: f32 = 40.0;
 pub(crate) const EDIT_THUMB: f32 = 36.0;
 pub(crate) const EDIT_GAP: f32 = 4.0;
 pub(crate) const REMOVE_BTN: f32 = 12.0;
-pub(crate) const HEADER_SIZE: f32 = 16.0;
 /// In-progress collection cell selection (1-based inclusive).
 #[derive(Debug, Clone)]
 pub struct CollectionCellPick {

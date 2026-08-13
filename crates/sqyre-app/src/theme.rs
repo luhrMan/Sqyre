@@ -66,11 +66,18 @@ pub fn paint_text_centered(
     paint_galley_centered(ui, rect, galley, color);
 }
 
-/// Glyph font size for all icon-only buttons.
-pub const ICON_BTN_FONT: f32 = 14.0;
-
-/// Fixed square hit target for all icon-only buttons (framed and bare).
+/// Minimum square hit target for icon-only buttons (framed and bare).
+/// Side grows with Button text so glyphs track the Font size setting.
 pub const ICON_BTN_SIDE: f32 = 18.0;
+
+fn icon_btn_font(ui: &egui::Ui) -> egui::FontId {
+    egui::TextStyle::Button.resolve(ui.style())
+}
+
+fn icon_btn_side(ui: &egui::Ui) -> f32 {
+    ui.text_style_height(&egui::TextStyle::Button)
+        .max(ICON_BTN_SIDE)
+}
 
 /// Framed icon-only button with optically centered glyph.
 pub fn icon_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
@@ -106,8 +113,8 @@ fn icon_button_inner(
     framed: bool,
     color: Option<Color32>,
 ) -> egui::Response {
-    let font_id = egui::FontId::proportional(ICON_BTN_FONT);
-    let desired = Vec2::splat(ICON_BTN_SIDE);
+    let font_id = icon_btn_font(ui);
+    let desired = Vec2::splat(icon_btn_side(ui));
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
     let visuals = ui.style().interact(&response);
     if framed {
@@ -218,7 +225,7 @@ pub fn titled_section(
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
     framed_section(ui, gap, |ui| {
-        ui.label(egui::RichText::new(title).strong().size(16.0));
+        ui.label(egui::RichText::new(title).strong().heading());
         if !subtitle.is_empty() {
             ui.label(egui::RichText::new(subtitle).weak());
         }

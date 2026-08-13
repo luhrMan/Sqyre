@@ -552,7 +552,6 @@ fn reassign_uids(action: &mut Action) {
 /// Horizontal / vertical padding around the label (content size is the minimum).
 const PICKER_TILE_PAD_X: f32 = 8.0;
 const PICKER_TILE_PAD_Y: f32 = 4.0;
-const PICKER_TILE_FONT: f32 = 12.0;
 
 fn picker_tile(
     ui: &mut egui::Ui,
@@ -565,9 +564,9 @@ fn picker_tile(
     let fill = Color32::from_rgba_unmultiplied(pastel[0], pastel[1], pastel[2], pastel[3]);
     let fg = crate::theme::contrast_fg(fill);
     let text = format!("{glyph}  {}", tmpl.label);
-    let galley =
-        ui.painter()
-            .layout_no_wrap(text, egui::FontId::proportional(PICKER_TILE_FONT), fg);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text, egui::TextStyle::Small.resolve(ui.style()), fg);
     // Hug the label: content + pad is both the size and the floor.
     let desired = galley.size() + Vec2::new(PICKER_TILE_PAD_X * 2.0, PICKER_TILE_PAD_Y * 2.0);
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());

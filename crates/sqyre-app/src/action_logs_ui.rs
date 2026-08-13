@@ -197,7 +197,7 @@ fn flush_item_gallery(
     ui.label(
         egui::RichText::new("Items — click an image to inspect processing & finds")
             .strong()
-            .size(13.0),
+            .small(),
     );
     ui.add_space(4.0);
     ui.horizontal_wrapped(|ui| {
@@ -240,8 +240,8 @@ fn show_item_card(
         ui.set_width(CARD_W);
         frame.show(ui, |ui| {
             ui.set_max_width(CARD_W);
-            ui.label(egui::RichText::new(title).strong().size(12.0));
-            ui.label(egui::RichText::new(summary).weak().size(11.0));
+            ui.label(egui::RichText::new(title).strong().small());
+            ui.label(egui::RichText::new(summary).weak().small());
             if let Some(tex) =
                 image_cache.texture(ui.ctx(), action_id, TexKey::Thumb(entry_index), thumbnail)
             {
@@ -285,13 +285,13 @@ fn show_item_detail(
         if ui.button("← Back to items").clicked() {
             image_cache.selected_item = None;
         }
-        ui.label(egui::RichText::new(title).strong().size(15.0));
+        ui.label(egui::RichText::new(title).strong().heading());
         ui.label(egui::RichText::new(summary).weak());
     });
     ui.separator();
 
     if !details.is_empty() {
-        ui.label(egui::RichText::new("Details").strong().size(13.0));
+        ui.label(egui::RichText::new("Details").strong().small());
         for line in details {
             ui.monospace(line);
         }
@@ -301,7 +301,7 @@ fn show_item_detail(
     ui.label(
         egui::RichText::new("Processing & find steps (chronological)")
             .strong()
-            .size(13.0),
+            .small(),
     );
     ui.add_space(4.0);
     let avail_w = ui.available_width().max(120.0);
@@ -330,11 +330,11 @@ fn show_labeled_image(
 ) {
     ui.add_space(8.0);
     ui.group(|ui| {
-        ui.label(egui::RichText::new(&image.label).strong().size(12.5));
+        ui.label(egui::RichText::new(&image.label).strong().small());
         ui.label(
             egui::RichText::new(format!("{}×{}", image.width, image.height))
                 .weak()
-                .size(11.0),
+                .small(),
         );
         if let Some(tex) = image_cache.texture(ui.ctx(), action_id, key, image) {
             let [tw, th] = tex.size();
