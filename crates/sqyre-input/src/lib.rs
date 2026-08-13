@@ -2,6 +2,9 @@
 //!
 //! Tracks keys/buttons this process has pressed so hard exits (failsafe /
 //! `process::exit`) can still release them — executor cleanup never runs then.
+//!
+//! Windows: `SendInput` / `WH_KEYBOARD_LL` cannot reach a higher-integrity
+//! process (UIPI). Sqyre must run at the same elevation as the target app.
 
 use arboard::Clipboard;
 use rustautogui::{MouseClick, RustAutoGui};
@@ -159,17 +162,18 @@ mod win_cursor {
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        ReleaseCapture, SendInput, SetCapture, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE,
-        KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_MOVE,
-        MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY, VK_MENU,
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, INPUT_MOUSE, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+        MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_MOVE, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VIRTUAL_KEY,
+        VK_MENU,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
-        ClipCursor, CreateWindowExW, DefWindowProcW, GetForegroundWindow, GetSystemMetrics,
-        GetWindowThreadProcessId, IsWindow, RegisterClassW, SetCursorPos, SetForegroundWindow,
-        SetLayeredWindowAttributes, SetWindowPos, ShowCursor, ShowWindow, CS_HREDRAW, CS_VREDRAW,
+        AllowSetForegroundWindow, ClipCursor, CreateWindowExW, DefWindowProcW, GetForegroundWindow,
+        GetSystemMetrics, GetWindowLongPtrW, GetWindowThreadProcessId, IsWindow, RegisterClassW,
+        SetCursorPos, SetForegroundWindow, SetLayeredWindowAttributes, SetWindowLongPtrW,
+        SetWindowPos, ShowCursor, ShowWindow, ASFW_ANY, CS_HREDRAW, CS_VREDRAW, GWL_EXSTYLE,
         HWND_TOPMOST, LWA_ALPHA, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
         SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SW_HIDE, SW_SHOWNA, WM_DESTROY, WNDCLASSW,
-        WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+        WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
     };
 
     use super::virtual_desk_normalized;
@@ -198,6 +202,7 @@ mod win_cursor {
             let hwnd = HWND(*guard as *mut _);
             // SAFETY: IsWindow on a cached HWND.
             if unsafe { IsWindow(Some(hwnd)).as_bool() } {
+                apply_click_through(hwnd);
                 return Some(hwnd);
             }
             *guard = 0;
@@ -220,7 +225,7 @@ mod win_cursor {
                 }
             }
             let hwnd = CreateWindowExW(
-                WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
+                WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT,
                 UNLOCK_CLASS,
                 w!("Sqyre cursor unlock"),
                 WS_POPUP,
@@ -238,8 +243,21 @@ mod win_cursor {
                 return None;
             }
             let _ = SetLayeredWindowAttributes(hwnd, COLORREF(0), 1, LWA_ALPHA);
+            apply_click_through(hwnd);
             *guard = hwnd.0 as isize;
             Some(hwnd)
+        }
+    }
+
+    /// Clicks must hit-test the game, not our 1×1 unlock popup.
+    fn apply_click_through(hwnd: HWND) {
+        // SAFETY: process-owned HWND; GWL_EXSTYLE read/write is the usual layered-window pattern.
+        unsafe {
+            let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE);
+            let add = WS_EX_TRANSPARENT.0 as isize;
+            if ex & add == 0 {
+                let _ = SetWindowLongPtrW(hwnd, GWL_EXSTYLE, ex | add);
+            }
         }
     }
 
@@ -259,12 +277,15 @@ mod win_cursor {
     }
 
     /// Steal activation long enough for `SetCursorPos` to succeed.
-    pub(super) fn unlock_cursor() {
-        let Some(hwnd) = ensure_unlock_hwnd() else {
-            return;
-        };
+    ///
+    /// Returns the previous foreground HWND so the caller can restore it after
+    /// moving. Click needs the game as foreground; a hidden Sqyre popup as FG
+    /// also leaves focused Esc (egui) inactive.
+    pub(super) fn unlock_cursor() -> Option<HWND> {
+        let hwnd = ensure_unlock_hwnd()?;
         // SAFETY: focus/capture APIs; AttachThreadInput pairs always detached below.
         unsafe {
+            let previous = GetForegroundWindow();
             let _ = ShowWindow(hwnd, SW_SHOWNA);
             let _ = ClipCursor(None);
             // Bound the ShowCursor loop — games can drive the display count very negative.
@@ -274,11 +295,10 @@ mod win_cursor {
                 }
             }
 
-            let foreground = GetForegroundWindow();
-            let fg_tid = if foreground.is_invalid() {
+            let fg_tid = if previous.is_invalid() {
                 0
             } else {
-                GetWindowThreadProcessId(foreground, None)
+                GetWindowThreadProcessId(previous, None)
             };
             let cur = GetCurrentThreadId();
             let attached =
@@ -291,23 +311,78 @@ mod win_cursor {
             ];
             let _ = SendInput(&alt, std::mem::size_of::<INPUT>() as i32);
             let _ = SetForegroundWindow(hwnd);
-            let _ = SetCapture(hwnd);
+            // Do not SetCapture — capture is thread-affine and routes every later
+            // SendInput click to this 1×1 window (clicks look dead).
 
             if attached {
+                let _ = AttachThreadInput(cur, fg_tid, false);
+            }
+
+            if previous.is_invalid() || previous == hwnd {
+                None
+            } else {
+                Some(previous)
+            }
+        }
+    }
+
+    fn restore_foreground(hwnd: HWND) {
+        // SAFETY: same AttachThreadInput pattern as unlock / win_focus.
+        unsafe {
+            let foreground = GetForegroundWindow();
+            if foreground == hwnd {
+                return;
+            }
+            let fg_tid = if foreground.is_invalid() {
+                0
+            } else {
+                GetWindowThreadProcessId(foreground, None)
+            };
+            let target_tid = GetWindowThreadProcessId(hwnd, None);
+            let cur = GetCurrentThreadId();
+            let mut attached_fg = false;
+            let mut attached_target = false;
+            if fg_tid != 0 && fg_tid != cur {
+                attached_fg = AttachThreadInput(cur, fg_tid, true).as_bool();
+            }
+            if target_tid != 0 && target_tid != cur && target_tid != fg_tid {
+                attached_target = AttachThreadInput(cur, target_tid, true).as_bool();
+            }
+            // We briefly own foreground via the unlock HWND — allow restoring any PID.
+            let _ = AllowSetForegroundWindow(ASFW_ANY);
+            let alt = [
+                key_input(VK_MENU, KEYBD_EVENT_FLAGS(0)),
+                key_input(VK_MENU, KEYEVENTF_KEYUP),
+            ];
+            let _ = SendInput(&alt, std::mem::size_of::<INPUT>() as i32);
+            let _ = SetForegroundWindow(hwnd);
+            if attached_target {
+                let _ = AttachThreadInput(cur, target_tid, false);
+            }
+            if attached_fg {
                 let _ = AttachThreadInput(cur, fg_tid, false);
             }
         }
     }
 
-    pub(super) fn hide_unlock() {
+    pub(super) fn hide_unlock(restore: Option<HWND>) {
         let Some(hwnd) = ensure_unlock_hwnd() else {
             return;
         };
-        // SAFETY: release capture taken during unlock; hide without activating others.
+        // SAFETY: hide without activating; restore FG while we can still AllowSetForeground.
         unsafe {
-            let _ = ReleaseCapture();
+            if let Some(prev) = restore {
+                restore_foreground(prev);
+            }
             let _ = ShowWindow(hwnd, SW_HIDE);
             let _ = SetWindowPos(hwnd, Some(HWND_TOPMOST), 0, 0, 1, 1, SWP_NOACTIVATE);
+            // If restore failed, we may still be FG on a hidden tool window — try once more.
+            if let Some(prev) = restore {
+                let fg = GetForegroundWindow();
+                if fg == hwnd || fg.is_invalid() {
+                    restore_foreground(prev);
+                }
+            }
         }
     }
 
@@ -424,9 +499,14 @@ fn move_mouse_windows(x: i32, y: i32, moving_time: f32) {
         if win_cursor::set_pos(px, py) {
             return;
         }
-        win_cursor::unlock_cursor();
+        let previous = win_cursor::unlock_cursor();
         win_cursor::set_pos_absolute_inject(px, py);
-        win_cursor::hide_unlock();
+        win_cursor::hide_unlock(previous);
+        // Restoring the game's FG often recenters relative-mouse locks — put the
+        // cursor back so the following Click lands on the Image Search target.
+        if !win_cursor::set_pos(px, py) {
+            win_cursor::set_pos_absolute_inject(px, py);
+        }
     }
 
     if moving_time <= 0.0 {
