@@ -264,14 +264,9 @@ pub(crate) fn fit_thumbnail(w: f32, h: f32) -> egui::Vec2 {
     image_view::fit_in_box_no_upscale(w, h, MAX, MAX)
 }
 
-/// 1px Sqyre yellow border around a Data Editor image preview.
+/// 1px dim gold border around a Data Editor image preview.
 pub(crate) fn paint_preview_frame(painter: &egui::Painter, rect: egui::Rect) {
-    painter.rect_stroke(
-        rect,
-        0.0,
-        egui::Stroke::new(1.0, theme::PRIMARY),
-        egui::StrokeKind::Inside,
-    );
+    painter.rect_stroke(rect, 0.0, theme::inner_stroke(), egui::StrokeKind::Inside);
 }
 
 pub(crate) fn paint_disk_preview(

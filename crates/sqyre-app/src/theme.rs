@@ -162,7 +162,7 @@ pub fn dark_visuals() -> Visuals {
     v.selection.bg_fill = dim;
     v.selection.stroke = Stroke::new(1.0, SELECTION_FG);
 
-    // Separators / window outline — dim primary.
+    // Separators / inner group outlines — dim primary.
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, dim);
 
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, PRIMARY);
@@ -174,7 +174,7 @@ pub fn dark_visuals() -> Visuals {
 
     v.widgets.open.bg_stroke = Stroke::new(1.0, rgba([0xdc, 0x9d, 0x2e, 0x80]));
 
-    v.window_stroke = Stroke::new(1.0, dim);
+    v.window_stroke = Stroke::new(1.0, PRIMARY);
     v.text_cursor.stroke = Stroke::new(2.0, PRIMARY);
 
     v
@@ -186,18 +186,21 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_visuals_of(egui::Theme::Dark, dark_visuals());
 }
 
-/// Rounded group frame with a faint Sqyre fill + gold stroke.
+/// Dim gold stroke for inner cards and previews (weaker than window chrome).
+pub fn inner_stroke() -> Stroke {
+    Stroke::new(1.0, accent_dim())
+}
+
+/// Rounded group frame with a faint Sqyre fill + dim gold stroke.
 pub fn section_frame(style: &egui::Style) -> egui::Frame {
     egui::Frame::group(style)
         .fill(frame_fill())
-        .stroke(Stroke::new(1.0, PRIMARY))
+        .stroke(inner_stroke())
         .corner_radius(CornerRadius::same(4))
         .inner_margin(egui::Margin::same(8))
 }
 
 /// Full-width framed card, then vertical `gap` after it.
-///
-/// Used by tip sections and settings panels so chrome stays consistent.
 pub fn framed_section(ui: &mut egui::Ui, gap: f32, add_contents: impl FnOnce(&mut egui::Ui)) {
     section_frame(ui.style()).show(ui, |ui| {
         ui.set_min_width(ui.available_width());
@@ -604,5 +607,17 @@ mod tests {
         assert_eq!(v.hyperlink_color, PRIMARY);
         assert_eq!(v.selection.bg_fill, accent_dim());
         assert_eq!(v.widgets.hovered.bg_stroke.color, PRIMARY);
+        assert_eq!(v.window_stroke.color, PRIMARY);
+    }
+
+    #[test]
+    fn window_chrome_is_strong_outer_weak_inner() {
+        let style = egui::Style {
+            visuals: dark_visuals(),
+            ..Default::default()
+        };
+        assert_eq!(style.visuals.window_stroke.color, PRIMARY);
+        assert_eq!(section_frame(&style).stroke.color, accent_dim());
+        assert_eq!(inner_stroke().color, accent_dim());
     }
 }
