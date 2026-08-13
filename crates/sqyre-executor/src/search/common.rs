@@ -438,7 +438,7 @@ pub(super) fn retry_until(
     default_interval_ms: i32,
     mut done: impl FnMut(&mut Executor<'_>) -> Result<bool>,
 ) -> Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(wait.wait_til_found_seconds.max(0) as u64);
+    let deadline = Instant::now() + wait.timeout().unwrap_or(Duration::ZERO);
     let mut interval = wait.effective_interval_ms(default_interval_ms).max(1);
     let max_interval = (interval * 5).min(2000).max(interval);
     while Instant::now() < deadline {
@@ -501,11 +501,7 @@ fn maybe_repeat_loop(
 
     let max_iter = wait.effective_max_iterations();
     let interval = wait.effective_interval_ms(default_interval_ms).max(1);
-    let deadline = if wait.wait_til_found_seconds > 0 {
-        Some(Instant::now() + Duration::from_secs(wait.wait_til_found_seconds.max(0) as u64))
-    } else {
-        None
-    };
+    let deadline = wait.timeout().map(|d| Instant::now() + d);
     for i in 0..max_iter {
         exec.check_stopped()?;
         let refresh = i > 0;

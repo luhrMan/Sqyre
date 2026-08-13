@@ -515,10 +515,15 @@ mod tests {
         let mut wait = WaitTilFoundConfig::default();
         assert_eq!(wait.display_wait_mode("instant"), "instant");
         wait.repeat_mode = RepeatMode::WaitUntilFound;
-        wait.wait_til_found_seconds = 5;
+        wait.wait_til_found_seconds = 5.0;
         assert_eq!(
             wait.display_wait_mode("instant"),
             "5 seconds or until found"
+        );
+        wait.wait_til_found_seconds = 0.5;
+        assert_eq!(
+            wait.display_wait_mode("instant"),
+            "0.5 seconds or until found"
         );
         let clause = sqyre_domain::ConditionClause {
             left: ScalarValue::String("name".into()),

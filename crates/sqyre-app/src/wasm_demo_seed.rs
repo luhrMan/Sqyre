@@ -290,10 +290,10 @@ fn set_var(name: &str, value: &str) -> Action {
     a
 }
 
-fn wait_until(seconds: i32, interval_ms: i32) -> WaitTilFoundConfig {
+fn wait_until(seconds: impl Into<f64>, interval_ms: i32) -> WaitTilFoundConfig {
     WaitTilFoundConfig {
         repeat_mode: RepeatMode::WaitUntilFound,
-        wait_til_found_seconds: seconds,
+        wait_til_found_seconds: seconds.into(),
         wait_til_found_interval_ms: interval_ms,
         max_iterations: 0,
     }

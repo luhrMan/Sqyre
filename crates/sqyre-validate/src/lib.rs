@@ -775,7 +775,7 @@ fn validate_wait_config(label: &str, wait: &sqyre_domain::WaitTilFoundConfig) ->
         wait.repeat_mode,
         RepeatMode::WaitUntilFound | RepeatMode::WaitWhileFound
     );
-    if needs_timeout && wait.wait_til_found_seconds <= 0 {
+    if needs_timeout && wait.timeout().is_none() {
         return Err(ValidateError::Message(format!(
             "{label}: wait modes require a positive timeout (seconds)"
         )));
@@ -1138,7 +1138,7 @@ mod tests {
                 detection: sqyre_domain::DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
-                        wait_til_found_seconds: 0,
+                        wait_til_found_seconds: 0.0,
                         wait_til_found_interval_ms: 0,
                         max_iterations: 0,
                     },
@@ -1168,7 +1168,7 @@ mod tests {
                 detection: sqyre_domain::DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
-                        wait_til_found_seconds: 0,
+                        wait_til_found_seconds: 0.0,
                         wait_til_found_interval_ms: 0,
                         max_iterations: 0,
                     },
