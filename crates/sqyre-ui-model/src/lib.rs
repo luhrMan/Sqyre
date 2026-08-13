@@ -339,6 +339,37 @@ mod tests {
     }
 
     #[test]
+    fn unset_search_area_and_point_show_in_tree_pills() {
+        let image = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "find".into(),
+                targets: vec!["a".into()],
+                search_area: CoordinateRef::default(),
+                tolerance: 0.9,
+                blur: 0,
+                match_method: Default::default(),
+                detection: DetectionBranch::default(),
+            },
+        };
+        let pills = image.tree_summary_pills();
+        assert!(pills.iter().any(|p| p.text == CoordinateRef::UNSET_LABEL));
+
+        let mv = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Move {
+                point: CoordinateRef::default(),
+                smooth: false,
+                smooth_low: 0.05,
+                smooth_high: 0.2,
+                smooth_delay_ms: 1,
+            },
+        };
+        let pills = mv.tree_summary_pills();
+        assert!(pills.iter().any(|p| p.text == CoordinateRef::UNSET_LABEL));
+    }
+
+    #[test]
     fn set_binding_uses_value_role() {
         let a = Action {
             id: ActionId::new(),

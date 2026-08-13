@@ -44,7 +44,7 @@ pub const TYPE_DELAY: &str = "Milliseconds between each character.";
 
 // --- Move ---
 
-pub const MOVE_POINT: &str = "Target point from the Data Editor (program~name).";
+pub const MOVE_POINT: &str = "Target point from the Data Editor (program~name). Required to run.";
 pub const MOVE_SMOOTH: &str = "Animate the cursor instead of teleporting.";
 pub const MOVE_SMOOTH_LOW: &str = "Minimum fraction of the path used for easing (0–1).";
 pub const MOVE_SMOOTH_HIGH: &str = "Maximum fraction of the path used for easing (0–1).";
@@ -110,7 +110,7 @@ pub const FOREACH_REMOVE_SOURCE: &str = "Remove this source.";
 
 // --- Detection shared ---
 
-pub const SEARCH_AREA: &str = "Screen region to scan (from the Data Editor).";
+pub const SEARCH_AREA: &str = "Screen region to scan (from the Data Editor). Required to run.";
 pub const REPEAT_MODE: &str =
     "once = single try; wait* = silent poll then one branch; repeat* = run branch each pass.";
 pub const WAIT_SECONDS: &str = "How long to keep retrying (seconds). Required for wait modes.";

@@ -421,18 +421,23 @@ fn validate_continue_key(keys: &[String]) -> Result<()> {
         .map_err(ValidateError::Message)
 }
 
-fn validate_coordinate_ref(
-    label: &str,
-    coord: &CoordinateRef,
-    _macro_: Option<&Macro>,
-) -> Result<()> {
-    if coord.0.trim().is_empty() {
+fn validate_coordinate_ref(label: &str, field: &str, coord: &CoordinateRef) -> Result<()> {
+    if coord.is_empty() {
         return Err(ValidateError::Message(format!(
-            "{label}: set a coordinate before saving"
+            "{label}: set a {field} before saving"
         )));
     }
     // Catalog refs are `program~entity` (or legacy bare names), resolved at runtime —
     // not math expressions. Do not run expression evaluation on them.
+    Ok(())
+}
+
+fn require_search_area(label: &str, search_area: &CoordinateRef) -> Result<()> {
+    if search_area.is_empty() {
+        return Err(ValidateError::Message(format!(
+            "{label}: set a search area"
+        )));
+    }
     Ok(())
 }
 
@@ -545,7 +550,8 @@ fn validate_target_color(label: &str, target_color: &str) -> Result<()> {
 enum ActionValidationMode {
     /// Fields that must be sound to keep the action in the tree (edit Save,
     /// paste, undo). Incomplete-but-editable cases (e.g. image search with no
-    /// target items) are allowed; the tree surfaces those via [`validate_action`].
+    /// target items or search area) are allowed; the tree surfaces those via
+    /// [`validate_action`].
     Persist,
     /// Full readiness check for run gates and per-row tree diagnostics.
     Complete,
@@ -553,8 +559,8 @@ enum ActionValidationMode {
 
 /// Checks minimum fields required to run an action (and for tree diagnostics).
 ///
-/// Image search with no target items fails here so the macro tree can show the
-/// error; use [`validate_action_persist`] when applying an edit Save.
+/// Image search with no target items or search area fails here so the macro tree
+/// can show the error; use [`validate_action_persist`] when applying an edit Save.
 ///
 /// `macro_` enables Set expression structure checks; when
 /// `None`, those structure checks are skipped (empty-expression / name rules
@@ -563,8 +569,9 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
     validate_action_with(action, macro_, ActionValidationMode::Complete)
 }
 
-/// Like [`validate_action`], but allows incomplete image-search targets so the
-/// user can save and fix them later (tree still flags via [`validate_action`]).
+/// Like [`validate_action`], but allows incomplete image-search targets and an
+/// unset search area so the user can save and fix them later (tree still flags
+/// via [`validate_action`]).
 pub fn validate_action_persist(action: &Action, macro_: Option<&Macro>) -> Result<()> {
     validate_action_with(action, macro_, ActionValidationMode::Persist)
 }
@@ -594,18 +601,30 @@ fn validate_action_with(
             validate_condition_block("conditional", condition, macro_)?;
         }
         ActionKind::ImageSearch {
-            targets, detection, ..
+            targets,
+            search_area,
+            detection,
+            ..
         } => {
             validate_wait_config("image search", &detection.wait)?;
-            if mode == ActionValidationMode::Complete
-                && (targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()))
-            {
-                return Err(ValidateError::Message(
-                    "image search: add at least one target item".into(),
-                ));
+            if mode == ActionValidationMode::Complete {
+                let mut issues = Vec::new();
+                if search_area.is_empty() {
+                    issues.push("set a search area");
+                }
+                if targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()) {
+                    issues.push("add at least one target item");
+                }
+                if !issues.is_empty() {
+                    return Err(ValidateError::Message(format!(
+                        "image search: {}",
+                        issues.join("; ")
+                    )));
+                }
             }
         }
         ActionKind::Ocr {
+            search_area,
             detection,
             blur,
             min_threshold,
@@ -613,6 +632,9 @@ fn validate_action_with(
             ..
         } => {
             validate_wait_config("ocr", &detection.wait)?;
+            if mode == ActionValidationMode::Complete {
+                require_search_area("ocr", search_area)?;
+            }
             if *blur < 0 {
                 return Err(ValidateError::Message(
                     "ocr: blur cannot be negative".into(),
@@ -630,12 +652,16 @@ fn validate_action_with(
             }
         }
         ActionKind::FindPixel {
+            search_area,
             target_color,
             detection,
             ..
         } => {
             validate_target_color("find pixel", target_color)?;
             validate_wait_config("find pixel", &detection.wait)?;
+            if mode == ActionValidationMode::Complete {
+                require_search_area("find pixel", search_area)?;
+            }
         }
         ActionKind::ForEachRow {
             sources,
@@ -658,7 +684,7 @@ fn validate_action_with(
             validate_continue_key(continue_key)?;
         }
         ActionKind::Move { point, .. } => {
-            validate_coordinate_ref("move", point, macro_)?;
+            validate_coordinate_ref("move", "point", point)?;
         }
         ActionKind::Click { .. } => {}
         ActionKind::Key { key, .. } => {
@@ -1206,7 +1232,7 @@ mod tests {
         assert!(validate_action(&a, None)
             .unwrap_err()
             .to_string()
-            .contains("coordinate"));
+            .contains("point"));
     }
 
     #[test]
@@ -1222,6 +1248,65 @@ mod tests {
             },
         };
         assert!(validate_action(&a, None).is_ok());
+    }
+
+    #[test]
+    fn validate_detection_requires_search_area_on_complete() {
+        let image = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec!["Game~Item".into()],
+                search_area: Default::default(),
+                tolerance: 0.95,
+                blur: 5,
+                match_method: Default::default(),
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action_persist(&image, None).is_ok());
+        assert!(validate_action(&image, None)
+            .unwrap_err()
+            .to_string()
+            .contains("search area"));
+
+        let ocr = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Ocr {
+                name: String::new(),
+                target: "ok".into(),
+                search_area: Default::default(),
+                output_variable: String::new(),
+                blur: 0,
+                min_threshold: 0,
+                resize: 1.0,
+                grayscale: false,
+                threshold_otsu: false,
+                threshold_invert: false,
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action_persist(&ocr, None).is_ok());
+        assert!(validate_action(&ocr, None)
+            .unwrap_err()
+            .to_string()
+            .contains("search area"));
+
+        let pixel = Action {
+            id: ActionId::new(),
+            kind: ActionKind::FindPixel {
+                name: String::new(),
+                search_area: Default::default(),
+                target_color: "ffffff".into(),
+                color_tolerance: 0,
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action_persist(&pixel, None).is_ok());
+        assert!(validate_action(&pixel, None)
+            .unwrap_err()
+            .to_string()
+            .contains("search area"));
     }
 
     #[test]
