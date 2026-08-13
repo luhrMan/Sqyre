@@ -6,6 +6,10 @@
 //! Injected input (`SendInput` mouse moves / typed keys) is skipped so automation
 //! cannot flood the hook and cause Windows to drop it — that previously broke
 //! global hotkeys whenever Sqyre was unfocused (focused path uses egui instead).
+//!
+//! Unfocused Esc uses this LL hook. UIPI blocks it when the foreground app is
+//! higher integrity than Sqyre (e.g. a game run as Administrator) — match
+//! elevation; extra poll/hotkey/raw-input sinks cannot bypass that.
 
 use crate::continue_wait::{vk_key_name, ContinueWaitBridge};
 use crate::macro_hotkeys::MacroHotkeyBridge;
@@ -208,7 +212,16 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
 
 unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 {
-        let _ = std::panic::catch_unwind(|| handle_mouse(wparam, lparam));
+        let msg = wparam.0 as u32;
+        // Game mouse-look floods WM_MOUSEMOVE. Skip the CTX lock unless recording
+        // / screen-click needs coordinates — otherwise Windows drops the keyboard
+        // hook and unfocused Esc dies.
+        let track_move = msg != WM_MOUSEMOVE
+            || crate::macro_record::hook_wants_mouse_moves()
+            || crate::screen_click::hook_wants_mouse_moves();
+        if track_move {
+            let _ = std::panic::catch_unwind(|| handle_mouse(wparam, lparam));
+        }
     }
     let hook = hhook_from_atomic(&MOUSE_HOOK);
     // SAFETY: forwarding to next hook in the chain.
@@ -295,6 +308,13 @@ fn handle_keyboard(wparam: WPARAM, lparam: LPARAM) {
         }
     };
 
+    // Esc stop first — must not wait on hotkey/record bridge work.
+    match update.esc {
+        EscAction::Failsafe(cb) => cb(),
+        EscAction::StopMacros(cb) => cb(),
+        EscAction::None => {}
+    }
+
     update.continue_wait.on_pressed_keys(&update.pressed);
     update
         .macro_hotkeys
@@ -302,11 +322,6 @@ fn handle_keyboard(wparam: WPARAM, lparam: LPARAM) {
     if let Some(rec) = update.macro_record.as_ref() {
         let keys: HashSet<&str> = update.pressed.iter().copied().collect();
         rec.sync_pressed_keys(&keys);
-    }
-    match update.esc {
-        EscAction::Failsafe(cb) => cb(),
-        EscAction::StopMacros(cb) => cb(),
-        EscAction::None => {}
     }
 }
 
@@ -330,6 +345,11 @@ fn handle_mouse(wparam: WPARAM, lparam: LPARAM) {
     }
 
     if msg == WM_MOUSEMOVE {
+        let record_armed = ctx.macro_record.is_armed();
+        let click_armed = ctx.screen_click.is_armed();
+        if !record_armed && !click_armed {
+            return;
+        }
         if !ctx.screen_click.grab_owns_input() {
             ctx.screen_click.on_mouse_move(mouse.pt.x, mouse.pt.y);
         }
@@ -346,6 +366,8 @@ fn handle_mouse(wparam: WPARAM, lparam: LPARAM) {
         WM_MBUTTONUP => (RecordMouseButton::Middle, false),
         _ => return,
     };
+    ctx.macro_record.set_last_pos(mouse.pt.x, mouse.pt.y);
+    ctx.screen_click.on_mouse_move(mouse.pt.x, mouse.pt.y);
     ctx.macro_record.on_button(button, pressed);
     if pressed
         && button == RecordMouseButton::Left
