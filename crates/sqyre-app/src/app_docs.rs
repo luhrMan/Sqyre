@@ -170,6 +170,11 @@ impl SqyreApp {
         self.settings_ui.settings()
     }
 
+    /// Mutable settings for docs / interaction harnesses.
+    pub fn docs_settings_mut(&mut self) -> &mut UserSettings {
+        self.settings_ui.settings_mut()
+    }
+
     /// Open the settings window (integration / screenshot harnesses).
     pub fn open_settings_for_docs(&mut self) {
         self.settings_ui.open = true;

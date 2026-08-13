@@ -139,6 +139,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     }
                     let allow_dnd = !running && app.tree.drag_mode != TreeDragMode::Scroll;
 
+                    let show_logs = app.settings_ui.settings().save_meta_images;
                     let catalog = &app.workspace.catalog;
                     let icons = &mut app.icon_cache;
                     let root = &app.workspace.macros[idx].root;
@@ -165,6 +166,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         selected_action,
                         pills_cache: &mut app.tree.pills_cache,
                         paint_revision,
+                        show_logs,
                     };
                     // egui_ltreeview sizes to max(available, content). Inside ScrollArea
                     // that fills the viewport and trips a permanent vertical scrollbar
@@ -652,6 +654,7 @@ fn build_tree(
             tree.pills_cache,
             tree.paint_revision,
             validation_error.as_deref(),
+            tree.show_logs,
         );
         if should_scroll {
             ui.scroll_to_rect(interaction.row_rect, Some(egui::Align::Center));

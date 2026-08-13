@@ -103,3 +103,22 @@ fn new_macro_button_adds_macro() {
         "created macro should be selected, got {name:?}"
     );
 }
+
+#[test]
+fn tree_log_buttons_follow_log_meta_images_setting() {
+    let mut harness = build_harness(|_| {});
+    harness.run();
+    assert!(
+        harness.query_all_by_label("Logs").next().is_none(),
+        "log buttons should be hidden when Log Meta Images is off"
+    );
+
+    let mut harness = build_harness(|app| {
+        app.docs_settings_mut().save_meta_images = true;
+    });
+    harness.run();
+    assert!(
+        harness.query_all_by_label("Logs").next().is_some(),
+        "log buttons should show when Log Meta Images is on"
+    );
+}

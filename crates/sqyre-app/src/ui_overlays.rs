@@ -208,9 +208,11 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     if app.run_session.highlighter.is_enabled() != highlight_on {
         app.run_session.highlighter.set_enabled(highlight_on);
     }
-    app.run_session
-        .action_log
-        .set_log_images(app.settings_ui.settings().save_meta_images);
+    let log_images = app.settings_ui.settings().save_meta_images;
+    app.run_session.action_log.set_log_images(log_images);
+    if !log_images && app.run_session.logs_window.take().is_some() {
+        app.run_session.logs_image_cache.clear();
+    }
     if app.settings_ui.reload_requested {
         app.settings_ui.reload_requested = false;
         apply_main_monitor_resolution(&mut app.workspace.catalog);

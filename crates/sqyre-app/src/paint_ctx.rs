@@ -43,6 +43,8 @@ pub struct TreePaint<'a> {
     /// Per-frame summary-pill cache (keyed by action id; filled on demand).
     pub pills_cache: &'a mut HashMap<ActionId, (u64, Vec<sqyre_ui_model::SummaryPill>)>,
     pub paint_revision: u64,
+    /// Show per-row Logs buttons (user "Log Meta Images" setting).
+    pub show_logs: bool,
 }
 
 /// Catalog paint + var theme + recording bridges (action tooltip / defaults edit).
