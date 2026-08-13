@@ -4,6 +4,23 @@
 use parking_lot::Mutex;
 use std::sync::Arc;
 
+#[cfg(all(feature = "hooks", target_os = "windows"))]
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Fast path for the Windows LL mouse hook: skip `WM_MOUSEMOVE` unless armed.
+#[cfg(all(feature = "hooks", target_os = "windows"))]
+static HOOK_WANTS_MOVES: AtomicBool = AtomicBool::new(false);
+
+#[cfg(all(feature = "hooks", target_os = "windows"))]
+pub(crate) fn hook_wants_mouse_moves() -> bool {
+    HOOK_WANTS_MOVES.load(Ordering::Relaxed)
+}
+
+fn sync_hook_wants_moves(_armed: bool) {
+    #[cfg(all(feature = "hooks", target_os = "windows"))]
+    HOOK_WANTS_MOVES.store(_armed, Ordering::Relaxed);
+}
+
 #[derive(Debug, Clone)]
 enum Armed {
     Point,
@@ -54,6 +71,7 @@ impl ScreenClickBridge {
             last_pos: g.last_pos,
             ..Inner::default()
         };
+        sync_hook_wants_moves(true);
     }
 
     pub fn arm_color(&self) {
@@ -63,6 +81,7 @@ impl ScreenClickBridge {
             last_pos: g.last_pos,
             ..Inner::default()
         };
+        sync_hook_wants_moves(true);
     }
 
     pub fn arm_search_area(&self) {
@@ -72,11 +91,13 @@ impl ScreenClickBridge {
             last_pos: g.last_pos,
             ..Inner::default()
         };
+        sync_hook_wants_moves(true);
     }
 
     pub fn disarm(&self) {
         let mut g = self.inner.lock();
         g.armed = None;
+        sync_hook_wants_moves(false);
     }
 
     /// When the fullscreen selection grab is active, hooks skip mouse/Esc delivery.
@@ -192,6 +213,7 @@ impl ScreenClickBridge {
             }
             None => {}
         }
+        sync_hook_wants_moves(g.armed.is_some());
     }
 
     /// Hotkey thread: Esc while armed cancels.
@@ -200,6 +222,7 @@ impl ScreenClickBridge {
         if g.armed.is_some() {
             g.armed = None;
             g.cancelled = true;
+            sync_hook_wants_moves(false);
             true
         } else {
             false
@@ -230,6 +253,7 @@ impl ScreenClickBridge {
         let mut g = self.inner.lock();
         g.point = Some((x, y));
         g.armed = None;
+        sync_hook_wants_moves(false);
     }
 }
 

@@ -5,6 +5,23 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Instant;
 
+#[cfg(all(feature = "hooks", target_os = "windows"))]
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Fast path for the Windows LL mouse hook: skip `WM_MOUSEMOVE` unless recording.
+#[cfg(all(feature = "hooks", target_os = "windows"))]
+static HOOK_WANTS_MOVES: AtomicBool = AtomicBool::new(false);
+
+#[cfg(all(feature = "hooks", target_os = "windows"))]
+pub(crate) fn hook_wants_mouse_moves() -> bool {
+    HOOK_WANTS_MOVES.load(Ordering::Relaxed)
+}
+
+fn sync_hook_wants_moves(_armed: bool) {
+    #[cfg(all(feature = "hooks", target_os = "windows"))]
+    HOOK_WANTS_MOVES.store(_armed, Ordering::Relaxed);
+}
+
 /// Mouse button for recorded click events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordMouseButton {
@@ -81,11 +98,13 @@ impl MacroRecordBridge {
             started_at: Some(Instant::now()),
             prev_keys: HashSet::new(),
         };
+        sync_hook_wants_moves(true);
     }
 
     pub fn disarm(&self) {
         let mut g = self.inner.lock();
         g.armed = false;
+        sync_hook_wants_moves(false);
     }
 
     pub fn is_armed(&self) -> bool {
@@ -115,6 +134,11 @@ impl MacroRecordBridge {
 
     pub fn started_at(&self) -> Option<Instant> {
         self.inner.lock().started_at
+    }
+
+    /// Update pointer without recording a move event (e.g. click coordinates).
+    pub fn set_last_pos(&self, x: i32, y: i32) {
+        self.inner.lock().last_pos = (x, y);
     }
 
     /// Hotkey thread: track pointer (always, so arm starts with a real position).
@@ -159,6 +183,7 @@ impl MacroRecordBridge {
         if pressed && name == "esc" {
             g.armed = false;
             g.finished = true;
+            sync_hook_wants_moves(false);
             return true;
         }
         // Do not record the Esc that stops recording.
@@ -188,6 +213,7 @@ impl MacroRecordBridge {
         if g.armed {
             g.armed = false;
             g.finished = true;
+            sync_hook_wants_moves(false);
             true
         } else {
             false
@@ -237,6 +263,7 @@ impl MacroRecordBridge {
         g.cancelled = true;
         g.events.clear();
         g.started_at = None;
+        sync_hook_wants_moves(false);
     }
 
     /// Snapshot of events recorded so far (while armed or until taken).
