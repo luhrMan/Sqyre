@@ -279,9 +279,7 @@ pub fn paint_program_label(
 
     let rich = match style {
         ProgramLabelStyle::Selectable { .. } => egui::RichText::new(text),
-        ProgramLabelStyle::Header { .. } => {
-            egui::RichText::new(text).size(PROCESS_ICON_SIDE).strong()
-        }
+        ProgramLabelStyle::Header { .. } => egui::RichText::new(text).strong(),
     };
 
     let icon = tex.as_ref().map(|tex| {

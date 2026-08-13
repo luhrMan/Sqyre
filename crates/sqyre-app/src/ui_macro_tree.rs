@@ -147,7 +147,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         .tree
                         .known_vars_cached(&app.workspace.macros[idx])
                         .clone();
-                    let interact_y = ui.spacing().interact_size.y;
+                    let interact_y = tree_chrome::row_height(ui);
                     let primary_id = app.tree.selected_actions.last().copied();
                     let selected_action = primary_id.and_then(|id| root.find_by_id(id));
                     let paint_revision = app.tree.paint_revision;
@@ -208,8 +208,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         if !scrolled_follow {
                             if let Some(row_i) = flattened_visible_index(root, target) {
                                 let row_h =
-                                    tree_chrome::default_row_height(ui.spacing().interact_size.y)
-                                        + ui.spacing().item_spacing.y;
+                                    tree_chrome::row_height(ui) + ui.spacing().item_spacing.y;
                                 let y = ui.min_rect().top() + row_i as f32 * row_h;
                                 let rect = egui::Rect::from_min_size(
                                     egui::pos2(ui.min_rect().left(), y),

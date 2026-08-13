@@ -425,7 +425,7 @@ pub(crate) fn show_action_view_tip(
                     ui.set_max_width(max_w);
                     tree_chrome::paint_pill_pub(ui, label, pastel);
                     ui.add_space(4.0);
-                    ui.label(egui::RichText::new(description).size(12.0).weak());
+                    ui.label(egui::RichText::new(description).small().weak());
                     if !summary_pills.is_empty() {
                         ui.add_space(4.0);
                         sections::tip_wrapped_section(ui, |ui| {
@@ -475,7 +475,7 @@ pub(crate) fn show_action_view_tip(
                                 ui.horizontal(|ui| {
                                     ui.label(
                                         egui::RichText::new(format!("{}:", p.label))
-                                            .size(12.0)
+                                            .small()
                                             .strong(),
                                     );
                                     if p.label.eq_ignore_ascii_case("Program") {

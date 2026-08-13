@@ -396,6 +396,7 @@ pub(crate) fn paint_zoomable_collection_preview(
 
     image_view::handle_scroll_zoom(ui, viewport, image_size, view, resp.hovered());
     let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
+    let body_font = egui::TextStyle::Body.resolve(ui.style());
 
     {
         let painter = ui.painter_at(viewport);
@@ -412,7 +413,7 @@ pub(crate) fn paint_zoomable_collection_preview(
                 viewport.center(),
                 egui::Align2::CENTER_CENTER,
                 "No image on disk",
-                egui::FontId::proportional(14.0),
+                body_font,
                 egui::Color32::LIGHT_GRAY,
             );
         }
@@ -679,6 +680,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
         )
     };
 
+    let small = egui::TextStyle::Small.resolve(ui.style());
     {
         let painter = ui.painter_at(viewport);
         painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(22));
@@ -695,8 +697,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
             painter.rect_filled(rect, 0.0, mon_fill);
             painter.rect_stroke(rect, 0.0, mon_stroke, egui::StrokeKind::Outside);
             let label = format!("Monitor {} — {mw}×{mh}", i + 1);
-            let galley =
-                painter.layout_no_wrap(label, egui::FontId::proportional(12.0), label_color);
+            let galley = painter.layout_no_wrap(label, small.clone(), label_color);
             let chip =
                 egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(10.0, 4.0));
             painter.rect_filled(
@@ -732,7 +733,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
             let label_pos = egui::pos2(rect.left() + 4.0, rect.top() + 4.0);
             let galley = painter.layout_no_wrap(
                 node.collection.clone(),
-                egui::FontId::proportional(11.0),
+                small.clone(),
                 egui::Color32::WHITE,
             );
             let chip = egui::Rect::from_min_size(label_pos, galley.size() + egui::vec2(6.0, 2.0));

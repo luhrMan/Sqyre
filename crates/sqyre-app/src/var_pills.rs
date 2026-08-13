@@ -1,8 +1,8 @@
 //! Nested variable-reference chips and unfocused entry overlays.
 
 use eframe::egui::{
-    self, text::CCursor, text_edit::TextEditState, Color32, FontId, Key, Modifiers,
-    PopupCloseBehavior, RectAlign, Sense, Stroke, Vec2,
+    self, text::CCursor, text_edit::TextEditState, Color32, Key, Modifiers, PopupCloseBehavior,
+    RectAlign, Sense, Stroke, Vec2,
 };
 use egui::text_selection::CCursorRange;
 use sqyre_domain::{is_known_variable, KnownVariableNames};
@@ -14,7 +14,6 @@ use crate::tree_chrome::rgba_pub;
 
 const VAR_AC_LIMIT: usize = 12;
 
-const PILL_FONT_SIZE: f32 = 12.0;
 const NESTED_MARGIN_X: i8 = 3;
 const NESTED_MARGIN_Y: i8 = 1;
 const NESTED_RADIUS: f32 = 4.0;
@@ -42,7 +41,7 @@ fn paint_text_chip(
 ) -> egui::Response {
     // allocate_exact_size (not Frame::show / Label) so text can be centered in the chrome.
     let fg = contrast_fg(fill);
-    let font = FontId::proportional(PILL_FONT_SIZE);
+    let font = egui::TextStyle::Small.resolve(ui.style());
     let galley = ui.painter().layout_no_wrap(text.to_owned(), font, fg);
     let pad = Vec2::new(margin_x as f32 * 2.0, margin_y as f32 * 2.0);
     let size = galley.size() + pad;
@@ -56,7 +55,7 @@ fn paint_text_chip(
 /// Plain text segment (no chrome): sized to the galley and ink-centered so it
 /// aligns with nested chips under parent `Align::Center`.
 fn paint_plain_segment(ui: &mut egui::Ui, text: &str, color: Color32) {
-    let font = FontId::proportional(PILL_FONT_SIZE);
+    let font = egui::TextStyle::Small.resolve(ui.style());
     let galley = ui.painter().layout_no_wrap(text.to_owned(), font, color);
     let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
     paint_galley_centered(ui, rect, galley, color);
@@ -545,10 +544,8 @@ pub fn paint_entry_validation_icon(ui: &mut egui::Ui, v: &EntryValidation) {
     } else {
         return;
     };
-    ui.add(
-        egui::Label::new(egui::RichText::new(glyph).color(color).size(14.0)).sense(Sense::hover()),
-    )
-    .on_hover_text(tip);
+    ui.add(egui::Label::new(egui::RichText::new(glyph).color(color)).sense(Sense::hover()))
+        .on_hover_text(tip);
 }
 
 /// Stroke color for compact validated chips (error > warning > none).

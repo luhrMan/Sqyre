@@ -1,4 +1,3 @@
-use super::types::HEADER_SIZE;
 use eframe::egui;
 use egui::containers::scroll_area::{DragScroll, ScrollSource};
 
@@ -74,8 +73,10 @@ pub fn picker_searchable_scroll(
 ) -> bool {
     let mut search_changed = false;
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new(egui_phosphor::regular::MAGNIFYING_GLASS).size(HEADER_SIZE))
-            .on_hover_text("Search");
+        ui.label(egui::RichText::new(
+            egui_phosphor::regular::MAGNIFYING_GLASS,
+        ))
+        .on_hover_text("Search");
         let mut edit = egui::TextEdit::singleline(search);
         if let Some(hint) = opts.hint_text {
             edit = edit.hint_text(hint);

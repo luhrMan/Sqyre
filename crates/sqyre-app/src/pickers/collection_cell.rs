@@ -63,6 +63,7 @@ pub fn paint_collection_cell_picker(
 
     let content =
         image_view::image_content_rect(viewport, image_size, pick.view.zoom, pick.view.pan);
+    let body_font = egui::TextStyle::Body.resolve(ui.style());
 
     {
         let painter = ui.painter_at(viewport);
@@ -79,7 +80,7 @@ pub fn paint_collection_cell_picker(
                 viewport.center(),
                 egui::Align2::CENTER_CENTER,
                 "No collection image",
-                egui::FontId::proportional(14.0),
+                body_font,
                 Color32::LIGHT_GRAY,
             );
         }
