@@ -268,6 +268,12 @@ fn platform_tessdata_paths() -> Vec<PathBuf> {
 
     #[cfg(not(target_os = "windows"))]
     {
+        // Bundled Linux releases colocate tessdata/ next to the executable.
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                paths.push(dir.join("tessdata"));
+            }
+        }
         paths.extend([
             PathBuf::from("/usr/share/tesseract-ocr/4.00/tessdata"),
             PathBuf::from("/usr/share/tesseract-ocr/5/tessdata"),
