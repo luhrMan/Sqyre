@@ -90,8 +90,14 @@ help:
 $(BIN):
 	mkdir -p $(BIN)
 
+ifeq ($(HOST_OS),linux)
+  SQYRE_APP_FEATURES := --features portal-capture
+else
+  SQYRE_APP_FEATURES :=
+endif
+
 sqyre: $(BIN)
-	$(CARGO) build -p sqyre-app $(CARGO_FLAGS)
+	$(CARGO) build -p sqyre-app $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/debug/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
 
 probe: $(BIN)
@@ -104,7 +110,7 @@ release-gate:
 	$(MAKE) check
 
 release: release-gate $(BIN)
-	$(CARGO) build -p sqyre-app --release $(CARGO_FLAGS)
+	$(CARGO) build -p sqyre-app --release $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/release/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
 
 # Windows release binary (no MSI). Docker MinGW cross from Linux; native on Windows.
