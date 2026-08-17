@@ -44,6 +44,11 @@ impl OsCapturer {
         capture_rect_gdi(rect)
     }
 
+    /// GDI capture is always synchronous; identical to [`Self::capture_rect_ref`].
+    pub fn capture_rect_fresh_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        self.capture_rect_ref(rect)
+    }
+
     /// Capture RGB directly (no alpha channel / no second conversion pass).
     pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
         let _guard = self.inner.lock();
