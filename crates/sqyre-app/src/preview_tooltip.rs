@@ -343,7 +343,7 @@ impl PreviewTooltipCache {
         #[cfg(target_os = "windows")]
         {
             mark_site("preview:capture_sync");
-            match capture_preview(capturer.as_ref(), coords, max_dim) {
+            match capture_preview(capturer.as_ref(), coords, max_dim, force) {
                 Ok(img) => {
                     self.failures.remove(key);
                     return self.finish_texture(ctx, key, caption, img, max_dim);
@@ -359,8 +359,9 @@ impl PreviewTooltipCache {
         #[cfg(not(target_os = "windows"))]
         {
             let (tx, rx) = std::sync::mpsc::channel();
+            let fresh = force;
             thread::spawn(move || {
-                let _ = tx.send(capture_preview(capturer.as_ref(), coords, max_dim));
+                let _ = tx.send(capture_preview(capturer.as_ref(), coords, max_dim, fresh));
             });
             self.pending.insert(
                 key.to_string(),
@@ -470,7 +471,15 @@ fn capture_preview(
     capturer: &OsCapturer,
     coords: PreviewCoords,
     max_dim: u32,
+    fresh: bool,
 ) -> Result<RgbaImage, CaptureError> {
+    let capture_rect = |bounds: DesktopRect| {
+        if fresh {
+            capturer.capture_rect_fresh_ref(bounds)
+        } else {
+            capturer.capture_rect_ref(bounds)
+        }
+    };
     let vb = capturer.virtual_bounds_ref()?;
     match coords {
         PreviewCoords::Point { x, y } => {
@@ -484,7 +493,7 @@ fn capture_preview(
                 )));
             }
             let bounds = preview_bounds_for_point(x, y, vb);
-            let mut img = capturer.capture_rect_ref(bounds)?;
+            let mut img = capture_rect(bounds)?;
             draw_point_marker(&mut img, x - bounds.x, y - bounds.y, OVERLAY, 2);
             Ok(downscale_max_dim(img, max_dim))
         }
@@ -504,7 +513,7 @@ fn capture_preview(
                 });
             }
             let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
-            let mut img = capturer.capture_rect_ref(bounds)?;
+            let mut img = capture_rect(bounds)?;
             draw_rect_outline(
                 &mut img,
                 lx - bounds.x,
