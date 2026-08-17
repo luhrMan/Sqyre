@@ -130,6 +130,7 @@ pub fn run() -> eframe::Result<()> {
             .with_inner_size([960.0, 640.0])
             .with_min_inner_size([100.0, 100.0])
             .with_title("Sqyre")
+            .with_app_id(assets::APP_ID)
             .with_icon(assets::app_icon()),
         // wgpu's DX12 HWND swapchain has no per-pixel alpha; glow + DWM blur-behind
         // is required for deferred overlay button transparency (egui#3632).
@@ -138,7 +139,7 @@ pub fn run() -> eframe::Result<()> {
         ..Default::default()
     };
     eframe::run_native(
-        "Sqyre",
+        assets::APP_ID,
         options,
         Box::new(move |cc| {
             let mut app = SqyreApp::load();

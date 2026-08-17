@@ -2,7 +2,7 @@
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
 .PHONY: all sqyre probe release windows macos test coverage coverage-floors check check-fmt fmt clippy deny machete \
-	release-gate run tessdata appimage docs-media wasm help
+	release-gate run tessdata appimage install-desktop docs-media wasm help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
@@ -85,6 +85,7 @@ help:
 	@echo "  docs-media   - regenerate docs/images screenshots"
 	@echo "  appimage     - fmt + check, then AppImage -> $(BIN)/ (Docker fallback if tools missing)"
 	@echo "                 (RELEASE_VERSION=…; SQYRE_APPIMAGE_FORCE_NATIVE=1)"
+	@echo "  install-desktop - install .desktop + icon for GNOME/Wayland (Linux dev builds)"
 	@echo "  wasm         - fmt + check, then GUI-only WASM editor -> $(BIN)/wasm/ (requires Trunk)"
 
 $(BIN):
@@ -196,6 +197,14 @@ docs-media:
 
 appimage: release-gate
 	./scripts/linux/packaging/appimage/build-appimage.sh
+
+# GNOME/Wayland dock icons need a matching .desktop file (see crates/sqyre-app APP_ID).
+install-desktop: release $(BIN)
+	@if [ "$(HOST_OS)" != "linux" ]; then \
+		echo "make install-desktop requires a Linux host (got $(HOST_OS))"; \
+		exit 1; \
+	fi
+	./scripts/linux/packaging/install-desktop.sh $(BIN)/sqyre
 
 # Browser GUI editor (no Run / capture / OCR). Requires: rustup target wasm32-unknown-unknown, trunk.
 wasm: release-gate
