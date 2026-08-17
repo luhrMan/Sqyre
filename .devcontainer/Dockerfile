@@ -4,7 +4,7 @@
 # so `make windows` and nested AppImage builds work inside the container.
 # Trunk + wasm32-unknown-unknown support `make wasm` (GUI-only browser editor).
 # Build and test in-container; run the GUI binary on the host (needs X11).
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG RUST_VERSION=1.92.0
@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libx11-dev libxkbcommon-dev libxkbcommon-x11-dev \
     libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
     libwayland-dev libegl1-mesa-dev libdbus-1-dev \
+    libpipewire-0.3-dev libspa-0.2-dev \
     libfontconfig1-dev libasound2-dev \
     # Headless wgpu (egui_kittest docs screenshots)
     mesa-vulkan-drivers libvulkan1 \
@@ -27,9 +28,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # AppImage packaging
     python3 python3-pip python3-setuptools \
     squashfs-tools patchelf zsync file desktop-file-utils \
-    libgtk-3-bin \
+    libgtk-3-bin librsvg2-bin \
     sudo \
-    && pip3 install --no-cache-dir 'appimage-builder==1.1.0' \
+    && pip3 install --no-cache-dir --break-system-packages 'appimage-builder==1.1.0' \
     && rm -rf /var/lib/apt/lists/*
 
 ENV RUSTUP_HOME=/usr/local/rustup \
@@ -52,7 +53,10 @@ ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=1000
 RUN groupadd --gid "${USER_GID}" "${USERNAME}" \
-    && useradd --uid "${USER_UID}" --gid "${USER_GID}" -m -s /bin/bash "${USERNAME}" \
+    || groupmod -n "${USERNAME}" "$(getent group "${USER_GID}" | cut -d: -f1)" \
+    && useradd -s /bin/bash --uid "${USER_UID}" --gid "${USER_GID}" -m "${USERNAME}" \
+    || usermod -l "${USERNAME}" -d "/home/${USERNAME}" -m "$(getent passwd "${USER_UID}" | cut -d: -f1)" \
+    && usermod -g "${USER_GID}" "${USERNAME}" \
     && echo "${USERNAME} ALL=(root) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" \
     && chmod 0440 "/etc/sudoers.d/${USERNAME}"
 
