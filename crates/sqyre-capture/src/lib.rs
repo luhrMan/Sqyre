@@ -4,6 +4,8 @@ mod diag;
 mod error;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod grab_stub;
+#[cfg(target_os = "linux")]
+pub mod linux;
 mod outline_geometry;
 mod outline_rect;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -25,6 +27,8 @@ mod window_match;
 #[cfg(target_os = "linux")]
 mod x11_capture;
 #[cfg(target_os = "linux")]
+mod x11_errors;
+#[cfg(target_os = "linux")]
 mod x11_focus;
 #[cfg(target_os = "linux")]
 mod x11_grab;
@@ -34,17 +38,19 @@ mod x11_outline;
 mod x11_secondary;
 
 pub use diag::{
-    disk_logging_enabled, mark_site, note, read_last_site, set_disk_logging, set_log_dir,
-    CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
+    cap_log, disk_logging_enabled, event_log, mark_site, note, read_last_site, set_disk_logging,
+    set_log_dir, CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
 };
 pub use error::{linux_session_capture_warning, CaptureError};
+#[cfg(target_os = "linux")]
+pub use linux::{
+    shared_capturer, LinuxCaptureBackend, LinuxSessionInfo, LinuxSessionKind, OsCapturer,
+    SharedRunCapturer,
+};
 pub use outline_rect::OutlineRect;
 pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
 pub use selection_grab::GrabPoll;
 pub use stub::{NullCapturer, SolidCapturer};
-
-#[cfg(target_os = "linux")]
-pub use x11_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
 
 #[cfg(target_os = "windows")]
 pub use win_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
