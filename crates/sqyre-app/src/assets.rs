@@ -1,5 +1,8 @@
 //! Embedded brand assets.
 
+/// Freedesktop application id; must match `com.sqyre.app.desktop` for GNOME/Wayland icons.
+pub const APP_ID: &str = "com.sqyre.app";
+
 /// Sqyre app icon SVG (crate-local `assets/icons/`).
 pub const APP_ICON_SVG: &[u8] = include_bytes!("../assets/icons/sqyre.svg");
 
