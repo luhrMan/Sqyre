@@ -1,7 +1,7 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre probe release windows macos test coverage coverage-floors check check-fmt fmt clippy deny machete \
+.PHONY: all sqyre probe release release-bundle windows macos test coverage coverage-floors check check-fmt fmt clippy deny machete \
 	release-gate run tessdata appimage install-desktop docs-media wasm help
 
 ROOT := $(abspath .)
@@ -67,6 +67,7 @@ help:
 	@echo "  all / sqyre  - cargo build (debug) -> $(BIN)/sqyre$(BIN_EXT)  [default]"
 	@echo "  probe        - cargo build (debug) -> $(BIN)/sqyre-probe$(BIN_EXT)"
 	@echo "  release      - fmt + check, then cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
+	@echo "  release-bundle - Linux: release + bundled Tesseract -> $(BIN)/sqyre-bundle/"
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
 	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
 	@echo "  macos        - fmt + check, then native macOS release -> $(BIN)/sqyre  (macOS host)"
@@ -113,6 +114,14 @@ release-gate:
 release: release-gate $(BIN)
 	$(CARGO) build -p sqyre-app --release $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/release/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
+
+# Portable Linux directory with libtesseract/leptonica + tessdata (needs patchelf).
+release-bundle: release-gate $(BIN)
+	@if [ "$(HOST_OS)" != "linux" ]; then \
+		echo "make release-bundle requires a Linux host (got $(HOST_OS))"; \
+		exit 1; \
+	fi
+	./scripts/linux/packaging/bundle-release.sh
 
 # Windows release binary (no MSI). Docker MinGW cross from Linux; native on Windows.
 windows: release-gate $(BIN)

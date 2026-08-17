@@ -27,11 +27,12 @@ script:
     TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
     export CARGO_TARGET_DIR="$TARGET_DIR"
     echo "cargo=$(command -v cargo) target=$TARGET_DIR"
-    (cd "$ROOT" && cargo build -p sqyre-app --release)
+    (cd "$ROOT" && cargo build -p sqyre-app --release --features portal-capture)
     if [ ! -x "$TARGET_DIR/release/sqyre" ]; then
       echo "ERROR: missing $TARGET_DIR/release/sqyre after cargo build" >&2
       exit 1
     fi
+    "$SOURCE_DIR/../generate-app-icon.sh" 256
     ICON="$ROOT/crates/sqyre-app/assets/icons/sqyre.png"
     install -Dm00755 "$TARGET_DIR/release/sqyre" "$TARGET_APPDIR/usr/bin/sqyre"
     install -Dm00644 "$ICON" "$TARGET_APPDIR/usr/share/icons/hicolor/256x256/apps/com.sqyre.app.png"
@@ -73,11 +74,17 @@ AppDir:
     exclude:
       - usr/share/man
       - usr/share/doc/*
+      # Host PipeWire must load its SPA plugins (bundled libpipewire breaks portal capture).
+      - usr/lib/libpipewire*
+      - usr/lib/libspa-*
+      - lib/x86_64*/libpipewire*
+      - lib/x86_64*/libspa-*
   runtime:
     env:
       TESSDATA_PREFIX: "${APPDIR}/usr/share/tessdata"
       SQYRE_TESSDATA: "${APPDIR}/usr/share/tessdata"
       APPDIR_LIBRARY_PATH: "${APPDIR}/usr/lib:${APPDIR}/lib/x86_64"
+      SPA_PLUGIN_DIR: "/usr/lib/x86_64-linux-gnu/spa-0.2:/usr/lib64/spa-0.2:/usr/lib/spa-0.2"
 
 AppImage:
   arch: x86_64

@@ -40,8 +40,24 @@ The recipe copies `eng.traineddata` from `assets/tessdata/` or host `/usr/share/
 
 ---
 
+## Bundled release (portable directory)
+
+Self-contained **`bin/sqyre-bundle/`** with Tesseract/Leptonica `.so` files and `tessdata/eng.traineddata`. The binary uses `$ORIGIN/lib` rpath so it runs without a system `libtesseract`.
+
+```bash
+make release-bundle
+./bin/sqyre-bundle/sqyre
+```
+
+Requires **patchelf** (installed in the devcontainer). Build on the target glibc family you intend to ship against (same constraint as AppImage).
+
+**Wayland portal capture:** `libpipewire` / `libspa-*` are **not** bundled — the host PipeWire stack (GNOME/KDE already ship it) must provide SPA plugins. Bundling breaks with `can't make support.system handle`.
+
+---
+
 ## Summary
 
 | Format | Command | Main requirement |
 |--------|---------|------------------|
+| **Bundled dir** | `make release-bundle` | Rust + Tesseract dev libs + patchelf |
 | **AppImage** | `make appimage` | Rust + Tesseract on host + appimage-builder |
