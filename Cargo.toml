@@ -16,6 +16,7 @@ members = [
     "crates/sqyre-hotkeys",
     "crates/sqyre-update",
     "crates/sqyre-app",
+    "crates/sqyre-probe",
 ]
 default-members = [
     "crates/sqyre-match",
