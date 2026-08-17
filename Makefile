@@ -1,7 +1,7 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre release windows macos test coverage coverage-floors check check-fmt fmt clippy deny machete \
+.PHONY: all sqyre probe release windows macos test coverage coverage-floors check check-fmt fmt clippy deny machete \
 	release-gate run tessdata appimage docs-media wasm help
 
 ROOT := $(abspath .)
@@ -65,6 +65,7 @@ all: sqyre
 help:
 	@echo "Targets:"
 	@echo "  all / sqyre  - cargo build (debug) -> $(BIN)/sqyre$(BIN_EXT)  [default]"
+	@echo "  probe        - cargo build (debug) -> $(BIN)/sqyre-probe$(BIN_EXT)"
 	@echo "  release      - fmt + check, then cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
 	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
@@ -92,6 +93,10 @@ $(BIN):
 sqyre: $(BIN)
 	$(CARGO) build -p sqyre-app $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/debug/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
+
+probe: $(BIN)
+	$(CARGO) build -p sqyre-probe --features portal-capture $(CARGO_FLAGS)
+	cp -f $(TARGET_DIR)/debug/sqyre-probe$(BIN_EXT) $(BIN)/sqyre-probe$(BIN_EXT)
 
 # Sequential fmt → check so release/packaging stays gated under make -j.
 release-gate:
