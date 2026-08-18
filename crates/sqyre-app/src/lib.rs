@@ -18,12 +18,15 @@ mod demo_icons;
 #[cfg(feature = "native-runtime")]
 mod diag;
 pub mod docs_fixture;
+mod egui_keys;
 mod file_dialogs;
 mod hotkey_record;
 mod icon_cache;
 mod icon_variants;
 mod image_view;
 mod key_record;
+#[cfg(all(target_os = "linux", feature = "native-runtime"))]
+mod linux_focused_keys;
 mod log;
 mod macro_meta;
 #[cfg(feature = "native-runtime")]

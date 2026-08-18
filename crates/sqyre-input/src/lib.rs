@@ -462,6 +462,87 @@ impl OsAutomation {
     }
 }
 
+/// Windows/macOS smooth duration from [`MoveOptions`] (legacy formula).
+#[cfg(any(test, not(target_os = "linux")))]
+fn smooth_moving_time_secs(opts: MoveOptions) -> f32 {
+    if !opts.smooth {
+        return 0.0;
+    }
+    let base = if opts.delay_ms > 0 {
+        opts.delay_ms as f32 * 0.05
+    } else {
+        0.2
+    };
+    base.clamp(0.05, 2.0)
+}
+
+/// Distance-aware smooth-move duration and step interval for Linux.
+///
+/// rustautogui smooth moves step once per pixel (`step_by` over the path), which
+/// is extremely slow on GNOME Wayland where each `XWarpPointer` round-trips through
+/// XWayland. Sqyre caps warp count and uses [`MoveOptions::delay_ms`] as the step
+/// interval instead.
+#[cfg(any(test, target_os = "linux"))]
+fn linux_smooth_move_plan(opts: MoveOptions, dx: i32, dy: i32) -> (f32, u64) {
+    let step_ms = opts.delay_ms.max(1) as u64;
+    let distance = ((dx * dx + dy * dy) as f64).sqrt();
+    // ~8 px per warp, at most 100 warps (Wayland/XWayland is costly per warp).
+    let ideal_steps = ((distance / 8.0).ceil() as u64).clamp(2, 100);
+    let mut duration_secs = ideal_steps as f32 * step_ms as f32 / 1000.0;
+    let min_t = opts.low as f32;
+    let max_t = opts.high as f32;
+    duration_secs = if max_t >= min_t {
+        duration_secs.clamp(min_t, max_t)
+    } else {
+        duration_secs.max(min_t)
+    };
+    (duration_secs, step_ms)
+}
+
+#[cfg(target_os = "linux")]
+fn move_mouse_instant(gui: &mut RustAutoGui, px: i32, py: i32) {
+    let xu = u32::try_from(px).unwrap_or(0);
+    let yu = u32::try_from(py).unwrap_or(0);
+    let _ = gui.move_mouse_to_pos(xu, yu, 0.0);
+}
+
+/// Linux smooth move: timed interpolation with instant warps (moving_time=0).
+///
+/// Avoids rustautogui's per-pixel smooth path (XTest + sleep per pixel).
+#[cfg(target_os = "linux")]
+fn move_mouse_linux(gui: &mut RustAutoGui, x: i32, y: i32, opts: MoveOptions) {
+    let (start_x, start_y) = match gui.get_mouse_position() {
+        Ok((sx, sy)) => (sx, sy),
+        Err(_) => {
+            move_mouse_instant(gui, x, y);
+            return;
+        }
+    };
+    let dx = x - start_x;
+    let dy = y - start_y;
+    if dx == 0 && dy == 0 {
+        return;
+    }
+    let (moving_time, step_ms) = linux_smooth_move_plan(opts, dx, dy);
+    if moving_time <= 0.0 {
+        move_mouse_instant(gui, x, y);
+        return;
+    }
+    let start_t = std::time::Instant::now();
+    let step = Duration::from_millis(step_ms);
+    loop {
+        let t = start_t.elapsed().as_secs_f32() / moving_time;
+        if t >= 1.0 {
+            move_mouse_instant(gui, x, y);
+            break;
+        }
+        let nx = start_x as f32 + t * dx as f32;
+        let ny = start_y as f32 + t * dy as f32;
+        move_mouse_instant(gui, nx as i32, ny as i32);
+        std::thread::sleep(step);
+    }
+}
+
 /// Map a virtual-desktop pixel into SendInput's 0..65535 absolute range.
 ///
 /// `None` when the virtual desktop metrics are unusable (caller should fall back).
@@ -548,22 +629,22 @@ impl AutomationBackend for OsAutomation {
     }
 
     fn move_to(&mut self, x: i32, y: i32, opts: MoveOptions) {
-        let moving_time = if opts.smooth {
-            // Approximate smooth move: delay_ms scaling into seconds.
-            let base = if opts.delay_ms > 0 {
-                opts.delay_ms as f32 * 0.05
-            } else {
-                0.2
-            };
-            base.clamp(0.05, 2.0)
-        } else {
-            0.0
-        };
-        // Absolute virtual-desktop coords (Windows origin may be negative).
         #[cfg(target_os = "windows")]
-        move_mouse_windows(x, y, moving_time);
-        #[cfg(not(target_os = "windows"))]
         {
+            let moving_time = smooth_moving_time_secs(opts);
+            move_mouse_windows(x, y, moving_time);
+        }
+        #[cfg(target_os = "linux")]
+        {
+            if opts.smooth {
+                move_mouse_linux(&mut self.gui, x, y, opts);
+            } else {
+                move_mouse_instant(&mut self.gui, x, y);
+            }
+        }
+        #[cfg(all(not(target_os = "windows"), not(target_os = "linux")))]
+        {
+            let moving_time = smooth_moving_time_secs(opts);
             // rustautogui's public API is u32; X11 virtual desktop starts at (0,0).
             let xu = u32::try_from(x).unwrap_or(0);
             let yu = u32::try_from(y).unwrap_or(0);
@@ -673,13 +754,48 @@ mod tests {
 
     #[test]
     fn smooth_move_time_clamped() {
-        // Documented mapping used by move_to — keep in sync if formula changes.
-        let from_delay = (100_f32 * 0.05).clamp(0.05, 2.0);
-        assert!((from_delay - 2.0).abs() < f32::EPSILON);
-        let default_smooth = 0.2_f32.clamp(0.05, 2.0);
-        assert!((default_smooth - 0.2).abs() < f32::EPSILON);
-        let instant = 0.0_f32;
-        assert_eq!(instant, 0.0);
+        let opts = MoveOptions {
+            smooth: true,
+            low: 0.05,
+            high: 0.2,
+            delay_ms: 100,
+        };
+        assert!((smooth_moving_time_secs(opts) - 2.0).abs() < f32::EPSILON);
+        assert_eq!(
+            smooth_moving_time_secs(MoveOptions {
+                smooth: false,
+                ..opts
+            }),
+            0.0
+        );
+    }
+
+    #[test]
+    fn linux_smooth_move_plan_caps_warps_and_duration() {
+        let opts = MoveOptions {
+            smooth: true,
+            low: 0.05,
+            high: 0.2,
+            delay_ms: 1,
+        };
+        // Short move: distance-based, clamped up to smooth_low.
+        let (dur, step) = linux_smooth_move_plan(opts, 40, 0);
+        assert_eq!(step, 1);
+        assert!((dur - 0.05).abs() < f32::EPSILON);
+
+        // Long move: warp count capped at 100 → 100ms at 1ms steps.
+        let (dur_long, _) = linux_smooth_move_plan(opts, 3000, 0);
+        assert!((dur_long - 0.1).abs() < f32::EPSILON);
+
+        // Duration capped at smooth_high when steps would exceed it.
+        let slow = MoveOptions {
+            smooth: true,
+            low: 0.05,
+            high: 0.2,
+            delay_ms: 5,
+        };
+        let (dur_capped, _) = linux_smooth_move_plan(slow, 3000, 0);
+        assert!((dur_capped - 0.2).abs() < f32::EPSILON);
     }
 
     #[test]
