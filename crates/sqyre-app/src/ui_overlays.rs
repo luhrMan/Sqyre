@@ -283,10 +283,12 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     app.update_recording_visibility(ctx);
     #[cfg(feature = "native-runtime")]
     sync_macro_overlay(app, ctx);
-    // Windows Raw Input suppresses WH_KEYBOARD_LL while we are focused; mirror
+    // Raw Input (Windows) and Wayland focus delivery suppress global hooks; mirror
     // egui keys into the hotkey bridges so Record / Esc / chords still work.
     #[cfg(target_os = "windows")]
     crate::win_focused_keys::feed_focused_keyboard(app, ctx);
+    #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+    crate::linux_focused_keys::feed_focused_keyboard(app, ctx);
     app.drain_pending_hotkey_macros(ctx);
 
     if let Some(chord) = app.hotkey_record.show(ctx, &app.run_session.macro_hotkeys) {

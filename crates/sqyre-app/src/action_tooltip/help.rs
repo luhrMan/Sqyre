@@ -46,9 +46,10 @@ pub const TYPE_DELAY: &str = "Milliseconds between each character.";
 
 pub const MOVE_POINT: &str = "Target point from the Data Editor (program~name). Required to run.";
 pub const MOVE_SMOOTH: &str = "Animate the cursor instead of teleporting.";
-pub const MOVE_SMOOTH_LOW: &str = "Minimum fraction of the path used for easing (0–1).";
-pub const MOVE_SMOOTH_HIGH: &str = "Maximum fraction of the path used for easing (0–1).";
-pub const MOVE_SMOOTH_DELAY: &str = "Milliseconds between smooth-move steps.";
+pub const MOVE_SMOOTH_LOW: &str = "Minimum smooth-move duration in seconds.";
+pub const MOVE_SMOOTH_HIGH: &str = "Maximum smooth-move duration in seconds.";
+pub const MOVE_SMOOTH_DELAY: &str =
+    "Milliseconds between smooth-move steps (Linux). Windows uses a fixed 10 ms step.";
 
 // --- Pause ---
 
