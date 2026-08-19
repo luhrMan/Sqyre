@@ -14,9 +14,12 @@ pub const IMAGE_SEARCH_REFERENCE: &str = "Image Search Reference";
 /// One display in virtual-desktop coordinates (`x`, `y`, `w`, `h`).
 pub type MonitorRect = (i32, i32, i32, i32);
 
-/// Create the `General` program with Whole Screen + per-monitor half Search Areas
-/// and per-monitor corner / center / corner-mid Points, if it does not already exist.
+/// Create/update the `General` program with Whole Screen + per-monitor half Search Areas
+/// and per-monitor corner / center / corner-mid Points.
 /// Always ensures [`IMAGE_SEARCH_REFERENCE`] (`${foundX}` / `${foundY}`) is present.
+///
+/// Re-runs against the live monitor list so a second display is added after capture
+/// becomes ready, and generated coordinates stay aligned with the desktop layout.
 ///
 /// `monitors` are absolute virtual-desktop rects (`x`, `y`, `w`, `h`), typically from
 /// the live capturer. Returns `true` when the catalog was modified.
@@ -26,12 +29,16 @@ pub fn ensure_general_program(
 ) -> Result<bool, String> {
     let mut changed = false;
     if catalog.get(GENERAL_PROGRAM).is_none() {
-        let monitors = usable_monitors(monitors);
         catalog
             .create_program(GENERAL_PROGRAM)
             .map_err(|e| e.to_string())?;
-        seed_search_areas(catalog, &monitors)?;
-        seed_points(catalog, &monitors)?;
+        changed = true;
+    }
+    let monitors = usable_monitors(monitors);
+    if seed_search_areas(catalog, &monitors)? {
+        changed = true;
+    }
+    if seed_points(catalog, &monitors)? {
         changed = true;
     }
     if ensure_image_search_reference(catalog)? {
@@ -77,9 +84,15 @@ fn usable_monitors(monitors: &[MonitorRect]) -> Vec<MonitorRect> {
     }
 }
 
-fn seed_search_areas(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result<(), String> {
+fn seed_search_areas(
+    catalog: &mut ProgramCatalog,
+    monitors: &[MonitorRect],
+) -> Result<bool, String> {
+    let mut changed = false;
     let (left, top, right, bottom) = virtual_bounds(monitors);
-    upsert_area(catalog, "Whole Screen", left, top, right, bottom)?;
+    if upsert_area(catalog, "Whole Screen", left, top, right, bottom)? {
+        changed = true;
+    }
 
     for (i, &(ox, oy, w, h)) in monitors.iter().enumerate() {
         let n = i + 1;
@@ -87,43 +100,52 @@ fn seed_search_areas(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> 
         let mid_y = oy + h / 2;
         let right = ox + w;
         let bottom = oy + h;
-        upsert_area(
+        if upsert_area(
             catalog,
             &format!("Monitor {n} Left Half"),
             ox,
             oy,
             mid_x,
             bottom,
-        )?;
-        upsert_area(
+        )? {
+            changed = true;
+        }
+        if upsert_area(
             catalog,
             &format!("Monitor {n} Right Half"),
             mid_x,
             oy,
             right,
             bottom,
-        )?;
-        upsert_area(
+        )? {
+            changed = true;
+        }
+        if upsert_area(
             catalog,
             &format!("Monitor {n} Top Half"),
             ox,
             oy,
             right,
             mid_y,
-        )?;
-        upsert_area(
+        )? {
+            changed = true;
+        }
+        if upsert_area(
             catalog,
             &format!("Monitor {n} Bottom Half"),
             ox,
             mid_y,
             right,
             bottom,
-        )?;
+        )? {
+            changed = true;
+        }
     }
-    Ok(())
+    Ok(changed)
 }
 
-fn seed_points(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result<(), String> {
+fn seed_points(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result<bool, String> {
+    let mut changed = false;
     for (i, &(ox, oy, w, h)) in monitors.iter().enumerate() {
         let n = i + 1;
         let right = ox + w - 1;
@@ -135,40 +157,55 @@ fn seed_points(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result
         let mid_top_y = oy + h / 4;
         let mid_bottom_y = oy + (3 * h) / 4;
 
-        // Corners
-        upsert_point(catalog, &format!("Monitor {n} Top Left"), ox, oy)?;
-        upsert_point(catalog, &format!("Monitor {n} Top Right"), right, oy)?;
-        upsert_point(catalog, &format!("Monitor {n} Bottom Left"), ox, bottom)?;
-        upsert_point(catalog, &format!("Monitor {n} Bottom Right"), right, bottom)?;
-        // Center
-        upsert_point(catalog, &format!("Monitor {n} Center"), cx, cy)?;
-        // Midpoints between each corner and the center
-        upsert_point(
+        if upsert_point(catalog, &format!("Monitor {n} Top Left"), ox, oy)? {
+            changed = true;
+        }
+        if upsert_point(catalog, &format!("Monitor {n} Top Right"), right, oy)? {
+            changed = true;
+        }
+        if upsert_point(catalog, &format!("Monitor {n} Bottom Left"), ox, bottom)? {
+            changed = true;
+        }
+        if upsert_point(catalog, &format!("Monitor {n} Bottom Right"), right, bottom)? {
+            changed = true;
+        }
+        if upsert_point(catalog, &format!("Monitor {n} Center"), cx, cy)? {
+            changed = true;
+        }
+        if upsert_point(
             catalog,
             &format!("Monitor {n} Top Left Mid"),
             mid_left_x,
             mid_top_y,
-        )?;
-        upsert_point(
+        )? {
+            changed = true;
+        }
+        if upsert_point(
             catalog,
             &format!("Monitor {n} Top Right Mid"),
             mid_right_x,
             mid_top_y,
-        )?;
-        upsert_point(
+        )? {
+            changed = true;
+        }
+        if upsert_point(
             catalog,
             &format!("Monitor {n} Bottom Left Mid"),
             mid_left_x,
             mid_bottom_y,
-        )?;
-        upsert_point(
+        )? {
+            changed = true;
+        }
+        if upsert_point(
             catalog,
             &format!("Monitor {n} Bottom Right Mid"),
             mid_right_x,
             mid_bottom_y,
-        )?;
+        )? {
+            changed = true;
+        }
     }
-    Ok(())
+    Ok(changed)
 }
 
 fn virtual_bounds(monitors: &[MonitorRect]) -> (i32, i32, i32, i32) {
@@ -192,7 +229,21 @@ fn upsert_area(
     top: i32,
     right: i32,
     bottom: i32,
-) -> Result<(), String> {
+) -> Result<bool, String> {
+    let res = catalog.resolution_key();
+    if let Some(existing) = catalog
+        .get(GENERAL_PROGRAM)
+        .and_then(|p| p.search_areas.get(res))
+        .and_then(|m| m.get(name))
+    {
+        if existing.left_x == ScalarValue::Int(left as i64)
+            && existing.top_y == ScalarValue::Int(top as i64)
+            && existing.right_x == ScalarValue::Int(right as i64)
+            && existing.bottom_y == ScalarValue::Int(bottom as i64)
+        {
+            return Ok(false);
+        }
+    }
     catalog
         .upsert_search_area(
             GENERAL_PROGRAM,
@@ -204,10 +255,21 @@ fn upsert_area(
                 bottom_y: ScalarValue::Int(bottom as i64),
             },
         )
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
-fn upsert_point(catalog: &mut ProgramCatalog, name: &str, x: i32, y: i32) -> Result<(), String> {
+fn upsert_point(catalog: &mut ProgramCatalog, name: &str, x: i32, y: i32) -> Result<bool, String> {
+    let res = catalog.resolution_key();
+    if let Some(existing) = catalog
+        .get(GENERAL_PROGRAM)
+        .and_then(|p| p.points.get(res))
+        .and_then(|m| m.get(name))
+    {
+        if existing.x == ScalarValue::Int(x as i64) && existing.y == ScalarValue::Int(y as i64) {
+            return Ok(false);
+        }
+    }
     catalog
         .upsert_point(
             GENERAL_PROGRAM,
@@ -217,7 +279,8 @@ fn upsert_point(catalog: &mut ProgramCatalog, name: &str, x: i32, y: i32) -> Res
                 y: ScalarValue::Int(y as i64),
             },
         )
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -301,23 +364,29 @@ mod tests {
     }
 
     #[test]
-    fn skips_geometry_when_general_already_exists() {
+    fn fills_geometry_when_general_already_exists() {
         let mut cat = ProgramCatalog::default();
         cat.set_resolution_key("1920x1080");
         cat.create_program(GENERAL_PROGRAM).unwrap();
-        // Still adds Image Search Reference when missing.
         assert!(ensure_general_program(&mut cat, &[(0, 0, 1920, 1080)]).unwrap());
         let p = cat.get(GENERAL_PROGRAM).unwrap();
-        assert!(p
-            .search_areas
-            .get("1920x1080")
-            .map(|m| m.is_empty())
-            .unwrap_or(true));
+        assert!(p.points["1920x1080"].contains_key("Monitor 1 Center"));
         let found = &p.points["1920x1080"][IMAGE_SEARCH_REFERENCE];
         assert_eq!(found.x, ScalarValue::String("${foundX}".into()));
-        assert_eq!(found.y, ScalarValue::String("${foundY}".into()));
-        // Second call is a no-op.
         assert!(!ensure_general_program(&mut cat, &[(0, 0, 1920, 1080)]).unwrap());
+    }
+
+    #[test]
+    fn adds_second_monitor_when_layout_grows() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        assert!(ensure_general_program(&mut cat, &[(0, 0, 1920, 1080)]).unwrap());
+        let monitors = [(0, 360, 1920, 1080), (1920, 0, 2560, 1440)];
+        assert!(ensure_general_program(&mut cat, &monitors).unwrap());
+        let points = &cat.get(GENERAL_PROGRAM).unwrap().points["1920x1080"];
+        assert_eq!(points["Monitor 1 Top Left"].y, ScalarValue::Int(360));
+        assert_eq!(points["Monitor 2 Center"].x, ScalarValue::Int(1920 + 1280));
+        assert_eq!(points["Monitor 2 Center"].y, ScalarValue::Int(720));
     }
 
     #[test]
