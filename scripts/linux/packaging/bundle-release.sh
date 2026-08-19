@@ -73,10 +73,10 @@ is_system_lib() {
   return 1
 }
 
-# PipeWire must match the host compositor + SPA plugin tree (portal capture).
-is_host_pipewire_lib() {
+# PipeWire / ALSA must match the host plugin tree (portal capture + cue audio).
+is_host_audio_stack_lib() {
   case "$(basename "$1")" in
-    libpipewire*.so.*|libspa-*.so.*)
+    libpipewire*.so.*|libspa-*.so.*|libasound*.so.*)
       return 0
       ;;
   esac
@@ -114,7 +114,7 @@ add_deps_from() {
     [ -n "$dep" ] || continue
     [ -f "$dep" ] || continue
     is_system_lib "$dep" && continue
-    is_host_pipewire_lib "$dep" && continue
+    is_host_audio_stack_lib "$dep" && continue
     resolved="$(readlink -f "$dep")"
     name="$(basename "$dep")"
     [ -n "${SEEN[$name]:-}" ] && continue
@@ -192,7 +192,7 @@ check_needed() {
   while IFS= read -r needed; do
     [ -n "$needed" ] || continue
     is_system_lib "$needed" && continue
-    is_host_pipewire_lib "$needed" && continue
+    is_host_audio_stack_lib "$needed" && continue
     case "$needed" in
       libstdc++.so.*|libgcc_s.so.*|libgomp.so.*) continue ;;
     esac

@@ -79,6 +79,9 @@ AppDir:
       - usr/lib/libspa-*
       - lib/x86_64*/libpipewire*
       - lib/x86_64*/libspa-*
+      # Host ALSA (Fedora /usr/lib64/alsa-lib vs Ubuntu plugin path in bundled libasound).
+      - usr/lib/libasound*
+      - lib/x86_64*/libasound*
   runtime:
     env:
       TESSDATA_PREFIX: "${APPDIR}/usr/share/tessdata"
