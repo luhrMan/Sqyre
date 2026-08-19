@@ -26,7 +26,7 @@ pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
 /// Live monitor rects for seeding, or a single display from the catalog resolution key.
 pub fn seed_monitor_rects(catalog: &ProgramCatalog) -> Vec<MonitorRect> {
     #[cfg(feature = "native-runtime")]
-    if let Ok(capturer) = sqyre_capture::shared_capturer() {
+    if let Ok(capturer) = sqyre_capture::shared_capturer_nonblocking() {
         if let Ok(rects) = capturer.monitor_rects_ref() {
             let usable: Vec<MonitorRect> = rects
                 .into_iter()

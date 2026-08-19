@@ -342,7 +342,7 @@ impl DataEditor {
                 return;
             }
 
-            let capturer = match sqyre_capture::shared_capturer() {
+            let capturer = match sqyre_capture::shared_capturer_nonblocking() {
                 Ok(c) => c,
                 Err(e) => {
                     self.set_err(format!("AutoPic: {e}"));

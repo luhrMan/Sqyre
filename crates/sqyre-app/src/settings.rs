@@ -47,6 +47,8 @@ pub struct SettingsUi {
     /// Set when the user asks to restart after applying an update.
     #[cfg(not(target_arch = "wasm32"))]
     pub restart_requested: bool,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    permissions: crate::permissions_panel::PermissionsPanel,
 }
 
 impl SettingsUi {
@@ -257,6 +259,18 @@ impl SettingsUi {
                     |ui| self.draw_sound(ui, q, section_hit),
                 );
             }
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            if section_visible(q, SECTION_PERMISSIONS, PERMISSIONS_SETTINGS) {
+                any_shown = true;
+                let section_hit = query_matches(q, SECTION_PERMISSIONS);
+                crate::theme::titled_section(
+                    ui,
+                    "Permissions",
+                    "Desktop access for capture, recording, hotkeys, and macro playback.",
+                    12.0,
+                    |ui| self.draw_permissions(ui, ctx, q, section_hit),
+                );
+            }
             if section_visible(q, SECTION_DATA, DATA_SETTINGS) {
                 any_shown = true;
                 let section_hit = query_matches(q, SECTION_DATA);
@@ -446,6 +460,20 @@ impl SettingsUi {
                 }
             });
         }
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    fn draw_permissions(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        q: &str,
+        section_hit: bool,
+    ) {
+        if !setting_visible(q, section_hit, PERMISSIONS_PANEL) {
+            return;
+        }
+        self.permissions.paint(ui, ctx);
     }
 
     fn draw_sound(&mut self, ui: &mut egui::Ui, q: &str, section_hit: bool) {
@@ -1131,6 +1159,19 @@ fn format_last_backup(unix: i64) -> String {
 
 const SECTION_GENERAL: &[&str] = &["general", "application", "behavior"];
 const SECTION_SOUND: &[&str] = &["sound", "audio", "cue"];
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+const SECTION_PERMISSIONS: &[&str] = &[
+    "permissions",
+    "permission",
+    "screen recording",
+    "input group",
+    "bazzite",
+    "atomic",
+    "hotkeys",
+    "portal",
+    "wayland",
+    "access",
+];
 const SECTION_DATA: &[&str] = &["data", "folder", "backup", "restore", "archive"];
 #[cfg(not(target_arch = "wasm32"))]
 const SECTION_UPDATES: &[&str] = &["updates", "github", "release", "version"];
@@ -1173,6 +1214,21 @@ const SETTING_IMAGE_SEARCH_DISTANCE: &[&str] = &[
 const SETTING_FINISH_SOUND: &[&str] = &["finish sound", "macro finishes", "complete"];
 const SETTING_UI_SOUNDS: &[&str] = &["ui sounds", "adding", "deleting", "add/delete"];
 const SETTING_SOUND_VOLUME: &[&str] = &["volume", "sound volume"];
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+const PERMISSIONS_PANEL: &[&str] = &[
+    "permissions",
+    "screen recording",
+    "input device",
+    "input group",
+    "global shortcuts",
+    "hotkeys",
+    "automation",
+    "usermod",
+    "portal",
+    "wayland",
+    "evdev",
+];
 
 const DATA_LOCATION: &[&str] = &[
     "data folder",
@@ -1226,6 +1282,8 @@ const SOUND_SETTINGS: &[&[&str]] = &[
     SETTING_UI_SOUNDS,
     SETTING_SOUND_VOLUME,
 ];
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+const PERMISSIONS_SETTINGS: &[&[&str]] = &[PERMISSIONS_PANEL];
 const DATA_SETTINGS: &[&[&str]] = &[DATA_LOCATION, DATA_BACKUP];
 #[cfg(not(target_arch = "wasm32"))]
 const UPDATES_SETTINGS: &[&[&str]] = &[

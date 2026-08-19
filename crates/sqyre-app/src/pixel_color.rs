@@ -41,10 +41,10 @@ pub fn spawn_sample_pixel_hex(
     use std::sync::mpsc;
     use std::thread;
 
-    let capturer = shared_capturer().map_err(|e| e.to_string())?;
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let result = (|| -> Result<String, String> {
+            let capturer = shared_capturer().map_err(|e| e.to_string())?;
             let rgb = capturer
                 .capture_rect_rgb_ref(DesktopRect { x, y, w: 1, h: 1 })
                 .map_err(|e| e.to_string())?;

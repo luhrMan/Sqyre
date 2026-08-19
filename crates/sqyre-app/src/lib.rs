@@ -34,6 +34,8 @@ mod macro_overlay;
 mod macro_record;
 mod overlay_icons;
 mod paint_ctx;
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+mod permissions_panel;
 mod pickers;
 #[cfg(feature = "native-runtime")]
 mod pixel_color;
@@ -227,6 +229,34 @@ pub struct SqyreApp {
     /// Background Find Pixel color sample (native only).
     #[cfg(not(target_arch = "wasm32"))]
     pixel_sample_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    /// Background portal ScreenCast probe (Linux Wayland — must not block startup).
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "native-runtime",
+        target_os = "linux"
+    ))]
+    capture_probe_pending: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
+    /// True after the deferred portal probe has been started (or skipped).
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "native-runtime",
+        target_os = "linux"
+    ))]
+    capture_probe_finished: bool,
+    /// Do not start portal ScreenCast before this instant (lets the first frames stay responsive).
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "native-runtime",
+        target_os = "linux"
+    ))]
+    capture_probe_not_before: Option<std::time::Instant>,
+    /// Wayland: start evdev after the ScreenCast picker so device fds do not steal clicks.
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "native-runtime",
+        target_os = "linux"
+    ))]
+    hotkeys_deferred: Option<HotkeyCallbacks>,
     /// Background update check / download (native only).
     #[cfg(not(target_arch = "wasm32"))]
     update: update::UpdateManager,
@@ -251,7 +281,7 @@ impl SqyreApp {
         let repaint_for_cb = Arc::clone(&hotkey_repaint);
 
         #[cfg(not(target_arch = "wasm32"))]
-        if let Err(e) = hotkeys.start(HotkeyCallbacks {
+        let hotkey_callbacks = HotkeyCallbacks {
             on_escape_stop: Arc::new(move || stop.request_stop()),
             on_failsafe: Arc::new(|| {
                 crate::log::warn(format!(
@@ -267,7 +297,25 @@ impl SqyreApp {
                     ctx.request_repaint();
                 }
             }),
-        }) {
+        };
+        #[cfg(all(
+            not(target_arch = "wasm32"),
+            feature = "native-runtime",
+            target_os = "linux"
+        ))]
+        let hotkeys_deferred = if sqyre_capture::shared_capturer_open_may_block() {
+            Some(hotkey_callbacks)
+        } else {
+            if let Err(e) = hotkeys.start(hotkey_callbacks) {
+                crate::log::warn(format!("failed to start global hotkeys: {e}"));
+            }
+            None
+        };
+        #[cfg(all(
+            not(target_arch = "wasm32"),
+            not(all(feature = "native-runtime", target_os = "linux"))
+        ))]
+        if let Err(e) = hotkeys.start(hotkey_callbacks) {
             crate::log::warn(format!("failed to start global hotkeys: {e}"));
         }
         #[cfg(target_arch = "wasm32")]
@@ -341,12 +389,7 @@ impl SqyreApp {
                     };
                     #[cfg(target_os = "linux")]
                     {
-                        sqyre_capture::linux_session_capture_warning()
-                            .or_else(|| match sqyre_capture::shared_capturer() {
-                                Ok(_) => None,
-                                Err(e) => Some(format!("Screen capture unavailable: {e}")),
-                            })
-                            .or(ocr_warning)
+                        sqyre_capture::linux_session_capture_warning().or(ocr_warning)
                     }
                     #[cfg(target_os = "windows")]
                     {
@@ -419,6 +462,30 @@ impl SqyreApp {
             backup_task: None,
             #[cfg(not(target_arch = "wasm32"))]
             pixel_sample_pending: None,
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            capture_probe_pending: None,
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            capture_probe_finished: false,
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            capture_probe_not_before: None,
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            hotkeys_deferred,
             #[cfg(not(target_arch = "wasm32"))]
             update: update::UpdateManager::default(),
         };
@@ -426,6 +493,20 @@ impl SqyreApp {
         #[cfg(not(target_arch = "wasm32"))]
         app.maybe_start_update_check();
         app
+    }
+
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "native-runtime",
+        target_os = "linux"
+    ))]
+    pub(crate) fn start_deferred_hotkeys(&mut self) {
+        let Some(callbacks) = self.hotkeys_deferred.take() else {
+            return;
+        };
+        if let Err(e) = self.hotkeys.start(callbacks) {
+            crate::log::warn(format!("failed to start global hotkeys: {e}"));
+        }
     }
 
     /// Sync working macros + catalog into `db` and write `db.yaml`.

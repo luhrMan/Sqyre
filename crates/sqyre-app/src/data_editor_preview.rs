@@ -489,7 +489,7 @@ pub(crate) fn paint_grid_overlay_painter(
 /// Prefers real positions from the capturer; falls back to L→R layout from sizes.
 fn atlas_monitor_rects(catalog: &sqyre_persist::ProgramCatalog) -> Vec<(i32, i32, i32, i32)> {
     #[cfg(feature = "native-runtime")]
-    if let Ok(capturer) = sqyre_capture::shared_capturer() {
+    if let Ok(capturer) = sqyre_capture::shared_capturer_nonblocking() {
         if let Ok(rects) = capturer.monitor_rects_ref() {
             let out: Vec<_> = rects
                 .into_iter()

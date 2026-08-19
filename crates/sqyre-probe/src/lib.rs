@@ -4,6 +4,7 @@ mod checksum;
 #[cfg(target_os = "linux")]
 mod linux_portal;
 mod permissions;
+mod permissions_panel;
 
 use serde::Serialize;
 use sqyre_capture::{cap_log, event_log};
@@ -15,6 +16,8 @@ use std::time::{Duration, Instant};
 use web_time::Instant as WebInstant;
 
 pub use checksum::fnv1a_hex;
+pub use permissions::user_in_input_group;
+pub use permissions_panel::{build_permission_items, PermissionEligibility, PermissionItem};
 
 /// Result of one capability check.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -131,6 +134,12 @@ pub struct ProbeOptions {
     pub wait_permissions_secs: u64,
     /// Print human text to stderr instead of JSON-only stdout.
     pub human: bool,
+    /// Do not start a second global hook thread (in-app permissions refresh).
+    pub skip_hotkeys_probe: bool,
+    /// Skip `SelectionOutline` / `SelectionGrab` open (in-app — those hitch the pointer).
+    pub skip_outline_grab: bool,
+    /// Do not block on a portal ScreenCast picker (`shared_capturer` OnceLock).
+    pub nonblocking_capture: bool,
 }
 
 impl Default for ProbeOptions {
@@ -139,6 +148,9 @@ impl Default for ProbeOptions {
             required: default_required_caps(),
             wait_permissions_secs: 0,
             human: false,
+            skip_hotkeys_probe: false,
+            skip_outline_grab: false,
+            nonblocking_capture: false,
         }
     }
 }
@@ -163,13 +175,17 @@ pub fn run_probe(opts: &ProbeOptions) -> ProbeReport {
     session.log_native();
 
     let mut caps = BTreeMap::new();
-    probe_capture(&session, &mut caps);
+    probe_capture(&session, &mut caps, opts);
     probe_windows(&mut caps);
     probe_input(&session, &mut caps);
-    probe_hotkeys(&mut caps);
-    probe_outline_grab(&mut caps);
+    if opts.skip_hotkeys_probe {
+        probe_hotkeys_inferred(&session, &mut caps);
+    } else {
+        probe_hotkeys(&session, &mut caps);
+    }
+    probe_outline_grab(&mut caps, opts);
     #[cfg(target_os = "linux")]
-    linux_portal::probe_portal(&session, &mut caps);
+    linux_portal::probe_portal(&session, &mut caps, opts);
     #[cfg(not(target_os = "linux"))]
     {
         caps.insert(
@@ -328,7 +344,11 @@ fn timed<F: FnOnce() -> CapabilityResult>(f: F) -> CapabilityResult {
     r
 }
 
-fn probe_capture(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityResult>) {
+fn probe_capture(
+    session: &SessionReport,
+    caps: &mut BTreeMap<String, CapabilityResult>,
+    opts: &ProbeOptions,
+) {
     let backend = session
         .capture_backend
         .clone()
@@ -336,30 +356,62 @@ fn probe_capture(session: &SessionReport, caps: &mut BTreeMap<String, Capability
 
     caps.insert(
         "capture.open".into(),
-        timed(|| match sqyre_capture::shared_capturer() {
-            Ok(_) => {
-                cap_log("CAP", "ok", &format!("backend={backend} op=open"));
-                CapabilityResult {
-                    status: CapStatus::Ok,
-                    backend: Some(backend.clone()),
-                    ..CapabilityResult::default()
-                }
+        timed(|| {
+            if opts.nonblocking_capture && sqyre_capture::shared_capturer_open_may_block() {
+                return match sqyre_capture::shared_capturer_if_ready() {
+                    Some(Ok(_)) => {
+                        cap_log("CAP", "ok", &format!("backend={backend} op=open"));
+                        CapabilityResult {
+                            status: CapStatus::Ok,
+                            backend: Some(backend.clone()),
+                            ..CapabilityResult::default()
+                        }
+                    }
+                    Some(Err(e)) => {
+                        cap_log("CAP", "fail", &format!("error={e} op=open"));
+                        CapabilityResult {
+                            status: CapStatus::Fail,
+                            backend: Some(backend.clone()),
+                            error: Some(e.to_string()),
+                            ..CapabilityResult::default()
+                        }
+                    }
+                    None => CapabilityResult::pending("waiting for portal ScreenCast permission"),
+                };
             }
-            Err(e) => {
-                cap_log("CAP", "fail", &format!("error={e} op=open"));
-                CapabilityResult {
-                    status: CapStatus::Fail,
-                    backend: Some(backend.clone()),
-                    error: Some(e.to_string()),
-                    ..CapabilityResult::default()
+            match sqyre_capture::shared_capturer() {
+                Ok(_) => {
+                    cap_log("CAP", "ok", &format!("backend={backend} op=open"));
+                    CapabilityResult {
+                        status: CapStatus::Ok,
+                        backend: Some(backend.clone()),
+                        ..CapabilityResult::default()
+                    }
+                }
+                Err(e) => {
+                    cap_log("CAP", "fail", &format!("error={e} op=open"));
+                    CapabilityResult {
+                        status: CapStatus::Fail,
+                        backend: Some(backend.clone()),
+                        error: Some(e.to_string()),
+                        ..CapabilityResult::default()
+                    }
                 }
             }
         }),
     );
 
+    let capture_open_pending = matches!(
+        caps.get("capture.open").map(|c| &c.status),
+        Some(CapStatus::Pending)
+    );
+
     caps.insert(
         "capture.rect".into(),
         timed(|| {
+            if capture_open_pending {
+                return CapabilityResult::pending("waiting for portal ScreenCast permission");
+            }
             let Ok(capturer) = sqyre_capture::shared_capturer() else {
                 return CapabilityResult::fail("capture.open failed");
             };
@@ -408,6 +460,9 @@ fn probe_capture(session: &SessionReport, caps: &mut BTreeMap<String, Capability
     caps.insert(
         "capture.multi_monitor".into(),
         timed(|| {
+            if capture_open_pending {
+                return CapabilityResult::pending("waiting for portal ScreenCast permission");
+            }
             let Ok(capturer) = sqyre_capture::shared_capturer() else {
                 return CapabilityResult::skip("capture.open failed");
             };
@@ -429,6 +484,9 @@ fn probe_capture(session: &SessionReport, caps: &mut BTreeMap<String, Capability
         timed(|| {
             #[cfg(target_os = "linux")]
             {
+                if capture_open_pending {
+                    return CapabilityResult::pending("waiting for portal ScreenCast permission");
+                }
                 if session.capture_backend.as_deref() == Some("portal+pipewire") {
                     return CapabilityResult::skip("portal capture has no pointer API");
                 }
@@ -532,15 +590,55 @@ fn probe_input(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityRe
     }
 }
 
-fn probe_hotkeys(caps: &mut BTreeMap<String, CapabilityResult>) {
+fn hotkeys_backend_label() -> &'static str {
+    if cfg!(target_os = "windows") {
+        "win32-llhook"
+    } else if cfg!(target_os = "linux") {
+        if sqyre_hotkeys::linux_uses_evdev_grab() {
+            "evdev"
+        } else {
+            "rdev-x11"
+        }
+    } else {
+        "null"
+    }
+}
+
+fn probe_hotkeys_inferred(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityResult>) {
     caps.insert(
         "hotkeys.start".into(),
         timed(|| {
-            let backend = if cfg!(any(target_os = "linux", target_os = "windows")) {
-                "rdev"
-            } else {
-                "null"
-            };
+            let backend = hotkeys_backend_label();
+            #[cfg(target_os = "linux")]
+            if session.session_type == "wayland" && !permissions::user_in_input_group() {
+                cap_log("HOTKEY", "fail", "reason=not_in_input_group");
+                return CapabilityResult::fail(
+                    "user not in 'input' group (evdev grab unavailable)",
+                );
+            }
+            cap_log("HOTKEY", "ok", &format!("backend={backend} inferred"));
+            CapabilityResult {
+                status: CapStatus::Ok,
+                backend: Some(backend.into()),
+                reason: Some("inferred (global hooks already owned by Sqyre)".into()),
+                ..CapabilityResult::default()
+            }
+        }),
+    );
+}
+
+fn probe_hotkeys(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityResult>) {
+    caps.insert(
+        "hotkeys.start".into(),
+        timed(|| {
+            let backend = hotkeys_backend_label();
+            #[cfg(target_os = "linux")]
+            if session.session_type == "wayland" && !permissions::user_in_input_group() {
+                cap_log("HOTKEY", "fail", "reason=not_in_input_group");
+                return CapabilityResult::fail(
+                    "user not in 'input' group (evdev grab unavailable)",
+                );
+            }
             let result = std::panic::catch_unwind(|| {
                 let (mut hk, _, _, _, _) = sqyre_hotkeys::default_hotkeys();
                 hk.start(HotkeyCallbacks::default()).map(|()| hk)
@@ -570,7 +668,18 @@ fn probe_hotkeys(caps: &mut BTreeMap<String, CapabilityResult>) {
     );
 }
 
-fn probe_outline_grab(caps: &mut BTreeMap<String, CapabilityResult>) {
+fn probe_outline_grab(caps: &mut BTreeMap<String, CapabilityResult>, opts: &ProbeOptions) {
+    if opts.skip_outline_grab {
+        caps.insert(
+            "outline.open".into(),
+            CapabilityResult::skip("skipped (in-app probe)"),
+        );
+        caps.insert(
+            "grab.open".into(),
+            CapabilityResult::skip("skipped (in-app probe)"),
+        );
+        return;
+    }
     caps.insert(
         "outline.open".into(),
         timed(|| match sqyre_capture::SelectionOutline::open() {
@@ -677,5 +786,48 @@ mod tests {
             ..ProbeOptions::default()
         };
         assert_eq!(exit_code(&report, &opts), 1);
+    }
+
+    #[test]
+    fn skip_outline_grab_does_not_open_x11() {
+        let mut caps = BTreeMap::new();
+        let opts = ProbeOptions {
+            skip_outline_grab: true,
+            ..ProbeOptions::default()
+        };
+        probe_outline_grab(&mut caps, &opts);
+        assert_eq!(
+            caps.get("outline.open").map(|c| &c.status),
+            Some(&CapStatus::Skip)
+        );
+        assert_eq!(
+            caps.get("grab.open").map(|c| &c.status),
+            Some(&CapStatus::Skip)
+        );
+    }
+
+    #[test]
+    fn skip_hotkeys_probe_infers_without_starting_hooks() {
+        let mut caps = BTreeMap::new();
+        let session = SessionReport {
+            session_type: "wayland".into(),
+            desktop: Some("GNOME".into()),
+            compositor: None,
+            portal_version: None,
+            display: Some(":0".into()),
+            wayland_display: Some("wayland-0".into()),
+            capture_backend: Some("portal+pipewire".into()),
+        };
+        probe_hotkeys_inferred(&session, &mut caps);
+        let cap = caps.get("hotkeys.start").expect("hotkeys cap");
+        #[cfg(target_os = "linux")]
+        if !permissions::user_in_input_group() {
+            assert_eq!(cap.status, CapStatus::Fail);
+        } else {
+            assert_eq!(cap.status, CapStatus::Ok);
+            assert!(cap.reason.as_deref().unwrap_or("").contains("inferred"));
+        }
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(cap.status, CapStatus::Ok);
     }
 }

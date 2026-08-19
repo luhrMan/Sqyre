@@ -112,7 +112,7 @@ pub fn collect_hints(
 }
 
 #[cfg(target_os = "linux")]
-fn screen_recording_hint(desktop: Option<&str>) -> String {
+pub(crate) fn screen_recording_hint(desktop: Option<&str>) -> String {
     let d = desktop.unwrap_or("your desktop").to_lowercase();
     if d.contains("gnome") {
         "Grant Screen Recording: Settings → Privacy → Screen Recording → enable Sqyre.".into()
@@ -132,4 +132,75 @@ fn in_input_group() -> bool {
     };
     let groups = String::from_utf8_lossy(&out.stdout);
     groups.split_whitespace().any(|g| g == "input")
+}
+
+/// Whether the current user belongs to the `input` group (Wayland evdev access).
+#[cfg(target_os = "linux")]
+pub fn user_in_input_group() -> bool {
+    in_input_group()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn user_in_input_group() -> bool {
+    true
+}
+
+/// Fedora Atomic / Bazzite and other ostree-based desktops keep group membership in `/etc/group`.
+#[cfg(target_os = "linux")]
+pub fn is_immutable_linux() -> bool {
+    if std::path::Path::new("/run/ostree-booted").exists() {
+        return true;
+    }
+    let Ok(os_release) = std::fs::read_to_string("/etc/os-release") else {
+        return false;
+    };
+    os_release.lines().any(|line| {
+        line.starts_with("VARIANT_ID=")
+            && (line.contains("silverblue")
+                || line.contains("kinoite")
+                || line.contains("bazzite")
+                || line.contains("aurora")
+                || line.contains("bluefin")
+                || line.contains("mainframe"))
+    })
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn is_immutable_linux() -> bool {
+    false
+}
+
+/// Setup steps for adding a user to a group on immutable Fedora systems.
+#[cfg(target_os = "linux")]
+pub fn atomic_group_setup_steps(group: &str) -> Vec<String> {
+    let mut steps = vec![
+        format!(
+            "On Bazzite and other Fedora Atomic systems, copy the group into /etc/group first \
+             (plain usermod alone may not survive reboot):"
+        ),
+        format!("grep '^{group}:' /usr/lib/group | sudo tee -a /etc/group"),
+        format!("sudo usermod -aG {group} $USER"),
+        format!(
+            "Verify /etc/group contains `{group}:x:<gid>:$USER` before rebooting, then log out fully."
+        ),
+    ];
+    if group == "input" {
+        steps.insert(2, "Or on Bazzite: ujust add-user-to-input-group add".into());
+    }
+    steps
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn atomic_group_setup_steps(_group: &str) -> Vec<String> {
+    Vec::new()
+}
+
+#[cfg(target_os = "linux")]
+pub fn atomic_group_tooltip(group: &str) -> String {
+    atomic_group_setup_steps(group).join("\n")
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn atomic_group_tooltip(_group: &str) -> String {
+    String::new()
 }
