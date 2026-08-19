@@ -4,7 +4,9 @@
 mod portal_capture;
 
 #[cfg(feature = "portal-capture")]
-pub use portal_capture::PortalCapturer;
+pub use portal_capture::{
+    portal_screencast_granted, request_portal_screencast_picker, PortalCapturer,
+};
 
 use sqyre_ports::CaptureError;
 

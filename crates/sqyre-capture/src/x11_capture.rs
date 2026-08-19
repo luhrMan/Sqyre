@@ -198,14 +198,42 @@ fn xinerama_monitor_rects(st: &X11State) -> Vec<DesktopRect> {
         w: st.width,
         h: st.height,
     };
-    // SAFETY: `st.display` is the live display; `screens` is null/`count`-checked
+    xinerama_monitor_rects_on(st.display, fallback)
+}
+
+/// Virtual-desktop monitor rects from Xinerama (same space as the X11 outline).
+/// Used by portal capture to place PipeWire streams on XWayland layouts.
+#[cfg(feature = "portal-capture")]
+pub(crate) fn query_x11_monitor_rects() -> Vec<DesktopRect> {
+    // SAFETY: connection is null-checked; closed before return; not registered as a
+    // long-lived secondary display.
+    unsafe {
+        let display = XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return Vec::new();
+        }
+        let screen = x11::xlib::XDefaultScreen(display);
+        let fallback = DesktopRect {
+            x: 0,
+            y: 0,
+            w: XDisplayWidth(display, screen),
+            h: XDisplayHeight(display, screen),
+        };
+        let rects = xinerama_monitor_rects_on(display, fallback);
+        XCloseDisplay(display);
+        rects
+    }
+}
+
+fn xinerama_monitor_rects_on(display: *mut _XDisplay, fallback: DesktopRect) -> Vec<DesktopRect> {
+    // SAFETY: `display` is a live connection; `screens` is null/`count`-checked
     // before the slice is built, and `XFree` releases the Xinerama-allocated array.
     unsafe {
-        if XineramaIsActive(st.display) == 0 {
+        if XineramaIsActive(display) == 0 {
             return vec![fallback];
         }
         let mut count = 0;
-        let screens = XineramaQueryScreens(st.display, &mut count);
+        let screens = XineramaQueryScreens(display, &mut count);
         if screens.is_null() || count <= 0 {
             return vec![fallback];
         }

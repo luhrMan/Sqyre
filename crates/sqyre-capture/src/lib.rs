@@ -44,8 +44,9 @@ pub use diag::{
 pub use error::{linux_session_capture_warning, CaptureError};
 #[cfg(target_os = "linux")]
 pub use linux::{
-    shared_capturer, LinuxCaptureBackend, LinuxSessionInfo, LinuxSessionKind, OsCapturer,
-    SharedRunCapturer,
+    reset_shared_capturer, shared_capturer, shared_capturer_if_ready, shared_capturer_is_opening,
+    shared_capturer_open_superseded, LinuxCaptureBackend, LinuxSessionInfo, LinuxSessionKind,
+    OsCapturer, SharedRunCapturer,
 };
 pub use outline_rect::OutlineRect;
 pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
@@ -53,7 +54,10 @@ pub use selection_grab::GrabPoll;
 pub use stub::{NullCapturer, SolidCapturer};
 
 #[cfg(target_os = "windows")]
-pub use win_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
+pub use win_capture::{
+    reset_shared_capturer, shared_capturer, shared_capturer_if_ready, shared_capturer_is_opening,
+    shared_capturer_open_superseded, OsCapturer, SharedRunCapturer,
+};
 
 #[cfg(target_os = "linux")]
 pub use x11_focus::OsWindowFocuser;
@@ -92,6 +96,24 @@ pub type OsCapturer = NullCapturer;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub fn shared_capturer() -> Result<std::sync::Arc<OsCapturer>, CaptureError> {
     Err(CaptureError::UnsupportedPlatform)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn shared_capturer_if_ready() -> Option<Result<std::sync::Arc<OsCapturer>, CaptureError>> {
+    None
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn shared_capturer_is_opening() -> bool {
+    false
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn reset_shared_capturer() {}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn shared_capturer_open_superseded() -> bool {
+    false
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -195,9 +217,12 @@ pub fn process_icon(_process_path: &str, _window_title: &str) -> Option<ProcessI
 /// Primary monitor resolution key (`"{w}x{h}"`).
 /// Uses the first entry from [`ScreenCapturer::monitor_sizes`] (display 0 / primary).
 /// Returns `None` when no display is available (headless / CI).
+///
+/// Does not block on a portal ScreenCast picker: if opening may block and the
+/// capturer is not ready yet, returns `None`.
 pub fn main_monitor_resolution_key() -> Option<String> {
     use sqyre_ports::ScreenCapturer;
-    let capturer = shared_capturer().ok()?;
+    let capturer = shared_capturer_nonblocking().ok()?;
     let mut wrap = SharedRunCapturer(capturer);
     let sizes = wrap.monitor_sizes().ok()?;
     let &(w, h) = sizes.first()?;
@@ -205,6 +230,58 @@ pub fn main_monitor_resolution_key() -> Option<String> {
         Some(format!("{w}x{h}"))
     } else {
         None
+    }
+}
+
+/// True when opening [`shared_capturer`] may block on a portal ScreenCast permission dialog.
+#[cfg(target_os = "linux")]
+pub fn shared_capturer_open_may_block() -> bool {
+    linux::LinuxSessionInfo::detect().shared_capturer_open_may_block()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn shared_capturer_open_may_block() -> bool {
+    false
+}
+
+/// ScreenCast Start succeeded, a restore token is stored, or the live capturer is open.
+pub fn portal_screencast_granted() -> bool {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        if linux::wayland::portal_screencast_granted() {
+            return true;
+        }
+    }
+    matches!(shared_capturer_if_ready(), Some(Ok(_)))
+}
+
+/// Show the portal ScreenCast picker again (Wayland). No-op on other targets.
+pub fn request_portal_screencast_picker() {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::request_portal_screencast_picker();
+    }
+}
+
+/// [`shared_capturer`] unless that would wait on a portal picker from this thread.
+///
+/// Use from the UI thread. The deferred Linux probe (or a worker) should call
+/// [`shared_capturer`] to start the open.
+pub fn shared_capturer_nonblocking() -> Result<std::sync::Arc<OsCapturer>, CaptureError> {
+    if shared_capturer_open_may_block() {
+        match shared_capturer_if_ready() {
+            Some(r) => r,
+            None if shared_capturer_is_opening() || portal_screencast_granted() => {
+                Err(CaptureError::Message(
+                    "screen capture is starting (waiting for the first frame)".into(),
+                ))
+            }
+            None => Err(CaptureError::Message(
+                "screen capture is still waiting for portal permission".into(),
+            )),
+        }
+    } else {
+        shared_capturer()
     }
 }
 

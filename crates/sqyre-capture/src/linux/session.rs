@@ -117,6 +117,11 @@ impl LinuxSessionInfo {
         )
     }
 
+    /// True when [`crate::shared_capturer`] may block on a portal ScreenCast dialog.
+    pub fn shared_capturer_open_may_block(&self) -> bool {
+        self.capture_backend() == LinuxCaptureBackend::WaylandPortal
+    }
+
     /// Human-readable capture warning (replaces simpler check in `error.rs`).
     pub fn capture_warning(&self) -> Option<String> {
         match self.capture_backend() {
@@ -213,6 +218,7 @@ mod tests {
             has_wayland: false,
         };
         assert_eq!(info.capture_backend(), LinuxCaptureBackend::X11Native);
+        assert!(!info.shared_capturer_open_may_block());
         assert!(info.capture_warning().is_none());
     }
 
@@ -229,6 +235,7 @@ mod tests {
         };
         assert_eq!(info.capture_backend(), LinuxCaptureBackend::WaylandPortal);
         assert!(info.needs_wayland_backend());
+        assert!(info.shared_capturer_open_may_block());
         assert!(info.capture_warning().is_some());
     }
 
