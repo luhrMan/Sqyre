@@ -7,7 +7,7 @@
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG RUST_VERSION=1.92.0
+ARG RUST_VERSION=1.94.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates git \
@@ -25,6 +25,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     mesa-vulkan-drivers libvulkan1 \
     # rustautogui / X11 capture & input
     libxtst-dev libxrandr-dev libxinerama-dev libxi-dev \
+    # rdev unstable_grab (Wayland evdev hotkeys)
+    libevdev-dev \
     # AppImage packaging
     python3 python3-pip python3-setuptools \
     squashfs-tools patchelf zsync file desktop-file-utils \

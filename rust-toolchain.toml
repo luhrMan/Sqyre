@@ -1,5 +1,5 @@
 # Keep in sync with .devcontainer/Dockerfile ARG RUST_VERSION.
 [toolchain]
-channel = "1.92.0"
+channel = "1.94.0"
 components = ["rustfmt", "clippy"]
 profile = "minimal"
