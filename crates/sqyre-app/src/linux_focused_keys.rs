@@ -1,10 +1,13 @@
-//! On Wayland, rdev/evdev does not see keys delivered to the focused Sqyre window.
-//! Mirror egui's key state into the hotkey bridges (same approach as Windows Raw Input).
+//! On Wayland, mirror egui key state into hotkey bridges when the evdev hook is unavailable.
+//!
+//! Macro recording on Wayland uses evdev for global mouse/keyboard; avoid
+//! duplicating those events from egui when that path is active.
 
 use crate::egui_keys::egui_key_name;
 use crate::SqyreApp;
 use eframe::egui::{self, Key};
 use sqyre_capture::{LinuxSessionInfo, LinuxSessionKind};
+use sqyre_hotkeys::linux_uses_evdev_grab;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -17,6 +20,11 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
     let record_ui_open = app.key_record.is_open() || app.hotkey_record.is_open();
     let recording = app.macro_record_bridge.is_armed();
     let focused = ctx.input(|i| i.focused);
+
+    // evdev owns macro-record input on Wayland (including clicks).
+    if recording && linux_uses_evdev_grab() {
+        return;
+    }
 
     // Unfocused macro recording relies on rdev/evdev; do not overwrite with an empty egui snapshot.
     if recording && !focused && !record_ui_open {
