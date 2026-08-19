@@ -4075,6 +4075,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
+name = "reis"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4b967ec6489a42067a20724f11987bb96178ea796873cbe1afd25fb93ee6f85f"
+dependencies = [
+ "enumflags2",
+ "log",
+ "rustix 1.1.4",
+]
+
+[[package]]
 name = "renderdoc-sys"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4673,11 +4684,13 @@ dependencies = [
  "ashpd",
  "enumflags2",
  "image",
+ "libc",
  "parking_lot",
  "pipewire",
  "pollster",
  "pulp",
  "rayon",
+ "reis",
  "sqyre-ports",
  "web-time",
  "windows",
@@ -4731,6 +4744,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "rustautogui",
+ "sqyre-capture",
  "sqyre-ports",
  "windows",
 ]

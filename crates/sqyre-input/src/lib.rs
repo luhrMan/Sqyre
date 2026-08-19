@@ -73,6 +73,18 @@ pub fn release_held_inputs() {
     if keys.is_empty() && buttons.is_empty() {
         return;
     }
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    if sqyre_capture::portal_input_ready() {
+        for key in &keys {
+            if let Some(evdev) = evdev_for_name(key) {
+                let _ = sqyre_capture::portal_input_key(evdev, false);
+            }
+        }
+        for button in &buttons {
+            let _ = sqyre_capture::portal_input_click(button, false);
+        }
+        return;
+    }
     let Ok(gui) = RustAutoGui::new(false) else {
         return;
     };
@@ -429,16 +441,33 @@ mod win_cursor {
 }
 
 pub struct OsAutomation {
-    gui: RustAutoGui,
+    gui: Option<RustAutoGui>,
     clipboard: Option<Clipboard>,
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    portal: bool,
 }
 
 impl OsAutomation {
     pub fn new() -> Result<Self, AutomationError> {
+        let clipboard = Clipboard::new().ok();
+        #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+        {
+            if linux_session_is_wayland() {
+                return Ok(Self {
+                    gui: RustAutoGui::new(false).ok(),
+                    clipboard,
+                    portal: true,
+                });
+            }
+        }
         let gui = RustAutoGui::new(false)
             .map_err(|e| AutomationError::Backend(format!("rustautogui: {e}")))?;
-        let clipboard = Clipboard::new().ok();
-        Ok(Self { gui, clipboard })
+        Ok(Self {
+            gui: Some(gui),
+            clipboard,
+            #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+            portal: false,
+        })
     }
 
     fn map_button(button: &str) -> MouseClick {
@@ -460,6 +489,120 @@ impl OsAutomation {
             other => other.to_string(),
         }
     }
+
+    fn gui(&mut self) -> Result<&mut RustAutoGui, AutomationError> {
+        self.gui
+            .as_mut()
+            .ok_or(AutomationError::Backend("no X11 input backend".into()))
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "portal-capture"))]
+fn linux_session_is_wayland() -> bool {
+    sqyre_capture::LinuxSessionInfo::detect().session_kind
+        == sqyre_capture::LinuxSessionKind::Wayland
+}
+
+#[cfg(all(target_os = "linux", feature = "portal-capture"))]
+fn ensure_portal_input() -> Result<(), AutomationError> {
+    if sqyre_capture::portal_input_ready() {
+        return Ok(());
+    }
+    let _ = sqyre_capture::shared_capturer();
+    if sqyre_capture::portal_input_ready() {
+        Ok(())
+    } else if sqyre_capture::portal_remote_desktop_granted() {
+        Err(AutomationError::Backend(
+            "Remote Desktop granted but EIS is not ready".into(),
+        ))
+    } else {
+        Err(AutomationError::Backend(
+            "desktop control not granted (enable Allow Remote Interaction, then Share)".into(),
+        ))
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "portal-capture"))]
+fn evdev_for_name(key: &str) -> Option<u32> {
+    Some(match key.trim().to_ascii_lowercase().as_str() {
+        "escape" | "esc" => 1,
+        "1" => 2,
+        "2" => 3,
+        "3" => 4,
+        "4" => 5,
+        "5" => 6,
+        "6" => 7,
+        "7" => 8,
+        "8" => 9,
+        "9" => 10,
+        "0" => 11,
+        "minus" | "-" => 12,
+        "equal" | "=" => 13,
+        "backspace" => 14,
+        "tab" => 15,
+        "q" => 16,
+        "w" => 17,
+        "e" => 18,
+        "r" => 19,
+        "t" => 20,
+        "y" => 21,
+        "u" => 22,
+        "i" => 23,
+        "o" => 24,
+        "p" => 25,
+        "return" | "enter" => 28,
+        "ctrl" | "control" | "ctrlleft" | "lctrl" => 29,
+        "a" => 30,
+        "s" => 31,
+        "d" => 32,
+        "f" => 33,
+        "g" => 34,
+        "h" => 35,
+        "j" => 36,
+        "k" => 37,
+        "l" => 38,
+        "shift" | "shiftleft" | "lshift" => 42,
+        "z" => 44,
+        "x" => 45,
+        "c" => 46,
+        "v" => 47,
+        "b" => 48,
+        "n" => 49,
+        "m" => 50,
+        "alt" | "altleft" | "lalt" => 56,
+        "space" | "spacebar" => 57,
+        "f1" => 59,
+        "f2" => 60,
+        "f3" => 61,
+        "f4" => 62,
+        "f5" => 63,
+        "f6" => 64,
+        "f7" => 65,
+        "f8" => 66,
+        "f9" => 67,
+        "f10" => 68,
+        "f11" => 87,
+        "f12" => 88,
+        "home" => 102,
+        "up" => 103,
+        "pageup" | "page_up" => 104,
+        "left" => 105,
+        "right" => 106,
+        "end" => 107,
+        "down" => 108,
+        "pagedown" | "page_down" => 109,
+        "insert" => 110,
+        "delete" | "del" => 111,
+        "super" | "win" | "cmd" | "command" | "meta" => 125,
+        other if other.len() == 1 => {
+            let c = other.chars().next()?;
+            if c.is_ascii_alphabetic() {
+                return evdev_for_name(&c.to_ascii_lowercase().to_string());
+            }
+            return None;
+        }
+        _ => return None,
+    })
 }
 
 /// Windows/macOS smooth duration from [`MoveOptions`] (legacy formula).
@@ -636,10 +779,24 @@ impl AutomationBackend for OsAutomation {
         }
         #[cfg(target_os = "linux")]
         {
+            #[cfg(feature = "portal-capture")]
+            if self.portal {
+                if let Err(e) = ensure_portal_input() {
+                    sqyre_capture::note(&format!("input move skipped: {e}"));
+                    return;
+                }
+                if let Err(e) = sqyre_capture::portal_input_move(x, y) {
+                    sqyre_capture::note(&format!("input move: {e}"));
+                }
+                return;
+            }
+            let Some(gui) = self.gui.as_mut() else {
+                return;
+            };
             if opts.smooth {
-                move_mouse_linux(&mut self.gui, x, y, opts);
+                move_mouse_linux(gui, x, y, opts);
             } else {
-                move_mouse_instant(&mut self.gui, x, y);
+                move_mouse_instant(gui, x, y);
             }
         }
         #[cfg(all(not(target_os = "windows"), not(target_os = "linux")))]
@@ -648,25 +805,37 @@ impl AutomationBackend for OsAutomation {
             // rustautogui's public API is u32; X11 virtual desktop starts at (0,0).
             let xu = u32::try_from(x).unwrap_or(0);
             let yu = u32::try_from(y).unwrap_or(0);
-            if let Err(e) = self.gui.move_mouse_to_pos(xu, yu, moving_time) {
-                // Fallback: try zero-time again (bounds check can false-positive).
-                let _ = self.gui.move_mouse_to_pos(xu, yu, 0.0);
-                let _ = e;
+            if let Ok(gui) = self.gui() {
+                if let Err(e) = gui.move_mouse_to_pos(xu, yu, moving_time) {
+                    let _ = gui.move_mouse_to_pos(xu, yu, 0.0);
+                    let _ = e;
+                }
             }
         }
     }
 
     fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
         let canonical = canonical_button(button);
+        #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+        if self.portal {
+            ensure_portal_input()?;
+            sqyre_capture::portal_input_click(canonical, down)?;
+            if down {
+                note_button_down(canonical);
+            } else {
+                note_button_up(canonical);
+            }
+            return Ok(());
+        }
         let btn = Self::map_button(canonical);
         if down {
-            self.gui
+            self.gui()?
                 .click_down(btn)
                 .map_err(|e| AutomationError::Backend(format!("click down: {e}")))?;
             note_button_down(canonical);
             Ok(())
         } else {
-            self.gui
+            self.gui()?
                 .click_up(btn)
                 .map_err(|e| AutomationError::Backend(format!("click up: {e}")))?;
             note_button_up(canonical);
@@ -675,21 +844,35 @@ impl AutomationBackend for OsAutomation {
     }
 
     fn scroll(&mut self, up: bool) -> Result<(), AutomationError> {
+        #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+        if self.portal {
+            ensure_portal_input()?;
+            return sqyre_capture::portal_input_scroll(up);
+        }
         // Scroll intensity ~3 notches.
         if up {
-            self.gui
+            self.gui()?
                 .scroll_up(3)
                 .map_err(|e| AutomationError::Backend(format!("scroll up: {e}")))
         } else {
-            self.gui
+            self.gui()?
                 .scroll_down(3)
                 .map_err(|e| AutomationError::Backend(format!("scroll down: {e}")))
         }
     }
 
     fn key_down(&mut self, key: &str) -> Result<(), AutomationError> {
+        #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+        if self.portal {
+            ensure_portal_input()?;
+            let evdev = evdev_for_name(key)
+                .ok_or_else(|| AutomationError::InvalidArg(format!("unknown key: {key}")))?;
+            sqyre_capture::portal_input_key(evdev, true)?;
+            note_key_down(key);
+            return Ok(());
+        }
         let k = Self::map_key(key);
-        self.gui
+        self.gui()?
             .key_down(&k)
             .map_err(|e| AutomationError::Backend(format!("key down {k}: {e}")))?;
         note_key_down(&k);
@@ -697,8 +880,16 @@ impl AutomationBackend for OsAutomation {
     }
 
     fn key_up(&mut self, key: &str) -> Result<(), AutomationError> {
+        #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+        if self.portal {
+            let evdev = evdev_for_name(key)
+                .ok_or_else(|| AutomationError::InvalidArg(format!("unknown key: {key}")))?;
+            let _ = sqyre_capture::portal_input_key(evdev, false);
+            note_key_up(key);
+            return Ok(());
+        }
         let k = Self::map_key(key);
-        self.gui
+        self.gui()?
             .key_up(&k)
             .map_err(|e| AutomationError::Backend(format!("key up {k}: {e}")))?;
         note_key_up(&k);
@@ -706,9 +897,19 @@ impl AutomationBackend for OsAutomation {
     }
 
     fn type_char(&mut self, ch: char) {
+        #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+        if self.portal && ensure_portal_input().is_ok() {
+            if let Some(evdev) = evdev_for_name(&ch.to_ascii_lowercase().to_string()) {
+                let _ = sqyre_capture::portal_input_key(evdev, true);
+                let _ = sqyre_capture::portal_input_key(evdev, false);
+                return;
+            }
+        }
         let mut buf = [0u8; 4];
         let s = ch.encode_utf8(&mut buf);
-        let _ = self.gui.keyboard_input(s);
+        if let Ok(gui) = self.gui() {
+            let _ = gui.keyboard_input(s);
+        }
     }
 
     fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError> {

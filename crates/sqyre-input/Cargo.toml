@@ -8,10 +8,17 @@ description = "OS AutomationBackend (rustautogui lite + arboard)"
 [lints]
 workspace = true
 
+[features]
+default = []
+portal-capture = ["sqyre-capture/portal-capture"]
+
 [dependencies]
 sqyre-ports = { path = "../sqyre-ports" }
 rustautogui = { workspace = true }
 arboard = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+sqyre-capture = { path = "../sqyre-capture" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [

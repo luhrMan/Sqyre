@@ -255,6 +255,35 @@ pub fn portal_screencast_granted() -> bool {
     matches!(shared_capturer_if_ready(), Some(Ok(_)))
 }
 
+/// Remote Desktop pointer/keyboard granted on the live combined portal session.
+pub fn portal_remote_desktop_granted() -> bool {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::portal_remote_desktop_granted()
+    }
+    #[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+    {
+        false
+    }
+}
+
+/// EIS input backend is connected (Wayland combined portal session).
+pub fn portal_input_ready() -> bool {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::portal_input_ready()
+    }
+    #[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+    {
+        false
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "portal-capture"))]
+pub use linux::wayland::{
+    portal_input_click, portal_input_key, portal_input_move, portal_input_scroll,
+};
+
 /// Show the portal ScreenCast picker again (Wayland). No-op on other targets.
 pub fn request_portal_screencast_picker() {
     #[cfg(all(target_os = "linux", feature = "portal-capture"))]

@@ -11,7 +11,7 @@ workspace = true
 [features]
 default = []
 # Wayland portal ScreenCast + PipeWire (needs libpipewire ≥ 1.0 dev headers at build time).
-portal-capture = ["dep:ashpd", "dep:pipewire", "dep:pollster", "dep:enumflags2"]
+portal-capture = ["dep:ashpd", "dep:pipewire", "dep:pollster", "dep:enumflags2", "dep:reis", "dep:libc"]
 
 [dependencies]
 sqyre-ports = { path = "../sqyre-ports" }
@@ -27,6 +27,8 @@ ashpd = { version = "0.11", default-features = false, features = ["async-std"], 
 pipewire = { version = "0.10", optional = true }
 pollster = { version = "0.4", optional = true }
 enumflags2 = { version = "0.7", optional = true }
+reis = { version = "0.7.1", optional = true }
+libc = { version = "0.2", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [

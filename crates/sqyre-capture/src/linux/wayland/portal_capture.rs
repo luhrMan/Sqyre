@@ -3,6 +3,7 @@
 use crate::cap_log;
 use crate::error::CaptureError;
 use crate::linux::session::{LinuxCaptureBackend, LinuxSessionInfo};
+use crate::linux::wayland::eis::EisInput;
 use image::RgbaImage;
 use parking_lot::{Condvar, Mutex};
 use pipewire as pw;
@@ -12,7 +13,7 @@ use pw::properties::properties;
 use pw::spa::param::video::{VideoFormat, VideoInfoRaw};
 use pw::spa::pod::Pod;
 use pw::stream::StreamRc;
-use sqyre_ports::{DesktopRect, RgbCapture};
+use sqyre_ports::{AutomationError, DesktopRect, RgbCapture};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::os::fd::OwnedFd;
@@ -22,6 +23,38 @@ use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+
+static INPUT_TX: Mutex<Option<Sender<EisCmd>>> = Mutex::new(None);
+static PENDING_EIS_FD: Mutex<Option<OwnedFd>> = Mutex::new(None);
+static EIS_READY: AtomicBool = AtomicBool::new(false);
+static EIS_SHUTDOWN: AtomicBool = AtomicBool::new(false);
+static REMOTE_DESKTOP_GRANTED: AtomicBool = AtomicBool::new(false);
+
+enum EisCmd {
+    Move {
+        x: i32,
+        y: i32,
+        reply: Sender<Result<(), AutomationError>>,
+    },
+    Click {
+        button: u32,
+        down: bool,
+        reply: Sender<Result<(), AutomationError>>,
+    },
+    Scroll {
+        up: bool,
+        reply: Sender<Result<(), AutomationError>>,
+    },
+    Key {
+        evdev: u32,
+        down: bool,
+        reply: Sender<Result<(), AutomationError>>,
+    },
+}
+
+const BTN_LEFT: u32 = 0x110;
+const BTN_RIGHT: u32 = 0x111;
+const BTN_MIDDLE: u32 = 0x112;
 
 /// Portal + PipeWire capturer for Wayland sessions.
 pub struct PortalCapturer {
@@ -274,6 +307,7 @@ fn portal_pw_thread(
 ) -> Result<(), CaptureError> {
     let ready = Arc::new(ready);
     let (portal_hold, setup) = propagate_ready(&ready, pollster::block_on(open_portal_session()))?;
+    let eis_fd = PENDING_EIS_FD.lock().take();
 
     {
         let mut slot = frame.0.lock();
@@ -322,7 +356,7 @@ fn portal_pw_thread(
             .map_err(|e| CaptureError::Message(format!("PipeWire registry: {e}"))),
     )?;
     let node_serials =
-        propagate_ready(&ready, pw_collect_node_serials(&core, &registry, &loop_ref))?;
+        propagate_ready(&ready, pw_collect_node_serials(&core, &registry, loop_ref))?;
 
     let frame_cb = Arc::clone(&frame);
     let shutdown_cb = Arc::clone(&shutdown);
@@ -523,6 +557,9 @@ fn portal_pw_thread(
         stream_holds.push(stream);
     }
     let _registry = registry;
+    if let Some(fd) = eis_fd {
+        spawn_eis_thread(fd);
+    }
 
     while !shutdown.load(Ordering::SeqCst) {
         if msg_rx.try_recv().is_ok() {
@@ -533,6 +570,8 @@ fn portal_pw_thread(
 
     drop(listeners);
     drop(stream_holds);
+    stop_eis_thread();
+    REMOTE_DESKTOP_GRANTED.store(false, Ordering::SeqCst);
     drop(portal_hold);
 
     if !first_ready.load(Ordering::Acquire) {
@@ -680,9 +719,19 @@ struct UserData {
 }
 
 /// Holds portal DBus session open for the lifetime of the PipeWire loop.
-struct PortalHold {
-    _proxy: ashpd::desktop::screencast::Screencast<'static>,
-    _session: ashpd::desktop::Session<'static, ashpd::desktop::screencast::Screencast<'static>>,
+enum PortalHold {
+    Combined {
+        _remote: ashpd::desktop::remote_desktop::RemoteDesktop<'static>,
+        _screencast: ashpd::desktop::screencast::Screencast<'static>,
+        _session: ashpd::desktop::Session<
+            'static,
+            ashpd::desktop::remote_desktop::RemoteDesktop<'static>,
+        >,
+    },
+    ScreenCastOnly {
+        _proxy: ashpd::desktop::screencast::Screencast<'static>,
+        _session: ashpd::desktop::Session<'static, ashpd::desktop::screencast::Screencast<'static>>,
+    },
 }
 
 /// Same id as `sqyre-app` (`com.sqyre.app.desktop`). GNOME persist keys off this.
@@ -695,13 +744,130 @@ static SCREENCAST_SESSION_GRANTED: AtomicBool = AtomicBool::new(false);
 pub fn portal_screencast_granted() -> bool {
     SCREENCAST_SESSION_GRANTED.load(Ordering::SeqCst)
         || read_restore_token_at(&restore_token_path()).is_some()
+        || read_restore_token_at(&legacy_screencast_token_path()).is_some()
+}
+
+/// Remote Desktop devices were granted on the live combined portal session.
+pub fn portal_remote_desktop_granted() -> bool {
+    REMOTE_DESKTOP_GRANTED.load(Ordering::SeqCst)
+}
+
+/// Whether EIS is ready to inject pointer/keyboard.
+pub fn portal_input_ready() -> bool {
+    EIS_READY.load(Ordering::SeqCst)
+}
+
+pub fn portal_input_move(x: i32, y: i32) -> Result<(), AutomationError> {
+    let (reply, rx) = mpsc::channel();
+    send_eis(EisCmd::Move { x, y, reply })?;
+    recv_eis(rx)
+}
+
+pub fn portal_input_click(button: &str, down: bool) -> Result<(), AutomationError> {
+    let code = match button {
+        "right" => BTN_RIGHT,
+        "center" | "middle" => BTN_MIDDLE,
+        _ => BTN_LEFT,
+    };
+    let (reply, rx) = mpsc::channel();
+    send_eis(EisCmd::Click {
+        button: code,
+        down,
+        reply,
+    })?;
+    recv_eis(rx)
+}
+
+pub fn portal_input_scroll(up: bool) -> Result<(), AutomationError> {
+    let (reply, rx) = mpsc::channel();
+    send_eis(EisCmd::Scroll { up, reply })?;
+    recv_eis(rx)
+}
+
+pub fn portal_input_key(evdev: u32, down: bool) -> Result<(), AutomationError> {
+    let (reply, rx) = mpsc::channel();
+    send_eis(EisCmd::Key { evdev, down, reply })?;
+    recv_eis(rx)
+}
+
+fn send_eis(cmd: EisCmd) -> Result<(), AutomationError> {
+    let tx = INPUT_TX.lock().clone().ok_or_else(|| {
+        AutomationError::Backend(
+            "desktop control not granted (enable Allow Remote Interaction, then Share)".into(),
+        )
+    })?;
+    tx.send(cmd)
+        .map_err(|_| AutomationError::Backend("portal input thread exited".into()))
+}
+
+fn recv_eis(rx: Receiver<Result<(), AutomationError>>) -> Result<(), AutomationError> {
+    rx.recv()
+        .map_err(|_| AutomationError::Backend("portal input reply dropped".into()))?
+}
+
+fn dispatch_eis(eis: &mut EisInput, cmd: EisCmd) {
+    match cmd {
+        EisCmd::Move { x, y, reply } => {
+            let _ = reply.send(eis.move_to(x, y));
+        }
+        EisCmd::Click {
+            button,
+            down,
+            reply,
+        } => {
+            let _ = reply.send(eis.click(button, down));
+        }
+        EisCmd::Scroll { up, reply } => {
+            let _ = reply.send(eis.scroll(up));
+        }
+        EisCmd::Key { evdev, down, reply } => {
+            let _ = reply.send(eis.key(evdev, down));
+        }
+    }
+}
+
+fn stop_eis_thread() {
+    EIS_SHUTDOWN.store(true, Ordering::SeqCst);
+    EIS_READY.store(false, Ordering::SeqCst);
+    REMOTE_DESKTOP_GRANTED.store(false, Ordering::SeqCst);
+    *INPUT_TX.lock() = None;
+}
+
+fn spawn_eis_thread(fd: OwnedFd) {
+    EIS_SHUTDOWN.store(false, Ordering::SeqCst);
+    cap_log("INPUT", "eis", "thread start");
+    let _ = thread::Builder::new()
+        .name("sqyre-eis".into())
+        .spawn(move || {
+            match EisInput::connect(fd, &EIS_SHUTDOWN) {
+                Ok(mut eis) => {
+                    let (tx, rx) = mpsc::channel();
+                    *INPUT_TX.lock() = Some(tx);
+                    EIS_READY.store(true, Ordering::SeqCst);
+                    cap_log("INPUT", "ok", "backend=eis");
+                    while !EIS_SHUTDOWN.load(Ordering::SeqCst) {
+                        match rx.recv_timeout(Duration::from_millis(100)) {
+                            Ok(cmd) => dispatch_eis(&mut eis, cmd),
+                            Err(mpsc::RecvTimeoutError::Timeout) => {}
+                            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        }
+                    }
+                }
+                Err(e) => cap_log("INPUT", "fail", &format!("eis handshake: {e}")),
+            }
+            EIS_READY.store(false, Ordering::SeqCst);
+            *INPUT_TX.lock() = None;
+            *PENDING_EIS_FD.lock() = None;
+        });
 }
 
 /// Drop the current ScreenCast session and show the share picker again (ignores restore token).
 pub fn request_portal_screencast_picker() {
     FORCE_SCREENCAST_PICKER.store(true, Ordering::SeqCst);
     SCREENCAST_SESSION_GRANTED.store(false, Ordering::SeqCst);
+    stop_eis_thread();
     write_restore_token_at(&restore_token_path(), None);
+    write_restore_token_at(&legacy_screencast_token_path(), None);
     crate::linux::reset_shared_capturer();
     cap_log("PORTAL", "picker", "requested");
     let _ = thread::Builder::new()
@@ -718,6 +884,10 @@ fn take_force_screencast_picker() -> bool {
 }
 
 fn restore_token_path() -> std::path::PathBuf {
+    dirs_home().join(".sqyre").join("wayland-remote.token")
+}
+
+fn legacy_screencast_token_path() -> std::path::PathBuf {
     dirs_home().join(".sqyre").join("wayland-screencast.token")
 }
 
@@ -821,7 +991,7 @@ async fn source_types(
 }
 
 async fn open_portal_session() -> Result<(PortalHold, PwSetup), CaptureError> {
-    cap_log("PORTAL", "start", "interface=ScreenCast");
+    cap_log("PORTAL", "start", "interface=RemoteDesktop+ScreenCast");
     register_portal_app().await;
 
     let stored = if take_force_screencast_picker() {
@@ -830,7 +1000,7 @@ async fn open_portal_session() -> Result<(PortalHold, PwSetup), CaptureError> {
     } else {
         read_restore_token_at(&restore_token_path())
     };
-    match open_portal_session_with_token(stored.as_deref()).await {
+    match open_combined_session_with_token(stored.as_deref()).await {
         Ok(ok) => Ok(ok),
         Err(e) if stored.is_some() => {
             cap_log(
@@ -839,16 +1009,203 @@ async fn open_portal_session() -> Result<(PortalHold, PwSetup), CaptureError> {
                 &format!("restore failed ({e}); retrying with picker"),
             );
             write_restore_token_at(&restore_token_path(), None);
-            open_portal_session_with_token(None).await
+            open_combined_session_with_token(None).await
         }
         Err(e) => Err(e),
     }
 }
 
-async fn open_portal_session_with_token(
+async fn open_combined_session_with_token(
     restore_token: Option<&str>,
 ) -> Result<(PortalHold, PwSetup), CaptureError> {
-    use ashpd::desktop::screencast::{Screencast, Stream};
+    use ashpd::desktop::remote_desktop::{DeviceType, RemoteDesktop};
+    use ashpd::desktop::screencast::Screencast;
+    use ashpd::desktop::PersistMode;
+
+    let remote = match RemoteDesktop::new().await {
+        Ok(remote) => remote,
+        Err(e) => {
+            cap_log(
+                "PORTAL",
+                "rd",
+                &format!("RemoteDesktop unavailable ({e}); ScreenCast only"),
+            );
+            return open_screencast_only_with_token(restore_token).await;
+        }
+    };
+    let proxy = Screencast::new()
+        .await
+        .map_err(portal_err("Screencast proxy"))?;
+    let types = source_types(&proxy).await;
+    let cursor = cursor_mode(&proxy).await;
+    let session = remote
+        .create_session()
+        .await
+        .map_err(portal_err("create_session"))?;
+    if restore_token.is_some() {
+        cap_log("PORTAL", "token", "restoring");
+    }
+    remote
+        .select_devices(
+            &session,
+            DeviceType::Keyboard | DeviceType::Pointer,
+            restore_token,
+            PersistMode::ExplicitlyRevoked,
+        )
+        .await
+        .map_err(portal_err("select_devices"))?;
+    proxy
+        .select_sources(&session, cursor, types, true, None, PersistMode::DoNot)
+        .await
+        .map_err(portal_err("select_sources"))?;
+    let response = remote
+        .start(&session, None)
+        .await
+        .map_err(portal_err("start"))?
+        .response()
+        .map_err(portal_err("start response"))?;
+    write_restore_token_at(&restore_token_path(), response.restore_token());
+    let has_input = response.devices().contains(DeviceType::Keyboard)
+        || response.devices().contains(DeviceType::Pointer);
+    REMOTE_DESKTOP_GRANTED.store(has_input, Ordering::SeqCst);
+    let streams_meta = response.streams().unwrap_or(&[]);
+    if streams_meta.is_empty() {
+        return Err(CaptureError::Message(
+            "portal ScreenCast returned no streams".into(),
+        ));
+    }
+    SCREENCAST_SESSION_GRANTED.store(true, Ordering::SeqCst);
+    cap_log(
+        "PORTAL",
+        "grant",
+        &format!(
+            "streams={} input={has_input} persist={}",
+            streams_meta.len(),
+            response.restore_token().is_some()
+        ),
+    );
+    let eis_fd = if has_input {
+        match remote.connect_to_eis(&session).await {
+            Ok(fd) => {
+                cap_log("INPUT", "eis", "ConnectToEIS fd");
+                Some(fd)
+            }
+            Err(e) => {
+                cap_log("INPUT", "fail", &format!("ConnectToEIS: {e}"));
+                None
+            }
+        }
+    } else {
+        cap_log(
+            "INPUT",
+            "fail",
+            "reason=no_remote_interaction enable Allow Remote Interaction in the share dialog",
+        );
+        None
+    };
+    let opened = finish_pipewire_setup(
+        streams_meta,
+        proxy,
+        PortalSessionKind::Combined { remote, session },
+    )
+    .await?;
+    *PENDING_EIS_FD.lock() = eis_fd;
+    Ok(opened)
+}
+
+enum PortalSessionKind {
+    Combined {
+        remote: ashpd::desktop::remote_desktop::RemoteDesktop<'static>,
+        session: ashpd::desktop::Session<
+            'static,
+            ashpd::desktop::remote_desktop::RemoteDesktop<'static>,
+        >,
+    },
+    ScreenCast {
+        session: ashpd::desktop::Session<'static, ashpd::desktop::screencast::Screencast<'static>>,
+    },
+}
+
+async fn finish_pipewire_setup(
+    streams_meta: &[ashpd::desktop::screencast::Stream],
+    proxy: ashpd::desktop::screencast::Screencast<'static>,
+    kind: PortalSessionKind,
+) -> Result<(PortalHold, PwSetup), CaptureError> {
+    use ashpd::desktop::screencast::Stream;
+
+    let mut streams: Vec<PwStreamSetup> = streams_meta
+        .iter()
+        .map(|s: &Stream| PwStreamSetup {
+            node_id: s.pipe_wire_node_id(),
+            rect: stream_rect(s),
+        })
+        .collect();
+    let x11_layout = crate::x11_capture::query_x11_monitor_rects();
+    let monitor_rects = if x11_layout.len() >= 2 {
+        assign_streams_to_layout(&mut streams, &x11_layout);
+        cap_log(
+            "PORTAL",
+            "pw",
+            &format!("layout=x11 monitors={}", x11_layout.len()),
+        );
+        x11_layout
+    } else {
+        layout_stream_rects(&mut streams);
+        streams.iter().map(|s| s.rect).collect()
+    };
+    for (i, s) in streams.iter().enumerate() {
+        cap_log(
+            "PORTAL",
+            "pw",
+            &format!(
+                "stream {i} node={} rect={}x{}+{}+{}",
+                s.node_id, s.rect.w, s.rect.h, s.rect.x, s.rect.y
+            ),
+        );
+    }
+    let virtual_bounds = monitor_rects
+        .iter()
+        .copied()
+        .filter(|r| r.w > 0 && r.h > 0)
+        .reduce(union_rect)
+        .unwrap_or_default();
+    let fd =
+        match &kind {
+            PortalSessionKind::Combined { session, .. } => proxy
+                .open_pipe_wire_remote(session)
+                .await
+                .map_err(portal_err("open_pipe_wire_remote"))?,
+            PortalSessionKind::ScreenCast { session } => proxy
+                .open_pipe_wire_remote(session)
+                .await
+                .map_err(portal_err("open_pipe_wire_remote"))?,
+        };
+    let hold = match kind {
+        PortalSessionKind::Combined { remote, session } => PortalHold::Combined {
+            _remote: remote,
+            _screencast: proxy,
+            _session: session,
+        },
+        PortalSessionKind::ScreenCast { session } => PortalHold::ScreenCastOnly {
+            _proxy: proxy,
+            _session: session,
+        },
+    };
+    Ok((
+        hold,
+        PwSetup {
+            fd,
+            virtual_bounds,
+            monitor_rects,
+            streams,
+        },
+    ))
+}
+
+async fn open_screencast_only_with_token(
+    restore_token: Option<&str>,
+) -> Result<(PortalHold, PwSetup), CaptureError> {
+    use ashpd::desktop::screencast::Screencast;
     use ashpd::desktop::PersistMode;
 
     let proxy = Screencast::new()
@@ -897,60 +1254,12 @@ async fn open_portal_session_with_token(
             response.restore_token().is_some()
         ),
     );
-    let mut streams: Vec<PwStreamSetup> = streams_meta
-        .iter()
-        .map(|s: &Stream| PwStreamSetup {
-            node_id: s.pipe_wire_node_id(),
-            rect: stream_rect(s),
-        })
-        .collect();
-    let x11_layout = crate::x11_capture::query_x11_monitor_rects();
-    let monitor_rects = if x11_layout.len() >= 2 {
-        assign_streams_to_layout(&mut streams, &x11_layout);
-        cap_log(
-            "PORTAL",
-            "pw",
-            &format!("layout=x11 monitors={}", x11_layout.len()),
-        );
-        x11_layout
-    } else {
-        layout_stream_rects(&mut streams);
-        streams.iter().map(|s| s.rect).collect()
-    };
-    for (i, s) in streams.iter().enumerate() {
-        cap_log(
-            "PORTAL",
-            "pw",
-            &format!(
-                "stream {i} node={} rect={}x{}+{}+{}",
-                s.node_id, s.rect.w, s.rect.h, s.rect.x, s.rect.y
-            ),
-        );
-    }
-    let virtual_bounds = monitor_rects
-        .iter()
-        .copied()
-        .filter(|r| r.w > 0 && r.h > 0)
-        .reduce(union_rect)
-        .unwrap_or_default();
-    let fd = proxy
-        .open_pipe_wire_remote(&session)
-        .await
-        .map_err(portal_err("open_pipe_wire_remote"))?;
-
-    let hold = PortalHold {
-        _proxy: proxy,
-        _session: session,
-    };
-    Ok((
-        hold,
-        PwSetup {
-            fd,
-            virtual_bounds,
-            monitor_rects,
-            streams,
-        },
-    ))
+    finish_pipewire_setup(
+        streams_meta,
+        proxy,
+        PortalSessionKind::ScreenCast { session },
+    )
+    .await
 }
 
 fn assign_streams_to_layout(streams: &mut [PwStreamSetup], layout: &[DesktopRect]) {

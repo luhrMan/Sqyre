@@ -212,13 +212,19 @@ fn automation_input_item(
     let mut setup_steps = Vec::new();
     let (eligibility, detail) = if cap_ok(caps, "input.open") {
         (PermissionEligibility::Granted, None)
+    } else if session.session_type == "wayland" {
+        setup_steps.push(
+            "In the screen share dialog, enable Allow Remote Interaction (pointer and keyboard), then Share."
+                .into(),
+        );
+        setup_steps.push(
+            "GNOME: the toggle is on the same picker as the monitor list. Re-share if capture was granted without it.".into(),
+        );
+        (
+            PermissionEligibility::Needed,
+            cap_fail_detail(caps, "input.open"),
+        )
     } else {
-        #[cfg(target_os = "linux")]
-        if session.session_type == "wayland" {
-            setup_steps.push(
-                "Wayland playback needs the input group (see Input device access above).".into(),
-            );
-        }
         (
             PermissionEligibility::Needed,
             cap_fail_detail(caps, "input.open"),
@@ -373,6 +379,27 @@ mod tests {
             .expect("screen recording row");
         assert_eq!(row.eligibility, PermissionEligibility::Checking);
         assert!(row.setup_steps.is_empty());
+    }
+
+    #[test]
+    fn automation_needed_on_wayland_without_eis() {
+        let mut caps = BTreeMap::new();
+        caps.insert("capture.open".into(), ok_cap());
+        caps.insert("portal.screencast".into(), ok_cap());
+        caps.insert(
+            "input.open".into(),
+            fail_cap("enable Allow Remote Interaction in the screen share dialog"),
+        );
+        let items = build_permission_items(&session_wayland(), &caps);
+        let row = items
+            .iter()
+            .find(|i| i.id == "automation_input")
+            .expect("automation row");
+        assert_eq!(row.eligibility, PermissionEligibility::Needed);
+        assert!(row
+            .setup_steps
+            .iter()
+            .any(|s| s.contains("Allow Remote Interaction")));
     }
 
     #[test]
