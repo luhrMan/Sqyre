@@ -557,6 +557,51 @@ fn probe_windows(caps: &mut BTreeMap<String, CapabilityResult>) {
 }
 
 fn probe_input(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityResult>) {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    if session.session_type == "wayland" {
+        caps.insert(
+            "input.open".into(),
+            timed(|| {
+                if sqyre_capture::portal_input_ready() {
+                    cap_log("INPUT", "ok", "backend=eis");
+                    CapabilityResult {
+                        status: CapStatus::Ok,
+                        backend: Some("eis".into()),
+                        ..CapabilityResult::default()
+                    }
+                } else if sqyre_capture::portal_remote_desktop_granted() {
+                    cap_log("INPUT", "fail", "reason=eis_not_ready");
+                    CapabilityResult::fail(String::from(
+                        "Remote Desktop granted but EIS pointer is not ready",
+                    ))
+                } else if sqyre_capture::portal_screencast_granted() {
+                    cap_log("INPUT", "fail", "reason=no_remote_interaction");
+                    CapabilityResult::fail(String::from(
+                        "enable Allow Remote Interaction in the screen share dialog",
+                    ))
+                } else {
+                    cap_log("INPUT", "fail", "reason=portal_input_not_granted");
+                    CapabilityResult::fail(String::from(
+                        "grant screen share with Allow Remote Interaction so mouse playback works",
+                    ))
+                }
+            }),
+        );
+        caps.insert(
+            "input.wayland_impl".into(),
+            if sqyre_capture::portal_input_ready() {
+                CapabilityResult {
+                    status: CapStatus::Ok,
+                    backend: Some("eis".into()),
+                    ..CapabilityResult::default()
+                }
+            } else {
+                CapabilityResult::pending("RemoteDesktop EIS (combined ScreenCast session)")
+            },
+        );
+        return;
+    }
+
     caps.insert(
         "input.open".into(),
         timed(|| match std::panic::catch_unwind(OsAutomation::new) {
