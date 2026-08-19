@@ -317,7 +317,7 @@ impl Drop for RecordingOverlay {
 
 /// Monitor containing `(x, y)`, else the first usable display, else a 1920×1080 fallback.
 fn monitor_for_pointer(x: i32, y: i32) -> DesktopRect {
-    if let Ok(capturer) = sqyre_capture::shared_capturer() {
+    if let Ok(capturer) = sqyre_capture::shared_capturer_nonblocking() {
         if let Ok(rects) = capturer.monitor_rects_ref() {
             let usable: Vec<_> = rects.into_iter().filter(|r| r.w > 1 && r.h > 1).collect();
             if let Some(r) = usable

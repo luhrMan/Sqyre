@@ -116,6 +116,30 @@ impl SqyreApp {
             pixel_sample_pending: None,
             #[cfg(not(target_arch = "wasm32"))]
             update: crate::update::UpdateManager::default(),
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            capture_probe_pending: None,
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            capture_probe_finished: false,
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            capture_probe_not_before: None,
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            hotkeys_deferred: None,
         };
         if let Some(m) = app.workspace.macros.first() {
             app.workspace.macro_meta.sync_selection(0, m);

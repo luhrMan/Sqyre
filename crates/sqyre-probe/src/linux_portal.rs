@@ -1,8 +1,9 @@
 //! XDG Desktop Portal probes (ScreenCast, GlobalShortcuts).
 
-use crate::{CapStatus, CapabilityResult, SessionReport};
+use crate::{CapStatus, CapabilityResult, ProbeOptions, SessionReport};
 use sqyre_capture::cap_log;
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 /// Best-effort portal version string from `busctl` (no hard dependency on portal running).
 pub fn portal_version() -> Option<String> {
@@ -29,7 +30,11 @@ pub fn portal_version() -> Option<String> {
     }
 }
 
-pub fn probe_portal(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityResult>) {
+pub fn probe_portal(
+    session: &SessionReport,
+    caps: &mut BTreeMap<String, CapabilityResult>,
+    opts: &ProbeOptions,
+) {
     caps.insert(
         "portal.version".into(),
         match session.portal_version.clone() {
@@ -42,7 +47,10 @@ pub fn probe_portal(session: &SessionReport, caps: &mut BTreeMap<String, Capabil
         },
     );
 
-    caps.insert("portal.screencast".into(), probe_screencast(session, caps));
+    caps.insert(
+        "portal.screencast".into(),
+        probe_screencast(session, caps, opts),
+    );
     caps.insert(
         "portal.global_shortcuts".into(),
         probe_global_shortcuts(session),
@@ -62,6 +70,7 @@ pub fn probe_portal(session: &SessionReport, caps: &mut BTreeMap<String, Capabil
 fn probe_screencast(
     session: &SessionReport,
     caps: &BTreeMap<String, CapabilityResult>,
+    opts: &ProbeOptions,
 ) -> CapabilityResult {
     if session.session_type != "wayland" {
         return CapabilityResult::skip("X11/XWayland session — portal screencast optional");
@@ -77,13 +86,48 @@ fn probe_screencast(
         };
     }
 
+    if matches!(
+        caps.get("capture.open").map(|c| &c.status),
+        Some(CapStatus::Pending)
+    ) {
+        return CapabilityResult::pending("waiting for portal ScreenCast permission");
+    }
+
+    if matches!(
+        caps.get("capture.open").map(|c| &c.status),
+        Some(CapStatus::Fail)
+    ) {
+        return CapabilityResult {
+            status: CapStatus::Fail,
+            error: caps
+                .get("capture.open")
+                .and_then(|c| c.error.clone().or_else(|| c.reason.clone())),
+            ..CapabilityResult::default()
+        };
+    }
+
+    if opts.nonblocking_capture {
+        return CapabilityResult::pending("skipped live ScreenCast session (in-app probe)");
+    }
+
     use ashpd::desktop::screencast::Screencast;
 
-    let result = pollster::block_on(async {
-        let proxy = Screencast::new().await?;
-        let _session = proxy.create_session().await?;
-        Ok::<(), ashpd::Error>(())
-    });
+    let result = match block_on_timeout(Duration::from_secs(4), || {
+        pollster::block_on(async {
+            let proxy = Screencast::new().await?;
+            let _session = proxy.create_session().await?;
+            Ok::<(), ashpd::Error>(())
+        })
+    }) {
+        Ok(inner) => inner,
+        Err(e) => {
+            return CapabilityResult {
+                status: CapStatus::Fail,
+                error: Some(e),
+                ..CapabilityResult::default()
+            };
+        }
+    };
 
     match result {
         Ok(()) => {
@@ -126,7 +170,18 @@ fn probe_global_shortcuts(session: &SessionReport) -> CapabilityResult {
 
     use ashpd::desktop::global_shortcuts::GlobalShortcuts;
 
-    let result = pollster::block_on(async { GlobalShortcuts::new().await });
+    let result = match block_on_timeout(Duration::from_secs(4), || {
+        pollster::block_on(async { GlobalShortcuts::new().await })
+    }) {
+        Ok(inner) => inner,
+        Err(e) => {
+            return CapabilityResult {
+                status: CapStatus::Fail,
+                error: Some(e),
+                ..CapabilityResult::default()
+            };
+        }
+    };
 
     match result {
         Ok(_proxy) => {
@@ -143,6 +198,18 @@ fn probe_global_shortcuts(session: &SessionReport) -> CapabilityResult {
             ..CapabilityResult::default()
         },
     }
+}
+
+fn block_on_timeout<T: Send + 'static>(
+    timeout: Duration,
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(timeout)
+        .map_err(|_| format!("portal call timed out after {}s", timeout.as_secs().max(1)))
 }
 
 #[cfg(test)]

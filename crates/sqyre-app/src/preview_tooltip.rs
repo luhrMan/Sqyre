@@ -3,7 +3,7 @@
 use crate::image_view::{self, ImageViewTransform};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
-use sqyre_capture::{mark_site, shared_capturer, OsCapturer};
+use sqyre_capture::{mark_site, shared_capturer_nonblocking, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use sqyre_ports::{CaptureError, DesktopRect};
@@ -421,12 +421,18 @@ impl PreviewTooltipCache {
         if self.capturer.is_some() {
             return Ok(());
         }
-        match shared_capturer() {
+        match shared_capturer_nonblocking() {
             Ok(c) => {
                 self.capturer = Some(c);
                 Ok(())
             }
             Err(e) => {
+                // Portal open still in flight — retry on the next hover, do not latch failure.
+                if sqyre_capture::shared_capturer_open_may_block()
+                    && sqyre_capture::shared_capturer_if_ready().is_none()
+                {
+                    return Err(e.to_string());
+                }
                 self.capturer_failed = true;
                 Err(e.to_string())
             }

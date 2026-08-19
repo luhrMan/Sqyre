@@ -195,6 +195,87 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 }
 
+/// Open portal ScreenCast after the window is up (startup must not block on the picker).
+///
+/// Runs once: `shared_capturer_open_may_block()` stays true for the whole Wayland
+/// session, so treating a finished probe as idle would spawn a thread and
+/// `request_repaint()` every frame.
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    feature = "native-runtime",
+    target_os = "linux"
+))]
+fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
+    use std::sync::mpsc::TryRecvError;
+    use std::time::Duration;
+
+    if app.capture_probe_finished {
+        return;
+    }
+
+    if app.capture_probe_pending.is_none() {
+        if !sqyre_capture::shared_capturer_open_may_block() {
+            app.capture_probe_finished = true;
+            app.start_deferred_hotkeys();
+            return;
+        }
+        let now = std::time::Instant::now();
+        match app.capture_probe_not_before {
+            None => {
+                app.capture_probe_not_before = Some(now + Duration::from_millis(750));
+                ctx.request_repaint_after(Duration::from_millis(750));
+                return;
+            }
+            Some(t) => {
+                if let Some(wait) = t.checked_duration_since(now) {
+                    ctx.request_repaint_after(wait);
+                    return;
+                }
+            }
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.capture_probe_pending = Some(rx);
+        std::thread::spawn(move || {
+            let result = match sqyre_capture::shared_capturer() {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Screen capture unavailable: {e}")),
+            };
+            let _ = tx.send(result);
+        });
+    }
+
+    let Some(rx) = app.capture_probe_pending.as_ref() else {
+        return;
+    };
+    match rx.try_recv() {
+        Ok(Ok(())) => {
+            app.capture_probe_pending = None;
+            app.capture_probe_finished = true;
+            app.start_deferred_hotkeys();
+            apply_main_monitor_resolution(&mut app.workspace.catalog);
+            let _ =
+                crate::catalog::prepare_catalog(&mut app.workspace.catalog, &mut app.workspace.db);
+            ctx.request_repaint();
+        }
+        Ok(Err(warn)) => {
+            app.capture_probe_pending = None;
+            app.capture_probe_finished = true;
+            app.start_deferred_hotkeys();
+            app.workspace.platform_warning = Some(match app.workspace.platform_warning.take() {
+                Some(existing) => format!("{existing}\n{warn}"),
+                None => warn,
+            });
+            ctx.request_repaint();
+        }
+        Err(TryRecvError::Empty) => ctx.request_repaint_after(Duration::from_millis(100)),
+        Err(TryRecvError::Disconnected) => {
+            app.capture_probe_pending = None;
+            app.capture_probe_finished = true;
+            app.start_deferred_hotkeys();
+        }
+    }
+}
+
 /// Settings reload, highlighter / log prefs, color sample, recording + macro overlays,
 /// hotkey/key record UI, and repaint pacing.
 pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
@@ -202,6 +283,12 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     poll_scheduled_backup(app, ctx);
     #[cfg(not(target_arch = "wasm32"))]
     poll_update(app, ctx);
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "native-runtime",
+        target_os = "linux"
+    ))]
+    poll_deferred_capture_probe(app, ctx);
 
     // Keep highlighter enable flag in sync with the preference.
     let highlight_on = app.settings_ui.settings().highlight_active_action;
