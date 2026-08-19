@@ -13,7 +13,10 @@ use pw::spa::param::video::{VideoFormat, VideoInfoRaw};
 use pw::spa::pod::Pod;
 use pw::stream::StreamRc;
 use sqyre_ports::{DesktopRect, RgbCapture};
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::os::fd::OwnedFd;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::Arc;
@@ -44,11 +47,16 @@ struct FrameCache {
     ready: bool,
 }
 
-struct PwSetup {
+struct PwStreamSetup {
     node_id: u32,
+    rect: DesktopRect,
+}
+
+struct PwSetup {
     fd: OwnedFd,
     virtual_bounds: DesktopRect,
     monitor_rects: Vec<DesktopRect>,
+    streams: Vec<PwStreamSetup>,
 }
 
 enum PwThreadMsg {
@@ -61,6 +69,11 @@ impl PortalCapturer {
         if info.capture_backend() != LinuxCaptureBackend::WaylandPortal {
             return Err(CaptureError::Message(
                 "portal capture not selected for this session".into(),
+            ));
+        }
+        if crate::linux::shared_capturer_open_superseded() {
+            return Err(CaptureError::Message(
+                "portal ScreenCast superseded by a newer picker request".into(),
             ));
         }
 
@@ -266,7 +279,24 @@ fn portal_pw_thread(
         let mut slot = frame.0.lock();
         slot.cache.virtual_bounds = setup.virtual_bounds;
         slot.cache.monitor_rects = setup.monitor_rects.clone();
+        ensure_cache_contains(&mut slot.cache, setup.virtual_bounds);
     }
+
+    let stream_count = setup.streams.len();
+    if stream_count == 0 {
+        return propagate_ready(
+            &ready,
+            Err(CaptureError::Message(
+                "portal ScreenCast returned no PipeWire streams".into(),
+            )),
+        );
+    }
+    let node_id = setup.streams[0].node_id;
+    cap_log(
+        "PORTAL",
+        "pw",
+        &format!("connecting node={node_id} streams={stream_count}"),
+    );
 
     ensure_spa_plugin_dir();
     pw::init();
@@ -285,116 +315,295 @@ fn portal_pw_thread(
             .connect_fd_rc(setup.fd, None)
             .map_err(|e| CaptureError::Message(format!("PipeWire connect: {e}"))),
     )?;
+    let loop_ref = mainloop.loop_();
+    let registry = propagate_ready(
+        &ready,
+        core.get_registry_rc()
+            .map_err(|e| CaptureError::Message(format!("PipeWire registry: {e}"))),
+    )?;
+    let node_serials =
+        propagate_ready(&ready, pw_collect_node_serials(&core, &registry, &loop_ref))?;
 
     let frame_cb = Arc::clone(&frame);
     let shutdown_cb = Arc::clone(&shutdown);
-    let first_frame = Arc::new(AtomicBool::new(false));
-    let first_frame_cb = Arc::clone(&first_frame);
+    let first_ready = Arc::new(AtomicBool::new(false));
+    let logged_unmap = Arc::new(AtomicBool::new(false));
+    let logged_copy = Arc::new(AtomicBool::new(false));
     let ready_cb = Arc::clone(&ready);
 
-    let stream = propagate_ready(
-        &ready,
-        StreamRc::new(
-            core,
-            "sqyre-screencast",
-            properties! {
-                *pw::keys::MEDIA_TYPE => "Video",
-                *pw::keys::MEDIA_CATEGORY => "Capture",
-                *pw::keys::MEDIA_ROLE => "Screen",
-            },
-        )
-        .map_err(|e| CaptureError::Message(format!("PipeWire stream: {e}"))),
-    )?;
+    let values: Vec<u8> = propagate_ready(&ready, pw_video_enum_format_bytes())?;
+    let mut stream_holds = Vec::with_capacity(setup.streams.len());
+    let mut listeners = Vec::with_capacity(setup.streams.len());
+    for (index, stream_setup) in setup.streams.iter().enumerate() {
+        let node_id = stream_setup.node_id;
+        let serial = node_serials.get(&node_id).cloned();
+        cap_log(
+            "PORTAL",
+            "pw",
+            &format!(
+                "stream {index} node={node_id} serial={}",
+                serial.as_deref().unwrap_or("-")
+            ),
+        );
 
-    let _listener = propagate_ready(
-        &ready,
-        stream
-            .add_local_listener_with_user_data(UserData {
-                format: VideoInfoRaw::default(),
-            })
-            .param_changed(|_, user_data, id, param| {
-                let Some(param) = param else { return };
-                if id != pw::spa::param::ParamType::Format.as_raw() {
-                    return;
-                }
-                let Ok((media_type, media_subtype)) =
-                    pw::spa::param::format_utils::parse_format(param)
-                else {
-                    return;
-                };
-                if media_type != pw::spa::param::format::MediaType::Video
-                    || media_subtype != pw::spa::param::format::MediaSubtype::Raw
-                {
-                    return;
-                }
-                let _ = user_data.format.parse(param);
-            })
-            .process(move |stream, user_data| {
-                if shutdown_cb.load(Ordering::SeqCst) {
-                    return;
-                }
-                let Some(mut buffer) = stream.dequeue_buffer() else {
-                    return;
-                };
-                let datas = buffer.datas_mut();
-                if datas.is_empty() {
-                    return;
-                }
-                let data = &mut datas[0];
-                let chunk = data.chunk();
-                let size = chunk.size() as usize;
-                let row_stride = if chunk.stride() > 0 {
-                    chunk.stride() as usize
-                } else {
-                    0
-                };
-                if size == 0 {
-                    return;
-                }
-                let Some(bytes) = data.data() else {
-                    return;
-                };
-                let stride = if row_stride > 0 {
-                    row_stride
-                } else {
-                    bytes.len().max(1)
-                };
-                let width = user_data.format.size().width.max(1);
-                let height = user_data.format.size().height.max(1);
-                let format = user_data.format.format();
-                let needed = height as usize * stride;
-                let (lock, cvar) = &*frame_cb;
-                let mut slot = lock.lock();
-                let cache = &mut slot.cache;
-                if cache.pixels.len() != needed {
-                    cache.pixels.resize(needed, 0);
-                }
-                cache.width = width;
-                cache.height = height;
-                cache.stride = stride;
-                if copy_pw_frame_to_rgba(
-                    bytes,
-                    size,
-                    stride,
-                    width,
-                    height,
-                    format,
-                    &mut cache.pixels,
-                )
-                .is_ok()
-                {
-                    cache.ready = true;
-                    slot.generation = slot.generation.saturating_add(1);
-                    cvar.notify_all();
-                    if !first_frame_cb.swap(true, Ordering::SeqCst) {
-                        let _ = ready_cb.send(Ok(()));
+        let mut props = properties! {
+            *pw::keys::MEDIA_TYPE => "Video",
+            *pw::keys::MEDIA_CATEGORY => "Capture",
+            *pw::keys::MEDIA_ROLE => "Screen",
+        };
+        if let Some(serial) = serial.as_deref() {
+            props.insert("target.object", serial);
+        }
+
+        let stream = propagate_ready(
+            &ready,
+            StreamRc::new(core.clone(), &format!("sqyre-screencast-{index}"), props)
+                .map_err(|e| CaptureError::Message(format!("PipeWire stream: {e}"))),
+        )?;
+
+        let frame_stream = Arc::clone(&frame_cb);
+        let shutdown_stream = Arc::clone(&shutdown_cb);
+        let first_ready_stream = Arc::clone(&first_ready);
+        let logged_unmap_stream = Arc::clone(&logged_unmap);
+        let logged_copy_stream = Arc::clone(&logged_copy);
+        let ready_stream = Arc::clone(&ready_cb);
+        let listener = propagate_ready(
+            &ready,
+            stream
+                .add_local_listener_with_user_data(UserData {
+                    format: VideoInfoRaw::default(),
+                    monitor_rect: stream_setup.rect,
+                })
+                .state_changed(move |_, _, old, new| {
+                    cap_log(
+                        "PORTAL",
+                        "pw",
+                        &format!("stream {index} {old:?} -> {new:?}"),
+                    );
+                })
+                .param_changed(|_, user_data, id, param| {
+                    let Some(param) = param else { return };
+                    if id != pw::spa::param::ParamType::Format.as_raw() {
+                        return;
                     }
-                }
-            })
-            .register()
-            .map_err(|e| CaptureError::Message(format!("PipeWire listener: {e}"))),
-    )?;
+                    let Ok((media_type, media_subtype)) =
+                        pw::spa::param::format_utils::parse_format(param)
+                    else {
+                        return;
+                    };
+                    if media_type != pw::spa::param::format::MediaType::Video
+                        || media_subtype != pw::spa::param::format::MediaSubtype::Raw
+                    {
+                        return;
+                    }
+                    let _ = user_data.format.parse(param);
+                    cap_log(
+                        "PORTAL",
+                        "pw",
+                        &format!(
+                            "format={:?} {}x{}",
+                            user_data.format.format(),
+                            user_data.format.size().width,
+                            user_data.format.size().height
+                        ),
+                    );
+                })
+                .process(move |stream, user_data| {
+                    if shutdown_stream.load(Ordering::SeqCst) {
+                        return;
+                    }
+                    let Some(mut buffer) = stream.dequeue_buffer() else {
+                        return;
+                    };
+                    let datas = buffer.datas_mut();
+                    if datas.is_empty() {
+                        return;
+                    }
+                    let data = &mut datas[0];
+                    let chunk = data.chunk();
+                    let size = chunk.size() as usize;
+                    let row_stride = if chunk.stride() > 0 {
+                        chunk.stride() as usize
+                    } else {
+                        0
+                    };
+                    if size == 0 {
+                        return;
+                    }
+                    let Some(bytes) = data.data() else {
+                        if !logged_unmap_stream.swap(true, Ordering::SeqCst) {
+                            cap_log("PORTAL", "pw", "buffer not mapped");
+                        }
+                        return;
+                    };
+                    let src_stride = if row_stride > 0 {
+                        row_stride
+                    } else {
+                        bytes.len().max(1)
+                    };
+                    let width = user_data.format.size().width.max(1);
+                    let height = user_data.format.size().height.max(1);
+                    let format = user_data.format.format();
+                    if user_data.monitor_rect.w <= 0 {
+                        user_data.monitor_rect.w = width as i32;
+                    }
+                    if user_data.monitor_rect.h <= 0 {
+                        user_data.monitor_rect.h = height as i32;
+                    }
+                    let dest = user_data.monitor_rect;
+                    let (lock, cvar) = &*frame_stream;
+                    let mut slot = lock.lock();
+                    ensure_cache_contains(&mut slot.cache, dest);
+                    let cache = &mut slot.cache;
+                    let vb = cache.virtual_bounds;
+                    let dst_x = (dest.x - vb.x).max(0) as usize;
+                    let dst_y = (dest.y - vb.y).max(0) as usize;
+                    match copy_pw_frame_into_rect(
+                        bytes,
+                        size,
+                        src_stride,
+                        width,
+                        height,
+                        format,
+                        &mut cache.pixels,
+                        cache.stride,
+                        dst_x,
+                        dst_y,
+                        dest.w.max(1) as u32,
+                        dest.h.max(1) as u32,
+                    ) {
+                        Ok(()) => {
+                            cache.ready = true;
+                            if !first_ready_stream.swap(true, Ordering::SeqCst) {
+                                let _ = ready_stream.send(Ok(()));
+                            }
+                            slot.generation = slot.generation.saturating_add(1);
+                            cvar.notify_all();
+                        }
+                        Err(e) => {
+                            if !logged_copy_stream.swap(true, Ordering::SeqCst) {
+                                cap_log(
+                                    "PORTAL",
+                                    "pw",
+                                    &format!("copy failed format={format:?} {e}"),
+                                );
+                            }
+                        }
+                    }
+                })
+                .register()
+                .map_err(|e| CaptureError::Message(format!("PipeWire listener: {e}"))),
+        )?;
 
+        let pod = propagate_ready(
+            &ready,
+            Pod::from_bytes(&values)
+                .ok_or_else(|| CaptureError::Message("PipeWire pod bytes invalid".into())),
+        )?;
+        let mut params = [pod];
+        let target = if serial.is_some() {
+            None
+        } else {
+            Some(node_id)
+        };
+        propagate_ready(
+            &ready,
+            stream
+                .connect(
+                    pw::spa::utils::Direction::Input,
+                    target,
+                    pw::stream::StreamFlags::AUTOCONNECT
+                        | pw::stream::StreamFlags::MAP_BUFFERS
+                        | pw::stream::StreamFlags::DONT_RECONNECT,
+                    &mut params,
+                )
+                .map_err(|e| CaptureError::Message(format!("PipeWire stream connect: {e}"))),
+        )?;
+        listeners.push(listener);
+        stream_holds.push(stream);
+    }
+    let _registry = registry;
+
+    while !shutdown.load(Ordering::SeqCst) {
+        if msg_rx.try_recv().is_ok() {
+            break;
+        }
+        loop_ref.iterate(pw::loop_::Timeout::Finite(Duration::from_millis(200)));
+    }
+
+    drop(listeners);
+    drop(stream_holds);
+    drop(portal_hold);
+
+    if !first_ready.load(Ordering::Acquire) {
+        return propagate_ready(
+            &ready,
+            Err(CaptureError::Message(
+                "portal PipeWire stream ended before first frame".into(),
+            )),
+        );
+    }
+    Ok(())
+}
+
+fn pw_collect_node_serials(
+    core: &pw::core::CoreRc,
+    registry: &pw::registry::RegistryRc,
+    loop_ref: &pw::loop_::Loop,
+) -> Result<HashMap<u32, String>, CaptureError> {
+    let serials = Rc::new(RefCell::new(HashMap::<u32, String>::new()));
+    let serials_cb = Rc::clone(&serials);
+    let _reg = registry
+        .add_listener_local()
+        .global(move |global| {
+            if global.type_ != pw::types::ObjectType::Node {
+                return;
+            }
+            let serial = global
+                .props
+                .and_then(|p| p.get("object.serial"))
+                .unwrap_or("")
+                .to_string();
+            let name = global
+                .props
+                .and_then(|p| p.get("node.name"))
+                .unwrap_or("")
+                .to_string();
+            cap_log(
+                "PORTAL",
+                "pw",
+                &format!("node id={} serial={serial} name={name}", global.id),
+            );
+            if !serial.is_empty() {
+                serials_cb.borrow_mut().insert(global.id, serial);
+            }
+        })
+        .register();
+    let done = Rc::new(Cell::new(false));
+    let pending = core
+        .sync(0)
+        .map_err(|e| CaptureError::Message(format!("PipeWire sync: {e}")))?;
+    let done_cb = Rc::clone(&done);
+    let _core = core
+        .add_listener_local()
+        .done(move |id, seq| {
+            if id == pw::core::PW_ID_CORE && seq == pending {
+                done_cb.set(true);
+            }
+        })
+        .register();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !done.get() {
+        if Instant::now() > deadline {
+            break;
+        }
+        loop_ref.iterate(pw::loop_::Timeout::Finite(Duration::from_millis(10)));
+    }
+    let map = serials.borrow().clone();
+    Ok(map)
+}
+
+fn pw_video_enum_format_bytes() -> Result<Vec<u8>, CaptureError> {
     let obj = pw::spa::pod::object!(
         pw::spa::utils::SpaTypes::ObjectParamFormat,
         pw::spa::param::ParamType::EnumFormat,
@@ -419,53 +628,12 @@ fn portal_pw_thread(
             VideoFormat::BGRA,
         ),
     );
-    let values: Vec<u8> = propagate_ready(
-        &ready,
-        pw::spa::pod::serialize::PodSerializer::serialize(
-            std::io::Cursor::new(Vec::new()),
-            &pw::spa::pod::Value::Object(obj),
-        )
-        .map_err(|e| CaptureError::Message(format!("PipeWire format pod: {e}")))
-        .map(|v| v.0.into_inner()),
-    )?;
-    let pod = propagate_ready(
-        &ready,
-        Pod::from_bytes(&values)
-            .ok_or_else(|| CaptureError::Message("PipeWire pod bytes invalid".into())),
-    )?;
-    let mut params = [pod];
-
-    propagate_ready(
-        &ready,
-        stream
-            .connect(
-                pw::spa::utils::Direction::Input,
-                Some(setup.node_id),
-                pw::stream::StreamFlags::AUTOCONNECT | pw::stream::StreamFlags::MAP_BUFFERS,
-                &mut params,
-            )
-            .map_err(|e| CaptureError::Message(format!("PipeWire stream connect: {e}"))),
-    )?;
-
-    let loop_ref = mainloop.loop_();
-    while !shutdown.load(Ordering::SeqCst) {
-        if msg_rx.try_recv().is_ok() {
-            break;
-        }
-        loop_ref.iterate(pw::loop_::Timeout::Finite(Duration::from_millis(200)));
-    }
-
-    drop(portal_hold);
-
-    if !first_frame.load(Ordering::SeqCst) {
-        return propagate_ready(
-            &ready,
-            Err(CaptureError::Message(
-                "portal PipeWire stream ended before first frame".into(),
-            )),
-        );
-    }
-    Ok(())
+    pw::spa::pod::serialize::PodSerializer::serialize(
+        std::io::Cursor::new(Vec::new()),
+        &pw::spa::pod::Value::Object(obj),
+    )
+    .map(|v| v.0.into_inner())
+    .map_err(|e| CaptureError::Message(format!("PipeWire format pod: {e}")))
 }
 
 /// PipeWire loads SPA plugins from the host; bundled `libpipewire` in AppImage/bundle breaks this.
@@ -508,6 +676,7 @@ fn propagate_ready<T>(
 
 struct UserData {
     format: VideoInfoRaw,
+    monitor_rect: DesktopRect,
 }
 
 /// Holds portal DBus session open for the lifetime of the PipeWire loop.
@@ -516,27 +685,192 @@ struct PortalHold {
     _session: ashpd::desktop::Session<'static, ashpd::desktop::screencast::Screencast<'static>>,
 }
 
-async fn open_portal_session() -> Result<(PortalHold, PwSetup), CaptureError> {
-    use ashpd::desktop::screencast::{CursorMode, Screencast, SourceType, Stream};
-    use ashpd::desktop::PersistMode;
-    use enumflags2::BitFlags;
+/// Same id as `sqyre-app` (`com.sqyre.app.desktop`). GNOME persist keys off this.
+const PORTAL_APP_ID: &str = "com.sqyre.app";
 
+static FORCE_SCREENCAST_PICKER: AtomicBool = AtomicBool::new(false);
+static SCREENCAST_SESSION_GRANTED: AtomicBool = AtomicBool::new(false);
+
+/// Portal Start succeeded this process, or a restore token is on disk from a prior grant.
+pub fn portal_screencast_granted() -> bool {
+    SCREENCAST_SESSION_GRANTED.load(Ordering::SeqCst)
+        || read_restore_token_at(&restore_token_path()).is_some()
+}
+
+/// Drop the current ScreenCast session and show the share picker again (ignores restore token).
+pub fn request_portal_screencast_picker() {
+    FORCE_SCREENCAST_PICKER.store(true, Ordering::SeqCst);
+    SCREENCAST_SESSION_GRANTED.store(false, Ordering::SeqCst);
+    write_restore_token_at(&restore_token_path(), None);
+    crate::linux::reset_shared_capturer();
+    cap_log("PORTAL", "picker", "requested");
+    let _ = thread::Builder::new()
+        .name("sqyre-portal-picker".into())
+        .spawn(|| {
+            if let Err(e) = crate::linux::shared_capturer() {
+                cap_log("PORTAL", "picker", &format!("reopen failed: {e}"));
+            }
+        });
+}
+
+fn take_force_screencast_picker() -> bool {
+    FORCE_SCREENCAST_PICKER.swap(false, Ordering::SeqCst)
+}
+
+fn restore_token_path() -> std::path::PathBuf {
+    dirs_home().join(".sqyre").join("wayland-screencast.token")
+}
+
+fn dirs_home() -> std::path::PathBuf {
+    std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+}
+
+fn read_restore_token_at(path: &std::path::Path) -> Option<String> {
+    let raw = std::fs::read_to_string(path).ok()?;
+    let token = raw.trim();
+    if token.is_empty() || token.bytes().any(|b| b.is_ascii_whitespace()) {
+        return None;
+    }
+    Some(token.to_string())
+}
+
+fn write_restore_token_at(path: &std::path::Path, token: Option<&str>) {
+    match token.map(str::trim).filter(|t| !t.is_empty()) {
+        Some(token) => {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = std::fs::write(path, token) {
+                cap_log("PORTAL", "token", &format!("save failed: {e}"));
+            } else {
+                cap_log("PORTAL", "token", "saved");
+            }
+        }
+        None => {
+            if path.exists() {
+                let _ = std::fs::remove_file(path);
+                cap_log("PORTAL", "token", "cleared");
+            }
+        }
+    }
+}
+
+fn stream_rect(stream: &ashpd::desktop::screencast::Stream) -> DesktopRect {
+    let (w, h) = stream.size().unwrap_or((0, 0));
+    let (x, y) = stream.position().unwrap_or((0, 0));
+    DesktopRect { x, y, w, h }
+}
+
+fn ensure_cache_contains(cache: &mut FrameCache, rect: DesktopRect) {
+    if rect.w <= 0 || rect.h <= 0 {
+        return;
+    }
+    let vb = if cache.virtual_bounds.w <= 0 || cache.virtual_bounds.h <= 0 {
+        rect
+    } else {
+        union_rect(cache.virtual_bounds, rect)
+    };
+    if vb == cache.virtual_bounds && !cache.pixels.is_empty() {
+        return;
+    }
+    cache.virtual_bounds = vb;
+    cache.width = vb.w.max(0) as u32;
+    cache.height = vb.h.max(0) as u32;
+    cache.stride = cache.width as usize * 4;
+    let len = cache.stride.saturating_mul(cache.height as usize);
+    cache.pixels.resize(len, 0);
+    if !cache.monitor_rects.contains(&rect) {
+        cache.monitor_rects.push(rect);
+    }
+}
+
+async fn register_portal_app() {
+    let Ok(app_id) = PORTAL_APP_ID.parse::<ashpd::AppID>() else {
+        return;
+    };
+    match ashpd::register_host_app(app_id).await {
+        Ok(()) => cap_log("PORTAL", "appid", PORTAL_APP_ID),
+        Err(e) => cap_log("PORTAL", "appid", &format!("register skipped: {e}")),
+    }
+}
+
+async fn cursor_mode(
+    proxy: &ashpd::desktop::screencast::Screencast<'_>,
+) -> ashpd::desktop::screencast::CursorMode {
+    use ashpd::desktop::screencast::CursorMode;
+    match proxy.available_cursor_modes().await {
+        Ok(modes) if modes.contains(CursorMode::Hidden) => CursorMode::Hidden,
+        Ok(modes) if modes.contains(CursorMode::Embedded) => CursorMode::Embedded,
+        Ok(modes) if modes.contains(CursorMode::Metadata) => CursorMode::Metadata,
+        _ => CursorMode::Hidden,
+    }
+}
+
+async fn source_types(
+    proxy: &ashpd::desktop::screencast::Screencast<'_>,
+) -> enumflags2::BitFlags<ashpd::desktop::screencast::SourceType> {
+    use ashpd::desktop::screencast::SourceType;
+    match proxy.available_source_types().await {
+        Ok(types) if types.contains(SourceType::Monitor) => SourceType::Monitor.into(),
+        Ok(types) if types.contains(SourceType::Virtual) => SourceType::Virtual.into(),
+        Ok(types) if !types.is_empty() => types,
+        _ => SourceType::Monitor.into(),
+    }
+}
+
+async fn open_portal_session() -> Result<(PortalHold, PwSetup), CaptureError> {
     cap_log("PORTAL", "start", "interface=ScreenCast");
+    register_portal_app().await;
+
+    let stored = if take_force_screencast_picker() {
+        cap_log("PORTAL", "picker", "forcing dialog");
+        None
+    } else {
+        read_restore_token_at(&restore_token_path())
+    };
+    match open_portal_session_with_token(stored.as_deref()).await {
+        Ok(ok) => Ok(ok),
+        Err(e) if stored.is_some() => {
+            cap_log(
+                "PORTAL",
+                "token",
+                &format!("restore failed ({e}); retrying with picker"),
+            );
+            write_restore_token_at(&restore_token_path(), None);
+            open_portal_session_with_token(None).await
+        }
+        Err(e) => Err(e),
+    }
+}
+
+async fn open_portal_session_with_token(
+    restore_token: Option<&str>,
+) -> Result<(PortalHold, PwSetup), CaptureError> {
+    use ashpd::desktop::screencast::{Screencast, Stream};
+    use ashpd::desktop::PersistMode;
+
     let proxy = Screencast::new()
         .await
         .map_err(portal_err("Screencast proxy"))?;
+    let types = source_types(&proxy).await;
+    let cursor = cursor_mode(&proxy).await;
     let session = proxy
         .create_session()
         .await
         .map_err(portal_err("create_session"))?;
+    if restore_token.is_some() {
+        cap_log("PORTAL", "token", "restoring");
+    }
     proxy
         .select_sources(
             &session,
-            CursorMode::Hidden,
-            BitFlags::from(SourceType::Monitor),
+            cursor,
+            types,
             true,
-            None,
-            PersistMode::DoNot,
+            restore_token,
+            PersistMode::ExplicitlyRevoked,
         )
         .await
         .map_err(portal_err("select_sources"))?;
@@ -546,25 +880,59 @@ async fn open_portal_session() -> Result<(PortalHold, PwSetup), CaptureError> {
         .map_err(portal_err("start"))?
         .response()
         .map_err(portal_err("start response"))?;
-    let streams = response.streams();
-    let stream = streams
-        .first()
-        .ok_or_else(|| CaptureError::Message("portal ScreenCast returned no streams".into()))?;
-    let node_id = stream.pipe_wire_node_id();
-    let monitor_rects: Vec<DesktopRect> = streams
+    write_restore_token_at(&restore_token_path(), response.restore_token());
+    let streams_meta = response.streams();
+    if streams_meta.is_empty() {
+        return Err(CaptureError::Message(
+            "portal ScreenCast returned no streams".into(),
+        ));
+    }
+    SCREENCAST_SESSION_GRANTED.store(true, Ordering::SeqCst);
+    cap_log(
+        "PORTAL",
+        "grant",
+        &format!(
+            "streams={} persist={}",
+            streams_meta.len(),
+            response.restore_token().is_some()
+        ),
+    );
+    let mut streams: Vec<PwStreamSetup> = streams_meta
         .iter()
-        .filter_map(|s: &Stream| {
-            let (x, y) = s.position()?;
-            let (w, h) = s.size()?;
-            Some(DesktopRect { x, y, w, h })
+        .map(|s: &Stream| PwStreamSetup {
+            node_id: s.pipe_wire_node_id(),
+            rect: stream_rect(s),
         })
         .collect();
-    let virtual_bounds = if monitor_rects.is_empty() {
-        let (w, h) = stream.size().unwrap_or((1920, 1080));
-        DesktopRect { x: 0, y: 0, w, h }
+    let x11_layout = crate::x11_capture::query_x11_monitor_rects();
+    let monitor_rects = if x11_layout.len() >= 2 {
+        assign_streams_to_layout(&mut streams, &x11_layout);
+        cap_log(
+            "PORTAL",
+            "pw",
+            &format!("layout=x11 monitors={}", x11_layout.len()),
+        );
+        x11_layout
     } else {
-        monitor_rects.iter().copied().reduce(union_rect).unwrap()
+        layout_stream_rects(&mut streams);
+        streams.iter().map(|s| s.rect).collect()
     };
+    for (i, s) in streams.iter().enumerate() {
+        cap_log(
+            "PORTAL",
+            "pw",
+            &format!(
+                "stream {i} node={} rect={}x{}+{}+{}",
+                s.node_id, s.rect.w, s.rect.h, s.rect.x, s.rect.y
+            ),
+        );
+    }
+    let virtual_bounds = monitor_rects
+        .iter()
+        .copied()
+        .filter(|r| r.w > 0 && r.h > 0)
+        .reduce(union_rect)
+        .unwrap_or_default();
     let fd = proxy
         .open_pipe_wire_remote(&session)
         .await
@@ -577,12 +945,61 @@ async fn open_portal_session() -> Result<(PortalHold, PwSetup), CaptureError> {
     Ok((
         hold,
         PwSetup {
-            node_id,
             fd,
             virtual_bounds,
             monitor_rects,
+            streams,
         },
     ))
+}
+
+fn assign_streams_to_layout(streams: &mut [PwStreamSetup], layout: &[DesktopRect]) {
+    if layout.is_empty() || streams.is_empty() {
+        return;
+    }
+    let mut dests = layout.to_vec();
+    dests.sort_by_key(|r| (r.x, r.y));
+    let mut order: Vec<usize> = (0..streams.len()).collect();
+    order.sort_by_key(|&i| (streams[i].rect.x, streams[i].rect.y, streams[i].node_id));
+    for (k, &si) in order.iter().enumerate() {
+        if let Some(dest) = dests.get(k) {
+            streams[si].rect = *dest;
+        }
+    }
+}
+
+fn layout_stream_rects(streams: &mut [PwStreamSetup]) {
+    if streams.len() < 2 {
+        return;
+    }
+    let missing_or_overlap = streams.iter().any(|s| s.rect.w <= 0 || s.rect.h <= 0)
+        || streams.iter().enumerate().any(|(i, a)| {
+            streams
+                .iter()
+                .skip(i + 1)
+                .any(|b| rects_overlap(a.rect, b.rect))
+        });
+    if !missing_or_overlap {
+        return;
+    }
+    let mut x = 0;
+    for stream in streams.iter_mut() {
+        let w = stream.rect.w.max(1);
+        let h = stream.rect.h.max(1);
+        stream.rect = DesktopRect { x, y: 0, w, h };
+        x = x.saturating_add(w);
+    }
+}
+
+fn rects_overlap(a: DesktopRect, b: DesktopRect) -> bool {
+    a.w > 0
+        && a.h > 0
+        && b.w > 0
+        && b.h > 0
+        && a.x < b.x + b.w
+        && b.x < a.x + a.w
+        && a.y < b.y + b.h
+        && b.y < a.y + a.h
 }
 
 fn union_rect(a: DesktopRect, b: DesktopRect) -> DesktopRect {
@@ -605,32 +1022,89 @@ fn portal_err(step: &'static str) -> impl Fn(ashpd::Error) -> CaptureError {
     }
 }
 
-fn copy_pw_frame_to_rgba(
+#[allow(clippy::too_many_arguments)] // src frame + dest rect in one blit
+fn copy_pw_frame_into_rect(
     src: &[u8],
     size: usize,
-    stride: usize,
+    src_stride: usize,
+    src_w: u32,
+    src_h: u32,
+    format: VideoFormat,
+    dst: &mut [u8],
+    dst_stride: usize,
+    dst_x: usize,
+    dst_y: usize,
+    dst_w: u32,
+    dst_h: u32,
+) -> Result<(), CaptureError> {
+    if src_w == dst_w && src_h == dst_h {
+        return copy_pw_frame_to_rgba_at(
+            src, size, src_stride, src_w, src_h, format, dst, dst_stride, dst_x, dst_y,
+        );
+    }
+    let mut tmp = vec![0u8; src_w as usize * src_h as usize * 4];
+    copy_pw_frame_to_rgba_at(
+        src,
+        size,
+        src_stride,
+        src_w,
+        src_h,
+        format,
+        &mut tmp,
+        src_w as usize * 4,
+        0,
+        0,
+    )?;
+    let sw = src_w as usize;
+    let sh = src_h as usize;
+    let dw = dst_w as usize;
+    let dh = dst_h as usize;
+    for y in 0..dh {
+        let sy = y * sh / dh;
+        for x in 0..dw {
+            let sx = x * sw / dw;
+            let src_off = (sy * sw + sx) * 4;
+            let dst_off = (dst_y + y) * dst_stride + (dst_x + x) * 4;
+            if src_off + 4 > tmp.len() || dst_off + 4 > dst.len() {
+                return Err(CaptureError::Message(
+                    "portal capture: RGBA buffer too small".into(),
+                ));
+            }
+            dst[dst_off..dst_off + 4].copy_from_slice(&tmp[src_off..src_off + 4]);
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)] // row copy needs src/dst geometry in one pass
+fn copy_pw_frame_to_rgba_at(
+    src: &[u8],
+    size: usize,
+    src_stride: usize,
     width: u32,
     height: u32,
     format: VideoFormat,
     dst: &mut [u8],
+    dst_stride: usize,
+    dst_x: usize,
+    dst_y: usize,
 ) -> Result<(), CaptureError> {
     let w = width as usize;
     let h = height as usize;
-    let needed = h * w * 4;
-    if dst.len() < needed {
-        return Err(CaptureError::Message(
-            "portal capture: RGBA buffer too small".into(),
-        ));
-    }
     for y in 0..h {
-        let src_off = y * stride;
-        let dst_off = y * w * 4;
+        let src_off = y * src_stride;
         if src_off >= size.min(src.len()) {
             break;
         }
-        let row_len = stride.min(src.len().saturating_sub(src_off));
+        let row_len = src_stride.min(src.len().saturating_sub(src_off));
         let row = &src[src_off..src_off + row_len];
-        let dst_row = &mut dst[dst_off..dst_off + w * 4];
+        let dst_row_off = (dst_y + y) * dst_stride + dst_x * 4;
+        if dst_row_off + w * 4 > dst.len() {
+            return Err(CaptureError::Message(
+                "portal capture: RGBA buffer too small".into(),
+            ));
+        }
+        let dst_row = &mut dst[dst_row_off..dst_row_off + w * 4];
         swizzle_row_to_rgba(row, w, format, dst_row)?;
     }
     Ok(())
@@ -706,6 +1180,119 @@ mod tests {
     }
 
     #[test]
+    fn restore_token_roundtrip() {
+        let dir = std::env::temp_dir().join(format!(
+            "sqyre-screencast-token-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("wayland-screencast.token");
+        write_restore_token_at(&path, Some(" token-value \n"));
+        assert_eq!(read_restore_token_at(&path).as_deref(), Some("token-value"));
+        write_restore_token_at(&path, None);
+        assert!(read_restore_token_at(&path).is_none());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn ensure_cache_grows_from_empty() {
+        let mut cache = FrameCache {
+            virtual_bounds: DesktopRect::default(),
+            monitor_rects: Vec::new(),
+            width: 0,
+            height: 0,
+            stride: 0,
+            pixels: Vec::new(),
+            ready: false,
+        };
+        ensure_cache_contains(
+            &mut cache,
+            DesktopRect {
+                x: 0,
+                y: 0,
+                w: 10,
+                h: 4,
+            },
+        );
+        assert_eq!(cache.width, 10);
+        assert_eq!(cache.height, 4);
+        assert_eq!(cache.pixels.len(), 10 * 4 * 4);
+    }
+
+    #[test]
+    fn assign_streams_uses_x11_y_offsets() {
+        let mut streams = vec![
+            PwStreamSetup {
+                node_id: 10,
+                rect: DesktopRect {
+                    x: 0,
+                    y: 0,
+                    w: 1920,
+                    h: 1080,
+                },
+            },
+            PwStreamSetup {
+                node_id: 11,
+                rect: DesktopRect {
+                    x: 1920,
+                    y: 0,
+                    w: 2560,
+                    h: 1440,
+                },
+            },
+        ];
+        let layout = [
+            DesktopRect {
+                x: 0,
+                y: 360,
+                w: 1920,
+                h: 1080,
+            },
+            DesktopRect {
+                x: 1920,
+                y: 0,
+                w: 2560,
+                h: 1440,
+            },
+        ];
+        assign_streams_to_layout(&mut streams, &layout);
+        assert_eq!(streams[0].rect.y, 360);
+        assert_eq!(streams[1].rect.x, 1920);
+        assert_eq!(streams[1].rect.y, 0);
+    }
+
+    #[test]
+    fn overlapping_streams_layout_ltr() {
+        let mut streams = vec![
+            PwStreamSetup {
+                node_id: 1,
+                rect: DesktopRect {
+                    x: 0,
+                    y: 0,
+                    w: 1920,
+                    h: 1080,
+                },
+            },
+            PwStreamSetup {
+                node_id: 2,
+                rect: DesktopRect {
+                    x: 0,
+                    y: 0,
+                    w: 1920,
+                    h: 1080,
+                },
+            },
+        ];
+        layout_stream_rects(&mut streams);
+        assert_eq!(streams[0].rect.x, 0);
+        assert_eq!(streams[1].rect.x, 1920);
+    }
+
+    #[test]
     fn union_monitor_rects() {
         let a = DesktopRect {
             x: 0,
@@ -722,5 +1309,50 @@ mod tests {
         let u = union_rect(a, b);
         assert_eq!(u.w, 3840);
         assert_eq!(u.h, 1080);
+    }
+
+    #[test]
+    fn composite_frame_at_offset() {
+        let row = [0u8, 1, 2, 255, 10, 11, 12, 255];
+        let mut dst = vec![0u8; 16];
+        copy_pw_frame_to_rgba_at(
+            &row,
+            row.len(),
+            8,
+            2,
+            1,
+            VideoFormat::RGBA,
+            &mut dst,
+            8,
+            1,
+            0,
+        )
+        .unwrap();
+        assert_eq!(&dst[4..8], &[0, 1, 2, 255]);
+        assert_eq!(&dst[0..4], &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn scale_frame_into_smaller_rect() {
+        let mut src = vec![0u8; 8];
+        src[0..4].copy_from_slice(&[10, 20, 30, 255]);
+        src[4..8].copy_from_slice(&[40, 50, 60, 255]);
+        let mut dst = vec![0u8; 4];
+        copy_pw_frame_into_rect(
+            &src,
+            src.len(),
+            8,
+            2,
+            1,
+            VideoFormat::RGBA,
+            &mut dst,
+            4,
+            0,
+            0,
+            1,
+            1,
+        )
+        .unwrap();
+        assert_eq!(&dst, &[10, 20, 30, 255]);
     }
 }
