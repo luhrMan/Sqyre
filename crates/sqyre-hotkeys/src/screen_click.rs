@@ -2,23 +2,20 @@
 //! Armed by the UI; delivered via the hotkey rdev listener when hooks are enabled.
 
 use parking_lot::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-#[cfg(all(feature = "hooks", target_os = "windows"))]
-use std::sync::atomic::{AtomicBool, Ordering};
-
-/// Fast path for the Windows LL mouse hook: skip `WM_MOUSEMOVE` unless armed.
-#[cfg(all(feature = "hooks", target_os = "windows"))]
+/// Fast path for OS hooks: skip mouse-move work unless a recording is armed.
+/// Windows uses this to avoid flooding WH_MOUSE_LL; Linux evdev grab uses it so
+/// pointer motion is not serialized on bridge mutexes (that stalls the cursor).
 static HOOK_WANTS_MOVES: AtomicBool = AtomicBool::new(false);
 
-#[cfg(all(feature = "hooks", target_os = "windows"))]
 pub(crate) fn hook_wants_mouse_moves() -> bool {
     HOOK_WANTS_MOVES.load(Ordering::Relaxed)
 }
 
-fn sync_hook_wants_moves(_armed: bool) {
-    #[cfg(all(feature = "hooks", target_os = "windows"))]
-    HOOK_WANTS_MOVES.store(_armed, Ordering::Relaxed);
+fn sync_hook_wants_moves(armed: bool) {
+    HOOK_WANTS_MOVES.store(armed, Ordering::Relaxed);
 }
 
 #[derive(Debug, Clone)]
