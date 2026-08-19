@@ -57,13 +57,19 @@ web-time = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 fs2 = "0.4"
-rodio = { version = "0.22", default-features = false, features = ["playback", "mp3"] }
 sqyre-input = { path = "../sqyre-input" }
 sqyre-update = { path = "../sqyre-update" }
 
+# Linux: decode with rodio, play via cpal PulseAudio (PipeWire pulse socket).
+# Avoids ALSA pipewire-plugin path + cpal timestamp errors on that plugin.
 [target.'cfg(all(not(target_arch = "wasm32"), target_os = "linux"))'.dependencies]
 ksni = { workspace = true }
 winit = "0.30"
+rodio = { version = "0.22", default-features = false, features = ["mp3"] }
+cpal = { version = "0.18", default-features = false, features = ["pulseaudio"] }
+
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "linux")))'.dependencies]
+rodio = { version = "0.22", default-features = false, features = ["playback", "mp3"] }
 
 [target.'cfg(all(not(target_arch = "wasm32"), any(target_os = "windows", target_os = "macos")))'.dependencies]
 tray-icon = { workspace = true }

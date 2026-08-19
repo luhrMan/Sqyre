@@ -53,6 +53,8 @@ Requires **patchelf** (installed in the devcontainer). Build on the target glibc
 
 **Wayland portal capture:** `libpipewire` / `libspa-*` are **not** bundled — the host PipeWire stack (GNOME/KDE already ship it) must provide SPA plugins. Bundling breaks with `can't make support.system handle`.
 
+**Cue audio:** `libasound` is **not** bundled. Playback uses the PulseAudio protocol (PipeWire's pulse socket on current desktops). Bundled Ubuntu `libasound` looks for `libasound_module_pcm_pipewire.so` under `/usr/lib/x86_64-linux-gnu/alsa-lib/`, which Fedora does not have.
+
 ---
 
 ## Summary
