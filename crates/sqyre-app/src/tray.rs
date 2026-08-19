@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 /// Retains the OS tray icon for the process lifetime.
 pub struct SystemTray {
-    active: bool,
     quit_requested: Arc<AtomicBool>,
     #[cfg(target_os = "linux")]
     _handle: Option<ksni::blocking::Handle<LinuxTray>>,
@@ -15,7 +14,7 @@ pub struct SystemTray {
 }
 
 impl SystemTray {
-    /// Install the tray. Failures are logged; the UI keeps running without hide-on-close.
+    /// Install the tray. Failures are logged; the UI keeps running.
     pub fn install(ctx: Context) -> Self {
         match install_inner(ctx) {
             Ok(tray) => tray,
@@ -26,18 +25,13 @@ impl SystemTray {
         }
     }
 
-    pub fn is_active(&self) -> bool {
-        self.active
-    }
-
-    /// True after the tray Quit item was chosen — close should exit, not hide.
+    /// True after the tray Quit item was chosen — close should exit, not minimize.
     pub fn quit_requested(&self) -> bool {
         self.quit_requested.load(Ordering::SeqCst)
     }
 
     fn inactive() -> Self {
         Self {
-            active: false,
             quit_requested: Arc::new(AtomicBool::new(false)),
             #[cfg(target_os = "linux")]
             _handle: None,
@@ -54,6 +48,7 @@ impl Default for SystemTray {
 }
 
 fn show_window(ctx: &Context) {
+    ctx.send_viewport_cmd(ViewportCommand::Minimized(false));
     ctx.send_viewport_cmd(ViewportCommand::Visible(true));
     ctx.send_viewport_cmd(ViewportCommand::Focus);
     ctx.request_repaint();
@@ -96,7 +91,6 @@ fn install_inner(ctx: Context) -> Result<SystemTray, String> {
         .map_err(|e| format!("StatusNotifierItem: {e}"))?;
 
     Ok(SystemTray {
-        active: true,
         quit_requested,
         _handle: Some(handle),
     })
@@ -206,7 +200,6 @@ fn install_inner(ctx: Context) -> Result<SystemTray, String> {
         .map_err(|e| format!("tray menu thread: {e}"))?;
 
     Ok(SystemTray {
-        active: true,
         quit_requested,
         _icon: Some(tray_icon),
     })

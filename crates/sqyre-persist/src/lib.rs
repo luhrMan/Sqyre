@@ -23,7 +23,8 @@ pub use programs::{
 };
 pub use settings::{
     default_overlay_position, move_dir, open_path_in_file_manager, open_sqyre_dir, settings_path,
-    ActionColorPrefs, OverlayButtonConfig, UserSettings, DEFAULT_AUTO_UPDATE_CHECK,
+    ActionColorPrefs, OverlayButtonConfig, TitleBarCloseAction, UserSettings,
+    DEFAULT_AUTO_UPDATE_CHECK,
     DEFAULT_BACKUP_INTERVAL_HOURS, DEFAULT_BACKUP_MAX_KEEP, DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
     DEFAULT_HIDE_APP_DURING_RECORDING, DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE,
     DEFAULT_OVERLAY_ACCENT_HEX, DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE,

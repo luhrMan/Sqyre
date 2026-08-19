@@ -11,17 +11,32 @@ use crate::variables_panel;
 use crate::SqyreApp;
 use eframe::egui;
 use sqyre_domain::ActionId;
+use sqyre_persist::TitleBarCloseAction;
 use std::sync::atomic::Ordering;
 
-/// Close → hide to tray when available; Quit from tray allows real exit.
+/// Close button: minimize or quit, per [`sqyre_persist::UserSettings::title_bar_close`].
+/// Tray Quit still exits.
 pub fn handle_close_to_tray(app: &mut SqyreApp, ctx: &egui::Context) {
-    if app.tray.is_active()
-        && !app.tray.quit_requested()
-        && ctx.input(|i| i.viewport().close_requested())
-    {
-        ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+    if app.tray.quit_requested() {
+        return;
     }
+    if !ctx.input(|i| i.viewport().close_requested()) {
+        return;
+    }
+    if app.settings_ui.settings().title_bar_close != TitleBarCloseAction::Minimize {
+        log_close("exit", "setting");
+        return;
+    }
+    log_close("minimize", "setting");
+    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+}
+
+fn log_close(action: &str, reason: &str) {
+    #[cfg(feature = "native-runtime")]
+    sqyre_capture::event_log("SQYRE_CLOSE", &[("action", action), ("reason", reason)]);
+    #[cfg(not(feature = "native-runtime"))]
+    let _ = (action, reason);
 }
 
 /// Always-on-top macro buttons (settings-backed); hidden while recording is armed.
