@@ -10,7 +10,7 @@ use sqyre_persist::{
 };
 use sqyre_persist::{
     move_dir, set_sqyre_dir_override, sqyre_dir, Database, ImportMode, ProgramCatalog,
-    UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+    TitleBarCloseAction, UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use sqyre_persist::{
@@ -378,6 +378,36 @@ impl SettingsUi {
                 .changed()
         {
             self.mark_dirty();
+        }
+
+        if setting_visible(q, section_hit, SETTING_TITLE_BAR_CLOSE) {
+            ui.add_space(6.0);
+            ui.label("Close button (X):");
+            ui.horizontal(|ui| {
+                let mut action = self.settings.title_bar_close;
+                let minimize = ui
+                    .radio_value(
+                        &mut action,
+                        TitleBarCloseAction::Minimize,
+                        "Minimize to the taskbar",
+                    )
+                    .on_hover_text(
+                        "The window stays running and is minimized. Restore it from the taskbar or dash.",
+                    )
+                    .changed();
+                let exit = ui
+                    .radio_value(
+                        &mut action,
+                        TitleBarCloseAction::Exit,
+                        "Close the application",
+                    )
+                    .on_hover_text("Quit Sqyre. The tray Quit item always exits.")
+                    .changed();
+                if minimize || exit {
+                    self.settings.title_bar_close = action;
+                    self.mark_dirty();
+                }
+            });
         }
 
         if setting_visible(q, section_hit, SETTING_RELEASE_HELD)
@@ -1188,6 +1218,15 @@ const SETTING_HIGHLIGHT_ACTION: &[&str] =
     &["highlight", "executing action", "active action", "tint"];
 const SETTING_HIDE_WHILE_RECORDING: &[&str] =
     &["hide", "recording", "points", "search areas", "snapshot"];
+const SETTING_TITLE_BAR_CLOSE: &[&str] = &[
+    "close",
+    "minimize",
+    "taskbar",
+    "title bar",
+    "quit",
+    "exit",
+    "window close",
+];
 const SETTING_RELEASE_HELD: &[&str] = &[
     "release",
     "held keys",
@@ -1272,6 +1311,7 @@ const GENERAL_SETTINGS: &[&[&str]] = &[
     SETTING_LOG_META,
     SETTING_HIGHLIGHT_ACTION,
     SETTING_HIDE_WHILE_RECORDING,
+    SETTING_TITLE_BAR_CLOSE,
     SETTING_RELEASE_HELD,
     SETTING_WHILE_BUDGET,
     SETTING_RUN_MACRO_DEPTH,
@@ -1355,5 +1395,16 @@ mod tests {
     fn section_title_reveals_all_settings_in_section() {
         assert!(setting_visible("general", true, SETTING_LOG_META));
         assert!(setting_visible("general", true, SETTING_WHILE_BUDGET));
+    }
+
+    #[test]
+    fn minimize_matches_title_bar_close() {
+        assert!(section_visible(
+            "minimize",
+            SECTION_GENERAL,
+            GENERAL_SETTINGS
+        ));
+        assert!(setting_visible("minimize", false, SETTING_TITLE_BAR_CLOSE));
+        assert!(!setting_visible("minimize", false, SETTING_HIDE_WHILE_RECORDING));
     }
 }
