@@ -170,7 +170,7 @@ impl ActionLogger for SharedActionLog {
         let Some(img) = image_buf_to_log_image(label, image) else {
             return;
         };
-        push_entry(&self.inner, action_id, ActionLogEntry::Image(img));
+        replace_or_push_image(&self.inner, action_id, img);
     }
 
     fn log_item_pipeline(
@@ -213,11 +213,44 @@ fn push_entry(
 ) {
     let mut map = inner.lock();
     let entries = map.entry(action_id).or_default();
+    push_capped(entries, entry);
+}
+
+fn push_capped(entries: &mut Vec<ActionLogEntry>, entry: ActionLogEntry) {
     entries.push(entry);
     if entries.len() > MAX_ENTRIES_PER_ACTION {
         let drop = entries.len() - MAX_ENTRIES_PER_ACTION;
         entries.drain(0..drop);
     }
+}
+
+/// Stable identity for wait-until-found capture shots so retries update one slot
+/// instead of stacking a frozen first frame above newer copies.
+fn live_capture_slot_key(label: &str) -> Option<&'static str> {
+    label
+        .starts_with("1. Capture (search area)")
+        .then_some("1. Capture (search area)")
+}
+
+fn replace_or_push_image(
+    inner: &Mutex<HashMap<ActionId, Vec<ActionLogEntry>>>,
+    action_id: ActionId,
+    img: LogImage,
+) {
+    let mut map = inner.lock();
+    let entries = map.entry(action_id).or_default();
+    if let Some(key) = live_capture_slot_key(&img.label) {
+        if let Some(slot) = entries.iter_mut().rev().find(|e| {
+            matches!(
+                e,
+                ActionLogEntry::Image(existing) if live_capture_slot_key(&existing.label) == Some(key)
+            )
+        }) {
+            *slot = ActionLogEntry::Image(img);
+            return;
+        }
+    }
+    push_capped(entries, ActionLogEntry::Image(img));
 }
 
 fn image_buf_to_log_image(label: String, image: &ImageBuf) -> Option<LogImage> {
@@ -322,5 +355,26 @@ mod tests {
         log.log_image(id, "capture".into(), &img);
         let entries = log.entries_for(id);
         assert_eq!(entries.len(), 1);
+    }
+
+    #[test]
+    fn wait_until_found_replaces_capture_image_slot() {
+        let log = SharedActionLog::new();
+        let id = ActionId::new();
+        let a = ImageBuf::new(4, 4, 3, 10);
+        let b = ImageBuf::new(4, 4, 3, 200);
+        log.log_image(id, "1. Capture (search area)".into(), &a);
+        log.log_image(id, "1. Capture (search area)".into(), &b);
+        let entries = log.entries_for(id);
+        let images: Vec<&LogImage> = entries
+            .iter()
+            .filter_map(|e| match e {
+                ActionLogEntry::Image(img) => Some(img),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(images.len(), 1);
+        assert_eq!(images[0].label, "1. Capture (search area)");
+        assert_eq!(images[0].pixels[0], 200);
     }
 }
