@@ -554,6 +554,15 @@ fn probe_windows(caps: &mut BTreeMap<String, CapabilityResult>) {
             Err(e) => CapabilityResult::fail(e.to_string()),
         }),
     );
+
+    #[cfg(target_os = "linux")]
+    caps.insert(
+        "windows.wayland_impl".into(),
+        match sqyre_capture::linux::wayland::toplevel_focus_available() {
+            Ok(()) => CapabilityResult::ok(),
+            Err(e) => CapabilityResult::pending(e.to_string()),
+        },
+    );
 }
 
 fn probe_input(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityResult>) {
