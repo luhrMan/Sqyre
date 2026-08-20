@@ -41,6 +41,8 @@ struct Inner {
     /// When true, the fullscreen [`SelectionGrab`] owns mouse/Esc — hotkey hooks
     /// must not also deliver those events (would double-count clicks).
     grab_owns_input: bool,
+    /// When false, hooks still deliver left-clicks even if [`Self::grab_owns_input`].
+    block_hook_clicks: bool,
 }
 
 fn normalize_rect(ax: i32, ay: i32, bx: i32, by: i32) -> (i32, i32, i32, i32) {
@@ -99,11 +101,22 @@ impl ScreenClickBridge {
 
     /// When the fullscreen selection grab is active, hooks skip mouse/Esc delivery.
     pub fn set_grab_owns_input(&self, owns: bool) {
-        self.inner.lock().grab_owns_input = owns;
+        let mut g = self.inner.lock();
+        g.grab_owns_input = owns;
+        g.block_hook_clicks = owns;
+    }
+
+    /// Keep hook clicks while blocking absolute hook moves (Wayland XQueryPointer).
+    pub fn allow_hook_clicks(&self) {
+        self.inner.lock().block_hook_clicks = false;
     }
 
     pub fn grab_owns_input(&self) -> bool {
         self.inner.lock().grab_owns_input
+    }
+
+    pub fn block_hook_clicks(&self) -> bool {
+        self.inner.lock().block_hook_clicks
     }
 
     pub fn is_armed(&self) -> bool {
@@ -183,6 +196,16 @@ impl ScreenClickBridge {
     /// Hotkey thread: track pointer.
     pub fn on_mouse_move(&self, x: i32, y: i32) {
         self.inner.lock().last_pos = (x, y);
+    }
+
+    /// Apply a relative move (evdev REL) without replacing the absolute origin.
+    pub fn on_mouse_delta(&self, dx: i32, dy: i32) {
+        if dx == 0 && dy == 0 {
+            return;
+        }
+        let mut g = self.inner.lock();
+        g.last_pos.0 = g.last_pos.0.saturating_add(dx);
+        g.last_pos.1 = g.last_pos.1.saturating_add(dy);
     }
 
     /// Hotkey thread: left button press while armed.
@@ -336,5 +359,19 @@ mod tests {
         assert!(b.grab_owns_input());
         b.set_grab_owns_input(false);
         assert!(!b.grab_owns_input());
+    }
+
+    #[test]
+    fn mouse_delta_keeps_absolute_origin() {
+        let b = ScreenClickBridge::new();
+        b.arm_search_area();
+        b.on_mouse_move(100, 200);
+        b.on_mouse_delta(50, -10);
+        assert_eq!(b.last_pos(), (150, 190));
+        b.set_grab_owns_input(true);
+        assert!(b.block_hook_clicks());
+        b.allow_hook_clicks();
+        assert!(!b.block_hook_clicks());
+        assert!(b.grab_owns_input());
     }
 }

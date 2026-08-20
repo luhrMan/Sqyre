@@ -41,10 +41,22 @@ impl SqyreApp {
                 && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed());
             if should_hide && !self.hidden_for_recording {
                 self.hidden_for_recording = true;
+                #[cfg(feature = "native-runtime")]
+                sqyre_capture::mark_site("recording:hide_main");
+                // GNOME Wayland often ignores Visible(false); the wgpu surface then
+                // clears transparent → opaque black. Minimize instead.
+                #[cfg(all(feature = "native-runtime", target_os = "linux"))]
+                if sqyre_capture::LinuxSessionInfo::detect().has_wayland {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                } else {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                }
+                #[cfg(not(all(feature = "native-runtime", target_os = "linux")))]
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             } else if !should_hide && self.hidden_for_recording {
                 self.hidden_for_recording = false;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
         }

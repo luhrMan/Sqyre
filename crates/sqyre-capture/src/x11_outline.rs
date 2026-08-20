@@ -8,11 +8,11 @@
 use std::os::raw::{c_int, c_uint, c_ulong};
 use std::ptr;
 use x11::xlib::{
-    Above, CWBackPixel, CWBorderPixel, CWHeight, CWOverrideRedirect, CWStackMode, CWWidth, Display,
+    Button1Mask, CWBackPixel, CWBorderPixel, CWHeight, CWOverrideRedirect, CWWidth, Display,
     InputOutput, True, Window, XAllocColor, XCloseDisplay, XColor, XConfigureWindow, XCreateWindow,
     XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen, XDefaultVisual,
-    XDestroyWindow, XFlush, XMapRaised, XOpenDisplay, XSetWindowAttributes, XUnmapWindow,
-    XWindowChanges, _XDisplay, CWX, CWY,
+    XDestroyWindow, XFlush, XMapRaised, XOpenDisplay, XQueryPointer, XSetWindowAttributes,
+    XUnmapWindow, XWindowChanges, _XDisplay, CWX, CWY,
 };
 
 use crate::outline_geometry::{edge_placements, outline_should_clear};
@@ -30,6 +30,7 @@ pub struct SelectionOutline {
     edges: [Window; 4],
     mapped: bool,
     last: Option<OutlineRect>,
+    last_edges: Option<[(i32, i32, i32, i32); 4]>,
 }
 
 // SAFETY: the raw display pointer is owned exclusively by this struct — only
@@ -81,6 +82,7 @@ impl SelectionOutline {
                 edges,
                 mapped: false,
                 last: None,
+                last_edges: None,
             })
         }
     }
@@ -95,17 +97,84 @@ impl SelectionOutline {
         if self.last == Some(rect) && self.mapped {
             return;
         }
+        let placements = edge_placements(rect);
         // SAFETY: `self.display` is a live connection (non-null since `open`
         // succeeded) and `self.edges` were created on it.
         unsafe {
-            place_edges(self.display, &self.edges, rect);
-            for &w in &self.edges {
-                XMapRaised(self.display, w);
+            let prev = if self.mapped { self.last_edges } else { None };
+            for (i, (&win, &place)) in self.edges.iter().zip(placements.iter()).enumerate() {
+                if prev.is_some_and(|p| p[i] == place) {
+                    continue;
+                }
+                configure(self.display, win, place.0, place.1, place.2, place.3);
+            }
+            if !self.mapped {
+                for &w in &self.edges {
+                    XMapRaised(self.display, w);
+                }
             }
             XFlush(self.display);
         }
         self.mapped = true;
         self.last = Some(rect);
+        self.last_edges = Some(placements);
+    }
+
+    /// Root-window pointer in the same coordinate space as [`Self::set_rect`].
+    pub fn query_pointer(&self) -> Option<(i32, i32, bool)> {
+        if self.display.is_null() {
+            return None;
+        }
+        // SAFETY: `self.display` is live since `open`; out-params are stack locals.
+        unsafe {
+            let root = XDefaultRootWindow(self.display);
+            let mut root_ret: Window = 0;
+            let mut child: Window = 0;
+            let mut root_x = 0;
+            let mut root_y = 0;
+            let mut win_x = 0;
+            let mut win_y = 0;
+            let mut mask = 0u32;
+            if XQueryPointer(
+                self.display,
+                root,
+                &mut root_ret,
+                &mut child,
+                &mut root_x,
+                &mut root_y,
+                &mut win_x,
+                &mut win_y,
+                &mut mask,
+            ) == 0
+            {
+                return None;
+            }
+            Some((root_x, root_y, mask & Button1Mask != 0))
+        }
+    }
+
+    /// X11 root size for this outline connection (for diag).
+    pub fn root_size(&self) -> Option<(i32, i32)> {
+        if self.display.is_null() {
+            return None;
+        }
+        // SAFETY: live display from `open`.
+        unsafe {
+            let screen = XDefaultScreen(self.display);
+            Some((
+                x11::xlib::XDisplayWidth(self.display, screen),
+                x11::xlib::XDisplayHeight(self.display, screen),
+            ))
+        }
+    }
+
+    /// Xinerama outputs on this connection (may span multiple monitors).
+    pub fn virtual_rects(&self) -> Vec<sqyre_ports::DesktopRect> {
+        let fallback = self
+            .root_size()
+            .map(|(w, h)| sqyre_ports::DesktopRect { x: 0, y: 0, w, h })
+            .unwrap_or_default();
+        crate::x11_capture::xinerama_monitor_rects_on(self.display, fallback)
     }
 
     pub fn clear(&mut self) {
@@ -122,6 +191,7 @@ impl SelectionOutline {
         }
         self.mapped = false;
         self.last = None;
+        self.last_edges = None;
     }
 }
 
@@ -196,14 +266,6 @@ unsafe fn create_edge(
     Ok(win)
 }
 
-// SAFETY: callers must pass a live, non-null Xlib `display` connection and
-// `edges` created on it.
-unsafe fn place_edges(display: *mut Display, edges: &[Window; 4], r: OutlineRect) {
-    for (&win, &(x, y, w, h)) in edges.iter().zip(edge_placements(r).iter()) {
-        configure(display, win, x, y, w, h);
-    }
-}
-
 // SAFETY: callers must pass a live, non-null Xlib `display` connection and a
 // `win` created on it; `changes` is a stack local that outlives
 // `XConfigureWindow`, and every field named by `mask` is initialized.
@@ -215,9 +277,11 @@ unsafe fn configure(display: *mut Display, win: Window, x: i32, y: i32, w: i32, 
         height: h.max(1),
         border_width: 0,
         sibling: 0,
-        stack_mode: Above,
+        stack_mode: 0,
     };
-    let mask = (CWX | CWY | CWWidth | CWHeight | CWStackMode) as c_uint;
+    // Do not raise on every mouse-move: MapRaised + CWStackMode floods XWayland
+    // and the outline stops tracking once the request queue backs up.
+    let mask = (CWX | CWY | CWWidth | CWHeight) as c_uint;
     XConfigureWindow(display, win, mask, &mut changes);
 }
 
