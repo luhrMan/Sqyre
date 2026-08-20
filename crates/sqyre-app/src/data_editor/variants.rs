@@ -108,7 +108,7 @@ impl DataEditor {
         icons: &mut IconCache,
         settings: &UserSettings,
     ) {
-        let Some(path) = crate::file_dialogs::pick_png() else {
+        let Some(path) = crate::file_dialogs::pick_png(&auto_pic_path()) else {
             return;
         };
         let (Some(prog), Some(item)) =
