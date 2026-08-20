@@ -3,6 +3,7 @@
 mod app_resolve;
 mod atspi_windows;
 mod foreign_toplevel;
+mod wayland_clients;
 mod windows;
 
 #[cfg(feature = "portal-capture")]

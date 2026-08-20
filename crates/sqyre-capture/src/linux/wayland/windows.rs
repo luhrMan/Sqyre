@@ -1,6 +1,6 @@
 //! Linux window list / focus: Wayland (foreign-toplevel + AT-SPI) merged with X11.
 
-use super::{atspi_windows, foreign_toplevel};
+use super::{atspi_windows, foreign_toplevel, wayland_clients};
 use crate::window_match::{paths_equal, titles_equal};
 use crate::x11_focus;
 use crate::{CaptureError, WindowInfo};
@@ -19,21 +19,26 @@ impl WindowFocuser for OsWindowFocuser {
 pub(crate) fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     let wayland = wayland_list();
     let atspi = atspi_list();
+    let clients = wayland_clients_list();
     let x11 = x11_focus::list_open_windows();
     let merged = merge_window_lists([
         wayland.as_deref().unwrap_or(&[]),
         atspi.as_deref().unwrap_or(&[]),
+        clients.as_deref().unwrap_or(&[]),
         x11.as_deref().unwrap_or(&[]),
     ]);
     crate::cap_log(
         "FOCUS",
-        "ok",
+        if merged.is_empty() { "fail" } else { "ok" },
         &format!(
-            "list wayland={} atspi={} x11={} merged={}",
+            "list wayland={} atspi={} clients={} x11={} merged={} wayland_err={} atspi_err={}",
             wayland.as_ref().map(Vec::len).unwrap_or(0),
             atspi.as_ref().map(Vec::len).unwrap_or(0),
+            clients.as_ref().map(Vec::len).unwrap_or(0),
             x11.as_ref().map(Vec::len).unwrap_or(0),
-            merged.len()
+            merged.len(),
+            wayland.as_ref().err().map(String::as_str).unwrap_or("-"),
+            atspi.as_ref().err().map(String::as_str).unwrap_or("-"),
         ),
     );
     if merged.is_empty() {
@@ -80,16 +85,26 @@ pub(crate) fn activate_window(
     if let Ok(true) = atspi_windows::activate(path, title) {
         return Ok(());
     }
+    if let Ok(true) = wayland_clients::activate(path, title) {
+        return Ok(());
+    }
     x11_focus::activate_window(path, title)
 }
 
 pub(crate) fn toplevel_focus_available() -> Result<(), CaptureError> {
     let wayland = foreign_toplevel::list_windows();
     let atspi = atspi_windows::list_windows();
-    match (wayland, atspi) {
-        (Ok(_), _) | (_, Ok(_)) => Ok(()),
+    match (&wayland, &atspi) {
+        (Ok(w), _) if !w.is_empty() => Ok(()),
+        (_, Ok(a)) if !a.is_empty() => Ok(()),
+        _ if wayland_clients_list().ok().is_some_and(|c| !c.is_empty()) => Ok(()),
         (Err(w), Err(a)) => Err(CaptureError::Message(format!(
             "Wayland window list unavailable ({w}); AT-SPI unavailable ({a})"
+        ))),
+        _ => Err(CaptureError::Message(format!(
+            "Wayland compositor has no foreign-toplevel ({}); AT-SPI listed no windows ({})",
+            wayland.err().unwrap_or_else(|| "empty".into()),
+            atspi.err().unwrap_or_else(|| "empty".into()),
         ))),
     }
 }
@@ -106,6 +121,13 @@ fn atspi_list() -> Result<Vec<WindowInfo>, String> {
         return Ok(Vec::new());
     }
     atspi_windows::list_windows()
+}
+
+fn wayland_clients_list() -> Result<Vec<WindowInfo>, String> {
+    if !crate::linux::LinuxSessionInfo::detect().has_wayland {
+        return Ok(Vec::new());
+    }
+    wayland_clients::list_windows()
 }
 
 fn merge_window_lists(
