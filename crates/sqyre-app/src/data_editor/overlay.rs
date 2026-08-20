@@ -12,12 +12,11 @@ use sqyre_persist::{
 pub(crate) fn primary_overlay_screen_rect(catalog: &ProgramCatalog) -> (f32, f32, f32, f32) {
     #[cfg(feature = "native-runtime")]
     {
-        if let Ok(capturer) = sqyre_capture::shared_capturer_nonblocking() {
-            if let Ok(rects) = capturer.monitor_rects_ref() {
-                if let Some(r) = rects.into_iter().find(|r| r.w > 1 && r.h > 1) {
-                    return (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
-                }
-            }
+        if let Some(r) = sqyre_capture::preferred_monitor_rects()
+            .into_iter()
+            .find(|r| r.w > 1 && r.h > 1)
+        {
+            return (r.x as f32, r.y as f32, r.w as f32, r.h as f32);
         }
     }
     let key = catalog.resolution_key();

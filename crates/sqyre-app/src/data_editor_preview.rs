@@ -489,31 +489,30 @@ pub(crate) fn paint_grid_overlay_painter(
 /// Prefers real positions from the capturer; falls back to L→R layout from sizes.
 fn atlas_monitor_rects(catalog: &sqyre_persist::ProgramCatalog) -> Vec<(i32, i32, i32, i32)> {
     #[cfg(feature = "native-runtime")]
-    if let Ok(capturer) = sqyre_capture::shared_capturer_nonblocking() {
-        if let Ok(rects) = capturer.monitor_rects_ref() {
-            let out: Vec<_> = rects
-                .into_iter()
-                .filter(|r| r.w > 0 && r.h > 0)
-                .map(|r| (r.x, r.y, r.w, r.h))
-                .collect();
-            if !out.is_empty() {
-                return out;
-            }
+    {
+        let preferred: Vec<_> = sqyre_capture::preferred_monitor_rects()
+            .into_iter()
+            .map(|r| (r.x, r.y, r.w, r.h))
+            .collect();
+        if !preferred.is_empty() {
+            return preferred;
         }
-        // Sizes only: place primary at virtual origin, others to the right.
-        if let Ok(sizes) = capturer.monitor_sizes_ref() {
-            let (ox, oy) = capturer
-                .virtual_bounds_ref()
-                .map(|vb| (vb.x, vb.y))
-                .unwrap_or((0, 0));
-            let laid = layout_monitors_ltr(ox, oy, &sizes);
-            if !laid.is_empty() {
-                return laid;
+        if let Ok(capturer) = sqyre_capture::shared_capturer_nonblocking() {
+            // Sizes only: place primary at virtual origin, others to the right.
+            if let Ok(sizes) = capturer.monitor_sizes_ref() {
+                let (ox, oy) = capturer
+                    .virtual_bounds_ref()
+                    .map(|vb| (vb.x, vb.y))
+                    .unwrap_or((0, 0));
+                let laid = layout_monitors_ltr(ox, oy, &sizes);
+                if !laid.is_empty() {
+                    return laid;
+                }
             }
-        }
-        if let Ok(vb) = capturer.virtual_bounds_ref() {
-            if vb.w > 0 && vb.h > 0 {
-                return vec![(vb.x, vb.y, vb.w, vb.h)];
+            if let Ok(vb) = capturer.virtual_bounds_ref() {
+                if vb.w > 0 && vb.h > 0 {
+                    return vec![(vb.x, vb.y, vb.w, vb.h)];
+                }
             }
         }
     }

@@ -18,8 +18,8 @@ pub type MonitorRect = (i32, i32, i32, i32);
 /// and per-monitor corner / center / corner-mid Points.
 /// Always ensures [`IMAGE_SEARCH_REFERENCE`] (`${foundX}` / `${foundY}`) is present.
 ///
-/// Re-runs against the live monitor list so a second display is added after capture
-/// becomes ready, and generated coordinates stay aligned with the desktop layout.
+/// Re-runs against the live (shared) monitor list so displays are added or
+/// removed after capture changes, and generated coordinates stay aligned.
 ///
 /// `monitors` are absolute virtual-desktop rects (`x`, `y`, `w`, `h`), typically from
 /// the live capturer. Returns `true` when the catalog was modified.
@@ -39,6 +39,9 @@ pub fn ensure_general_program(
         changed = true;
     }
     if seed_points(catalog, &monitors)? {
+        changed = true;
+    }
+    if prune_generated_beyond(catalog, monitors.len())? {
         changed = true;
     }
     if ensure_image_search_reference(catalog)? {
@@ -72,16 +75,97 @@ fn program_has_point(catalog: &ProgramCatalog, name: &str) -> bool {
 }
 
 fn usable_monitors(monitors: &[MonitorRect]) -> Vec<MonitorRect> {
-    let usable: Vec<_> = monitors
+    let mut usable: Vec<_> = monitors
         .iter()
         .copied()
         .filter(|&(_, _, w, h)| w > 1 && h > 1)
         .collect();
+    usable.sort_by_key(|&(x, y, w, h)| (x, y, w, h));
+    usable.dedup();
     if usable.is_empty() {
         vec![(0, 0, 1920, 1080)]
     } else {
         usable
     }
+}
+
+const GENERATED_AREA_SUFFIXES: [&str; 4] =
+    [" Left Half", " Right Half", " Top Half", " Bottom Half"];
+const GENERATED_POINT_SUFFIXES: [&str; 9] = [
+    " Top Left",
+    " Top Right",
+    " Bottom Left",
+    " Bottom Right",
+    " Center",
+    " Top Left Mid",
+    " Top Right Mid",
+    " Bottom Left Mid",
+    " Bottom Right Mid",
+];
+
+fn generated_monitor_index(name: &str, suffixes: &[&str]) -> Option<usize> {
+    let rest = name.strip_prefix("Monitor ")?;
+    let digit_end = rest.find(|c: char| !c.is_ascii_digit())?;
+    let (n, suffix) = rest.split_at(digit_end);
+    if !suffixes.contains(&suffix) {
+        return None;
+    }
+    n.parse().ok().filter(|&i| i >= 1)
+}
+
+fn prune_generated_beyond(
+    catalog: &mut ProgramCatalog,
+    monitor_count: usize,
+) -> Result<bool, String> {
+    let stale_in = |p: &super::ProgramData| {
+        p.search_areas.values().any(|bucket| {
+            bucket.keys().any(|name| {
+                generated_monitor_index(name, &GENERATED_AREA_SUFFIXES)
+                    .is_some_and(|n| n > monitor_count)
+            })
+        }) || p.points.values().any(|bucket| {
+            bucket.keys().any(|name| {
+                generated_monitor_index(name, &GENERATED_POINT_SUFFIXES)
+                    .is_some_and(|n| n > monitor_count)
+            })
+        })
+    };
+    if !catalog.get(GENERAL_PROGRAM).is_some_and(stale_in) {
+        return Ok(false);
+    }
+    let p = catalog
+        .program_mut(GENERAL_PROGRAM)
+        .map_err(|e| e.to_string())?;
+    let mut changed = false;
+    for bucket in p.search_areas.values_mut() {
+        let stale: Vec<String> = bucket
+            .keys()
+            .filter(|name| {
+                generated_monitor_index(name, &GENERATED_AREA_SUFFIXES)
+                    .is_some_and(|n| n > monitor_count)
+            })
+            .cloned()
+            .collect();
+        for key in stale {
+            bucket.remove(&key);
+            changed = true;
+        }
+    }
+    for bucket in p.points.values_mut() {
+        let stale: Vec<String> = bucket
+            .keys()
+            .filter(|name| {
+                generated_monitor_index(name, &GENERATED_POINT_SUFFIXES)
+                    .is_some_and(|n| n > monitor_count)
+            })
+            .cloned()
+            .collect();
+        for key in stale {
+            bucket.remove(&key);
+            changed = true;
+        }
+    }
+    Ok(changed)
 }
 
 fn seed_search_areas(
@@ -396,5 +480,23 @@ mod tests {
         assert!(ensure_general_program(&mut cat, &[(0, 0, 1, 1)]).unwrap());
         let areas = &cat.get(GENERAL_PROGRAM).unwrap().search_areas["1920x1080"];
         assert_eq!(areas["Whole Screen"].right_x, ScalarValue::Int(1920));
+    }
+
+    #[test]
+    fn drops_generated_geometry_when_share_shrinks() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        let two = [(0, 0, 1920, 1080), (1920, 0, 2560, 1440)];
+        assert!(ensure_general_program(&mut cat, &two).unwrap());
+        let points = &cat.get(GENERAL_PROGRAM).unwrap().points["1920x1080"];
+        assert!(points.contains_key("Monitor 2 Center"));
+        assert!(ensure_general_program(&mut cat, &[(0, 0, 1920, 1080)]).unwrap());
+        let p = cat.get(GENERAL_PROGRAM).unwrap();
+        let points = &p.points["1920x1080"];
+        let areas = &p.search_areas["1920x1080"];
+        assert!(points.contains_key("Monitor 1 Center"));
+        assert!(!points.contains_key("Monitor 2 Center"));
+        assert!(!areas.contains_key("Monitor 2 Left Half"));
+        assert!(areas.contains_key("Monitor 1 Left Half"));
     }
 }
