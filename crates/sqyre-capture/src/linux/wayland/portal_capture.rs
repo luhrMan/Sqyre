@@ -10,7 +10,10 @@ use pipewire as pw;
 use pw::context::ContextRc;
 use pw::main_loop::MainLoopRc;
 use pw::properties::properties;
-use pw::spa::buffer::{ChunkFlags, DataType};
+use pw::spa::buffer::{
+    meta::{MetaCursor, MetaHeader, Metadata},
+    ChunkFlags, DataType,
+};
 use pw::spa::param::video::{VideoFormat, VideoInfoRaw};
 use pw::spa::pod::Pod;
 use pw::stream::StreamRc;
@@ -28,6 +31,9 @@ use std::time::{Duration, Instant};
 static INPUT_TX: Mutex<Option<Sender<EisCmd>>> = Mutex::new(None);
 static PENDING_EIS_FD: Mutex<Option<OwnedFd>> = Mutex::new(None);
 static LAST_ABS: Mutex<Option<(i32, i32)>> = Mutex::new(None);
+static PORTAL_CURSOR: Mutex<Option<(i32, i32)>> = Mutex::new(None);
+static LOGGED_PORTAL_CURSOR: AtomicBool = AtomicBool::new(false);
+static LOGGED_CURSOR_META: AtomicBool = AtomicBool::new(false);
 static EIS_READY: AtomicBool = AtomicBool::new(false);
 static EIS_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 static REMOTE_DESKTOP_GRANTED: AtomicBool = AtomicBool::new(false);
@@ -397,6 +403,7 @@ fn portal_pw_thread(
     let ready_cb = Arc::clone(&ready);
 
     let values: Vec<u8> = propagate_ready(&ready, pw_video_enum_format_bytes())?;
+    let cursor_meta: Vec<u8> = propagate_ready(&ready, pw_cursor_meta_bytes())?;
     let mut stream_holds = Vec::with_capacity(setup.streams.len());
     let mut listeners = Vec::with_capacity(setup.streams.len());
     for (index, stream_setup) in setup.streams.iter().enumerate() {
@@ -447,7 +454,7 @@ fn portal_pw_thread(
                         &format!("stream {index} {old:?} -> {new:?}"),
                     );
                 })
-                .param_changed(|_, user_data, id, param| {
+                .param_changed(move |stream, user_data, id, param| {
                     let Some(param) = param else { return };
                     if id != pw::spa::param::ParamType::Format.as_raw() {
                         return;
@@ -465,28 +472,75 @@ fn portal_pw_thread(
                     let _ = user_data.format.parse(param);
                     let fps = user_data.format.framerate();
                     let max_fps = user_data.format.max_framerate();
+                    let size = user_data.format.size();
                     cap_log(
                         "PORTAL",
                         "pw",
                         &format!(
                             "format={:?} {}x{} fps={}/{} max={}/{}",
                             user_data.format.format(),
-                            user_data.format.size().width,
-                            user_data.format.size().height,
+                            size.width,
+                            size.height,
                             fps.num,
                             fps.denom,
                             max_fps.num,
                             max_fps.denom
                         ),
                     );
+                    let width = size.width.max(1) as i32;
+                    let height = size.height.max(1) as i32;
+                    let stride = width.saturating_mul(4);
+                    let bytes = stride.saturating_mul(height);
+                    match apply_stream_buffer_params(stream, bytes, stride) {
+                        Ok(()) => cap_log(
+                            "PORTAL",
+                            "cursor",
+                            &format!("stream {index} params=buffers+header+cursor"),
+                        ),
+                        Err(e) => cap_log(
+                            "PORTAL",
+                            "cursor",
+                            &format!("stream {index} update_params: {e}"),
+                        ),
+                    }
                 })
                 .process(move |stream, user_data| {
                     if shutdown_stream.load(Ordering::SeqCst) {
                         return;
                     }
+                    let dest = user_data.monitor_rect;
+                    let stream_size = user_data.format.size();
                     let Some(mut buffer) = stream.dequeue_buffer() else {
                         return;
                     };
+                    let cursor_info = buffer.find_meta::<MetaCursor>().map(|c| {
+                        let p = c.position();
+                        (c.is_valid(), p.x, p.y)
+                    });
+                    if LOGGED_CURSOR_META
+                        .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+                        .is_ok()
+                    {
+                        match cursor_info {
+                            Some((valid, x, y)) => cap_log(
+                                "PORTAL",
+                                "cursor",
+                                &format!(
+                                    "meta=yes valid={valid} pos={x},{y} stream={}x{} dest={}x{}+{}+{}",
+                                    stream_size.width,
+                                    stream_size.height,
+                                    dest.w,
+                                    dest.h,
+                                    dest.x,
+                                    dest.y
+                                ),
+                            ),
+                            None => cap_log("PORTAL", "cursor", "meta=no"),
+                        }
+                    }
+                    if let Some((true, lx, ly)) = cursor_info {
+                        note_portal_cursor(dest, lx, ly, stream_size.width, stream_size.height);
+                    }
                     let datas = buffer.datas_mut();
                     if datas.is_empty() {
                         return;
@@ -582,12 +636,17 @@ fn portal_pw_thread(
                 .map_err(|e| CaptureError::Message(format!("PipeWire listener: {e}"))),
         )?;
 
-        let pod = propagate_ready(
+        let format_pod = propagate_ready(
             &ready,
             Pod::from_bytes(&values)
                 .ok_or_else(|| CaptureError::Message("PipeWire pod bytes invalid".into())),
         )?;
-        let mut params = [pod];
+        let meta_pod = propagate_ready(
+            &ready,
+            Pod::from_bytes(&cursor_meta)
+                .ok_or_else(|| CaptureError::Message("PipeWire cursor meta pod invalid".into())),
+        )?;
+        let mut params = [format_pod, meta_pod];
         let target = if serial.is_some() {
             None
         } else {
@@ -747,6 +806,152 @@ fn pw_video_enum_format_bytes() -> Result<Vec<u8>, CaptureError> {
     .map_err(|e| CaptureError::Message(format!("PipeWire format pod: {e}")))
 }
 
+/// `SPA_PARAM_Meta` keys (`enum spa_param_meta` in spa/param/buffers.h).
+struct ParamMetaKey(u32);
+impl ParamMetaKey {
+    const TYPE: Self = Self(1);
+    const SIZE: Self = Self(2);
+    const fn as_raw(&self) -> u32 {
+        self.0
+    }
+}
+
+/// `SPA_PARAM_BUFFERS_*` keys (`enum spa_param_buffers`).
+struct ParamBuffersKey(u32);
+impl ParamBuffersKey {
+    const BUFFERS: Self = Self(1);
+    const BLOCKS: Self = Self(2);
+    const SIZE: Self = Self(3);
+    const STRIDE: Self = Self(4);
+    const DATA_TYPE: Self = Self(6);
+    const fn as_raw(&self) -> u32 {
+        self.0
+    }
+}
+
+struct SpaId(u32);
+impl SpaId {
+    const fn as_raw(&self) -> u32 {
+        self.0
+    }
+}
+
+fn cursor_meta_size(w: u32, h: u32) -> i32 {
+    let base = std::mem::size_of::<pw::spa::sys::spa_meta_cursor>()
+        + std::mem::size_of::<pw::spa::sys::spa_meta_bitmap>();
+    (base + (w as usize) * (h as usize) * 4) as i32
+}
+
+fn serialize_spa_object(obj: pw::spa::pod::Object) -> Result<Vec<u8>, CaptureError> {
+    pw::spa::pod::serialize::PodSerializer::serialize(
+        std::io::Cursor::new(Vec::new()),
+        &pw::spa::pod::Value::Object(obj),
+    )
+    .map(|v| v.0.into_inner())
+    .map_err(|e| CaptureError::Message(format!("PipeWire pod: {e}")))
+}
+
+fn int_choice_range(key: u32, default: i32, min: i32, max: i32) -> pw::spa::pod::Property {
+    pw::spa::pod::Property::new(
+        key,
+        pw::spa::pod::Value::Choice(pw::spa::pod::ChoiceValue::Int(pw::spa::utils::Choice(
+            pw::spa::utils::ChoiceFlags::empty(),
+            pw::spa::utils::ChoiceEnum::Range { default, min, max },
+        ))),
+    )
+}
+
+fn int_choice_flags(key: u32, default: i32, flags: Vec<i32>) -> pw::spa::pod::Property {
+    pw::spa::pod::Property::new(
+        key,
+        pw::spa::pod::Value::Choice(pw::spa::pod::ChoiceValue::Int(pw::spa::utils::Choice(
+            pw::spa::utils::ChoiceFlags::empty(),
+            pw::spa::utils::ChoiceEnum::Flags { default, flags },
+        ))),
+    )
+}
+
+fn pw_cursor_meta_bytes() -> Result<Vec<u8>, CaptureError> {
+    let obj = pw::spa::pod::Object {
+        type_: pw::spa::utils::SpaTypes::ObjectParamMeta.as_raw(),
+        id: pw::spa::param::ParamType::Meta.as_raw(),
+        properties: vec![
+            pw::spa::pod::property!(ParamMetaKey::TYPE, Id, SpaId(MetaCursor::META_TYPE)),
+            int_choice_range(
+                ParamMetaKey::SIZE.as_raw(),
+                cursor_meta_size(64, 64),
+                cursor_meta_size(1, 1),
+                cursor_meta_size(384, 384),
+            ),
+        ],
+    };
+    serialize_spa_object(obj)
+}
+
+fn pw_header_meta_bytes() -> Result<Vec<u8>, CaptureError> {
+    let obj = pw::spa::pod::object!(
+        pw::spa::utils::SpaTypes::ObjectParamMeta,
+        pw::spa::param::ParamType::Meta,
+        pw::spa::pod::property!(ParamMetaKey::TYPE, Id, SpaId(MetaHeader::META_TYPE)),
+        pw::spa::pod::property!(
+            ParamMetaKey::SIZE,
+            Int,
+            std::mem::size_of::<pw::spa::sys::spa_meta_header>() as i32
+        ),
+    );
+    serialize_spa_object(obj)
+}
+
+fn pw_buffers_param_bytes(size: i32, stride: i32) -> Result<Vec<u8>, CaptureError> {
+    let data_mask = (1 << DataType::MemPtr.as_raw())
+        | (1 << DataType::MemFd.as_raw())
+        | (1 << DataType::DmaBuf.as_raw());
+    let obj = pw::spa::pod::Object {
+        type_: pw::spa::utils::SpaTypes::ObjectParamBuffers.as_raw(),
+        id: pw::spa::param::ParamType::Buffers.as_raw(),
+        properties: vec![
+            int_choice_range(ParamBuffersKey::BUFFERS.as_raw(), 8, 1, 32),
+            pw::spa::pod::property!(ParamBuffersKey::BLOCKS, Int, 1),
+            pw::spa::pod::Property::new(
+                ParamBuffersKey::SIZE.as_raw(),
+                pw::spa::pod::Value::Int(size),
+            ),
+            pw::spa::pod::Property::new(
+                ParamBuffersKey::STRIDE.as_raw(),
+                pw::spa::pod::Value::Int(stride),
+            ),
+            int_choice_flags(
+                ParamBuffersKey::DATA_TYPE.as_raw(),
+                data_mask,
+                vec![data_mask],
+            ),
+        ],
+    };
+    serialize_spa_object(obj)
+}
+
+/// Mutter only attaches `SPA_META_Cursor` after the client finishes negotiation
+/// with `pw_stream_update_params` (connect-time Meta is not enough).
+fn apply_stream_buffer_params(
+    stream: &pw::stream::Stream,
+    size: i32,
+    stride: i32,
+) -> Result<(), CaptureError> {
+    let buffers = pw_buffers_param_bytes(size, stride)?;
+    let header = pw_header_meta_bytes()?;
+    let cursor = pw_cursor_meta_bytes()?;
+    let buffers_pod = Pod::from_bytes(&buffers)
+        .ok_or_else(|| CaptureError::Message("PipeWire buffers pod invalid".into()))?;
+    let header_pod = Pod::from_bytes(&header)
+        .ok_or_else(|| CaptureError::Message("PipeWire header meta pod invalid".into()))?;
+    let cursor_pod = Pod::from_bytes(&cursor)
+        .ok_or_else(|| CaptureError::Message("PipeWire cursor meta pod invalid".into()))?;
+    let mut params = [buffers_pod, header_pod, cursor_pod];
+    stream
+        .update_params(&mut params)
+        .map_err(|e| CaptureError::Message(format!("PipeWire update_params: {e}")))
+}
+
 /// PipeWire loads SPA plugins from the host; bundled `libpipewire` in AppImage/bundle breaks this.
 fn ensure_spa_plugin_dir() {
     if std::env::var_os("SPA_PLUGIN_DIR").is_some() {
@@ -827,6 +1032,56 @@ pub fn portal_remote_desktop_granted() -> bool {
 /// Whether EIS is ready to inject pointer/keyboard.
 pub fn portal_input_ready() -> bool {
     EIS_READY.load(Ordering::SeqCst)
+}
+
+/// Compositor cursor from ScreenCast `CursorMode::Metadata`, in desktop pixels.
+/// Works over native Wayland surfaces; XQueryPointer does not.
+pub fn portal_cursor_position() -> Option<(i32, i32)> {
+    *PORTAL_CURSOR.lock()
+}
+
+/// Map a stream-local cursor into the virtual desktop using the stream dest rect.
+pub(crate) fn stream_cursor_to_desktop(
+    dest: DesktopRect,
+    lx: i32,
+    ly: i32,
+    stream_w: u32,
+    stream_h: u32,
+) -> (i32, i32) {
+    let map = |local: i32, dest_origin: i32, dest_span: i32, stream_span: u32| {
+        if stream_span > 0 && dest_span > 0 {
+            dest_origin
+                .saturating_add(((local as i64) * (dest_span as i64) / (stream_span as i64)) as i32)
+        } else {
+            dest_origin.saturating_add(local)
+        }
+    };
+    (
+        map(lx, dest.x, dest.w, stream_w),
+        map(ly, dest.y, dest.h, stream_h),
+    )
+}
+
+fn note_portal_cursor(dest: DesktopRect, lx: i32, ly: i32, stream_w: u32, stream_h: u32) {
+    let pos = stream_cursor_to_desktop(dest, lx, ly, stream_w, stream_h);
+    let mut g = PORTAL_CURSOR.lock();
+    if *g == Some(pos) {
+        return;
+    }
+    if LOGGED_PORTAL_CURSOR
+        .compare_exchange(false, true, Ordering::Relaxed, Ordering::Relaxed)
+        .is_ok()
+    {
+        cap_log(
+            "PORTAL",
+            "cursor",
+            &format!(
+                "desktop={},{} stream={},{} dest={}x{}+{}+{}",
+                pos.0, pos.1, lx, ly, dest.w, dest.h, dest.x, dest.y
+            ),
+        );
+    }
+    *g = Some(pos);
 }
 
 pub fn portal_input_move(x: i32, y: i32) -> Result<(), AutomationError> {
@@ -913,6 +1168,9 @@ fn stop_eis_thread() {
     REMOTE_DESKTOP_GRANTED.store(false, Ordering::SeqCst);
     *INPUT_TX.lock() = None;
     *LAST_ABS.lock() = None;
+    *PORTAL_CURSOR.lock() = None;
+    LOGGED_PORTAL_CURSOR.store(false, Ordering::Relaxed);
+    LOGGED_CURSOR_META.store(false, Ordering::Relaxed);
 }
 
 fn spawn_eis_thread(fd: OwnedFd) {
@@ -1106,12 +1364,19 @@ async fn cursor_mode(
     proxy: &ashpd::desktop::screencast::Screencast<'_>,
 ) -> ashpd::desktop::screencast::CursorMode {
     use ashpd::desktop::screencast::CursorMode;
-    match proxy.available_cursor_modes().await {
+    let available = proxy.available_cursor_modes().await;
+    let mode = match &available {
+        Ok(modes) if modes.contains(CursorMode::Metadata) => CursorMode::Metadata,
         Ok(modes) if modes.contains(CursorMode::Hidden) => CursorMode::Hidden,
         Ok(modes) if modes.contains(CursorMode::Embedded) => CursorMode::Embedded,
-        Ok(modes) if modes.contains(CursorMode::Metadata) => CursorMode::Metadata,
         _ => CursorMode::Hidden,
-    }
+    };
+    cap_log(
+        "PORTAL",
+        "cursor",
+        &format!("available={available:?} selected={mode:?}"),
+    );
+    mode
 }
 
 async fn source_types(
@@ -1215,7 +1480,7 @@ async fn open_combined_session_with_token(
         "PORTAL",
         "grant",
         &format!(
-            "streams={} input={has_input} persist={}",
+            "streams={} input={has_input} cursor={cursor:?} persist={}",
             streams_meta.len(),
             response.restore_token().is_some()
         ),
@@ -1384,7 +1649,7 @@ async fn open_screencast_only_with_token(
         "PORTAL",
         "grant",
         &format!(
-            "streams={} persist={}",
+            "streams={} cursor={cursor:?} persist={}",
             streams_meta.len(),
             response.restore_token().is_some()
         ),
@@ -1829,6 +2094,36 @@ mod tests {
 
     fn monitor_rect(x: i32, w: i32, h: i32) -> DesktopRect {
         DesktopRect { x, y: 0, w, h }
+    }
+
+    #[test]
+    fn stream_cursor_maps_into_dest_rect() {
+        let dest = DesktopRect {
+            x: 1920,
+            y: 0,
+            w: 2560,
+            h: 1440,
+        };
+        assert_eq!(
+            stream_cursor_to_desktop(dest, 100, 50, 2560, 1440),
+            (2020, 50)
+        );
+        assert_eq!(
+            stream_cursor_to_desktop(dest, 1280, 720, 1280, 720),
+            (4480, 1440)
+        );
+        assert_eq!(stream_cursor_to_desktop(dest, 10, 20, 0, 0), (1930, 20));
+    }
+
+    #[test]
+    fn pipewire_cursor_and_buffer_pods_serialize() {
+        let cursor = pw_cursor_meta_bytes().expect("cursor meta");
+        let header = pw_header_meta_bytes().expect("header meta");
+        let buffers = pw_buffers_param_bytes(8294400, 7680).expect("buffers");
+        assert!(Pod::from_bytes(&cursor).is_some());
+        assert!(Pod::from_bytes(&header).is_some());
+        assert!(Pod::from_bytes(&buffers).is_some());
+        assert!(cursor_meta_size(64, 64) > cursor_meta_size(1, 1));
     }
 
     #[test]
