@@ -202,8 +202,8 @@ fn xinerama_monitor_rects(st: &X11State) -> Vec<DesktopRect> {
 }
 
 /// Virtual-desktop monitor rects from Xinerama (same space as the X11 outline).
-/// Used by portal capture to place PipeWire streams on XWayland layouts.
-#[cfg(feature = "portal-capture")]
+/// Used by portal capture to place PipeWire streams on XWayland layouts,
+/// and by General seeding when ScreenCast is not ready yet.
 pub(crate) fn query_x11_monitor_rects() -> Vec<DesktopRect> {
     // SAFETY: connection is null-checked; closed before return; not registered as a
     // long-lived secondary display.
@@ -225,7 +225,141 @@ pub(crate) fn query_x11_monitor_rects() -> Vec<DesktopRect> {
     }
 }
 
-fn xinerama_monitor_rects_on(display: *mut _XDisplay, fallback: DesktopRect) -> Vec<DesktopRect> {
+#[cfg(feature = "portal-capture")]
+pub(crate) use compositor_kick::CompositorKick;
+
+/// 0-alpha overlay that forces GNOME to damage `rect` so ScreenCast copies the
+/// current stage (PipeWire framerate is 0/1, emit-on-damage).
+#[cfg(feature = "portal-capture")]
+mod compositor_kick {
+    use super::*;
+    use std::os::raw::c_int;
+    use x11::xlib::{
+        AllocNone, CWBackPixel, CWBorderPixel, CWColormap, CWOverrideRedirect, Display,
+        InputOutput, True, TrueColor, VisualClassMask, VisualDepthMask, VisualScreenMask,
+        XCreateColormap, XCreateWindow, XDestroyWindow, XFlush, XFreeColormap, XGetVisualInfo,
+        XMapWindow, XSetWindowAttributes, XSync, XUnmapWindow, XVisualInfo,
+    };
+
+    pub(crate) struct CompositorKick {
+        display: *mut _XDisplay,
+        window: u64,
+        colormap: u64,
+    }
+
+    impl CompositorKick {
+        pub(crate) fn map(rect: DesktopRect) -> Option<Self> {
+            if rect.w <= 1 || rect.h <= 1 {
+                return None;
+            }
+            // SAFETY: `XOpenDisplay` is null-checked; failures close the connection
+            // before return; `Drop` unmaps/destroys/closes exactly once.
+            unsafe { map_compositor_kick(rect) }
+        }
+    }
+
+    impl Drop for CompositorKick {
+        fn drop(&mut self) {
+            unsafe {
+                if self.display.is_null() {
+                    return;
+                }
+                if self.window != 0 {
+                    XUnmapWindow(self.display, self.window);
+                    XDestroyWindow(self.display, self.window);
+                }
+                if self.colormap != 0 {
+                    XFreeColormap(self.display, self.colormap);
+                }
+                XFlush(self.display);
+                XCloseDisplay(self.display);
+                self.display = ptr::null_mut();
+                self.window = 0;
+                self.colormap = 0;
+            }
+        }
+    }
+
+    unsafe fn map_compositor_kick(rect: DesktopRect) -> Option<CompositorKick> {
+        let display = XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return None;
+        }
+        let screen = x11::xlib::XDefaultScreen(display);
+        let root = XDefaultRootWindow(display);
+        let Some((visual, depth)) = find_argb_visual(display, screen) else {
+            XCloseDisplay(display);
+            return None;
+        };
+        let colormap = XCreateColormap(display, root, visual, AllocNone);
+        let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+        attrs.colormap = colormap;
+        attrs.background_pixel = 0;
+        attrs.border_pixel = 0;
+        attrs.override_redirect = True;
+        let mask = CWColormap | CWBackPixel | CWBorderPixel | CWOverrideRedirect;
+        let window = XCreateWindow(
+            display,
+            root,
+            rect.x,
+            rect.y,
+            rect.w.max(1) as u32,
+            rect.h.max(1) as u32,
+            0,
+            depth,
+            InputOutput as u32,
+            visual,
+            mask,
+            &mut attrs,
+        );
+        if window == 0 {
+            XFreeColormap(display, colormap);
+            XCloseDisplay(display);
+            return None;
+        }
+        XMapWindow(display, window);
+        XFlush(display);
+        XSync(display, 0);
+        Some(CompositorKick {
+            display,
+            window,
+            colormap,
+        })
+    }
+
+    unsafe fn find_argb_visual(
+        display: *mut Display,
+        screen: c_int,
+    ) -> Option<(*mut x11::xlib::Visual, c_int)> {
+        let mut tmpl = std::mem::zeroed::<XVisualInfo>();
+        tmpl.screen = screen;
+        tmpl.depth = 32;
+        tmpl.class = TrueColor;
+        let mut n = 0;
+        let infos = XGetVisualInfo(
+            display,
+            VisualScreenMask | VisualDepthMask | VisualClassMask,
+            &mut tmpl,
+            &mut n,
+        );
+        if infos.is_null() || n <= 0 {
+            return None;
+        }
+        let slice = std::slice::from_raw_parts(infos, n as usize);
+        let found = slice.iter().find(|info| {
+            let rgb = info.red_mask | info.green_mask | info.blue_mask;
+            rgb != 0 && rgb != 0xFFFF_FFFF
+        });
+        let result = found.map(|info| (info.visual, info.depth));
+        XFree(infos as *mut c_void);
+        result
+    }
+}
+
+pub(crate) fn xinerama_monitor_rects_on(
+    display: *mut _XDisplay,
+    fallback: DesktopRect,
+) -> Vec<DesktopRect> {
     // SAFETY: `display` is a live connection; `screens` is null/`count`-checked
     // before the slice is built, and `XFree` releases the Xinerama-allocated array.
     unsafe {
@@ -239,7 +373,7 @@ fn xinerama_monitor_rects_on(display: *mut _XDisplay, fallback: DesktopRect) -> 
         }
         let slice =
             std::slice::from_raw_parts(screens as *const XineramaScreenInfo, count as usize);
-        let rects: Vec<DesktopRect> = slice
+        let mut rects: Vec<DesktopRect> = slice
             .iter()
             .map(|s| DesktopRect {
                 x: s.x_org as i32,
@@ -253,6 +387,7 @@ fn xinerama_monitor_rects_on(display: *mut _XDisplay, fallback: DesktopRect) -> 
         if rects.is_empty() {
             vec![fallback]
         } else {
+            rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
             rects
         }
     }

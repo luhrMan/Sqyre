@@ -1,8 +1,7 @@
 //! OCR action: capture → preprocess → recognize → write vars → run children per hit.
 
 use super::common::{
-    apply_detection_hits, capture_search_buf, frame_fingerprint, run_detection_shell, sort_hits,
-    DetectionHit, FrameCache,
+    apply_detection_hits, capture_search_buf, run_detection_shell, sort_hits, DetectionHit,
 };
 use crate::error::{ExecError, Result};
 use crate::log_draw::draw_rect_rgb;
@@ -61,9 +60,7 @@ pub(crate) fn execute_ocr(
         vec![target.clone()]
     };
 
-    let mut cache = FrameCache::default();
-    // Log wait intent once before the shared shell arms retries.
-    let attempt0 = ocr_attempt(exec, action_id, &ocr_params, &order, macro_, &mut cache);
+    let attempt0 = ocr_attempt(exec, action_id, &ocr_params, &order, macro_);
     if wait.wait_until_found_active() && attempt0.hits.is_empty() {
         exec.log(
             action_id,
@@ -93,14 +90,7 @@ pub(crate) fn execute_ocr(
             if let Some(first) = initial.take() {
                 return Ok(first);
             }
-            Ok(ocr_attempt(
-                exec,
-                action_id,
-                &ocr_params,
-                &order,
-                macro_,
-                &mut cache,
-            ))
+            Ok(ocr_attempt(exec, action_id, &ocr_params, &order, macro_))
         },
         |attempt| !attempt.hits.is_empty(),
         |exec, macro_, attempt, pass| {
@@ -158,9 +148,8 @@ fn ocr_attempt(
     params: &OcrRunParams<'_>,
     order: &MatchOrder,
     macro_: &Macro,
-    cache: &mut FrameCache<OcrAttempt>,
 ) -> OcrAttempt {
-    match run_ocr_once(exec, action_id, params, order, macro_, cache) {
+    match run_ocr_once(exec, action_id, params, order, macro_) {
         Some(a) => a,
         None => OcrAttempt {
             text: None,
@@ -175,7 +164,6 @@ fn run_ocr_once(
     params: &OcrRunParams<'_>,
     order: &MatchOrder,
     macro_: &Macro,
-    cache: &mut FrameCache<OcrAttempt>,
 ) -> Option<OcrAttempt> {
     let label = params.label;
     let Some(ocr) = exec.deps.ocr else {
@@ -200,14 +188,6 @@ fn run_ocr_once(
             );
         },
     )?;
-    let fp = frame_fingerprint(&rgb);
-    if let Some(cached) = cache.get(fp, origin) {
-        exec.log(
-            action_id,
-            format!("{label}: capture unchanged since last attempt; reusing OCR result"),
-        );
-        return Some(cached);
-    }
     let search_center_x = origin.x + origin.w / 2;
     let search_center_y = origin.y + origin.h / 2;
     exec.log_image(action_id, "Capture (raw)", &rgb);
@@ -360,7 +340,6 @@ fn run_ocr_once(
         text: Some(recognized.text),
         hits,
     };
-    cache.set(fp, origin, attempt.clone());
     Some(attempt)
 }
 

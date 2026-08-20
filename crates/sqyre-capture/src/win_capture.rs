@@ -55,6 +55,14 @@ impl OsCapturer {
         capture_rect_rgb_gdi(rect)
     }
 
+    /// GDI capture is always synchronous; identical to [`Self::capture_rect_rgb_ref`].
+    pub fn capture_rect_rgb_fresh_ref(
+        &self,
+        rect: DesktopRect,
+    ) -> Result<RgbCapture, CaptureError> {
+        self.capture_rect_rgb_ref(rect)
+    }
+
     /// Virtual desktop bounds (`&self`).
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         let _guard = self.inner.lock();
@@ -230,6 +238,7 @@ fn enum_monitor_rects() -> Result<Vec<DesktopRect>, CaptureError> {
             return Ok(vec![vb]);
         }
     }
+    rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
     Ok(rects)
 }
 

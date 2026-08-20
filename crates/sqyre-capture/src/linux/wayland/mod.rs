@@ -12,9 +12,9 @@ mod portal_capture;
 
 #[cfg(feature = "portal-capture")]
 pub use portal_capture::{
-    portal_input_click, portal_input_key, portal_input_move, portal_input_ready,
-    portal_input_scroll, portal_remote_desktop_granted, portal_screencast_granted,
-    request_portal_screencast_picker, PortalCapturer,
+    portal_input_click, portal_input_key, portal_input_last_pos, portal_input_move,
+    portal_input_ready, portal_input_scroll, portal_remote_desktop_granted,
+    portal_screencast_granted, request_portal_screencast_picker, PortalCapturer,
 };
 
 pub use windows::OsWindowFocuser;
