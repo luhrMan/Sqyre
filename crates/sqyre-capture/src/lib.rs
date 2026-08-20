@@ -214,23 +214,72 @@ pub fn process_icon(_process_path: &str, _window_title: &str) -> Option<ProcessI
     None
 }
 
-/// Primary monitor resolution key (`"{w}x{h}"`).
-/// Uses the first entry from [`ScreenCapturer::monitor_sizes`] (display 0 / primary).
+/// Xinerama / RandR output rects (physical layout). Independent of how many
+/// ScreenCast streams the portal currently has open.
+#[cfg(target_os = "linux")]
+fn physical_monitor_rects() -> Vec<sqyre_ports::DesktopRect> {
+    use sqyre_ports::DesktopRect;
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    static CACHE: Mutex<Option<(Instant, Vec<DesktopRect>)>> = Mutex::new(None);
+    if let Ok(g) = CACHE.lock() {
+        if let Some((at, rects)) = g.as_ref() {
+            if at.elapsed() < Duration::from_millis(500) {
+                return rects.clone();
+            }
+        }
+    }
+    let rects = crate::x11_capture::query_x11_monitor_rects();
+    if let Ok(mut g) = CACHE.lock() {
+        *g = Some((Instant::now(), rects.clone()));
+    }
+    rects
+}
+
+fn usable_desktop_rects(
+    rects: impl IntoIterator<Item = sqyre_ports::DesktopRect>,
+) -> Vec<sqyre_ports::DesktopRect> {
+    let mut usable: Vec<sqyre_ports::DesktopRect> =
+        rects.into_iter().filter(|r| r.w > 1 && r.h > 1).collect();
+    usable.sort_by_key(|r| (r.x, r.y, r.w, r.h));
+    usable.dedup();
+    usable
+}
+
+/// Live ScreenCast/X11 capturer rects, preferring Linux Xinerama when it reports
+/// more outputs than the portal currently has (e.g. one stream failed to connect).
+pub fn preferred_monitor_rects() -> Vec<sqyre_ports::DesktopRect> {
+    let capture = shared_capturer_nonblocking()
+        .ok()
+        .and_then(|c| c.monitor_rects_ref().ok())
+        .map(usable_desktop_rects)
+        .unwrap_or_default();
+    #[cfg(target_os = "linux")]
+    let x11 = usable_desktop_rects(physical_monitor_rects());
+    #[cfg(not(target_os = "linux"))]
+    let x11: Vec<sqyre_ports::DesktopRect> = Vec::new();
+    if x11.len() > capture.len() {
+        x11
+    } else {
+        capture
+    }
+}
+
+/// Leftmost live monitor resolution key (`"{w}x{h}"`).
+/// Uses capturer monitor rects sorted by position (shared outputs on portal),
+/// not whichever screen the Sqyre window is on.
 /// Returns `None` when no display is available (headless / CI).
 ///
 /// Does not block on a portal ScreenCast picker: if opening may block and the
 /// capturer is not ready yet, returns `None`.
 pub fn main_monitor_resolution_key() -> Option<String> {
-    use sqyre_ports::ScreenCapturer;
     let capturer = shared_capturer_nonblocking().ok()?;
-    let mut wrap = SharedRunCapturer(capturer);
-    let sizes = wrap.monitor_sizes().ok()?;
-    let &(w, h) = sizes.first()?;
-    if w > 0 && h > 0 {
-        Some(format!("{w}x{h}"))
-    } else {
-        None
-    }
+    let mut rects = capturer.monitor_rects_ref().ok()?;
+    rects.retain(|r| r.w > 0 && r.h > 0);
+    rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
+    let r = rects.first()?;
+    Some(format!("{}x{}", r.w, r.h))
 }
 
 /// True when opening [`shared_capturer`] may block on a portal ScreenCast permission dialog.
