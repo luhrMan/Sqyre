@@ -20,14 +20,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     WS_EX_TOPMOST, WS_EX_TRANSPARENT, WS_POPUP,
 };
 
-use crate::outline_geometry::{edge_placements, outline_should_clear};
+use crate::outline_geometry::{
+    edge_placements, outline_should_clear, STROKE_B, STROKE_G, STROKE_R,
+};
 pub use crate::outline_rect::OutlineRect;
 use crate::CaptureError;
-
-/// Selection stroke color (gold) — same as X11 outline.
-const STROKE_R: u8 = 255;
-const STROKE_G: u8 = 200;
-const STROKE_B: u8 = 0;
 
 const CLASS_NAME: windows::core::PCWSTR = w!("SqyreSelectionOutline");
 

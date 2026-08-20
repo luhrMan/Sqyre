@@ -24,7 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Headless wgpu (egui_kittest docs screenshots)
     mesa-vulkan-drivers libvulkan1 \
     # rustautogui / X11 capture & input
-    libxtst-dev libxrandr-dev libxinerama-dev libxi-dev \
+    libxtst-dev libxrandr-dev libxinerama-dev libxi-dev libxfixes-dev \
     # rdev unstable_grab (Wayland evdev hotkeys)
     libevdev-dev \
     # AppImage packaging

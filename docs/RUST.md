@@ -34,7 +34,7 @@ Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux bin
 
 Requires **Rust ≥ 1.92** (egui 0.35 / PureCV). The repo pins `1.92.0` via [`rust-toolchain.toml`](../rust-toolchain.toml); the `.devcontainer` matches that plus clang/Tesseract for OCR.
 
-Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`). Windows uses GDI capture plus Win32 focus, selection outline, and low-level hotkey hooks (`windows` crate). macOS capture/focus remain stubbed.
+Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`, `libxinerama-dev`, `libxfixes-dev`). Windows uses GDI capture plus Win32 focus, selection outline, and low-level hotkey hooks (`windows` crate). macOS capture/focus remain stubbed.
 
 From the repo root:
 

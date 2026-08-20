@@ -7,6 +7,11 @@ use crate::OutlineRect;
 /// Thickness (px) of each outline edge window.
 pub(crate) const EDGE_PX: i32 = 2;
 
+/// Selection stroke (gold) shared by X11/Win32 edge windows and the snapshot cover.
+pub(crate) const STROKE_R: u8 = 255;
+pub(crate) const STROKE_G: u8 = 200;
+pub(crate) const STROKE_B: u8 = 0;
+
 /// True when `rect` is empty or too small to draw a hollow outline (the outline should be
 /// cleared instead).
 pub(crate) fn outline_should_clear(rect: OutlineRect) -> bool {
