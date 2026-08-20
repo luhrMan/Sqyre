@@ -19,7 +19,7 @@ enum TexKey {
 #[derive(Default)]
 pub struct LogsImageCache {
     action: Option<ActionId>,
-    textures: HashMap<TexKey, TextureHandle>,
+    textures: HashMap<TexKey, (usize, TextureHandle)>,
     /// Entry index of the selected [`ActionLogEntry::ItemPipeline`], if any.
     pub selected_item: Option<usize>,
 }
@@ -47,12 +47,18 @@ impl LogsImageCache {
         image: &LogImage,
     ) -> Option<TextureHandle> {
         self.ensure_action(action_id);
-        if let Some(t) = self.textures.get(&key) {
-            return Some(t.clone());
-        }
+        let ptr = std::sync::Arc::as_ptr(&image.pixels) as usize;
         let size = [image.width as usize, image.height as usize];
         if image.pixels.len() != size[0] * size[1] * 4 {
             return None;
+        }
+        if let Some((old_ptr, tex)) = self.textures.get_mut(&key) {
+            if *old_ptr != ptr {
+                let color = ColorImage::from_rgba_unmultiplied(size, &image.pixels);
+                tex.set(color, TextureOptions::NEAREST);
+                *old_ptr = ptr;
+            }
+            return Some(tex.clone());
         }
         let color = ColorImage::from_rgba_unmultiplied(size, &image.pixels);
         let name = format!(
@@ -62,7 +68,7 @@ impl LogsImageCache {
             image.label
         );
         let tex = ctx.load_texture(name, color, TextureOptions::NEAREST);
-        self.textures.insert(key, tex.clone());
+        self.textures.insert(key, (ptr, tex.clone()));
         Some(tex)
     }
 }
