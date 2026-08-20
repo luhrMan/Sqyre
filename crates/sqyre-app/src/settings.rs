@@ -1405,6 +1405,10 @@ mod tests {
             GENERAL_SETTINGS
         ));
         assert!(setting_visible("minimize", false, SETTING_TITLE_BAR_CLOSE));
-        assert!(!setting_visible("minimize", false, SETTING_HIDE_WHILE_RECORDING));
+        assert!(!setting_visible(
+            "minimize",
+            false,
+            SETTING_HIDE_WHILE_RECORDING
+        ));
     }
 }

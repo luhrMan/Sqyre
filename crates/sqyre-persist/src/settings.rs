@@ -23,8 +23,9 @@ pub const DEFAULT_HIDE_APP_DURING_RECORDING: bool = true;
 pub const DEFAULT_PLAY_FINISH_SOUND: bool = true;
 pub const DEFAULT_PLAY_UI_SOUNDS: bool = true;
 pub const DEFAULT_SOUND_VOLUME: f32 = 0.25;
-pub const DEFAULT_UI_FONT_SIZE: i32 = 14;
-pub const DEFAULT_UI_SCALE: f32 = 1.7;
+pub const DEFAULT_UI_FONT_SIZE: i32 = 12;
+pub const DEFAULT_UI_SCALE: f32 = 1.5;
+pub const DEFAULT_COMPACT_PROGRAM_HEADERS: bool = true;
 pub const DEFAULT_BACKUP_INTERVAL_HOURS: i32 = 24;
 pub const MIN_BACKUP_INTERVAL_HOURS: i32 = 1;
 pub const MAX_BACKUP_INTERVAL_HOURS: i32 = 720;
@@ -387,7 +388,7 @@ pub struct UserSettings {
     #[serde(default)]
     pub highlight_active_action: bool,
     /// In catalog lists, programs with a process icon omit the name (icon + child count only).
-    #[serde(default)]
+    #[serde(default = "default_compact_program_headers")]
     pub compact_program_headers: bool,
     #[serde(default = "default_hide_recording")]
     pub hide_app_during_recording: bool,
@@ -479,6 +480,9 @@ fn default_close_matches() -> i32 {
 fn default_drag_debounce() -> i32 {
     DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS
 }
+fn default_compact_program_headers() -> bool {
+    DEFAULT_COMPACT_PROGRAM_HEADERS
+}
 fn default_font_size() -> i32 {
     DEFAULT_UI_FONT_SIZE
 }
@@ -503,7 +507,7 @@ impl Default for UserSettings {
         Self {
             save_meta_images: false,
             highlight_active_action: false,
-            compact_program_headers: false,
+            compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
             title_bar_close: TitleBarCloseAction::Minimize,
             release_held_inputs_on_end: DEFAULT_RELEASE_HELD_INPUTS_ON_END,

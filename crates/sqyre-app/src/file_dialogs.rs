@@ -10,14 +10,16 @@
 use std::path::PathBuf;
 
 /// PNG open dialog (icon variants).
-pub fn pick_png() -> Option<PathBuf> {
+pub fn pick_png(start: &std::path::Path) -> Option<PathBuf> {
     #[cfg(target_arch = "wasm32")]
     {
+        let _ = start;
         None
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
         rfd::FileDialog::new()
+            .set_directory(start)
             .add_filter("PNG", &["png"])
             .pick_file()
     }
