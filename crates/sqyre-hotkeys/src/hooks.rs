@@ -88,6 +88,7 @@ struct HookCtx {
     macro_hotkeys: MacroHotkeyBridge,
     callbacks: HotkeyCallbacks,
     pressed: HashSet<&'static str>,
+    last_evdev_pos: Option<(f64, f64)>,
 }
 
 impl HookCtx {
@@ -105,7 +106,13 @@ impl HookCtx {
                 {
                     return;
                 }
-                if !self.screen_click.grab_owns_input() {
+                let prev = self.last_evdev_pos.replace((*x, *y));
+                if self.screen_click.grab_owns_input() {
+                    if let Some((lx, ly)) = prev {
+                        self.screen_click
+                            .on_mouse_delta((*x - lx) as i32, (*y - ly) as i32);
+                    }
+                } else {
                     self.screen_click.on_mouse_move(*x as i32, *y as i32);
                 }
                 self.macro_record.on_mouse_move(*x as i32, *y as i32);
@@ -116,7 +123,7 @@ impl HookCtx {
                 }
                 if matches!(button, Button::Left)
                     && self.screen_click.is_armed()
-                    && !self.screen_click.grab_owns_input()
+                    && !self.screen_click.block_hook_clicks()
                 {
                     self.screen_click.on_left_click();
                 }
@@ -145,8 +152,6 @@ impl HookCtx {
                 if matches!(key, Key::Escape) {
                     if self.macro_record.on_escape() {
                         // Macro recording takes Esc.
-                    } else if self.screen_click.grab_owns_input() && self.screen_click.is_armed() {
-                        // SelectionGrab delivers Esc; swallow so we don't stop macros.
                     } else if self.screen_click.on_escape() {
                         // Point/area recording takes Esc; don't also stop macros.
                     } else if crate::failsafe_modifiers_held(&self.pressed) {
@@ -223,6 +228,7 @@ impl HotkeyService for RdevHotkeys {
             macro_hotkeys: self.macro_hotkeys.clone(),
             callbacks,
             pressed: HashSet::new(),
+            last_evdev_pos: None,
         };
         let handle = thread::Builder::new()
             .name("sqyre-hotkeys".into())

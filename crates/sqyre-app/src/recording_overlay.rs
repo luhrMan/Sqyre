@@ -3,7 +3,9 @@
 //! Driven by [`sqyre_hotkeys::ScreenClickBridge`] and tooltip preview requests:
 //! - A fullscreen OS grab ([`sqyre_capture::SelectionGrab`]) that takes the pointer
 //!   while Point / Color / SearchArea recording is armed, so games that confine or
-//!   relative-capture the mouse cannot block selection.
+//!   relative-capture the mouse cannot block selection. Do **not** use an eframe
+//!   fullscreen viewport for this on GNOME/Wayland: Mutter un-redirects those
+//!   surfaces and they paint as opaque black.
 //! - OS edge windows ([`sqyre_capture::SelectionOutline`]) for the live search-area
 //!   rect or a hovered point / search-area preview — not a fullscreen desktop
 //!   snapshot (X11 on Linux, Win32 popups on Windows).
@@ -20,7 +22,7 @@
 
 use crate::theme;
 use eframe::egui::{self, Pos2, TextStyle, Vec2, ViewportBuilder, ViewportClass, ViewportId};
-use sqyre_capture::{mark_site, SelectionGrab, SelectionOutline};
+use sqyre_capture::{event_log, mark_site, SelectionGrab, SelectionOutline};
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_ports::DesktopRect;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -56,6 +58,15 @@ pub struct RecordingOverlay {
     grab_failed: bool,
     /// Sticky vertical edge (`true` = top). Cleared when recording ends.
     hud_at_top: Option<bool>,
+    /// OS window size for the coords HUD. Frozen after first show so we do not
+    /// patch `min_inner_size` while `resizable(false)` pins max — GNOME Mutter
+    /// treats min > max as `wl_surface` error 4 ("Invalid min/max size").
+    hud_window_size: Option<Vec2>,
+    /// Cached so HUD placement does not lock the portal frame mutex every paint
+    /// (PipeWire copies ~4K frames under that lock).
+    monitor_rects: Vec<DesktopRect>,
+    logged_outline_ptr: bool,
+    last_x11_ptr: Option<(i32, i32)>,
 }
 
 impl RecordingOverlay {
@@ -77,6 +88,8 @@ impl RecordingOverlay {
         let macro_armed = macro_record.is_some_and(|b| b.is_armed());
         let recording = screen_click.is_armed() || macro_armed;
         self.sync_selection_grab(screen_click);
+        #[cfg(target_os = "linux")]
+        self.sync_x11_pointer(screen_click);
         let rect = screen_click
             .peek_search_area_selection()
             .or(preview_outline);
@@ -90,6 +103,10 @@ impl RecordingOverlay {
             self.show_coords_hud(ctx, screen_click, macro_record);
         } else {
             self.hud_at_top = None;
+            self.hud_window_size = None;
+            self.monitor_rects.clear();
+            self.logged_outline_ptr = false;
+            self.last_x11_ptr = None;
         }
     }
 
@@ -97,6 +114,14 @@ impl RecordingOverlay {
     fn sync_selection_grab(&mut self, screen_click: &ScreenClickBridge) {
         if !screen_click.is_armed() {
             self.release_selection_grab(screen_click);
+            return;
+        }
+
+        if skip_x11_pointer_grab() {
+            // XGrabPointer on an XWayland InputOnly window stalls GNOME and does
+            // not own the Wayland cursor. Track via XQueryPointer + evdev deltas.
+            screen_click.set_grab_owns_input(true);
+            screen_click.allow_hook_clicks();
             return;
         }
 
@@ -175,6 +200,70 @@ impl RecordingOverlay {
         }
     }
 
+    /// Sample the X11 root pointer (same connection as the outline).
+    #[cfg(target_os = "linux")]
+    fn sync_x11_pointer(&mut self, screen_click: &ScreenClickBridge) {
+        if !screen_click.is_armed() {
+            return;
+        }
+        if self.outline.is_none() && !self.outline_failed {
+            mark_site("outline:open");
+            match SelectionOutline::open() {
+                Ok(o) => self.outline = Some(o),
+                Err(e) => {
+                    self.outline_failed = true;
+                    crate::log::warn(format_args!("selection outline unavailable: {e}"));
+                    return;
+                }
+            }
+        }
+        let Some(outline) = self.outline.as_mut() else {
+            return;
+        };
+        let Some((x, y, _left)) = outline.query_pointer() else {
+            return;
+        };
+        // Only trust X11 when it actually moved. On the other GNOME output the
+        // cursor is not in XWayland, so QueryPointer sticks and evdev deltas win.
+        if self.last_x11_ptr != Some((x, y)) {
+            screen_click.on_mouse_move(x, y);
+            self.last_x11_ptr = Some((x, y));
+        }
+        if self.monitor_rects.is_empty() {
+            let mut rects = outline.virtual_rects();
+            let portal = sqyre_capture::preferred_monitor_rects();
+            if portal.iter().map(|r| r.w).sum::<i32>() > rects.iter().map(|r| r.w).sum::<i32>() {
+                rects = portal;
+            }
+            self.monitor_rects = rects;
+        }
+        if !self.logged_outline_ptr {
+            self.logged_outline_ptr = true;
+            let root = outline
+                .root_size()
+                .map(|(w, h)| format!("{w}x{h}"))
+                .unwrap_or_else(|| "unknown".into());
+            let x11n = outline.virtual_rects().len();
+            event_log(
+                "SQYRE_OUTLINE",
+                &[
+                    ("ptr", &format!("{x},{y}")),
+                    ("root", &root),
+                    ("x11_outputs", &x11n.to_string()),
+                    ("desktop_outputs", &self.monitor_rects.len().to_string()),
+                    (
+                        "grab",
+                        if skip_x11_pointer_grab() {
+                            "xquery+evdev"
+                        } else {
+                            "x11"
+                        },
+                    ),
+                ],
+            );
+        }
+    }
+
     fn apply_outline(&mut self, rect: Option<OutlineCorners>) {
         if rect.is_none() {
             if let Some(outline) = self.outline.as_mut() {
@@ -242,7 +331,10 @@ impl RecordingOverlay {
             Some(b) if b.is_armed() => b.last_pos(),
             _ => screen_click.last_pos(),
         };
-        let monitor = monitor_for_pointer(mx, my);
+        if self.monitor_rects.is_empty() {
+            self.monitor_rects = sqyre_capture::preferred_monitor_rects();
+        }
+        let monitor = monitor_for_pointer_in(&self.monitor_rects, mx, my);
         let hud_at_top = pick_hud_edge(self.hud_at_top, my, monitor);
         self.hud_at_top = Some(hud_at_top);
 
@@ -252,19 +344,54 @@ impl RecordingOverlay {
         let mon_w_pts = monitor.w as f32 / ppp;
         let max_w = (mon_w_pts - HUD_MARGIN * 2.0).max(HUD_MIN_W);
 
-        let style = ctx.global_style();
-        let font = TextStyle::Body.resolve(&style);
-        let color = theme::PRIMARY;
-        let text_max_w = (max_w - HUD_PAD_X - HUD_STROKE * 2.0).max(1.0);
-        let galley = ctx.fonts_mut(|f| f.layout(text.clone(), font, color, text_max_w));
-        // Panel size is text + padding; OS window adds stroke room so bottom/right
-        // borders are not clipped (egui Frame stroke draws outside the content).
-        let panel_w = (galley.size().x + HUD_PAD_X)
-            .ceil()
-            .clamp(HUD_MIN_W, (max_w - HUD_STROKE * 2.0).max(HUD_MIN_W));
-        let panel_h = (galley.size().y + HUD_PAD_Y).ceil().max(HUD_MIN_H);
-        let hud_w = panel_w + HUD_STROKE * 2.0;
-        let hud_h = panel_h + HUD_STROKE * 2.0;
+        let (hud_w, hud_h, panel) = if let Some(size) = self.hud_window_size {
+            (
+                size.x,
+                size.y,
+                Vec2::new(
+                    (size.x - HUD_STROKE * 2.0).max(1.0),
+                    (size.y - HUD_STROKE * 2.0).max(1.0),
+                ),
+            )
+        } else {
+            let style = ctx.global_style();
+            let font = TextStyle::Body.resolve(&style);
+            let color = theme::PRIMARY;
+            let text_max_w = (max_w - HUD_PAD_X - HUD_STROKE * 2.0).max(1.0);
+            let galley = ctx.fonts_mut(|f| f.layout(text.clone(), font, color, text_max_w));
+            let panel_w = (galley.size().x + HUD_PAD_X)
+                .ceil()
+                .clamp(HUD_MIN_W, (max_w - HUD_STROKE * 2.0).max(HUD_MIN_W));
+            let panel_h = (galley.size().y + HUD_PAD_Y).ceil().max(HUD_MIN_H);
+            let needed_w = panel_w + HUD_STROKE * 2.0;
+            let needed_h = panel_h + HUD_STROKE * 2.0;
+            let size = freeze_hud_size(None, Vec2::new(needed_w, needed_h), max_w);
+            self.hud_window_size = Some(size);
+            mark_site("hud:open");
+            event_log(
+                "SQYRE_HUD",
+                &[
+                    ("op", "open"),
+                    ("size", &format!("{}x{}", size.x, size.y)),
+                    ("ppp", &format!("{ppp:.3}")),
+                ],
+            );
+            (
+                size.x,
+                size.y,
+                Vec2::new(
+                    (size.x - HUD_STROKE * 2.0).max(1.0),
+                    (size.y - HUD_STROKE * 2.0).max(1.0),
+                ),
+            )
+        };
+        // GNOME embeds deferred viewports in the root window and ignores
+        // `with_position`. Prefer an in-window banner over a second OS surface.
+        if skip_x11_pointer_grab() {
+            paint_hud_window(ctx, &text, hud_at_top);
+            return;
+        }
+
         let pos = hud_position(monitor, hud_at_top, hud_w, hud_h, ppp);
 
         let text_owned = text;
@@ -280,20 +407,12 @@ impl RecordingOverlay {
             .with_active(false)
             .with_mouse_passthrough(true)
             .with_inner_size([hud_w, hud_h])
-            .with_min_inner_size([hud_w, hud_h])
             .with_position(pos);
 
         // Deferred: independent of the (possibly hidden) root viewport paint cycle,
         // as long as the parent keeps registering it each frame via request_repaint.
         ctx.show_viewport_deferred(id, builder, move |ui, class| {
-            paint_hud_label(
-                ui,
-                class,
-                &text_owned,
-                hud_at_top,
-                Vec2::new(panel_w, panel_h),
-            );
-            ui.ctx().request_repaint();
+            paint_hud_label(ui, class, &text_owned, hud_at_top, panel);
         });
     }
 }
@@ -315,22 +434,27 @@ impl Drop for RecordingOverlay {
     }
 }
 
-/// Monitor containing `(x, y)`, else the first usable display, else a 1920×1080 fallback.
-fn monitor_for_pointer(x: i32, y: i32) -> DesktopRect {
-    if let Ok(capturer) = sqyre_capture::shared_capturer_nonblocking() {
-        if let Ok(rects) = capturer.monitor_rects_ref() {
-            let usable: Vec<_> = rects.into_iter().filter(|r| r.w > 1 && r.h > 1).collect();
-            if let Some(r) = usable
-                .iter()
-                .find(|r| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
-                .copied()
-            {
-                return r;
-            }
-            if let Some(r) = usable.first().copied() {
-                return r;
-            }
-        }
+fn skip_x11_pointer_grab() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        sqyre_capture::linux::LinuxSessionInfo::detect().has_wayland
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+fn monitor_for_pointer_in(rects: &[DesktopRect], x: i32, y: i32) -> DesktopRect {
+    if let Some(r) = rects
+        .iter()
+        .find(|r| x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h)
+        .copied()
+    {
+        return r;
+    }
+    if let Some(r) = rects.first().copied() {
+        return r;
     }
     DesktopRect {
         x: 0,
@@ -352,6 +476,18 @@ fn pick_hud_edge(current: Option<bool>, pointer_y: i32, monitor: DesktopRect) ->
     }
 }
 
+/// First-frame HUD size, then frozen. Growing `min_inner_size` each mouse-move
+/// against `resizable(false)` max is a GNOME Mutter protocol error.
+fn freeze_hud_size(existing: Option<Vec2>, needed: Vec2, max_w: f32) -> Vec2 {
+    if let Some(s) = existing {
+        return s;
+    }
+    Vec2::new(
+        (needed.x + 80.0).clamp(HUD_MIN_W, max_w).round().max(1.0),
+        needed.y.round().max(HUD_MIN_H),
+    )
+}
+
 /// Convert a physical-pixel monitor placement into egui points.
 fn hud_position(monitor: DesktopRect, at_top: bool, hud_w: f32, hud_h: f32, ppp: f32) -> Pos2 {
     let mon_x = monitor.x as f32 / ppp;
@@ -367,33 +503,41 @@ fn hud_position(monitor: DesktopRect, at_top: bool, hud_w: f32, hud_h: f32, ppp:
     Pos2::new(x, y)
 }
 
-fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: bool, panel: Vec2) {
-    let frame = egui::Frame::NONE
+fn hud_frame() -> egui::Frame {
+    egui::Frame::NONE
         .fill(crate::theme::overlay_panel_fill())
         .stroke(egui::Stroke::new(HUD_STROKE, theme::PRIMARY))
         .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::symmetric(12, 8));
+        .inner_margin(egui::Margin::symmetric(12, 8))
+}
+
+fn paint_hud_window(ctx: &egui::Context, text: &str, at_top: bool) {
+    let anchor = if at_top {
+        egui::Align2::CENTER_TOP
+    } else {
+        egui::Align2::CENTER_BOTTOM
+    };
+    let offset = if at_top {
+        [0.0, HUD_MARGIN]
+    } else {
+        [0.0, -HUD_MARGIN]
+    };
+    egui::Window::new("Recording")
+        .collapsible(false)
+        .resizable(false)
+        .title_bar(false)
+        .anchor(anchor, offset)
+        .frame(hud_frame())
+        .show(ctx, |ui| {
+            ui.label(egui::RichText::new(text).color(theme::PRIMARY).strong());
+        });
+}
+
+fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: bool, panel: Vec2) {
+    let frame = hud_frame();
 
     if class == ViewportClass::EmbeddedWindow {
-        let anchor = if at_top {
-            egui::Align2::CENTER_TOP
-        } else {
-            egui::Align2::CENTER_BOTTOM
-        };
-        let offset = if at_top {
-            [0.0, HUD_MARGIN]
-        } else {
-            [0.0, -HUD_MARGIN]
-        };
-        egui::Window::new("Recording")
-            .collapsible(false)
-            .resizable(false)
-            .title_bar(false)
-            .anchor(anchor, offset)
-            .frame(frame)
-            .show(ui.ctx(), |ui| {
-                ui.label(egui::RichText::new(text).color(theme::PRIMARY).strong());
-            });
+        paint_hud_window(ui.ctx(), text, at_top);
         return;
     }
 
@@ -432,6 +576,35 @@ mod tests {
         assert!((bottom.x - top.x).abs() < 0.01);
         let expect_y = 50.0 / ppp + (1080.0 / ppp - hud_h - HUD_MARGIN);
         assert!((bottom.y - expect_y).abs() < 0.01);
+    }
+
+    #[test]
+    fn freeze_hud_size_does_not_grow_after_first_frame() {
+        let first = freeze_hud_size(None, Vec2::new(240.0, 40.0), 800.0);
+        assert!((first.x - 320.0).abs() < f32::EPSILON);
+        let second = freeze_hud_size(Some(first), Vec2::new(500.0, 40.0), 800.0);
+        assert_eq!(second, first);
+    }
+
+    #[test]
+    fn monitor_for_pointer_in_picks_containing_display() {
+        let rects = [
+            DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2560,
+                h: 1440,
+            },
+            DesktopRect {
+                x: 2560,
+                y: 0,
+                w: 1920,
+                h: 1080,
+            },
+        ];
+        assert_eq!(monitor_for_pointer_in(&rects, 100, 100).w, 2560);
+        assert_eq!(monitor_for_pointer_in(&rects, 3000, 10).w, 1920);
+        assert_eq!(monitor_for_pointer_in(&[], 0, 0).w, 1920);
     }
 
     #[test]

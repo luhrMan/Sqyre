@@ -572,6 +572,26 @@ impl eframe::App for SqyreApp {
         ui_overlays::handle_close_to_tray(self, ui.ctx());
         // Poll background tasks before floating windows so Settings sees fresh update state.
         ui_overlays::sync_frame_state(self, ui.ctx());
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        if self.hidden_for_recording
+            && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed())
+        {
+            self.sync_recording_overlay(ui.ctx());
+            // If hide/minimize is ignored, paint a panel so we do not leave a
+            // transparent clear (reads as a black window on GNOME).
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE.fill(crate::theme::overlay_panel_fill()))
+                .show(ui, |ui| {
+                    ui.centered_and_justified(|ui| {
+                        ui.label(
+                            egui::RichText::new("Recording…")
+                                .color(crate::theme::PRIMARY)
+                                .strong(),
+                        );
+                    });
+                });
+            return;
+        }
         ui_overlays::show_floating_windows(self, ui.ctx());
         ui_overlays::handle_shortcuts(self, ui);
 

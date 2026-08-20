@@ -284,8 +284,6 @@ fn handle_keyboard(wparam: WPARAM, lparam: LPARAM) {
             let shift = ctx.pressed.contains("shift") || ctx.pressed.contains("rshift");
             if ctx.macro_record.on_escape() {
                 // Macro recording takes Esc.
-            } else if ctx.screen_click.grab_owns_input() && ctx.screen_click.is_armed() {
-                // SelectionGrab delivers Esc; swallow so we don't stop macros.
             } else if ctx.screen_click.on_escape() {
                 // Point/area recording takes Esc; don't also stop macros.
             } else if crate::failsafe_modifiers_held(&ctx.pressed) {
