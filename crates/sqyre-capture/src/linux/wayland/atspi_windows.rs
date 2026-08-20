@@ -10,10 +10,14 @@ use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 
 const A11Y_BUS: &str = "org.a11y.Bus";
-const A11Y_BUS_PATH: &str = "/org/a11y/Bus";
+/// at-spi-bus-launcher exports this path (lowercase `bus`). D-Bus paths are case-sensitive.
+const A11Y_BUS_PATH: &str = "/org/a11y/bus";
 const A11Y_BUS_IFACE: &str = "org.a11y.Bus";
+const A11Y_STATUS_IFACE: &str = "org.a11y.Status";
 const REGISTRY: &str = "org.a11y.atspi.Registry";
 const ROOT_PATH: &str = "/org/a11y/atspi/accessible/root";
+const REGISTRY_PATH: &str = "/org/a11y/atspi/registry";
+const REGISTRY_IFACE: &str = "org.a11y.atspi.Registry";
 const ACCESSIBLE: &str = "org.a11y.atspi.Accessible";
 const COMPONENT: &str = "org.a11y.atspi.Component";
 const DBUS: &str = "org.freedesktop.DBus";
@@ -30,8 +34,17 @@ struct AtspiRef {
 
 pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, String> {
     let conn = a11y_connection()?;
+    register_event_listener(&conn);
+    let root = root_ref()?;
+    wait_for_children(&conn, &root);
+    let kids = children(&conn, &root)?;
+    crate::cap_log(
+        "FOCUS",
+        if kids.is_empty() { "atspi" } else { "ok" },
+        &format!("atspi root_children={}", kids.len()),
+    );
     let mut out = Vec::new();
-    for app in walk_applications(&conn)? {
+    for app in walk_applications_from(&conn, kids)? {
         out.extend(app);
     }
     Ok(out)
@@ -47,9 +60,9 @@ pub(crate) fn active_window() -> Result<Option<WindowInfo>, String> {
             .map_err(|e: zbus::zvariant::Error| e.to_string())?,
     };
     for app in children(&conn, &root)? {
-        if role_name(&conn, &app)?.eq_ignore_ascii_case("application") {
+        if is_application_role(&role_name(&conn, &app).unwrap_or_default()) {
             for frame in children(&conn, &app)? {
-                if !is_window_role(&role_name(&conn, &frame)?) {
+                if !is_window_role(&role_name(&conn, &frame).unwrap_or_default()) {
                     continue;
                 }
                 if has_state(&conn, &frame, STATE_DEFUNCT) {
@@ -78,7 +91,7 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, S
             .map_err(|e: zbus::zvariant::Error| e.to_string())?,
     };
     for app in children(&conn, &root)? {
-        if !role_name(&conn, &app)?.eq_ignore_ascii_case("application") {
+        if !is_application_role(&role_name(&conn, &app).unwrap_or_default()) {
             continue;
         }
         let pid = unix_pid(&conn, &app).unwrap_or(0);
@@ -112,7 +125,7 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, S
             {
                 continue;
             }
-            if grab_focus(&conn, &frame)? {
+            if grab_focus(&conn, &frame).unwrap_or(false) {
                 return Ok(true);
             }
         }
@@ -120,16 +133,22 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, S
     Ok(false)
 }
 
-fn walk_applications(conn: &Connection) -> Result<Vec<Vec<WindowInfo>>, String> {
-    let root = AtspiRef {
+fn root_ref() -> Result<AtspiRef, String> {
+    Ok(AtspiRef {
         dest: REGISTRY.into(),
         path: ROOT_PATH
             .try_into()
             .map_err(|e: zbus::zvariant::Error| e.to_string())?,
-    };
+    })
+}
+
+fn walk_applications_from(
+    conn: &Connection,
+    apps: Vec<AtspiRef>,
+) -> Result<Vec<Vec<WindowInfo>>, String> {
     let mut groups = Vec::new();
-    for app in children(conn, &root)? {
-        if !role_name(conn, &app)?.eq_ignore_ascii_case("application") {
+    for app in apps {
+        if !is_application_role(&role_name(conn, &app).unwrap_or_default()) {
             continue;
         }
         if has_state(conn, &app, STATE_DEFUNCT) {
@@ -195,8 +214,13 @@ fn is_window_role(role: &str) -> bool {
     )
 }
 
+fn is_application_role(role: &str) -> bool {
+    role.is_empty() || role.eq_ignore_ascii_case("application")
+}
+
 fn a11y_connection() -> Result<Connection, String> {
     let session = Connection::session().map_err(|e| format!("session bus: {e}"))?;
+    enable_toolkit_a11y(&session);
     let proxy = Proxy::new(&session, A11Y_BUS, A11Y_BUS_PATH, A11Y_BUS_IFACE)
         .map_err(|e| format!("a11y bus proxy: {e}"))?;
     let address: String = proxy
@@ -208,6 +232,46 @@ fn a11y_connection() -> Result<Connection, String> {
         .map_err(|e| format!("a11y connect: {e}"))
 }
 
+/// GTK/Qt only export AT-SPI when this is true. Already-running apps may still need a restart.
+fn enable_toolkit_a11y(session: &Connection) {
+    let Ok(status) = Proxy::new(session, A11Y_BUS, A11Y_BUS_PATH, A11Y_STATUS_IFACE) else {
+        return;
+    };
+    let enabled = status.get_property::<bool>("IsEnabled").unwrap_or(false);
+    if enabled {
+        return;
+    }
+    if let Err(e) = status.set_property("IsEnabled", true) {
+        crate::note(&format!("atspi: enable IsEnabled: {e}"));
+    }
+}
+
+/// Recent at-spi-bus-launcher treats event registration as "an AT is present".
+fn register_event_listener(conn: &Connection) {
+    let Ok(proxy) = Proxy::new(conn, REGISTRY, REGISTRY_PATH, REGISTRY_IFACE) else {
+        return;
+    };
+    for ev in [
+        "window:activate",
+        "window:create",
+        "object:children-changed",
+    ] {
+        if let Err(e) = proxy.call::<_, _, ()>("RegisterEvent", &ev) {
+            crate::note(&format!("atspi: RegisterEvent {ev}: {e}"));
+        }
+    }
+}
+
+fn wait_for_children(conn: &Connection, root: &AtspiRef) {
+    for i in 0..6 {
+        match children(conn, root) {
+            Ok(kids) if !kids.is_empty() => return,
+            Ok(_) if i < 5 => std::thread::sleep(std::time::Duration::from_millis(50)),
+            _ => return,
+        }
+    }
+}
+
 fn children(conn: &Connection, node: &AtspiRef) -> Result<Vec<AtspiRef>, String> {
     let proxy = accessible(conn, node)?;
     let kids: Vec<(String, OwnedObjectPath)> = proxy
@@ -215,8 +279,20 @@ fn children(conn: &Connection, node: &AtspiRef) -> Result<Vec<AtspiRef>, String>
         .map_err(|e| format!("GetChildren: {e}"))?;
     Ok(kids
         .into_iter()
-        .map(|(dest, path)| AtspiRef { dest, path })
+        .map(|(dest, path)| child_ref(node, dest, path))
         .collect())
+}
+
+/// Empty bus name in `(so)` means the child lives on the same unique name as `parent`.
+fn child_ref(parent: &AtspiRef, dest: String, path: OwnedObjectPath) -> AtspiRef {
+    AtspiRef {
+        dest: if dest.is_empty() {
+            parent.dest.clone()
+        } else {
+            dest
+        },
+        path,
+    }
 }
 
 fn name_of(conn: &Connection, node: &AtspiRef) -> Result<String, String> {
@@ -277,5 +353,23 @@ mod tests {
         states[0] |= 1 << STATE_FOCUSED;
         assert!(state_bit(&states, STATE_FOCUSED));
         assert!(!state_bit(&states, STATE_DEFUNCT));
+    }
+
+    #[test]
+    fn a11y_bus_path_matches_at_spi_launcher() {
+        assert_eq!(A11Y_BUS_PATH, "/org/a11y/bus");
+    }
+
+    #[test]
+    fn empty_child_dest_inherits_parent() {
+        let parent = AtspiRef {
+            dest: ":1.42".into(),
+            path: ROOT_PATH.try_into().unwrap(),
+        };
+        let path: OwnedObjectPath = "/org/a11y/atspi/accessible/1".try_into().unwrap();
+        let child = child_ref(&parent, String::new(), path.clone());
+        assert_eq!(child.dest, ":1.42");
+        let other = child_ref(&parent, ":1.99".into(), path);
+        assert_eq!(other.dest, ":1.99");
     }
 }

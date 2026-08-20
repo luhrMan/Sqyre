@@ -39,6 +39,7 @@ pub(crate) fn resolve_app_id(app_id: &str) -> (String, String) {
 struct DesktopFile {
     name: String,
     exec: String,
+    app_id: Option<String>,
 }
 
 fn load_desktop(app_id: &str) -> Option<DesktopFile> {
@@ -82,7 +83,9 @@ fn desktop_dirs() -> Vec<PathBuf> {
 
 fn parse_desktop_file(path: &Path) -> Option<DesktopFile> {
     let raw = fs::read_to_string(path).ok()?;
-    parse_desktop_entry(&raw)
+    let mut parsed = parse_desktop_entry(&raw)?;
+    parsed.app_id = path.file_stem().map(|s| s.to_string_lossy().into_owned());
+    Some(parsed)
 }
 
 fn parse_desktop_entry(raw: &str) -> Option<DesktopFile> {
@@ -118,7 +121,11 @@ fn parse_desktop_entry(raw: &str) -> Option<DesktopFile> {
     if exec.is_empty() && name.is_empty() {
         return None;
     }
-    Some(DesktopFile { name, exec })
+    Some(DesktopFile {
+        name,
+        exec,
+        app_id: None,
+    })
 }
 
 /// First executable token from a freedesktop `Exec=` value.
@@ -240,6 +247,42 @@ pub(crate) fn process_from_pid(pid: u32) -> (String, String) {
         })
         .unwrap_or_default();
     (name, path)
+}
+
+/// Desktop `Name=` for a running exe, from `GIO_LAUNCHED_DESKTOP_FILE` or a matching `.desktop`.
+pub(crate) fn desktop_label_for_pid(pid: u32, process_path: &str) -> Option<String> {
+    desktop_file_for_pid(pid, process_path).and_then(|d| {
+        if d.name.is_empty() {
+            None
+        } else {
+            Some(d.name)
+        }
+    })
+}
+
+/// Freedesktop app id (`org.gnome.Nautilus`) if we can resolve a desktop file.
+pub(crate) fn desktop_app_id_for_pid(pid: u32, process_path: &str) -> Option<String> {
+    desktop_file_for_pid(pid, process_path).and_then(|d| d.app_id)
+}
+
+fn desktop_file_for_pid(pid: u32, process_path: &str) -> Option<DesktopFile> {
+    if let Some(path) = environ_value(pid, "GIO_LAUNCHED_DESKTOP_FILE") {
+        if let Some(parsed) = parse_desktop_file(Path::new(&path)) {
+            return Some(parsed);
+        }
+    }
+    let bin = Path::new(process_path)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())?;
+    load_desktop(&bin)
+}
+
+fn environ_value(pid: u32, key: &str) -> Option<String> {
+    let raw = fs::read(format!("/proc/{pid}/environ")).ok()?;
+    let prefix = format!("{key}=");
+    raw.split(|b| *b == 0)
+        .filter_map(|kv| std::str::from_utf8(kv).ok())
+        .find_map(|kv| kv.strip_prefix(&prefix).map(str::to_string))
 }
 
 #[cfg(test)]
