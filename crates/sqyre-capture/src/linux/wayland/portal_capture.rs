@@ -10,6 +10,7 @@ use pipewire as pw;
 use pw::context::ContextRc;
 use pw::main_loop::MainLoopRc;
 use pw::properties::properties;
+use pw::spa::buffer::{ChunkFlags, DataType};
 use pw::spa::param::video::{VideoFormat, VideoInfoRaw};
 use pw::spa::pod::Pod;
 use pw::stream::StreamRc;
@@ -26,6 +27,7 @@ use std::time::{Duration, Instant};
 
 static INPUT_TX: Mutex<Option<Sender<EisCmd>>> = Mutex::new(None);
 static PENDING_EIS_FD: Mutex<Option<OwnedFd>> = Mutex::new(None);
+static LAST_ABS: Mutex<Option<(i32, i32)>> = Mutex::new(None);
 static EIS_READY: AtomicBool = AtomicBool::new(false);
 static EIS_SHUTDOWN: AtomicBool = AtomicBool::new(false);
 static REMOTE_DESKTOP_GRANTED: AtomicBool = AtomicBool::new(false);
@@ -68,6 +70,9 @@ struct FrameSlot {
     cache: FrameCache,
     /// Incremented on every PipeWire frame copied into `cache`.
     generation: u64,
+    /// Last global generation at which each stream dest was copied. Search waits
+    /// on the dests that overlap the crop so the other monitor cannot starve it.
+    region_gen: Vec<(DesktopRect, u64)>,
 }
 
 struct FrameCache {
@@ -122,6 +127,7 @@ impl PortalCapturer {
                     ready: false,
                 },
                 generation: 0,
+                region_gen: Vec::new(),
             }),
             Condvar::new(),
         ));
@@ -183,13 +189,60 @@ impl PortalCapturer {
         })
     }
 
-    /// Capture after waiting for a new PipeWire frame (for manual refresh).
+    /// Wait until a PipeWire stream that overlaps `rect` copies a newer frame.
+    /// A global generation bump is not enough: GNOME often delivers the other
+    /// monitor first, which left nested wait-until-found on an unchanged crop.
+    fn wait_for_overlapping_stream_frame(&self, rect: DesktopRect) {
+        let min_gen = {
+            let slot = self.frame.0.lock();
+            region_generation(&slot, rect)
+        };
+        let region_after = wait_until_region_after(
+            &self.frame.0,
+            &self.frame.1,
+            rect,
+            min_gen,
+            Duration::from_millis(50),
+        );
+        if region_after <= min_gen {
+            let dest = {
+                let slot = self.frame.0.lock();
+                overlapping_stream_dest(&slot, rect)
+            };
+            let kick = crate::x11_capture::CompositorKick::map(dest);
+            let _ = wait_until_region_after(
+                &self.frame.0,
+                &self.frame.1,
+                rect,
+                min_gen,
+                Duration::from_millis(400),
+            );
+            drop(kick);
+        }
+    }
+
+    /// Capture after waiting for a new PipeWire frame on the overlapping stream.
     pub fn capture_rect_fresh_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
-        self.wait_for_fresh_frame(Duration::from_secs(1))?;
+        self.wait_for_overlapping_stream_frame(rect);
         self.capture_rect_ref(rect)
     }
 
     pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        self.crop_cached_rgba(rect)
+    }
+
+    pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
+        Ok(RgbCapture::from_rgba(&self.capture_rect_ref(rect)?))
+    }
+
+    pub fn capture_rect_rgb_fresh_ref(
+        &self,
+        rect: DesktopRect,
+    ) -> Result<RgbCapture, CaptureError> {
+        Ok(RgbCapture::from_rgba(&self.capture_rect_fresh_ref(rect)?))
+    }
+
+    fn crop_cached_rgba(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
         if rect.is_empty() {
             return Err(CaptureError::EmptyRect);
         }
@@ -230,12 +283,9 @@ impl PortalCapturer {
             out[dst_off..dst_off + out_w as usize * 4].copy_from_slice(&cache.pixels[src_off..end]);
         }
 
-        RgbaImage::from_raw(out_w, out_h, out)
-            .ok_or_else(|| CaptureError::Message("portal capture: RGBA size mismatch".into()))
-    }
-
-    pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
-        Ok(RgbCapture::from_rgba(&self.capture_rect_ref(rect)?))
+        let img = RgbaImage::from_raw(out_w, out_h, out)
+            .ok_or_else(|| CaptureError::Message("portal capture: RGBA size mismatch".into()))?;
+        Ok(img)
     }
 
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
@@ -256,26 +306,6 @@ impl PortalCapturer {
             ));
         }
         Ok(slot.cache.monitor_rects.clone())
-    }
-
-    fn wait_for_fresh_frame(&self, timeout: Duration) -> Result<(), CaptureError> {
-        let (lock, cvar) = &*self.frame;
-        let start_gen = lock.lock().generation;
-        let deadline = Instant::now() + timeout;
-        let mut slot = lock.lock();
-        while slot.generation <= start_gen {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            if remaining.is_zero() {
-                cap_log(
-                    "PORTAL",
-                    "wait",
-                    &format!("fresh frame timeout after gen={start_gen}"),
-                );
-                break;
-            }
-            cvar.wait_for(&mut slot, remaining);
-        }
-        Ok(())
     }
 
     pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, CaptureError> {
@@ -363,6 +393,7 @@ fn portal_pw_thread(
     let first_ready = Arc::new(AtomicBool::new(false));
     let logged_unmap = Arc::new(AtomicBool::new(false));
     let logged_copy = Arc::new(AtomicBool::new(false));
+    let logged_type = Arc::new(AtomicBool::new(false));
     let ready_cb = Arc::clone(&ready);
 
     let values: Vec<u8> = propagate_ready(&ready, pw_video_enum_format_bytes())?;
@@ -400,6 +431,7 @@ fn portal_pw_thread(
         let first_ready_stream = Arc::clone(&first_ready);
         let logged_unmap_stream = Arc::clone(&logged_unmap);
         let logged_copy_stream = Arc::clone(&logged_copy);
+        let logged_type_stream = Arc::clone(&logged_type);
         let ready_stream = Arc::clone(&ready_cb);
         let listener = propagate_ready(
             &ready,
@@ -431,14 +463,20 @@ fn portal_pw_thread(
                         return;
                     }
                     let _ = user_data.format.parse(param);
+                    let fps = user_data.format.framerate();
+                    let max_fps = user_data.format.max_framerate();
                     cap_log(
                         "PORTAL",
                         "pw",
                         &format!(
-                            "format={:?} {}x{}",
+                            "format={:?} {}x{} fps={}/{} max={}/{}",
                             user_data.format.format(),
                             user_data.format.size().width,
-                            user_data.format.size().height
+                            user_data.format.size().height,
+                            fps.num,
+                            fps.denom,
+                            max_fps.num,
+                            max_fps.denom
                         ),
                     );
                 })
@@ -454,27 +492,27 @@ fn portal_pw_thread(
                         return;
                     }
                     let data = &mut datas[0];
-                    let chunk = data.chunk();
-                    let size = chunk.size() as usize;
-                    let row_stride = if chunk.stride() > 0 {
-                        chunk.stride() as usize
+                    if data.chunk().flags().contains(ChunkFlags::CORRUPTED) {
+                        return;
+                    }
+                    let offset = data.chunk().offset() as usize;
+                    let size = data.chunk().size() as usize;
+                    let row_stride = if data.chunk().stride() > 0 {
+                        data.chunk().stride() as usize
                     } else {
                         0
                     };
                     if size == 0 {
                         return;
                     }
-                    let Some(bytes) = data.data() else {
-                        if !logged_unmap_stream.swap(true, Ordering::SeqCst) {
-                            cap_log("PORTAL", "pw", "buffer not mapped");
-                        }
-                        return;
-                    };
-                    let src_stride = if row_stride > 0 {
-                        row_stride
-                    } else {
-                        bytes.len().max(1)
-                    };
+                    let ty = data.type_();
+                    if !logged_type_stream.swap(true, Ordering::SeqCst) {
+                        cap_log(
+                            "PORTAL",
+                            "pw",
+                            &format!("data={ty:?} offset={offset} size={size} stride={row_stride}"),
+                        );
+                    }
                     let width = user_data.format.size().width.max(1);
                     let height = user_data.format.size().height.max(1);
                     let format = user_data.format.format();
@@ -485,36 +523,50 @@ fn portal_pw_thread(
                         user_data.monitor_rect.h = height as i32;
                     }
                     let dest = user_data.monitor_rect;
-                    let (lock, cvar) = &*frame_stream;
-                    let mut slot = lock.lock();
-                    ensure_cache_contains(&mut slot.cache, dest);
-                    let cache = &mut slot.cache;
-                    let vb = cache.virtual_bounds;
-                    let dst_x = (dest.x - vb.x).max(0) as usize;
-                    let dst_y = (dest.y - vb.y).max(0) as usize;
-                    match copy_pw_frame_into_rect(
-                        bytes,
-                        size,
-                        src_stride,
-                        width,
-                        height,
-                        format,
-                        &mut cache.pixels,
-                        cache.stride,
-                        dst_x,
-                        dst_y,
-                        dest.w.max(1) as u32,
-                        dest.h.max(1) as u32,
-                    ) {
-                        Ok(()) => {
+                    let copy_result = with_spa_chunk_bytes(data, offset, size, |bytes| {
+                        let src_stride = if row_stride > 0 {
+                            row_stride
+                        } else {
+                            bytes.len().max(1)
+                        };
+                        let (lock, cvar) = &*frame_stream;
+                        let mut slot = lock.lock();
+                        ensure_cache_contains(&mut slot.cache, dest);
+                        let cache = &mut slot.cache;
+                        let vb = cache.virtual_bounds;
+                        let dst_x = (dest.x - vb.x).max(0) as usize;
+                        let dst_y = (dest.y - vb.y).max(0) as usize;
+                        let copied = copy_pw_frame_into_rect(
+                            bytes,
+                            bytes.len(),
+                            src_stride,
+                            width,
+                            height,
+                            format,
+                            &mut cache.pixels,
+                            cache.stride,
+                            dst_x,
+                            dst_y,
+                            dest.w.max(1) as u32,
+                            dest.h.max(1) as u32,
+                        );
+                        if copied.is_ok() {
                             cache.ready = true;
                             if !first_ready_stream.swap(true, Ordering::SeqCst) {
                                 let _ = ready_stream.send(Ok(()));
                             }
-                            slot.generation = slot.generation.saturating_add(1);
+                            note_region_copy(&mut slot, dest);
                             cvar.notify_all();
                         }
-                        Err(e) => {
+                        copied
+                    });
+                    match copy_result {
+                        None => {
+                            if !logged_unmap_stream.swap(true, Ordering::SeqCst) {
+                                cap_log("PORTAL", "pw", "buffer not mapped");
+                            }
+                        }
+                        Some(Err(e)) => {
                             if !logged_copy_stream.swap(true, Ordering::SeqCst) {
                                 cap_log(
                                     "PORTAL",
@@ -523,6 +575,7 @@ fn portal_pw_thread(
                                 );
                             }
                         }
+                        Some(Ok(())) => {}
                     }
                 })
                 .register()
@@ -562,10 +615,12 @@ fn portal_pw_thread(
     }
 
     while !shutdown.load(Ordering::SeqCst) {
-        if msg_rx.try_recv().is_ok() {
-            break;
+        match msg_rx.try_recv() {
+            Ok(PwThreadMsg::Quit) => break,
+            Err(mpsc::TryRecvError::Empty) => {}
+            Err(mpsc::TryRecvError::Disconnected) => break,
         }
-        loop_ref.iterate(pw::loop_::Timeout::Finite(Duration::from_millis(200)));
+        loop_ref.iterate(pw::loop_::Timeout::Finite(Duration::from_millis(20)));
     }
 
     drop(listeners);
@@ -666,6 +721,23 @@ fn pw_video_enum_format_bytes() -> Result<Vec<u8>, CaptureError> {
             VideoFormat::BGRx,
             VideoFormat::BGRA,
         ),
+        // Mutter fixates VideoFramerate at 0/1 (emit-on-damage). A non-zero
+        // VideoFramerate range fails to negotiate. Periodic frames come from
+        // VideoMaxFramerate (same as xdg-desktop-portal-wlr).
+        pw::spa::pod::property!(
+            pw::spa::param::format::FormatProperties::VideoFramerate,
+            Fraction,
+            pw::spa::utils::Fraction { num: 0, denom: 1 }
+        ),
+        pw::spa::pod::property!(
+            pw::spa::param::format::FormatProperties::VideoMaxFramerate,
+            Choice,
+            Range,
+            Fraction,
+            pw::spa::utils::Fraction { num: 30, denom: 1 },
+            pw::spa::utils::Fraction { num: 1, denom: 1 },
+            pw::spa::utils::Fraction { num: 30, denom: 1 }
+        ),
     );
     pw::spa::pod::serialize::PodSerializer::serialize(
         std::io::Cursor::new(Vec::new()),
@@ -763,6 +835,11 @@ pub fn portal_input_move(x: i32, y: i32) -> Result<(), AutomationError> {
     recv_eis(rx)
 }
 
+/// Last absolute pointer sent over EIS this session, if any.
+pub fn portal_input_last_pos() -> Option<(i32, i32)> {
+    *LAST_ABS.lock()
+}
+
 pub fn portal_input_click(button: &str, down: bool) -> Result<(), AutomationError> {
     let code = match button {
         "right" => BTN_RIGHT,
@@ -808,7 +885,11 @@ fn recv_eis(rx: Receiver<Result<(), AutomationError>>) -> Result<(), AutomationE
 fn dispatch_eis(eis: &mut EisInput, cmd: EisCmd) {
     match cmd {
         EisCmd::Move { x, y, reply } => {
-            let _ = reply.send(eis.move_to(x, y));
+            let result = eis.move_to(x, y);
+            if result.is_ok() {
+                *LAST_ABS.lock() = Some((x, y));
+            }
+            let _ = reply.send(result);
         }
         EisCmd::Click {
             button,
@@ -831,6 +912,7 @@ fn stop_eis_thread() {
     EIS_READY.store(false, Ordering::SeqCst);
     REMOTE_DESKTOP_GRANTED.store(false, Ordering::SeqCst);
     *INPUT_TX.lock() = None;
+    *LAST_ABS.lock() = None;
 }
 
 fn spawn_eis_thread(fd: OwnedFd) {
@@ -933,6 +1015,63 @@ fn stream_rect(stream: &ashpd::desktop::screencast::Stream) -> DesktopRect {
     DesktopRect { x, y, w, h }
 }
 
+fn note_region_copy(slot: &mut FrameSlot, dest: DesktopRect) {
+    slot.generation = slot.generation.saturating_add(1);
+    let gen = slot.generation;
+    if let Some((_, g)) = slot.region_gen.iter_mut().find(|(r, _)| *r == dest) {
+        *g = gen;
+    } else {
+        slot.region_gen.push((dest, gen));
+    }
+}
+
+fn region_generation(slot: &FrameSlot, rect: DesktopRect) -> u64 {
+    slot.region_gen
+        .iter()
+        .filter(|(r, _)| rects_overlap(*r, rect))
+        .map(|(_, g)| *g)
+        .max()
+        .unwrap_or(0)
+}
+
+fn overlapping_stream_dest(slot: &FrameSlot, rect: DesktopRect) -> DesktopRect {
+    slot.cache
+        .monitor_rects
+        .iter()
+        .copied()
+        .find(|d| rects_overlap(*d, rect))
+        .unwrap_or(rect)
+}
+
+/// Wait until a stream dest overlapping `rect` has generation `> min_gen`.
+fn wait_until_region_after(
+    lock: &Mutex<FrameSlot>,
+    cvar: &Condvar,
+    rect: DesktopRect,
+    min_gen: u64,
+    timeout: Duration,
+) -> u64 {
+    let deadline = Instant::now() + timeout;
+    let mut slot = lock.lock();
+    while region_generation(&slot, rect) <= min_gen {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            cap_log(
+                "PORTAL",
+                "wait",
+                &format!(
+                    "region frame timeout after gen={min_gen} now={} region={}",
+                    slot.generation,
+                    region_generation(&slot, rect)
+                ),
+            );
+            break;
+        }
+        cvar.wait_for(&mut slot, remaining);
+    }
+    region_generation(&slot, rect)
+}
+
 fn ensure_cache_contains(cache: &mut FrameCache, rect: DesktopRect) {
     if rect.w <= 0 || rect.h <= 0 {
         return;
@@ -951,9 +1090,6 @@ fn ensure_cache_contains(cache: &mut FrameCache, rect: DesktopRect) {
     cache.stride = cache.width as usize * 4;
     let len = cache.stride.saturating_mul(cache.height as usize);
     cache.pixels.resize(len, 0);
-    if !cache.monitor_rects.contains(&rect) {
-        cache.monitor_rects.push(rect);
-    }
 }
 
 async fn register_portal_app() {
@@ -1141,18 +1277,17 @@ async fn finish_pipewire_setup(
         })
         .collect();
     let x11_layout = crate::x11_capture::query_x11_monitor_rects();
-    let monitor_rects = if x11_layout.len() >= 2 {
-        assign_streams_to_layout(&mut streams, &x11_layout);
-        cap_log(
-            "PORTAL",
-            "pw",
-            &format!("layout=x11 monitors={}", x11_layout.len()),
-        );
-        x11_layout
-    } else {
-        layout_stream_rects(&mut streams);
-        streams.iter().map(|s| s.rect).collect()
-    };
+    let monitor_rects = shared_monitor_rects(&mut streams, &x11_layout);
+    cap_log(
+        "PORTAL",
+        "pw",
+        &format!(
+            "layout=shared streams={} monitors={} x11={}",
+            streams.len(),
+            monitor_rects.len(),
+            x11_layout.len()
+        ),
+    );
     for (i, s) in streams.iter().enumerate() {
         cap_log(
             "PORTAL",
@@ -1262,19 +1397,65 @@ async fn open_screencast_only_with_token(
     .await
 }
 
+/// Place PipeWire streams on the shared-output layout.
+///
+/// Xinerama is only a position hint: the returned monitor list is the streams
+/// themselves (what the user shared), never extra outputs the Sqyre window
+/// happens to see.
+fn shared_monitor_rects(
+    streams: &mut [PwStreamSetup],
+    x11_layout: &[DesktopRect],
+) -> Vec<DesktopRect> {
+    if x11_layout.len() >= 2 {
+        assign_streams_to_layout(streams, x11_layout);
+    } else {
+        layout_stream_rects(streams);
+    }
+    let mut rects: Vec<DesktopRect> = streams
+        .iter()
+        .map(|s| s.rect)
+        .filter(|r| r.w > 0 && r.h > 0)
+        .collect();
+    rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
+    rects.dedup();
+    rects
+}
+
 fn assign_streams_to_layout(streams: &mut [PwStreamSetup], layout: &[DesktopRect]) {
     if layout.is_empty() || streams.is_empty() {
         return;
     }
-    let mut dests = layout.to_vec();
-    dests.sort_by_key(|r| (r.x, r.y));
-    let mut order: Vec<usize> = (0..streams.len()).collect();
-    order.sort_by_key(|&i| (streams[i].rect.x, streams[i].rect.y, streams[i].node_id));
-    for (k, &si) in order.iter().enumerate() {
-        if let Some(dest) = dests.get(k) {
-            streams[si].rect = *dest;
-        }
+    let mut remaining: Vec<DesktopRect> = layout.to_vec();
+    remaining.sort_by_key(|r| (r.x, r.y));
+    for stream in streams.iter_mut() {
+        let Some(idx) = take_layout_match(&remaining, stream.rect) else {
+            continue;
+        };
+        stream.rect = remaining.remove(idx);
     }
+    layout_stream_rects(streams);
+}
+
+fn take_layout_match(remaining: &[DesktopRect], hint: DesktopRect) -> Option<usize> {
+    if hint.w > 0 && hint.h > 0 {
+        if let Some(i) = remaining.iter().position(|d| *d == hint) {
+            return Some(i);
+        }
+        let size_hits: Vec<usize> = remaining
+            .iter()
+            .enumerate()
+            .filter(|(_, d)| d.w == hint.w && d.h == hint.h)
+            .map(|(i, _)| i)
+            .collect();
+        if !size_hits.is_empty() {
+            return size_hits.into_iter().min_by_key(|&i| {
+                let d = remaining[i];
+                d.x.abs_diff(hint.x) as u64 + d.y.abs_diff(hint.y) as u64
+            });
+        }
+        return None;
+    }
+    remaining.first().map(|_| 0)
 }
 
 fn layout_stream_rects(streams: &mut [PwStreamSetup]) {
@@ -1329,6 +1510,121 @@ fn portal_err(step: &'static str) -> impl Fn(ashpd::Error) -> CaptureError {
         cap_log("PORTAL", "fail", &format!("step={step} error={e}"));
         CaptureError::Message(format!("portal {step}: {e}"))
     }
+}
+
+/// linux/dma-buf.h `DMA_BUF_IOCTL_SYNC` (`_IOW('b', 0, struct dma_buf_sync)`).
+const DMA_BUF_IOCTL_SYNC: libc::c_ulong = 0x4008_6200;
+const DMA_BUF_SYNC_READ: u64 = 1 << 0;
+const DMA_BUF_SYNC_END: u64 = 1 << 2;
+
+#[repr(C)]
+struct DmaBufSync {
+    flags: u64,
+}
+
+/// CPU-map coherency for GNOME ScreenCast DMA-BUF / memfd. Without START/END
+/// the mapping often stays on the first GPU write for the whole wait-until-found.
+struct SpaBufSync {
+    fd: i32,
+    active: bool,
+}
+
+impl SpaBufSync {
+    fn begin(ty: DataType, fd: i32) -> Self {
+        let active = fd >= 0 && matches!(ty, DataType::DmaBuf | DataType::MemFd);
+        if active {
+            dma_buf_sync(fd, DMA_BUF_SYNC_READ);
+        }
+        Self { fd, active }
+    }
+}
+
+impl Drop for SpaBufSync {
+    fn drop(&mut self) {
+        if self.active {
+            dma_buf_sync(self.fd, DMA_BUF_SYNC_READ | DMA_BUF_SYNC_END);
+        }
+    }
+}
+
+fn dma_buf_sync(fd: i32, flags: u64) {
+    let mut sync = DmaBufSync { flags };
+    // SAFETY: `fd` is the live spa_data fd; `sync` is `struct dma_buf_sync`.
+    let _ = unsafe { libc::ioctl(fd, DMA_BUF_IOCTL_SYNC, &mut sync) };
+}
+
+struct MappedFd {
+    ptr: *mut libc::c_void,
+    len: usize,
+}
+
+impl MappedFd {
+    fn as_slice(&self) -> &[u8] {
+        // SAFETY: `ptr`/`len` come from a successful `mmap` of `len` bytes.
+        unsafe { std::slice::from_raw_parts(self.ptr.cast(), self.len) }
+    }
+}
+
+impl Drop for MappedFd {
+    fn drop(&mut self) {
+        if !self.ptr.is_null() && self.len > 0 {
+            // SAFETY: mapping created by `mmap_spa_fd` and not yet unmapped.
+            unsafe {
+                libc::munmap(self.ptr, self.len);
+            }
+        }
+    }
+}
+
+fn mmap_spa_fd(data: &pw::spa::buffer::Data) -> Option<MappedFd> {
+    let raw = data.as_raw();
+    let len = raw.maxsize as usize;
+    let fd = data.fd();
+    if len == 0 || fd < 0 {
+        return None;
+    }
+    // SAFETY: `fd` is PipeWire's buffer fd; `mapoffset`/`maxsize` are spa_data.
+    let ptr = unsafe {
+        libc::mmap(
+            std::ptr::null_mut(),
+            len,
+            libc::PROT_READ,
+            libc::MAP_SHARED,
+            fd,
+            raw.mapoffset as libc::off_t,
+        )
+    };
+    if ptr == libc::MAP_FAILED {
+        return None;
+    }
+    Some(MappedFd { ptr, len })
+}
+
+fn chunk_byte_range(
+    mapped_len: usize,
+    offset: usize,
+    size: usize,
+) -> Option<std::ops::Range<usize>> {
+    let end = offset.checked_add(size)?;
+    (end <= mapped_len && size > 0).then_some(offset..end)
+}
+
+fn with_spa_chunk_bytes<T>(
+    data: &mut pw::spa::buffer::Data,
+    offset: usize,
+    size: usize,
+    f: impl FnOnce(&[u8]) -> T,
+) -> Option<T> {
+    let ty = data.type_();
+    let fd = data.fd();
+    let _sync = SpaBufSync::begin(ty, fd);
+    if let Some(mapped) = data.data() {
+        let range = chunk_byte_range(mapped.len(), offset, size)?;
+        return Some(f(&mapped[range]));
+    }
+    let map = mmap_spa_fd(data)?;
+    let range = chunk_byte_range(map.as_slice().len(), offset, size)?;
+    Some(f(&map.as_slice()[range]))
 }
 
 #[allow(clippy::too_many_arguments)] // src frame + dest rect in one blit
@@ -1489,6 +1785,14 @@ mod tests {
     }
 
     #[test]
+    fn chunk_byte_range_skips_prefix_offset() {
+        assert_eq!(chunk_byte_range(12, 4, 4), Some(4..8));
+        assert_eq!(chunk_byte_range(8, 0, 8), Some(0..8));
+        assert_eq!(chunk_byte_range(8, 6, 4), None);
+        assert_eq!(chunk_byte_range(8, 0, 0), None);
+    }
+
+    #[test]
     fn restore_token_roundtrip() {
         let dir = std::env::temp_dir().join(format!(
             "sqyre-screencast-token-{}-{}",
@@ -1505,6 +1809,69 @@ mod tests {
         write_restore_token_at(&path, None);
         assert!(read_restore_token_at(&path).is_none());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn empty_slot(generation: u64) -> FrameSlot {
+        FrameSlot {
+            cache: FrameCache {
+                virtual_bounds: DesktopRect::default(),
+                monitor_rects: Vec::new(),
+                width: 0,
+                height: 0,
+                stride: 0,
+                pixels: Vec::new(),
+                ready: false,
+            },
+            generation,
+            region_gen: Vec::new(),
+        }
+    }
+
+    fn monitor_rect(x: i32, w: i32, h: i32) -> DesktopRect {
+        DesktopRect { x, y: 0, w, h }
+    }
+
+    #[test]
+    fn region_generation_uses_overlapping_stream_only() {
+        let mut slot = empty_slot(10);
+        slot.region_gen = vec![
+            (monitor_rect(0, 1920, 1080), 10),
+            (monitor_rect(1920, 1280, 1440), 7),
+        ];
+        assert_eq!(region_generation(&slot, monitor_rect(1920, 1280, 1440)), 7);
+        assert_eq!(region_generation(&slot, monitor_rect(0, 1920, 1080)), 10);
+    }
+
+    #[test]
+    fn wait_until_region_after_ignores_other_monitor_copies() {
+        let lock = Arc::new(Mutex::new(empty_slot(1)));
+        {
+            let mut slot = lock.lock();
+            slot.region_gen = vec![
+                (monitor_rect(0, 1920, 1080), 1),
+                (monitor_rect(1920, 1280, 1440), 1),
+            ];
+        }
+        let cvar = Arc::new(Condvar::new());
+        let wait_lock = Arc::clone(&lock);
+        let wait_cvar = Arc::clone(&cvar);
+        let search = monitor_rect(1920, 1280, 1440);
+        let handle = thread::spawn(move || {
+            wait_until_region_after(&wait_lock, &wait_cvar, search, 1, Duration::from_secs(2))
+        });
+        thread::sleep(Duration::from_millis(20));
+        {
+            let mut slot = lock.lock();
+            note_region_copy(&mut slot, monitor_rect(0, 1920, 1080));
+            cvar.notify_all();
+        }
+        thread::sleep(Duration::from_millis(30));
+        {
+            let mut slot = lock.lock();
+            note_region_copy(&mut slot, monitor_rect(1920, 1280, 1440));
+            cvar.notify_all();
+        }
+        assert_eq!(handle.join().unwrap(), 3);
     }
 
     #[test]
@@ -1572,6 +1939,67 @@ mod tests {
         assert_eq!(streams[0].rect.y, 360);
         assert_eq!(streams[1].rect.x, 1920);
         assert_eq!(streams[1].rect.y, 0);
+    }
+
+    #[test]
+    fn shared_rects_follow_streams_not_full_x11_layout() {
+        let mut streams = vec![PwStreamSetup {
+            node_id: 11,
+            rect: DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2560,
+                h: 1440,
+            },
+        }];
+        let layout = [
+            DesktopRect {
+                x: 0,
+                y: 360,
+                w: 1920,
+                h: 1080,
+            },
+            DesktopRect {
+                x: 1920,
+                y: 0,
+                w: 2560,
+                h: 1440,
+            },
+        ];
+        let rects = shared_monitor_rects(&mut streams, &layout);
+        assert_eq!(rects.len(), 1);
+        assert_eq!(rects[0].w, 2560);
+        assert_eq!(rects[0].h, 1440);
+        assert_eq!(rects[0].x, 1920);
+    }
+
+    #[test]
+    fn ensure_cache_does_not_invent_monitors() {
+        let mut cache = FrameCache {
+            virtual_bounds: DesktopRect::default(),
+            monitor_rects: vec![DesktopRect {
+                x: 0,
+                y: 0,
+                w: 10,
+                h: 4,
+            }],
+            width: 0,
+            height: 0,
+            stride: 0,
+            pixels: Vec::new(),
+            ready: false,
+        };
+        ensure_cache_contains(
+            &mut cache,
+            DesktopRect {
+                x: 0,
+                y: 0,
+                w: 20,
+                h: 4,
+            },
+        );
+        assert_eq!(cache.monitor_rects.len(), 1);
+        assert_eq!(cache.width, 20);
     }
 
     #[test]

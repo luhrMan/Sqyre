@@ -140,6 +140,12 @@ pub trait ScreenCapturer {
         Ok(RgbCapture::from_rgba(&self.capture_rect(rect)?))
     }
 
+    /// RGB capture that waits for a newer compositor frame when the backend
+    /// caches buffers (portal + PipeWire). Default: same as [`Self::capture_rect_rgb`].
+    fn capture_rect_rgb_fresh(&mut self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
+        self.capture_rect_rgb(rect)
+    }
+
     /// Capture a search-area rectangle after basic size checks.
     fn capture_search_area(
         &mut self,
@@ -164,7 +170,7 @@ pub trait ScreenCapturer {
     ) -> Result<(RgbCapture, DesktopRect), CaptureError> {
         let vb = self.virtual_bounds().ok();
         let rect = clamp_search_rect(left, top, right, bottom, vb)?;
-        let img = self.capture_rect_rgb(rect)?;
+        let img = self.capture_rect_rgb_fresh(rect)?;
         Ok((img, rect))
     }
 }

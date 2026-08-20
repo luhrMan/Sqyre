@@ -649,26 +649,22 @@ fn move_mouse_instant(gui: &mut RustAutoGui, px: i32, py: i32) {
     let _ = gui.move_mouse_to_pos(xu, yu, 0.0);
 }
 
-/// Linux smooth move: timed interpolation with instant warps (moving_time=0).
-///
-/// Avoids rustautogui's per-pixel smooth path (XTest + sleep per pixel).
+/// Timed interpolation between `start` and `end`, calling `warp` each step.
 #[cfg(target_os = "linux")]
-fn move_mouse_linux(gui: &mut RustAutoGui, x: i32, y: i32, opts: MoveOptions) {
-    let (start_x, start_y) = match gui.get_mouse_position() {
-        Ok((sx, sy)) => (sx, sy),
-        Err(_) => {
-            move_mouse_instant(gui, x, y);
-            return;
-        }
-    };
-    let dx = x - start_x;
-    let dy = y - start_y;
+fn run_linux_smooth_move(
+    start: (i32, i32),
+    end: (i32, i32),
+    opts: MoveOptions,
+    mut warp: impl FnMut(i32, i32),
+) {
+    let dx = end.0 - start.0;
+    let dy = end.1 - start.1;
     if dx == 0 && dy == 0 {
         return;
     }
     let (moving_time, step_ms) = linux_smooth_move_plan(opts, dx, dy);
     if moving_time <= 0.0 {
-        move_mouse_instant(gui, x, y);
+        warp(end.0, end.1);
         return;
     }
     let start_t = std::time::Instant::now();
@@ -676,14 +672,48 @@ fn move_mouse_linux(gui: &mut RustAutoGui, x: i32, y: i32, opts: MoveOptions) {
     loop {
         let t = start_t.elapsed().as_secs_f32() / moving_time;
         if t >= 1.0 {
-            move_mouse_instant(gui, x, y);
+            warp(end.0, end.1);
             break;
         }
-        let nx = start_x as f32 + t * dx as f32;
-        let ny = start_y as f32 + t * dy as f32;
-        move_mouse_instant(gui, nx as i32, ny as i32);
+        let nx = start.0 as f32 + t * dx as f32;
+        let ny = start.1 as f32 + t * dy as f32;
+        warp(nx as i32, ny as i32);
         std::thread::sleep(step);
     }
+}
+
+/// Linux smooth move: timed interpolation with instant warps (moving_time=0).
+///
+/// Avoids rustautogui's per-pixel smooth path (XTest + sleep per pixel).
+#[cfg(target_os = "linux")]
+fn move_mouse_linux(gui: &mut RustAutoGui, x: i32, y: i32, opts: MoveOptions) {
+    let start = match gui.get_mouse_position() {
+        Ok(pos) => pos,
+        Err(_) => {
+            move_mouse_instant(gui, x, y);
+            return;
+        }
+    };
+    run_linux_smooth_move(start, (x, y), opts, |px, py| {
+        move_mouse_instant(gui, px, py)
+    });
+}
+
+/// Portal EIS smooth move. Start pos is last EIS warp, else X11 query via rustautogui.
+#[cfg(all(target_os = "linux", feature = "portal-capture"))]
+fn move_mouse_portal(start: Option<(i32, i32)>, x: i32, y: i32, opts: MoveOptions) {
+    let Some(start) = start else {
+        sqyre_capture::note("input: portal smooth has no start pos, instant warp");
+        if let Err(e) = sqyre_capture::portal_input_move(x, y) {
+            sqyre_capture::note(&format!("input move: {e}"));
+        }
+        return;
+    };
+    run_linux_smooth_move(start, (x, y), opts, |px, py| {
+        if let Err(e) = sqyre_capture::portal_input_move(px, py) {
+            sqyre_capture::note(&format!("input move: {e}"));
+        }
+    });
 }
 
 /// Map a virtual-desktop pixel into SendInput's 0..65535 absolute range.
@@ -785,7 +815,11 @@ impl AutomationBackend for OsAutomation {
                     sqyre_capture::note(&format!("input move skipped: {e}"));
                     return;
                 }
-                if let Err(e) = sqyre_capture::portal_input_move(x, y) {
+                if opts.smooth {
+                    let start = sqyre_capture::portal_input_last_pos()
+                        .or_else(|| self.gui.as_mut().and_then(|g| g.get_mouse_position().ok()));
+                    move_mouse_portal(start, x, y, opts);
+                } else if let Err(e) = sqyre_capture::portal_input_move(x, y) {
                     sqyre_capture::note(&format!("input move: {e}"));
                 }
                 return;

@@ -1,8 +1,8 @@
 //! Image search action: capture → match template variants → run children per hit.
 
 use super::common::{
-    apply_detection_hits, capture_search_buf, close_matches_distance, frame_fingerprint,
-    run_detection_shell, sort_hits, DetectionExtras, DetectionHit, FrameCache,
+    apply_detection_hits, capture_search_buf, close_matches_distance, run_detection_shell,
+    sort_hits, DetectionExtras, DetectionHit,
 };
 use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, Result, SearchError};
@@ -54,7 +54,6 @@ pub(crate) fn execute_image_search(
     let label = action_type_label(action.type_key());
     let macro_name = macro_.name.clone();
     let order = order.clone();
-    let mut cache = FrameCache::default();
     let result = (|| {
         // Log wait intent once before the shared shell arms retries.
         let results0 = capture_and_match(
@@ -68,7 +67,6 @@ pub(crate) fn execute_image_search(
             *match_method,
             &order,
             macro_,
-            &mut cache,
         )?;
         if wait.wait_until_found_active() && results0.is_empty() {
             exec.log(
@@ -110,7 +108,6 @@ pub(crate) fn execute_image_search(
                     *match_method,
                     &order,
                     macro_,
-                    &mut cache,
                 )
             },
             |results| !results.is_empty(),
@@ -176,7 +173,6 @@ fn capture_and_match(
     match_method: MatchMethod,
     order: &MatchOrder,
     macro_: &Macro,
-    cache: &mut FrameCache<Vec<DetectionHit>>,
 ) -> Result<Vec<DetectionHit>> {
     // Capture/resolve/blur failures are logged as misses so wait-until-found can retry
     // instead of aborting the macro (same policy as OCR / Find Pixel).
@@ -205,15 +201,6 @@ fn capture_and_match(
     ) else {
         return Ok(Vec::new());
     };
-    let fp = frame_fingerprint(&search);
-    if let Some(cached) = cache.get(fp, origin) {
-        exec.log_timing(action_id, "capture", capture_started.elapsed());
-        exec.log(
-            action_id,
-            format!("{label}: capture unchanged since last attempt; reusing match result"),
-        );
-        return Ok(cached);
-    }
     exec.log_image(action_id, "1. Capture (search area)", &search);
     let kernel = search_blur_kernel(blur);
     let want_pipeline = exec.log_images_enabled();
@@ -563,6 +550,5 @@ fn capture_and_match(
         })
         .collect();
     sort_hits(&mut hits, order);
-    cache.set(fp, origin, hits.clone());
     Ok(hits)
 }

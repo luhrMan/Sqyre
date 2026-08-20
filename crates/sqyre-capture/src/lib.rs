@@ -281,7 +281,8 @@ pub fn portal_input_ready() -> bool {
 
 #[cfg(all(target_os = "linux", feature = "portal-capture"))]
 pub use linux::wayland::{
-    portal_input_click, portal_input_key, portal_input_move, portal_input_scroll,
+    portal_input_click, portal_input_key, portal_input_last_pos, portal_input_move,
+    portal_input_scroll,
 };
 
 /// Show the portal ScreenCast picker again (Wayland). No-op on other targets.

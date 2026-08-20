@@ -65,6 +65,18 @@ impl OsCapturer {
         }
     }
 
+    /// Wait for a newer portal frame when applicable; X11 is always a live grab.
+    pub fn capture_rect_rgb_fresh_ref(
+        &self,
+        rect: DesktopRect,
+    ) -> Result<RgbCapture, CaptureError> {
+        match self {
+            Self::X11(c) => c.capture_rect_rgb_ref(rect),
+            #[cfg(feature = "portal-capture")]
+            Self::Portal(c) => c.capture_rect_rgb_fresh_ref(rect),
+        }
+    }
+
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         match self {
             Self::X11(c) => c.virtual_bounds_ref(),
