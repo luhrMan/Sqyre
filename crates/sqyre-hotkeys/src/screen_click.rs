@@ -5,6 +5,8 @@ use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+type AbsolutePosFn = Arc<dyn Fn() -> Option<(i32, i32)> + Send + Sync>;
+
 /// Fast path for OS hooks: skip mouse-move work unless a recording is armed.
 /// Windows uses this to avoid flooding WH_MOUSE_LL; Linux evdev grab uses it so
 /// pointer motion is not serialized on bridge mutexes (that stalls the cursor).
@@ -28,7 +30,7 @@ enum Armed {
     },
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct Inner {
     armed: Option<Armed>,
     last_pos: (i32, i32),
@@ -43,6 +45,9 @@ struct Inner {
     grab_owns_input: bool,
     /// When false, hooks still deliver left-clicks even if [`Self::grab_owns_input`].
     block_hook_clicks: bool,
+    /// Compositor-absolute pointer (portal cursor). Used on every click so the
+    /// first corner is Wayland-accurate even over XWayland windows.
+    absolute_pos: Option<AbsolutePosFn>,
 }
 
 fn normalize_rect(ax: i32, ay: i32, bx: i32, by: i32) -> (i32, i32, i32, i32) {
@@ -64,33 +69,33 @@ impl ScreenClickBridge {
     }
 
     pub fn arm_point(&self) {
-        let mut g = self.inner.lock();
-        *g = Inner {
-            armed: Some(Armed::Point),
-            last_pos: g.last_pos,
-            ..Inner::default()
-        };
-        sync_hook_wants_moves(true);
+        self.arm_with(Armed::Point);
     }
 
     pub fn arm_color(&self) {
+        self.arm_with(Armed::Color);
+    }
+
+    pub fn arm_search_area(&self) {
+        self.arm_with(Armed::SearchArea { first: None });
+    }
+
+    fn arm_with(&self, armed: Armed) {
         let mut g = self.inner.lock();
+        let last_pos = g.last_pos;
+        let absolute_pos = g.absolute_pos.clone();
         *g = Inner {
-            armed: Some(Armed::Color),
-            last_pos: g.last_pos,
+            armed: Some(armed),
+            last_pos,
+            absolute_pos,
             ..Inner::default()
         };
         sync_hook_wants_moves(true);
     }
 
-    pub fn arm_search_area(&self) {
-        let mut g = self.inner.lock();
-        *g = Inner {
-            armed: Some(Armed::SearchArea { first: None }),
-            last_pos: g.last_pos,
-            ..Inner::default()
-        };
-        sync_hook_wants_moves(true);
+    /// Compositor-absolute pointer sampled on each click (portal cursor on Wayland).
+    pub fn set_absolute_pos(&self, f: impl Fn() -> Option<(i32, i32)> + Send + Sync + 'static) {
+        self.inner.lock().absolute_pos = Some(Arc::new(f));
     }
 
     pub fn disarm(&self) {
@@ -198,42 +203,22 @@ impl ScreenClickBridge {
         self.inner.lock().last_pos = (x, y);
     }
 
-    /// Apply a relative move (evdev REL) without replacing the absolute origin.
-    pub fn on_mouse_delta(&self, dx: i32, dy: i32) {
-        if dx == 0 && dy == 0 {
-            return;
-        }
-        let mut g = self.inner.lock();
-        g.last_pos.0 = g.last_pos.0.saturating_add(dx);
-        g.last_pos.1 = g.last_pos.1.saturating_add(dy);
-    }
-
     /// Hotkey thread: left button press while armed.
     pub fn on_left_click(&self) {
+        let sample = self.inner.lock().absolute_pos.clone();
+        let sampled = sample.as_ref().and_then(|f| f());
         let mut g = self.inner.lock();
-        let pos = g.last_pos;
-        match g.armed.clone() {
-            Some(Armed::Point) => {
-                g.point = Some(pos);
-                g.armed = None;
-            }
-            Some(Armed::Color) => {
-                g.color_point = Some(pos);
-                g.armed = None;
-            }
-            Some(Armed::SearchArea { first: None }) => {
-                g.armed = Some(Armed::SearchArea { first: Some(pos) });
-            }
-            Some(Armed::SearchArea {
-                first: Some((lx, ty)),
-            }) => {
-                let (rx, by) = pos;
-                g.search_area = Some(normalize_rect(lx, ty, rx, by));
-                g.armed = None;
-            }
-            None => {}
+        if let Some(pos) = sampled {
+            g.last_pos = pos;
         }
-        sync_hook_wants_moves(g.armed.is_some());
+        apply_left_click(&mut g);
+    }
+
+    /// Overlay/grab click at a known desktop point (do not sample portal cursor).
+    pub fn on_left_click_at(&self, x: i32, y: i32) {
+        let mut g = self.inner.lock();
+        g.last_pos = (x, y);
+        apply_left_click(&mut g);
     }
 
     /// Hotkey thread: Esc while armed cancels.
@@ -275,6 +260,31 @@ impl ScreenClickBridge {
         g.armed = None;
         sync_hook_wants_moves(false);
     }
+}
+
+fn apply_left_click(g: &mut Inner) {
+    let pos = g.last_pos;
+    match g.armed.clone() {
+        Some(Armed::Point) => {
+            g.point = Some(pos);
+            g.armed = None;
+        }
+        Some(Armed::Color) => {
+            g.color_point = Some(pos);
+            g.armed = None;
+        }
+        Some(Armed::SearchArea { first: None }) => {
+            g.armed = Some(Armed::SearchArea { first: Some(pos) });
+        }
+        Some(Armed::SearchArea {
+            first: Some((lx, ty)),
+        }) => {
+            g.search_area = Some(normalize_rect(lx, ty, pos.0, pos.1));
+            g.armed = None;
+        }
+        None => {}
+    }
+    sync_hook_wants_moves(g.armed.is_some());
 }
 
 #[cfg(test)]
@@ -362,16 +372,32 @@ mod tests {
     }
 
     #[test]
-    fn mouse_delta_keeps_absolute_origin() {
+    fn allow_hook_clicks_keeps_grab_flag() {
         let b = ScreenClickBridge::new();
         b.arm_search_area();
-        b.on_mouse_move(100, 200);
-        b.on_mouse_delta(50, -10);
-        assert_eq!(b.last_pos(), (150, 190));
         b.set_grab_owns_input(true);
         assert!(b.block_hook_clicks());
         b.allow_hook_clicks();
         assert!(!b.block_hook_clicks());
         assert!(b.grab_owns_input());
+    }
+
+    #[test]
+    fn left_click_uses_absolute_pos_even_after_arm() {
+        let b = ScreenClickBridge::new();
+        b.set_absolute_pos(|| Some((3212, 528)));
+        b.on_mouse_move(10, 10);
+        b.arm_search_area();
+        b.on_left_click();
+        assert_eq!(b.peek_search_area_draft(), Some((3212, 528, 3212, 528)));
+    }
+
+    #[test]
+    fn left_click_at_ignores_absolute_pos() {
+        let b = ScreenClickBridge::new();
+        b.set_absolute_pos(|| Some((3212, 528)));
+        b.arm_search_area();
+        b.on_left_click_at(40, 50);
+        assert_eq!(b.peek_search_area_draft(), Some((40, 50, 40, 50)));
     }
 }

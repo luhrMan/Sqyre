@@ -273,6 +273,8 @@ impl SqyreApp {
 
         let (mut hotkeys, continue_wait, screen_click, macro_record_bridge, macro_hotkeys) =
             default_hotkeys();
+        #[cfg(all(feature = "native-runtime", target_os = "linux"))]
+        screen_click.set_absolute_pos(sqyre_capture::portal_cursor_position);
         let run = RunState::default();
         let stop = run.stop.clone();
         let pending_hotkey_macros = Arc::new(Mutex::new(Vec::new()));

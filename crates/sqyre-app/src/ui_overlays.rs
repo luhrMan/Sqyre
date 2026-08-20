@@ -362,6 +362,20 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         }
         if app.pixel_sample_pending.is_none() {
             if let Some((x, y)) = app.screen_click.take_color_point() {
+                #[cfg(target_os = "linux")]
+                if let Some(hex) = app.recording_overlay.sample_frozen_pixel_hex(x, y) {
+                    app.tree.tooltip.apply_recorded_color(hex.clone());
+                    app.add_action_picker.apply_recorded_color(hex);
+                } else {
+                    match pixel_color::spawn_sample_pixel_hex(x, y) {
+                        Ok(rx) => {
+                            app.pixel_sample_pending = Some(rx);
+                            ctx.request_repaint();
+                        }
+                        Err(e) => crate::log::warn(format!("sample pixel color: {e}")),
+                    }
+                }
+                #[cfg(not(target_os = "linux"))]
                 match pixel_color::spawn_sample_pixel_hex(x, y) {
                     Ok(rx) => {
                         app.pixel_sample_pending = Some(rx);
