@@ -88,7 +88,6 @@ struct HookCtx {
     macro_hotkeys: MacroHotkeyBridge,
     callbacks: HotkeyCallbacks,
     pressed: HashSet<&'static str>,
-    last_evdev_pos: Option<(f64, f64)>,
 }
 
 impl HookCtx {
@@ -106,13 +105,10 @@ impl HookCtx {
                 {
                     return;
                 }
-                let prev = self.last_evdev_pos.replace((*x, *y));
-                if self.screen_click.grab_owns_input() {
-                    if let Some((lx, ly)) = prev {
-                        self.screen_click
-                            .on_mouse_delta((*x - lx) as i32, (*y - ly) as i32);
-                    }
-                } else {
+                // Wayland evdev REL is raw counts, not pixels, and keeps firing
+                // after the compositor clamps at the screen edge. Recording
+                // position comes from portal cursor metadata / XQueryPointer.
+                if !self.screen_click.grab_owns_input() {
                     self.screen_click.on_mouse_move(*x as i32, *y as i32);
                 }
                 self.macro_record.on_mouse_move(*x as i32, *y as i32);
@@ -228,7 +224,6 @@ impl HotkeyService for RdevHotkeys {
             macro_hotkeys: self.macro_hotkeys.clone(),
             callbacks,
             pressed: HashSet::new(),
-            last_evdev_pos: None,
         };
         let handle = thread::Builder::new()
             .name("sqyre-hotkeys".into())

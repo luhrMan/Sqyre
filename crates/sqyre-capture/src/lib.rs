@@ -36,6 +36,8 @@ mod x11_grab;
 mod x11_outline;
 #[cfg(target_os = "linux")]
 mod x11_secondary;
+#[cfg(target_os = "linux")]
+mod x11_snapshot_overlay;
 
 pub use diag::{
     cap_log, disk_logging_enabled, event_log, mark_site, note, read_last_site, set_disk_logging,
@@ -73,6 +75,9 @@ pub use win_outline::SelectionOutline;
 
 #[cfg(target_os = "linux")]
 pub use x11_grab::SelectionGrab;
+
+#[cfg(target_os = "linux")]
+pub use x11_snapshot_overlay::{FrozenFrame, FrozenSelectionOverlay};
 
 #[cfg(target_os = "windows")]
 pub use win_grab::SelectionGrab;

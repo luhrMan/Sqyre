@@ -6,9 +6,10 @@
 //!   relative-capture the mouse cannot block selection. Do **not** use an eframe
 //!   fullscreen viewport for this on GNOME/Wayland: Mutter un-redirects those
 //!   surfaces and they paint as opaque black.
-//! - OS edge windows ([`sqyre_capture::SelectionOutline`]) for the live search-area
-//!   rect or a hovered point / search-area preview — not a fullscreen desktop
-//!   snapshot (X11 on Linux, Win32 popups on Windows).
+//! - On GNOME/Wayland, a frozen screenshot cover ([`sqyre_capture::FrozenSelectionOverlay`])
+//!   sits over XWayland windows, owns pointer events, and paints the gold rubber-band
+//!   onto that freeze (separate edge windows would sit under the cover).
+//! - Native X11 uses the grab + edge windows without a snapshot.
 //! - A small always-on-top egui viewport for live coords / status while recording
 //!   (needed when the main window is hidden via `hide_app_during_recording`).
 //!   The HUD sits on the opposite vertical edge of the monitor from the cursor so
@@ -16,9 +17,10 @@
 //!
 //! Outline / grab HWNDs and X11 windows are updated on the UI thread only. A short
 //! poller only `request_repaint`s while recording is armed so the HUD keeps updating
-//! when the root viewport is `Visible(false)`. Driving Win32 outline windows from a
-//! background thread while glow paints preview textures hard-crashed on Windows
-//! (no Rust panic / `crash.log`).
+//! when the root viewport is `Visible(false)`. On GNOME Wayland the main window stays
+//! mapped (Recording panel) because a minimized surface gets no frame callbacks.
+//! Driving Win32 outline windows from a background thread while glow paints preview
+//! textures hard-crashed on Windows (no Rust panic / `crash.log`).
 
 use crate::theme;
 use eframe::egui::{self, Pos2, TextStyle, Vec2, ViewportBuilder, ViewportClass, ViewportId};
@@ -29,6 +31,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+#[cfg(target_os = "linux")]
+use sqyre_capture::{FrozenFrame, FrozenSelectionOverlay};
 
 const POLL_MS: u64 = 16;
 const HUD_ID: &str = "sqyre_recording_coords_hud";
@@ -67,6 +72,15 @@ pub struct RecordingOverlay {
     monitor_rects: Vec<DesktopRect>,
     logged_outline_ptr: bool,
     last_x11_ptr: Option<(i32, i32)>,
+    last_portal_ptr: Option<(i32, i32)>,
+    /// Wayland: frozen screenshot cover over X11/XWayland windows.
+    #[cfg(target_os = "linux")]
+    snapshot: Option<FrozenSelectionOverlay>,
+    #[cfg(target_os = "linux")]
+    snapshot_failed: bool,
+    /// Freeze kept after the cover unmaps so Find Pixel can sample it.
+    #[cfg(target_os = "linux")]
+    freeze: Option<FrozenFrame>,
 }
 
 impl RecordingOverlay {
@@ -89,11 +103,21 @@ impl RecordingOverlay {
         let recording = screen_click.is_armed() || macro_armed;
         self.sync_selection_grab(screen_click);
         #[cfg(target_os = "linux")]
-        self.sync_x11_pointer(screen_click);
-        let rect = screen_click
-            .peek_search_area_selection()
-            .or(preview_outline);
+        {
+            if !self.sync_linux_snapshot(screen_click) {
+                self.sync_linux_pointer(screen_click);
+            }
+        }
+        let selection = screen_click.peek_search_area_selection();
+        let rect = selection.or(preview_outline);
 
+        #[cfg(target_os = "linux")]
+        if self.snapshot.is_some() {
+            self.apply_snapshot_rect(selection);
+        } else if rect.is_some() || self.outline.is_some() {
+            self.apply_outline(rect);
+        }
+        #[cfg(not(target_os = "linux"))]
         if rect.is_some() || self.outline.is_some() {
             self.apply_outline(rect);
         }
@@ -107,6 +131,12 @@ impl RecordingOverlay {
             self.monitor_rects.clear();
             self.logged_outline_ptr = false;
             self.last_x11_ptr = None;
+            self.last_portal_ptr = None;
+            #[cfg(target_os = "linux")]
+            {
+                self.close_snapshot();
+                self.snapshot_failed = false;
+            }
         }
     }
 
@@ -119,9 +149,13 @@ impl RecordingOverlay {
 
         if skip_x11_pointer_grab() {
             // XGrabPointer on an XWayland InputOnly window stalls GNOME and does
-            // not own the Wayland cursor. Track via XQueryPointer + evdev deltas.
+            // not own the Wayland cursor. The frozen snapshot cover owns input
+            // when it maps; until then hooks still deliver clicks.
             screen_click.set_grab_owns_input(true);
-            screen_click.allow_hook_clicks();
+            #[cfg(target_os = "linux")]
+            if self.snapshot.is_none() {
+                screen_click.allow_hook_clicks();
+            }
             return;
         }
 
@@ -176,7 +210,7 @@ impl RecordingOverlay {
             screen_click.on_mouse_move(poll.x, poll.y);
         }
         for _ in 0..poll.left_clicks {
-            screen_click.on_left_click();
+            screen_click.on_left_click_at(poll.x, poll.y);
         }
         if poll.escape {
             let _ = screen_click.on_escape();
@@ -200,12 +234,99 @@ impl RecordingOverlay {
         }
     }
 
-    /// Sample the X11 root pointer (same connection as the outline).
     #[cfg(target_os = "linux")]
-    fn sync_x11_pointer(&mut self, screen_click: &ScreenClickBridge) {
+    fn sync_linux_snapshot(&mut self, screen_click: &ScreenClickBridge) -> bool {
+        if !skip_x11_pointer_grab() {
+            self.close_snapshot();
+            return false;
+        }
+        if !screen_click.is_armed() {
+            self.close_snapshot();
+            return false;
+        }
+        if self.snapshot.is_none() && !self.snapshot_failed {
+            mark_site("snapshot:open");
+            match FrozenSelectionOverlay::capture_and_open() {
+                Ok(overlay) => {
+                    self.freeze = None;
+                    self.snapshot = Some(overlay);
+                    screen_click.set_grab_owns_input(true);
+                }
+                Err(e) if FrozenSelectionOverlay::capture_retryable(&e) => return false,
+                Err(e) => {
+                    self.snapshot_failed = true;
+                    crate::log::warn(format_args!("frozen snapshot overlay unavailable: {e}"));
+                    return false;
+                }
+            }
+        }
+        screen_click.set_grab_owns_input(true);
+        let poll = {
+            let Some(snapshot) = self.snapshot.as_mut() else {
+                return false;
+            };
+            snapshot.poll()
+        };
+        if poll.moved {
+            screen_click.on_mouse_move(poll.x, poll.y);
+        }
+        for _ in 0..poll.left_clicks {
+            screen_click.on_left_click_at(poll.x, poll.y);
+        }
+        if poll.escape {
+            let _ = screen_click.on_escape();
+        }
+        if self.monitor_rects.is_empty() {
+            if let Some(snapshot) = self.snapshot.as_ref() {
+                self.monitor_rects = snapshot.virtual_rects();
+            }
+        }
+        true
+    }
+
+    #[cfg(target_os = "linux")]
+    fn close_snapshot(&mut self) {
+        if let Some(overlay) = self.snapshot.take() {
+            mark_site("snapshot:close");
+            self.freeze = Some(overlay.into_frame());
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn apply_snapshot_rect(&mut self, rect: Option<OutlineCorners>) {
+        let Some(snapshot) = self.snapshot.as_mut() else {
+            return;
+        };
+        match rect {
+            Some((lx, ty, rx, by)) => snapshot.set_rect(lx, ty, rx, by),
+            None => snapshot.clear_rect(),
+        }
+    }
+
+    /// Sample Find Pixel from the freeze (cover or kept frame). `None` if no freeze.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn sample_frozen_pixel_hex(&self, x: i32, y: i32) -> Option<String> {
+        if let Some(snapshot) = self.snapshot.as_ref() {
+            return snapshot.sample_hex(x, y);
+        }
+        self.freeze.as_ref().and_then(|f| f.sample_hex(x, y))
+    }
+
+    /// Merge compositor-absolute pointer sources.
+    ///
+    /// Portal ScreenCast cursor metadata is compositor-absolute for both native
+    /// Wayland and XWayland. `XQueryPointer` over a fullscreen XWayland game is a
+    /// blocking round-trip that delays the first outline by seconds and makes
+    /// every later frame hitch. Only query X11 when portal position is missing.
+    #[cfg(target_os = "linux")]
+    fn sync_linux_pointer(&mut self, screen_click: &ScreenClickBridge) {
         if !screen_click.is_armed() {
             return;
         }
+        let portal_raw = sqyre_capture::portal_cursor_position();
+        let wayland = skip_x11_pointer_grab();
+        // Create (and pre-map) edge windows on arm — while the user is still in
+        // Sqyre — so the first click on an XWayland game only ConfigureWindow.
         if self.outline.is_none() && !self.outline_failed {
             mark_site("outline:open");
             match SelectionOutline::open() {
@@ -213,52 +334,90 @@ impl RecordingOverlay {
                 Err(e) => {
                     self.outline_failed = true;
                     crate::log::warn(format_args!("selection outline unavailable: {e}"));
-                    return;
                 }
             }
         }
-        let Some(outline) = self.outline.as_mut() else {
-            return;
-        };
-        let Some((x, y, _left)) = outline.query_pointer() else {
-            return;
-        };
-        // Only trust X11 when it actually moved. On the other GNOME output the
-        // cursor is not in XWayland, so QueryPointer sticks and evdev deltas win.
-        if self.last_x11_ptr != Some((x, y)) {
-            screen_click.on_mouse_move(x, y);
-            self.last_x11_ptr = Some((x, y));
-        }
         if self.monitor_rects.is_empty() {
-            let mut rects = outline.virtual_rects();
-            let portal = sqyre_capture::preferred_monitor_rects();
-            if portal.iter().map(|r| r.w).sum::<i32>() > rects.iter().map(|r| r.w).sum::<i32>() {
-                rects = portal;
+            if let Some(outline) = self.outline.as_ref() {
+                // Xinerama was cached during outline open. Do not call
+                // preferred_monitor_rects() here — it locks the PipeWire frame mutex
+                // (4K copy) and starves the rubber-band for seconds.
+                self.monitor_rects = outline.virtual_rects();
             }
-            self.monitor_rects = rects;
+        }
+        let portal = portal_raw.map(|(x, y)| clamp_to_desktop(&self.monitor_rects, x, y));
+        let x11 = if wayland || portal.is_some() {
+            None
+        } else if let Some(outline) = self.outline.as_ref() {
+            if outline.has_separate_pointer_conn() || self.last_x11_ptr.is_none() {
+                outline
+                    .query_pointer()
+                    .map(|(x, y, _)| clamp_to_desktop(&self.monitor_rects, x, y))
+            } else {
+                self.last_x11_ptr
+            }
+        } else {
+            None
+        };
+        if let Some((x, y)) = linux_pointer_snap(portal, self.last_x11_ptr, x11) {
+            screen_click.on_mouse_move(x, y);
+        }
+        self.last_portal_ptr = portal;
+        if let Some(pos) = x11 {
+            self.last_x11_ptr = Some(pos);
+        }
+        let (x, y) = screen_click.last_pos();
+        let clamped = clamp_to_desktop(&self.monitor_rects, x, y);
+        if clamped != (x, y) {
+            screen_click.on_mouse_move(clamped.0, clamped.1);
         }
         if !self.logged_outline_ptr {
             self.logged_outline_ptr = true;
-            let root = outline
-                .root_size()
-                .map(|(w, h)| format!("{w}x{h}"))
-                .unwrap_or_else(|| "unknown".into());
-            let x11n = outline.virtual_rects().len();
+            let ptr = screen_click.last_pos();
+            let portal_s = self
+                .last_portal_ptr
+                .map(|(x, y)| format!("{x},{y}"))
+                .unwrap_or_else(|| "none".into());
+            let (root, x11n, ptr_conn, input) = match self.outline.as_ref() {
+                Some(outline) => (
+                    outline
+                        .root_size()
+                        .map(|(w, h)| format!("{w}x{h}"))
+                        .unwrap_or_else(|| "unknown".into()),
+                    outline.virtual_rects().len(),
+                    if outline.has_separate_pointer_conn() {
+                        "separate"
+                    } else {
+                        "shared"
+                    },
+                    if outline.input_passthrough() {
+                        "passthrough"
+                    } else {
+                        "opaque"
+                    },
+                ),
+                None => ("pending".into(), 0, "none", "pending"),
+            };
             event_log(
                 "SQYRE_OUTLINE",
                 &[
-                    ("ptr", &format!("{x},{y}")),
+                    ("ptr", &format!("{},{}", ptr.0, ptr.1)),
+                    ("portal", &portal_s),
                     ("root", &root),
                     ("x11_outputs", &x11n.to_string()),
                     ("desktop_outputs", &self.monitor_rects.len().to_string()),
                     (
                         "grab",
-                        if skip_x11_pointer_grab() {
-                            "xquery+evdev"
+                        if portal.is_some() {
+                            "portal"
+                        } else if wayland {
+                            "portal-wait"
                         } else {
                             "x11"
                         },
                     ),
+                    ("ptr_conn", ptr_conn),
+                    ("input", input),
                 ],
             );
         }
@@ -431,6 +590,8 @@ impl Drop for RecordingOverlay {
         if let Some(mut outline) = self.outline.take() {
             outline.clear();
         }
+        #[cfg(target_os = "linux")]
+        self.close_snapshot();
     }
 }
 
@@ -443,6 +604,45 @@ fn skip_x11_pointer_grab() -> bool {
     {
         false
     }
+}
+
+/// Absolute compositor snap for this frame.
+///
+/// Portal wins whenever it exists (XWayland games included). XQueryPointer is
+/// only a fallback for when ScreenCast cursor metadata is missing.
+fn linux_pointer_snap(
+    portal: Option<(i32, i32)>,
+    last_x11: Option<(i32, i32)>,
+    x11: Option<(i32, i32)>,
+) -> Option<(i32, i32)> {
+    if portal.is_some() {
+        return portal;
+    }
+    if let Some(pos) = x11 {
+        if last_x11 != Some(pos) {
+            return Some(pos);
+        }
+    }
+    None
+}
+
+/// Clamp to the bounding box of the known outputs so a stuck edge drag cannot
+/// walk `last_pos` to ±∞.
+fn clamp_to_desktop(rects: &[DesktopRect], x: i32, y: i32) -> (i32, i32) {
+    let Some(first) = rects.first() else {
+        return (x.max(0), y.max(0));
+    };
+    let mut min_x = first.x;
+    let mut min_y = first.y;
+    let mut max_x = first.x.saturating_add(first.w.saturating_sub(1));
+    let mut max_y = first.y.saturating_add(first.h.saturating_sub(1));
+    for r in rects.iter().skip(1) {
+        min_x = min_x.min(r.x);
+        min_y = min_y.min(r.y);
+        max_x = max_x.max(r.x.saturating_add(r.w.saturating_sub(1)));
+        max_y = max_y.max(r.y.saturating_add(r.h.saturating_sub(1)));
+    }
+    (x.clamp(min_x, max_x), y.clamp(min_y, max_y))
 }
 
 fn monitor_for_pointer_in(rects: &[DesktopRect], x: i32, y: i32) -> DesktopRect {
@@ -626,5 +826,47 @@ mod tests {
         // Sticky bottom until cursor moves well into the lower half.
         assert!(!pick_hud_edge(Some(false), 600, mon));
         assert!(pick_hud_edge(Some(false), 700, mon));
+    }
+
+    #[test]
+    fn clamp_to_desktop_rejects_negatives_and_past_edge() {
+        let rects = [
+            DesktopRect {
+                x: 0,
+                y: 146,
+                w: 1920,
+                h: 1080,
+            },
+            DesktopRect {
+                x: 1920,
+                y: 0,
+                w: 2560,
+                h: 1440,
+            },
+        ];
+        assert_eq!(clamp_to_desktop(&rects, -400, -20), (0, 0));
+        assert_eq!(clamp_to_desktop(&rects, 9000, 50), (4479, 50));
+        assert_eq!(clamp_to_desktop(&rects, 3327, 967), (3327, 967));
+        assert_eq!(clamp_to_desktop(&[], -3, 10), (0, 10));
+    }
+
+    #[test]
+    fn linux_pointer_snap_prefers_portal_over_x11() {
+        assert_eq!(
+            linux_pointer_snap(None, None, Some((10, 20))),
+            Some((10, 20))
+        );
+        assert_eq!(
+            linux_pointer_snap(None, Some((10, 20)), Some((10, 20))),
+            None
+        );
+        assert_eq!(
+            linux_pointer_snap(Some((30, 40)), Some((10, 20)), Some((10, 20))),
+            Some((30, 40))
+        );
+        assert_eq!(
+            linux_pointer_snap(Some((30, 40)), Some((10, 20)), Some((11, 20))),
+            Some((30, 40))
+        );
     }
 }

@@ -43,11 +43,13 @@ impl SqyreApp {
                 self.hidden_for_recording = true;
                 #[cfg(feature = "native-runtime")]
                 sqyre_capture::mark_site("recording:hide_main");
-                // GNOME Wayland often ignores Visible(false); the wgpu surface then
-                // clears transparent → opaque black. Minimize instead.
+                // GNOME Wayland ignores Visible(false) (black window) and a
+                // minimized xdg_toplevel gets no frame callbacks, so the
+                // rubber-band (updated from egui paints) freezes after one frame.
+                // Keep the surface mapped and paint the in-window Recording panel.
                 #[cfg(all(feature = "native-runtime", target_os = "linux"))]
                 if sqyre_capture::LinuxSessionInfo::detect().has_wayland {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                    sqyre_capture::event_log("SQYRE_HUD", &[("hide", "shown-panel")]);
                 } else {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                 }
