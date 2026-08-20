@@ -4692,9 +4692,13 @@ dependencies = [
  "rayon",
  "reis",
  "sqyre-ports",
+ "wayland-client",
+ "wayland-protocols",
+ "wayland-protocols-wlr",
  "web-time",
  "windows",
  "x11",
+ "zbus",
 ]
 
 [[package]]

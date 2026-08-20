@@ -3,7 +3,7 @@
 use crate::window_match::{paths_equal, pick_matching_icon, titles_equal};
 use crate::{CaptureError, ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use parking_lot::Mutex;
-use sqyre_ports::{AutomationError, WindowFocuser};
+use sqyre_ports::AutomationError;
 use std::collections::HashSet;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_ulong;
@@ -48,16 +48,6 @@ where
     }
     let display = guard.as_ref().expect("just inserted").display;
     f(display)
-}
-
-/// Focus a top-level window by executable path + window title.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct OsWindowFocuser;
-
-impl WindowFocuser for OsWindowFocuser {
-    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError> {
-        activate_window(process_path, window_title)
-    }
 }
 
 /// List open top-level windows with title + executable path.
@@ -134,7 +124,10 @@ pub fn skip_taskbar_for_overlay_windows() -> Result<(), CaptureError> {
     result.map_err(CaptureError::Message)
 }
 
-fn activate_window(process_path: &str, window_title: &str) -> Result<(), AutomationError> {
+pub(crate) fn activate_window(
+    process_path: &str,
+    window_title: &str,
+) -> Result<(), AutomationError> {
     let path = process_path.trim();
     let title = window_title.trim();
     if path.is_empty() || title.is_empty() {

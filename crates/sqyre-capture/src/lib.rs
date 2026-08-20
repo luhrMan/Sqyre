@@ -60,7 +60,7 @@ pub use win_capture::{
 };
 
 #[cfg(target_os = "linux")]
-pub use x11_focus::OsWindowFocuser;
+pub use linux::wayland::OsWindowFocuser;
 
 #[cfg(target_os = "windows")]
 pub use win_focus::OsWindowFocuser;
@@ -353,7 +353,7 @@ pub fn monitor_count() -> usize {
 /// Open top-level windows with stable executable path and title.
 #[cfg(target_os = "linux")]
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
-    x11_focus::list_open_windows()
+    linux::wayland::list_open_windows()
 }
 
 #[cfg(target_os = "windows")]
@@ -369,7 +369,7 @@ pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
 /// Currently focused top-level window, if any.
 #[cfg(target_os = "linux")]
 pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
-    x11_focus::get_active_window()
+    linux::wayland::get_active_window()
 }
 
 #[cfg(target_os = "windows")]
@@ -491,17 +491,19 @@ pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
     if want.is_empty() {
         return true;
     }
-    let got = win.process_path.trim();
-    if got.is_empty() {
-        return false;
-    }
-    if got.eq_ignore_ascii_case(want) {
-        return true;
-    }
     let want_base = std::path::Path::new(want)
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
         .unwrap_or_else(|| want.to_lowercase());
+    let got = win.process_path.trim();
+    if got.is_empty() {
+        let name = win.process_name.trim();
+        return !name.is_empty()
+            && (name.eq_ignore_ascii_case(want) || name.eq_ignore_ascii_case(&want_base));
+    }
+    if got.eq_ignore_ascii_case(want) {
+        return true;
+    }
     let got_base = std::path::Path::new(got)
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
@@ -597,6 +599,15 @@ mod tests {
         assert!(super::window_matches_process(&w, "/elsewhere/DemoGame"));
         assert!(!super::window_matches_process(&w, "/opt/other/OtherApp"));
         assert!(super::window_matches_process(&w, ""));
+        let unnamed = WindowInfo {
+            title: "Firefox".into(),
+            process_name: "firefox".into(),
+            process_path: String::new(),
+            icon: None,
+        };
+        assert!(super::window_matches_process(&unnamed, "/usr/bin/firefox"));
+        assert!(super::window_matches_process(&unnamed, "firefox"));
+        assert!(!super::window_matches_process(&unnamed, "chrome"));
     }
 
     #[test]

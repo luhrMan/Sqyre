@@ -1,5 +1,10 @@
 //! Wayland-native backends (portal ScreenCast, foreign-toplevel, layer-shell).
 
+mod app_resolve;
+mod atspi_windows;
+mod foreign_toplevel;
+mod windows;
+
 #[cfg(feature = "portal-capture")]
 mod eis;
 #[cfg(feature = "portal-capture")]
@@ -11,6 +16,9 @@ pub use portal_capture::{
     portal_input_scroll, portal_remote_desktop_granted, portal_screencast_granted,
     request_portal_screencast_picker, PortalCapturer,
 };
+
+pub use windows::OsWindowFocuser;
+pub(crate) use windows::{get_active_window, list_open_windows};
 
 use sqyre_ports::CaptureError;
 
@@ -30,11 +38,9 @@ pub fn portal_capture_available() -> Result<(), CaptureError> {
     }
 }
 
-/// Probe-only: foreign-toplevel window management (not implemented).
+/// Probe: Wayland foreign-toplevel and/or AT-SPI window listing is usable.
 pub fn toplevel_focus_available() -> Result<(), CaptureError> {
-    Err(CaptureError::Message(
-        "Wayland foreign-toplevel focus not implemented yet".into(),
-    ))
+    windows::toplevel_focus_available()
 }
 
 /// Probe-only: wlr-layer-shell overlays (not implemented).
