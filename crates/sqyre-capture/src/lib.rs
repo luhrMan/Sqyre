@@ -330,9 +330,16 @@ pub fn portal_input_ready() -> bool {
 
 #[cfg(all(target_os = "linux", feature = "portal-capture"))]
 pub use linux::wayland::{
-    portal_input_click, portal_input_key, portal_input_last_pos, portal_input_move,
-    portal_input_scroll,
+    portal_cursor_position, portal_input_click, portal_input_key, portal_input_last_pos,
+    portal_input_move, portal_input_scroll,
 };
+
+/// Compositor pointer from ScreenCast cursor metadata (Wayland). `None` on other
+/// targets, without portal-capture, or before the first metadata sample.
+#[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+pub fn portal_cursor_position() -> Option<(i32, i32)> {
+    None
+}
 
 /// Show the portal ScreenCast picker again (Wayland). No-op on other targets.
 pub fn request_portal_screencast_picker() {
