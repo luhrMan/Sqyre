@@ -38,6 +38,7 @@ const POINT_OUTLINE_HALF: i32 = 10;
 pub enum PreviewKind {
     Point,
     SearchArea,
+    Collection,
 }
 
 struct CacheEntry {
@@ -82,7 +83,10 @@ impl PreviewTooltipCache {
         }
         let prefix_pt = format!("pt:{name}:");
         let prefix_sa = format!("sa:{name}:");
-        let drop = |k: &str| k.starts_with(&prefix_pt) || k.starts_with(&prefix_sa);
+        let prefix_col = format!("col:{name}:");
+        let drop = |k: &str| {
+            k.starts_with(&prefix_pt) || k.starts_with(&prefix_sa) || k.starts_with(&prefix_col)
+        };
         self.entries.retain(|k, _| !drop(k));
         self.order.retain(|k| !drop(k));
         self.pending.retain(|k, _| !drop(k));
@@ -263,6 +267,7 @@ impl PreviewTooltipCache {
                 top,
                 right,
                 bottom,
+                grid: None,
             },
             force,
             PANEL_MAX_DIM,
@@ -470,6 +475,7 @@ enum PreviewCoords {
         top: i32,
         right: i32,
         bottom: i32,
+        grid: Option<(i32, i32)>,
     },
 }
 
@@ -508,6 +514,7 @@ fn capture_preview(
             top,
             right,
             bottom,
+            grid,
         } => {
             let (lx, ty, rx, by) = normalize_rect(left, top, right, bottom);
             if rx <= lx || by <= ty {
@@ -520,15 +527,14 @@ fn capture_preview(
             }
             let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
             let mut img = capture_rect(bounds)?;
-            draw_rect_outline(
-                &mut img,
-                lx - bounds.x,
-                ty - bounds.y,
-                rx - bounds.x,
-                by - bounds.y,
-                OVERLAY,
-                2,
-            );
+            let olx = lx - bounds.x;
+            let oty = ty - bounds.y;
+            let orx = rx - bounds.x;
+            let oby = by - bounds.y;
+            draw_rect_outline(&mut img, olx, oty, orx, oby, OVERLAY, 2);
+            if let Some((rows, cols)) = grid {
+                draw_grid_lines(&mut img, (olx, oty, orx, oby), rows, cols, OVERLAY, 1);
+            }
             Ok(downscale_max_dim(img, max_dim))
         }
     }
@@ -569,7 +575,7 @@ fn ref_preview_spec(
                 coords,
             ))
         }
-        PreviewKind::SearchArea => {
+        PreviewKind::SearchArea | PreviewKind::Collection => {
             let (left, top, right, bottom) = catalog
                 .resolve_search_area(coord_ref, &macro_)
                 .map_err(|e| e.to_string())?;
@@ -578,6 +584,7 @@ fn ref_preview_spec(
                 top,
                 right,
                 bottom,
+                grid: None,
             };
             Ok((
                 cache_key_ref(coord_ref, coords),
@@ -596,6 +603,7 @@ fn cache_key_ref(coord_ref: &CoordinateRef, coords: PreviewCoords) -> String {
             top,
             right,
             bottom,
+            grid: _,
         } => format!(
             "ref:sa:{}:{left}:{top}:{right}:{bottom}",
             coord_ref.as_str()
@@ -651,6 +659,39 @@ fn entity_preview_spec(
                     top,
                     right,
                     bottom,
+                    grid: None,
+                },
+            ))
+        }
+        PreviewKind::Collection => {
+            let col = pdata
+                .collections
+                .get(name)
+                .ok_or(EntityPreviewError::Missing)?;
+            if col.search_area.is_empty() {
+                return Err(EntityPreviewError::Missing);
+            }
+            let sa = pdata
+                .search_areas
+                .get(res)
+                .or_else(|| pdata.search_areas.values().next())
+                .and_then(|m| m.get(&col.search_area))
+                .ok_or(EntityPreviewError::Missing)?;
+            let left = coord_to_literal(&sa.left_x).ok_or(EntityPreviewError::NonLiteral)?;
+            let top = coord_to_literal(&sa.top_y).ok_or(EntityPreviewError::NonLiteral)?;
+            let right = coord_to_literal(&sa.right_x).ok_or(EntityPreviewError::NonLiteral)?;
+            let bottom = coord_to_literal(&sa.bottom_y).ok_or(EntityPreviewError::NonLiteral)?;
+            let rows = col.rows.max(1);
+            let cols = col.cols.max(1);
+            Ok((
+                cache_key_collection(&col.name, sa, rows, cols),
+                collection_caption(sa, rows, cols),
+                PreviewCoords::SearchArea {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                    grid: Some((rows, cols)),
                 },
             ))
         }
@@ -672,6 +713,19 @@ fn cache_key_search_area(sa: &ProgramSearchArea) -> String {
     )
 }
 
+fn cache_key_collection(name: &str, sa: &ProgramSearchArea, rows: i32, cols: i32) -> String {
+    format!(
+        "col:{}:{}:{}:{}:{}:{}x{}",
+        name,
+        sa.left_x.as_display(),
+        sa.top_y.as_display(),
+        sa.right_x.as_display(),
+        sa.bottom_y.as_display(),
+        rows,
+        cols
+    )
+}
+
 fn point_caption(pt: &ProgramPoint) -> String {
     format!("X: {}, Y: {}", pt.x.as_display(), pt.y.as_display())
 }
@@ -684,6 +738,10 @@ fn search_area_caption(sa: &ProgramSearchArea) -> String {
         sa.right_x.as_display(),
         sa.bottom_y.as_display()
     )
+}
+
+fn collection_caption(sa: &ProgramSearchArea, rows: i32, cols: i32) -> String {
+    format!("{} ({rows}×{cols})", search_area_caption(sa))
 }
 
 /// Literal numeric coordinate suitable for a live screen preview.
@@ -793,6 +851,7 @@ fn desktop_outline_rect(coords: PreviewCoords) -> (i32, i32, i32, i32) {
             top,
             right,
             bottom,
+            grid: _,
         } => normalize_rect(left, top, right, bottom),
     }
 }
@@ -958,6 +1017,34 @@ fn draw_rect_outline(
     draw_vline(img, x1, ty, y1, c, thick);
 }
 
+fn draw_grid_lines(
+    img: &mut RgbaImage,
+    rect: (i32, i32, i32, i32),
+    rows: i32,
+    cols: i32,
+    c: Rgba<u8>,
+    thick: i32,
+) {
+    let (lx, ty, rx, by) = normalize_rect(rect.0, rect.1, rect.2, rect.3);
+    if rx <= lx || by <= ty {
+        return;
+    }
+    let rows = rows.max(1);
+    let cols = cols.max(1);
+    let w = rx - lx;
+    let h = by - ty;
+    let x1 = rx - 1;
+    let y1 = by - 1;
+    for i in 1..rows {
+        let y = ty + i * h / rows;
+        draw_hline(img, y, lx, x1, c, thick);
+    }
+    for i in 1..cols {
+        let x = lx + i * w / cols;
+        draw_vline(img, x, ty, y1, c, thick);
+    }
+}
+
 fn draw_point_marker(img: &mut RgbaImage, cx: i32, cy: i32, c: Rgba<u8>, thick: i32) {
     // Circle radius 8 (approx) + crosshair arms ±15.
     for dy in -8..=8 {
@@ -1071,6 +1158,10 @@ mod tests {
         assert_eq!(
             search_area_caption(&sa),
             "Left: 10, Top: 20, Right: 110, Bottom: 80"
+        );
+        assert_eq!(
+            collection_caption(&sa, 2, 2),
+            "Left: 10, Top: 20, Right: 110, Bottom: 80 (2×2)"
         );
     }
 
