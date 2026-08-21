@@ -44,7 +44,7 @@ pub(crate) fn execute_find_pixel(
         wait,
         100,
         100,
-        |exec, macro_| {
+        |exec, macro_, fresh| {
             Ok(try_find_pixels(
                 exec,
                 action_id,
@@ -54,6 +54,7 @@ pub(crate) fn execute_find_pixel(
                 *color_tolerance,
                 &order,
                 macro_,
+                fresh,
             ))
         },
         |hits| !hits.is_empty(),
@@ -106,6 +107,7 @@ fn try_find_pixels(
     color_tolerance: i32,
     order: &MatchOrder,
     macro_: &Macro,
+    fresh: bool,
 ) -> Vec<DetectionHit> {
     let Some((buf, origin)) = capture_search_buf(
         exec,
@@ -113,6 +115,7 @@ fn try_find_pixels(
         label,
         search_area,
         macro_,
+        fresh,
         |_, _, _, _, _| {},
     ) else {
         return Vec::new();

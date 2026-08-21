@@ -60,7 +60,7 @@ pub(crate) fn execute_ocr(
         vec![target.clone()]
     };
 
-    let attempt0 = ocr_attempt(exec, action_id, &ocr_params, &order, macro_);
+    let attempt0 = ocr_attempt(exec, action_id, &ocr_params, &order, macro_, false);
     if wait.wait_until_found_active() && attempt0.hits.is_empty() {
         exec.log(
             action_id,
@@ -86,11 +86,18 @@ pub(crate) fn execute_ocr(
         wait,
         100,
         100,
-        |exec, macro_| {
+        |exec, macro_, fresh| {
             if let Some(first) = initial.take() {
                 return Ok(first);
             }
-            Ok(ocr_attempt(exec, action_id, &ocr_params, &order, macro_))
+            Ok(ocr_attempt(
+                exec,
+                action_id,
+                &ocr_params,
+                &order,
+                macro_,
+                fresh,
+            ))
         },
         |attempt| !attempt.hits.is_empty(),
         |exec, macro_, attempt, pass| {
@@ -148,8 +155,9 @@ fn ocr_attempt(
     params: &OcrRunParams<'_>,
     order: &MatchOrder,
     macro_: &Macro,
+    fresh: bool,
 ) -> OcrAttempt {
-    match run_ocr_once(exec, action_id, params, order, macro_) {
+    match run_ocr_once(exec, action_id, params, order, macro_, fresh) {
         Some(a) => a,
         None => OcrAttempt {
             text: None,
@@ -164,6 +172,7 @@ fn run_ocr_once(
     params: &OcrRunParams<'_>,
     order: &MatchOrder,
     macro_: &Macro,
+    fresh: bool,
 ) -> Option<OcrAttempt> {
     let label = params.label;
     let Some(ocr) = exec.deps.ocr else {
@@ -177,6 +186,7 @@ fn run_ocr_once(
         label,
         params.search_area,
         macro_,
+        fresh,
         |exec, lx, ty, rx, by| {
             exec.log(
                 action_id,

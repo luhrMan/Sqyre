@@ -228,8 +228,11 @@ pub(crate) fn query_x11_monitor_rects() -> Vec<DesktopRect> {
 #[cfg(feature = "portal-capture")]
 pub(crate) use compositor_kick::CompositorKick;
 
-/// 0-alpha overlay that forces GNOME to damage `rect` so ScreenCast copies the
+/// 0-alpha overlay that forces GNOME to damage a dest so ScreenCast copies the
 /// current stage (PipeWire framerate is 0/1, emit-on-damage).
+///
+/// Kept alive for the portal capturer lifetime so retries map/unmap one window
+/// instead of opening a new X11 connection each stall.
 #[cfg(feature = "portal-capture")]
 mod compositor_kick {
     use super::*;
@@ -238,23 +241,64 @@ mod compositor_kick {
         AllocNone, CWBackPixel, CWBorderPixel, CWColormap, CWOverrideRedirect, Display,
         InputOutput, True, TrueColor, VisualClassMask, VisualDepthMask, VisualScreenMask,
         XCreateColormap, XCreateWindow, XDestroyWindow, XFlush, XFreeColormap, XGetVisualInfo,
-        XMapWindow, XSetWindowAttributes, XSync, XUnmapWindow, XVisualInfo,
+        XMapWindow, XMoveResizeWindow, XSetWindowAttributes, XSync, XUnmapWindow, XVisualInfo,
     };
 
     pub(crate) struct CompositorKick {
         display: *mut _XDisplay,
         window: u64,
         colormap: u64,
+        mapped: bool,
     }
 
+    // SAFETY: the display pointer is only used while `PortalCapturer::kick` is held.
+    unsafe impl Send for CompositorKick {}
+
     impl CompositorKick {
-        pub(crate) fn map(rect: DesktopRect) -> Option<Self> {
-            if rect.w <= 1 || rect.h <= 1 {
-                return None;
-            }
+        pub(crate) fn open() -> Option<Self> {
             // SAFETY: `XOpenDisplay` is null-checked; failures close the connection
             // before return; `Drop` unmaps/destroys/closes exactly once.
-            unsafe { map_compositor_kick(rect) }
+            unsafe { open_compositor_kick() }
+        }
+
+        pub(crate) fn map_rect(&mut self, rect: DesktopRect) {
+            if rect.w <= 1 || rect.h <= 1 {
+                self.unmap();
+                return;
+            }
+            if self.display.is_null() || self.window == 0 {
+                return;
+            }
+            // SAFETY: `display`/`window` are the live connection and overlay created
+            // by `open`; `Drop` is the only destroy/close path.
+            unsafe {
+                XMoveResizeWindow(
+                    self.display,
+                    self.window,
+                    rect.x,
+                    rect.y,
+                    rect.w as u32,
+                    rect.h as u32,
+                );
+                XMapWindow(self.display, self.window);
+                XFlush(self.display);
+                XSync(self.display, 0);
+            }
+            self.mapped = true;
+        }
+
+        pub(crate) fn unmap(&mut self) {
+            if !self.mapped {
+                return;
+            }
+            if !self.display.is_null() && self.window != 0 {
+                // SAFETY: window was created on this display and has not been destroyed.
+                unsafe {
+                    XUnmapWindow(self.display, self.window);
+                    XFlush(self.display);
+                }
+            }
+            self.mapped = false;
         }
     }
 
@@ -265,7 +309,9 @@ mod compositor_kick {
                     return;
                 }
                 if self.window != 0 {
-                    XUnmapWindow(self.display, self.window);
+                    if self.mapped {
+                        XUnmapWindow(self.display, self.window);
+                    }
                     XDestroyWindow(self.display, self.window);
                 }
                 if self.colormap != 0 {
@@ -276,11 +322,12 @@ mod compositor_kick {
                 self.display = ptr::null_mut();
                 self.window = 0;
                 self.colormap = 0;
+                self.mapped = false;
             }
         }
     }
 
-    unsafe fn map_compositor_kick(rect: DesktopRect) -> Option<CompositorKick> {
+    unsafe fn open_compositor_kick() -> Option<CompositorKick> {
         let display = XOpenDisplay(ptr::null());
         if display.is_null() {
             return None;
@@ -301,10 +348,10 @@ mod compositor_kick {
         let window = XCreateWindow(
             display,
             root,
-            rect.x,
-            rect.y,
-            rect.w.max(1) as u32,
-            rect.h.max(1) as u32,
+            0,
+            0,
+            1,
+            1,
             0,
             depth,
             InputOutput as u32,
@@ -317,13 +364,11 @@ mod compositor_kick {
             XCloseDisplay(display);
             return None;
         }
-        XMapWindow(display, window);
-        XFlush(display);
-        XSync(display, 0);
         Some(CompositorKick {
             display,
             window,
             colormap,
+            mapped: false,
         })
     }
 

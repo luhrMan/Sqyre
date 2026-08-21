@@ -64,12 +64,16 @@ const BTN_LEFT: u32 = 0x110;
 const BTN_RIGHT: u32 = 0x111;
 const BTN_MIDDLE: u32 = 0x112;
 
+const REGION_FRAME_WAIT: Duration = Duration::from_millis(50);
+const KICK_FRAME_WAIT: Duration = Duration::from_millis(80);
+
 /// Portal + PipeWire capturer for Wayland sessions.
 pub struct PortalCapturer {
     frame: Arc<(Mutex<FrameSlot>, Condvar)>,
     shutdown: Arc<AtomicBool>,
     quit_tx: Mutex<Option<Sender<PwThreadMsg>>>,
     thread: Mutex<Option<JoinHandle<()>>>,
+    kick: Mutex<Option<crate::x11_capture::CompositorKick>>,
 }
 
 struct FrameSlot {
@@ -192,6 +196,7 @@ impl PortalCapturer {
             shutdown,
             quit_tx: Mutex::new(Some(msg_tx)),
             thread: Mutex::new(Some(handle)),
+            kick: Mutex::new(None),
         })
     }
 
@@ -208,22 +213,32 @@ impl PortalCapturer {
             &self.frame.1,
             rect,
             min_gen,
-            Duration::from_millis(50),
+            REGION_FRAME_WAIT,
         );
         if region_after <= min_gen {
             let dest = {
                 let slot = self.frame.0.lock();
                 overlapping_stream_dest(&slot, rect)
             };
-            let kick = crate::x11_capture::CompositorKick::map(dest);
+            {
+                let mut kick = self.kick.lock();
+                if kick.is_none() {
+                    *kick = crate::x11_capture::CompositorKick::open();
+                }
+                if let Some(k) = kick.as_mut() {
+                    k.map_rect(dest);
+                }
+            }
             let _ = wait_until_region_after(
                 &self.frame.0,
                 &self.frame.1,
                 rect,
                 min_gen,
-                Duration::from_millis(400),
+                KICK_FRAME_WAIT,
             );
-            drop(kick);
+            if let Some(k) = self.kick.lock().as_mut() {
+                k.unmap();
+            }
         }
     }
 
@@ -238,60 +253,27 @@ impl PortalCapturer {
     }
 
     pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
-        Ok(RgbCapture::from_rgba(&self.capture_rect_ref(rect)?))
+        self.crop_cached_rgb(rect)
     }
 
     pub fn capture_rect_rgb_fresh_ref(
         &self,
         rect: DesktopRect,
     ) -> Result<RgbCapture, CaptureError> {
-        Ok(RgbCapture::from_rgba(&self.capture_rect_fresh_ref(rect)?))
+        self.wait_for_overlapping_stream_frame(rect);
+        self.crop_cached_rgb(rect)
     }
 
     fn crop_cached_rgba(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
-        if rect.is_empty() {
-            return Err(CaptureError::EmptyRect);
-        }
         let slot = self.frame.0.lock();
-        let cache = &slot.cache;
-        if !cache.ready {
-            return Err(CaptureError::Message(
-                "portal capture: no frame yet from PipeWire".into(),
-            ));
-        }
+        let crop = cache_crop_geom(&slot.cache, rect)?;
+        copy_cache_rgba(&slot.cache, crop)
+    }
 
-        let vb = cache.virtual_bounds;
-        let left = rect.x.max(vb.x);
-        let top = rect.y.max(vb.y);
-        let right = (rect.x + rect.w).min(vb.x + vb.w);
-        let bottom = (rect.y + rect.h).min(vb.y + vb.h);
-        if right <= left || bottom <= top {
-            return Err(CaptureError::OutsideVirtualDesktop);
-        }
-
-        let out_w = (right - left) as u32;
-        let out_h = (bottom - top) as u32;
-        let src_x = (left - vb.x) as u32;
-        let src_y = (top - vb.y) as u32;
-        let mut out = vec![0u8; out_w as usize * out_h as usize * 4];
-        let src_stride = cache.stride;
-
-        for row in 0..out_h {
-            let src_row = src_y + row;
-            let dst_off = row as usize * out_w as usize * 4;
-            let src_off = src_row as usize * src_stride + src_x as usize * 4;
-            let end = src_off + out_w as usize * 4;
-            if end > cache.pixels.len() {
-                return Err(CaptureError::Message(
-                    "portal capture: frame buffer shorter than expected".into(),
-                ));
-            }
-            out[dst_off..dst_off + out_w as usize * 4].copy_from_slice(&cache.pixels[src_off..end]);
-        }
-
-        let img = RgbaImage::from_raw(out_w, out_h, out)
-            .ok_or_else(|| CaptureError::Message("portal capture: RGBA size mismatch".into()))?;
-        Ok(img)
+    fn crop_cached_rgb(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
+        let slot = self.frame.0.lock();
+        let crop = cache_crop_geom(&slot.cache, rect)?;
+        copy_cache_rgb(&slot.cache, crop)
     }
 
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
@@ -326,6 +308,7 @@ impl PortalCapturer {
 impl Drop for PortalCapturer {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::SeqCst);
+        drop(self.kick.lock().take());
         if let Some(tx) = self.quit_tx.lock().take() {
             let _ = tx.send(PwThreadMsg::Quit);
         }
@@ -1301,6 +1284,86 @@ fn overlapping_stream_dest(slot: &FrameSlot, rect: DesktopRect) -> DesktopRect {
         .unwrap_or(rect)
 }
 
+#[derive(Clone, Copy)]
+struct CacheCrop {
+    src_x: u32,
+    src_y: u32,
+    out_w: u32,
+    out_h: u32,
+}
+
+fn cache_crop_geom(cache: &FrameCache, rect: DesktopRect) -> Result<CacheCrop, CaptureError> {
+    if rect.is_empty() {
+        return Err(CaptureError::EmptyRect);
+    }
+    if !cache.ready {
+        return Err(CaptureError::Message(
+            "portal capture: no frame yet from PipeWire".into(),
+        ));
+    }
+
+    let vb = cache.virtual_bounds;
+    let left = rect.x.max(vb.x);
+    let top = rect.y.max(vb.y);
+    let right = (rect.x + rect.w).min(vb.x + vb.w);
+    let bottom = (rect.y + rect.h).min(vb.y + vb.h);
+    if right <= left || bottom <= top {
+        return Err(CaptureError::OutsideVirtualDesktop);
+    }
+
+    Ok(CacheCrop {
+        src_x: (left - vb.x) as u32,
+        src_y: (top - vb.y) as u32,
+        out_w: (right - left) as u32,
+        out_h: (bottom - top) as u32,
+    })
+}
+
+fn copy_cache_rgba(cache: &FrameCache, crop: CacheCrop) -> Result<RgbaImage, CaptureError> {
+    let mut out = vec![0u8; crop.out_w as usize * crop.out_h as usize * 4];
+    let src_stride = cache.stride;
+    for row in 0..crop.out_h {
+        let dst_off = row as usize * crop.out_w as usize * 4;
+        let src_off = (crop.src_y + row) as usize * src_stride + crop.src_x as usize * 4;
+        let end = src_off + crop.out_w as usize * 4;
+        if end > cache.pixels.len() {
+            return Err(CaptureError::Message(
+                "portal capture: frame buffer shorter than expected".into(),
+            ));
+        }
+        out[dst_off..dst_off + crop.out_w as usize * 4]
+            .copy_from_slice(&cache.pixels[src_off..end]);
+    }
+    RgbaImage::from_raw(crop.out_w, crop.out_h, out)
+        .ok_or_else(|| CaptureError::Message("portal capture: RGBA size mismatch".into()))
+}
+
+fn copy_cache_rgb(cache: &FrameCache, crop: CacheCrop) -> Result<RgbCapture, CaptureError> {
+    let out_w = crop.out_w as usize;
+    let mut out = vec![0u8; out_w * crop.out_h as usize * 3];
+    let src_stride = cache.stride;
+    for row in 0..crop.out_h {
+        let src_off = (crop.src_y + row) as usize * src_stride + crop.src_x as usize * 4;
+        let end = src_off + out_w * 4;
+        if end > cache.pixels.len() {
+            return Err(CaptureError::Message(
+                "portal capture: frame buffer shorter than expected".into(),
+            ));
+        }
+        let dst_off = row as usize * out_w * 3;
+        let src = &cache.pixels[src_off..end];
+        let dst = &mut out[dst_off..dst_off + out_w * 3];
+        for (d, s) in dst.chunks_exact_mut(3).zip(src.chunks_exact(4)) {
+            d.copy_from_slice(&s[..3]);
+        }
+    }
+    Ok(RgbCapture {
+        width: crop.out_w,
+        height: crop.out_h,
+        data: out,
+    })
+}
+
 /// Wait until a stream dest overlapping `rect` has generation `> min_gen`.
 fn wait_until_region_after(
     lock: &Mutex<FrameSlot>,
@@ -2192,6 +2255,66 @@ mod tests {
         assert_eq!(cache.width, 10);
         assert_eq!(cache.height, 4);
         assert_eq!(cache.pixels.len(), 10 * 4 * 4);
+    }
+
+    fn ready_cache(w: u32, h: u32, pixels: Vec<u8>) -> FrameCache {
+        FrameCache {
+            virtual_bounds: DesktopRect {
+                x: 0,
+                y: 0,
+                w: w as i32,
+                h: h as i32,
+            },
+            monitor_rects: Vec::new(),
+            width: w,
+            height: h,
+            stride: w as usize * 4,
+            pixels,
+            ready: true,
+        }
+    }
+
+    #[test]
+    fn copy_cache_rgb_skips_alpha() {
+        let cache = ready_cache(2, 1, vec![1, 2, 3, 255, 4, 5, 6, 128]);
+        let crop = cache_crop_geom(
+            &cache,
+            DesktopRect {
+                x: 0,
+                y: 0,
+                w: 2,
+                h: 1,
+            },
+        )
+        .unwrap();
+        let rgb = copy_cache_rgb(&cache, crop).unwrap();
+        assert_eq!(rgb.width, 2);
+        assert_eq!(rgb.height, 1);
+        assert_eq!(rgb.data, vec![1, 2, 3, 4, 5, 6]);
+    }
+
+    #[test]
+    fn copy_cache_rgb_crops_subrect() {
+        // 2x2 RGBA: row0 (1,2,3,a)(4,5,6,a)  row1 (7,8,9,a)(10,11,12,a)
+        let cache = ready_cache(
+            2,
+            2,
+            vec![1, 2, 3, 9, 4, 5, 6, 9, 7, 8, 9, 9, 10, 11, 12, 9],
+        );
+        let crop = cache_crop_geom(
+            &cache,
+            DesktopRect {
+                x: 1,
+                y: 1,
+                w: 1,
+                h: 1,
+            },
+        )
+        .unwrap();
+        let rgb = copy_cache_rgb(&cache, crop).unwrap();
+        assert_eq!(rgb.data, vec![10, 11, 12]);
+        let rgba = copy_cache_rgba(&cache, crop).unwrap();
+        assert_eq!(rgba.as_raw(), &[10, 11, 12, 9]);
     }
 
     #[test]
