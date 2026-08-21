@@ -30,6 +30,9 @@ pub(super) fn close_matches_distance(exec: &Executor<'_>) -> i32 {
 /// with `label` and treated as a miss (`None`) so the shared wait/repeat shell in
 /// [`run_detection_shell`] can retry instead of aborting the macro.
 ///
+/// `fresh` is true on wait/repeat recaptures so caching backends (portal) request a
+/// newer frame. The first capture and nested searches crop the latest cache.
+///
 /// `on_resolved` runs after a successful resolve but before capture, so callers can
 /// log action-specific detail (e.g. targets, dimensions) using the resolved rect.
 pub(super) fn capture_search_buf(
@@ -38,6 +41,7 @@ pub(super) fn capture_search_buf(
     label: &str,
     search_area: &CoordinateRef,
     macro_: &Macro,
+    fresh: bool,
     on_resolved: impl FnOnce(&mut Executor<'_>, i32, i32, i32, i32),
 ) -> Option<(ImageBuf, DesktopRect)> {
     let Some(resolver) = exec.deps.resolver else {
@@ -70,7 +74,7 @@ pub(super) fn capture_search_buf(
         .capturer
         .as_mut()
         .expect("checked Some above")
-        .capture_search_area_rgb(lx, ty, rx, by)
+        .capture_search_area_rgb(lx, ty, rx, by, fresh)
     {
         Ok(v) => v,
         Err(e) => {
@@ -340,9 +344,11 @@ pub(super) fn apply_detection_hits(
 
 /// Shared wait → repeat → single-shot shell for detection actions.
 ///
-/// `try_once` produces the latest attempt state. `is_hit` decides whether wait/repeat
-/// treat it as found. `on_outcome` applies outputs and runs branch children; its
-/// returned bool is the continue flag for the repeat loop (typically the hit flag).
+/// `try_once(exec, macro_, fresh)` produces the latest attempt. `fresh` is false on
+/// the first capture (crop the latest cache) and true on wait/repeat recaptures.
+/// `is_hit` decides whether wait/repeat treat it as found. `on_outcome` applies
+/// outputs and runs branch children; its returned bool is the continue flag for
+/// the repeat loop (typically the hit flag).
 ///
 /// `macro_` is passed into callbacks so try/outcome do not both capture it.
 #[allow(clippy::too_many_arguments)]
@@ -352,23 +358,23 @@ pub(super) fn run_detection_shell<T>(
     wait: &WaitTilFoundConfig,
     wait_interval_ms: i32,
     repeat_interval_ms: i32,
-    mut try_once: impl FnMut(&mut Executor<'_>, &Macro) -> Result<T>,
+    mut try_once: impl FnMut(&mut Executor<'_>, &Macro, bool) -> Result<T>,
     is_hit: impl Fn(&T) -> bool,
     mut on_outcome: impl FnMut(&mut Executor<'_>, &mut Macro, &T, DetectionPass) -> Result<bool>,
 ) -> Result<()> {
-    let mut state = try_once(exec, macro_)?;
+    let mut state = try_once(exec, macro_, false)?;
     maybe_wait_until_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
-        state = try_once(exec, macro_)?;
+        state = try_once(exec, macro_, true)?;
         Ok(is_hit(&state))
     })?;
     maybe_wait_while_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
-        state = try_once(exec, macro_)?;
+        state = try_once(exec, macro_, true)?;
         Ok(!is_hit(&state))
     })?;
 
     if maybe_repeat_while_found(exec, wait, repeat_interval_ms, |exec, refresh| {
         if refresh {
-            state = try_once(exec, macro_)?;
+            state = try_once(exec, macro_, true)?;
         }
         on_outcome(exec, macro_, &state, DetectionPass::RepeatWhile { refresh })
     })? {
@@ -377,7 +383,7 @@ pub(super) fn run_detection_shell<T>(
 
     if maybe_repeat_until_found(exec, wait, repeat_interval_ms, |exec, refresh| {
         if refresh {
-            state = try_once(exec, macro_)?;
+            state = try_once(exec, macro_, true)?;
         }
         on_outcome(exec, macro_, &state, DetectionPass::RepeatUntil { refresh })
     })? {

@@ -67,6 +67,7 @@ pub(crate) fn execute_image_search(
             *match_method,
             &order,
             macro_,
+            false,
         )?;
         if wait.wait_until_found_active() && results0.is_empty() {
             exec.log(
@@ -93,7 +94,7 @@ pub(crate) fn execute_image_search(
             wait,
             100,
             100,
-            |exec, macro_| {
+            |exec, macro_, fresh| {
                 if let Some(first) = initial.take() {
                     return Ok(first);
                 }
@@ -108,6 +109,7 @@ pub(crate) fn execute_image_search(
                     *match_method,
                     &order,
                     macro_,
+                    fresh,
                 )
             },
             |results| !results.is_empty(),
@@ -173,6 +175,7 @@ fn capture_and_match(
     match_method: MatchMethod,
     order: &MatchOrder,
     macro_: &Macro,
+    fresh: bool,
 ) -> Result<Vec<DetectionHit>> {
     // Capture/resolve/blur failures are logged as misses so wait-until-found can retry
     // instead of aborting the macro (same policy as OCR / Find Pixel).
@@ -188,6 +191,7 @@ fn capture_and_match(
         label,
         search_area,
         macro_,
+        fresh,
         |exec, lx, ty, rx, by| {
             let w = (rx - lx).max(0);
             let h = (by - ty).max(0);

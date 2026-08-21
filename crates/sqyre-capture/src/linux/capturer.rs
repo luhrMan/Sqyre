@@ -65,7 +65,7 @@ impl OsCapturer {
         }
     }
 
-    /// Wait for a newer portal frame when applicable; X11 is always a live grab.
+    /// Wait for a newer portal frame (wait/repeat retries and manual refresh).
     pub fn capture_rect_rgb_fresh_ref(
         &self,
         rect: DesktopRect,

@@ -450,6 +450,11 @@ fn find_pixel_uses_collection_cell_search_area() {
         "{:?}",
         capturer.log
     );
+    assert!(
+        capturer.log.iter().all(|e| !e.starts_with("rgb_fresh:")),
+        "one-shot should crop the cache: {:?}",
+        capturer.log
+    );
 }
 
 #[test]
@@ -1097,6 +1102,16 @@ fn find_pixel_wait_until_found_retries_then_succeeds() {
         "expected miss then hit: {:?}",
         capturer.log
     );
+    assert!(
+        capturer.log[0].starts_with("rect:"),
+        "first capture should crop the cache: {:?}",
+        capturer.log
+    );
+    assert!(
+        capturer.log[1].starts_with("rgb_fresh:"),
+        "wait retry should request a fresh frame: {:?}",
+        capturer.log
+    );
     assert_eq!(
         macro_.variables.get("foundX").map(|v| v.as_display()),
         Some("102".into())
@@ -1402,6 +1417,16 @@ fn image_search_wait_until_found_retries_then_succeeds() {
         assert!(
             capturer.log.len() >= 2,
             "expected miss then hit capture: {:?}",
+            capturer.log
+        );
+        assert!(
+            capturer.log.iter().any(|e| e.starts_with("rect:")),
+            "first capture should crop the cache: {:?}",
+            capturer.log
+        );
+        assert!(
+            capturer.log.iter().any(|e| e.starts_with("rgb_fresh:")),
+            "wait retry should request a fresh frame: {:?}",
             capturer.log
         );
         assert!(

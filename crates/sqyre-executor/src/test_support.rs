@@ -262,6 +262,16 @@ impl ScreenCapturer for RecordingCapturer {
             .push(format!("rect:{},{},{},{}", rect.x, rect.y, rect.w, rect.h));
         self.take_image()
     }
+    fn capture_rect_rgb_fresh(
+        &mut self,
+        rect: DesktopRect,
+    ) -> Result<crate::backends::RgbCapture, crate::CaptureError> {
+        self.log.push(format!(
+            "rgb_fresh:{},{},{},{}",
+            rect.x, rect.y, rect.w, rect.h
+        ));
+        Ok(crate::backends::RgbCapture::from_rgba(&self.take_image()?))
+    }
     fn virtual_bounds(&mut self) -> Result<DesktopRect, crate::CaptureError> {
         Ok(self.bounds)
     }
