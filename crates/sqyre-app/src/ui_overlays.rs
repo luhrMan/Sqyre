@@ -558,8 +558,9 @@ fn poll_update(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 }
 
-/// Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A — skip while editing an action
-/// or when a text field has keyboard focus (so Ctrl+A still selects-all in editors).
+/// Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A / Alt+Up / Alt+Down —
+/// skip while editing an action or when a text field has keyboard focus
+/// (so Ctrl+A still selects-all in editors).
 ///
 /// Uses [`egui::Context::text_edit_focused`] rather than `egui_wants_keyboard_input`:
 /// the latter is true whenever *any* widget (including the TreeView) has focus, which
@@ -578,26 +579,32 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
         && !app.macro_record.is_open()
         && !ui.ctx().text_edit_focused()
     {
-        let (copy, cut, paste, undo, redo, add_action) = ui.ctx().input(|i| {
-            let mut copy = false;
-            let mut cut = false;
-            let mut paste = false;
-            for ev in &i.events {
-                match ev {
-                    egui::Event::Copy => copy = true,
-                    egui::Event::Cut => cut = true,
-                    egui::Event::Paste(_) => paste = true,
-                    _ => {}
+        let (copy, cut, paste, undo, redo, add_action, nudge_up, nudge_down) =
+            ui.ctx().input_mut(|i| {
+                let mut copy = false;
+                let mut cut = false;
+                let mut paste = false;
+                for ev in &i.events {
+                    match ev {
+                        egui::Event::Copy => copy = true,
+                        egui::Event::Cut => cut = true,
+                        egui::Event::Paste(_) => paste = true,
+                        _ => {}
+                    }
                 }
-            }
-            let mod_key = i.modifiers.command;
-            let undo = mod_key && !i.modifiers.shift && i.key_pressed(egui::Key::Z);
-            let redo = mod_key
-                && (i.key_pressed(egui::Key::Y)
-                    || (i.modifiers.shift && i.key_pressed(egui::Key::Z)));
-            let add_action = mod_key && i.key_pressed(egui::Key::A);
-            (copy, cut, paste, undo, redo, add_action)
-        });
+                let mod_key = i.modifiers.command;
+                let undo = mod_key && !i.modifiers.shift && i.key_pressed(egui::Key::Z);
+                let redo = mod_key
+                    && (i.key_pressed(egui::Key::Y)
+                        || (i.modifiers.shift && i.key_pressed(egui::Key::Z)));
+                let add_action = mod_key && i.key_pressed(egui::Key::A);
+                // Consume so TreeView does not also treat Alt+arrows as selection move.
+                let nudge_up = i.consume_key(egui::Modifiers::ALT, egui::Key::ArrowUp);
+                let nudge_down = i.consume_key(egui::Modifiers::ALT, egui::Key::ArrowDown);
+                (
+                    copy, cut, paste, undo, redo, add_action, nudge_up, nudge_down,
+                )
+            });
         if running {
             return;
         }
@@ -613,6 +620,10 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.redo_tree();
         } else if add_action && !app.workspace.macros.is_empty() {
             app.add_action_picker.open();
+        } else if nudge_up {
+            app.nudge_selection(true);
+        } else if nudge_down {
+            app.nudge_selection(false);
         }
     }
 }

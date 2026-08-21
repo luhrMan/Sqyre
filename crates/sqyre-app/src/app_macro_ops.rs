@@ -377,6 +377,34 @@ impl SqyreApp {
             .is_some_and(|h| h.can_redo())
     }
 
+    /// Shift selected actions one slot among siblings (`up` = Alt+Up).
+    pub(crate) fn nudge_selection(&mut self, up: bool) -> bool {
+        if self.workspace.macros.is_empty() {
+            return false;
+        }
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let selected = self.tree.selected_actions.clone();
+        if self.workspace.macros[idx]
+            .root
+            .sibling_nudge_plan(&selected, up)
+            .is_none()
+        {
+            return false;
+        }
+        self.record_tree_mutation();
+        if !self.workspace.macros[idx]
+            .root
+            .nudge_siblings(&selected, up)
+        {
+            return false;
+        }
+        self.persist_macro_at(idx);
+        true
+    }
+
     pub(crate) fn can_copy_selection(&self) -> bool {
         if self.workspace.macros.is_empty() {
             return false;
