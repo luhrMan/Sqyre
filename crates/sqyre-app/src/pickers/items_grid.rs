@@ -1,4 +1,4 @@
-use super::icon_grid::paint_even_icon_grid;
+use super::icon_grid::{paint_even_icon_grid, IconGridKind};
 use super::query::{fuzzy_match_fold, query_matches_name_or_tags};
 use crate::icon_cache::IconCache;
 use eframe::egui;
@@ -168,7 +168,7 @@ pub fn paint_items_icon_grid(
                     icons,
                     &targets,
                     |t| selected.iter().any(|s| s == t),
-                    false,
+                    IconGridKind::Picker,
                     |_i, t| {
                         clicked = Some(t.to_string());
                     },

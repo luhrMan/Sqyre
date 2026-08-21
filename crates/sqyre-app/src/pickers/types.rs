@@ -11,8 +11,10 @@ pub(crate) const GRID_CELL: f32 = 64.0;
 pub(crate) const GRID_THUMB: f32 = 52.0;
 pub(crate) const GRID_GAP: f32 = 6.0;
 /// Compact cells for Image Search tip edit (remove badge overlay).
+/// Floor when many targets share a row; [`EDIT_CELL_MAX`] is used for few items.
 pub(crate) const EDIT_CELL: f32 = 40.0;
 pub(crate) const EDIT_THUMB: f32 = 36.0;
+pub(crate) const EDIT_CELL_MAX: f32 = 112.0;
 pub(crate) const EDIT_GAP: f32 = 4.0;
 pub(crate) const REMOVE_BTN: f32 = 12.0;
 /// In-progress collection cell selection (1-based inclusive).

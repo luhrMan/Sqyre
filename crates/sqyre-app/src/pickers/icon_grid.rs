@@ -1,4 +1,6 @@
-use super::types::{EDIT_CELL, EDIT_GAP, EDIT_THUMB, GRID_CELL, GRID_GAP, GRID_THUMB, REMOVE_BTN};
+use super::types::{
+    EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP, EDIT_THUMB, GRID_CELL, GRID_GAP, GRID_THUMB, REMOVE_BTN,
+};
 use crate::icon_cache::IconCache;
 use crate::image_view;
 use eframe::egui::{self, Color32, Sense, Vec2};
@@ -94,25 +96,89 @@ pub(crate) fn grid_column_count_for_width(avail_w: f32, cell: f32, gap: f32) -> 
     cols.max(1)
 }
 
-pub(crate) fn icon_grid_metrics(show_remove: bool) -> (f32, f32, f32) {
-    if show_remove {
-        (EDIT_CELL, EDIT_THUMB, EDIT_GAP)
+/// How an icon grid sizes cells.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IconGridKind {
+    /// Catalog / picker: fixed cell size.
+    Picker,
+    /// Image Search target list: larger cells when few items, shrinking toward
+    /// the compact edit size as more are added. `removable` paints the × badge.
+    Targets { removable: bool },
+}
+
+impl IconGridKind {
+    fn show_remove(self) -> bool {
+        matches!(self, Self::Targets { removable: true })
+    }
+
+    fn scale_with_count(self) -> bool {
+        matches!(self, Self::Targets { .. })
+    }
+}
+
+/// Cell edge that fills one row when possible, clamped to `[min_cell, max_cell]`.
+pub(crate) fn adaptive_icon_cell(
+    count: usize,
+    avail_w: f32,
+    min_cell: f32,
+    max_cell: f32,
+    gap: f32,
+) -> f32 {
+    if count == 0 {
+        return max_cell;
+    }
+    let n = count as f32;
+    let fitted = (avail_w - gap * (n - 1.0)) / n;
+    fitted.clamp(min_cell, max_cell)
+}
+
+#[derive(Clone, Copy)]
+struct IconCellStyle {
+    cell: f32,
+    thumb: f32,
+    show_remove: bool,
+}
+
+fn metrics_for(kind: IconGridKind, count: usize, avail_w: f32) -> (IconCellStyle, f32) {
+    let show_remove = kind.show_remove();
+    if kind.scale_with_count() {
+        let inset = EDIT_CELL - EDIT_THUMB;
+        let cell = adaptive_icon_cell(count, avail_w, EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP);
+        (
+            IconCellStyle {
+                cell,
+                thumb: (cell - inset).max(0.0),
+                show_remove,
+            },
+            EDIT_GAP,
+        )
     } else {
-        (GRID_CELL, GRID_THUMB, GRID_GAP)
+        (
+            IconCellStyle {
+                cell: GRID_CELL,
+                thumb: GRID_THUMB,
+                show_remove,
+            },
+            GRID_GAP,
+        )
     }
 }
 
 /// Paint a selectable icon cell (fixed square, no under-icon label).
 /// Returns `(cell_clicked, remove_clicked)`.
-pub fn icon_grid_cell_ex(
+fn icon_grid_cell_ex(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     target: &str,
     selected: bool,
-    show_remove: bool,
+    style: IconCellStyle,
 ) -> (bool, bool) {
-    let (cell, thumb, _) = icon_grid_metrics(show_remove);
+    let IconCellStyle {
+        cell,
+        thumb,
+        show_remove,
+    } = style;
     let rounding = if show_remove { 3.0 } else { 4.0 };
 
     let mut remove_clicked = false;
@@ -181,7 +247,7 @@ pub fn icon_grid_cell_ex(
     (resp.clicked() && !remove_clicked, remove_clicked)
 }
 
-/// Lay out `targets` in fixed-size rows (no column stretch, no staircase wrap).
+/// Lay out `targets` in even rows (no column stretch, no staircase wrap).
 #[allow(clippy::too_many_arguments)]
 pub fn paint_even_icon_grid(
     ui: &mut egui::Ui,
@@ -189,24 +255,25 @@ pub fn paint_even_icon_grid(
     icons: &mut IconCache,
     targets: &[String],
     is_selected: impl Fn(&str) -> bool,
-    show_remove: bool,
+    kind: IconGridKind,
     mut on_cell: impl FnMut(usize, &str),
     mut on_remove: impl FnMut(usize),
 ) {
     if targets.is_empty() {
         return;
     }
-    let (cell, _, gap) = icon_grid_metrics(show_remove);
-    let avail = ui.available_width().max(cell);
+    let avail_raw = ui.available_width();
+    let (style, gap) = metrics_for(kind, targets.len(), avail_raw);
+    let avail = avail_raw.max(style.cell);
     ui.set_max_width(avail);
-    let cols = grid_column_count_for_width(avail, cell, gap);
+    let cols = grid_column_count_for_width(avail, style.cell, gap);
     let old_spacing = ui.spacing().item_spacing;
     ui.spacing_mut().item_spacing = Vec2::splat(gap);
 
     let mut i = 0;
     while i < targets.len() {
         ui.allocate_ui_with_layout(
-            egui::vec2(avail, cell),
+            egui::vec2(avail, style.cell),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.set_max_width(avail);
@@ -215,7 +282,7 @@ pub fn paint_even_icon_grid(
                 for (k, target) in targets.iter().enumerate().take(end).skip(i) {
                     let sel = is_selected(target);
                     let (clicked, remove) =
-                        icon_grid_cell_ex(ui, catalog, icons, target, sel, show_remove);
+                        icon_grid_cell_ex(ui, catalog, icons, target, sel, style);
                     if clicked {
                         on_cell(k, target);
                     }

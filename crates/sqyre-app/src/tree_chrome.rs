@@ -298,12 +298,16 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         return;
     }
     ui.label(egui::RichText::new("Items").small().strong());
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = Vec2::splat(4.0);
-        for target in targets {
-            paint_target_thumb(ui, catalog, icons, target);
-        }
-    });
+    crate::pickers::paint_even_icon_grid(
+        ui,
+        catalog,
+        icons,
+        targets,
+        |_| false,
+        crate::pickers::IconGridKind::Targets { removable: false },
+        |_, _| {},
+        |_| {},
+    );
 }
 
 /// Right-edge space covered by a floating vertical scrollbar (egui default allocates 0).
