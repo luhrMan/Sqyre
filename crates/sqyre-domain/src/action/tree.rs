@@ -328,6 +328,92 @@ impl Action {
         Ok(())
     }
 
+    /// Parent id to pass to [`move_actions`] and the ordered sibling ids of `id`.
+    ///
+    /// Else-branch children use the Else folder sentinel as parent.
+    fn sibling_context(&self, id: ActionId) -> Option<(ActionId, Vec<ActionId>)> {
+        if id.is_root()
+            || matches!(
+                self.resolve_tree_id(id),
+                Some(TreeNodeRef::ElseFolder { .. })
+            )
+        {
+            return None;
+        }
+        let parent_id = self.find_parent_id(id)?;
+        let parent = if parent_id == self.id {
+            self
+        } else {
+            self.find_by_id(parent_id)?
+        };
+        if parent.children().iter().any(|c| c.id == id) {
+            let ids = parent.children().iter().map(|c| c.id).collect();
+            return Some((parent_id, ids));
+        }
+        if let Some(else_kids) = parent.else_children() {
+            if else_kids.iter().any(|c| c.id == id) {
+                let ids = else_kids.iter().map(|c| c.id).collect();
+                return Some((ActionId::else_folder(parent_id), ids));
+            }
+        }
+        None
+    }
+
+    /// Plan a one-slot sibling shift for `ids` (`up` = toward the start of the list).
+    ///
+    /// All ids must share a sibling list. Sources are returned in sibling order.
+    pub fn sibling_nudge_plan(
+        &self,
+        ids: &[ActionId],
+        up: bool,
+    ) -> Option<(Vec<ActionId>, ActionId, InsertSlot)> {
+        let mut seen = std::collections::HashSet::new();
+        let mut sources: Vec<ActionId> = Vec::new();
+        for &id in ids {
+            if id.is_root()
+                || matches!(
+                    self.resolve_tree_id(id),
+                    Some(TreeNodeRef::ElseFolder { .. })
+                )
+                || !seen.insert(id)
+            {
+                continue;
+            }
+            sources.push(id);
+        }
+        if sources.is_empty() {
+            return None;
+        }
+        let (parent, siblings) = self.sibling_context(sources[0])?;
+        if !sources.iter().all(|id| siblings.contains(id)) {
+            return None;
+        }
+        sources.sort_by_key(|&id| siblings.iter().position(|&s| s == id).unwrap_or(usize::MAX));
+        let last = *sources.last()?;
+        let min = siblings.iter().position(|&s| s == sources[0])?;
+        let max = siblings.iter().position(|&s| s == last)?;
+        let slot = if up {
+            if min == 0 {
+                return None;
+            }
+            InsertSlot::Before(siblings[min - 1])
+        } else {
+            if max + 1 >= siblings.len() {
+                return None;
+            }
+            InsertSlot::After(siblings[max + 1])
+        };
+        Some((sources, parent, slot))
+    }
+
+    /// Shift `ids` one slot among their shared siblings. Returns whether the tree changed.
+    pub fn nudge_siblings(&mut self, ids: &[ActionId], up: bool) -> bool {
+        let Some((sources, parent, slot)) = self.sibling_nudge_plan(ids, up) else {
+            return false;
+        };
+        self.move_actions(&sources, parent, slot).is_ok()
+    }
+
     pub fn walk<F: FnMut(&Action)>(&self, f: &mut F) {
         f(self);
         for child in self.children() {
@@ -565,6 +651,86 @@ mod tests {
             .unwrap();
         let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
         assert_eq!(ids, vec![c, d, a, b]);
+    }
+
+    #[test]
+    fn nudge_siblings_swaps_with_neighbor() {
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let c = ActionId::new();
+        let mut root = root_loop(vec![wait(a), wait(b), wait(c)]);
+        assert!(root.nudge_siblings(&[b], true));
+        let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
+        assert_eq!(ids, vec![b, a, c]);
+        assert!(root.nudge_siblings(&[b], false));
+        let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
+        assert_eq!(ids, vec![a, b, c]);
+    }
+
+    #[test]
+    fn nudge_siblings_noop_at_ends() {
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let mut root = root_loop(vec![wait(a), wait(b)]);
+        assert!(!root.nudge_siblings(&[a], true));
+        assert!(!root.nudge_siblings(&[b], false));
+        assert!(!root.nudge_siblings(&[ActionId::root()], false));
+        let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
+        assert_eq!(ids, vec![a, b]);
+    }
+
+    #[test]
+    fn nudge_siblings_moves_contiguous_block() {
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let c = ActionId::new();
+        let d = ActionId::new();
+        let mut root = root_loop(vec![wait(a), wait(b), wait(c), wait(d)]);
+        assert!(root.nudge_siblings(&[b, c], false));
+        let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
+        assert_eq!(ids, vec![a, d, b, c]);
+    }
+
+    #[test]
+    fn nudge_siblings_else_branch() {
+        let detection_id = ActionId::new();
+        let then_id = ActionId::new();
+        let else_a = ActionId::new();
+        let else_b = ActionId::new();
+        let mut root = root_loop(vec![Action {
+            id: detection_id,
+            kind: ActionKind::FindPixel {
+                name: String::new(),
+                search_area: Default::default(),
+                target_color: "#fff".into(),
+                color_tolerance: 0,
+                detection: DetectionBranch {
+                    subactions: vec![wait(then_id)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        root.insert_at(
+            ActionId::else_folder(detection_id),
+            InsertSlot::Last,
+            wait(else_a),
+        )
+        .unwrap();
+        root.insert_at(
+            ActionId::else_folder(detection_id),
+            InsertSlot::Last,
+            wait(else_b),
+        )
+        .unwrap();
+        assert!(root.nudge_siblings(&[else_b], true));
+        let else_ids: Vec<_> = root.children()[0]
+            .else_children()
+            .expect("else branch")
+            .iter()
+            .map(|x| x.id)
+            .collect();
+        assert_eq!(else_ids, vec![else_b, else_a]);
+        assert_eq!(root.children()[0].children()[0].id, then_id);
     }
 
     #[test]
