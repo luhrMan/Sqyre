@@ -5,7 +5,6 @@ mod edit_detect;
 
 use super::sections::{tip_advanced, tip_section, tip_wrapped_section};
 use super::{help, help as h};
-use crate::data_editor_preview::show_file_hover;
 use crate::icon_cache::IconCache;
 use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use crate::pickers::{self, options, ActivePicker, CoordKind};
@@ -784,7 +783,7 @@ fn coord_picker_row(
         };
         let resp = ui.label(egui::RichText::new(display).monospace().color(color));
         if !coord.is_empty() {
-            attach_coord_hover(ui, &resp, catalog, icons, previews, coord, kind);
+            attach_coord_hover(ui, &resp, catalog, previews, coord, kind);
         } else if let Some(tip) = var_pills::entry_validation_tip(&validation) {
             let _ = resp.on_hover_text(tip);
         }
@@ -821,27 +820,17 @@ fn attach_coord_hover(
     ui: &mut egui::Ui,
     response: &egui::Response,
     catalog: &ProgramCatalog,
-    icons: &mut IconCache,
     previews: &mut PreviewTooltipCache,
     coord: &CoordinateRef,
     kind: CoordKind,
 ) {
-    if coord.is_collection() {
-        let Some(prog) = coord.program() else {
-            return;
-        };
-        show_file_hover(
-            ui,
-            response,
-            icons,
-            &catalog.collection_image_path(prog, coord.name()),
-            coord.as_str(),
-        );
-        return;
-    }
-    let preview_kind = match kind {
-        CoordKind::Point => PreviewKind::Point,
-        CoordKind::SearchArea => PreviewKind::SearchArea,
+    let preview_kind = if coord.is_collection() {
+        PreviewKind::Collection
+    } else {
+        match kind {
+            CoordKind::Point => PreviewKind::Point,
+            CoordKind::SearchArea => PreviewKind::SearchArea,
+        }
     };
     previews.show_for_coordinate_ref(ui, response, catalog, coord, preview_kind);
 }

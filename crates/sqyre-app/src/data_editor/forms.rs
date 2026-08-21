@@ -791,12 +791,13 @@ impl DataEditor {
                         let Some(prog) = prog.as_deref() else {
                             return;
                         };
-                        show_file_hover(
+                        previews.show_for_entity(
                             ui,
                             resp,
-                            icons,
-                            &catalog.collection_image_path(prog, name),
-                            &format!("{prog}~{name}"),
+                            catalog,
+                            prog,
+                            name,
+                            PreviewKind::Collection,
                         );
                     };
                     searchable_combo_with(
@@ -829,12 +830,13 @@ impl DataEditor {
                     ui.horizontal(|ui| {
                         let label = ui.label(format!("• {member}"));
                         if let Some(prog) = self.selected_program.as_deref() {
-                            show_file_hover(
+                            previews.show_for_entity(
                                 ui,
                                 &label,
-                                icons,
-                                &catalog.collection_image_path(prog, member),
-                                &format!("{prog}~{member}"),
+                                catalog,
+                                prog,
+                                member,
+                                PreviewKind::Collection,
                             );
                         }
                         if theme::icon_button_colored(ui, "×", Some(theme::MACRO_STOP))
@@ -906,25 +908,12 @@ impl DataEditor {
                         }
                         let resp = ui.monospace(display);
                         if !reference.is_empty() {
-                            if reference.is_collection() {
-                                if let Some(prog) = reference.program() {
-                                    show_file_hover(
-                                        ui,
-                                        &resp,
-                                        icons,
-                                        &catalog.collection_image_path(prog, reference.name()),
-                                        reference.as_str(),
-                                    );
-                                }
+                            let kind = if reference.is_collection() {
+                                PreviewKind::Collection
                             } else {
-                                previews.show_for_coordinate_ref(
-                                    ui,
-                                    &resp,
-                                    catalog,
-                                    &reference,
-                                    PreviewKind::SearchArea,
-                                );
-                            }
+                                PreviewKind::SearchArea
+                            };
+                            previews.show_for_coordinate_ref(ui, &resp, catalog, &reference, kind);
                         }
                         if crate::theme::icon_button(ui, "☰")
                             .on_hover_text("Pick search area or collection cell…")

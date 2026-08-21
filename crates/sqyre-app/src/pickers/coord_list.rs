@@ -2,7 +2,6 @@ use super::items_grid::set_collapsing_openness;
 use super::query::fuzzy_match_fold;
 use super::scroll::{maybe_scroll_to, popup_scroll_max_height, scroll_vertical};
 use super::types::{CollectionCellPick, CoordKind};
-use crate::data_editor_preview::show_file_hover;
 use crate::paint_ctx::CatalogPaint;
 use crate::preview_tooltip::PreviewKind;
 use eframe::egui;
@@ -229,12 +228,13 @@ pub fn paint_coord_ref_list(
                                         selected,
                                         egui::RichText::new(label).small(),
                                     );
-                                    show_file_hover(
+                                    previews.show_for_entity(
                                         ui,
                                         &resp,
-                                        icons,
-                                        &catalog.collection_image_path(prog, &col.name),
-                                        &format!("{prog}~{}", col.name),
+                                        catalog,
+                                        prog,
+                                        &col.name,
+                                        PreviewKind::Collection,
                                     );
                                     if selected && *scroll_to_selection && !did_scroll {
                                         maybe_scroll_to(ui, &resp, scroll_to_selection);

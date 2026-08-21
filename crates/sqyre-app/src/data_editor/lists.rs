@@ -123,6 +123,7 @@ impl DataEditor {
                 let kind = match self.tab {
                     EditorTab::Points => Some(PreviewKind::Point),
                     EditorTab::SearchAreas => Some(PreviewKind::SearchArea),
+                    EditorTab::Collections => Some(PreviewKind::Collection),
                     _ => None,
                 };
                 self.ensure_list_cache(catalog);
@@ -177,14 +178,6 @@ impl DataEditor {
                                     &resp,
                                     icons,
                                     &catalog.mask_image_path(prog, &ent),
-                                    &format!("{prog}~{ent}"),
-                                );
-                            } else if matches!(self.tab, EditorTab::Collections) {
-                                show_file_hover(
-                                    ui,
-                                    &resp,
-                                    icons,
-                                    &catalog.collection_image_path(prog, &ent),
                                     &format!("{prog}~{ent}"),
                                 );
                             }
@@ -276,12 +269,13 @@ impl DataEditor {
                                 && current.name() == col.name;
                             let label = format!("{} (collection)", col.name);
                             let resp = ui.selectable_label(selected, label);
-                            show_file_hover(
+                            previews.show_for_entity(
                                 ui,
                                 &resp,
-                                icons,
-                                &catalog.collection_image_path(prog, &col.name),
-                                &format!("{prog}~{}", col.name),
+                                catalog,
+                                prog,
+                                &col.name,
+                                PreviewKind::Collection,
                             );
                             if resp.clicked() {
                                 let initial = if selected { current.cell_range() } else { None };

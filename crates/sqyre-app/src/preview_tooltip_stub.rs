@@ -11,6 +11,7 @@ const UNAVAILABLE: &str = "Live screen preview requires the desktop app.";
 pub enum PreviewKind {
     Point,
     SearchArea,
+    Collection,
 }
 
 #[derive(Default)]
