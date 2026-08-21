@@ -664,7 +664,7 @@ fn targets_editor(
         icons,
         &snapshot,
         |_| true,
-        true,
+        pickers::IconGridKind::Targets { removable: true },
         |_, _| {},
         |i| {
             remove = Some(i);
