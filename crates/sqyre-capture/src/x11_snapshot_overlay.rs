@@ -593,5 +593,6 @@ mod tests {
         let rect = OutlineRect::normalize(2000, 100, 2200, 300);
         let edges = window_local_edges(bounds, rect);
         assert_eq!(edges[0], (80, 100, 200, 2));
+        assert_eq!(edges[2], (80, 102, 2, 196));
     }
 }

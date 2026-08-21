@@ -18,7 +18,7 @@ use x11::xlib::{
     InputOutput, True, Window, XAllocColor, XCloseDisplay, XColor, XConfigureWindow, XCreateWindow,
     XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen, XDefaultVisual,
     XDestroyWindow, XEvent, XFlush, XMapRaised, XMapWindow, XNextEvent, XOpenDisplay, XPending,
-    XQueryPointer, XSetWindowAttributes, XWindowChanges, _XDisplay, CWX, CWY,
+    XQueryPointer, XRaiseWindow, XSetWindowAttributes, XWindowChanges, _XDisplay, CWX, CWY,
 };
 
 use crate::outline_geometry::{
@@ -163,6 +163,30 @@ impl SelectionOutline {
             return;
         }
         let placements = edge_placements(rect);
+        let coming_from_clear = self.last.is_none();
+        if coming_from_clear {
+            event_log(
+                "SQYRE_OUTLINE",
+                &[
+                    ("op", "show"),
+                    (
+                        "rect",
+                        &format!("{},{}-{},{}", rect.left, rect.top, rect.right, rect.bottom),
+                    ),
+                    (
+                        "top",
+                        &format!(
+                            "{},{},{},{}",
+                            placements[0].0, placements[0].1, placements[0].2, placements[0].3
+                        ),
+                    ),
+                    (
+                        "sides",
+                        &format!("y={} h={}", placements[2].1, placements[2].3),
+                    ),
+                ],
+            );
+        }
         let start = Instant::now();
         // SAFETY: `self.display` is a live connection (non-null since `open`
         // succeeded) and `self.edges` were created on it.
@@ -177,6 +201,12 @@ impl SelectionOutline {
             if !self.mapped {
                 for &w in &self.edges {
                     XMapRaised(self.display, w);
+                }
+            } else if coming_from_clear {
+                // Parked 1×1 windows sit at the bottom of the stack. Raise once when
+                // showing a tooltip/static rect — not on every rubber-band mouse-move.
+                for &w in &self.edges {
+                    XRaiseWindow(self.display, w);
                 }
             }
             XFlush(self.display);
