@@ -1,6 +1,6 @@
-//! Seeded `General` program with common Points and Search Areas.
+//! Seeded `General` program with common Points, Search Areas, and Collections.
 
-use super::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
+use super::{ProgramCatalog, ProgramCollection, ProgramPoint, ProgramSearchArea};
 use sqyre_domain::ScalarValue;
 
 pub const GENERAL_PROGRAM: &str = "General";
@@ -14,8 +14,9 @@ pub const IMAGE_SEARCH_REFERENCE: &str = "Image Search Reference";
 /// One display in virtual-desktop coordinates (`x`, `y`, `w`, `h`).
 pub type MonitorRect = (i32, i32, i32, i32);
 
-/// Create/update the `General` program with Whole Screen + per-monitor half Search Areas
-/// and per-monitor corner / center / corner-mid Points.
+/// Create/update the `General` program with Whole Screen, one search area + 2×2 Collection
+/// per monitor (quadrants / halves via cell ranges), and per-monitor corner / center /
+/// corner-mid Points.
 /// Always ensures [`IMAGE_SEARCH_REFERENCE`] (`${foundX}` / `${foundY}`) is present.
 ///
 /// Re-runs against the live (shared) monitor list so displays are added or
@@ -36,6 +37,9 @@ pub fn ensure_general_program(
     }
     let monitors = usable_monitors(monitors);
     if seed_search_areas(catalog, &monitors)? {
+        changed = true;
+    }
+    if seed_collections(catalog, monitors.len())? {
         changed = true;
     }
     if seed_points(catalog, &monitors)? {
@@ -89,8 +93,20 @@ fn usable_monitors(monitors: &[MonitorRect]) -> Vec<MonitorRect> {
     }
 }
 
-const GENERATED_AREA_SUFFIXES: [&str; 4] =
-    [" Left Half", " Right Half", " Top Half", " Bottom Half"];
+/// Current generated monitor entity: `Monitor N` (search area + collection).
+const GENERATED_MONITOR_SUFFIXES: [&str; 1] = [""];
+/// Previous named halves / quadrants / whole-screen areas — dropped in favor of collections.
+const OBSOLETE_AREA_SUFFIXES: [&str; 9] = [
+    " Whole Screen",
+    " Left Half",
+    " Right Half",
+    " Top Half",
+    " Bottom Half",
+    " Top Left Quadrant",
+    " Top Right Quadrant",
+    " Bottom Left Quadrant",
+    " Bottom Right Quadrant",
+];
 const GENERATED_POINT_SUFFIXES: [&str; 9] = [
     " Top Left",
     " Top Right",
@@ -105,12 +121,27 @@ const GENERATED_POINT_SUFFIXES: [&str; 9] = [
 
 fn generated_monitor_index(name: &str, suffixes: &[&str]) -> Option<usize> {
     let rest = name.strip_prefix("Monitor ")?;
-    let digit_end = rest.find(|c: char| !c.is_ascii_digit())?;
+    let digit_end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
+    if digit_end == 0 {
+        return None;
+    }
     let (n, suffix) = rest.split_at(digit_end);
     if !suffixes.contains(&suffix) {
         return None;
     }
     n.parse().ok().filter(|&i| i >= 1)
+}
+
+fn stale_monitor_area(name: &str, monitor_count: usize) -> bool {
+    generated_monitor_index(name, &OBSOLETE_AREA_SUFFIXES).is_some()
+        || generated_monitor_index(name, &GENERATED_MONITOR_SUFFIXES)
+            .is_some_and(|n| n > monitor_count)
+}
+
+fn stale_monitor_entity(name: &str, suffixes: &[&str], monitor_count: usize) -> bool {
+    generated_monitor_index(name, suffixes).is_some_and(|n| n > monitor_count)
 }
 
 fn prune_generated_beyond(
@@ -119,16 +150,17 @@ fn prune_generated_beyond(
 ) -> Result<bool, String> {
     let stale_in = |p: &super::ProgramData| {
         p.search_areas.values().any(|bucket| {
-            bucket.keys().any(|name| {
-                generated_monitor_index(name, &GENERATED_AREA_SUFFIXES)
-                    .is_some_and(|n| n > monitor_count)
-            })
+            bucket
+                .keys()
+                .any(|name| stale_monitor_area(name, monitor_count))
         }) || p.points.values().any(|bucket| {
-            bucket.keys().any(|name| {
-                generated_monitor_index(name, &GENERATED_POINT_SUFFIXES)
-                    .is_some_and(|n| n > monitor_count)
-            })
-        })
+            bucket
+                .keys()
+                .any(|name| stale_monitor_entity(name, &GENERATED_POINT_SUFFIXES, monitor_count))
+        }) || p
+            .collections
+            .keys()
+            .any(|name| stale_monitor_entity(name, &GENERATED_MONITOR_SUFFIXES, monitor_count))
     };
     if !catalog.get(GENERAL_PROGRAM).is_some_and(stale_in) {
         return Ok(false);
@@ -140,10 +172,7 @@ fn prune_generated_beyond(
     for bucket in p.search_areas.values_mut() {
         let stale: Vec<String> = bucket
             .keys()
-            .filter(|name| {
-                generated_monitor_index(name, &GENERATED_AREA_SUFFIXES)
-                    .is_some_and(|n| n > monitor_count)
-            })
+            .filter(|name| stale_monitor_area(name, monitor_count))
             .cloned()
             .collect();
         for key in stale {
@@ -154,16 +183,23 @@ fn prune_generated_beyond(
     for bucket in p.points.values_mut() {
         let stale: Vec<String> = bucket
             .keys()
-            .filter(|name| {
-                generated_monitor_index(name, &GENERATED_POINT_SUFFIXES)
-                    .is_some_and(|n| n > monitor_count)
-            })
+            .filter(|name| stale_monitor_entity(name, &GENERATED_POINT_SUFFIXES, monitor_count))
             .cloned()
             .collect();
         for key in stale {
             bucket.remove(&key);
             changed = true;
         }
+    }
+    let stale_cols: Vec<String> = p
+        .collections
+        .keys()
+        .filter(|name| stale_monitor_entity(name, &GENERATED_MONITOR_SUFFIXES, monitor_count))
+        .cloned()
+        .collect();
+    for key in stale_cols {
+        p.collections.remove(&key);
+        changed = true;
     }
     Ok(changed)
 }
@@ -180,48 +216,18 @@ fn seed_search_areas(
 
     for (i, &(ox, oy, w, h)) in monitors.iter().enumerate() {
         let n = i + 1;
-        let mid_x = ox + w / 2;
-        let mid_y = oy + h / 2;
-        let right = ox + w;
-        let bottom = oy + h;
-        if upsert_area(
-            catalog,
-            &format!("Monitor {n} Left Half"),
-            ox,
-            oy,
-            mid_x,
-            bottom,
-        )? {
+        if upsert_area(catalog, &format!("Monitor {n}"), ox, oy, ox + w, oy + h)? {
             changed = true;
         }
-        if upsert_area(
-            catalog,
-            &format!("Monitor {n} Right Half"),
-            mid_x,
-            oy,
-            right,
-            bottom,
-        )? {
-            changed = true;
-        }
-        if upsert_area(
-            catalog,
-            &format!("Monitor {n} Top Half"),
-            ox,
-            oy,
-            right,
-            mid_y,
-        )? {
-            changed = true;
-        }
-        if upsert_area(
-            catalog,
-            &format!("Monitor {n} Bottom Half"),
-            ox,
-            mid_y,
-            right,
-            bottom,
-        )? {
+    }
+    Ok(changed)
+}
+
+fn seed_collections(catalog: &mut ProgramCatalog, monitor_count: usize) -> Result<bool, String> {
+    let mut changed = false;
+    for n in 1..=monitor_count {
+        let name = format!("Monitor {n}");
+        if upsert_collection(catalog, &name, &name, 2, 2)? {
             changed = true;
         }
     }
@@ -343,6 +349,35 @@ fn upsert_area(
     Ok(true)
 }
 
+fn upsert_collection(
+    catalog: &mut ProgramCatalog,
+    name: &str,
+    search_area: &str,
+    rows: i32,
+    cols: i32,
+) -> Result<bool, String> {
+    if let Some(existing) = catalog
+        .get(GENERAL_PROGRAM)
+        .and_then(|p| p.collections.get(name))
+    {
+        if existing.search_area == search_area && existing.rows == rows && existing.cols == cols {
+            return Ok(false);
+        }
+    }
+    catalog
+        .upsert_collection(
+            GENERAL_PROGRAM,
+            ProgramCollection {
+                name: name.into(),
+                search_area: search_area.into(),
+                rows,
+                cols,
+            },
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
 fn upsert_point(catalog: &mut ProgramCatalog, name: &str, x: i32, y: i32) -> Result<bool, String> {
     let res = catalog.resolution_key();
     if let Some(existing) = catalog
@@ -381,11 +416,9 @@ mod tests {
         let res = "1920x1080";
         let areas = p.search_areas.get(res).expect("areas");
         assert!(areas.contains_key("Whole Screen"));
-        assert!(areas.contains_key("Monitor 1 Left Half"));
-        assert!(areas.contains_key("Monitor 1 Right Half"));
-        assert!(areas.contains_key("Monitor 1 Top Half"));
-        assert!(areas.contains_key("Monitor 1 Bottom Half"));
-        assert_eq!(areas.len(), 5);
+        assert!(areas.contains_key("Monitor 1"));
+        assert!(!areas.contains_key("Monitor 1 Left Half"));
+        assert_eq!(areas.len(), 2);
 
         let whole = &areas["Whole Screen"];
         assert_eq!(whole.left_x, ScalarValue::Int(0));
@@ -393,10 +426,16 @@ mod tests {
         assert_eq!(whole.right_x, ScalarValue::Int(1920));
         assert_eq!(whole.bottom_y, ScalarValue::Int(1080));
 
-        let left = &areas["Monitor 1 Left Half"];
-        assert_eq!(left.right_x, ScalarValue::Int(960));
-        let top = &areas["Monitor 1 Top Half"];
-        assert_eq!(top.bottom_y, ScalarValue::Int(540));
+        let monitor = &areas["Monitor 1"];
+        assert_eq!(monitor.left_x, ScalarValue::Int(0));
+        assert_eq!(monitor.top_y, ScalarValue::Int(0));
+        assert_eq!(monitor.right_x, ScalarValue::Int(1920));
+        assert_eq!(monitor.bottom_y, ScalarValue::Int(1080));
+
+        let col = p.collections.get("Monitor 1").expect("collection");
+        assert_eq!(col.search_area, "Monitor 1");
+        assert_eq!(col.rows, 2);
+        assert_eq!(col.cols, 2);
 
         let points = p.points.get(res).expect("points");
         assert_eq!(points.len(), 10);
@@ -430,15 +469,26 @@ mod tests {
 
         let p = cat.get(GENERAL_PROGRAM).expect("General");
         let areas = p.search_areas.get("2560x1440").expect("areas");
-        assert_eq!(areas.len(), 1 + 4 * 2);
+        assert_eq!(areas.len(), 3);
         let whole = &areas["Whole Screen"];
         assert_eq!(whole.left_x, ScalarValue::Int(0));
         assert_eq!(whole.right_x, ScalarValue::Int(4480));
         assert_eq!(whole.bottom_y, ScalarValue::Int(1440));
 
-        let m2_left = &areas["Monitor 2 Left Half"];
-        assert_eq!(m2_left.left_x, ScalarValue::Int(2560));
-        assert_eq!(m2_left.right_x, ScalarValue::Int(2560 + 960));
+        let m2 = &areas["Monitor 2"];
+        assert_eq!(m2.left_x, ScalarValue::Int(2560));
+        assert_eq!(m2.top_y, ScalarValue::Int(0));
+        assert_eq!(m2.right_x, ScalarValue::Int(4480));
+        assert_eq!(m2.bottom_y, ScalarValue::Int(1080));
+
+        assert_eq!(p.collections.len(), 2);
+        let m2_col = p
+            .collections
+            .get("Monitor 2")
+            .expect("Monitor 2 collection");
+        assert_eq!(m2_col.search_area, "Monitor 2");
+        assert_eq!(m2_col.rows, 2);
+        assert_eq!(m2_col.cols, 2);
 
         let points = p.points.get("2560x1440").expect("points");
         assert_eq!(points.len(), 19);
@@ -471,6 +521,12 @@ mod tests {
         assert_eq!(points["Monitor 1 Top Left"].y, ScalarValue::Int(360));
         assert_eq!(points["Monitor 2 Center"].x, ScalarValue::Int(1920 + 1280));
         assert_eq!(points["Monitor 2 Center"].y, ScalarValue::Int(720));
+        let p = cat.get(GENERAL_PROGRAM).unwrap();
+        assert!(p.collections.contains_key("Monitor 2"));
+        assert_eq!(
+            p.search_areas["1920x1080"]["Monitor 2"].left_x,
+            ScalarValue::Int(1920)
+        );
     }
 
     #[test]
@@ -496,7 +552,62 @@ mod tests {
         let areas = &p.search_areas["1920x1080"];
         assert!(points.contains_key("Monitor 1 Center"));
         assert!(!points.contains_key("Monitor 2 Center"));
-        assert!(!areas.contains_key("Monitor 2 Left Half"));
-        assert!(areas.contains_key("Monitor 1 Left Half"));
+        assert!(!areas.contains_key("Monitor 2"));
+        assert!(!p.collections.contains_key("Monitor 2"));
+        assert!(areas.contains_key("Monitor 1"));
+        assert!(p.collections.contains_key("Monitor 1"));
+    }
+
+    #[test]
+    fn drops_obsolete_named_halves_for_collections() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.create_program(GENERAL_PROGRAM).unwrap();
+        cat.upsert_search_area(
+            GENERAL_PROGRAM,
+            ProgramSearchArea {
+                name: "Monitor 1 Left Half".into(),
+                left_x: ScalarValue::Int(0),
+                top_y: ScalarValue::Int(0),
+                right_x: ScalarValue::Int(960),
+                bottom_y: ScalarValue::Int(1080),
+            },
+        )
+        .unwrap();
+        assert!(ensure_general_program(&mut cat, &[(0, 0, 1920, 1080)]).unwrap());
+        let p = cat.get(GENERAL_PROGRAM).unwrap();
+        let areas = &p.search_areas["1920x1080"];
+        assert!(!areas.contains_key("Monitor 1 Left Half"));
+        assert!(areas.contains_key("Monitor 1"));
+        assert!(p.collections.contains_key("Monitor 1"));
+    }
+
+    #[test]
+    fn monitor_collection_cells_cover_quadrants_and_halves() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        ensure_general_program(&mut cat, &[(0, 0, 1920, 1080)]).unwrap();
+        let macro_ = sqyre_domain::Macro::new("t", 0, Vec::new());
+        let tl = cat
+            .resolve_search_area(
+                &sqyre_domain::CoordinateRef::collection(GENERAL_PROGRAM, "Monitor 1", 1, 1, 1, 1),
+                &macro_,
+            )
+            .unwrap();
+        assert_eq!(tl, (0, 0, 960, 540));
+        let left = cat
+            .resolve_search_area(
+                &sqyre_domain::CoordinateRef::collection(GENERAL_PROGRAM, "Monitor 1", 1, 1, 2, 1),
+                &macro_,
+            )
+            .unwrap();
+        assert_eq!(left, (0, 0, 960, 1080));
+        let whole = cat
+            .resolve_search_area(
+                &sqyre_domain::CoordinateRef::collection(GENERAL_PROGRAM, "Monitor 1", 1, 1, 2, 2),
+                &macro_,
+            )
+            .unwrap();
+        assert_eq!(whole, (0, 0, 1920, 1080));
     }
 }
