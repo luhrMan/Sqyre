@@ -36,32 +36,13 @@ pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             .maintain_aspect_ratio(true);
         let button = egui::Button::image_and_text(image, egui::RichText::new("Sqyre").heading())
             .frame_when_inactive(false);
-
-        let (response, _) = egui::containers::menu::MenuButton::from_button(button).ui(ui, |ui| {
-            if ui.button("📁  Data Editor").clicked() {
-                app.data_editor.request_open(ui.ctx());
-                ui.close();
-            }
-            if ui.button("Variables").clicked() {
-                app.variables_panel.open = true;
-                ui.close();
-            }
-            if ui.button("⚙  Settings").clicked() {
-                app.settings_ui.open = true;
-                ui.close();
-            }
-            ui.separator();
-            let list_label = if app.macro_list_open {
-                "◁  Hide Macro List"
-            } else {
-                "☰  Show Macro List"
-            };
-            if ui.button(list_label).clicked() {
-                app.macro_list_open = !app.macro_list_open;
-                ui.close();
-            }
-        });
-        response.on_hover_text("App menu");
+        if ui
+            .add(button)
+            .on_hover_text("Command palette (Ctrl+K)")
+            .clicked()
+        {
+            app.command_palette.open_palette();
+        }
 
         #[cfg(not(target_arch = "wasm32"))]
         show_update_banner(app, ui);

@@ -572,6 +572,23 @@ fn poll_update(app: &mut SqyreApp, ctx: &egui::Context) {
 ///
 /// Mutating shortcuts match the action toolbar: disabled while a macro is running.
 pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    let recording =
+        app.hotkey_record.is_open() || app.key_record.is_open() || app.macro_record.is_open();
+    if !recording {
+        let toggle_palette = ui.ctx().input_mut(|i| {
+            let mods = i.modifiers;
+            let want = mods.command && !mods.shift && !mods.alt && i.key_pressed(egui::Key::K);
+            if want {
+                i.consume_key(egui::Modifiers::COMMAND, egui::Key::K);
+            }
+            want
+        });
+        if toggle_palette {
+            app.command_palette.toggle();
+            return;
+        }
+    }
+
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     if !app.tree.tooltip.is_editing()
         && !app.hotkey_record.is_open()
@@ -625,5 +642,19 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
         } else if nudge_down {
             app.nudge_selection(false);
         }
+    }
+}
+
+pub fn show_command_palette(app: &mut SqyreApp, ctx: &egui::Context) {
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
+    let commands =
+        crate::command_palette::collect_commands(crate::command_palette::CommandSources {
+            macros: &app.workspace.macros,
+            catalog: &app.workspace.catalog,
+            overlay_buttons: &app.settings_ui.settings().overlay_buttons,
+            running,
+        });
+    if let Some(kind) = app.command_palette.show(ctx, &commands) {
+        app.run_palette_command(ctx, kind);
     }
 }
