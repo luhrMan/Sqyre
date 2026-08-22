@@ -1,0 +1,4 @@
+{
+  "name": "Sqyre (Rust)",
+  "install": "bash .cursor/install.sh"
+}
