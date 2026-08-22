@@ -12,6 +12,7 @@ mod catalog;
 mod chord_record;
 #[cfg(feature = "native-runtime")]
 mod collection_capture;
+mod command_palette;
 mod data_editor;
 mod data_editor_preview;
 mod demo_icons;
@@ -83,6 +84,7 @@ pub use settings::SettingsUi;
 use add_action::AddActionPicker;
 use app_backends::RunState;
 use catalog::{apply_main_monitor_resolution, ensure_general_program_seeded, prepare_catalog};
+use command_palette::CommandPaletteUi;
 use data_editor::DataEditor;
 use eframe::egui;
 use hotkey_record::HotkeyRecordUi;
@@ -200,6 +202,7 @@ pub struct SqyreApp {
     icon_cache: IconCache,
     preview_tooltips: PreviewTooltipCache,
     add_action_picker: AddActionPicker,
+    command_palette: CommandPaletteUi,
     data_editor: DataEditor,
     settings_ui: SettingsUi,
     variables_panel: variables_panel::VariablesPanelUi,
@@ -446,6 +449,7 @@ impl SqyreApp {
             icon_cache: IconCache::new(),
             preview_tooltips: PreviewTooltipCache::new(),
             add_action_picker,
+            command_palette: CommandPaletteUi::default(),
             data_editor: DataEditor::default(),
             settings_ui,
             variables_panel: variables_panel::VariablesPanelUi::default(),
@@ -596,6 +600,7 @@ impl eframe::App for SqyreApp {
         }
         ui_overlays::show_floating_windows(self, ui.ctx());
         ui_overlays::handle_shortcuts(self, ui);
+        ui_overlays::show_command_palette(self, ui.ctx());
 
         ui_macro_list::show(self, ui);
 

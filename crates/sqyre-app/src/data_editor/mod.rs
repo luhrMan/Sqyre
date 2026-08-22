@@ -359,6 +359,70 @@ impl DataEditor {
         self.load_overlay_style_from_config(&defaults);
     }
 
+    fn clear_entity_selection(&mut self) {
+        self.selected_entity = None;
+        self.variant_prompt = None;
+        self.overlay_icon_picker_for = None;
+    }
+
+    fn switch_tab(&mut self, tab: EditorTab, catalog: &ProgramCatalog, settings: &UserSettings) {
+        if self.tab != tab {
+            self.tab = tab;
+            self.clear_entity_selection();
+        }
+        self.load_form(catalog, settings);
+    }
+
+    /// Open on `tab`, ensure a program is selected, then create a new entity.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn open_new(
+        &mut self,
+        ctx: &egui::Context,
+        tab: EditorTab,
+        db: &mut Database,
+        macros: &mut [Macro],
+        catalog: &mut ProgramCatalog,
+        icons: &mut IconCache,
+        screen_click: &ScreenClickBridge,
+        settings: &mut UserSettings,
+    ) {
+        self.request_open(ctx);
+        self.switch_tab(tab, catalog, settings);
+        if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
+            if let Some(name) = catalog.program_names().next() {
+                self.select_program(name, catalog, settings);
+            }
+        }
+        self.form_name.clear();
+        self.on_new(db, macros, catalog, icons, screen_click, settings);
+    }
+
+    pub(crate) fn open_program(
+        &mut self,
+        ctx: &egui::Context,
+        name: &str,
+        catalog: &ProgramCatalog,
+        settings: &UserSettings,
+    ) {
+        self.request_open(ctx);
+        self.switch_tab(EditorTab::Programs, catalog, settings);
+        self.select_program(name, catalog, settings);
+    }
+
+    pub(crate) fn open_entity(
+        &mut self,
+        ctx: &egui::Context,
+        tab: EditorTab,
+        program: &str,
+        entity: &str,
+        catalog: &ProgramCatalog,
+        settings: &UserSettings,
+    ) {
+        self.request_open(ctx);
+        self.switch_tab(tab, catalog, settings);
+        self.select_entity(program, entity, catalog, settings);
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
@@ -518,7 +582,6 @@ impl DataEditor {
         settings: &mut UserSettings,
     ) {
         ui.horizontal(|ui| {
-            let prev = self.tab;
             let section = EditorSection::of(self.tab);
             for (sec, label) in [
                 (EditorSection::Programs, "Programs"),
@@ -527,14 +590,8 @@ impl DataEditor {
                 (EditorSection::Overlay, "Overlay"),
             ] {
                 if ui.selectable_label(section == sec, label).clicked() && section != sec {
-                    self.tab = sec.default_tab();
+                    self.switch_tab(sec.default_tab(), catalog, settings);
                 }
-            }
-            if self.tab != prev {
-                self.selected_entity = None;
-                self.variant_prompt = None;
-                self.overlay_icon_picker_for = None;
-                self.load_form(catalog, settings);
             }
         });
         let section = EditorSection::of(self.tab);
@@ -559,9 +616,7 @@ impl DataEditor {
                     _ => {}
                 }
                 if self.tab != prev {
-                    self.selected_entity = None;
-                    self.variant_prompt = None;
-                    self.overlay_icon_picker_for = None;
+                    self.clear_entity_selection();
                     self.load_form(catalog, settings);
                 }
             });

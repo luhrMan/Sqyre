@@ -96,6 +96,7 @@ impl SqyreApp {
             icon_cache: IconCache::new(),
             preview_tooltips: PreviewTooltipCache::new(),
             add_action_picker,
+            command_palette: crate::command_palette::CommandPaletteUi::default(),
             data_editor: DataEditor::default(),
             settings_ui,
             variables_panel: variables_panel::VariablesPanelUi::default(),
@@ -149,6 +150,10 @@ impl SqyreApp {
 
     pub fn open_add_action_picker(&mut self) {
         self.add_action_picker.open();
+    }
+
+    pub fn open_command_palette_for_docs(&mut self) {
+        self.command_palette.open_palette();
     }
 
     pub fn open_data_editor(&mut self) {
