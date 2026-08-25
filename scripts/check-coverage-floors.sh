@@ -26,11 +26,13 @@ fi
 REPORT_JSON="$(mktemp)"
 trap 'rm -f "$REPORT_JSON"' EXIT
 
-echo "Running llvm-cov for pure crates (sqyre-domain, sqyre-varref, sqyre-persist, sqyre-executor)..."
+echo "Running llvm-cov for pure crates (sqyre-domain, sqyre-varref, sqyre-persist, sqyre-serialize, sqyre-validate, sqyre-executor)..."
 "$CARGO" llvm-cov \
 	-p sqyre-domain \
 	-p sqyre-varref \
 	-p sqyre-persist \
+	-p sqyre-serialize \
+	-p sqyre-validate \
 	-p sqyre-executor \
 	--json --summary-only --output-path "$REPORT_JSON" -q
 

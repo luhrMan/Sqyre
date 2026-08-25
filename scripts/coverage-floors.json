@@ -23,6 +23,18 @@
       "path": "migrate.rs",
       "floor": 80.0,
       "note": "sqyre-persist db.yaml migration"
+    },
+    {
+      "name": "sqyre-serialize",
+      "path": "/sqyre-serialize/",
+      "floor": 65.0,
+      "note": "whole crate (YAML codecs)"
+    },
+    {
+      "name": "sqyre-validate",
+      "path": "/sqyre-validate/",
+      "floor": 70.0,
+      "note": "whole crate (name/action validation)"
     }
   ]
 }
