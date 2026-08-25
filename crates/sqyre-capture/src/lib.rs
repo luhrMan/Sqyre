@@ -61,6 +61,9 @@ pub use win_capture::{
     shared_capturer_open_superseded, OsCapturer, SharedRunCapturer,
 };
 
+#[cfg(all(target_os = "linux", feature = "portal-capture"))]
+pub use linux::wayland::PortalEisInput;
+
 #[cfg(target_os = "linux")]
 pub use linux::wayland::OsWindowFocuser;
 

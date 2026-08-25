@@ -4,16 +4,17 @@
 //! compositor does not advertise foreign-toplevel and AT-SPI has no applications.
 
 use super::app_resolve::{desktop_app_id_for_pid, desktop_label_for_pid, process_from_pid};
-use crate::WindowInfo;
+use crate::{CaptureError, WindowInfo};
+use sqyre_ports::AutomationError;
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, String> {
+pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     let socket = wayland_socket_path();
     let mut seen = HashSet::new();
     let mut out = Vec::new();
-    let proc = fs::read_dir("/proc").map_err(|e| format!("/proc: {e}"))?;
+    let proc = fs::read_dir("/proc").map_err(|e| CaptureError::Message(format!("/proc: {e}")))?;
     for ent in proc.flatten() {
         let pid = ent.file_name();
         let Some(pid) = pid.to_str().and_then(|s| s.parse::<u32>().ok()) else {
@@ -45,7 +46,7 @@ pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, String> {
     Ok(out)
 }
 
-pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, String> {
+pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, AutomationError> {
     let want = process_path.trim();
     if want.is_empty() {
         return Ok(false);
@@ -74,8 +75,9 @@ fn pid_for_exe(process_path: &str) -> Option<u32> {
     None
 }
 
-fn activate_freedesktop_application(app_id: &str) -> Result<bool, String> {
-    let session = zbus::blocking::Connection::session().map_err(|e| format!("session bus: {e}"))?;
+fn activate_freedesktop_application(app_id: &str) -> Result<bool, AutomationError> {
+    let session = zbus::blocking::Connection::session()
+        .map_err(|e| AutomationError::Backend(format!("session bus: {e}")))?;
     let path = app_object_path(app_id);
     let proxy = zbus::blocking::Proxy::new(
         &session,
@@ -83,7 +85,7 @@ fn activate_freedesktop_application(app_id: &str) -> Result<bool, String> {
         path.as_str(),
         "org.freedesktop.Application",
     )
-    .map_err(|e| format!("Application proxy: {e}"))?;
+    .map_err(|e| AutomationError::Backend(format!("Application proxy: {e}")))?;
     let platform: std::collections::HashMap<String, zbus::zvariant::Value<'_>> =
         std::collections::HashMap::new();
     match proxy.call::<_, _, ()>("Activate", &(platform,)) {

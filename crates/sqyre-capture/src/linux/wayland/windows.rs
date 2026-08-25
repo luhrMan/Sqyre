@@ -37,8 +37,16 @@ pub(crate) fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
             clients.as_ref().map(Vec::len).unwrap_or(0),
             x11.as_ref().map(Vec::len).unwrap_or(0),
             merged.len(),
-            wayland.as_ref().err().map(String::as_str).unwrap_or("-"),
-            atspi.as_ref().err().map(String::as_str).unwrap_or("-"),
+            wayland
+                .as_ref()
+                .err()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "-".into()),
+            atspi
+                .as_ref()
+                .err()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "-".into()),
         ),
     );
     if merged.is_empty() {
@@ -46,6 +54,7 @@ pub(crate) fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
             let extra = [wayland.err(), atspi.err()]
                 .into_iter()
                 .flatten()
+                .map(|err| err.to_string())
                 .collect::<Vec<_>>()
                 .join("; ");
             if extra.is_empty() {
@@ -103,27 +112,33 @@ pub(crate) fn toplevel_focus_available() -> Result<(), CaptureError> {
         ))),
         _ => Err(CaptureError::Message(format!(
             "Wayland compositor has no foreign-toplevel ({}); AT-SPI listed no windows ({})",
-            wayland.err().unwrap_or_else(|| "empty".into()),
-            atspi.err().unwrap_or_else(|| "empty".into()),
+            wayland
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "empty".into()),
+            atspi
+                .err()
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "empty".into()),
         ))),
     }
 }
 
-fn wayland_list() -> Result<Vec<WindowInfo>, String> {
+fn wayland_list() -> Result<Vec<WindowInfo>, CaptureError> {
     if !crate::linux::LinuxSessionInfo::detect().has_wayland {
         return Ok(Vec::new());
     }
     foreign_toplevel::list_windows()
 }
 
-fn atspi_list() -> Result<Vec<WindowInfo>, String> {
+fn atspi_list() -> Result<Vec<WindowInfo>, CaptureError> {
     if !crate::linux::LinuxSessionInfo::detect().has_wayland {
         return Ok(Vec::new());
     }
     atspi_windows::list_windows()
 }
 
-fn wayland_clients_list() -> Result<Vec<WindowInfo>, String> {
+fn wayland_clients_list() -> Result<Vec<WindowInfo>, CaptureError> {
     if !crate::linux::LinuxSessionInfo::detect().has_wayland {
         return Ok(Vec::new());
     }
