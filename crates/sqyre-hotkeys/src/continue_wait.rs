@@ -2,6 +2,8 @@
 
 use parking_lot::{Condvar, Mutex};
 use sqyre_domain::{normalize_keys, validate_not_failsafe};
+
+use crate::HotkeyError;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -129,7 +131,7 @@ impl ContinueWaitBridge {
         keys: &[String],
         pass_through: bool,
         stop: &AtomicBool,
-    ) -> Result<(), String> {
+    ) -> Result<(), HotkeyError> {
         self.wait_for_any_chord(&[keys.to_vec()], &[], pass_through, stop)
             .map(|_| ())
     }
@@ -144,13 +146,13 @@ impl ContinueWaitBridge {
         hold_repeat: &[bool],
         _pass_through: bool,
         stop: &AtomicBool,
-    ) -> Result<usize, String> {
+    ) -> Result<usize, HotkeyError> {
         if !self.hooks_enabled {
-            return Err("key wait is not available in this build".into());
+            return Err(HotkeyError::WaitUnavailable);
         }
         let normalized: Vec<Vec<String>> = chords.iter().map(|c| normalize_keys(c)).collect();
         if normalized.iter().all(|c| c.is_empty()) {
-            return Err("key wait: no chords configured".into());
+            return Err(HotkeyError::NoChords);
         }
         for c in &normalized {
             if !c.is_empty() {
@@ -197,7 +199,7 @@ impl ContinueWaitBridge {
 
         let result = loop {
             if stop.load(Ordering::SeqCst) {
-                break Err("stopped".into());
+                break Err(HotkeyError::Stopped);
             }
             {
                 let mut g = self.inner.state.lock();
@@ -439,7 +441,7 @@ mod tests {
         let err = b
             .wait_for_continue(&["f9".into()], false, &stop)
             .unwrap_err();
-        assert!(err.contains("not available"));
+        assert!(matches!(err, HotkeyError::WaitUnavailable));
     }
 
     #[test]
@@ -493,7 +495,7 @@ mod tests {
         let err = b
             .wait_for_continue(&["f9".into()], false, stop_flag.as_ref())
             .unwrap_err();
-        assert!(err.contains("stopped"));
+        assert!(matches!(err, HotkeyError::Stopped));
         handle.join().unwrap();
     }
 }

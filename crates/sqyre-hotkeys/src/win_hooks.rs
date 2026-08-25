@@ -59,7 +59,7 @@ fn take_hhook(slot: &AtomicIsize) -> HHOOK {
     HHOOK(slot.swap(0, Ordering::SeqCst) as *mut _)
 }
 
-pub struct WinHotkeys {
+pub struct OsHotkeys {
     stop: Arc<AtomicBool>,
     join: Mutex<Option<JoinHandle<()>>>,
     continue_wait: ContinueWaitBridge,
@@ -68,7 +68,7 @@ pub struct WinHotkeys {
     macro_hotkeys: MacroHotkeyBridge,
 }
 
-impl WinHotkeys {
+impl OsHotkeys {
     pub fn new(
         continue_wait: ContinueWaitBridge,
         screen_click: ScreenClickBridge,
@@ -86,7 +86,7 @@ impl WinHotkeys {
     }
 }
 
-impl HotkeyService for WinHotkeys {
+impl HotkeyService for OsHotkeys {
     fn start(&mut self, callbacks: HotkeyCallbacks) -> Result<(), HotkeyError> {
         self.stop();
         let stop = Arc::clone(&self.stop);
@@ -125,6 +125,8 @@ impl HotkeyService for WinHotkeys {
                             })?;
                     store_hhook(&KEY_HOOK, key);
                     store_hhook(&MOUSE_HOOK, mouse);
+                    // SAFETY: GetCurrentThreadId is always safe; this is the hook thread that
+                    // later receives PostThreadMessageW(WM_QUIT) from stop().
                     HOOK_THREAD_ID.store(unsafe { GetCurrentThreadId() }, Ordering::SeqCst);
                     Ok(())
                 })();
