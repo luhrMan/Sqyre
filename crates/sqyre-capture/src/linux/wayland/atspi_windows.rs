@@ -5,7 +5,8 @@
 
 use super::app_resolve::process_from_pid;
 use crate::window_match::{paths_equal, titles_equal};
-use crate::{window_matches_process, WindowInfo};
+use crate::{window_matches_process, CaptureError, WindowInfo};
+use sqyre_ports::AutomationError;
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 
@@ -32,7 +33,7 @@ struct AtspiRef {
     path: OwnedObjectPath,
 }
 
-pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, String> {
+pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     let conn = a11y_connection()?;
     register_event_listener(&conn);
     let root = root_ref()?;
@@ -50,14 +51,14 @@ pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, String> {
     Ok(out)
 }
 
-pub(crate) fn active_window() -> Result<Option<WindowInfo>, String> {
+pub(crate) fn active_window() -> Result<Option<WindowInfo>, CaptureError> {
     let conn = a11y_connection()?;
     let mut focused = None;
     let root = AtspiRef {
         dest: REGISTRY.into(),
         path: ROOT_PATH
             .try_into()
-            .map_err(|e: zbus::zvariant::Error| e.to_string())?,
+            .map_err(|e: zbus::zvariant::Error| CaptureError::Message(e.to_string()))?,
     };
     for app in children(&conn, &root)? {
         if is_application_role(&role_name(&conn, &app).unwrap_or_default()) {
@@ -82,21 +83,21 @@ pub(crate) fn active_window() -> Result<Option<WindowInfo>, String> {
     Ok(focused)
 }
 
-pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, String> {
-    let conn = a11y_connection()?;
+pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, AutomationError> {
+    let conn = a11y_connection().map_err(|e| AutomationError::Backend(e.to_string()))?;
     let root = AtspiRef {
         dest: REGISTRY.into(),
         path: ROOT_PATH
             .try_into()
-            .map_err(|e: zbus::zvariant::Error| e.to_string())?,
+            .map_err(|e: zbus::zvariant::Error| AutomationError::Backend(e.to_string()))?,
     };
-    for app in children(&conn, &root)? {
+    for app in children(&conn, &root).map_err(|e| AutomationError::Backend(e.to_string()))? {
         if !is_application_role(&role_name(&conn, &app).unwrap_or_default()) {
             continue;
         }
         let pid = unix_pid(&conn, &app).unwrap_or(0);
         let (name, path) = process_from_pid(pid);
-        let frames = children(&conn, &app)?;
+        let frames = children(&conn, &app).map_err(|e| AutomationError::Backend(e.to_string()))?;
         let targets: Vec<AtspiRef> = if frames.is_empty() {
             vec![app]
         } else {
@@ -133,19 +134,19 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, S
     Ok(false)
 }
 
-fn root_ref() -> Result<AtspiRef, String> {
+fn root_ref() -> Result<AtspiRef, CaptureError> {
     Ok(AtspiRef {
         dest: REGISTRY.into(),
         path: ROOT_PATH
             .try_into()
-            .map_err(|e: zbus::zvariant::Error| e.to_string())?,
+            .map_err(|e: zbus::zvariant::Error| CaptureError::Message(e.to_string()))?,
     })
 }
 
 fn walk_applications_from(
     conn: &Connection,
     apps: Vec<AtspiRef>,
-) -> Result<Vec<Vec<WindowInfo>>, String> {
+) -> Result<Vec<Vec<WindowInfo>>, CaptureError> {
     let mut groups = Vec::new();
     for app in apps {
         if !is_application_role(&role_name(conn, &app).unwrap_or_default()) {
@@ -218,18 +219,19 @@ fn is_application_role(role: &str) -> bool {
     role.is_empty() || role.eq_ignore_ascii_case("application")
 }
 
-fn a11y_connection() -> Result<Connection, String> {
-    let session = Connection::session().map_err(|e| format!("session bus: {e}"))?;
+fn a11y_connection() -> Result<Connection, CaptureError> {
+    let session =
+        Connection::session().map_err(|e| CaptureError::Message(format!("session bus: {e}")))?;
     enable_toolkit_a11y(&session);
     let proxy = Proxy::new(&session, A11Y_BUS, A11Y_BUS_PATH, A11Y_BUS_IFACE)
-        .map_err(|e| format!("a11y bus proxy: {e}"))?;
+        .map_err(|e| CaptureError::Message(format!("a11y bus proxy: {e}")))?;
     let address: String = proxy
         .call("GetAddress", &())
-        .map_err(|e| format!("GetAddress: {e}"))?;
+        .map_err(|e| CaptureError::Message(format!("GetAddress: {e}")))?;
     zbus::blocking::connection::Builder::address(address.as_str())
-        .map_err(|e| format!("a11y address: {e}"))?
+        .map_err(|e| CaptureError::Message(format!("a11y address: {e}")))?
         .build()
-        .map_err(|e| format!("a11y connect: {e}"))
+        .map_err(|e| CaptureError::Message(format!("a11y connect: {e}")))
 }
 
 /// GTK/Qt only export AT-SPI when this is true. Already-running apps may still need a restart.
@@ -272,11 +274,11 @@ fn wait_for_children(conn: &Connection, root: &AtspiRef) {
     }
 }
 
-fn children(conn: &Connection, node: &AtspiRef) -> Result<Vec<AtspiRef>, String> {
+fn children(conn: &Connection, node: &AtspiRef) -> Result<Vec<AtspiRef>, CaptureError> {
     let proxy = accessible(conn, node)?;
     let kids: Vec<(String, OwnedObjectPath)> = proxy
         .call("GetChildren", &())
-        .map_err(|e| format!("GetChildren: {e}"))?;
+        .map_err(|e| CaptureError::Message(format!("GetChildren: {e}")))?;
     Ok(kids
         .into_iter()
         .map(|(dest, path)| child_ref(node, dest, path))
@@ -295,18 +297,18 @@ fn child_ref(parent: &AtspiRef, dest: String, path: OwnedObjectPath) -> AtspiRef
     }
 }
 
-fn name_of(conn: &Connection, node: &AtspiRef) -> Result<String, String> {
+fn name_of(conn: &Connection, node: &AtspiRef) -> Result<String, CaptureError> {
     let proxy = accessible(conn, node)?;
     proxy
         .call("GetName", &())
-        .map_err(|e| format!("GetName: {e}"))
+        .map_err(|e| CaptureError::Message(format!("GetName: {e}")))
 }
 
-fn role_name(conn: &Connection, node: &AtspiRef) -> Result<String, String> {
+fn role_name(conn: &Connection, node: &AtspiRef) -> Result<String, CaptureError> {
     let proxy = accessible(conn, node)?;
     proxy
         .call("GetRoleName", &())
-        .map_err(|e| format!("GetRoleName: {e}"))
+        .map_err(|e| CaptureError::Message(format!("GetRoleName: {e}")))
 }
 
 fn has_state(conn: &Connection, node: &AtspiRef, bit: u32) -> bool {
@@ -330,17 +332,17 @@ fn unix_pid(conn: &Connection, node: &AtspiRef) -> Option<u32> {
     proxy.call("GetConnectionUnixProcessID", &node.dest).ok()
 }
 
-fn grab_focus(conn: &Connection, node: &AtspiRef) -> Result<bool, String> {
+fn grab_focus(conn: &Connection, node: &AtspiRef) -> Result<bool, AutomationError> {
     let proxy = Proxy::new(conn, node.dest.as_str(), node.path.as_str(), COMPONENT)
-        .map_err(|e| format!("Component proxy: {e}"))?;
+        .map_err(|e| AutomationError::Backend(format!("Component proxy: {e}")))?;
     proxy
         .call("GrabFocus", &())
-        .map_err(|e| format!("GrabFocus: {e}"))
+        .map_err(|e| AutomationError::Backend(format!("GrabFocus: {e}")))
 }
 
-fn accessible<'a>(conn: &'a Connection, node: &'a AtspiRef) -> Result<Proxy<'a>, String> {
+fn accessible<'a>(conn: &'a Connection, node: &'a AtspiRef) -> Result<Proxy<'a>, CaptureError> {
     Proxy::new(conn, node.dest.as_str(), node.path.as_str(), ACCESSIBLE)
-        .map_err(|e| format!("Accessible proxy: {e}"))
+        .map_err(|e| CaptureError::Message(format!("Accessible proxy: {e}")))
 }
 
 #[cfg(test)]

@@ -2,7 +2,8 @@
 
 use super::app_resolve::resolve_app_id;
 use crate::window_match::titles_equal;
-use crate::{window_matches_process, WindowInfo};
+use crate::{window_matches_process, CaptureError, WindowInfo};
+use sqyre_ports::AutomationError;
 use std::collections::HashMap;
 use wayland_client::protocol::{wl_output, wl_registry, wl_seat};
 use wayland_client::{event_created_child, Connection, Dispatch, EventQueue, Proxy, QueueHandle};
@@ -38,23 +39,26 @@ impl State {
     }
 }
 
-pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, String> {
+pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     let (_conn, mut queue, mut state) = bind()?;
     pump(&mut queue, &mut state)?;
     if state.wlr_mgr.is_none() && state.ext_list.is_none() {
-        return Err("compositor does not advertise foreign-toplevel".into());
+        return Err(CaptureError::Message(
+            "compositor does not advertise foreign-toplevel".into(),
+        ));
     }
     Ok(collect_infos(&state))
 }
 
-pub(crate) fn active_window() -> Result<Option<WindowInfo>, String> {
+pub(crate) fn active_window() -> Result<Option<WindowInfo>, CaptureError> {
     let infos = list_raw()?;
     Ok(infos.into_iter().find(|(_, d)| d.activated).map(|(w, _)| w))
 }
 
-pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, String> {
-    let (conn, mut queue, mut state) = bind()?;
-    pump(&mut queue, &mut state)?;
+pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, AutomationError> {
+    let (conn, mut queue, mut state) =
+        bind().map_err(|e| AutomationError::Backend(e.to_string()))?;
+    pump(&mut queue, &mut state).map_err(|e| AutomationError::Backend(e.to_string()))?;
     let Some(seat) = state.seat.clone() else {
         return Ok(false);
     };
@@ -82,15 +86,17 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, S
     let _ = conn.flush();
     queue
         .roundtrip(&mut state)
-        .map_err(|e| format!("activate roundtrip: {e}"))?;
+        .map_err(|e| AutomationError::Backend(format!("activate roundtrip: {e}")))?;
     Ok(true)
 }
 
-fn list_raw() -> Result<Vec<(WindowInfo, Draft)>, String> {
+fn list_raw() -> Result<Vec<(WindowInfo, Draft)>, CaptureError> {
     let (_conn, mut queue, mut state) = bind()?;
     pump(&mut queue, &mut state)?;
     if state.wlr_mgr.is_none() && state.ext_list.is_none() {
-        return Err("compositor does not advertise foreign-toplevel".into());
+        return Err(CaptureError::Message(
+            "compositor does not advertise foreign-toplevel".into(),
+        ));
     }
     Ok(state
         .drafts
@@ -119,8 +125,9 @@ fn info_from_draft(draft: &Draft) -> WindowInfo {
     }
 }
 
-fn bind() -> Result<(Connection, EventQueue<State>, State), String> {
-    let conn = Connection::connect_to_env().map_err(|e| format!("wayland connect: {e}"))?;
+fn bind() -> Result<(Connection, EventQueue<State>, State), CaptureError> {
+    let conn = Connection::connect_to_env()
+        .map_err(|e| CaptureError::Message(format!("wayland connect: {e}")))?;
     let mut queue = conn.new_event_queue();
     let qh = queue.handle();
     let display = conn.display();
@@ -128,18 +135,18 @@ fn bind() -> Result<(Connection, EventQueue<State>, State), String> {
     let mut state = State::default();
     queue
         .roundtrip(&mut state)
-        .map_err(|e| format!("registry roundtrip: {e}"))?;
+        .map_err(|e| CaptureError::Message(format!("registry roundtrip: {e}")))?;
     Ok((conn, queue, state))
 }
 
-fn pump(queue: &mut EventQueue<State>, state: &mut State) -> Result<(), String> {
+fn pump(queue: &mut EventQueue<State>, state: &mut State) -> Result<(), CaptureError> {
     if state.wlr_mgr.is_none() && state.ext_list.is_none() {
         return Ok(());
     }
     for _ in 0..4 {
         queue
             .roundtrip(state)
-            .map_err(|e| format!("toplevel roundtrip: {e}"))?;
+            .map_err(|e| CaptureError::Message(format!("toplevel roundtrip: {e}")))?;
     }
     Ok(())
 }

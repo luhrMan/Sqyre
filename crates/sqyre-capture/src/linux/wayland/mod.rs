@@ -9,13 +9,23 @@ mod windows;
 #[cfg(feature = "portal-capture")]
 mod eis;
 #[cfg(feature = "portal-capture")]
-mod portal_capture;
+mod portal_dma;
+#[cfg(feature = "portal-capture")]
+mod portal_pipewire;
+#[cfg(feature = "portal-capture")]
+mod portal_remote;
+#[cfg(feature = "portal-capture")]
+mod portal_session;
 
 #[cfg(feature = "portal-capture")]
-pub use portal_capture::{
+pub use portal_pipewire::PortalCapturer;
+#[cfg(feature = "portal-capture")]
+pub use portal_remote::PortalEisInput;
+#[cfg(feature = "portal-capture")]
+pub use portal_session::{
     portal_cursor_position, portal_input_click, portal_input_key, portal_input_last_pos,
     portal_input_move, portal_input_ready, portal_input_scroll, portal_remote_desktop_granted,
-    portal_screencast_granted, request_portal_screencast_picker, PortalCapturer,
+    portal_screencast_granted, request_portal_screencast_picker,
 };
 
 pub use windows::OsWindowFocuser;

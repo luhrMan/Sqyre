@@ -9,12 +9,14 @@ use sqyre_ports::{DesktopRect, RgbCapture};
 #[cfg(feature = "portal-capture")]
 use crate::linux::wayland::PortalCapturer;
 
-/// OS-neutral Linux capturer — X11 when available, else portal ScreenCast + PipeWire.
-pub enum OsCapturer {
+enum Inner {
     X11(X11Capturer),
     #[cfg(feature = "portal-capture")]
     Portal(PortalCapturer),
 }
+
+/// OS-neutral Linux capturer — X11 when available, else portal ScreenCast + PipeWire.
+pub struct OsCapturer(Inner);
 
 impl OsCapturer {
     /// Open the preferred capture backend for the current session.
@@ -23,7 +25,7 @@ impl OsCapturer {
         match info.capture_backend() {
             LinuxCaptureBackend::WaylandPortal => open_wayland_portal(),
             LinuxCaptureBackend::X11Native | LinuxCaptureBackend::XWayland => {
-                X11Capturer::open().map(Self::X11)
+                X11Capturer::open().map(|c| Self(Inner::X11(c)))
             }
             LinuxCaptureBackend::Unavailable => Err(CaptureError::OpenDisplay),
         }
@@ -31,37 +33,37 @@ impl OsCapturer {
 
     /// Absolute pointer position (X11 only today).
     pub fn pointer_position(&self) -> Result<(i32, i32), CaptureError> {
-        match self {
-            Self::X11(c) => c.pointer_position(),
+        match &self.0 {
+            Inner::X11(c) => c.pointer_position(),
             #[cfg(feature = "portal-capture")]
-            Self::Portal(_) => Err(CaptureError::Message(
+            Inner::Portal(_) => Err(CaptureError::Message(
                 "pointer position unavailable with portal capture".into(),
             )),
         }
     }
 
     pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
-        match self {
-            Self::X11(c) => c.capture_rect_ref(rect),
+        match &self.0 {
+            Inner::X11(c) => c.capture_rect_ref(rect),
             #[cfg(feature = "portal-capture")]
-            Self::Portal(c) => c.capture_rect_ref(rect),
+            Inner::Portal(c) => c.capture_rect_ref(rect),
         }
     }
 
     /// Capture after waiting for a new portal frame when applicable (manual refresh).
     pub fn capture_rect_fresh_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
-        match self {
-            Self::X11(c) => c.capture_rect_ref(rect),
+        match &self.0 {
+            Inner::X11(c) => c.capture_rect_ref(rect),
             #[cfg(feature = "portal-capture")]
-            Self::Portal(c) => c.capture_rect_fresh_ref(rect),
+            Inner::Portal(c) => c.capture_rect_fresh_ref(rect),
         }
     }
 
     pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
-        match self {
-            Self::X11(c) => c.capture_rect_rgb_ref(rect),
+        match &self.0 {
+            Inner::X11(c) => c.capture_rect_rgb_ref(rect),
             #[cfg(feature = "portal-capture")]
-            Self::Portal(c) => c.capture_rect_rgb_ref(rect),
+            Inner::Portal(c) => c.capture_rect_rgb_ref(rect),
         }
     }
 
@@ -70,34 +72,34 @@ impl OsCapturer {
         &self,
         rect: DesktopRect,
     ) -> Result<RgbCapture, CaptureError> {
-        match self {
-            Self::X11(c) => c.capture_rect_rgb_ref(rect),
+        match &self.0 {
+            Inner::X11(c) => c.capture_rect_rgb_ref(rect),
             #[cfg(feature = "portal-capture")]
-            Self::Portal(c) => c.capture_rect_rgb_fresh_ref(rect),
+            Inner::Portal(c) => c.capture_rect_rgb_fresh_ref(rect),
         }
     }
 
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
-        match self {
-            Self::X11(c) => c.virtual_bounds_ref(),
+        match &self.0 {
+            Inner::X11(c) => c.virtual_bounds_ref(),
             #[cfg(feature = "portal-capture")]
-            Self::Portal(c) => c.virtual_bounds_ref(),
+            Inner::Portal(c) => c.virtual_bounds_ref(),
         }
     }
 
     pub fn monitor_rects_ref(&self) -> Result<Vec<DesktopRect>, CaptureError> {
-        match self {
-            Self::X11(c) => c.monitor_rects_ref(),
+        match &self.0 {
+            Inner::X11(c) => c.monitor_rects_ref(),
             #[cfg(feature = "portal-capture")]
-            Self::Portal(c) => c.monitor_rects_ref(),
+            Inner::Portal(c) => c.monitor_rects_ref(),
         }
     }
 
     pub fn monitor_sizes_ref(&self) -> Result<Vec<(i32, i32)>, CaptureError> {
-        match self {
-            Self::X11(c) => c.monitor_sizes_ref(),
+        match &self.0 {
+            Inner::X11(c) => c.monitor_sizes_ref(),
             #[cfg(feature = "portal-capture")]
-            Self::Portal(c) => c.monitor_sizes_ref(),
+            Inner::Portal(c) => c.monitor_sizes_ref(),
         }
     }
 }
@@ -105,7 +107,7 @@ impl OsCapturer {
 fn open_wayland_portal() -> Result<OsCapturer, CaptureError> {
     #[cfg(feature = "portal-capture")]
     {
-        PortalCapturer::open().map(OsCapturer::Portal)
+        PortalCapturer::open().map(|c| OsCapturer(Inner::Portal(c)))
     }
     #[cfg(not(feature = "portal-capture"))]
     {
