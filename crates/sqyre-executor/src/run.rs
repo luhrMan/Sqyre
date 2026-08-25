@@ -1,6 +1,6 @@
 use crate::actions::{
     execute_focus_window, execute_for_each_row, execute_pause, execute_run_macro,
-    execute_save_variable, execute_set_variable, execute_while,
+    execute_save_variable, execute_set_variable, execute_while, FlowLoopCtx,
 };
 use crate::backends::{
     AutomationBackend, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup, MoveOptions,
@@ -13,7 +13,7 @@ use sqyre_domain::{
     action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, LoopJumpMode, Macro,
     MatchMode, MouseButton, PressState, ScalarValue,
 };
-use sqyre_ui_model::{
+use sqyre_ports::{
     clear_highlights, highlight_cursor, ActionHighlighter, ActionLogger, RuntimeVarSink,
 };
 use std::collections::BTreeSet;
@@ -162,9 +162,16 @@ impl<'a> Executor<'a> {
         label: impl Into<String>,
         image: &sqyre_match::ImageBuf,
     ) {
-        if let Some(logger) = self.deps.logger {
-            logger.log_image(action_id, label.into(), image);
+        let Some(logger) = self.deps.logger else {
+            return;
+        };
+        if !logger.log_images_enabled() {
+            return;
         }
+        let Some(image) = crate::log_draw::image_buf_to_log_image(label.into(), image) else {
+            return;
+        };
+        logger.log_image(action_id, &image);
     }
 
     pub fn log_item_pipeline(
@@ -176,16 +183,32 @@ impl<'a> Executor<'a> {
         steps: &[(&str, &sqyre_match::ImageBuf)],
         details: Vec<String>,
     ) {
-        if let Some(logger) = self.deps.logger {
-            logger.log_item_pipeline(
-                action_id,
-                title.into(),
-                summary.into(),
-                thumbnail,
-                steps,
-                details,
-            );
+        let Some(logger) = self.deps.logger else {
+            return;
+        };
+        if !logger.log_images_enabled() {
+            return;
         }
+        let title = title.into();
+        let Some(thumbnail) =
+            crate::log_draw::image_buf_to_log_image(format!("Item — {title}"), thumbnail)
+        else {
+            return;
+        };
+        let steps: Vec<_> = steps
+            .iter()
+            .filter_map(|(label, img)| {
+                crate::log_draw::image_buf_to_log_image((*label).to_string(), img)
+            })
+            .collect();
+        logger.log_item_pipeline(
+            action_id,
+            title,
+            summary.into(),
+            &thumbnail,
+            &steps,
+            details,
+        );
     }
 
     /// Record how long a named step took (shown in the action logs UI).
@@ -564,12 +587,14 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             subactions,
         } => execute_while(
             exec,
-            action.id,
-            &condition.name,
+            &FlowLoopCtx {
+                action_id: action.id,
+                name: &condition.name,
+                subactions,
+            },
             condition.match_mode,
             &condition.clauses,
             *max_iterations,
-            subactions,
             macro_,
         ),
         ActionKind::ForEachRow {
@@ -579,7 +604,16 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             end_row,
             subactions,
         } => execute_for_each_row(
-            exec, action.id, name, sources, start_row, end_row, subactions, macro_,
+            exec,
+            &FlowLoopCtx {
+                action_id: action.id,
+                name,
+                subactions,
+            },
+            sources,
+            start_row,
+            end_row,
+            macro_,
         ),
         ActionKind::Pause {
             message,
@@ -750,13 +784,13 @@ pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
 mod tests {
     use super::*;
     use crate::backends::DesktopRect;
+    use crate::lines_for;
     use crate::test_support::FixedResolver;
     use crate::test_support::{RecordingBackend, RecordingCapturer};
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, ConditionOperator, CoordinateRef, ScalarValue,
         VariableAssignment,
     };
-    use sqyre_ui_model::lines_for;
 
     const RUN_RESOLVER: FixedResolver = FixedResolver::point_area((42, 99), (0, 0, 10, 10));
 

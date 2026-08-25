@@ -1,16 +1,15 @@
-use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionHit};
+use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionCtx, DetectionHit};
 use super::ocr::ocr_target_matched;
 use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
 use crate::test_support::{RecordingBackend, RecordingCapturer, SEARCH_FIXED_AREA};
-use crate::SharedActionLog;
+use crate::{lines_for, SharedActionLog};
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
     root_loop, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, LoopJumpMode, Macro,
-    MatchOrder, RepeatMode, ScalarValue, WaitTilFoundConfig,
+    MatchGrouping, MatchOrder, RepeatMode, ScalarValue, WaitTilFoundConfig,
 };
 use sqyre_match::{search_blur_kernel, ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
-use sqyre_ui_model::lines_for;
 use sqyre_vision::get_cached_blurred_template;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -269,7 +268,7 @@ fn sort_hits_respects_match_order() {
     sort_hits(
         &mut pts,
         &MatchOrder {
-            grouping: "row".into(),
+            grouping: MatchGrouping::Row,
             horizontal: "right_to_left".into(),
             vertical: "top_to_bottom".into(),
         },
@@ -287,7 +286,7 @@ fn sort_hits_respects_match_order() {
     sort_hits(
         &mut pts,
         &MatchOrder {
-            grouping: "column".into(),
+            grouping: MatchGrouping::Column,
             horizontal: "left_to_right".into(),
             vertical: "top_to_bottom".into(),
         },
@@ -728,17 +727,14 @@ fn image_search_break_stops_match_loop() {
             },
         },
     ];
-    run_matches(
-        &mut exec,
-        ActionId::new(),
-        &["a".into(), "b".into()],
-        &results,
-        &CoordinateOutputs::defaults(),
-        &subactions,
-        &[],
-        &mut macro_,
-    )
-    .unwrap();
+    let branch = sqyre_domain::DetectionBranch {
+        subactions,
+        ..Default::default()
+    };
+    let targets = ["a".into(), "b".into()];
+    let area = CoordinateRef::default();
+    let ctx = DetectionCtx::new(ActionId::new(), "test", &area, &targets, &branch);
+    run_matches(&mut exec, &ctx, &results, &mut macro_).unwrap();
     assert_eq!(
         backend
             .log
@@ -1862,17 +1858,14 @@ fn run_matches_clears_coords_on_miss() {
     let mut macro_ = Macro::new("t", 0, vec![]);
     macro_.variables.set("foundX", ScalarValue::Int(9));
     macro_.variables.set("foundY", ScalarValue::Int(8));
-    run_matches(
-        &mut exec,
-        ActionId::new(),
-        &[],
-        &[],
-        &coords_xy("foundX", "foundY"),
-        &[],
-        &[],
-        &mut macro_,
-    )
-    .unwrap();
+    let coords = coords_xy("foundX", "foundY");
+    let branch = sqyre_domain::DetectionBranch {
+        coords,
+        ..Default::default()
+    };
+    let area = CoordinateRef::default();
+    let ctx = DetectionCtx::new(ActionId::new(), "test", &area, &[], &branch);
+    run_matches(&mut exec, &ctx, &[], &mut macro_).unwrap();
     assert!(macro_.variables.get("foundX").is_none());
     assert!(macro_.variables.get("foundY").is_none());
 }

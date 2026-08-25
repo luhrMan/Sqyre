@@ -5,7 +5,8 @@ use crate::error::{ExecError, FlowSignal, Result};
 use crate::run::{resolve_int, resolve_text, run_children, Executor};
 use sqyre_domain::{
     Action, ActionId, ActionKind, AtlasLayout, AtlasNode, AtlasPos, CoordinateRef, Macro, NavDir,
-    NavInputs, NavOptions, NavOutputs, NavSelectAction, NavigateSelectData, ScalarValue,
+    NavInputs, NavOptions, NavOutputs, NavPressMode, NavSelectAction, NavSelectDevice,
+    NavigateSelectData, ScalarValue,
 };
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -501,44 +502,33 @@ fn move_to_cell(
 }
 
 fn perform_select(exec: &mut Executor<'_>, select: &NavSelectAction) -> Result<()> {
-    let mode = select.press_mode.trim().to_ascii_lowercase();
-    let device = select.device.trim().to_ascii_lowercase();
-    match device.as_str() {
-        "" | "mouse" => {
-            let btn = if select.button.trim().is_empty() {
-                "left"
-            } else {
-                select.button.trim()
-            };
-            match mode.as_str() {
-                "down" | "hold" => exec.input_click_down(btn)?,
-                "up" => exec.input_click_up(btn)?,
-                _ => {
+    match select.device {
+        NavSelectDevice::Mouse => {
+            let btn = select.button.as_str();
+            match select.press_mode {
+                NavPressMode::Down | NavPressMode::Hold => exec.input_click_down(btn)?,
+                NavPressMode::Up => exec.input_click_up(btn)?,
+                NavPressMode::Click => {
                     exec.input_click_down(btn)?;
                     exec.input_click_up(btn)?;
                 }
             }
         }
-        "keyboard" => {
+        NavSelectDevice::Keyboard => {
             let k = select.key.trim();
             if k.is_empty() {
                 return Err(ExecError::Message(
                     "navigate select: select key not set".into(),
                 ));
             }
-            match mode.as_str() {
-                "down" | "hold" => exec.input_key_down(k)?,
-                "up" => exec.input_key_up(k)?,
-                _ => {
+            match select.press_mode {
+                NavPressMode::Down | NavPressMode::Hold => exec.input_key_down(k)?,
+                NavPressMode::Up => exec.input_key_up(k)?,
+                NavPressMode::Click => {
                     exec.input_key_down(k)?;
                     exec.input_key_up(k)?;
                 }
             }
-        }
-        other => {
-            return Err(ExecError::Message(format!(
-                "navigate select: unknown select device {other:?}"
-            )));
         }
     }
     Ok(())

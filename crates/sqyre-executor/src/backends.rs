@@ -1,4 +1,4 @@
-//! Executor-only ports (OCR) and re-exports from [`sqyre_ports`] / [`sqyre_ui_model`].
+//! Executor-only ports (OCR) and re-exports from [`sqyre_ports`].
 
 pub use sqyre_match::ImageBuf;
 pub use sqyre_ports::{
@@ -16,6 +16,6 @@ pub trait OcrEngine: Send + Sync {
 #[cfg(not(target_arch = "wasm32"))]
 impl OcrEngine for sqyre_vision::LeptessOcr {
     fn recognize(&self, image: &ImageBuf) -> Result<sqyre_vision::OcrRecognition, PortError> {
-        sqyre_vision::LeptessOcr::recognize(self, image).map_err(PortError::Message)
+        sqyre_vision::LeptessOcr::recognize(self, image)
     }
 }

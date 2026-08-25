@@ -8,22 +8,28 @@ use sqyre_domain::{
     Action, ActionId, ConditionClause, ListColumn, Macro, MatchMode, ScalarValue,
     FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
 };
-use sqyre_ui_model::{highlight_clear, highlight_fill};
+use sqyre_ports::{highlight_clear, highlight_fill};
 use std::fs;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-#[allow(clippy::too_many_arguments)]
+pub(crate) struct FlowLoopCtx<'a> {
+    pub action_id: ActionId,
+    pub name: &'a str,
+    pub subactions: &'a [Action],
+}
+
 pub(crate) fn execute_while(
     exec: &mut Executor<'_>,
-    action_id: ActionId,
-    name: &str,
+    ctx: &FlowLoopCtx<'_>,
     match_mode: MatchMode,
     clauses: &[ConditionClause],
     max_iterations: i32,
-    subactions: &[Action],
     macro_: &mut Macro,
 ) -> Result<()> {
+    let action_id = ctx.action_id;
+    let name = ctx.name;
+    let subactions = ctx.subactions;
     let cap = if max_iterations <= 0 {
         exec.deps.while_max_iterations.max(1)
     } else {
@@ -64,17 +70,17 @@ pub(crate) fn execute_while(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(crate) fn execute_for_each_row(
     exec: &mut Executor<'_>,
-    action_id: ActionId,
-    name: &str,
+    ctx: &FlowLoopCtx<'_>,
     sources: &[ListColumn],
     start_row: &ScalarValue,
     end_row: &ScalarValue,
-    subactions: &[Action],
     macro_: &mut Macro,
 ) -> Result<()> {
+    let action_id = ctx.action_id;
+    let name = ctx.name;
+    let subactions = ctx.subactions;
     if sources.is_empty() {
         return Err(ExecError::Message(format!(
             "for each row {name:?}: at least one source is required"
@@ -161,7 +167,8 @@ pub(crate) fn execute_pause(
     pass_through: bool,
     macro_: &Macro,
 ) -> Result<()> {
-    let keys = sqyre_hotkeys::validate_continue_key(continue_key).map_err(ExecError::Message)?;
+    let keys = sqyre_hotkeys::validate_continue_key(continue_key)
+        .map_err(|e| ExecError::Message(e.to_string()))?;
 
     let msg = match resolve_text(message, macro_) {
         Ok(s) => s,
