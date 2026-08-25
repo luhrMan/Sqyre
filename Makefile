@@ -1,8 +1,8 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre probe release release-bundle windows macos test coverage coverage-floors check check-fmt fmt clippy deny machete \
-	release-gate run tessdata appimage install-desktop docs-media wasm help
+.PHONY: all sqyre probe release release-bundle windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
+	release-gate run tessdata appimage install-desktop docs-media wasm wasm-check help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
@@ -72,6 +72,9 @@ help:
 	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
 	@echo "  macos        - fmt + check, then native macOS release -> $(BIN)/sqyre  (macOS host)"
 	@echo "  test         - cargo nextest (fallback: cargo test)"
+	@echo "  smoke        - debug build then ./bin/sqyre --version"
+	@echo "  bench        - criterion benches (match, vision, serialize; not run in CI)"
+	@echo "  wasm-check   - cargo check sqyre-app for wasm32 (no Trunk / no full wasm build)"
 	@echo "  check-fmt    - cargo fmt --check"
 	@echo "  fmt          - cargo fmt --all (write)"
 	@echo "  clippy       - cargo clippy --workspace --all-targets (-D warnings)"
@@ -143,6 +146,23 @@ test:
 		echo "  Install: cargo install cargo-nextest --locked"; \
 		$(CARGO) test --workspace $(CARGO_FLAGS); \
 	fi
+
+smoke: sqyre
+	$(BIN)/sqyre$(BIN_EXT) --version
+
+# Local-only: do not add to CI. Name each [[bench]] so cargo never runs `--lib`
+# (libtest rejects Criterion CLI flags). Short times are set in the bench sources.
+bench:
+	$(CARGO) bench -p sqyre-match --bench template_match $(CARGO_FLAGS)
+	$(CARGO) bench -p sqyre-vision --bench vision_hot_paths $(CARGO_FLAGS)
+	$(CARGO) bench -p sqyre-serialize --bench macro_codec $(CARGO_FLAGS)
+
+# Compile-only WASM editor (no Trunk). CI Linux test job runs this.
+# Skip `rustup target add` when the target is already installed (read-only RUSTUP_HOME in CI).
+wasm-check:
+	@rustup target list --installed | grep -q wasm32-unknown-unknown \
+		|| rustup target add wasm32-unknown-unknown
+	$(CARGO) check -p sqyre-app --target wasm32-unknown-unknown --no-default-features $(CARGO_FLAGS)
 
 check-fmt:
 	$(CARGO) fmt --all -- --check

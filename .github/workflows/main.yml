@@ -7,6 +7,7 @@
 # - Cargo target/: per triple (linux host / windows-gnu / wasm32) — not cross-shareable
 # - Linux/Windows Docker images: content-hash tags on GHCR; Buildx layers as fallback
 # - tessdata: shared keys across runs
+# Criterion benches (`make bench`) are local-only; Linux tests run `make wasm-check`.
 
 name: Build and Release
 
@@ -237,7 +238,9 @@ jobs:
             bash -c 'set -euo pipefail
               make check
               make machete
-              make test'
+              make test
+              make smoke
+              make wasm-check'
 
       - name: Coverage report
         run: |
@@ -264,6 +267,32 @@ jobs:
             target/coverage/lcov.info
           if-no-files-found: warn
           retention-days: 14
+
+  test-windows:
+    if: |
+      always() && !cancelled() &&
+      (github.event_name == 'push' || github.event_name == 'pull_request')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.94.0
+
+      - name: Cache Cargo
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-agnostic-v1-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-agnostic-v1-
+
+      - name: Test OS-agnostic crates
+        run: |
+          cargo test -p sqyre-domain -p sqyre-varref -p sqyre-serialize -p sqyre-validate -p sqyre-persist
 
   build-linux:
     if: |
