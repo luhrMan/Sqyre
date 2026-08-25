@@ -161,8 +161,8 @@ pub fn images_path() -> PathBuf {
     sqyre_dir().join("images")
 }
 
-pub fn auto_pic_path() -> PathBuf {
-    images_path().join("AutoPic")
+pub fn screen_cap_path() -> PathBuf {
+    images_path().join("ScreenCap")
 }
 
 pub fn initialize_directories() -> Result<()> {
@@ -174,7 +174,7 @@ pub fn initialize_directories() -> Result<()> {
     {
         for p in [
             sqyre_dir().join("images/icons"),
-            sqyre_dir().join("images/AutoPic"),
+            sqyre_dir().join("images/ScreenCap"),
             sqyre_dir().join("images/Collections"),
             sqyre_dir().join("images/masks"),
             variables_path(),

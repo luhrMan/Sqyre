@@ -1,0 +1,16 @@
+macros:
+  Wait once:
+    name: Wait once
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: []
+    variables: []
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions:
+        - type: wait
+          time: 25
+programs: {}

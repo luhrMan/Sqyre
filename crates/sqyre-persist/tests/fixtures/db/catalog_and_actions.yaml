@@ -1,0 +1,61 @@
+macros:
+  Catalog demo:
+    name: Catalog demo
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: []
+    variables: []
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions:
+        - type: wait
+          time: 10
+        - type: loop
+          name: inner
+          count: 2
+          subactions:
+            - type: click
+              button: left
+              state: tap
+        - type: conditional
+          name: always
+          match: all
+          clauses:
+            - left: "1"
+              operator: "=="
+              right: "1"
+          subactions:
+            - type: type
+              text: hi
+              delayms: 0
+programs:
+  Demo:
+    name: Demo
+    items:
+      Gem:
+        name: Gem
+        mask: ""
+        stackmax: 0
+        gridsize: [0, 0]
+        tags: []
+    coordinates:
+      1920x1080:
+        scale: 1.0
+        points:
+          Center:
+            name: Center
+            x: 500
+            y: 300
+        searchareas:
+          Main:
+            name: Main
+            leftx: 0
+            topy: 0
+            rightx: 100
+            bottomy: 100
+    masks: {}
+    collections: {}
+    atlases: {}
