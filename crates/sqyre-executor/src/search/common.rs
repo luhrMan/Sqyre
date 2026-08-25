@@ -4,11 +4,11 @@ use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::run::{run_children, Executor};
 use sqyre_domain::{
-    Action, ActionId, CoordinateOutputs, CoordinateRef, Macro, MatchOrder, ScalarValue,
-    WaitTilFoundConfig,
+    Action, ActionId, CoordinateOutputs, CoordinateRef, DetectionBranch, Macro, MatchGrouping,
+    MatchOrder, ScalarValue, WaitTilFoundConfig,
 };
 use sqyre_match::{ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
-use sqyre_ui_model::{highlight_clear, highlight_fill};
+use sqyre_ports::{highlight_clear, highlight_fill};
 use sqyre_vision::rgb_capture_to_image_buf;
 use std::time::{Duration, Instant};
 
@@ -20,6 +20,37 @@ pub(super) fn close_matches_distance(exec: &Executor<'_>) -> i32 {
         d
     } else {
         DEFAULT_CLOSE_MATCHES_DISTANCE
+    }
+}
+
+/// Shared capture / wait / branch wiring for Image Search, OCR, and Find Pixel.
+pub(super) struct DetectionCtx<'a> {
+    pub action_id: ActionId,
+    pub label: &'a str,
+    pub search_area: &'a CoordinateRef,
+    pub targets: &'a [String],
+    pub branch: &'a DetectionBranch,
+    pub wait_interval_ms: i32,
+    pub repeat_interval_ms: i32,
+}
+
+impl<'a> DetectionCtx<'a> {
+    pub(super) fn new(
+        action_id: ActionId,
+        label: &'a str,
+        search_area: &'a CoordinateRef,
+        targets: &'a [String],
+        branch: &'a DetectionBranch,
+    ) -> Self {
+        Self {
+            action_id,
+            label,
+            search_area,
+            targets,
+            branch,
+            wait_interval_ms: 100,
+            repeat_interval_ms: 100,
+        }
     }
 }
 
@@ -37,13 +68,13 @@ pub(super) fn close_matches_distance(exec: &Executor<'_>) -> i32 {
 /// log action-specific detail (e.g. targets, dimensions) using the resolved rect.
 pub(super) fn capture_search_buf(
     exec: &mut Executor<'_>,
-    action_id: ActionId,
-    label: &str,
-    search_area: &CoordinateRef,
+    ctx: &DetectionCtx<'_>,
     macro_: &Macro,
     fresh: bool,
     on_resolved: impl FnOnce(&mut Executor<'_>, i32, i32, i32, i32),
 ) -> Option<(ImageBuf, DesktopRect)> {
+    let action_id = ctx.action_id;
+    let label = ctx.label;
     let Some(resolver) = exec.deps.resolver else {
         exec.log(action_id, format!("{label}: missing CoordinateResolver"));
         return None;
@@ -53,14 +84,14 @@ pub(super) fn capture_search_buf(
         return None;
     }
 
-    let (lx, ty, rx, by) = match resolver.resolve_search_area(search_area, macro_) {
+    let (lx, ty, rx, by) = match resolver.resolve_search_area(ctx.search_area, macro_) {
         Ok(v) => v,
         Err(e) => {
             exec.log(
                 action_id,
                 format!(
                     "{label}: resolve search area {}: {e}",
-                    search_area.display_label()
+                    ctx.search_area.display_label()
                 ),
             );
             return None;
@@ -170,10 +201,9 @@ impl DetectionHit {
 
 const ORDER_BAND_PX: i32 = 5;
 
-/// Sort hits using [`MatchOrder`]. Empty fields keep the historical default:
-/// row grouping (±5px Y band), left-to-right, top-to-bottom.
+/// Sort hits using [`MatchOrder`]. Default grouping is row banding
+/// (±5px Y band), left-to-right, top-to-bottom.
 pub(super) fn sort_hits(hits: &mut [DetectionHit], order: &MatchOrder) {
-    let grouping = order.grouping.trim().to_ascii_lowercase();
     let h_rev = order.horizontal.eq_ignore_ascii_case("right_to_left");
     let v_rev = order.vertical.eq_ignore_ascii_case("bottom_to_top");
 
@@ -186,17 +216,16 @@ pub(super) fn sort_hits(hits: &mut [DetectionHit], order: &MatchOrder) {
         let cmp_y = if v_rev { by.cmp(&ay) } else { ay.cmp(&by) };
         let name = a.name.cmp(&b.name);
 
-        match grouping.as_str() {
-            "column" => {
+        match order.grouping {
+            MatchGrouping::Column => {
                 if (ax - bx).abs() <= ORDER_BAND_PX {
                     cmp_y.then(name)
                 } else {
                     cmp_x.then(cmp_y).then(name)
                 }
             }
-            "none" => cmp_y.then(cmp_x).then(name),
-            // "" | "row" | anything else → row banding (legacy default)
-            _ => {
+            MatchGrouping::None => cmp_y.then(cmp_x).then(name),
+            MatchGrouping::Row => {
                 if (ay - by).abs() <= ORDER_BAND_PX {
                     cmp_x.then(name)
                 } else {
@@ -208,21 +237,19 @@ pub(super) fn sort_hits(hits: &mut [DetectionHit], order: &MatchOrder) {
 }
 
 /// Shared per-hit children loop used by Image Search, OCR, and Find Pixel.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn run_matches(
     exec: &mut Executor<'_>,
-    action_id: ActionId,
-    targets: &[String],
+    ctx: &DetectionCtx<'_>,
     results: &[DetectionHit],
-    coords: &CoordinateOutputs,
-    subactions: &[Action],
-    else_actions: &[Action],
     macro_: &mut Macro,
 ) -> Result<()> {
+    let action_id = ctx.action_id;
+    let coords = &ctx.branch.coords;
     let mut found_names: Vec<&str> = results.iter().map(|h| h.name.as_str()).collect();
     found_names.sort_unstable();
     found_names.dedup();
-    let not_found: Vec<&str> = targets
+    let not_found: Vec<&str> = ctx
+        .targets
         .iter()
         .map(|t| t.as_str())
         .filter(|t| !found_names.iter().any(|f| f == t))
@@ -239,8 +266,8 @@ pub(super) fn run_matches(
 
     if results.is_empty() {
         clear_coord_outputs(macro_, coords);
-        if !else_actions.is_empty() {
-            run_children_flow(exec, else_actions, macro_)?;
+        if !ctx.branch.else_actions.is_empty() {
+            run_children_flow(exec, &ctx.branch.else_actions, macro_)?;
         }
         return Ok(());
     }
@@ -287,7 +314,7 @@ pub(super) fn run_matches(
                 .variables
                 .set("ImagePixelHeight", ScalarValue::Int(*tmpl_h as i64));
         }
-        match run_children_flow(exec, subactions, macro_) {
+        match run_children_flow(exec, &ctx.branch.subactions, macro_) {
             Err(ExecError::Flow(FlowSignal::Break)) => break,
             Err(ExecError::Flow(FlowSignal::Continue)) => continue,
             Err(e) => {
@@ -305,36 +332,22 @@ pub(super) fn run_matches(
 
 /// Apply hits for a detection pass: repeat-while miss runs else (if any) and stops;
 /// otherwise [`run_matches`] runs the then or else branch.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn apply_detection_hits(
     exec: &mut Executor<'_>,
-    action_id: ActionId,
-    targets: &[String],
+    ctx: &DetectionCtx<'_>,
     hits: &[DetectionHit],
-    coords: &CoordinateOutputs,
-    subactions: &[Action],
-    else_actions: &[Action],
     macro_: &mut Macro,
     pass: DetectionPass,
 ) -> Result<bool> {
     // Repeat-while-found stops on miss after running the else branch once.
     if matches!(pass, DetectionPass::RepeatWhile { .. }) && hits.is_empty() {
-        clear_coord_outputs(macro_, coords);
-        if !else_actions.is_empty() {
-            run_children_flow(exec, else_actions, macro_)?;
+        clear_coord_outputs(macro_, &ctx.branch.coords);
+        if !ctx.branch.else_actions.is_empty() {
+            run_children_flow(exec, &ctx.branch.else_actions, macro_)?;
         }
         return Ok(false);
     }
-    run_matches(
-        exec,
-        action_id,
-        targets,
-        hits,
-        coords,
-        subactions,
-        else_actions,
-        macro_,
-    )?;
+    run_matches(exec, ctx, hits, macro_)?;
     // Repeat-until-found continues while missing; other passes continue while found.
     Ok(match pass {
         DetectionPass::RepeatUntil { .. } => hits.is_empty(),
@@ -351,17 +364,17 @@ pub(super) fn apply_detection_hits(
 /// the repeat loop (typically the hit flag).
 ///
 /// `macro_` is passed into callbacks so try/outcome do not both capture it.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn run_detection_shell<T>(
     exec: &mut Executor<'_>,
     macro_: &mut Macro,
-    wait: &WaitTilFoundConfig,
-    wait_interval_ms: i32,
-    repeat_interval_ms: i32,
+    ctx: &DetectionCtx<'_>,
     mut try_once: impl FnMut(&mut Executor<'_>, &Macro, bool) -> Result<T>,
     is_hit: impl Fn(&T) -> bool,
     mut on_outcome: impl FnMut(&mut Executor<'_>, &mut Macro, &T, DetectionPass) -> Result<bool>,
 ) -> Result<()> {
+    let wait = &ctx.branch.wait;
+    let wait_interval_ms = ctx.wait_interval_ms;
+    let repeat_interval_ms = ctx.repeat_interval_ms;
     let mut state = try_once(exec, macro_, false)?;
     maybe_wait_until_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
         state = try_once(exec, macro_, true)?;

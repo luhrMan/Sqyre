@@ -1,6 +1,70 @@
 //! RGB drawing helpers for executor debug log overlays.
 
 use sqyre_match::ImageBuf;
+use sqyre_ports::LogImage;
+
+/// Cap long edge when storing log images (keeps UI memory bounded).
+const LOG_IMAGE_MAX_EDGE: usize = 640;
+
+/// Convert a match buffer to RGBA log pixels (downscaled if needed).
+pub(crate) fn image_buf_to_log_image(label: String, image: &ImageBuf) -> Option<LogImage> {
+    if image.width == 0 || image.height == 0 {
+        return None;
+    }
+    let scaled = downscale_for_log(image);
+    let rgba = image_buf_to_rgba(&scaled);
+    LogImage::from_rgba(label, scaled.width as u32, scaled.height as u32, rgba)
+}
+
+fn downscale_for_log(img: &ImageBuf) -> ImageBuf {
+    let long = img.width.max(img.height);
+    if long <= LOG_IMAGE_MAX_EDGE {
+        return img.clone();
+    }
+    let scale = LOG_IMAGE_MAX_EDGE as f64 / long as f64;
+    let nw = ((img.width as f64) * scale).round().max(1.0) as usize;
+    let nh = ((img.height as f64) * scale).round().max(1.0) as usize;
+    nearest_resize(img, nw, nh)
+}
+
+fn nearest_resize(img: &ImageBuf, nw: usize, nh: usize) -> ImageBuf {
+    let ch = img.channels;
+    let mut data = vec![0u8; nw * nh * ch];
+    for y in 0..nh {
+        let sy = (y * img.height / nh).min(img.height - 1);
+        for x in 0..nw {
+            let sx = (x * img.width / nw).min(img.width - 1);
+            let si = img.pixel_offset(sx, sy);
+            let di = (y * nw + x) * ch;
+            data[di..di + ch].copy_from_slice(&img.data[si..si + ch]);
+        }
+    }
+    ImageBuf::from_raw(nw, nh, ch, data)
+}
+
+fn image_buf_to_rgba(img: &ImageBuf) -> Vec<u8> {
+    let n = img.width * img.height;
+    let mut out = Vec::with_capacity(n * 4);
+    match img.channels {
+        1 => {
+            for &v in &img.data {
+                out.extend_from_slice(&[v, v, v, 255]);
+            }
+        }
+        3 => {
+            for i in 0..n {
+                let o = i * 3;
+                out.extend_from_slice(&[img.data[o], img.data[o + 1], img.data[o + 2], 255]);
+            }
+        }
+        _ => {
+            for _ in 0..n {
+                out.extend_from_slice(&[0, 0, 0, 255]);
+            }
+        }
+    }
+    out
+}
 
 /// Draw axis-aligned rectangles on a 3-channel RGB buffer (clips to bounds).
 pub fn draw_rect_rgb(img: &mut ImageBuf, x0: i32, y0: i32, x1: i32, y1: i32, rgb: [u8; 3]) {

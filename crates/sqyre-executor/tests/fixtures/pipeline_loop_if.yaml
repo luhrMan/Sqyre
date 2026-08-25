@@ -1,0 +1,30 @@
+name: pipeline-loop-if
+globaldelay: 0
+keyboarddelay: 0
+mousedelay: 0
+hotkey: []
+variables: []
+root:
+  type: loop
+  name: root
+  count: 1
+  subactions:
+    - type: loop
+      name: twice
+      count: 2
+      subactions:
+        - type: wait
+          time: 1
+        - type: click
+          button: left
+          state: tap
+    - type: conditional
+      name: always
+      match: all
+      clauses:
+        - left: "1"
+          operator: "=="
+          right: "1"
+      subactions:
+        - type: wait
+          time: 1
