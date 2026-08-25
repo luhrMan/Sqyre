@@ -418,7 +418,7 @@ fn yaml_string_value(v: &sqyre_domain::ScalarValue) -> Option<&str> {
 fn validate_continue_key(keys: &[String]) -> Result<()> {
     sqyre_domain::validate_continue_key(keys)
         .map(|_| ())
-        .map_err(ValidateError::Message)
+        .map_err(|e| ValidateError::Message(e.to_string()))
 }
 
 fn validate_coordinate_ref(label: &str, field: &str, coord: &CoordinateRef) -> Result<()> {
@@ -856,7 +856,7 @@ mod tests {
             );
         }
         // Colon mid-name previously slipped past the drive-prefix-only check and
-        // produced 0-byte / extensionless AutoPic files via Windows ADS.
+        // produced 0-byte / extensionless ScreenCap files via Windows ADS.
         assert!(validate_entity_name("Potion:Red").is_err());
         assert!(validate_entity_name("a<b").is_err());
         assert!(validate_entity_name("a>b").is_err());

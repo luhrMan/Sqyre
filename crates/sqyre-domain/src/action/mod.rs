@@ -6,7 +6,7 @@ mod tree;
 mod wire_keys;
 
 pub use kind::ActionKind;
-pub use tree::{InsertSlot, TreeNodeRef};
+pub use tree::{InsertSlot, TreeError, TreeNodeRef};
 pub use wire_keys::WIRE_TYPE_KEYS;
 
 pub use crate::match_method::MatchMethod;
@@ -202,11 +202,22 @@ string_enum! {
     /// Mouse button for click / navigate-select.
     pub enum MouseButton {
         #[default]
-        Left = "left",
+        Left = "left" | "",
         Right = "right",
         Middle = "middle" | "center",
         /// Scroll-wheel click / scroll action.
         Scroll = "scroll",
+    }
+}
+
+impl MouseButton {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Left => "Left",
+            Self::Right => "Right",
+            Self::Middle => "Middle",
+            Self::Scroll => "Scroll",
+        }
     }
 }
 
@@ -316,6 +327,69 @@ string_enum! {
         #[default]
         Rectangle = "rectangle",
         Circle = "circle",
+    }
+}
+
+string_enum! {
+    /// How detection hits are banded before left/right and top/bottom order.
+    pub enum MatchGrouping {
+        /// ±5px Y band, then horizontal order (historical default).
+        #[default]
+        Row = "row",
+        /// ±5px X band, then vertical order.
+        Column = "column",
+        /// No banding: vertical then horizontal.
+        None = "none",
+    }
+}
+
+impl MatchGrouping {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Row => "Row",
+            Self::Column => "Column",
+            Self::None => "None",
+        }
+    }
+}
+
+string_enum! {
+    /// Press performed when a Navigate Select chord fires.
+    pub enum NavPressMode {
+        #[default]
+        Click = "click",
+        Down = "down",
+        Up = "up",
+        Hold = "hold",
+    }
+}
+
+impl NavPressMode {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Click => "Click",
+            Self::Down => "Down",
+            Self::Up => "Up",
+            Self::Hold => "Hold",
+        }
+    }
+}
+
+string_enum! {
+    /// Input device for a Navigate Select chord.
+    pub enum NavSelectDevice {
+        #[default]
+        Mouse = "mouse" | "",
+        Keyboard = "keyboard",
+    }
+}
+
+impl NavSelectDevice {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Mouse => "Mouse",
+            Self::Keyboard => "Keyboard",
+        }
     }
 }
 
@@ -657,11 +731,23 @@ pub(crate) fn is_default_match_method(v: &MatchMethod) -> bool {
     *v == MatchMethod::CcoeffNormed
 }
 
+fn is_default_match_grouping(v: &MatchGrouping) -> bool {
+    *v == MatchGrouping::Row
+}
+
+fn is_default_nav_select_device(v: &NavSelectDevice) -> bool {
+    *v == NavSelectDevice::Mouse
+}
+
+fn is_default_mouse_button(v: &MouseButton) -> bool {
+    *v == MouseButton::Left
+}
+
 /// Optional match-order fields present in newer `~/.sqyre` data.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct MatchOrder {
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub grouping: String,
+    #[serde(default, skip_serializing_if = "is_default_match_grouping")]
+    pub grouping: MatchGrouping,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub horizontal: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -820,43 +906,28 @@ impl Default for NavOptions {
 }
 
 /// Press performed when the Select chord fires.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct NavSelectAction {
     #[serde(
         rename = "selectdevice",
         default,
-        skip_serializing_if = "String::is_empty"
+        skip_serializing_if = "is_default_nav_select_device"
     )]
-    pub device: String,
+    pub device: NavSelectDevice,
     #[serde(
         rename = "selectbutton",
         default,
-        skip_serializing_if = "String::is_empty"
+        skip_serializing_if = "is_default_mouse_button"
     )]
-    pub button: String,
+    pub button: MouseButton,
     #[serde(
         rename = "selectkey",
         default,
         skip_serializing_if = "String::is_empty"
     )]
     pub key: String,
-    #[serde(
-        rename = "selectpressmode",
-        default,
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub press_mode: String,
-}
-
-impl Default for NavSelectAction {
-    fn default() -> Self {
-        Self {
-            device: "mouse".into(),
-            button: "left".into(),
-            key: String::new(),
-            press_mode: "click".into(),
-        }
-    }
+    #[serde(rename = "selectpressmode", default)]
+    pub press_mode: NavPressMode,
 }
 
 /// Optional start / override sources for Navigate Select.
@@ -1223,7 +1294,13 @@ mod tests {
     fn string_enums_parse_aliases_and_defaults() {
         assert_eq!(MouseButton::parse("center"), MouseButton::Middle);
         assert_eq!(MouseButton::parse("CENTER"), MouseButton::Middle);
+        assert_eq!(MouseButton::parse(""), MouseButton::Left);
         assert_eq!(MouseButton::parse("nope"), MouseButton::Left);
+        assert_eq!(NavSelectDevice::parse(""), NavSelectDevice::Mouse);
+        assert_eq!(
+            NavSelectDevice::parse("keyboard"),
+            NavSelectDevice::Keyboard
+        );
         assert_eq!(MatchMode::parse("any"), MatchMode::Any);
         assert_eq!(
             RepeatMode::parse("repeatwhilefound"),
@@ -1239,6 +1316,10 @@ mod tests {
         );
         assert_eq!(MaskShape::parse("circle"), MaskShape::Circle);
         assert_eq!(format!("{}", MouseButton::Scroll), "scroll");
+        assert_eq!(MatchGrouping::parse("column"), MatchGrouping::Column);
+        assert_eq!(MatchGrouping::parse(""), MatchGrouping::Row);
+        assert_eq!(NavPressMode::parse("hold"), NavPressMode::Hold);
+        assert_eq!(NavPressMode::parse("CLICK"), NavPressMode::Click);
     }
 
     #[test]
@@ -1247,6 +1328,23 @@ mod tests {
         assert!(err.to_string().contains("unknown MouseButton"), "{err}");
         let err = serde_yaml::from_str::<RepeatMode>("not-a-mode").unwrap_err();
         assert!(err.to_string().contains("unknown RepeatMode"), "{err}");
+        let err = serde_yaml::from_str::<MatchGrouping>("diagonal").unwrap_err();
+        assert!(err.to_string().contains("unknown MatchGrouping"), "{err}");
+        let err = serde_yaml::from_str::<NavPressMode>("tap").unwrap_err();
+        assert!(err.to_string().contains("unknown NavPressMode"), "{err}");
+        let err = serde_yaml::from_str::<NavSelectDevice>("touch").unwrap_err();
+        assert!(err.to_string().contains("unknown NavSelectDevice"), "{err}");
+        assert_eq!(
+            serde_yaml::from_str::<NavSelectDevice>("\"\"").unwrap(),
+            NavSelectDevice::Mouse
+        );
+        assert_eq!(
+            serde_yaml::from_str::<MouseButton>("\"\"").unwrap(),
+            MouseButton::Left
+        );
+        let select: NavSelectAction = serde_yaml::from_str("{}").unwrap();
+        assert_eq!(select.device, NavSelectDevice::Mouse);
+        assert_eq!(select.button, MouseButton::Left);
     }
 
     #[test]

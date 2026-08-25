@@ -1,6 +1,30 @@
 //! Action tree navigation, insertion, and drag-and-drop helpers.
 
 use super::{Action, ActionId};
+use thiserror::Error;
+
+/// Failure inserting or moving a node in an action tree.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum TreeError {
+    #[error("parent action {0} not found")]
+    ParentNotFound(ActionId),
+    #[error("source action {0} not found")]
+    SourceNotFound(ActionId),
+    #[error("drop target is not a branch")]
+    NotABranch,
+    #[error("else drop target has no else branch")]
+    NoElseBranch,
+    #[error("before-sibling not found")]
+    BeforeSiblingNotFound,
+    #[error("after-sibling not found")]
+    AfterSiblingNotFound,
+    #[error("drop sibling not found")]
+    DropSiblingNotFound,
+    #[error("cannot drop onto self")]
+    DropOntoSelf,
+    #[error("cannot drop into own descendant")]
+    DropIntoDescendant,
+}
 
 /// Tree selection / drop target: a real action, or an Else folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,31 +188,27 @@ impl Action {
     fn child_list_mut_for_insert(
         &mut self,
         parent_id: ActionId,
-    ) -> Result<&mut Vec<Action>, String> {
+    ) -> Result<&mut Vec<Action>, TreeError> {
         match self.resolve_tree_id(parent_id) {
             Some(TreeNodeRef::ElseFolder { parent_id: owner }) => {
                 let parent = if owner == self.id {
                     self
                 } else {
                     self.find_by_id_mut(owner)
-                        .ok_or_else(|| format!("parent action {owner} not found"))?
+                        .ok_or(TreeError::ParentNotFound(owner))?
                 };
-                parent
-                    .else_children_mut()
-                    .ok_or_else(|| "else drop target has no else branch".to_string())
+                parent.else_children_mut().ok_or(TreeError::NoElseBranch)
             }
             Some(TreeNodeRef::Action(aid)) => {
                 let parent = if aid == self.id {
                     self
                 } else {
                     self.find_by_id_mut(aid)
-                        .ok_or_else(|| format!("parent action {aid} not found"))?
+                        .ok_or(TreeError::ParentNotFound(aid))?
                 };
-                parent
-                    .children_mut()
-                    .ok_or_else(|| "drop target is not a branch".to_string())
+                parent.children_mut().ok_or(TreeError::NotABranch)
             }
-            None => Err(format!("parent action {parent_id} not found")),
+            None => Err(TreeError::ParentNotFound(parent_id)),
         }
     }
 
@@ -200,7 +220,7 @@ impl Action {
         parent_id: ActionId,
         slot: InsertSlot,
         child: Action,
-    ) -> Result<(), String> {
+    ) -> Result<(), TreeError> {
         let children = self.child_list_mut_for_insert(parent_id)?;
         match slot {
             InsertSlot::First => children.insert(0, child),
@@ -209,14 +229,14 @@ impl Action {
                 let i = children
                     .iter()
                     .position(|c| c.id == sib)
-                    .ok_or_else(|| "before-sibling not found".to_string())?;
+                    .ok_or(TreeError::BeforeSiblingNotFound)?;
                 children.insert(i, child);
             }
             InsertSlot::After(sib) => {
                 let i = children
                     .iter()
                     .position(|c| c.id == sib)
-                    .ok_or_else(|| "after-sibling not found".to_string())?;
+                    .ok_or(TreeError::AfterSiblingNotFound)?;
                 children.insert(i + 1, child);
             }
         }
@@ -230,7 +250,7 @@ impl Action {
         source_id: ActionId,
         parent_id: ActionId,
         slot: InsertSlot,
-    ) -> Result<(), String> {
+    ) -> Result<(), TreeError> {
         self.move_actions(&[source_id], parent_id, slot)
     }
 
@@ -243,7 +263,7 @@ impl Action {
         source_ids: &[ActionId],
         parent_id: ActionId,
         slot: InsertSlot,
-    ) -> Result<(), String> {
+    ) -> Result<(), TreeError> {
         let mut seen = std::collections::HashSet::new();
         let mut sources: Vec<ActionId> = Vec::new();
         for &id in source_ids {
@@ -268,11 +288,11 @@ impl Action {
         };
         for &source_id in &sources {
             if source_id == parent_id {
-                return Err("cannot drop onto self".into());
+                return Err(TreeError::DropOntoSelf);
             }
             if let Some(src) = self.find_by_id(source_id) {
                 if src.contains_id(parent_for_check) {
-                    return Err("cannot drop into own descendant".into());
+                    return Err(TreeError::DropIntoDescendant);
                 }
             }
         }
@@ -293,7 +313,7 @@ impl Action {
         for source_id in sources {
             let node = self
                 .remove_by_id(source_id)
-                .ok_or_else(|| format!("source action {source_id} not found"))?;
+                .ok_or(TreeError::SourceNotFound(source_id))?;
             nodes.push(node);
         }
 
@@ -448,7 +468,7 @@ fn resolve_slot_around_moving_sources(
     parent_id: ActionId,
     slot: InsertSlot,
     sources: &[ActionId],
-) -> Result<InsertSlot, String> {
+) -> Result<InsertSlot, TreeError> {
     let children: Vec<ActionId> = {
         // Read-only walk of the insert list (same resolution as insert_at).
         let list = match root.resolve_tree_id(parent_id) {
@@ -457,25 +477,22 @@ fn resolve_slot_around_moving_sources(
                     root
                 } else {
                     root.find_by_id(owner)
-                        .ok_or_else(|| format!("parent action {owner} not found"))?
+                        .ok_or(TreeError::ParentNotFound(owner))?
                 };
-                parent
-                    .else_children()
-                    .ok_or_else(|| "else drop target has no else branch".to_string())?
+                parent.else_children().ok_or(TreeError::NoElseBranch)?
             }
             Some(TreeNodeRef::Action(aid)) => {
                 let parent = if aid == root.id {
                     root
                 } else {
-                    root.find_by_id(aid)
-                        .ok_or_else(|| format!("parent action {aid} not found"))?
+                    root.find_by_id(aid).ok_or(TreeError::ParentNotFound(aid))?
                 };
                 if !parent.is_branch() {
-                    return Err("drop target is not a branch".into());
+                    return Err(TreeError::NotABranch);
                 }
                 parent.children()
             }
-            None => return Err(format!("parent action {parent_id} not found")),
+            None => return Err(TreeError::ParentNotFound(parent_id)),
         };
         list.iter().map(|c| c.id).collect()
     };
@@ -486,7 +503,7 @@ fn resolve_slot_around_moving_sources(
         other => return Ok(other),
     };
     let Some(idx) = children.iter().position(|&id| id == anchor_id) else {
-        return Err("drop sibling not found".into());
+        return Err(TreeError::DropSiblingNotFound);
     };
     if after {
         // Find first non-moving sibling after the anchor block of movers.
@@ -537,7 +554,7 @@ fn resolve_slot_around_moving_sources(
 mod tests {
     use crate::{
         root_loop, Action, ActionId, ActionKind, ConditionBlock, DetectionBranch, InsertSlot,
-        ScalarValue, TreeNodeRef,
+        ScalarValue, TreeError, TreeNodeRef,
     };
 
     fn wait(id: ActionId) -> Action {
@@ -748,5 +765,17 @@ mod tests {
         assert!(root
             .move_action(branch_id, branch_id, InsertSlot::Last)
             .is_err());
+    }
+
+    #[test]
+    fn tree_error_display_and_reject_missing_parent() {
+        let mut root = root_loop(vec![]);
+        let missing = ActionId::new();
+        let err = root
+            .insert_at(missing, InsertSlot::Last, wait(ActionId::new()))
+            .unwrap_err();
+        assert_eq!(err, TreeError::ParentNotFound(missing));
+        assert!(err.to_string().contains("not found"));
+        assert_eq!(TreeError::DropOntoSelf.to_string(), "cannot drop onto self");
     }
 }

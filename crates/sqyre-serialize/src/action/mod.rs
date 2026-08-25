@@ -162,10 +162,10 @@ mod tests {
                     hold_repeat: true,
                 },
                 select: sqyre_domain::NavSelectAction {
-                    device: "mouse".into(),
-                    button: "left".into(),
+                    device: sqyre_domain::NavSelectDevice::Mouse,
+                    button: sqyre_domain::MouseButton::Left,
                     key: String::new(),
-                    press_mode: "click".into(),
+                    press_mode: sqyre_domain::NavPressMode::Click,
                 },
                 inputs: sqyre_domain::NavInputs::default(),
                 outputs: sqyre_domain::NavOutputs {
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn image_search_populated_fields_roundtrip() {
-        use sqyre_domain::{MatchOrder, RepeatMode, WaitTilFoundConfig};
+        use sqyre_domain::{MatchGrouping, MatchOrder, RepeatMode, WaitTilFoundConfig};
         let action = Action {
             id: ActionId::new(),
             kind: ActionKind::ImageSearch {
@@ -310,7 +310,7 @@ mod tests {
                         output_y_variable: "sy".into(),
                     },
                     order: MatchOrder {
-                        grouping: "row".into(),
+                        grouping: MatchGrouping::Row,
                         horizontal: "ltr".into(),
                         vertical: "ttb".into(),
                     },
