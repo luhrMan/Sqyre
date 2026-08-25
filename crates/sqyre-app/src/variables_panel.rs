@@ -3,7 +3,7 @@
 use crate::action_tooltip::help;
 use eframe::egui;
 use sqyre_domain::{builtin_variable_catalog, Macro, VariableDecl, VariableType};
-use sqyre_ui_model::SharedRuntimeVars;
+use sqyre_ports::SharedRuntimeVars;
 use sqyre_validate::validate_variable_assignment_name;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
