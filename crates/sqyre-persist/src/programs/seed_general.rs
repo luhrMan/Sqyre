@@ -1,6 +1,7 @@
 //! Seeded `General` program with common Points, Search Areas, and Collections.
 
 use super::{ProgramCatalog, ProgramCollection, ProgramPoint, ProgramSearchArea};
+use crate::Result;
 use sqyre_domain::ScalarValue;
 
 pub const GENERAL_PROGRAM: &str = "General";
@@ -27,12 +28,10 @@ pub type MonitorRect = (i32, i32, i32, i32);
 pub fn ensure_general_program(
     catalog: &mut ProgramCatalog,
     monitors: &[MonitorRect],
-) -> Result<bool, String> {
+) -> Result<bool> {
     let mut changed = false;
     if catalog.get(GENERAL_PROGRAM).is_none() {
-        catalog
-            .create_program(GENERAL_PROGRAM)
-            .map_err(|e| e.to_string())?;
+        catalog.create_program(GENERAL_PROGRAM)?;
         changed = true;
     }
     let monitors = usable_monitors(monitors);
@@ -54,20 +53,18 @@ pub fn ensure_general_program(
     Ok(changed)
 }
 
-fn ensure_image_search_reference(catalog: &mut ProgramCatalog) -> Result<bool, String> {
+fn ensure_image_search_reference(catalog: &mut ProgramCatalog) -> Result<bool> {
     if program_has_point(catalog, IMAGE_SEARCH_REFERENCE) {
         return Ok(false);
     }
-    catalog
-        .upsert_point(
-            GENERAL_PROGRAM,
-            ProgramPoint {
-                name: IMAGE_SEARCH_REFERENCE.into(),
-                x: ScalarValue::String("${foundX}".into()),
-                y: ScalarValue::String("${foundY}".into()),
-            },
-        )
-        .map_err(|e| e.to_string())?;
+    catalog.upsert_point(
+        GENERAL_PROGRAM,
+        ProgramPoint {
+            name: IMAGE_SEARCH_REFERENCE.into(),
+            x: ScalarValue::String("${foundX}".into()),
+            y: ScalarValue::String("${foundY}".into()),
+        },
+    )?;
     Ok(true)
 }
 
@@ -144,10 +141,7 @@ fn stale_monitor_entity(name: &str, suffixes: &[&str], monitor_count: usize) -> 
     generated_monitor_index(name, suffixes).is_some_and(|n| n > monitor_count)
 }
 
-fn prune_generated_beyond(
-    catalog: &mut ProgramCatalog,
-    monitor_count: usize,
-) -> Result<bool, String> {
+fn prune_generated_beyond(catalog: &mut ProgramCatalog, monitor_count: usize) -> Result<bool> {
     let stale_in = |p: &super::ProgramData| {
         p.search_areas.values().any(|bucket| {
             bucket
@@ -165,9 +159,7 @@ fn prune_generated_beyond(
     if !catalog.get(GENERAL_PROGRAM).is_some_and(stale_in) {
         return Ok(false);
     }
-    let p = catalog
-        .program_mut(GENERAL_PROGRAM)
-        .map_err(|e| e.to_string())?;
+    let p = catalog.program_mut(GENERAL_PROGRAM)?;
     let mut changed = false;
     for bucket in p.search_areas.values_mut() {
         let stale: Vec<String> = bucket
@@ -204,10 +196,7 @@ fn prune_generated_beyond(
     Ok(changed)
 }
 
-fn seed_search_areas(
-    catalog: &mut ProgramCatalog,
-    monitors: &[MonitorRect],
-) -> Result<bool, String> {
+fn seed_search_areas(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result<bool> {
     let mut changed = false;
     let (left, top, right, bottom) = virtual_bounds(monitors);
     if upsert_area(catalog, "Whole Screen", left, top, right, bottom)? {
@@ -223,7 +212,7 @@ fn seed_search_areas(
     Ok(changed)
 }
 
-fn seed_collections(catalog: &mut ProgramCatalog, monitor_count: usize) -> Result<bool, String> {
+fn seed_collections(catalog: &mut ProgramCatalog, monitor_count: usize) -> Result<bool> {
     let mut changed = false;
     for n in 1..=monitor_count {
         let name = format!("Monitor {n}");
@@ -234,7 +223,7 @@ fn seed_collections(catalog: &mut ProgramCatalog, monitor_count: usize) -> Resul
     Ok(changed)
 }
 
-fn seed_points(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result<bool, String> {
+fn seed_points(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result<bool> {
     let mut changed = false;
     for (i, &(ox, oy, w, h)) in monitors.iter().enumerate() {
         let n = i + 1;
@@ -319,7 +308,7 @@ fn upsert_area(
     top: i32,
     right: i32,
     bottom: i32,
-) -> Result<bool, String> {
+) -> Result<bool> {
     let res = catalog.resolution_key();
     if let Some(existing) = catalog
         .get(GENERAL_PROGRAM)
@@ -334,18 +323,16 @@ fn upsert_area(
             return Ok(false);
         }
     }
-    catalog
-        .upsert_search_area(
-            GENERAL_PROGRAM,
-            ProgramSearchArea {
-                name: name.into(),
-                left_x: ScalarValue::Int(left as i64),
-                top_y: ScalarValue::Int(top as i64),
-                right_x: ScalarValue::Int(right as i64),
-                bottom_y: ScalarValue::Int(bottom as i64),
-            },
-        )
-        .map_err(|e| e.to_string())?;
+    catalog.upsert_search_area(
+        GENERAL_PROGRAM,
+        ProgramSearchArea {
+            name: name.into(),
+            left_x: ScalarValue::Int(left as i64),
+            top_y: ScalarValue::Int(top as i64),
+            right_x: ScalarValue::Int(right as i64),
+            bottom_y: ScalarValue::Int(bottom as i64),
+        },
+    )?;
     Ok(true)
 }
 
@@ -355,7 +342,7 @@ fn upsert_collection(
     search_area: &str,
     rows: i32,
     cols: i32,
-) -> Result<bool, String> {
+) -> Result<bool> {
     if let Some(existing) = catalog
         .get(GENERAL_PROGRAM)
         .and_then(|p| p.collections.get(name))
@@ -364,21 +351,19 @@ fn upsert_collection(
             return Ok(false);
         }
     }
-    catalog
-        .upsert_collection(
-            GENERAL_PROGRAM,
-            ProgramCollection {
-                name: name.into(),
-                search_area: search_area.into(),
-                rows,
-                cols,
-            },
-        )
-        .map_err(|e| e.to_string())?;
+    catalog.upsert_collection(
+        GENERAL_PROGRAM,
+        ProgramCollection {
+            name: name.into(),
+            search_area: search_area.into(),
+            rows,
+            cols,
+        },
+    )?;
     Ok(true)
 }
 
-fn upsert_point(catalog: &mut ProgramCatalog, name: &str, x: i32, y: i32) -> Result<bool, String> {
+fn upsert_point(catalog: &mut ProgramCatalog, name: &str, x: i32, y: i32) -> Result<bool> {
     let res = catalog.resolution_key();
     if let Some(existing) = catalog
         .get(GENERAL_PROGRAM)
@@ -389,16 +374,14 @@ fn upsert_point(catalog: &mut ProgramCatalog, name: &str, x: i32, y: i32) -> Res
             return Ok(false);
         }
     }
-    catalog
-        .upsert_point(
-            GENERAL_PROGRAM,
-            ProgramPoint {
-                name: name.into(),
-                x: ScalarValue::Int(x as i64),
-                y: ScalarValue::Int(y as i64),
-            },
-        )
-        .map_err(|e| e.to_string())?;
+    catalog.upsert_point(
+        GENERAL_PROGRAM,
+        ProgramPoint {
+            name: name.into(),
+            x: ScalarValue::Int(x as i64),
+            y: ScalarValue::Int(y as i64),
+        },
+    )?;
     Ok(true)
 }
 

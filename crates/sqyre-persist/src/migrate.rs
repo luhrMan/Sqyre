@@ -290,62 +290,7 @@ mod tests {
 
     #[test]
     fn migrates_legacy_snippets() {
-        let text = r#"
-macros:
-  Demo:
-    name: Demo
-    globaldelay: 0
-    hotkey: []
-    variables:
-      variables:
-        foundx: 1
-        delay: 3
-    root:
-      type: loop
-      name: root
-      count: 1
-      subactions:
-        - type: click
-          button: false
-          state: true
-        - type: move
-          point:
-            name: image search reference
-            x: ${foundX}
-            y: ${foundY}
-          smooth: true
-        - type: imagesearch
-          name: ""
-          targets: [Arena Breakout Infinite~Claim All]
-          searcharea:
-            name: Mail Area
-            leftx: 1
-            topy: 2
-            rightx: 3
-            bottomy: 4
-          tolerance: 0.95
-          waittilfound: true
-          waittilfoundseconds: 5
-programs:
-  Arena Breakout Infinite:
-    coordinates:
-      2560x1440:
-        searchareas:
-          Mail Area:
-            name: Mail Area
-            leftx: 1
-            topy: 2
-            rightx: 3
-            bottomy: 4
-  windows 10:
-    coordinates:
-      2560x1440:
-        points:
-          image search reference:
-            name: found image search
-            x: ${foundX}
-            y: ${foundY}
-"#;
+        let text = include_str!("../tests/fixtures/db/legacy_inline.yaml");
         let out = migrate_db_yaml(text).expect("migrate");
         let db = Database::from_yaml(&out).expect("load");
         let m = &db.macros["Demo"];
