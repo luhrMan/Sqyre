@@ -227,4 +227,13 @@ Game:
         assert!(snap.get("alpha").is_some());
         assert!(snap.get("missing").is_none());
     }
+
+    #[test]
+    fn ensure_general_program_seeded_creates_general() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        assert!(ensure_general_program_seeded(&mut cat));
+        assert!(cat.get(sqyre_persist::GENERAL_PROGRAM).is_some());
+        assert!(!ensure_general_program_seeded(&mut cat));
+    }
 }

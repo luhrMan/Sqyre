@@ -12,7 +12,7 @@ use crate::pickers::ActivePicker;
 use crate::theme;
 use crate::tree_chrome;
 use crate::var_pills;
-use crate::widgets::{combo_str, drag_field, text_field, W_VAR};
+use crate::widgets::{drag_field, match_settings, text_field, W_VAR};
 use eframe::egui;
 use sqyre_domain::{parse_hex_color, CoordinateRef, DetectionBranch, Macro, MatchMethod};
 use sqyre_hotkeys::ScreenClickBridge;
@@ -44,16 +44,7 @@ fn detection_advanced_fields(
 }
 
 fn match_method_editor(ui: &mut egui::Ui, match_method: &mut MatchMethod) {
-    let mut method_label = match_method.label().to_string();
-    let method_opts: Vec<&str> = MatchMethod::ALL.iter().map(|m| m.label()).collect();
-    combo_str(ui, "Method", h::IS_METHOD, &mut method_label, &method_opts);
-    if let Some(m) = MatchMethod::ALL
-        .iter()
-        .copied()
-        .find(|m| m.label() == method_label)
-    {
-        *match_method = m;
-    }
+    match_settings::paint_match_method(ui, match_method);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -75,24 +66,7 @@ pub(super) fn paint_image_search_fields(
         targets_editor(ui, paint.catalog, paint.icons, targets, picker);
     });
     tip_wrapped_section(ui, |ui| {
-        let tol_help = if matches!(
-            *match_method,
-            MatchMethod::Sqdiff | MatchMethod::SqdiffNormed
-        ) {
-            h::IS_TOLERANCE_SQDIFF
-        } else if match_method.is_normed() {
-            h::IS_TOLERANCE
-        } else {
-            h::IS_TOLERANCE_UNNORMED
-        };
-        if match_method.is_normed() {
-            drag_field(ui, "Tolerance", tol_help, tolerance, |d| {
-                d.speed(0.01).range(0.0..=1.0)
-            });
-        } else {
-            drag_field(ui, "Tolerance", tol_help, tolerance, |d| d.speed(1.0));
-        }
-        drag_field(ui, "Blur", h::IS_BLUR, blur, |d| d);
+        match_settings::paint_match_settings(ui, tolerance, blur, match_method, false);
     });
     tip_advanced(ui, |ui| {
         detection_advanced_fields(ui, theme, detection);

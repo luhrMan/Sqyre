@@ -12,14 +12,15 @@ use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
 use crate::var_pills;
 use crate::widgets::{
-    combo_condition_operator, combo_str, combo_str_labeled, drag_field, drag_field_enabled,
+    combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
     searchable_combo, searchable_combo_with, text_field, W_MULTILINE, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
     Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs, CoordinateRef,
-    DetectionBranch, KnownVariableNames, ListColumn, Macro, MatchMode, MatchOrder, RepeatMode,
-    ScalarValue, VariableAssignment, WaitTilFoundConfig,
+    DetectionBranch, KnownVariableNames, ListColumn, Macro, MatchGrouping, MatchMode, MatchOrder,
+    MouseButton, NavPressMode, NavSelectDevice, RepeatMode, ScalarValue, VariableAssignment,
+    WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
 use sqyre_validate::{
@@ -544,27 +545,30 @@ pub fn paint_edit_fields(
                     );
                 });
                 tip_wrapped_section(ui, |ui| {
-                    combo_str(
+                    combo_enum(
                         ui,
                         "Select device",
                         h::NAV_SELECT_DEVICE,
                         &mut data.select.device,
-                        options::SELECT_DEVICES,
+                        NavSelectDevice::ALL,
+                        NavSelectDevice::label,
                     );
-                    combo_str(
+                    combo_enum(
                         ui,
                         "Select button",
                         h::NAV_SELECT_BUTTON,
                         &mut data.select.button,
-                        options::MOUSE_BUTTONS,
+                        MouseButton::ALL,
+                        MouseButton::label,
                     );
                     text_field(ui, "Select key", h::NAV_SELECT_KEY, &mut data.select.key);
-                    combo_str(
+                    combo_enum(
                         ui,
                         "Select press mode",
                         h::NAV_SELECT_PRESS,
                         &mut data.select.press_mode,
-                        options::SELECT_PRESS_MODES,
+                        NavPressMode::ALL,
+                        NavPressMode::label,
                     );
                 });
                 tip_wrapped_section(ui, |ui| {
@@ -1166,13 +1170,13 @@ fn coords_editor(
 }
 
 fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
-    combo_str_labeled(
+    combo_enum(
         ui,
         "Grouping",
         h::ORDER_GROUPING,
         &mut order.grouping,
-        options::ORDER_GROUPING,
-        "row",
+        MatchGrouping::ALL,
+        MatchGrouping::label,
     );
     combo_str_labeled(
         ui,

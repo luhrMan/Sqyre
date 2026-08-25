@@ -100,7 +100,7 @@ use sqyre_hotkeys::{
     default_hotkeys, HotkeyCallbacks, HotkeyService, MacroRecordBridge, ScreenClickBridge,
 };
 use sqyre_persist::{Database, ProgramCatalog, UserSettings};
-use sqyre_ui_model::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
+use sqyre_ports::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
 use tree_state::TreeState;
 use wasm_io::PendingImport;
@@ -158,6 +158,35 @@ pub fn run() -> eframe::Result<()> {
             Ok(Box::new(app))
         }),
     )
+}
+
+/// Handle `--version` / `--help` before starting the GUI.
+///
+/// Returns `true` when the process should exit without opening a window.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn handle_cli_args() -> bool {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    handle_cli_args_from(&args)
+}
+
+/// Parse CLI flags (tests pass argv without `argv[0]`).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn handle_cli_args_from(args: &[String]) -> bool {
+    let Some(arg) = args.first().map(String::as_str) else {
+        return false;
+    };
+    match arg {
+        "--version" | "-V" => {
+            println!("{}", crate::update::SQYRE_VERSION);
+            true
+        }
+        "--help" | "-h" => {
+            println!("Sqyre — desktop macro automation");
+            println!("Usage: sqyre [--version | --help]");
+            true
+        }
+        _ => false,
+    }
 }
 
 /// Keep winit from storing X errors that originate on Sqyre's secondary Displays.
@@ -657,5 +686,20 @@ impl Drop for SqyreApp {
         #[cfg(not(target_arch = "wasm32"))]
         sqyre_input::release_held_inputs();
         self.hotkeys.stop();
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod cli_tests {
+    use super::handle_cli_args_from;
+
+    #[test]
+    fn version_and_help_are_consumed() {
+        assert!(handle_cli_args_from(&["--version".into()]));
+        assert!(handle_cli_args_from(&["-V".into()]));
+        assert!(handle_cli_args_from(&["--help".into()]));
+        assert!(handle_cli_args_from(&["-h".into()]));
+        assert!(!handle_cli_args_from(&[]));
+        assert!(!handle_cli_args_from(&["--unknown".into()]));
     }
 }

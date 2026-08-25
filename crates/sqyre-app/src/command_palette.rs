@@ -1,6 +1,6 @@
 //! App-wide command window (Ctrl/Cmd+K): add actions, jump to macros, open editors.
 
-use crate::data_editor::EditorTab;
+use crate::data_editor::{DataEditorCtx, EditorTab};
 use crate::overlay_icons;
 use crate::pickers::fuzzy_match_fold;
 use crate::SqyreApp;
@@ -660,14 +660,16 @@ impl SqyreApp {
             CommandKind::ShowMacroList => self.macro_list_open = true,
             CommandKind::NewCatalogEntity { tab } => {
                 self.data_editor.open_new(
-                    ctx,
                     tab,
-                    &mut self.workspace.db,
-                    &mut self.workspace.macros,
-                    &mut self.workspace.catalog,
-                    &mut self.icon_cache,
-                    &self.screen_click,
-                    self.settings_ui.settings_mut(),
+                    &mut DataEditorCtx {
+                        ctx,
+                        db: &mut self.workspace.db,
+                        macros: &mut self.workspace.macros,
+                        catalog: &mut self.workspace.catalog,
+                        icons: &mut self.icon_cache,
+                        screen_click: &self.screen_click,
+                        settings: self.settings_ui.settings_mut(),
+                    },
                 );
             }
             CommandKind::OpenProgram { name } => {

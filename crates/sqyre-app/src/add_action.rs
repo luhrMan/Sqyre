@@ -14,7 +14,7 @@ use crate::pickers::{self, ActivePicker};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::tree_chrome;
 use crate::widgets::SaveCancel;
-use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2, WidgetInfo, WidgetType};
 use sqyre_domain::{
     action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
     KnownVariableNames,
@@ -591,7 +591,9 @@ fn picker_tile(
     );
     ui.painter().galley(text_pos, galley, Color32::PLACEHOLDER);
 
-    // No egui `on_hover_text` — the delayed action view tip is the hover UI.
+    response.widget_info(|| {
+        WidgetInfo::labeled(WidgetType::Button, true, format!("Add {}", tmpl.label))
+    });
     response
 }
 

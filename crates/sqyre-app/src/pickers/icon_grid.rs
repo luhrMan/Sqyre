@@ -248,7 +248,7 @@ fn icon_grid_cell_ex(
 }
 
 /// Lay out `targets` in even rows (no column stretch, no staircase wrap).
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // even grid: selection, kind, and click/remove callbacks
 pub fn paint_even_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,

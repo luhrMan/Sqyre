@@ -3,7 +3,7 @@
 use crate::macro_meta::collect_all_macro_tags;
 use crate::theme;
 use crate::SqyreApp;
-use eframe::egui::{self, Color32, Vec2};
+use eframe::egui::{self, Color32, Vec2, WidgetInfo, WidgetType};
 use sqyre_hotkeys::{format_hotkey, HotkeyTrigger};
 use sqyre_ui_model::action_pastel_color;
 use std::sync::atomic::Ordering;
@@ -21,10 +21,11 @@ fn toolbar_icon_colored(
     enabled: bool,
     color: Option<Color32>,
 ) -> egui::Response {
-    ui.add_enabled_ui(enabled, |ui| theme::icon_button_colored(ui, glyph, color))
-        .inner
-        .on_hover_text(tip)
-        .on_disabled_hover_text(tip)
+    let response = ui
+        .add_enabled_ui(enabled, |ui| theme::icon_button_colored(ui, glyph, color))
+        .inner;
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tip));
+    response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
 
 pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {

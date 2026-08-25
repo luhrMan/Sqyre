@@ -7,7 +7,7 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use sqyre_domain::{ActionId, KnownVariableNames};
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
-use sqyre_ui_model::HighlightSnapshot;
+use sqyre_ports::HighlightSnapshot;
 use std::collections::HashMap;
 
 pub struct CatalogPaint<'a> {

@@ -3,12 +3,18 @@
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 fn main() -> eframe::Result<()> {
+    if sqyre_app::handle_cli_args() {
+        return Ok(());
+    }
     sqyre_capture::enable_per_monitor_dpi_v2();
     sqyre_app::run()
 }
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "native-runtime")))]
 fn main() -> eframe::Result<()> {
+    if sqyre_app::handle_cli_args() {
+        return Ok(());
+    }
     sqyre_app::run()
 }
 

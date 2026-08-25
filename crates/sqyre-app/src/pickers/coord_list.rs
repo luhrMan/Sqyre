@@ -31,7 +31,7 @@ pub fn set_coord_list_openness<'a>(
     );
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // picker list: query, selection, kind, and scroll in one paint
 pub fn paint_coord_ref_list(
     ui: &mut egui::Ui,
     paint: &mut CatalogPaint<'_>,

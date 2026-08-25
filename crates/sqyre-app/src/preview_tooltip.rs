@@ -531,7 +531,7 @@ fn capture_preview(
             let oty = ty - bounds.y;
             let orx = rx - bounds.x;
             let oby = by - bounds.y;
-            draw_rect_outline(&mut img, olx, oty, orx, oby, OVERLAY, 2);
+            draw_rect_outline(&mut img, olx, oty, orx, oby, OVERLAY);
             if let Some((rows, cols)) = grid {
                 draw_grid_lines(&mut img, (olx, oty, orx, oby), rows, cols, OVERLAY, 1);
             }
@@ -995,26 +995,21 @@ fn draw_vline(img: &mut RgbaImage, x: i32, y0: i32, y1: i32, c: Rgba<u8>, thick:
     }
 }
 
-fn draw_rect_outline(
-    img: &mut RgbaImage,
-    lx: i32,
-    ty: i32,
-    rx: i32,
-    by: i32,
-    c: Rgba<u8>,
-    thick: i32,
-) {
+/// 1px stroke immediately outside exclusive `[lx, rx) × [ty, by)` so search
+/// pixels stay unpainted.
+fn draw_rect_outline(img: &mut RgbaImage, lx: i32, ty: i32, rx: i32, by: i32, c: Rgba<u8>) {
     let (lx, ty, rx, by) = normalize_rect(lx, ty, rx, by);
     if rx <= lx || by <= ty {
         return;
     }
-    // Inclusive max edge for rectangle stroke on image coords.
-    let x1 = rx - 1;
-    let y1 = by - 1;
-    draw_hline(img, ty, lx, x1, c, thick);
-    draw_hline(img, y1, lx, x1, c, thick);
-    draw_vline(img, lx, ty, y1, c, thick);
-    draw_vline(img, x1, ty, y1, c, thick);
+    let ox0 = lx - 1;
+    let oy0 = ty - 1;
+    let ox1 = rx;
+    let oy1 = by;
+    draw_hline(img, oy0, ox0, ox1, c, 1);
+    draw_hline(img, oy1, ox0, ox1, c, 1);
+    draw_vline(img, ox0, oy0, oy1, c, 1);
+    draw_vline(img, ox1, oy0, oy1, c, 1);
 }
 
 fn draw_grid_lines(
@@ -1076,6 +1071,27 @@ mod tests {
         assert!(b.x >= 0 && b.y >= 0);
         assert!(b.x + b.w <= vb.w);
         assert!(b.y + b.h <= vb.h);
+    }
+
+    #[test]
+    fn search_area_outline_is_one_px_outside() {
+        let black = Rgba([0, 0, 0, 255]);
+        let mut img = RgbaImage::from_pixel(10, 10, black);
+        // Exclusive search area [3, 7) × [3, 7).
+        draw_rect_outline(&mut img, 3, 3, 7, 7, OVERLAY);
+        for y in 3..7 {
+            for x in 3..7 {
+                assert_eq!(*img.get_pixel(x, y), black, "inner ({x},{y})");
+            }
+        }
+        for x in 2..=7 {
+            assert_eq!(*img.get_pixel(x, 2), OVERLAY);
+            assert_eq!(*img.get_pixel(x, 7), OVERLAY);
+        }
+        for y in 3..7 {
+            assert_eq!(*img.get_pixel(2, y), OVERLAY);
+            assert_eq!(*img.get_pixel(7, y), OVERLAY);
+        }
     }
 
     #[test]

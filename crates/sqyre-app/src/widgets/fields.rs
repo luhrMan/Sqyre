@@ -104,14 +104,33 @@ pub fn combo_condition_operator(
 ) {
     use sqyre_domain::ConditionOperator;
 
+    combo_enum(
+        ui,
+        label,
+        help_text,
+        value,
+        ConditionOperator::ALL,
+        ConditionOperator::as_str,
+    );
+}
+
+/// ComboBox over a closed set of copyable enum values.
+pub fn combo_enum<T: Copy + PartialEq>(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut T,
+    options: &[T],
+    display: impl Fn(T) -> &'static str,
+) {
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
         help::tip(
             egui::ComboBox::from_id_salt(label)
-                .selected_text(value.to_string())
+                .selected_text(display(*value))
                 .show_ui(ui, |ui| {
-                    for op in ConditionOperator::ALL {
-                        ui.selectable_value(value, *op, op.as_str());
+                    for opt in options {
+                        ui.selectable_value(value, *opt, display(*opt));
                     }
                 })
                 .response,
