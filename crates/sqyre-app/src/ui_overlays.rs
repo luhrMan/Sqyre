@@ -2,7 +2,7 @@
 
 use crate::add_action::AddActionPicker;
 use crate::catalog::apply_main_monitor_resolution;
-use crate::data_editor::DataEditor;
+use crate::data_editor::{DataEditor, DataEditorCtx};
 use crate::icon_cache::IconCache;
 #[cfg(feature = "native-runtime")]
 use crate::pixel_color;
@@ -107,15 +107,17 @@ pub fn show_logs_window(app: &mut SqyreApp, ctx: &egui::Context) {
 pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     show_logs_window(app, ctx);
     app.data_editor.show(
-        ctx,
-        &mut app.workspace.db,
-        &mut app.workspace.macros,
+        &mut DataEditorCtx {
+            ctx,
+            db: &mut app.workspace.db,
+            macros: &mut app.workspace.macros,
+            catalog: &mut app.workspace.catalog,
+            icons: &mut app.icon_cache,
+            screen_click: &app.screen_click,
+            settings: app.settings_ui.settings_mut(),
+        },
         app.workspace.selected_macro,
-        &mut app.workspace.catalog,
-        &mut app.icon_cache,
         &mut app.preview_tooltips,
-        &app.screen_click,
-        app.settings_ui.settings_mut(),
     );
     #[cfg(not(target_arch = "wasm32"))]
     {

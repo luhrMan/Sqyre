@@ -5,16 +5,12 @@
 
 use parking_lot::Mutex;
 use sqyre_domain::ActionId;
-use sqyre_match::ImageBuf;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 /// Max entries retained per action (oldest dropped).
 pub const MAX_ENTRIES_PER_ACTION: usize = 200;
-
-/// Cap long edge when storing log images (keeps UI memory bounded).
-const LOG_IMAGE_MAX_EDGE: usize = 640;
 
 /// RGBA image stored in an action log.
 #[derive(Clone, Debug)]
@@ -24,6 +20,24 @@ pub struct LogImage {
     pub height: u32,
     /// RGBA8 pixels, length `width * height * 4`.
     pub pixels: Arc<Vec<u8>>,
+}
+
+impl LogImage {
+    /// Build from packed RGBA8 (`pixels.len() == width * height * 4`).
+    pub fn from_rgba(label: String, width: u32, height: u32, pixels: Vec<u8>) -> Option<Self> {
+        if width == 0 || height == 0 {
+            return None;
+        }
+        if pixels.len() != width as usize * height as usize * 4 {
+            return None;
+        }
+        Some(Self {
+            label,
+            width,
+            height,
+            pixels: Arc::new(pixels),
+        })
+    }
 }
 
 /// One chronologically ordered log item for an action.
@@ -68,8 +82,8 @@ pub trait ActionLogger: Send + Sync {
         false
     }
 
-    fn log_image(&self, action_id: ActionId, label: String, image: &ImageBuf) {
-        let _ = (action_id, label, image);
+    fn log_image(&self, action_id: ActionId, image: &LogImage) {
+        let _ = (action_id, image);
     }
 
     fn log_item_pipeline(
@@ -77,8 +91,8 @@ pub trait ActionLogger: Send + Sync {
         action_id: ActionId,
         title: String,
         summary: String,
-        thumbnail: &ImageBuf,
-        steps: &[(&str, &ImageBuf)],
+        thumbnail: &LogImage,
+        steps: &[LogImage],
         details: Vec<String>,
     ) {
         let _ = (action_id, title, summary, thumbnail, steps, details);
@@ -163,14 +177,11 @@ impl ActionLogger for SharedActionLog {
         SharedActionLog::log_images_enabled(self)
     }
 
-    fn log_image(&self, action_id: ActionId, label: String, image: &ImageBuf) {
+    fn log_image(&self, action_id: ActionId, image: &LogImage) {
         if !self.log_images_enabled() {
             return;
         }
-        let Some(img) = image_buf_to_log_image(label, image) else {
-            return;
-        };
-        replace_or_push_image(&self.inner, action_id, img);
+        replace_or_push_image(&self.inner, action_id, image.clone());
     }
 
     fn log_item_pipeline(
@@ -178,28 +189,21 @@ impl ActionLogger for SharedActionLog {
         action_id: ActionId,
         title: String,
         summary: String,
-        thumbnail: &ImageBuf,
-        steps: &[(&str, &ImageBuf)],
+        thumbnail: &LogImage,
+        steps: &[LogImage],
         details: Vec<String>,
     ) {
         if !self.log_images_enabled() {
             return;
         }
-        let Some(thumbnail) = image_buf_to_log_image(format!("Item — {title}"), thumbnail) else {
-            return;
-        };
-        let steps: Vec<LogImage> = steps
-            .iter()
-            .filter_map(|(label, img)| image_buf_to_log_image((*label).to_string(), img))
-            .collect();
         push_entry(
             &self.inner,
             action_id,
             ActionLogEntry::ItemPipeline {
                 title,
                 summary,
-                thumbnail,
-                steps,
+                thumbnail: thumbnail.clone(),
+                steps: steps.to_vec(),
                 details,
             },
         );
@@ -253,73 +257,17 @@ fn replace_or_push_image(
     push_capped(entries, ActionLogEntry::Image(img));
 }
 
-fn image_buf_to_log_image(label: String, image: &ImageBuf) -> Option<LogImage> {
-    if image.width == 0 || image.height == 0 {
-        return None;
-    }
-    let scaled = downscale_for_log(image);
-    let rgba = image_buf_to_rgba(&scaled);
-    Some(LogImage {
-        label,
-        width: scaled.width as u32,
-        height: scaled.height as u32,
-        pixels: Arc::new(rgba),
-    })
-}
-
-fn downscale_for_log(img: &ImageBuf) -> ImageBuf {
-    let long = img.width.max(img.height);
-    if long <= LOG_IMAGE_MAX_EDGE {
-        return img.clone();
-    }
-    let scale = LOG_IMAGE_MAX_EDGE as f64 / long as f64;
-    let nw = ((img.width as f64) * scale).round().max(1.0) as usize;
-    let nh = ((img.height as f64) * scale).round().max(1.0) as usize;
-    nearest_resize(img, nw, nh)
-}
-
-fn nearest_resize(img: &ImageBuf, nw: usize, nh: usize) -> ImageBuf {
-    let ch = img.channels;
-    let mut data = vec![0u8; nw * nh * ch];
-    for y in 0..nh {
-        let sy = (y * img.height / nh).min(img.height - 1);
-        for x in 0..nw {
-            let sx = (x * img.width / nw).min(img.width - 1);
-            let si = img.pixel_offset(sx, sy);
-            let di = (y * nw + x) * ch;
-            data[di..di + ch].copy_from_slice(&img.data[si..si + ch]);
-        }
-    }
-    ImageBuf::from_raw(nw, nh, ch, data)
-}
-
-fn image_buf_to_rgba(img: &ImageBuf) -> Vec<u8> {
-    let n = img.width * img.height;
-    let mut out = Vec::with_capacity(n * 4);
-    match img.channels {
-        1 => {
-            for &v in &img.data {
-                out.extend_from_slice(&[v, v, v, 255]);
-            }
-        }
-        3 => {
-            for i in 0..n {
-                let o = i * 3;
-                out.extend_from_slice(&[img.data[o], img.data[o + 1], img.data[o + 2], 255]);
-            }
-        }
-        _ => {
-            for _ in 0..n {
-                out.extend_from_slice(&[0, 0, 0, 255]);
-            }
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn solid(label: &str, fill: u8) -> LogImage {
+        let mut pixels = Vec::with_capacity(4 * 4 * 4);
+        for _ in 0..16 {
+            pixels.extend_from_slice(&[fill, fill, fill, 255]);
+        }
+        LogImage::from_rgba(label.to_string(), 4, 4, pixels).expect("solid log image")
+    }
 
     #[test]
     fn caps_entries_per_action() {
@@ -351,8 +299,7 @@ mod tests {
         log.set_log_images(false);
         let id = ActionId::new();
         log.log(id, "start".into());
-        let img = ImageBuf::new(4, 4, 3, 128);
-        log.log_image(id, "capture".into(), &img);
+        log.log_image(id, &solid("capture", 128));
         let entries = log.entries_for(id);
         assert_eq!(entries.len(), 1);
     }
@@ -361,10 +308,10 @@ mod tests {
     fn wait_until_found_replaces_capture_image_slot() {
         let log = SharedActionLog::new();
         let id = ActionId::new();
-        let a = ImageBuf::new(4, 4, 3, 10);
-        let b = ImageBuf::new(4, 4, 3, 200);
-        log.log_image(id, "1. Capture (search area)".into(), &a);
-        log.log_image(id, "1. Capture (search area)".into(), &b);
+        let a = solid("1. Capture (search area)", 10);
+        let b = solid("1. Capture (search area)", 200);
+        log.log_image(id, &a);
+        log.log_image(id, &b);
         let entries = log.entries_for(id);
         let images: Vec<&LogImage> = entries
             .iter()

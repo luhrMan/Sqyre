@@ -22,7 +22,7 @@ use eframe::egui;
 use parking_lot::Mutex;
 use sqyre_hotkeys::{HotkeyService, MacroRecordBridge, NullHotkeys, ScreenClickBridge};
 use sqyre_persist::UserSettings;
-use sqyre_ui_model::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
+use sqyre_ports::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
 
 impl SqyreApp {
@@ -32,6 +32,10 @@ impl SqyreApp {
         // golden PNGs assume unscaled coordinates.
         let settings = UserSettings {
             ui_scale: 1.0,
+            // Headless kittest/docs must not touch Pulse, GitHub, or portal ScreenCast.
+            play_ui_sounds: false,
+            play_finish_sound: false,
+            auto_update_check: false,
             ..UserSettings::default()
         };
         SettingsUi::apply_action_colors(&settings);
@@ -128,7 +132,7 @@ impl SqyreApp {
                 feature = "native-runtime",
                 target_os = "linux"
             ))]
-            capture_probe_finished: false,
+            capture_probe_finished: true,
             #[cfg(all(
                 not(target_arch = "wasm32"),
                 feature = "native-runtime",
@@ -225,5 +229,14 @@ impl SqyreApp {
             .macros
             .get(self.workspace.selected_macro)
             .map(|m| m.name.as_str())
+    }
+
+    /// Root-loop child count of the selected macro (docs / interaction harnesses).
+    pub fn docs_selected_root_child_count(&self) -> usize {
+        self.workspace
+            .macros
+            .get(self.workspace.selected_macro)
+            .map(|m| m.root.children().len())
+            .unwrap_or(0)
     }
 }

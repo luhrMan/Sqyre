@@ -4,21 +4,15 @@
 //! [`sqyre_domain::VariableBinding`]) stay in `sqyre-domain`; this crate only
 //! adds presentation (pill/tree/color) on top.
 
-mod action_log;
 mod action_picker;
 mod colors;
 mod display;
-mod highlight;
 mod icons;
-mod runtime_vars;
 
-pub use action_log::*;
 pub use action_picker::*;
 pub use colors::*;
 pub use display::*;
-pub use highlight::*;
 pub use icons::*;
-pub use runtime_vars::*;
 
 #[cfg(test)]
 mod tests {

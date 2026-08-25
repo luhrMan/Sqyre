@@ -1,14 +1,28 @@
-//! OS-facing port traits shared by platform adapters and the macro executor.
+//! OS-facing port traits (capture, automation, focus) and execution telemetry
+//! (action log, highlight, runtime vars) shared by adapters and the macro executor.
 
+mod action_log;
 mod automation_error;
 mod capture_error;
 mod domain_ports;
+mod highlight;
 mod port_error;
+mod portal_remote;
+mod runtime_vars;
 
+pub use action_log::{
+    lines_for, ActionLogEntry, ActionLogger, LogImage, SharedActionLog, MAX_ENTRIES_PER_ACTION,
+};
 pub use automation_error::AutomationError;
 pub use capture_error::CaptureError;
 pub use domain_ports::{ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup};
+pub use highlight::{
+    clear_highlights, highlight_clear, highlight_cursor, highlight_fill, ActionHighlighter,
+    HighlightEvent, HighlightKind, HighlightSnapshot, SharedHighlighter,
+};
 pub use port_error::PortError;
+pub use portal_remote::PortalRemoteInput;
+pub use runtime_vars::{RuntimeVarSink, SharedRuntimeVars};
 
 use image::RgbaImage;
 use rayon::prelude::*;
