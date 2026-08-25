@@ -97,7 +97,7 @@ fn activate_window(process_path: &str, window_title: &str) -> Result<(), Automat
         ));
     }
 
-    let hwnds = enum_top_level_windows().map_err(AutomationError::Backend)?;
+    let hwnds = enum_top_level_windows()?;
     for hwnd in hwnds {
         let Some(wtitle) = window_title_of(hwnd) else {
             continue;
@@ -111,7 +111,7 @@ fn activate_window(process_path: &str, window_title: &str) -> Result<(), Automat
         if !paths_equal(&exe, path) {
             continue;
         }
-        return set_foreground(hwnd).map_err(AutomationError::Backend);
+        return set_foreground(hwnd);
     }
     Err(AutomationError::WindowNotFound {
         process_path: path.to_string(),
@@ -119,7 +119,7 @@ fn activate_window(process_path: &str, window_title: &str) -> Result<(), Automat
     })
 }
 
-fn enum_top_level_windows() -> Result<Vec<HWND>, String> {
+fn enum_top_level_windows() -> Result<Vec<HWND>, AutomationError> {
     let mut hwnds: Vec<HWND> = Vec::new();
     // SAFETY: callback only touches the Vec via lparam for the duration of EnumWindows.
     unsafe {
@@ -127,7 +127,7 @@ fn enum_top_level_windows() -> Result<Vec<HWND>, String> {
             Some(enum_windows_proc),
             LPARAM(&mut hwnds as *mut Vec<HWND> as isize),
         )
-        .map_err(|e| format!("EnumWindows failed: {e}"))?;
+        .map_err(|e| AutomationError::Backend(format!("EnumWindows failed: {e}")))?;
     }
     Ok(hwnds)
 }
@@ -405,7 +405,7 @@ unsafe fn hicon_to_rgba(hicon: HICON, destroy: bool) -> Option<ProcessIcon> {
     icon
 }
 
-fn set_foreground(hwnd: HWND) -> Result<(), String> {
+fn set_foreground(hwnd: HWND) -> Result<(), AutomationError> {
     // SAFETY: Win32 focus APIs; AttachThreadInput pairs are always detached below.
     unsafe {
         if IsIconic(hwnd).as_bool() {
@@ -445,7 +445,9 @@ fn set_foreground(hwnd: HWND) -> Result<(), String> {
         }
 
         if !ok {
-            return Err("SetForegroundWindow failed".into());
+            return Err(AutomationError::Backend(
+                "SetForegroundWindow failed".into(),
+            ));
         }
         Ok(())
     }
@@ -465,6 +467,7 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
     static HINTED: OnceLock<Mutex<HashSet<isize>>> = OnceLock::new();
     let hinted = HINTED.get_or_init(|| Mutex::new(HashSet::new()));
 
+    // SAFETY: GetCurrentProcessId is always safe to call.
     let our_pid = unsafe { GetCurrentProcessId() };
     let mut hwnds: Vec<HWND> = Vec::new();
     // SAFETY: callback only touches the Vec via lparam for the duration of EnumWindows.
@@ -498,7 +501,7 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
             continue;
         }
         crate::diag::mark_site(&format!("win:overlay_transparency:apply:{key}"));
-        enable_dwm_per_pixel_alpha(hwnd).map_err(CaptureError::Message)?;
+        enable_dwm_per_pixel_alpha(hwnd)?;
         hinted.insert(key);
         newly += 1;
     }
@@ -517,13 +520,15 @@ unsafe extern "system" fn enum_overlay_windows_proc(hwnd: HWND, lparam: LPARAM) 
     BOOL(1)
 }
 
-fn enable_dwm_per_pixel_alpha(hwnd: HWND) -> Result<(), String> {
+fn enable_dwm_per_pixel_alpha(hwnd: HWND) -> Result<(), CaptureError> {
     // Mirror winit's transparent-window setup: empty blur region → use framebuffer alpha.
     // SAFETY: CreateRectRgn / DwmEnableBlurBehindWindow / DeleteObject with our HWND + region.
     unsafe {
         let region = CreateRectRgn(0, 0, -1, -1);
         if region.is_invalid() {
-            return Err("CreateRectRgn failed for overlay transparency".into());
+            return Err(CaptureError::Message(
+                "CreateRectRgn failed for overlay transparency".into(),
+            ));
         }
         let bb = DWM_BLURBEHIND {
             dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
@@ -532,7 +537,7 @@ fn enable_dwm_per_pixel_alpha(hwnd: HWND) -> Result<(), String> {
             fTransitionOnMaximized: false.into(),
         };
         let result = DwmEnableBlurBehindWindow(hwnd, &bb)
-            .map_err(|e| format!("DwmEnableBlurBehindWindow failed: {e}"));
+            .map_err(|e| CaptureError::Message(format!("DwmEnableBlurBehindWindow failed: {e}")));
         let _ = DeleteObject(HGDIOBJ::from(region));
         result
     }

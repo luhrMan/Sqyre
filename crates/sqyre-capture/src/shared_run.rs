@@ -26,7 +26,7 @@ macro_rules! define_shared_run_capturer {
             static SHARED_UI_OPEN_GEN: ::std::cell::Cell<u64> = const { ::std::cell::Cell::new(0) };
         }
 
-        /// Shared capturer for UI-thread offload (preview tooltips, AutoPic, etc.).
+        /// Shared capturer for UI-thread offload (preview tooltips, ScreenCap, etc.).
         ///
         /// Blocks while `OsCapturer::open()` runs. On Wayland that can wait on the
         /// portal ScreenCast picker — call [`shared_capturer_if_ready`] from the UI

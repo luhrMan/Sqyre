@@ -101,6 +101,32 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn edge_placements_wide_and_tall() {
+        let wide = OutlineRect::normalize(0, 0, 400, 20);
+        assert!(!outline_should_clear(wide));
+        let [top, bottom, left, right] = edge_placements(wide);
+        assert_eq!(top, (0, 0, 400, EDGE_PX));
+        assert_eq!(bottom, (0, 20 - EDGE_PX, 400, EDGE_PX));
+        assert_eq!(left.2, EDGE_PX);
+        assert_eq!(right.0, 400 - EDGE_PX);
+
+        let tall = OutlineRect::normalize(5, 5, 15, 505);
+        assert!(!outline_should_clear(tall));
+        let edges = edge_placements(tall);
+        assert_eq!(edges[0].2, 10);
+        assert_eq!(edges[2].3, 500 - 2 * EDGE_PX);
+    }
+
+    #[test]
+    fn edge_placements_minimum_drawable() {
+        let rect = OutlineRect::normalize(0, 0, EDGE_PX * 2, EDGE_PX * 2);
+        assert!(!outline_should_clear(rect));
+        let edges = edge_placements(rect);
+        assert_eq!(edges[0].2, EDGE_PX * 2);
+        assert_eq!(edges[2].3, 1.max(rect.height() - 2 * EDGE_PX));
+    }
+
     fn aabb_overlap(a: (i32, i32, i32, i32), b: (i32, i32, i32, i32)) -> bool {
         a.0 < b.0 + b.2 && b.0 < a.0 + a.2 && a.1 < b.1 + b.3 && b.1 < a.1 + a.3
     }
