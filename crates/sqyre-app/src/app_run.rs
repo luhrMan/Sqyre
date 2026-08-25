@@ -91,12 +91,13 @@ impl SqyreApp {
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod native_run {
     use super::*;
-    use crate::app_backends::{trim_process_heap, BridgeContinueWait, StopWatchAutomation};
+    use crate::app_backends::{
+        os_automation, trim_process_heap, BridgeContinueWait, StopWatchAutomation,
+    };
     use crate::catalog::{CatalogIcons, CatalogResolver, SnapshotMacros};
     use sqyre_capture::{shared_capturer, OsWindowFocuser, SharedRunCapturer};
     use sqyre_domain::Macro;
     use sqyre_executor::{execute_macro_with, ExecDeps, OcrEngine};
-    use sqyre_input::OsAutomation;
     use sqyre_persist::variables_path;
     use sqyre_vision::shared_leptess;
     use std::collections::BTreeMap;
@@ -165,8 +166,7 @@ mod native_run {
 
             thread::spawn(move || {
                 let result = (|| -> Result<(), String> {
-                    let mut automation =
-                        OsAutomation::new().map_err(|e| format!("automation: {e}"))?;
+                    let mut automation = os_automation().map_err(|e| format!("automation: {e}"))?;
                     let capturer_arc = shared_capturer().map_err(|e| format!("capture: {e}"))?;
                     let mut capturer = SharedRunCapturer(capturer_arc);
                     let resolver = CatalogResolver(&catalog);

@@ -81,6 +81,12 @@ impl MacroOverlay {
         pending_macros: &Arc<Mutex<Vec<String>>>,
         running_macro: Option<&str>,
     ) {
+        let any_enabled = buttons
+            .iter()
+            .any(|b| b.enabled && !b.macro_name.trim().is_empty());
+        if preview.is_none() && !any_enabled {
+            return;
+        }
         let focus = self.resolve_focus();
         let preview_id = preview.map(|b| b.id.as_str());
         let mut any_gated = false;

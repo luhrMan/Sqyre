@@ -18,8 +18,8 @@ path = "src/main.rs"
 # Full desktop runtime: macro execution, screen capture, OCR/vision.
 default = ["native-runtime", "hooks"]
 # Wayland portal ScreenCast + PipeWire (needs libpipewire ≥ 1.0 dev headers).
-portal-capture = ["sqyre-capture/portal-capture", "sqyre-probe/portal-capture", "sqyre-input/portal-capture"]
-native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-capture", "dep:sqyre-probe"]
+portal-capture = ["sqyre-capture/portal-capture", "sqyre-probe/portal-capture"]
+native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-match", "dep:sqyre-capture", "dep:sqyre-probe"]
 # OS global hotkeys (rdev). Disabled for wasm builds (`--no-default-features`).
 hooks = ["sqyre-hotkeys/hooks"]
 
@@ -49,6 +49,7 @@ sqyre-capture = { path = "../sqyre-capture", optional = true }
 sqyre-probe = { path = "../sqyre-probe", optional = true }
 sqyre-hotkeys = { path = "../sqyre-hotkeys" }
 sqyre-vision = { path = "../sqyre-vision", optional = true }
+sqyre-match = { path = "../sqyre-match", optional = true }
 serde_yaml = { workspace = true }
 rfd = { workspace = true }
 parking_lot = { workspace = true }

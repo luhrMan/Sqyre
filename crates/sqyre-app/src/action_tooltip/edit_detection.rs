@@ -4,10 +4,14 @@ use crate::icon_cache::IconCache;
 use crate::paint_ctx::CatalogPaint;
 use crate::pickers::{self, ActivePicker};
 use crate::preview_tooltip::PreviewTooltipCache;
-use crate::widgets::{combo_str, combo_str_labeled, drag_field, searchable_combo, text_field, W_TEXT, W_VAR};
+use crate::widgets::{
+    combo_enum, combo_str, combo_str_labeled, drag_field, searchable_combo, text_field, W_TEXT,
+    W_VAR,
+};
 use eframe::egui;
 use sqyre_domain::{
-    DetectionBranch, ListColumn, MatchOrder, RepeatMode, ScalarValue, WaitTilFoundConfig,
+    DetectionBranch, ListColumn, MatchGrouping, MatchOrder, RepeatMode, ScalarValue,
+    WaitTilFoundConfig,
 };
 use sqyre_persist::ProgramCatalog;
 
@@ -196,13 +200,13 @@ fn coords_editor(
 }
 
 fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
-    combo_str_labeled(
+    combo_enum(
         ui,
         "Grouping",
         h::ORDER_GROUPING,
         &mut order.grouping,
-        options::ORDER_GROUPING,
-        "row",
+        MatchGrouping::ALL,
+        MatchGrouping::label,
     );
     combo_str_labeled(
         ui,

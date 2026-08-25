@@ -176,7 +176,8 @@ pub const NAV_HOLD_REPEAT: &str = "Repeat movement while a chord is held.";
 pub const NAV_SELECT_DEVICE: &str = "mouse or keyboard for the Select action.";
 pub const NAV_SELECT_BUTTON: &str = "Mouse button used when Select device is mouse.";
 pub const NAV_SELECT_KEY: &str = "Key used when Select device is keyboard.";
-pub const NAV_SELECT_PRESS: &str = "click = down+up; down or up for a single edge.";
+pub const NAV_SELECT_PRESS: &str =
+    "click = down+up; down or hold keeps the button/key down; up releases.";
 pub const NAV_IN_ATLAS: &str = "Optional starting Atlas override (variable or name).";
 pub const NAV_IN_ROW: &str = "Optional starting row override.";
 pub const NAV_IN_COL: &str = "Optional starting column override.";
@@ -211,7 +212,7 @@ pub const DE_AREA_LEFT: &str = "Left edge X of the search area.";
 pub const DE_AREA_TOP: &str = "Top edge Y of the search area.";
 pub const DE_AREA_RIGHT: &str = "Right edge X of the search area.";
 pub const DE_AREA_BOTTOM: &str = "Bottom edge Y of the search area.";
-pub const DE_AUTOPIC_REF: &str =
+pub const DE_SCREENCAP_REF: &str =
     "Optional. Picking a search area or collection cell loads its bounds into LeftX/TopY/RightX/BottomY and suggests a filename.";
 pub const DE_COLLECTION_AREA: &str = "Search area used when capturing this collection.";
 pub const DE_COLLECTION_ROWS: &str = "Number of rows in the collection grid.";

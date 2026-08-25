@@ -57,7 +57,7 @@ pub fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Con
 ///
 /// When `selected_program` / `clicked_program` are used (data editor), program headers
 /// are selectable and write the clicked program name into `clicked_program`.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // accordion grid: selection mode plus optional program click
 pub fn paint_items_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,

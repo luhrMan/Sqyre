@@ -571,7 +571,7 @@ fn sync_execution_expand(
     }
 }
 
-fn highlight_follow_target(snap: &sqyre_ui_model::HighlightSnapshot) -> Option<ActionId> {
+fn highlight_follow_target(snap: &sqyre_ports::HighlightSnapshot) -> Option<ActionId> {
     if let Some(id) = snap.cursor {
         return Some(id);
     }
@@ -789,7 +789,7 @@ fn build_else_dir(
 pub(crate) fn row_highlight(
     macro_name: &str,
     action_id: ActionId,
-    snap: &sqyre_ui_model::HighlightSnapshot,
+    snap: &sqyre_ports::HighlightSnapshot,
 ) -> RowHighlight {
     if snap.macro_name != macro_name {
         return RowHighlight::None;
@@ -859,7 +859,7 @@ pub(crate) fn press_pair_highlight(action: &Action, selected: Option<&Action>) -
 mod highlight_ui_tests {
     use super::*;
     use sqyre_domain::{ActionKind, PressState};
-    use sqyre_ui_model::HighlightSnapshot;
+    use sqyre_ports::HighlightSnapshot;
     use std::collections::HashMap;
 
     #[test]

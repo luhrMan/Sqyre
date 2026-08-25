@@ -1,12 +1,10 @@
 //! Create / update / delete / persist catalog entities.
 
 use super::helpers::{new_overlay_button_id, parse_i32, unique_name};
-use super::{DataEditor, EditorTab, PendingConfirm};
-use crate::icon_cache::IconCache;
+use super::{DataEditor, DataEditorCtx, EditorTab, PendingConfirm};
 use crate::overlay_icons;
 use crate::preview_tooltip::PreviewTooltipCache;
 use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue};
-use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
     Database, OverlayButtonConfig, ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramItem,
     ProgramMask, ProgramPoint, ProgramSearchArea, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
@@ -36,15 +34,15 @@ fn new_entity_name(form_name: &str, default_base: &str, exists: impl Fn(&str) ->
 }
 
 impl DataEditor {
-    pub(crate) fn on_new(
-        &mut self,
-        db: &mut Database,
-        macros: &mut [Macro],
-        catalog: &mut ProgramCatalog,
-        _icons: &mut IconCache,
-        screen_click: &ScreenClickBridge,
-        settings: &mut UserSettings,
-    ) {
+    pub(crate) fn on_new(&mut self, env: &mut DataEditorCtx<'_>) {
+        let DataEditorCtx {
+            db,
+            macros,
+            catalog,
+            screen_click,
+            settings,
+            ..
+        } = env;
         self.clear_status();
         self.save_after_record = false;
         let created = match self.tab {
@@ -247,8 +245,12 @@ impl DataEditor {
                     Err(e) => Err(e.to_string()),
                 }
             }
-            EditorTab::AutoPic => {
-                self.set_err("Use Save on the AutoPic tab to capture the preview region.");
+            EditorTab::ScreenCap => {
+                self.set_err("Use Save on the ScreenCap tab to capture the preview region.");
+                return;
+            }
+            EditorTab::PixelCheck => {
+                self.set_err("PixelCheck is read-only — select an item to probe.");
                 return;
             }
             EditorTab::Overlay => {
@@ -311,18 +313,15 @@ impl DataEditor {
 
     pub(crate) fn on_update(
         &mut self,
-        db: &mut Database,
-        macros: &mut [Macro],
-        catalog: &mut ProgramCatalog,
+        env: &mut DataEditorCtx<'_>,
         previews: &mut PreviewTooltipCache,
-        settings: &mut UserSettings,
     ) {
         // Check overwrite for renames onto existing keys
-        if let Some((kind, name)) = self.would_overwrite(catalog) {
+        if let Some((kind, name)) = self.would_overwrite(env.catalog) {
             self.confirm = Some(PendingConfirm::Overwrite { kind, name });
             return;
         }
-        self.apply_update(db, macros, catalog, false, previews, settings);
+        self.apply_update(env, false, previews);
     }
 
     pub(crate) fn would_overwrite(
@@ -398,7 +397,7 @@ impl DataEditor {
                     return Some(("Atlas", new.to_string()));
                 }
             }
-            EditorTab::AutoPic => {}
+            EditorTab::ScreenCap | EditorTab::PixelCheck => {}
             EditorTab::Overlay => {}
         }
         None
@@ -406,13 +405,17 @@ impl DataEditor {
 
     pub(crate) fn apply_update(
         &mut self,
-        db: &mut Database,
-        macros: &mut [Macro],
-        catalog: &mut ProgramCatalog,
+        env: &mut DataEditorCtx<'_>,
         overwrite: bool,
         previews: &mut PreviewTooltipCache,
-        settings: &mut UserSettings,
     ) {
+        let DataEditorCtx {
+            db,
+            macros,
+            catalog,
+            settings,
+            ..
+        } = env;
         self.clear_status();
         if matches!(self.tab, EditorTab::Overlay) {
             self.apply_overlay_update(settings);
@@ -486,7 +489,7 @@ impl DataEditor {
             EditorTab::Masks => self.update_mask(catalog, &new_name, overwrite),
             EditorTab::Collections => self.update_collection(catalog, macros, &new_name, overwrite),
             EditorTab::Atlases => self.update_atlas(catalog, macros, &new_name, overwrite),
-            EditorTab::AutoPic | EditorTab::Overlay => Ok(()),
+            EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay => Ok(()),
         };
 
         match result {
@@ -766,12 +769,16 @@ impl DataEditor {
 
     pub(crate) fn on_delete(
         &mut self,
-        db: &mut Database,
-        macros: &mut [Macro],
-        catalog: &mut ProgramCatalog,
+        env: &mut DataEditorCtx<'_>,
         previews: &mut PreviewTooltipCache,
-        settings: &mut UserSettings,
     ) {
+        let DataEditorCtx {
+            db,
+            macros,
+            catalog,
+            settings,
+            ..
+        } = env;
         self.clear_status();
         if matches!(self.tab, EditorTab::Overlay) {
             let Some(id) = self.selected_entity.clone() else {
@@ -869,7 +876,7 @@ impl DataEditor {
                     self.reset_atlas_form();
                 })
             }
-            EditorTab::AutoPic | EditorTab::Overlay => return,
+            EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay => return,
         };
         match result {
             Ok(()) => {

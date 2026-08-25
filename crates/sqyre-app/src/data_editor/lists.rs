@@ -22,7 +22,9 @@ impl DataEditor {
     ) {
         let id_salt = match self.tab {
             EditorTab::Programs => "data_editor_programs",
-            EditorTab::Items | EditorTab::Masks | EditorTab::AutoPic => "data_editor_items",
+            EditorTab::Items | EditorTab::Masks | EditorTab::ScreenCap | EditorTab::PixelCheck => {
+                "data_editor_items"
+            }
             EditorTab::Overlay => "data_editor_overlay_list",
             EditorTab::Points
             | EditorTab::SearchAreas
@@ -44,7 +46,7 @@ impl DataEditor {
                 return;
             }
             pickers::collapse_all_buttons(ui, |ctx, open| match tab {
-                EditorTab::Items => {
+                EditorTab::Items | EditorTab::PixelCheck => {
                     pickers::set_items_icon_grid_openness(
                         ctx,
                         program_names_for_collapse.iter().map(|n| n.as_str()),
@@ -69,7 +71,7 @@ impl DataEditor {
             self.selected_program.as_deref(),
             self.selected_entity.as_deref(),
         ) {
-            (EditorTab::Items, Some(p), Some(e)) => {
+            (EditorTab::Items | EditorTab::PixelCheck, Some(p), Some(e)) => {
                 vec![format!("{p}{}{e}", sqyre_domain::PROGRAM_DELIMITER)]
             }
             _ => Vec::new(),
@@ -101,7 +103,7 @@ impl DataEditor {
                     }
                 }
             }
-            EditorTab::Items => {
+            EditorTab::Items | EditorTab::PixelCheck => {
                 ui.set_max_width(ui.available_width());
                 pickers::paint_items_icon_grid(
                     ui,
@@ -188,7 +190,7 @@ impl DataEditor {
                     });
                 }
             }
-            EditorTab::AutoPic => {
+            EditorTab::ScreenCap => {
                 self.ensure_list_cache(catalog);
                 let program_names = self.list_cache.program_names.clone();
                 for prog in &program_names {
@@ -388,7 +390,7 @@ impl DataEditor {
             self.select_program(&prog, catalog, settings);
         } else if let Some((prog, id)) = clicked_overlay {
             self.select_entity(&prog, &id, catalog, settings);
-        } else if matches!(self.tab, EditorTab::Items) {
+        } else if matches!(self.tab, EditorTab::Items | EditorTab::PixelCheck) {
             if let Some(target) = item_selection.first() {
                 if let Some((prog, item)) = target.split_once(sqyre_domain::PROGRAM_DELIMITER) {
                     let changed = self.selected_program.as_deref() != Some(prog)
@@ -518,12 +520,13 @@ fn tab_collapse_key(tab: EditorTab) -> &'static str {
     match tab {
         EditorTab::Programs => "programs",
         EditorTab::Items => "items",
+        EditorTab::PixelCheck => "pixel_check",
         EditorTab::Points => "points",
         EditorTab::SearchAreas => "search_areas",
         EditorTab::Masks => "masks",
         EditorTab::Collections => "collections",
         EditorTab::Atlases => "atlases",
-        EditorTab::AutoPic => "autopix",
+        EditorTab::ScreenCap => "screencap",
         EditorTab::Overlay => "overlay",
     }
 }
@@ -534,7 +537,7 @@ fn compute_entity_names(catalog: &ProgramCatalog, tab: EditorTab, program: &str)
     };
     let res = catalog.resolution_key();
     let mut keys: Vec<(String, String)> = match tab {
-        EditorTab::Items => p
+        EditorTab::Items | EditorTab::PixelCheck => p
             .items
             .iter()
             .map(|(k, it)| {
@@ -563,7 +566,7 @@ fn compute_entity_names(catalog: &ProgramCatalog, tab: EditorTab, program: &str)
                     .collect()
             })
             .unwrap_or_default(),
-        EditorTab::SearchAreas | EditorTab::AutoPic => p
+        EditorTab::SearchAreas | EditorTab::ScreenCap => p
             .search_areas
             .get(res)
             .or_else(|| p.search_areas.values().next())

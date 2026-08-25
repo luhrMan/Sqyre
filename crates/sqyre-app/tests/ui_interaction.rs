@@ -8,12 +8,19 @@ use egui_kittest::kittest::Queryable;
 use egui_kittest::Harness;
 use sqyre_app::{theme, SettingsUi, SqyreApp};
 
-fn build_harness(mut setup: impl FnMut(&mut SqyreApp)) -> Harness<'static, SqyreApp> {
+fn build_harness(setup: impl FnMut(&mut SqyreApp)) -> Harness<'static, SqyreApp> {
+    build_harness_size([1000.0, 500.0], setup)
+}
+
+fn build_harness_size(
+    size: [f32; 2],
+    mut setup: impl FnMut(&mut SqyreApp),
+) -> Harness<'static, SqyreApp> {
     let mut app = SqyreApp::for_docs();
     setup(&mut app);
     let settings = app.docs_settings().clone();
     Harness::builder()
-        .with_size([1000.0, 500.0])
+        .with_size(size)
         .with_os(OperatingSystem::Nix)
         .wgpu()
         .build_eframe(move |cc| {
@@ -121,4 +128,40 @@ fn tree_log_buttons_follow_log_meta_images_setting() {
         harness.query_all_by_label("Logs").next().is_some(),
         "log buttons should show when Log Meta Images is on"
     );
+}
+
+#[test]
+fn add_action_picker_lists_wait() {
+    let mut harness = build_harness_size([1100.0, 520.0], |app| {
+        app.open_add_action_picker();
+    });
+    harness.run();
+    harness.get_by_label("Add Wait");
+}
+
+#[test]
+fn add_wait_from_picker_increases_tree() {
+    let mut harness = build_harness_size([1100.0, 520.0], |app| {
+        app.open_add_action_picker();
+    });
+    harness.run();
+    let before = harness.state().docs_selected_root_child_count();
+    assert!(before >= 1, "demo macro should have root children");
+
+    harness.get_by_label("Add Wait").click();
+    // Provisional insert opens a pulsing Save; Harness::run never settles.
+    harness.run_steps(4);
+
+    assert_eq!(
+        harness.state().docs_selected_root_child_count(),
+        before + 1,
+        "picking Wait should insert a child under the demo root"
+    );
+}
+
+#[test]
+fn run_toolbar_button_is_present() {
+    let mut harness = build_harness(|_| {});
+    harness.run();
+    harness.get_by_label("Run");
 }
