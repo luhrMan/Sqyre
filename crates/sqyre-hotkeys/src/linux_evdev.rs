@@ -15,13 +15,20 @@ use std::time::SystemTime;
 const DEV_PATH: &str = "/dev/input";
 const EPOLL_TIMEOUT_MS: i32 = 100;
 
-pub fn watch_events(stop: Arc<AtomicBool>, mut on_event: impl FnMut(Event)) -> Result<(), String> {
-    let files = device_files().map_err(|e| format!("list {DEV_PATH}: {e}"))?;
+pub fn watch_events(
+    stop: Arc<AtomicBool>,
+    mut on_event: impl FnMut(Event),
+) -> Result<(), crate::HotkeyError> {
+    let files =
+        device_files().map_err(|e| crate::HotkeyError::Install(format!("list {DEV_PATH}: {e}")))?;
     if files.is_empty() {
-        return Err(format!("no usable devices in {DEV_PATH}"));
+        return Err(crate::HotkeyError::Install(format!(
+            "no usable devices in {DEV_PATH}"
+        )));
     }
 
-    let epoll_fd = epoll::create(true).map_err(|e| format!("epoll create: {e}"))?;
+    let epoll_fd = epoll::create(true)
+        .map_err(|e| crate::HotkeyError::Install(format!("epoll create: {e}")))?;
     let mut devices = Vec::new();
     for file in files {
         let fd = file.as_raw_fd();
@@ -37,7 +44,9 @@ pub fn watch_events(stop: Arc<AtomicBool>, mut on_event: impl FnMut(Event)) -> R
     }
     if devices.is_empty() {
         let _ = epoll::close(epoll_fd);
-        return Err("could not open any evdev devices".into());
+        return Err(crate::HotkeyError::Install(
+            "could not open any evdev devices".into(),
+        ));
     }
 
     let mut buf = [epoll::Event::new(epoll::Events::empty(), 0); 8];
