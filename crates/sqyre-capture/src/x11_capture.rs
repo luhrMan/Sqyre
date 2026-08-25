@@ -18,7 +18,7 @@ use x11::xlib::{
 const ALLPLANES: u64 = !0;
 
 /// Shared X11 display connection (internal; public entry is [`crate::linux::capturer::OsCapturer`]).
-pub struct X11Capturer {
+pub(crate) struct X11Capturer {
     inner: Mutex<X11State>,
 }
 
@@ -304,6 +304,8 @@ mod compositor_kick {
 
     impl Drop for CompositorKick {
         fn drop(&mut self) {
+            // SAFETY: `display`/`window`/`colormap` were created by `open_compositor_kick`
+            // (or are null/0); this Drop is the only destroy/close path and nulls them after.
             unsafe {
                 if self.display.is_null() {
                     return;

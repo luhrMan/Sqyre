@@ -48,8 +48,8 @@ unsafe impl Send for SelectionGrab {}
 
 impl SelectionGrab {
     pub fn open() -> Result<Self, CaptureError> {
-        ensure_class().map_err(CaptureError::Message)?;
-        let bounds = virtual_screen().map_err(CaptureError::Message)?;
+        ensure_class()?;
+        let bounds = virtual_screen()?;
         // SAFETY: class registered; creates an unowned popup HWND for this grab.
         let hwnd = unsafe {
             let module =
@@ -84,7 +84,7 @@ impl SelectionGrab {
 
     /// Show the grab window, take foreground/capture, and clear cursor confinement.
     pub fn arm(&mut self) -> Result<(), CaptureError> {
-        let bounds = virtual_screen().map_err(CaptureError::Message)?;
+        let bounds = virtual_screen()?;
         clear_pending();
         // SAFETY: hwnd owned by this struct.
         unsafe {
@@ -177,14 +177,14 @@ impl Drop for SelectionGrab {
     }
 }
 
-fn ensure_class() -> Result<(), String> {
-    static CLASS: OnceLock<Result<(), String>> = OnceLock::new();
+fn ensure_class() -> Result<(), CaptureError> {
+    static CLASS: OnceLock<Result<(), CaptureError>> = OnceLock::new();
     CLASS
         .get_or_init(|| {
             // SAFETY: RegisterClassW with a process-local class.
             unsafe {
-                let module =
-                    GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW failed: {e}"))?;
+                let module = GetModuleHandleW(None)
+                    .map_err(|e| CaptureError::Message(format!("GetModuleHandleW failed: {e}")))?;
                 let wc = WNDCLASSW {
                     style: CS_HREDRAW | CS_VREDRAW,
                     lpfnWndProc: Some(grab_wnd_proc),
@@ -199,7 +199,9 @@ fn ensure_class() -> Result<(), String> {
                     if err == ERROR_CLASS_ALREADY_EXISTS {
                         return Ok(());
                     }
-                    return Err(format!("RegisterClassW failed: {err:?}"));
+                    return Err(CaptureError::Message(format!(
+                        "RegisterClassW failed: {err:?}"
+                    )));
                 }
             }
             Ok(())
@@ -207,7 +209,7 @@ fn ensure_class() -> Result<(), String> {
         .clone()
 }
 
-fn virtual_screen() -> Result<(i32, i32, i32, i32), String> {
+fn virtual_screen() -> Result<(i32, i32, i32, i32), CaptureError> {
     // SAFETY: GetSystemMetrics for virtual-screen bounds.
     unsafe {
         let x = GetSystemMetrics(SM_XVIRTUALSCREEN);
@@ -215,7 +217,9 @@ fn virtual_screen() -> Result<(i32, i32, i32, i32), String> {
         let w = GetSystemMetrics(SM_CXVIRTUALSCREEN);
         let h = GetSystemMetrics(SM_CYVIRTUALSCREEN);
         if w <= 0 || h <= 0 {
-            return Err("virtual screen metrics unavailable".into());
+            return Err(CaptureError::Message(
+                "virtual screen metrics unavailable".into(),
+            ));
         }
         Ok((x, y, w, h))
     }

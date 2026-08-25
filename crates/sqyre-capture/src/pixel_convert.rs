@@ -161,4 +161,34 @@ mod tests {
     fn rejects_short_buffer() {
         assert!(zpixmap_to_rgba(&[1, 2], 1, 1, 4, 0).is_err());
     }
+
+    #[test]
+    fn zero_stride_means_tightly_packed() {
+        let data = [0, 0, 255, 255]; // BGRA red
+        let packed = zpixmap_to_rgba(&data, 1, 1, 4, 0).unwrap();
+        let explicit = zpixmap_to_rgba(&data, 1, 1, 4, 4).unwrap();
+        assert_eq!(packed.get_pixel(0, 0), explicit.get_pixel(0, 0));
+        assert_eq!(*packed.get_pixel(0, 0), image::Rgba([255, 0, 0, 255]));
+    }
+
+    #[test]
+    fn odd_width_3bpp() {
+        let data = [
+            1, 2, 3, // BGR
+            4, 5, 6, 7, 8, 9, // two more pixels
+        ];
+        let img = zpixmap_to_rgba(&data, 3, 1, 3, 0).unwrap();
+        assert_eq!(*img.get_pixel(0, 0), image::Rgba([3, 2, 1, 255]));
+        assert_eq!(*img.get_pixel(2, 0), image::Rgba([9, 8, 7, 255]));
+    }
+
+    #[test]
+    fn rejects_stride_shorter_than_row() {
+        let data = vec![0u8; 16];
+        let err = zpixmap_to_rgba(&data, 2, 1, 4, 4).unwrap_err();
+        assert!(
+            err.contains("shorter than"),
+            "expected stride error, got {err}"
+        );
+    }
 }

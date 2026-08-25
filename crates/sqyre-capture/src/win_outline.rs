@@ -40,14 +40,14 @@ unsafe impl Send for SelectionOutline {}
 
 impl SelectionOutline {
     pub fn open() -> Result<Self, CaptureError> {
-        ensure_class().map_err(CaptureError::Message)?;
+        ensure_class()?;
         let mut edges = [HWND::default(); 4];
         for i in 0..edges.len() {
             match create_edge() {
                 Ok(hwnd) => edges[i] = hwnd,
                 Err(e) => {
                     destroy_edges(&edges);
-                    return Err(CaptureError::Message(e));
+                    return Err(e);
                 }
             }
         }
@@ -105,19 +105,21 @@ impl Drop for SelectionOutline {
     }
 }
 
-fn ensure_class() -> Result<(), String> {
-    static CLASS: OnceLock<Result<(), String>> = OnceLock::new();
+fn ensure_class() -> Result<(), CaptureError> {
+    static CLASS: OnceLock<Result<(), CaptureError>> = OnceLock::new();
     CLASS
         .get_or_init(|| {
             // SAFETY: RegisterClassW with a process-local class; brush lives for process life.
             unsafe {
-                let module =
-                    GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW failed: {e}"))?;
+                let module = GetModuleHandleW(None)
+                    .map_err(|e| CaptureError::Message(format!("GetModuleHandleW failed: {e}")))?;
                 let brush = CreateSolidBrush(COLORREF(
                     u32::from(STROKE_R) | (u32::from(STROKE_G) << 8) | (u32::from(STROKE_B) << 16),
                 ));
                 if brush.is_invalid() {
-                    return Err("CreateSolidBrush failed for selection outline".into());
+                    return Err(CaptureError::Message(
+                        "CreateSolidBrush failed for selection outline".into(),
+                    ));
                 }
                 let wc = WNDCLASSW {
                     style: CS_HREDRAW | CS_VREDRAW,
@@ -134,7 +136,9 @@ fn ensure_class() -> Result<(), String> {
                     if err == ERROR_CLASS_ALREADY_EXISTS {
                         return Ok(());
                     }
-                    return Err(format!("RegisterClassW failed: {err:?}"));
+                    return Err(CaptureError::Message(format!(
+                        "RegisterClassW failed: {err:?}"
+                    )));
                 }
                 // Leak the brush: it remains the class background for the process lifetime.
             }
@@ -143,10 +147,11 @@ fn ensure_class() -> Result<(), String> {
         .clone()
 }
 
-fn create_edge() -> Result<HWND, String> {
+fn create_edge() -> Result<HWND, CaptureError> {
     // SAFETY: class registered; creates an unowned popup HWND for this outline.
     unsafe {
-        let module = GetModuleHandleW(None).map_err(|e| format!("GetModuleHandleW failed: {e}"))?;
+        let module = GetModuleHandleW(None)
+            .map_err(|e| CaptureError::Message(format!("GetModuleHandleW failed: {e}")))?;
         let hwnd = CreateWindowExW(
             WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TRANSPARENT,
             CLASS_NAME,
@@ -161,9 +166,11 @@ fn create_edge() -> Result<HWND, String> {
             Some(module.into()),
             None,
         )
-        .map_err(|e| format!("CreateWindowExW failed: {e}"))?;
+        .map_err(|e| CaptureError::Message(format!("CreateWindowExW failed: {e}")))?;
         if hwnd.is_invalid() {
-            return Err("CreateWindowExW returned null HWND".into());
+            return Err(CaptureError::Message(
+                "CreateWindowExW returned null HWND".into(),
+            ));
         }
         Ok(hwnd)
     }
