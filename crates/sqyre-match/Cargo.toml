@@ -18,3 +18,8 @@ thiserror = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
 
 [dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "template_match"
+harness = false

@@ -1,6 +1,7 @@
 //! OCR capture preprocessing.
 
 use sqyre_match::{blur_image_owned, search_blur_kernel, ImageBuf};
+use sqyre_ports::PortError;
 
 /// One intermediate image from OCR preprocessing (chronological).
 #[derive(Debug, Clone)]
@@ -68,7 +69,7 @@ impl OcrPreprocessOptions {
 pub fn preprocess_for_ocr(
     img: &ImageBuf,
     opts: OcrPreprocessOptions,
-) -> Result<(ImageBuf, f64), String> {
+) -> Result<(ImageBuf, f64), PortError> {
     let (out, scale, _) = preprocess_for_ocr_with_steps(img, opts, false)?;
     Ok((out, scale))
 }
@@ -78,9 +79,9 @@ pub fn preprocess_for_ocr_with_steps(
     img: &ImageBuf,
     opts: OcrPreprocessOptions,
     collect_steps: bool,
-) -> Result<(ImageBuf, f64, Vec<OcrPreprocessStep>), String> {
+) -> Result<(ImageBuf, f64, Vec<OcrPreprocessStep>), PortError> {
     if img.width == 0 || img.height == 0 {
-        return Err("empty OCR image".into());
+        return Err(PortError::invalid("empty OCR image"));
     }
     let mut steps = Vec::new();
     let mut step_n = 0u32;
@@ -98,12 +99,15 @@ pub fn preprocess_for_ocr_with_steps(
     } else if img.channels == 1 || img.channels == 3 {
         img.clone()
     } else {
-        return Err(format!("unsupported OCR channels {}", img.channels));
+        return Err(PortError::invalid(format!(
+            "unsupported OCR channels {}",
+            img.channels
+        )));
     };
 
     if opts.blur && opts.blur_amount > 0 {
         let k = search_blur_kernel(opts.blur_amount);
-        cur = blur_image_owned(cur, k).map_err(|e| format!("OCR blur: {e}"))?;
+        cur = blur_image_owned(cur, k).map_err(|e| PortError::Message(format!("OCR blur: {e}")))?;
         if collect_steps {
             step_n += 1;
             steps.push(OcrPreprocessStep {
@@ -157,7 +161,9 @@ pub fn preprocess_for_ocr_with_steps(
     }
 
     if cur.width == 0 || cur.height == 0 {
-        return Err("preprocessing produced empty image".into());
+        return Err(PortError::Message(
+            "preprocessing produced empty image".into(),
+        ));
     }
     if collect_steps {
         step_n += 1;
@@ -267,9 +273,9 @@ fn dilate_2x2(img: &ImageBuf) -> ImageBuf {
     ImageBuf::from_raw(w, h, 1, out)
 }
 
-fn resize_image(img: &ImageBuf, scale: f64) -> Result<ImageBuf, String> {
+fn resize_image(img: &ImageBuf, scale: f64) -> Result<ImageBuf, PortError> {
     if scale <= 0.0 {
-        return Err("invalid resize scale".into());
+        return Err(PortError::invalid("invalid resize scale"));
     }
     let nw = ((img.width as f64) * scale).round().max(1.0) as usize;
     let nh = ((img.height as f64) * scale).round().max(1.0) as usize;
