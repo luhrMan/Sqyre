@@ -77,4 +77,17 @@ mod tests {
         assert_eq!((pts[1].x, pts[1].y), (3, 0));
         assert_eq!((pts[2].x, pts[2].y), (1, 1));
     }
+
+    #[test]
+    fn find_pixels_respects_tolerance() {
+        let mut img = ImageBuf::new(8, 8, 3, 10);
+        let o = img.pixel_offset(4, 5);
+        img.data[o] = 200;
+        img.data[o + 1] = 10;
+        img.data[o + 2] = 10;
+        assert!(find_pixel(&img, "#c80000", 0).is_none());
+        let p = find_pixel(&img, "#c80000", 15).unwrap();
+        assert_eq!((p.x, p.y), (4, 5));
+        assert_eq!(find_pixels(&img, "#c80000", 15).len(), 1);
+    }
 }
