@@ -3,6 +3,7 @@
 mod app_resolve;
 mod atspi_windows;
 mod foreign_toplevel;
+mod layer_shell;
 mod wayland_clients;
 mod windows;
 
@@ -28,6 +29,7 @@ pub use portal_session::{
     portal_screencast_granted, request_portal_screencast_picker,
 };
 
+pub use layer_shell::{layer_shell_available, prefers_layer_shell_overlay_session};
 pub use windows::OsWindowFocuser;
 pub(crate) use windows::{get_active_window, list_open_windows};
 
@@ -54,16 +56,12 @@ pub fn toplevel_focus_available() -> Result<(), CaptureError> {
     windows::toplevel_focus_available()
 }
 
-/// Probe-only: wlr-layer-shell overlays (not implemented).
+/// Probe: wlr-layer-shell is available for native Wayland overlays.
 pub fn layer_outline_available() -> Result<(), CaptureError> {
-    Err(CaptureError::Message(
-        "Wayland layer-shell outline not implemented yet".into(),
-    ))
+    layer_shell::layer_shell_available()
 }
 
-/// Probe-only: compositor pointer grab via layer-shell (not implemented).
+/// Probe: compositor pointer grab can use layer-shell (same global as outline).
 pub fn layer_grab_available() -> Result<(), CaptureError> {
-    Err(CaptureError::Message(
-        "Wayland layer-shell grab not implemented yet".into(),
-    ))
+    layer_shell::layer_shell_available()
 }
