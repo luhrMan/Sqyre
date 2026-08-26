@@ -1,6 +1,7 @@
 //! Macro tree row chrome: icon badge, pastel pills, swatches.
 
 use crate::icon_cache::IconCache;
+#[cfg(test)]
 use crate::image_view;
 use crate::pickers::attach_item_icon_tooltip;
 use crate::theme::paint_galley_centered;
@@ -219,17 +220,14 @@ fn paint_target_thumb(
     let slot = Vec2::new(TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
     let (slot_rect, slot_resp) = ui.allocate_exact_size(slot, Sense::hover());
     if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
-        let [tw, th] = tex.size();
-        let size =
-            image_view::fit_in_box(tw as f32, th as f32, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
-        let inner = egui::Rect::from_center_size(slot_rect.center(), size);
-        let _ = ui.put(
-            inner,
-            egui::Image::new((tex.id(), size))
-                .fit_to_exact_size(size)
-                .maintain_aspect_ratio(true)
-                .corner_radius(3.0)
-                .bg_fill(Color32::from_black_alpha(20)),
+        crate::icon_cache::paint_icon_thumb_at(
+            ui,
+            &tex,
+            slot_rect.center(),
+            TARGET_THUMB_MAX_W,
+            TARGET_THUMB_MAX_H,
+            3.0,
+            Some(Color32::from_black_alpha(20)),
         );
     } else {
         let inner =
@@ -658,11 +656,11 @@ mod tests {
 
     #[test]
     fn thumb_display_size_preserves_aspect() {
-        let wide = image_view::fit_in_box(64.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
+        let wide = image_view::fit_icon_thumb(64.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         assert!((wide.x / wide.y - 2.0).abs() < 0.01);
         assert!(wide.y <= TARGET_THUMB_MAX_H + 0.01);
 
-        let tall = image_view::fit_in_box(16.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
+        let tall = image_view::fit_icon_thumb(16.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         assert!((tall.x / tall.y - 0.5).abs() < 0.01);
         assert!((tall.y - TARGET_THUMB_MAX_H).abs() < 0.01);
     }

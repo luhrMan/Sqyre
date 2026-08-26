@@ -2,8 +2,9 @@
 
 use crate::assets;
 use crate::demo_icons;
+use crate::image_view;
 use crate::window_types::ProcessIcon;
-use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
+use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;
@@ -14,6 +15,10 @@ const FALLBACK_KEY: &str = "__sqyre_fallback__";
 const FALLBACK_PX: u32 = 128;
 /// Display size for OS process icons in lists / forms.
 pub const PROCESS_ICON_SIDE: f32 = 16.0;
+
+fn icon_texture_options() -> TextureOptions {
+    TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear))
+}
 
 #[derive(Default)]
 pub struct IconCache {
@@ -31,7 +36,7 @@ impl IconCache {
         Self::default()
     }
 
-    /// First variant PNG for `program~item`, loaded into a retained texture.
+    /// One variant PNG for `program~item` (deterministic pick from `target`).
     ///
     /// Falls back to in-memory [`demo_icons`] placeholders when no file exists
     /// (WASM demo seed).
@@ -44,14 +49,7 @@ impl IconCache {
         if self.missing.contains_key(target) {
             return None;
         }
-        let path = demo_icons::merged_variant_paths(catalog, target)
-            .into_iter()
-            .next();
-        let Some(path) = path else {
-            self.missing.insert(target.to_string(), ());
-            return None;
-        };
-        match self.get_or_load(ctx, &path) {
+        match self.for_target_random_variant(ctx, catalog, target) {
             Some(t) => Some(t),
             None => {
                 self.missing.insert(target.to_string(), ());
@@ -71,6 +69,26 @@ impl IconCache {
             .unwrap_or_else(|| self.sqyre_fallback(ctx))
     }
 
+    /// One variant PNG for `program~item`, chosen deterministically from `target`.
+    pub fn for_target_random_variant(
+        &mut self,
+        ctx: &egui::Context,
+        catalog: &ProgramCatalog,
+        target: &str,
+    ) -> Option<TextureHandle> {
+        let paths = demo_icons::merged_variant_paths(catalog, target);
+        if paths.is_empty() {
+            return None;
+        }
+        let start = stable_variant_index(target, paths.len());
+        for i in 0..paths.len() {
+            if let Some(tex) = self.for_path(ctx, &paths[(start + i) % paths.len()]) {
+                return Some(tex);
+            }
+        }
+        None
+    }
+
     pub fn sqyre_fallback(&mut self, ctx: &egui::Context) -> TextureHandle {
         if let Some(t) = &self.fallback {
             return t.clone();
@@ -78,7 +96,7 @@ impl IconCache {
         let (rgba, w, h) =
             assets::app_icon_rgba(FALLBACK_PX).expect("embedded Sqyre SVG must rasterize");
         let color = ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
-        let tex = ctx.load_texture(FALLBACK_KEY, color, TextureOptions::LINEAR);
+        let tex = ctx.load_texture(FALLBACK_KEY, color, icon_texture_options());
         self.fallback = Some(tex.clone());
         tex
     }
@@ -194,7 +212,7 @@ impl IconCache {
         let size = [icon.width as usize, icon.height as usize];
         let color = ColorImage::from_rgba_unmultiplied(size, &icon.rgba);
         let name = format!("process_icon:{key}");
-        let tex = ctx.load_texture(name, color, TextureOptions::LINEAR);
+        let tex = ctx.load_texture(name, color, icon_texture_options());
         self.process.insert(key.to_string(), tex.clone());
         tex
     }
@@ -207,6 +225,43 @@ impl IconCache {
         self.textures.insert(path.to_path_buf(), tex.clone());
         Some(tex)
     }
+}
+
+fn stable_variant_index(target: &str, count: usize) -> usize {
+    if count <= 1 {
+        return 0;
+    }
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    target.hash(&mut hasher);
+    (hasher.finish() as usize) % count
+}
+
+/// Paint a catalog/item icon centered at `center`, fitting inside `max_w`×`max_h`.
+pub fn paint_icon_thumb_at(
+    ui: &egui::Ui,
+    tex: &TextureHandle,
+    center: egui::Pos2,
+    max_w: f32,
+    max_h: f32,
+    corner_radius: f32,
+    bg_fill: Option<egui::Color32>,
+) -> egui::Rect {
+    let [tw, th] = tex.size();
+    let size = image_view::fit_icon_thumb(tw as f32, th as f32, max_w, max_h);
+    let rect = egui::Rect::from_center_size(center, size);
+    if let Some(bg) = bg_fill {
+        let slot = egui::Rect::from_center_size(center, Vec2::new(max_w, max_h));
+        ui.painter().rect_filled(slot, corner_radius, bg);
+    }
+    ui.painter().image(
+        tex.id(),
+        rect,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        Color32::WHITE,
+    );
+    rect
 }
 
 /// Draw a square process icon (non-interactive).
@@ -379,14 +434,14 @@ fn load_texture(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
     let demo = demo_icons::get(path)?;
     let color =
         ColorImage::from_rgba_unmultiplied([demo.width as usize, demo.height as usize], &demo.rgba);
-    Some(ctx.load_texture(path.to_string_lossy(), color, TextureOptions::LINEAR))
+    Some(ctx.load_texture(path.to_string_lossy(), color, icon_texture_options()))
 }
 
 fn load_png_bytes(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<TextureHandle> {
     let img = image::load_from_memory(bytes).ok()?.into_rgba8();
     let size = [img.width() as usize, img.height() as usize];
     let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
-    Some(ctx.load_texture(name.to_owned(), color, TextureOptions::LINEAR))
+    Some(ctx.load_texture(name.to_owned(), color, icon_texture_options()))
 }
 
 #[cfg(test)]
@@ -410,6 +465,15 @@ mod tests {
         assert!(
             cache.missing.contains_key("Prog~Item"),
             "path invalidation alone must not imply a target recheck"
+        );
+    }
+
+    #[test]
+    fn stable_variant_index_is_deterministic() {
+        assert_eq!(stable_variant_index("Prog~Item", 5), stable_variant_index("Prog~Item", 5));
+        assert_ne!(
+            stable_variant_index("Prog~Item", 5),
+            stable_variant_index("Prog~Other", 5)
         );
     }
 }

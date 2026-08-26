@@ -165,6 +165,11 @@ pub fn fit_in_box(w: f32, h: f32, max_w: f32, max_h: f32) -> Vec2 {
     Vec2::new(w.max(1.0) * scale, h.max(1.0) * scale)
 }
 
+/// Letterbox an item icon inside a thumb cell (always show the full image).
+pub fn fit_icon_thumb(w: f32, h: f32, max_w: f32, max_h: f32) -> Vec2 {
+    fit_in_box(w, h, max_w, max_h)
+}
+
 /// Fit `w`×`h` inside a `max_w`×`max_h` box, preserving aspect ratio, without
 /// enlarging sources that are already smaller than the box.
 pub fn fit_in_box_no_upscale(w: f32, h: f32, max_w: f32, max_h: f32) -> Vec2 {
@@ -276,6 +281,17 @@ mod tests {
         let square = fit_in_box(200.0, 100.0, 50.0, 50.0);
         assert!((square.x - 50.0).abs() < 0.01);
         assert!((square.y - 25.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn fit_icon_thumb_letterboxes() {
+        let wide = fit_icon_thumb(64.0, 48.0, 30.0, 18.0);
+        assert!((wide.x - 24.0).abs() < 0.01);
+        assert!((wide.y - 18.0).abs() < 0.01);
+
+        let square = fit_icon_thumb(64.0, 64.0, 18.0, 18.0);
+        assert!((square.x - 18.0).abs() < 0.01);
+        assert!((square.y - 18.0).abs() < 0.01);
     }
 
     #[test]

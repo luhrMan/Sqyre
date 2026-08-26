@@ -65,16 +65,22 @@ fn paint_item_icon_tooltip(
                     continue;
                 };
                 let [tw, th] = tex.size();
-                let size = image_view::fit_in_box(
+                let size = image_view::fit_icon_thumb(
                     tw as f32,
                     th as f32,
                     VARIANT_TIP_THUMB,
                     VARIANT_TIP_THUMB,
                 );
-                ui.add(
-                    egui::Image::new((tex.id(), size))
-                        .fit_to_exact_size(size)
-                        .maintain_aspect_ratio(true),
+                let (rect, _) =
+                    ui.allocate_exact_size(size, egui::Sense::hover());
+                crate::icon_cache::paint_icon_thumb_at(
+                    ui,
+                    &tex,
+                    rect.center(),
+                    VARIANT_TIP_THUMB,
+                    VARIANT_TIP_THUMB,
+                    0.0,
+                    None,
                 );
             }
         });
@@ -204,16 +210,7 @@ fn icon_grid_cell_ex(
     }
 
     let tex = icons.for_target_or_fallback(ui.ctx(), catalog, target);
-    let [tw, th] = tex.size();
-    let size = image_view::fit_in_box(tw as f32, th as f32, thumb, thumb);
-    let img_rect = egui::Rect::from_center_size(body.center(), size);
-    // Paint directly — avoid `ui.put(Image)` which can advance the wrap cursor.
-    ui.painter().image(
-        tex.id(),
-        img_rect,
-        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-        Color32::WHITE,
-    );
+    crate::icon_cache::paint_icon_thumb_at(ui, &tex, body.center(), thumb, thumb, 0.0, None);
 
     if show_remove {
         let btn_rect = egui::Rect::from_center_size(
