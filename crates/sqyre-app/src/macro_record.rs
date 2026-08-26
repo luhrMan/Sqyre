@@ -70,6 +70,7 @@ pub(crate) struct MacroRecordShow<'a> {
     pub screen_click: &'a ScreenClickBridge,
     pub macros: &'a [(String, Vec<String>)],
     pub compact_program_headers: bool,
+    pub image_search_tooltip_preview: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -130,6 +131,7 @@ impl MacroRecordUi {
             screen_click,
             macros,
             compact_program_headers,
+            image_search_tooltip_preview,
         } = ui;
         match self {
             Self::Closed => MacroRecordShowResult {
@@ -463,6 +465,7 @@ fn paint_review(
                 catalog,
                 icons,
                 previews,
+                image_search_tooltip_preview,
             },
             theme: VarTheme {
                 known_vars: &known_vars,

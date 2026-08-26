@@ -5,9 +5,8 @@ use crate::action_tooltip::sections::{tip_section, tip_wrapped_section};
 use crate::pickers::options;
 use crate::widgets::{combo_str_labeled, drag_field, text_field};
 use eframe::egui;
-use sqyre_domain::{
-    ConditionBlock, KnownVariableNames, ListColumn, LoopJumpMode, Macro, ScalarValue,
-};
+use sqyre_domain::{ConditionBlock, KnownVariableNames, ListColumn, LoopJumpMode, Macro, ScalarValue};
+use sqyre_persist::{MAX_WHILE_MAX_ITERATIONS};
 
 pub(super) fn paint_loop_jump(ui: &mut egui::Ui, mode: &mut LoopJumpMode) {
     tip_wrapped_section(ui, |ui| {
@@ -60,7 +59,7 @@ pub(super) fn paint_while(
             "Max iterations",
             h::MAX_ITERATIONS,
             max_iterations,
-            |d| d,
+            |d| d.speed(1).range(0..=MAX_WHILE_MAX_ITERATIONS),
         );
     });
 }

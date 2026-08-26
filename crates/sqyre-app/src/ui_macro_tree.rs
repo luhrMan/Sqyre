@@ -332,11 +332,18 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             .clone();
         let discarded = {
             let macro_ = &mut app.workspace.macros[idx];
+            previews.set_image_search_close_matches_distance(
+                app.settings_ui.settings().image_search_close_matches_distance,
+            );
             let mut tip_ui = TipUiCtx {
                 paint: CatalogPaint {
                     catalog,
                     icons,
                     previews,
+                    image_search_tooltip_preview: app
+                        .settings_ui
+                        .settings()
+                        .image_search_tooltip_preview,
                 },
                 theme: VarTheme {
                     known_vars: &known_vars,

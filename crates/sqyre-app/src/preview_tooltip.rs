@@ -1,10 +1,11 @@
 //! Hover tooltips showing a live screen capture around a point or search area.
 
+use crate::icon_cache::IconCache;
 use crate::image_view::{self, ImageViewTransform};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
 use sqyre_capture::{mark_site, shared_capturer_nonblocking, OsCapturer};
-use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
+use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, MatchMethod, ScalarValue};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use sqyre_ports::{CaptureError, DesktopRect};
 use std::collections::HashMap;
@@ -67,8 +68,11 @@ pub struct PreviewTooltipCache {
     pending: HashMap<String, PendingCapture>,
     /// Failed captures — avoids respawning on every repaint for permanent errors.
     failures: HashMap<String, FailureEntry>,
-    /// Desktop outline requested by a tooltip preview this frame (absolute corners).
+    /// Desktop outline from an embedded preview (action tooltip body, edit form).
     desktop_outline: Option<(i32, i32, i32, i32)>,
+    /// Desktop outline from a hovered list row / coord label; wins over embedded.
+    desktop_outline_hover: Option<(i32, i32, i32, i32)>,
+    image_search: image_search_preview::ImageSearchPreviewCache,
 }
 
 impl PreviewTooltipCache {
@@ -99,6 +103,12 @@ impl PreviewTooltipCache {
         self.pending.clear();
         self.failures.clear();
         self.desktop_outline = None;
+        self.desktop_outline_hover = None;
+        self.image_search.clear();
+    }
+
+    pub fn set_image_search_close_matches_distance(&mut self, distance: i32) {
+        self.image_search.close_matches_distance = distance;
     }
 
     /// Absolute desktop corners requested by a tooltip preview last frame, if any.
@@ -106,11 +116,20 @@ impl PreviewTooltipCache {
     /// Consumed by the recording overlay so the gold selection outline is drawn on
     /// the real desktop at the point / search-area location while the tip is open.
     pub fn take_desktop_outline(&mut self) -> Option<(i32, i32, i32, i32)> {
-        self.desktop_outline.take()
+        let outline = self
+            .desktop_outline_hover
+            .take()
+            .or_else(|| self.desktop_outline.take());
+        self.desktop_outline = None;
+        outline
     }
 
-    fn request_desktop_outline(&mut self, coords: PreviewCoords) {
+    fn request_desktop_outline_embedded(&mut self, coords: PreviewCoords) {
         self.desktop_outline = Some(desktop_outline_rect(coords));
+    }
+
+    fn request_desktop_outline_hover(&mut self, coords: PreviewCoords) {
+        self.desktop_outline_hover = Some(desktop_outline_rect(coords));
     }
 
     /// Paint an egui hover tooltip for a program entity list row.
@@ -128,7 +147,7 @@ impl PreviewTooltipCache {
         }
         match entity_preview_spec(catalog, program, name, kind) {
             Ok((key, caption, coords)) => {
-                self.request_desktop_outline(coords);
+                self.request_desktop_outline_hover(coords);
                 let preview =
                     self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
                 response.clone().on_hover_ui(|ui| match &preview {
@@ -160,9 +179,10 @@ impl PreviewTooltipCache {
         kind: PreviewKind,
         force: bool,
     ) {
-        let preview = match ref_preview_spec(catalog, coord_ref, kind) {
+        let macro_ = Macro::new("", 0, vec![]);
+        let preview = match ref_preview_spec(catalog, &macro_, coord_ref, kind) {
             Ok((key, caption, coords)) => {
-                self.request_desktop_outline(coords);
+                self.request_desktop_outline_embedded(coords);
                 self.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM)
             }
             Err(err) => Err(err),
@@ -175,6 +195,40 @@ impl PreviewTooltipCache {
                 ui.colored_label(crate::theme::error_fg(), err);
             }
         }
+    }
+
+    /// Search-area capture plus live template-match overlays for Image Search.
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_image_search_action_preview(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        macro_: &Macro,
+        search_area: &CoordinateRef,
+        targets: &[String],
+        tolerance: f64,
+        blur: i32,
+        match_method: MatchMethod,
+        force: bool,
+    ) {
+        let ctx = ui.ctx().clone();
+        let preview =
+            paint_search_area_capture(ui, self, catalog, macro_, search_area, force);
+        self.image_search.paint_overlays(
+            ui,
+            &ctx,
+            catalog,
+            icons,
+            macro_,
+            search_area,
+            targets,
+            tolerance,
+            blur,
+            match_method,
+            force,
+            preview,
+        );
     }
 
     /// Hover tooltip variant of [`Self::paint_for_coordinate_ref`].
@@ -190,9 +244,10 @@ impl PreviewTooltipCache {
             return;
         }
         let label = coord_ref.as_str().to_string();
-        let preview = match ref_preview_spec(catalog, coord_ref, kind) {
+        let macro_ = Macro::new("", 0, vec![]);
+        let preview = match ref_preview_spec(catalog, &macro_, coord_ref, kind) {
             Ok((key, caption, coords)) => {
-                self.request_desktop_outline(coords);
+                self.request_desktop_outline_hover(coords);
                 match self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM) {
                     Ok((tex, cap)) => Ok((tex, cap)),
                     Err(err) => Err((caption, err)),
@@ -240,7 +295,7 @@ impl PreviewTooltipCache {
     }
 
     /// Embedded form-panel preview for a search area (uses form field coords).
-    /// Returns the viewport rect for cardinal coord overlays.
+    /// Returns the viewport rect and native image size (for heatmap alignment).
     /// Pass `None` for a coordinate that is a variable or non-literal expression.
     #[allow(clippy::too_many_arguments)]
     pub fn paint_search_area_panel(
@@ -252,9 +307,12 @@ impl PreviewTooltipCache {
         bottom: Option<i32>,
         force: bool,
         view: &mut ImageViewTransform,
-    ) -> egui::Rect {
+    ) -> (egui::Rect, egui::Vec2) {
         let (Some(left), Some(top), Some(right), Some(bottom)) = (left, top, right, bottom) else {
-            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG, view);
+            return (
+                paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG, view),
+                egui::Vec2::ZERO,
+            );
         };
         let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
         let caption = format!("Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}");
@@ -273,8 +331,15 @@ impl PreviewTooltipCache {
             PANEL_MAX_DIM,
         );
         match preview {
-            Ok((tex, _)) => paint_preview_panel_image(ui, &tex, view),
-            Err(err) => paint_preview_panel_placeholder(ui, &err, view),
+            Ok((tex, _)) => {
+                let [tw, th] = tex.size();
+                let rect = paint_preview_panel_image(ui, &tex, view);
+                (rect, egui::vec2(tw as f32, th as f32))
+            }
+            Err(err) => (
+                paint_preview_panel_placeholder(ui, &err, view),
+                egui::Vec2::ZERO,
+            ),
         }
     }
 
@@ -559,14 +624,14 @@ pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, Pre
 
 fn ref_preview_spec(
     catalog: &ProgramCatalog,
+    macro_: &Macro,
     coord_ref: &CoordinateRef,
     kind: PreviewKind,
 ) -> Result<(String, String, PreviewCoords), String> {
-    let macro_ = Macro::new("", 0, vec![]);
     match kind {
         PreviewKind::Point => {
             let (x, y) = catalog
-                .resolve_point(coord_ref, &macro_)
+                .resolve_point(coord_ref, macro_)
                 .map_err(|e| e.to_string())?;
             let coords = PreviewCoords::Point { x, y };
             Ok((
@@ -577,7 +642,7 @@ fn ref_preview_spec(
         }
         PreviewKind::SearchArea | PreviewKind::Collection => {
             let (left, top, right, bottom) = catalog
-                .resolve_search_area(coord_ref, &macro_)
+                .resolve_search_area(coord_ref, macro_)
                 .map_err(|e| e.to_string())?;
             let coords = PreviewCoords::SearchArea {
                 left,
@@ -765,10 +830,43 @@ fn coord_to_literal(v: &ScalarValue) -> Option<i32> {
 }
 
 fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str) {
+    let _ = paint_preview_image(ui, tex);
+    ui.label(caption);
+}
+
+fn paint_preview_image(ui: &mut egui::Ui, tex: &TextureHandle) -> (egui::Rect, Vec2) {
     let [tw, th] = tex.size();
     let size = fit_display(tw as f32, th as f32);
-    ui.add(egui::Image::new((tex.id(), size)));
-    ui.label(caption);
+    let resp = ui.add(egui::Image::new((tex.id(), size)));
+    (resp.rect, Vec2::new(tw as f32, th as f32))
+}
+
+fn paint_search_area_capture(
+    ui: &mut egui::Ui,
+    cache: &mut PreviewTooltipCache,
+    catalog: &ProgramCatalog,
+    macro_: &Macro,
+    search_area: &CoordinateRef,
+    force: bool,
+) -> Option<(egui::Rect, Vec2)> {
+    let preview = match ref_preview_spec(catalog, macro_, search_area, PreviewKind::SearchArea) {
+        Ok((key, caption, coords)) => {
+            cache.request_desktop_outline_embedded(coords);
+            cache.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM)
+        }
+        Err(err) => Err(err),
+    };
+    match preview {
+        Ok((tex, cap)) => {
+            let (rect, size) = paint_preview_image(ui, &tex);
+            ui.label(cap);
+            Some((rect, size))
+        }
+        Err(err) => {
+            ui.colored_label(crate::theme::error_fg(), err);
+            None
+        }
+    }
 }
 
 fn panel_viewport_size(ui: &egui::Ui) -> Vec2 {

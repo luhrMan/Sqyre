@@ -3,7 +3,10 @@
 use crate::action_tooltip::help as h;
 use crate::widgets::{combo_str, drag_field};
 use eframe::egui;
-use sqyre_domain::MatchMethod;
+use sqyre_domain::{
+    clamp_match_blur, clamp_match_tolerance, MatchMethod, MAX_MATCH_BLUR, MAX_NORMED_MATCH_TOLERANCE,
+    MAX_UNNORMED_MATCH_TOLERANCE, MIN_MATCH_BLUR, MIN_MATCH_TOLERANCE,
+};
 
 fn tolerance_help(method: MatchMethod) -> &'static str {
     if matches!(method, MatchMethod::Sqdiff | MatchMethod::SqdiffNormed) {
@@ -15,6 +18,21 @@ fn tolerance_help(method: MatchMethod) -> &'static str {
     }
 }
 
+pub fn configure_match_blur_drag(d: egui::DragValue<'_>) -> egui::DragValue<'_> {
+    d.speed(1).range(MIN_MATCH_BLUR..=MAX_MATCH_BLUR)
+}
+
+pub fn configure_match_tolerance_drag(d: egui::DragValue<'_>, method: MatchMethod) -> egui::DragValue<'_> {
+    if method.is_normed() {
+        d.speed(0.01)
+            .range(MIN_MATCH_TOLERANCE..=MAX_NORMED_MATCH_TOLERANCE)
+            .max_decimals(3)
+    } else {
+        d.speed(1.0)
+            .range(MIN_MATCH_TOLERANCE..=MAX_UNNORMED_MATCH_TOLERANCE)
+    }
+}
+
 /// Tolerance + blur (+ optional method combo).
 pub fn paint_match_settings(
     ui: &mut egui::Ui,
@@ -23,15 +41,14 @@ pub fn paint_match_settings(
     match_method: &mut MatchMethod,
     show_method: bool,
 ) {
+    *blur = clamp_match_blur(*blur);
+    *tolerance = clamp_match_tolerance(*tolerance, *match_method);
+
     let tol_help = tolerance_help(*match_method);
-    if match_method.is_normed() {
-        drag_field(ui, "Tolerance", tol_help, tolerance, |d| {
-            d.speed(0.01).range(0.0..=1.0)
-        });
-    } else {
-        drag_field(ui, "Tolerance", tol_help, tolerance, |d| d.speed(1.0));
-    }
-    drag_field(ui, "Blur", h::IS_BLUR, blur, |d| d);
+    drag_field(ui, "Tolerance", tol_help, tolerance, |d| {
+        configure_match_tolerance_drag(d, *match_method)
+    });
+    drag_field(ui, "Blur", h::IS_BLUR, blur, configure_match_blur_drag);
     if show_method {
         paint_match_method(ui, match_method);
     }

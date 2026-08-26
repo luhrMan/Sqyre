@@ -76,7 +76,6 @@ mod native {
         #[cfg(all(target_os = "linux", feature = "portal-capture"))]
         {
             use sqyre_capture::{LinuxSessionInfo, LinuxSessionKind, PortalEisInput};
-            use sqyre_ports::PortalRemoteInput;
             use std::sync::Arc;
             if LinuxSessionInfo::detect().session_kind == LinuxSessionKind::Wayland {
                 return OsAutomation::new_with_portal(Some(Arc::new(PortalEisInput)));

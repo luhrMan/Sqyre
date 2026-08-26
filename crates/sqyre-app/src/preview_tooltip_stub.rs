@@ -1,8 +1,9 @@
 //! Browser editor: coordinate previews without live screen capture.
 
+use crate::icon_cache::IconCache;
 use crate::image_view::ImageViewTransform;
 use eframe::egui;
-use sqyre_domain::{Action, ActionKind, CoordinateRef};
+use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, MatchMethod};
 use sqyre_persist::ProgramCatalog;
 
 const UNAVAILABLE: &str = "Live screen preview requires the desktop app.";
@@ -44,6 +45,25 @@ impl PreviewTooltipCache {
                 .clone()
                 .on_hover_text(format!("{program}~{name}\n{UNAVAILABLE}"));
         }
+    }
+
+    pub fn set_image_search_close_matches_distance(&mut self, _distance: i32) {}
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn paint_image_search_action_preview(
+        &mut self,
+        ui: &mut egui::Ui,
+        _catalog: &ProgramCatalog,
+        _icons: &mut IconCache,
+        _macro_: &Macro,
+        _search_area: &CoordinateRef,
+        _targets: &[String],
+        _tolerance: f64,
+        _blur: i32,
+        _match_method: MatchMethod,
+        _force: bool,
+    ) {
+        ui.colored_label(crate::theme::error_fg(), UNAVAILABLE);
     }
 
     pub fn paint_for_coordinate_ref(
@@ -92,8 +112,8 @@ impl PreviewTooltipCache {
         _bottom: Option<i32>,
         _force: bool,
         view: &mut ImageViewTransform,
-    ) -> egui::Rect {
-        paint_unavailable_panel(ui, view)
+    ) -> (egui::Rect, egui::Vec2) {
+        (paint_unavailable_panel(ui, view), egui::Vec2::ZERO)
     }
 }
 

@@ -46,6 +46,7 @@ pub fn paint_coord_ref_list(
         catalog,
         icons,
         previews,
+        ..
     } = paint;
     let q = search.trim().to_ascii_lowercase();
     let res = catalog.resolution_key().to_string();
