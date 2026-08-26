@@ -133,16 +133,25 @@ pub fn run() -> eframe::Result<()> {
     };
 
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([960.0, 640.0])
-            .with_min_inner_size([100.0, 100.0])
-            .with_title("Sqyre")
-            .with_app_id(assets::APP_ID)
-            .with_icon(assets::app_icon()),
+        viewport: {
+            let builder = egui::ViewportBuilder::default()
+                .with_inner_size([960.0, 640.0])
+                .with_min_inner_size([100.0, 100.0])
+                .with_title("Sqyre")
+                .with_app_id(assets::APP_ID)
+                .with_icon(assets::app_icon());
+            // wgpu deferred overlay viewports inherit transparency from the root GL/VK config.
+            #[cfg(target_os = "linux")]
+            let builder = builder.with_transparent(true);
+            builder
+        },
         // wgpu's DX12 HWND swapchain has no per-pixel alpha; glow + DWM blur-behind
         // is required for deferred overlay button transparency (egui#3632).
+        // Linux Wayland: glow cannot create transparent deferred viewports; wgpu does.
         #[cfg(target_os = "windows")]
         renderer: eframe::Renderer::Glow,
+        #[cfg(target_os = "linux")]
+        renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
     eframe::run_native(
@@ -604,7 +613,6 @@ impl SqyreApp {
 impl eframe::App for SqyreApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.take_pending_db_import();
-        ui_overlays::handle_close_to_tray(self, ui.ctx());
         // Poll background tasks before floating windows so Settings sees fresh update state.
         ui_overlays::sync_frame_state(self, ui.ctx());
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
@@ -612,19 +620,6 @@ impl eframe::App for SqyreApp {
             && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed())
         {
             self.sync_recording_overlay(ui.ctx());
-            // If hide/minimize is ignored, paint a panel so we do not leave a
-            // transparent clear (reads as a black window on GNOME).
-            egui::CentralPanel::default()
-                .frame(egui::Frame::NONE.fill(crate::theme::overlay_panel_fill()))
-                .show(ui, |ui| {
-                    ui.centered_and_justified(|ui| {
-                        ui.label(
-                            egui::RichText::new("Recording…")
-                                .color(crate::theme::PRIMARY)
-                                .strong(),
-                        );
-                    });
-                });
             return;
         }
         ui_overlays::show_floating_windows(self, ui.ctx());

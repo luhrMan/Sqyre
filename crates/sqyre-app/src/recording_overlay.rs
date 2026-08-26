@@ -17,10 +17,9 @@
 //!
 //! Outline / grab HWNDs and X11 windows are updated on the UI thread only. A short
 //! poller only `request_repaint`s while recording is armed so the HUD keeps updating
-//! when the root viewport is `Visible(false)`. On GNOME Wayland the main window stays
-//! mapped (Recording panel) because a minimized surface gets no frame callbacks.
-//! Driving Win32 outline windows from a background thread while glow paints preview
-//! textures hard-crashed on Windows (no Rust panic / `crash.log`).
+//! when the root viewport is `Visible(false)`. On Wayland the main window is unmapped
+//! during recording (GSR-style) so portal captures exclude Sqyre; selection uses the
+//! frozen snapshot cover and a deferred HUD viewport.
 
 use crate::theme;
 use eframe::egui::{self, Pos2, TextStyle, Vec2, ViewportBuilder, ViewportClass, ViewportId};
@@ -98,6 +97,7 @@ impl RecordingOverlay {
         screen_click: &ScreenClickBridge,
         macro_record: Option<&sqyre_hotkeys::MacroRecordBridge>,
         preview_outline: Option<OutlineCorners>,
+        main_window_hidden: bool,
     ) {
         let macro_armed = macro_record.is_some_and(|b| b.is_armed());
         let recording = screen_click.is_armed() || macro_armed;
@@ -124,7 +124,7 @@ impl RecordingOverlay {
 
         if recording {
             self.ensure_wake_poller(ctx.clone(), screen_click.clone(), macro_record.cloned());
-            self.show_coords_hud(ctx, screen_click, macro_record);
+            self.show_coords_hud(ctx, screen_click, macro_record, main_window_hidden);
         } else {
             self.hud_at_top = None;
             self.hud_window_size = None;
@@ -479,6 +479,7 @@ impl RecordingOverlay {
         ctx: &egui::Context,
         screen_click: &ScreenClickBridge,
         macro_record: Option<&sqyre_hotkeys::MacroRecordBridge>,
+        main_window_hidden: bool,
     ) {
         let text = macro_record
             .and_then(|b| b.status_label())
@@ -544,9 +545,10 @@ impl RecordingOverlay {
                 ),
             )
         };
-        // GNOME embeds deferred viewports in the root window and ignores
-        // `with_position`. Prefer an in-window banner over a second OS surface.
-        if skip_x11_pointer_grab() {
+        // When the main window stays visible on Wayland, paint the HUD in-window
+        // (GNOME embeds deferred viewports in the root and ignores `with_position`).
+        // After GSR-style hide (`Visible(false)`), use a separate deferred viewport.
+        if skip_x11_pointer_grab() && !main_window_hidden {
             paint_hud_window(ctx, &text, hud_at_top);
             return;
         }

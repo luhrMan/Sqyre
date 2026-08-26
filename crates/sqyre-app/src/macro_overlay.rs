@@ -14,9 +14,10 @@ use eframe::egui::{self, Color32, Pos2, ViewportBuilder, ViewportClass, Viewport
 use parking_lot::Mutex;
 use sqyre_capture::{
     enable_overlay_window_transparency, get_active_window, mark_site, note,
-    skip_taskbar_for_overlay_windows, window_is_our_process, window_matches_binding,
-    window_matches_program, WindowInfo, OVERLAY_WM_TITLE,
+    skip_taskbar_for_overlay_windows, sync_overlay_window_geometry, window_is_our_process,
+    window_matches_binding, window_matches_program, WindowInfo, OVERLAY_WM_TITLE,
 };
+use std::collections::HashMap;
 use sqyre_persist::{
     OverlayButtonConfig, ProgramCatalog, DEFAULT_OVERLAY_BUTTON_SIZE, GENERAL_PROGRAM,
     MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
@@ -39,6 +40,8 @@ pub struct MacroOverlay {
     last_focus_err_log: Option<Instant>,
     /// Last logged (shown, gated, preview) tuple — avoid flooding stderr notes.
     last_sync_sig: Option<(usize, bool, bool)>,
+    /// Wayland: match XWayland overlay windows to buttons after coordinate edits.
+    overlay_last_positions: HashMap<String, (i32, i32)>,
 }
 
 impl Default for MacroOverlay {
@@ -54,6 +57,7 @@ impl MacroOverlay {
             last_skip_taskbar: None,
             last_focus_err_log: None,
             last_sync_sig: None,
+            overlay_last_positions: HashMap::new(),
         }
     }
 
@@ -93,6 +97,9 @@ impl MacroOverlay {
         let mut any_shown = false;
         let mut any_busy = false;
         let mut shown = 0usize;
+        let mut overlay_geom_hints: Vec<(String, i32, i32, u32, u32)> = Vec::new();
+        let ppp = ctx.pixels_per_point().max(0.01);
+        let wayland_overlay_geom = wayland_overlay_needs_x11_geometry();
 
         for btn in buttons {
             if preview_id == Some(btn.id.as_str()) {
@@ -116,7 +123,14 @@ impl MacroOverlay {
             let (x, y) = btn.resolved_position(catalog);
             drawn.x = x;
             drawn.y = y;
-            show_button_viewport(ctx, &drawn, Arc::clone(pending_macros), busy);
+            show_button_viewport(
+                ctx,
+                &drawn,
+                Arc::clone(pending_macros),
+                busy,
+                wayland_overlay_geom,
+            );
+            push_overlay_geom_hint(&mut overlay_geom_hints, &drawn, ppp);
             any_shown = true;
             shown += 1;
         }
@@ -128,7 +142,8 @@ impl MacroOverlay {
             let (x, y) = btn.resolved_position(catalog);
             drawn.x = x;
             drawn.y = y;
-            show_button_viewport(ctx, &drawn, Arc::clone(pending_macros), busy);
+            show_button_viewport(ctx, &drawn, Arc::clone(pending_macros), busy, wayland_overlay_geom);
+            push_overlay_geom_hint(&mut overlay_geom_hints, &drawn, ppp);
             any_shown = true;
             shown += 1;
             // Keep the preview viewport updating while the form is edited.
@@ -156,6 +171,14 @@ impl MacroOverlay {
 
         if any_shown {
             self.maybe_hint_overlay_windows();
+            if wayland_overlay_geom {
+                if let Err(e) = sync_overlay_window_geometry(
+                    &overlay_geom_hints,
+                    &mut self.overlay_last_positions,
+                ) {
+                    note(&format!("overlay: sync geometry failed: {e}"));
+                }
+            }
         }
 
         if any_gated {
@@ -240,11 +263,47 @@ fn button_is_busy(btn: &OverlayButtonConfig, running_macro: Option<&str>) -> boo
     btn.macro_name.trim() == running
 }
 
+fn wayland_overlay_needs_x11_geometry() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        sqyre_capture::linux::LinuxSessionInfo::detect().has_wayland
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+fn push_overlay_geom_hint(
+    hints: &mut Vec<(String, i32, i32, u32, u32)>,
+    btn: &OverlayButtonConfig,
+    ppp: f32,
+) {
+    let size = if btn.size > 0.0 {
+        btn.size
+    } else {
+        DEFAULT_OVERLAY_BUTTON_SIZE
+    }
+    .clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
+    let style = overlay_icons::OverlayPaintStyle::from_config(btn);
+    let pad = VIEWPORT_PAD_MIN.max(style.border_width * (2.0 / 1.5) + 1.0);
+    let outer = size + pad * 2.0;
+    let phys_outer = (outer * ppp).round().max(1.0);
+    hints.push((
+        btn.id.clone(),
+        btn.x.round() as i32,
+        btn.y.round() as i32,
+        phys_outer as u32,
+        phys_outer as u32,
+    ));
+}
+
 fn show_button_viewport(
     ctx: &egui::Context,
     btn: &OverlayButtonConfig,
     pending: Arc<Mutex<Vec<String>>>,
     busy: bool,
+    wayland_overlay_geom: bool,
 ) {
     // Stable id from settings — must not change per frame or OS windows pile up in Alt-Tab.
     let id = ViewportId::from_hash_of(format!("sqyre_macro_overlay_{}", btn.id));
@@ -297,6 +356,10 @@ fn show_button_viewport(
             busy,
         );
     });
+
+    if !wayland_overlay_geom {
+        ctx.send_viewport_cmd_to(egui::ViewportCommand::OuterPosition(btn_pos), id);
+    }
 }
 
 fn overlay_tip_text(macro_name: &str, label: &str) -> String {

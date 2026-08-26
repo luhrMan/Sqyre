@@ -43,18 +43,15 @@ impl SqyreApp {
                 self.hidden_for_recording = true;
                 #[cfg(feature = "native-runtime")]
                 sqyre_capture::mark_site("recording:hide_main");
-                // GNOME Wayland ignores Visible(false) (black window) and a
-                // minimized xdg_toplevel gets no frame callbacks, so the
-                // rubber-band (updated from egui paints) freezes after one frame.
-                // Keep the surface mapped and paint the in-window Recording panel.
+                // GSR destroys its overlay (`window.reset()`) before portal capture so
+                // the UI is not in the screencast. Unmap the main viewport; the wake
+                // poller keeps outline/HUD updates alive while hidden.
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                 #[cfg(all(feature = "native-runtime", target_os = "linux"))]
                 if sqyre_capture::LinuxSessionInfo::detect().has_wayland {
-                    sqyre_capture::event_log("SQYRE_HUD", &[("hide", "shown-panel")]);
-                } else {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                    sqyre_capture::event_log("SQYRE_HUD", &[("hide", "wayland-unmap")]);
+                    sqyre_capture::nudge_portal_capture_after_ui_hide();
                 }
-                #[cfg(not(all(feature = "native-runtime", target_os = "linux")))]
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             } else if !should_hide && self.hidden_for_recording {
                 self.hidden_for_recording = false;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
@@ -75,6 +72,7 @@ impl SqyreApp {
                 &self.screen_click,
                 Some(&self.macro_record_bridge),
                 preview_outline,
+                self.hidden_for_recording,
             );
         }
         #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]
