@@ -5,9 +5,10 @@
 //! shared pending-macro queue drained by `SqyreApp` each frame.
 //!
 //! On X11, `with_taskbar(false)` is Windows-only in egui-winit. Overlay buttons use
-//! Dock window type (GNOME/Mutter skips docks from Alt-Tab) plus
-//! [`sqyre_capture::skip_taskbar_for_overlay_windows`] as a belt-and-suspenders
-//! `_NET_WM_STATE_SKIP_TASKBAR` / `SKIP_PAGER` request.
+//! Notification window type plus
+//! [`sqyre_capture::skip_taskbar_for_overlay_windows`] (`SKIP_TASKBAR` / `SKIP_PAGER`).
+//! Dock type is avoided: Mutter treats docks like panels and can autohide / unredirect
+//! them away under fullscreen games on GNOME Wayland.
 
 use crate::overlay_icons::{self, OverlayIcon};
 use eframe::egui::{self, Color32, Pos2, ViewportBuilder, ViewportClass, ViewportId};
@@ -15,7 +16,8 @@ use parking_lot::Mutex;
 use sqyre_capture::{
     enable_overlay_window_transparency, get_active_window, mark_site, note,
     skip_taskbar_for_overlay_windows, sync_overlay_window_geometry, window_is_our_process,
-    window_matches_binding, window_matches_program, WindowInfo, OVERLAY_WM_TITLE,
+    window_is_transient_shell_focus, window_matches_binding, window_matches_program, WindowInfo,
+    OVERLAY_WM_TITLE,
 };
 use std::collections::HashMap;
 use sqyre_persist::{
@@ -167,6 +169,17 @@ impl MacroOverlay {
                 "overlay: sync shown={shown} gated={any_gated} preview={} focus={focus_label}",
                 preview.is_some()
             ));
+            if shown == 0 && any_gated {
+                if let Some(lf) = &self.last_foreign {
+                    note(&format!(
+                        "overlay: gated hidden last_foreign={} ({})",
+                        lf.process_name.trim(),
+                        lf.process_path.trim()
+                    ));
+                } else {
+                    note("overlay: gated hidden last_foreign=(none)");
+                }
+            }
         }
 
         if any_shown {
@@ -191,7 +204,12 @@ impl MacroOverlay {
 
     fn resolve_focus(&mut self) -> Option<WindowInfo> {
         match get_active_window() {
-            Ok(Some(active)) if window_is_our_process(&active) => self.last_foreign.clone(),
+            Ok(Some(active))
+                if window_is_our_process(&active) || window_is_transient_shell_focus(&active) =>
+            {
+                // Keep last real app focus across overlay clicks and portal/shell dialogs.
+                self.last_foreign.clone()
+            }
             Ok(Some(active)) => {
                 self.last_foreign = Some(active.clone());
                 Some(active)
@@ -331,10 +349,10 @@ fn show_button_viewport(
         .with_decorations(false)
         .with_resizable(false)
         .with_always_on_top()
-        // Windows: omit from taskbar. X11: Dock is omitted from GNOME Alt-Tab;
-        // skip_taskbar_for_overlay_windows reinforces SKIP_TASKBAR/SKIP_PAGER.
+        // Windows: omit from taskbar. X11: Notification + SKIP_TASKBAR/SKIP_PAGER
+        // (Dock is avoided — Mutter can autohide dock-type windows under fullscreen).
         .with_taskbar(false)
-        .with_window_type(egui::X11WindowType::Dock)
+        .with_window_type(egui::X11WindowType::Notification)
         .with_transparent(true)
         .with_inner_size([outer, outer])
         .with_min_inner_size([outer, outer])
@@ -358,7 +376,7 @@ fn show_button_viewport(
     });
 
     if !wayland_overlay_geom {
-        ctx.send_viewport_cmd_to(egui::ViewportCommand::OuterPosition(btn_pos), id);
+        ctx.send_viewport_cmd_to(id, egui::ViewportCommand::OuterPosition(btn_pos));
     }
 }
 
@@ -416,6 +434,10 @@ fn show_overlay_tip_viewport(
         .with_resizable(false)
         .with_always_on_top()
         .with_taskbar(false)
+        // Passthrough + inactive: on GNOME Wayland/XWayland a sibling tooltip window
+        // above the button steals hover and the tip flickers show/hide every frame.
+        .with_active(false)
+        .with_mouse_passthrough(true)
         .with_window_type(egui::X11WindowType::Tooltip)
         .with_transparent(true)
         .with_inner_size([tip_w, tip_h])

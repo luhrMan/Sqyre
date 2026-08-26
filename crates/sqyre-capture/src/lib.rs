@@ -528,6 +528,10 @@ pub fn active_window_is_our_process() -> bool {
 
 /// True when `win` is owned by this process's executable.
 pub fn window_is_our_process(win: &WindowInfo) -> bool {
+    // Overlay chrome uses a fixed WM title; path matching can fail via AT-SPI.
+    if win.title.trim() == OVERLAY_WM_TITLE {
+        return true;
+    }
     // `current_exe` is unsupported / may panic on wasm32-unknown-unknown.
     #[cfg(target_arch = "wasm32")]
     {
@@ -541,6 +545,34 @@ pub fn window_is_our_process(win: &WindowInfo) -> bool {
         };
         window_matches_process(win, &exe.to_string_lossy())
     }
+}
+
+/// Focus that should not replace overlay program-gating (`last_foreign`).
+///
+/// On GNOME Wayland, opening portal ScreenCast (and similar shell dialogs) steals
+/// focus for a moment. Storing that as the last foreign window poisons gated
+/// overlays: after the dialog closes, fullscreen games often report `None` and
+/// the bad `last_foreign` sticks until process restart.
+pub fn window_is_transient_shell_focus(win: &WindowInfo) -> bool {
+    if win.title.trim() == OVERLAY_WM_TITLE {
+        return true;
+    }
+    let name = win.process_name.trim().to_ascii_lowercase();
+    let path = win.process_path.trim().to_ascii_lowercase();
+    let title = win.title.trim().to_ascii_lowercase();
+    let path_base = std::path::Path::new(path.as_str())
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    name.contains("xdg-desktop-portal")
+        || path.contains("xdg-desktop-portal")
+        || name == "gnome-shell"
+        || path_base == "gnome-shell"
+        || name == "gsd-xsettings"
+        || (title.contains("share") && (title.contains("screen") || title.contains("audio")))
+        || title.contains("screen sharing")
+        || title.contains("screencast")
+        || title.contains("remote desktop")
 }
 
 /// True when `program` is empty, or the focused window looks like that catalog program.
@@ -741,5 +773,41 @@ mod tests {
         ));
         assert!(super::window_matches_title(&w, " Game A "));
         assert!(!super::window_matches_title(&w, "Game B"));
+    }
+
+    #[test]
+    fn transient_shell_focus_detects_portal_and_overlay() {
+        let portal = WindowInfo {
+            title: "Share your screen".into(),
+            process_name: "xdg-desktop-portal-gnome".into(),
+            process_path: "/usr/libexec/xdg-desktop-portal-gnome".into(),
+            icon: None,
+        };
+        assert!(super::window_is_transient_shell_focus(&portal));
+
+        let shell = WindowInfo {
+            title: "gnome-shell".into(),
+            process_name: "gnome-shell".into(),
+            process_path: "/usr/bin/gnome-shell".into(),
+            icon: None,
+        };
+        assert!(super::window_is_transient_shell_focus(&shell));
+
+        let overlay = WindowInfo {
+            title: super::OVERLAY_WM_TITLE.into(),
+            process_name: "sqyre".into(),
+            process_path: String::new(),
+            icon: None,
+        };
+        assert!(super::window_is_transient_shell_focus(&overlay));
+        assert!(super::window_is_our_process(&overlay));
+
+        let game = WindowInfo {
+            title: "Mistfall Hunter".into(),
+            process_name: "MistfallHunter".into(),
+            process_path: "/opt/mistfall/MistfallHunter".into(),
+            icon: None,
+        };
+        assert!(!super::window_is_transient_shell_focus(&game));
     }
 }
