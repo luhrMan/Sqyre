@@ -14,4 +14,5 @@ pub use fields::{
     drag_field_enabled, searchable_combo, searchable_combo_width, searchable_combo_with,
     text_field, text_field_width, W_MULTILINE, W_TEXT, W_VAR,
 };
+pub use match_settings::configure_match_blur_drag;
 pub use tags::{tag_chip_editor, TagChipOptions};

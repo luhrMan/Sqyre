@@ -12,23 +12,36 @@ use crate::pickers::ActivePicker;
 use crate::theme;
 use crate::tree_chrome;
 use crate::var_pills;
-use crate::widgets::{drag_field, match_settings, text_field, W_VAR};
+use crate::widgets::{configure_match_blur_drag, drag_field, match_settings, text_field, W_VAR};
 use eframe::egui;
-use sqyre_domain::{parse_hex_color, CoordinateRef, DetectionBranch, Macro, MatchMethod};
+use sqyre_domain::{
+    clamp_color_tolerance, clamp_ocr_resize, clamp_ocr_threshold, parse_hex_color, CoordinateRef,
+    DetectionBranch, Macro, MatchMethod, MAX_COLOR_TOLERANCE, MAX_OCR_RESIZE, MAX_OCR_THRESHOLD,
+    MIN_COLOR_TOLERANCE, MIN_OCR_RESIZE, MIN_OCR_THRESHOLD,
+};
 use sqyre_hotkeys::ScreenClickBridge;
 
-/// Name + search area — the always-visible detection header.
+/// Optional live match overlay for Image Search search-area previews.
+pub(super) struct ImageSearchAreaPreview<'a> {
+    pub macro_: Option<&'a Macro>,
+    pub targets: &'a [String],
+    pub tolerance: f64,
+    pub blur: i32,
+    pub match_method: sqyre_domain::MatchMethod,
+}
+
 fn detection_primary_header(
     ui: &mut egui::Ui,
     paint: &mut CatalogPaint<'_>,
     picker: &mut ActivePicker,
     name: &mut String,
     search_area: &mut CoordinateRef,
+    image_search: Option<ImageSearchAreaPreview<'_>>,
 ) {
     tip_wrapped_section(ui, |ui| {
         text_field(ui, "Name", h::NAME, name);
     });
-    search_area_section(ui, paint, search_area, picker);
+    search_area_section(ui, paint, search_area, picker, image_search);
 }
 
 /// Output coords + wait/order — shared Advanced contents for detection actions.
@@ -53,6 +66,7 @@ pub(super) fn paint_image_search_fields(
     paint: &mut CatalogPaint<'_>,
     picker: &mut ActivePicker,
     theme: VarTheme<'_>,
+    active_macro: Option<&Macro>,
     name: &mut String,
     targets: &mut Vec<String>,
     search_area: &mut CoordinateRef,
@@ -61,7 +75,20 @@ pub(super) fn paint_image_search_fields(
     match_method: &mut MatchMethod,
     detection: &mut DetectionBranch,
 ) {
-    detection_primary_header(ui, paint, picker, name, search_area);
+    detection_primary_header(
+        ui,
+        paint,
+        picker,
+        name,
+        search_area,
+        Some(ImageSearchAreaPreview {
+            macro_: active_macro,
+            targets,
+            tolerance: *tolerance,
+            blur: *blur,
+            match_method: *match_method,
+        }),
+    );
     tip_section(ui, |ui| {
         targets_editor(ui, paint.catalog, paint.icons, targets, picker);
     });
@@ -95,7 +122,7 @@ pub(super) fn paint_ocr_fields(
     threshold_invert: &mut bool,
     detection: &mut DetectionBranch,
 ) {
-    detection_primary_header(ui, paint, picker, name, search_area);
+    detection_primary_header(ui, paint, picker, name, search_area, None);
     tip_wrapped_section(ui, |ui| {
         var_pills::var_name_text_edit(
             ui,
@@ -118,19 +145,24 @@ pub(super) fn paint_ocr_fields(
         );
     });
     tip_wrapped_section(ui, |ui| {
-        drag_field(ui, "Blur", h::OCR_BLUR, blur, |d| d);
+        *blur = sqyre_domain::clamp_match_blur(*blur);
+        drag_field(ui, "Blur", h::OCR_BLUR, blur, configure_match_blur_drag);
+        *min_threshold = clamp_ocr_threshold(*min_threshold);
         drag_field(
             ui,
             "Min threshold",
             h::OCR_MIN_THRESHOLD,
             min_threshold,
-            |d| d,
+            |d| d.speed(1).range(MIN_OCR_THRESHOLD..=MAX_OCR_THRESHOLD),
         );
     });
     tip_advanced(ui, |ui| {
         detection_advanced_fields(ui, theme, detection);
         tip_wrapped_section(ui, |ui| {
-            drag_field(ui, "Resize", h::OCR_RESIZE, resize, |d| d.speed(0.01));
+            *resize = clamp_ocr_resize(*resize);
+            drag_field(ui, "Resize", h::OCR_RESIZE, resize, |d| {
+                d.speed(0.01).range(MIN_OCR_RESIZE..=MAX_OCR_RESIZE)
+            });
             h::tip(ui.checkbox(grayscale, "Grayscale"), h::OCR_GRAYSCALE);
             h::tip(ui.checkbox(threshold_otsu, "Threshold Otsu"), h::OCR_OTSU);
             h::tip(
@@ -155,7 +187,7 @@ pub(super) fn paint_find_pixel_fields(
     color_tolerance: &mut i32,
     detection: &mut DetectionBranch,
 ) {
-    detection_primary_header(ui, paint, picker, name, search_area);
+    detection_primary_header(ui, paint, picker, name, search_area, None);
     tip_wrapped_section(ui, |ui| {
         ui.horizontal(|ui| {
             var_ref_field(
@@ -189,12 +221,13 @@ pub(super) fn paint_find_pixel_fields(
                 screen_click.arm_color();
             }
         });
+        *color_tolerance = clamp_color_tolerance(*color_tolerance);
         drag_field(
             ui,
             "Color tolerance",
             h::PIXEL_TOLERANCE,
             color_tolerance,
-            |d| d,
+            |d| d.speed(1).range(MIN_COLOR_TOLERANCE..=MAX_COLOR_TOLERANCE),
         );
     });
     tip_advanced(ui, |ui| {

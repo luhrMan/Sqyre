@@ -20,9 +20,10 @@ use sqyre_domain::{
     Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs, CoordinateRef,
     DetectionBranch, KnownVariableNames, ListColumn, Macro, MatchGrouping, MatchMode, MatchOrder,
     MouseButton, NavPressMode, NavSelectDevice, RepeatMode, ScalarValue, VariableAssignment,
-    WaitTilFoundConfig,
+    WaitTilFoundConfig, MAX_DETECTION_INTERVAL_MS, MAX_SMOOTH_DELAY_MS, MAX_TYPE_DELAY_MS,
+    MIN_DETECTION_INTERVAL_MS, MIN_SMOOTH_DELAY_MS, MIN_TYPE_DELAY_MS,
 };
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::{ProgramCatalog, MAX_WHILE_MAX_ITERATIONS};
 use sqyre_validate::{
     preview_calculate, validate_numeric_expression, validate_set_variable_value,
     validate_variable_references, EntryValidation,
@@ -69,6 +70,7 @@ pub fn paint_edit_fields(
         catalog,
         icons,
         previews,
+        image_search_tooltip_preview,
     } = paint;
     let VarTheme {
         known_vars,
@@ -153,7 +155,9 @@ pub fn paint_edit_fields(
                     W_VAR,
                     active_macro,
                 );
-                drag_field(ui, "Delay ms", h::TYPE_DELAY, delay_ms, |d| d.speed(1));
+                drag_field(ui, "Delay ms", h::TYPE_DELAY, delay_ms, |d| {
+                    d.speed(1).range(MIN_TYPE_DELAY_MS..=MAX_TYPE_DELAY_MS)
+                });
             });
         }
         ActionKind::Move {
@@ -170,11 +174,12 @@ pub fn paint_edit_fields(
                         catalog,
                         icons,
                         previews,
+                        image_search_tooltip_preview,
                     },
                     point,
                     picker,
                 );
-                paint_coord_preview(ui, catalog, previews, point, PreviewKind::Point);
+                paint_coord_preview(ui, catalog, previews, point, PreviewKind::Point, false);
             });
             tip_wrapped_section(ui, |ui| {
                 help::tip(ui.checkbox(smooth, "Smooth"), h::MOVE_SMOOTH);
@@ -192,7 +197,7 @@ pub fn paint_edit_fields(
                         "Smooth delay ms",
                         h::MOVE_SMOOTH_DELAY,
                         smooth_delay_ms,
-                        |d| d.speed(1),
+                        |d| d.speed(1).range(MIN_SMOOTH_DELAY_MS..=MAX_SMOOTH_DELAY_MS),
                     );
                 });
             });
@@ -372,12 +377,14 @@ pub fn paint_edit_fields(
                     catalog,
                     icons,
                     previews,
+                    image_search_tooltip_preview,
                 },
                 picker,
                 VarTheme {
                     known_vars,
                     is_dark,
                 },
+                active_macro,
                 name,
                 targets,
                 search_area,
@@ -406,6 +413,7 @@ pub fn paint_edit_fields(
                     catalog,
                     icons,
                     previews,
+                    image_search_tooltip_preview,
                 },
                 picker,
                 VarTheme {
@@ -439,6 +447,7 @@ pub fn paint_edit_fields(
                     catalog,
                     icons,
                     previews,
+                    image_search_tooltip_preview,
                 },
                 picker,
                 VarTheme {
@@ -706,21 +715,22 @@ fn paint_coord_preview(
     previews: &mut PreviewTooltipCache,
     coord: &CoordinateRef,
     kind: PreviewKind,
+    force: bool,
 ) {
     if coord.is_empty() {
         return;
     }
-    let mut force = false;
+    let mut refresh = force;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Preview").strong());
         if crate::theme::icon_button(ui, "↻")
             .on_hover_text("Refresh")
             .clicked()
         {
-            force = true;
+            refresh = true;
         }
     });
-    previews.paint_for_coordinate_ref(ui, catalog, coord, kind, force);
+    previews.paint_for_coordinate_ref(ui, catalog, coord, kind, refresh);
 }
 
 fn point_picker_row(
@@ -770,6 +780,7 @@ fn coord_picker_row(
         catalog,
         icons,
         previews,
+        image_search_tooltip_preview: _,
     } = paint;
     let display = coord.display_label();
     let validation = coord_unset_validation(kind, coord);
@@ -1032,16 +1043,56 @@ fn search_area_section(
     paint: &mut CatalogPaint<'_>,
     search_area: &mut CoordinateRef,
     picker: &mut ActivePicker,
+    image_search: Option<edit_detect::ImageSearchAreaPreview<'_>>,
 ) {
     tip_section(ui, |ui| {
         search_area_picker_row(ui, paint, search_area, picker);
-        paint_coord_preview(
-            ui,
-            paint.catalog,
-            paint.previews,
-            search_area,
-            PreviewKind::SearchArea,
-        );
+        let mut force = false;
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Preview").strong());
+            if crate::theme::icon_button(ui, "↻")
+                .on_hover_text("Refresh")
+                .clicked()
+            {
+                force = true;
+            }
+        });
+        if let Some(is) = image_search {
+            let empty = Macro::new("", 0, vec![]);
+            let macro_ref = is.macro_.unwrap_or(&empty);
+            if paint.image_search_tooltip_preview {
+                paint.previews.paint_image_search_action_preview(
+                    ui,
+                    paint.catalog,
+                    paint.icons,
+                    macro_ref,
+                    search_area,
+                    is.targets,
+                    is.tolerance,
+                    is.blur,
+                    is.match_method,
+                    force,
+                );
+            } else {
+                paint_coord_preview(
+                    ui,
+                    paint.catalog,
+                    paint.previews,
+                    search_area,
+                    PreviewKind::SearchArea,
+                    force,
+                );
+            }
+        } else {
+            paint_coord_preview(
+                ui,
+                paint.catalog,
+                paint.previews,
+                search_area,
+                PreviewKind::SearchArea,
+                force,
+            );
+        }
     });
 }
 
@@ -1131,7 +1182,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
         h::WAIT_INTERVAL,
         &mut wait.wait_til_found_interval_ms,
         timing_enabled,
-        |d| d,
+        |d| d.speed(1).range(MIN_DETECTION_INTERVAL_MS..=MAX_DETECTION_INTERVAL_MS),
     );
     drag_field_enabled(
         ui,
@@ -1139,7 +1190,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
         h::WAIT_MAX_ITER,
         &mut wait.max_iterations,
         max_enabled,
-        |d| d,
+        |d| d.speed(1).range(0..=MAX_WHILE_MAX_ITERATIONS),
     );
 }
 
