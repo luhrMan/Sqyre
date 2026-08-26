@@ -357,6 +357,23 @@ pub fn request_portal_screencast_picker() {
     }
 }
 
+/// After unmapping Sqyre's main window, wait for a fresh portal frame so captures
+/// exclude the hidden surface (GPU Screen Recorder destroys its overlay before portal capture).
+#[cfg(all(target_os = "linux", feature = "portal-capture"))]
+pub fn nudge_portal_capture_after_ui_hide() {
+    let Some(cap) = shared_capturer_if_ready() else {
+        return;
+    };
+    if let Ok(cap) = cap {
+        if let Ok(bounds) = cap.virtual_bounds_ref() {
+            let _ = cap.capture_rect_fresh_ref(bounds);
+        }
+    }
+}
+
+#[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+pub fn nudge_portal_capture_after_ui_hide() {}
+
 /// [`shared_capturer`] unless that would wait on a portal picker from this thread.
 ///
 /// Use from the UI thread. The deferred Linux probe (or a worker) should call
@@ -466,8 +483,31 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
     win_focus::enable_overlay_window_transparency()
 }
 
-#[cfg(not(target_os = "windows"))]
+/// Linux X11: clear opaque window backings on overlay XWayland surfaces.
+#[cfg(target_os = "linux")]
 pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
+    x11_focus::enable_overlay_window_transparency()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
+    Ok(())
+}
+
+/// Wayland: winit cannot position overlay viewports; move XWayland windows directly.
+#[cfg(target_os = "linux")]
+pub fn sync_overlay_window_geometry(
+    hints: &[(String, i32, i32, u32, u32)],
+    last_positions: &mut std::collections::HashMap<String, (i32, i32)>,
+) -> Result<(), CaptureError> {
+    x11_focus::sync_overlay_window_geometry(hints, last_positions)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn sync_overlay_window_geometry(
+    _hints: &[(String, i32, i32, u32, u32)],
+    _last_positions: &mut std::collections::HashMap<String, (i32, i32)>,
+) -> Result<(), CaptureError> {
     Ok(())
 }
 

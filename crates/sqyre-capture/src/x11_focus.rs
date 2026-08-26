@@ -4,15 +4,16 @@ use crate::window_match::{paths_equal, pick_matching_icon, titles_equal};
 use crate::{CaptureError, ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use parking_lot::Mutex;
 use sqyre_ports::AutomationError;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_ulong;
 use std::path::{Path, PathBuf};
 use std::ptr;
 use x11::xlib::{
     Atom, ClientMessage, Display, False, PropModeReplace, Success, True, Window, XChangeProperty,
-    XDefaultRootWindow, XEvent, XFlush, XFree, XGetWMName, XGetWindowProperty, XInternAtom,
-    XOpenDisplay, XSendEvent, _XDisplay, XA_ATOM, XA_CARDINAL, XA_WINDOW,
+    XChangeWindowAttributes, XDefaultRootWindow, XEvent, XFlush, XFree, XGetGeometry,
+    XGetWMName, XGetWindowProperty, XInternAtom, XMoveResizeWindow, XOpenDisplay, XSendEvent,
+    XSetWindowAttributes, _XDisplay, CWBackPixel, XA_ATOM, XA_CARDINAL, XA_WINDOW,
 };
 
 /// Title used by floating macro-overlay viewports (`macro_overlay`).
@@ -120,6 +121,47 @@ pub fn skip_taskbar_for_overlay_windows() -> Result<(), CaptureError> {
     crate::diag::mark_site("x11:skip_taskbar:done");
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:skip_taskbar err: {e}"));
+    }
+    result
+}
+
+/// X11: move overlay tool windows to desktop coordinates (Wayland winit ignores position).
+///
+/// `hints` are `(button_id, phys_x, phys_y, phys_w, phys_h)` in overlay sync order.
+/// `last_positions` stores the last applied top-left per id so windows can be matched after moves.
+pub fn sync_overlay_window_geometry(
+    hints: &[(String, i32, i32, u32, u32)],
+    last_positions: &mut HashMap<String, (i32, i32)>,
+) -> Result<(), CaptureError> {
+    if hints.is_empty() {
+        return Ok(());
+    }
+    crate::diag::mark_site("x11:overlay_geom:before_open");
+    let result = with_display(|display| {
+        crate::diag::mark_site("x11:overlay_geom:on_display");
+        // SAFETY: `display` comes from `with_display`, which guarantees a live,
+        // non-null `XOpenDisplay` connection for the duration of this call.
+        unsafe { sync_overlay_geometry_on_display(display, hints, last_positions) }
+    });
+    crate::diag::mark_site("x11:overlay_geom:done");
+    if let Err(ref e) = result {
+        crate::diag::note(&format!("x11:overlay_geom err: {e}"));
+    }
+    result
+}
+
+/// X11: clear opaque backings on overlay tool windows (glow deferred viewports).
+pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
+    crate::diag::mark_site("x11:overlay_transparency:before_open");
+    let result = with_display(|display| {
+        crate::diag::mark_site("x11:overlay_transparency:on_display");
+        // SAFETY: `display` comes from `with_display`, which guarantees a live,
+        // non-null `XOpenDisplay` connection for the duration of this call.
+        unsafe { enable_overlay_transparency_on_display(display) }
+    });
+    crate::diag::mark_site("x11:overlay_transparency:done");
+    if let Err(ref e) = result {
+        crate::diag::note(&format!("x11:overlay_transparency err: {e}"));
     }
     result
 }
@@ -564,6 +606,134 @@ unsafe fn set_active_window(
         ));
     }
     XFlush(display);
+    Ok(())
+}
+
+// SAFETY: callers must pass a live, non-null Xlib `display` connection that
+// outlives this call.
+unsafe fn overlay_windows_on_display(
+    display: *mut _XDisplay,
+) -> Result<Vec<(Window, i32, i32, u32, u32)>, CaptureError> {
+    let our_pid = std::process::id();
+    let root = XDefaultRootWindow(display);
+    let clients = client_list(display, root)?;
+    let mut out = Vec::new();
+    for win in clients {
+        let Some(pid) = window_pid(display, win) else {
+            continue;
+        };
+        if pid != our_pid {
+            continue;
+        }
+        let Some(title) = window_title_of(display, win) else {
+            continue;
+        };
+        if title.trim() != OVERLAY_WM_TITLE {
+            continue;
+        }
+        let Some((x, y, w, h)) = window_geometry(display, win) else {
+            continue;
+        };
+        out.push((win, x, y, w, h));
+    }
+    Ok(out)
+}
+
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a valid `win`.
+unsafe fn window_geometry(display: *mut Display, win: Window) -> Option<(i32, i32, u32, u32)> {
+    let mut root_return: Window = 0;
+    let mut x: i32 = 0;
+    let mut y: i32 = 0;
+    let mut width: u32 = 0;
+    let mut height: u32 = 0;
+    let mut border_width: u32 = 0;
+    let mut depth: u32 = 0;
+    if XGetGeometry(
+        display,
+        win,
+        &mut root_return,
+        &mut x,
+        &mut y,
+        &mut width,
+        &mut height,
+        &mut border_width,
+        &mut depth,
+    ) == 0
+    {
+        return None;
+    }
+    Some((x, y, width, height))
+}
+
+// SAFETY: callers must pass a live, non-null Xlib `display` connection that
+// outlives this call.
+unsafe fn sync_overlay_geometry_on_display(
+    display: *mut _XDisplay,
+    hints: &[(String, i32, i32, u32, u32)],
+    last_positions: &mut HashMap<String, (i32, i32)>,
+) -> Result<(), CaptureError> {
+    let windows = overlay_windows_on_display(display)?;
+    if windows.is_empty() {
+        return Ok(());
+    }
+    let mut used = HashSet::new();
+    let mut moved = 0u32;
+    for (id, nx, ny, nw, nh) in hints {
+        let hint = last_positions.get(id).copied().unwrap_or((*nx, *ny));
+        let mut best: Option<(usize, i64)> = None;
+        for (idx, (win, x, y, w, h)) in windows.iter().enumerate() {
+            if used.contains(&idx) {
+                continue;
+            }
+            let dx = *x - hint.0;
+            let dy = *y - hint.1;
+            let dist = (dx as i64) * (dx as i64) + (dy as i64) * (dy as i64);
+            match best {
+                None => best = Some((idx, dist)),
+                Some((_, best_dist)) if dist < best_dist => best = Some((idx, dist)),
+                _ => {}
+            }
+            let _ = (win, w, h);
+        }
+        let Some((idx, _)) = best else {
+            continue;
+        };
+        used.insert(idx);
+        let (win, _, _, _, _) = windows[idx];
+        let nw = nw.max(1);
+        let nh = nh.max(1);
+        XMoveResizeWindow(display, win, *nx, *ny, nw, nh);
+        last_positions.insert(id.clone(), (*nx, *ny));
+        moved += 1;
+    }
+    XFlush(display);
+    if moved > 0 {
+        crate::diag::mark_site(&format!("x11:overlay_geom:moved={moved}"));
+    }
+    Ok(())
+}
+
+// SAFETY: callers must pass a live, non-null Xlib `display` connection that
+// outlives this call.
+unsafe fn enable_overlay_transparency_on_display(
+    display: *mut _XDisplay,
+) -> Result<(), CaptureError> {
+    let windows = overlay_windows_on_display(display)?;
+    if windows.is_empty() {
+        return Ok(());
+    }
+    let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+    attrs.background_pixel = 0;
+    let mask = CWBackPixel;
+    let mut applied = 0u32;
+    for (win, _, _, _, _) in windows {
+        XChangeWindowAttributes(display, win, mask, &mut attrs);
+        applied += 1;
+    }
+    XFlush(display);
+    if applied > 0 {
+        crate::diag::mark_site(&format!("x11:overlay_transparency:applied={applied}"));
+    }
     Ok(())
 }
 
