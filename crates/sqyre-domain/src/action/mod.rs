@@ -174,6 +174,62 @@ pub const DEFAULT_SMOOTH_LOW: f64 = 0.05;
 pub const DEFAULT_SMOOTH_HIGH: f64 = 0.20;
 pub const DEFAULT_SMOOTH_DELAY_MS: i32 = 1;
 
+/// Gaussian blur amount for template match / OCR preprocess (`<= 0` skips blur).
+pub const MIN_MATCH_BLUR: i32 = 0;
+pub const MAX_MATCH_BLUR: i32 = 99;
+
+pub const MIN_MATCH_TOLERANCE: f64 = 0.0;
+pub const MAX_NORMED_MATCH_TOLERANCE: f64 = 1.0;
+pub const MAX_UNNORMED_MATCH_TOLERANCE: f64 = 1_000_000.0;
+
+/// Per-channel color distance for Find Pixel (wire format 0–100).
+pub const MIN_COLOR_TOLERANCE: i32 = 0;
+pub const MAX_COLOR_TOLERANCE: i32 = 100;
+
+pub const MIN_OCR_THRESHOLD: i32 = 0;
+pub const MAX_OCR_THRESHOLD: i32 = 255;
+pub const MIN_OCR_RESIZE: f64 = 0.01;
+pub const MAX_OCR_RESIZE: f64 = 10.0;
+
+pub const MIN_TYPE_DELAY_MS: i32 = 0;
+pub const MAX_TYPE_DELAY_MS: i32 = 10_000;
+
+pub const MIN_SMOOTH_DELAY_MS: i32 = 0;
+pub const MAX_SMOOTH_DELAY_MS: i32 = 10_000;
+
+pub const MIN_DETECTION_INTERVAL_MS: i32 = 0;
+pub const MAX_DETECTION_INTERVAL_MS: i32 = 3_600_000;
+
+#[inline]
+pub fn clamp_match_blur(v: i32) -> i32 {
+    v.clamp(MIN_MATCH_BLUR, MAX_MATCH_BLUR)
+}
+
+#[inline]
+pub fn clamp_match_tolerance(v: f64, method: MatchMethod) -> f64 {
+    let max = if method.is_normed() {
+        MAX_NORMED_MATCH_TOLERANCE
+    } else {
+        MAX_UNNORMED_MATCH_TOLERANCE
+    };
+    v.clamp(MIN_MATCH_TOLERANCE, max)
+}
+
+#[inline]
+pub fn clamp_color_tolerance(v: i32) -> i32 {
+    v.clamp(MIN_COLOR_TOLERANCE, MAX_COLOR_TOLERANCE)
+}
+
+#[inline]
+pub fn clamp_ocr_threshold(v: i32) -> i32 {
+    v.clamp(MIN_OCR_THRESHOLD, MAX_OCR_THRESHOLD)
+}
+
+#[inline]
+pub fn clamp_ocr_resize(v: f64) -> f64 {
+    v.clamp(MIN_OCR_RESIZE, MAX_OCR_RESIZE)
+}
+
 string_enum! {
     /// How condition clauses are combined.
     pub enum MatchMode {
@@ -1394,5 +1450,18 @@ time: 1
         wait.wait_til_found_seconds = 0.0;
         assert!(wait.timeout().is_none());
         assert!(!wait.wait_until_found_active());
+    }
+
+    #[test]
+    fn match_field_clamps() {
+        assert_eq!(clamp_match_blur(-3), MIN_MATCH_BLUR);
+        assert_eq!(clamp_match_blur(500), MAX_MATCH_BLUR);
+        assert_eq!(
+            clamp_match_tolerance(2.0, MatchMethod::CcoeffNormed),
+            MAX_NORMED_MATCH_TOLERANCE
+        );
+        assert_eq!(clamp_color_tolerance(150), MAX_COLOR_TOLERANCE);
+        assert_eq!(clamp_ocr_threshold(300), MAX_OCR_THRESHOLD);
+        assert_eq!(clamp_ocr_resize(0.001), MIN_OCR_RESIZE);
     }
 }
