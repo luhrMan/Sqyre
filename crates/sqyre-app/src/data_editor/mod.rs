@@ -405,15 +405,26 @@ impl DataEditor {
         self.load_form(catalog, settings);
     }
 
-    /// Open on `tab`, ensure a program is selected, then create a new entity.
-    pub(crate) fn open_new(&mut self, tab: EditorTab, env: &mut DataEditorCtx<'_>) {
-        self.request_open(env.ctx);
-        self.switch_tab(tab, env.catalog, env.settings);
+    /// Open the editor on `tab`, selecting a program when the tab needs one.
+    pub(crate) fn open_tab(
+        &mut self,
+        ctx: &egui::Context,
+        tab: EditorTab,
+        catalog: &ProgramCatalog,
+        settings: &UserSettings,
+    ) {
+        self.request_open(ctx);
+        self.switch_tab(tab, catalog, settings);
         if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
-            if let Some(name) = env.catalog.program_names().next() {
-                self.select_program(name, env.catalog, env.settings);
+            if let Some(name) = catalog.program_names().next() {
+                self.select_program(name, catalog, settings);
             }
         }
+    }
+
+    /// Open on `tab`, ensure a program is selected, then create a new entity.
+    pub(crate) fn open_new(&mut self, tab: EditorTab, env: &mut DataEditorCtx<'_>) {
+        self.open_tab(env.ctx, tab, env.catalog, env.settings);
         self.form_name.clear();
         self.on_new(env);
     }
