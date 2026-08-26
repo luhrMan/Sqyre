@@ -22,6 +22,9 @@ pub(crate) enum CommandKind {
     },
     NewMacro,
     OpenDataEditor,
+    OpenEditorTab {
+        tab: EditorTab,
+    },
     OpenSettings,
     OpenVariables,
     ShowMacroList,
@@ -289,6 +292,24 @@ fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
         ph("folder"),
         CommandKind::OpenDataEditor,
         &["data", "editor", "catalog", "goto"],
+    ));
+    out.push(item(
+        "Open ScreenCap",
+        "Go to",
+        ph("camera"),
+        CommandKind::OpenEditorTab {
+            tab: EditorTab::ScreenCap,
+        },
+        &["screencap", "screen", "capture", "screenshot", "goto"],
+    ));
+    out.push(item(
+        "Open PixelCheck",
+        "Go to",
+        ph("crosshair"),
+        CommandKind::OpenEditorTab {
+            tab: EditorTab::PixelCheck,
+        },
+        &["pixelcheck", "pixel", "match", "heatmap", "goto"],
     ));
     out.push(item(
         "Open Settings",
@@ -597,6 +618,7 @@ fn is_static_command(kind: &CommandKind) -> bool {
         CommandKind::AddAction { .. }
             | CommandKind::NewMacro
             | CommandKind::OpenDataEditor
+            | CommandKind::OpenEditorTab { .. }
             | CommandKind::OpenSettings
             | CommandKind::OpenVariables
             | CommandKind::ShowMacroList
@@ -655,6 +677,14 @@ impl SqyreApp {
             }
             CommandKind::NewMacro => self.create_macro(),
             CommandKind::OpenDataEditor => self.data_editor.request_open(ctx),
+            CommandKind::OpenEditorTab { tab } => {
+                self.data_editor.open_tab(
+                    ctx,
+                    tab,
+                    &self.workspace.catalog,
+                    self.settings_ui.settings(),
+                );
+            }
             CommandKind::OpenSettings => self.settings_ui.open = true,
             CommandKind::OpenVariables => self.variables_panel.open = true,
             CommandKind::ShowMacroList => self.macro_list_open = true,
@@ -748,9 +778,23 @@ mod tests {
         assert!(shown.iter().any(|t| t == "Add Click"));
         assert!(shown.iter().any(|t| t == "New Item"));
         assert!(shown.iter().any(|t| t == "Open Data Editor"));
+        assert!(shown.iter().any(|t| t == "Open ScreenCap"));
+        assert!(shown.iter().any(|t| t == "Open PixelCheck"));
         assert!(!shown.iter().any(|t| t == "Farm gold"));
         assert!(!shown.iter().any(|t| t == "Health Flask"));
         assert!(!shown.iter().any(|t| t == "Game"));
+    }
+
+    #[test]
+    fn screencap_and_pixelcheck_match() {
+        let catalog = ProgramCatalog::default();
+        let items = collect_commands(sources(&[], &catalog, &[], false));
+        assert!(titles("screencap", &items)
+            .iter()
+            .any(|t| t == "Open ScreenCap"));
+        assert!(titles("pixelcheck", &items)
+            .iter()
+            .any(|t| t == "Open PixelCheck"));
     }
 
     #[test]
@@ -828,6 +872,7 @@ mod tests {
             "plus",
             "play",
             "folder",
+            "camera",
             "gear",
             "equals",
             "list",
