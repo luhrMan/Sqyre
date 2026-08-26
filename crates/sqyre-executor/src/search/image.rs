@@ -50,7 +50,7 @@ pub(crate) fn execute_image_search(
     let result = (|| {
         // Log wait intent once before the shared shell arms retries.
         let results0 =
-            capture_and_match(exec, &ctx, *tolerance, *blur, *match_method, macro_)?;
+            capture_and_match(exec, &ctx, *tolerance, *blur, *match_method, false, macro_)?;
         if wait.wait_until_found_active() && results0.is_empty() {
             exec.log(
                 action_id,
@@ -74,11 +74,19 @@ pub(crate) fn execute_image_search(
             exec,
             macro_,
             &ctx,
-            |exec, macro_, _fresh| {
+            |exec, macro_, force_fresh| {
                 if let Some(first) = initial.take() {
                     return Ok(first);
                 }
-                capture_and_match(exec, &ctx, *tolerance, *blur, *match_method, macro_)
+                capture_and_match(
+                    exec,
+                    &ctx,
+                    *tolerance,
+                    *blur,
+                    *match_method,
+                    force_fresh,
+                    macro_,
+                )
             },
             |results| !results.is_empty(),
             |exec, macro_, results, pass| apply_detection_hits(exec, &ctx, results, macro_, pass),
@@ -125,6 +133,7 @@ fn capture_and_match(
     tolerance: f64,
     blur: i32,
     match_method: MatchMethod,
+    force_fresh: bool,
     macro_: &Macro,
 ) -> Result<Vec<DetectionHit>> {
     let action_id = ctx.action_id;
@@ -138,12 +147,13 @@ fn capture_and_match(
         return Ok(Vec::new());
     };
 
+    let fresh = exec.take_capture_fresh(force_fresh);
     let capture_started = Instant::now();
     let Some((search, origin)) = capture_search_buf(
         exec,
         ctx,
         macro_,
-        true,
+        fresh,
         |exec, lx, ty, rx, by| {
             let w = (rx - lx).max(0);
             let h = (by - ty).max(0);

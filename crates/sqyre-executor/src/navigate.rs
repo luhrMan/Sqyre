@@ -488,6 +488,7 @@ fn move_to_cell(
             node.collection, pos.row, pos.col
         ))
     })?;
+    exec.mark_capture_dirty();
     exec.deps.automation.move_to(
         x,
         y,
