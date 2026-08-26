@@ -290,9 +290,12 @@ impl SettingsUi {
                 egui_phosphor::regular::MAGNIFYING_GLASS,
             ))
             .on_hover_text("Search");
+            let search_w = (ui.available_width() - 60.0).max(120.0);
             if ui
                 .add(
-                    egui::TextEdit::singleline(&mut self.search).hint_text("Search settings…"),
+                    egui::TextEdit::singleline(&mut self.search)
+                        .hint_text("Search settings…")
+                        .desired_width(search_w),
                 )
                 .changed()
                 && !self.search.trim().is_empty()
@@ -327,11 +330,12 @@ impl SettingsUi {
 
         ui.horizontal(|ui| {
             const SIDEBAR_W: f32 = 132.0;
+            const MIN_CONTENT_W: f32 = 240.0;
             ui.allocate_ui_with_layout(
                 egui::vec2(SIDEBAR_W, body_h),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
-                    ui.set_width(SIDEBAR_W);
+                    ui.set_max_size(egui::vec2(SIDEBAR_W, body_h));
                     for section in visible_sections.iter().copied() {
                         if ui
                             .selectable_label(self.active_section == section, section.label())
@@ -343,34 +347,44 @@ impl SettingsUi {
                 },
             );
             ui.separator();
-            crate::pickers::scroll_vertical()
-                .id_salt("user_settings_content")
-                .max_height(body_h)
-                .show(ui, |ui| {
-                    if visible_sections.is_empty() {
-                        ui.label(
-                            egui::RichText::new("No settings match your search.")
-                                .weak()
-                                .italics(),
-                        );
-                        return;
-                    }
-                    let section = self.active_section;
-                    ui.label(egui::RichText::new(section.label()).strong().heading());
-                    ui.label(egui::RichText::new(section.subtitle()).weak());
-                    ui.separator();
-                    self.draw_section(
-                        ui,
-                        ctx,
-                        db,
-                        macros,
-                        catalog,
-                        #[cfg(not(target_arch = "wasm32"))]
-                        update,
-                        section,
-                        &q,
-                    );
-                });
+            let content_w = ui.available_width().max(MIN_CONTENT_W);
+            ui.allocate_ui_with_layout(
+                egui::vec2(content_w, body_h),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.set_max_size(egui::vec2(content_w, body_h));
+                    crate::pickers::scroll_vertical()
+                        .id_salt("user_settings_content")
+                        .auto_shrink([false, false])
+                        .max_height(body_h)
+                        .show(ui, |ui| {
+                            ui.set_max_width(ui.available_width());
+                            if visible_sections.is_empty() {
+                                ui.label(
+                                    egui::RichText::new("No settings match your search.")
+                                        .weak()
+                                        .italics(),
+                                );
+                                return;
+                            }
+                            let section = self.active_section;
+                            ui.label(egui::RichText::new(section.label()).strong().heading());
+                            ui.label(egui::RichText::new(section.subtitle()).weak());
+                            ui.separator();
+                            self.draw_section(
+                                ui,
+                                ctx,
+                                db,
+                                macros,
+                                catalog,
+                                #[cfg(not(target_arch = "wasm32"))]
+                                update,
+                                section,
+                                &q,
+                            );
+                        });
+                },
+            );
         });
 
         if self.status_banner.status.is_some() {
@@ -549,19 +563,6 @@ impl SettingsUi {
             });
         }
 
-        if setting_visible(q, section_hit, SETTING_IMAGE_SEARCH_TOOLTIP_PREVIEW)
-            && ui
-                .checkbox(
-                    &mut self.settings.image_search_tooltip_preview,
-                    "Image Search tooltip match preview",
-                )
-                .on_hover_text(
-                    "When enabled, Image Search action tooltips overlay live template-match boxes on the search-area capture (uses tolerance, blur, and method from the action).",
-                )
-                .changed()
-        {
-            self.mark_dirty();
-        }
     }
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
@@ -1312,14 +1313,6 @@ const SETTING_IMAGE_SEARCH_DISTANCE: &[&str] = &[
     "distance",
     "duplicate",
 ];
-const SETTING_IMAGE_SEARCH_TOOLTIP_PREVIEW: &[&str] = &[
-    "image search",
-    "tooltip",
-    "preview",
-    "match preview",
-    "template match",
-    "overlay",
-];
 
 const SETTING_FINISH_SOUND: &[&str] = &["finish sound", "macro finishes", "complete"];
 const SETTING_UI_SOUNDS: &[&str] = &["ui sounds", "adding", "deleting", "add/delete"];
@@ -1386,7 +1379,6 @@ const GENERAL_SETTINGS: &[&[&str]] = &[
     SETTING_WHILE_BUDGET,
     SETTING_RUN_MACRO_DEPTH,
     SETTING_IMAGE_SEARCH_DISTANCE,
-    SETTING_IMAGE_SEARCH_TOOLTIP_PREVIEW,
 ];
 const SOUND_SETTINGS: &[&[&str]] = &[
     SETTING_FINISH_SOUND,

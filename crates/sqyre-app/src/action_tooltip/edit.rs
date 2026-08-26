@@ -70,7 +70,6 @@ pub fn paint_edit_fields(
         catalog,
         icons,
         previews,
-        image_search_tooltip_preview,
     } = paint;
     let VarTheme {
         known_vars,
@@ -174,12 +173,11 @@ pub fn paint_edit_fields(
                         catalog,
                         icons,
                         previews,
-                        image_search_tooltip_preview,
                     },
                     point,
                     picker,
                 );
-                paint_coord_preview(ui, catalog, previews, point, PreviewKind::Point, false);
+                paint_coord_preview(ui, catalog, previews, point, PreviewKind::Point);
             });
             tip_wrapped_section(ui, |ui| {
                 help::tip(ui.checkbox(smooth, "Smooth"), h::MOVE_SMOOTH);
@@ -377,14 +375,12 @@ pub fn paint_edit_fields(
                     catalog,
                     icons,
                     previews,
-                    image_search_tooltip_preview,
                 },
                 picker,
                 VarTheme {
                     known_vars,
                     is_dark,
                 },
-                active_macro,
                 name,
                 targets,
                 search_area,
@@ -413,7 +409,6 @@ pub fn paint_edit_fields(
                     catalog,
                     icons,
                     previews,
-                    image_search_tooltip_preview,
                 },
                 picker,
                 VarTheme {
@@ -447,7 +442,6 @@ pub fn paint_edit_fields(
                     catalog,
                     icons,
                     previews,
-                    image_search_tooltip_preview,
                 },
                 picker,
                 VarTheme {
@@ -715,22 +709,21 @@ fn paint_coord_preview(
     previews: &mut PreviewTooltipCache,
     coord: &CoordinateRef,
     kind: PreviewKind,
-    force: bool,
 ) {
     if coord.is_empty() {
         return;
     }
-    let mut refresh = force;
+    let mut force = false;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Preview").strong());
         if crate::theme::icon_button(ui, "↻")
             .on_hover_text("Refresh")
             .clicked()
         {
-            refresh = true;
+            force = true;
         }
     });
-    previews.paint_for_coordinate_ref(ui, catalog, coord, kind, refresh);
+    previews.paint_for_coordinate_ref(ui, catalog, coord, kind, force);
 }
 
 fn point_picker_row(
@@ -780,7 +773,6 @@ fn coord_picker_row(
         catalog,
         icons,
         previews,
-        image_search_tooltip_preview: _,
     } = paint;
     let display = coord.display_label();
     let validation = coord_unset_validation(kind, coord);
@@ -1043,56 +1035,16 @@ fn search_area_section(
     paint: &mut CatalogPaint<'_>,
     search_area: &mut CoordinateRef,
     picker: &mut ActivePicker,
-    image_search: Option<edit_detect::ImageSearchAreaPreview<'_>>,
 ) {
     tip_section(ui, |ui| {
         search_area_picker_row(ui, paint, search_area, picker);
-        let mut force = false;
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Preview").strong());
-            if crate::theme::icon_button(ui, "↻")
-                .on_hover_text("Refresh")
-                .clicked()
-            {
-                force = true;
-            }
-        });
-        if let Some(is) = image_search {
-            let empty = Macro::new("", 0, vec![]);
-            let macro_ref = is.macro_.unwrap_or(&empty);
-            if paint.image_search_tooltip_preview {
-                paint.previews.paint_image_search_action_preview(
-                    ui,
-                    paint.catalog,
-                    paint.icons,
-                    macro_ref,
-                    search_area,
-                    is.targets,
-                    is.tolerance,
-                    is.blur,
-                    is.match_method,
-                    force,
-                );
-            } else {
-                paint_coord_preview(
-                    ui,
-                    paint.catalog,
-                    paint.previews,
-                    search_area,
-                    PreviewKind::SearchArea,
-                    force,
-                );
-            }
-        } else {
-            paint_coord_preview(
-                ui,
-                paint.catalog,
-                paint.previews,
-                search_area,
-                PreviewKind::SearchArea,
-                force,
-            );
-        }
+        paint_coord_preview(
+            ui,
+            paint.catalog,
+            paint.previews,
+            search_area,
+            PreviewKind::SearchArea,
+        );
     });
 }
 

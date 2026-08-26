@@ -329,7 +329,7 @@ pub fn show(
                 *state = TooltipState::Hidden;
                 return Vec::new();
             };
-            show_view_tip(ctx, action, macro_, paint, *theme);
+            show_view_tip(ctx, action, paint, *theme);
             Vec::new()
         }
         TooltipState::Edit { .. } => {
@@ -376,7 +376,6 @@ pub(crate) fn show_action_view_tip(
     ctx: &egui::Context,
     tip_id: egui::Id,
     action: &Action,
-    macro_: &Macro,
     paint: &mut CatalogPaint<'_>,
     theme: VarTheme<'_>,
 ) {
@@ -384,7 +383,6 @@ pub(crate) fn show_action_view_tip(
         catalog,
         icons,
         previews,
-        image_search_tooltip_preview,
     } = paint;
     let VarTheme {
         known_vars,
@@ -457,51 +455,19 @@ pub(crate) fn show_action_view_tip(
                             }
                         });
                     }
-                    if let ActionKind::ImageSearch {
-                        targets,
-                        search_area,
-                        tolerance,
-                        blur,
-                        match_method,
-                        ..
-                    } = &action.kind
-                    {
-                        if image_search_tooltip_preview
-                            && !search_area.is_empty()
-                            && !targets.is_empty()
-                        {
-                            sections::tip_section(ui, |ui| {
-                                previews.paint_image_search_action_preview(
-                                    ui,
-                                    catalog,
-                                    icons,
-                                    macro_,
-                                    search_area,
-                                    targets,
-                                    *tolerance,
-                                    *blur,
-                                    *match_method,
-                                    false,
-                                );
-                            });
-                        } else if let Some((coord_ref, kind)) = coord_preview {
-                            sections::tip_section(ui, |ui| {
-                                previews.paint_for_coordinate_ref(
-                                    ui, catalog, &coord_ref, kind, false,
-                                );
-                            });
-                        }
-                        if !image_search_tooltip_preview && !targets.is_empty() {
+                    if let Some((coord_ref, kind)) = coord_preview {
+                        sections::tip_section(ui, |ui| {
+                            previews.paint_for_coordinate_ref(ui, catalog, &coord_ref, kind, false);
+                        });
+                    }
+                    if let ActionKind::ImageSearch { targets, .. } = &action.kind {
+                        if !targets.is_empty() {
                             sections::tip_section(ui, |ui| {
                                 tree_chrome::paint_image_search_tooltip_thumbs_pub(
                                     ui, action, catalog, icons,
                                 );
                             });
                         }
-                    } else if let Some((coord_ref, kind)) = coord_preview {
-                        sections::tip_section(ui, |ui| {
-                            previews.paint_for_coordinate_ref(ui, catalog, &coord_ref, kind, false);
-                        });
                     }
                     if !extra.is_empty() {
                         sections::tip_section(ui, |ui| {
@@ -555,7 +521,6 @@ pub(crate) fn show_action_view_tip(
 fn show_view_tip(
     ctx: &egui::Context,
     action: &Action,
-    macro_: &Macro,
     paint: &mut CatalogPaint<'_>,
     theme: VarTheme<'_>,
 ) {
@@ -563,7 +528,6 @@ fn show_view_tip(
         ctx,
         egui::Id::new(("action_hover_tip", action.id)),
         action,
-        macro_,
         paint,
         theme,
     );
@@ -618,7 +582,6 @@ fn show_edit_window(
         catalog,
         icons,
         previews,
-        image_search_tooltip_preview,
     } = paint;
 
     let mut save = false;
@@ -663,7 +626,6 @@ fn show_edit_window(
                         catalog,
                         icons,
                         previews,
-                        image_search_tooltip_preview: paint.image_search_tooltip_preview,
                     },
                     bridges: RecordBridges {
                         key_record: bridges.key_record,

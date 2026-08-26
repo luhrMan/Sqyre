@@ -17,8 +17,6 @@ use sqyre_domain::{
 };
 
 pub const DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE: i32 = 10;
-/// Live template-match overlays on Image Search action tooltip previews.
-pub const DEFAULT_IMAGE_SEARCH_TOOLTIP_PREVIEW: bool = false;
 pub const DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 150;
 pub const MIN_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 25;
 pub const DEFAULT_HIDE_APP_DURING_RECORDING: bool = true;
@@ -403,9 +401,6 @@ pub struct UserSettings {
     pub sound_volume: f32,
     #[serde(default = "default_close_matches")]
     pub image_search_close_matches_distance: i32,
-    /// Draw tolerance match boxes on Image Search action tooltip previews.
-    #[serde(default = "default_image_search_tooltip_preview")]
-    pub image_search_tooltip_preview: bool,
     #[serde(default = "default_drag_debounce")]
     pub drag_preview_debounce_ms: i32,
     /// Absolute path override for the `.sqyre` data directory (empty = `~/.sqyre`).
@@ -468,9 +463,6 @@ fn default_sound_volume() -> f32 {
 fn default_close_matches() -> i32 {
     DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE
 }
-fn default_image_search_tooltip_preview() -> bool {
-    DEFAULT_IMAGE_SEARCH_TOOLTIP_PREVIEW
-}
 fn default_drag_debounce() -> i32 {
     DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS
 }
@@ -510,7 +502,6 @@ impl Default for UserSettings {
             play_ui_sounds: DEFAULT_PLAY_UI_SOUNDS,
             sound_volume: DEFAULT_SOUND_VOLUME,
             image_search_close_matches_distance: DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE,
-            image_search_tooltip_preview: DEFAULT_IMAGE_SEARCH_TOOLTIP_PREVIEW,
             drag_preview_debounce_ms: DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
             sqyre_dir: String::new(),
             ui_font_size: DEFAULT_UI_FONT_SIZE,
