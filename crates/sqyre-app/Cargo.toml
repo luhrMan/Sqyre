@@ -31,7 +31,8 @@ winresource = "0.1"
 
 [dependencies]
 # `glow`: Windows overlay button per-pixel alpha (wgpu DX12 HWND swapchains are opaque).
-eframe = { workspace = true, features = ["glow"] }
+# `wgpu`: Linux Wayland deferred viewports need wgpu for per-pixel alpha (glow child GL configs).
+eframe = { workspace = true, features = ["glow", "wgpu"] }
 egui = { workspace = true }
 egui-phosphor = { workspace = true }
 egui_ltreeview = { workspace = true }
