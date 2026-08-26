@@ -939,6 +939,7 @@ impl DataEditor {
     fn invalidate_pixel_check(&mut self) {
         self.pixel_check_cache = None;
         self.pixel_check_pending = None;
+        self.pixel_check.show_many_match_boxes = false;
     }
 
     #[cfg(feature = "native-runtime")]
@@ -987,6 +988,9 @@ impl DataEditor {
                 Ok(Ok(result)) => {
                     self.pixel_check_pending = None;
                     if result.fingerprint == self.pixel_check.last_inputs {
+                        if result.tolerance_matches.len() > pixel_check::MANY_MATCH_BOX_THRESHOLD {
+                            self.pixel_check.show_many_match_boxes = false;
+                        }
                         self.pixel_check_cache = Some(pixel_check::finish_cache(ctx, result));
                     }
                 }

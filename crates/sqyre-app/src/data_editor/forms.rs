@@ -218,6 +218,7 @@ impl DataEditor {
             catalog,
             icons,
             previews,
+            ..
         } = paint;
         let known = active_macro
             .map(collect_known_variable_names)
@@ -463,7 +464,7 @@ impl DataEditor {
                 let by = form_coord_literal(&self.form_bottom);
                 self.sync_coord_preview_view();
                 let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
-                let rect = previews.paint_search_area_panel(
+                let (rect, _) = previews.paint_search_area_panel(
                     ui,
                     lx,
                     ty,
@@ -953,7 +954,7 @@ impl DataEditor {
                     egui::vec2(ui.available_width(), preview_h),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
-                        let rect = previews.paint_search_area_panel(
+                        let (rect, _) = previews.paint_search_area_panel(
                             ui,
                             lx,
                             ty,
@@ -1021,6 +1022,7 @@ impl DataEditor {
                     active_macro,
                     &known,
                     is_dark,
+                    settings,
                 );
             }
             EditorTab::Overlay => {
@@ -1236,6 +1238,7 @@ impl DataEditor {
         active_macro: Option<&Macro>,
         known: &KnownVariableNames,
         is_dark: bool,
+        settings: &UserSettings,
     ) {
         ui.heading("PixelCheck");
         #[cfg(not(feature = "native-runtime"))]
@@ -1368,7 +1371,7 @@ impl DataEditor {
                 egui::vec2(ui.available_width(), preview_h),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
-                    let rect = previews.paint_search_area_panel(
+                    let (rect, _preview_image_size) = previews.paint_search_area_panel(
                         ui,
                         lx,
                         ty,
@@ -1390,8 +1393,14 @@ impl DataEditor {
                             self.pixel_check.match_method,
                             self.pixel_check.tolerance,
                             self.pixel_check.refresh_gen,
+                            settings.image_search_close_matches_distance,
                         );
                         if cache.fingerprint == inputs {
+                            let match_count = cache.tolerance_matches.len();
+                            let show_boxes = super::pixel_check::should_paint_match_boxes(
+                                match_count,
+                                self.pixel_check.show_many_match_boxes,
+                            );
                             let image_size = egui::vec2(cache.image_w as f32, cache.image_h as f32);
                             super::pixel_check::paint_heatmap_overlay(
                                 ui,
@@ -1402,6 +1411,7 @@ impl DataEditor {
                                 &mut hover,
                                 self.pixel_check.match_method,
                                 self.pixel_check.tolerance as f32,
+                                show_boxes,
                             );
                         }
                     }
@@ -1440,22 +1450,28 @@ impl DataEditor {
                     );
                 },
             );
-            let tmpl_dims = self
-                .pixel_check_cache
-                .as_ref()
-                .map(|c| (c.tmpl_w, c.tmpl_h, c.summary))
-                .unwrap_or((0, 0, super::pixel_check::MatchSummary::default()));
-            super::pixel_check::paint_legend(
-                ui,
-                &tmpl_dims.2,
-                hover.as_ref(),
-                self.pixel_check.tolerance as f32,
-                self.pixel_check.match_method,
-                tmpl_dims.0,
-                tmpl_dims.1,
-            );
+            if let Some(cache) = &self.pixel_check_cache {
+                super::pixel_check::paint_legend(
+                    ui,
+                    &cache.summary,
+                    cache.tolerance_matches.len(),
+                    &mut self.pixel_check.show_many_match_boxes,
+                    hover.as_ref(),
+                    self.pixel_check.tolerance as f32,
+                    cache.tmpl_w,
+                    cache.tmpl_h,
+                );
+            }
             if can_compute {
-                self.request_pixel_check_match(catalog, lx, ty, rx, by, force);
+                self.request_pixel_check_match(
+                    catalog,
+                    lx,
+                    ty,
+                    rx,
+                    by,
+                    force,
+                    settings.image_search_close_matches_distance,
+                );
             }
             if can_compute && (force || lx.is_some()) {
                 ui.ctx().request_repaint();

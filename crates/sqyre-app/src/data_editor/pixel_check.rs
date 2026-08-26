@@ -11,8 +11,8 @@ mod inner {
     use sqyre_capture::shared_capturer;
     use sqyre_domain::MatchMethod;
     use sqyre_match::{
-        blur_image_owned, match_template_with_prepared, prepare_search, prepare_template,
-        search_blur_kernel, MatchMap,
+        blur_image_owned, find_peaks_for_method, match_template_with_prepared, prepare_search,
+        prepare_template, search_blur_kernel, MatchMap,
     };
     use sqyre_persist::ProgramCatalog;
     use sqyre_ports::DesktopRect;
@@ -26,6 +26,8 @@ mod inner {
     const MIN_CAPTURE_SIZE: i32 = 320;
     const CAPTURE_PADDING: i32 = 48;
     const DEBOUNCE: Duration = Duration::from_millis(200);
+    /// Above this count, match boxes are hidden until the user opts in (paint cost).
+    pub(crate) const MANY_MATCH_BOX_THRESHOLD: usize = 100;
 
     /// Peak match stats shown in the legend and best-match marker.
     #[derive(Clone, Copy, Debug, Default)]
@@ -39,6 +41,14 @@ mod inner {
         pub peaks_above: usize,
     }
 
+    /// Spatially clustered template match at or above tolerance (strict).
+    #[derive(Clone, Debug)]
+    pub(crate) struct ToleranceMatch {
+        pub x: i32,
+        pub y: i32,
+        pub score: f32,
+    }
+
     pub(crate) struct PixelCheckCache {
         pub fingerprint: String,
         pub match_map: MatchMap,
@@ -47,6 +57,7 @@ mod inner {
         pub tmpl_w: usize,
         pub tmpl_h: usize,
         pub summary: MatchSummary,
+        pub tolerance_matches: Vec<ToleranceMatch>,
         pub heatmap: TextureHandle,
     }
 
@@ -58,6 +69,7 @@ mod inner {
         pub tmpl_w: usize,
         pub tmpl_h: usize,
         pub summary: MatchSummary,
+        pub tolerance_matches: Vec<ToleranceMatch>,
         pub heatmap_rgba: Vec<u8>,
     }
 
@@ -81,6 +93,8 @@ mod inner {
         pub last_request: Option<Instant>,
         /// When true, debounced refresh and retries are suppressed until inputs change or ↻.
         pub paused: bool,
+        /// Opt-in paint for match boxes when count exceeds [`MANY_MATCH_BOX_THRESHOLD`].
+        pub show_many_match_boxes: bool,
     }
 
     impl Default for PixelCheckSettings {
@@ -94,8 +108,13 @@ mod inner {
                 last_inputs: String::new(),
                 last_request: None,
                 paused: false,
+                show_many_match_boxes: false,
             }
         }
+    }
+
+    pub(crate) fn should_paint_match_boxes(match_count: usize, show_many: bool) -> bool {
+        match_count <= MANY_MATCH_BOX_THRESHOLD || show_many
     }
 
     /// All bounds are literal integers forming a non-empty rectangle.
@@ -139,9 +158,10 @@ mod inner {
         method: MatchMethod,
         tolerance: f64,
         refresh_gen: u64,
+        close_matches_distance: i32,
     ) -> String {
         format!(
-            "{prog}\0{item}\0{variant}\0{lx},{ty},{rx},{by}\0{blur}\0{method:?}\0{tolerance}\0{refresh_gen}"
+            "{prog}\0{item}\0{variant}\0{lx},{ty},{rx},{by}\0{blur}\0{method:?}\0{tolerance}\0{refresh_gen}\0{close_matches_distance}"
         )
     }
 
@@ -185,31 +205,46 @@ mod inner {
         }
     }
 
-    fn shift_into_virtual(r: DesktopRect, vb: DesktopRect) -> DesktopRect {
-        if r.is_empty() || vb.is_empty() {
-            return r;
+    fn shift_into_virtual(desired: DesktopRect, vb: DesktopRect) -> DesktopRect {
+        if desired.is_empty() || vb.is_empty() {
+            return DesktopRect::from_corners(
+                desired.x.max(vb.x),
+                desired.y.max(vb.y),
+                (desired.x + desired.w).min(vb.x + vb.w),
+                (desired.y + desired.h).min(vb.y + vb.h),
+            );
         }
-        let mut x0 = r.x;
-        let mut y0 = r.y;
-        let w = r.w;
-        let h = r.h;
-        if x0 < vb.x {
+        let mut w = desired.w;
+        let mut h = desired.h;
+        if w <= 0 || h <= 0 {
+            return DesktopRect::default();
+        }
+        if w >= vb.w && h >= vb.h {
+            return vb;
+        }
+        let mut x0 = desired.x;
+        let mut y0 = desired.y;
+        if w > vb.w {
             x0 = vb.x;
+            w = vb.w;
+        } else {
+            if x0 < vb.x {
+                x0 = vb.x;
+            }
+            if x0 + w > vb.x + vb.w {
+                x0 = vb.x + vb.w - w;
+            }
         }
-        if y0 < vb.y {
+        if h > vb.h {
             y0 = vb.y;
-        }
-        if x0 + w > vb.x + vb.w {
-            x0 = vb.x + vb.w - w;
-        }
-        if y0 + h > vb.y + vb.h {
-            y0 = vb.y + vb.h - h;
-        }
-        if x0 < vb.x {
-            x0 = vb.x;
-        }
-        if y0 < vb.y {
-            y0 = vb.y;
+            h = vb.h;
+        } else {
+            if y0 < vb.y {
+                y0 = vb.y;
+            }
+            if y0 + h > vb.y + vb.h {
+                y0 = vb.y + vb.h - h;
+            }
         }
         DesktopRect { x: x0, y: y0, w, h }
     }
@@ -284,10 +319,89 @@ mod inner {
     }
 
     fn score_passes(score: f32, method: MatchMethod, tolerance: f32) -> bool {
+        if !score.is_finite() {
+            return false;
+        }
         if method.higher_is_better() {
             score >= tolerance
         } else {
             score <= tolerance
+        }
+    }
+
+    fn match_score_at(map: &MatchMap, x: i32, y: i32) -> Option<f32> {
+        if x < 0 || y < 0 {
+            return None;
+        }
+        let (x, y) = (x as usize, y as usize);
+        if x >= map.width || y >= map.height {
+            return None;
+        }
+        let score = map.scores[y * map.width + x];
+        score.is_finite().then_some(score)
+    }
+
+    pub(crate) fn collect_tolerance_matches(
+        map: &MatchMap,
+        tolerance: f32,
+        close_matches_distance: i32,
+        method: MatchMethod,
+    ) -> Vec<ToleranceMatch> {
+        find_peaks_for_method(map, tolerance, close_matches_distance, method)
+            .into_iter()
+            .filter_map(|pt| {
+                let score = match_score_at(map, pt.x, pt.y)?;
+                if score_passes(score, method, tolerance) {
+                    Some(ToleranceMatch {
+                        x: pt.x,
+                        y: pt.y,
+                        score,
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// 0–1 display strength for a raw score (matches hover closeness semantics).
+    fn score_norm_for_display(score: f32, method: MatchMethod, summary: &MatchSummary) -> f32 {
+        if !score.is_finite() {
+            return 0.0;
+        }
+        if method.is_normed() {
+            if method.higher_is_better() {
+                score.clamp(0.0, 1.0)
+            } else {
+                1.0 - score.clamp(0.0, 1.0)
+            }
+        } else {
+            let span = (summary.score_max - summary.score_min).max(f32::EPSILON);
+            if method.higher_is_better() {
+                ((score - summary.score_min) / span).clamp(0.0, 1.0)
+            } else {
+                ((summary.score_max - score) / span).clamp(0.0, 1.0)
+            }
+        }
+    }
+
+    const HEATMAP_VIZ_MARGIN: f32 = 0.12;
+
+    /// Whether a match position should contribute to the pooled heatmap overlay.
+    fn score_pools_in_heatmap(score: f32, method: MatchMethod, tolerance: f32) -> bool {
+        if !score.is_finite() {
+            return false;
+        }
+        if score_passes(score, method, tolerance) {
+            return true;
+        }
+        if !method.is_normed() {
+            return false;
+        }
+        if method.higher_is_better() {
+            score >= tolerance - HEATMAP_VIZ_MARGIN
+        } else {
+            score <= tolerance + HEATMAP_VIZ_MARGIN
         }
     }
 
@@ -392,7 +506,6 @@ mod inner {
         if map.width == 0 || map.height == 0 || image_w == 0 || image_h == 0 {
             return (rgba, summary);
         }
-        let span = (summary.score_max - summary.score_min).max(f32::EPSILON);
 
         // Max-pool template footprints so each pixel shows the best overlapping match.
         let init = if method.higher_is_better() {
@@ -406,7 +519,7 @@ mod inner {
         for y in 0..map.height {
             for x in 0..map.width {
                 let score = map.scores[y * map.width + x];
-                if !score.is_finite() {
+                if !score_pools_in_heatmap(score, method, tolerance) {
                     continue;
                 }
                 let x1 = (x + tw).min(image_w);
@@ -432,12 +545,7 @@ mod inner {
                 if !score.is_finite() {
                     continue;
                 }
-                let norm = if method.higher_is_better() {
-                    (score - summary.score_min) / span
-                } else {
-                    (summary.score_max - score) / span
-                }
-                .clamp(0.0, 1.0);
+                let norm = score_norm_for_display(score, method, &summary);
                 let px_rgba = pixel_rgba(score, norm, method, tolerance);
                 if px_rgba[3] == 0 {
                     continue;
@@ -455,28 +563,10 @@ mod inner {
         method: MatchMethod,
         summary: &MatchSummary,
     ) -> f32 {
-        if !score.is_finite() {
-            return 0.0;
-        }
-        if method.is_normed() {
-            if method.higher_is_better() {
-                score.clamp(0.0, 1.0) * 100.0
-            } else {
-                // SQDIFF* normed: 0 = perfect match.
-                (1.0 - score.clamp(0.0, 1.0)) * 100.0
-            }
-        } else {
-            let span = (summary.score_max - summary.score_min).max(f32::EPSILON);
-            let norm = if method.higher_is_better() {
-                (score - summary.score_min) / span
-            } else {
-                (summary.score_max - score) / span
-            };
-            norm.clamp(0.0, 1.0) * 100.0
-        }
+        score_norm_for_display(score, method, summary) * 100.0
     }
 
-    /// Best template-match score covering image pixel `(px, py)` (matches heatmap pooling).
+    /// Best template-match score covering image pixel `(px, py)` among strict tolerance hits.
     fn pooled_score_at(
         map: &MatchMap,
         px: usize,
@@ -484,6 +574,7 @@ mod inner {
         tmpl_w: usize,
         tmpl_h: usize,
         method: MatchMethod,
+        tolerance: f32,
     ) -> Option<f32> {
         let mut best: Option<f32> = None;
         for my in 0..map.height {
@@ -492,7 +583,7 @@ mod inner {
                     continue;
                 }
                 let score = map.scores[my * map.width + mx];
-                if !score.is_finite() {
+                if !score_passes(score, method, tolerance) {
                     continue;
                 }
                 best = Some(match best {
@@ -519,7 +610,15 @@ mod inner {
         if ix < 0 || iy < 0 {
             return None;
         }
-        let score = pooled_score_at(map, ix as usize, iy as usize, tmpl_w, tmpl_h, method)?;
+        let score = pooled_score_at(
+            map,
+            ix as usize,
+            iy as usize,
+            tmpl_w,
+            tmpl_h,
+            method,
+            tolerance,
+        )?;
         let passes = score_passes(score, method, tolerance);
         Some(PixelCheckHover {
             x: ix,
@@ -541,6 +640,7 @@ mod inner {
         blur: i32,
         method: MatchMethod,
         tolerance: f32,
+        close_matches_distance: i32,
         image_w_hint: usize,
         image_h_hint: usize,
     ) -> mpsc::Receiver<Result<PixelCheckResult, String>> {
@@ -566,6 +666,8 @@ mod inner {
                     method,
                     tolerance,
                 );
+                let tolerance_matches =
+                    collect_tolerance_matches(&map, tolerance, close_matches_distance, method);
                 Ok(PixelCheckResult {
                     fingerprint,
                     match_map: map,
@@ -574,6 +676,7 @@ mod inner {
                     tmpl_w,
                     tmpl_h,
                     summary,
+                    tolerance_matches,
                     heatmap_rgba,
                 })
             })();
@@ -599,6 +702,7 @@ mod inner {
             tmpl_w: result.tmpl_w,
             tmpl_h: result.tmpl_h,
             summary: result.summary,
+            tolerance_matches: result.tolerance_matches,
             heatmap,
         }
     }
@@ -616,40 +720,81 @@ mod inner {
         )
     }
 
-    fn paint_best_match_marker(
+    fn paint_tolerance_match_boxes(
         painter: &egui::Painter,
         content: egui::Rect,
         image_size: egui::Vec2,
         summary: &MatchSummary,
+        tolerance_matches: &[ToleranceMatch],
         tmpl_w: usize,
         tmpl_h: usize,
+        method: MatchMethod,
+        tolerance: f32,
+        show_match_boxes: bool,
     ) {
-        if !summary.best_score.is_finite() {
+        if !show_match_boxes {
             return;
         }
-        let top_left = image_to_content(
-            egui::pos2(summary.best_x as f32, summary.best_y as f32),
-            content,
-            image_size,
-        );
+        if tmpl_w == 0 || tmpl_h == 0 || !summary.best_score.is_finite() {
+            return;
+        }
         let scale_x = content.width() / image_size.x.max(1.0);
         let scale_y = content.height() / image_size.y.max(1.0);
-        let rect = egui::Rect::from_min_size(
-            top_left,
-            egui::vec2(tmpl_w as f32 * scale_x, tmpl_h as f32 * scale_y),
-        );
-        let color = if summary.best_passes {
-            Color32::from_rgb(80, 255, 120)
-        } else {
-            Color32::from_rgb(255, 200, 60)
-        };
-        painter.rect_stroke(
-            rect,
-            0.0,
-            egui::Stroke::new(2.0, color),
-            egui::StrokeKind::Outside,
-        );
-        painter.circle_filled(egui::pos2(rect.center().x, rect.min.y - 6.0), 4.0, color);
+        let box_size = egui::vec2(tmpl_w as f32 * scale_x, tmpl_h as f32 * scale_y);
+        if tolerance_matches.is_empty() {
+            if score_passes(summary.best_score, method, tolerance) {
+                return;
+            }
+            let top_left = image_to_content(
+                egui::pos2(summary.best_x as f32, summary.best_y as f32),
+                content,
+                image_size,
+            );
+            let rect = egui::Rect::from_min_size(top_left, box_size);
+            let color = Color32::from_rgb(255, 200, 60);
+            painter.rect_stroke(
+                rect,
+                0.0,
+                egui::Stroke::new(2.0, color),
+                egui::StrokeKind::Outside,
+            );
+            painter.circle_filled(
+                egui::pos2(rect.center().x, rect.min.y - 6.0),
+                4.0,
+                color,
+            );
+            return;
+        }
+        for m in tolerance_matches {
+            if !score_passes(m.score, method, tolerance) {
+                continue;
+            }
+            let is_best = m.x == summary.best_x && m.y == summary.best_y;
+            let top_left = image_to_content(
+                egui::pos2(m.x as f32, m.y as f32),
+                content,
+                image_size,
+            );
+            let rect = egui::Rect::from_min_size(top_left, box_size);
+            let color = if is_best {
+                Color32::from_rgb(80, 255, 120)
+            } else {
+                Color32::from_rgb(120, 230, 180)
+            };
+            painter.rect_stroke(
+                rect,
+                0.0,
+                egui::Stroke::new(if is_best { 2.0 } else { 1.5 }, color),
+                egui::StrokeKind::Outside,
+            );
+            if is_best {
+                painter.circle_filled(
+                    egui::pos2(rect.center().x, rect.min.y - 6.0),
+                    4.0,
+                    color,
+                );
+            }
+        }
     }
 
     pub(crate) fn paint_heatmap_overlay(
@@ -661,6 +806,7 @@ mod inner {
         hover: &mut Option<PixelCheckHover>,
         method: MatchMethod,
         tolerance: f32,
+        show_match_boxes: bool,
     ) {
         let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
         let painter = ui.painter_at(viewport);
@@ -670,13 +816,17 @@ mod inner {
             egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             Color32::WHITE,
         );
-        paint_best_match_marker(
+        paint_tolerance_match_boxes(
             &painter,
             content,
             image_size,
             &cache.summary,
+            &cache.tolerance_matches,
             cache.tmpl_w,
             cache.tmpl_h,
+            method,
+            tolerance,
+            show_match_boxes,
         );
 
         *hover = None;
@@ -731,8 +881,14 @@ mod inner {
             if flip_y { -EST_H - 12.0 } else { OFFSET.y },
         );
         let mut pos = pointer + offset;
-        pos.x = pos.x.clamp(viewport.min.x + 4.0, (viewport.max.x - EST_W - 4.0).max(viewport.min.x));
-        pos.y = pos.y.clamp(viewport.min.y + 4.0, (viewport.max.y - EST_H - 4.0).max(viewport.min.y));
+        pos.x = pos.x.clamp(
+            viewport.min.x + 4.0,
+            (viewport.max.x - EST_W - 4.0).max(viewport.min.x),
+        );
+        pos.y = pos.y.clamp(
+            viewport.min.y + 4.0,
+            (viewport.max.y - EST_H - 4.0).max(viewport.min.y),
+        );
 
         let pct_color = if h.passes {
             Color32::from_rgb(100, 230, 130)
@@ -760,7 +916,9 @@ mod inner {
                         );
                         if let Some(tol) = tol_pct {
                             ui.label(
-                                egui::RichText::new(format!("tolerance {:.0}%", tol)).size(14.0).weak(),
+                                egui::RichText::new(format!("tolerance {:.0}%", tol))
+                                    .size(14.0)
+                                    .weak(),
                             );
                         } else {
                             ui.label(
@@ -776,9 +934,10 @@ mod inner {
     pub(crate) fn paint_legend(
         ui: &mut egui::Ui,
         summary: &MatchSummary,
+        tolerance_match_count: usize,
+        show_many_match_boxes: &mut bool,
         hover: Option<&PixelCheckHover>,
         tolerance: f32,
-        method: MatchMethod,
         tmpl_w: usize,
         tmpl_h: usize,
     ) {
@@ -813,8 +972,24 @@ mod inner {
                     summary.score_min, summary.score_max
                 ));
                 ui.weak(format!("tolerance {:.3}", tolerance));
-                if summary.peaks_above > 0 {
-                    ui.weak(format!("{} ≥ tolerance", summary.peaks_above));
+                if tolerance_match_count > 0 {
+                    ui.weak(format!("{tolerance_match_count} match(es)"));
+                } else if summary.peaks_above > 0 {
+                    ui.weak(format!("{} ≥ tolerance (cells)", summary.peaks_above));
+                }
+            }
+            if tolerance_match_count > MANY_MATCH_BOX_THRESHOLD {
+                let hiding = !should_paint_match_boxes(tolerance_match_count, *show_many_match_boxes);
+                let btn = if *show_many_match_boxes {
+                    "Hide match boxes".to_string()
+                } else {
+                    format!("Show {tolerance_match_count} match boxes")
+                };
+                if ui.small_button(btn).clicked() {
+                    *show_many_match_boxes = !*show_many_match_boxes;
+                }
+                if hiding {
+                    ui.weak("match boxes hidden (too many to paint by default)");
                 }
             }
             if let Some(h) = hover {
@@ -829,10 +1004,10 @@ mod inner {
             }
             if summary.best_passes {
                 ui.colored_label(Color32::from_rgb(80, 220, 80), "■ best match");
-            } else {
+            } else if summary.best_score.is_finite() {
                 ui.colored_label(Color32::from_rgb(255, 200, 60), "■ best (below tolerance)");
             }
-            let _ = method;
+            ui.colored_label(Color32::from_rgb(120, 230, 180), "□ within tolerance");
         });
     }
 
@@ -848,6 +1023,7 @@ mod inner {
         method: MatchMethod,
         tolerance: f64,
         refresh_gen: u64,
+        close_matches_distance: i32,
     ) -> String {
         let (lx, ty, rx, by) = match (left, top, right, bottom) {
             (Some(lx), Some(ty), Some(rx), Some(by)) => (lx, ty, rx, by),
@@ -865,6 +1041,7 @@ mod inner {
             method,
             tolerance,
             refresh_gen,
+            close_matches_distance,
         )
     }
 
@@ -924,6 +1101,7 @@ mod inner {
             right: Option<i32>,
             bottom: Option<i32>,
             force: bool,
+            close_matches_distance: i32,
         ) {
             if force {
                 self.pixel_check.refresh_gen = self.pixel_check.refresh_gen.wrapping_add(1);
@@ -962,6 +1140,7 @@ mod inner {
                 self.pixel_check.match_method,
                 self.pixel_check.tolerance,
                 self.pixel_check.refresh_gen,
+                close_matches_distance,
             );
             if inputs.is_empty() {
                 self.stop_pixel_check_compute();
@@ -1012,6 +1191,7 @@ mod inner {
                 self.pixel_check.blur,
                 self.pixel_check.match_method,
                 tolerance,
+                close_matches_distance,
                 0,
                 0,
             );
@@ -1028,7 +1208,8 @@ pub(crate) use inner::*;
 #[cfg(all(test, feature = "native-runtime"))]
 mod tests {
     use super::inner::{
-        closeness_percent, coords_displayable, hover_at_image, scores_to_heatmap_rgba, MatchSummary,
+        closeness_percent, collect_tolerance_matches, coords_displayable, hover_at_image,
+        scores_to_heatmap_rgba, should_paint_match_boxes, MatchSummary, MANY_MATCH_BOX_THRESHOLD,
     };
     use sqyre_domain::MatchMethod;
     use sqyre_match::MatchMap;
@@ -1071,12 +1252,25 @@ mod tests {
             scores: vec![0.1],
         };
         let (rgba, _) = scores_to_heatmap_rgba(&map, 4, 4, 2, 2, MatchMethod::CcoeffNormed, 0.95);
-        // Weak score should be mostly transparent across the 2×2 block.
+        // Far below tolerance — should not paint any heat.
         let alphas: Vec<u8> = rgba.chunks(4).map(|p| p[3]).collect();
         assert!(
-            alphas.iter().all(|&a| a < 80),
-            "weak match should fade: {alphas:?}"
+            alphas.iter().all(|&a| a == 0),
+            "weak match should not paint: {alphas:?}"
         );
+    }
+
+    #[test]
+    fn heatmap_suppresses_clustered_weak_scores() {
+        // Tight score range that used to normalize to full-span yellow streaks.
+        let map = MatchMap {
+            width: 4,
+            height: 1,
+            scores: vec![0.38, 0.39, 0.40, 0.41],
+        };
+        let (rgba, _) = scores_to_heatmap_rgba(&map, 8, 2, 2, 1, MatchMethod::CcoeffNormed, 0.95);
+        let painted = rgba.chunks(4).filter(|p| p[3] > 0).count();
+        assert_eq!(painted, 0, "clustered weak scores should not paint");
     }
 
     #[test]
@@ -1130,5 +1324,43 @@ mod tests {
         // Pixel inside the high-score template block should inherit 0.95.
         let h = hover_at_image(&map, &summary, 1, 0, 2, 1, MatchMethod::CcoeffNormed, 0.9).unwrap();
         assert!((h.closeness_pct - 95.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn hover_strict_skips_below_tolerance() {
+        let map = MatchMap {
+            width: 2,
+            height: 1,
+            scores: vec![0.5, 0.95],
+        };
+        let summary = MatchSummary {
+            score_min: 0.5,
+            score_max: 0.95,
+            ..Default::default()
+        };
+        assert!(
+            hover_at_image(&map, &summary, 0, 0, 2, 1, MatchMethod::CcoeffNormed, 0.9).is_none()
+        );
+    }
+
+    #[test]
+    fn collect_tolerance_matches_filters_weak_peaks() {
+        let map = MatchMap {
+            width: 4,
+            height: 1,
+            scores: vec![0.38, 0.39, 0.96, 0.41],
+        };
+        let matches = collect_tolerance_matches(&map, 0.95, 0, MatchMethod::CcoeffNormed);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].x, 2);
+        assert!(matches[0].score >= 0.95);
+    }
+
+    #[test]
+    fn should_paint_match_boxes_threshold() {
+        assert!(should_paint_match_boxes(MANY_MATCH_BOX_THRESHOLD, false));
+        assert!(should_paint_match_boxes(50, false));
+        assert!(!should_paint_match_boxes(MANY_MATCH_BOX_THRESHOLD + 1, false));
+        assert!(should_paint_match_boxes(MANY_MATCH_BOX_THRESHOLD + 1, true));
     }
 }
