@@ -1099,7 +1099,7 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
         .with_always_on_top()
         .with_taskbar(false)
         .with_mouse_passthrough(true)
-        .with_window_type(egui::X11WindowType::Dock)
+        .with_window_type(egui::X11WindowType::Notification)
         .with_transparent(true)
         .with_inner_size([outer_w, outer_h])
         .with_min_inner_size([outer_w, outer_h])

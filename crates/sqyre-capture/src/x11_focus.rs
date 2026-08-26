@@ -10,10 +10,10 @@ use std::os::raw::c_ulong;
 use std::path::{Path, PathBuf};
 use std::ptr;
 use x11::xlib::{
-    Atom, ClientMessage, Display, False, PropModeReplace, Success, True, Window, XChangeProperty,
-    XChangeWindowAttributes, XDefaultRootWindow, XEvent, XFlush, XFree, XGetGeometry,
-    XGetWMName, XGetWindowProperty, XInternAtom, XMoveResizeWindow, XOpenDisplay, XSendEvent,
-    XSetWindowAttributes, _XDisplay, CWBackPixel, XA_ATOM, XA_CARDINAL, XA_WINDOW,
+    Atom, ClientMessage, Display, False, PropModeReplace, Success, True, Window,
+    XChangeProperty, XChangeWindowAttributes, XDefaultRootWindow, XEvent, XFlush, XFree,
+    XGetGeometry, XGetWMName, XGetWindowProperty, XInternAtom, XMoveResizeWindow, XOpenDisplay,
+    XSendEvent, XSetWindowAttributes, _XDisplay, CWBackPixel, XA_ATOM, XA_CARDINAL, XA_WINDOW,
 };
 
 /// Title used by floating macro-overlay viewports (`macro_overlay`).
@@ -105,11 +105,10 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
 
 /// Ask the WM to omit this process's overlay tool windows from taskbar / pager / Alt-Tab.
 ///
-/// egui-winit's `with_taskbar(false)` is Windows-only. Overlay buttons use Dock type
-/// (Mutter skips docks from Alt-Tab), but we still set `_NET_WM_STATE_SKIP_TASKBAR` and
-/// `_NET_WM_STATE_SKIP_PAGER` on top-level windows we own whose title matches
-/// [`OVERLAY_WM_TITLE`], and re-assert `_NET_WM_WINDOW_TYPE_DOCK` in case the WM
-/// remapped the type.
+/// egui-winit's `with_taskbar(false)` is Windows-only. Overlay buttons use Notification type
+/// with [`OVERLAY_WM_TITLE`]; we set `_NET_WM_STATE_SKIP_TASKBAR` and
+/// `_NET_WM_STATE_SKIP_PAGER` on those top-level windows, and re-assert
+/// `_NET_WM_WINDOW_TYPE_NOTIFICATION` (not Dock — Mutter can autohide docks under fullscreen).
 pub fn skip_taskbar_for_overlay_windows() -> Result<(), CaptureError> {
     crate::diag::mark_site("x11:skip_taskbar:before_open");
     let result = with_display(|display| {
@@ -700,8 +699,8 @@ unsafe fn sync_overlay_geometry_on_display(
         };
         used.insert(idx);
         let (win, _, _, _, _) = windows[idx];
-        let nw = nw.max(1);
-        let nh = nh.max(1);
+        let nw = (*nw).max(1);
+        let nh = (*nh).max(1);
         XMoveResizeWindow(display, win, *nx, *ny, nw, nh);
         last_positions.insert(id.clone(), (*nx, *ny));
         moved += 1;
@@ -748,7 +747,7 @@ unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), Capture
     let skip_taskbar = intern(display, "_NET_WM_STATE_SKIP_TASKBAR")?;
     let skip_pager = intern(display, "_NET_WM_STATE_SKIP_PAGER")?;
     let win_type = intern(display, "_NET_WM_WINDOW_TYPE")?;
-    let type_dock = intern(display, "_NET_WM_WINDOW_TYPE_DOCK")?;
+    let type_notification = intern(display, "_NET_WM_WINDOW_TYPE_NOTIFICATION")?;
     let mut hinted = 0u32;
     for win in clients {
         let Some(pid) = window_pid(display, win) else {
@@ -763,9 +762,10 @@ unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), Capture
         if title.trim() != OVERLAY_WM_TITLE {
             continue;
         }
-        // Dock type: Mutter/GNOME omit these from Alt-Tab even without skip hints.
-        set_window_type_dock(display, win, win_type, type_dock);
-        // EWMH: clients request state changes via ClientMessage to the root.
+        // Property replace so the hint sticks even if the WM ignores ClientMessage
+        // before the window is fully mapped (common for deferred egui viewports).
+        set_window_type(display, win, win_type, type_notification);
+        set_net_wm_state(display, win, state, &[skip_taskbar, skip_pager]);
         send_net_wm_state_add(display, root, win, state, skip_taskbar, skip_pager);
         hinted += 1;
     }
@@ -779,13 +779,13 @@ unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), Capture
 // SAFETY: callers must pass a live, non-null Xlib `display` connection, a valid
 // `win`, and atoms interned on that connection; the single-element `atom` buffer
 // matches the `format: 32` / `nelements: 1` passed to `XChangeProperty`.
-unsafe fn set_window_type_dock(
+unsafe fn set_window_type(
     display: *mut Display,
     win: Window,
     win_type: Atom,
-    type_dock: Atom,
+    type_atom: Atom,
 ) {
-    let mut atom = type_dock;
+    let mut atom = type_atom;
     XChangeProperty(
         display,
         win,
@@ -795,6 +795,30 @@ unsafe fn set_window_type_dock(
         PropModeReplace,
         &mut atom as *mut Atom as *mut u8,
         1,
+    );
+}
+
+// SAFETY: callers must pass a live, non-null Xlib `display` connection, a valid
+// `win`, and atoms interned on that connection; `atoms` is copied into the property.
+unsafe fn set_net_wm_state(
+    display: *mut Display,
+    win: Window,
+    state_atom: Atom,
+    atoms: &[Atom],
+) {
+    if atoms.is_empty() {
+        return;
+    }
+    let mut buf = atoms.to_vec();
+    XChangeProperty(
+        display,
+        win,
+        state_atom,
+        XA_ATOM,
+        32,
+        PropModeReplace,
+        buf.as_mut_ptr() as *mut u8,
+        buf.len() as i32,
     );
 }
 
