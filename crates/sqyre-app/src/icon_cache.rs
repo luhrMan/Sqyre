@@ -9,6 +9,7 @@ use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const FALLBACK_KEY: &str = "__sqyre_fallback__";
 /// Raster size for the brand fallback texture (displayed smaller in UI).
@@ -36,7 +37,7 @@ impl IconCache {
         Self::default()
     }
 
-    /// One variant PNG for `program~item` (deterministic pick from `target`).
+    /// One variant PNG for `program~item` (cycles when multiple variants exist).
     ///
     /// Falls back to in-memory [`demo_icons`] placeholders when no file exists
     /// (WASM demo seed).
@@ -69,7 +70,7 @@ impl IconCache {
             .unwrap_or_else(|| self.sqyre_fallback(ctx))
     }
 
-    /// One variant PNG for `program~item`, chosen deterministically from `target`.
+    /// One variant PNG for `program~item`, cycling through variants every second.
     pub fn for_target_random_variant(
         &mut self,
         ctx: &egui::Context,
@@ -80,7 +81,10 @@ impl IconCache {
         if paths.is_empty() {
             return None;
         }
-        let start = stable_variant_index(target, paths.len());
+        if paths.len() > 1 {
+            ctx.request_repaint_after(Duration::from_secs(1));
+        }
+        let start = rotating_variant_index(target, paths.len(), ctx.input(|i| i.time));
         for i in 0..paths.len() {
             if let Some(tex) = self.for_path(ctx, &paths[(start + i) % paths.len()]) {
                 return Some(tex);
@@ -236,6 +240,15 @@ fn stable_variant_index(target: &str, count: usize) -> usize {
     let mut hasher = DefaultHasher::new();
     target.hash(&mut hasher);
     (hasher.finish() as usize) % count
+}
+
+/// Seconds-based cycle index; per-target hash offsets keep grids from flipping in sync.
+fn rotating_variant_index(target: &str, count: usize, time_secs: f64) -> usize {
+    if count <= 1 {
+        return 0;
+    }
+    let tick = time_secs.max(0.0) as u64;
+    (tick as usize + stable_variant_index(target, count)) % count
 }
 
 /// Paint a catalog/item icon centered at `center`, fitting inside `max_w`×`max_h`.
@@ -475,5 +488,22 @@ mod tests {
             stable_variant_index("Prog~Item", 5),
             stable_variant_index("Prog~Other", 5)
         );
+    }
+
+    #[test]
+    fn rotating_variant_index_cycles_every_second() {
+        let count = 4;
+        let t = "Prog~Item";
+        let a = rotating_variant_index(t, count, 0.0);
+        let b = rotating_variant_index(t, count, 1.0);
+        let c = rotating_variant_index(t, count, 2.0);
+        assert_ne!(a, b);
+        assert_ne!(b, c);
+        assert_eq!(rotating_variant_index(t, count, 4.0), a);
+    }
+
+    #[test]
+    fn rotating_variant_index_single_variant_is_zero() {
+        assert_eq!(rotating_variant_index("Prog~Item", 1, 99.0), 0);
     }
 }
