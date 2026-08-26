@@ -10,7 +10,7 @@ use sqyre_persist::{
 };
 use sqyre_persist::{
     move_dir, set_sqyre_dir_override, sqyre_dir, Database, ImportMode, ProgramCatalog,
-    TitleBarCloseAction, UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+    UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use sqyre_persist::{
@@ -33,11 +33,84 @@ enum PendingConfirm {
     RestoreBackup { path: PathBuf },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum SettingsSection {
+    #[default]
+    General,
+    Sound,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    Permissions,
+    Data,
+    #[cfg(not(target_arch = "wasm32"))]
+    Updates,
+    Appearance,
+}
+
+impl SettingsSection {
+    fn label(self) -> &'static str {
+        match self {
+            Self::General => "General",
+            Self::Sound => "Sound",
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            Self::Permissions => "Permissions",
+            Self::Data => "Data",
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Updates => "Updates",
+            Self::Appearance => "Appearance",
+        }
+    }
+
+    fn subtitle(self) -> &'static str {
+        match self {
+            Self::General => "Application and behavior options.",
+            Self::Sound => "Cue sounds for macros and UI actions.",
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            Self::Permissions => {
+                "Desktop access for capture, recording, hotkeys, and macro playback."
+            }
+            Self::Data => {
+                "Data folder location and zip backups of macros, settings, images, and variables."
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Updates => "Check GitHub Releases for a newer Sqyre build.",
+            Self::Appearance => "Theme and display options.",
+        }
+    }
+
+    fn visible(self, q: &str) -> bool {
+        match self {
+            Self::General => section_visible(q, SECTION_GENERAL, GENERAL_SETTINGS),
+            Self::Sound => section_visible(q, SECTION_SOUND, SOUND_SETTINGS),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            Self::Permissions => section_visible(q, SECTION_PERMISSIONS, PERMISSIONS_SETTINGS),
+            Self::Data => section_visible(q, SECTION_DATA, DATA_SETTINGS),
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Updates => section_visible(q, SECTION_UPDATES, UPDATES_SETTINGS),
+            Self::Appearance => appearance_section_visible(q),
+        }
+    }
+
+    fn all() -> impl Iterator<Item = Self> {
+        [
+            Self::General,
+            Self::Sound,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            Self::Permissions,
+            Self::Data,
+            #[cfg(not(target_arch = "wasm32"))]
+            Self::Updates,
+            Self::Appearance,
+        ]
+        .into_iter()
+    }
+}
+
 #[derive(Default)]
 pub struct SettingsUi {
     pub open: bool,
     settings: UserSettings,
     dirty: bool,
+    active_section: SettingsSection,
     /// Filter query for the settings list (case-insensitive fuzzy match).
     search: String,
     status_banner: StatusBanner,
@@ -181,8 +254,8 @@ impl SettingsUi {
         let mut open = self.open;
         egui::Window::new("User Settings")
             .open(&mut open)
-            .default_size([520.0, 640.0])
-            .min_size([400.0, 360.0])
+            .default_size([680.0, 640.0])
+            .min_size([520.0, 360.0])
             .resizable(true)
             .constrain(true)
             .show(ctx, |ui| {
@@ -212,124 +285,139 @@ impl SettingsUi {
             return;
         }
 
-        // Reserve space for the optional status banner below; fill the rest of the window.
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(
+                egui_phosphor::regular::MAGNIFYING_GLASS,
+            ))
+            .on_hover_text("Search");
+            if ui
+                .add(
+                    egui::TextEdit::singleline(&mut self.search).hint_text("Search settings…"),
+                )
+                .changed()
+                && !self.search.trim().is_empty()
+            {
+                let q = self.search.trim().to_ascii_lowercase();
+                if !self.active_section.visible(&q) {
+                    if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
+                        self.active_section = section;
+                    }
+                }
+            }
+            if !self.search.is_empty() && ui.small_button("Clear").clicked() {
+                self.search.clear();
+            }
+        });
+        ui.separator();
+
         let footer = if self.status_banner.status.is_some() {
             40.0
         } else {
             0.0
         };
-        let mut opts = crate::pickers::PickerScrollOpts {
-            footer_reserve: footer,
-            trailing: None,
-            id_salt: Some("user_settings"),
-            hint_text: Some("Search settings…"),
-        };
-        let mut clear_search = false;
-        let search_nonempty = !self.search.is_empty();
-        let mut trailing = |ui: &mut egui::Ui| {
-            if search_nonempty && ui.small_button("Clear").clicked() {
-                clear_search = true;
-            }
-        };
-        opts.trailing = Some(&mut trailing);
-
-        // Take search out so the scroll body can borrow `&mut self`.
-        let mut search = std::mem::take(&mut self.search);
-        let mut any_shown = false;
-        crate::pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| {
-            if section_visible(q, SECTION_GENERAL, GENERAL_SETTINGS) {
-                any_shown = true;
-                let section_hit = query_matches(q, SECTION_GENERAL);
-                crate::theme::titled_section(
-                    ui,
-                    "General",
-                    "Application and behavior options.",
-                    12.0,
-                    |ui| self.draw_general(ui, q, section_hit),
-                );
-            }
-            if section_visible(q, SECTION_SOUND, SOUND_SETTINGS) {
-                any_shown = true;
-                let section_hit = query_matches(q, SECTION_SOUND);
-                crate::theme::titled_section(
-                    ui,
-                    "Sound",
-                    "Cue sounds for macros and UI actions.",
-                    12.0,
-                    |ui| self.draw_sound(ui, q, section_hit),
-                );
-            }
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            if section_visible(q, SECTION_PERMISSIONS, PERMISSIONS_SETTINGS) {
-                any_shown = true;
-                let section_hit = query_matches(q, SECTION_PERMISSIONS);
-                crate::theme::titled_section(
-                    ui,
-                    "Permissions",
-                    "Desktop access for capture, recording, hotkeys, and macro playback.",
-                    12.0,
-                    |ui| self.draw_permissions(ui, ctx, q, section_hit),
-                );
-            }
-            if section_visible(q, SECTION_DATA, DATA_SETTINGS) {
-                any_shown = true;
-                let section_hit = query_matches(q, SECTION_DATA);
-                crate::theme::titled_section(
-                    ui,
-                    "Data",
-                    "Data folder location and zip backups of macros, settings, images, and variables.",
-                    12.0,
-                    |ui| {
-                        self.draw_data(ui, db, macros, catalog, q, section_hit);
-                        #[cfg(not(target_arch = "wasm32"))]
-                        if setting_visible(q, section_hit, DATA_LOCATION)
-                            && setting_visible(q, section_hit, DATA_BACKUP)
-                        {
-                            ui.add_space(10.0);
-                        }
-                        self.draw_backup(ui, db, macros, catalog, q, section_hit);
-                    },
-                );
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            if section_visible(q, SECTION_UPDATES, UPDATES_SETTINGS) {
-                any_shown = true;
-                let section_hit = query_matches(q, SECTION_UPDATES);
-                crate::theme::titled_section(
-                    ui,
-                    "Updates",
-                    "Check GitHub Releases for a newer Sqyre build.",
-                    12.0,
-                    |ui| self.draw_updates(ui, update, q, section_hit),
-                );
-            }
-            if appearance_section_visible(q) {
-                any_shown = true;
-                let section_hit = query_matches(q, SECTION_APPEARANCE);
-                crate::theme::titled_section(
-                    ui,
-                    "Appearance",
-                    "Theme and display options.",
-                    12.0,
-                    |ui| self.draw_appearance(ui, ctx, q, section_hit),
-                );
-            }
-            if !any_shown {
-                ui.label(
-                    egui::RichText::new("No settings match your search.")
-                        .weak()
-                        .italics(),
-                );
-            }
-        });
-        if clear_search {
-            search.clear();
+        let body_h = (ui.available_height() - footer).max(40.0);
+        let q = self.search.trim().to_ascii_lowercase();
+        let visible_sections: Vec<SettingsSection> =
+            SettingsSection::all().filter(|s| s.visible(&q)).collect();
+        if !visible_sections.is_empty()
+            && !visible_sections.contains(&self.active_section)
+        {
+            self.active_section = visible_sections[0];
         }
-        self.search = search;
+
+        ui.horizontal(|ui| {
+            const SIDEBAR_W: f32 = 132.0;
+            ui.allocate_ui_with_layout(
+                egui::vec2(SIDEBAR_W, body_h),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.set_width(SIDEBAR_W);
+                    for section in visible_sections.iter().copied() {
+                        if ui
+                            .selectable_label(self.active_section == section, section.label())
+                            .clicked()
+                        {
+                            self.active_section = section;
+                        }
+                    }
+                },
+            );
+            ui.separator();
+            crate::pickers::scroll_vertical()
+                .id_salt("user_settings_content")
+                .max_height(body_h)
+                .show(ui, |ui| {
+                    if visible_sections.is_empty() {
+                        ui.label(
+                            egui::RichText::new("No settings match your search.")
+                                .weak()
+                                .italics(),
+                        );
+                        return;
+                    }
+                    let section = self.active_section;
+                    ui.label(egui::RichText::new(section.label()).strong().heading());
+                    ui.label(egui::RichText::new(section.subtitle()).weak());
+                    ui.separator();
+                    self.draw_section(
+                        ui,
+                        ctx,
+                        db,
+                        macros,
+                        catalog,
+                        #[cfg(not(target_arch = "wasm32"))]
+                        update,
+                        section,
+                        &q,
+                    );
+                });
+        });
 
         if self.status_banner.status.is_some() {
             ui.separator();
             self.status_banner.paint(ui);
+        }
+    }
+
+    fn draw_section(
+        &mut self,
+        ui: &mut egui::Ui,
+        ctx: &egui::Context,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
+        #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
+        section: SettingsSection,
+        q: &str,
+    ) {
+        let section_hit = match section {
+            SettingsSection::General => query_matches(q, SECTION_GENERAL),
+            SettingsSection::Sound => query_matches(q, SECTION_SOUND),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            SettingsSection::Permissions => query_matches(q, SECTION_PERMISSIONS),
+            SettingsSection::Data => query_matches(q, SECTION_DATA),
+            #[cfg(not(target_arch = "wasm32"))]
+            SettingsSection::Updates => query_matches(q, SECTION_UPDATES),
+            SettingsSection::Appearance => query_matches(q, SECTION_APPEARANCE),
+        };
+        match section {
+            SettingsSection::General => self.draw_general(ui, q, section_hit),
+            SettingsSection::Sound => self.draw_sound(ui, q, section_hit),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            SettingsSection::Permissions => self.draw_permissions(ui, ctx, q, section_hit),
+            SettingsSection::Data => {
+                self.draw_data(ui, db, macros, catalog, q, section_hit);
+                #[cfg(not(target_arch = "wasm32"))]
+                if setting_visible(q, section_hit, DATA_LOCATION)
+                    && setting_visible(q, section_hit, DATA_BACKUP)
+                {
+                    ui.add_space(10.0);
+                }
+                self.draw_backup(ui, db, macros, catalog, q, section_hit);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            SettingsSection::Updates => self.draw_updates(ui, update, q, section_hit),
+            SettingsSection::Appearance => self.draw_appearance(ui, ctx, q, section_hit),
         }
     }
 
@@ -378,36 +466,6 @@ impl SettingsUi {
                 .changed()
         {
             self.mark_dirty();
-        }
-
-        if setting_visible(q, section_hit, SETTING_TITLE_BAR_CLOSE) {
-            ui.add_space(6.0);
-            ui.label("Close button (X):");
-            ui.horizontal(|ui| {
-                let mut action = self.settings.title_bar_close;
-                let minimize = ui
-                    .radio_value(
-                        &mut action,
-                        TitleBarCloseAction::Minimize,
-                        "Minimize to the taskbar",
-                    )
-                    .on_hover_text(
-                        "The window stays running and is minimized. Restore it from the taskbar or dash.",
-                    )
-                    .changed();
-                let exit = ui
-                    .radio_value(
-                        &mut action,
-                        TitleBarCloseAction::Exit,
-                        "Close the application",
-                    )
-                    .on_hover_text("Quit Sqyre. The tray Quit item always exits.")
-                    .changed();
-                if minimize || exit {
-                    self.settings.title_bar_close = action;
-                    self.mark_dirty();
-                }
-            });
         }
 
         if setting_visible(q, section_hit, SETTING_RELEASE_HELD)
@@ -489,6 +547,20 @@ impl SettingsUi {
                     self.mark_dirty();
                 }
             });
+        }
+
+        if setting_visible(q, section_hit, SETTING_IMAGE_SEARCH_TOOLTIP_PREVIEW)
+            && ui
+                .checkbox(
+                    &mut self.settings.image_search_tooltip_preview,
+                    "Image Search tooltip match preview",
+                )
+                .on_hover_text(
+                    "When enabled, Image Search action tooltips overlay live template-match boxes on the search-area capture (uses tolerance, blur, and method from the action).",
+                )
+                .changed()
+        {
+            self.mark_dirty();
         }
     }
 
@@ -1218,15 +1290,6 @@ const SETTING_HIGHLIGHT_ACTION: &[&str] =
     &["highlight", "executing action", "active action", "tint"];
 const SETTING_HIDE_WHILE_RECORDING: &[&str] =
     &["hide", "recording", "points", "search areas", "snapshot"];
-const SETTING_TITLE_BAR_CLOSE: &[&str] = &[
-    "close",
-    "minimize",
-    "taskbar",
-    "title bar",
-    "quit",
-    "exit",
-    "window close",
-];
 const SETTING_RELEASE_HELD: &[&str] = &[
     "release",
     "held keys",
@@ -1248,6 +1311,14 @@ const SETTING_IMAGE_SEARCH_DISTANCE: &[&str] = &[
     "close match",
     "distance",
     "duplicate",
+];
+const SETTING_IMAGE_SEARCH_TOOLTIP_PREVIEW: &[&str] = &[
+    "image search",
+    "tooltip",
+    "preview",
+    "match preview",
+    "template match",
+    "overlay",
 ];
 
 const SETTING_FINISH_SOUND: &[&str] = &["finish sound", "macro finishes", "complete"];
@@ -1311,11 +1382,11 @@ const GENERAL_SETTINGS: &[&[&str]] = &[
     SETTING_LOG_META,
     SETTING_HIGHLIGHT_ACTION,
     SETTING_HIDE_WHILE_RECORDING,
-    SETTING_TITLE_BAR_CLOSE,
     SETTING_RELEASE_HELD,
     SETTING_WHILE_BUDGET,
     SETTING_RUN_MACRO_DEPTH,
     SETTING_IMAGE_SEARCH_DISTANCE,
+    SETTING_IMAGE_SEARCH_TOOLTIP_PREVIEW,
 ];
 const SOUND_SETTINGS: &[&[&str]] = &[
     SETTING_FINISH_SOUND,
@@ -1395,20 +1466,5 @@ mod tests {
     fn section_title_reveals_all_settings_in_section() {
         assert!(setting_visible("general", true, SETTING_LOG_META));
         assert!(setting_visible("general", true, SETTING_WHILE_BUDGET));
-    }
-
-    #[test]
-    fn minimize_matches_title_bar_close() {
-        assert!(section_visible(
-            "minimize",
-            SECTION_GENERAL,
-            GENERAL_SETTINGS
-        ));
-        assert!(setting_visible("minimize", false, SETTING_TITLE_BAR_CLOSE));
-        assert!(!setting_visible(
-            "minimize",
-            false,
-            SETTING_HIDE_WHILE_RECORDING
-        ));
     }
 }

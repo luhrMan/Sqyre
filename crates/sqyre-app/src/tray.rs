@@ -1,4 +1,6 @@
-//! System tray: hide-on-close, Show / Quit menu.
+//! System tray: Show / Hide application / Quit (GSR-style).
+//!
+//! The title-bar close button quits Sqyre. Hide the window from the tray menu only.
 
 use egui::{Context, ViewportCommand};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -25,7 +27,7 @@ impl SystemTray {
         }
     }
 
-    /// True after the tray Quit item was chosen — close should exit, not minimize.
+    /// True after the tray Quit item was chosen.
     pub fn quit_requested(&self) -> bool {
         self.quit_requested.load(Ordering::SeqCst)
     }
@@ -51,6 +53,11 @@ fn show_window(ctx: &Context) {
     ctx.send_viewport_cmd(ViewportCommand::Minimized(false));
     ctx.send_viewport_cmd(ViewportCommand::Visible(true));
     ctx.send_viewport_cmd(ViewportCommand::Focus);
+    ctx.request_repaint();
+}
+
+fn hide_application(ctx: &Context) {
+    ctx.send_viewport_cmd(ViewportCommand::Visible(false));
     ctx.request_repaint();
 }
 
@@ -133,6 +140,12 @@ impl ksni::Tray for LinuxTray {
                 ..Default::default()
             }
             .into(),
+            StandardItem {
+                label: "Hide application".into(),
+                activate: Box::new(|this: &mut Self| hide_application(&this.ctx)),
+                ..Default::default()
+            }
+            .into(),
             MenuItem::Separator,
             StandardItem {
                 label: "Quit".into(),
@@ -161,10 +174,14 @@ fn install_inner(ctx: Context) -> Result<SystemTray, String> {
 
     let menu = Menu::new();
     let show_item = MenuItem::new("Show", true, None);
+    let hide_item = MenuItem::new("Hide application", true, None);
     let quit_item = MenuItem::new("Quit", true, None);
     let show_id = show_item.id().clone();
+    let hide_id = hide_item.id().clone();
     let quit_id = quit_item.id().clone();
     menu.append(&show_item)
+        .map_err(|e| format!("tray menu: {e}"))?;
+    menu.append(&hide_item)
         .map_err(|e| format!("tray menu: {e}"))?;
     menu.append(&PredefinedMenuItem::separator())
         .map_err(|e| format!("tray menu: {e}"))?;
@@ -180,6 +197,7 @@ fn install_inner(ctx: Context) -> Result<SystemTray, String> {
 
     // Keep menu items alive for the tray lifetime.
     std::mem::forget(show_item);
+    std::mem::forget(hide_item);
     std::mem::forget(quit_item);
 
     let quit_requested = Arc::new(AtomicBool::new(false));
@@ -192,6 +210,8 @@ fn install_inner(ctx: Context) -> Result<SystemTray, String> {
             while let Ok(event) = rx.recv() {
                 if event.id == show_id {
                     show_window(&ctx_clone);
+                } else if event.id == hide_id {
+                    hide_application(&ctx_clone);
                 } else if event.id == quit_id {
                     quit_app(&ctx_clone, &quit_flag);
                 }

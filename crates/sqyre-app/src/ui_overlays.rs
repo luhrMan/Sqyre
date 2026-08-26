@@ -11,33 +11,8 @@ use crate::variables_panel;
 use crate::SqyreApp;
 use eframe::egui;
 use sqyre_domain::ActionId;
-use sqyre_persist::TitleBarCloseAction;
 use std::sync::atomic::Ordering;
 
-/// Close button: minimize or quit, per [`sqyre_persist::UserSettings::title_bar_close`].
-/// Tray Quit still exits.
-pub fn handle_close_to_tray(app: &mut SqyreApp, ctx: &egui::Context) {
-    if app.tray.quit_requested() {
-        return;
-    }
-    if !ctx.input(|i| i.viewport().close_requested()) {
-        return;
-    }
-    if app.settings_ui.settings().title_bar_close != TitleBarCloseAction::Minimize {
-        log_close("exit", "setting");
-        return;
-    }
-    log_close("minimize", "setting");
-    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-    ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
-}
-
-fn log_close(action: &str, reason: &str) {
-    #[cfg(feature = "native-runtime")]
-    sqyre_capture::event_log("SQYRE_CLOSE", &[("action", action), ("reason", reason)]);
-    #[cfg(not(feature = "native-runtime"))]
-    let _ = (action, reason);
-}
 
 /// Always-on-top macro buttons (settings-backed); hidden while recording is armed.
 #[cfg(feature = "native-runtime")]
@@ -439,6 +414,10 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             screen_click: &app.screen_click,
             macros: &macros,
             compact_program_headers: app.settings_ui.settings().compact_program_headers,
+            image_search_tooltip_preview: app
+                .settings_ui
+                .settings()
+                .image_search_tooltip_preview,
         });
         if result.catalog_changed {
             if let Err(e) = app.persist_database() {
