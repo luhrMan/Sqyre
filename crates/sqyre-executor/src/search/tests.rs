@@ -298,6 +298,19 @@ fn sort_hits_respects_match_order() {
 }
 
 #[test]
+fn sort_hits_total_order_chain_band() {
+    // Points within 5px of each other pairwise but span >5px overall — old
+    // conditional band compare could violate transitivity and panic in sort.
+    let mut pts = vec![
+        named("a", 0, 0, 0, 0),
+        named("b", 10, 4, 0, 0),
+        named("c", 5, 8, 0, 0),
+    ];
+    sort_hits(&mut pts, &MatchOrder::default());
+    assert_eq!(pts.len(), 3);
+}
+
+#[test]
 fn ocr_empty_target_always_matches() {
     assert!(ocr_target_matched("", ""));
     assert!(ocr_target_matched("", "anything"));
@@ -1428,6 +1441,89 @@ fn image_search_wait_until_found_retries_then_succeeds() {
         assert!(
             backend.log.iter().any(|e| e == "sleep:3"),
             "expected child on find: {:?}",
+            backend.log
+        );
+        assert!(macro_.variables.get("foundX").is_some());
+    });
+}
+
+#[test]
+fn image_search_wait_until_found_runs_final_search_on_timeout() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("tmpl.png");
+        let tmpl = patterned_rgba(10, 10, 33);
+        tmpl.save(&tmpl_path).unwrap();
+
+        let miss = RgbaImage::from_pixel(50, 50, Rgba([0, 255, 0, 255]));
+        let mut hit = RgbaImage::from_pixel(50, 50, Rgba([30, 30, 30, 255]));
+        stamp_rgba(&mut hit, &tmpl, 15, 18);
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::new(),
+        };
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            queue: vec![miss.clone(), miss.clone(), miss.clone(), miss, hit],
+            next: None,
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let resolver = SEARCH_FIXED_AREA;
+        let close_matches = 8;
+        let search_id = ActionId::new();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "find".into(),
+                targets: vec!["Prog~Item".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                detection: sqyre_domain::DetectionBranch {
+                    wait: wait_until_found(0.15, 30),
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                        time: ScalarValue::Int(3),
+                    })],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
+        )
+        .unwrap();
+
+        let fresh_captures = capturer
+            .log
+            .iter()
+            .filter(|e| e.starts_with("rgb_fresh:"))
+            .count();
+        assert!(
+            fresh_captures >= 2,
+            "expected wait retries plus a final timeout search: {:?}",
+            capturer.log
+        );
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:3"),
+            "final search should find the template after wait timeout: {:?}",
             backend.log
         );
         assert!(macro_.variables.get("foundX").is_some());

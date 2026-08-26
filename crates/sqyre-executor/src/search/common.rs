@@ -201,6 +201,12 @@ impl DetectionHit {
 
 const ORDER_BAND_PX: i32 = 5;
 
+/// Quantize a screen axis into ±[`ORDER_BAND_PX`] bands (transitive; safe for `sort_by`).
+fn band_axis(v: i32) -> i32 {
+    v.saturating_add(ORDER_BAND_PX)
+        .div_euclid(ORDER_BAND_PX + 1)
+}
+
 /// Sort hits using [`MatchOrder`]. Default grouping is row banding
 /// (±5px Y band), left-to-right, top-to-bottom.
 pub(super) fn sort_hits(hits: &mut [DetectionHit], order: &MatchOrder) {
@@ -208,30 +214,28 @@ pub(super) fn sort_hits(hits: &mut [DetectionHit], order: &MatchOrder) {
     let v_rev = order.vertical.eq_ignore_ascii_case("bottom_to_top");
 
     hits.sort_by(|a, b| {
-        let ay = a.screen_y;
-        let by = b.screen_y;
-        let ax = a.screen_x;
-        let bx = b.screen_x;
-        let cmp_x = if h_rev { bx.cmp(&ax) } else { ax.cmp(&bx) };
-        let cmp_y = if v_rev { by.cmp(&ay) } else { ay.cmp(&by) };
+        let cmp_x = if h_rev {
+            b.screen_x.cmp(&a.screen_x)
+        } else {
+            a.screen_x.cmp(&b.screen_x)
+        };
+        let cmp_y = if v_rev {
+            b.screen_y.cmp(&a.screen_y)
+        } else {
+            a.screen_y.cmp(&b.screen_y)
+        };
         let name = a.name.cmp(&b.name);
 
         match order.grouping {
-            MatchGrouping::Column => {
-                if (ax - bx).abs() <= ORDER_BAND_PX {
-                    cmp_y.then(name)
-                } else {
-                    cmp_x.then(cmp_y).then(name)
-                }
-            }
+            MatchGrouping::Column => band_axis(a.screen_x)
+                .cmp(&band_axis(b.screen_x))
+                .then(cmp_y)
+                .then(name),
             MatchGrouping::None => cmp_y.then(cmp_x).then(name),
-            MatchGrouping::Row => {
-                if (ay - by).abs() <= ORDER_BAND_PX {
-                    cmp_x.then(name)
-                } else {
-                    cmp_y.then(cmp_x).then(name)
-                }
-            }
+            MatchGrouping::Row => band_axis(a.screen_y)
+                .cmp(&band_axis(b.screen_y))
+                .then(cmp_x)
+                .then(name),
         }
     });
 }
@@ -376,14 +380,25 @@ pub(super) fn run_detection_shell<T>(
     let wait_interval_ms = ctx.wait_interval_ms;
     let repeat_interval_ms = ctx.repeat_interval_ms;
     let mut state = try_once(exec, macro_, false)?;
-    maybe_wait_until_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
+    let mut wait_timed_out = false;
+    if wait.wait_until_found_active() && !is_hit(&state) {
+        if !maybe_wait_until_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
+            state = try_once(exec, macro_, true)?;
+            Ok(is_hit(&state))
+        })? {
+            wait_timed_out = true;
+        }
+    } else if wait.wait_while_found_active() && is_hit(&state) {
+        if !maybe_wait_while_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
+            state = try_once(exec, macro_, true)?;
+            Ok(!is_hit(&state))
+        })? {
+            wait_timed_out = true;
+        }
+    }
+    if wait_timed_out {
         state = try_once(exec, macro_, true)?;
-        Ok(is_hit(&state))
-    })?;
-    maybe_wait_while_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
-        state = try_once(exec, macro_, true)?;
-        Ok(!is_hit(&state))
-    })?;
+    }
 
     if maybe_repeat_while_found(exec, wait, repeat_interval_ms, |exec, refresh| {
         if refresh {
@@ -414,12 +429,15 @@ pub(super) enum DetectionPass {
     Final,
 }
 
+/// Poll until `done` returns true or the wait timeout elapses.
+///
+/// Returns `Ok(true)` when `done` succeeded, `Ok(false)` on timeout.
 pub(super) fn retry_until(
     exec: &mut Executor<'_>,
     wait: &WaitTilFoundConfig,
     default_interval_ms: i32,
     mut done: impl FnMut(&mut Executor<'_>) -> Result<bool>,
-) -> Result<()> {
+) -> Result<bool> {
     let deadline = Instant::now() + wait.timeout().unwrap_or(Duration::ZERO);
     let mut interval = wait.effective_interval_ms(default_interval_ms).max(1);
     let max_interval = (interval * 5).min(2000).max(interval);
@@ -427,28 +445,31 @@ pub(super) fn retry_until(
         exec.check_stopped()?;
         exec.interruptible_sleep(interval)?;
         if done(exec)? {
-            return Ok(());
+            return Ok(true);
         }
         if interval < max_interval {
             interval = (interval * 2).min(max_interval);
         }
     }
-    Ok(())
+    Ok(false)
 }
 
+/// Returns `Ok(true)` when found (or wait inactive), `Ok(false)` on timeout.
 pub(super) fn maybe_wait_until_found(
     exec: &mut Executor<'_>,
     wait: &WaitTilFoundConfig,
     hit: bool,
     default_interval_ms: i32,
     retry: impl FnMut(&mut Executor<'_>) -> Result<bool>,
-) -> Result<()> {
+) -> Result<bool> {
     if wait.wait_until_found_active() && !hit {
-        retry_until(exec, wait, default_interval_ms, retry)?;
+        retry_until(exec, wait, default_interval_ms, retry)
+    } else {
+        Ok(true)
     }
-    Ok(())
 }
 
+/// Returns `Ok(true)` when gone (or wait inactive), `Ok(false)` on timeout.
 pub(super) fn maybe_wait_while_found(
     exec: &mut Executor<'_>,
     wait: &WaitTilFoundConfig,
@@ -456,11 +477,12 @@ pub(super) fn maybe_wait_while_found(
     default_interval_ms: i32,
     // `gone` returns true when the target disappeared (stop waiting).
     gone: impl FnMut(&mut Executor<'_>) -> Result<bool>,
-) -> Result<()> {
+) -> Result<bool> {
     if wait.wait_while_found_active() && hit {
-        retry_until(exec, wait, default_interval_ms, gone)?;
+        retry_until(exec, wait, default_interval_ms, gone)
+    } else {
+        Ok(true)
     }
-    Ok(())
 }
 
 /// Shared repeat loop body for while-found / until-found modes.
