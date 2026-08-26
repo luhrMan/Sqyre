@@ -17,6 +17,8 @@ use sqyre_domain::{
 };
 
 pub const DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE: i32 = 10;
+/// Live template-match overlays on Image Search action tooltip previews.
+pub const DEFAULT_IMAGE_SEARCH_TOOLTIP_PREVIEW: bool = false;
 pub const DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 150;
 pub const MIN_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 25;
 pub const DEFAULT_HIDE_APP_DURING_RECORDING: bool = true;
@@ -34,17 +36,6 @@ pub const MIN_BACKUP_MAX_KEEP: i32 = 1;
 pub const MAX_BACKUP_MAX_KEEP: i32 = 100;
 pub const DEFAULT_AUTO_UPDATE_CHECK: bool = true;
 pub const DEFAULT_RELEASE_HELD_INPUTS_ON_END: bool = true;
-
-/// What the window title-bar close control does.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TitleBarCloseAction {
-    /// Keep running; minimize to the taskbar / dash.
-    #[default]
-    Minimize,
-    /// Quit the application.
-    Exit,
-}
 
 /// Default While budget when a macro sets `max_iterations` ≤ 0.
 pub const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
@@ -392,9 +383,6 @@ pub struct UserSettings {
     pub compact_program_headers: bool,
     #[serde(default = "default_hide_recording")]
     pub hide_app_during_recording: bool,
-    /// Title-bar close (X): minimize to the taskbar, or quit.
-    #[serde(default)]
-    pub title_bar_close: TitleBarCloseAction,
     /// Release keys/buttons still held from Down/hold actions when a macro ends.
     #[serde(default = "default_release_held_inputs_on_end")]
     pub release_held_inputs_on_end: bool,
@@ -415,6 +403,9 @@ pub struct UserSettings {
     pub sound_volume: f32,
     #[serde(default = "default_close_matches")]
     pub image_search_close_matches_distance: i32,
+    /// Draw tolerance match boxes on Image Search action tooltip previews.
+    #[serde(default = "default_image_search_tooltip_preview")]
+    pub image_search_tooltip_preview: bool,
     #[serde(default = "default_drag_debounce")]
     pub drag_preview_debounce_ms: i32,
     /// Absolute path override for the `.sqyre` data directory (empty = `~/.sqyre`).
@@ -477,6 +468,9 @@ fn default_sound_volume() -> f32 {
 fn default_close_matches() -> i32 {
     DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE
 }
+fn default_image_search_tooltip_preview() -> bool {
+    DEFAULT_IMAGE_SEARCH_TOOLTIP_PREVIEW
+}
 fn default_drag_debounce() -> i32 {
     DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS
 }
@@ -509,7 +503,6 @@ impl Default for UserSettings {
             highlight_active_action: false,
             compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
-            title_bar_close: TitleBarCloseAction::Minimize,
             release_held_inputs_on_end: DEFAULT_RELEASE_HELD_INPUTS_ON_END,
             while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
             run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -517,6 +510,7 @@ impl Default for UserSettings {
             play_ui_sounds: DEFAULT_PLAY_UI_SOUNDS,
             sound_volume: DEFAULT_SOUND_VOLUME,
             image_search_close_matches_distance: DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE,
+            image_search_tooltip_preview: DEFAULT_IMAGE_SEARCH_TOOLTIP_PREVIEW,
             drag_preview_debounce_ms: DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
             sqyre_dir: String::new(),
             ui_font_size: DEFAULT_UI_FONT_SIZE,
@@ -878,29 +872,6 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].bg_alpha, 128);
         assert_eq!(loaded.overlay_buttons[0].icon_color, "#abcdef");
         assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
-        assert_eq!(loaded.title_bar_close, TitleBarCloseAction::Minimize);
-    }
-
-    #[test]
-    fn title_bar_close_roundtrip_exit() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("settings.yaml");
-        let s = UserSettings {
-            title_bar_close: TitleBarCloseAction::Exit,
-            ..Default::default()
-        };
-        s.save_to_path(&path).unwrap();
-        let loaded = UserSettings::load_from_path(&path).unwrap();
-        assert_eq!(loaded.title_bar_close, TitleBarCloseAction::Exit);
-    }
-
-    #[test]
-    fn title_bar_close_omitted_defaults_to_minimize() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("settings.yaml");
-        std::fs::write(&path, "save_meta_images: true\n").unwrap();
-        let loaded = UserSettings::load_from_path(&path).unwrap();
-        assert_eq!(loaded.title_bar_close, TitleBarCloseAction::Minimize);
     }
 
     #[test]

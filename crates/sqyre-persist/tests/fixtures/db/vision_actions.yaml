@@ -1,0 +1,62 @@
+macros:
+  Vision catalog:
+    name: Vision catalog
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: []
+    variables: []
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions:
+        - type: imagesearch
+          name: find gem
+          targets: [Demo~Gem]
+          searcharea: Demo~Main
+          tolerance: 0.9
+          blur: 5
+        - type: ocr
+          name: read label
+          target: Submit
+          searcharea: Demo~Main
+          outputvariable: ocrText
+          blur: 1
+          minthreshold: 0
+          resize: 1.0
+          grayscale: true
+          thresholdotsu: true
+        - type: findpixel
+          name: red pixel
+          searcharea: Demo~Main
+          targetcolor: ff0000
+          colortolerance: 8
+programs:
+  Demo:
+    name: Demo
+    items:
+      Gem:
+        name: Gem
+        mask: ""
+        stackmax: 0
+        gridsize: [0, 0]
+        tags: []
+    coordinates:
+      1920x1080:
+        scale: 1.0
+        points:
+          Center:
+            name: Center
+            x: 500
+            y: 300
+        searchareas:
+          Main:
+            name: Main
+            leftx: 0
+            topy: 0
+            rightx: 100
+            bottomy: 100
+    masks: {}
+    collections: {}
+    atlases: {}
