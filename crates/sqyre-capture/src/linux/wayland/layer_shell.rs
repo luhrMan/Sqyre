@@ -77,8 +77,8 @@ mod tests {
         std::env::set_var("XDG_CURRENT_DESKTOP", "GNOME");
         assert!(!prefers_layer_shell_overlay_session());
         match prev {
-            Ok(v) => std::env::set_var("XDG_CURRENT_DESKTOP", v),
-            Err(_) => std::env::remove_var("XDG_CURRENT_DESKTOP"),
+            Some(v) => std::env::set_var("XDG_CURRENT_DESKTOP", v),
+            None => std::env::remove_var("XDG_CURRENT_DESKTOP"),
         }
     }
 }

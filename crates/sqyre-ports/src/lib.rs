@@ -155,8 +155,8 @@ pub trait ScreenCapturer {
     }
 
     /// RGB capture that waits for a newer compositor frame when the backend
-    /// caches buffers (portal + PipeWire). Used for wait/repeat retries and
-    /// manual refresh — not the default one-shot / nested search crop.
+    /// caches buffers (portal + PipeWire). Used for image search and wait/repeat
+    /// retries — not the default one-shot OCR / find-pixel crop.
     /// Default: same as [`Self::capture_rect_rgb`].
     fn capture_rect_rgb_fresh(&mut self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
         self.capture_rect_rgb(rect)
@@ -179,7 +179,7 @@ pub trait ScreenCapturer {
     /// RGB search-area capture (preferred for image/OCR/pixel matching).
     ///
     /// `fresh` waits for a newer compositor frame on caching backends (wait/repeat
-    /// retries). One-shot and nested searches pass `false` and crop the latest cache.
+    /// retries and image search). Other one-shot searches crop the latest cache.
     fn capture_search_area_rgb(
         &mut self,
         left: i32,

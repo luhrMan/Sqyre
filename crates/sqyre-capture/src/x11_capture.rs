@@ -287,6 +287,13 @@ mod compositor_kick {
             self.mapped = true;
         }
 
+        /// Map then immediately unmap so ScreenCast sees damage without leaving
+        /// an overlay covering the capture during the subsequent frame wait.
+        pub(crate) fn pulse_rect(&mut self, rect: DesktopRect) {
+            self.map_rect(rect);
+            self.unmap();
+        }
+
         pub(crate) fn unmap(&mut self) {
             if !self.mapped {
                 return;
@@ -296,6 +303,7 @@ mod compositor_kick {
                 unsafe {
                     XUnmapWindow(self.display, self.window);
                     XFlush(self.display);
+                    XSync(self.display, 0);
                 }
             }
             self.mapped = false;

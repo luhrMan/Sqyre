@@ -31,8 +31,19 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-const REGION_FRAME_WAIT: Duration = Duration::from_millis(50);
-const KICK_FRAME_WAIT: Duration = Duration::from_millis(80);
+/// Overall budget to obtain a PipeWire frame newer than the cache at call start.
+const FRESH_CAPTURE_BUDGET: Duration = Duration::from_millis(800);
+/// Post-kick wait slices (short first so a miss retries sooner than a full 120ms stall).
+/// Emit-on-damage streams (games/Wine) often need the kick; continuous streams usually
+/// land in the first slice. Multi-monitor deliveries that miss the search region also
+/// benefit from re-pulsing instead of sitting out a long wait.
+const POST_KICK_SLICES: &[Duration] = &[
+    Duration::from_millis(40),
+    Duration::from_millis(80),
+    Duration::from_millis(120),
+];
+/// Log successful fresh waits that exceed this (stderr + diag when enabled).
+const SLOW_FRESH_LOG: Duration = Duration::from_millis(100);
 
 /// Portal + PipeWire capturer for Wayland sessions.
 pub struct PortalCapturer {
@@ -155,45 +166,79 @@ impl PortalCapturer {
         })
     }
 
-    /// Wait until a PipeWire stream that overlaps `rect` copies a newer frame.
-    /// A global generation bump is not enough: GNOME often delivers the other
-    /// monitor first, which left nested wait-until-found on an unchanged crop.
+    /// Wait until a PipeWire stream that overlaps `rect` copies a frame newer than
+    /// the cache at the start of this call. Pulses a transparent damage overlay
+    /// (map+unmap) before each wait — leaving it mapped during the wait timed out
+    /// on emit-on-damage games and could crop an overlay-tainted buffer.
+    ///
+    /// Latency is dominated by kick XSync + PipeWire frame arrival, not crop size:
+    /// ~1 frame after a successful kick (~40–80ms) vs multiple pulse retries (~200–300ms)
+    /// when the stream is idle or another monitor updates first.
     fn wait_for_overlapping_stream_frame(&self, rect: DesktopRect) {
         let min_gen = {
             let slot = self.frame.0.lock();
             region_generation(&slot, rect)
         };
-        let region_after = wait_until_region_after(
-            &self.frame.0,
-            &self.frame.1,
-            rect,
-            min_gen,
-            REGION_FRAME_WAIT,
+        let kick_rect = {
+            let slot = self.frame.0.lock();
+            kick_damage_rect(&slot, rect)
+        };
+        let started = Instant::now();
+        let deadline = started + FRESH_CAPTURE_BUDGET;
+        let mut pulses = 0u32;
+        while Instant::now() < deadline {
+            self.pulse_compositor_kick(kick_rect);
+            pulses = pulses.saturating_add(1);
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            let slice_idx = (pulses as usize)
+                .saturating_sub(1)
+                .min(POST_KICK_SLICES.len() - 1);
+            let slice = remaining.min(POST_KICK_SLICES[slice_idx]);
+            let region_after =
+                wait_until_region_after(&self.frame.0, &self.frame.1, rect, min_gen, slice);
+            if region_after > min_gen {
+                let elapsed = started.elapsed();
+                if elapsed >= SLOW_FRESH_LOG {
+                    cap_log(
+                        "PORTAL",
+                        "fresh",
+                        &format!(
+                            "wait_ms={} pulses={} gen={}->{}",
+                            elapsed.as_millis(),
+                            pulses,
+                            min_gen,
+                            region_after
+                        ),
+                    );
+                }
+                return;
+            }
+        }
+
+        let (now, region) = {
+            let slot = self.frame.0.lock();
+            (slot.generation, region_generation(&slot, rect))
+        };
+        cap_log(
+            "PORTAL",
+            "wait",
+            &format!(
+                "fresh timeout after gen={min_gen} now={now} region={region} pulses={pulses} wait_ms={}",
+                started.elapsed().as_millis()
+            ),
         );
-        if region_after <= min_gen {
-            let dest = {
-                let slot = self.frame.0.lock();
-                overlapping_stream_dest(&slot, rect)
-            };
-            {
-                let mut kick = self.kick.lock();
-                if kick.is_none() {
-                    *kick = crate::x11_capture::CompositorKick::open();
-                }
-                if let Some(k) = kick.as_mut() {
-                    k.map_rect(dest);
-                }
-            }
-            let _ = wait_until_region_after(
-                &self.frame.0,
-                &self.frame.1,
-                rect,
-                min_gen,
-                KICK_FRAME_WAIT,
-            );
-            if let Some(k) = self.kick.lock().as_mut() {
-                k.unmap();
-            }
+    }
+
+    fn pulse_compositor_kick(&self, rect: DesktopRect) {
+        let mut kick = self.kick.lock();
+        if kick.is_none() {
+            *kick = crate::x11_capture::CompositorKick::open();
+        }
+        if let Some(k) = kick.as_mut() {
+            k.pulse_rect(rect);
         }
     }
 
@@ -216,7 +261,7 @@ impl PortalCapturer {
         rect: DesktopRect,
     ) -> Result<RgbCapture, CaptureError> {
         self.wait_for_overlapping_stream_frame(rect);
-        self.crop_cached_rgb(rect)
+        self.capture_rect_rgb_ref(rect)
     }
 
     fn crop_cached_rgba(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
@@ -959,6 +1004,26 @@ fn overlapping_stream_dest(slot: &FrameSlot, rect: DesktopRect) -> DesktopRect {
         .unwrap_or(rect)
 }
 
+/// Damage region for a compositor kick: the search crop, clamped into the
+/// overlapping monitor (full-monitor overlays were slow and covered the wait).
+fn kick_damage_rect(slot: &FrameSlot, rect: DesktopRect) -> DesktopRect {
+    let dest = overlapping_stream_dest(slot, rect);
+    let left = rect.x.max(dest.x);
+    let top = rect.y.max(dest.y);
+    let right = (rect.x + rect.w).min(dest.x + dest.w);
+    let bottom = (rect.y + rect.h).min(dest.y + dest.h);
+    if right - left < 2 || bottom - top < 2 {
+        dest
+    } else {
+        DesktopRect {
+            x: left,
+            y: top,
+            w: right - left,
+            h: bottom - top,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 struct CacheCrop {
     src_x: u32,
@@ -1052,15 +1117,6 @@ fn wait_until_region_after(
     while region_generation(&slot, rect) <= min_gen {
         let remaining = deadline.saturating_duration_since(Instant::now());
         if remaining.is_zero() {
-            cap_log(
-                "PORTAL",
-                "wait",
-                &format!(
-                    "region frame timeout after gen={min_gen} now={} region={}",
-                    slot.generation,
-                    region_generation(&slot, rect)
-                ),
-            );
             break;
         }
         cvar.wait_for(&mut slot, remaining);
@@ -1136,6 +1192,24 @@ mod tests {
         ];
         assert_eq!(region_generation(&slot, monitor_rect(1920, 1280, 1440)), 7);
         assert_eq!(region_generation(&slot, monitor_rect(0, 1920, 1080)), 10);
+    }
+
+    #[test]
+    fn kick_damage_rect_clamps_to_overlapping_monitor() {
+        let mut slot = empty_slot(1);
+        let mon = monitor_rect(1920, 1280, 1440);
+        slot.cache.monitor_rects = vec![monitor_rect(0, 1920, 1080), mon];
+        let search = DesktopRect {
+            x: 2000,
+            y: 100,
+            w: 400,
+            h: 50,
+        };
+        let kick = kick_damage_rect(&slot, search);
+        assert_eq!(kick.x, 2000);
+        assert_eq!(kick.y, 100);
+        assert_eq!(kick.w, 400);
+        assert_eq!(kick.h, 50);
     }
 
     #[test]
