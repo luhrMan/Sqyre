@@ -36,6 +36,11 @@ pub struct Executor<'a> {
     /// `None` until the first publish. Skips re-publishing unchanged variables
     /// after every action.
     published_vars_revision: Option<u64>,
+    /// When true, the next image-search capture waits for a newer portal frame.
+    /// Cleared after that capture; set again by mouse/keyboard/scroll input so
+    /// nested searches without intervening input reuse the cache (fast) while
+    /// post-click nested searches still get a fresh frame.
+    capture_dirty: bool,
 }
 
 /// Hard default for nested RunMacro depth when callers omit a custom budget.
@@ -53,28 +58,49 @@ impl<'a> Executor<'a> {
             held_buttons: BTreeSet::new(),
             run_macro_stack: Vec::new(),
             published_vars_revision: None,
+            // First capture of the run should not reuse a pre-run portal cache.
+            capture_dirty: true,
+        }
+    }
+
+    /// Screen may have changed; the next image search should wait for a new frame.
+    pub(crate) fn mark_capture_dirty(&mut self) {
+        self.capture_dirty = true;
+    }
+
+    /// Consume the dirty flag (or honor a wait/repeat forced fresh) for one capture.
+    pub(crate) fn take_capture_fresh(&mut self, force: bool) -> bool {
+        if force || self.capture_dirty {
+            self.capture_dirty = false;
+            true
+        } else {
+            false
         }
     }
 
     pub(crate) fn input_click_down(&mut self, button: &str) -> Result<()> {
+        self.mark_capture_dirty();
         self.deps.automation.click(button, true)?;
         self.held_buttons.insert(button.to_string());
         Ok(())
     }
 
     pub(crate) fn input_click_up(&mut self, button: &str) -> Result<()> {
+        self.mark_capture_dirty();
         self.deps.automation.click(button, false)?;
         self.held_buttons.remove(button);
         Ok(())
     }
 
     pub(crate) fn input_key_down(&mut self, key: &str) -> Result<()> {
+        self.mark_capture_dirty();
         self.deps.automation.key_down(key)?;
         self.held_keys.insert(key.to_string());
         Ok(())
     }
 
     pub(crate) fn input_key_up(&mut self, key: &str) -> Result<()> {
+        self.mark_capture_dirty();
         self.deps.automation.key_up(key)?;
         self.held_keys.remove(key);
         Ok(())
@@ -347,6 +373,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         held_buttons: BTreeSet::new(),
         run_macro_stack: vec![macro_.name.clone()],
         published_vars_revision: None,
+        capture_dirty: true,
     };
     macro_.init_runtime_variables();
     let monitor_sizes = match exec.deps.capturer.as_mut() {
@@ -495,6 +522,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::Click { button, state } => {
             if *button == MouseButton::Scroll {
                 let up = matches!(*state, PressState::Up);
+                exec.mark_capture_dirty();
                 exec.deps.automation.scroll(up).map_err(ExecError::from)
             } else {
                 match *state {
@@ -519,6 +547,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             let resolved = resolve_text(text, macro_)?;
             for ch in resolved.chars() {
                 exec.check_stopped()?;
+                exec.mark_capture_dirty();
                 exec.deps.automation.type_char(ch);
                 if *delay_ms > 0 {
                     exec.interruptible_sleep(*delay_ms)?;
@@ -546,6 +575,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
                 ));
             };
             exec.log(action.id, format!("Move → ({x}, {y}) [{}]", point.as_str()));
+            exec.mark_capture_dirty();
             exec.deps.automation.move_to(
                 x,
                 y,
@@ -992,6 +1022,7 @@ mod tests {
             held_buttons: BTreeSet::new(),
             run_macro_stack: Vec::new(),
             published_vars_revision: None,
+            capture_dirty: true,
         };
         let err = exec.interruptible_sleep(1000).unwrap_err();
         assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));

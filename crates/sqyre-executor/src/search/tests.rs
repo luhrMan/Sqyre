@@ -7,7 +7,7 @@ use crate::{lines_for, SharedActionLog};
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
     root_loop, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, LoopJumpMode, Macro,
-    MatchGrouping, MatchOrder, RepeatMode, ScalarValue, WaitTilFoundConfig,
+    MatchGrouping, MatchOrder, MouseButton, PressState, RepeatMode, ScalarValue, WaitTilFoundConfig,
 };
 use sqyre_match::{search_blur_kernel, ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
 use sqyre_vision::get_cached_blurred_template;
@@ -1443,7 +1443,7 @@ fn image_search_wait_until_found_retries_then_succeeds() {
 }
 
 #[test]
-fn nested_image_search_captures_fresh_screen() {
+fn nested_image_search_after_click_captures_fresh_screen() {
     sqyre_vision::with_search_cache_test_lock(|| {
         sqyre_vision::reset_search_cache_for_testing();
         let dir = tempfile::tempdir().unwrap();
@@ -1469,6 +1469,112 @@ fn nested_image_search_captures_fresh_screen() {
         };
         let mut backend = RecordingBackend::default();
         let mut capturer = capturer_queue(vec![parent_only, nested_visible]);
+        let resolver = SEARCH_FIXED_AREA;
+        let close_matches = 8;
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "parent".into(),
+                targets: vec!["Prog~Parent".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                detection: sqyre_domain::DetectionBranch {
+                    subactions: vec![
+                        Action {
+                            id: ActionId::new(),
+                            kind: ActionKind::Click {
+                                button: MouseButton::Left,
+                                state: PressState::Tap,
+                            },
+                        },
+                        Action {
+                            id: ActionId::new(),
+                            kind: ActionKind::ImageSearch {
+                                name: "nested".into(),
+                                targets: vec!["Prog~Nested".into()],
+                                search_area: CoordinateRef("Prog~Box".into()),
+                                tolerance: 0.7,
+                                blur: 0,
+                                match_method: Default::default(),
+                                detection: sqyre_domain::DetectionBranch {
+                                    coords: CoordinateOutputs {
+                                        output_x_variable: "nestedX".into(),
+                                        output_y_variable: "nestedY".into(),
+                                    },
+                                    subactions: vec![wait_child(7)],
+                                    ..Default::default()
+                                },
+                            },
+                        },
+                    ],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
+        )
+        .unwrap();
+
+        let fresh_captures = capturer
+            .log
+            .iter()
+            .filter(|e| e.starts_with("rgb_fresh:"))
+            .count();
+        assert_eq!(
+            fresh_captures, 2,
+            "parent and post-click nested search should each capture fresh: {:?}",
+            capturer.log
+        );
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:7"),
+            "nested search should find on the updated screen: {:?}",
+            backend.log
+        );
+        assert!(macro_.variables.get("nestedX").is_some());
+    });
+}
+
+#[test]
+fn nested_image_search_without_input_reuses_cache() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let parent_tmpl_path = dir.path().join("parent.png");
+        let nested_tmpl_path = dir.path().join("nested.png");
+        let parent_tmpl = patterned_rgba(10, 10, 11);
+        let nested_tmpl = patterned_rgba(8, 8, 33);
+        parent_tmpl.save(&parent_tmpl_path).unwrap();
+        nested_tmpl.save(&nested_tmpl_path).unwrap();
+
+        // Both templates visible on one frame — nested must reuse the cache crop.
+        let mut both = RgbaImage::from_pixel(50, 50, Rgba([30, 30, 30, 255]));
+        stamp_rgba(&mut both, &parent_tmpl, 15, 18);
+        stamp_rgba(&mut both, &nested_tmpl, 25, 28);
+
+        let icons = MapIcons {
+            paths: HashMap::from([
+                ("Prog~Parent".into(), vec![parent_tmpl_path]),
+                ("Prog~Nested".into(), vec![nested_tmpl_path]),
+            ]),
+            masks: HashMap::new(),
+            meta: HashMap::new(),
+        };
+        let mut backend = RecordingBackend::default();
+        // Same frame for every capture — nested must crop cache, not require a
+        // second queued buffer (portal would reuse the last PipeWire crop).
+        let mut capturer = capturer_next(both);
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
         let mut macro_ = Macro::new("t", 0, vec![]);
@@ -1524,13 +1630,18 @@ fn nested_image_search_captures_fresh_screen() {
             .filter(|e| e.starts_with("rgb_fresh:"))
             .count();
         assert_eq!(
-            fresh_captures, 2,
-            "parent and nested image search should each capture fresh: {:?}",
+            fresh_captures, 1,
+            "nested without input should crop cache, not wait fresh: {:?}",
+            capturer.log
+        );
+        assert!(
+            capturer.log.iter().any(|e| e.starts_with("rect:")),
+            "nested should use non-fresh crop: {:?}",
             capturer.log
         );
         assert!(
             backend.log.iter().any(|e| e == "sleep:7"),
-            "nested search should find on the updated screen: {:?}",
+            "nested search should find on the shared cache frame: {:?}",
             backend.log
         );
         assert!(macro_.variables.get("nestedX").is_some());

@@ -61,8 +61,9 @@ impl<'a> DetectionCtx<'a> {
 /// with `label` and treated as a miss (`None`) so the shared wait/repeat shell in
 /// [`run_detection_shell`] can retry instead of aborting the macro.
 ///
-/// `fresh` is true on wait/repeat recaptures and image search so caching backends
-/// (portal) request a newer frame. OCR and find-pixel one-shot searches crop the cache.
+/// `fresh` is true on wait/repeat recaptures and when image search was dirtied by
+/// input so caching backends (portal) request a newer frame. Clean nested image
+/// searches and OCR / find-pixel one-shots crop the cache.
 ///
 /// `on_resolved` runs after a successful resolve but before capture, so callers can
 /// log action-specific detail (e.g. targets, dimensions) using the resolved rect.
@@ -361,9 +362,10 @@ pub(super) fn apply_detection_hits(
 
 /// Shared wait → repeat → single-shot shell for detection actions.
 ///
-/// `try_once(exec, macro_, fresh)` produces the latest attempt. Image search always
-/// fresh-captures; other kinds use `fresh` false on the first pass (crop cache) and
-/// true on wait/repeat recaptures.
+/// `try_once(exec, macro_, fresh)` produces the latest attempt. Image search uses
+/// `fresh` true when the screen was dirtied by input (or on wait/repeat recaptures);
+/// a clean nested search crops the cache. OCR / find-pixel use `fresh` false on the
+/// first pass and true on wait/repeat recaptures.
 /// `is_hit` decides whether wait/repeat treat it as found. `on_outcome` applies
 /// outputs and runs branch children; its returned bool is the continue flag for
 /// the repeat loop (typically the hit flag).

@@ -178,8 +178,9 @@ pub trait ScreenCapturer {
 
     /// RGB search-area capture (preferred for image/OCR/pixel matching).
     ///
-    /// `fresh` waits for a newer compositor frame on caching backends (wait/repeat
-    /// retries and image search). Other one-shot searches crop the latest cache.
+    /// `fresh` waits for a newer compositor frame on caching backends when the
+    /// screen was dirtied by input, or on wait/repeat retries. Clean nested image
+    /// searches crop the latest cache.
     fn capture_search_area_rgb(
         &mut self,
         left: i32,

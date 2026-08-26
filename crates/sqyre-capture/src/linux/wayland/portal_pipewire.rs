@@ -32,11 +32,15 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 /// Overall budget to obtain a PipeWire frame newer than the cache at call start.
-const FRESH_CAPTURE_BUDGET: Duration = Duration::from_millis(800);
-/// Post-kick wait slices (short first so a miss retries sooner than a full 120ms stall).
+/// Idle / emit-on-damage streams may need several kick retries after input. Multi-monitor
+/// stuck regions bail earlier — see [`EARLY_BAIL_MIN_PULSES`].
+const FRESH_CAPTURE_BUDGET: Duration = Duration::from_millis(300);
+/// Brief no-kick wait so continuous / max-framerate streams can deliver the next
+/// frame without paying XSync damage-pulse cost.
+const SPONTANEOUS_WAIT: Duration = Duration::from_millis(48);
+/// Post-kick wait slices (short first so a miss retries sooner than a full stall).
 /// Emit-on-damage streams (games/Wine) often need the kick; continuous streams usually
-/// land in the first slice. Multi-monitor deliveries that miss the search region also
-/// benefit from re-pulsing instead of sitting out a long wait.
+/// land in the spontaneous wait or first slice.
 const POST_KICK_SLICES: &[Duration] = &[
     Duration::from_millis(40),
     Duration::from_millis(80),
@@ -44,6 +48,10 @@ const POST_KICK_SLICES: &[Duration] = &[
 ];
 /// Log successful fresh waits that exceed this (stderr + diag when enabled).
 const SLOW_FRESH_LOG: Duration = Duration::from_millis(100);
+/// Minimum damage pulses before giving up when other monitors advance but the
+/// search region stays stuck. Two slices (~40+80ms) lets a late region frame
+/// land; beyond that waiting only burns latency for the same cache.
+const EARLY_BAIL_MIN_PULSES: u32 = 2;
 
 /// Portal + PipeWire capturer for Wayland sessions.
 pub struct PortalCapturer {
@@ -51,7 +59,7 @@ pub struct PortalCapturer {
     shutdown: Arc<AtomicBool>,
     quit_tx: Mutex<Option<Sender<PwThreadMsg>>>,
     thread: Mutex<Option<JoinHandle<()>>>,
-    kick: Mutex<Option<crate::x11_capture::CompositorKick>>,
+    kick: Mutex<Option<super::compositor_kick::DamageKick>>,
 }
 
 struct FrameSlot {
@@ -167,17 +175,18 @@ impl PortalCapturer {
     }
 
     /// Wait until a PipeWire stream that overlaps `rect` copies a frame newer than
-    /// the cache at the start of this call. Pulses a transparent damage overlay
-    /// (map+unmap) before each wait — leaving it mapped during the wait timed out
-    /// on emit-on-damage games and could crop an overlay-tainted buffer.
+    /// the cache at the start of this call. Prefers a spontaneous frame (no kick)
+    /// so continuous streams stay snappy; then pulses a transparent damage overlay
+    /// for emit-on-damage streams. Leaving the overlay mapped during the wait timed
+    /// out on games and could crop an overlay-tainted buffer.
     ///
-    /// Latency is dominated by kick XSync + PipeWire frame arrival, not crop size:
-    /// ~1 frame after a successful kick (~40–80ms) vs multiple pulse retries (~200–300ms)
-    /// when the stream is idle or another monitor updates first.
+    /// If other streams advance while the search region stays stuck, bail early
+    /// (same cache as a full timeout). Idle same-monitor waits keep retrying so a
+    /// post-click kick can still land within the budget.
     fn wait_for_overlapping_stream_frame(&self, rect: DesktopRect) {
-        let min_gen = {
+        let (min_gen, start_global) = {
             let slot = self.frame.0.lock();
-            region_generation(&slot, rect)
+            (region_generation(&slot, rect), slot.generation)
         };
         let kick_rect = {
             let slot = self.frame.0.lock();
@@ -185,6 +194,19 @@ impl PortalCapturer {
         };
         let started = Instant::now();
         let deadline = started + FRESH_CAPTURE_BUDGET;
+
+        let spontaneous = wait_until_region_after(
+            &self.frame.0,
+            &self.frame.1,
+            rect,
+            min_gen,
+            SPONTANEOUS_WAIT.min(deadline.saturating_duration_since(Instant::now())),
+        );
+        if spontaneous > min_gen {
+            log_fresh_ok(started, 0, min_gen, spontaneous, "spontaneous");
+            return;
+        }
+
         let mut pulses = 0u32;
         while Instant::now() < deadline {
             self.pulse_compositor_kick(kick_rect);
@@ -200,20 +222,26 @@ impl PortalCapturer {
             let region_after =
                 wait_until_region_after(&self.frame.0, &self.frame.1, rect, min_gen, slice);
             if region_after > min_gen {
-                let elapsed = started.elapsed();
-                if elapsed >= SLOW_FRESH_LOG {
-                    cap_log(
-                        "PORTAL",
-                        "fresh",
-                        &format!(
-                            "wait_ms={} pulses={} gen={}->{}",
-                            elapsed.as_millis(),
-                            pulses,
-                            min_gen,
-                            region_after
-                        ),
-                    );
-                }
+                log_fresh_ok(started, pulses, min_gen, region_after, "kick");
+                return;
+            }
+            let now_global = self.frame.0.lock().generation;
+            if fresh_region_stuck_while_others_advance(
+                pulses,
+                EARLY_BAIL_MIN_PULSES,
+                start_global,
+                now_global,
+                region_after,
+                min_gen,
+            ) {
+                cap_log(
+                    "PORTAL",
+                    "wait",
+                    &format!(
+                        "result=early-bail gen={min_gen} now={now_global} region={region_after} pulses={pulses} wait_ms={}",
+                        started.elapsed().as_millis()
+                    ),
+                );
                 return;
             }
         }
@@ -226,7 +254,7 @@ impl PortalCapturer {
             "PORTAL",
             "wait",
             &format!(
-                "fresh timeout after gen={min_gen} now={now} region={region} pulses={pulses} wait_ms={}",
+                "result=timeout gen={min_gen} now={now} region={region} pulses={pulses} wait_ms={}",
                 started.elapsed().as_millis()
             ),
         );
@@ -235,7 +263,7 @@ impl PortalCapturer {
     fn pulse_compositor_kick(&self, rect: DesktopRect) {
         let mut kick = self.kick.lock();
         if kick.is_none() {
-            *kick = crate::x11_capture::CompositorKick::open();
+            *kick = super::compositor_kick::DamageKick::open();
         }
         if let Some(k) = kick.as_mut() {
             k.pulse_rect(rect);
@@ -976,6 +1004,24 @@ struct UserData {
     format: VideoInfoRaw,
     monitor_rect: DesktopRect,
 }
+fn log_fresh_ok(started: Instant, pulses: u32, min_gen: u64, region_after: u64, path: &str) {
+    let elapsed = started.elapsed();
+    if elapsed < SLOW_FRESH_LOG && path == "spontaneous" {
+        return;
+    }
+    if elapsed < SLOW_FRESH_LOG && path == "kick" && pulses <= 1 {
+        return;
+    }
+    cap_log(
+        "PORTAL",
+        "fresh",
+        &format!(
+            "result=ok path={path} wait_ms={} pulses={pulses} gen={min_gen}->{region_after}",
+            elapsed.as_millis()
+        ),
+    );
+}
+
 fn note_region_copy(slot: &mut FrameSlot, dest: DesktopRect) {
     slot.generation = slot.generation.saturating_add(1);
     let gen = slot.generation;
@@ -1104,6 +1150,22 @@ fn copy_cache_rgb(cache: &FrameCache, crop: CacheCrop) -> Result<RgbCapture, Cap
     })
 }
 
+/// True when the search-region stream stayed idle while another stream advanced.
+///
+/// Single-monitor (or fully idle) sessions keep `now_global == start_global` until
+/// the overlapping dest copies, so this stays false and pulse retries continue —
+/// required for nested image search after a click when the kick needs a few tries.
+fn fresh_region_stuck_while_others_advance(
+    pulses: u32,
+    min_pulses: u32,
+    start_global: u64,
+    now_global: u64,
+    region_after: u64,
+    min_gen: u64,
+) -> bool {
+    pulses >= min_pulses && region_after <= min_gen && now_global > start_global
+}
+
 /// Wait until a stream dest overlapping `rect` has generation `> min_gen`.
 fn wait_until_region_after(
     lock: &Mutex<FrameSlot>,
@@ -1192,6 +1254,26 @@ mod tests {
         ];
         assert_eq!(region_generation(&slot, monitor_rect(1920, 1280, 1440)), 7);
         assert_eq!(region_generation(&slot, monitor_rect(0, 1920, 1080)), 10);
+    }
+
+    #[test]
+    fn early_bail_when_other_monitor_advances_after_min_pulses() {
+        assert!(fresh_region_stuck_while_others_advance(
+            2, EARLY_BAIL_MIN_PULSES, 364, 366, 353, 353
+        ));
+        // Still within the first pulse — allow a late region frame.
+        assert!(!fresh_region_stuck_while_others_advance(
+            1, EARLY_BAIL_MIN_PULSES, 364, 366, 353, 353
+        ));
+        // Nothing else advanced (single-monitor / fully idle): keep retrying so
+        // nested searches can still land a post-click frame.
+        assert!(!fresh_region_stuck_while_others_advance(
+            5, EARLY_BAIL_MIN_PULSES, 353, 353, 353, 353
+        ));
+        // Region did advance — success path, not a bail.
+        assert!(!fresh_region_stuck_while_others_advance(
+            2, EARLY_BAIL_MIN_PULSES, 353, 354, 354, 353
+        ));
     }
 
     #[test]

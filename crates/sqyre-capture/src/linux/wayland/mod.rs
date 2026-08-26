@@ -8,6 +8,8 @@ mod wayland_clients;
 mod windows;
 
 #[cfg(feature = "portal-capture")]
+mod compositor_kick;
+#[cfg(feature = "portal-capture")]
 mod eis;
 #[cfg(feature = "portal-capture")]
 mod portal_dma;

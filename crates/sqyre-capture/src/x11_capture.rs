@@ -231,6 +231,9 @@ pub(crate) use compositor_kick::CompositorKick;
 /// 0-alpha overlay that forces GNOME to damage a dest so ScreenCast copies the
 /// current stage (PipeWire framerate is 0/1, emit-on-damage).
 ///
+/// Used as the fallback when `zwlr_layer_shell_v1` is unavailable (typical on
+/// GNOME). Portal fresh-wait prefers a native Wayland layer-shell pulse first.
+///
 /// Kept alive for the portal capturer lifetime so retries map/unmap one window
 /// instead of opening a new X11 connection each stall.
 #[cfg(feature = "portal-capture")]
