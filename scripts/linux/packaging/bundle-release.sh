@@ -46,11 +46,13 @@ fi
 
 SQYRE_APP_FEATURES="--features portal-capture"
 
-echo "Building release binary…"
-(
-  cd "$REPO_ROOT"
-  cargo build -p sqyre-app --release $SQYRE_APP_FEATURES ${CARGO_FLAGS:-}
-)
+if [ "${SQYRE_BUNDLE_SKIP_BUILD:-}" != "1" ]; then
+  echo "Building release binary…"
+  (
+    cd "$REPO_ROOT"
+    cargo build -p sqyre-app --release $SQYRE_APP_FEATURES ${CARGO_FLAGS:-}
+  )
+fi
 
 if [ ! -x "$BINARY_SRC" ]; then
   echo "ERROR: missing $BINARY_SRC after cargo build" >&2

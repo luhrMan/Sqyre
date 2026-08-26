@@ -67,7 +67,7 @@ help:
 	@echo "  all / sqyre  - cargo build (debug) -> $(BIN)/sqyre$(BIN_EXT)  [default]"
 	@echo "  probe        - cargo build (debug) -> $(BIN)/sqyre-probe$(BIN_EXT)"
 	@echo "  release      - fmt + check, then cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
-	@echo "  release-bundle - Linux: release + bundled Tesseract -> $(BIN)/sqyre-bundle/"
+	@echo "  release-bundle - Linux: release + bundled Tesseract -> $(BIN)/sqyre-bundle/ (no check gate)"
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
 	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
 	@echo "  macos        - fmt + check, then native macOS release -> $(BIN)/sqyre  (macOS host)"
@@ -119,12 +119,14 @@ release: release-gate $(BIN)
 	cp -f $(TARGET_DIR)/release/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
 
 # Portable Linux directory with libtesseract/leptonica + tessdata (needs patchelf).
-release-bundle: release-gate $(BIN)
+# Skips release-gate (clippy/deny): local packaging only; run `make check` before shipping.
+release-bundle: $(BIN)
 	@if [ "$(HOST_OS)" != "linux" ]; then \
 		echo "make release-bundle requires a Linux host (got $(HOST_OS))"; \
 		exit 1; \
 	fi
-	./scripts/linux/packaging/bundle-release.sh
+	$(CARGO) build -p sqyre-app --release $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
+	SQYRE_BUNDLE_SKIP_BUILD=1 ./scripts/linux/packaging/bundle-release.sh
 
 # Windows release binary (no MSI). Docker MinGW cross from Linux; native on Windows.
 windows: release-gate $(BIN)
