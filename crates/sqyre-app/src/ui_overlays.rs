@@ -414,10 +414,6 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             screen_click: &app.screen_click,
             macros: &macros,
             compact_program_headers: app.settings_ui.settings().compact_program_headers,
-            image_search_tooltip_preview: app
-                .settings_ui
-                .settings()
-                .image_search_tooltip_preview,
         });
         if result.catalog_changed {
             if let Err(e) = app.persist_database() {

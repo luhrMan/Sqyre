@@ -1,11 +1,10 @@
 //! Hover tooltips showing a live screen capture around a point or search area.
 
-use crate::icon_cache::IconCache;
 use crate::image_view::{self, ImageViewTransform};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
 use sqyre_capture::{mark_site, shared_capturer_nonblocking, OsCapturer};
-use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, MatchMethod, ScalarValue};
+use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use sqyre_ports::{CaptureError, DesktopRect};
 use std::collections::HashMap;
@@ -72,7 +71,6 @@ pub struct PreviewTooltipCache {
     desktop_outline: Option<(i32, i32, i32, i32)>,
     /// Desktop outline from a hovered list row / coord label; wins over embedded.
     desktop_outline_hover: Option<(i32, i32, i32, i32)>,
-    image_search: image_search_preview::ImageSearchPreviewCache,
 }
 
 impl PreviewTooltipCache {
@@ -104,11 +102,6 @@ impl PreviewTooltipCache {
         self.failures.clear();
         self.desktop_outline = None;
         self.desktop_outline_hover = None;
-        self.image_search.clear();
-    }
-
-    pub fn set_image_search_close_matches_distance(&mut self, distance: i32) {
-        self.image_search.close_matches_distance = distance;
     }
 
     /// Absolute desktop corners requested by a tooltip preview last frame, if any.
@@ -195,40 +188,6 @@ impl PreviewTooltipCache {
                 ui.colored_label(crate::theme::error_fg(), err);
             }
         }
-    }
-
-    /// Search-area capture plus live template-match overlays for Image Search.
-    #[allow(clippy::too_many_arguments)]
-    pub fn paint_image_search_action_preview(
-        &mut self,
-        ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
-        icons: &mut IconCache,
-        macro_: &Macro,
-        search_area: &CoordinateRef,
-        targets: &[String],
-        tolerance: f64,
-        blur: i32,
-        match_method: MatchMethod,
-        force: bool,
-    ) {
-        let ctx = ui.ctx().clone();
-        let preview =
-            paint_search_area_capture(ui, self, catalog, macro_, search_area, force);
-        self.image_search.paint_overlays(
-            ui,
-            &ctx,
-            catalog,
-            icons,
-            macro_,
-            search_area,
-            targets,
-            tolerance,
-            blur,
-            match_method,
-            force,
-            preview,
-        );
     }
 
     /// Hover tooltip variant of [`Self::paint_for_coordinate_ref`].
@@ -830,43 +789,10 @@ fn coord_to_literal(v: &ScalarValue) -> Option<i32> {
 }
 
 fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str) {
-    let _ = paint_preview_image(ui, tex);
-    ui.label(caption);
-}
-
-fn paint_preview_image(ui: &mut egui::Ui, tex: &TextureHandle) -> (egui::Rect, Vec2) {
     let [tw, th] = tex.size();
     let size = fit_display(tw as f32, th as f32);
-    let resp = ui.add(egui::Image::new((tex.id(), size)));
-    (resp.rect, Vec2::new(tw as f32, th as f32))
-}
-
-fn paint_search_area_capture(
-    ui: &mut egui::Ui,
-    cache: &mut PreviewTooltipCache,
-    catalog: &ProgramCatalog,
-    macro_: &Macro,
-    search_area: &CoordinateRef,
-    force: bool,
-) -> Option<(egui::Rect, Vec2)> {
-    let preview = match ref_preview_spec(catalog, macro_, search_area, PreviewKind::SearchArea) {
-        Ok((key, caption, coords)) => {
-            cache.request_desktop_outline_embedded(coords);
-            cache.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM)
-        }
-        Err(err) => Err(err),
-    };
-    match preview {
-        Ok((tex, cap)) => {
-            let (rect, size) = paint_preview_image(ui, &tex);
-            ui.label(cap);
-            Some((rect, size))
-        }
-        Err(err) => {
-            ui.colored_label(crate::theme::error_fg(), err);
-            None
-        }
-    }
+    ui.add(egui::Image::new((tex.id(), size)));
+    ui.label(caption);
 }
 
 fn panel_viewport_size(ui: &egui::Ui) -> Vec2 {

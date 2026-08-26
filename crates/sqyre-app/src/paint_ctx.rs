@@ -14,8 +14,6 @@ pub struct CatalogPaint<'a> {
     pub catalog: &'a ProgramCatalog,
     pub icons: &'a mut IconCache,
     pub previews: &'a mut PreviewTooltipCache,
-    /// When true, Image Search tooltips overlay live template matches on the preview.
-    pub image_search_tooltip_preview: bool,
 }
 
 #[derive(Clone, Copy)]

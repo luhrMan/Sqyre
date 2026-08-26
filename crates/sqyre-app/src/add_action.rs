@@ -17,7 +17,7 @@ use crate::widgets::SaveCancel;
 use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2, WidgetInfo, WidgetType};
 use sqyre_domain::{
     action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
-    KnownVariableNames, Macro,
+    KnownVariableNames,
 };
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
@@ -370,12 +370,10 @@ impl AddActionPicker {
             ctx,
             egui::Id::new(("action_default_view", action_type.as_str())),
             action,
-            &Macro::new("", 0, vec![]),
             &mut CatalogPaint {
                 catalog,
                 icons,
                 previews,
-                image_search_tooltip_preview: false,
             },
             VarTheme {
                 known_vars,
@@ -443,7 +441,6 @@ impl AddActionPicker {
                     catalog,
                     icons,
                     previews,
-                    image_search_tooltip_preview: false,
                 },
                 macros,
                 compact_program_headers,
@@ -495,7 +492,6 @@ impl AddActionPicker {
                                     catalog,
                                     icons,
                                     previews,
-                                    image_search_tooltip_preview: false,
                                 },
                                 bridges: RecordBridges {
                                     key_record,

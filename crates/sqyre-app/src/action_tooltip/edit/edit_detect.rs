@@ -21,27 +21,18 @@ use sqyre_domain::{
 };
 use sqyre_hotkeys::ScreenClickBridge;
 
-/// Optional live match overlay for Image Search search-area previews.
-pub(super) struct ImageSearchAreaPreview<'a> {
-    pub macro_: Option<&'a Macro>,
-    pub targets: &'a [String],
-    pub tolerance: f64,
-    pub blur: i32,
-    pub match_method: sqyre_domain::MatchMethod,
-}
-
+/// Name + search area — the always-visible detection header.
 fn detection_primary_header(
     ui: &mut egui::Ui,
     paint: &mut CatalogPaint<'_>,
     picker: &mut ActivePicker,
     name: &mut String,
     search_area: &mut CoordinateRef,
-    image_search: Option<ImageSearchAreaPreview<'_>>,
 ) {
     tip_wrapped_section(ui, |ui| {
         text_field(ui, "Name", h::NAME, name);
     });
-    search_area_section(ui, paint, search_area, picker, image_search);
+    search_area_section(ui, paint, search_area, picker);
 }
 
 /// Output coords + wait/order — shared Advanced contents for detection actions.
@@ -66,7 +57,6 @@ pub(super) fn paint_image_search_fields(
     paint: &mut CatalogPaint<'_>,
     picker: &mut ActivePicker,
     theme: VarTheme<'_>,
-    active_macro: Option<&Macro>,
     name: &mut String,
     targets: &mut Vec<String>,
     search_area: &mut CoordinateRef,
@@ -75,20 +65,7 @@ pub(super) fn paint_image_search_fields(
     match_method: &mut MatchMethod,
     detection: &mut DetectionBranch,
 ) {
-    detection_primary_header(
-        ui,
-        paint,
-        picker,
-        name,
-        search_area,
-        Some(ImageSearchAreaPreview {
-            macro_: active_macro,
-            targets,
-            tolerance: *tolerance,
-            blur: *blur,
-            match_method: *match_method,
-        }),
-    );
+    detection_primary_header(ui, paint, picker, name, search_area);
     tip_section(ui, |ui| {
         targets_editor(ui, paint.catalog, paint.icons, targets, picker);
     });
@@ -122,7 +99,7 @@ pub(super) fn paint_ocr_fields(
     threshold_invert: &mut bool,
     detection: &mut DetectionBranch,
 ) {
-    detection_primary_header(ui, paint, picker, name, search_area, None);
+    detection_primary_header(ui, paint, picker, name, search_area);
     tip_wrapped_section(ui, |ui| {
         var_pills::var_name_text_edit(
             ui,
@@ -187,7 +164,7 @@ pub(super) fn paint_find_pixel_fields(
     color_tolerance: &mut i32,
     detection: &mut DetectionBranch,
 ) {
-    detection_primary_header(ui, paint, picker, name, search_area, None);
+    detection_primary_header(ui, paint, picker, name, search_area);
     tip_wrapped_section(ui, |ui| {
         ui.horizontal(|ui| {
             var_ref_field(

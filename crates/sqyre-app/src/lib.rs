@@ -24,8 +24,6 @@ mod file_dialogs;
 mod hotkey_record;
 mod icon_cache;
 mod icon_variants;
-#[cfg(feature = "native-runtime")]
-mod image_search_preview;
 mod image_view;
 mod key_record;
 #[cfg(all(target_os = "linux", feature = "native-runtime"))]
