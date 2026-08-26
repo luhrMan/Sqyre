@@ -12,12 +12,17 @@ use std::ptr;
 use x11::xlib::{
     Atom, ClientMessage, Display, False, PropModeReplace, Success, True, Window,
     XChangeProperty, XChangeWindowAttributes, XDefaultRootWindow, XEvent, XFlush, XFree,
-    XGetGeometry, XGetWMName, XGetWindowProperty, XInternAtom, XMoveResizeWindow, XOpenDisplay,
-    XSendEvent, XSetWindowAttributes, _XDisplay, CWBackPixel, XA_ATOM, XA_CARDINAL, XA_WINDOW,
+    XGetGeometry, XGetWMName, XGetWindowProperty, XInternAtom, XMoveWindow,
+    XOpenDisplay, XSendEvent, XSetWindowAttributes, _XDisplay, CWBackPixel, XA_ATOM, XA_CARDINAL,
+    XA_WINDOW,
 };
 
 /// Title used by floating macro-overlay viewports (`macro_overlay`).
 pub const OVERLAY_WM_TITLE: &str = "sqyre-overlay";
+
+/// Title for overlay tooltip viewports — must differ from [`OVERLAY_WM_TITLE`]
+/// so X11 geometry sync does not treat tips as buttons.
+pub const OVERLAY_TIP_WM_TITLE: &str = "sqyre-overlay-tip";
 
 /// Process-lifetime X11 display for focus / window-list APIs (serialized via Mutex).
 struct SharedFocusDisplay {
@@ -110,14 +115,11 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
 /// `_NET_WM_STATE_SKIP_PAGER` on those top-level windows, and re-assert
 /// `_NET_WM_WINDOW_TYPE_NOTIFICATION` (not Dock — Mutter can autohide docks under fullscreen).
 pub fn skip_taskbar_for_overlay_windows() -> Result<(), CaptureError> {
-    crate::diag::mark_site("x11:skip_taskbar:before_open");
     let result = with_display(|display| {
-        crate::diag::mark_site("x11:skip_taskbar:on_display");
         // SAFETY: `display` comes from `with_display`, which guarantees a live,
         // non-null `XOpenDisplay` connection for the duration of this call.
         unsafe { skip_taskbar_on_display(display) }
     });
-    crate::diag::mark_site("x11:skip_taskbar:done");
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:skip_taskbar err: {e}"));
     }
@@ -135,14 +137,11 @@ pub fn sync_overlay_window_geometry(
     if hints.is_empty() {
         return Ok(());
     }
-    crate::diag::mark_site("x11:overlay_geom:before_open");
     let result = with_display(|display| {
-        crate::diag::mark_site("x11:overlay_geom:on_display");
         // SAFETY: `display` comes from `with_display`, which guarantees a live,
         // non-null `XOpenDisplay` connection for the duration of this call.
         unsafe { sync_overlay_geometry_on_display(display, hints, last_positions) }
     });
-    crate::diag::mark_site("x11:overlay_geom:done");
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:overlay_geom err: {e}"));
     }
@@ -151,14 +150,11 @@ pub fn sync_overlay_window_geometry(
 
 /// X11: clear opaque backings on overlay tool windows (glow deferred viewports).
 pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
-    crate::diag::mark_site("x11:overlay_transparency:before_open");
     let result = with_display(|display| {
-        crate::diag::mark_site("x11:overlay_transparency:on_display");
         // SAFETY: `display` comes from `with_display`, which guarantees a live,
         // non-null `XOpenDisplay` connection for the duration of this call.
         unsafe { enable_overlay_transparency_on_display(display) }
     });
-    crate::diag::mark_site("x11:overlay_transparency:done");
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:overlay_transparency err: {e}"));
     }
@@ -676,8 +672,7 @@ unsafe fn sync_overlay_geometry_on_display(
         return Ok(());
     }
     let mut used = HashSet::new();
-    let mut moved = 0u32;
-    for (id, nx, ny, nw, nh) in hints {
+    for (id, nx, ny, _nw, _nh) in hints {
         let hint = last_positions.get(id).copied().unwrap_or((*nx, *ny));
         let mut best: Option<(usize, i64)> = None;
         for (idx, (win, x, y, w, h)) in windows.iter().enumerate() {
@@ -699,16 +694,11 @@ unsafe fn sync_overlay_geometry_on_display(
         };
         used.insert(idx);
         let (win, _, _, _, _) = windows[idx];
-        let nw = (*nw).max(1);
-        let nh = (*nh).max(1);
-        XMoveResizeWindow(display, win, *nx, *ny, nw, nh);
+        // Position only — never resize; egui owns overlay window size.
+        XMoveWindow(display, win, *nx, *ny);
         last_positions.insert(id.clone(), (*nx, *ny));
-        moved += 1;
     }
     XFlush(display);
-    if moved > 0 {
-        crate::diag::mark_site(&format!("x11:overlay_geom:moved={moved}"));
-    }
     Ok(())
 }
 
@@ -724,15 +714,10 @@ unsafe fn enable_overlay_transparency_on_display(
     let mut attrs: XSetWindowAttributes = std::mem::zeroed();
     attrs.background_pixel = 0;
     let mask = CWBackPixel;
-    let mut applied = 0u32;
     for (win, _, _, _, _) in windows {
         XChangeWindowAttributes(display, win, mask, &mut attrs);
-        applied += 1;
     }
     XFlush(display);
-    if applied > 0 {
-        crate::diag::mark_site(&format!("x11:overlay_transparency:applied={applied}"));
-    }
     Ok(())
 }
 
@@ -748,7 +733,6 @@ unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), Capture
     let skip_pager = intern(display, "_NET_WM_STATE_SKIP_PAGER")?;
     let win_type = intern(display, "_NET_WM_WINDOW_TYPE")?;
     let type_notification = intern(display, "_NET_WM_WINDOW_TYPE_NOTIFICATION")?;
-    let mut hinted = 0u32;
     for win in clients {
         let Some(pid) = window_pid(display, win) else {
             continue;
@@ -767,12 +751,8 @@ unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), Capture
         set_window_type(display, win, win_type, type_notification);
         set_net_wm_state(display, win, state, &[skip_taskbar, skip_pager]);
         send_net_wm_state_add(display, root, win, state, skip_taskbar, skip_pager);
-        hinted += 1;
     }
     XFlush(display);
-    if hinted > 0 {
-        crate::diag::mark_site(&format!("x11:skip_taskbar:hinted={hinted}"));
-    }
     Ok(())
 }
 
