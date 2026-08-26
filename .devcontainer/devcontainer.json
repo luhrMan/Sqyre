@@ -19,16 +19,34 @@
     "CARGO_HOME": "/home/vscode/.cargo",
     "RUSTUP_HOME": "/usr/local/rustup",
     "CARGO_TARGET_DIR": "/workspace/target",
-    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
+    "CARGO_BUILD_JOBS": "4"
   },
   "customizations": {
     "vscode": {
       "extensions": [
         "rust-lang.rust-analyzer"
-      ]
+      ],
+      "settings": {
+        "files.watcherExclude": {
+          "**/target/**": true,
+          "**/.cache/**": true,
+          "**/bin/sqyre-bundle/**": true
+        },
+        "search.exclude": {
+          "**/target": true,
+          "**/.cache": true,
+          "**/bin/sqyre-bundle": true
+        },
+        "rust-analyzer.files.excludeDirs": [
+          "target",
+          ".cache",
+          "bin/sqyre-bundle"
+        ]
+      }
     }
   },
-  "postCreateCommand": "sudo chown -R vscode:vscode /home/vscode/.cargo 2>/dev/null || true && rustup component add rust-src 2>/dev/null || true && rustup target add wasm32-unknown-unknown 2>/dev/null || true && rustc --version && cargo --version && trunk --version && (docker version >/dev/null && echo 'docker: ok' || echo 'docker: unavailable (need host Docker + rebuild)') && cargo fetch",
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
   "remoteUser": "vscode",
   "updateRemoteUserUID": true
 }
