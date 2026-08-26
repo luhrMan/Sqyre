@@ -2,9 +2,11 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.92, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows` and AppImage Docker fallbacks work inside the container.
+Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.94, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows` and AppImage Docker fallbacks work inside the container.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
+
+If Cursor reports **“container is not running”** during attach, stale containers are usually the cause — remove them (`docker ps -a` → `docker rm -f <id>`) and **Rebuild Container**. Large `target/` trees are excluded from file watchers (see `.devcontainer/devcontainer.json`); run `cargo clean` locally if the cache has grown huge (>50 GiB).
 
 From the repo root:
 
@@ -25,7 +27,10 @@ make windows    # fmt + check, then bin/sqyre.exe (Docker MinGW cross / native o
 make macos      # fmt + check, then bin/sqyre (macOS host)
 make wasm       # fmt + check, then bin/wasm/ GUI-only browser editor (Trunk)
 make tessdata   # download eng.traineddata into assets/tessdata/
+make release-bundle  # portable bin/sqyre-bundle/ (release only; no check gate — see scripts/linux/packaging/PACKAGING.md)
 ```
+
+Release builds (`make release`, `make release-bundle`) need **≥4 GiB** container RAM on a cold `target/`; if rustc is SIGKILL'd, raise Docker memory or set `CARGO_BUILD_JOBS=1`. With a warm `target/` cache, `make release-bundle` is much faster and lighter than before (it no longer runs clippy/deny first).
 
 Run `make help` for the full target list. Workspace layout: [RUST.md](./RUST.md).
 
@@ -61,7 +66,7 @@ Build caches (all gitignored):
 | `bench` | Criterion benches for `sqyre-match`, `sqyre-vision`, `sqyre-serialize` (local only; not CI) |
 | `wasm-check` | `cargo check` of the GUI-only WASM editor (no Trunk) |
 | `coverage` | llvm-cov HTML + `lcov.info` under `target/coverage/` (report only; no % gate) |
-| `coverage-floors` | Line-coverage floors for pure crates (`sqyre-domain`, `sqyre-varref`, `path_confine`, `migrate`, `sqyre-serialize`, `sqyre-validate`; see `scripts/coverage-floors.json`) |
+| `coverage-floors` | Line-coverage floors for pure crates (`sqyre-domain`, `sqyre-varref`, `path_confine`, `migrate`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`, `sqyre-executor`; see `scripts/coverage-floors.json`) |
 | `run` | `cargo run -p sqyre-app` |
 | `docs-media` | Regenerate `docs/images/` screenshots |
 | `appimage` | `bin/Sqyre-*.AppImage` |
@@ -193,12 +198,14 @@ Headless CI uses Null* backends / stub hotkeys where hooks are unavailable.
 
 | Target | Scope | Default floor |
 |--------|-------|---------------|
-| `sqyre-domain` | whole crate | 70% |
-| `sqyre-varref` | whole crate | 90% |
-| `path_confine` | `sqyre-executor` path confinement | 85% |
-| `migrate` | `sqyre-persist` db.yaml migration | 80% |
-| `sqyre-serialize` | whole crate | 65% |
-| `sqyre-validate` | whole crate | 70% |
+| `sqyre-domain` | whole crate | 83% |
+| `sqyre-varref` | whole crate | 93% |
+| `path_confine` | `sqyre-executor` path confinement | 90% |
+| `migrate` | `sqyre-persist` db.yaml migration | 83% |
+| `sqyre-serialize` | whole crate | 93% |
+| `sqyre-validate` | whole crate | 84% |
+| `sqyre-persist` | whole crate | 77% |
+| `sqyre-executor` | whole crate | 85% |
 
 OS-specific crates (`sqyre-capture`, etc.) are intentionally **not** gated. Set `COVERAGE_FLOORS=1` when running `make coverage` to also run the floor check after the report. CI runs `make coverage-floors` after the report-only coverage step.
 
