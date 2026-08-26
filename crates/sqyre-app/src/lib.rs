@@ -134,7 +134,7 @@ pub fn run() -> eframe::Result<()> {
         }
     };
 
-    let options = eframe::NativeOptions {
+    let mut options = eframe::NativeOptions {
         viewport: {
             let builder = egui::ViewportBuilder::default()
                 .with_inner_size([960.0, 640.0])
@@ -156,6 +156,19 @@ pub fn run() -> eframe::Result<()> {
         renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
+    // Native Wayland: winit's set_visible / set_outer_position are no-ops, so tray-hide
+    // cannot unmap the root window (the old 1×1 off-screen hack left an Alt-Tab skeleton)
+    // and X11 window-type / SKIP_TASKBAR hints never apply to overlay viewports.
+    // Prefer XWayland whenever DISPLAY is available (normal GNOME/Plasma/Cosmic sessions).
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("DISPLAY").is_some() {
+        options.event_loop_builder = Some(Box::new(|builder| {
+            use winit::platform::x11::EventLoopBuilderExtX11 as _;
+            builder.with_x11();
+        }));
+        #[cfg(feature = "native-runtime")]
+        sqyre_capture::note("ui: X11/XWayland event loop (tray hide + overlay Alt-Tab)");
+    }
     eframe::run_native(
         assets::APP_ID,
         options,
@@ -165,7 +178,7 @@ pub fn run() -> eframe::Result<()> {
             SettingsUi::install_fonts(&cc.egui_ctx);
             SettingsUi::apply_appearance(&cc.egui_ctx, app.settings_ui.settings());
             app.bind_hotkey_repaint(cc.egui_ctx.clone());
-            app.tray = tray::SystemTray::install(cc.egui_ctx.clone());
+            app.tray = tray::SystemTray::install(cc.egui_ctx.clone(), cc.winit_window().cloned());
             Ok(Box::new(app))
         }),
     )
@@ -613,6 +626,11 @@ impl SqyreApp {
 }
 
 impl eframe::App for SqyreApp {
+    fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.tray.poll_commands(ctx, frame);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.take_pending_db_import();
         // Poll background tasks before floating windows so Settings sees fresh update state.
@@ -622,6 +640,10 @@ impl eframe::App for SqyreApp {
             && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed())
         {
             self.sync_recording_overlay(ui.ctx());
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.tray.application_hidden() {
             return;
         }
         ui_overlays::show_floating_windows(self, ui.ctx());
