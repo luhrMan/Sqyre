@@ -81,3 +81,27 @@ fn minimal_db_roundtrip_validates() {
 fn catalog_and_actions_roundtrip_validates() {
     assert_roundtrip(&fixture("catalog_and_actions.yaml"));
 }
+
+#[test]
+fn vision_actions_roundtrip_validates() {
+    assert_roundtrip(&fixture("vision_actions.yaml"));
+    let db = Database::from_yaml(&fixture("vision_actions.yaml")).expect("load vision fixture");
+    let keys = kind_keys(&db.macros["Vision catalog"]);
+    assert!(
+        keys.contains(&"imagesearch") && keys.contains(&"ocr") && keys.contains(&"findpixel"),
+        "vision fixture kinds: {keys:?}"
+    );
+}
+
+#[test]
+fn skipped_macro_fixture_warns_and_keeps_good() {
+    let (db, warnings) = Database::from_yaml_with_warnings(&fixture("skipped_macro.yaml"))
+        .expect("decode skipped-macro fixture");
+    assert!(db.macros.contains_key("Keep"));
+    assert!(!db.macros.contains_key("Broken"));
+    assert!(
+        warnings.iter().any(|w| w.contains("Broken")),
+        "expected skip warning for Broken, got {warnings:?}"
+    );
+    sqyre_validate::validate_macro(&db.macros["Keep"]).expect("validate Keep");
+}
