@@ -513,10 +513,13 @@ pub fn sync_overlay_window_geometry(
 
 /// Stable WM title used by floating macro-overlay viewports.
 #[cfg(target_os = "linux")]
-pub use x11_focus::OVERLAY_WM_TITLE;
+pub use x11_focus::{OVERLAY_TIP_WM_TITLE, OVERLAY_WM_TITLE};
 
 #[cfg(not(target_os = "linux"))]
 pub const OVERLAY_WM_TITLE: &str = "sqyre-overlay";
+
+#[cfg(not(target_os = "linux"))]
+pub const OVERLAY_TIP_WM_TITLE: &str = "sqyre-overlay-tip";
 
 /// True when the focused window belongs to this process (e.g. an overlay button).
 pub fn active_window_is_our_process() -> bool {
@@ -526,10 +529,15 @@ pub fn active_window_is_our_process() -> bool {
     window_is_our_process(&win)
 }
 
+fn title_is_overlay_chrome(title: &str) -> bool {
+    let t = title.trim();
+    t == OVERLAY_WM_TITLE || t == OVERLAY_TIP_WM_TITLE
+}
+
 /// True when `win` is owned by this process's executable.
 pub fn window_is_our_process(win: &WindowInfo) -> bool {
     // Overlay chrome uses a fixed WM title; path matching can fail via AT-SPI.
-    if win.title.trim() == OVERLAY_WM_TITLE {
+    if title_is_overlay_chrome(&win.title) {
         return true;
     }
     // `current_exe` is unsupported / may panic on wasm32-unknown-unknown.
@@ -554,7 +562,7 @@ pub fn window_is_our_process(win: &WindowInfo) -> bool {
 /// overlays: after the dialog closes, fullscreen games often report `None` and
 /// the bad `last_foreign` sticks until process restart.
 pub fn window_is_transient_shell_focus(win: &WindowInfo) -> bool {
-    if win.title.trim() == OVERLAY_WM_TITLE {
+    if title_is_overlay_chrome(&win.title) {
         return true;
     }
     let name = win.process_name.trim().to_ascii_lowercase();
@@ -801,6 +809,15 @@ mod tests {
         };
         assert!(super::window_is_transient_shell_focus(&overlay));
         assert!(super::window_is_our_process(&overlay));
+
+        let tip = WindowInfo {
+            title: super::OVERLAY_TIP_WM_TITLE.into(),
+            process_name: "sqyre".into(),
+            process_path: String::new(),
+            icon: None,
+        };
+        assert!(super::window_is_transient_shell_focus(&tip));
+        assert!(super::window_is_our_process(&tip));
 
         let game = WindowInfo {
             title: "Mistfall Hunter".into(),

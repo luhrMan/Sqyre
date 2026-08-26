@@ -426,8 +426,11 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     let running = app.run_session.state.running.load(Ordering::SeqCst);
-    if running
-        || app.hotkey_record.is_open()
+    if running {
+        // Macro tree highlighter; overlay spinner has its own wake thread.
+        // Keep this coarser than 60 Hz so Wayland focus/hint work is not on the hot path.
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
+    } else if app.hotkey_record.is_open()
         || app.key_record.is_open()
         || app.macro_record.is_open()
         || app.screen_click.is_armed()
