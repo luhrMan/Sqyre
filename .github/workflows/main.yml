@@ -233,7 +233,7 @@ jobs:
             -e RUSTUP_HOME=/usr/local/rustup \
             -e PATH=/usr/local/cargo/bin:/usr/bin:/bin \
             -e WGPU_BACKEND=vulkan \
-            -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
+            -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
               make check
@@ -252,7 +252,7 @@ jobs:
             -e RUSTUP_HOME=/usr/local/rustup \
             -e PATH=/usr/local/cargo/bin:/usr/bin:/bin \
             -e WGPU_BACKEND=vulkan \
-            -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.x86_64.json \
+            -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
               make coverage
