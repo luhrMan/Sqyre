@@ -383,32 +383,56 @@ pub(super) fn run_detection_shell<T>(
     let wait_interval_ms = ctx.wait_interval_ms;
     let repeat_interval_ms = ctx.repeat_interval_ms;
     let mut state = try_once(exec, macro_, false)?;
-    let mut wait_timed_out = false;
+
+    let wait_started = Instant::now();
+    let mut did_wait = false;
     if wait.wait_until_found_active() && !is_hit(&state) {
-        if !maybe_wait_until_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
+        did_wait = true;
+        let timeout = wait.timeout().unwrap_or(Duration::ZERO);
+        // Short window: one sleep + one fresh search (avoids interval poll + timeout final).
+        if timeout <= Duration::from_millis(100) {
+            let ms = timeout.as_millis().min(i32::MAX as u128) as i32;
+            if ms > 0 {
+                exec.interruptible_sleep(ms)?;
+            }
             state = try_once(exec, macro_, true)?;
-            Ok(is_hit(&state))
-        })? {
-            wait_timed_out = true;
+        } else {
+            let mut wait_timed_out = false;
+            if !maybe_wait_until_found(exec, wait, false, wait_interval_ms, |exec| {
+                state = try_once(exec, macro_, true)?;
+                Ok(is_hit(&state))
+            })? {
+                wait_timed_out = true;
+            }
+            if wait_timed_out {
+                state = try_once(exec, macro_, true)?;
+            }
         }
     } else if wait.wait_while_found_active() && is_hit(&state) {
-        if !maybe_wait_while_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
+        did_wait = true;
+        let mut wait_timed_out = false;
+        if !maybe_wait_while_found(exec, wait, true, wait_interval_ms, |exec| {
             state = try_once(exec, macro_, true)?;
             Ok(!is_hit(&state))
         })? {
             wait_timed_out = true;
         }
+        if wait_timed_out {
+            state = try_once(exec, macro_, true)?;
+        }
     }
-    if wait_timed_out {
-        state = try_once(exec, macro_, true)?;
+    if did_wait {
+        exec.log_timing(ctx.action_id, "wait", wait_started.elapsed());
     }
 
+    let apply_started = Instant::now();
     if maybe_repeat_while_found(exec, wait, repeat_interval_ms, |exec, refresh| {
         if refresh {
             state = try_once(exec, macro_, true)?;
         }
         on_outcome(exec, macro_, &state, DetectionPass::RepeatWhile { refresh })
     })? {
+        exec.log_timing(ctx.action_id, "apply", apply_started.elapsed());
         return Ok(());
     }
 
@@ -418,10 +442,13 @@ pub(super) fn run_detection_shell<T>(
         }
         on_outcome(exec, macro_, &state, DetectionPass::RepeatUntil { refresh })
     })? {
+        exec.log_timing(ctx.action_id, "apply", apply_started.elapsed());
         return Ok(());
     }
 
-    on_outcome(exec, macro_, &state, DetectionPass::Final).map(|_| ())
+    on_outcome(exec, macro_, &state, DetectionPass::Final)?;
+    exec.log_timing(ctx.action_id, "apply", apply_started.elapsed());
+    Ok(())
 }
 
 /// Whether `on_outcome` is running inside a repeat loop or as the single-shot after wait.
@@ -435,18 +462,39 @@ pub(super) enum DetectionPass {
 /// Poll until `done` returns true or the wait timeout elapses.
 ///
 /// Returns `Ok(true)` when `done` succeeded, `Ok(false)` on timeout.
+/// Sleeps are capped to the remaining wait window so a short
+/// `waittilfoundseconds` cannot overshoot via a longer default interval.
 pub(super) fn retry_until(
     exec: &mut Executor<'_>,
     wait: &WaitTilFoundConfig,
     default_interval_ms: i32,
     mut done: impl FnMut(&mut Executor<'_>) -> Result<bool>,
 ) -> Result<bool> {
-    let deadline = Instant::now() + wait.timeout().unwrap_or(Duration::ZERO);
+    let Some(timeout) = wait.timeout() else {
+        return Ok(false);
+    };
+    let deadline = Instant::now() + timeout;
     let mut interval = wait.effective_interval_ms(default_interval_ms).max(1);
+    // Poll at least as often as the wait window (e.g. 50ms wait must not sleep 100ms).
+    let timeout_ms = timeout.as_millis().min(i32::MAX as u128) as i32;
+    interval = interval.min(timeout_ms.max(1));
     let max_interval = (interval * 5).min(2000).max(interval);
     while Instant::now() < deadline {
         exec.check_stopped()?;
-        exec.interruptible_sleep(interval)?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let sleep_ms = (interval as u128)
+            .min(remaining.as_millis())
+            .max(1)
+            .min(i32::MAX as u128) as i32;
+        exec.interruptible_sleep(sleep_ms)?;
+        // After sleeping to/past the deadline, let the shell's final try_once
+        // run once — avoid an extra capture here that duplicates it.
+        if Instant::now() >= deadline {
+            break;
+        }
         if done(exec)? {
             return Ok(true);
         }
