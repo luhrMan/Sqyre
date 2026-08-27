@@ -602,11 +602,17 @@ unsafe fn set_active_window(
     Ok(())
 }
 
+struct OverlayWindowGeom {
+    win: Window,
+    x: i32,
+    y: i32,
+}
+
 // SAFETY: callers must pass a live, non-null Xlib `display` connection that
 // outlives this call.
 unsafe fn overlay_windows_on_display(
     display: *mut _XDisplay,
-) -> Result<Vec<(Window, i32, i32, u32, u32)>, CaptureError> {
+) -> Result<Vec<OverlayWindowGeom>, CaptureError> {
     let our_pid = std::process::id();
     let root = XDefaultRootWindow(display);
     let clients = client_list(display, root)?;
@@ -624,10 +630,10 @@ unsafe fn overlay_windows_on_display(
         if title.trim() != OVERLAY_WM_TITLE {
             continue;
         }
-        let Some((x, y, w, h)) = window_geometry(display, win) else {
+        let Some((x, y, _w, _h)) = window_geometry(display, win) else {
             continue;
         };
-        out.push((win, x, y, w, h));
+        out.push(OverlayWindowGeom { win, x, y });
     }
     Ok(out)
 }
@@ -673,27 +679,25 @@ unsafe fn sync_overlay_geometry_on_display(
     for (id, nx, ny, _nw, _nh) in hints {
         let hint = last_positions.get(id).copied().unwrap_or((*nx, *ny));
         let mut best: Option<(usize, i64)> = None;
-        for (idx, (win, x, y, w, h)) in windows.iter().enumerate() {
+        for (idx, geom) in windows.iter().enumerate() {
             if used.contains(&idx) {
                 continue;
             }
-            let dx = *x - hint.0;
-            let dy = *y - hint.1;
+            let dx = geom.x - hint.0;
+            let dy = geom.y - hint.1;
             let dist = (dx as i64) * (dx as i64) + (dy as i64) * (dy as i64);
             match best {
                 None => best = Some((idx, dist)),
                 Some((_, best_dist)) if dist < best_dist => best = Some((idx, dist)),
                 _ => {}
             }
-            let _ = (win, w, h);
         }
         let Some((idx, _)) = best else {
             continue;
         };
         used.insert(idx);
-        let (win, _, _, _, _) = windows[idx];
         // Position only — never resize; egui owns overlay window size.
-        XMoveWindow(display, win, *nx, *ny);
+        XMoveWindow(display, windows[idx].win, *nx, *ny);
         last_positions.insert(id.clone(), (*nx, *ny));
     }
     XFlush(display);
@@ -712,8 +716,8 @@ unsafe fn enable_overlay_transparency_on_display(
     let mut attrs: XSetWindowAttributes = std::mem::zeroed();
     attrs.background_pixel = 0;
     let mask = CWBackPixel;
-    for (win, _, _, _, _) in windows {
-        XChangeWindowAttributes(display, win, mask, &mut attrs);
+    for geom in windows {
+        XChangeWindowAttributes(display, geom.win, mask, &mut attrs);
     }
     XFlush(display);
     Ok(())
