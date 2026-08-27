@@ -9,12 +9,14 @@ use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 static INPUT_TX: Mutex<Option<Sender<EisCmd>>> = Mutex::new(None);
 pub(super) static PENDING_EIS_FD: Mutex<Option<OwnedFd>> = Mutex::new(None);
 static LAST_ABS: Mutex<Option<(i32, i32)>> = Mutex::new(None);
 static PORTAL_CURSOR: Mutex<Option<(i32, i32)>> = Mutex::new(None);
+/// Last click/key/scroll over EIS — ScreenCast may still be catching up.
+static LAST_STAGE_MUTATION: Mutex<Option<Instant>> = Mutex::new(None);
 static LOGGED_PORTAL_CURSOR: AtomicBool = AtomicBool::new(false);
 pub(super) static LOGGED_CURSOR_META: AtomicBool = AtomicBool::new(false);
 static EIS_READY: AtomicBool = AtomicBool::new(false);
@@ -30,6 +32,8 @@ enum EisCmd {
     Click {
         button: u32,
         down: bool,
+        /// Last absolute pointer we sent — framed with the button edge when possible.
+        reseat: Option<(i32, i32)>,
         reply: Sender<Result<(), AutomationError>>,
     },
     Scroll {
@@ -171,25 +175,73 @@ pub fn portal_input_click(button: &str, down: bool) -> Result<(), AutomationErro
         "center" | "middle" => BTN_MIDDLE,
         _ => BTN_LEFT,
     };
+    let reseat = *LAST_ABS.lock();
+    let pos = reseat
+        .map(|(x, y)| format!("{x},{y}"))
+        .unwrap_or_else(|| "none".into());
     let (reply, rx) = mpsc::channel();
     send_eis(EisCmd::Click {
         button: code,
         down,
+        reseat,
         reply,
     })?;
-    recv_eis(rx)
+    let r = recv_eis(rx);
+    let edge = if down { "down" } else { "up" };
+    match &r {
+        Ok(()) => {
+            note_stage_mutation();
+            cap_log(
+                "INPUT",
+                "ok",
+                &format!(
+                    "click={edge} button={button} pos={pos} reseat={}",
+                    if reseat.is_some() { "yes" } else { "no" }
+                ),
+            );
+        }
+        Err(e) => {
+            cap_log(
+                "INPUT",
+                "fail",
+                &format!("click={edge} button={button} pos={pos} err={e}"),
+            );
+        }
+    }
+    r
 }
 
 pub fn portal_input_scroll(up: bool) -> Result<(), AutomationError> {
     let (reply, rx) = mpsc::channel();
     send_eis(EisCmd::Scroll { up, reply })?;
-    recv_eis(rx)
+    let r = recv_eis(rx);
+    if r.is_ok() {
+        note_stage_mutation();
+    }
+    r
 }
 
 pub fn portal_input_key(evdev: u32, down: bool) -> Result<(), AutomationError> {
     let (reply, rx) = mpsc::channel();
     send_eis(EisCmd::Key { evdev, down, reply })?;
-    recv_eis(rx)
+    let r = recv_eis(rx);
+    if r.is_ok() {
+        note_stage_mutation();
+    }
+    r
+}
+
+/// Record that portal input may have changed on-screen pixels (ScreenCast lag).
+pub(super) fn note_stage_mutation() {
+    *LAST_STAGE_MUTATION.lock() = Some(Instant::now());
+}
+
+/// True if EIS click/key/scroll happened within `within` (ScreenCast may still catch up).
+pub(super) fn stage_mutation_recent(within: Duration) -> bool {
+    LAST_STAGE_MUTATION
+        .lock()
+        .map(|t| t.elapsed() <= within)
+        .unwrap_or(false)
 }
 
 fn send_eis(cmd: EisCmd) -> Result<(), AutomationError> {
@@ -219,9 +271,10 @@ fn dispatch_eis(eis: &mut EisInput, cmd: EisCmd) {
         EisCmd::Click {
             button,
             down,
+            reseat,
             reply,
         } => {
-            let _ = reply.send(eis.click(button, down));
+            let _ = reply.send(eis.click(button, down, reseat));
         }
         EisCmd::Scroll { up, reply } => {
             let _ = reply.send(eis.scroll(up));
@@ -258,7 +311,8 @@ pub(super) fn spawn_eis_thread(fd: OwnedFd) {
                     while !EIS_SHUTDOWN.load(Ordering::SeqCst) {
                         match rx.recv_timeout(Duration::from_millis(100)) {
                             Ok(cmd) => dispatch_eis(&mut eis, cmd),
-                            Err(mpsc::RecvTimeoutError::Timeout) => {}
+                            // Drain pause/resume so the next click sees current device state.
+                            Err(mpsc::RecvTimeoutError::Timeout) => eis.drain(),
                             Err(mpsc::RecvTimeoutError::Disconnected) => break,
                         }
                     }

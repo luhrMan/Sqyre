@@ -3,8 +3,9 @@
 //! GSR uses `ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY` with exclusive keyboard interactivity
 //! on wlroots compositors so the recorder UI can be shown/hidden without unmapping
 //! fullscreen games. Sqyre probes the global here; portal ScreenCast freshness prefers
-//! a layer-shell pulse, then a GNOME `xdg_toplevel` fullscreen pulse
-//! (`compositor_kick`); outline/grab surfaces will also bind layer-shell when present.
+//! transparent layer-shell pulse when available, else windowed xdg-shell
+//! (`compositor_kick`; not fullscreen — Mutter ignores alpha there). Outline/grab
+//! will also bind layer-shell when present.
 
 use crate::CaptureError;
 use wayland_client::protocol::wl_registry;

@@ -2,10 +2,11 @@
 
 use super::portal_dma::{copy_pw_frame_into_rect, with_spa_chunk_bytes};
 use super::portal_session::{
-    note_portal_cursor, open_portal_session, rects_overlap, spawn_eis_thread, stop_eis_thread,
-    union_rect, LOGGED_CURSOR_META, PENDING_EIS_FD, REMOTE_DESKTOP_GRANTED,
+    note_portal_cursor, open_portal_session, rects_overlap, spawn_eis_thread,
+    stage_mutation_recent, stop_eis_thread, union_rect, LOGGED_CURSOR_META, PENDING_EIS_FD,
+    REMOTE_DESKTOP_GRANTED,
 };
-use crate::cap_log;
+use crate::{cap_log, mark_site};
 use crate::error::CaptureError;
 use crate::linux::session::{LinuxCaptureBackend, LinuxSessionInfo};
 use image::RgbaImage;
@@ -32,26 +33,24 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 /// Overall budget to obtain a PipeWire frame newer than the cache at call start.
-/// Idle / emit-on-damage streams may need several kick retries after input. Multi-monitor
-/// stuck regions bail earlier — see [`EARLY_BAIL_MIN_PULSES`].
-const FRESH_CAPTURE_BUDGET: Duration = Duration::from_millis(300);
-/// Brief no-kick wait so continuous / max-framerate streams can deliver the next
-/// frame without paying XSync damage-pulse cost.
-const SPONTANEOUS_WAIT: Duration = Duration::from_millis(48);
-/// Post-kick wait slices (short first so a miss retries sooner than a full stall).
-/// Emit-on-damage streams (games/Wine) often need the kick; continuous streams usually
-/// land in the spontaneous wait or first slice.
+/// Idle / emit-on-damage streams may need a kick + one frame interval after input.
+const FRESH_CAPTURE_BUDGET: Duration = Duration::from_millis(200);
+/// Brief no-kick wait only when a region frame arrived very recently (continuous /
+/// max-framerate streams). Stale caches skip this and kick without waiting.
+const SPONTANEOUS_WAIT: Duration = Duration::from_millis(16);
+/// Region copy older than this → treat as stale and kick without spontaneous wait.
+const STALE_REGION_AGE: Duration = Duration::from_millis(40);
+/// Post-kick wait slices (short first; kick runs concurrently so we poll soon).
 const POST_KICK_SLICES: &[Duration] = &[
+    Duration::from_millis(20),
     Duration::from_millis(40),
     Duration::from_millis(80),
-    Duration::from_millis(120),
 ];
 /// Log successful fresh waits that exceed this (stderr + diag when enabled).
-const SLOW_FRESH_LOG: Duration = Duration::from_millis(100);
+const SLOW_FRESH_LOG: Duration = Duration::from_millis(80);
 /// Minimum damage pulses before giving up when other monitors advance but the
-/// search region stays stuck. Two slices (~40+80ms) lets a late region frame
-/// land; beyond that waiting only burns latency for the same cache.
-const EARLY_BAIL_MIN_PULSES: u32 = 2;
+/// search region stays stuck.
+const EARLY_BAIL_MIN_PULSES: u32 = 1;
 
 /// Portal + PipeWire capturer for Wayland sessions.
 pub struct PortalCapturer {
@@ -59,7 +58,8 @@ pub struct PortalCapturer {
     shutdown: Arc<AtomicBool>,
     quit_tx: Mutex<Option<Sender<PwThreadMsg>>>,
     thread: Mutex<Option<JoinHandle<()>>>,
-    kick: Mutex<Option<super::compositor_kick::DamageKick>>,
+    /// `None` = not tried yet; `Some(None)` = unavailable; `Some(Some(_))` = ready.
+    kick: Mutex<Option<Option<super::compositor_kick::DamageKick>>>,
 }
 
 struct FrameSlot {
@@ -69,6 +69,8 @@ struct FrameSlot {
     /// Last global generation at which each stream dest was copied. Search waits
     /// on the dests that overlap the crop so the other monitor cannot starve it.
     region_gen: Vec<(DesktopRect, u64)>,
+    /// Last copy time per stream dest (stale region → kick immediately).
+    region_copy_at: Vec<(DesktopRect, Instant)>,
 }
 
 struct FrameCache {
@@ -112,6 +114,7 @@ impl PortalCapturer {
                 },
                 generation: 0,
                 region_gen: Vec::new(),
+                region_copy_at: Vec::new(),
             }),
             Condvar::new(),
         ));
@@ -175,18 +178,74 @@ impl PortalCapturer {
     }
 
     /// Wait until a PipeWire stream that overlaps `rect` copies a frame newer than
-    /// the cache at the start of this call. Prefers a spontaneous frame (no kick)
-    /// so continuous streams stay snappy; then pulses a transparent damage overlay
-    /// for emit-on-damage streams. Leaving the overlay mapped during the wait timed
-    /// out on games and could crop an overlay-tainted buffer.
+    /// the cache at the start of this call. Prefers a spontaneous frame (no kick);
+    /// then pulses layer-shell or windowed-xdg damage when available.
     ///
     /// If other streams advance while the search region stays stuck, bail early
-    /// (same cache as a full timeout). Idle same-monitor waits keep retrying so a
-    /// post-click kick can still land within the budget.
+    /// (same cache as a full timeout).
     fn wait_for_overlapping_stream_frame(&self, rect: DesktopRect) {
-        let (min_gen, start_global) = {
+        // Unmap staged xdg kick and restore the window that had focus before the
+        // pulse — GNOME activates the kick toplevel and EIS clicks otherwise miss.
+        struct KickFocusRestore {
+            pre: Mutex<Option<crate::WindowInfo>>,
+        }
+        impl KickFocusRestore {
+            fn capture_before_pulse(&self) {
+                let Ok(Some(w)) = super::windows::get_active_window() else {
+                    return;
+                };
+                if is_sqyre_managed_window(&w) {
+                    return;
+                }
+                if w.process_path.trim().is_empty() || w.title.trim().is_empty() {
+                    return;
+                }
+                *self.pre.lock() = Some(w);
+            }
+
+            fn restore_after_unmap(&self) {
+                let Some(w) = self.pre.lock().take() else {
+                    return;
+                };
+                match super::windows::activate_window(&w.process_path, &w.title) {
+                    Ok(()) => cap_log(
+                        "PORTAL",
+                        "kick",
+                        &format!("refocus=ok title={}", w.title.replace(' ', "_")),
+                    ),
+                    Err(e) => cap_log(
+                        "PORTAL",
+                        "kick",
+                        &format!("refocus=fail err={e}"),
+                    ),
+                }
+            }
+        }
+        struct ReleaseKickStage<'a> {
+            capturer: &'a PortalCapturer,
+            focus: &'a KickFocusRestore,
+        }
+        impl Drop for ReleaseKickStage<'_> {
+            fn drop(&mut self) {
+                self.capturer.release_compositor_kick_stage();
+                self.focus.restore_after_unmap();
+            }
+        }
+        let focus = KickFocusRestore {
+            pre: Mutex::new(None),
+        };
+        let _release = ReleaseKickStage {
+            capturer: self,
+            focus: &focus,
+        };
+
+        let (min_gen, start_global, region_stale) = {
             let slot = self.frame.0.lock();
-            (region_generation(&slot, rect), slot.generation)
+            (
+                region_generation(&slot, rect),
+                slot.generation,
+                region_copy_is_stale(&slot, rect),
+            )
         };
         let kick_rect = {
             let slot = self.frame.0.lock();
@@ -194,31 +253,65 @@ impl PortalCapturer {
         };
         let started = Instant::now();
         let deadline = started + FRESH_CAPTURE_BUDGET;
+        // After EIS input or an idle emit-on-damage cache, skip the spontaneous
+        // wait — it almost never helps and just adds latency before the kick.
+        let expect_kick = region_stale || stage_mutation_recent(Duration::from_millis(400));
 
-        let spontaneous = wait_until_region_after(
-            &self.frame.0,
-            &self.frame.1,
-            rect,
-            min_gen,
-            SPONTANEOUS_WAIT.min(deadline.saturating_duration_since(Instant::now())),
-        );
-        if spontaneous > min_gen {
-            log_fresh_ok(started, 0, min_gen, spontaneous, "spontaneous");
+        if !expect_kick {
+            let spontaneous = wait_until_region_after(
+                &self.frame.0,
+                &self.frame.1,
+                rect,
+                min_gen,
+                SPONTANEOUS_WAIT.min(deadline.saturating_duration_since(Instant::now())),
+            );
+            if spontaneous > min_gen {
+                log_fresh_ok(started, 0, min_gen, spontaneous, "spontaneous");
+                return;
+            }
+        }
+
+        if !self.ensure_compositor_kick() {
+            if stage_mutation_recent(Duration::from_millis(500)) {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                if !remaining.is_zero() {
+                    let region_after = wait_until_region_after(
+                        &self.frame.0,
+                        &self.frame.1,
+                        rect,
+                        min_gen,
+                        remaining.min(Duration::from_millis(160)),
+                    );
+                    if region_after > min_gen {
+                        log_fresh_ok(started, 0, min_gen, region_after, "post-input");
+                        return;
+                    }
+                }
+            }
+            cap_log(
+                "PORTAL",
+                "wait",
+                &format!(
+                    "result=no-kick gen={min_gen} wait_ms={}",
+                    started.elapsed().as_millis()
+                ),
+            );
             return;
         }
 
-        let mut pulses = 0u32;
+        // One kick only. Re-queueing while the first xdg pulse is still running
+        // stacked map/unmap work and made release_stage wait on the backlog.
+        focus.capture_before_pulse();
+        self.pulse_compositor_kick(kick_rect);
+        let pulses = 1u32;
+        let mut slice_i = 0usize;
         while Instant::now() < deadline {
-            self.pulse_compositor_kick(kick_rect);
-            pulses = pulses.saturating_add(1);
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 break;
             }
-            let slice_idx = (pulses as usize)
-                .saturating_sub(1)
-                .min(POST_KICK_SLICES.len() - 1);
-            let slice = remaining.min(POST_KICK_SLICES[slice_idx]);
+            let slice = remaining.min(POST_KICK_SLICES[slice_i.min(POST_KICK_SLICES.len() - 1)]);
+            slice_i = slice_i.saturating_add(1);
             let region_after =
                 wait_until_region_after(&self.frame.0, &self.frame.1, rect, min_gen, slice);
             if region_after > min_gen {
@@ -260,13 +353,26 @@ impl PortalCapturer {
         );
     }
 
-    fn pulse_compositor_kick(&self, rect: DesktopRect) {
-        let mut kick = self.kick.lock();
-        if kick.is_none() {
-            *kick = super::compositor_kick::DamageKick::open();
+    /// Open damage kick once (layer-shell, else windowed-xdg). `false` if neither.
+    fn ensure_compositor_kick(&self) -> bool {
+        let mut slot = self.kick.lock();
+        if slot.is_none() {
+            *slot = Some(super::compositor_kick::DamageKick::open());
         }
-        if let Some(k) = kick.as_mut() {
+        matches!(slot.as_ref(), Some(Some(_)))
+    }
+
+    fn pulse_compositor_kick(&self, rect: DesktopRect) {
+        let mut slot = self.kick.lock();
+        if let Some(Some(k)) = slot.as_mut() {
             k.pulse_rect(rect);
+        }
+    }
+
+    fn release_compositor_kick_stage(&self) {
+        let mut slot = self.kick.lock();
+        if let Some(Some(k)) = slot.as_mut() {
+            k.release_stage();
         }
     }
 
@@ -335,14 +441,32 @@ impl PortalCapturer {
 
 impl Drop for PortalCapturer {
     fn drop(&mut self) {
+        mark_site("portal:drop:start");
+        let t0 = Instant::now();
         self.shutdown.store(true, Ordering::SeqCst);
+        mark_site("portal:drop:before_kick");
+        let t_kick = Instant::now();
         drop(self.kick.lock().take());
+        let kick_ms = t_kick.elapsed().as_millis();
+        mark_site("portal:drop:after_kick");
         if let Some(tx) = self.quit_tx.lock().take() {
             let _ = tx.send(PwThreadMsg::Quit);
         }
+        mark_site("portal:drop:before_pw_join");
+        let t_pw = Instant::now();
         if let Some(handle) = self.thread.lock().take() {
             let _ = handle.join();
         }
+        let pw_ms = t_pw.elapsed().as_millis();
+        mark_site("portal:drop:after_pw_join");
+        cap_log(
+            "PORTAL",
+            "drop",
+            &format!(
+                "kick_ms={kick_ms} pw_ms={pw_ms} total_ms={}",
+                t0.elapsed().as_millis()
+            ),
+        );
     }
 }
 fn portal_pw_thread(
@@ -1006,10 +1130,8 @@ struct UserData {
 }
 fn log_fresh_ok(started: Instant, pulses: u32, min_gen: u64, region_after: u64, path: &str) {
     let elapsed = started.elapsed();
-    if elapsed < SLOW_FRESH_LOG && path == "spontaneous" {
-        return;
-    }
-    if elapsed < SLOW_FRESH_LOG && path == "kick" && pulses <= 1 {
+    // Always log slower waits so intermittent 500ms dispatches are diagnosable.
+    if elapsed < SLOW_FRESH_LOG {
         return;
     }
     cap_log(
@@ -1022,13 +1144,44 @@ fn log_fresh_ok(started: Instant, pulses: u32, min_gen: u64, region_after: u64, 
     );
 }
 
+fn is_sqyre_managed_window(w: &crate::WindowInfo) -> bool {
+    let title = w.title.trim();
+    if title == crate::x11_focus::OVERLAY_WM_TITLE
+        || title == crate::x11_focus::OVERLAY_TIP_WM_TITLE
+    {
+        return true;
+    }
+    // Kick toplevel uses empty title / app_id sqyre-kick; process name may be sqyre.
+    let name = w.process_name.to_ascii_lowercase();
+    name.contains("sqyre")
+}
+
 fn note_region_copy(slot: &mut FrameSlot, dest: DesktopRect) {
     slot.generation = slot.generation.saturating_add(1);
     let gen = slot.generation;
+    let now = Instant::now();
     if let Some((_, g)) = slot.region_gen.iter_mut().find(|(r, _)| *r == dest) {
         *g = gen;
     } else {
         slot.region_gen.push((dest, gen));
+    }
+    if let Some((_, t)) = slot.region_copy_at.iter_mut().find(|(r, _)| *r == dest) {
+        *t = now;
+    } else {
+        slot.region_copy_at.push((dest, now));
+    }
+}
+
+fn region_copy_is_stale(slot: &FrameSlot, rect: DesktopRect) -> bool {
+    let age = slot
+        .region_copy_at
+        .iter()
+        .filter(|(r, _)| rects_overlap(*r, rect))
+        .map(|(_, t)| t.elapsed())
+        .min();
+    match age {
+        None => true,
+        Some(a) => a >= STALE_REGION_AGE,
     }
 }
 
@@ -1227,6 +1380,7 @@ mod tests {
             },
             generation,
             region_gen: Vec::new(),
+            region_copy_at: Vec::new(),
         }
     }
 
@@ -1259,20 +1413,20 @@ mod tests {
     #[test]
     fn early_bail_when_other_monitor_advances_after_min_pulses() {
         assert!(fresh_region_stuck_while_others_advance(
-            2, EARLY_BAIL_MIN_PULSES, 364, 366, 353, 353
-        ));
-        // Still within the first pulse — allow a late region frame.
-        assert!(!fresh_region_stuck_while_others_advance(
             1, EARLY_BAIL_MIN_PULSES, 364, 366, 353, 353
         ));
-        // Nothing else advanced (single-monitor / fully idle): keep retrying so
+        // No pulse yet — allow a late region frame.
+        assert!(!fresh_region_stuck_while_others_advance(
+            0, EARLY_BAIL_MIN_PULSES, 364, 366, 353, 353
+        ));
+        // Nothing else advanced (single-monitor / fully idle): keep waiting so
         // nested searches can still land a post-click frame.
         assert!(!fresh_region_stuck_while_others_advance(
             5, EARLY_BAIL_MIN_PULSES, 353, 353, 353, 353
         ));
         // Region did advance — success path, not a bail.
         assert!(!fresh_region_stuck_while_others_advance(
-            2, EARLY_BAIL_MIN_PULSES, 353, 354, 354, 353
+            1, EARLY_BAIL_MIN_PULSES, 353, 354, 354, 353
         ));
     }
 

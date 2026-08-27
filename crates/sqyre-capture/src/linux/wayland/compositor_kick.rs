@@ -1,104 +1,110 @@
 //! Force compositor stage damage so portal ScreenCast emits a fresh frame.
 //!
-//! Mutter (and other emit-on-damage streams) may leave the PipeWire cache idle
-//! after a click. Kick backends, in order:
-//! 1. `zwlr_layer_shell_v1` transparent overlay (wlroots / Cosmic / …)
-//! 2. `xdg_toplevel` fullscreen on the target `wl_output` (GNOME / Mutter)
-//! 3. X11 ARGB overlay via XWayland (last resort)
+//! Backends (first that connects):
+//! 1. `zwlr_layer_shell_v1` — transparent overlay pulse (wlroots / Cosmic / …)
+//! 2. `xdg_toplevel` **windowed** (not fullscreen) — Mutter draws fullscreen
+//!    surfaces opaque black (alpha ignored). Windowed ARGB with an empty opaque
+//!    region stays transparent; we keep a small surface mapped for the fresh
+//!    wait and damage-flip it, then unmap on [`DamageKick::release_stage`].
+//!    Mapping steals activation on GNOME — callers must refocus the prior
+//!    window after `release_stage` before injecting EIS clicks.
 
-use crate::cap_log;
-use crate::x11_capture::CompositorKick as X11Kick;
+use crate::{cap_log, mark_site};
 use sqyre_ports::DesktopRect;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::os::fd::{AsFd, AsRawFd, FromRawFd, IntoRawFd, OwnedFd};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
+use std::sync::Arc;
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use wayland_client::protocol::{
     wl_buffer, wl_compositor, wl_output, wl_region, wl_registry, wl_shm, wl_shm_pool, wl_surface,
 };
 use wayland_client::{Connection, Dispatch, EventQueue, Proxy, QueueHandle, WEnum};
+use wayland_protocols::xdg::decoration::zv1::client::{
+    zxdg_decoration_manager_v1, zxdg_toplevel_decoration_v1,
+};
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
 use wayland_protocols_wlr::layer_shell::v1::client::{
     zwlr_layer_shell_v1, zwlr_layer_surface_v1,
 };
 
-/// Damage kick used by portal fresh-capture waits.
-pub(crate) enum DamageKick {
-    Wayland(WaylandKick),
-    X11(X11Kick),
+/// Cap windowed kick size so a failed-alpha path cannot cover the desk.
+const XDG_KICK_MAX: i32 = 64;
+
+/// Layer-shell or windowed-xdg damage kick for portal fresh-capture waits.
+pub(crate) struct DamageKick {
+    tx: Sender<KickCmd>,
+    thread: Option<JoinHandle<()>>,
+    /// Unprocessed `Pulse`/`Release` cmds (Shutdown not counted). Grows when
+    /// fire-and-forget enqueue outpaces Wayland roundtrips — Drop joins drain.
+    pending: Arc<AtomicUsize>,
+    /// When set, the kick thread skips remaining Pulse work and exits on Shutdown.
+    shutting_down: Arc<std::sync::atomic::AtomicBool>,
 }
 
-impl DamageKick {
-    /// Prefer native Wayland (layer-shell, then xdg fullscreen); then X11.
-    pub(crate) fn open() -> Option<Self> {
-        if let Some(w) = WaylandKick::open() {
-            return Some(Self::Wayland(w));
-        }
-        X11Kick::open().map(Self::X11)
-    }
-
-    pub(crate) fn pulse_rect(&mut self, rect: DesktopRect) {
-        match self {
-            Self::Wayland(w) => w.pulse_rect(rect),
-            Self::X11(x) => x.pulse_rect(rect),
-        }
-    }
-}
 
 enum KickCmd {
     Pulse {
         rect: DesktopRect,
         done: SyncSender<()>,
     },
+    Release {
+        done: SyncSender<()>,
+    },
     Shutdown,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum WaylandKickKind {
+enum KickKind {
     LayerShell,
-    /// GNOME/Mutter: fullscreen transparent xdg_toplevel on the search output.
-    XdgFullscreen,
+    XdgWindowed,
 }
 
-/// Persistent Wayland connection on a dedicated thread (EventQueue is !Send).
-pub(crate) struct WaylandKick {
-    tx: Sender<KickCmd>,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl WaylandKick {
+impl DamageKick {
+    /// `None` when neither layer-shell nor xdg-shell is available.
     pub(crate) fn open() -> Option<Self> {
-        let (ready_tx, ready_rx) = mpsc::sync_channel::<Option<WaylandKickKind>>(1);
+        let (ready_tx, ready_rx) = mpsc::sync_channel::<Option<KickKind>>(1);
         let (cmd_tx, cmd_rx) = mpsc::channel::<KickCmd>();
+        let pending = Arc::new(AtomicUsize::new(0));
+        let shutting_down = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let pending_thread = Arc::clone(&pending);
+        let shutdown_thread = Arc::clone(&shutting_down);
         let thread = thread::Builder::new()
             .name("sqyre-wl-kick".into())
-            .spawn(move || kick_thread(ready_tx, cmd_rx))
+            .spawn(move || kick_thread(ready_tx, cmd_rx, pending_thread, shutdown_thread))
             .ok()?;
-        let kind = ready_rx
-            .recv_timeout(Duration::from_secs(2))
-            .ok()
-            .flatten();
+        let kind = ready_rx.recv_timeout(Duration::from_secs(2)).ok().flatten();
         let Some(kind) = kind else {
+            shutting_down.store(true, Ordering::SeqCst);
             let _ = cmd_tx.send(KickCmd::Shutdown);
             let _ = thread.join();
             return None;
         };
         let backend = match kind {
-            WaylandKickKind::LayerShell => "wayland-layer-shell",
-            WaylandKickKind::XdgFullscreen => "wayland-xdg-fullscreen",
+            KickKind::LayerShell => "wayland-layer-shell",
+            KickKind::XdgWindowed => "wayland-xdg-windowed",
         };
         cap_log("PORTAL", "kick", &format!("backend={backend}"));
         Some(Self {
             tx: cmd_tx,
             thread: Some(thread),
+            pending,
+            shutting_down,
         })
     }
 
     pub(crate) fn pulse_rect(&mut self, rect: DesktopRect) {
-        let (done_tx, done_rx) = mpsc::sync_channel(1);
+        if self.shutting_down.load(Ordering::SeqCst) {
+            return;
+        }
+        // Fire-and-forget during the PipeWire wait; [`release_stage`] blocks until
+        // this pulse (and later cmds) finish so Move/Click cannot race the toplevel.
+        let (done_tx, _done_rx) = mpsc::sync_channel(1);
+        self.pending.fetch_add(1, Ordering::Relaxed);
         if self
             .tx
             .send(KickCmd::Pulse {
@@ -107,22 +113,78 @@ impl WaylandKick {
             })
             .is_err()
         {
+            self.pending.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+
+    /// Allow another xdg pulse on the next fresh-wait.
+    ///
+    /// Blocks until this `Release` (and any earlier `Pulse` ahead of it) finishes.
+    /// Fresh-capture used to return while the kick toplevel was still mapping —
+    /// on GNOME that intermittently stole focus / ate the following EIS click.
+    pub(crate) fn release_stage(&mut self) {
+        if self.shutting_down.load(Ordering::SeqCst) {
             return;
         }
-        let _ = done_rx.recv_timeout(Duration::from_millis(250));
+        let (done_tx, done_rx) = mpsc::sync_channel(1);
+        self.pending.fetch_add(1, Ordering::Relaxed);
+        if self
+            .tx
+            .send(KickCmd::Release { done: done_tx })
+            .is_err()
+        {
+            self.pending.fetch_sub(1, Ordering::Relaxed);
+            return;
+        }
+        let t0 = Instant::now();
+        match done_rx.recv_timeout(Duration::from_millis(750)) {
+            Ok(()) => {
+                let ms = t0.elapsed().as_millis();
+                if ms >= 20 {
+                    cap_log("PORTAL", "kick", &format!("release_wait_ms={ms}"));
+                }
+            }
+            Err(_) => {
+                cap_log(
+                    "PORTAL",
+                    "kick",
+                    &format!(
+                        "release_wait=timeout pending={}",
+                        self.pending.load(Ordering::Relaxed)
+                    ),
+                );
+            }
+        }
     }
 }
 
-impl Drop for WaylandKick {
+impl Drop for DamageKick {
     fn drop(&mut self) {
+        let pending = self.pending.load(Ordering::Relaxed);
+        mark_site("kick:drop:before_join");
+        let t0 = Instant::now();
+        // Skip remaining Wayland map/unmap work — join used to drain the whole backlog.
+        self.shutting_down.store(true, Ordering::SeqCst);
         let _ = self.tx.send(KickCmd::Shutdown);
         if let Some(t) = self.thread.take() {
             let _ = t.join();
         }
+        let ms = t0.elapsed().as_millis();
+        cap_log(
+            "PORTAL",
+            "kick-drop",
+            &format!("pending={pending} join_ms={ms}"),
+        );
+        mark_site("kick:drop:after_join");
     }
 }
 
-fn kick_thread(ready: SyncSender<Option<WaylandKickKind>>, cmds: Receiver<KickCmd>) {
+fn kick_thread(
+    ready: SyncSender<Option<KickKind>>,
+    cmds: Receiver<KickCmd>,
+    pending: Arc<AtomicUsize>,
+    shutting_down: Arc<std::sync::atomic::AtomicBool>,
+) {
     let mut conn = match KickConn::connect() {
         Ok(c) => {
             let _ = ready.send(Some(c.kind));
@@ -136,8 +198,18 @@ fn kick_thread(ready: SyncSender<Option<WaylandKickKind>>, cmds: Receiver<KickCm
     while let Ok(cmd) = cmds.recv() {
         match cmd {
             KickCmd::Pulse { rect, done } => {
-                conn.pulse(rect);
+                if !shutting_down.load(Ordering::SeqCst) {
+                    conn.pulse(rect);
+                }
                 let _ = done.send(());
+                pending.fetch_sub(1, Ordering::Relaxed);
+            }
+            KickCmd::Release { done } => {
+                if !shutting_down.load(Ordering::SeqCst) {
+                    conn.release_stage();
+                }
+                let _ = done.send(());
+                pending.fetch_sub(1, Ordering::Relaxed);
             }
             KickCmd::Shutdown => break,
         }
@@ -158,23 +230,37 @@ struct OutputInfo {
     pending_scale: i32,
 }
 
+struct StagedXdg {
+    surface: wl_surface::WlSurface,
+    xdg_surface: xdg_surface::XdgSurface,
+    toplevel: xdg_toplevel::XdgToplevel,
+    decoration: Option<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1>,
+    buffer: wl_buffer::WlBuffer,
+    pool: wl_shm_pool::WlShmPool,
+    file: File,
+    buf_w: i32,
+    buf_h: i32,
+    flip: u8,
+}
+
 struct KickState {
     compositor: Option<wl_compositor::WlCompositor>,
     shm: Option<wl_shm::WlShm>,
     layer_shell: Option<zwlr_layer_shell_v1::ZwlrLayerShellV1>,
-    wm_base: Option<xdg_wm_base::XdgWmBase>,
+    xdg_wm_base: Option<xdg_wm_base::XdgWmBase>,
+    decoration_manager: Option<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1>,
     outputs: HashMap<u32, OutputInfo>,
     configure_serial: Option<u32>,
-    configure_w: i32,
-    configure_h: i32,
     layer_closed: bool,
+    xdg_configured: bool,
 }
 
 struct KickConn {
     conn: Connection,
     queue: EventQueue<KickState>,
     state: KickState,
-    kind: WaylandKickKind,
+    kind: KickKind,
+    staged: Option<StagedXdg>,
 }
 
 impl KickConn {
@@ -187,12 +273,12 @@ impl KickConn {
             compositor: None,
             shm: None,
             layer_shell: None,
-            wm_base: None,
+            xdg_wm_base: None,
+            decoration_manager: None,
             outputs: HashMap::new(),
             configure_serial: None,
-            configure_w: 0,
-            configure_h: 0,
             layer_closed: false,
+            xdg_configured: false,
         };
         queue.roundtrip(&mut state).map_err(|_| ())?;
         for _ in 0..4 {
@@ -202,9 +288,9 @@ impl KickConn {
             return Err(());
         }
         let kind = if state.layer_shell.is_some() {
-            WaylandKickKind::LayerShell
-        } else if state.wm_base.is_some() {
-            WaylandKickKind::XdgFullscreen
+            KickKind::LayerShell
+        } else if state.xdg_wm_base.is_some() {
+            KickKind::XdgWindowed
         } else {
             return Err(());
         };
@@ -213,20 +299,27 @@ impl KickConn {
             queue,
             state,
             kind,
+            staged: None,
         })
     }
 
     fn pulse(&mut self, rect: DesktopRect) {
-        if rect.w <= 1 || rect.h <= 1 {
-            return;
-        }
         match self.kind {
-            WaylandKickKind::LayerShell => self.pulse_layer_shell(rect),
-            WaylandKickKind::XdgFullscreen => self.pulse_xdg_fullscreen(rect),
+            KickKind::LayerShell => self.pulse_layer(rect),
+            KickKind::XdgWindowed => self.pulse_xdg(rect),
         }
     }
 
-    fn pulse_layer_shell(&mut self, rect: DesktopRect) {
+    fn release_stage(&mut self) {
+        if self.staged.is_some() {
+            self.destroy_staged();
+        }
+    }
+
+    fn pulse_layer(&mut self, rect: DesktopRect) {
+        if rect.w <= 1 || rect.h <= 1 {
+            return;
+        }
         let Some(out_id) = overlapping_output_id(&self.state, rect) else {
             return;
         };
@@ -260,7 +353,9 @@ impl KickConn {
         let layer_shell = self.state.layer_shell.as_ref().expect("layer_shell").clone();
 
         let surface = compositor.create_surface(&qh, ());
-        set_empty_input(&compositor, &surface, &qh);
+        let empty = compositor.create_region(&qh, ());
+        surface.set_input_region(Some(&empty));
+        empty.destroy();
 
         let layer = layer_shell.get_layer_surface(
             &surface,
@@ -274,16 +369,14 @@ impl KickConn {
         layer.set_anchor(
             zwlr_layer_surface_v1::Anchor::Top | zwlr_layer_surface_v1::Anchor::Left,
         );
-        let margin_top = (kick.y - out_y).max(0);
-        let margin_left = (kick.x - out_x).max(0);
-        layer.set_margin(margin_top, 0, 0, margin_left);
+        layer.set_margin((kick.y - out_y).max(0), 0, 0, (kick.x - out_x).max(0));
         layer.set_exclusive_zone(0);
         layer.set_keyboard_interactivity(zwlr_layer_surface_v1::KeyboardInteractivity::None);
 
         self.state.configure_serial = None;
         self.state.layer_closed = false;
         surface.commit();
-        if !self.wait_configure() {
+        if !self.wait_layer_configure() {
             layer.destroy();
             surface.destroy();
             let _ = self.conn.flush();
@@ -292,7 +385,7 @@ impl KickConn {
         let serial = self.state.configure_serial.take().expect("configure");
         layer.ack_configure(serial);
 
-        let mapped = attach_transparent(&surface, &shm, &qh, kick.w, kick.h, scale);
+        let mapped = attach_transparent(&surface, &shm, &qh, kick.w, kick.h, scale, 0);
         let _ = self.queue.roundtrip(&mut self.state);
 
         surface.attach(None, 0, 0);
@@ -309,71 +402,143 @@ impl KickConn {
         let _ = self.conn.flush();
     }
 
-    /// Mutter has no layer-shell; fullscreen a transparent xdg_toplevel on the
-    /// overlapping output so that monitor's ScreenCast stream sees stage damage.
-    fn pulse_xdg_fullscreen(&mut self, rect: DesktopRect) {
+    fn pulse_xdg(&mut self, rect: DesktopRect) {
+        if self.staged.is_some() {
+            self.damage_staged();
+            return;
+        }
+        if rect.w <= 1 || rect.h <= 1 {
+            return;
+        }
         let Some(out_id) = overlapping_output_id(&self.state, rect) else {
             return;
         };
-        let (scale, output, out_w, out_h) = {
+        let (out_w, out_h, scale) = {
             let o = self.state.outputs.get(&out_id).expect("output id");
-            (
-                o.scale.max(1),
-                o.output.clone(),
-                o.width.max(1),
-                o.height.max(1),
-            )
+            (o.width.max(1), o.height.max(1), o.scale.max(1))
         };
+        let kick = clamp_kick_rect(
+            rect,
+            DesktopRect {
+                x: 0,
+                y: 0,
+                w: out_w,
+                h: out_h,
+            },
+        );
+        // Small windowed surface: alpha works on Mutter for non-fullscreen.
+        let w = kick.w.min(XDG_KICK_MAX).max(2);
+        let h = kick.h.min(XDG_KICK_MAX).max(2);
 
         let qh = self.queue.handle();
         let compositor = self.state.compositor.as_ref().expect("compositor").clone();
         let shm = self.state.shm.as_ref().expect("shm").clone();
-        let wm_base = self.state.wm_base.as_ref().expect("wm_base").clone();
+        let wm = self.state.xdg_wm_base.as_ref().expect("xdg_wm_base").clone();
 
         let surface = compositor.create_surface(&qh, ());
-        set_empty_input(&compositor, &surface, &qh);
+        let empty_in = compositor.create_region(&qh, ());
+        surface.set_input_region(Some(&empty_in));
+        empty_in.destroy();
+        let empty_op = compositor.create_region(&qh, ());
+        surface.set_opaque_region(Some(&empty_op));
+        empty_op.destroy();
 
-        let xdg_surf = wm_base.get_xdg_surface(&surface, &qh, ());
-        let toplevel = xdg_surf.get_toplevel(&qh, ());
-        toplevel.set_app_id("sqyre-kick".to_string());
-        toplevel.set_title(String::new());
-        toplevel.set_fullscreen(Some(&output));
+        let xdg_surface = wm.get_xdg_surface(&surface, &qh, ());
+        let toplevel = xdg_surface.get_toplevel(&qh, ());
+        toplevel.set_title("".into());
+        toplevel.set_app_id("sqyre-kick".into());
+        toplevel.set_min_size(w, h);
+        toplevel.set_max_size(w, h);
+        // Do NOT set_fullscreen — Mutter paints fullscreen opaque black.
+
+        let decoration = self
+            .state
+            .decoration_manager
+            .as_ref()
+            .map(|mgr| {
+                let deco = mgr.get_toplevel_decoration(&toplevel, &qh, ());
+                deco.set_mode(zxdg_toplevel_decoration_v1::Mode::ClientSide);
+                deco
+            });
 
         self.state.configure_serial = None;
-        self.state.configure_w = 0;
-        self.state.configure_h = 0;
+        self.state.xdg_configured = false;
         surface.commit();
-        if !self.wait_configure() {
+        if !self.wait_xdg_configure() {
+            if let Some(d) = decoration {
+                d.destroy();
+            }
             toplevel.destroy();
-            xdg_surf.destroy();
+            xdg_surface.destroy();
             surface.destroy();
             let _ = self.conn.flush();
             return;
         }
-        let serial = self.state.configure_serial.take().expect("configure");
-        xdg_surf.ack_configure(serial);
+        let serial = self.state.configure_serial.take().expect("xdg configure");
+        xdg_surface.ack_configure(serial);
+        xdg_surface.set_window_geometry(0, 0, w, h);
 
-        // Tiny transparent buffer: the window is still fullscreen on `output`
-        // (that is what damages the stream); avoid a full-desktop memfd.
-        let bump_w = self.state.configure_w.max(2).min(out_w).min(64);
-        let bump_h = self.state.configure_h.max(2).min(out_h).min(64);
-        let mapped = attach_transparent(&surface, &shm, &qh, bump_w, bump_h, scale);
+        let Some((buffer, pool, file)) = attach_transparent(&surface, &shm, &qh, w, h, scale, 0)
+        else {
+            if let Some(d) = decoration {
+                d.destroy();
+            }
+            toplevel.destroy();
+            xdg_surface.destroy();
+            surface.destroy();
+            let _ = self.conn.flush();
+            return;
+        };
         let _ = self.queue.roundtrip(&mut self.state);
+        let _ = self.conn.flush();
 
-        // Destroy unmaps; do not leave a fullscreen surface up during the wait.
-        toplevel.destroy();
-        xdg_surf.destroy();
-        surface.destroy();
-        if let Some((buffer, pool, file)) = mapped {
-            buffer.destroy();
-            pool.destroy();
-            drop(file);
-        }
+        self.staged = Some(StagedXdg {
+            surface,
+            xdg_surface,
+            toplevel,
+            decoration,
+            buffer,
+            pool,
+            file,
+            buf_w: w.saturating_mul(scale),
+            buf_h: h.saturating_mul(scale),
+            flip: 0,
+        });
+    }
+
+    fn damage_staged(&mut self) {
+        let Some(staged) = self.staged.as_mut() else {
+            return;
+        };
+        staged.flip = staged.flip.wrapping_add(1);
+        // Re-write one pixel so the shm contents change (damage alone can be ignored).
+        let _ = write_flip_pixel(&mut staged.file, staged.flip);
+        staged.surface.damage_buffer(0, 0, staged.buf_w, staged.buf_h);
+        staged.surface.commit();
         let _ = self.queue.roundtrip(&mut self.state);
         let _ = self.conn.flush();
     }
 
-    fn wait_configure(&mut self) -> bool {
+    fn destroy_staged(&mut self) {
+        let Some(staged) = self.staged.take() else {
+            return;
+        };
+        staged.surface.attach(None, 0, 0);
+        staged.surface.commit();
+        let _ = self.queue.roundtrip(&mut self.state);
+        if let Some(d) = staged.decoration {
+            d.destroy();
+        }
+        staged.toplevel.destroy();
+        staged.xdg_surface.destroy();
+        staged.surface.destroy();
+        staged.buffer.destroy();
+        staged.pool.destroy();
+        drop(staged.file);
+        let _ = self.conn.flush();
+    }
+
+    fn wait_layer_configure(&mut self) -> bool {
         for _ in 0..8 {
             if self.state.configure_serial.is_some() || self.state.layer_closed {
                 break;
@@ -384,16 +549,18 @@ impl KickConn {
         }
         self.state.configure_serial.is_some()
     }
-}
 
-fn set_empty_input(
-    compositor: &wl_compositor::WlCompositor,
-    surface: &wl_surface::WlSurface,
-    qh: &QueueHandle<KickState>,
-) {
-    let empty = compositor.create_region(qh, ());
-    surface.set_input_region(Some(&empty));
-    empty.destroy();
+    fn wait_xdg_configure(&mut self) -> bool {
+        for _ in 0..12 {
+            if self.state.configure_serial.is_some() && self.state.xdg_configured {
+                break;
+            }
+            if self.queue.roundtrip(&mut self.state).is_err() {
+                return false;
+            }
+        }
+        self.state.configure_serial.is_some()
+    }
 }
 
 fn attach_transparent(
@@ -403,6 +570,7 @@ fn attach_transparent(
     width: i32,
     height: i32,
     scale: i32,
+    flip: u8,
 ) -> Option<(wl_buffer::WlBuffer, wl_shm_pool::WlShmPool, File)> {
     let width = width.max(2);
     let height = height.max(2);
@@ -412,6 +580,7 @@ fn attach_transparent(
     let stride = buf_w.saturating_mul(4);
     let bytes = stride.saturating_mul(buf_h) as usize;
     let mut file = transparent_shm_file(bytes)?;
+    let _ = write_flip_pixel(&mut file, flip);
     let _ = file.flush();
     let pool = shm.create_pool(file.as_fd(), bytes as i32, qh, ());
     let buffer = pool.create_buffer(
@@ -428,6 +597,16 @@ fn attach_transparent(
     surface.damage_buffer(0, 0, buf_w, buf_h);
     surface.commit();
     Some((buffer, pool, file))
+}
+
+fn write_flip_pixel(file: &mut File, flip: u8) -> std::io::Result<()> {
+    use std::io::{Seek, SeekFrom};
+    // ARGB8888 little-endian: A in high byte. Keep A=0 so the pixel stays transparent.
+    let px = [flip, 0u8, 0u8, 0u8];
+    file.seek(SeekFrom::Start(0))?;
+    file.write_all(&px)?;
+    file.flush()?;
+    Ok(())
 }
 
 fn overlapping_output_id(state: &KickState, rect: DesktopRect) -> Option<u32> {
@@ -554,14 +733,6 @@ impl Dispatch<wl_registry::WlRegistry, ()> for KickState {
                     },
                 );
             }
-            "xdg_wm_base" if state.wm_base.is_none() => {
-                state.wm_base = Some(registry.bind::<xdg_wm_base::XdgWmBase, _, _>(
-                    name,
-                    version.min(4),
-                    qh,
-                    (),
-                ));
-            }
             i if i == zwlr_layer_shell_v1::ZwlrLayerShellV1::interface().name
                 && state.layer_shell.is_none() =>
             {
@@ -572,6 +743,23 @@ impl Dispatch<wl_registry::WlRegistry, ()> for KickState {
                         qh,
                         (),
                     ));
+            }
+            i if i == xdg_wm_base::XdgWmBase::interface().name && state.xdg_wm_base.is_none() => {
+                state.xdg_wm_base = Some(registry.bind::<xdg_wm_base::XdgWmBase, _, _>(
+                    name,
+                    version.min(6),
+                    qh,
+                    (),
+                ));
+            }
+            i if i == zxdg_decoration_manager_v1::ZxdgDecorationManagerV1::interface().name
+                && state.decoration_manager.is_none() =>
+            {
+                state.decoration_manager = Some(registry.bind::<
+                    zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+                    _,
+                    _,
+                >(name, version.min(1), qh, ()));
             }
             _ => {}
         }
@@ -651,14 +839,14 @@ impl Dispatch<zwlr_layer_surface_v1::ZwlrLayerSurfaceV1, ()> for KickState {
 impl Dispatch<xdg_wm_base::XdgWmBase, ()> for KickState {
     fn event(
         _: &mut Self,
-        wm_base: &xdg_wm_base::XdgWmBase,
+        wm: &xdg_wm_base::XdgWmBase,
         event: xdg_wm_base::Event,
         _: &(),
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
         if let xdg_wm_base::Event::Ping { serial } = event {
-            wm_base.pong(serial);
+            wm.pong(serial);
         }
     }
 }
@@ -674,27 +862,44 @@ impl Dispatch<xdg_surface::XdgSurface, ()> for KickState {
     ) {
         if let xdg_surface::Event::Configure { serial } = event {
             state.configure_serial = Some(serial);
+            state.xdg_configured = true;
         }
     }
 }
 
 impl Dispatch<xdg_toplevel::XdgToplevel, ()> for KickState {
     fn event(
-        state: &mut Self,
+        _: &mut Self,
         _: &xdg_toplevel::XdgToplevel,
-        event: xdg_toplevel::Event,
+        _: xdg_toplevel::Event,
         _: &(),
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let xdg_toplevel::Event::Configure { width, height, .. } = event {
-            if width > 0 {
-                state.configure_w = width;
-            }
-            if height > 0 {
-                state.configure_h = height;
-            }
-        }
+    }
+}
+
+impl Dispatch<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, ()> for KickState {
+    fn event(
+        _: &mut Self,
+        _: &zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
+        _: zxdg_decoration_manager_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
+}
+
+impl Dispatch<zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1, ()> for KickState {
+    fn event(
+        _: &mut Self,
+        _: &zxdg_toplevel_decoration_v1::ZxdgToplevelDecorationV1,
+        _: zxdg_toplevel_decoration_v1::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
     }
 }
 
