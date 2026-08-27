@@ -239,7 +239,7 @@ pub(crate) fn execute_navigate_select(
                         pos,
                         &data.outputs,
                     );
-                    perform_select(exec, &data.select)?;
+                    perform_select(exec, &data.select, macro_.mouse_delay)?;
                     let cur = &layout.nodes()[pos.node];
                     exec.log(
                         action.id,
@@ -502,7 +502,11 @@ fn move_to_cell(
     Ok(())
 }
 
-fn perform_select(exec: &mut Executor<'_>, select: &NavSelectAction) -> Result<()> {
+fn perform_select(
+    exec: &mut Executor<'_>,
+    select: &NavSelectAction,
+    mouse_delay: i32,
+) -> Result<()> {
     match select.device {
         NavSelectDevice::Mouse => {
             let btn = select.button.as_str();
@@ -510,8 +514,7 @@ fn perform_select(exec: &mut Executor<'_>, select: &NavSelectAction) -> Result<(
                 NavPressMode::Down | NavPressMode::Hold => exec.input_click_down(btn)?,
                 NavPressMode::Up => exec.input_click_up(btn)?,
                 NavPressMode::Click => {
-                    exec.input_click_down(btn)?;
-                    exec.input_click_up(btn)?;
+                    exec.input_click_tap(btn, mouse_delay)?;
                 }
             }
         }

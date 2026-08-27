@@ -92,6 +92,17 @@ impl<'a> Executor<'a> {
         Ok(())
     }
 
+    /// Press+release with `hold_ms` between edges (macro mouse delay).
+    /// Zero-hold taps are intermittently dropped by Wayland/EIS compositors
+    /// even when both edges return Ok.
+    pub(crate) fn input_click_tap(&mut self, button: &str, hold_ms: i32) -> Result<()> {
+        self.input_click_down(button)?;
+        if hold_ms > 0 {
+            self.interruptible_sleep(hold_ms)?;
+        }
+        self.input_click_up(button)
+    }
+
     pub(crate) fn input_key_down(&mut self, key: &str) -> Result<()> {
         self.mark_capture_dirty();
         self.deps.automation.key_down(key)?;
@@ -528,10 +539,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
                 match *state {
                     PressState::Down => exec.input_click_down(button.as_str()),
                     PressState::Up => exec.input_click_up(button.as_str()),
-                    PressState::Tap => {
-                        exec.input_click_down(button.as_str())?;
-                        exec.input_click_up(button.as_str())
-                    }
+                    PressState::Tap => exec.input_click_tap(button.as_str(), macro_.mouse_delay),
                 }
             }
         }

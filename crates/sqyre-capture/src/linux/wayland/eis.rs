@@ -69,10 +69,31 @@ impl EisInput {
             std::thread::sleep(Duration::from_millis(20));
         }
         let resumed = eis.devices.iter().filter(|d| d.resumed).count();
+        let regions: Vec<String> = eis
+            .devices
+            .iter()
+            .filter(|d| d.resumed)
+            .flat_map(|d| {
+                d.device.regions().iter().map(|r| {
+                    format!(
+                        "{}x{}+{}+{}@{}",
+                        r.width, r.height, r.x, r.y, r.scale
+                    )
+                })
+            })
+            .collect();
+        let regions_s = if regions.is_empty() {
+            "none".to_string()
+        } else {
+            regions.join(",")
+        };
         cap_log(
             "INPUT",
             if resumed == 0 { "fail" } else { "ok" },
-            &format!("eis devices={} resumed={resumed}", eis.devices.len()),
+            &format!(
+                "eis devices={} resumed={resumed} regions={regions_s}",
+                eis.devices.len()
+            ),
         );
         if resumed == 0 {
             return Err(CaptureError::Message(
@@ -82,7 +103,7 @@ impl EisInput {
         Ok(eis)
     }
 
-    fn drain(&mut self) {
+    pub(crate) fn drain(&mut self) {
         for _ in 0..32 {
             match poll_readable_timeout(&self.context, Duration::ZERO) {
                 Ok(true) => {}
@@ -182,11 +203,42 @@ impl EisInput {
         AutomationError::Backend(format!("EIS has no resumed {cap:?} device"))
     }
 
+    /// `None` if the device has no regions (unrestricted) or `(x,y)` is inside one.
+    fn outside_regions(device: &Device, x: i32, y: i32) -> Option<String> {
+        let regions = device.regions();
+        if regions.is_empty() {
+            return None;
+        }
+        let inside = regions.iter().any(|r| {
+            let rx = r.x as i32;
+            let ry = r.y as i32;
+            let rw = r.width as i32;
+            let rh = r.height as i32;
+            x >= rx && y >= ry && x < rx.saturating_add(rw) && y < ry.saturating_add(rh)
+        });
+        if inside {
+            None
+        } else {
+            let detail = regions
+                .iter()
+                .map(|r| format!("{}x{}+{}+{}", r.width, r.height, r.x, r.y))
+                .collect::<Vec<_>>()
+                .join(",");
+            Some(detail)
+        }
+    }
+
     pub(crate) fn move_to(&mut self, x: i32, y: i32) -> Result<(), AutomationError> {
         self.drain();
         let idx = self
             .device_for(DeviceCapability::PointerAbsolute)
             .ok_or_else(|| Self::missing(DeviceCapability::PointerAbsolute))?;
+        if let Some(detail) = Self::outside_regions(&self.devices[idx].device, x, y) {
+            cap_log("INPUT", "fail", &format!("abs outside region pos={x},{y} {detail}"));
+            return Err(AutomationError::Backend(format!(
+                "EIS absolute pointer ({x},{y}) outside device regions ({detail})"
+            )));
+        }
         self.ensure_emulating(idx);
         let ptr = self.devices[idx]
             .device
@@ -197,12 +249,53 @@ impl EisInput {
         Ok(())
     }
 
-    pub(crate) fn click(&mut self, button: u32, down: bool) -> Result<(), AutomationError> {
+    pub(crate) fn click(
+        &mut self,
+        button: u32,
+        down: bool,
+        reseat: Option<(i32, i32)>,
+    ) -> Result<(), AutomationError> {
         self.drain();
         let idx = self
             .device_for(DeviceCapability::Button)
             .ok_or_else(|| Self::missing(DeviceCapability::Button))?;
         self.ensure_emulating(idx);
+
+        // Re-assert absolute position with the button edge. GNOME/Mutter intermittently
+        // drops orphaned button events when the pointer device has not framed recently
+        // (common after Image Search / kick / rapid Tap sequences).
+        if let Some((x, y)) = reseat {
+            let ptr_idx = if self.devices[idx]
+                .device
+                .interface::<ei::PointerAbsolute>()
+                .is_some()
+            {
+                idx
+            } else {
+                self.device_for(DeviceCapability::PointerAbsolute)
+                    .ok_or_else(|| Self::missing(DeviceCapability::PointerAbsolute))?
+            };
+            if let Some(detail) = Self::outside_regions(&self.devices[ptr_idx].device, x, y) {
+                cap_log(
+                    "INPUT",
+                    "fail",
+                    &format!("click reseat outside region pos={x},{y} {detail}"),
+                );
+                return Err(AutomationError::Backend(format!(
+                    "EIS click reseat ({x},{y}) outside device regions ({detail})"
+                )));
+            }
+            self.ensure_emulating(ptr_idx);
+            let ptr = self.devices[ptr_idx]
+                .device
+                .interface::<ei::PointerAbsolute>()
+                .ok_or_else(|| Self::missing(DeviceCapability::PointerAbsolute))?;
+            ptr.motion_absolute(x as f32, y as f32);
+            if ptr_idx != idx {
+                self.emit_frame(ptr_idx);
+            }
+        }
+
         let btn = self.devices[idx]
             .device
             .interface::<ei::Button>()
