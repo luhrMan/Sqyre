@@ -139,7 +139,22 @@ impl Default for SystemTray {
 
 impl Drop for SystemTray {
     fn drop(&mut self) {
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        sqyre_capture::mark_site("tray:drop:start");
         self.stop_wake_poller();
+        #[cfg(target_os = "linux")]
+        {
+            let t0 = std::time::Instant::now();
+            drop(self._handle.take());
+            #[cfg(feature = "native-runtime")]
+            sqyre_capture::cap_log(
+                "TRAY",
+                "drop",
+                &format!("handle_ms={}", t0.elapsed().as_millis()),
+            );
+        }
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        sqyre_capture::mark_site("tray:drop:done");
     }
 }
 

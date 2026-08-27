@@ -700,9 +700,73 @@ impl eframe::App for SqyreApp {
 
 impl Drop for SqyreApp {
     fn drop(&mut self) {
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        sqyre_capture::mark_site("app:drop:start");
         #[cfg(not(target_arch = "wasm32"))]
         sqyre_input::release_held_inputs();
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        let t_hk = web_time::Instant::now();
         self.hotkeys.stop();
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        {
+            sqyre_capture::cap_log(
+                "APP",
+                "drop",
+                &format!("hotkeys_ms={}", t_hk.elapsed().as_millis()),
+            );
+            sqyre_capture::mark_site("app:drop:after_hotkeys");
+        }
+
+        // Tear down known-slow fields before automatic drop order so we get
+        // timed sites if quit hangs (tray dbus, X11 outline under XWayland games,
+        // portal kick/PipeWire join).
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        {
+            let t = web_time::Instant::now();
+            self.tray = tray::SystemTray::default();
+            sqyre_capture::cap_log(
+                "APP",
+                "drop",
+                &format!("tray_ms={}", t.elapsed().as_millis()),
+            );
+            sqyre_capture::mark_site("app:drop:after_tray");
+
+            let t = web_time::Instant::now();
+            self.macro_overlay = macro_overlay::MacroOverlay::new();
+            sqyre_capture::cap_log(
+                "APP",
+                "drop",
+                &format!("macro_overlay_ms={}", t.elapsed().as_millis()),
+            );
+            sqyre_capture::mark_site("app:drop:after_macro_overlay");
+
+            let t = web_time::Instant::now();
+            self.recording_overlay = recording_overlay::RecordingOverlay::new();
+            sqyre_capture::cap_log(
+                "APP",
+                "drop",
+                &format!("recording_overlay_ms={}", t.elapsed().as_millis()),
+            );
+            sqyre_capture::mark_site("app:drop:after_recording_overlay");
+
+            let t = web_time::Instant::now();
+            self.preview_tooltips = preview_tooltip::PreviewTooltipCache::new();
+            sqyre_capture::cap_log(
+                "APP",
+                "drop",
+                &format!("preview_ms={}", t.elapsed().as_millis()),
+            );
+            sqyre_capture::mark_site("app:drop:after_preview");
+
+            let t = web_time::Instant::now();
+            sqyre_capture::reset_shared_capturer();
+            sqyre_capture::cap_log(
+                "APP",
+                "drop",
+                &format!("capturer_ms={}", t.elapsed().as_millis()),
+            );
+            sqyre_capture::mark_site("app:drop:done");
+        }
     }
 }
 

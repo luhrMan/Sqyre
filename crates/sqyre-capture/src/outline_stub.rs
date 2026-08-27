@@ -14,4 +14,8 @@ impl SelectionOutline {
     pub fn set_rect(&mut self, _left: i32, _top: i32, _right: i32, _bottom: i32) {}
 
     pub fn clear(&mut self) {}
+
+    pub fn is_active(&self) -> bool {
+        false
+    }
 }

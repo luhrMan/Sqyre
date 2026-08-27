@@ -212,7 +212,10 @@ impl FrozenSelectionOverlay {
 
 impl Drop for FrozenSelectionOverlay {
     fn drop(&mut self) {
-        // SAFETY: destroy only resources we created on `self.display`.
+        crate::mark_site("snapshot:drop:start");
+        let t0 = std::time::Instant::now();
+        // SAFETY: destroy only resources we created on `self.display`. Skip
+        // XFlush / XCloseDisplay — they hitch under fullscreen XWayland games.
         unsafe {
             if !self.display.is_null() {
                 if self.window != 0 {
@@ -232,12 +235,16 @@ impl Drop for FrozenSelectionOverlay {
                     XFreeCursor(self.display, self.cursor);
                     self.cursor = 0;
                 }
-                XFlush(self.display);
                 crate::x11_secondary::unregister(self.display);
-                XCloseDisplay(self.display);
                 self.display = ptr::null_mut();
             }
         }
+        crate::cap_log(
+            "SNAPSHOT",
+            "drop",
+            &format!("ms={}", t0.elapsed().as_millis()),
+        );
+        crate::mark_site("snapshot:drop:done");
     }
 }
 
