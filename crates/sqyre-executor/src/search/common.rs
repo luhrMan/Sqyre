@@ -4,75 +4,13 @@ use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::run::{run_children, Executor};
 use sqyre_domain::{
-    Action, ActionId, CoordinateOutputs, CoordinateRef, Macro, MatchOrder, ScalarValue,
-    WaitTilFoundConfig,
+    Action, ActionId, CoordinateOutputs, CoordinateRef, DetectionBranch, Macro, MatchGrouping,
+    MatchOrder, ScalarValue, WaitTilFoundConfig,
 };
 use sqyre_match::{ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
-use sqyre_ui_model::{highlight_clear, highlight_fill};
+use sqyre_ports::{highlight_clear, highlight_fill};
 use sqyre_vision::rgb_capture_to_image_buf;
 use std::time::{Duration, Instant};
-
-/// Cheap sampled fingerprint of a captured frame, far cheaper than the full
-/// match/OCR/pixel-scan passes it gates. Wait/repeat loops in Image Search, OCR,
-/// and Find Pixel use this to detect an unchanged capture across retries and reuse
-/// the previous pass's result instead of redoing expensive work every iteration.
-///
-/// Sampling (rather than hashing every byte) keeps the cost roughly constant
-/// regardless of search-area resolution. Width/height/len are folded in so a
-/// same-length-but-resized buffer never collides with a stale fingerprint.
-pub(super) fn frame_fingerprint(buf: &ImageBuf) -> u64 {
-    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
-    const FNV_PRIME: u64 = 0x0100_0000_01b3;
-    const MAX_SAMPLES: usize = 4096;
-
-    let bytes = buf.data.as_slice();
-    let mut hash = FNV_OFFSET;
-    for v in [buf.width as u64, buf.height as u64, bytes.len() as u64] {
-        hash ^= v;
-        hash = hash.wrapping_mul(FNV_PRIME);
-    }
-    if bytes.is_empty() {
-        return hash;
-    }
-    let stride = (bytes.len() / MAX_SAMPLES).max(1);
-    let mut i = 0;
-    while i < bytes.len() {
-        hash ^= bytes[i] as u64;
-        hash = hash.wrapping_mul(FNV_PRIME);
-        i += stride;
-    }
-    hash
-}
-
-/// Per-action cache keyed on [`frame_fingerprint`] + capture origin, letting a
-/// wait/repeat loop reuse the previous attempt's result when the latest capture
-/// is indistinguishable from the last one (same fingerprint, same search-area
-/// rect). Lives for a single action invocation — constructed fresh per call.
-pub(super) struct FrameCache<T> {
-    last: Option<(u64, DesktopRect, T)>,
-}
-
-impl<T> Default for FrameCache<T> {
-    fn default() -> Self {
-        Self { last: None }
-    }
-}
-
-impl<T: Clone> FrameCache<T> {
-    /// Returns the cached value when `fp`/`origin` match the previous attempt.
-    pub(super) fn get(&self, fp: u64, origin: DesktopRect) -> Option<T> {
-        match &self.last {
-            Some((last_fp, last_origin, value)) if *last_fp == fp && *last_origin == origin => {
-                Some(value.clone())
-            }
-            _ => None,
-        }
-    }
-
-    pub(super) fn set(&mut self, fp: u64, origin: DesktopRect, value: T) {
-        self.last = Some((fp, origin, value));
-    }
-}
 
 /// Spatial dedup distance for match/pixel peaks, falling back to the library default
 /// when the configured value is `0`. Shared by Image Search and Find Pixel.
@@ -85,6 +23,37 @@ pub(super) fn close_matches_distance(exec: &Executor<'_>) -> i32 {
     }
 }
 
+/// Shared capture / wait / branch wiring for Image Search, OCR, and Find Pixel.
+pub(super) struct DetectionCtx<'a> {
+    pub action_id: ActionId,
+    pub label: &'a str,
+    pub search_area: &'a CoordinateRef,
+    pub targets: &'a [String],
+    pub branch: &'a DetectionBranch,
+    pub wait_interval_ms: i32,
+    pub repeat_interval_ms: i32,
+}
+
+impl<'a> DetectionCtx<'a> {
+    pub(super) fn new(
+        action_id: ActionId,
+        label: &'a str,
+        search_area: &'a CoordinateRef,
+        targets: &'a [String],
+        branch: &'a DetectionBranch,
+    ) -> Self {
+        Self {
+            action_id,
+            label,
+            search_area,
+            targets,
+            branch,
+            wait_interval_ms: 100,
+            repeat_interval_ms: 100,
+        }
+    }
+}
+
 /// Resolve the search area, capture it, and convert to an [`ImageBuf`] — the shared
 /// resolve→capture→convert preamble used by Image Search, OCR, and Find Pixel.
 ///
@@ -92,16 +61,21 @@ pub(super) fn close_matches_distance(exec: &Executor<'_>) -> i32 {
 /// with `label` and treated as a miss (`None`) so the shared wait/repeat shell in
 /// [`run_detection_shell`] can retry instead of aborting the macro.
 ///
+/// `fresh` is true on wait/repeat recaptures and when image search was dirtied by
+/// input so caching backends (portal) request a newer frame. Clean nested image
+/// searches and OCR / find-pixel one-shots crop the cache.
+///
 /// `on_resolved` runs after a successful resolve but before capture, so callers can
 /// log action-specific detail (e.g. targets, dimensions) using the resolved rect.
 pub(super) fn capture_search_buf(
     exec: &mut Executor<'_>,
-    action_id: ActionId,
-    label: &str,
-    search_area: &CoordinateRef,
+    ctx: &DetectionCtx<'_>,
     macro_: &Macro,
+    fresh: bool,
     on_resolved: impl FnOnce(&mut Executor<'_>, i32, i32, i32, i32),
 ) -> Option<(ImageBuf, DesktopRect)> {
+    let action_id = ctx.action_id;
+    let label = ctx.label;
     let Some(resolver) = exec.deps.resolver else {
         exec.log(action_id, format!("{label}: missing CoordinateResolver"));
         return None;
@@ -111,14 +85,14 @@ pub(super) fn capture_search_buf(
         return None;
     }
 
-    let (lx, ty, rx, by) = match resolver.resolve_search_area(search_area, macro_) {
+    let (lx, ty, rx, by) = match resolver.resolve_search_area(ctx.search_area, macro_) {
         Ok(v) => v,
         Err(e) => {
             exec.log(
                 action_id,
                 format!(
                     "{label}: resolve search area {}: {e}",
-                    search_area.display_label()
+                    ctx.search_area.display_label()
                 ),
             );
             return None;
@@ -132,7 +106,7 @@ pub(super) fn capture_search_buf(
         .capturer
         .as_mut()
         .expect("checked Some above")
-        .capture_search_area_rgb(lx, ty, rx, by)
+        .capture_search_area_rgb(lx, ty, rx, by, fresh)
     {
         Ok(v) => v,
         Err(e) => {
@@ -141,7 +115,32 @@ pub(super) fn capture_search_buf(
         }
     };
     exec.log_timing(action_id, "capture", capture_started.elapsed());
-    Some((rgb_capture_to_image_buf(img), origin))
+    let buf = rgb_capture_to_image_buf(img);
+    let checksum = capture_checksum(&buf.data);
+    exec.log(
+        action_id,
+        format!(
+            "{label}: capture {}×{} checksum={:#x}",
+            buf.width, buf.height, checksum
+        ),
+    );
+    Some((buf, origin))
+}
+
+fn capture_checksum(bytes: &[u8]) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
+    const FNV_PRIME: u64 = 0x0100_0000_01b3;
+    let mut hash = FNV_OFFSET;
+    let mut chunks = bytes.chunks_exact(8);
+    for chunk in chunks.by_ref() {
+        hash ^= u64::from_le_bytes(chunk.try_into().expect("chunks_exact(8)"));
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    for &b in chunks.remainder() {
+        hash ^= u64::from(b);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    hash
 }
 
 pub(super) fn run_children_flow(
@@ -203,59 +202,59 @@ impl DetectionHit {
 
 const ORDER_BAND_PX: i32 = 5;
 
-/// Sort hits using [`MatchOrder`]. Empty fields keep the historical default:
-/// row grouping (±5px Y band), left-to-right, top-to-bottom.
+/// Quantize a screen axis into ±[`ORDER_BAND_PX`] bands (transitive; safe for `sort_by`).
+fn band_axis(v: i32) -> i32 {
+    v.saturating_add(ORDER_BAND_PX)
+        .div_euclid(ORDER_BAND_PX + 1)
+}
+
+/// Sort hits using [`MatchOrder`]. Default grouping is row banding
+/// (±5px Y band), left-to-right, top-to-bottom.
 pub(super) fn sort_hits(hits: &mut [DetectionHit], order: &MatchOrder) {
-    let grouping = order.grouping.trim().to_ascii_lowercase();
     let h_rev = order.horizontal.eq_ignore_ascii_case("right_to_left");
     let v_rev = order.vertical.eq_ignore_ascii_case("bottom_to_top");
 
     hits.sort_by(|a, b| {
-        let ay = a.screen_y;
-        let by = b.screen_y;
-        let ax = a.screen_x;
-        let bx = b.screen_x;
-        let cmp_x = if h_rev { bx.cmp(&ax) } else { ax.cmp(&bx) };
-        let cmp_y = if v_rev { by.cmp(&ay) } else { ay.cmp(&by) };
+        let cmp_x = if h_rev {
+            b.screen_x.cmp(&a.screen_x)
+        } else {
+            a.screen_x.cmp(&b.screen_x)
+        };
+        let cmp_y = if v_rev {
+            b.screen_y.cmp(&a.screen_y)
+        } else {
+            a.screen_y.cmp(&b.screen_y)
+        };
         let name = a.name.cmp(&b.name);
 
-        match grouping.as_str() {
-            "column" => {
-                if (ax - bx).abs() <= ORDER_BAND_PX {
-                    cmp_y.then(name)
-                } else {
-                    cmp_x.then(cmp_y).then(name)
-                }
-            }
-            "none" => cmp_y.then(cmp_x).then(name),
-            // "" | "row" | anything else → row banding (legacy default)
-            _ => {
-                if (ay - by).abs() <= ORDER_BAND_PX {
-                    cmp_x.then(name)
-                } else {
-                    cmp_y.then(cmp_x).then(name)
-                }
-            }
+        match order.grouping {
+            MatchGrouping::Column => band_axis(a.screen_x)
+                .cmp(&band_axis(b.screen_x))
+                .then(cmp_y)
+                .then(name),
+            MatchGrouping::None => cmp_y.then(cmp_x).then(name),
+            MatchGrouping::Row => band_axis(a.screen_y)
+                .cmp(&band_axis(b.screen_y))
+                .then(cmp_x)
+                .then(name),
         }
     });
 }
 
 /// Shared per-hit children loop used by Image Search, OCR, and Find Pixel.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn run_matches(
     exec: &mut Executor<'_>,
-    action_id: ActionId,
-    targets: &[String],
+    ctx: &DetectionCtx<'_>,
     results: &[DetectionHit],
-    coords: &CoordinateOutputs,
-    subactions: &[Action],
-    else_actions: &[Action],
     macro_: &mut Macro,
 ) -> Result<()> {
+    let action_id = ctx.action_id;
+    let coords = &ctx.branch.coords;
     let mut found_names: Vec<&str> = results.iter().map(|h| h.name.as_str()).collect();
     found_names.sort_unstable();
     found_names.dedup();
-    let not_found: Vec<&str> = targets
+    let not_found: Vec<&str> = ctx
+        .targets
         .iter()
         .map(|t| t.as_str())
         .filter(|t| !found_names.iter().any(|f| f == t))
@@ -272,8 +271,8 @@ pub(super) fn run_matches(
 
     if results.is_empty() {
         clear_coord_outputs(macro_, coords);
-        if !else_actions.is_empty() {
-            run_children_flow(exec, else_actions, macro_)?;
+        if !ctx.branch.else_actions.is_empty() {
+            run_children_flow(exec, &ctx.branch.else_actions, macro_)?;
         }
         return Ok(());
     }
@@ -320,7 +319,7 @@ pub(super) fn run_matches(
                 .variables
                 .set("ImagePixelHeight", ScalarValue::Int(*tmpl_h as i64));
         }
-        match run_children_flow(exec, subactions, macro_) {
+        match run_children_flow(exec, &ctx.branch.subactions, macro_) {
             Err(ExecError::Flow(FlowSignal::Break)) => break,
             Err(ExecError::Flow(FlowSignal::Continue)) => continue,
             Err(e) => {
@@ -338,36 +337,22 @@ pub(super) fn run_matches(
 
 /// Apply hits for a detection pass: repeat-while miss runs else (if any) and stops;
 /// otherwise [`run_matches`] runs the then or else branch.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn apply_detection_hits(
     exec: &mut Executor<'_>,
-    action_id: ActionId,
-    targets: &[String],
+    ctx: &DetectionCtx<'_>,
     hits: &[DetectionHit],
-    coords: &CoordinateOutputs,
-    subactions: &[Action],
-    else_actions: &[Action],
     macro_: &mut Macro,
     pass: DetectionPass,
 ) -> Result<bool> {
     // Repeat-while-found stops on miss after running the else branch once.
     if matches!(pass, DetectionPass::RepeatWhile { .. }) && hits.is_empty() {
-        clear_coord_outputs(macro_, coords);
-        if !else_actions.is_empty() {
-            run_children_flow(exec, else_actions, macro_)?;
+        clear_coord_outputs(macro_, &ctx.branch.coords);
+        if !ctx.branch.else_actions.is_empty() {
+            run_children_flow(exec, &ctx.branch.else_actions, macro_)?;
         }
         return Ok(false);
     }
-    run_matches(
-        exec,
-        action_id,
-        targets,
-        hits,
-        coords,
-        subactions,
-        else_actions,
-        macro_,
-    )?;
+    run_matches(exec, ctx, hits, macro_)?;
     // Repeat-until-found continues while missing; other passes continue while found.
     Ok(match pass {
         DetectionPass::RepeatUntil { .. } => hits.is_empty(),
@@ -377,51 +362,93 @@ pub(super) fn apply_detection_hits(
 
 /// Shared wait → repeat → single-shot shell for detection actions.
 ///
-/// `try_once` produces the latest attempt state. `is_hit` decides whether wait/repeat
-/// treat it as found. `on_outcome` applies outputs and runs branch children; its
-/// returned bool is the continue flag for the repeat loop (typically the hit flag).
+/// `try_once(exec, macro_, fresh)` produces the latest attempt. Image search uses
+/// `fresh` true when the screen was dirtied by input (or on wait/repeat recaptures);
+/// a clean nested search crops the cache. OCR / find-pixel use `fresh` false on the
+/// first pass and true on wait/repeat recaptures.
+/// `is_hit` decides whether wait/repeat treat it as found. `on_outcome` applies
+/// outputs and runs branch children; its returned bool is the continue flag for
+/// the repeat loop (typically the hit flag).
 ///
 /// `macro_` is passed into callbacks so try/outcome do not both capture it.
-#[allow(clippy::too_many_arguments)]
 pub(super) fn run_detection_shell<T>(
     exec: &mut Executor<'_>,
     macro_: &mut Macro,
-    wait: &WaitTilFoundConfig,
-    wait_interval_ms: i32,
-    repeat_interval_ms: i32,
-    mut try_once: impl FnMut(&mut Executor<'_>, &Macro) -> Result<T>,
+    ctx: &DetectionCtx<'_>,
+    mut try_once: impl FnMut(&mut Executor<'_>, &Macro, bool) -> Result<T>,
     is_hit: impl Fn(&T) -> bool,
     mut on_outcome: impl FnMut(&mut Executor<'_>, &mut Macro, &T, DetectionPass) -> Result<bool>,
 ) -> Result<()> {
-    let mut state = try_once(exec, macro_)?;
-    maybe_wait_until_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
-        state = try_once(exec, macro_)?;
-        Ok(is_hit(&state))
-    })?;
-    maybe_wait_while_found(exec, wait, is_hit(&state), wait_interval_ms, |exec| {
-        state = try_once(exec, macro_)?;
-        Ok(!is_hit(&state))
-    })?;
+    let wait = &ctx.branch.wait;
+    let wait_interval_ms = ctx.wait_interval_ms;
+    let repeat_interval_ms = ctx.repeat_interval_ms;
+    let mut state = try_once(exec, macro_, false)?;
 
+    let wait_started = Instant::now();
+    let mut did_wait = false;
+    if wait.wait_until_found_active() && !is_hit(&state) {
+        did_wait = true;
+        let timeout = wait.timeout().unwrap_or(Duration::ZERO);
+        // Short window: one sleep + one fresh search (avoids interval poll + timeout final).
+        if timeout <= Duration::from_millis(100) {
+            let ms = timeout.as_millis().min(i32::MAX as u128) as i32;
+            if ms > 0 {
+                exec.interruptible_sleep(ms)?;
+            }
+            state = try_once(exec, macro_, true)?;
+        } else {
+            let mut wait_timed_out = false;
+            if !maybe_wait_until_found(exec, wait, false, wait_interval_ms, |exec| {
+                state = try_once(exec, macro_, true)?;
+                Ok(is_hit(&state))
+            })? {
+                wait_timed_out = true;
+            }
+            if wait_timed_out {
+                state = try_once(exec, macro_, true)?;
+            }
+        }
+    } else if wait.wait_while_found_active() && is_hit(&state) {
+        did_wait = true;
+        let mut wait_timed_out = false;
+        if !maybe_wait_while_found(exec, wait, true, wait_interval_ms, |exec| {
+            state = try_once(exec, macro_, true)?;
+            Ok(!is_hit(&state))
+        })? {
+            wait_timed_out = true;
+        }
+        if wait_timed_out {
+            state = try_once(exec, macro_, true)?;
+        }
+    }
+    if did_wait {
+        exec.log_timing(ctx.action_id, "wait", wait_started.elapsed());
+    }
+
+    let apply_started = Instant::now();
     if maybe_repeat_while_found(exec, wait, repeat_interval_ms, |exec, refresh| {
         if refresh {
-            state = try_once(exec, macro_)?;
+            state = try_once(exec, macro_, true)?;
         }
         on_outcome(exec, macro_, &state, DetectionPass::RepeatWhile { refresh })
     })? {
+        exec.log_timing(ctx.action_id, "apply", apply_started.elapsed());
         return Ok(());
     }
 
     if maybe_repeat_until_found(exec, wait, repeat_interval_ms, |exec, refresh| {
         if refresh {
-            state = try_once(exec, macro_)?;
+            state = try_once(exec, macro_, true)?;
         }
         on_outcome(exec, macro_, &state, DetectionPass::RepeatUntil { refresh })
     })? {
+        exec.log_timing(ctx.action_id, "apply", apply_started.elapsed());
         return Ok(());
     }
 
-    on_outcome(exec, macro_, &state, DetectionPass::Final).map(|_| ())
+    on_outcome(exec, macro_, &state, DetectionPass::Final)?;
+    exec.log_timing(ctx.action_id, "apply", apply_started.elapsed());
+    Ok(())
 }
 
 /// Whether `on_outcome` is running inside a repeat loop or as the single-shot after wait.
@@ -432,41 +459,68 @@ pub(super) enum DetectionPass {
     Final,
 }
 
+/// Poll until `done` returns true or the wait timeout elapses.
+///
+/// Returns `Ok(true)` when `done` succeeded, `Ok(false)` on timeout.
+/// Sleeps are capped to the remaining wait window so a short
+/// `waittilfoundseconds` cannot overshoot via a longer default interval.
 pub(super) fn retry_until(
     exec: &mut Executor<'_>,
     wait: &WaitTilFoundConfig,
     default_interval_ms: i32,
     mut done: impl FnMut(&mut Executor<'_>) -> Result<bool>,
-) -> Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(wait.wait_til_found_seconds.max(0) as u64);
+) -> Result<bool> {
+    let Some(timeout) = wait.timeout() else {
+        return Ok(false);
+    };
+    let deadline = Instant::now() + timeout;
     let mut interval = wait.effective_interval_ms(default_interval_ms).max(1);
+    // Poll at least as often as the wait window (e.g. 50ms wait must not sleep 100ms).
+    let timeout_ms = timeout.as_millis().min(i32::MAX as u128) as i32;
+    interval = interval.min(timeout_ms.max(1));
     let max_interval = (interval * 5).min(2000).max(interval);
     while Instant::now() < deadline {
         exec.check_stopped()?;
-        exec.interruptible_sleep(interval)?;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            break;
+        }
+        let sleep_ms = (interval as u128)
+            .min(remaining.as_millis())
+            .max(1)
+            .min(i32::MAX as u128) as i32;
+        exec.interruptible_sleep(sleep_ms)?;
+        // After sleeping to/past the deadline, let the shell's final try_once
+        // run once — avoid an extra capture here that duplicates it.
+        if Instant::now() >= deadline {
+            break;
+        }
         if done(exec)? {
-            return Ok(());
+            return Ok(true);
         }
         if interval < max_interval {
             interval = (interval * 2).min(max_interval);
         }
     }
-    Ok(())
+    Ok(false)
 }
 
+/// Returns `Ok(true)` when found (or wait inactive), `Ok(false)` on timeout.
 pub(super) fn maybe_wait_until_found(
     exec: &mut Executor<'_>,
     wait: &WaitTilFoundConfig,
     hit: bool,
     default_interval_ms: i32,
     retry: impl FnMut(&mut Executor<'_>) -> Result<bool>,
-) -> Result<()> {
+) -> Result<bool> {
     if wait.wait_until_found_active() && !hit {
-        retry_until(exec, wait, default_interval_ms, retry)?;
+        retry_until(exec, wait, default_interval_ms, retry)
+    } else {
+        Ok(true)
     }
-    Ok(())
 }
 
+/// Returns `Ok(true)` when gone (or wait inactive), `Ok(false)` on timeout.
 pub(super) fn maybe_wait_while_found(
     exec: &mut Executor<'_>,
     wait: &WaitTilFoundConfig,
@@ -474,11 +528,12 @@ pub(super) fn maybe_wait_while_found(
     default_interval_ms: i32,
     // `gone` returns true when the target disappeared (stop waiting).
     gone: impl FnMut(&mut Executor<'_>) -> Result<bool>,
-) -> Result<()> {
+) -> Result<bool> {
     if wait.wait_while_found_active() && hit {
-        retry_until(exec, wait, default_interval_ms, gone)?;
+        retry_until(exec, wait, default_interval_ms, gone)
+    } else {
+        Ok(true)
     }
-    Ok(())
 }
 
 /// Shared repeat loop body for while-found / until-found modes.
@@ -501,11 +556,7 @@ fn maybe_repeat_loop(
 
     let max_iter = wait.effective_max_iterations();
     let interval = wait.effective_interval_ms(default_interval_ms).max(1);
-    let deadline = if wait.wait_til_found_seconds > 0 {
-        Some(Instant::now() + Duration::from_secs(wait.wait_til_found_seconds.max(0) as u64))
-    } else {
-        None
-    };
+    let deadline = wait.timeout().map(|d| Instant::now() + d);
     for i in 0..max_iter {
         exec.check_stopped()?;
         let refresh = i > 0;

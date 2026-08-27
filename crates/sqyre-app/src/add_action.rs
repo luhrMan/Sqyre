@@ -14,7 +14,7 @@ use crate::pickers::{self, ActivePicker};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::tree_chrome;
 use crate::widgets::SaveCancel;
-use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2, WidgetInfo, WidgetType};
 use sqyre_domain::{
     action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
     KnownVariableNames,
@@ -26,7 +26,7 @@ use sqyre_serialize::{action_from_map, action_to_map};
 use sqyre_ui_model::{
     action_icon_glyph, action_pastel_color, action_picker_category, ACTION_PICKER_CATEGORIES,
 };
-use sqyre_validate::validate_action;
+use sqyre_validate::validate_action_persist;
 use std::collections::HashMap;
 use web_time::{Duration, Instant};
 
@@ -56,9 +56,16 @@ struct HoverPending {
 struct DefaultsEdit {
     action_type: String,
     draft: Action,
+    baseline: Action,
     error: Option<String>,
     anchor: egui::Pos2,
     picker: ActivePicker,
+}
+
+impl DefaultsEdit {
+    fn save_enabled(&self) -> bool {
+        self.draft != self.baseline
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -142,6 +149,7 @@ impl AddActionPicker {
         };
         self.tip = Some(DefaultsTip::Edit(Box::new(DefaultsEdit {
             action_type,
+            baseline: draft.clone(),
             draft,
             error: None,
             anchor,
@@ -189,6 +197,7 @@ impl AddActionPicker {
         hotkey_record: &mut HotkeyRecordUi,
         macro_hotkeys: &MacroHotkeyBridge,
         screen_click: &ScreenClickBridge,
+        compact_program_headers: bool,
         mut on_defaults_saved: impl FnMut(&AddActionPicker),
     ) -> Option<Action> {
         if !self.open {
@@ -320,6 +329,7 @@ impl AddActionPicker {
                 hotkey_record,
                 macro_hotkeys,
                 screen_click,
+                compact_program_headers,
             ),
             None => false,
         };
@@ -386,6 +396,7 @@ impl AddActionPicker {
         hotkey_record: &mut HotkeyRecordUi,
         macro_hotkeys: &MacroHotkeyBridge,
         screen_click: &ScreenClickBridge,
+        compact_program_headers: bool,
     ) -> bool {
         if !matches!(&self.tip, Some(DefaultsTip::Edit { .. })) {
             return false;
@@ -432,6 +443,7 @@ impl AddActionPicker {
                     previews,
                 },
                 macros,
+                compact_program_headers,
             );
             apply_picker_result(&mut edit.draft, result);
         }
@@ -443,6 +455,8 @@ impl AddActionPicker {
             Some(DefaultsTip::Edit(edit)) => edit.error.clone(),
             _ => None,
         };
+        let save_enabled =
+            matches!(&self.tip, Some(DefaultsTip::Edit(edit)) if edit.save_enabled());
 
         egui::Window::new(format!("Default: {label}"))
             .id(egui::Id::new(("action_default_edit", type_key.as_str())))
@@ -461,6 +475,7 @@ impl AddActionPicker {
                     pastel,
                     Some("New actions of this type start with these values"),
                     err_msg.as_deref(),
+                    save_enabled,
                 ) {
                     SaveCancel::Cancel => cancel = true,
                     SaveCancel::Save => save = true,
@@ -506,7 +521,7 @@ impl AddActionPicker {
                 Some(DefaultsTip::Edit(edit)) => (edit.action_type.clone(), edit.draft.clone()),
                 _ => return false,
             };
-            if let Err(e) = validate_action(&draft, None) {
+            if let Err(e) = validate_action_persist(&draft, None) {
                 if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
                     edit.error = Some(e.to_string());
                 }
@@ -537,7 +552,6 @@ fn reassign_uids(action: &mut Action) {
 /// Horizontal / vertical padding around the label (content size is the minimum).
 const PICKER_TILE_PAD_X: f32 = 8.0;
 const PICKER_TILE_PAD_Y: f32 = 4.0;
-const PICKER_TILE_FONT: f32 = 12.0;
 
 fn picker_tile(
     ui: &mut egui::Ui,
@@ -550,9 +564,9 @@ fn picker_tile(
     let fill = Color32::from_rgba_unmultiplied(pastel[0], pastel[1], pastel[2], pastel[3]);
     let fg = crate::theme::contrast_fg(fill);
     let text = format!("{glyph}  {}", tmpl.label);
-    let galley =
-        ui.painter()
-            .layout_no_wrap(text, egui::FontId::proportional(PICKER_TILE_FONT), fg);
+    let galley = ui
+        .painter()
+        .layout_no_wrap(text, egui::TextStyle::Small.resolve(ui.style()), fg);
     // Hug the label: content + pad is both the size and the floor.
     let desired = galley.size() + Vec2::new(PICKER_TILE_PAD_X * 2.0, PICKER_TILE_PAD_Y * 2.0);
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
@@ -577,7 +591,9 @@ fn picker_tile(
     );
     ui.painter().galley(text_pos, galley, Color32::PLACEHOLDER);
 
-    // No egui `on_hover_text` — the delayed action view tip is the hover UI.
+    response.widget_info(|| {
+        WidgetInfo::labeled(WidgetType::Button, true, format!("Add {}", tmpl.label))
+    });
     response
 }
 

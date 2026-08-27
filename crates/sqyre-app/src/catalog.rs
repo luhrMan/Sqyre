@@ -26,16 +26,13 @@ pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
 /// Live monitor rects for seeding, or a single display from the catalog resolution key.
 pub fn seed_monitor_rects(catalog: &ProgramCatalog) -> Vec<MonitorRect> {
     #[cfg(feature = "native-runtime")]
-    if let Ok(capturer) = sqyre_capture::shared_capturer() {
-        if let Ok(rects) = capturer.monitor_rects_ref() {
-            let usable: Vec<MonitorRect> = rects
-                .into_iter()
-                .filter(|r| r.w > 1 && r.h > 1)
-                .map(|r| (r.x, r.y, r.w, r.h))
-                .collect();
-            if !usable.is_empty() {
-                return usable;
-            }
+    {
+        let from_layout: Vec<MonitorRect> = sqyre_capture::preferred_monitor_rects()
+            .into_iter()
+            .map(|r| (r.x, r.y, r.w, r.h))
+            .collect();
+        if !from_layout.is_empty() {
+            return from_layout;
         }
     }
     let (w, h) = parse_resolution_wh(catalog.resolution_key()).unwrap_or((1920, 1080));
@@ -50,6 +47,19 @@ fn parse_resolution_wh(key: &str) -> Option<(i32, i32)> {
 /// Create/update the seeded `General` program when missing entries. Returns `true` if changed.
 pub fn ensure_general_program_seeded(catalog: &mut ProgramCatalog) -> bool {
     let monitors = seed_monitor_rects(catalog);
+    #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+    {
+        let n = monitors.len();
+        let layout = monitors
+            .iter()
+            .map(|&(x, y, w, h)| format!("{w}x{h}+{x}+{y}"))
+            .collect::<Vec<_>>()
+            .join(";");
+        sqyre_capture::event_log(
+            "SQYRE_GENERAL",
+            &[("monitors", &n.to_string()), ("layout", &layout)],
+        );
+    }
     match ensure_general_program(catalog, &monitors) {
         Ok(created) => created,
         Err(e) => {
@@ -216,5 +226,14 @@ Game:
         let snap = SnapshotMacros(Arc::new(map));
         assert!(snap.get("alpha").is_some());
         assert!(snap.get("missing").is_none());
+    }
+
+    #[test]
+    fn ensure_general_program_seeded_creates_general() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        assert!(ensure_general_program_seeded(&mut cat));
+        assert!(cat.get(sqyre_persist::GENERAL_PROGRAM).is_some());
+        assert!(!ensure_general_program_seeded(&mut cat));
     }
 }

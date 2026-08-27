@@ -162,10 +162,10 @@ mod tests {
                     hold_repeat: true,
                 },
                 select: sqyre_domain::NavSelectAction {
-                    device: "mouse".into(),
-                    button: "left".into(),
+                    device: sqyre_domain::NavSelectDevice::Mouse,
+                    button: sqyre_domain::MouseButton::Left,
                     key: String::new(),
-                    press_mode: "click".into(),
+                    press_mode: sqyre_domain::NavPressMode::Click,
                 },
                 inputs: sqyre_domain::NavInputs::default(),
                 outputs: sqyre_domain::NavOutputs {
@@ -288,7 +288,7 @@ mod tests {
 
     #[test]
     fn image_search_populated_fields_roundtrip() {
-        use sqyre_domain::{MatchOrder, RepeatMode, WaitTilFoundConfig};
+        use sqyre_domain::{MatchGrouping, MatchOrder, RepeatMode, WaitTilFoundConfig};
         let action = Action {
             id: ActionId::new(),
             kind: ActionKind::ImageSearch {
@@ -301,7 +301,7 @@ mod tests {
                 detection: DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
-                        wait_til_found_seconds: 5,
+                        wait_til_found_seconds: 1.5,
                         wait_til_found_interval_ms: 100,
                         max_iterations: 0,
                     },
@@ -310,7 +310,7 @@ mod tests {
                         output_y_variable: "sy".into(),
                     },
                     order: MatchOrder {
-                        grouping: "row".into(),
+                        grouping: MatchGrouping::Row,
                         horizontal: "ltr".into(),
                         vertical: "ttb".into(),
                     },
@@ -358,7 +358,7 @@ mod tests {
                 detection: DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::RepeatWhileFound,
-                        wait_til_found_seconds: 0,
+                        wait_til_found_seconds: 0.0,
                         wait_til_found_interval_ms: 0,
                         max_iterations: 42,
                     },
@@ -400,6 +400,27 @@ blur: 5
             } => {
                 assert_eq!(targets, vec!["Game~Sword".to_string()]);
                 assert_eq!(search_area.as_str(), "Game~Arena");
+            }
+            other => panic!("expected ImageSearch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn image_search_wait_seconds_accepts_float_yaml() {
+        let yaml = r#"
+type: imagesearch
+name: find
+targets: [Game~Sword]
+searcharea: Game~Arena
+repeatmode: waituntilfound
+waittilfoundseconds: 0.25
+"#;
+        let value: Value = serde_yaml::from_str(yaml).unwrap();
+        let map = value.as_mapping().unwrap();
+        let action = action_from_map(map).unwrap();
+        match action.kind {
+            ActionKind::ImageSearch { detection, .. } => {
+                assert_eq!(detection.wait.wait_til_found_seconds, 0.25);
             }
             other => panic!("expected ImageSearch, got {other:?}"),
         }

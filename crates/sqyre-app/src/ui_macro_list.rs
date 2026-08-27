@@ -149,18 +149,6 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             if let Some(err) = &app.workspace.load_error {
                 ui.colored_label(crate::theme::error_fg(), format!("Load error: {err}"));
             }
-            #[cfg(target_arch = "wasm32")]
-            ui.small(format!(
-                "{} (browser — import/export db.yaml)",
-                app.workspace.macros.len()
-            ));
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                let path = sqyre_persist::db_path();
-                let status = format!("{} from {}", app.workspace.macros.len(), path.display());
-                let font = egui::TextStyle::Small.resolve(ui.style());
-                ui.small(elide_to_width(ui, &status, pane_w, font));
-            }
             if let Some(warn) = &app.workspace.platform_warning {
                 ui.colored_label(crate::theme::warn_fg(), warn);
             }
@@ -253,7 +241,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         egui::collapsing_header::CollapsingState::load_with_default_open(
                             ui.ctx(),
                             id,
-                            true,
+                            false,
                         )
                         .show_header(ui, |ui| {
                             let selected =

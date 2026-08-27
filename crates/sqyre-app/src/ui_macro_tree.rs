@@ -79,7 +79,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         app.tree.scroll_vel = pointer_vel_y;
                     }
                     if !primary_down {
-                        app.tree.drag_mode = TreeDragMode::Idle;
+                        // Keep Scroll through TreeView + Move handling this frame.
+                        // Clearing early re-enables DnD on drag_stopped and egui_ltreeview
+                        // emits a spurious Move (often empty sources) that records undo.
+                        if app.tree.drag_mode != TreeDragMode::Scroll {
+                            app.tree.drag_mode = TreeDragMode::Idle;
+                        }
                     } else if app.tree.drag_mode == TreeDragMode::Idle {
                         let become_drag = ui.input(|i| !i.pointer.could_any_button_be_click());
                         if become_drag {
@@ -134,6 +139,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     }
                     let allow_dnd = !running && app.tree.drag_mode != TreeDragMode::Scroll;
 
+                    let show_logs = app.settings_ui.settings().save_meta_images;
                     let catalog = &app.workspace.catalog;
                     let icons = &mut app.icon_cache;
                     let root = &app.workspace.macros[idx].root;
@@ -142,7 +148,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         .tree
                         .known_vars_cached(&app.workspace.macros[idx])
                         .clone();
-                    let interact_y = ui.spacing().interact_size.y;
+                    let interact_y = tree_chrome::row_height(ui);
                     let primary_id = app.tree.selected_actions.last().copied();
                     let selected_action = primary_id.and_then(|id| root.find_by_id(id));
                     let paint_revision = app.tree.paint_revision;
@@ -160,6 +166,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         selected_action,
                         pills_cache: &mut app.tree.pills_cache,
                         paint_revision,
+                        show_logs,
                     };
                     // egui_ltreeview sizes to max(available, content). Inside ScrollArea
                     // that fills the viewport and trips a permanent vertical scrollbar
@@ -203,8 +210,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         if !scrolled_follow {
                             if let Some(row_i) = flattened_visible_index(root, target) {
                                 let row_h =
-                                    tree_chrome::default_row_height(ui.spacing().interact_size.y)
-                                        + ui.spacing().item_spacing.y;
+                                    tree_chrome::row_height(ui) + ui.spacing().item_spacing.y;
                                 let y = ui.min_rect().top() + row_i as f32 * row_h;
                                 let rect = egui::Rect::from_min_size(
                                     egui::pos2(ui.min_rect().left(), y),
@@ -342,6 +348,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     macro_hotkeys: &app.run_session.macro_hotkeys,
                     screen_click: &app.screen_click,
                 },
+                compact_program_headers: app.settings_ui.settings().compact_program_headers,
             };
             action_tooltip::show(
                 &mut app.tree.tooltip,
@@ -412,11 +419,17 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         }
     }
     if let Some((sources, parent, slot)) = pending_move {
-        app.record_tree_mutation();
-        let _ = app.workspace.macros[idx]
-            .root
-            .move_actions(&sources, parent, slot);
-        app.persist_macro_at(idx);
+        if !sources.is_empty() {
+            app.record_tree_mutation();
+            let _ = app.workspace.macros[idx]
+                .root
+                .move_actions(&sources, parent, slot);
+            app.persist_macro_at(idx);
+        }
+    }
+    // Finish deferred Scroll→Idle now that TreeView Move/Drag are handled.
+    if app.tree.drag_mode == TreeDragMode::Scroll && !ui.input(|i| i.pointer.primary_down()) {
+        app.tree.drag_mode = TreeDragMode::Idle;
     }
 
     match app.tree.selected_actions.as_slice() {
@@ -558,7 +571,7 @@ fn sync_execution_expand(
     }
 }
 
-fn highlight_follow_target(snap: &sqyre_ui_model::HighlightSnapshot) -> Option<ActionId> {
+fn highlight_follow_target(snap: &sqyre_ports::HighlightSnapshot) -> Option<ActionId> {
     if let Some(id) = snap.cursor {
         return Some(id);
     }
@@ -641,6 +654,7 @@ fn build_tree(
             tree.pills_cache,
             tree.paint_revision,
             validation_error.as_deref(),
+            tree.show_logs,
         );
         if should_scroll {
             ui.scroll_to_rect(interaction.row_rect, Some(egui::Align::Center));
@@ -719,7 +733,12 @@ fn build_else_dir(
             .drop_allowed(true)
             .height(row_h)
             .label_ui(|ui| {
-                let resp = help::tip(ui.strong("Else"), help::ELSE_BRANCH);
+                let resp = help::tip(
+                    ui.add(
+                        egui::Label::new(egui::RichText::new("Else").strong()).selectable(false),
+                    ),
+                    help::ELSE_BRANCH,
+                );
                 let mut row_rect = resp.rect;
                 row_rect.set_right(ui.max_rect().right());
                 tree_chrome::paint_row_highlight(
@@ -741,7 +760,8 @@ fn build_else_dir(
                         double_clicked: false,
                         primary_clicked: resp.clicked(),
                         row_rect,
-                        drag_handle_rect: row_rect,
+                        // Else folders are fixed under their owner — drag scrolls.
+                        drag_handle_rect: egui::Rect::NOTHING,
                     },
                 ));
             }),
@@ -769,7 +789,7 @@ fn build_else_dir(
 pub(crate) fn row_highlight(
     macro_name: &str,
     action_id: ActionId,
-    snap: &sqyre_ui_model::HighlightSnapshot,
+    snap: &sqyre_ports::HighlightSnapshot,
 ) -> RowHighlight {
     if snap.macro_name != macro_name {
         return RowHighlight::None;
@@ -839,7 +859,7 @@ pub(crate) fn press_pair_highlight(action: &Action, selected: Option<&Action>) -
 mod highlight_ui_tests {
     use super::*;
     use sqyre_domain::{ActionKind, PressState};
-    use sqyre_ui_model::HighlightSnapshot;
+    use sqyre_ports::HighlightSnapshot;
     use std::collections::HashMap;
 
     #[test]

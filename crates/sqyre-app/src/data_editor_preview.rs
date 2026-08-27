@@ -62,7 +62,7 @@ fn pure_i32(s: &str) -> Option<i32> {
 
 /// Coord chip overlaid on a preview edge: sizes to text, Sqyre yellow border,
 /// and when the value is a pure integer: drag-to-adjust + −/+ steppers.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // chip overlays one preview edge with edit + validation
 pub(crate) fn paint_preview_coord_chip(
     ui: &mut egui::Ui,
     preview: egui::Rect,
@@ -144,8 +144,10 @@ pub(crate) fn paint_preview_coord_chip(
     ui.painter()
         .rect_stroke(edit_rect, radius, border, egui::StrokeKind::Outside);
 
+    // Use `place` (not `put`) so overlay chips do not advance the form cursor
+    // into the preview — widgets after the panel must stay below it.
     if let (Some(minus), Some(n)) = (minus_rect, pure) {
-        let resp = ui.put(
+        let resp = ui.place(
             minus,
             egui::Button::new("−")
                 .fill(fill)
@@ -159,7 +161,7 @@ pub(crate) fn paint_preview_coord_chip(
         resp.on_hover_text("Decrement");
     }
     if let (Some(plus), Some(n)) = (plus_rect, pure) {
-        let resp = ui.put(
+        let resp = ui.place(
             plus,
             egui::Button::new("+")
                 .fill(fill)
@@ -178,14 +180,12 @@ pub(crate) fn paint_preview_coord_chip(
 
     let resp = if show_overlay {
         let plain_fg = egui::Color32::from_gray(230);
-        ui.scope_builder(egui::UiBuilder::new().max_rect(inner), |ui| {
-            ui.set_min_size(inner.size());
-            ui.centered_and_justified(|ui| {
-                var_pills::paint_var_ref_content(ui, value, known, is_dark, plain_fg);
-            });
-        })
-        .response
-        .interact(egui::Sense::click())
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(
+            egui::Layout::centered_and_justified(egui::Direction::TopDown),
+        ));
+        child.set_min_size(inner.size());
+        var_pills::paint_var_ref_content(&mut child, value, known, is_dark, plain_fg);
+        ui.interact(edit_rect, id.with("overlay"), egui::Sense::click())
     } else if let Some(n) = pure.filter(|_| !focused) {
         // Unfocused pure number: drag to adjust, click to edit.
         let resp = ui.interact(edit_rect, id.with("drag"), egui::Sense::click_and_drag());
@@ -220,7 +220,7 @@ pub(crate) fn paint_preview_coord_chip(
         }
         resp
     } else {
-        ui.put(
+        ui.place(
             inner,
             egui::TextEdit::singleline(value)
                 .id(id)
@@ -264,14 +264,9 @@ pub(crate) fn fit_thumbnail(w: f32, h: f32) -> egui::Vec2 {
     image_view::fit_in_box_no_upscale(w, h, MAX, MAX)
 }
 
-/// 1px Sqyre yellow border around a Data Editor image preview.
+/// 1px dim gold border around a Data Editor image preview.
 pub(crate) fn paint_preview_frame(painter: &egui::Painter, rect: egui::Rect) {
-    painter.rect_stroke(
-        rect,
-        0.0,
-        egui::Stroke::new(1.0, theme::PRIMARY),
-        egui::StrokeKind::Inside,
-    );
+    painter.rect_stroke(rect, 0.0, theme::inner_stroke(), egui::StrokeKind::Inside);
 }
 
 pub(crate) fn paint_disk_preview(
@@ -324,7 +319,7 @@ pub(crate) fn paint_disk_preview(
 }
 
 /// Collection-tab preview with wheel zoom / drag pan.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // zoomable preview: path, grid, view, and replace state
 pub(crate) fn paint_zoomable_collection_preview(
     ui: &mut egui::Ui,
     icons: &mut IconCache,
@@ -401,6 +396,7 @@ pub(crate) fn paint_zoomable_collection_preview(
 
     image_view::handle_scroll_zoom(ui, viewport, image_size, view, resp.hovered());
     let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
+    let body_font = egui::TextStyle::Body.resolve(ui.style());
 
     {
         let painter = ui.painter_at(viewport);
@@ -417,7 +413,7 @@ pub(crate) fn paint_zoomable_collection_preview(
                 viewport.center(),
                 egui::Align2::CENTER_CENTER,
                 "No image on disk",
-                egui::FontId::proportional(14.0),
+                body_font,
                 egui::Color32::LIGHT_GRAY,
             );
         }
@@ -493,31 +489,30 @@ pub(crate) fn paint_grid_overlay_painter(
 /// Prefers real positions from the capturer; falls back to L→R layout from sizes.
 fn atlas_monitor_rects(catalog: &sqyre_persist::ProgramCatalog) -> Vec<(i32, i32, i32, i32)> {
     #[cfg(feature = "native-runtime")]
-    if let Ok(capturer) = sqyre_capture::shared_capturer() {
-        if let Ok(rects) = capturer.monitor_rects_ref() {
-            let out: Vec<_> = rects
-                .into_iter()
-                .filter(|r| r.w > 0 && r.h > 0)
-                .map(|r| (r.x, r.y, r.w, r.h))
-                .collect();
-            if !out.is_empty() {
-                return out;
-            }
+    {
+        let preferred: Vec<_> = sqyre_capture::preferred_monitor_rects()
+            .into_iter()
+            .map(|r| (r.x, r.y, r.w, r.h))
+            .collect();
+        if !preferred.is_empty() {
+            return preferred;
         }
-        // Sizes only: place primary at virtual origin, others to the right.
-        if let Ok(sizes) = capturer.monitor_sizes_ref() {
-            let (ox, oy) = capturer
-                .virtual_bounds_ref()
-                .map(|vb| (vb.x, vb.y))
-                .unwrap_or((0, 0));
-            let laid = layout_monitors_ltr(ox, oy, &sizes);
-            if !laid.is_empty() {
-                return laid;
+        if let Ok(capturer) = sqyre_capture::shared_capturer_nonblocking() {
+            // Sizes only: place primary at virtual origin, others to the right.
+            if let Ok(sizes) = capturer.monitor_sizes_ref() {
+                let (ox, oy) = capturer
+                    .virtual_bounds_ref()
+                    .map(|vb| (vb.x, vb.y))
+                    .unwrap_or((0, 0));
+                let laid = layout_monitors_ltr(ox, oy, &sizes);
+                if !laid.is_empty() {
+                    return laid;
+                }
             }
-        }
-        if let Ok(vb) = capturer.virtual_bounds_ref() {
-            if vb.w > 0 && vb.h > 0 {
-                return vec![(vb.x, vb.y, vb.w, vb.h)];
+            if let Ok(vb) = capturer.virtual_bounds_ref() {
+                if vb.w > 0 && vb.h > 0 {
+                    return vec![(vb.x, vb.y, vb.w, vb.h)];
+                }
             }
         }
     }
@@ -684,6 +679,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
         )
     };
 
+    let small = egui::TextStyle::Small.resolve(ui.style());
     {
         let painter = ui.painter_at(viewport);
         painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(22));
@@ -700,8 +696,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
             painter.rect_filled(rect, 0.0, mon_fill);
             painter.rect_stroke(rect, 0.0, mon_stroke, egui::StrokeKind::Outside);
             let label = format!("Monitor {} — {mw}×{mh}", i + 1);
-            let galley =
-                painter.layout_no_wrap(label, egui::FontId::proportional(12.0), label_color);
+            let galley = painter.layout_no_wrap(label, small.clone(), label_color);
             let chip =
                 egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(10.0, 4.0));
             painter.rect_filled(
@@ -737,7 +732,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
             let label_pos = egui::pos2(rect.left() + 4.0, rect.top() + 4.0);
             let galley = painter.layout_no_wrap(
                 node.collection.clone(),
-                egui::FontId::proportional(11.0),
+                small.clone(),
                 egui::Color32::WHITE,
             );
             let chip = egui::Rect::from_min_size(label_pos, galley.size() + egui::vec2(6.0, 2.0));

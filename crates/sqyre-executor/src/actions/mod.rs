@@ -5,7 +5,7 @@ mod io;
 mod submacro;
 mod window;
 
-pub(crate) use flow::{execute_for_each_row, execute_pause, execute_while};
+pub(crate) use flow::{execute_for_each_row, execute_pause, execute_while, FlowLoopCtx};
 pub(crate) use io::{execute_save_variable, execute_set_variable};
 pub(crate) use submacro::execute_run_macro;
 pub(crate) use window::execute_focus_window;

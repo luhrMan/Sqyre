@@ -28,3 +28,4 @@ zip = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+sqyre-validate = { path = "../sqyre-validate" }

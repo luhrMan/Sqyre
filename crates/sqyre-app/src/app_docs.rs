@@ -22,7 +22,7 @@ use eframe::egui;
 use parking_lot::Mutex;
 use sqyre_hotkeys::{HotkeyService, MacroRecordBridge, NullHotkeys, ScreenClickBridge};
 use sqyre_persist::UserSettings;
-use sqyre_ui_model::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
+use sqyre_ports::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
 
 impl SqyreApp {
@@ -32,6 +32,10 @@ impl SqyreApp {
         // golden PNGs assume unscaled coordinates.
         let settings = UserSettings {
             ui_scale: 1.0,
+            // Headless kittest/docs must not touch Pulse, GitHub, or portal ScreenCast.
+            play_ui_sounds: false,
+            play_finish_sound: false,
+            auto_update_check: false,
             ..UserSettings::default()
         };
         SettingsUi::apply_action_colors(&settings);
@@ -53,8 +57,7 @@ impl SqyreApp {
         add_action_picker.load_from_settings(settings_ui.settings());
 
         let catalog = docs_fixture::demo_catalog();
-        let macro_ = docs_fixture::demo_macro();
-        let macros = vec![macro_];
+        let macros = docs_fixture::demo_macros();
         let db = docs_fixture::demo_database(&macros, &catalog);
 
         let tree = TreeState {
@@ -96,6 +99,7 @@ impl SqyreApp {
             icon_cache: IconCache::new(),
             preview_tooltips: PreviewTooltipCache::new(),
             add_action_picker,
+            command_palette: crate::command_palette::CommandPaletteUi::default(),
             data_editor: DataEditor::default(),
             settings_ui,
             variables_panel: variables_panel::VariablesPanelUi::default(),
@@ -104,7 +108,8 @@ impl SqyreApp {
             recording_overlay: RecordingOverlay::new(),
             #[cfg(feature = "native-runtime")]
             macro_overlay: MacroOverlay::new(),
-            macro_list_open: false,
+            // Match product default so main-window goldens include the Macros sidebar.
+            macro_list_open: true,
             macro_list_filter: String::new(),
             tray: tray::SystemTray::default(),
             instance_lock: None,
@@ -116,6 +121,30 @@ impl SqyreApp {
             pixel_sample_pending: None,
             #[cfg(not(target_arch = "wasm32"))]
             update: crate::update::UpdateManager::default(),
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            capture_probe_pending: None,
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            capture_probe_finished: true,
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            capture_probe_not_before: None,
+            #[cfg(all(
+                not(target_arch = "wasm32"),
+                feature = "native-runtime",
+                target_os = "linux"
+            ))]
+            hotkeys_deferred: None,
         };
         if let Some(m) = app.workspace.macros.first() {
             app.workspace.macro_meta.sync_selection(0, m);
@@ -127,10 +156,14 @@ impl SqyreApp {
         self.add_action_picker.open();
     }
 
+    pub fn open_command_palette_for_docs(&mut self) {
+        self.command_palette.open_palette();
+    }
+
     pub fn open_data_editor(&mut self) {
-        self.data_editor.open = true;
+        // Coordinates → Points shows the post-ScreenCap tab strip with filled form data.
         self.data_editor
-            .select_program_for_docs("Demo Program", &self.workspace.catalog);
+            .open_points_for_docs("Demo Program", "center", &self.workspace.catalog);
     }
 
     pub fn select_action(&mut self, id: sqyre_domain::ActionId) {
@@ -170,9 +203,19 @@ impl SqyreApp {
         self.settings_ui.settings()
     }
 
+    /// Mutable settings for docs / interaction harnesses.
+    pub fn docs_settings_mut(&mut self) -> &mut UserSettings {
+        self.settings_ui.settings_mut()
+    }
+
     /// Open the settings window (integration / screenshot harnesses).
     pub fn open_settings_for_docs(&mut self) {
         self.settings_ui.open = true;
+    }
+
+    /// Open Settings → Appearance (docs screenshots of the sidebar layout).
+    pub fn open_settings_appearance_for_docs(&mut self) {
+        self.settings_ui.open_appearance_for_docs();
     }
 
     /// Show the macro list panel (docs / interaction harnesses).
@@ -191,5 +234,14 @@ impl SqyreApp {
             .macros
             .get(self.workspace.selected_macro)
             .map(|m| m.name.as_str())
+    }
+
+    /// Root-loop child count of the selected macro (docs / interaction harnesses).
+    pub fn docs_selected_root_child_count(&self) -> usize {
+        self.workspace
+            .macros
+            .get(self.workspace.selected_macro)
+            .map(|m| m.root.children().len())
+            .unwrap_or(0)
     }
 }

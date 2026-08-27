@@ -3,7 +3,7 @@
 use crate::image_view::{self, ImageViewTransform};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
-use sqyre_capture::{mark_site, shared_capturer, OsCapturer};
+use sqyre_capture::{mark_site, shared_capturer_nonblocking, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use sqyre_ports::{CaptureError, DesktopRect};
@@ -38,6 +38,7 @@ const POINT_OUTLINE_HALF: i32 = 10;
 pub enum PreviewKind {
     Point,
     SearchArea,
+    Collection,
 }
 
 struct CacheEntry {
@@ -66,8 +67,10 @@ pub struct PreviewTooltipCache {
     pending: HashMap<String, PendingCapture>,
     /// Failed captures — avoids respawning on every repaint for permanent errors.
     failures: HashMap<String, FailureEntry>,
-    /// Desktop outline requested by a tooltip preview this frame (absolute corners).
+    /// Desktop outline from an embedded preview (action tooltip body, edit form).
     desktop_outline: Option<(i32, i32, i32, i32)>,
+    /// Desktop outline from a hovered list row / coord label; wins over embedded.
+    desktop_outline_hover: Option<(i32, i32, i32, i32)>,
 }
 
 impl PreviewTooltipCache {
@@ -82,7 +85,10 @@ impl PreviewTooltipCache {
         }
         let prefix_pt = format!("pt:{name}:");
         let prefix_sa = format!("sa:{name}:");
-        let drop = |k: &str| k.starts_with(&prefix_pt) || k.starts_with(&prefix_sa);
+        let prefix_col = format!("col:{name}:");
+        let drop = |k: &str| {
+            k.starts_with(&prefix_pt) || k.starts_with(&prefix_sa) || k.starts_with(&prefix_col)
+        };
         self.entries.retain(|k, _| !drop(k));
         self.order.retain(|k| !drop(k));
         self.pending.retain(|k, _| !drop(k));
@@ -95,6 +101,7 @@ impl PreviewTooltipCache {
         self.pending.clear();
         self.failures.clear();
         self.desktop_outline = None;
+        self.desktop_outline_hover = None;
     }
 
     /// Absolute desktop corners requested by a tooltip preview last frame, if any.
@@ -102,11 +109,20 @@ impl PreviewTooltipCache {
     /// Consumed by the recording overlay so the gold selection outline is drawn on
     /// the real desktop at the point / search-area location while the tip is open.
     pub fn take_desktop_outline(&mut self) -> Option<(i32, i32, i32, i32)> {
-        self.desktop_outline.take()
+        let outline = self
+            .desktop_outline_hover
+            .take()
+            .or_else(|| self.desktop_outline.take());
+        self.desktop_outline = None;
+        outline
     }
 
-    fn request_desktop_outline(&mut self, coords: PreviewCoords) {
+    fn request_desktop_outline_embedded(&mut self, coords: PreviewCoords) {
         self.desktop_outline = Some(desktop_outline_rect(coords));
+    }
+
+    fn request_desktop_outline_hover(&mut self, coords: PreviewCoords) {
+        self.desktop_outline_hover = Some(desktop_outline_rect(coords));
     }
 
     /// Paint an egui hover tooltip for a program entity list row.
@@ -124,7 +140,7 @@ impl PreviewTooltipCache {
         }
         match entity_preview_spec(catalog, program, name, kind) {
             Ok((key, caption, coords)) => {
-                self.request_desktop_outline(coords);
+                self.request_desktop_outline_hover(coords);
                 let preview =
                     self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
                 response.clone().on_hover_ui(|ui| match &preview {
@@ -156,9 +172,10 @@ impl PreviewTooltipCache {
         kind: PreviewKind,
         force: bool,
     ) {
-        let preview = match ref_preview_spec(catalog, coord_ref, kind) {
+        let macro_ = Macro::new("", 0, vec![]);
+        let preview = match ref_preview_spec(catalog, &macro_, coord_ref, kind) {
             Ok((key, caption, coords)) => {
-                self.request_desktop_outline(coords);
+                self.request_desktop_outline_embedded(coords);
                 self.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM)
             }
             Err(err) => Err(err),
@@ -186,9 +203,10 @@ impl PreviewTooltipCache {
             return;
         }
         let label = coord_ref.as_str().to_string();
-        let preview = match ref_preview_spec(catalog, coord_ref, kind) {
+        let macro_ = Macro::new("", 0, vec![]);
+        let preview = match ref_preview_spec(catalog, &macro_, coord_ref, kind) {
             Ok((key, caption, coords)) => {
-                self.request_desktop_outline(coords);
+                self.request_desktop_outline_hover(coords);
                 match self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM) {
                     Ok((tex, cap)) => Ok((tex, cap)),
                     Err(err) => Err((caption, err)),
@@ -236,7 +254,7 @@ impl PreviewTooltipCache {
     }
 
     /// Embedded form-panel preview for a search area (uses form field coords).
-    /// Returns the viewport rect for cardinal coord overlays.
+    /// Returns the viewport rect and native image size (for heatmap alignment).
     /// Pass `None` for a coordinate that is a variable or non-literal expression.
     #[allow(clippy::too_many_arguments)]
     pub fn paint_search_area_panel(
@@ -248,9 +266,12 @@ impl PreviewTooltipCache {
         bottom: Option<i32>,
         force: bool,
         view: &mut ImageViewTransform,
-    ) -> egui::Rect {
+    ) -> (egui::Rect, egui::Vec2) {
         let (Some(left), Some(top), Some(right), Some(bottom)) = (left, top, right, bottom) else {
-            return paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG, view);
+            return (
+                paint_preview_panel_placeholder(ui, LITERAL_COORDS_MSG, view),
+                egui::Vec2::ZERO,
+            );
         };
         let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
         let caption = format!("Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}");
@@ -263,13 +284,21 @@ impl PreviewTooltipCache {
                 top,
                 right,
                 bottom,
+                grid: None,
             },
             force,
             PANEL_MAX_DIM,
         );
         match preview {
-            Ok((tex, _)) => paint_preview_panel_image(ui, &tex, view),
-            Err(err) => paint_preview_panel_placeholder(ui, &err, view),
+            Ok((tex, _)) => {
+                let [tw, th] = tex.size();
+                let rect = paint_preview_panel_image(ui, &tex, view);
+                (rect, egui::vec2(tw as f32, th as f32))
+            }
+            Err(err) => (
+                paint_preview_panel_placeholder(ui, &err, view),
+                egui::Vec2::ZERO,
+            ),
         }
     }
 
@@ -343,7 +372,7 @@ impl PreviewTooltipCache {
         #[cfg(target_os = "windows")]
         {
             mark_site("preview:capture_sync");
-            match capture_preview(capturer.as_ref(), coords, max_dim) {
+            match capture_preview(capturer.as_ref(), coords, max_dim, force) {
                 Ok(img) => {
                     self.failures.remove(key);
                     return self.finish_texture(ctx, key, caption, img, max_dim);
@@ -359,8 +388,9 @@ impl PreviewTooltipCache {
         #[cfg(not(target_os = "windows"))]
         {
             let (tx, rx) = std::sync::mpsc::channel();
+            let fresh = force;
             thread::spawn(move || {
-                let _ = tx.send(capture_preview(capturer.as_ref(), coords, max_dim));
+                let _ = tx.send(capture_preview(capturer.as_ref(), coords, max_dim, fresh));
             });
             self.pending.insert(
                 key.to_string(),
@@ -420,12 +450,18 @@ impl PreviewTooltipCache {
         if self.capturer.is_some() {
             return Ok(());
         }
-        match shared_capturer() {
+        match shared_capturer_nonblocking() {
             Ok(c) => {
                 self.capturer = Some(c);
                 Ok(())
             }
             Err(e) => {
+                // Portal open still in flight — retry on the next hover, do not latch failure.
+                if sqyre_capture::shared_capturer_open_may_block()
+                    && sqyre_capture::shared_capturer_if_ready().is_none()
+                {
+                    return Err(e.to_string());
+                }
                 self.capturer_failed = true;
                 Err(e.to_string())
             }
@@ -463,6 +499,7 @@ enum PreviewCoords {
         top: i32,
         right: i32,
         bottom: i32,
+        grid: Option<(i32, i32)>,
     },
 }
 
@@ -470,7 +507,15 @@ fn capture_preview(
     capturer: &OsCapturer,
     coords: PreviewCoords,
     max_dim: u32,
+    fresh: bool,
 ) -> Result<RgbaImage, CaptureError> {
+    let capture_rect = |bounds: DesktopRect| {
+        if fresh {
+            capturer.capture_rect_fresh_ref(bounds)
+        } else {
+            capturer.capture_rect_ref(bounds)
+        }
+    };
     let vb = capturer.virtual_bounds_ref()?;
     match coords {
         PreviewCoords::Point { x, y } => {
@@ -484,7 +529,7 @@ fn capture_preview(
                 )));
             }
             let bounds = preview_bounds_for_point(x, y, vb);
-            let mut img = capturer.capture_rect_ref(bounds)?;
+            let mut img = capture_rect(bounds)?;
             draw_point_marker(&mut img, x - bounds.x, y - bounds.y, OVERLAY, 2);
             Ok(downscale_max_dim(img, max_dim))
         }
@@ -493,6 +538,7 @@ fn capture_preview(
             top,
             right,
             bottom,
+            grid,
         } => {
             let (lx, ty, rx, by) = normalize_rect(left, top, right, bottom);
             if rx <= lx || by <= ty {
@@ -504,16 +550,15 @@ fn capture_preview(
                 });
             }
             let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
-            let mut img = capturer.capture_rect_ref(bounds)?;
-            draw_rect_outline(
-                &mut img,
-                lx - bounds.x,
-                ty - bounds.y,
-                rx - bounds.x,
-                by - bounds.y,
-                OVERLAY,
-                2,
-            );
+            let mut img = capture_rect(bounds)?;
+            let olx = lx - bounds.x;
+            let oty = ty - bounds.y;
+            let orx = rx - bounds.x;
+            let oby = by - bounds.y;
+            draw_rect_outline(&mut img, olx, oty, orx, oby, OVERLAY);
+            if let Some((rows, cols)) = grid {
+                draw_grid_lines(&mut img, (olx, oty, orx, oby), rows, cols, OVERLAY, 1);
+            }
             Ok(downscale_max_dim(img, max_dim))
         }
     }
@@ -538,14 +583,14 @@ pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, Pre
 
 fn ref_preview_spec(
     catalog: &ProgramCatalog,
+    macro_: &Macro,
     coord_ref: &CoordinateRef,
     kind: PreviewKind,
 ) -> Result<(String, String, PreviewCoords), String> {
-    let macro_ = Macro::new("", 0, vec![]);
     match kind {
         PreviewKind::Point => {
             let (x, y) = catalog
-                .resolve_point(coord_ref, &macro_)
+                .resolve_point(coord_ref, macro_)
                 .map_err(|e| e.to_string())?;
             let coords = PreviewCoords::Point { x, y };
             Ok((
@@ -554,15 +599,16 @@ fn ref_preview_spec(
                 coords,
             ))
         }
-        PreviewKind::SearchArea => {
+        PreviewKind::SearchArea | PreviewKind::Collection => {
             let (left, top, right, bottom) = catalog
-                .resolve_search_area(coord_ref, &macro_)
+                .resolve_search_area(coord_ref, macro_)
                 .map_err(|e| e.to_string())?;
             let coords = PreviewCoords::SearchArea {
                 left,
                 top,
                 right,
                 bottom,
+                grid: None,
             };
             Ok((
                 cache_key_ref(coord_ref, coords),
@@ -581,6 +627,7 @@ fn cache_key_ref(coord_ref: &CoordinateRef, coords: PreviewCoords) -> String {
             top,
             right,
             bottom,
+            grid: _,
         } => format!(
             "ref:sa:{}:{left}:{top}:{right}:{bottom}",
             coord_ref.as_str()
@@ -636,6 +683,39 @@ fn entity_preview_spec(
                     top,
                     right,
                     bottom,
+                    grid: None,
+                },
+            ))
+        }
+        PreviewKind::Collection => {
+            let col = pdata
+                .collections
+                .get(name)
+                .ok_or(EntityPreviewError::Missing)?;
+            if col.search_area.is_empty() {
+                return Err(EntityPreviewError::Missing);
+            }
+            let sa = pdata
+                .search_areas
+                .get(res)
+                .or_else(|| pdata.search_areas.values().next())
+                .and_then(|m| m.get(&col.search_area))
+                .ok_or(EntityPreviewError::Missing)?;
+            let left = coord_to_literal(&sa.left_x).ok_or(EntityPreviewError::NonLiteral)?;
+            let top = coord_to_literal(&sa.top_y).ok_or(EntityPreviewError::NonLiteral)?;
+            let right = coord_to_literal(&sa.right_x).ok_or(EntityPreviewError::NonLiteral)?;
+            let bottom = coord_to_literal(&sa.bottom_y).ok_or(EntityPreviewError::NonLiteral)?;
+            let rows = col.rows.max(1);
+            let cols = col.cols.max(1);
+            Ok((
+                cache_key_collection(&col.name, sa, rows, cols),
+                collection_caption(sa, rows, cols),
+                PreviewCoords::SearchArea {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                    grid: Some((rows, cols)),
                 },
             ))
         }
@@ -657,6 +737,19 @@ fn cache_key_search_area(sa: &ProgramSearchArea) -> String {
     )
 }
 
+fn cache_key_collection(name: &str, sa: &ProgramSearchArea, rows: i32, cols: i32) -> String {
+    format!(
+        "col:{}:{}:{}:{}:{}:{}x{}",
+        name,
+        sa.left_x.as_display(),
+        sa.top_y.as_display(),
+        sa.right_x.as_display(),
+        sa.bottom_y.as_display(),
+        rows,
+        cols
+    )
+}
+
 fn point_caption(pt: &ProgramPoint) -> String {
     format!("X: {}, Y: {}", pt.x.as_display(), pt.y.as_display())
 }
@@ -669,6 +762,10 @@ fn search_area_caption(sa: &ProgramSearchArea) -> String {
         sa.right_x.as_display(),
         sa.bottom_y.as_display()
     )
+}
+
+fn collection_caption(sa: &ProgramSearchArea, rows: i32, cols: i32) -> String {
+    format!("{} ({rows}×{cols})", search_area_caption(sa))
 }
 
 /// Literal numeric coordinate suitable for a live screen preview.
@@ -749,7 +846,7 @@ fn paint_preview_panel_placeholder(
         rect.center(),
         egui::Align2::CENTER_CENTER,
         err,
-        egui::FontId::proportional(13.0),
+        egui::TextStyle::Small.resolve(ui.style()),
         crate::theme::error_fg(),
     );
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
@@ -778,6 +875,7 @@ fn desktop_outline_rect(coords: PreviewCoords) -> (i32, i32, i32, i32) {
             top,
             right,
             bottom,
+            grid: _,
         } => normalize_rect(left, top, right, bottom),
     }
 }
@@ -921,26 +1019,49 @@ fn draw_vline(img: &mut RgbaImage, x: i32, y0: i32, y1: i32, c: Rgba<u8>, thick:
     }
 }
 
-fn draw_rect_outline(
-    img: &mut RgbaImage,
-    lx: i32,
-    ty: i32,
-    rx: i32,
-    by: i32,
-    c: Rgba<u8>,
-    thick: i32,
-) {
+/// 1px stroke immediately outside exclusive `[lx, rx) × [ty, by)` so search
+/// pixels stay unpainted.
+fn draw_rect_outline(img: &mut RgbaImage, lx: i32, ty: i32, rx: i32, by: i32, c: Rgba<u8>) {
     let (lx, ty, rx, by) = normalize_rect(lx, ty, rx, by);
     if rx <= lx || by <= ty {
         return;
     }
-    // Inclusive max edge for rectangle stroke on image coords.
+    let ox0 = lx - 1;
+    let oy0 = ty - 1;
+    let ox1 = rx;
+    let oy1 = by;
+    draw_hline(img, oy0, ox0, ox1, c, 1);
+    draw_hline(img, oy1, ox0, ox1, c, 1);
+    draw_vline(img, ox0, oy0, oy1, c, 1);
+    draw_vline(img, ox1, oy0, oy1, c, 1);
+}
+
+fn draw_grid_lines(
+    img: &mut RgbaImage,
+    rect: (i32, i32, i32, i32),
+    rows: i32,
+    cols: i32,
+    c: Rgba<u8>,
+    thick: i32,
+) {
+    let (lx, ty, rx, by) = normalize_rect(rect.0, rect.1, rect.2, rect.3);
+    if rx <= lx || by <= ty {
+        return;
+    }
+    let rows = rows.max(1);
+    let cols = cols.max(1);
+    let w = rx - lx;
+    let h = by - ty;
     let x1 = rx - 1;
     let y1 = by - 1;
-    draw_hline(img, ty, lx, x1, c, thick);
-    draw_hline(img, y1, lx, x1, c, thick);
-    draw_vline(img, lx, ty, y1, c, thick);
-    draw_vline(img, x1, ty, y1, c, thick);
+    for i in 1..rows {
+        let y = ty + i * h / rows;
+        draw_hline(img, y, lx, x1, c, thick);
+    }
+    for i in 1..cols {
+        let x = lx + i * w / cols;
+        draw_vline(img, x, ty, y1, c, thick);
+    }
 }
 
 fn draw_point_marker(img: &mut RgbaImage, cx: i32, cy: i32, c: Rgba<u8>, thick: i32) {
@@ -974,6 +1095,27 @@ mod tests {
         assert!(b.x >= 0 && b.y >= 0);
         assert!(b.x + b.w <= vb.w);
         assert!(b.y + b.h <= vb.h);
+    }
+
+    #[test]
+    fn search_area_outline_is_one_px_outside() {
+        let black = Rgba([0, 0, 0, 255]);
+        let mut img = RgbaImage::from_pixel(10, 10, black);
+        // Exclusive search area [3, 7) × [3, 7).
+        draw_rect_outline(&mut img, 3, 3, 7, 7, OVERLAY);
+        for y in 3..7 {
+            for x in 3..7 {
+                assert_eq!(*img.get_pixel(x, y), black, "inner ({x},{y})");
+            }
+        }
+        for x in 2..=7 {
+            assert_eq!(*img.get_pixel(x, 2), OVERLAY);
+            assert_eq!(*img.get_pixel(x, 7), OVERLAY);
+        }
+        for y in 3..7 {
+            assert_eq!(*img.get_pixel(2, y), OVERLAY);
+            assert_eq!(*img.get_pixel(7, y), OVERLAY);
+        }
     }
 
     #[test]
@@ -1056,6 +1198,10 @@ mod tests {
         assert_eq!(
             search_area_caption(&sa),
             "Left: 10, Top: 20, Right: 110, Bottom: 80"
+        );
+        assert_eq!(
+            collection_caption(&sa, 2, 2),
+            "Left: 10, Top: 20, Right: 110, Bottom: 80 (2×2)"
         );
     }
 

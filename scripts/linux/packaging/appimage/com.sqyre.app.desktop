@@ -7,3 +7,4 @@ Keywords=sqyre;macro;automation;
 Icon=com.sqyre.app
 Exec=sqyre
 Terminal=false
+StartupWMClass=sqyre

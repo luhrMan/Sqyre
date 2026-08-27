@@ -3,20 +3,25 @@
 use crate::window_match::{paths_equal, pick_matching_icon, titles_equal};
 use crate::{CaptureError, ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use parking_lot::Mutex;
-use sqyre_ports::{AutomationError, WindowFocuser};
-use std::collections::HashSet;
+use sqyre_ports::AutomationError;
+use std::collections::{HashMap, HashSet};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_ulong;
 use std::path::{Path, PathBuf};
 use std::ptr;
 use x11::xlib::{
-    Atom, ClientMessage, Display, False, PropModeReplace, Success, True, Window, XChangeProperty,
-    XDefaultRootWindow, XEvent, XFlush, XFree, XGetWMName, XGetWindowProperty, XInternAtom,
-    XOpenDisplay, XSendEvent, _XDisplay, XA_ATOM, XA_CARDINAL, XA_WINDOW,
+    Atom, CWBackPixel, ClientMessage, Display, False, PropModeReplace, Success, True, Window,
+    XChangeProperty, XChangeWindowAttributes, XDefaultRootWindow, XEvent, XFlush, XFree,
+    XGetGeometry, XGetWMName, XGetWindowProperty, XInternAtom, XMoveWindow, XOpenDisplay,
+    XSendEvent, XSetWindowAttributes, _XDisplay, XA_ATOM, XA_CARDINAL, XA_WINDOW,
 };
 
 /// Title used by floating macro-overlay viewports (`macro_overlay`).
 pub const OVERLAY_WM_TITLE: &str = "sqyre-overlay";
+
+/// Title for overlay tooltip viewports — must differ from [`OVERLAY_WM_TITLE`]
+/// so X11 geometry sync does not treat tips as buttons.
+pub const OVERLAY_TIP_WM_TITLE: &str = "sqyre-overlay-tip";
 
 /// Process-lifetime X11 display for focus / window-list APIs (serialized via Mutex).
 struct SharedFocusDisplay {
@@ -29,9 +34,9 @@ unsafe impl Send for SharedFocusDisplay {}
 
 static SHARED_FOCUS: Mutex<Option<SharedFocusDisplay>> = Mutex::new(None);
 
-fn with_display<F, R>(f: F) -> Result<R, String>
+fn with_display<F, R>(f: F) -> Result<R, CaptureError>
 where
-    F: FnOnce(*mut _XDisplay) -> Result<R, String>,
+    F: FnOnce(*mut _XDisplay) -> Result<R, CaptureError>,
 {
     let mut guard = SHARED_FOCUS.lock();
     if guard.is_none() {
@@ -40,7 +45,7 @@ where
         unsafe {
             let display = XOpenDisplay(ptr::null());
             if display.is_null() {
-                return Err("XOpenDisplay failed".into());
+                return Err(CaptureError::OpenDisplay);
             }
             crate::x11_secondary::register(display);
             *guard = Some(SharedFocusDisplay { display });
@@ -50,37 +55,26 @@ where
     f(display)
 }
 
-/// Focus a top-level window by executable path + window title.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct OsWindowFocuser;
-
-impl WindowFocuser for OsWindowFocuser {
-    fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError> {
-        activate_window(process_path, window_title)
-    }
-}
-
 /// List open top-level windows with title + executable path.
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     // SAFETY: `display` comes from `with_display`, which guarantees a live,
     // non-null `XOpenDisplay` connection for the duration of this call.
-    with_display(|display| unsafe { list_on_display(display) }).map_err(CaptureError::Message)
+    with_display(|display| unsafe { list_on_display(display) })
 }
 
 /// Currently focused top-level window (`_NET_ACTIVE_WINDOW`), if any.
 pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
-    crate::diag::mark_site("x11:get_active_window:before_open");
+    // No mark_site here — overlay focus polls this every few hundred ms; disk
+    // flush on each call makes gated buttons feel laggy.
     let result = with_display(|display| {
-        crate::diag::mark_site("x11:get_active_window:on_display");
         // SAFETY: `display` comes from `with_display`, which guarantees a live,
         // non-null `XOpenDisplay` connection for the duration of this call.
         unsafe { active_on_display(display) }
     });
-    crate::diag::mark_site("x11:get_active_window:done");
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:get_active_window err: {e}"));
     }
-    result.map_err(CaptureError::Message)
+    result
 }
 
 /// Icon for a bound process: matching open window's `_NET_WM_ICON`, if any.
@@ -89,7 +83,7 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
     if path.is_empty() {
         return None;
     }
-    with_display(|display| -> Result<Option<ProcessIcon>, String> {
+    with_display(|display| -> Result<Option<ProcessIcon>, CaptureError> {
         // SAFETY: `display` comes from `with_display`, which guarantees a live,
         // non-null `XOpenDisplay` connection for the duration of this call.
         let infos = unsafe {
@@ -114,27 +108,61 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
 
 /// Ask the WM to omit this process's overlay tool windows from taskbar / pager / Alt-Tab.
 ///
-/// egui-winit's `with_taskbar(false)` is Windows-only. Overlay buttons use Dock type
-/// (Mutter skips docks from Alt-Tab), but we still set `_NET_WM_STATE_SKIP_TASKBAR` and
-/// `_NET_WM_STATE_SKIP_PAGER` on top-level windows we own whose title matches
-/// [`OVERLAY_WM_TITLE`], and re-assert `_NET_WM_WINDOW_TYPE_DOCK` in case the WM
-/// remapped the type.
+/// egui-winit's `with_taskbar(false)` is Windows-only. Overlay buttons use Notification type
+/// with [`OVERLAY_WM_TITLE`]; we set `_NET_WM_STATE_SKIP_TASKBAR` and
+/// `_NET_WM_STATE_SKIP_PAGER` on those top-level windows, and re-assert
+/// `_NET_WM_WINDOW_TYPE_NOTIFICATION` (not Dock — Mutter can autohide docks under fullscreen).
 pub fn skip_taskbar_for_overlay_windows() -> Result<(), CaptureError> {
-    crate::diag::mark_site("x11:skip_taskbar:before_open");
     let result = with_display(|display| {
-        crate::diag::mark_site("x11:skip_taskbar:on_display");
         // SAFETY: `display` comes from `with_display`, which guarantees a live,
         // non-null `XOpenDisplay` connection for the duration of this call.
         unsafe { skip_taskbar_on_display(display) }
     });
-    crate::diag::mark_site("x11:skip_taskbar:done");
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:skip_taskbar err: {e}"));
     }
-    result.map_err(CaptureError::Message)
+    result
 }
 
-fn activate_window(process_path: &str, window_title: &str) -> Result<(), AutomationError> {
+/// X11: move overlay tool windows to desktop coordinates (Wayland winit ignores position).
+///
+/// `hints` are `(button_id, phys_x, phys_y, phys_w, phys_h)` in overlay sync order.
+/// `last_positions` stores the last applied top-left per id so windows can be matched after moves.
+pub fn sync_overlay_window_geometry(
+    hints: &[(String, i32, i32, u32, u32)],
+    last_positions: &mut HashMap<String, (i32, i32)>,
+) -> Result<(), CaptureError> {
+    if hints.is_empty() {
+        return Ok(());
+    }
+    let result = with_display(|display| {
+        // SAFETY: `display` comes from `with_display`, which guarantees a live,
+        // non-null `XOpenDisplay` connection for the duration of this call.
+        unsafe { sync_overlay_geometry_on_display(display, hints, last_positions) }
+    });
+    if let Err(ref e) = result {
+        crate::diag::note(&format!("x11:overlay_geom err: {e}"));
+    }
+    result
+}
+
+/// X11: clear opaque backings on overlay tool windows (glow deferred viewports).
+pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
+    let result = with_display(|display| {
+        // SAFETY: `display` comes from `with_display`, which guarantees a live,
+        // non-null `XOpenDisplay` connection for the duration of this call.
+        unsafe { enable_overlay_transparency_on_display(display) }
+    });
+    if let Err(ref e) = result {
+        crate::diag::note(&format!("x11:overlay_transparency err: {e}"));
+    }
+    result
+}
+
+pub(crate) fn activate_window(
+    process_path: &str,
+    window_title: &str,
+) -> Result<(), AutomationError> {
     let path = process_path.trim();
     let title = window_title.trim();
     if path.is_empty() || title.is_empty() {
@@ -146,7 +174,7 @@ fn activate_window(process_path: &str, window_title: &str) -> Result<(), Automat
     // SAFETY: `display` comes from `with_display`, which guarantees a live,
     // non-null `XOpenDisplay` connection for the duration of this call.
     let activated = with_display(|display| unsafe { activate_on_display(display, path, title) })
-        .map_err(AutomationError::Backend)?;
+        .map_err(|e| AutomationError::Backend(e.to_string()))?;
     if activated {
         Ok(())
     } else {
@@ -160,7 +188,7 @@ fn activate_window(process_path: &str, window_title: &str) -> Result<(), Automat
 // SAFETY: callers must pass a live, non-null Xlib `display` connection that
 // outlives this call; all Xlib calls inside are otherwise self-contained
 // (properties are null/status-checked and freed with `XFree`).
-unsafe fn list_on_display(display: *mut _XDisplay) -> Result<Vec<WindowInfo>, String> {
+unsafe fn list_on_display(display: *mut _XDisplay) -> Result<Vec<WindowInfo>, CaptureError> {
     let root = XDefaultRootWindow(display);
     let clients = client_list(display, root)?;
     let mut out = Vec::with_capacity(clients.len());
@@ -180,7 +208,7 @@ unsafe fn list_on_display(display: *mut _XDisplay) -> Result<Vec<WindowInfo>, St
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection that
 // outlives this call.
-unsafe fn active_on_display(display: *mut _XDisplay) -> Result<Option<WindowInfo>, String> {
+unsafe fn active_on_display(display: *mut _XDisplay) -> Result<Option<WindowInfo>, CaptureError> {
     let root = XDefaultRootWindow(display);
     let Some(win) = active_window_id(display, root)? else {
         return Ok(None);
@@ -191,7 +219,10 @@ unsafe fn active_on_display(display: *mut _XDisplay) -> Result<Option<WindowInfo
 // SAFETY: callers must pass a live, non-null Xlib `display` connection and a
 // valid `root` window; `prop`/`nitems` are status- and null-checked before the
 // `Window` read, and `XFree` is called on every path that allocates `prop`.
-unsafe fn active_window_id(display: *mut Display, root: Window) -> Result<Option<Window>, String> {
+unsafe fn active_window_id(
+    display: *mut Display,
+    root: Window,
+) -> Result<Option<Window>, CaptureError> {
     let atom = intern(display, "_NET_ACTIVE_WINDOW")?;
     let mut actual_type: Atom = 0;
     let mut actual_format: i32 = 0;
@@ -351,7 +382,7 @@ unsafe fn activate_on_display(
     display: *mut _XDisplay,
     process_path: &str,
     window_title: &str,
-) -> Result<bool, String> {
+) -> Result<bool, CaptureError> {
     let root = XDefaultRootWindow(display);
     let clients = client_list(display, root)?;
     for win in clients {
@@ -378,7 +409,7 @@ unsafe fn activate_on_display(
 // SAFETY: callers must pass a live, non-null Xlib `display` connection and a
 // valid `root` window; `prop`/`nitems` are status- and null-checked before the
 // slice is built, and `XFree` is called on every path that allocates `prop`.
-unsafe fn client_list(display: *mut Display, root: Window) -> Result<Vec<Window>, String> {
+unsafe fn client_list(display: *mut Display, root: Window) -> Result<Vec<Window>, CaptureError> {
     let atom = intern(display, "_NET_CLIENT_LIST")?;
     let mut actual_type: Atom = 0;
     let mut actual_format: i32 = 0;
@@ -403,7 +434,9 @@ unsafe fn client_list(display: *mut Display, root: Window) -> Result<Vec<Window>
         if !prop.is_null() {
             XFree(prop as *mut _);
         }
-        return Err("failed to read _NET_CLIENT_LIST".into());
+        return Err(CaptureError::Message(
+            "failed to read _NET_CLIENT_LIST".into(),
+        ));
     }
     let slice = std::slice::from_raw_parts(prop as *const Window, nitems as usize);
     let out = slice.to_vec();
@@ -535,7 +568,7 @@ unsafe fn set_active_window(
     display: *mut Display,
     root: Window,
     win: Window,
-) -> Result<(), String> {
+) -> Result<(), CaptureError> {
     let atom = intern(display, "_NET_ACTIVE_WINDOW")?;
     let mut data = x11::xlib::ClientMessageData::new();
     data.set_long(0, 2); // source indication: pager
@@ -561,25 +594,29 @@ unsafe fn set_active_window(
     let mask = SUBSTRUCTURE_REDIRECT | SUBSTRUCTURE_NOTIFY;
     let status = XSendEvent(display, root, False, mask, &mut event);
     if status == 0 {
-        return Err("XSendEvent _NET_ACTIVE_WINDOW failed".into());
+        return Err(CaptureError::Message(
+            "XSendEvent _NET_ACTIVE_WINDOW failed".into(),
+        ));
     }
     XFlush(display);
     Ok(())
 }
 
+struct OverlayWindowGeom {
+    win: Window,
+    x: i32,
+    y: i32,
+}
+
 // SAFETY: callers must pass a live, non-null Xlib `display` connection that
-// outlives this call; the windows passed on come from `_NET_CLIENT_LIST` on
-// that same connection.
-unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), String> {
+// outlives this call.
+unsafe fn overlay_windows_on_display(
+    display: *mut _XDisplay,
+) -> Result<Vec<OverlayWindowGeom>, CaptureError> {
     let our_pid = std::process::id();
     let root = XDefaultRootWindow(display);
     let clients = client_list(display, root)?;
-    let state = intern(display, "_NET_WM_STATE")?;
-    let skip_taskbar = intern(display, "_NET_WM_STATE_SKIP_TASKBAR")?;
-    let skip_pager = intern(display, "_NET_WM_STATE_SKIP_PAGER")?;
-    let win_type = intern(display, "_NET_WM_WINDOW_TYPE")?;
-    let type_dock = intern(display, "_NET_WM_WINDOW_TYPE_DOCK")?;
-    let mut hinted = 0u32;
+    let mut out = Vec::new();
     for win in clients {
         let Some(pid) = window_pid(display, win) else {
             continue;
@@ -593,29 +630,139 @@ unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), String>
         if title.trim() != OVERLAY_WM_TITLE {
             continue;
         }
-        // Dock type: Mutter/GNOME omit these from Alt-Tab even without skip hints.
-        set_window_type_dock(display, win, win_type, type_dock);
-        // EWMH: clients request state changes via ClientMessage to the root.
-        send_net_wm_state_add(display, root, win, state, skip_taskbar, skip_pager);
-        hinted += 1;
+        let Some((x, y, _w, _h)) = window_geometry(display, win) else {
+            continue;
+        };
+        out.push(OverlayWindowGeom { win, x, y });
+    }
+    Ok(out)
+}
+
+// SAFETY: callers must pass a live, non-null Xlib `display` connection and a valid `win`.
+unsafe fn window_geometry(display: *mut Display, win: Window) -> Option<(i32, i32, u32, u32)> {
+    let mut root_return: Window = 0;
+    let mut x: i32 = 0;
+    let mut y: i32 = 0;
+    let mut width: u32 = 0;
+    let mut height: u32 = 0;
+    let mut border_width: u32 = 0;
+    let mut depth: u32 = 0;
+    if XGetGeometry(
+        display,
+        win,
+        &mut root_return,
+        &mut x,
+        &mut y,
+        &mut width,
+        &mut height,
+        &mut border_width,
+        &mut depth,
+    ) == 0
+    {
+        return None;
+    }
+    Some((x, y, width, height))
+}
+
+// SAFETY: callers must pass a live, non-null Xlib `display` connection that
+// outlives this call.
+unsafe fn sync_overlay_geometry_on_display(
+    display: *mut _XDisplay,
+    hints: &[(String, i32, i32, u32, u32)],
+    last_positions: &mut HashMap<String, (i32, i32)>,
+) -> Result<(), CaptureError> {
+    let windows = overlay_windows_on_display(display)?;
+    if windows.is_empty() {
+        return Ok(());
+    }
+    let mut used = HashSet::new();
+    for (id, nx, ny, _nw, _nh) in hints {
+        let hint = last_positions.get(id).copied().unwrap_or((*nx, *ny));
+        let mut best: Option<(usize, i64)> = None;
+        for (idx, geom) in windows.iter().enumerate() {
+            if used.contains(&idx) {
+                continue;
+            }
+            let dx = geom.x - hint.0;
+            let dy = geom.y - hint.1;
+            let dist = (dx as i64) * (dx as i64) + (dy as i64) * (dy as i64);
+            match best {
+                None => best = Some((idx, dist)),
+                Some((_, best_dist)) if dist < best_dist => best = Some((idx, dist)),
+                _ => {}
+            }
+        }
+        let Some((idx, _)) = best else {
+            continue;
+        };
+        used.insert(idx);
+        // Position only — never resize; egui owns overlay window size.
+        XMoveWindow(display, windows[idx].win, *nx, *ny);
+        last_positions.insert(id.clone(), (*nx, *ny));
     }
     XFlush(display);
-    if hinted > 0 {
-        crate::diag::mark_site(&format!("x11:skip_taskbar:hinted={hinted}"));
+    Ok(())
+}
+
+// SAFETY: callers must pass a live, non-null Xlib `display` connection that
+// outlives this call.
+unsafe fn enable_overlay_transparency_on_display(
+    display: *mut _XDisplay,
+) -> Result<(), CaptureError> {
+    let windows = overlay_windows_on_display(display)?;
+    if windows.is_empty() {
+        return Ok(());
     }
+    let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+    attrs.background_pixel = 0;
+    let mask = CWBackPixel;
+    for geom in windows {
+        XChangeWindowAttributes(display, geom.win, mask, &mut attrs);
+    }
+    XFlush(display);
+    Ok(())
+}
+
+// SAFETY: callers must pass a live, non-null Xlib `display` connection that
+// outlives this call; the windows passed on come from `_NET_CLIENT_LIST` on
+// that same connection.
+unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), CaptureError> {
+    let our_pid = std::process::id();
+    let root = XDefaultRootWindow(display);
+    let clients = client_list(display, root)?;
+    let state = intern(display, "_NET_WM_STATE")?;
+    let skip_taskbar = intern(display, "_NET_WM_STATE_SKIP_TASKBAR")?;
+    let skip_pager = intern(display, "_NET_WM_STATE_SKIP_PAGER")?;
+    let win_type = intern(display, "_NET_WM_WINDOW_TYPE")?;
+    let type_notification = intern(display, "_NET_WM_WINDOW_TYPE_NOTIFICATION")?;
+    for win in clients {
+        let Some(pid) = window_pid(display, win) else {
+            continue;
+        };
+        if pid != our_pid {
+            continue;
+        }
+        let Some(title) = window_title_of(display, win) else {
+            continue;
+        };
+        if title.trim() != OVERLAY_WM_TITLE {
+            continue;
+        }
+        // Property replace so the hint sticks even if the WM ignores ClientMessage
+        // before the window is fully mapped (common for deferred egui viewports).
+        set_window_type(display, win, win_type, type_notification);
+        set_net_wm_state(display, win, state, &[skip_taskbar, skip_pager]);
+        send_net_wm_state_add(display, root, win, state, skip_taskbar, skip_pager);
+    }
+    XFlush(display);
     Ok(())
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection, a valid
 // `win`, and atoms interned on that connection; the single-element `atom` buffer
 // matches the `format: 32` / `nelements: 1` passed to `XChangeProperty`.
-unsafe fn set_window_type_dock(
-    display: *mut Display,
-    win: Window,
-    win_type: Atom,
-    type_dock: Atom,
-) {
-    let mut atom = type_dock;
+unsafe fn set_window_type(display: *mut Display, win: Window, win_type: Atom, type_atom: Atom) {
+    let mut atom = type_atom;
     XChangeProperty(
         display,
         win,
@@ -625,6 +772,25 @@ unsafe fn set_window_type_dock(
         PropModeReplace,
         &mut atom as *mut Atom as *mut u8,
         1,
+    );
+}
+
+// SAFETY: callers must pass a live, non-null Xlib `display` connection, a valid
+// `win`, and atoms interned on that connection; `atoms` is copied into the property.
+unsafe fn set_net_wm_state(display: *mut Display, win: Window, state_atom: Atom, atoms: &[Atom]) {
+    if atoms.is_empty() {
+        return;
+    }
+    let mut buf = atoms.to_vec();
+    XChangeProperty(
+        display,
+        win,
+        state_atom,
+        XA_ATOM,
+        32,
+        PropModeReplace,
+        buf.as_mut_ptr() as *mut u8,
+        buf.len() as i32,
     );
 }
 
@@ -667,11 +833,11 @@ unsafe fn send_net_wm_state_add(
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection; the
 // `CString` outlives the `XInternAtom` call that reads its pointer.
-unsafe fn intern(display: *mut Display, name: &str) -> Result<Atom, String> {
-    let c = CString::new(name).map_err(|e| e.to_string())?;
+unsafe fn intern(display: *mut Display, name: &str) -> Result<Atom, CaptureError> {
+    let c = CString::new(name).map_err(|e| CaptureError::Message(e.to_string()))?;
     let atom = XInternAtom(display, c.as_ptr(), False);
     if atom == 0 {
-        Err(format!("XInternAtom {name} failed"))
+        Err(CaptureError::Message(format!("XInternAtom {name} failed")))
     } else {
         Ok(atom)
     }

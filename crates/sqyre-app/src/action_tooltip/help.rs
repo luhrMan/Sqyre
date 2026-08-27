@@ -44,11 +44,12 @@ pub const TYPE_DELAY: &str = "Milliseconds between each character.";
 
 // --- Move ---
 
-pub const MOVE_POINT: &str = "Target point from the Data Editor (program~name).";
+pub const MOVE_POINT: &str = "Target point from the Data Editor (program~name). Required to run.";
 pub const MOVE_SMOOTH: &str = "Animate the cursor instead of teleporting.";
-pub const MOVE_SMOOTH_LOW: &str = "Minimum fraction of the path used for easing (0–1).";
-pub const MOVE_SMOOTH_HIGH: &str = "Maximum fraction of the path used for easing (0–1).";
-pub const MOVE_SMOOTH_DELAY: &str = "Milliseconds between smooth-move steps.";
+pub const MOVE_SMOOTH_LOW: &str = "Minimum smooth-move duration in seconds.";
+pub const MOVE_SMOOTH_HIGH: &str = "Maximum smooth-move duration in seconds.";
+pub const MOVE_SMOOTH_DELAY: &str =
+    "Milliseconds between smooth-move steps (Linux). Windows uses a fixed 10 ms step.";
 
 // --- Pause ---
 
@@ -110,7 +111,7 @@ pub const FOREACH_REMOVE_SOURCE: &str = "Remove this source.";
 
 // --- Detection shared ---
 
-pub const SEARCH_AREA: &str = "Screen region to scan (from the Data Editor).";
+pub const SEARCH_AREA: &str = "Screen region to scan (from the Data Editor). Required to run.";
 pub const REPEAT_MODE: &str =
     "once = single try; wait* = silent poll then one branch; repeat* = run branch each pass.";
 pub const WAIT_SECONDS: &str = "How long to keep retrying (seconds). Required for wait modes.";
@@ -175,7 +176,8 @@ pub const NAV_HOLD_REPEAT: &str = "Repeat movement while a chord is held.";
 pub const NAV_SELECT_DEVICE: &str = "mouse or keyboard for the Select action.";
 pub const NAV_SELECT_BUTTON: &str = "Mouse button used when Select device is mouse.";
 pub const NAV_SELECT_KEY: &str = "Key used when Select device is keyboard.";
-pub const NAV_SELECT_PRESS: &str = "click = down+up; down or up for a single edge.";
+pub const NAV_SELECT_PRESS: &str =
+    "click = down+up; down or hold keeps the button/key down; up releases.";
 pub const NAV_IN_ATLAS: &str = "Optional starting Atlas override (variable or name).";
 pub const NAV_IN_ROW: &str = "Optional starting row override.";
 pub const NAV_IN_COL: &str = "Optional starting column override.";
@@ -195,7 +197,8 @@ pub const NAV_KEY_CHORD: &str = "Keys that trigger this branch (one per line).";
 
 // --- Data editor ---
 
-pub const DE_NAME: &str = "Unique name within this program.";
+pub const DE_NAME: &str =
+    "Unique name within this program. Cannot contain < > : \" / \\ | ? * or end with a period.";
 pub const DE_RUNNING_PROGRAM: &str =
     "Process and window title that must be focused for overlay buttons.";
 pub const DE_COLS: &str = "Grid columns for this item (0 = unset).";
@@ -209,6 +212,8 @@ pub const DE_AREA_LEFT: &str = "Left edge X of the search area.";
 pub const DE_AREA_TOP: &str = "Top edge Y of the search area.";
 pub const DE_AREA_RIGHT: &str = "Right edge X of the search area.";
 pub const DE_AREA_BOTTOM: &str = "Bottom edge Y of the search area.";
+pub const DE_SCREENCAP_REF: &str =
+    "Optional. Picking a search area or collection cell loads its bounds into LeftX/TopY/RightX/BottomY and suggests a filename.";
 pub const DE_COLLECTION_AREA: &str = "Search area used when capturing this collection.";
 pub const DE_COLLECTION_ROWS: &str = "Number of rows in the collection grid.";
 pub const DE_COLLECTION_COLS: &str = "Number of columns in the collection grid.";

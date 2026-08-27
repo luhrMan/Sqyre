@@ -35,7 +35,7 @@ pub use expr::{evaluate_expression, numeric_to_scalar};
 pub use expr_error::{ExprError, ResolveError};
 pub use keys::{
     failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
-    validate_continue_key, validate_not_failsafe, FAILSAFE_KEYS, FAILSAFE_LABEL,
+    validate_continue_key, validate_not_failsafe, KeyError, FAILSAFE_KEYS, FAILSAFE_LABEL,
 };
 pub use macro_model::*;
 pub use match_method::MatchMethod;

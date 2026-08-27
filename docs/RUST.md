@@ -34,7 +34,7 @@ Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux bin
 
 Requires **Rust ≥ 1.92** (egui 0.35 / PureCV). The repo pins `1.92.0` via [`rust-toolchain.toml`](../rust-toolchain.toml); the `.devcontainer` matches that plus clang/Tesseract for OCR.
 
-Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`). Windows uses GDI capture plus Win32 focus, selection outline, and low-level hotkey hooks (`windows` crate). macOS capture/focus remain stubbed.
+Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`, `libxinerama-dev`, `libxfixes-dev`). Windows uses GDI capture plus Win32 focus, selection outline, and low-level hotkey hooks (`windows` crate). macOS capture/focus remain stubbed.
 
 From the repo root:
 
@@ -45,6 +45,9 @@ make windows         # fmt + check, then ./bin/sqyre.exe (Docker MinGW cross / n
 make macos           # fmt + check, then ./bin/sqyre (macOS host)
 make check           # fmt --check + clippy (-D warnings) + cargo deny
 make test            # cargo nextest (falls back to cargo test)
+make smoke           # debug bin/sqyre --version
+make bench           # criterion (match / vision / serialize; not CI)
+make wasm-check      # cargo check wasm32 sqyre-app --no-default-features
 make coverage        # llvm-cov HTML + lcov under target/coverage/
 make run             # cargo run -p sqyre-app; loads ~/.sqyre/db.yaml
 make appimage        # fmt + check, then Linux AppImage

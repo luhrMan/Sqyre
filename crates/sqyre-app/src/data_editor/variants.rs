@@ -1,4 +1,4 @@
-//! Item icon variants, mask images, AutoPic save.
+//! Item icon variants, mask images, ScreenCap save.
 
 use super::helpers::{copy_image_as_png, form_coord_i32};
 use super::{DataEditor, PendingConfirm, VariantPrompt};
@@ -8,7 +8,8 @@ use crate::data_editor_preview::{
 use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
 use eframe::egui;
-use sqyre_persist::{auto_pic_path, ProgramCatalog, UserSettings};
+use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
+use sqyre_persist::{screen_cap_path, ProgramCatalog, UserSettings};
 use sqyre_ports::DesktopRect;
 #[cfg(feature = "native-runtime")]
 use sqyre_vision::invalidate_search_masks_under;
@@ -37,6 +38,7 @@ impl DataEditor {
                 .on_hover_text("Refresh")
                 .clicked()
             {
+                icons.invalidate_target(target);
                 for path in &paths {
                     icons.invalidate_path(path);
                 }
@@ -106,7 +108,7 @@ impl DataEditor {
         icons: &mut IconCache,
         settings: &UserSettings,
     ) {
-        let Some(path) = crate::file_dialogs::pick_png() else {
+        let Some(path) = crate::file_dialogs::pick_png(&screen_cap_path()) else {
             return;
         };
         let (Some(prog), Some(item)) =
@@ -141,7 +143,9 @@ impl DataEditor {
         match icon_variants::add_variant(catalog, &prog, &item, name, source) {
             Ok(added) => {
                 let path = icon_variants::variant_path(catalog, &prog, &item, &added);
+                let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
                 icons.invalidate_path(&path);
+                icons.invalidate_target(&target);
                 self.set_ok(format!("Added variant “{added}”."));
                 #[cfg(not(target_arch = "wasm32"))]
                 crate::sound::play_add_sound_if(settings.play_ui_sounds, settings.sound_volume);
@@ -173,7 +177,9 @@ impl DataEditor {
         match icon_variants::overwrite_variant(catalog, &prog, &item, variant, source) {
             Ok(()) => {
                 let path = icon_variants::variant_path(catalog, &prog, &item, variant);
+                let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
                 icons.invalidate_path(&path);
+                icons.invalidate_target(&target);
                 self.set_ok(format!("Overwrote variant “{variant}”."));
             }
             Err(e) => self.set_err(e),
@@ -204,7 +210,9 @@ impl DataEditor {
         match icon_variants::delete_variant(catalog, &prog, &item, variant) {
             Ok(()) => {
                 let path = icon_variants::variant_path(catalog, &prog, &item, variant);
+                let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
                 icons.invalidate_path(&path);
+                icons.invalidate_target(&target);
                 self.set_ok(format!("Deleted variant “{variant}”."));
                 #[cfg(not(target_arch = "wasm32"))]
                 crate::sound::play_delete_sound_if(settings.play_ui_sounds, settings.sound_volume);
@@ -264,21 +272,63 @@ impl DataEditor {
         }
     }
 
-    pub(crate) fn save_autopix(&mut self) {
+    /// Seed ScreenCap form buffers from a search-area or collection-cell reference.
+    /// Returns `true` when the reference resolved to desktop bounds.
+    pub(crate) fn apply_screen_cap_reference(
+        &mut self,
+        catalog: &ProgramCatalog,
+        coord: CoordinateRef,
+    ) -> bool {
+        let macro_ = Macro::new("", 0, vec![]);
+        let (lx, ty, rx, by) = match catalog.resolve_search_area(&coord, &macro_) {
+            Ok(bounds) => bounds,
+            Err(e) => {
+                self.set_err(format!("ScreenCap: {e}"));
+                return false;
+            }
+        };
+        self.form_left = lx.to_string();
+        self.form_top = ty.to_string();
+        self.form_right = rx.to_string();
+        self.form_bottom = by.to_string();
+        self.form_search_area = coord.0.clone();
+        self.form_name = match coord.cell_range() {
+            Some((r1, c1, r2, c2)) if r1 == r2 && c1 == c2 => {
+                format!("{}_r{}c{}", coord.name(), r1, c1)
+            }
+            Some((r1, c1, r2, c2)) => {
+                format!("{}_r{}c{}-r{}c{}", coord.name(), r1, c1, r2, c2)
+            }
+            None => coord.name().to_string(),
+        };
+        if let Some(prog) = coord.program() {
+            self.selected_program = Some(prog.to_string());
+        }
+        self.selected_entity = Some(coord.name().to_string());
+        self.coord_preview.reset();
+        self.coord_preview_key = None;
+        true
+    }
+
+    pub(crate) fn save_screen_cap(&mut self) {
         #[cfg(not(feature = "native-runtime"))]
         {
-            self.set_err("AutoPic requires the desktop app.");
+            self.set_err("ScreenCap requires the desktop app.");
             return;
         }
         #[cfg(feature = "native-runtime")]
         {
-            if self.autopix_pending.is_some() {
-                self.set_ok("AutoPic: capturing…");
+            if self.screen_cap_pending.is_some() {
+                self.set_ok("ScreenCap: capturing…");
                 return;
             }
             let name = self.form_name.trim().to_string();
             if name.is_empty() {
-                self.set_err("AutoPic: select a search area first.");
+                self.set_err("ScreenCap: enter a name for the saved image.");
+                return;
+            }
+            if let Err(e) = sqyre_validate::validate_entity_name(&name) {
+                self.set_err(format!("ScreenCap: {e}"));
                 return;
             }
             let lx = form_coord_i32(&self.form_left);
@@ -288,14 +338,14 @@ impl DataEditor {
             let (lx, rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
             let (ty, by) = if ty <= by { (ty, by) } else { (by, ty) };
             if rx - lx <= 0 || by - ty <= 0 {
-                self.set_err("AutoPic: invalid search area dimensions.");
+                self.set_err("ScreenCap: invalid capture dimensions.");
                 return;
             }
 
-            let capturer = match sqyre_capture::shared_capturer() {
+            let capturer = match sqyre_capture::shared_capturer_nonblocking() {
                 Ok(c) => c,
                 Err(e) => {
-                    self.set_err(format!("AutoPic: {e}"));
+                    self.set_err(format!("ScreenCap: {e}"));
                     return;
                 }
             };
@@ -312,10 +362,10 @@ impl DataEditor {
                             w: right - lx,
                             h: bottom - ty,
                         })
-                        .map_err(|e| format!("AutoPic: {e} (area: {area_name})"))?;
-                    let dir = auto_pic_path();
+                        .map_err(|e| format!("ScreenCap: {e} (area: {area_name})"))?;
+                    let dir = screen_cap_path();
                     std::fs::create_dir_all(&dir)
-                        .map_err(|e| format!("AutoPic: create dir: {e}"))?;
+                        .map_err(|e| format!("ScreenCap: create dir: {e}"))?;
                     let stamp = {
                         use web_time::{SystemTime, UNIX_EPOCH};
                         let dur = SystemTime::now()
@@ -344,35 +394,35 @@ impl DataEditor {
                     let filename = format!("{stamp}_{area_name}.png");
                     let full = dir.join(&filename);
                     img.save(&full)
-                        .map_err(|e| format!("AutoPic: save {}: {e}", full.display()))?;
-                    Ok(format!("AutoPic: saved {}", full.display()))
+                        .map_err(|e| format!("ScreenCap: save {}: {e}", full.display()))?;
+                    Ok(format!("ScreenCap: saved {}", full.display()))
                 })();
                 let _ = tx.send(result);
             });
-            self.autopix_pending = Some(result_rx);
-            self.set_ok("AutoPic: capturing…");
+            self.screen_cap_pending = Some(result_rx);
+            self.set_ok("ScreenCap: capturing…");
         }
     }
 
-    pub(crate) fn poll_autopix(&mut self, ctx: &egui::Context) {
-        let Some(rx) = self.autopix_pending.as_ref() else {
+    pub(crate) fn poll_screen_cap(&mut self, ctx: &egui::Context) {
+        let Some(rx) = self.screen_cap_pending.as_ref() else {
             return;
         };
         match rx.try_recv() {
             Ok(Ok(msg)) => {
-                self.autopix_pending = None;
+                self.screen_cap_pending = None;
                 self.set_ok(msg);
             }
             Ok(Err(e)) => {
-                self.autopix_pending = None;
+                self.screen_cap_pending = None;
                 self.set_err(e);
             }
             Err(TryRecvError::Empty) => {
                 ctx.request_repaint();
             }
             Err(TryRecvError::Disconnected) => {
-                self.autopix_pending = None;
-                self.set_err("AutoPic: capture failed");
+                self.screen_cap_pending = None;
+                self.set_err("ScreenCap: capture failed");
             }
         }
     }

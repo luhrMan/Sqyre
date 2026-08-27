@@ -67,11 +67,11 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
         },
         "click" => ActionKind::Click {
             button: "left".into(),
-            state: PressState::Down,
+            state: PressState::Tap,
         },
         "key" => ActionKind::Key {
             key: "ctrl".into(),
-            state: PressState::Down,
+            state: PressState::Tap,
         },
         "type" => ActionKind::Type {
             text: String::new(),
@@ -122,7 +122,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
         "ocr" => ActionKind::Ocr {
             name: String::new(),
             target: "template".into(),
-            search_area: CoordinateRef("template search area".into()),
+            search_area: CoordinateRef::default(),
             output_variable: String::new(),
             blur: 0,
             min_threshold: 0,
@@ -219,5 +219,22 @@ mod tests {
             }
             other => panic!("expected Move, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn blank_click_and_key_default_to_tap() {
+        let click = blank_action("click").unwrap();
+        match click.kind {
+            ActionKind::Click { state, .. } => assert_eq!(state, PressState::Tap),
+            other => panic!("expected Click, got {other:?}"),
+        }
+        assert!(click.matching_release().is_none());
+
+        let key = blank_action("key").unwrap();
+        match key.kind {
+            ActionKind::Key { state, .. } => assert_eq!(state, PressState::Tap),
+            other => panic!("expected Key, got {other:?}"),
+        }
+        assert!(key.matching_release().is_none());
     }
 }

@@ -11,6 +11,7 @@ pub fn paint_action_edit_header(
     pastel: Color32,
     subtitle: Option<&str>,
     error: Option<&str>,
+    save_enabled: bool,
 ) -> SaveCancel {
     let mut outcome = SaveCancel::None;
     ui.horizontal(|ui| {
@@ -18,7 +19,7 @@ pub fn paint_action_edit_header(
         if let Some(text) = subtitle {
             ui.label(text);
         }
-        outcome = save_cancel_row(ui);
+        outcome = save_cancel_row(ui, save_enabled);
     });
     if let Some(err) = error {
         ui.colored_label(crate::theme::error_fg(), err);

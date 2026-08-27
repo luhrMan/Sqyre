@@ -22,7 +22,9 @@ impl DataEditor {
     ) {
         let id_salt = match self.tab {
             EditorTab::Programs => "data_editor_programs",
-            EditorTab::Items | EditorTab::Masks | EditorTab::AutoPic => "data_editor_items",
+            EditorTab::Items | EditorTab::Masks | EditorTab::ScreenCap | EditorTab::PixelCheck => {
+                "data_editor_items"
+            }
             EditorTab::Overlay => "data_editor_overlay_list",
             EditorTab::Points
             | EditorTab::SearchAreas
@@ -43,8 +45,8 @@ impl DataEditor {
             if !show_collapse_chrome {
                 return;
             }
-            collapse_all_buttons(ui, |ctx, open| match tab {
-                EditorTab::Items => {
+            pickers::collapse_all_buttons(ui, |ctx, open| match tab {
+                EditorTab::Items | EditorTab::PixelCheck => {
                     pickers::set_items_icon_grid_openness(
                         ctx,
                         program_names_for_collapse.iter().map(|n| n.as_str()),
@@ -69,7 +71,7 @@ impl DataEditor {
             self.selected_program.as_deref(),
             self.selected_entity.as_deref(),
         ) {
-            (EditorTab::Items, Some(p), Some(e)) => {
+            (EditorTab::Items | EditorTab::PixelCheck, Some(p), Some(e)) => {
                 vec![format!("{p}{}{e}", sqyre_domain::PROGRAM_DELIMITER)]
             }
             _ => Vec::new(),
@@ -93,6 +95,7 @@ impl DataEditor {
                         icons,
                         name,
                         crate::icon_cache::ProgramLabelStyle::Selectable { selected },
+                        settings.compact_program_headers,
                     )
                     .clicked()
                     {
@@ -100,7 +103,7 @@ impl DataEditor {
                     }
                 }
             }
-            EditorTab::Items => {
+            EditorTab::Items | EditorTab::PixelCheck => {
                 ui.set_max_width(ui.available_width());
                 pickers::paint_items_icon_grid(
                     ui,
@@ -111,17 +114,18 @@ impl DataEditor {
                     false,
                     self.selected_program.as_deref(),
                     &mut clicked_program,
+                    settings.compact_program_headers,
                 );
             }
             EditorTab::Points
             | EditorTab::SearchAreas
             | EditorTab::Masks
             | EditorTab::Collections
-            | EditorTab::Atlases
-            | EditorTab::AutoPic => {
+            | EditorTab::Atlases => {
                 let kind = match self.tab {
                     EditorTab::Points => Some(PreviewKind::Point),
-                    EditorTab::SearchAreas | EditorTab::AutoPic => Some(PreviewKind::SearchArea),
+                    EditorTab::SearchAreas => Some(PreviewKind::SearchArea),
+                    EditorTab::Collections => Some(PreviewKind::Collection),
                     _ => None,
                 };
                 self.ensure_list_cache(catalog);
@@ -140,7 +144,7 @@ impl DataEditor {
                     egui::collapsing_header::CollapsingState::load_with_default_open(
                         ui.ctx(),
                         id,
-                        true,
+                        false,
                     )
                     .show_header(ui, |ui| {
                         if crate::icon_cache::paint_program_label(
@@ -152,6 +156,7 @@ impl DataEditor {
                                 selected: Some(prog_selected),
                                 child_count: entities.len(),
                             },
+                            settings.compact_program_headers,
                         )
                         .clicked()
                         {
@@ -177,17 +182,119 @@ impl DataEditor {
                                     &catalog.mask_image_path(prog, &ent),
                                     &format!("{prog}~{ent}"),
                                 );
-                            } else if matches!(self.tab, EditorTab::Collections) {
-                                show_file_hover(
-                                    ui,
-                                    &resp,
-                                    icons,
-                                    &catalog.collection_image_path(prog, &ent),
-                                    &format!("{prog}~{ent}"),
-                                );
                             }
                             if resp.clicked() {
                                 self.select_entity(prog, &ent, catalog, settings);
+                            }
+                        }
+                    });
+                }
+            }
+            EditorTab::ScreenCap => {
+                self.ensure_list_cache(catalog);
+                let program_names = self.list_cache.program_names.clone();
+                for prog in &program_names {
+                    let search_areas = self.entity_names(catalog, prog);
+                    let collections: Vec<sqyre_persist::ProgramCollection> = catalog
+                        .get(prog)
+                        .map(|p| p.collections.values().cloned().collect())
+                        .unwrap_or_default();
+                    let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
+                    let any_sa = search_areas
+                        .iter()
+                        .any(|e| q.is_empty() || pickers::fuzzy_match_fold(q, e));
+                    let any_col = collections
+                        .iter()
+                        .any(|c| q.is_empty() || pickers::fuzzy_match_fold(q, &c.name));
+                    if !prog_match && !any_sa && !any_col {
+                        continue;
+                    }
+                    let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
+                    let child_count = search_areas.len() + collections.len();
+                    let id = data_editor_list_collapse_id(self.tab, prog);
+                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                        ui.ctx(),
+                        id,
+                        false,
+                    )
+                    .show_header(ui, |ui| {
+                        if crate::icon_cache::paint_program_label(
+                            ui,
+                            catalog,
+                            icons,
+                            prog,
+                            crate::icon_cache::ProgramLabelStyle::Header {
+                                selected: Some(prog_selected),
+                                child_count,
+                            },
+                            settings.compact_program_headers,
+                        )
+                        .clicked()
+                        {
+                            clicked_program = Some(prog.clone());
+                        }
+                    })
+                    .body(|ui| {
+                        ui.set_max_width(ui.available_width());
+                        for ent in &search_areas {
+                            if !q.is_empty() && !pickers::fuzzy_match_fold(q, ent) && !prog_match {
+                                continue;
+                            }
+                            let selected = self.selected_program.as_deref() == Some(prog.as_str())
+                                && self.selected_entity.as_deref() == Some(ent.as_str())
+                                && !sqyre_domain::CoordinateRef(self.form_search_area.clone())
+                                    .is_collection();
+                            let resp = ui.selectable_label(selected, ent);
+                            previews.show_for_entity(
+                                ui,
+                                &resp,
+                                catalog,
+                                prog,
+                                ent,
+                                PreviewKind::SearchArea,
+                            );
+                            if resp.clicked() {
+                                self.select_entity(prog, ent, catalog, settings);
+                            }
+                        }
+                        for col in &collections {
+                            if !q.is_empty()
+                                && !pickers::fuzzy_match_fold(q, &col.name)
+                                && !prog_match
+                            {
+                                continue;
+                            }
+                            let current =
+                                sqyre_domain::CoordinateRef(self.form_search_area.clone());
+                            let selected = current.is_collection()
+                                && current.program() == Some(prog.as_str())
+                                && current.name() == col.name;
+                            let label = format!("{} (collection)", col.name);
+                            let resp = ui.selectable_label(selected, label);
+                            previews.show_for_entity(
+                                ui,
+                                &resp,
+                                catalog,
+                                prog,
+                                &col.name,
+                                PreviewKind::Collection,
+                            );
+                            if resp.clicked() {
+                                let initial = if selected { current.cell_range() } else { None };
+                                self.selected_program = Some(prog.clone());
+                                self.selected_entity = Some(col.name.clone());
+                                self.window_picker = pickers::ActivePicker::Coord {
+                                    kind: pickers::CoordKind::SearchArea,
+                                    search: String::new(),
+                                    value: self.form_search_area.clone(),
+                                    cell_pick: Some(
+                                        pickers::CollectionCellPick::new(
+                                            prog, &col.name, col.rows, col.cols,
+                                        )
+                                        .with_initial_sel(initial),
+                                    ),
+                                    scroll_to_selection: false,
+                                };
                             }
                         }
                     });
@@ -216,7 +323,7 @@ impl DataEditor {
                     egui::collapsing_header::CollapsingState::load_with_default_open(
                         ui.ctx(),
                         id,
-                        true,
+                        false,
                     )
                     .show_header(ui, |ui| {
                         if crate::icon_cache::paint_program_label(
@@ -228,6 +335,7 @@ impl DataEditor {
                                 selected: Some(prog_selected),
                                 child_count,
                             },
+                            settings.compact_program_headers,
                         )
                         .clicked()
                         {
@@ -282,7 +390,7 @@ impl DataEditor {
             self.select_program(&prog, catalog, settings);
         } else if let Some((prog, id)) = clicked_overlay {
             self.select_entity(&prog, &id, catalog, settings);
-        } else if matches!(self.tab, EditorTab::Items) {
+        } else if matches!(self.tab, EditorTab::Items | EditorTab::PixelCheck) {
             if let Some(target) = item_selection.first() {
                 if let Some((prog, item)) = target.split_once(sqyre_domain::PROGRAM_DELIMITER) {
                     let changed = self.selected_program.as_deref() != Some(prog)
@@ -347,9 +455,17 @@ impl DataEditor {
         self.load_form(catalog, settings);
     }
 
-    /// Select a program for docs screenshots (Programs tab form populated).
-    pub(crate) fn select_program_for_docs(&mut self, name: &str, catalog: &ProgramCatalog) {
-        self.select_program(name, catalog, &UserSettings::default());
+    /// Open Coordinates → Points with a filled entity (docs screenshots).
+    pub(crate) fn open_points_for_docs(
+        &mut self,
+        program: &str,
+        point: &str,
+        catalog: &ProgramCatalog,
+    ) {
+        let settings = UserSettings::default();
+        self.open = true;
+        self.switch_tab(EditorTab::Points, catalog, &settings);
+        self.select_entity(program, point, catalog, &settings);
     }
 
     pub(crate) fn select_entity(
@@ -412,26 +528,14 @@ fn tab_collapse_key(tab: EditorTab) -> &'static str {
     match tab {
         EditorTab::Programs => "programs",
         EditorTab::Items => "items",
+        EditorTab::PixelCheck => "pixel_check",
         EditorTab::Points => "points",
         EditorTab::SearchAreas => "search_areas",
         EditorTab::Masks => "masks",
         EditorTab::Collections => "collections",
         EditorTab::Atlases => "atlases",
-        EditorTab::AutoPic => "autopix",
+        EditorTab::ScreenCap => "screencap",
         EditorTab::Overlay => "overlay",
-    }
-}
-
-fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Context, bool)) {
-    let expand = crate::theme::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_DOWN)
-        .on_hover_text("Expand all");
-    let collapse = crate::theme::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_UP)
-        .on_hover_text("Collapse all");
-    if expand.clicked() {
-        on_set(ui.ctx(), true);
-    }
-    if collapse.clicked() {
-        on_set(ui.ctx(), false);
     }
 }
 
@@ -441,7 +545,7 @@ fn compute_entity_names(catalog: &ProgramCatalog, tab: EditorTab, program: &str)
     };
     let res = catalog.resolution_key();
     let mut keys: Vec<(String, String)> = match tab {
-        EditorTab::Items => p
+        EditorTab::Items | EditorTab::PixelCheck => p
             .items
             .iter()
             .map(|(k, it)| {
@@ -470,7 +574,7 @@ fn compute_entity_names(catalog: &ProgramCatalog, tab: EditorTab, program: &str)
                     .collect()
             })
             .unwrap_or_default(),
-        EditorTab::SearchAreas | EditorTab::AutoPic => p
+        EditorTab::SearchAreas | EditorTab::ScreenCap => p
             .search_areas
             .get(res)
             .or_else(|| p.search_areas.values().next())

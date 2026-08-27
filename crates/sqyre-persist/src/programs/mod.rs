@@ -472,6 +472,34 @@ Game:
     }
 
     #[test]
+    fn resolve_skips_remap_for_runtime_var_refs() {
+        // Image Search Reference style: live screen pixels must not be DPI-scaled.
+        let yaml = r#"
+General:
+  name: General
+  coordinates:
+    1920x1080:
+      scale: 1.0
+      points:
+        Image Search Reference:
+          name: Image Search Reference
+          x: ${foundX}
+          y: ${foundY}
+"#;
+        let v: Value = serde_yaml::from_str(yaml).unwrap();
+        let mut cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        cat.set_resolution_key("1920x1080");
+        cat.set_runtime_scale(1.5);
+        let mut m = Macro::new("t", 0, vec![]);
+        m.variables.set("foundX", ScalarValue::Int(500));
+        m.variables.set("foundY", ScalarValue::Int(400));
+        let (x, y) = cat
+            .resolve_point(&CoordinateRef("General~Image Search Reference".into()), &m)
+            .unwrap();
+        assert_eq!((x, y), (500, 400));
+    }
+
+    #[test]
     fn resolve_remaps_resolution_and_scale() {
         let yaml = r#"
 Game:
@@ -556,6 +584,59 @@ Game:
         assert_eq!(cat.get("Beta").unwrap().name, "Beta");
         cat.delete_program("Beta").unwrap();
         assert!(cat.get("Beta").is_none());
+    }
+
+    #[test]
+    fn rename_program_moves_asset_dirs() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let icons_old = images.join("icons").join("Alpha");
+        let masks_old = images.join("masks").join("Alpha");
+        let cols_old = images.join("Collections").join("Alpha");
+        std::fs::create_dir_all(&icons_old).unwrap();
+        std::fs::create_dir_all(&masks_old).unwrap();
+        std::fs::create_dir_all(&cols_old).unwrap();
+        std::fs::write(icons_old.join("Potion.png"), b"icon").unwrap();
+        std::fs::write(icons_old.join("Potion~Alt.png"), b"alt").unwrap();
+        std::fs::write(masks_old.join("circle.png"), b"mask").unwrap();
+        std::fs::write(cols_old.join("Bag.png"), b"col").unwrap();
+
+        cat.rename_program("Alpha", "Beta").unwrap();
+
+        assert!(!icons_old.exists());
+        assert!(!masks_old.exists());
+        assert!(!cols_old.exists());
+        let icons_new = images.join("icons").join("Beta");
+        assert_eq!(
+            std::fs::read(icons_new.join("Potion.png")).unwrap(),
+            b"icon"
+        );
+        assert_eq!(
+            std::fs::read(icons_new.join("Potion~Alt.png")).unwrap(),
+            b"alt"
+        );
+        assert_eq!(
+            std::fs::read(images.join("masks").join("Beta").join("circle.png")).unwrap(),
+            b"mask"
+        );
+        assert_eq!(
+            std::fs::read(images.join("Collections").join("Beta").join("Bag.png")).unwrap(),
+            b"col"
+        );
+        // Items stay under the renamed program entry (names unchanged).
+        assert!(cat.get("Beta").unwrap().items.contains_key("Potion"));
     }
 
     #[test]

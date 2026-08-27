@@ -1,6 +1,30 @@
 //! Action tree navigation, insertion, and drag-and-drop helpers.
 
 use super::{Action, ActionId};
+use thiserror::Error;
+
+/// Failure inserting or moving a node in an action tree.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum TreeError {
+    #[error("parent action {0} not found")]
+    ParentNotFound(ActionId),
+    #[error("source action {0} not found")]
+    SourceNotFound(ActionId),
+    #[error("drop target is not a branch")]
+    NotABranch,
+    #[error("else drop target has no else branch")]
+    NoElseBranch,
+    #[error("before-sibling not found")]
+    BeforeSiblingNotFound,
+    #[error("after-sibling not found")]
+    AfterSiblingNotFound,
+    #[error("drop sibling not found")]
+    DropSiblingNotFound,
+    #[error("cannot drop onto self")]
+    DropOntoSelf,
+    #[error("cannot drop into own descendant")]
+    DropIntoDescendant,
+}
 
 /// Tree selection / drop target: a real action, or an Else folder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -164,31 +188,27 @@ impl Action {
     fn child_list_mut_for_insert(
         &mut self,
         parent_id: ActionId,
-    ) -> Result<&mut Vec<Action>, String> {
+    ) -> Result<&mut Vec<Action>, TreeError> {
         match self.resolve_tree_id(parent_id) {
             Some(TreeNodeRef::ElseFolder { parent_id: owner }) => {
                 let parent = if owner == self.id {
                     self
                 } else {
                     self.find_by_id_mut(owner)
-                        .ok_or_else(|| format!("parent action {owner} not found"))?
+                        .ok_or(TreeError::ParentNotFound(owner))?
                 };
-                parent
-                    .else_children_mut()
-                    .ok_or_else(|| "else drop target has no else branch".to_string())
+                parent.else_children_mut().ok_or(TreeError::NoElseBranch)
             }
             Some(TreeNodeRef::Action(aid)) => {
                 let parent = if aid == self.id {
                     self
                 } else {
                     self.find_by_id_mut(aid)
-                        .ok_or_else(|| format!("parent action {aid} not found"))?
+                        .ok_or(TreeError::ParentNotFound(aid))?
                 };
-                parent
-                    .children_mut()
-                    .ok_or_else(|| "drop target is not a branch".to_string())
+                parent.children_mut().ok_or(TreeError::NotABranch)
             }
-            None => Err(format!("parent action {parent_id} not found")),
+            None => Err(TreeError::ParentNotFound(parent_id)),
         }
     }
 
@@ -200,7 +220,7 @@ impl Action {
         parent_id: ActionId,
         slot: InsertSlot,
         child: Action,
-    ) -> Result<(), String> {
+    ) -> Result<(), TreeError> {
         let children = self.child_list_mut_for_insert(parent_id)?;
         match slot {
             InsertSlot::First => children.insert(0, child),
@@ -209,14 +229,14 @@ impl Action {
                 let i = children
                     .iter()
                     .position(|c| c.id == sib)
-                    .ok_or_else(|| "before-sibling not found".to_string())?;
+                    .ok_or(TreeError::BeforeSiblingNotFound)?;
                 children.insert(i, child);
             }
             InsertSlot::After(sib) => {
                 let i = children
                     .iter()
                     .position(|c| c.id == sib)
-                    .ok_or_else(|| "after-sibling not found".to_string())?;
+                    .ok_or(TreeError::AfterSiblingNotFound)?;
                 children.insert(i + 1, child);
             }
         }
@@ -230,7 +250,7 @@ impl Action {
         source_id: ActionId,
         parent_id: ActionId,
         slot: InsertSlot,
-    ) -> Result<(), String> {
+    ) -> Result<(), TreeError> {
         self.move_actions(&[source_id], parent_id, slot)
     }
 
@@ -243,7 +263,7 @@ impl Action {
         source_ids: &[ActionId],
         parent_id: ActionId,
         slot: InsertSlot,
-    ) -> Result<(), String> {
+    ) -> Result<(), TreeError> {
         let mut seen = std::collections::HashSet::new();
         let mut sources: Vec<ActionId> = Vec::new();
         for &id in source_ids {
@@ -268,11 +288,11 @@ impl Action {
         };
         for &source_id in &sources {
             if source_id == parent_id {
-                return Err("cannot drop onto self".into());
+                return Err(TreeError::DropOntoSelf);
             }
             if let Some(src) = self.find_by_id(source_id) {
                 if src.contains_id(parent_for_check) {
-                    return Err("cannot drop into own descendant".into());
+                    return Err(TreeError::DropIntoDescendant);
                 }
             }
         }
@@ -293,7 +313,7 @@ impl Action {
         for source_id in sources {
             let node = self
                 .remove_by_id(source_id)
-                .ok_or_else(|| format!("source action {source_id} not found"))?;
+                .ok_or(TreeError::SourceNotFound(source_id))?;
             nodes.push(node);
         }
 
@@ -326,6 +346,92 @@ impl Action {
             }
         }
         Ok(())
+    }
+
+    /// Parent id to pass to [`move_actions`] and the ordered sibling ids of `id`.
+    ///
+    /// Else-branch children use the Else folder sentinel as parent.
+    fn sibling_context(&self, id: ActionId) -> Option<(ActionId, Vec<ActionId>)> {
+        if id.is_root()
+            || matches!(
+                self.resolve_tree_id(id),
+                Some(TreeNodeRef::ElseFolder { .. })
+            )
+        {
+            return None;
+        }
+        let parent_id = self.find_parent_id(id)?;
+        let parent = if parent_id == self.id {
+            self
+        } else {
+            self.find_by_id(parent_id)?
+        };
+        if parent.children().iter().any(|c| c.id == id) {
+            let ids = parent.children().iter().map(|c| c.id).collect();
+            return Some((parent_id, ids));
+        }
+        if let Some(else_kids) = parent.else_children() {
+            if else_kids.iter().any(|c| c.id == id) {
+                let ids = else_kids.iter().map(|c| c.id).collect();
+                return Some((ActionId::else_folder(parent_id), ids));
+            }
+        }
+        None
+    }
+
+    /// Plan a one-slot sibling shift for `ids` (`up` = toward the start of the list).
+    ///
+    /// All ids must share a sibling list. Sources are returned in sibling order.
+    pub fn sibling_nudge_plan(
+        &self,
+        ids: &[ActionId],
+        up: bool,
+    ) -> Option<(Vec<ActionId>, ActionId, InsertSlot)> {
+        let mut seen = std::collections::HashSet::new();
+        let mut sources: Vec<ActionId> = Vec::new();
+        for &id in ids {
+            if id.is_root()
+                || matches!(
+                    self.resolve_tree_id(id),
+                    Some(TreeNodeRef::ElseFolder { .. })
+                )
+                || !seen.insert(id)
+            {
+                continue;
+            }
+            sources.push(id);
+        }
+        if sources.is_empty() {
+            return None;
+        }
+        let (parent, siblings) = self.sibling_context(sources[0])?;
+        if !sources.iter().all(|id| siblings.contains(id)) {
+            return None;
+        }
+        sources.sort_by_key(|&id| siblings.iter().position(|&s| s == id).unwrap_or(usize::MAX));
+        let last = *sources.last()?;
+        let min = siblings.iter().position(|&s| s == sources[0])?;
+        let max = siblings.iter().position(|&s| s == last)?;
+        let slot = if up {
+            if min == 0 {
+                return None;
+            }
+            InsertSlot::Before(siblings[min - 1])
+        } else {
+            if max + 1 >= siblings.len() {
+                return None;
+            }
+            InsertSlot::After(siblings[max + 1])
+        };
+        Some((sources, parent, slot))
+    }
+
+    /// Shift `ids` one slot among their shared siblings. Returns whether the tree changed.
+    pub fn nudge_siblings(&mut self, ids: &[ActionId], up: bool) -> bool {
+        let Some((sources, parent, slot)) = self.sibling_nudge_plan(ids, up) else {
+            return false;
+        };
+        self.move_actions(&sources, parent, slot).is_ok()
     }
 
     pub fn walk<F: FnMut(&Action)>(&self, f: &mut F) {
@@ -362,7 +468,7 @@ fn resolve_slot_around_moving_sources(
     parent_id: ActionId,
     slot: InsertSlot,
     sources: &[ActionId],
-) -> Result<InsertSlot, String> {
+) -> Result<InsertSlot, TreeError> {
     let children: Vec<ActionId> = {
         // Read-only walk of the insert list (same resolution as insert_at).
         let list = match root.resolve_tree_id(parent_id) {
@@ -371,25 +477,22 @@ fn resolve_slot_around_moving_sources(
                     root
                 } else {
                     root.find_by_id(owner)
-                        .ok_or_else(|| format!("parent action {owner} not found"))?
+                        .ok_or(TreeError::ParentNotFound(owner))?
                 };
-                parent
-                    .else_children()
-                    .ok_or_else(|| "else drop target has no else branch".to_string())?
+                parent.else_children().ok_or(TreeError::NoElseBranch)?
             }
             Some(TreeNodeRef::Action(aid)) => {
                 let parent = if aid == root.id {
                     root
                 } else {
-                    root.find_by_id(aid)
-                        .ok_or_else(|| format!("parent action {aid} not found"))?
+                    root.find_by_id(aid).ok_or(TreeError::ParentNotFound(aid))?
                 };
                 if !parent.is_branch() {
-                    return Err("drop target is not a branch".into());
+                    return Err(TreeError::NotABranch);
                 }
                 parent.children()
             }
-            None => return Err(format!("parent action {parent_id} not found")),
+            None => return Err(TreeError::ParentNotFound(parent_id)),
         };
         list.iter().map(|c| c.id).collect()
     };
@@ -400,7 +503,7 @@ fn resolve_slot_around_moving_sources(
         other => return Ok(other),
     };
     let Some(idx) = children.iter().position(|&id| id == anchor_id) else {
-        return Err("drop sibling not found".into());
+        return Err(TreeError::DropSiblingNotFound);
     };
     if after {
         // Find first non-moving sibling after the anchor block of movers.
@@ -451,7 +554,7 @@ fn resolve_slot_around_moving_sources(
 mod tests {
     use crate::{
         root_loop, Action, ActionId, ActionKind, ConditionBlock, DetectionBranch, InsertSlot,
-        ScalarValue, TreeNodeRef,
+        ScalarValue, TreeError, TreeNodeRef,
     };
 
     fn wait(id: ActionId) -> Action {
@@ -568,6 +671,86 @@ mod tests {
     }
 
     #[test]
+    fn nudge_siblings_swaps_with_neighbor() {
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let c = ActionId::new();
+        let mut root = root_loop(vec![wait(a), wait(b), wait(c)]);
+        assert!(root.nudge_siblings(&[b], true));
+        let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
+        assert_eq!(ids, vec![b, a, c]);
+        assert!(root.nudge_siblings(&[b], false));
+        let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
+        assert_eq!(ids, vec![a, b, c]);
+    }
+
+    #[test]
+    fn nudge_siblings_noop_at_ends() {
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let mut root = root_loop(vec![wait(a), wait(b)]);
+        assert!(!root.nudge_siblings(&[a], true));
+        assert!(!root.nudge_siblings(&[b], false));
+        assert!(!root.nudge_siblings(&[ActionId::root()], false));
+        let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
+        assert_eq!(ids, vec![a, b]);
+    }
+
+    #[test]
+    fn nudge_siblings_moves_contiguous_block() {
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let c = ActionId::new();
+        let d = ActionId::new();
+        let mut root = root_loop(vec![wait(a), wait(b), wait(c), wait(d)]);
+        assert!(root.nudge_siblings(&[b, c], false));
+        let ids: Vec<_> = root.children().iter().map(|x| x.id).collect();
+        assert_eq!(ids, vec![a, d, b, c]);
+    }
+
+    #[test]
+    fn nudge_siblings_else_branch() {
+        let detection_id = ActionId::new();
+        let then_id = ActionId::new();
+        let else_a = ActionId::new();
+        let else_b = ActionId::new();
+        let mut root = root_loop(vec![Action {
+            id: detection_id,
+            kind: ActionKind::FindPixel {
+                name: String::new(),
+                search_area: Default::default(),
+                target_color: "#fff".into(),
+                color_tolerance: 0,
+                detection: DetectionBranch {
+                    subactions: vec![wait(then_id)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        root.insert_at(
+            ActionId::else_folder(detection_id),
+            InsertSlot::Last,
+            wait(else_a),
+        )
+        .unwrap();
+        root.insert_at(
+            ActionId::else_folder(detection_id),
+            InsertSlot::Last,
+            wait(else_b),
+        )
+        .unwrap();
+        assert!(root.nudge_siblings(&[else_b], true));
+        let else_ids: Vec<_> = root.children()[0]
+            .else_children()
+            .expect("else branch")
+            .iter()
+            .map(|x| x.id)
+            .collect();
+        assert_eq!(else_ids, vec![else_b, else_a]);
+        assert_eq!(root.children()[0].children()[0].id, then_id);
+    }
+
+    #[test]
     fn move_action_rejects_into_self_descendant() {
         let branch_id = ActionId::new();
         let child_id = ActionId::new();
@@ -582,5 +765,17 @@ mod tests {
         assert!(root
             .move_action(branch_id, branch_id, InsertSlot::Last)
             .is_err());
+    }
+
+    #[test]
+    fn tree_error_display_and_reject_missing_parent() {
+        let mut root = root_loop(vec![]);
+        let missing = ActionId::new();
+        let err = root
+            .insert_at(missing, InsertSlot::Last, wait(ActionId::new()))
+            .unwrap_err();
+        assert_eq!(err, TreeError::ParentNotFound(missing));
+        assert!(err.to_string().contains("not found"));
+        assert_eq!(TreeError::DropOntoSelf.to_string(), "cannot drop onto self");
     }
 }

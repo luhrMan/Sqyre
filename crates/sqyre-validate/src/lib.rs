@@ -18,10 +18,17 @@ pub enum ValidateError {
 
 pub type Result<T> = std::result::Result<T, ValidateError>;
 
+/// Characters illegal in Windows filenames. Linux forbids `/` and NUL (included here /
+/// via the control-char check). Used for any catalog name that becomes a path component
+/// under `images/` (programs, items, search areas, masks, collections, icon variants, …).
+pub const FS_FORBIDDEN_FILENAME_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+
 /// True when `name` is safe to use as a single path component under a managed directory.
 ///
-/// Rejects empty/whitespace names, `.` / `..`, separators, absolute forms, and control chars
-/// so catalog keys cannot escape `images/` via join + `remove_dir_all` / rename.
+/// Rejects empty/whitespace names, `.` / `..`, Windows/Linux forbidden filename characters,
+/// absolute forms, trailing `.`, reserved Windows device names, and control chars so catalog
+/// keys cannot escape `images/` via join + `remove_dir_all` / rename, and cannot produce
+/// empty or extensionless files (e.g. `:` Alternate Data Streams on Windows).
 pub fn is_safe_fs_entity_name(name: &str) -> bool {
     validate_entity_name(name).is_ok()
 }
@@ -41,23 +48,56 @@ pub fn validate_entity_name(name: &str) -> Result<()> {
             "name cannot be an absolute path".into(),
         ));
     }
-    // Windows drive / UNC prefixes (`C:`, `\\server`, …).
-    if name.len() >= 2 && name.as_bytes()[1] == b':' {
+    if let Some(c) = name
+        .chars()
+        .find(|c| *c == '\0' || c.is_control() || FS_FORBIDDEN_FILENAME_CHARS.contains(c))
+    {
+        return Err(ValidateError::Message(format!(
+            "name cannot contain forbidden file character {c:?} (disallowed: < > : \" / \\ | ? * and controls)"
+        )));
+    }
+    // Windows strips / rejects trailing periods in file names.
+    if name.ends_with('.') {
         return Err(ValidateError::Message(
-            "name cannot include a drive prefix".into(),
+            "name cannot end with a period".into(),
         ));
     }
-    if name.contains(['/', '\\', '\0']) {
-        return Err(ValidateError::Message(
-            "name cannot contain path separators or NUL".into(),
-        ));
-    }
-    if name.chars().any(|c| c.is_control()) {
-        return Err(ValidateError::Message(
-            "name cannot contain control characters".into(),
-        ));
+    if is_windows_reserved_device_name(name) {
+        return Err(ValidateError::Message(format!(
+            "name {name:?} is a reserved Windows device name"
+        )));
     }
     Ok(())
+}
+
+/// `CON`, `PRN`, `AUX`, `NUL`, `COM1`–`COM9`, `LPT1`–`LPT9` (optionally with an extension).
+fn is_windows_reserved_device_name(name: &str) -> bool {
+    let stem = name.split('.').next().unwrap_or(name);
+    matches!(
+        stem.to_ascii_uppercase().as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
 }
 
 pub fn parse_positive_i32(s: &str) -> Result<i32> {
@@ -378,21 +418,26 @@ fn yaml_string_value(v: &sqyre_domain::ScalarValue) -> Option<&str> {
 fn validate_continue_key(keys: &[String]) -> Result<()> {
     sqyre_domain::validate_continue_key(keys)
         .map(|_| ())
-        .map_err(ValidateError::Message)
+        .map_err(|e| ValidateError::Message(e.to_string()))
 }
 
-fn validate_coordinate_ref(
-    label: &str,
-    coord: &CoordinateRef,
-    _macro_: Option<&Macro>,
-) -> Result<()> {
-    if coord.0.trim().is_empty() {
+fn validate_coordinate_ref(label: &str, field: &str, coord: &CoordinateRef) -> Result<()> {
+    if coord.is_empty() {
         return Err(ValidateError::Message(format!(
-            "{label}: set a coordinate before saving"
+            "{label}: set a {field} before saving"
         )));
     }
     // Catalog refs are `program~entity` (or legacy bare names), resolved at runtime —
     // not math expressions. Do not run expression evaluation on them.
+    Ok(())
+}
+
+fn require_search_area(label: &str, search_area: &CoordinateRef) -> Result<()> {
+    if search_area.is_empty() {
+        return Err(ValidateError::Message(format!(
+            "{label}: set a search area"
+        )));
+    }
     Ok(())
 }
 
@@ -500,12 +545,42 @@ fn validate_target_color(label: &str, target_color: &str) -> Result<()> {
     Ok(())
 }
 
-/// Checks minimum fields required to save/run an action.
+/// How strictly to validate an action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ActionValidationMode {
+    /// Fields that must be sound to keep the action in the tree (edit Save,
+    /// paste, undo). Incomplete-but-editable cases (e.g. image search with no
+    /// target items or search area) are allowed; the tree surfaces those via
+    /// [`validate_action`].
+    Persist,
+    /// Full readiness check for run gates and per-row tree diagnostics.
+    Complete,
+}
+
+/// Checks minimum fields required to run an action (and for tree diagnostics).
+///
+/// Image search with no target items or search area fails here so the macro tree
+/// can show the error; use [`validate_action_persist`] when applying an edit Save.
 ///
 /// `macro_` enables Set expression structure checks; when
 /// `None`, those structure checks are skipped (empty-expression / name rules
 /// still apply).
 pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
+    validate_action_with(action, macro_, ActionValidationMode::Complete)
+}
+
+/// Like [`validate_action`], but allows incomplete image-search targets and an
+/// unset search area so the user can save and fix them later (tree still flags
+/// via [`validate_action`]).
+pub fn validate_action_persist(action: &Action, macro_: Option<&Macro>) -> Result<()> {
+    validate_action_with(action, macro_, ActionValidationMode::Persist)
+}
+
+fn validate_action_with(
+    action: &Action,
+    macro_: Option<&Macro>,
+    mode: ActionValidationMode,
+) -> Result<()> {
     for b in action.variable_bindings() {
         if b.name.trim().is_empty() {
             continue;
@@ -526,16 +601,30 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
             validate_condition_block("conditional", condition, macro_)?;
         }
         ActionKind::ImageSearch {
-            targets, detection, ..
+            targets,
+            search_area,
+            detection,
+            ..
         } => {
-            if targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()) {
-                return Err(ValidateError::Message(
-                    "image search: add at least one target item".into(),
-                ));
-            }
             validate_wait_config("image search", &detection.wait)?;
+            if mode == ActionValidationMode::Complete {
+                let mut issues = Vec::new();
+                if search_area.is_empty() {
+                    issues.push("set a search area");
+                }
+                if targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()) {
+                    issues.push("add at least one target item");
+                }
+                if !issues.is_empty() {
+                    return Err(ValidateError::Message(format!(
+                        "image search: {}",
+                        issues.join("; ")
+                    )));
+                }
+            }
         }
         ActionKind::Ocr {
+            search_area,
             detection,
             blur,
             min_threshold,
@@ -543,6 +632,9 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
             ..
         } => {
             validate_wait_config("ocr", &detection.wait)?;
+            if mode == ActionValidationMode::Complete {
+                require_search_area("ocr", search_area)?;
+            }
             if *blur < 0 {
                 return Err(ValidateError::Message(
                     "ocr: blur cannot be negative".into(),
@@ -560,12 +652,16 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
             }
         }
         ActionKind::FindPixel {
+            search_area,
             target_color,
             detection,
             ..
         } => {
             validate_target_color("find pixel", target_color)?;
             validate_wait_config("find pixel", &detection.wait)?;
+            if mode == ActionValidationMode::Complete {
+                require_search_area("find pixel", search_area)?;
+            }
         }
         ActionKind::ForEachRow {
             sources,
@@ -588,7 +684,7 @@ pub fn validate_action(action: &Action, macro_: Option<&Macro>) -> Result<()> {
             validate_continue_key(continue_key)?;
         }
         ActionKind::Move { point, .. } => {
-            validate_coordinate_ref("move", point, macro_)?;
+            validate_coordinate_ref("move", "point", point)?;
         }
         ActionKind::Click { .. } => {}
         ActionKind::Key { key, .. } => {
@@ -679,7 +775,7 @@ fn validate_wait_config(label: &str, wait: &sqyre_domain::WaitTilFoundConfig) ->
         wait.repeat_mode,
         RepeatMode::WaitUntilFound | RepeatMode::WaitWhileFound
     );
-    if needs_timeout && wait.wait_til_found_seconds <= 0 {
+    if needs_timeout && wait.timeout().is_none() {
         return Err(ValidateError::Message(format!(
             "{label}: wait modes require a positive timeout (seconds)"
         )));
@@ -694,13 +790,26 @@ fn validate_wait_config(label: &str, wait: &sqyre_domain::WaitTilFoundConfig) ->
 
 /// Recursively validate `action` and every descendant via then/else children.
 pub fn validate_action_tree(action: &Action, macro_: Option<&Macro>) -> Result<()> {
-    validate_action(action, macro_)?;
+    validate_action_tree_with(action, macro_, ActionValidationMode::Complete)
+}
+
+/// Like [`validate_action_tree`] using [`validate_action_persist`] at each node.
+pub fn validate_action_tree_persist(action: &Action, macro_: Option<&Macro>) -> Result<()> {
+    validate_action_tree_with(action, macro_, ActionValidationMode::Persist)
+}
+
+fn validate_action_tree_with(
+    action: &Action,
+    macro_: Option<&Macro>,
+    mode: ActionValidationMode,
+) -> Result<()> {
+    validate_action_with(action, macro_, mode)?;
     for child in action.children() {
-        validate_action_tree(child, macro_)?;
+        validate_action_tree_with(child, macro_, mode)?;
     }
     if let Some(else_kids) = action.else_children() {
         for child in else_kids {
-            validate_action_tree(child, macro_)?;
+            validate_action_tree_with(child, macro_, mode)?;
         }
     }
     Ok(())
@@ -724,6 +833,8 @@ mod tests {
     #[test]
     fn entity_name_rejects_path_escape() {
         assert!(validate_entity_name("Demo").is_ok());
+        assert!(validate_entity_name("Item Name").is_ok());
+        assert!(validate_entity_name("Item-v2").is_ok());
         assert!(validate_entity_name("").is_err());
         assert!(validate_entity_name(".").is_err());
         assert!(validate_entity_name("..").is_err());
@@ -733,6 +844,33 @@ mod tests {
         assert!(validate_entity_name("/abs").is_err());
         assert!(validate_entity_name("C:foo").is_err());
         assert!(validate_entity_name("has\0nul").is_err());
+    }
+
+    #[test]
+    fn entity_name_rejects_windows_linux_forbidden_chars() {
+        for c in FS_FORBIDDEN_FILENAME_CHARS {
+            let name = format!("item{c}name");
+            assert!(
+                validate_entity_name(&name).is_err(),
+                "expected reject for {c:?} in {name:?}"
+            );
+        }
+        // Colon mid-name previously slipped past the drive-prefix-only check and
+        // produced 0-byte / extensionless ScreenCap files via Windows ADS.
+        assert!(validate_entity_name("Potion:Red").is_err());
+        assert!(validate_entity_name("a<b").is_err());
+        assert!(validate_entity_name("a>b").is_err());
+        assert!(validate_entity_name("a\"b").is_err());
+        assert!(validate_entity_name("a|b").is_err());
+        assert!(validate_entity_name("a?b").is_err());
+        assert!(validate_entity_name("a*b").is_err());
+        assert!(validate_entity_name("ends.").is_err());
+        assert!(validate_entity_name("CON").is_err());
+        assert!(validate_entity_name("nul.txt").is_err());
+        assert!(validate_entity_name("com1").is_err());
+        assert!(validate_entity_name("LPT9").is_err());
+        assert!(validate_entity_name("console").is_ok());
+        assert!(validate_entity_name("Item.v2").is_ok());
     }
 
     #[test]
@@ -985,6 +1123,8 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("target"));
+        // Persist allows saving without items; tree/run still flag via Complete.
+        assert!(validate_action_persist(&empty, None).is_ok());
 
         let bad_wait = Action {
             id: ActionId::new(),
@@ -998,7 +1138,7 @@ mod tests {
                 detection: sqyre_domain::DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
-                        wait_til_found_seconds: 0,
+                        wait_til_found_seconds: 0.0,
                         wait_til_found_interval_ms: 0,
                         max_iterations: 0,
                     },
@@ -1007,6 +1147,36 @@ mod tests {
             },
         };
         assert!(validate_action(&bad_wait, None)
+            .unwrap_err()
+            .to_string()
+            .contains("timeout"));
+        assert!(validate_action_persist(&bad_wait, None)
+            .unwrap_err()
+            .to_string()
+            .contains("timeout"));
+
+        // Empty targets must not mask a bad wait on persist.
+        let empty_bad_wait = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec![],
+                search_area: Default::default(),
+                tolerance: 0.95,
+                blur: 5,
+                match_method: Default::default(),
+                detection: sqyre_domain::DetectionBranch {
+                    wait: WaitTilFoundConfig {
+                        repeat_mode: RepeatMode::WaitUntilFound,
+                        wait_til_found_seconds: 0.0,
+                        wait_til_found_interval_ms: 0,
+                        max_iterations: 0,
+                    },
+                    ..Default::default()
+                },
+            },
+        };
+        assert!(validate_action_persist(&empty_bad_wait, None)
             .unwrap_err()
             .to_string()
             .contains("timeout"));
@@ -1062,7 +1232,7 @@ mod tests {
         assert!(validate_action(&a, None)
             .unwrap_err()
             .to_string()
-            .contains("coordinate"));
+            .contains("point"));
     }
 
     #[test]
@@ -1078,6 +1248,65 @@ mod tests {
             },
         };
         assert!(validate_action(&a, None).is_ok());
+    }
+
+    #[test]
+    fn validate_detection_requires_search_area_on_complete() {
+        let image = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec!["Game~Item".into()],
+                search_area: Default::default(),
+                tolerance: 0.95,
+                blur: 5,
+                match_method: Default::default(),
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action_persist(&image, None).is_ok());
+        assert!(validate_action(&image, None)
+            .unwrap_err()
+            .to_string()
+            .contains("search area"));
+
+        let ocr = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Ocr {
+                name: String::new(),
+                target: "ok".into(),
+                search_area: Default::default(),
+                output_variable: String::new(),
+                blur: 0,
+                min_threshold: 0,
+                resize: 1.0,
+                grayscale: false,
+                threshold_otsu: false,
+                threshold_invert: false,
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action_persist(&ocr, None).is_ok());
+        assert!(validate_action(&ocr, None)
+            .unwrap_err()
+            .to_string()
+            .contains("search area"));
+
+        let pixel = Action {
+            id: ActionId::new(),
+            kind: ActionKind::FindPixel {
+                name: String::new(),
+                search_area: Default::default(),
+                target_color: "ffffff".into(),
+                color_tolerance: 0,
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action_persist(&pixel, None).is_ok());
+        assert!(validate_action(&pixel, None)
+            .unwrap_err()
+            .to_string()
+            .contains("search area"));
     }
 
     #[test]

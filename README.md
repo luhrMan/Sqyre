@@ -55,6 +55,8 @@ Assets under `docs/images/` are generated from in-memory egui tests (`make docs-
 | Main window | ![Main window](docs/images/main-window.png) |
 | Add action picker | ![Add action picker](docs/images/add-action-picker.png) |
 | Data editor | ![Data editor](docs/images/data-editor.png) |
+| Settings | ![Settings](docs/images/settings.png) |
+| Command palette | ![Command palette](docs/images/command-palette.png) |
 
 ---
 

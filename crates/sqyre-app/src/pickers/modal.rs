@@ -3,7 +3,7 @@ use super::coord_list::paint_coord_ref_list;
 use super::items_grid::paint_items_icon_grid;
 use super::query::{query_matches_name_or_tags, query_matches_window};
 use super::scroll::{maybe_scroll_to, picker_searchable_scroll, PickerScrollOpts};
-use super::types::{ActivePicker, CoordKind, PickerResult, HEADER_SIZE};
+use super::types::{ActivePicker, CoordKind, PickerResult};
 #[cfg(feature = "native-runtime")]
 use super::window::fetch_open_windows;
 use super::window::poll_window_picker_load;
@@ -20,6 +20,7 @@ pub fn show_active_picker(
     paint: &mut CatalogPaint<'_>,
     // `(name, tags)` — tags are used by the macro search bar.
     macros: &[(String, Vec<String>)],
+    compact_program_headers: bool,
 ) -> PickerResult {
     let mut result = PickerResult::None;
     let mut open = picker.is_open();
@@ -70,7 +71,20 @@ pub fn show_active_picker(
             match picker {
                 ActivePicker::Items { search, staged } => {
                     let mut header_click = None;
-                    picker_searchable_scroll(ui, search, PickerScrollOpts::list(ui), |ui, q| {
+                    let program_names: Vec<String> =
+                        paint.catalog.program_names().cloned().collect();
+                    let mut opts = PickerScrollOpts::list(ui);
+                    let mut trailing = |ui: &mut egui::Ui| {
+                        super::collapse_all_buttons(ui, |ctx, open| {
+                            super::set_items_icon_grid_openness(
+                                ctx,
+                                program_names.iter().map(|n| n.as_str()),
+                                open,
+                            );
+                        });
+                    };
+                    opts.trailing = Some(&mut trailing);
+                    picker_searchable_scroll(ui, search, opts, |ui, q| {
                         paint_items_icon_grid(
                             ui,
                             paint.catalog,
@@ -80,6 +94,7 @@ pub fn show_active_picker(
                             true,
                             None,
                             &mut header_click,
+                            compact_program_headers,
                         );
                     });
                     ui.separator();
@@ -95,16 +110,26 @@ pub fn show_active_picker(
                     if let Some(pick) = cell_pick.as_mut() {
                         paint_collection_cell_picker(ui, paint.catalog, paint.icons, pick);
                     } else {
+                        let kind = *kind;
+                        let program_names: Vec<String> =
+                            paint.catalog.program_names().cloned().collect();
                         // Search chrome only — list owns its own ScrollArea (program groups).
                         ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(egui_phosphor::regular::MAGNIFYING_GLASS)
-                                    .size(HEADER_SIZE),
-                            )
+                            ui.label(egui::RichText::new(
+                                egui_phosphor::regular::MAGNIFYING_GLASS,
+                            ))
                             .on_hover_text("Search");
                             if ui.text_edit_singleline(search).changed() {
                                 *scroll_to_selection = true;
                             }
+                            super::collapse_all_buttons(ui, |ctx, open| {
+                                super::set_coord_list_openness(
+                                    ctx,
+                                    kind,
+                                    program_names.iter().map(|n| n.as_str()),
+                                    open,
+                                );
+                            });
                         });
                         ui.separator();
                         paint_coord_ref_list(
@@ -112,9 +137,10 @@ pub fn show_active_picker(
                             paint,
                             search,
                             value,
-                            *kind,
+                            kind,
                             cell_pick,
                             scroll_to_selection,
+                            compact_program_headers,
                         );
                     }
                 }
@@ -136,7 +162,7 @@ pub fn show_active_picker(
                                 let selected = value == name;
                                 let resp = ui.selectable_label(
                                     selected,
-                                    egui::RichText::new(name.as_str()).size(13.0),
+                                    egui::RichText::new(name.as_str()).small(),
                                 );
                                 if selected && *scroll_to_selection && !did_scroll {
                                     maybe_scroll_to(ui, &resp, scroll_to_selection);
@@ -208,7 +234,7 @@ pub fn show_active_picker(
                                     }
                                     ui.selectable_label(
                                         selected,
-                                        egui::RichText::new(w.label()).size(13.0),
+                                        egui::RichText::new(w.label()).small(),
                                     )
                                 })
                                 .inner;

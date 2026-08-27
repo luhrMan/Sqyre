@@ -1,11 +1,12 @@
 //! Macro tree row chrome: icon badge, pastel pills, swatches.
 
 use crate::icon_cache::IconCache;
+#[cfg(test)]
 use crate::image_view;
 use crate::pickers::attach_item_icon_tooltip;
 use crate::theme::paint_galley_centered;
 use crate::var_pills;
-use eframe::egui::{self, Color32, FontId, Sense, Stroke, Vec2};
+use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use sqyre_domain::{parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames};
 use sqyre_persist::ProgramCatalog;
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
@@ -13,15 +14,8 @@ use std::collections::HashMap;
 
 /// Icon badge edge length.
 const ICON_SIZE: f32 = 18.0;
-/// Glyph inside the type badge.
-const ICON_GLYPH_SIZE: f32 = 12.0;
-/// Dense logs/delete hit targets (smaller than toolbar `ICON_BTN_SIDE`).
-const ROW_ACTION_BTN_SIDE: f32 = 14.0;
-const ROW_ACTION_BTN_FONT: f32 = 12.0;
 /// Gap between logs and delete.
 const ROW_ACTION_BTN_GAP: f32 = 2.0;
-/// Pill label font (1px smaller than prior 13).
-const PILL_FONT_SIZE: f32 = 12.0;
 /// Pill inner padding (4×2).
 const PILL_MARGIN_X: i8 = 4;
 const PILL_MARGIN_Y: i8 = 2;
@@ -35,6 +29,20 @@ const MAX_TARGET_THUMBS: usize = 8;
 /// Default tree-row height (icon column + chrome).
 pub fn default_row_height(interact_y: f32) -> f32 {
     interact_y.max(ICON_SIZE)
+}
+
+/// Row height including type-badge and icon-button glyphs that track Font size.
+pub fn row_height(ui: &egui::Ui) -> f32 {
+    let btn_h = ui
+        .text_style_height(&egui::TextStyle::Button)
+        .max(crate::theme::ICON_BTN_SIDE);
+    default_row_height(ui.spacing().interact_size.y)
+        .max(type_badge_side(ui))
+        .max(btn_h)
+}
+
+fn type_badge_side(ui: &egui::Ui) -> f32 {
+    ui.text_style_height(&egui::TextStyle::Small).max(ICON_SIZE)
 }
 
 /// Row height for a painted tree label (item thumbs fit in the standard band).
@@ -130,18 +138,16 @@ fn row_action_btn(
     tip: &str,
     color: Option<Color32>,
 ) -> egui::Response {
-    let font_id = FontId::proportional(ROW_ACTION_BTN_FONT);
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(ROW_ACTION_BTN_SIDE), Sense::click());
-    let visuals = ui.style().interact(&response);
-    let fg = color.unwrap_or_else(|| visuals.text_color());
-    crate::theme::paint_text_centered(ui, rect, glyph, font_id, fg);
+    let response = crate::theme::icon_button_bare_colored(ui, glyph, color);
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
     response.on_hover_text(tip)
 }
 
 /// Paint the pastel type badge with a glyph.
 pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> egui::Response {
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
-    let size = Vec2::splat(ICON_SIZE);
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let size = Vec2::splat(type_badge_side(ui));
     let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
     ui.painter().rect(
         rect,
@@ -151,13 +157,7 @@ pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> e
         egui::StrokeKind::Outside,
     );
     let glyph = action_icon_glyph(action);
-    crate::theme::paint_text_centered(
-        ui,
-        rect,
-        glyph,
-        FontId::proportional(ICON_GLYPH_SIZE),
-        contrast_fg(pastel),
-    );
+    crate::theme::paint_text_centered(ui, rect, glyph, font, contrast_fg(pastel));
     resp
 }
 
@@ -169,7 +169,7 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
     // Allocate through the parent layout (unlike Frame::show, which top-aligns in
     // available_rect and ignores Align::Center — that drifted pills below the tree icon).
     let fg = contrast_fg(fill);
-    let font = FontId::proportional(PILL_FONT_SIZE);
+    let font = egui::TextStyle::Small.resolve(ui.style());
     let galley = ui.painter().layout_no_wrap(text.to_owned(), font, fg);
     let pad = Vec2::new(PILL_MARGIN_X as f32 * 2.0, PILL_MARGIN_Y as f32 * 2.0);
     let size = galley.size() + pad;
@@ -220,17 +220,14 @@ fn paint_target_thumb(
     let slot = Vec2::new(TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
     let (slot_rect, slot_resp) = ui.allocate_exact_size(slot, Sense::hover());
     if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
-        let [tw, th] = tex.size();
-        let size =
-            image_view::fit_in_box(tw as f32, th as f32, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
-        let inner = egui::Rect::from_center_size(slot_rect.center(), size);
-        let _ = ui.put(
-            inner,
-            egui::Image::new((tex.id(), size))
-                .fit_to_exact_size(size)
-                .maintain_aspect_ratio(true)
-                .corner_radius(3.0)
-                .bg_fill(Color32::from_black_alpha(20)),
+        crate::icon_cache::paint_icon_thumb_at(
+            ui,
+            &tex,
+            slot_rect.center(),
+            TARGET_THUMB_MAX_W,
+            TARGET_THUMB_MAX_H,
+            3.0,
+            Some(Color32::from_black_alpha(20)),
         );
     } else {
         let inner =
@@ -298,13 +295,17 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     if targets.is_empty() {
         return;
     }
-    ui.label(egui::RichText::new("Items").size(PILL_FONT_SIZE).strong());
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = Vec2::splat(4.0);
-        for target in targets {
-            paint_target_thumb(ui, catalog, icons, target);
-        }
-    });
+    ui.label(egui::RichText::new("Items").small().strong());
+    crate::pickers::paint_even_icon_grid(
+        ui,
+        catalog,
+        icons,
+        targets,
+        |_| false,
+        crate::pickers::IconGridKind::Targets { removable: false },
+        |_, _| {},
+        |_| {},
+    );
 }
 
 /// Right-edge space covered by a floating vertical scrollbar (egui default allocates 0).
@@ -330,12 +331,13 @@ pub fn paint_action_row(
     pills_cache: &mut HashMap<ActionId, (u64, Vec<SummaryPill>)>,
     paint_revision: u64,
     validation_error: Option<&str>,
+    show_logs: bool,
 ) -> RowInteraction {
     let mut action_click = RowAction::None;
     let mut chrome_hovered = false;
     let mut tip_hovered = false;
     // Match TreeView node height.
-    let interact_y = ui.spacing().interact_size.y;
+    let interact_y = row_height(ui);
     let row_h = action_row_height(action, interact_y);
     let base_h = default_row_height(interact_y);
 
@@ -364,16 +366,19 @@ pub fn paint_action_row(
             if del.clicked() {
                 action_click = RowAction::Delete;
             }
+            chrome_rect = del.rect;
 
-            let logs = row_action_btn(ui, "📋", "Logs", None);
-            // contains_pointer: the full-row sense below steals `.hovered()` over these buttons.
-            if logs.contains_pointer() {
-                chrome_hovered = true;
+            if show_logs {
+                let logs = row_action_btn(ui, "📋", "Logs", None);
+                // contains_pointer: the full-row sense below steals `.hovered()` over these buttons.
+                if logs.contains_pointer() {
+                    chrome_hovered = true;
+                }
+                if logs.clicked() {
+                    action_click = RowAction::Logs;
+                }
+                chrome_rect = logs.rect.union(del.rect);
             }
-            if logs.clicked() {
-                action_click = RowAction::Logs;
-            }
-            chrome_rect = logs.rect.union(del.rect);
             ui.spacing_mut().item_spacing.x = spacing;
 
             let content_w = ui.available_width().max(0.0);
@@ -391,7 +396,7 @@ pub fn paint_action_row(
 
                 // Pin the type badge to the standard row band.
                 content.allocate_ui_with_layout(
-                    Vec2::new(ICON_SIZE, base_h),
+                    Vec2::new(type_badge_side(&content), base_h),
                     egui::Layout::top_down(egui::Align::Center),
                     |ui| {
                         extend_drag_handle(
@@ -651,11 +656,11 @@ mod tests {
 
     #[test]
     fn thumb_display_size_preserves_aspect() {
-        let wide = image_view::fit_in_box(64.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
+        let wide = image_view::fit_icon_thumb(64.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         assert!((wide.x / wide.y - 2.0).abs() < 0.01);
         assert!(wide.y <= TARGET_THUMB_MAX_H + 0.01);
 
-        let tall = image_view::fit_in_box(16.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
+        let tall = image_view::fit_icon_thumb(16.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         assert!((tall.x / tall.y - 0.5).abs() < 0.01);
         assert!((tall.y - TARGET_THUMB_MAX_H).abs() < 0.01);
     }
@@ -682,6 +687,7 @@ mod tests {
                 &mut HashMap::new(),
                 0,
                 None,
+                true,
             );
             assert_eq!(result.action, RowAction::None);
         });
@@ -713,6 +719,7 @@ mod tests {
                     &mut HashMap::new(),
                     0,
                     None,
+                    true,
                 );
                 assert!(
                     result.drag_handle_rect.width() > 0.0 && result.drag_handle_rect.height() > 0.0,
@@ -756,6 +763,7 @@ mod tests {
                     &mut HashMap::new(),
                     0,
                     None,
+                    true,
                 )
                 .action,
                 RowAction::None
@@ -789,6 +797,7 @@ mod tests {
                     &mut HashMap::new(),
                     0,
                     None,
+                    true,
                 )
                 .action,
                 RowAction::None
@@ -887,6 +896,7 @@ mod tests {
             &mut HashMap::new(),
             0,
             None,
+            true,
         )
     }
 

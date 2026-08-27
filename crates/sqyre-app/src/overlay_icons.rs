@@ -49,7 +49,8 @@ pub const DEFAULT_ICON_ID: &str = "play";
 
 const PHOSPHOR_FAMILY: &str = "phosphor";
 
-fn phosphor_font_id(size: f32) -> FontId {
+/// Font for painting Phosphor catalog glyphs (overlay buttons, command palette).
+pub(crate) fn glyph_font_id(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name(PHOSPHOR_FAMILY.into()))
 }
 
@@ -150,7 +151,7 @@ pub fn paint_glyph_bare(
         ui,
         rect,
         icon.glyph,
-        phosphor_font_id((size * 0.55).round()),
+        glyph_font_id((size * 0.55).round()),
         color,
     );
     if busy {
@@ -175,7 +176,7 @@ pub fn icon_glyph_button(
         ui,
         rect,
         icon.glyph,
-        phosphor_font_id((size * 0.48).round()),
+        glyph_font_id((size * 0.48).round()),
         crate::theme::PRIMARY,
     );
     response.on_hover_text(icon.label)
@@ -227,7 +228,7 @@ fn paint_picker_chrome(ui: &mut egui::Ui, rect: egui::Rect, selected: bool, hove
     let stroke = if selected || hovered {
         egui::Stroke::new(1.5, crate::theme::PRIMARY)
     } else {
-        egui::Stroke::new(1.0, crate::theme::PRIMARY)
+        crate::theme::inner_stroke()
     };
     ui.painter()
         .rect_filled(rect, egui::CornerRadius::same(8), fill);

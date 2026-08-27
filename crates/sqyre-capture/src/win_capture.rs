@@ -44,10 +44,23 @@ impl OsCapturer {
         capture_rect_gdi(rect)
     }
 
+    /// GDI capture is always synchronous; identical to [`Self::capture_rect_ref`].
+    pub fn capture_rect_fresh_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        self.capture_rect_ref(rect)
+    }
+
     /// Capture RGB directly (no alpha channel / no second conversion pass).
     pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
         let _guard = self.inner.lock();
         capture_rect_rgb_gdi(rect)
+    }
+
+    /// GDI capture is always synchronous; identical to [`Self::capture_rect_rgb_ref`].
+    pub fn capture_rect_rgb_fresh_ref(
+        &self,
+        rect: DesktopRect,
+    ) -> Result<RgbCapture, CaptureError> {
+        self.capture_rect_rgb_ref(rect)
     }
 
     /// Virtual desktop bounds (`&self`).
@@ -73,6 +86,7 @@ impl OsCapturer {
 }
 
 fn virtual_screen_metrics() -> Result<DesktopRect, CaptureError> {
+    // SAFETY: GetSystemMetrics with SM_*VIRTUALSCREEN needs no live handles; values are process-global.
     unsafe {
         let x = GetSystemMetrics(SM_XVIRTUALSCREEN);
         let y = GetSystemMetrics(SM_YVIRTUALSCREEN);
@@ -121,6 +135,8 @@ fn capture_rect_bgra(rect: DesktopRect) -> Result<(Vec<u8>, u32, u32), CaptureEr
     let w = rect.w as u32;
     let h = rect.h as u32;
 
+    // SAFETY: every GDI object created here is released on all return paths; GetDIBits writes
+    // into `bgra`, which is sized for tightly packed w×h×4 BGRA.
     unsafe {
         let screen_dc = GetDC(None);
         if screen_dc.is_invalid() {
@@ -213,6 +229,7 @@ fn capture_rect_bgra(rect: DesktopRect) -> Result<(Vec<u8>, u32, u32), CaptureEr
 
 fn enum_monitor_rects() -> Result<Vec<DesktopRect>, CaptureError> {
     let mut rects: Vec<DesktopRect> = Vec::new();
+    // SAFETY: callback only mutates `rects` via lparam for the duration of EnumDisplayMonitors.
     unsafe {
         let ok = EnumDisplayMonitors(
             None,
@@ -225,11 +242,13 @@ fn enum_monitor_rects() -> Result<Vec<DesktopRect>, CaptureError> {
             return Ok(vec![vb]);
         }
     }
+    rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
     Ok(rects)
 }
 
 /// Primary monitor DPI scale (`dpi / 96`).
 pub(crate) fn primary_monitor_scale() -> Option<f32> {
+    // SAFETY: MonitorFromPoint / GetDpiForMonitor use stack out-params; no GDI handle is retained.
     unsafe {
         let mon = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
         if mon.is_invalid() {
@@ -249,6 +268,7 @@ pub(crate) fn primary_monitor_scale() -> Option<f32> {
 /// Per-Monitor DPI awareness V2 so GDI / metrics / input use physical pixels.
 pub(crate) fn enable_per_monitor_dpi_v2() {
     // Ignore failure (already set, or older Windows) — best-effort.
+    // SAFETY: the awareness constant is a documented process-wide value; no handles involved.
     let _ = unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
 }
 

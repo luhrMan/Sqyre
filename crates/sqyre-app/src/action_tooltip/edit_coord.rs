@@ -99,6 +99,7 @@ fn coord_picker_row(
         catalog,
         icons,
         previews,
+        ..
     } = paint;
     let display = if coord.is_empty() {
         "(unset)"

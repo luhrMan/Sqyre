@@ -17,7 +17,7 @@ pub use macro_record::{MacroRecordBridge, MacroRecordEvent, RecordMouseButton};
 pub use screen_click::ScreenClickBridge;
 pub use sqyre_domain::{
     failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
-    validate_continue_key, validate_not_failsafe, FAILSAFE_KEYS, FAILSAFE_LABEL,
+    validate_continue_key, validate_not_failsafe, KeyError, FAILSAFE_KEYS, FAILSAFE_LABEL,
 };
 
 pub use error::HotkeyError;
@@ -90,14 +90,17 @@ impl HotkeyService for NullHotkeys {
 #[cfg(all(feature = "hooks", not(target_os = "windows")))]
 mod hooks;
 
+#[cfg(all(feature = "hooks", target_os = "linux"))]
+mod linux_evdev;
+
 #[cfg(all(feature = "hooks", not(target_os = "windows")))]
-pub use hooks::RdevHotkeys;
+pub use hooks::{linux_in_input_group, linux_uses_evdev_grab, RdevHotkeys};
 
 #[cfg(all(feature = "hooks", target_os = "windows"))]
 mod win_hooks;
 
 #[cfg(all(feature = "hooks", target_os = "windows"))]
-pub use win_hooks::WinHotkeys;
+pub use win_hooks::OsHotkeys;
 
 /// Default hotkeys + bridges (continue-wait, screen-click, macro record, chords).
 pub fn default_hotkeys() -> (
@@ -114,7 +117,7 @@ pub fn default_hotkeys() -> (
     {
         let bridge = ContinueWaitBridge::new(true);
         (
-            Box::new(WinHotkeys::new(
+            Box::new(OsHotkeys::new(
                 bridge.clone(),
                 screen_click.clone(),
                 macro_record.clone(),

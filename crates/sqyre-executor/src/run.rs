@@ -1,6 +1,6 @@
 use crate::actions::{
     execute_focus_window, execute_for_each_row, execute_pause, execute_run_macro,
-    execute_save_variable, execute_set_variable, execute_while,
+    execute_save_variable, execute_set_variable, execute_while, FlowLoopCtx,
 };
 use crate::backends::{
     AutomationBackend, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup, MoveOptions,
@@ -13,7 +13,7 @@ use sqyre_domain::{
     action_type_label, resolve_scalar_int, Action, ActionId, ActionKind, LoopJumpMode, Macro,
     MatchMode, MouseButton, PressState, ScalarValue,
 };
-use sqyre_ui_model::{
+use sqyre_ports::{
     clear_highlights, highlight_cursor, ActionHighlighter, ActionLogger, RuntimeVarSink,
 };
 use std::collections::BTreeSet;
@@ -36,6 +36,11 @@ pub struct Executor<'a> {
     /// `None` until the first publish. Skips re-publishing unchanged variables
     /// after every action.
     published_vars_revision: Option<u64>,
+    /// When true, the next image-search capture waits for a newer portal frame.
+    /// Cleared after that capture; set again by mouse/keyboard/scroll input so
+    /// nested searches without intervening input reuse the cache (fast) while
+    /// post-click nested searches still get a fresh frame.
+    capture_dirty: bool,
 }
 
 /// Hard default for nested RunMacro depth when callers omit a custom budget.
@@ -53,28 +58,60 @@ impl<'a> Executor<'a> {
             held_buttons: BTreeSet::new(),
             run_macro_stack: Vec::new(),
             published_vars_revision: None,
+            // First capture of the run should not reuse a pre-run portal cache.
+            capture_dirty: true,
+        }
+    }
+
+    /// Screen may have changed; the next image search should wait for a new frame.
+    pub(crate) fn mark_capture_dirty(&mut self) {
+        self.capture_dirty = true;
+    }
+
+    /// Consume the dirty flag (or honor a wait/repeat forced fresh) for one capture.
+    pub(crate) fn take_capture_fresh(&mut self, force: bool) -> bool {
+        if force || self.capture_dirty {
+            self.capture_dirty = false;
+            true
+        } else {
+            false
         }
     }
 
     pub(crate) fn input_click_down(&mut self, button: &str) -> Result<()> {
+        self.mark_capture_dirty();
         self.deps.automation.click(button, true)?;
         self.held_buttons.insert(button.to_string());
         Ok(())
     }
 
     pub(crate) fn input_click_up(&mut self, button: &str) -> Result<()> {
+        self.mark_capture_dirty();
         self.deps.automation.click(button, false)?;
         self.held_buttons.remove(button);
         Ok(())
     }
 
+    /// Press+release with `hold_ms` between edges (macro mouse delay).
+    /// Zero-hold taps are intermittently dropped by Wayland/EIS compositors
+    /// even when both edges return Ok.
+    pub(crate) fn input_click_tap(&mut self, button: &str, hold_ms: i32) -> Result<()> {
+        self.input_click_down(button)?;
+        if hold_ms > 0 {
+            self.interruptible_sleep(hold_ms)?;
+        }
+        self.input_click_up(button)
+    }
+
     pub(crate) fn input_key_down(&mut self, key: &str) -> Result<()> {
+        self.mark_capture_dirty();
         self.deps.automation.key_down(key)?;
         self.held_keys.insert(key.to_string());
         Ok(())
     }
 
     pub(crate) fn input_key_up(&mut self, key: &str) -> Result<()> {
+        self.mark_capture_dirty();
         self.deps.automation.key_up(key)?;
         self.held_keys.remove(key);
         Ok(())
@@ -162,9 +199,16 @@ impl<'a> Executor<'a> {
         label: impl Into<String>,
         image: &sqyre_match::ImageBuf,
     ) {
-        if let Some(logger) = self.deps.logger {
-            logger.log_image(action_id, label.into(), image);
+        let Some(logger) = self.deps.logger else {
+            return;
+        };
+        if !logger.log_images_enabled() {
+            return;
         }
+        let Some(image) = crate::log_draw::image_buf_to_log_image(label.into(), image) else {
+            return;
+        };
+        logger.log_image(action_id, &image);
     }
 
     pub fn log_item_pipeline(
@@ -176,16 +220,32 @@ impl<'a> Executor<'a> {
         steps: &[(&str, &sqyre_match::ImageBuf)],
         details: Vec<String>,
     ) {
-        if let Some(logger) = self.deps.logger {
-            logger.log_item_pipeline(
-                action_id,
-                title.into(),
-                summary.into(),
-                thumbnail,
-                steps,
-                details,
-            );
+        let Some(logger) = self.deps.logger else {
+            return;
+        };
+        if !logger.log_images_enabled() {
+            return;
         }
+        let title = title.into();
+        let Some(thumbnail) =
+            crate::log_draw::image_buf_to_log_image(format!("Item — {title}"), thumbnail)
+        else {
+            return;
+        };
+        let steps: Vec<_> = steps
+            .iter()
+            .filter_map(|(label, img)| {
+                crate::log_draw::image_buf_to_log_image((*label).to_string(), img)
+            })
+            .collect();
+        logger.log_item_pipeline(
+            action_id,
+            title,
+            summary.into(),
+            &thumbnail,
+            &steps,
+            details,
+        );
     }
 
     /// Record how long a named step took (shown in the action logs UI).
@@ -324,6 +384,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         held_buttons: BTreeSet::new(),
         run_macro_stack: vec![macro_.name.clone()],
         published_vars_revision: None,
+        capture_dirty: true,
     };
     macro_.init_runtime_variables();
     let monitor_sizes = match exec.deps.capturer.as_mut() {
@@ -472,15 +533,13 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::Click { button, state } => {
             if *button == MouseButton::Scroll {
                 let up = matches!(*state, PressState::Up);
+                exec.mark_capture_dirty();
                 exec.deps.automation.scroll(up).map_err(ExecError::from)
             } else {
                 match *state {
                     PressState::Down => exec.input_click_down(button.as_str()),
                     PressState::Up => exec.input_click_up(button.as_str()),
-                    PressState::Tap => {
-                        exec.input_click_down(button.as_str())?;
-                        exec.input_click_up(button.as_str())
-                    }
+                    PressState::Tap => exec.input_click_tap(button.as_str(), macro_.mouse_delay),
                 }
             }
         }
@@ -496,6 +555,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             let resolved = resolve_text(text, macro_)?;
             for ch in resolved.chars() {
                 exec.check_stopped()?;
+                exec.mark_capture_dirty();
                 exec.deps.automation.type_char(ch);
                 if *delay_ms > 0 {
                     exec.interruptible_sleep(*delay_ms)?;
@@ -522,6 +582,8 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
                     "Move: coordinate resolver not configured".into(),
                 ));
             };
+            exec.log(action.id, format!("Move → ({x}, {y}) [{}]", point.as_str()));
+            exec.mark_capture_dirty();
             exec.deps.automation.move_to(
                 x,
                 y,
@@ -563,12 +625,14 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             subactions,
         } => execute_while(
             exec,
-            action.id,
-            &condition.name,
+            &FlowLoopCtx {
+                action_id: action.id,
+                name: &condition.name,
+                subactions,
+            },
             condition.match_mode,
             &condition.clauses,
             *max_iterations,
-            subactions,
             macro_,
         ),
         ActionKind::ForEachRow {
@@ -578,7 +642,16 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             end_row,
             subactions,
         } => execute_for_each_row(
-            exec, action.id, name, sources, start_row, end_row, subactions, macro_,
+            exec,
+            &FlowLoopCtx {
+                action_id: action.id,
+                name,
+                subactions,
+            },
+            sources,
+            start_row,
+            end_row,
+            macro_,
         ),
         ActionKind::Pause {
             message,
@@ -749,13 +822,13 @@ pub(crate) fn resolve_text(text: &str, macro_: &Macro) -> Result<String> {
 mod tests {
     use super::*;
     use crate::backends::DesktopRect;
+    use crate::lines_for;
     use crate::test_support::FixedResolver;
     use crate::test_support::{RecordingBackend, RecordingCapturer};
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, ConditionOperator, CoordinateRef, ScalarValue,
         VariableAssignment,
     };
-    use sqyre_ui_model::lines_for;
 
     const RUN_RESOLVER: FixedResolver = FixedResolver::point_area((42, 99), (0, 0, 10, 10));
 
@@ -957,6 +1030,7 @@ mod tests {
             held_buttons: BTreeSet::new(),
             run_macro_stack: Vec::new(),
             published_vars_revision: None,
+            capture_dirty: true,
         };
         let err = exec.interruptible_sleep(1000).unwrap_err();
         assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));

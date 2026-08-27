@@ -7,7 +7,7 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use sqyre_domain::{ActionId, KnownVariableNames};
 use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
 use sqyre_persist::ProgramCatalog;
-use sqyre_ui_model::HighlightSnapshot;
+use sqyre_ports::HighlightSnapshot;
 use std::collections::HashMap;
 
 pub struct CatalogPaint<'a> {
@@ -43,6 +43,8 @@ pub struct TreePaint<'a> {
     /// Per-frame summary-pill cache (keyed by action id; filled on demand).
     pub pills_cache: &'a mut HashMap<ActionId, (u64, Vec<sqyre_ui_model::SummaryPill>)>,
     pub paint_revision: u64,
+    /// Show per-row Logs buttons (user "Log Meta Images" setting).
+    pub show_logs: bool,
 }
 
 /// Catalog paint + var theme + recording bridges (action tooltip / defaults edit).
@@ -50,6 +52,7 @@ pub struct TipUiCtx<'a> {
     pub paint: CatalogPaint<'a>,
     pub theme: VarTheme<'a>,
     pub bridges: RecordBridges<'a>,
+    pub compact_program_headers: bool,
 }
 
 /// Bundled args for [`crate::action_tooltip::edit::paint_edit_fields`].

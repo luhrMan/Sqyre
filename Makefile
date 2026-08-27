@@ -1,8 +1,8 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre release windows macos test coverage coverage-floors check check-fmt fmt clippy deny machete \
-	release-gate run tessdata appimage docs-media wasm help
+.PHONY: all sqyre probe release release-bundle windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
+	release-gate run tessdata appimage install-desktop docs-media wasm wasm-check help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
@@ -65,11 +65,16 @@ all: sqyre
 help:
 	@echo "Targets:"
 	@echo "  all / sqyre  - cargo build (debug) -> $(BIN)/sqyre$(BIN_EXT)  [default]"
+	@echo "  probe        - cargo build (debug) -> $(BIN)/sqyre-probe$(BIN_EXT)"
 	@echo "  release      - fmt + check, then cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
+	@echo "  release-bundle - Linux: release + bundled Tesseract -> $(BIN)/sqyre-bundle/ (no check gate)"
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
 	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
 	@echo "  macos        - fmt + check, then native macOS release -> $(BIN)/sqyre  (macOS host)"
 	@echo "  test         - cargo nextest (fallback: cargo test)"
+	@echo "  smoke        - debug build then ./bin/sqyre --version"
+	@echo "  bench        - criterion benches (match, vision, serialize; not run in CI)"
+	@echo "  wasm-check   - cargo check sqyre-app for wasm32 (no Trunk / no full wasm build)"
 	@echo "  check-fmt    - cargo fmt --check"
 	@echo "  fmt          - cargo fmt --all (write)"
 	@echo "  clippy       - cargo clippy --workspace --all-targets (-D warnings)"
@@ -84,14 +89,25 @@ help:
 	@echo "  docs-media   - regenerate docs/images screenshots"
 	@echo "  appimage     - fmt + check, then AppImage -> $(BIN)/ (Docker fallback if tools missing)"
 	@echo "                 (RELEASE_VERSION=…; SQYRE_APPIMAGE_FORCE_NATIVE=1)"
+	@echo "  install-desktop - install .desktop + icon for GNOME/Wayland (Linux dev builds)"
 	@echo "  wasm         - fmt + check, then GUI-only WASM editor -> $(BIN)/wasm/ (requires Trunk)"
 
 $(BIN):
 	mkdir -p $(BIN)
 
+ifeq ($(HOST_OS),linux)
+  SQYRE_APP_FEATURES := --features portal-capture
+else
+  SQYRE_APP_FEATURES :=
+endif
+
 sqyre: $(BIN)
-	$(CARGO) build -p sqyre-app $(CARGO_FLAGS)
+	$(CARGO) build -p sqyre-app $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/debug/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
+
+probe: $(BIN)
+	$(CARGO) build -p sqyre-probe --features portal-capture $(CARGO_FLAGS)
+	cp -f $(TARGET_DIR)/debug/sqyre-probe$(BIN_EXT) $(BIN)/sqyre-probe$(BIN_EXT)
 
 # Sequential fmt → check so release/packaging stays gated under make -j.
 release-gate:
@@ -99,8 +115,18 @@ release-gate:
 	$(MAKE) check
 
 release: release-gate $(BIN)
-	$(CARGO) build -p sqyre-app --release $(CARGO_FLAGS)
+	$(CARGO) build -p sqyre-app --release $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/release/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
+
+# Portable Linux directory with libtesseract/leptonica + tessdata (needs patchelf).
+# Skips release-gate (clippy/deny): local packaging only; run `make check` before shipping.
+release-bundle: $(BIN)
+	@if [ "$(HOST_OS)" != "linux" ]; then \
+		echo "make release-bundle requires a Linux host (got $(HOST_OS))"; \
+		exit 1; \
+	fi
+	$(CARGO) build -p sqyre-app --release $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
+	SQYRE_BUNDLE_SKIP_BUILD=1 ./scripts/linux/packaging/bundle-release.sh
 
 # Windows release binary (no MSI). Docker MinGW cross from Linux; native on Windows.
 windows: release-gate $(BIN)
@@ -122,6 +148,23 @@ test:
 		echo "  Install: cargo install cargo-nextest --locked"; \
 		$(CARGO) test --workspace $(CARGO_FLAGS); \
 	fi
+
+smoke: sqyre
+	$(BIN)/sqyre$(BIN_EXT) --version
+
+# Local-only: do not add to CI. Name each [[bench]] so cargo never runs `--lib`
+# (libtest rejects Criterion CLI flags). Short times are set in the bench sources.
+bench:
+	$(CARGO) bench -p sqyre-match --bench template_match $(CARGO_FLAGS)
+	$(CARGO) bench -p sqyre-vision --bench vision_hot_paths $(CARGO_FLAGS)
+	$(CARGO) bench -p sqyre-serialize --bench macro_codec $(CARGO_FLAGS)
+
+# Compile-only WASM editor (no Trunk). CI Linux test job runs this.
+# Skip `rustup target add` when the target is already installed (read-only RUSTUP_HOME in CI).
+wasm-check:
+	@rustup target list --installed | grep -q wasm32-unknown-unknown \
+		|| rustup target add wasm32-unknown-unknown
+	$(CARGO) check -p sqyre-app --target wasm32-unknown-unknown --no-default-features $(CARGO_FLAGS)
 
 check-fmt:
 	$(CARGO) fmt --all -- --check
@@ -185,6 +228,14 @@ docs-media:
 
 appimage: release-gate
 	./scripts/linux/packaging/appimage/build-appimage.sh
+
+# GNOME/Wayland dock icons need a matching .desktop file (see crates/sqyre-app APP_ID).
+install-desktop: release $(BIN)
+	@if [ "$(HOST_OS)" != "linux" ]; then \
+		echo "make install-desktop requires a Linux host (got $(HOST_OS))"; \
+		exit 1; \
+	fi
+	./scripts/linux/packaging/install-desktop.sh $(BIN)/sqyre
 
 # Browser GUI editor (no Run / capture / OCR). Requires: rustup target wasm32-unknown-unknown, trunk.
 wasm: release-gate

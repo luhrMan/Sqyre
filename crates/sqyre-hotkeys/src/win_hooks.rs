@@ -2,6 +2,14 @@
 //!
 //! Replaces `rdev` on Windows: keeps the LL hook path fast (VK map only — no
 //! `AttachThreadInput` / `ToUnicodeEx`) so Windows does not silently remove the hook.
+//!
+//! Injected input (`SendInput` mouse moves / typed keys) is skipped so automation
+//! cannot flood the hook and cause Windows to drop it — that previously broke
+//! global hotkeys whenever Sqyre was unfocused (focused path uses egui instead).
+//!
+//! Unfocused Esc uses this LL hook. UIPI blocks it when the foreground app is
+//! higher integrity than Sqyre (e.g. a game run as Administrator) — match
+//! elevation; extra poll/hotkey/raw-input sinks cannot bypass that.
 
 use crate::continue_wait::{vk_key_name, ContinueWaitBridge};
 use crate::macro_hotkeys::MacroHotkeyBridge;
@@ -18,10 +26,10 @@ use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
 use windows::Win32::System::Threading::GetCurrentThreadId;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, DispatchMessageW, GetMessageW, PostThreadMessageW, SetWindowsHookExW,
-    TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, MSG,
-    MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_QUIT, WM_RBUTTONDOWN,
-    WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
+    TranslateMessage, UnhookWindowsHookEx, HHOOK, KBDLLHOOKSTRUCT, LLKHF_EXTENDED, LLKHF_INJECTED,
+    LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL, WM_KEYDOWN, WM_KEYUP,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_QUIT,
+    WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN, WM_SYSKEYUP,
 };
 
 struct HookCtx {
@@ -51,7 +59,7 @@ fn take_hhook(slot: &AtomicIsize) -> HHOOK {
     HHOOK(slot.swap(0, Ordering::SeqCst) as *mut _)
 }
 
-pub struct WinHotkeys {
+pub struct OsHotkeys {
     stop: Arc<AtomicBool>,
     join: Mutex<Option<JoinHandle<()>>>,
     continue_wait: ContinueWaitBridge,
@@ -60,7 +68,7 @@ pub struct WinHotkeys {
     macro_hotkeys: MacroHotkeyBridge,
 }
 
-impl WinHotkeys {
+impl OsHotkeys {
     pub fn new(
         continue_wait: ContinueWaitBridge,
         screen_click: ScreenClickBridge,
@@ -78,7 +86,7 @@ impl WinHotkeys {
     }
 }
 
-impl HotkeyService for WinHotkeys {
+impl HotkeyService for OsHotkeys {
     fn start(&mut self, callbacks: HotkeyCallbacks) -> Result<(), HotkeyError> {
         self.stop();
         let stop = Arc::clone(&self.stop);
@@ -117,6 +125,8 @@ impl HotkeyService for WinHotkeys {
                             })?;
                     store_hhook(&KEY_HOOK, key);
                     store_hhook(&MOUSE_HOOK, mouse);
+                    // SAFETY: GetCurrentThreadId is always safe; this is the hook thread that
+                    // later receives PostThreadMessageW(WM_QUIT) from stop().
                     HOOK_THREAD_ID.store(unsafe { GetCurrentThreadId() }, Ordering::SeqCst);
                     Ok(())
                 })();
@@ -204,7 +214,16 @@ unsafe extern "system" fn keyboard_proc(code: i32, wparam: WPARAM, lparam: LPARA
 
 unsafe extern "system" fn mouse_proc(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if code >= 0 {
-        let _ = std::panic::catch_unwind(|| handle_mouse(wparam, lparam));
+        let msg = wparam.0 as u32;
+        // Game mouse-look floods WM_MOUSEMOVE. Skip the CTX lock unless recording
+        // / screen-click needs coordinates — otherwise Windows drops the keyboard
+        // hook and unfocused Esc dies.
+        let track_move = msg != WM_MOUSEMOVE
+            || crate::macro_record::hook_wants_mouse_moves()
+            || crate::screen_click::hook_wants_mouse_moves();
+        if track_move {
+            let _ = std::panic::catch_unwind(|| handle_mouse(wparam, lparam));
+        }
     }
     let hook = hhook_from_atomic(&MOUSE_HOOK);
     // SAFETY: forwarding to next hook in the chain.
@@ -215,6 +234,10 @@ fn handle_keyboard(wparam: WPARAM, lparam: LPARAM) {
     let msg = wparam.0 as u32;
     // SAFETY: lparam points at KBDLLHOOKSTRUCT for the duration of the hook call.
     let kb = unsafe { &*(lparam.0 as *const KBDLLHOOKSTRUCT) };
+    // Ignore our own / other injected keystrokes so Type actions cannot flood the hook.
+    if kb.flags.contains(LLKHF_INJECTED) {
+        return;
+    }
     let extended = kb.flags.contains(LLKHF_EXTENDED);
     let Some(name) = vk_key_name(kb.vkCode, extended) else {
         return;
@@ -225,51 +248,94 @@ fn handle_keyboard(wparam: WPARAM, lparam: LPARAM) {
         return;
     }
 
-    let mut guard = CTX.lock();
-    let Some(ctx) = guard.as_mut() else {
-        return;
-    };
-    if ctx.stop.load(Ordering::SeqCst) {
-        return;
+    // Work under the lock must stay tiny — Windows silently removes LL hooks that
+    // exceed ~300ms. Fire callbacks only after releasing CTX.
+    enum EscAction {
+        None,
+        Failsafe(Arc<dyn Fn() + Send + Sync>),
+        StopMacros(Arc<dyn Fn() + Send + Sync>),
     }
 
-    if is_press {
-        ctx.pressed.insert(name);
-    } else {
-        ctx.pressed.remove(name);
+    struct KeyUpdate {
+        pressed: HashSet<&'static str>,
+        continue_wait: ContinueWaitBridge,
+        macro_hotkeys: MacroHotkeyBridge,
+        on_fire: Arc<dyn Fn(String) + Send + Sync>,
+        macro_record: Option<MacroRecordBridge>,
+        esc: EscAction,
     }
 
-    ctx.continue_wait.on_pressed_keys(&ctx.pressed);
-    let on_fire = Arc::clone(&ctx.callbacks.on_macro_hotkey);
-    ctx.macro_hotkeys.on_pressed_keys(&ctx.pressed, &*on_fire);
-    // When LL hooks deliver keys (Sqyre not focused), record immediately.
-    // While focused, win_focused_keys polls GetAsyncKeyState instead.
-    if ctx.macro_record.is_armed() {
-        let keys: HashSet<&str> = ctx.pressed.iter().copied().collect();
-        ctx.macro_record.sync_pressed_keys(&keys);
-    }
-
-    if is_press && name == "esc" {
-        let ctrl = ctx.pressed.contains("ctrl");
-        let shift = ctx.pressed.contains("shift") || ctx.pressed.contains("rshift");
-        if ctx.macro_record.on_escape() {
-            // Macro recording takes Esc.
-        } else if ctx.screen_click.on_escape() {
-            // Point/area recording takes Esc; don't also stop macros.
-        } else if crate::failsafe_modifiers_held(&ctx.pressed) {
-            let on_failsafe = Arc::clone(&ctx.callbacks.on_failsafe);
-            drop(guard);
-            on_failsafe();
-        } else if !ctrl && !shift && !ctx.continue_wait.continue_is_escape() {
-            let on_escape = Arc::clone(&ctx.callbacks.on_escape_stop);
-            drop(guard);
-            on_escape();
+    let update = {
+        let mut guard = CTX.lock();
+        let Some(ctx) = guard.as_mut() else {
+            return;
+        };
+        if ctx.stop.load(Ordering::SeqCst) {
+            return;
         }
+
+        if is_press {
+            ctx.pressed.insert(name);
+        } else {
+            ctx.pressed.remove(name);
+        }
+
+        let mut esc = EscAction::None;
+        if is_press && name == "esc" {
+            let ctrl = ctx.pressed.contains("ctrl");
+            let shift = ctx.pressed.contains("shift") || ctx.pressed.contains("rshift");
+            if ctx.macro_record.on_escape() {
+                // Macro recording takes Esc.
+            } else if ctx.screen_click.on_escape() {
+                // Point/area recording takes Esc; don't also stop macros.
+            } else if crate::failsafe_modifiers_held(&ctx.pressed) {
+                esc = EscAction::Failsafe(Arc::clone(&ctx.callbacks.on_failsafe));
+            } else if !ctrl && !shift && !ctx.continue_wait.continue_is_escape() {
+                esc = EscAction::StopMacros(Arc::clone(&ctx.callbacks.on_escape_stop));
+            }
+        }
+
+        KeyUpdate {
+            pressed: ctx.pressed.clone(),
+            continue_wait: ctx.continue_wait.clone(),
+            macro_hotkeys: ctx.macro_hotkeys.clone(),
+            on_fire: Arc::clone(&ctx.callbacks.on_macro_hotkey),
+            macro_record: ctx
+                .macro_record
+                .is_armed()
+                .then(|| ctx.macro_record.clone()),
+            esc,
+        }
+    };
+
+    // Esc stop first — must not wait on hotkey/record bridge work.
+    match update.esc {
+        EscAction::Failsafe(cb) => cb(),
+        EscAction::StopMacros(cb) => cb(),
+        EscAction::None => {}
+    }
+
+    update.continue_wait.on_pressed_keys(&update.pressed);
+    update
+        .macro_hotkeys
+        .on_pressed_keys(&update.pressed, &*update.on_fire);
+    if let Some(rec) = update.macro_record.as_ref() {
+        let keys: HashSet<&str> = update.pressed.iter().copied().collect();
+        rec.sync_pressed_keys(&keys);
     }
 }
 
 fn handle_mouse(wparam: WPARAM, lparam: LPARAM) {
     let msg = wparam.0 as u32;
+    // SAFETY: lparam points at MSLLHOOKSTRUCT for the duration of the hook call.
+    let mouse = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
+    // SendInput absolute moves (and other injected input) must not enter this path —
+    // flooding WH_MOUSE_LL is the usual reason Windows silently unhooks us, which
+    // kills global hotkeys while Sqyre is unfocused.
+    if mouse.flags & LLMHF_INJECTED != 0 {
+        return;
+    }
+
     let mut guard = CTX.lock();
     let Some(ctx) = guard.as_mut() else {
         return;
@@ -279,9 +345,14 @@ fn handle_mouse(wparam: WPARAM, lparam: LPARAM) {
     }
 
     if msg == WM_MOUSEMOVE {
-        // SAFETY: lparam points at MSLLHOOKSTRUCT for the duration of the hook call.
-        let mouse = unsafe { &*(lparam.0 as *const MSLLHOOKSTRUCT) };
-        ctx.screen_click.on_mouse_move(mouse.pt.x, mouse.pt.y);
+        let record_armed = ctx.macro_record.is_armed();
+        let click_armed = ctx.screen_click.is_armed();
+        if !record_armed && !click_armed {
+            return;
+        }
+        if !ctx.screen_click.grab_owns_input() {
+            ctx.screen_click.on_mouse_move(mouse.pt.x, mouse.pt.y);
+        }
         ctx.macro_record.on_mouse_move(mouse.pt.x, mouse.pt.y);
         return;
     }
@@ -295,8 +366,14 @@ fn handle_mouse(wparam: WPARAM, lparam: LPARAM) {
         WM_MBUTTONUP => (RecordMouseButton::Middle, false),
         _ => return,
     };
+    ctx.macro_record.set_last_pos(mouse.pt.x, mouse.pt.y);
+    ctx.screen_click.on_mouse_move(mouse.pt.x, mouse.pt.y);
     ctx.macro_record.on_button(button, pressed);
-    if pressed && button == RecordMouseButton::Left && ctx.screen_click.is_armed() {
+    if pressed
+        && button == RecordMouseButton::Left
+        && ctx.screen_click.is_armed()
+        && !ctx.screen_click.grab_owns_input()
+    {
         ctx.screen_click.on_left_click();
     }
 }

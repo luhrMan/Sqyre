@@ -2,7 +2,23 @@
 //! Armed by the UI; delivered via the hotkey rdev listener when hooks are enabled.
 
 use parking_lot::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+type AbsolutePosFn = Arc<dyn Fn() -> Option<(i32, i32)> + Send + Sync>;
+
+/// Fast path for OS hooks: skip mouse-move work unless a recording is armed.
+/// Windows uses this to avoid flooding WH_MOUSE_LL; Linux evdev grab uses it so
+/// pointer motion is not serialized on bridge mutexes (that stalls the cursor).
+static HOOK_WANTS_MOVES: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn hook_wants_mouse_moves() -> bool {
+    HOOK_WANTS_MOVES.load(Ordering::Relaxed)
+}
+
+fn sync_hook_wants_moves(armed: bool) {
+    HOOK_WANTS_MOVES.store(armed, Ordering::Relaxed);
+}
 
 #[derive(Debug, Clone)]
 enum Armed {
@@ -14,7 +30,7 @@ enum Armed {
     },
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct Inner {
     armed: Option<Armed>,
     last_pos: (i32, i32),
@@ -24,6 +40,14 @@ struct Inner {
     color_point: Option<(i32, i32)>,
     search_area: Option<(i32, i32, i32, i32)>,
     cancelled: bool,
+    /// When true, the fullscreen [`SelectionGrab`] owns mouse/Esc — hotkey hooks
+    /// must not also deliver those events (would double-count clicks).
+    grab_owns_input: bool,
+    /// When false, hooks still deliver left-clicks even if [`Self::grab_owns_input`].
+    block_hook_clicks: bool,
+    /// Compositor-absolute pointer (portal cursor). Used on every click so the
+    /// first corner is Wayland-accurate even over XWayland windows.
+    absolute_pos: Option<AbsolutePosFn>,
 }
 
 fn normalize_rect(ax: i32, ay: i32, bx: i32, by: i32) -> (i32, i32, i32, i32) {
@@ -45,35 +69,59 @@ impl ScreenClickBridge {
     }
 
     pub fn arm_point(&self) {
-        let mut g = self.inner.lock();
-        *g = Inner {
-            armed: Some(Armed::Point),
-            last_pos: g.last_pos,
-            ..Inner::default()
-        };
+        self.arm_with(Armed::Point);
     }
 
     pub fn arm_color(&self) {
-        let mut g = self.inner.lock();
-        *g = Inner {
-            armed: Some(Armed::Color),
-            last_pos: g.last_pos,
-            ..Inner::default()
-        };
+        self.arm_with(Armed::Color);
     }
 
     pub fn arm_search_area(&self) {
+        self.arm_with(Armed::SearchArea { first: None });
+    }
+
+    fn arm_with(&self, armed: Armed) {
         let mut g = self.inner.lock();
+        let last_pos = g.last_pos;
+        let absolute_pos = g.absolute_pos.clone();
         *g = Inner {
-            armed: Some(Armed::SearchArea { first: None }),
-            last_pos: g.last_pos,
+            armed: Some(armed),
+            last_pos,
+            absolute_pos,
             ..Inner::default()
         };
+        sync_hook_wants_moves(true);
+    }
+
+    /// Compositor-absolute pointer sampled on each click (portal cursor on Wayland).
+    pub fn set_absolute_pos(&self, f: impl Fn() -> Option<(i32, i32)> + Send + Sync + 'static) {
+        self.inner.lock().absolute_pos = Some(Arc::new(f));
     }
 
     pub fn disarm(&self) {
         let mut g = self.inner.lock();
         g.armed = None;
+        sync_hook_wants_moves(false);
+    }
+
+    /// When the fullscreen selection grab is active, hooks skip mouse/Esc delivery.
+    pub fn set_grab_owns_input(&self, owns: bool) {
+        let mut g = self.inner.lock();
+        g.grab_owns_input = owns;
+        g.block_hook_clicks = owns;
+    }
+
+    /// Keep hook clicks while blocking absolute hook moves (Wayland XQueryPointer).
+    pub fn allow_hook_clicks(&self) {
+        self.inner.lock().block_hook_clicks = false;
+    }
+
+    pub fn grab_owns_input(&self) -> bool {
+        self.inner.lock().grab_owns_input
+    }
+
+    pub fn block_hook_clicks(&self) -> bool {
+        self.inner.lock().block_hook_clicks
     }
 
     pub fn is_armed(&self) -> bool {
@@ -157,29 +205,20 @@ impl ScreenClickBridge {
 
     /// Hotkey thread: left button press while armed.
     pub fn on_left_click(&self) {
+        let sample = self.inner.lock().absolute_pos.clone();
+        let sampled = sample.as_ref().and_then(|f| f());
         let mut g = self.inner.lock();
-        let pos = g.last_pos;
-        match g.armed.clone() {
-            Some(Armed::Point) => {
-                g.point = Some(pos);
-                g.armed = None;
-            }
-            Some(Armed::Color) => {
-                g.color_point = Some(pos);
-                g.armed = None;
-            }
-            Some(Armed::SearchArea { first: None }) => {
-                g.armed = Some(Armed::SearchArea { first: Some(pos) });
-            }
-            Some(Armed::SearchArea {
-                first: Some((lx, ty)),
-            }) => {
-                let (rx, by) = pos;
-                g.search_area = Some(normalize_rect(lx, ty, rx, by));
-                g.armed = None;
-            }
-            None => {}
+        if let Some(pos) = sampled {
+            g.last_pos = pos;
         }
+        apply_left_click(&mut g);
+    }
+
+    /// Overlay/grab click at a known desktop point (do not sample portal cursor).
+    pub fn on_left_click_at(&self, x: i32, y: i32) {
+        let mut g = self.inner.lock();
+        g.last_pos = (x, y);
+        apply_left_click(&mut g);
     }
 
     /// Hotkey thread: Esc while armed cancels.
@@ -188,6 +227,7 @@ impl ScreenClickBridge {
         if g.armed.is_some() {
             g.armed = None;
             g.cancelled = true;
+            sync_hook_wants_moves(false);
             true
         } else {
             false
@@ -218,7 +258,33 @@ impl ScreenClickBridge {
         let mut g = self.inner.lock();
         g.point = Some((x, y));
         g.armed = None;
+        sync_hook_wants_moves(false);
     }
+}
+
+fn apply_left_click(g: &mut Inner) {
+    let pos = g.last_pos;
+    match g.armed.clone() {
+        Some(Armed::Point) => {
+            g.point = Some(pos);
+            g.armed = None;
+        }
+        Some(Armed::Color) => {
+            g.color_point = Some(pos);
+            g.armed = None;
+        }
+        Some(Armed::SearchArea { first: None }) => {
+            g.armed = Some(Armed::SearchArea { first: Some(pos) });
+        }
+        Some(Armed::SearchArea {
+            first: Some((lx, ty)),
+        }) => {
+            g.search_area = Some(normalize_rect(lx, ty, pos.0, pos.1));
+            g.armed = None;
+        }
+        None => {}
+    }
+    sync_hook_wants_moves(g.armed.is_some());
 }
 
 #[cfg(test)]
@@ -288,5 +354,50 @@ mod tests {
         assert_eq!(b.take_color_point(), Some((7, 9)));
         assert!(b.take_point().is_none());
         assert!(b.status_label().is_none());
+    }
+
+    #[test]
+    fn grab_owns_input_flag_roundtrip() {
+        let b = ScreenClickBridge::new();
+        assert!(!b.grab_owns_input());
+        b.set_grab_owns_input(true);
+        assert!(b.grab_owns_input());
+        b.arm_point();
+        // Arming resets bridge state including the grab flag.
+        assert!(!b.grab_owns_input());
+        b.set_grab_owns_input(true);
+        assert!(b.grab_owns_input());
+        b.set_grab_owns_input(false);
+        assert!(!b.grab_owns_input());
+    }
+
+    #[test]
+    fn allow_hook_clicks_keeps_grab_flag() {
+        let b = ScreenClickBridge::new();
+        b.arm_search_area();
+        b.set_grab_owns_input(true);
+        assert!(b.block_hook_clicks());
+        b.allow_hook_clicks();
+        assert!(!b.block_hook_clicks());
+        assert!(b.grab_owns_input());
+    }
+
+    #[test]
+    fn left_click_uses_absolute_pos_even_after_arm() {
+        let b = ScreenClickBridge::new();
+        b.set_absolute_pos(|| Some((3212, 528)));
+        b.on_mouse_move(10, 10);
+        b.arm_search_area();
+        b.on_left_click();
+        assert_eq!(b.peek_search_area_draft(), Some((3212, 528, 3212, 528)));
+    }
+
+    #[test]
+    fn left_click_at_ignores_absolute_pos() {
+        let b = ScreenClickBridge::new();
+        b.set_absolute_pos(|| Some((3212, 528)));
+        b.arm_search_area();
+        b.on_left_click_at(40, 50);
+        assert_eq!(b.peek_search_area_draft(), Some((40, 50, 40, 50)));
     }
 }

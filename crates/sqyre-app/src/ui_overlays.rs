@@ -2,7 +2,7 @@
 
 use crate::add_action::AddActionPicker;
 use crate::catalog::apply_main_monitor_resolution;
-use crate::data_editor::DataEditor;
+use crate::data_editor::{DataEditor, DataEditorCtx};
 use crate::icon_cache::IconCache;
 #[cfg(feature = "native-runtime")]
 use crate::pixel_color;
@@ -12,17 +12,6 @@ use crate::SqyreApp;
 use eframe::egui;
 use sqyre_domain::ActionId;
 use std::sync::atomic::Ordering;
-
-/// Close → hide to tray when available; Quit from tray allows real exit.
-pub fn handle_close_to_tray(app: &mut SqyreApp, ctx: &egui::Context) {
-    if app.tray.is_active()
-        && !app.tray.quit_requested()
-        && ctx.input(|i| i.viewport().close_requested())
-    {
-        ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-    }
-}
 
 /// Always-on-top macro buttons (settings-backed); hidden while recording is armed.
 #[cfg(feature = "native-runtime")]
@@ -92,15 +81,17 @@ pub fn show_logs_window(app: &mut SqyreApp, ctx: &egui::Context) {
 pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     show_logs_window(app, ctx);
     app.data_editor.show(
-        ctx,
-        &mut app.workspace.db,
-        &mut app.workspace.macros,
+        &mut DataEditorCtx {
+            ctx,
+            db: &mut app.workspace.db,
+            macros: &mut app.workspace.macros,
+            catalog: &mut app.workspace.catalog,
+            icons: &mut app.icon_cache,
+            screen_click: &app.screen_click,
+            settings: app.settings_ui.settings_mut(),
+        },
         app.workspace.selected_macro,
-        &mut app.workspace.catalog,
-        &mut app.icon_cache,
         &mut app.preview_tooltips,
-        &app.screen_click,
-        app.settings_ui.settings_mut(),
     );
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -174,6 +165,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             &mut app.hotkey_record,
             &app.run_session.macro_hotkeys,
             &app.screen_click,
+            app.settings_ui.settings().compact_program_headers,
             |_| {
                 defaults_to_persist = true;
             },
@@ -194,6 +186,87 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 }
 
+/// Open portal ScreenCast after the window is up (startup must not block on the picker).
+///
+/// Runs once: `shared_capturer_open_may_block()` stays true for the whole Wayland
+/// session, so treating a finished probe as idle would spawn a thread and
+/// `request_repaint()` every frame.
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    feature = "native-runtime",
+    target_os = "linux"
+))]
+fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
+    use std::sync::mpsc::TryRecvError;
+    use std::time::Duration;
+
+    if app.capture_probe_finished {
+        return;
+    }
+
+    if app.capture_probe_pending.is_none() {
+        if !sqyre_capture::shared_capturer_open_may_block() {
+            app.capture_probe_finished = true;
+            app.start_deferred_hotkeys();
+            return;
+        }
+        let now = std::time::Instant::now();
+        match app.capture_probe_not_before {
+            None => {
+                app.capture_probe_not_before = Some(now + Duration::from_millis(750));
+                ctx.request_repaint_after(Duration::from_millis(750));
+                return;
+            }
+            Some(t) => {
+                if let Some(wait) = t.checked_duration_since(now) {
+                    ctx.request_repaint_after(wait);
+                    return;
+                }
+            }
+        }
+        let (tx, rx) = std::sync::mpsc::channel();
+        app.capture_probe_pending = Some(rx);
+        std::thread::spawn(move || {
+            let result = match sqyre_capture::shared_capturer() {
+                Ok(_) => Ok(()),
+                Err(e) => Err(format!("Screen capture unavailable: {e}")),
+            };
+            let _ = tx.send(result);
+        });
+    }
+
+    let Some(rx) = app.capture_probe_pending.as_ref() else {
+        return;
+    };
+    match rx.try_recv() {
+        Ok(Ok(())) => {
+            app.capture_probe_pending = None;
+            app.capture_probe_finished = true;
+            app.start_deferred_hotkeys();
+            apply_main_monitor_resolution(&mut app.workspace.catalog);
+            let _ =
+                crate::catalog::prepare_catalog(&mut app.workspace.catalog, &mut app.workspace.db);
+            ctx.request_repaint();
+        }
+        Ok(Err(warn)) => {
+            app.capture_probe_pending = None;
+            app.capture_probe_finished = true;
+            app.start_deferred_hotkeys();
+            app.workspace.platform_warning = Some(match app.workspace.platform_warning.take() {
+                Some(existing) => format!("{existing}\n{warn}"),
+                None => warn,
+            });
+            ctx.request_repaint();
+        }
+        Err(TryRecvError::Empty) => ctx.request_repaint_after(Duration::from_millis(100)),
+        Err(TryRecvError::Disconnected) => {
+            app.capture_probe_pending = None;
+            app.capture_probe_finished = true;
+            app.start_deferred_hotkeys();
+        }
+    }
+}
+
 /// Settings reload, highlighter / log prefs, color sample, recording + macro overlays,
 /// hotkey/key record UI, and repaint pacing.
 pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
@@ -201,15 +274,23 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     poll_scheduled_backup(app, ctx);
     #[cfg(not(target_arch = "wasm32"))]
     poll_update(app, ctx);
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "native-runtime",
+        target_os = "linux"
+    ))]
+    poll_deferred_capture_probe(app, ctx);
 
     // Keep highlighter enable flag in sync with the preference.
     let highlight_on = app.settings_ui.settings().highlight_active_action;
     if app.run_session.highlighter.is_enabled() != highlight_on {
         app.run_session.highlighter.set_enabled(highlight_on);
     }
-    app.run_session
-        .action_log
-        .set_log_images(app.settings_ui.settings().save_meta_images);
+    let log_images = app.settings_ui.settings().save_meta_images;
+    app.run_session.action_log.set_log_images(log_images);
+    if !log_images && app.run_session.logs_window.take().is_some() {
+        app.run_session.logs_image_cache.clear();
+    }
     if app.settings_ui.reload_requested {
         app.settings_ui.reload_requested = false;
         apply_main_monitor_resolution(&mut app.workspace.catalog);
@@ -257,6 +338,20 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         }
         if app.pixel_sample_pending.is_none() {
             if let Some((x, y)) = app.screen_click.take_color_point() {
+                #[cfg(target_os = "linux")]
+                if let Some(hex) = app.recording_overlay.sample_frozen_pixel_hex(x, y) {
+                    app.tree.tooltip.apply_recorded_color(hex.clone());
+                    app.add_action_picker.apply_recorded_color(hex);
+                } else {
+                    match pixel_color::spawn_sample_pixel_hex(x, y) {
+                        Ok(rx) => {
+                            app.pixel_sample_pending = Some(rx);
+                            ctx.request_repaint();
+                        }
+                        Err(e) => crate::log::warn(format!("sample pixel color: {e}")),
+                    }
+                }
+                #[cfg(not(target_os = "linux"))]
                 match pixel_color::spawn_sample_pixel_hex(x, y) {
                     Ok(rx) => {
                         app.pixel_sample_pending = Some(rx);
@@ -280,10 +375,12 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     app.update_recording_visibility(ctx);
     #[cfg(feature = "native-runtime")]
     sync_macro_overlay(app, ctx);
-    // Windows Raw Input suppresses WH_KEYBOARD_LL while we are focused; mirror
+    // Raw Input (Windows) and Wayland focus delivery suppress global hooks; mirror
     // egui keys into the hotkey bridges so Record / Esc / chords still work.
     #[cfg(target_os = "windows")]
     crate::win_focused_keys::feed_focused_keyboard(app, ctx);
+    #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+    crate::linux_focused_keys::feed_focused_keyboard(app, ctx);
     app.drain_pending_hotkey_macros(ctx);
 
     if let Some(chord) = app.hotkey_record.show(ctx, &app.run_session.macro_hotkeys) {
@@ -315,6 +412,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             hotkey_record: &mut app.hotkey_record,
             screen_click: &app.screen_click,
             macros: &macros,
+            compact_program_headers: app.settings_ui.settings().compact_program_headers,
         });
         if result.catalog_changed {
             if let Err(e) = app.persist_database() {
@@ -327,8 +425,11 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     let running = app.run_session.state.running.load(Ordering::SeqCst);
-    if running
-        || app.hotkey_record.is_open()
+    if running {
+        // Macro tree highlighter; overlay spinner has its own wake thread.
+        // Keep this coarser than 60 Hz so Wayland focus/hint work is not on the hot path.
+        ctx.request_repaint_after(std::time::Duration::from_millis(50));
+    } else if app.hotkey_record.is_open()
         || app.key_record.is_open()
         || app.macro_record.is_open()
         || app.screen_click.is_armed()
@@ -436,8 +537,9 @@ fn poll_update(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 }
 
-/// Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A — skip while editing an action
-/// or when a text field has keyboard focus (so Ctrl+A still selects-all in editors).
+/// Ctrl+C / Ctrl+X / Ctrl+V / Ctrl+Z / Ctrl+Y / Ctrl+A / Alt+Up / Alt+Down —
+/// skip while editing an action or when a text field has keyboard focus
+/// (so Ctrl+A still selects-all in editors).
 ///
 /// Uses [`egui::Context::text_edit_focused`] rather than `egui_wants_keyboard_input`:
 /// the latter is true whenever *any* widget (including the TreeView) has focus, which
@@ -449,6 +551,23 @@ fn poll_update(app: &mut SqyreApp, ctx: &egui::Context) {
 ///
 /// Mutating shortcuts match the action toolbar: disabled while a macro is running.
 pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    let recording =
+        app.hotkey_record.is_open() || app.key_record.is_open() || app.macro_record.is_open();
+    if !recording {
+        let toggle_palette = ui.ctx().input_mut(|i| {
+            let mods = i.modifiers;
+            let want = mods.command && !mods.shift && !mods.alt && i.key_pressed(egui::Key::K);
+            if want {
+                i.consume_key(egui::Modifiers::COMMAND, egui::Key::K);
+            }
+            want
+        });
+        if toggle_palette {
+            app.command_palette.toggle();
+            return;
+        }
+    }
+
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     if !app.tree.tooltip.is_editing()
         && !app.hotkey_record.is_open()
@@ -456,26 +575,32 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
         && !app.macro_record.is_open()
         && !ui.ctx().text_edit_focused()
     {
-        let (copy, cut, paste, undo, redo, add_action) = ui.ctx().input(|i| {
-            let mut copy = false;
-            let mut cut = false;
-            let mut paste = false;
-            for ev in &i.events {
-                match ev {
-                    egui::Event::Copy => copy = true,
-                    egui::Event::Cut => cut = true,
-                    egui::Event::Paste(_) => paste = true,
-                    _ => {}
+        let (copy, cut, paste, undo, redo, add_action, nudge_up, nudge_down) =
+            ui.ctx().input_mut(|i| {
+                let mut copy = false;
+                let mut cut = false;
+                let mut paste = false;
+                for ev in &i.events {
+                    match ev {
+                        egui::Event::Copy => copy = true,
+                        egui::Event::Cut => cut = true,
+                        egui::Event::Paste(_) => paste = true,
+                        _ => {}
+                    }
                 }
-            }
-            let mod_key = i.modifiers.command;
-            let undo = mod_key && !i.modifiers.shift && i.key_pressed(egui::Key::Z);
-            let redo = mod_key
-                && (i.key_pressed(egui::Key::Y)
-                    || (i.modifiers.shift && i.key_pressed(egui::Key::Z)));
-            let add_action = mod_key && i.key_pressed(egui::Key::A);
-            (copy, cut, paste, undo, redo, add_action)
-        });
+                let mod_key = i.modifiers.command;
+                let undo = mod_key && !i.modifiers.shift && i.key_pressed(egui::Key::Z);
+                let redo = mod_key
+                    && (i.key_pressed(egui::Key::Y)
+                        || (i.modifiers.shift && i.key_pressed(egui::Key::Z)));
+                let add_action = mod_key && i.key_pressed(egui::Key::A);
+                // Consume so TreeView does not also treat Alt+arrows as selection move.
+                let nudge_up = i.consume_key(egui::Modifiers::ALT, egui::Key::ArrowUp);
+                let nudge_down = i.consume_key(egui::Modifiers::ALT, egui::Key::ArrowDown);
+                (
+                    copy, cut, paste, undo, redo, add_action, nudge_up, nudge_down,
+                )
+            });
         if running {
             return;
         }
@@ -491,6 +616,24 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.redo_tree();
         } else if add_action && !app.workspace.macros.is_empty() {
             app.add_action_picker.open();
+        } else if nudge_up {
+            app.nudge_selection(true);
+        } else if nudge_down {
+            app.nudge_selection(false);
         }
+    }
+}
+
+pub fn show_command_palette(app: &mut SqyreApp, ctx: &egui::Context) {
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
+    let commands =
+        crate::command_palette::collect_commands(crate::command_palette::CommandSources {
+            macros: &app.workspace.macros,
+            catalog: &app.workspace.catalog,
+            overlay_buttons: &app.settings_ui.settings().overlay_buttons,
+            running,
+        });
+    if let Some(kind) = app.command_palette.show(ctx, &commands) {
+        app.run_palette_command(ctx, kind);
     }
 }

@@ -1,0 +1,29 @@
+[package]
+name = "sqyre-probe"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Desktop capability probe for Sqyre (GNOME / Plasma / Cosmic parity verification)"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "sqyre-probe"
+path = "src/bin/sqyre-probe.rs"
+
+[features]
+portal-capture = ["sqyre-capture/portal-capture"]
+
+[dependencies]
+sqyre-capture = { path = "../sqyre-capture" }
+sqyre-hotkeys = { path = "../sqyre-hotkeys", features = ["hooks"] }
+sqyre-input = { path = "../sqyre-input" }
+sqyre-ports = { path = "../sqyre-ports" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+web-time = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
+pollster = "0.4"

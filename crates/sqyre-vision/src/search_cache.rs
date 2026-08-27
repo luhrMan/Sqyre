@@ -9,6 +9,7 @@ use crate::image_util::{load_rgb_image, mask_as_u8, resize_mask};
 use parking_lot::{Mutex, RwLock};
 use sqyre_domain::MatchMethod;
 use sqyre_match::{blur_image_owned, prepare_template, ImageBuf, PreparedTemplate};
+use sqyre_ports::PortError;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -336,9 +337,9 @@ fn mask_cache_hit(key: &str, mod_time: SystemTime) -> Option<Arc<Vec<u8>>> {
 pub fn get_cached_blurred_template(
     icon_path: &Path,
     blur_kernel: i32,
-) -> Result<Arc<ImageBuf>, String> {
-    let mod_time =
-        file_mtime(icon_path).ok_or_else(|| format!("stat {}: missing", icon_path.display()))?;
+) -> Result<Arc<ImageBuf>, PortError> {
+    let mod_time = file_mtime(icon_path)
+        .ok_or_else(|| PortError::Message(format!("stat {}: missing", icon_path.display())))?;
     let key = template_cache_key(icon_path, blur_kernel);
 
     if let Some(hit) = template_cache_hit(&key, mod_time, blur_kernel) {
@@ -357,7 +358,7 @@ pub fn get_cached_blurred_template(
     let raw = load_rgb_image(icon_path)?;
     let blurred = Arc::new(
         blur_image_owned(raw, blur_kernel)
-            .map_err(|e| format!("blur {}: {e}", icon_path.display()))?,
+            .map_err(|e| PortError::Message(format!("blur {}: {e}", icon_path.display())))?,
     );
     let bytes = blurred.data.len();
 
@@ -448,9 +449,9 @@ pub fn get_cached_prepared_template(
     mask_path: Option<&Path>,
     mask: Option<&[u8]>,
     method: MatchMethod,
-) -> Result<Arc<PreparedTemplate>, String> {
-    let tmpl_mod_time =
-        file_mtime(icon_path).ok_or_else(|| format!("stat {}: missing", icon_path.display()))?;
+) -> Result<Arc<PreparedTemplate>, PortError> {
+    let tmpl_mod_time = file_mtime(icon_path)
+        .ok_or_else(|| PortError::Message(format!("stat {}: missing", icon_path.display())))?;
     let mask_mod_time = mask_path.and_then(file_mtime);
     let key = prepared_cache_key(icon_path, blur_kernel, mask_path, method);
 
@@ -466,10 +467,9 @@ pub fn get_cached_prepared_template(
         return Ok(hit);
     }
 
-    let prepared = Arc::new(
-        prepare_template(template, mask, method)
-            .map_err(|e| format!("prepare template {}: {e}", icon_path.display()))?,
-    );
+    let prepared = Arc::new(prepare_template(template, mask, method).map_err(|e| {
+        PortError::Message(format!("prepare template {}: {e}", icon_path.display()))
+    })?);
     let bytes = prepared.approx_bytes();
 
     cache().write().insert_prepared(

@@ -9,10 +9,10 @@ use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::tree_chrome::{self, RowInteraction};
 use eframe::egui::{self, Key, Order, Vec2};
 use sqyre_domain::{
-    action_type_description, action_type_label, Action, ActionId, ActionKind, Macro,
+    action_type_description, action_type_label, Action, ActionId, ActionKind, CoordinateRef, Macro,
 };
 use sqyre_ui_model::{action_pastel_color, split_display_params, ActionDisplay};
-use sqyre_validate::validate_action;
+use sqyre_validate::validate_action_persist;
 
 use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, TipUiCtx, VarTheme};
 use crate::var_pills;
@@ -27,6 +27,8 @@ pub(crate) use edit_header::paint_action_edit_header;
 pub struct TooltipEdit {
     pub action_id: ActionId,
     pub draft: Action,
+    /// Snapshot at open; Save enables when `draft` differs (or provisional insert).
+    baseline: Action,
     pub error: Option<String>,
     /// Screen position when edit opened (pinned, not mouse-follow).
     pub anchor: egui::Pos2,
@@ -41,6 +43,13 @@ pub struct TooltipEdit {
     /// While true, size the window height to content (capped at screen max).
     /// Cleared after the initial fit settles, or when the user resizes.
     auto_fit: bool,
+}
+
+impl TooltipEdit {
+    /// Provisional inserts are always saveable; otherwise require a draft change.
+    fn save_enabled(&self) -> bool {
+        self.discard_on_cancel || self.draft != self.baseline
+    }
 }
 
 /// Tooltip lifecycle (editing flag + hover ownership).
@@ -78,6 +87,7 @@ impl TooltipState {
         *self = Self::Edit(Box::new(TooltipEdit {
             action_id: action.id,
             draft: action.clone(),
+            baseline: action.clone(),
             error: None,
             anchor,
             picker: ActivePicker::None,
@@ -98,6 +108,7 @@ impl TooltipState {
         *self = Self::Edit(Box::new(TooltipEdit {
             action_id: action.id,
             draft: action.clone(),
+            baseline: action.clone(),
             error: None,
             anchor,
             picker: ActivePicker::None,
@@ -130,6 +141,8 @@ impl TooltipState {
     }
 
     /// Validate draft (with live children) then apply. On failure keeps Edit + error.
+    /// Image search may persist with no target items or search area; the macro
+    /// tree shows that incompleteness via [`sqyre_validate::validate_action`].
     /// `before_mutate` runs after validation succeeds and before the tree is changed
     /// (for undo snapshots); it receives the pre-mutation root.
     pub fn try_save_validated(
@@ -160,7 +173,7 @@ impl TooltipState {
         }
         candidate.id = live.id;
 
-        if let Err(e) = validate_action(&candidate, macro_) {
+        if let Err(e) = validate_action_persist(&candidate, macro_) {
             edit.error = Some(e.to_string());
             return false;
         }
@@ -295,8 +308,8 @@ pub fn show(
         paint,
         theme,
         bridges,
+        ..
     } = ui;
-    // Esc while recording a key / chord / screen sample / macro is captured by the recorder.
     if !bridges.key_record.is_open()
         && !bridges.hotkey_record.is_open()
         && !bridges.screen_click.is_armed()
@@ -412,7 +425,7 @@ pub(crate) fn show_action_view_tip(
                     ui.set_max_width(max_w);
                     tree_chrome::paint_pill_pub(ui, label, pastel);
                     ui.add_space(4.0);
-                    ui.label(egui::RichText::new(description).size(12.0).weak());
+                    ui.label(egui::RichText::new(description).small().weak());
                     if !summary_pills.is_empty() {
                         ui.add_space(4.0);
                         sections::tip_wrapped_section(ui, |ui| {
@@ -462,7 +475,7 @@ pub(crate) fn show_action_view_tip(
                                 ui.horizontal(|ui| {
                                     ui.label(
                                         egui::RichText::new(format!("{}:", p.label))
-                                            .size(12.0)
+                                            .small()
                                             .strong(),
                                     );
                                     if p.label.eq_ignore_ascii_case("Program") {
@@ -491,7 +504,11 @@ pub(crate) fn show_action_view_tip(
                                         p.minimal(),
                                         known_vars,
                                         is_dark,
-                                        ui.visuals().text_color(),
+                                        if p.minimal() == CoordinateRef::UNSET_LABEL {
+                                            crate::theme::warn_fg()
+                                        } else {
+                                            ui.visuals().text_color()
+                                        },
                                     );
                                 });
                             }
@@ -528,6 +545,7 @@ fn show_edit_window(
         paint,
         theme,
         bridges,
+        compact_program_headers,
     } = ui;
     let VarTheme { is_dark, .. } = *theme;
     let (action_id, anchor, type_key, has_coord_preview) = match state {
@@ -550,7 +568,13 @@ fn show_edit_window(
 
     // Picker modal first (foreground); apply result onto draft.
     if let TooltipState::Edit(edit) = state {
-        let result = pickers::show_active_picker(ctx, &mut edit.picker, paint, macros);
+        let result = pickers::show_active_picker(
+            ctx,
+            &mut edit.picker,
+            paint,
+            macros,
+            *compact_program_headers,
+        );
         apply_picker_result(&mut edit.draft, result);
     }
 
@@ -587,11 +611,11 @@ fn show_edit_window(
                 .inner_margin(egui::Margin::symmetric(10, 8)),
         )
         .show(ctx, |ui| {
-            let err = match state {
-                TooltipState::Edit(edit) => edit.error.as_deref(),
-                _ => None,
+            let (err, save_enabled) = match state {
+                TooltipState::Edit(edit) => (edit.error.as_deref(), edit.save_enabled()),
+                _ => (None, false),
             };
-            match paint_action_edit_header(ui, label, pastel, None, err) {
+            match paint_action_edit_header(ui, label, pastel, None, err, save_enabled) {
                 SaveCancel::Cancel => cancel = true,
                 SaveCancel::Save => save = true,
                 SaveCancel::None => {}
@@ -845,6 +869,39 @@ mod tests {
             ActionKind::Key { key, .. } => assert_eq!(key, "a"),
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    #[test]
+    fn image_search_saves_without_targets() {
+        let child = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec!["Game~Item".into()],
+                search_area: Default::default(),
+                tolerance: 0.95,
+                blur: 5,
+                match_method: Default::default(),
+                detection: DetectionBranch::default(),
+            },
+        };
+        let id = child.id;
+        let mut root = root_loop(vec![child]);
+        let live = root.find_by_id(id).unwrap().clone();
+        let mut state = TooltipState::Hidden;
+        state.open_edit(&live, egui::pos2(0.0, 0.0));
+        if let TooltipState::Edit(edit) = &mut state {
+            if let ActionKind::ImageSearch { targets, .. } = &mut edit.draft.kind {
+                targets.clear();
+            }
+        }
+        assert!(state.try_save_validated(&mut root, None, |_| {}));
+        assert!(matches!(state, TooltipState::View { action_id } if action_id == id));
+        match &root.find_by_id(id).unwrap().kind {
+            ActionKind::ImageSearch { targets, .. } => assert!(targets.is_empty()),
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(sqyre_validate::validate_action(root.find_by_id(id).unwrap(), None).is_err());
     }
 
     #[test]

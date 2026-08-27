@@ -40,8 +40,26 @@ The recipe copies `eng.traineddata` from `assets/tessdata/` or host `/usr/share/
 
 ---
 
+## Bundled release (portable directory)
+
+Self-contained **`bin/sqyre-bundle/`** with Tesseract/Leptonica `.so` files and `tessdata/eng.traineddata`. The binary uses `$ORIGIN/lib` rpath so it runs without a system `libtesseract`.
+
+```bash
+make release-bundle
+./bin/sqyre-bundle/sqyre
+```
+
+Requires **patchelf** (installed in the devcontainer). Build on the target glibc family you intend to ship against (same constraint as AppImage). Does **not** run `make check` (unlike `make appimage`); run `make check` yourself before shipping.
+
+**Wayland portal capture:** `libpipewire` / `libspa-*` are **not** bundled — the host PipeWire stack (GNOME/KDE already ship it) must provide SPA plugins. Bundling breaks with `can't make support.system handle`.
+
+**Cue audio:** `libasound` is **not** bundled. Playback uses the PulseAudio protocol (PipeWire's pulse socket on current desktops). Bundled Ubuntu `libasound` looks for `libasound_module_pcm_pipewire.so` under `/usr/lib/x86_64-linux-gnu/alsa-lib/`, which Fedora does not have.
+
+---
+
 ## Summary
 
 | Format | Command | Main requirement |
 |--------|---------|------------------|
+| **Bundled dir** | `make release-bundle` | Rust + Tesseract dev libs + patchelf |
 | **AppImage** | `make appimage` | Rust + Tesseract on host + appimage-builder |
