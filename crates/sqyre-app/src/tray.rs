@@ -403,7 +403,10 @@ fn install_inner(
     })
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(target_os = "linux", target_os = "windows", target_os = "macos"))
+))]
 fn install_inner(
     _wake: Context,
     _cmd_tx: Sender<TrayCommand>,
