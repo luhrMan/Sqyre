@@ -322,9 +322,7 @@ impl SettingsUi {
         let q = self.search.trim().to_ascii_lowercase();
         let visible_sections: Vec<SettingsSection> =
             SettingsSection::all().filter(|s| s.visible(&q)).collect();
-        if !visible_sections.is_empty()
-            && !visible_sections.contains(&self.active_section)
-        {
+        if !visible_sections.is_empty() && !visible_sections.contains(&self.active_section) {
             self.active_section = visible_sections[0];
         }
 
@@ -562,7 +560,6 @@ impl SettingsUi {
                 }
             });
         }
-
     }
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]

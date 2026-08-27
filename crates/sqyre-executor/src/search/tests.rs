@@ -7,7 +7,8 @@ use crate::{lines_for, SharedActionLog};
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
     root_loop, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, LoopJumpMode, Macro,
-    MatchGrouping, MatchOrder, MouseButton, PressState, RepeatMode, ScalarValue, WaitTilFoundConfig,
+    MatchGrouping, MatchOrder, MouseButton, PressState, RepeatMode, ScalarValue,
+    WaitTilFoundConfig,
 };
 use sqyre_match::{search_blur_kernel, ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
 use sqyre_vision::get_cached_blurred_template;
@@ -1429,7 +1430,12 @@ fn image_search_wait_until_found_retries_then_succeeds() {
             capturer.log
         );
         assert!(
-            capturer.log.iter().filter(|e| e.starts_with("rgb_fresh:")).count() >= 2,
+            capturer
+                .log
+                .iter()
+                .filter(|e| e.starts_with("rgb_fresh:"))
+                .count()
+                >= 2,
             "image search should fresh-capture on first attempt and on wait retry: {:?}",
             capturer.log
         );

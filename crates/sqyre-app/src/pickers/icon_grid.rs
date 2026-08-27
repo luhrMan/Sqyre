@@ -71,8 +71,7 @@ fn paint_item_icon_tooltip(
                     VARIANT_TIP_THUMB,
                     VARIANT_TIP_THUMB,
                 );
-                let (rect, _) =
-                    ui.allocate_exact_size(size, egui::Sense::hover());
+                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
                 crate::icon_cache::paint_icon_thumb_at(
                     ui,
                     &tex,

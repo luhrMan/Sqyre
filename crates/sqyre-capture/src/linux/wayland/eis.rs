@@ -74,12 +74,10 @@ impl EisInput {
             .iter()
             .filter(|d| d.resumed)
             .flat_map(|d| {
-                d.device.regions().iter().map(|r| {
-                    format!(
-                        "{}x{}+{}+{}@{}",
-                        r.width, r.height, r.x, r.y, r.scale
-                    )
-                })
+                d.device
+                    .regions()
+                    .iter()
+                    .map(|r| format!("{}x{}+{}+{}@{}", r.width, r.height, r.x, r.y, r.scale))
             })
             .collect();
         let regions_s = if regions.is_empty() {
@@ -234,7 +232,11 @@ impl EisInput {
             .device_for(DeviceCapability::PointerAbsolute)
             .ok_or_else(|| Self::missing(DeviceCapability::PointerAbsolute))?;
         if let Some(detail) = Self::outside_regions(&self.devices[idx].device, x, y) {
-            cap_log("INPUT", "fail", &format!("abs outside region pos={x},{y} {detail}"));
+            cap_log(
+                "INPUT",
+                "fail",
+                &format!("abs outside region pos={x},{y} {detail}"),
+            );
             return Err(AutomationError::Backend(format!(
                 "EIS absolute pointer ({x},{y}) outside device regions ({detail})"
             )));

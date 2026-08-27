@@ -10,11 +10,10 @@ use std::os::raw::c_ulong;
 use std::path::{Path, PathBuf};
 use std::ptr;
 use x11::xlib::{
-    Atom, ClientMessage, Display, False, PropModeReplace, Success, True, Window,
+    Atom, CWBackPixel, ClientMessage, Display, False, PropModeReplace, Success, True, Window,
     XChangeProperty, XChangeWindowAttributes, XDefaultRootWindow, XEvent, XFlush, XFree,
-    XGetGeometry, XGetWMName, XGetWindowProperty, XInternAtom, XMoveWindow,
-    XOpenDisplay, XSendEvent, XSetWindowAttributes, _XDisplay, CWBackPixel, XA_ATOM, XA_CARDINAL,
-    XA_WINDOW,
+    XGetGeometry, XGetWMName, XGetWindowProperty, XInternAtom, XMoveWindow, XOpenDisplay,
+    XSendEvent, XSetWindowAttributes, _XDisplay, XA_ATOM, XA_CARDINAL, XA_WINDOW,
 };
 
 /// Title used by floating macro-overlay viewports (`macro_overlay`).
@@ -758,12 +757,7 @@ unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), Capture
 // SAFETY: callers must pass a live, non-null Xlib `display` connection, a valid
 // `win`, and atoms interned on that connection; the single-element `atom` buffer
 // matches the `format: 32` / `nelements: 1` passed to `XChangeProperty`.
-unsafe fn set_window_type(
-    display: *mut Display,
-    win: Window,
-    win_type: Atom,
-    type_atom: Atom,
-) {
+unsafe fn set_window_type(display: *mut Display, win: Window, win_type: Atom, type_atom: Atom) {
     let mut atom = type_atom;
     XChangeProperty(
         display,
@@ -779,12 +773,7 @@ unsafe fn set_window_type(
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection, a valid
 // `win`, and atoms interned on that connection; `atoms` is copied into the property.
-unsafe fn set_net_wm_state(
-    display: *mut Display,
-    win: Window,
-    state_atom: Atom,
-    atoms: &[Atom],
-) {
+unsafe fn set_net_wm_state(display: *mut Display, win: Window, state_atom: Atom, atoms: &[Atom]) {
     if atoms.is_empty() {
         return;
     }
