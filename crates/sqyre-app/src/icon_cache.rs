@@ -483,13 +483,28 @@ mod tests {
 
     #[test]
     fn stable_variant_index_is_deterministic() {
-        assert_eq!(
-            stable_variant_index("Prog~Item", 5),
-            stable_variant_index("Prog~Item", 5)
-        );
-        assert_ne!(
-            stable_variant_index("Prog~Item", 5),
-            stable_variant_index("Prog~Other", 5)
+        let count = 5;
+        let a = stable_variant_index("Prog~Item", count);
+        assert_eq!(a, stable_variant_index("Prog~Item", count));
+        assert!(a < count);
+        assert_eq!(stable_variant_index("alone", 1), 0);
+        // Hash collisions are allowed; require diversity across a sample set, not one pair.
+        let idxs: std::collections::HashSet<_> = [
+            "Prog~Item",
+            "Prog~Other",
+            "Prog~Foo",
+            "Prog~Bar",
+            "Prog~Baz",
+            "A",
+            "B",
+            "C",
+        ]
+        .iter()
+        .map(|t| stable_variant_index(t, count))
+        .collect();
+        assert!(
+            idxs.len() > 1,
+            "expected multiple buckets across sample targets, got {idxs:?}"
         );
     }
 
