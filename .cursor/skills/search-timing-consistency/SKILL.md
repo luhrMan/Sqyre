@@ -64,9 +64,9 @@ Use `exec.log_timing(action_id, step, elapsed)` / `timed_step` — never `printl
 | Kind | Steps |
 |------|--------|
 | Shared capture helper | `capture` (inside `capture_search_buf`) |
-| Image | `capture+preprocess`, `match` |
-| OCR | `preprocess`, `recognize` |
-| Pixel | `scan` |
+| Image | `capture+preprocess`, `match`, `wait`, `apply` |
+| OCR | `preprocess`, `recognize`, `wait`, `apply` |
+| Pixel | `scan`, `wait`, `apply` |
 | Action wrapper | `dispatch`, `post-delay`, `total` (from `run.rs`) |
 
 - Time the **meaningful phases**, not every micro-helper.
