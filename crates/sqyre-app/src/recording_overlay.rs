@@ -426,8 +426,10 @@ impl RecordingOverlay {
     fn apply_outline(&mut self, rect: Option<OutlineCorners>) {
         if rect.is_none() {
             if let Some(outline) = self.outline.as_mut() {
-                mark_site("outline:clear");
-                outline.clear();
+                if outline.is_active() {
+                    mark_site("outline:clear");
+                    outline.clear();
+                }
             }
             return;
         }
@@ -580,20 +582,26 @@ impl RecordingOverlay {
 
 impl Drop for RecordingOverlay {
     fn drop(&mut self) {
+        mark_site("recording_overlay:drop:start");
         if let Some(stop) = self.stop.take() {
             stop.store(true, Ordering::Relaxed);
         }
         if let Some(join) = self.join.take() {
             let _ = join.join();
         }
+        mark_site("recording_overlay:drop:after_wake");
         if let Some(mut grab) = self.grab.take() {
             grab.disarm();
         }
-        if let Some(mut outline) = self.outline.take() {
-            outline.clear();
-        }
+        // Do not outline.clear() here — that XFlushs under the game. Drop alone
+        // destroys windows without waiting on the X11 server.
+        drop(self.outline.take());
+        mark_site("recording_overlay:drop:after_outline");
         #[cfg(target_os = "linux")]
         self.close_snapshot();
+        #[cfg(target_os = "linux")]
+        drop(self.freeze.take());
+        mark_site("recording_overlay:drop:done");
     }
 }
 

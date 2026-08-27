@@ -97,6 +97,10 @@ impl SelectionOutline {
         self.mapped = false;
         self.last = None;
     }
+
+    pub fn is_active(&self) -> bool {
+        self.last.is_some()
+    }
 }
 
 impl Drop for SelectionOutline {

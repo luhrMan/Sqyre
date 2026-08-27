@@ -280,7 +280,10 @@ impl SelectionOutline {
     }
 
     pub fn clear(&mut self) {
-        if self.last.is_none() && !self.mapped {
+        // Already parked (1×1): do not re-Configure/Flush every UI frame — that
+        // X11 round-trip hitch under a fullscreen XWayland game makes overlay
+        // buttons feel frozen whenever the game holds focus.
+        if self.last.is_none() {
             return;
         }
         // Park 1×1 instead of unmapping so the next rubber-band does not
@@ -298,27 +301,43 @@ impl SelectionOutline {
         self.last = None;
         self.last_edges = None;
     }
+
+    /// True while a non-parked rectangle is shown.
+    pub fn is_active(&self) -> bool {
+        self.last.is_some()
+    }
 }
 
 impl Drop for SelectionOutline {
     fn drop(&mut self) {
-        // SAFETY: the edges were created on `self.display`, which is still live
-        // here; it is closed last and nulled so nothing can reuse it.
+        crate::mark_site("outline:drop:start");
+        let t0 = std::time::Instant::now();
+        // SAFETY: edges were created on `self.display`. We destroy windows but do
+        // **not** XFlush / XCloseDisplay — both block for seconds under a busy
+        // fullscreen XWayland client (Proton games). The kernel reclaims the
+        // connection fds when the process exits; mid-session we leak at most two
+        // Display connections per outline lifetime.
         unsafe {
-            for &w in &self.edges {
-                if w != 0 {
-                    XDestroyWindow(self.display, w);
-                }
-            }
-            if !self.ptr_display.is_null() {
-                close_x_display(self.ptr_display);
-                self.ptr_display = ptr::null_mut();
-            }
             if !self.display.is_null() {
-                close_x_display(self.display);
+                for &w in &self.edges {
+                    if w != 0 {
+                        XDestroyWindow(self.display, w);
+                    }
+                }
+                crate::x11_secondary::unregister(self.display);
                 self.display = ptr::null_mut();
             }
+            if !self.ptr_display.is_null() {
+                crate::x11_secondary::unregister(self.ptr_display);
+                self.ptr_display = ptr::null_mut();
+            }
         }
+        crate::cap_log(
+            "OUTLINE",
+            "drop",
+            &format!("ms={}", t0.elapsed().as_millis()),
+        );
+        crate::mark_site("outline:drop:done");
     }
 }
 
