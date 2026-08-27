@@ -369,17 +369,51 @@ impl SettingsUi {
                             ui.label(egui::RichText::new(section.label()).strong().heading());
                             ui.label(egui::RichText::new(section.subtitle()).weak());
                             ui.separator();
-                            self.draw_section(
-                                ui,
-                                ctx,
-                                db,
-                                macros,
-                                catalog,
+                            let section_hit = match section {
+                                SettingsSection::General => query_matches(&q, SECTION_GENERAL),
+                                SettingsSection::Sound => query_matches(&q, SECTION_SOUND),
+                                #[cfg(all(
+                                    not(target_arch = "wasm32"),
+                                    feature = "native-runtime"
+                                ))]
+                                SettingsSection::Permissions => {
+                                    query_matches(&q, SECTION_PERMISSIONS)
+                                }
+                                SettingsSection::Data => query_matches(&q, SECTION_DATA),
                                 #[cfg(not(target_arch = "wasm32"))]
-                                update,
-                                section,
-                                &q,
-                            );
+                                SettingsSection::Updates => query_matches(&q, SECTION_UPDATES),
+                                SettingsSection::Appearance => {
+                                    query_matches(&q, SECTION_APPEARANCE)
+                                }
+                            };
+                            match section {
+                                SettingsSection::General => self.draw_general(ui, &q, section_hit),
+                                SettingsSection::Sound => self.draw_sound(ui, &q, section_hit),
+                                #[cfg(all(
+                                    not(target_arch = "wasm32"),
+                                    feature = "native-runtime"
+                                ))]
+                                SettingsSection::Permissions => {
+                                    self.draw_permissions(ui, ctx, &q, section_hit)
+                                }
+                                SettingsSection::Data => {
+                                    self.draw_data(ui, db, macros, catalog, &q, section_hit);
+                                    #[cfg(not(target_arch = "wasm32"))]
+                                    if setting_visible(&q, section_hit, DATA_LOCATION)
+                                        && setting_visible(&q, section_hit, DATA_BACKUP)
+                                    {
+                                        ui.add_space(10.0);
+                                    }
+                                    self.draw_backup(ui, db, macros, catalog, &q, section_hit);
+                                }
+                                #[cfg(not(target_arch = "wasm32"))]
+                                SettingsSection::Updates => {
+                                    self.draw_updates(ui, update, &q, section_hit)
+                                }
+                                SettingsSection::Appearance => {
+                                    self.draw_appearance(ui, ctx, &q, section_hit)
+                                }
+                            }
                         });
                 },
             );
@@ -388,48 +422,6 @@ impl SettingsUi {
         if self.status_banner.status.is_some() {
             ui.separator();
             self.status_banner.paint(ui);
-        }
-    }
-
-    fn draw_section(
-        &mut self,
-        ui: &mut egui::Ui,
-        ctx: &egui::Context,
-        db: &mut Database,
-        macros: &mut Vec<Macro>,
-        catalog: &mut ProgramCatalog,
-        #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
-        section: SettingsSection,
-        q: &str,
-    ) {
-        let section_hit = match section {
-            SettingsSection::General => query_matches(q, SECTION_GENERAL),
-            SettingsSection::Sound => query_matches(q, SECTION_SOUND),
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            SettingsSection::Permissions => query_matches(q, SECTION_PERMISSIONS),
-            SettingsSection::Data => query_matches(q, SECTION_DATA),
-            #[cfg(not(target_arch = "wasm32"))]
-            SettingsSection::Updates => query_matches(q, SECTION_UPDATES),
-            SettingsSection::Appearance => query_matches(q, SECTION_APPEARANCE),
-        };
-        match section {
-            SettingsSection::General => self.draw_general(ui, q, section_hit),
-            SettingsSection::Sound => self.draw_sound(ui, q, section_hit),
-            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            SettingsSection::Permissions => self.draw_permissions(ui, ctx, q, section_hit),
-            SettingsSection::Data => {
-                self.draw_data(ui, db, macros, catalog, q, section_hit);
-                #[cfg(not(target_arch = "wasm32"))]
-                if setting_visible(q, section_hit, DATA_LOCATION)
-                    && setting_visible(q, section_hit, DATA_BACKUP)
-                {
-                    ui.add_space(10.0);
-                }
-                self.draw_backup(ui, db, macros, catalog, q, section_hit);
-            }
-            #[cfg(not(target_arch = "wasm32"))]
-            SettingsSection::Updates => self.draw_updates(ui, update, q, section_hit),
-            SettingsSection::Appearance => self.draw_appearance(ui, ctx, q, section_hit),
         }
     }
 

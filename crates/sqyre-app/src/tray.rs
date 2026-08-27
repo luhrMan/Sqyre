@@ -163,7 +163,7 @@ fn show_window(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
     if let Some(win) = window {
         #[cfg(target_os = "windows")]
         let _ = win.set_minimized(false);
-        let _ = win.set_visible(true);
+        win.set_visible(true);
     }
     ctx.send_viewport_cmd(ViewportCommand::Minimized(false));
     ctx.send_viewport_cmd(ViewportCommand::Visible(true));
@@ -178,7 +178,7 @@ fn hide_application(ctx: &Context, window: Option<&Arc<winit::window::Window>>) 
         let _ = win.set_minimized(true);
         // Unmap. Do not resize to 1×1 / move off-screen — on sessions where
         // set_visible is ignored that left a vertical Alt-Tab skeleton.
-        let _ = win.set_visible(false);
+        win.set_visible(false);
     }
     ctx.send_viewport_cmd(ViewportCommand::Visible(false));
     #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
@@ -202,7 +202,7 @@ fn set_application_visible(
 #[cfg(not(target_arch = "wasm32"))]
 fn quit_app(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
     if let Some(win) = window {
-        let _ = win.set_visible(true);
+        win.set_visible(true);
     }
     ctx.send_viewport_cmd(ViewportCommand::Visible(true));
     ctx.send_viewport_cmd(ViewportCommand::Close);
