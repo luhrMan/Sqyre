@@ -188,27 +188,60 @@ root:
         #![proptest_config(ProptestConfig::with_cases(32))]
 
         #[test]
-        fn yaml_roundtrip_preserves_name_and_child_count(
+        fn yaml_roundtrip_preserves_wait_and_loop_kinds(
             name in "[a-zA-Z][a-zA-Z0-9_ ]{0,24}",
             wait_ms in 0i64..10_000,
+            loop_count in 1i64..20,
         ) {
             let mut m = Macro::new(name.trim(), 0, vec![]);
             prop_assume!(!m.name.is_empty());
-            m.root = sqyre_domain::root_loop(vec![Action {
-                id: ActionId::new(),
-                kind: ActionKind::Wait {
-                    time: ScalarValue::Int(wait_ms),
+            m.root = sqyre_domain::root_loop(vec![
+                Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::Wait {
+                        time: ScalarValue::Int(wait_ms),
+                    },
                 },
-            }]);
+                Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::Loop {
+                        name: "inner".into(),
+                        count: ScalarValue::Int(loop_count),
+                        subactions: vec![Action {
+                            id: ActionId::new(),
+                            kind: ActionKind::Wait {
+                                time: ScalarValue::Int(1),
+                            },
+                        }],
+                    },
+                },
+            ]);
             let yaml = encode_macro_to_yaml(&m).expect("encode yaml");
             let restored = decode_macro_from_yaml(&yaml).expect("decode yaml");
             prop_assert_eq!(&restored.name, &m.name);
-            prop_assert_eq!(restored.root.children().len(), m.root.children().len());
-            match &restored.root.children()[0].kind {
-                ActionKind::Wait { time } => {
-                    prop_assert_eq!(time, &ScalarValue::Int(wait_ms));
+            prop_assert_eq!(&restored.root.children()[0].kind, &m.root.children()[0].kind);
+            match (
+                &restored.root.children()[1].kind,
+                &m.root.children()[1].kind,
+            ) {
+                (
+                    ActionKind::Loop {
+                        name: n1,
+                        count: c1,
+                        subactions: s1,
+                    },
+                    ActionKind::Loop {
+                        name: n2,
+                        count: c2,
+                        subactions: s2,
+                    },
+                ) => {
+                    prop_assert_eq!(n1, n2);
+                    prop_assert_eq!(c1, c2);
+                    prop_assert_eq!(s1.len(), s2.len());
+                    prop_assert_eq!(&s1[0].kind, &s2[0].kind);
                 }
-                other => prop_assert!(false, "expected Wait, got {other:?}"),
+                (other, _) => prop_assert!(false, "expected Loop, got {other:?}"),
             }
         }
     }

@@ -17,7 +17,9 @@ path = "src/main.rs"
 [features]
 # Full desktop runtime: macro execution, screen capture, OCR/vision.
 default = ["native-runtime", "hooks"]
-native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-capture"]
+# Wayland portal ScreenCast + PipeWire (needs libpipewire ≥ 1.0 dev headers).
+portal-capture = ["sqyre-capture/portal-capture", "sqyre-probe/portal-capture"]
+native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-match", "dep:sqyre-capture", "dep:sqyre-probe"]
 # OS global hotkeys (rdev). Disabled for wasm builds (`--no-default-features`).
 hooks = ["sqyre-hotkeys/hooks"]
 
@@ -29,7 +31,8 @@ winresource = "0.1"
 
 [dependencies]
 # `glow`: Windows overlay button per-pixel alpha (wgpu DX12 HWND swapchains are opaque).
-eframe = { workspace = true, features = ["glow"] }
+# `wgpu`: Linux Wayland deferred viewports need wgpu for per-pixel alpha (glow child GL configs).
+eframe = { workspace = true, features = ["glow", "wgpu"] }
 egui = { workspace = true }
 egui-phosphor = { workspace = true }
 egui_ltreeview = { workspace = true }
@@ -44,8 +47,10 @@ sqyre-varref = { path = "../sqyre-varref" }
 sqyre-executor = { path = "../sqyre-executor", optional = true }
 sqyre-serialize = { path = "../sqyre-serialize" }
 sqyre-capture = { path = "../sqyre-capture", optional = true }
+sqyre-probe = { path = "../sqyre-probe", optional = true }
 sqyre-hotkeys = { path = "../sqyre-hotkeys" }
 sqyre-vision = { path = "../sqyre-vision", optional = true }
+sqyre-match = { path = "../sqyre-match", optional = true }
 serde_yaml = { workspace = true }
 rfd = { workspace = true }
 parking_lot = { workspace = true }
@@ -54,13 +59,19 @@ web-time = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 fs2 = "0.4"
-rodio = { version = "0.22", default-features = false, features = ["playback", "mp3"] }
 sqyre-input = { path = "../sqyre-input" }
 sqyre-update = { path = "../sqyre-update" }
+winit = "0.30"
 
+# Linux: decode with rodio, play via cpal PulseAudio (PipeWire pulse socket).
+# Avoids ALSA pipewire-plugin path + cpal timestamp errors on that plugin.
 [target.'cfg(all(not(target_arch = "wasm32"), target_os = "linux"))'.dependencies]
 ksni = { workspace = true }
-winit = "0.30"
+rodio = { version = "0.22", default-features = false, features = ["mp3"] }
+cpal = { version = "0.18", default-features = false, features = ["pulseaudio"] }
+
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "linux")))'.dependencies]
+rodio = { version = "0.22", default-features = false, features = ["playback", "mp3"] }
 
 [target.'cfg(all(not(target_arch = "wasm32"), any(target_os = "windows", target_os = "macos")))'.dependencies]
 tray-icon = { workspace = true }

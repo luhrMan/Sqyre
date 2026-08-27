@@ -66,11 +66,18 @@ pub fn paint_text_centered(
     paint_galley_centered(ui, rect, galley, color);
 }
 
-/// Glyph font size for all icon-only buttons.
-pub const ICON_BTN_FONT: f32 = 14.0;
-
-/// Fixed square hit target for all icon-only buttons (framed and bare).
+/// Minimum square hit target for icon-only buttons (framed and bare).
+/// Side grows with Button text so glyphs track the Font size setting.
 pub const ICON_BTN_SIDE: f32 = 18.0;
+
+fn icon_btn_font(ui: &egui::Ui) -> egui::FontId {
+    egui::TextStyle::Button.resolve(ui.style())
+}
+
+fn icon_btn_side(ui: &egui::Ui) -> f32 {
+    ui.text_style_height(&egui::TextStyle::Button)
+        .max(ICON_BTN_SIDE)
+}
 
 /// Framed icon-only button with optically centered glyph.
 pub fn icon_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
@@ -106,8 +113,8 @@ fn icon_button_inner(
     framed: bool,
     color: Option<Color32>,
 ) -> egui::Response {
-    let font_id = egui::FontId::proportional(ICON_BTN_FONT);
-    let desired = Vec2::splat(ICON_BTN_SIDE);
+    let font_id = icon_btn_font(ui);
+    let desired = Vec2::splat(icon_btn_side(ui));
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
     let visuals = ui.style().interact(&response);
     if framed {
@@ -162,7 +169,7 @@ pub fn dark_visuals() -> Visuals {
     v.selection.bg_fill = dim;
     v.selection.stroke = Stroke::new(1.0, SELECTION_FG);
 
-    // Separators / window outline — dim primary.
+    // Separators / inner group outlines — dim primary.
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, dim);
 
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, PRIMARY);
@@ -174,7 +181,7 @@ pub fn dark_visuals() -> Visuals {
 
     v.widgets.open.bg_stroke = Stroke::new(1.0, rgba([0xdc, 0x9d, 0x2e, 0x80]));
 
-    v.window_stroke = Stroke::new(1.0, dim);
+    v.window_stroke = Stroke::new(1.0, PRIMARY);
     v.text_cursor.stroke = Stroke::new(2.0, PRIMARY);
 
     v
@@ -186,18 +193,21 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_visuals_of(egui::Theme::Dark, dark_visuals());
 }
 
-/// Rounded group frame with a faint Sqyre fill + gold stroke.
+/// Dim gold stroke for inner cards and previews (weaker than window chrome).
+pub fn inner_stroke() -> Stroke {
+    Stroke::new(1.0, accent_dim())
+}
+
+/// Rounded group frame with a faint Sqyre fill + dim gold stroke.
 pub fn section_frame(style: &egui::Style) -> egui::Frame {
     egui::Frame::group(style)
         .fill(frame_fill())
-        .stroke(Stroke::new(1.0, PRIMARY))
+        .stroke(inner_stroke())
         .corner_radius(CornerRadius::same(4))
         .inner_margin(egui::Margin::same(8))
 }
 
 /// Full-width framed card, then vertical `gap` after it.
-///
-/// Used by tip sections and settings panels so chrome stays consistent.
 pub fn framed_section(ui: &mut egui::Ui, gap: f32, add_contents: impl FnOnce(&mut egui::Ui)) {
     section_frame(ui.style()).show(ui, |ui| {
         ui.set_min_width(ui.available_width());
@@ -215,13 +225,79 @@ pub fn titled_section(
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
     framed_section(ui, gap, |ui| {
-        ui.label(egui::RichText::new(title).strong().size(16.0));
+        ui.label(egui::RichText::new(title).strong().heading());
         if !subtitle.is_empty() {
             ui.label(egui::RichText::new(subtitle).weak());
         }
         ui.separator();
         add_contents(ui);
     });
+}
+
+/// Persist / commit button that pulses a Sqyre-yellow glow while enabled (dirty + valid).
+///
+/// Disabled state matches a normal `add_enabled(false, …)` button. While glowing,
+/// requests continuous repaint so the loop stays smooth.
+///
+/// Glow is soft filled halos painted *under* an opaque button body (not concentric
+/// `rect_stroke`s) so epaint stroke tessellation cannot leave a midline seam.
+pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
+    if !enabled {
+        return ui.add_enabled(false, egui::Button::new(label));
+    }
+
+    let t = ui.input(|i| i.time) as f32;
+    // ~0.4 Hz full cycle; soft ease so it reads as a glow, not a blink.
+    let pulse = (t * std::f32::consts::TAU * 0.4).sin().mul_add(0.5, 0.5);
+
+    let visuals = ui.style().visuals.widgets.inactive;
+    let rounding = visuals.corner_radius;
+    let base_fill = visuals.weak_bg_fill;
+    let pad = ui.spacing().button_padding;
+    let font_id = egui::TextStyle::Button.resolve(ui.style());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(label.to_owned(), font_id, PRIMARY);
+    let size = Vec2::new(
+        galley.size().x + 2.0 * pad.x,
+        (galley.size().y + 2.0 * pad.y).max(ui.spacing().interact_size.y),
+    );
+
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let painter = ui.painter();
+
+    // Soft bloom under the button — stacked fills, no stroked rings.
+    for i in (1..=5).rev() {
+        let expand = i as f32 * (1.1 + pulse * 1.6);
+        let alpha = ((22.0 / i as f32) * (0.35 + 0.65 * pulse)).round() as u8;
+        let expand_u8 = expand.round().clamp(0.0, 255.0) as u8;
+        let glow_round = CornerRadius {
+            nw: rounding.nw.saturating_add(expand_u8),
+            ne: rounding.ne.saturating_add(expand_u8),
+            sw: rounding.sw.saturating_add(expand_u8),
+            se: rounding.se.saturating_add(expand_u8),
+        };
+        painter.rect_filled(
+            rect.expand(expand),
+            glow_round,
+            Color32::from_rgba_unmultiplied(PRIMARY.r(), PRIMARY.g(), PRIMARY.b(), alpha),
+        );
+    }
+
+    // Opaque body covers the halo center so nothing shows through the label.
+    let tint = 0.12 + pulse * 0.22;
+    let fill = Color32::from_rgb(
+        ((1.0 - tint) * base_fill.r() as f32 + tint * PRIMARY.r() as f32).round() as u8,
+        ((1.0 - tint) * base_fill.g() as f32 + tint * PRIMARY.g() as f32).round() as u8,
+        ((1.0 - tint) * base_fill.b() as f32 + tint * PRIMARY.b() as f32).round() as u8,
+    );
+    // Keep stroke width fixed — animating Inside stroke width can tessellate a midline.
+    let stroke = Stroke::new(1.0, PRIMARY);
+    painter.rect(rect, rounding, fill, stroke, egui::StrokeKind::Inside);
+    paint_galley_centered(ui, rect, galley, PRIMARY);
+
+    ui.ctx().request_repaint();
+    response
 }
 
 /// Icon-only record control (danger styling).
@@ -538,5 +614,17 @@ mod tests {
         assert_eq!(v.hyperlink_color, PRIMARY);
         assert_eq!(v.selection.bg_fill, accent_dim());
         assert_eq!(v.widgets.hovered.bg_stroke.color, PRIMARY);
+        assert_eq!(v.window_stroke.color, PRIMARY);
+    }
+
+    #[test]
+    fn window_chrome_is_strong_outer_weak_inner() {
+        let style = egui::Style {
+            visuals: dark_visuals(),
+            ..Default::default()
+        };
+        assert_eq!(style.visuals.window_stroke.color, PRIMARY);
+        assert_eq!(section_frame(&style).stroke.color, accent_dim());
+        assert_eq!(inner_stroke().color, accent_dim());
     }
 }

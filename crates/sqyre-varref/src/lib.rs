@@ -396,6 +396,39 @@ mod tests {
         }
 
         #[test]
+        fn expand_via_segments_is_prefix_value_suffix(
+            prefix in "[^{$}]{0,12}",
+            name in arb_var_name(),
+            suffix in "[^{$}]{0,12}",
+            value in "[^{$}]{0,16}",
+            dollar in any::<bool>(),
+        ) {
+            let text = if dollar {
+                format!("{prefix}${{{name}}}{suffix}")
+            } else {
+                format!("{prefix}{{{name}}}{suffix}")
+            };
+            let expanded: String = segments(&text)
+                .into_iter()
+                .map(|s| {
+                    if s.is_ref {
+                        value.clone()
+                    } else {
+                        unescape_plain(&s.text)
+                    }
+                })
+                .collect();
+            prop_assert_eq!(expanded, format!("{prefix}{value}{suffix}"));
+            let renamed = rename(&text, &name, "other_name");
+            let expect = if dollar {
+                format!("{prefix}${{other_name}}{suffix}")
+            } else {
+                format!("{prefix}{{other_name}}{suffix}")
+            };
+            prop_assert_eq!(renamed, expect);
+        }
+
+        #[test]
         fn plain_text_has_no_refs(s in "[^{$}]{0,64}") {
             prop_assert!(!contains(&s));
             prop_assert!(names(&s).is_empty());

@@ -2,9 +2,11 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.92, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows` and AppImage Docker fallbacks work inside the container.
+Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.94, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows` and AppImage Docker fallbacks work inside the container.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
+
+If Cursor reports **“container is not running”** during attach, stale containers are usually the cause — remove them (`docker ps -a` → `docker rm -f <id>`) and **Rebuild Container**. Large `target/` trees are excluded from file watchers (see `.devcontainer/devcontainer.json`); run `cargo clean` locally if the cache has grown huge (>50 GiB).
 
 From the repo root:
 
@@ -15,6 +17,8 @@ make run        # cargo run -p sqyre-app
 make check      # fmt --check + clippy (-D warnings) + cargo deny
 make machete    # unused crate deps
 make test       # cargo nextest (falls back to cargo test)
+make bench      # criterion: match, vision (no Tesseract), serialize (not in CI)
+make wasm-check # cargo check -p sqyre-app --target wasm32-unknown-unknown --no-default-features
 make coverage   # llvm-cov HTML + lcov under target/coverage/
 make coverage-floors  # line-% gates for pure crates (needs cargo-llvm-cov)
 make docs-media # regenerate docs/images screenshots
@@ -23,7 +27,10 @@ make windows    # fmt + check, then bin/sqyre.exe (Docker MinGW cross / native o
 make macos      # fmt + check, then bin/sqyre (macOS host)
 make wasm       # fmt + check, then bin/wasm/ GUI-only browser editor (Trunk)
 make tessdata   # download eng.traineddata into assets/tessdata/
+make release-bundle  # portable bin/sqyre-bundle/ (release only; no check gate — see scripts/linux/packaging/PACKAGING.md)
 ```
+
+Release builds (`make release`, `make release-bundle`) need **≥4 GiB** container RAM on a cold `target/`; if rustc is SIGKILL'd, raise Docker memory or set `CARGO_BUILD_JOBS=1`. With a warm `target/` cache, `make release-bundle` is much faster and lighter than before (it no longer runs clippy/deny first).
 
 Run `make help` for the full target list. Workspace layout: [RUST.md](./RUST.md).
 
@@ -55,8 +62,11 @@ Build caches (all gitignored):
 | `machete` | `cargo machete` (unused dependencies) |
 | `check` | `check-fmt` + `clippy` + `deny` (CI quality gates) |
 | `test` | `cargo nextest run --workspace` (falls back to `cargo test`) |
+| `smoke` | Debug `bin/sqyre --version` (no display) |
+| `bench` | Criterion benches for `sqyre-match`, `sqyre-vision`, `sqyre-serialize` (local only; not CI) |
+| `wasm-check` | `cargo check` of the GUI-only WASM editor (no Trunk) |
 | `coverage` | llvm-cov HTML + `lcov.info` under `target/coverage/` (report only; no % gate) |
-| `coverage-floors` | Line-coverage floors for pure crates only (`sqyre-domain`, `sqyre-varref`, `path_confine`, `migrate`; see `scripts/coverage-floors.json`) |
+| `coverage-floors` | Line-coverage floors for pure crates (`sqyre-domain`, `sqyre-varref`, `path_confine`, `migrate`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`, `sqyre-executor`; see `scripts/coverage-floors.json`) |
 | `run` | `cargo run -p sqyre-app` |
 | `docs-media` | Regenerate `docs/images/` screenshots |
 | `appimage` | `bin/Sqyre-*.AppImage` |
@@ -85,6 +95,7 @@ Discovery order (earlier entries win): `SQYRE_TESSDATA`, platform system paths (
 Browser-only macro editor (import/export `db.yaml`). Does not run automation. The **dev container** already has Trunk and the `wasm32-unknown-unknown` target — rebuild the container after pulling those Dockerfile changes, then:
 
 ```bash
+make wasm-check    # cargo check wasm32 editor (no Trunk; also run on Linux CI)
 make wasm          # → bin/wasm/index.html  (deployable; use this, not trunk serve's dist)
 cd crates/sqyre-app && env -u NO_COLOR trunk serve   # local preview + reload only
 ```
@@ -101,7 +112,7 @@ Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make rel
 
 ### CI and GitHub Releases
 
-Push/PR to `main` runs tests — **not** a GitHub Release.
+Push/PR to `main` runs Linux tests (including `make smoke` / `sqyre --version` and `make wasm-check`) and a Windows job that tests OS-agnostic crates (`sqyre-domain`, `sqyre-varref`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`) — **not** a GitHub Release. Capture, hotkeys, and GPU UI tests stay Linux-only. Criterion benches (`make bench`) are local-only.
 
 Releases come from [`.github/workflows/main.yml`](../.github/workflows/main.yml) on **schedule** or **manual dispatch** only:
 
@@ -183,20 +194,32 @@ Headless CI uses Null* backends / stub hotkeys where hooks are unavailable.
 
 `make coverage` instruments the full workspace and writes HTML + LCOV under `target/coverage/` with **no** percentage gate. Requires `cargo-llvm-cov` and `llvm-tools-preview` (preinstalled in the dev container). Normal `make test` does **not** need these tools.
 
-`make coverage-floors` runs a separate, smaller instrumented test pass over pure crates only (`sqyre-domain`, `sqyre-varref`, `sqyre-persist`, `sqyre-executor`) and fails when line coverage drops below the floors in [`scripts/coverage-floors.json`](../scripts/coverage-floors.json):
+`make coverage-floors` runs a separate, smaller instrumented test pass over pure crates only (`sqyre-domain`, `sqyre-varref`, `sqyre-persist`, `sqyre-serialize`, `sqyre-validate`, `sqyre-executor`) and fails when line coverage drops below the floors in [`scripts/coverage-floors.json`](../scripts/coverage-floors.json):
 
 | Target | Scope | Default floor |
 |--------|-------|---------------|
-| `sqyre-domain` | whole crate | 70% |
-| `sqyre-varref` | whole crate | 90% |
-| `path_confine` | `sqyre-executor` path confinement | 85% |
-| `migrate` | `sqyre-persist` db.yaml migration | 80% |
+| `sqyre-domain` | whole crate | 83% |
+| `sqyre-varref` | whole crate | 93% |
+| `path_confine` | `sqyre-executor` path confinement | 90% |
+| `migrate` | `sqyre-persist` db.yaml migration | 83% |
+| `sqyre-serialize` | whole crate | 93% |
+| `sqyre-validate` | whole crate | 84% |
+| `sqyre-persist` | whole crate | 77% |
+| `sqyre-executor` | whole crate | 85% |
 
 OS-specific crates (`sqyre-capture`, etc.) are intentionally **not** gated. Set `COVERAGE_FLOORS=1` when running `make coverage` to also run the floor check after the report. CI runs `make coverage-floors` after the report-only coverage step.
 
 ### README screenshots
 
-In-memory egui goldens live under `docs/images/` (test: `cargo test -p sqyre-app --test docs_screenshots`).
+In-memory egui goldens live under `docs/images/` (test: `cargo test -p sqyre-app --test docs_screenshots`):
+
+| Asset | Surface |
+|-------|---------|
+| `main-window.png` | Macro tree + Macros sidebar |
+| `add-action-picker.png` | Add Action catalog |
+| `data-editor.png` | Data Editor → Coordinates / Points |
+| `settings.png` | Settings → Appearance (sidebar layout) |
+| `command-palette.png` | Ctrl+K command palette |
 
 ```bash
 make docs-media

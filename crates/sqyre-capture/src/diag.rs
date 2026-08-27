@@ -108,6 +108,30 @@ pub fn mark_site(site: &str) {
 pub fn note(msg: &str) {
     let line = format!("{} {msg}", stamp());
     eprintln!("sqyre: {line}");
+    append_diag_line(&line);
+}
+
+/// Stable key=value log line for agents (e.g. `SQYRE_CAP=ok backend=x11 size=1920x1080`).
+pub fn event_log(prefix: &str, fields: &[(&str, &str)]) {
+    let kv = fields
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    note(&format!("{prefix} {kv}"));
+}
+
+/// Category status log (`SQYRE_{category}={status} …`).
+pub fn cap_log(category: &str, status: &str, detail: &str) {
+    let prefix = format!("SQYRE_{category}={status}");
+    if detail.is_empty() {
+        note(&prefix);
+    } else {
+        note(&format!("{prefix} {detail}"));
+    }
+}
+
+fn append_diag_line(line: &str) {
     if !disk_logging_enabled() {
         return;
     }

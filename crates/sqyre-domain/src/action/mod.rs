@@ -6,7 +6,7 @@ mod tree;
 mod wire_keys;
 
 pub use kind::ActionKind;
-pub use tree::{InsertSlot, TreeNodeRef};
+pub use tree::{InsertSlot, TreeError, TreeNodeRef};
 pub use wire_keys::WIRE_TYPE_KEYS;
 
 pub use crate::match_method::MatchMethod;
@@ -174,6 +174,62 @@ pub const DEFAULT_SMOOTH_LOW: f64 = 0.05;
 pub const DEFAULT_SMOOTH_HIGH: f64 = 0.20;
 pub const DEFAULT_SMOOTH_DELAY_MS: i32 = 1;
 
+/// Gaussian blur amount for template match / OCR preprocess (`<= 0` skips blur).
+pub const MIN_MATCH_BLUR: i32 = 0;
+pub const MAX_MATCH_BLUR: i32 = 99;
+
+pub const MIN_MATCH_TOLERANCE: f64 = 0.0;
+pub const MAX_NORMED_MATCH_TOLERANCE: f64 = 1.0;
+pub const MAX_UNNORMED_MATCH_TOLERANCE: f64 = 1_000_000.0;
+
+/// Per-channel color distance for Find Pixel (wire format 0–100).
+pub const MIN_COLOR_TOLERANCE: i32 = 0;
+pub const MAX_COLOR_TOLERANCE: i32 = 100;
+
+pub const MIN_OCR_THRESHOLD: i32 = 0;
+pub const MAX_OCR_THRESHOLD: i32 = 255;
+pub const MIN_OCR_RESIZE: f64 = 0.01;
+pub const MAX_OCR_RESIZE: f64 = 10.0;
+
+pub const MIN_TYPE_DELAY_MS: i32 = 0;
+pub const MAX_TYPE_DELAY_MS: i32 = 10_000;
+
+pub const MIN_SMOOTH_DELAY_MS: i32 = 0;
+pub const MAX_SMOOTH_DELAY_MS: i32 = 10_000;
+
+pub const MIN_DETECTION_INTERVAL_MS: i32 = 0;
+pub const MAX_DETECTION_INTERVAL_MS: i32 = 3_600_000;
+
+#[inline]
+pub fn clamp_match_blur(v: i32) -> i32 {
+    v.clamp(MIN_MATCH_BLUR, MAX_MATCH_BLUR)
+}
+
+#[inline]
+pub fn clamp_match_tolerance(v: f64, method: MatchMethod) -> f64 {
+    let max = if method.is_normed() {
+        MAX_NORMED_MATCH_TOLERANCE
+    } else {
+        MAX_UNNORMED_MATCH_TOLERANCE
+    };
+    v.clamp(MIN_MATCH_TOLERANCE, max)
+}
+
+#[inline]
+pub fn clamp_color_tolerance(v: i32) -> i32 {
+    v.clamp(MIN_COLOR_TOLERANCE, MAX_COLOR_TOLERANCE)
+}
+
+#[inline]
+pub fn clamp_ocr_threshold(v: i32) -> i32 {
+    v.clamp(MIN_OCR_THRESHOLD, MAX_OCR_THRESHOLD)
+}
+
+#[inline]
+pub fn clamp_ocr_resize(v: f64) -> f64 {
+    v.clamp(MIN_OCR_RESIZE, MAX_OCR_RESIZE)
+}
+
 string_enum! {
     /// How condition clauses are combined.
     pub enum MatchMode {
@@ -202,11 +258,22 @@ string_enum! {
     /// Mouse button for click / navigate-select.
     pub enum MouseButton {
         #[default]
-        Left = "left",
+        Left = "left" | "",
         Right = "right",
         Middle = "middle" | "center",
         /// Scroll-wheel click / scroll action.
         Scroll = "scroll",
+    }
+}
+
+impl MouseButton {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Left => "Left",
+            Self::Right => "Right",
+            Self::Middle => "Middle",
+            Self::Scroll => "Scroll",
+        }
     }
 }
 
@@ -316,6 +383,69 @@ string_enum! {
         #[default]
         Rectangle = "rectangle",
         Circle = "circle",
+    }
+}
+
+string_enum! {
+    /// How detection hits are banded before left/right and top/bottom order.
+    pub enum MatchGrouping {
+        /// ±5px Y band, then horizontal order (historical default).
+        #[default]
+        Row = "row",
+        /// ±5px X band, then vertical order.
+        Column = "column",
+        /// No banding: vertical then horizontal.
+        None = "none",
+    }
+}
+
+impl MatchGrouping {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Row => "Row",
+            Self::Column => "Column",
+            Self::None => "None",
+        }
+    }
+}
+
+string_enum! {
+    /// Press performed when a Navigate Select chord fires.
+    pub enum NavPressMode {
+        #[default]
+        Click = "click",
+        Down = "down",
+        Up = "up",
+        Hold = "hold",
+    }
+}
+
+impl NavPressMode {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Click => "Click",
+            Self::Down => "Down",
+            Self::Up => "Up",
+            Self::Hold => "Hold",
+        }
+    }
+}
+
+string_enum! {
+    /// Input device for a Navigate Select chord.
+    pub enum NavSelectDevice {
+        #[default]
+        Mouse = "mouse" | "",
+        Keyboard = "keyboard",
+    }
+}
+
+impl NavSelectDevice {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Mouse => "Mouse",
+            Self::Keyboard => "Keyboard",
+        }
     }
 }
 
@@ -465,6 +595,10 @@ pub(crate) fn is_zero_i32(v: &i32) -> bool {
     *v == 0
 }
 
+pub(crate) fn is_zero_f64(v: &f64) -> bool {
+    *v == 0.0
+}
+
 pub(crate) fn is_default_image_blur(v: &i32) -> bool {
     *v == 5
 }
@@ -546,9 +680,9 @@ pub struct WaitTilFoundConfig {
     #[serde(
         rename = "waittilfoundseconds",
         default,
-        skip_serializing_if = "is_zero_i32"
+        skip_serializing_if = "is_zero_f64"
     )]
-    pub wait_til_found_seconds: i32,
+    pub wait_til_found_seconds: f64,
     #[serde(
         rename = "waittilfoundintervalms",
         default,
@@ -563,7 +697,7 @@ impl Default for WaitTilFoundConfig {
     fn default() -> Self {
         Self {
             repeat_mode: RepeatMode::Once,
-            wait_til_found_seconds: 0,
+            wait_til_found_seconds: 0.0,
             wait_til_found_interval_ms: 0,
             max_iterations: 0,
         }
@@ -571,14 +705,21 @@ impl Default for WaitTilFoundConfig {
 }
 
 impl WaitTilFoundConfig {
+    /// Wall-clock timeout when `wait_til_found_seconds` is a positive finite value.
+    pub fn timeout(&self) -> Option<std::time::Duration> {
+        std::time::Duration::try_from_secs_f64(self.wait_til_found_seconds)
+            .ok()
+            .filter(|d| !d.is_zero())
+    }
+
     /// Silent poll until found (or timeout).
     pub fn wait_until_found_active(&self) -> bool {
-        self.repeat_mode == RepeatMode::WaitUntilFound && self.wait_til_found_seconds > 0
+        self.repeat_mode == RepeatMode::WaitUntilFound && self.timeout().is_some()
     }
 
     /// Silent poll while found (or timeout).
     pub fn wait_while_found_active(&self) -> bool {
-        self.repeat_mode == RepeatMode::WaitWhileFound && self.wait_til_found_seconds > 0
+        self.repeat_mode == RepeatMode::WaitWhileFound && self.timeout().is_some()
     }
 
     /// Run the branch each pass while the target remains found.
@@ -646,11 +787,23 @@ pub(crate) fn is_default_match_method(v: &MatchMethod) -> bool {
     *v == MatchMethod::CcoeffNormed
 }
 
+fn is_default_match_grouping(v: &MatchGrouping) -> bool {
+    *v == MatchGrouping::Row
+}
+
+fn is_default_nav_select_device(v: &NavSelectDevice) -> bool {
+    *v == NavSelectDevice::Mouse
+}
+
+fn is_default_mouse_button(v: &MouseButton) -> bool {
+    *v == MouseButton::Left
+}
+
 /// Optional match-order fields present in newer `~/.sqyre` data.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct MatchOrder {
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub grouping: String,
+    #[serde(default, skip_serializing_if = "is_default_match_grouping")]
+    pub grouping: MatchGrouping,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub horizontal: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -809,43 +962,28 @@ impl Default for NavOptions {
 }
 
 /// Press performed when the Select chord fires.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct NavSelectAction {
     #[serde(
         rename = "selectdevice",
         default,
-        skip_serializing_if = "String::is_empty"
+        skip_serializing_if = "is_default_nav_select_device"
     )]
-    pub device: String,
+    pub device: NavSelectDevice,
     #[serde(
         rename = "selectbutton",
         default,
-        skip_serializing_if = "String::is_empty"
+        skip_serializing_if = "is_default_mouse_button"
     )]
-    pub button: String,
+    pub button: MouseButton,
     #[serde(
         rename = "selectkey",
         default,
         skip_serializing_if = "String::is_empty"
     )]
     pub key: String,
-    #[serde(
-        rename = "selectpressmode",
-        default,
-        skip_serializing_if = "String::is_empty"
-    )]
-    pub press_mode: String,
-}
-
-impl Default for NavSelectAction {
-    fn default() -> Self {
-        Self {
-            device: "mouse".into(),
-            button: "left".into(),
-            key: String::new(),
-            press_mode: "click".into(),
-        }
-    }
+    #[serde(rename = "selectpressmode", default)]
+    pub press_mode: NavPressMode,
 }
 
 /// Optional start / override sources for Navigate Select.
@@ -1212,7 +1350,13 @@ mod tests {
     fn string_enums_parse_aliases_and_defaults() {
         assert_eq!(MouseButton::parse("center"), MouseButton::Middle);
         assert_eq!(MouseButton::parse("CENTER"), MouseButton::Middle);
+        assert_eq!(MouseButton::parse(""), MouseButton::Left);
         assert_eq!(MouseButton::parse("nope"), MouseButton::Left);
+        assert_eq!(NavSelectDevice::parse(""), NavSelectDevice::Mouse);
+        assert_eq!(
+            NavSelectDevice::parse("keyboard"),
+            NavSelectDevice::Keyboard
+        );
         assert_eq!(MatchMode::parse("any"), MatchMode::Any);
         assert_eq!(
             RepeatMode::parse("repeatwhilefound"),
@@ -1228,6 +1372,10 @@ mod tests {
         );
         assert_eq!(MaskShape::parse("circle"), MaskShape::Circle);
         assert_eq!(format!("{}", MouseButton::Scroll), "scroll");
+        assert_eq!(MatchGrouping::parse("column"), MatchGrouping::Column);
+        assert_eq!(MatchGrouping::parse(""), MatchGrouping::Row);
+        assert_eq!(NavPressMode::parse("hold"), NavPressMode::Hold);
+        assert_eq!(NavPressMode::parse("CLICK"), NavPressMode::Click);
     }
 
     #[test]
@@ -1236,6 +1384,23 @@ mod tests {
         assert!(err.to_string().contains("unknown MouseButton"), "{err}");
         let err = serde_yaml::from_str::<RepeatMode>("not-a-mode").unwrap_err();
         assert!(err.to_string().contains("unknown RepeatMode"), "{err}");
+        let err = serde_yaml::from_str::<MatchGrouping>("diagonal").unwrap_err();
+        assert!(err.to_string().contains("unknown MatchGrouping"), "{err}");
+        let err = serde_yaml::from_str::<NavPressMode>("tap").unwrap_err();
+        assert!(err.to_string().contains("unknown NavPressMode"), "{err}");
+        let err = serde_yaml::from_str::<NavSelectDevice>("touch").unwrap_err();
+        assert!(err.to_string().contains("unknown NavSelectDevice"), "{err}");
+        assert_eq!(
+            serde_yaml::from_str::<NavSelectDevice>("\"\"").unwrap(),
+            NavSelectDevice::Mouse
+        );
+        assert_eq!(
+            serde_yaml::from_str::<MouseButton>("\"\"").unwrap(),
+            MouseButton::Left
+        );
+        let select: NavSelectAction = serde_yaml::from_str("{}").unwrap();
+        assert_eq!(select.device, NavSelectDevice::Mouse);
+        assert_eq!(select.button, MouseButton::Left);
     }
 
     #[test]
@@ -1271,5 +1436,32 @@ time: 1
             _ => panic!("expected loop"),
         }
         assert!(root.id.is_root());
+    }
+
+    #[test]
+    fn wait_timeout_accepts_fractional_seconds() {
+        let mut wait = WaitTilFoundConfig {
+            repeat_mode: RepeatMode::WaitUntilFound,
+            wait_til_found_seconds: 0.5,
+            ..Default::default()
+        };
+        assert_eq!(wait.timeout(), Some(std::time::Duration::from_millis(500)));
+        assert!(wait.wait_until_found_active());
+        wait.wait_til_found_seconds = 0.0;
+        assert!(wait.timeout().is_none());
+        assert!(!wait.wait_until_found_active());
+    }
+
+    #[test]
+    fn match_field_clamps() {
+        assert_eq!(clamp_match_blur(-3), MIN_MATCH_BLUR);
+        assert_eq!(clamp_match_blur(500), MAX_MATCH_BLUR);
+        assert_eq!(
+            clamp_match_tolerance(2.0, MatchMethod::CcoeffNormed),
+            MAX_NORMED_MATCH_TOLERANCE
+        );
+        assert_eq!(clamp_color_tolerance(150), MAX_COLOR_TOLERANCE);
+        assert_eq!(clamp_ocr_threshold(300), MAX_OCR_THRESHOLD);
+        assert_eq!(clamp_ocr_resize(0.001), MIN_OCR_RESIZE);
     }
 }

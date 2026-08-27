@@ -11,10 +11,8 @@ workspace = true
 [dependencies]
 thiserror = { workspace = true }
 image = { workspace = true }
-parking_lot = { workspace = true }
 rayon = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
-sqyre-ui-model = { path = "../sqyre-ui-model" }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-vision = { path = "../sqyre-vision" }
 sqyre-hotkeys = { path = "../sqyre-hotkeys" }
@@ -22,3 +20,4 @@ sqyre-ports = { path = "../sqyre-ports" }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+sqyre-serialize = { path = "../sqyre-serialize" }

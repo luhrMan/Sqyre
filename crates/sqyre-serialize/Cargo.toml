@@ -16,3 +16,8 @@ sqyre-domain = { path = "../sqyre-domain" }
 
 [dev-dependencies]
 proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "macro_codec"
+harness = false

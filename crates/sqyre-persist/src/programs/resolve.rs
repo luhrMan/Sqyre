@@ -5,9 +5,14 @@ use super::{
     search_area_from, split_target, ProgramCatalog, ProgramCollection, ProgramData, ProgramPoint,
     ProgramSearchArea,
 };
-use sqyre_domain::{resolve_scalar_int, CoordinateRef, Macro, PROGRAM_DELIMITER};
+use sqyre_domain::{resolve_scalar_int, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
 use sqyre_ports::PortError;
 use std::path::PathBuf;
+
+/// Runtime screen coords (e.g. `${foundX}`) must not be remapped by catalog DPI/resolution.
+fn scalar_has_runtime_ref(v: &ScalarValue) -> bool {
+    matches!(v, ScalarValue::String(s) if s.contains("${"))
+}
 
 impl ProgramCatalog {
     pub fn lookup_point(
@@ -127,6 +132,11 @@ impl ProgramCatalog {
             .map_err(|e| PortError::invalid(format!("point X: {e}")))?;
         let y = resolve_scalar_int(&pt.y, &macro_.variables)
             .map_err(|e| PortError::invalid(format!("point Y: {e}")))?;
+        // Image Search Reference (`${foundX}`/`${foundY}`) and similar points already
+        // hold live screen pixels — remapping by stored bucket scale warps them on DPI≠100%.
+        if scalar_has_runtime_ref(&pt.x) || scalar_has_runtime_ref(&pt.y) {
+            return Ok((x, y));
+        }
         self.remap_xy(x, y, src_key, data)
     }
 
@@ -148,6 +158,12 @@ impl ProgramCatalog {
             .map_err(|e| PortError::invalid(format!("search area right_x: {e}")))?;
         let by = resolve_scalar_int(&sa.bottom_y, &macro_.variables)
             .map_err(|e| PortError::invalid(format!("search area bottom_y: {e}")))?;
+        if [&sa.left_x, &sa.top_y, &sa.right_x, &sa.bottom_y]
+            .into_iter()
+            .any(scalar_has_runtime_ref)
+        {
+            return Ok((lx, ty, rx, by));
+        }
         let (lx, ty) = self.remap_xy(lx, ty, src_key, data)?;
         let (rx, by) = self.remap_xy(rx, by, src_key, data)?;
         Ok((lx, ty, rx, by))

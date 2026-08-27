@@ -1,4 +1,4 @@
-use super::icon_grid::paint_even_icon_grid;
+use super::icon_grid::{paint_even_icon_grid, IconGridKind};
 use super::query::{fuzzy_match_fold, query_matches_name_or_tags};
 use crate::icon_cache::IconCache;
 use eframe::egui;
@@ -30,9 +30,23 @@ pub fn set_collapsing_openness(
 ) {
     for id in ids {
         let mut state =
-            egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, true);
+            egui::collapsing_header::CollapsingState::load_with_default_open(ctx, id, false);
         state.set_open(open);
         state.store(ctx);
+    }
+}
+
+/// Expand-all / collapse-all icon pair for program-header lists.
+pub fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Context, bool)) {
+    let expand = crate::theme::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_DOWN)
+        .on_hover_text("Expand all");
+    let collapse = crate::theme::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_UP)
+        .on_hover_text("Collapse all");
+    if expand.clicked() {
+        on_set(ui.ctx(), true);
+    }
+    if collapse.clicked() {
+        on_set(ui.ctx(), false);
     }
 }
 
@@ -43,7 +57,7 @@ pub fn set_collapsing_openness(
 ///
 /// When `selected_program` / `clicked_program` are used (data editor), program headers
 /// are selectable and write the clicked program name into `clicked_program`.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // accordion grid: selection mode plus optional program click
 pub fn paint_items_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -53,6 +67,7 @@ pub fn paint_items_icon_grid(
     multi: bool,
     selected_program: Option<&str>,
     clicked_program: &mut Option<String>,
+    compact_program_headers: bool,
 ) {
     let q = search.trim().to_ascii_lowercase();
     let pane_w = ui.available_width();
@@ -109,7 +124,7 @@ pub fn paint_items_icon_grid(
 
         // Absolute id so expand/collapse-all (outside this ui stack) can target the same state.
         let id = items_icon_grid_collapse_id(prog);
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
             .show_header(ui, |ui| {
                 let prog_selected = selected_program == Some(prog.as_str());
                 if crate::icon_cache::paint_program_label(
@@ -121,6 +136,7 @@ pub fn paint_items_icon_grid(
                         selected: Some(prog_selected),
                         child_count: pdata.items.len(),
                     },
+                    compact_program_headers,
                 )
                 .clicked()
                 {
@@ -152,7 +168,7 @@ pub fn paint_items_icon_grid(
                     icons,
                     &targets,
                     |t| selected.iter().any(|s| s == t),
-                    false,
+                    IconGridKind::Picker,
                     |_i, t| {
                         clicked = Some(t.to_string());
                     },

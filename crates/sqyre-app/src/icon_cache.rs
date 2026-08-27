@@ -2,18 +2,24 @@
 
 use crate::assets;
 use crate::demo_icons;
+use crate::image_view;
 use crate::window_types::ProcessIcon;
-use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
+use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 const FALLBACK_KEY: &str = "__sqyre_fallback__";
 /// Raster size for the brand fallback texture (displayed smaller in UI).
 const FALLBACK_PX: u32 = 128;
 /// Display size for OS process icons in lists / forms.
 pub const PROCESS_ICON_SIDE: f32 = 16.0;
+
+fn icon_texture_options() -> TextureOptions {
+    TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear))
+}
 
 #[derive(Default)]
 pub struct IconCache {
@@ -31,7 +37,7 @@ impl IconCache {
         Self::default()
     }
 
-    /// First variant PNG for `program~item`, loaded into a retained texture.
+    /// One variant PNG for `program~item` (cycles when multiple variants exist).
     ///
     /// Falls back to in-memory [`demo_icons`] placeholders when no file exists
     /// (WASM demo seed).
@@ -44,14 +50,7 @@ impl IconCache {
         if self.missing.contains_key(target) {
             return None;
         }
-        let path = demo_icons::merged_variant_paths(catalog, target)
-            .into_iter()
-            .next();
-        let Some(path) = path else {
-            self.missing.insert(target.to_string(), ());
-            return None;
-        };
-        match self.get_or_load(ctx, &path) {
+        match self.for_target_random_variant(ctx, catalog, target) {
             Some(t) => Some(t),
             None => {
                 self.missing.insert(target.to_string(), ());
@@ -71,6 +70,29 @@ impl IconCache {
             .unwrap_or_else(|| self.sqyre_fallback(ctx))
     }
 
+    /// One variant PNG for `program~item`, cycling through variants every second.
+    pub fn for_target_random_variant(
+        &mut self,
+        ctx: &egui::Context,
+        catalog: &ProgramCatalog,
+        target: &str,
+    ) -> Option<TextureHandle> {
+        let paths = demo_icons::merged_variant_paths(catalog, target);
+        if paths.is_empty() {
+            return None;
+        }
+        if paths.len() > 1 {
+            ctx.request_repaint_after(Duration::from_secs(1));
+        }
+        let start = rotating_variant_index(target, paths.len(), ctx.input(|i| i.time));
+        for i in 0..paths.len() {
+            if let Some(tex) = self.for_path(ctx, &paths[(start + i) % paths.len()]) {
+                return Some(tex);
+            }
+        }
+        None
+    }
+
     pub fn sqyre_fallback(&mut self, ctx: &egui::Context) -> TextureHandle {
         if let Some(t) = &self.fallback {
             return t.clone();
@@ -78,7 +100,7 @@ impl IconCache {
         let (rgba, w, h) =
             assets::app_icon_rgba(FALLBACK_PX).expect("embedded Sqyre SVG must rasterize");
         let color = ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
-        let tex = ctx.load_texture(FALLBACK_KEY, color, TextureOptions::LINEAR);
+        let tex = ctx.load_texture(FALLBACK_KEY, color, icon_texture_options());
         self.fallback = Some(tex.clone());
         tex
     }
@@ -176,6 +198,15 @@ impl IconCache {
         self.textures.remove(path);
     }
 
+    /// Forget a sticky miss for `program~item` so listings recheck disk.
+    ///
+    /// Call this after adding, overwriting, or deleting icon variants. Path-only
+    /// invalidation is not enough: [`for_target`] remembers empty results and
+    /// would keep showing the fallback until restart.
+    pub fn invalidate_target(&mut self, target: &str) {
+        self.missing.remove(target);
+    }
+
     fn insert_process_icon(
         &mut self,
         ctx: &egui::Context,
@@ -185,7 +216,7 @@ impl IconCache {
         let size = [icon.width as usize, icon.height as usize];
         let color = ColorImage::from_rgba_unmultiplied(size, &icon.rgba);
         let name = format!("process_icon:{key}");
-        let tex = ctx.load_texture(name, color, TextureOptions::LINEAR);
+        let tex = ctx.load_texture(name, color, icon_texture_options());
         self.process.insert(key.to_string(), tex.clone());
         tex
     }
@@ -198,6 +229,52 @@ impl IconCache {
         self.textures.insert(path.to_path_buf(), tex.clone());
         Some(tex)
     }
+}
+
+fn stable_variant_index(target: &str, count: usize) -> usize {
+    if count <= 1 {
+        return 0;
+    }
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    target.hash(&mut hasher);
+    (hasher.finish() as usize) % count
+}
+
+/// Seconds-based cycle index; per-target hash offsets keep grids from flipping in sync.
+fn rotating_variant_index(target: &str, count: usize, time_secs: f64) -> usize {
+    if count <= 1 {
+        return 0;
+    }
+    let tick = time_secs.max(0.0) as u64;
+    (tick as usize + stable_variant_index(target, count)) % count
+}
+
+/// Paint a catalog/item icon centered at `center`, fitting inside `max_w`×`max_h`.
+pub fn paint_icon_thumb_at(
+    ui: &egui::Ui,
+    tex: &TextureHandle,
+    center: egui::Pos2,
+    max_w: f32,
+    max_h: f32,
+    corner_radius: f32,
+    bg_fill: Option<egui::Color32>,
+) -> egui::Rect {
+    let [tw, th] = tex.size();
+    let size = image_view::fit_icon_thumb(tw as f32, th as f32, max_w, max_h);
+    let rect = egui::Rect::from_center_size(center, size);
+    if let Some(bg) = bg_fill {
+        let slot = egui::Rect::from_center_size(center, Vec2::new(max_w, max_h));
+        ui.painter().rect_filled(slot, corner_radius, bg);
+    }
+    ui.painter().image(
+        tex.id(),
+        rect,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        Color32::WHITE,
+    );
+    rect
 }
 
 /// Draw a square process icon (non-interactive).
@@ -216,7 +293,7 @@ pub fn paint_process_icon(ui: &mut egui::Ui, tex: &TextureHandle, side: f32) {
 pub enum ProgramLabelStyle {
     /// Plain selectable list row.
     Selectable { selected: bool },
-    /// Strong 16px header with child count in parentheses.
+    /// Strong 16px header with leading child count in parentheses.
     /// `selected: None` → non-interactive label.
     Header {
         selected: Option<bool>,
@@ -224,41 +301,79 @@ pub enum ProgramLabelStyle {
     },
 }
 
-/// Paint optional process icon + program name; returns the name widget response.
+/// Paint optional process icon + program name as one selectable (or label) widget.
+///
+/// When `compact` is true and the program has a process icon, header styles omit the
+/// name and show only `({child_count})` (full name on hover).
 pub fn paint_program_label(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     program: &str,
     style: ProgramLabelStyle,
+    compact: bool,
 ) -> egui::Response {
     let tex = icons.for_program(ui.ctx(), catalog, program);
-    ui.horizontal(|ui| {
-        if let Some(tex) = tex.as_ref() {
-            paint_process_icon(ui, tex, PROCESS_ICON_SIDE);
+    let hide_name = compact && tex.is_some();
+
+    let (selected, text, interactive) = match style {
+        ProgramLabelStyle::Selectable { selected } => {
+            // Flat program rows have no child count; always keep the name.
+            (selected, program.to_string(), true)
         }
-        match style {
-            ProgramLabelStyle::Selectable { selected } => ui.selectable_label(selected, program),
-            ProgramLabelStyle::Header {
-                selected: Some(selected),
-                child_count,
-            } => ui.selectable_label(
-                selected,
-                egui::RichText::new(format!("{program} ({child_count})"))
-                    .size(PROCESS_ICON_SIDE)
-                    .strong(),
-            ),
-            ProgramLabelStyle::Header {
-                selected: None,
-                child_count,
-            } => ui.label(
-                egui::RichText::new(format!("{program} ({child_count})"))
-                    .size(PROCESS_ICON_SIDE)
-                    .strong(),
-            ),
+        ProgramLabelStyle::Header {
+            selected: Some(selected),
+            child_count,
+        } => {
+            let text = if hide_name {
+                format!("({child_count})")
+            } else {
+                format!("({child_count}) {program}")
+            };
+            (selected, text, true)
         }
-    })
-    .inner
+        ProgramLabelStyle::Header {
+            selected: None,
+            child_count,
+        } => {
+            let text = if hide_name {
+                format!("({child_count})")
+            } else {
+                format!("({child_count}) {program}")
+            };
+            (false, text, false)
+        }
+    };
+
+    let rich = match style {
+        ProgramLabelStyle::Selectable { .. } => egui::RichText::new(text),
+        ProgramLabelStyle::Header { .. } => egui::RichText::new(text).strong(),
+    };
+
+    let icon = tex.as_ref().map(|tex| {
+        egui::Image::new((tex.id(), Vec2::splat(PROCESS_ICON_SIDE)))
+            .fit_to_exact_size(Vec2::splat(PROCESS_ICON_SIDE))
+            .maintain_aspect_ratio(true)
+    });
+
+    let response = match (icon, interactive) {
+        (Some(icon), true) => ui.selectable_label(selected, (icon, rich)),
+        (None, true) => ui.selectable_label(selected, rich),
+        (Some(icon), false) => {
+            ui.horizontal(|ui| {
+                ui.add(icon);
+                ui.label(rich);
+            })
+            .response
+        }
+        (None, false) => ui.label(rich),
+    };
+
+    if hide_name {
+        response.on_hover_text(program)
+    } else {
+        response
+    }
 }
 
 /// Paint a program's process icon when bound; returns whether an icon was drawn.
@@ -332,12 +447,81 @@ fn load_texture(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
     let demo = demo_icons::get(path)?;
     let color =
         ColorImage::from_rgba_unmultiplied([demo.width as usize, demo.height as usize], &demo.rgba);
-    Some(ctx.load_texture(path.to_string_lossy(), color, TextureOptions::LINEAR))
+    Some(ctx.load_texture(path.to_string_lossy(), color, icon_texture_options()))
 }
 
 fn load_png_bytes(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<TextureHandle> {
     let img = image::load_from_memory(bytes).ok()?.into_rgba8();
     let size = [img.width() as usize, img.height() as usize];
     let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
-    Some(ctx.load_texture(name.to_owned(), color, TextureOptions::LINEAR))
+    Some(ctx.load_texture(name.to_owned(), color, icon_texture_options()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalidate_target_clears_sticky_miss() {
+        let mut cache = IconCache::new();
+        cache.missing.insert("Prog~Item".into(), ());
+        cache.invalidate_target("Prog~Item");
+        assert!(!cache.missing.contains_key("Prog~Item"));
+    }
+
+    #[test]
+    fn invalidate_path_does_not_clear_sticky_miss() {
+        let mut cache = IconCache::new();
+        let path = PathBuf::from("/tmp/Prog/Item~Original.png");
+        cache.missing.insert("Prog~Item".into(), ());
+        cache.invalidate_path(&path);
+        assert!(
+            cache.missing.contains_key("Prog~Item"),
+            "path invalidation alone must not imply a target recheck"
+        );
+    }
+
+    #[test]
+    fn stable_variant_index_is_deterministic() {
+        let count = 5;
+        let a = stable_variant_index("Prog~Item", count);
+        assert_eq!(a, stable_variant_index("Prog~Item", count));
+        assert!(a < count);
+        assert_eq!(stable_variant_index("alone", 1), 0);
+        // Hash collisions are allowed; require diversity across a sample set, not one pair.
+        let idxs: std::collections::HashSet<_> = [
+            "Prog~Item",
+            "Prog~Other",
+            "Prog~Foo",
+            "Prog~Bar",
+            "Prog~Baz",
+            "A",
+            "B",
+            "C",
+        ]
+        .iter()
+        .map(|t| stable_variant_index(t, count))
+        .collect();
+        assert!(
+            idxs.len() > 1,
+            "expected multiple buckets across sample targets, got {idxs:?}"
+        );
+    }
+
+    #[test]
+    fn rotating_variant_index_cycles_every_second() {
+        let count = 4;
+        let t = "Prog~Item";
+        let a = rotating_variant_index(t, count, 0.0);
+        let b = rotating_variant_index(t, count, 1.0);
+        let c = rotating_variant_index(t, count, 2.0);
+        assert_ne!(a, b);
+        assert_ne!(b, c);
+        assert_eq!(rotating_variant_index(t, count, 4.0), a);
+    }
+
+    #[test]
+    fn rotating_variant_index_single_variant_is_zero() {
+        assert_eq!(rotating_variant_index("Prog~Item", 1, 99.0), 0);
+    }
 }

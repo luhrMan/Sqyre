@@ -78,17 +78,13 @@ pub fn validate_png_file(path: &Path) -> Result<(), String> {
 }
 
 fn sanitize_variant_name(name: &str) -> Result<String, String> {
-    if name.contains("..") || name.contains('/') || name.contains('\\') {
-        return Err("invalid variant name: contains path separators".into());
-    }
     let base = Path::new(name)
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("")
+        .trim()
         .to_string();
-    if base.is_empty() {
-        return Err("variant name cannot be empty".into());
-    }
+    sqyre_validate::validate_entity_name(&base).map_err(|e| e.to_string())?;
     Ok(base)
 }
 

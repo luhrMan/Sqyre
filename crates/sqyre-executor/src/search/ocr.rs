@@ -1,13 +1,13 @@
 //! OCR action: capture → preprocess → recognize → write vars → run children per hit.
 
 use super::common::{
-    apply_detection_hits, capture_search_buf, frame_fingerprint, run_detection_shell, sort_hits,
-    DetectionHit, FrameCache,
+    apply_detection_hits, capture_search_buf, run_detection_shell, sort_hits, DetectionCtx,
+    DetectionHit,
 };
 use crate::error::{ExecError, Result};
 use crate::log_draw::draw_rect_rgb;
 use crate::run::Executor;
-use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchOrder, ScalarValue};
+use sqyre_domain::{action_type_label, Action, ActionKind, Macro, ScalarValue};
 use std::time::Instant;
 
 /// OCR branch action: capture → preprocess → recognize → write vars → run children per hit
@@ -33,20 +33,10 @@ pub(crate) fn execute_ocr(
     else {
         return Err(ExecError::Message("not ocr".into()));
     };
-    let sqyre_domain::DetectionBranch {
-        wait,
-        coords,
-        order,
-        subactions,
-        else_actions,
-    } = detection;
-
     let action_id = action.id;
     let label = action_type_label(action.type_key());
-    let order = order.clone();
+    let wait = &detection.wait;
     let ocr_params = OcrRunParams {
-        label,
-        search_area,
         target,
         blur: *blur,
         min_threshold: *min_threshold,
@@ -60,10 +50,9 @@ pub(crate) fn execute_ocr(
     } else {
         vec![target.clone()]
     };
+    let ctx = DetectionCtx::new(action_id, label, search_area, &targets, detection);
 
-    let mut cache = FrameCache::default();
-    // Log wait intent once before the shared shell arms retries.
-    let attempt0 = ocr_attempt(exec, action_id, &ocr_params, &order, macro_, &mut cache);
+    let attempt0 = ocr_attempt(exec, &ctx, &ocr_params, macro_, false);
     if wait.wait_until_found_active() && attempt0.hits.is_empty() {
         exec.log(
             action_id,
@@ -86,43 +75,22 @@ pub(crate) fn execute_ocr(
     run_detection_shell(
         exec,
         macro_,
-        wait,
-        100,
-        100,
-        |exec, macro_| {
+        &ctx,
+        |exec, macro_, fresh| {
             if let Some(first) = initial.take() {
                 return Ok(first);
             }
-            Ok(ocr_attempt(
-                exec,
-                action_id,
-                &ocr_params,
-                &order,
-                macro_,
-                &mut cache,
-            ))
+            Ok(ocr_attempt(exec, &ctx, &ocr_params, macro_, fresh))
         },
         |attempt| !attempt.hits.is_empty(),
         |exec, macro_, attempt, pass| {
             apply_ocr_text_var(macro_, output_variable, attempt);
-            apply_detection_hits(
-                exec,
-                action_id,
-                &targets,
-                &attempt.hits,
-                coords,
-                subactions,
-                else_actions,
-                macro_,
-                pass,
-            )
+            apply_detection_hits(exec, &ctx, &attempt.hits, macro_, pass)
         },
     )
 }
 
 struct OcrRunParams<'a> {
-    label: &'a str,
-    search_area: &'a sqyre_domain::CoordinateRef,
     target: &'a str,
     blur: i32,
     min_threshold: i32,
@@ -154,13 +122,12 @@ fn apply_ocr_text_var(macro_: &mut Macro, output_variable: &str, attempt: &OcrAt
 
 fn ocr_attempt(
     exec: &mut Executor<'_>,
-    action_id: sqyre_domain::ActionId,
+    ctx: &DetectionCtx<'_>,
     params: &OcrRunParams<'_>,
-    order: &MatchOrder,
     macro_: &Macro,
-    cache: &mut FrameCache<OcrAttempt>,
+    fresh: bool,
 ) -> OcrAttempt {
-    match run_ocr_once(exec, action_id, params, order, macro_, cache) {
+    match run_ocr_once(exec, ctx, params, macro_, fresh) {
         Some(a) => a,
         None => OcrAttempt {
             text: None,
@@ -171,43 +138,28 @@ fn ocr_attempt(
 
 fn run_ocr_once(
     exec: &mut Executor<'_>,
-    action_id: sqyre_domain::ActionId,
+    ctx: &DetectionCtx<'_>,
     params: &OcrRunParams<'_>,
-    order: &MatchOrder,
     macro_: &Macro,
-    cache: &mut FrameCache<OcrAttempt>,
+    fresh: bool,
 ) -> Option<OcrAttempt> {
-    let label = params.label;
+    let action_id = ctx.action_id;
+    let label = ctx.label;
     let Some(ocr) = exec.deps.ocr else {
         exec.log(action_id, format!("{label}: missing OcrEngine"));
         return None;
     };
 
-    let (rgb, origin) = capture_search_buf(
-        exec,
-        action_id,
-        label,
-        params.search_area,
-        macro_,
-        |exec, lx, ty, rx, by| {
-            exec.log(
-                action_id,
-                format!(
-                    "{label}: searching {:?} in {} X1:{lx} Y1:{ty} X2:{rx} Y2:{by}",
-                    params.target,
-                    params.search_area.display_label()
-                ),
-            );
-        },
-    )?;
-    let fp = frame_fingerprint(&rgb);
-    if let Some(cached) = cache.get(fp, origin) {
+    let (rgb, origin) = capture_search_buf(exec, ctx, macro_, fresh, |exec, lx, ty, rx, by| {
         exec.log(
             action_id,
-            format!("{label}: capture unchanged since last attempt; reusing OCR result"),
+            format!(
+                "{label}: searching {:?} in {} X1:{lx} Y1:{ty} X2:{rx} Y2:{by}",
+                params.target,
+                ctx.search_area.display_label()
+            ),
         );
-        return Some(cached);
-    }
+    })?;
     let search_center_x = origin.x + origin.w / 2;
     let search_center_y = origin.y + origin.h / 2;
     exec.log_image(action_id, "Capture (raw)", &rgb);
@@ -354,13 +306,12 @@ fn run_ocr_once(
                 .collect()
         }
     };
-    sort_hits(&mut hits, order);
+    sort_hits(&mut hits, &ctx.branch.order);
 
     let attempt = OcrAttempt {
         text: Some(recognized.text),
         hits,
     };
-    cache.set(fp, origin, attempt.clone());
     Some(attempt)
 }
 

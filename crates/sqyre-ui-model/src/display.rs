@@ -1,8 +1,8 @@
 //! Display params and tree summary pills for actions.
 
 use sqyre_domain::{
-    Action, ActionKind, ConditionClause, ConditionOperator, LoopJumpMode, MatchMode, RepeatMode,
-    ScalarValue, WaitTilFoundConfig,
+    Action, ActionKind, ConditionClause, ConditionOperator, CoordinateRef, LoopJumpMode, MatchMode,
+    RepeatMode, ScalarValue, WaitTilFoundConfig,
 };
 
 /// One display parameter.
@@ -80,28 +80,28 @@ impl WaitDisplay for WaitTilFoundConfig {
     fn display_wait_mode(&self, instant_label: &str) -> String {
         match self.repeat_mode {
             RepeatMode::WaitUntilFound => {
-                if self.wait_til_found_seconds > 0 {
+                if self.timeout().is_some() {
                     format!("{} seconds or until found", self.wait_til_found_seconds)
                 } else {
                     format!("wait {}s", self.wait_til_found_seconds)
                 }
             }
             RepeatMode::WaitWhileFound => {
-                if self.wait_til_found_seconds > 0 {
+                if self.timeout().is_some() {
                     format!("{} seconds or while found", self.wait_til_found_seconds)
                 } else {
                     format!("wait while found ({}s)", self.wait_til_found_seconds)
                 }
             }
             RepeatMode::RepeatUntilFound => {
-                if self.wait_til_found_seconds > 0 {
+                if self.timeout().is_some() {
                     format!("repeat until found ({}s)", self.wait_til_found_seconds)
                 } else {
                     "repeat until found".to_string()
                 }
             }
             RepeatMode::RepeatWhileFound => {
-                if self.wait_til_found_seconds > 0 {
+                if self.timeout().is_some() {
                     format!("repeat while found ({}s)", self.wait_til_found_seconds)
                 } else {
                     "repeat while found".to_string()
@@ -321,10 +321,7 @@ impl ActionKindDisplay for ActionKind {
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
                 params.push(DisplayParam::new("Items", targets.len().to_string()));
-                params.push(DisplayParam::extra(
-                    "Search Area",
-                    search_area.display_label(),
-                ));
+                params.push(search_area_display_param(search_area));
                 params.push(DisplayParam::extra(
                     "Wait",
                     detection.wait.display_wait_mode("instant"),
@@ -342,10 +339,7 @@ impl ActionKindDisplay for ActionKind {
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
                 params.push(DisplayParam::new("Target Text", target.as_str()));
-                params.push(DisplayParam::extra(
-                    "Search Area",
-                    search_area.display_label(),
-                ));
+                params.push(search_area_display_param(search_area));
                 params.push(DisplayParam::extra(
                     "Wait",
                     detection.wait.display_wait_mode("instant"),
@@ -364,10 +358,7 @@ impl ActionKindDisplay for ActionKind {
                     "Tolerance",
                     format!("{color_tolerance}%"),
                 ));
-                params.push(DisplayParam::extra(
-                    "Search Area",
-                    search_area.display_label(),
-                ));
+                params.push(search_area_display_param(search_area));
                 params.push(DisplayParam::extra(
                     "Wait",
                     detection.wait.display_wait_mode("instant"),
@@ -479,5 +470,15 @@ impl ActionKindDisplay for ActionKind {
             }
         }
         params
+    }
+}
+
+/// Unset search areas show in the tree; a chosen area stays tooltip-only.
+fn search_area_display_param(search_area: &CoordinateRef) -> DisplayParam {
+    let value = search_area.display_label();
+    if search_area.is_empty() {
+        DisplayParam::new("Search Area", value)
+    } else {
+        DisplayParam::extra("Search Area", value)
     }
 }

@@ -1,7 +1,7 @@
 //! Runtime adapters shared by macro execution (OCR, continue-wait, stop-watch).
 
 use parking_lot::Mutex;
-use sqyre_hotkeys::{ContinueWaitBridge, MacroHotkeyBridge, StopFlag};
+use sqyre_hotkeys::{ContinueWaitBridge, HotkeyError, MacroHotkeyBridge, StopFlag};
 use sqyre_ports::PortError;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -11,13 +11,10 @@ pub(crate) struct BridgeContinueWait {
     pub(crate) macro_hotkeys: MacroHotkeyBridge,
 }
 
-/// `sqyre-hotkeys` predates the typed port error and still reports failures as
-/// plain strings; translate at this adapter boundary instead of widening that crate.
-fn to_port_error(e: String) -> PortError {
-    if e == "stopped" {
-        PortError::Stopped
-    } else {
-        PortError::Message(e)
+fn to_port_error(e: HotkeyError) -> PortError {
+    match e {
+        HotkeyError::Stopped => PortError::Stopped,
+        other => PortError::Message(other.to_string()),
     }
 }
 
@@ -74,6 +71,18 @@ mod native {
     use super::StopFlag;
     use sqyre_input::OsAutomation;
     use sqyre_ports::{AutomationBackend, AutomationError, MoveOptions};
+
+    pub(crate) fn os_automation() -> Result<OsAutomation, AutomationError> {
+        #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+        {
+            use sqyre_capture::{LinuxSessionInfo, LinuxSessionKind, PortalEisInput};
+            use std::sync::Arc;
+            if LinuxSessionInfo::detect().session_kind == LinuxSessionKind::Wayland {
+                return OsAutomation::new_with_portal(Some(Arc::new(PortalEisInput)));
+            }
+        }
+        OsAutomation::new()
+    }
 
     /// Forwards automation but surfaces stop via milli_sleep / between calls.
     pub(crate) struct StopWatchAutomation<'a> {
@@ -136,6 +145,7 @@ mod native {
     pub(crate) fn trim_process_heap() {
         #[cfg(target_os = "linux")]
         {
+            // SAFETY: glibc `malloc_trim` only inspects this process's allocator; pad=0 is always valid.
             unsafe {
                 extern "C" {
                     fn malloc_trim(pad: usize) -> i32;
@@ -147,4 +157,4 @@ mod native {
 }
 
 #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
-pub(crate) use native::{trim_process_heap, StopWatchAutomation};
+pub(crate) use native::{os_automation, trim_process_heap, StopWatchAutomation};

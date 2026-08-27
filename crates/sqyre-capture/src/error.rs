@@ -2,23 +2,12 @@
 
 pub use sqyre_ports::CaptureError;
 
-/// Human-readable warning when the Linux session cannot support X11 capture.
+/// Human-readable warning when the Linux session cannot support capture yet.
 ///
-/// Returns `None` on non-Linux targets and when `DISPLAY` is available.
+/// Returns `None` on non-Linux targets and when X11/XWayland is available.
 #[cfg(target_os = "linux")]
 pub fn linux_session_capture_warning() -> Option<String> {
-    let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_default();
-    let wayland =
-        session.eq_ignore_ascii_case("wayland") || std::env::var_os("WAYLAND_DISPLAY").is_some();
-    let has_x11 = std::env::var_os("DISPLAY").is_some();
-    if wayland && !has_x11 {
-        Some(
-            "Pure Wayland session detected (no DISPLAY). Sqyre needs X11 or XWayland for screen capture, window focus, and overlays."
-                .into(),
-        )
-    } else {
-        None
-    }
+    crate::linux::LinuxSessionInfo::detect().capture_warning()
 }
 
 #[cfg(not(target_os = "linux"))]

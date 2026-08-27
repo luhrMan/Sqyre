@@ -3,7 +3,7 @@
 use crate::macro_meta::collect_all_macro_tags;
 use crate::theme;
 use crate::SqyreApp;
-use eframe::egui::{self, Color32, Vec2};
+use eframe::egui::{self, Color32, Vec2, WidgetInfo, WidgetType};
 use sqyre_hotkeys::{format_hotkey, HotkeyTrigger};
 use sqyre_ui_model::action_pastel_color;
 use std::sync::atomic::Ordering;
@@ -21,9 +21,11 @@ fn toolbar_icon_colored(
     enabled: bool,
     color: Option<Color32>,
 ) -> egui::Response {
-    ui.add_enabled_ui(enabled, |ui| theme::icon_button_colored(ui, glyph, color))
-        .inner
-        .on_hover_text(tip)
+    let response = ui
+        .add_enabled_ui(enabled, |ui| theme::icon_button_colored(ui, glyph, color))
+        .inner;
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tip));
+    response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
 
 pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
@@ -35,32 +37,13 @@ pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             .maintain_aspect_ratio(true);
         let button = egui::Button::image_and_text(image, egui::RichText::new("Sqyre").heading())
             .frame_when_inactive(false);
-
-        let (response, _) = egui::containers::menu::MenuButton::from_button(button).ui(ui, |ui| {
-            if ui.button("📁  Data Editor").clicked() {
-                app.data_editor.open = true;
-                ui.close();
-            }
-            if ui.button("Variables").clicked() {
-                app.variables_panel.open = true;
-                ui.close();
-            }
-            if ui.button("⚙  Settings").clicked() {
-                app.settings_ui.open = true;
-                ui.close();
-            }
-            ui.separator();
-            let list_label = if app.macro_list_open {
-                "◁  Hide Macro List"
-            } else {
-                "☰  Show Macro List"
-            };
-            if ui.button(list_label).clicked() {
-                app.macro_list_open = !app.macro_list_open;
-                ui.close();
-            }
-        });
-        response.on_hover_text("App menu");
+        if ui
+            .add(button)
+            .on_hover_text("Command palette (Ctrl+K)")
+            .clicked()
+        {
+            app.command_palette.open_palette();
+        }
 
         #[cfg(not(target_arch = "wasm32"))]
         show_update_banner(app, ui);
@@ -126,7 +109,18 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             {
                 app.start_macro(ui.ctx());
             }
-            if toolbar_icon_colored(ui, "⏹", "Stop", running, Some(theme::MACRO_STOP)).clicked() {
+            if toolbar_icon_colored(
+                ui,
+                "⏹",
+                &format!(
+                    "Esc stops the running macro; {} exits Sqyre (failsafe).",
+                    sqyre_hotkeys::FAILSAFE_LABEL
+                ),
+                running,
+                Some(theme::MACRO_STOP),
+            )
+            .clicked()
+            {
                 app.request_stop();
             }
         }
@@ -140,7 +134,7 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             }
         }
         if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
-            app.data_editor.open = true;
+            app.data_editor.request_open(ui.ctx());
         }
 
         let status = app.run_session.state.status.lock().clone();
@@ -158,11 +152,6 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             },
         );
     });
-    #[cfg(not(target_arch = "wasm32"))]
-    ui.small(format!(
-        "Esc stops the running macro; {} exits (failsafe). Macro hotkeys launch from anywhere.",
-        sqyre_hotkeys::FAILSAFE_LABEL
-    ));
     #[cfg(target_arch = "wasm32")]
     ui.small(
         "Browser editor: import/export db.yaml. Run, capture, and global hotkeys are desktop-only.",

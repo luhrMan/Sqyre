@@ -1,20 +1,20 @@
 //! Image search action: capture → match template variants → run children per hit.
 
 use super::common::{
-    apply_detection_hits, capture_search_buf, close_matches_distance, frame_fingerprint,
-    run_detection_shell, sort_hits, DetectionExtras, DetectionHit, FrameCache,
+    apply_detection_hits, capture_search_buf, close_matches_distance, run_detection_shell,
+    sort_hits, DetectionCtx, DetectionExtras, DetectionHit,
 };
 use crate::backends::{DesktopRect, ItemMeta};
 use crate::error::{ExecError, Result, SearchError};
 use crate::log_draw::{crop_match_preview, draw_rect_rgb};
 use crate::run::Executor;
 use rayon::prelude::*;
-use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchMethod, MatchOrder};
+use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchMethod};
 use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_prepared, prepare_search,
     search_blur_kernel, ImageBuf, Point,
 };
-use sqyre_ui_model::{highlight_clear, highlight_fill};
+use sqyre_ports::{highlight_clear, highlight_fill};
 use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
     load_rgb_image,
@@ -41,35 +41,16 @@ pub(crate) fn execute_image_search(
     else {
         return Err(ExecError::Message("not image search".into()));
     };
-    let sqyre_domain::DetectionBranch {
-        wait,
-        coords,
-        order,
-        subactions,
-        else_actions,
-    } = detection;
-
     highlight_fill(exec.deps.highlighter, &macro_.name, action.id, 0.0);
     let action_id = action.id;
     let label = action_type_label(action.type_key());
+    let ctx = DetectionCtx::new(action_id, label, search_area, targets, detection);
+    let wait = &detection.wait;
     let macro_name = macro_.name.clone();
-    let order = order.clone();
-    let mut cache = FrameCache::default();
     let result = (|| {
         // Log wait intent once before the shared shell arms retries.
-        let results0 = capture_and_match(
-            exec,
-            action_id,
-            label,
-            targets,
-            search_area,
-            *tolerance,
-            *blur,
-            *match_method,
-            &order,
-            macro_,
-            &mut cache,
-        )?;
+        let results0 =
+            capture_and_match(exec, &ctx, *tolerance, *blur, *match_method, false, macro_)?;
         if wait.wait_until_found_active() && results0.is_empty() {
             exec.log(
                 action_id,
@@ -92,41 +73,23 @@ pub(crate) fn execute_image_search(
         run_detection_shell(
             exec,
             macro_,
-            wait,
-            100,
-            100,
-            |exec, macro_| {
+            &ctx,
+            |exec, macro_, force_fresh| {
                 if let Some(first) = initial.take() {
                     return Ok(first);
                 }
                 capture_and_match(
                     exec,
-                    action_id,
-                    label,
-                    targets,
-                    search_area,
+                    &ctx,
                     *tolerance,
                     *blur,
                     *match_method,
-                    &order,
+                    force_fresh,
                     macro_,
-                    &mut cache,
                 )
             },
             |results| !results.is_empty(),
-            |exec, macro_, results, pass| {
-                apply_detection_hits(
-                    exec,
-                    action_id,
-                    targets,
-                    results,
-                    coords,
-                    subactions,
-                    else_actions,
-                    macro_,
-                    pass,
-                )
-            },
+            |exec, macro_, results, pass| apply_detection_hits(exec, &ctx, results, macro_, pass),
         )
     })();
     highlight_clear(exec.deps.highlighter, &macro_name, action_id);
@@ -164,20 +127,19 @@ struct VariantMatchOutcome {
     match_ms: f64,
 }
 
-#[allow(clippy::too_many_arguments)]
 fn capture_and_match(
     exec: &mut Executor<'_>,
-    action_id: sqyre_domain::ActionId,
-    label: &str,
-    targets: &[String],
-    search_area: &sqyre_domain::CoordinateRef,
+    ctx: &DetectionCtx<'_>,
     tolerance: f64,
     blur: i32,
     match_method: MatchMethod,
-    order: &MatchOrder,
+    force_fresh: bool,
     macro_: &Macro,
-    cache: &mut FrameCache<Vec<DetectionHit>>,
 ) -> Result<Vec<DetectionHit>> {
+    let action_id = ctx.action_id;
+    let label = ctx.label;
+    let targets = ctx.targets;
+    let order = &ctx.branch.order;
     // Capture/resolve/blur failures are logged as misses so wait-until-found can retry
     // instead of aborting the macro (same policy as OCR / Find Pixel).
     let Some(icons) = exec.deps.icons else {
@@ -185,13 +147,13 @@ fn capture_and_match(
         return Ok(Vec::new());
     };
 
+    let fresh = exec.take_capture_fresh(force_fresh);
     let capture_started = Instant::now();
     let Some((search, origin)) = capture_search_buf(
         exec,
-        action_id,
-        label,
-        search_area,
+        ctx,
         macro_,
+        fresh,
         |exec, lx, ty, rx, by| {
             let w = (rx - lx).max(0);
             let h = (by - ty).max(0);
@@ -205,15 +167,6 @@ fn capture_and_match(
     ) else {
         return Ok(Vec::new());
     };
-    let fp = frame_fingerprint(&search);
-    if let Some(cached) = cache.get(fp, origin) {
-        exec.log_timing(action_id, "capture", capture_started.elapsed());
-        exec.log(
-            action_id,
-            format!("{label}: capture unchanged since last attempt; reusing match result"),
-        );
-        return Ok(cached);
-    }
     exec.log_image(action_id, "1. Capture (search area)", &search);
     let kernel = search_blur_kernel(blur);
     let want_pipeline = exec.log_images_enabled();
@@ -563,6 +516,5 @@ fn capture_and_match(
         })
         .collect();
     sort_hits(&mut hits, order);
-    cache.set(fp, origin, hits.clone());
     Ok(hits)
 }

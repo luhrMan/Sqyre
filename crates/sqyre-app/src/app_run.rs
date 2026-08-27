@@ -41,10 +41,21 @@ impl SqyreApp {
                 && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed());
             if should_hide && !self.hidden_for_recording {
                 self.hidden_for_recording = true;
+                #[cfg(feature = "native-runtime")]
+                sqyre_capture::mark_site("recording:hide_main");
+                // GSR destroys its overlay (`window.reset()`) before portal capture so
+                // the UI is not in the screencast. Unmap the main viewport; the wake
+                // poller keeps outline/HUD updates alive while hidden.
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                #[cfg(all(feature = "native-runtime", target_os = "linux"))]
+                if sqyre_capture::LinuxSessionInfo::detect().has_wayland {
+                    sqyre_capture::event_log("SQYRE_HUD", &[("hide", "wayland-unmap")]);
+                    sqyre_capture::nudge_portal_capture_after_ui_hide();
+                }
             } else if !should_hide && self.hidden_for_recording {
                 self.hidden_for_recording = false;
                 ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
                 ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
             }
         }
@@ -61,6 +72,7 @@ impl SqyreApp {
                 &self.screen_click,
                 Some(&self.macro_record_bridge),
                 preview_outline,
+                self.hidden_for_recording,
             );
         }
         #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]
@@ -77,12 +89,13 @@ impl SqyreApp {
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod native_run {
     use super::*;
-    use crate::app_backends::{trim_process_heap, BridgeContinueWait, StopWatchAutomation};
+    use crate::app_backends::{
+        os_automation, trim_process_heap, BridgeContinueWait, StopWatchAutomation,
+    };
     use crate::catalog::{CatalogIcons, CatalogResolver, SnapshotMacros};
     use sqyre_capture::{shared_capturer, OsWindowFocuser, SharedRunCapturer};
     use sqyre_domain::Macro;
     use sqyre_executor::{execute_macro_with, ExecDeps, OcrEngine};
-    use sqyre_input::OsAutomation;
     use sqyre_persist::variables_path;
     use sqyre_vision::shared_leptess;
     use std::collections::BTreeMap;
@@ -145,10 +158,13 @@ mod native_run {
             running.store(true, Ordering::SeqCst);
             *status.lock() = format!("Running {}…", macro_.name);
 
+            // Must run on the UI thread: winit's SetCapture/ReleaseCapture are
+            // thread-affine. Doing this only on the worker never clears Start-click capture.
+            sqyre_input::prepare_for_automation();
+
             thread::spawn(move || {
                 let result = (|| -> Result<(), String> {
-                    let mut automation =
-                        OsAutomation::new().map_err(|e| format!("automation: {e}"))?;
+                    let mut automation = os_automation().map_err(|e| format!("automation: {e}"))?;
                     let capturer_arc = shared_capturer().map_err(|e| format!("capture: {e}"))?;
                     let mut capturer = SharedRunCapturer(capturer_arc);
                     let resolver = CatalogResolver(&catalog);

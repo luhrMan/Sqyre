@@ -4,6 +4,18 @@
 //! owns the key-name strings that end up in `db.yaml` and the rules about them.
 
 use std::collections::HashSet;
+use thiserror::Error;
+
+/// Failure validating a Pause continue-key or wait chord against the failsafe.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum KeyError {
+    #[error("pause: continue key not set")]
+    ContinueKeyNotSet,
+    #[error("pause: continue key cannot match the failsafe hotkey ({label})", label = FAILSAFE_LABEL)]
+    ContinueKeyIsFailsafe,
+    #[error("key wait: chord cannot match the failsafe hotkey ({label})", label = FAILSAFE_LABEL)]
+    WaitChordIsFailsafe,
+}
 
 /// Canonical Sqyre key name for `key` (lowercase, left/right variants folded where
 /// the chord vocabulary does not distinguish them).
@@ -78,25 +90,21 @@ pub fn failsafe_modifiers_held(pressed: &HashSet<&'static str>) -> bool {
 /// Normalize and validate a Pause continue-key chord.
 ///
 /// Returns normalized key names, or an error if empty / equals the failsafe chord.
-pub fn validate_continue_key(keys: &[String]) -> Result<Vec<String>, String> {
+pub fn validate_continue_key(keys: &[String]) -> Result<Vec<String>, KeyError> {
     let normalized = normalize_keys(keys);
     if normalized.is_empty() {
-        return Err("pause: continue key not set".into());
+        return Err(KeyError::ContinueKeyNotSet);
     }
     if is_failsafe_chord(&normalized) {
-        return Err(format!(
-            "pause: continue key cannot match the failsafe hotkey ({FAILSAFE_LABEL})"
-        ));
+        return Err(KeyError::ContinueKeyIsFailsafe);
     }
     Ok(normalized)
 }
 
 /// Reject a wait chord that collides with the failsafe hotkey.
-pub fn validate_not_failsafe(keys: &[String]) -> Result<(), String> {
+pub fn validate_not_failsafe(keys: &[String]) -> Result<(), KeyError> {
     if is_failsafe_chord(keys) {
-        return Err(format!(
-            "key wait: chord cannot match the failsafe hotkey ({FAILSAFE_LABEL})"
-        ));
+        return Err(KeyError::WaitChordIsFailsafe);
     }
     Ok(())
 }
@@ -153,16 +161,19 @@ mod tests {
 
     #[test]
     fn continue_key_rejects_empty_and_failsafe() {
-        assert!(validate_continue_key(&[]).unwrap_err().contains("not set"));
+        assert_eq!(
+            validate_continue_key(&[]).unwrap_err(),
+            KeyError::ContinueKeyNotSet
+        );
         let failsafe = vec![
             "Escape".to_string(),
             "Control".to_string(),
             "alt".to_string(),
             "shift".to_string(),
         ];
-        assert!(validate_continue_key(&failsafe)
-            .unwrap_err()
-            .contains("failsafe"));
+        let err = validate_continue_key(&failsafe).unwrap_err();
+        assert_eq!(err, KeyError::ContinueKeyIsFailsafe);
+        assert!(err.to_string().contains("failsafe"));
         assert_eq!(
             validate_continue_key(&["F9".to_string()]).unwrap(),
             vec!["f9"]

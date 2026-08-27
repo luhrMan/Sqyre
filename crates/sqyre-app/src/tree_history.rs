@@ -3,7 +3,7 @@
 use serde_yaml::Mapping;
 use sqyre_domain::{Action, ActionId};
 use sqyre_serialize::{action_from_map, action_to_map_with_uid};
-use sqyre_validate::validate_action_tree;
+use sqyre_validate::validate_action_tree_persist;
 
 /// Per-macro undo/redo depth cap. Keeps memory bounded for long editing
 /// sessions since each entry is a full YAML snapshot of the tree.
@@ -132,7 +132,7 @@ fn apply_snapshot(
     // semantic re-validate — history is process-local but this still
     // guards against a corrupted snapshot silently landing in the tree.
     let restored = action_from_map(&snap.root_map).map_err(|e| e.to_string())?;
-    validate_action_tree(&restored, None).map_err(|e| e.to_string())?;
+    validate_action_tree_persist(&restored, None).map_err(|e| e.to_string())?;
     *applying = true;
     *root = restored;
     *selected = snap

@@ -1,6 +1,7 @@
-use super::icon_grid::item_tooltip_parts;
+use super::icon_grid::{adaptive_icon_cell, item_tooltip_parts};
 use super::items_grid::{sort_by_display_name, toggle_select_all_filtered};
 use super::query::{query_matches_name_or_tags, query_matches_window};
+use super::types::{EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP};
 use crate::window_types::WindowInfo;
 use sqyre_persist::{ProgramCatalog, ProgramData, ProgramItem};
 use std::collections::BTreeMap;
@@ -103,4 +104,31 @@ fn window_query_matches_title_name_or_path() {
     assert!(query_matches_window("THUNDER", &w));
     assert!(query_matches_window("/usr/lib/thunder", &w));
     assert!(!query_matches_window("firefox", &w));
+}
+
+#[test]
+fn adaptive_icon_cell_uses_max_for_one_item() {
+    let cell = adaptive_icon_cell(1, 280.0, EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP);
+    assert!((cell - EDIT_CELL_MAX).abs() < f32::EPSILON);
+}
+
+#[test]
+fn adaptive_icon_cell_shrinks_as_count_grows() {
+    let avail = 280.0;
+    let sizes: Vec<f32> = [1, 2, 3, 4, 6, 8]
+        .into_iter()
+        .map(|n| adaptive_icon_cell(n, avail, EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP))
+        .collect();
+    for pair in sizes.windows(2) {
+        assert!(pair[1] <= pair[0] + f32::EPSILON);
+    }
+    assert!((sizes[0] - EDIT_CELL_MAX).abs() < f32::EPSILON);
+    assert!((sizes[sizes.len() - 1] - EDIT_CELL).abs() < f32::EPSILON);
+}
+
+#[test]
+fn adaptive_icon_cell_fits_one_row_between_min_and_max() {
+    // 4 cells: (280 - 3*4) / 4 = 67, inside [40, 112].
+    let cell = adaptive_icon_cell(4, 280.0, EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP);
+    assert!((cell - 67.0).abs() < 0.01);
 }

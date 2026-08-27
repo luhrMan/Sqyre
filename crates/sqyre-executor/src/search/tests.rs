@@ -1,16 +1,16 @@
-use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionHit};
+use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionCtx, DetectionHit};
 use super::ocr::ocr_target_matched;
 use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
 use crate::test_support::{RecordingBackend, RecordingCapturer, SEARCH_FIXED_AREA};
-use crate::SharedActionLog;
+use crate::{lines_for, SharedActionLog};
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
     root_loop, Action, ActionId, ActionKind, CoordinateOutputs, CoordinateRef, LoopJumpMode, Macro,
-    MatchOrder, RepeatMode, ScalarValue, WaitTilFoundConfig,
+    MatchGrouping, MatchOrder, MouseButton, PressState, RepeatMode, ScalarValue,
+    WaitTilFoundConfig,
 };
 use sqyre_match::{search_blur_kernel, ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
-use sqyre_ui_model::lines_for;
 use sqyre_vision::get_cached_blurred_template;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -123,19 +123,19 @@ fn detection_branch(
     }
 }
 
-fn wait_until_found(seconds: i32, interval_ms: i32) -> WaitTilFoundConfig {
+fn wait_until_found(seconds: impl Into<f64>, interval_ms: i32) -> WaitTilFoundConfig {
     WaitTilFoundConfig {
         repeat_mode: RepeatMode::WaitUntilFound,
-        wait_til_found_seconds: seconds,
+        wait_til_found_seconds: seconds.into(),
         wait_til_found_interval_ms: interval_ms,
         max_iterations: 0,
     }
 }
 
-fn wait_while_found(seconds: i32, interval_ms: i32) -> WaitTilFoundConfig {
+fn wait_while_found(seconds: impl Into<f64>, interval_ms: i32) -> WaitTilFoundConfig {
     WaitTilFoundConfig {
         repeat_mode: RepeatMode::WaitWhileFound,
-        wait_til_found_seconds: seconds,
+        wait_til_found_seconds: seconds.into(),
         wait_til_found_interval_ms: interval_ms,
         max_iterations: 0,
     }
@@ -144,7 +144,7 @@ fn wait_while_found(seconds: i32, interval_ms: i32) -> WaitTilFoundConfig {
 fn while_found(interval_ms: i32, max_iterations: i32) -> WaitTilFoundConfig {
     WaitTilFoundConfig {
         repeat_mode: RepeatMode::RepeatWhileFound,
-        wait_til_found_seconds: 0,
+        wait_til_found_seconds: 0.0,
         wait_til_found_interval_ms: interval_ms,
         max_iterations,
     }
@@ -153,7 +153,7 @@ fn while_found(interval_ms: i32, max_iterations: i32) -> WaitTilFoundConfig {
 fn until_found(interval_ms: i32, max_iterations: i32) -> WaitTilFoundConfig {
     WaitTilFoundConfig {
         repeat_mode: RepeatMode::RepeatUntilFound,
-        wait_til_found_seconds: 0,
+        wait_til_found_seconds: 0.0,
         wait_til_found_interval_ms: interval_ms,
         max_iterations,
     }
@@ -269,7 +269,7 @@ fn sort_hits_respects_match_order() {
     sort_hits(
         &mut pts,
         &MatchOrder {
-            grouping: "row".into(),
+            grouping: MatchGrouping::Row,
             horizontal: "right_to_left".into(),
             vertical: "top_to_bottom".into(),
         },
@@ -287,7 +287,7 @@ fn sort_hits_respects_match_order() {
     sort_hits(
         &mut pts,
         &MatchOrder {
-            grouping: "column".into(),
+            grouping: MatchGrouping::Column,
             horizontal: "left_to_right".into(),
             vertical: "top_to_bottom".into(),
         },
@@ -296,6 +296,19 @@ fn sort_hits_respects_match_order() {
         pts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(),
         vec!["a", "b", "c"]
     );
+}
+
+#[test]
+fn sort_hits_total_order_chain_band() {
+    // Points within 5px of each other pairwise but span >5px overall — old
+    // conditional band compare could violate transitivity and panic in sort.
+    let mut pts = vec![
+        named("a", 0, 0, 0, 0),
+        named("b", 10, 4, 0, 0),
+        named("c", 5, 8, 0, 0),
+    ];
+    sort_hits(&mut pts, &MatchOrder::default());
+    assert_eq!(pts.len(), 3);
 }
 
 #[test]
@@ -448,6 +461,11 @@ fn find_pixel_uses_collection_cell_search_area() {
     assert!(
         capturer.log.iter().any(|e| e == "rect:50,60,4,4"),
         "{:?}",
+        capturer.log
+    );
+    assert!(
+        capturer.log.iter().all(|e| !e.starts_with("rgb_fresh:")),
+        "one-shot should crop the cache: {:?}",
         capturer.log
     );
 }
@@ -723,17 +741,14 @@ fn image_search_break_stops_match_loop() {
             },
         },
     ];
-    run_matches(
-        &mut exec,
-        ActionId::new(),
-        &["a".into(), "b".into()],
-        &results,
-        &CoordinateOutputs::defaults(),
-        &subactions,
-        &[],
-        &mut macro_,
-    )
-    .unwrap();
+    let branch = sqyre_domain::DetectionBranch {
+        subactions,
+        ..Default::default()
+    };
+    let targets = ["a".into(), "b".into()];
+    let area = CoordinateRef::default();
+    let ctx = DetectionCtx::new(ActionId::new(), "test", &area, &targets, &branch);
+    run_matches(&mut exec, &ctx, &results, &mut macro_).unwrap();
     assert_eq!(
         backend
             .log
@@ -1097,6 +1112,16 @@ fn find_pixel_wait_until_found_retries_then_succeeds() {
         "expected miss then hit: {:?}",
         capturer.log
     );
+    assert!(
+        capturer.log[0].starts_with("rect:"),
+        "first capture should crop the cache: {:?}",
+        capturer.log
+    );
+    assert!(
+        capturer.log[1].starts_with("rgb_fresh:"),
+        "wait retry should request a fresh frame: {:?}",
+        capturer.log
+    );
     assert_eq!(
         macro_.variables.get("foundX").map(|v| v.as_display()),
         Some("102".into())
@@ -1405,8 +1430,307 @@ fn image_search_wait_until_found_retries_then_succeeds() {
             capturer.log
         );
         assert!(
+            capturer
+                .log
+                .iter()
+                .filter(|e| e.starts_with("rgb_fresh:"))
+                .count()
+                >= 2,
+            "image search should fresh-capture on first attempt and on wait retry: {:?}",
+            capturer.log
+        );
+        assert!(
             backend.log.iter().any(|e| e == "sleep:3"),
             "expected child on find: {:?}",
+            backend.log
+        );
+        assert!(macro_.variables.get("foundX").is_some());
+    });
+}
+
+#[test]
+fn nested_image_search_after_click_captures_fresh_screen() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let parent_tmpl_path = dir.path().join("parent.png");
+        let nested_tmpl_path = dir.path().join("nested.png");
+        let parent_tmpl = patterned_rgba(10, 10, 11);
+        let nested_tmpl = patterned_rgba(8, 8, 33);
+        parent_tmpl.save(&parent_tmpl_path).unwrap();
+        nested_tmpl.save(&nested_tmpl_path).unwrap();
+
+        let mut parent_only = RgbaImage::from_pixel(50, 50, Rgba([30, 30, 30, 255]));
+        stamp_rgba(&mut parent_only, &parent_tmpl, 15, 18);
+        let mut nested_visible = parent_only.clone();
+        stamp_rgba(&mut nested_visible, &nested_tmpl, 25, 28);
+
+        let icons = MapIcons {
+            paths: HashMap::from([
+                ("Prog~Parent".into(), vec![parent_tmpl_path]),
+                ("Prog~Nested".into(), vec![nested_tmpl_path]),
+            ]),
+            masks: HashMap::new(),
+            meta: HashMap::new(),
+        };
+        let mut backend = RecordingBackend::default();
+        let mut capturer = capturer_queue(vec![parent_only, nested_visible]);
+        let resolver = SEARCH_FIXED_AREA;
+        let close_matches = 8;
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "parent".into(),
+                targets: vec!["Prog~Parent".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                detection: sqyre_domain::DetectionBranch {
+                    subactions: vec![
+                        Action {
+                            id: ActionId::new(),
+                            kind: ActionKind::Click {
+                                button: MouseButton::Left,
+                                state: PressState::Tap,
+                            },
+                        },
+                        Action {
+                            id: ActionId::new(),
+                            kind: ActionKind::ImageSearch {
+                                name: "nested".into(),
+                                targets: vec!["Prog~Nested".into()],
+                                search_area: CoordinateRef("Prog~Box".into()),
+                                tolerance: 0.7,
+                                blur: 0,
+                                match_method: Default::default(),
+                                detection: sqyre_domain::DetectionBranch {
+                                    coords: CoordinateOutputs {
+                                        output_x_variable: "nestedX".into(),
+                                        output_y_variable: "nestedY".into(),
+                                    },
+                                    subactions: vec![wait_child(7)],
+                                    ..Default::default()
+                                },
+                            },
+                        },
+                    ],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
+        )
+        .unwrap();
+
+        let fresh_captures = capturer
+            .log
+            .iter()
+            .filter(|e| e.starts_with("rgb_fresh:"))
+            .count();
+        assert_eq!(
+            fresh_captures, 2,
+            "parent and post-click nested search should each capture fresh: {:?}",
+            capturer.log
+        );
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:7"),
+            "nested search should find on the updated screen: {:?}",
+            backend.log
+        );
+        assert!(macro_.variables.get("nestedX").is_some());
+    });
+}
+
+#[test]
+fn nested_image_search_without_input_reuses_cache() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let parent_tmpl_path = dir.path().join("parent.png");
+        let nested_tmpl_path = dir.path().join("nested.png");
+        let parent_tmpl = patterned_rgba(10, 10, 11);
+        let nested_tmpl = patterned_rgba(8, 8, 33);
+        parent_tmpl.save(&parent_tmpl_path).unwrap();
+        nested_tmpl.save(&nested_tmpl_path).unwrap();
+
+        // Both templates visible on one frame — nested must reuse the cache crop.
+        let mut both = RgbaImage::from_pixel(50, 50, Rgba([30, 30, 30, 255]));
+        stamp_rgba(&mut both, &parent_tmpl, 15, 18);
+        stamp_rgba(&mut both, &nested_tmpl, 25, 28);
+
+        let icons = MapIcons {
+            paths: HashMap::from([
+                ("Prog~Parent".into(), vec![parent_tmpl_path]),
+                ("Prog~Nested".into(), vec![nested_tmpl_path]),
+            ]),
+            masks: HashMap::new(),
+            meta: HashMap::new(),
+        };
+        let mut backend = RecordingBackend::default();
+        // Same frame for every capture — nested must crop cache, not require a
+        // second queued buffer (portal would reuse the last PipeWire crop).
+        let mut capturer = capturer_next(both);
+        let resolver = SEARCH_FIXED_AREA;
+        let close_matches = 8;
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "parent".into(),
+                targets: vec!["Prog~Parent".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                detection: sqyre_domain::DetectionBranch {
+                    subactions: vec![Action {
+                        id: ActionId::new(),
+                        kind: ActionKind::ImageSearch {
+                            name: "nested".into(),
+                            targets: vec!["Prog~Nested".into()],
+                            search_area: CoordinateRef("Prog~Box".into()),
+                            tolerance: 0.7,
+                            blur: 0,
+                            match_method: Default::default(),
+                            detection: sqyre_domain::DetectionBranch {
+                                coords: CoordinateOutputs {
+                                    output_x_variable: "nestedX".into(),
+                                    output_y_variable: "nestedY".into(),
+                                },
+                                subactions: vec![wait_child(7)],
+                                ..Default::default()
+                            },
+                        },
+                    }],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
+        )
+        .unwrap();
+
+        let fresh_captures = capturer
+            .log
+            .iter()
+            .filter(|e| e.starts_with("rgb_fresh:"))
+            .count();
+        assert_eq!(
+            fresh_captures, 1,
+            "nested without input should crop cache, not wait fresh: {:?}",
+            capturer.log
+        );
+        assert!(
+            capturer.log.iter().any(|e| e.starts_with("rect:")),
+            "nested should use non-fresh crop: {:?}",
+            capturer.log
+        );
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:7"),
+            "nested search should find on the shared cache frame: {:?}",
+            backend.log
+        );
+        assert!(macro_.variables.get("nestedX").is_some());
+    });
+}
+
+#[test]
+fn image_search_wait_until_found_runs_final_search_on_timeout() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("tmpl.png");
+        let tmpl = patterned_rgba(10, 10, 33);
+        tmpl.save(&tmpl_path).unwrap();
+
+        let miss = RgbaImage::from_pixel(50, 50, Rgba([0, 255, 0, 255]));
+        let mut hit = RgbaImage::from_pixel(50, 50, Rgba([30, 30, 30, 255]));
+        stamp_rgba(&mut hit, &tmpl, 15, 18);
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::new(),
+        };
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            queue: vec![miss.clone(), miss.clone(), miss.clone(), miss, hit],
+            next: None,
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let resolver = SEARCH_FIXED_AREA;
+        let close_matches = 8;
+        let search_id = ActionId::new();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "find".into(),
+                targets: vec!["Prog~Item".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                detection: sqyre_domain::DetectionBranch {
+                    wait: wait_until_found(0.15, 30),
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                        time: ScalarValue::Int(3),
+                    })],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
+        )
+        .unwrap();
+
+        let fresh_captures = capturer
+            .log
+            .iter()
+            .filter(|e| e.starts_with("rgb_fresh:"))
+            .count();
+        assert!(
+            fresh_captures >= 2,
+            "expected wait retries plus a final timeout search: {:?}",
+            capturer.log
+        );
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:3"),
+            "final search should find the template after wait timeout: {:?}",
             backend.log
         );
         assert!(macro_.variables.get("foundX").is_some());
@@ -1837,17 +2161,14 @@ fn run_matches_clears_coords_on_miss() {
     let mut macro_ = Macro::new("t", 0, vec![]);
     macro_.variables.set("foundX", ScalarValue::Int(9));
     macro_.variables.set("foundY", ScalarValue::Int(8));
-    run_matches(
-        &mut exec,
-        ActionId::new(),
-        &[],
-        &[],
-        &coords_xy("foundX", "foundY"),
-        &[],
-        &[],
-        &mut macro_,
-    )
-    .unwrap();
+    let coords = coords_xy("foundX", "foundY");
+    let branch = sqyre_domain::DetectionBranch {
+        coords,
+        ..Default::default()
+    };
+    let area = CoordinateRef::default();
+    let ctx = DetectionCtx::new(ActionId::new(), "test", &area, &[], &branch);
+    run_matches(&mut exec, &ctx, &[], &mut macro_).unwrap();
     assert!(macro_.variables.get("foundX").is_none());
     assert!(macro_.variables.get("foundY").is_none());
 }

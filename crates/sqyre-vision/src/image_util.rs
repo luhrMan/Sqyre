@@ -2,7 +2,7 @@ use image::RgbaImage;
 use pulp::Arch;
 use rayon::prelude::*;
 use sqyre_match::{map_rgb_to_gray_u8, ImageBuf};
-use sqyre_ports::RgbCapture;
+use sqyre_ports::{PortError, RgbCapture};
 
 /// Wrap a packed RGB capture as an `ImageBuf` (reuses the pixel buffer).
 pub fn rgb_capture_to_image_buf(capture: RgbCapture) -> ImageBuf {
@@ -62,9 +62,9 @@ pub fn gray_to_rgb(img: &ImageBuf) -> ImageBuf {
     ImageBuf::from_raw(img.width, img.height, 3, data)
 }
 
-pub fn load_rgb_image(path: &std::path::Path) -> Result<ImageBuf, String> {
+pub fn load_rgb_image(path: &std::path::Path) -> Result<ImageBuf, PortError> {
     let img = image::open(path)
-        .map_err(|e| format!("load {}: {e}", path.display()))?
+        .map_err(|e| PortError::Message(format!("load {}: {e}", path.display())))?
         .to_rgb8();
     let w = img.width() as usize;
     let h = img.height() as usize;

@@ -2,11 +2,16 @@
 
 mod diag;
 mod error;
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+mod grab_stub;
+#[cfg(target_os = "linux")]
+pub mod linux;
 mod outline_geometry;
 mod outline_rect;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod outline_stub;
 mod pixel_convert;
+mod selection_grab;
 #[macro_use]
 mod shared_run;
 mod stub;
@@ -15,34 +20,52 @@ mod win_capture;
 #[cfg(target_os = "windows")]
 mod win_focus;
 #[cfg(target_os = "windows")]
+mod win_grab;
+#[cfg(target_os = "windows")]
 mod win_outline;
 mod window_match;
 #[cfg(target_os = "linux")]
 mod x11_capture;
 #[cfg(target_os = "linux")]
+mod x11_errors;
+#[cfg(target_os = "linux")]
 mod x11_focus;
+#[cfg(target_os = "linux")]
+mod x11_grab;
 #[cfg(target_os = "linux")]
 mod x11_outline;
 #[cfg(target_os = "linux")]
 mod x11_secondary;
+#[cfg(target_os = "linux")]
+mod x11_snapshot_overlay;
 
 pub use diag::{
-    disk_logging_enabled, mark_site, note, read_last_site, set_disk_logging, set_log_dir,
-    CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
+    cap_log, disk_logging_enabled, event_log, mark_site, note, read_last_site, set_disk_logging,
+    set_log_dir, CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
 };
 pub use error::{linux_session_capture_warning, CaptureError};
+#[cfg(target_os = "linux")]
+pub use linux::{
+    reset_shared_capturer, shared_capturer, shared_capturer_if_ready, shared_capturer_is_opening,
+    shared_capturer_open_superseded, LinuxCaptureBackend, LinuxSessionInfo, LinuxSessionKind,
+    OsCapturer, SharedRunCapturer,
+};
 pub use outline_rect::OutlineRect;
 pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
+pub use selection_grab::GrabPoll;
 pub use stub::{NullCapturer, SolidCapturer};
 
-#[cfg(target_os = "linux")]
-pub use x11_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
-
 #[cfg(target_os = "windows")]
-pub use win_capture::{shared_capturer, OsCapturer, SharedRunCapturer};
+pub use win_capture::{
+    reset_shared_capturer, shared_capturer, shared_capturer_if_ready, shared_capturer_is_opening,
+    shared_capturer_open_superseded, OsCapturer, SharedRunCapturer,
+};
+
+#[cfg(all(target_os = "linux", feature = "portal-capture"))]
+pub use linux::wayland::PortalEisInput;
 
 #[cfg(target_os = "linux")]
-pub use x11_focus::OsWindowFocuser;
+pub use linux::wayland::OsWindowFocuser;
 
 #[cfg(target_os = "windows")]
 pub use win_focus::OsWindowFocuser;
@@ -53,6 +76,15 @@ pub use x11_outline::SelectionOutline;
 #[cfg(target_os = "windows")]
 pub use win_outline::SelectionOutline;
 
+#[cfg(target_os = "linux")]
+pub use x11_grab::SelectionGrab;
+
+#[cfg(target_os = "linux")]
+pub use x11_snapshot_overlay::{FrozenFrame, FrozenSelectionOverlay};
+
+#[cfg(target_os = "windows")]
+pub use win_grab::SelectionGrab;
+
 /// True if `display` is a Sqyre secondary X11 connection (for winit error hooks).
 #[cfg(target_os = "linux")]
 pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
@@ -62,6 +94,9 @@ pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub use outline_stub::SelectionOutline;
 
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub use grab_stub::SelectionGrab;
+
 /// macOS / other: capture not implemented yet.
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub type OsCapturer = NullCapturer;
@@ -69,6 +104,24 @@ pub type OsCapturer = NullCapturer;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub fn shared_capturer() -> Result<std::sync::Arc<OsCapturer>, CaptureError> {
     Err(CaptureError::UnsupportedPlatform)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn shared_capturer_if_ready() -> Option<Result<std::sync::Arc<OsCapturer>, CaptureError>> {
+    None
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn shared_capturer_is_opening() -> bool {
+    false
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn reset_shared_capturer() {}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+pub fn shared_capturer_open_superseded() -> bool {
+    false
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -169,19 +222,177 @@ pub fn process_icon(_process_path: &str, _window_title: &str) -> Option<ProcessI
     None
 }
 
-/// Primary monitor resolution key (`"{w}x{h}"`).
-/// Uses the first entry from [`ScreenCapturer::monitor_sizes`] (display 0 / primary).
-/// Returns `None` when no display is available (headless / CI).
-pub fn main_monitor_resolution_key() -> Option<String> {
-    use sqyre_ports::ScreenCapturer;
-    let capturer = shared_capturer().ok()?;
-    let mut wrap = SharedRunCapturer(capturer);
-    let sizes = wrap.monitor_sizes().ok()?;
-    let &(w, h) = sizes.first()?;
-    if w > 0 && h > 0 {
-        Some(format!("{w}x{h}"))
+/// Xinerama / RandR output rects (physical layout). Independent of how many
+/// ScreenCast streams the portal currently has open.
+#[cfg(target_os = "linux")]
+fn physical_monitor_rects() -> Vec<sqyre_ports::DesktopRect> {
+    use sqyre_ports::DesktopRect;
+    use std::sync::Mutex;
+    use std::time::{Duration, Instant};
+
+    static CACHE: Mutex<Option<(Instant, Vec<DesktopRect>)>> = Mutex::new(None);
+    if let Ok(g) = CACHE.lock() {
+        if let Some((at, rects)) = g.as_ref() {
+            if at.elapsed() < Duration::from_millis(500) {
+                return rects.clone();
+            }
+        }
+    }
+    let rects = crate::x11_capture::query_x11_monitor_rects();
+    if let Ok(mut g) = CACHE.lock() {
+        *g = Some((Instant::now(), rects.clone()));
+    }
+    rects
+}
+
+fn usable_desktop_rects(
+    rects: impl IntoIterator<Item = sqyre_ports::DesktopRect>,
+) -> Vec<sqyre_ports::DesktopRect> {
+    let mut usable: Vec<sqyre_ports::DesktopRect> =
+        rects.into_iter().filter(|r| r.w > 1 && r.h > 1).collect();
+    usable.sort_by_key(|r| (r.x, r.y, r.w, r.h));
+    usable.dedup();
+    usable
+}
+
+/// Live ScreenCast/X11 capturer rects, preferring Linux Xinerama when it reports
+/// more outputs than the portal currently has (e.g. one stream failed to connect).
+pub fn preferred_monitor_rects() -> Vec<sqyre_ports::DesktopRect> {
+    let capture = shared_capturer_nonblocking()
+        .ok()
+        .and_then(|c| c.monitor_rects_ref().ok())
+        .map(usable_desktop_rects)
+        .unwrap_or_default();
+    #[cfg(target_os = "linux")]
+    let x11 = usable_desktop_rects(physical_monitor_rects());
+    #[cfg(not(target_os = "linux"))]
+    let x11: Vec<sqyre_ports::DesktopRect> = Vec::new();
+    if x11.len() > capture.len() {
+        x11
     } else {
-        None
+        capture
+    }
+}
+
+/// Leftmost live monitor resolution key (`"{w}x{h}"`).
+/// Uses capturer monitor rects sorted by position (shared outputs on portal),
+/// not whichever screen the Sqyre window is on.
+/// Returns `None` when no display is available (headless / CI).
+///
+/// Does not block on a portal ScreenCast picker: if opening may block and the
+/// capturer is not ready yet, returns `None`.
+pub fn main_monitor_resolution_key() -> Option<String> {
+    let capturer = shared_capturer_nonblocking().ok()?;
+    let mut rects = capturer.monitor_rects_ref().ok()?;
+    rects.retain(|r| r.w > 0 && r.h > 0);
+    rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
+    let r = rects.first()?;
+    Some(format!("{}x{}", r.w, r.h))
+}
+
+/// True when opening [`shared_capturer`] may block on a portal ScreenCast permission dialog.
+#[cfg(target_os = "linux")]
+pub fn shared_capturer_open_may_block() -> bool {
+    linux::LinuxSessionInfo::detect().shared_capturer_open_may_block()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn shared_capturer_open_may_block() -> bool {
+    false
+}
+
+/// ScreenCast Start succeeded, a restore token is stored, or the live capturer is open.
+pub fn portal_screencast_granted() -> bool {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        if linux::wayland::portal_screencast_granted() {
+            return true;
+        }
+    }
+    matches!(shared_capturer_if_ready(), Some(Ok(_)))
+}
+
+/// Remote Desktop pointer/keyboard granted on the live combined portal session.
+pub fn portal_remote_desktop_granted() -> bool {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::portal_remote_desktop_granted()
+    }
+    #[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+    {
+        false
+    }
+}
+
+/// EIS input backend is connected (Wayland combined portal session).
+pub fn portal_input_ready() -> bool {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::portal_input_ready()
+    }
+    #[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+    {
+        false
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "portal-capture"))]
+pub use linux::wayland::{
+    portal_cursor_position, portal_input_click, portal_input_key, portal_input_last_pos,
+    portal_input_move, portal_input_scroll,
+};
+
+/// Compositor pointer from ScreenCast cursor metadata (Wayland). `None` on other
+/// targets, without portal-capture, or before the first metadata sample.
+#[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+pub fn portal_cursor_position() -> Option<(i32, i32)> {
+    None
+}
+
+/// Show the portal ScreenCast picker again (Wayland). No-op on other targets.
+pub fn request_portal_screencast_picker() {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::request_portal_screencast_picker();
+    }
+}
+
+/// After unmapping Sqyre's main window, wait for a fresh portal frame so captures
+/// exclude the hidden surface (GPU Screen Recorder destroys its overlay before portal capture).
+#[cfg(all(target_os = "linux", feature = "portal-capture"))]
+pub fn nudge_portal_capture_after_ui_hide() {
+    let Some(cap) = shared_capturer_if_ready() else {
+        return;
+    };
+    if let Ok(cap) = cap {
+        if let Ok(bounds) = cap.virtual_bounds_ref() {
+            let _ = cap.capture_rect_fresh_ref(bounds);
+        }
+    }
+}
+
+#[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+pub fn nudge_portal_capture_after_ui_hide() {}
+
+/// [`shared_capturer`] unless that would wait on a portal picker from this thread.
+///
+/// Use from the UI thread. The deferred Linux probe (or a worker) should call
+/// [`shared_capturer`] to start the open.
+pub fn shared_capturer_nonblocking() -> Result<std::sync::Arc<OsCapturer>, CaptureError> {
+    if shared_capturer_open_may_block() {
+        match shared_capturer_if_ready() {
+            Some(r) => r,
+            None if shared_capturer_is_opening() || portal_screencast_granted() => {
+                Err(CaptureError::Message(
+                    "screen capture is starting (waiting for the first frame)".into(),
+                ))
+            }
+            None => Err(CaptureError::Message(
+                "screen capture is still waiting for portal permission".into(),
+            )),
+        }
+    } else {
+        shared_capturer()
     }
 }
 
@@ -224,7 +435,7 @@ pub fn monitor_count() -> usize {
 /// Open top-level windows with stable executable path and title.
 #[cfg(target_os = "linux")]
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
-    x11_focus::list_open_windows()
+    linux::wayland::list_open_windows()
 }
 
 #[cfg(target_os = "windows")]
@@ -240,7 +451,7 @@ pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
 /// Currently focused top-level window, if any.
 #[cfg(target_os = "linux")]
 pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
-    x11_focus::get_active_window()
+    linux::wayland::get_active_window()
 }
 
 #[cfg(target_os = "windows")]
@@ -272,17 +483,43 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
     win_focus::enable_overlay_window_transparency()
 }
 
-#[cfg(not(target_os = "windows"))]
+/// Linux X11: clear opaque window backings on overlay XWayland surfaces.
+#[cfg(target_os = "linux")]
 pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
+    x11_focus::enable_overlay_window_transparency()
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
+    Ok(())
+}
+
+/// Wayland: winit cannot position overlay viewports; move XWayland windows directly.
+#[cfg(target_os = "linux")]
+pub fn sync_overlay_window_geometry(
+    hints: &[(String, i32, i32, u32, u32)],
+    last_positions: &mut std::collections::HashMap<String, (i32, i32)>,
+) -> Result<(), CaptureError> {
+    x11_focus::sync_overlay_window_geometry(hints, last_positions)
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn sync_overlay_window_geometry(
+    _hints: &[(String, i32, i32, u32, u32)],
+    _last_positions: &mut std::collections::HashMap<String, (i32, i32)>,
+) -> Result<(), CaptureError> {
     Ok(())
 }
 
 /// Stable WM title used by floating macro-overlay viewports.
 #[cfg(target_os = "linux")]
-pub use x11_focus::OVERLAY_WM_TITLE;
+pub use x11_focus::{OVERLAY_TIP_WM_TITLE, OVERLAY_WM_TITLE};
 
 #[cfg(not(target_os = "linux"))]
 pub const OVERLAY_WM_TITLE: &str = "sqyre-overlay";
+
+#[cfg(not(target_os = "linux"))]
+pub const OVERLAY_TIP_WM_TITLE: &str = "sqyre-overlay-tip";
 
 /// True when the focused window belongs to this process (e.g. an overlay button).
 pub fn active_window_is_our_process() -> bool {
@@ -292,8 +529,17 @@ pub fn active_window_is_our_process() -> bool {
     window_is_our_process(&win)
 }
 
+fn title_is_overlay_chrome(title: &str) -> bool {
+    let t = title.trim();
+    t == OVERLAY_WM_TITLE || t == OVERLAY_TIP_WM_TITLE
+}
+
 /// True when `win` is owned by this process's executable.
 pub fn window_is_our_process(win: &WindowInfo) -> bool {
+    // Overlay chrome uses a fixed WM title; path matching can fail via AT-SPI.
+    if title_is_overlay_chrome(&win.title) {
+        return true;
+    }
     // `current_exe` is unsupported / may panic on wasm32-unknown-unknown.
     #[cfg(target_arch = "wasm32")]
     {
@@ -307,6 +553,34 @@ pub fn window_is_our_process(win: &WindowInfo) -> bool {
         };
         window_matches_process(win, &exe.to_string_lossy())
     }
+}
+
+/// Focus that should not replace overlay program-gating (`last_foreign`).
+///
+/// On GNOME Wayland, opening portal ScreenCast (and similar shell dialogs) steals
+/// focus for a moment. Storing that as the last foreign window poisons gated
+/// overlays: after the dialog closes, fullscreen games often report `None` and
+/// the bad `last_foreign` sticks until process restart.
+pub fn window_is_transient_shell_focus(win: &WindowInfo) -> bool {
+    if title_is_overlay_chrome(&win.title) {
+        return true;
+    }
+    let name = win.process_name.trim().to_ascii_lowercase();
+    let path = win.process_path.trim().to_ascii_lowercase();
+    let title = win.title.trim().to_ascii_lowercase();
+    let path_base = std::path::Path::new(path.as_str())
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    name.contains("xdg-desktop-portal")
+        || path.contains("xdg-desktop-portal")
+        || name == "gnome-shell"
+        || path_base == "gnome-shell"
+        || name == "gsd-xsettings"
+        || (title.contains("share") && (title.contains("screen") || title.contains("audio")))
+        || title.contains("screen sharing")
+        || title.contains("screencast")
+        || title.contains("remote desktop")
 }
 
 /// True when `program` is empty, or the focused window looks like that catalog program.
@@ -362,17 +636,19 @@ pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
     if want.is_empty() {
         return true;
     }
-    let got = win.process_path.trim();
-    if got.is_empty() {
-        return false;
-    }
-    if got.eq_ignore_ascii_case(want) {
-        return true;
-    }
     let want_base = std::path::Path::new(want)
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
         .unwrap_or_else(|| want.to_lowercase());
+    let got = win.process_path.trim();
+    if got.is_empty() {
+        let name = win.process_name.trim();
+        return !name.is_empty()
+            && (name.eq_ignore_ascii_case(want) || name.eq_ignore_ascii_case(&want_base));
+    }
+    if got.eq_ignore_ascii_case(want) {
+        return true;
+    }
     let got_base = std::path::Path::new(got)
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
@@ -468,6 +744,15 @@ mod tests {
         assert!(super::window_matches_process(&w, "/elsewhere/DemoGame"));
         assert!(!super::window_matches_process(&w, "/opt/other/OtherApp"));
         assert!(super::window_matches_process(&w, ""));
+        let unnamed = WindowInfo {
+            title: "Firefox".into(),
+            process_name: "firefox".into(),
+            process_path: String::new(),
+            icon: None,
+        };
+        assert!(super::window_matches_process(&unnamed, "/usr/bin/firefox"));
+        assert!(super::window_matches_process(&unnamed, "firefox"));
+        assert!(!super::window_matches_process(&unnamed, "chrome"));
     }
 
     #[test]
@@ -496,5 +781,50 @@ mod tests {
         ));
         assert!(super::window_matches_title(&w, " Game A "));
         assert!(!super::window_matches_title(&w, "Game B"));
+    }
+
+    #[test]
+    fn transient_shell_focus_detects_portal_and_overlay() {
+        let portal = WindowInfo {
+            title: "Share your screen".into(),
+            process_name: "xdg-desktop-portal-gnome".into(),
+            process_path: "/usr/libexec/xdg-desktop-portal-gnome".into(),
+            icon: None,
+        };
+        assert!(super::window_is_transient_shell_focus(&portal));
+
+        let shell = WindowInfo {
+            title: "gnome-shell".into(),
+            process_name: "gnome-shell".into(),
+            process_path: "/usr/bin/gnome-shell".into(),
+            icon: None,
+        };
+        assert!(super::window_is_transient_shell_focus(&shell));
+
+        let overlay = WindowInfo {
+            title: super::OVERLAY_WM_TITLE.into(),
+            process_name: "sqyre".into(),
+            process_path: String::new(),
+            icon: None,
+        };
+        assert!(super::window_is_transient_shell_focus(&overlay));
+        assert!(super::window_is_our_process(&overlay));
+
+        let tip = WindowInfo {
+            title: super::OVERLAY_TIP_WM_TITLE.into(),
+            process_name: "sqyre".into(),
+            process_path: String::new(),
+            icon: None,
+        };
+        assert!(super::window_is_transient_shell_focus(&tip));
+        assert!(super::window_is_our_process(&tip));
+
+        let game = WindowInfo {
+            title: "Mistfall Hunter".into(),
+            process_name: "MistfallHunter".into(),
+            process_path: "/opt/mistfall/MistfallHunter".into(),
+            icon: None,
+        };
+        assert!(!super::window_is_transient_shell_focus(&game));
     }
 }

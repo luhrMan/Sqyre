@@ -3,9 +3,8 @@
 mod edit_control_flow;
 mod edit_detect;
 
-use super::sections::{tip_section, tip_wrapped_section};
+use super::sections::{tip_advanced, tip_section, tip_wrapped_section};
 use super::{help, help as h};
-use crate::data_editor_preview::show_file_hover;
 use crate::icon_cache::IconCache;
 use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use crate::pickers::{self, options, ActivePicker, CoordKind};
@@ -13,19 +12,21 @@ use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
 use crate::var_pills;
 use crate::widgets::{
-    combo_condition_operator, combo_str, combo_str_labeled, drag_field, drag_field_enabled,
+    combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
     searchable_combo, searchable_combo_with, text_field, W_MULTILINE, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
     Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs, CoordinateRef,
-    DetectionBranch, KnownVariableNames, ListColumn, Macro, MatchMode, MatchOrder, RepeatMode,
-    ScalarValue, VariableAssignment, WaitTilFoundConfig,
+    DetectionBranch, KnownVariableNames, ListColumn, Macro, MatchGrouping, MatchMode, MatchOrder,
+    MouseButton, NavPressMode, NavSelectDevice, RepeatMode, ScalarValue, VariableAssignment,
+    WaitTilFoundConfig, MAX_DETECTION_INTERVAL_MS, MAX_SMOOTH_DELAY_MS, MAX_TYPE_DELAY_MS,
+    MIN_DETECTION_INTERVAL_MS, MIN_SMOOTH_DELAY_MS, MIN_TYPE_DELAY_MS,
 };
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::{ProgramCatalog, MAX_WHILE_MAX_ITERATIONS};
 use sqyre_validate::{
     preview_calculate, validate_numeric_expression, validate_set_variable_value,
-    validate_variable_references,
+    validate_variable_references, EntryValidation,
 };
 
 /// Copy draft fields onto `live`, keeping `live`'s then/else children.
@@ -153,7 +154,9 @@ pub fn paint_edit_fields(
                     W_VAR,
                     active_macro,
                 );
-                drag_field(ui, "Delay ms", h::TYPE_DELAY, delay_ms, |d| d.speed(1));
+                drag_field(ui, "Delay ms", h::TYPE_DELAY, delay_ms, |d| {
+                    d.speed(1).range(MIN_TYPE_DELAY_MS..=MAX_TYPE_DELAY_MS)
+                });
             });
         }
         ActionKind::Move {
@@ -178,19 +181,23 @@ pub fn paint_edit_fields(
             });
             tip_wrapped_section(ui, |ui| {
                 help::tip(ui.checkbox(smooth, "Smooth"), h::MOVE_SMOOTH);
-                drag_field(ui, "Smooth low", h::MOVE_SMOOTH_LOW, smooth_low, |d| {
-                    d.speed(0.01).range(0.0..=1.0)
+            });
+            tip_advanced(ui, |ui| {
+                tip_wrapped_section(ui, |ui| {
+                    drag_field(ui, "Smooth low", h::MOVE_SMOOTH_LOW, smooth_low, |d| {
+                        d.speed(0.01).range(0.0..=1.0)
+                    });
+                    drag_field(ui, "Smooth high", h::MOVE_SMOOTH_HIGH, smooth_high, |d| {
+                        d.speed(0.01).range(0.0..=1.0)
+                    });
+                    drag_field(
+                        ui,
+                        "Smooth delay ms",
+                        h::MOVE_SMOOTH_DELAY,
+                        smooth_delay_ms,
+                        |d| d.speed(1).range(MIN_SMOOTH_DELAY_MS..=MAX_SMOOTH_DELAY_MS),
+                    );
                 });
-                drag_field(ui, "Smooth high", h::MOVE_SMOOTH_HIGH, smooth_high, |d| {
-                    d.speed(0.01).range(0.0..=1.0)
-                });
-                drag_field(
-                    ui,
-                    "Smooth delay ms",
-                    h::MOVE_SMOOTH_DELAY,
-                    smooth_delay_ms,
-                    |d| d.speed(1),
-                );
             });
         }
         ActionKind::Pause {
@@ -504,98 +511,6 @@ pub fn paint_edit_fields(
                 );
                 string_list_field(ui, "Chord back", &mut data.chords.back, h::NAV_CHORD_BACK);
             });
-            tip_wrapped_section(ui, |ui| {
-                help::tip(
-                    ui.checkbox(&mut data.options.wrap_edges, "Wrap edges"),
-                    h::NAV_WRAP,
-                );
-                help::tip(
-                    ui.checkbox(
-                        &mut data.options.move_cursor_with_nav,
-                        "Move cursor with nav",
-                    ),
-                    h::NAV_MOVE_CURSOR,
-                );
-                help::tip(
-                    ui.checkbox(&mut data.options.smooth, "Smooth"),
-                    h::NAV_SMOOTH,
-                );
-                help::tip(
-                    ui.checkbox(&mut data.options.pass_through, "Pass through"),
-                    h::NAV_PASS_THROUGH,
-                );
-                help::tip(
-                    ui.checkbox(&mut data.options.hold_repeat, "Hold repeat"),
-                    h::NAV_HOLD_REPEAT,
-                );
-            });
-            tip_wrapped_section(ui, |ui| {
-                combo_str(
-                    ui,
-                    "Select device",
-                    h::NAV_SELECT_DEVICE,
-                    &mut data.select.device,
-                    options::SELECT_DEVICES,
-                );
-                combo_str(
-                    ui,
-                    "Select button",
-                    h::NAV_SELECT_BUTTON,
-                    &mut data.select.button,
-                    options::MOUSE_BUTTONS,
-                );
-                text_field(ui, "Select key", h::NAV_SELECT_KEY, &mut data.select.key);
-                combo_str(
-                    ui,
-                    "Select press mode",
-                    h::NAV_SELECT_PRESS,
-                    &mut data.select.press_mode,
-                    options::SELECT_PRESS_MODES,
-                );
-            });
-            tip_wrapped_section(ui, |ui| {
-                text_field(ui, "In atlas", h::NAV_IN_ATLAS, &mut data.inputs.atlas);
-                text_field(ui, "In row", h::NAV_IN_ROW, &mut data.inputs.row);
-                text_field(ui, "In col", h::NAV_IN_COL, &mut data.inputs.col);
-                text_field(
-                    ui,
-                    "In collection",
-                    h::NAV_IN_COLLECTION,
-                    &mut data.inputs.collection,
-                );
-            });
-            tip_wrapped_section(ui, |ui| {
-                text_field(
-                    ui,
-                    "Output ref",
-                    h::NAV_OUT_REF,
-                    &mut data.outputs.output_ref,
-                );
-                text_field(
-                    ui,
-                    "Output atlas",
-                    h::NAV_OUT_ATLAS,
-                    &mut data.outputs.output_atlas,
-                );
-                text_field(
-                    ui,
-                    "Output row",
-                    h::NAV_OUT_ROW,
-                    &mut data.outputs.output_row,
-                );
-                text_field(
-                    ui,
-                    "Output col",
-                    h::NAV_OUT_COL,
-                    &mut data.outputs.output_col,
-                );
-                text_field(
-                    ui,
-                    "Output collection",
-                    h::NAV_OUT_COLLECTION,
-                    &mut data.outputs.output_collection,
-                );
-            });
             tip_section(ui, |ui| {
                 ui.label(
                     egui::RichText::new(
@@ -605,6 +520,103 @@ pub fn paint_edit_fields(
                     .weak(),
                 )
                 .on_hover_text(h::NAV_KEY_CHILDREN);
+            });
+            tip_advanced(ui, |ui| {
+                tip_wrapped_section(ui, |ui| {
+                    help::tip(
+                        ui.checkbox(&mut data.options.wrap_edges, "Wrap edges"),
+                        h::NAV_WRAP,
+                    );
+                    help::tip(
+                        ui.checkbox(
+                            &mut data.options.move_cursor_with_nav,
+                            "Move cursor with nav",
+                        ),
+                        h::NAV_MOVE_CURSOR,
+                    );
+                    help::tip(
+                        ui.checkbox(&mut data.options.smooth, "Smooth"),
+                        h::NAV_SMOOTH,
+                    );
+                    help::tip(
+                        ui.checkbox(&mut data.options.pass_through, "Pass through"),
+                        h::NAV_PASS_THROUGH,
+                    );
+                    help::tip(
+                        ui.checkbox(&mut data.options.hold_repeat, "Hold repeat"),
+                        h::NAV_HOLD_REPEAT,
+                    );
+                });
+                tip_wrapped_section(ui, |ui| {
+                    combo_enum(
+                        ui,
+                        "Select device",
+                        h::NAV_SELECT_DEVICE,
+                        &mut data.select.device,
+                        NavSelectDevice::ALL,
+                        NavSelectDevice::label,
+                    );
+                    combo_enum(
+                        ui,
+                        "Select button",
+                        h::NAV_SELECT_BUTTON,
+                        &mut data.select.button,
+                        MouseButton::ALL,
+                        MouseButton::label,
+                    );
+                    text_field(ui, "Select key", h::NAV_SELECT_KEY, &mut data.select.key);
+                    combo_enum(
+                        ui,
+                        "Select press mode",
+                        h::NAV_SELECT_PRESS,
+                        &mut data.select.press_mode,
+                        NavPressMode::ALL,
+                        NavPressMode::label,
+                    );
+                });
+                tip_wrapped_section(ui, |ui| {
+                    text_field(ui, "In atlas", h::NAV_IN_ATLAS, &mut data.inputs.atlas);
+                    text_field(ui, "In row", h::NAV_IN_ROW, &mut data.inputs.row);
+                    text_field(ui, "In col", h::NAV_IN_COL, &mut data.inputs.col);
+                    text_field(
+                        ui,
+                        "In collection",
+                        h::NAV_IN_COLLECTION,
+                        &mut data.inputs.collection,
+                    );
+                });
+                tip_wrapped_section(ui, |ui| {
+                    text_field(
+                        ui,
+                        "Output ref",
+                        h::NAV_OUT_REF,
+                        &mut data.outputs.output_ref,
+                    );
+                    text_field(
+                        ui,
+                        "Output atlas",
+                        h::NAV_OUT_ATLAS,
+                        &mut data.outputs.output_atlas,
+                    );
+                    text_field(
+                        ui,
+                        "Output row",
+                        h::NAV_OUT_ROW,
+                        &mut data.outputs.output_row,
+                    );
+                    text_field(
+                        ui,
+                        "Output col",
+                        h::NAV_OUT_COL,
+                        &mut data.outputs.output_col,
+                    );
+                    text_field(
+                        ui,
+                        "Output collection",
+                        h::NAV_OUT_COLLECTION,
+                        &mut data.outputs.output_collection,
+                    );
+                });
             });
         }
         ActionKind::NavigateKey {
@@ -659,7 +671,7 @@ fn targets_editor(
         icons,
         &snapshot,
         |_| true,
-        true,
+        pickers::IconGridKind::Targets { removable: true },
         |_, _| {},
         |i| {
             remove = Some(i);
@@ -762,20 +774,27 @@ fn coord_picker_row(
         icons,
         previews,
     } = paint;
-    let display = if coord.is_empty() {
-        "(unset)"
-    } else {
-        coord.as_str()
-    };
+    let display = coord.display_label();
+    let validation = coord_unset_validation(kind, coord);
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
         if let Some(prog) = coord.program() {
             crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
         }
-        let resp = ui.monospace(display);
+        let color = if !validation.error.is_empty() {
+            theme::error_fg()
+        } else if !validation.warning.is_empty() {
+            theme::warn_fg()
+        } else {
+            ui.visuals().text_color()
+        };
+        let resp = ui.label(egui::RichText::new(display).monospace().color(color));
         if !coord.is_empty() {
-            attach_coord_hover(ui, &resp, catalog, icons, previews, coord, kind);
+            attach_coord_hover(ui, &resp, catalog, previews, coord, kind);
+        } else if let Some(tip) = var_pills::entry_validation_tip(&validation) {
+            let _ = resp.on_hover_text(tip);
         }
+        var_pills::paint_entry_validation_icon(ui, &validation);
         if pick_icon_btn(ui).clicked() {
             *picker = ActivePicker::Coord {
                 kind,
@@ -788,31 +807,37 @@ fn coord_picker_row(
     });
 }
 
+fn coord_unset_validation(kind: CoordKind, coord: &CoordinateRef) -> EntryValidation {
+    if !coord.is_empty() {
+        return EntryValidation::default();
+    }
+    match kind {
+        CoordKind::Point => EntryValidation {
+            error: "set a point before saving".into(),
+            warning: String::new(),
+        },
+        CoordKind::SearchArea => EntryValidation {
+            warning: "set a search area".into(),
+            error: String::new(),
+        },
+    }
+}
+
 fn attach_coord_hover(
     ui: &mut egui::Ui,
     response: &egui::Response,
     catalog: &ProgramCatalog,
-    icons: &mut IconCache,
     previews: &mut PreviewTooltipCache,
     coord: &CoordinateRef,
     kind: CoordKind,
 ) {
-    if coord.is_collection() {
-        let Some(prog) = coord.program() else {
-            return;
-        };
-        show_file_hover(
-            ui,
-            response,
-            icons,
-            &catalog.collection_image_path(prog, coord.name()),
-            coord.as_str(),
-        );
-        return;
-    }
-    let preview_kind = match kind {
-        CoordKind::Point => PreviewKind::Point,
-        CoordKind::SearchArea => PreviewKind::SearchArea,
+    let preview_kind = if coord.is_collection() {
+        PreviewKind::Collection
+    } else {
+        match kind {
+            CoordKind::Point => PreviewKind::Point,
+            CoordKind::SearchArea => PreviewKind::SearchArea,
+        }
     };
     previews.show_for_coordinate_ref(ui, response, catalog, coord, preview_kind);
 }
@@ -1101,7 +1126,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
         h::WAIT_SECONDS,
         &mut wait.wait_til_found_seconds,
         timing_enabled,
-        |d| d,
+        |d| d.speed(0.1).range(0.0..=1_000_000.0).max_decimals(3),
     );
     drag_field_enabled(
         ui,
@@ -1109,7 +1134,10 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
         h::WAIT_INTERVAL,
         &mut wait.wait_til_found_interval_ms,
         timing_enabled,
-        |d| d,
+        |d| {
+            d.speed(1)
+                .range(MIN_DETECTION_INTERVAL_MS..=MAX_DETECTION_INTERVAL_MS)
+        },
     );
     drag_field_enabled(
         ui,
@@ -1117,7 +1145,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
         h::WAIT_MAX_ITER,
         &mut wait.max_iterations,
         max_enabled,
-        |d| d,
+        |d| d.speed(1).range(0..=MAX_WHILE_MAX_ITERATIONS),
     );
 }
 
@@ -1148,13 +1176,13 @@ fn coords_editor(
 }
 
 fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
-    combo_str_labeled(
+    combo_enum(
         ui,
         "Grouping",
         h::ORDER_GROUPING,
         &mut order.grouping,
-        options::ORDER_GROUPING,
-        "row",
+        MatchGrouping::ALL,
+        MatchGrouping::label,
     );
     combo_str_labeled(
         ui,

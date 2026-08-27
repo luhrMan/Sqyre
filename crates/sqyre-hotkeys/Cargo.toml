@@ -20,6 +20,10 @@ thiserror = { workspace = true }
 rdev = { workspace = true, optional = true }
 web-time = { workspace = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev-rs = "0.4"
+epoll = "4.4"
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [
     "Win32_Foundation",

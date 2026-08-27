@@ -2,6 +2,7 @@
 
 use crate::error::CaptureError;
 use crate::pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
+use crate::x11_errors::with_capture_error_handler;
 use image::RgbaImage;
 use parking_lot::Mutex;
 use sqyre_ports::{DesktopRect, RgbCapture};
@@ -16,8 +17,8 @@ use x11::xlib::{
 
 const ALLPLANES: u64 = !0;
 
-/// Shared X11 display connection (public type [`OsCapturer`]; mutex serializes access).
-pub struct OsCapturer {
+/// Shared X11 display connection (internal; public entry is [`crate::linux::capturer::OsCapturer`]).
+pub(crate) struct X11Capturer {
     inner: Mutex<X11State>,
 }
 
@@ -32,9 +33,7 @@ struct X11State {
 // (a `Mutex`) is held, so concurrent access from another thread never overlaps.
 unsafe impl Send for X11State {}
 
-crate::define_shared_run_capturer!();
-
-impl OsCapturer {
+impl X11Capturer {
     pub fn open() -> Result<Self, CaptureError> {
         // SAFETY: `XOpenDisplay(null)` connects to the default display; the
         // returned pointer is checked for null before any other Xlib call uses it.
@@ -122,43 +121,45 @@ impl OsCapturer {
         // other threads aren't blocked on the X11 connection during conversion.
         let (data, w, h, bpp, stride) = {
             let st = self.inner.lock();
-            // SAFETY: `st.display`/`st.root` are the live display/root; `ximage` is
-            // null-checked before dereference, and `XDestroyImage` runs on every
-            // return path (including the `bpp < 3` error) so the image is never leaked.
-            unsafe {
-                let ximage = XGetImage(
-                    st.display,
-                    st.root,
-                    rect.x,
-                    rect.y,
-                    rect.w as u32,
-                    rect.h as u32,
-                    ALLPLANES,
-                    ZPixmap,
-                );
-                if ximage.is_null() {
-                    return Err(CaptureError::GetImage {
-                        x: rect.x,
-                        y: rect.y,
-                        w: rect.w,
-                        h: rect.h,
-                    });
-                }
-                let img = &*ximage;
-                let w = img.width as u32;
-                let h = img.height as u32;
-                let bpp = (img.bits_per_pixel / 8) as usize;
-                if bpp < 3 {
-                    let bits = img.bits_per_pixel;
+            with_capture_error_handler(st.display, || {
+                // SAFETY: `st.display`/`st.root` are the live display/root; `ximage` is
+                // null-checked before dereference, and `XDestroyImage` runs on every
+                // return path (including the `bpp < 3` error) so the image is never leaked.
+                unsafe {
+                    let ximage = XGetImage(
+                        st.display,
+                        st.root,
+                        rect.x,
+                        rect.y,
+                        rect.w as u32,
+                        rect.h as u32,
+                        ALLPLANES,
+                        ZPixmap,
+                    );
+                    if ximage.is_null() {
+                        return Err(CaptureError::GetImage {
+                            x: rect.x,
+                            y: rect.y,
+                            w: rect.w,
+                            h: rect.h,
+                        });
+                    }
+                    let img = &*ximage;
+                    let w = img.width as u32;
+                    let h = img.height as u32;
+                    let bpp = (img.bits_per_pixel / 8) as usize;
+                    if bpp < 3 {
+                        let bits = img.bits_per_pixel;
+                        XDestroyImage(ximage);
+                        return Err(CaptureError::BitsPerPixel(bits));
+                    }
+                    let stride = img.bytes_per_line as usize;
+                    let data_len = stride.saturating_mul(h as usize);
+                    let data = std::slice::from_raw_parts(img.data as *const u8, data_len).to_vec();
                     XDestroyImage(ximage);
-                    return Err(CaptureError::BitsPerPixel(bits));
+                    Ok((data, w, h, bpp, stride))
                 }
-                let stride = img.bytes_per_line as usize;
-                let data_len = stride.saturating_mul(h as usize);
-                let data = std::slice::from_raw_parts(img.data as *const u8, data_len).to_vec();
-                XDestroyImage(ximage);
-                (data, w, h, bpp, stride)
-            }
+            })?
         };
         convert(&data, w, h, bpp, stride)
     }
@@ -197,20 +198,51 @@ fn xinerama_monitor_rects(st: &X11State) -> Vec<DesktopRect> {
         w: st.width,
         h: st.height,
     };
-    // SAFETY: `st.display` is the live display; `screens` is null/`count`-checked
+    xinerama_monitor_rects_on(st.display, fallback)
+}
+
+/// Virtual-desktop monitor rects from Xinerama (same space as the X11 outline).
+/// Used by portal capture to place PipeWire streams on XWayland layouts,
+/// and by General seeding when ScreenCast is not ready yet.
+pub(crate) fn query_x11_monitor_rects() -> Vec<DesktopRect> {
+    // SAFETY: connection is null-checked; closed before return; not registered as a
+    // long-lived secondary display.
+    unsafe {
+        let display = XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return Vec::new();
+        }
+        let screen = x11::xlib::XDefaultScreen(display);
+        let fallback = DesktopRect {
+            x: 0,
+            y: 0,
+            w: XDisplayWidth(display, screen),
+            h: XDisplayHeight(display, screen),
+        };
+        let rects = xinerama_monitor_rects_on(display, fallback);
+        XCloseDisplay(display);
+        rects
+    }
+}
+
+pub(crate) fn xinerama_monitor_rects_on(
+    display: *mut _XDisplay,
+    fallback: DesktopRect,
+) -> Vec<DesktopRect> {
+    // SAFETY: `display` is a live connection; `screens` is null/`count`-checked
     // before the slice is built, and `XFree` releases the Xinerama-allocated array.
     unsafe {
-        if XineramaIsActive(st.display) == 0 {
+        if XineramaIsActive(display) == 0 {
             return vec![fallback];
         }
         let mut count = 0;
-        let screens = XineramaQueryScreens(st.display, &mut count);
+        let screens = XineramaQueryScreens(display, &mut count);
         if screens.is_null() || count <= 0 {
             return vec![fallback];
         }
         let slice =
             std::slice::from_raw_parts(screens as *const XineramaScreenInfo, count as usize);
-        let rects: Vec<DesktopRect> = slice
+        let mut rects: Vec<DesktopRect> = slice
             .iter()
             .map(|s| DesktopRect {
                 x: s.x_org as i32,
@@ -224,6 +256,7 @@ fn xinerama_monitor_rects(st: &X11State) -> Vec<DesktopRect> {
         if rects.is_empty() {
             vec![fallback]
         } else {
+            rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
             rects
         }
     }
@@ -245,7 +278,7 @@ impl Drop for X11State {
 /// Primary monitor DPI scale from `Xft.dpi` (`dpi / 96`), else `1.0`.
 /// Returns `None` when the display cannot be opened.
 pub(crate) fn primary_monitor_scale() -> Option<f32> {
-    if let Ok(cap) = shared_capturer() {
+    if let Ok(cap) = X11Capturer::open() {
         let st = cap.inner.lock();
         return Some(xft_dpi_scale(st.display));
     }
@@ -299,6 +332,6 @@ mod tests {
     #[test]
     fn open_or_skip() {
         // CI / headless: open may fail — that's ok.
-        let _ = OsCapturer::open();
+        let _ = X11Capturer::open();
     }
 }

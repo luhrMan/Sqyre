@@ -11,6 +11,7 @@ const UNAVAILABLE: &str = "Live screen preview requires the desktop app.";
 pub enum PreviewKind {
     Point,
     SearchArea,
+    Collection,
 }
 
 #[derive(Default)]
@@ -91,8 +92,8 @@ impl PreviewTooltipCache {
         _bottom: Option<i32>,
         _force: bool,
         view: &mut ImageViewTransform,
-    ) -> egui::Rect {
-        paint_unavailable_panel(ui, view)
+    ) -> (egui::Rect, egui::Vec2) {
+        (paint_unavailable_panel(ui, view), egui::Vec2::ZERO)
     }
 }
 
@@ -105,7 +106,7 @@ fn paint_unavailable_panel(ui: &mut egui::Ui, _view: &mut ImageViewTransform) ->
         rect.center(),
         egui::Align2::CENTER_CENTER,
         UNAVAILABLE,
-        egui::FontId::proportional(13.0),
+        egui::TextStyle::Small.resolve(ui.style()),
         crate::theme::error_fg(),
     );
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);

@@ -1,4 +1,7 @@
 //! Filesystem-safe entity names for catalog paths under `images/`.
+//!
+//! Rules live in [`sqyre_validate::validate_entity_name`] (Windows/Linux forbidden
+//! filename characters, reserved device names, path escape).
 
 use crate::{PersistError, Result};
 use std::path::{Component, Path, PathBuf};

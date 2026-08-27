@@ -3,7 +3,7 @@
 use crate::action_tooltip::help;
 use eframe::egui;
 use sqyre_domain::{builtin_variable_catalog, Macro, VariableDecl, VariableType};
-use sqyre_ui_model::SharedRuntimeVars;
+use sqyre_ports::SharedRuntimeVars;
 use sqyre_validate::validate_variable_assignment_name;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -35,6 +35,20 @@ struct EditState {
     initial_value: String,
     description: String,
     error: Option<String>,
+    /// Snapshot at open for dirty Save enablement.
+    baseline_name: String,
+    baseline_type: VariableType,
+    baseline_initial: String,
+    baseline_description: String,
+}
+
+impl EditState {
+    fn save_enabled(&self) -> bool {
+        self.name != self.baseline_name
+            || self.type_ != self.baseline_type
+            || self.initial_value != self.baseline_initial
+            || self.description != self.baseline_description
+    }
 }
 
 impl VariablesPanelUi {
@@ -172,6 +186,10 @@ impl VariablesPanelUi {
                         initial_value: String::new(),
                         description: String::new(),
                         error: None,
+                        baseline_name: String::new(),
+                        baseline_type: VariableType::Auto,
+                        baseline_initial: String::new(),
+                        baseline_description: String::new(),
                     });
                     self.status = None;
                 }
@@ -227,11 +245,15 @@ impl VariablesPanelUi {
             if let Some(d) = macro_.variable_decls.get(i).cloned() {
                 self.editing = Some(EditState {
                     index: Some(i),
-                    name: d.name,
+                    name: d.name.clone(),
                     type_: d.type_,
-                    initial_value: d.initial_value,
-                    description: d.description,
+                    initial_value: d.initial_value.clone(),
+                    description: d.description.clone(),
                     error: None,
+                    baseline_name: d.name,
+                    baseline_type: d.type_,
+                    baseline_initial: d.initial_value,
+                    baseline_description: d.description,
                 });
                 self.status = None;
             }
@@ -308,7 +330,7 @@ impl VariablesPanelUi {
             ui.colored_label(crate::theme::error_fg(), err);
         }
 
-        match crate::widgets::save_cancel_row_ltr(ui) {
+        match crate::widgets::save_cancel_row_ltr(ui, edit.save_enabled()) {
             crate::widgets::SaveCancel::Cancel => {
                 self.editing = None;
                 return false;

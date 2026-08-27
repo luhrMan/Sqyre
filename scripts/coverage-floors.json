@@ -3,26 +3,50 @@
     {
       "name": "sqyre-domain",
       "path": "/sqyre-domain/",
-      "floor": 70.0,
+      "floor": 83.0,
       "note": "whole crate (pure domain logic)"
     },
     {
       "name": "sqyre-varref",
       "path": "/sqyre-varref/",
-      "floor": 90.0,
+      "floor": 93.0,
       "note": "whole crate (variable-ref grammar)"
     },
     {
       "name": "path_confine",
       "path": "path_confine.rs",
-      "floor": 85.0,
+      "floor": 90.0,
       "note": "sqyre-executor path confinement helper"
     },
     {
       "name": "migrate",
       "path": "migrate.rs",
-      "floor": 80.0,
+      "floor": 83.0,
       "note": "sqyre-persist db.yaml migration"
+    },
+    {
+      "name": "sqyre-serialize",
+      "path": "/sqyre-serialize/",
+      "floor": 93.0,
+      "note": "whole crate (YAML codecs)"
+    },
+    {
+      "name": "sqyre-validate",
+      "path": "/sqyre-validate/",
+      "floor": 84.0,
+      "note": "whole crate (name/action validation)"
+    },
+    {
+      "name": "sqyre-persist",
+      "path": "/sqyre-persist/",
+      "floor": 77.0,
+      "note": "whole crate (db.yaml load/save)"
+    },
+    {
+      "name": "sqyre-executor",
+      "path": "/sqyre-executor/",
+      "floor": 85.0,
+      "note": "whole crate (mocked execution)"
     }
   ]
 }

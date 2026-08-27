@@ -1,14 +1,28 @@
-//! OS-facing port traits shared by platform adapters and the macro executor.
+//! OS-facing port traits (capture, automation, focus) and execution telemetry
+//! (action log, highlight, runtime vars) shared by adapters and the macro executor.
 
+mod action_log;
 mod automation_error;
 mod capture_error;
 mod domain_ports;
+mod highlight;
 mod port_error;
+mod portal_remote;
+mod runtime_vars;
 
+pub use action_log::{
+    lines_for, ActionLogEntry, ActionLogger, LogImage, SharedActionLog, MAX_ENTRIES_PER_ACTION,
+};
 pub use automation_error::AutomationError;
 pub use capture_error::CaptureError;
 pub use domain_ports::{ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup};
+pub use highlight::{
+    clear_highlights, highlight_clear, highlight_cursor, highlight_fill, ActionHighlighter,
+    HighlightEvent, HighlightKind, HighlightSnapshot, SharedHighlighter,
+};
 pub use port_error::PortError;
+pub use portal_remote::PortalRemoteInput;
+pub use runtime_vars::{RuntimeVarSink, SharedRuntimeVars};
 
 use image::RgbaImage;
 use rayon::prelude::*;
@@ -140,6 +154,14 @@ pub trait ScreenCapturer {
         Ok(RgbCapture::from_rgba(&self.capture_rect(rect)?))
     }
 
+    /// RGB capture that waits for a newer compositor frame when the backend
+    /// caches buffers (portal + PipeWire). Used for image search and wait/repeat
+    /// retries — not the default one-shot OCR / find-pixel crop.
+    /// Default: same as [`Self::capture_rect_rgb`].
+    fn capture_rect_rgb_fresh(&mut self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
+        self.capture_rect_rgb(rect)
+    }
+
     /// Capture a search-area rectangle after basic size checks.
     fn capture_search_area(
         &mut self,
@@ -155,16 +177,25 @@ pub trait ScreenCapturer {
     }
 
     /// RGB search-area capture (preferred for image/OCR/pixel matching).
+    ///
+    /// `fresh` waits for a newer compositor frame on caching backends when the
+    /// screen was dirtied by input, or on wait/repeat retries. Clean nested image
+    /// searches crop the latest cache.
     fn capture_search_area_rgb(
         &mut self,
         left: i32,
         top: i32,
         right: i32,
         bottom: i32,
+        fresh: bool,
     ) -> Result<(RgbCapture, DesktopRect), CaptureError> {
         let vb = self.virtual_bounds().ok();
         let rect = clamp_search_rect(left, top, right, bottom, vb)?;
-        let img = self.capture_rect_rgb(rect)?;
+        let img = if fresh {
+            self.capture_rect_rgb_fresh(rect)?
+        } else {
+            self.capture_rect_rgb(rect)?
+        };
         Ok((img, rect))
     }
 }
