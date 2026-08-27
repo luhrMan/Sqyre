@@ -57,8 +57,7 @@ impl SqyreApp {
         add_action_picker.load_from_settings(settings_ui.settings());
 
         let catalog = docs_fixture::demo_catalog();
-        let macro_ = docs_fixture::demo_macro();
-        let macros = vec![macro_];
+        let macros = docs_fixture::demo_macros();
         let db = docs_fixture::demo_database(&macros, &catalog);
 
         let tree = TreeState {
@@ -109,7 +108,8 @@ impl SqyreApp {
             recording_overlay: RecordingOverlay::new(),
             #[cfg(feature = "native-runtime")]
             macro_overlay: MacroOverlay::new(),
-            macro_list_open: false,
+            // Match product default so main-window goldens include the Macros sidebar.
+            macro_list_open: true,
             macro_list_filter: String::new(),
             tray: tray::SystemTray::default(),
             instance_lock: None,
@@ -161,9 +161,9 @@ impl SqyreApp {
     }
 
     pub fn open_data_editor(&mut self) {
-        self.data_editor.open = true;
+        // Coordinates → Points shows the post-ScreenCap tab strip with filled form data.
         self.data_editor
-            .select_program_for_docs("Demo Program", &self.workspace.catalog);
+            .open_points_for_docs("Demo Program", "center", &self.workspace.catalog);
     }
 
     pub fn select_action(&mut self, id: sqyre_domain::ActionId) {
@@ -211,6 +211,11 @@ impl SqyreApp {
     /// Open the settings window (integration / screenshot harnesses).
     pub fn open_settings_for_docs(&mut self) {
         self.settings_ui.open = true;
+    }
+
+    /// Open Settings → Appearance (docs screenshots of the sidebar layout).
+    pub fn open_settings_appearance_for_docs(&mut self) {
+        self.settings_ui.open_appearance_for_docs();
     }
 
     /// Show the macro list panel (docs / interaction harnesses).

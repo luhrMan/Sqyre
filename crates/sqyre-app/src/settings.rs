@@ -132,6 +132,13 @@ impl SettingsUi {
         }
     }
 
+    /// Open Settings on the Appearance section (docs / screenshot harnesses).
+    pub fn open_appearance_for_docs(&mut self) {
+        self.open = true;
+        self.active_section = SettingsSection::Appearance;
+        self.search.clear();
+    }
+
     pub fn settings(&self) -> &UserSettings {
         &self.settings
     }

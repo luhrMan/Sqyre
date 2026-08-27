@@ -3,37 +3,14 @@
 //! Uses the same docs fixture + lavapipe path as `docs_screenshots`, but drives
 //! AccessKit clicks and asserts app state.
 
-use egui::os::OperatingSystem;
+mod common;
+
+use common::build_docs_harness;
 use egui_kittest::kittest::Queryable;
-use egui_kittest::Harness;
-use sqyre_app::{theme, SettingsUi, SqyreApp};
-
-fn build_harness(setup: impl FnMut(&mut SqyreApp)) -> Harness<'static, SqyreApp> {
-    build_harness_size([1000.0, 500.0], setup)
-}
-
-fn build_harness_size(
-    size: [f32; 2],
-    mut setup: impl FnMut(&mut SqyreApp),
-) -> Harness<'static, SqyreApp> {
-    let mut app = SqyreApp::for_docs();
-    setup(&mut app);
-    let settings = app.docs_settings().clone();
-    Harness::builder()
-        .with_size(size)
-        .with_os(OperatingSystem::Nix)
-        .wgpu()
-        .build_eframe(move |cc| {
-            SettingsUi::install_fonts(&cc.egui_ctx);
-            SettingsUi::apply_appearance(&cc.egui_ctx, &settings);
-            theme::apply(&cc.egui_ctx);
-            app
-        })
-}
 
 #[test]
 fn settings_checkbox_toggles_log_meta_images() {
-    let mut harness = build_harness(|app| {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
         app.open_settings_for_docs();
     });
     harness.run();
@@ -62,7 +39,7 @@ fn settings_checkbox_toggles_log_meta_images() {
 
 #[test]
 fn settings_checkbox_toggles_highlight_active_action() {
-    let mut harness = build_harness(|app| {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
         app.open_settings_for_docs();
     });
     harness.run();
@@ -85,7 +62,7 @@ fn settings_checkbox_toggles_highlight_active_action() {
 
 #[test]
 fn new_macro_button_adds_macro() {
-    let mut harness = build_harness(|app| {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
         app.open_macro_list_for_docs();
     });
     harness.run();
@@ -113,14 +90,14 @@ fn new_macro_button_adds_macro() {
 
 #[test]
 fn tree_log_buttons_follow_log_meta_images_setting() {
-    let mut harness = build_harness(|_| {});
+    let mut harness = build_docs_harness([1000.0, 500.0], |_| {});
     harness.run();
     assert!(
         harness.query_all_by_label("Logs").next().is_none(),
         "log buttons should be hidden when Log Meta Images is off"
     );
 
-    let mut harness = build_harness(|app| {
+    let mut harness = build_docs_harness([1000.0, 500.0], |app| {
         app.docs_settings_mut().save_meta_images = true;
     });
     harness.run();
@@ -132,7 +109,7 @@ fn tree_log_buttons_follow_log_meta_images_setting() {
 
 #[test]
 fn add_action_picker_lists_wait() {
-    let mut harness = build_harness_size([1100.0, 520.0], |app| {
+    let mut harness = build_docs_harness([1100.0, 520.0], |app| {
         app.open_add_action_picker();
     });
     harness.run();
@@ -141,7 +118,7 @@ fn add_action_picker_lists_wait() {
 
 #[test]
 fn add_wait_from_picker_increases_tree() {
-    let mut harness = build_harness_size([1100.0, 520.0], |app| {
+    let mut harness = build_docs_harness([1100.0, 520.0], |app| {
         app.open_add_action_picker();
     });
     harness.run();
@@ -161,7 +138,7 @@ fn add_wait_from_picker_increases_tree() {
 
 #[test]
 fn run_toolbar_button_is_present() {
-    let mut harness = build_harness(|_| {});
+    let mut harness = build_docs_harness([1000.0, 500.0], |_| {});
     harness.run();
     harness.get_by_label("Run");
 }
