@@ -34,8 +34,11 @@ use std::thread::{self, JoinHandle};
 use web_time::{Duration, Instant};
 
 const VIEWPORT_PAD_MIN: f32 = 2.0;
-/// How often to re-query OS focus.
+/// How often to re-query OS focus while gated buttons may appear/disappear.
 const FOCUS_POLL: Duration = Duration::from_millis(250);
+/// Once a foreign (e.g. XWayland game) window owns focus and buttons are shown,
+/// poll less often — X11 focus IPC under fullscreen games hitch the UI thread.
+const FOCUS_POLL_WHILE_SHOWN: Duration = Duration::from_millis(1000);
 /// Spinner wake interval from the background poller.
 const OVERLAY_ANIM_POLL: Duration = Duration::from_millis(16);
 /// Re-apply skip-taskbar / transparency rarely. Doing this every focus poll
@@ -66,6 +69,8 @@ pub struct MacroOverlay {
     last_timing_log: Option<Instant>,
     /// Last logged (shown, gated, preview) tuple — avoid flooding stderr notes.
     last_sync_sig: Option<(usize, bool, bool)>,
+    /// Buttons visible last sync — stretch focus poll while an X11 game holds focus.
+    last_shown: usize,
     /// Last geom hints that were applied — skip XMove when unchanged.
     last_geom_hints: Vec<(String, i32, i32, u32, u32)>,
     /// Wayland: match XWayland overlay windows to buttons after coordinate edits.
@@ -98,6 +103,7 @@ impl MacroOverlay {
             last_focus_err_log: None,
             last_timing_log: None,
             last_sync_sig: None,
+            last_shown: 0,
             last_geom_hints: Vec::new(),
             overlay_last_positions: HashMap::new(),
             busy_wake: Mutex::new(None),
@@ -210,6 +216,7 @@ impl MacroOverlay {
         }
 
         self.set_busy_wake(ctx, busy_ids);
+        self.last_shown = shown;
 
         if any_busy {
             // Re-register deferred callbacks on a short cadence; spinner frames come
@@ -255,23 +262,28 @@ impl MacroOverlay {
         }
 
         let total_ms = sync_t0.elapsed().as_secs_f32() * 1000.0;
-        let should_log_timing = total_ms >= 4.0
-            || hint_ms >= 2.0
-            || geom_ms >= 2.0
-            || focus_ms >= 2.0
-            || self
+        // Only log when a phase is actually slow — periodic logging alone was noise.
+        if any_shown && (total_ms >= 4.0 || hint_ms >= 2.0 || geom_ms >= 2.0 || focus_ms >= 2.0)
+        {
+            let should_log = self
                 .last_timing_log
                 .is_none_or(|t| sync_t0.duration_since(t) >= OVERLAY_TIMING_LOG_EVERY);
-        if should_log_timing && any_shown {
-            self.last_timing_log = Some(sync_t0);
-            note(&format!(
-                "overlay: timing total={total_ms:.1}ms focus={focus_ms:.1}ms hint={hint_ms:.1}ms geom={geom_ms:.1}ms shown={shown} busy={any_busy}"
-            ));
+            if should_log {
+                self.last_timing_log = Some(sync_t0);
+                note(&format!(
+                    "overlay: timing total={total_ms:.1}ms focus={focus_ms:.1}ms hint={hint_ms:.1}ms geom={geom_ms:.1}ms shown={shown} busy={any_busy}"
+                ));
+            }
         }
 
         if any_gated && !any_busy {
             // Do NOT request_repaint every frame — that flickers transparent X11 windows.
-            ctx.request_repaint_after(FOCUS_POLL);
+            let wake = if shown > 0 {
+                FOCUS_POLL_WHILE_SHOWN
+            } else {
+                FOCUS_POLL
+            };
+            ctx.request_repaint_after(wake);
         }
     }
 
@@ -315,13 +327,19 @@ impl MacroOverlay {
 
     fn resolve_focus(&mut self) -> Option<WindowInfo> {
         let now = Instant::now();
+        let poll = if self.last_shown > 0 {
+            FOCUS_POLL_WHILE_SHOWN
+        } else {
+            FOCUS_POLL
+        };
         if self
             .last_focus_poll
-            .is_some_and(|t| now.duration_since(t) < FOCUS_POLL)
+            .is_some_and(|t| now.duration_since(t) < poll)
         {
             return self.cached_focus.clone();
         }
         self.last_focus_poll = Some(now);
+        let t0 = Instant::now();
         let focus = match get_active_window() {
             Ok(Some(active))
                 if window_is_our_process(&active) || window_is_transient_shell_focus(&active) =>
@@ -345,6 +363,10 @@ impl MacroOverlay {
                 self.last_foreign.clone()
             }
         };
+        let focus_ms = t0.elapsed().as_secs_f32() * 1000.0;
+        if focus_ms >= 5.0 {
+            note(&format!("overlay: focus_poll slow={focus_ms:.1}ms"));
+        }
         self.cached_focus = focus.clone();
         focus
     }

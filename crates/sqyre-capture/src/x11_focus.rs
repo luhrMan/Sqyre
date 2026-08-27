@@ -65,14 +65,13 @@ pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
 
 /// Currently focused top-level window (`_NET_ACTIVE_WINDOW`), if any.
 pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
-    crate::diag::mark_site("x11:get_active_window:before_open");
+    // No mark_site here — overlay focus polls this every few hundred ms; disk
+    // flush on each call makes gated buttons feel laggy.
     let result = with_display(|display| {
-        crate::diag::mark_site("x11:get_active_window:on_display");
         // SAFETY: `display` comes from `with_display`, which guarantees a live,
         // non-null `XOpenDisplay` connection for the duration of this call.
         unsafe { active_on_display(display) }
     });
-    crate::diag::mark_site("x11:get_active_window:done");
     if let Err(ref e) = result {
         crate::diag::note(&format!("x11:get_active_window err: {e}"));
     }
