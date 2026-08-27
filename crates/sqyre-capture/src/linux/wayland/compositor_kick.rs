@@ -28,9 +28,7 @@ use wayland_protocols::xdg::decoration::zv1::client::{
     zxdg_decoration_manager_v1, zxdg_toplevel_decoration_v1,
 };
 use wayland_protocols::xdg::shell::client::{xdg_surface, xdg_toplevel, xdg_wm_base};
-use wayland_protocols_wlr::layer_shell::v1::client::{
-    zwlr_layer_shell_v1, zwlr_layer_surface_v1,
-};
+use wayland_protocols_wlr::layer_shell::v1::client::{zwlr_layer_shell_v1, zwlr_layer_surface_v1};
 
 /// Cap windowed kick size so a failed-alpha path cannot cover the desk.
 const XDG_KICK_MAX: i32 = 64;
@@ -45,7 +43,6 @@ pub(crate) struct DamageKick {
     /// When set, the kick thread skips remaining Pulse work and exits on Shutdown.
     shutting_down: Arc<std::sync::atomic::AtomicBool>,
 }
-
 
 enum KickCmd {
     Pulse {
@@ -128,11 +125,7 @@ impl DamageKick {
         }
         let (done_tx, done_rx) = mpsc::sync_channel(1);
         self.pending.fetch_add(1, Ordering::Relaxed);
-        if self
-            .tx
-            .send(KickCmd::Release { done: done_tx })
-            .is_err()
-        {
+        if self.tx.send(KickCmd::Release { done: done_tx }).is_err() {
             self.pending.fetch_sub(1, Ordering::Relaxed);
             return;
         }
@@ -350,7 +343,12 @@ impl KickConn {
         let qh = self.queue.handle();
         let compositor = self.state.compositor.as_ref().expect("compositor").clone();
         let shm = self.state.shm.as_ref().expect("shm").clone();
-        let layer_shell = self.state.layer_shell.as_ref().expect("layer_shell").clone();
+        let layer_shell = self
+            .state
+            .layer_shell
+            .as_ref()
+            .expect("layer_shell")
+            .clone();
 
         let surface = compositor.create_surface(&qh, ());
         let empty = compositor.create_region(&qh, ());
@@ -366,9 +364,7 @@ impl KickConn {
             (),
         );
         layer.set_size(kick.w as u32, kick.h as u32);
-        layer.set_anchor(
-            zwlr_layer_surface_v1::Anchor::Top | zwlr_layer_surface_v1::Anchor::Left,
-        );
+        layer.set_anchor(zwlr_layer_surface_v1::Anchor::Top | zwlr_layer_surface_v1::Anchor::Left);
         layer.set_margin((kick.y - out_y).max(0), 0, 0, (kick.x - out_x).max(0));
         layer.set_exclusive_zone(0);
         layer.set_keyboard_interactivity(zwlr_layer_surface_v1::KeyboardInteractivity::None);
@@ -433,7 +429,12 @@ impl KickConn {
         let qh = self.queue.handle();
         let compositor = self.state.compositor.as_ref().expect("compositor").clone();
         let shm = self.state.shm.as_ref().expect("shm").clone();
-        let wm = self.state.xdg_wm_base.as_ref().expect("xdg_wm_base").clone();
+        let wm = self
+            .state
+            .xdg_wm_base
+            .as_ref()
+            .expect("xdg_wm_base")
+            .clone();
 
         let surface = compositor.create_surface(&qh, ());
         let empty_in = compositor.create_region(&qh, ());
@@ -451,15 +452,11 @@ impl KickConn {
         toplevel.set_max_size(w, h);
         // Do NOT set_fullscreen — Mutter paints fullscreen opaque black.
 
-        let decoration = self
-            .state
-            .decoration_manager
-            .as_ref()
-            .map(|mgr| {
-                let deco = mgr.get_toplevel_decoration(&toplevel, &qh, ());
-                deco.set_mode(zxdg_toplevel_decoration_v1::Mode::ClientSide);
-                deco
-            });
+        let decoration = self.state.decoration_manager.as_ref().map(|mgr| {
+            let deco = mgr.get_toplevel_decoration(&toplevel, &qh, ());
+            deco.set_mode(zxdg_toplevel_decoration_v1::Mode::ClientSide);
+            deco
+        });
 
         self.state.configure_serial = None;
         self.state.xdg_configured = false;
@@ -513,7 +510,9 @@ impl KickConn {
         staged.flip = staged.flip.wrapping_add(1);
         // Re-write one pixel so the shm contents change (damage alone can be ignored).
         let _ = write_flip_pixel(&mut staged.file, staged.flip);
-        staged.surface.damage_buffer(0, 0, staged.buf_w, staged.buf_h);
+        staged
+            .surface
+            .damage_buffer(0, 0, staged.buf_w, staged.buf_h);
         staged.surface.commit();
         let _ = self.queue.roundtrip(&mut self.state);
         let _ = self.conn.flush();
@@ -583,15 +582,7 @@ fn attach_transparent(
     let _ = write_flip_pixel(&mut file, flip);
     let _ = file.flush();
     let pool = shm.create_pool(file.as_fd(), bytes as i32, qh, ());
-    let buffer = pool.create_buffer(
-        0,
-        buf_w,
-        buf_h,
-        stride,
-        wl_shm::Format::Argb8888,
-        qh,
-        (),
-    );
+    let buffer = pool.create_buffer(0, buf_w, buf_h, stride, wl_shm::Format::Argb8888, qh, ());
     surface.set_buffer_scale(scale);
     surface.attach(Some(&buffer), 0, 0);
     surface.damage_buffer(0, 0, buf_w, buf_h);
@@ -702,20 +693,12 @@ impl Dispatch<wl_registry::WlRegistry, ()> for KickState {
                 ));
             }
             "wl_shm" if state.shm.is_none() => {
-                state.shm = Some(registry.bind::<wl_shm::WlShm, _, _>(
-                    name,
-                    version.min(1),
-                    qh,
-                    (),
-                ));
+                state.shm =
+                    Some(registry.bind::<wl_shm::WlShm, _, _>(name, version.min(1), qh, ()));
             }
             "wl_output" => {
-                let output = registry.bind::<wl_output::WlOutput, _, _>(
-                    name,
-                    version.min(4),
-                    qh,
-                    name,
-                );
+                let output =
+                    registry.bind::<wl_output::WlOutput, _, _>(name, version.min(4), qh, name);
                 state.outputs.insert(
                     name,
                     OutputInfo {
@@ -736,13 +719,14 @@ impl Dispatch<wl_registry::WlRegistry, ()> for KickState {
             i if i == zwlr_layer_shell_v1::ZwlrLayerShellV1::interface().name
                 && state.layer_shell.is_none() =>
             {
-                state.layer_shell =
-                    Some(registry.bind::<zwlr_layer_shell_v1::ZwlrLayerShellV1, _, _>(
+                state.layer_shell = Some(
+                    registry.bind::<zwlr_layer_shell_v1::ZwlrLayerShellV1, _, _>(
                         name,
                         version.min(4),
                         qh,
                         (),
-                    ));
+                    ),
+                );
             }
             i if i == xdg_wm_base::XdgWmBase::interface().name && state.xdg_wm_base.is_none() => {
                 state.xdg_wm_base = Some(registry.bind::<xdg_wm_base::XdgWmBase, _, _>(
@@ -755,11 +739,14 @@ impl Dispatch<wl_registry::WlRegistry, ()> for KickState {
             i if i == zxdg_decoration_manager_v1::ZxdgDecorationManagerV1::interface().name
                 && state.decoration_manager.is_none() =>
             {
-                state.decoration_manager = Some(registry.bind::<
-                    zxdg_decoration_manager_v1::ZxdgDecorationManagerV1,
-                    _,
-                    _,
-                >(name, version.min(1), qh, ()));
+                state.decoration_manager = Some(
+                    registry.bind::<zxdg_decoration_manager_v1::ZxdgDecorationManagerV1, _, _>(
+                        name,
+                        version.min(1),
+                        qh,
+                        (),
+                    ),
+                );
             }
             _ => {}
         }

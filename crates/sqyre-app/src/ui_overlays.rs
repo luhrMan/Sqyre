@@ -13,7 +13,6 @@ use eframe::egui;
 use sqyre_domain::ActionId;
 use std::sync::atomic::Ordering;
 
-
 /// Always-on-top macro buttons (settings-backed); hidden while recording is armed.
 #[cfg(feature = "native-runtime")]
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {

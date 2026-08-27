@@ -1134,7 +1134,10 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
         h::WAIT_INTERVAL,
         &mut wait.wait_til_found_interval_ms,
         timing_enabled,
-        |d| d.speed(1).range(MIN_DETECTION_INTERVAL_MS..=MAX_DETECTION_INTERVAL_MS),
+        |d| {
+            d.speed(1)
+                .range(MIN_DETECTION_INTERVAL_MS..=MAX_DETECTION_INTERVAL_MS)
+        },
     );
     drag_field_enabled(
         ui,

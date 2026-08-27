@@ -385,11 +385,7 @@ fn install_inner(
                 if event.id == hide_id {
                     let now_hidden = !hidden_flag.load(Ordering::SeqCst);
                     hidden_flag.store(now_hidden, Ordering::SeqCst);
-                    send_tray_command(
-                        &cmd_tx,
-                        &wake_thread,
-                        TrayCommand::SetVisible(!now_hidden),
-                    );
+                    send_tray_command(&cmd_tx, &wake_thread, TrayCommand::SetVisible(!now_hidden));
                     hide_item.set_checked(now_hidden);
                 } else if event.id == quit_id {
                     send_tray_command(&cmd_tx, &wake_thread, TrayCommand::Quit);

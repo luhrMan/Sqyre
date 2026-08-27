@@ -263,8 +263,7 @@ impl MacroOverlay {
 
         let total_ms = sync_t0.elapsed().as_secs_f32() * 1000.0;
         // Only log when a phase is actually slow — periodic logging alone was noise.
-        if any_shown && (total_ms >= 4.0 || hint_ms >= 2.0 || geom_ms >= 2.0 || focus_ms >= 2.0)
-        {
+        if any_shown && (total_ms >= 4.0 || hint_ms >= 2.0 || geom_ms >= 2.0 || focus_ms >= 2.0) {
             let should_log = self
                 .last_timing_log
                 .is_none_or(|t| sync_t0.duration_since(t) >= OVERLAY_TIMING_LOG_EVERY);

@@ -483,7 +483,10 @@ mod tests {
 
     #[test]
     fn stable_variant_index_is_deterministic() {
-        assert_eq!(stable_variant_index("Prog~Item", 5), stable_variant_index("Prog~Item", 5));
+        assert_eq!(
+            stable_variant_index("Prog~Item", 5),
+            stable_variant_index("Prog~Item", 5)
+        );
         assert_ne!(
             stable_variant_index("Prog~Item", 5),
             stable_variant_index("Prog~Other", 5)

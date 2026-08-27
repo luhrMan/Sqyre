@@ -4,8 +4,8 @@ use crate::action_tooltip::help as h;
 use crate::widgets::{combo_str, drag_field};
 use eframe::egui;
 use sqyre_domain::{
-    clamp_match_blur, clamp_match_tolerance, MatchMethod, MAX_MATCH_BLUR, MAX_NORMED_MATCH_TOLERANCE,
-    MAX_UNNORMED_MATCH_TOLERANCE, MIN_MATCH_BLUR, MIN_MATCH_TOLERANCE,
+    clamp_match_blur, clamp_match_tolerance, MatchMethod, MAX_MATCH_BLUR,
+    MAX_NORMED_MATCH_TOLERANCE, MAX_UNNORMED_MATCH_TOLERANCE, MIN_MATCH_BLUR, MIN_MATCH_TOLERANCE,
 };
 
 fn tolerance_help(method: MatchMethod) -> &'static str {
@@ -22,7 +22,10 @@ pub fn configure_match_blur_drag(d: egui::DragValue<'_>) -> egui::DragValue<'_> 
     d.speed(1).range(MIN_MATCH_BLUR..=MAX_MATCH_BLUR)
 }
 
-pub fn configure_match_tolerance_drag(d: egui::DragValue<'_>, method: MatchMethod) -> egui::DragValue<'_> {
+pub fn configure_match_tolerance_drag(
+    d: egui::DragValue<'_>,
+    method: MatchMethod,
+) -> egui::DragValue<'_> {
     if method.is_normed() {
         d.speed(0.01)
             .range(MIN_MATCH_TOLERANCE..=MAX_NORMED_MATCH_TOLERANCE)

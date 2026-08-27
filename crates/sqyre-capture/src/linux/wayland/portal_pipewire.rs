@@ -6,9 +6,9 @@ use super::portal_session::{
     stage_mutation_recent, stop_eis_thread, union_rect, LOGGED_CURSOR_META, PENDING_EIS_FD,
     REMOTE_DESKTOP_GRANTED,
 };
-use crate::{cap_log, mark_site};
 use crate::error::CaptureError;
 use crate::linux::session::{LinuxCaptureBackend, LinuxSessionInfo};
+use crate::{cap_log, mark_site};
 use image::RgbaImage;
 use parking_lot::{Condvar, Mutex};
 use pipewire as pw;
@@ -213,11 +213,7 @@ impl PortalCapturer {
                         "kick",
                         &format!("refocus=ok title={}", w.title.replace(' ', "_")),
                     ),
-                    Err(e) => cap_log(
-                        "PORTAL",
-                        "kick",
-                        &format!("refocus=fail err={e}"),
-                    ),
+                    Err(e) => cap_log("PORTAL", "kick", &format!("refocus=fail err={e}")),
                 }
             }
         }
@@ -1413,20 +1409,40 @@ mod tests {
     #[test]
     fn early_bail_when_other_monitor_advances_after_min_pulses() {
         assert!(fresh_region_stuck_while_others_advance(
-            1, EARLY_BAIL_MIN_PULSES, 364, 366, 353, 353
+            1,
+            EARLY_BAIL_MIN_PULSES,
+            364,
+            366,
+            353,
+            353
         ));
         // No pulse yet — allow a late region frame.
         assert!(!fresh_region_stuck_while_others_advance(
-            0, EARLY_BAIL_MIN_PULSES, 364, 366, 353, 353
+            0,
+            EARLY_BAIL_MIN_PULSES,
+            364,
+            366,
+            353,
+            353
         ));
         // Nothing else advanced (single-monitor / fully idle): keep waiting so
         // nested searches can still land a post-click frame.
         assert!(!fresh_region_stuck_while_others_advance(
-            5, EARLY_BAIL_MIN_PULSES, 353, 353, 353, 353
+            5,
+            EARLY_BAIL_MIN_PULSES,
+            353,
+            353,
+            353,
+            353
         ));
         // Region did advance — success path, not a bail.
         assert!(!fresh_region_stuck_while_others_advance(
-            1, EARLY_BAIL_MIN_PULSES, 353, 354, 354, 353
+            1,
+            EARLY_BAIL_MIN_PULSES,
+            353,
+            354,
+            354,
+            353
         ));
     }
 

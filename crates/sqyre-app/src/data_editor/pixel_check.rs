@@ -758,11 +758,7 @@ mod inner {
                 egui::Stroke::new(2.0, color),
                 egui::StrokeKind::Outside,
             );
-            painter.circle_filled(
-                egui::pos2(rect.center().x, rect.min.y - 6.0),
-                4.0,
-                color,
-            );
+            painter.circle_filled(egui::pos2(rect.center().x, rect.min.y - 6.0), 4.0, color);
             return;
         }
         for m in tolerance_matches {
@@ -770,11 +766,8 @@ mod inner {
                 continue;
             }
             let is_best = m.x == summary.best_x && m.y == summary.best_y;
-            let top_left = image_to_content(
-                egui::pos2(m.x as f32, m.y as f32),
-                content,
-                image_size,
-            );
+            let top_left =
+                image_to_content(egui::pos2(m.x as f32, m.y as f32), content, image_size);
             let rect = egui::Rect::from_min_size(top_left, box_size);
             let color = if is_best {
                 Color32::from_rgb(80, 255, 120)
@@ -788,11 +781,7 @@ mod inner {
                 egui::StrokeKind::Outside,
             );
             if is_best {
-                painter.circle_filled(
-                    egui::pos2(rect.center().x, rect.min.y - 6.0),
-                    4.0,
-                    color,
-                );
+                painter.circle_filled(egui::pos2(rect.center().x, rect.min.y - 6.0), 4.0, color);
             }
         }
     }
@@ -979,7 +968,8 @@ mod inner {
                 }
             }
             if tolerance_match_count > MANY_MATCH_BOX_THRESHOLD {
-                let hiding = !should_paint_match_boxes(tolerance_match_count, *show_many_match_boxes);
+                let hiding =
+                    !should_paint_match_boxes(tolerance_match_count, *show_many_match_boxes);
                 let btn = if *show_many_match_boxes {
                     "Hide match boxes".to_string()
                 } else {
@@ -1360,7 +1350,10 @@ mod tests {
     fn should_paint_match_boxes_threshold() {
         assert!(should_paint_match_boxes(MANY_MATCH_BOX_THRESHOLD, false));
         assert!(should_paint_match_boxes(50, false));
-        assert!(!should_paint_match_boxes(MANY_MATCH_BOX_THRESHOLD + 1, false));
+        assert!(!should_paint_match_boxes(
+            MANY_MATCH_BOX_THRESHOLD + 1,
+            false
+        ));
         assert!(should_paint_match_boxes(MANY_MATCH_BOX_THRESHOLD + 1, true));
     }
 }
