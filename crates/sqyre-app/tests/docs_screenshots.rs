@@ -4,15 +4,20 @@
 //!   SQYRE_UPDATE_SCREENSHOTS=1 ./scripts/generate-docs-media.sh
 //! or: make docs-media
 
-use egui::os::OperatingSystem;
-use egui_kittest::{Harness, SnapshotOptions};
+mod common;
+
+use common::build_docs_harness;
+use egui_kittest::Harness;
 use image::{ImageFormat, RgbaImage};
-use sqyre_app::{theme, SettingsUi, SqyreApp};
+use sqyre_app::SqyreApp;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-const MAIN_SIZE: [f32; 2] = [1000.0, 500.0];
+const MAIN_SIZE: [f32; 2] = [1120.0, 560.0];
 const PICKER_SIZE: [f32; 2] = [1100.0, 520.0];
+const EDITOR_SIZE: [f32; 2] = [1120.0, 620.0];
+const SETTINGS_SIZE: [f32; 2] = [760.0, 700.0];
+const PALETTE_SIZE: [f32; 2] = [1000.0, 560.0];
 const MIN_PNG_BYTES: usize = 5_000;
 
 fn docs_images_dir() -> PathBuf {
@@ -30,39 +35,6 @@ fn update_screenshots() -> bool {
         std::env::var("UPDATE_SNAPSHOTS").ok().as_deref(),
         Some("true") | Some("force") | Some("1")
     )
-}
-
-fn sync_update_env() {
-    if matches!(
-        std::env::var("SQYRE_UPDATE_SCREENSHOTS").ok().as_deref(),
-        Some("1") | Some("true")
-    ) {
-        std::env::set_var("UPDATE_SNAPSHOTS", "force");
-    }
-}
-
-fn snapshot_opts(dir: &Path) -> SnapshotOptions {
-    SnapshotOptions::new().output_path(dir).threshold(0.8)
-}
-
-fn build_harness(
-    size: [f32; 2],
-    mut setup: impl FnMut(&mut SqyreApp),
-) -> Harness<'static, SqyreApp> {
-    let mut app = SqyreApp::for_docs();
-    setup(&mut app);
-    let settings = app.docs_settings().clone();
-    Harness::builder()
-        .with_size(size)
-        .with_os(OperatingSystem::Nix)
-        .with_options(snapshot_opts(&docs_images_dir()))
-        .wgpu()
-        .build_eframe(move |cc| {
-            SettingsUi::install_fonts(&cc.egui_ctx);
-            SettingsUi::apply_appearance(&cc.egui_ctx, &settings);
-            theme::apply(&cc.egui_ctx);
-            app
-        })
 }
 
 fn write_or_compare_png(path: &Path, img: &RgbaImage) {
@@ -130,8 +102,7 @@ fn render_png(harness: &mut Harness<'_, SqyreApp>) -> RgbaImage {
 
 #[test]
 fn docs_main_window() {
-    sync_update_env();
-    let mut harness = build_harness(MAIN_SIZE, |app| {
+    let mut harness = build_docs_harness(MAIN_SIZE, |app| {
         app.expand_all_branches_for_docs();
     });
     let img = render_png(&mut harness);
@@ -140,8 +111,7 @@ fn docs_main_window() {
 
 #[test]
 fn docs_add_action_picker() {
-    sync_update_env();
-    let mut harness = build_harness(PICKER_SIZE, |app| {
+    let mut harness = build_docs_harness(PICKER_SIZE, |app| {
         app.open_add_action_picker();
     });
     let img = render_png(&mut harness);
@@ -150,10 +120,27 @@ fn docs_add_action_picker() {
 
 #[test]
 fn docs_data_editor() {
-    sync_update_env();
-    let mut harness = build_harness(MAIN_SIZE, |app| {
+    let mut harness = build_docs_harness(EDITOR_SIZE, |app| {
         app.open_data_editor();
     });
     let img = render_png(&mut harness);
     write_or_compare_png(&docs_images_dir().join("data-editor.png"), &img);
+}
+
+#[test]
+fn docs_settings() {
+    let mut harness = build_docs_harness(SETTINGS_SIZE, |app| {
+        app.open_settings_appearance_for_docs();
+    });
+    let img = render_png(&mut harness);
+    write_or_compare_png(&docs_images_dir().join("settings.png"), &img);
+}
+
+#[test]
+fn docs_command_palette() {
+    let mut harness = build_docs_harness(PALETTE_SIZE, |app| {
+        app.open_command_palette_for_docs();
+    });
+    let img = render_png(&mut harness);
+    write_or_compare_png(&docs_images_dir().join("command-palette.png"), &img);
 }

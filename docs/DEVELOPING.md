@@ -211,7 +211,15 @@ OS-specific crates (`sqyre-capture`, etc.) are intentionally **not** gated. Set 
 
 ### README screenshots
 
-In-memory egui goldens live under `docs/images/` (test: `cargo test -p sqyre-app --test docs_screenshots`).
+In-memory egui goldens live under `docs/images/` (test: `cargo test -p sqyre-app --test docs_screenshots`):
+
+| Asset | Surface |
+|-------|---------|
+| `main-window.png` | Macro tree + Macros sidebar |
+| `add-action-picker.png` | Add Action catalog |
+| `data-editor.png` | Data Editor → Coordinates / Points |
+| `settings.png` | Settings → Appearance (sidebar layout) |
+| `command-palette.png` | Ctrl+K command palette |
 
 ```bash
 make docs-media

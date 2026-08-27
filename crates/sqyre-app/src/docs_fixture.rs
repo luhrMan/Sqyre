@@ -2,7 +2,7 @@
 
 use sqyre_domain::{
     blank_action, root_loop, ActionKind, CoordinateOutputs, CoordinateRef, Macro, PressState,
-    ScalarValue, PROGRAM_DELIMITER,
+    ScalarValue, VariableDecl, VariableType, PROGRAM_DELIMITER,
 };
 use sqyre_persist::{Database, ProgramCatalog, ProgramItem, ProgramPoint, ProgramSearchArea};
 
@@ -28,8 +28,8 @@ pub fn demo_catalog() -> ProgramCatalog {
             DEMO_PROGRAM,
             ProgramPoint {
                 name: "center".into(),
-                x: ScalarValue::Int(500),
-                y: ScalarValue::Int(300),
+                x: ScalarValue::Int(960),
+                y: ScalarValue::Int(540),
             },
         )
         .expect("upsert center");
@@ -61,11 +61,18 @@ pub fn demo_catalog() -> ProgramCatalog {
     catalog
 }
 
-/// Demo macro with nested image-search and loop branches.
+/// Primary demo macro: focus → move → image search (found/else) → loop.
 pub fn demo_macro() -> Macro {
     let mut focus = blank_action("focuswindow").expect("focuswindow");
-    if let ActionKind::FocusWindow { window_title, .. } = &mut focus.kind {
-        *window_title = "Notepad".into();
+    if let ActionKind::FocusWindow {
+        process_path,
+        window_title,
+        ..
+    } = &mut focus.kind
+    {
+        // Satisfies validate so the main-window golden has no red error banner.
+        *process_path = "/usr/bin/gedit".into();
+        *window_title = "Text Editor".into();
     }
 
     let mut move_act = blank_action("move").expect("move");
@@ -78,6 +85,17 @@ pub fn demo_macro() -> Macro {
     if let ActionKind::Click { button, state } = &mut click.kind {
         *button = sqyre_domain::MouseButton::Left;
         *state = PressState::Down;
+    }
+
+    let mut type_act = blank_action("type").expect("type");
+    if let ActionKind::Type { text, delay_ms } = &mut type_act.kind {
+        *text = "Hello, Sqyre!".into();
+        *delay_ms = 40;
+    }
+
+    let mut wait = blank_action("wait").expect("wait");
+    if let ActionKind::Wait { time } = &mut wait.kind {
+        *time = ScalarValue::Int(500);
     }
 
     let mut image_search = blank_action("imagesearch").expect("imagesearch");
@@ -98,17 +116,7 @@ pub fn demo_macro() -> Macro {
         *blur = 5;
         detection.coords = CoordinateOutputs::defaults();
         detection.subactions = vec![click];
-    }
-
-    let mut type_act = blank_action("type").expect("type");
-    if let ActionKind::Type { text, delay_ms } = &mut type_act.kind {
-        *text = "Hello, Sqyre!".into();
-        *delay_ms = 40;
-    }
-
-    let mut wait = blank_action("wait").expect("wait");
-    if let ActionKind::Wait { time } = &mut wait.kind {
-        *time = ScalarValue::Int(500);
+        detection.else_actions = vec![type_act, wait];
     }
 
     let mut key = blank_action("key").expect("key");
@@ -126,16 +134,45 @@ pub fn demo_macro() -> Macro {
         *subactions = vec![key];
     }
 
-    let mut m = Macro::new("Demo Macro", 0, vec![]);
-    m.root = root_loop(vec![
-        focus,
-        move_act,
-        image_search,
-        type_act,
-        wait,
-        loop_act,
-    ]);
+    let mut m = Macro::new(
+        "Demo Macro",
+        0,
+        vec!["ctrl".into(), "shift".into(), "f9".into()],
+    );
+    m.tags = vec!["demo".into(), "desktop".into()];
+    m.variable_decls = vec![
+        VariableDecl {
+            name: "retry_count".into(),
+            type_: VariableType::Number,
+            initial_value: "3".into(),
+            description: "Retries before giving up".into(),
+        },
+        VariableDecl {
+            name: "greeting".into(),
+            type_: VariableType::Text,
+            initial_value: "Hello, Sqyre!".into(),
+            description: String::new(),
+        },
+    ];
+    m.root = root_loop(vec![focus, move_act, image_search, loop_act]);
     m
+}
+
+/// Second macro so the Macros sidebar shows tags / hotkeys.
+pub fn demo_utility_macro() -> Macro {
+    let mut wait = blank_action("wait").expect("wait");
+    if let ActionKind::Wait { time } = &mut wait.kind {
+        *time = ScalarValue::Int(250);
+    }
+    let mut m = Macro::new("Quick Pause", 0, vec!["f8".into()]);
+    m.tags = vec!["utils".into()];
+    m.root = root_loop(vec![wait]);
+    m
+}
+
+/// In-memory macros used by docs / kittest harnesses.
+pub fn demo_macros() -> Vec<Macro> {
+    vec![demo_macro(), demo_utility_macro()]
 }
 
 /// In-memory database built from the demo macro list and catalog.

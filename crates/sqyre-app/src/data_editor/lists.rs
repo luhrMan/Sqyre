@@ -455,9 +455,17 @@ impl DataEditor {
         self.load_form(catalog, settings);
     }
 
-    /// Select a program for docs screenshots (Programs tab form populated).
-    pub(crate) fn select_program_for_docs(&mut self, name: &str, catalog: &ProgramCatalog) {
-        self.select_program(name, catalog, &UserSettings::default());
+    /// Open Coordinates → Points with a filled entity (docs screenshots).
+    pub(crate) fn open_points_for_docs(
+        &mut self,
+        program: &str,
+        point: &str,
+        catalog: &ProgramCatalog,
+    ) {
+        let settings = UserSettings::default();
+        self.open = true;
+        self.switch_tab(EditorTab::Points, catalog, &settings);
+        self.select_entity(program, point, catalog, &settings);
     }
 
     pub(crate) fn select_entity(
