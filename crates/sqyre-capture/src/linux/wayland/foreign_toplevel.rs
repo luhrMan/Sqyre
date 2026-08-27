@@ -5,6 +5,7 @@ use crate::window_match::titles_equal;
 use crate::{window_matches_process, CaptureError, WindowInfo};
 use sqyre_ports::AutomationError;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use wayland_client::protocol::{wl_output, wl_registry, wl_seat};
 use wayland_client::{event_created_child, Connection, Dispatch, EventQueue, Proxy, QueueHandle};
 use wayland_protocols::ext::foreign_toplevel_list::v1::client::{
@@ -39,10 +40,19 @@ impl State {
     }
 }
 
+/// Cached: compositor has no wlr/ext foreign-toplevel (typical GNOME).
+static FOREIGN_TOPLEVEL_MISSING: AtomicBool = AtomicBool::new(false);
+
 pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, CaptureError> {
+    if FOREIGN_TOPLEVEL_MISSING.load(Ordering::Relaxed) {
+        return Err(CaptureError::Message(
+            "compositor does not advertise foreign-toplevel".into(),
+        ));
+    }
     let (_conn, mut queue, mut state) = bind()?;
     pump(&mut queue, &mut state)?;
     if state.wlr_mgr.is_none() && state.ext_list.is_none() {
+        FOREIGN_TOPLEVEL_MISSING.store(true, Ordering::Relaxed);
         return Err(CaptureError::Message(
             "compositor does not advertise foreign-toplevel".into(),
         ));
@@ -91,9 +101,15 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, A
 }
 
 fn list_raw() -> Result<Vec<(WindowInfo, Draft)>, CaptureError> {
+    if FOREIGN_TOPLEVEL_MISSING.load(Ordering::Relaxed) {
+        return Err(CaptureError::Message(
+            "compositor does not advertise foreign-toplevel".into(),
+        ));
+    }
     let (_conn, mut queue, mut state) = bind()?;
     pump(&mut queue, &mut state)?;
     if state.wlr_mgr.is_none() && state.ext_list.is_none() {
+        FOREIGN_TOPLEVEL_MISSING.store(true, Ordering::Relaxed);
         return Err(CaptureError::Message(
             "compositor does not advertise foreign-toplevel".into(),
         ));

@@ -68,6 +68,15 @@ pub(crate) fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
 }
 
 pub(crate) fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
+    // Hybrid GNOME/etc.: X11 `_NET_ACTIVE_WINDOW` is cheap and correct for XWayland
+    // games. foreign-toplevel + AT-SPI each open a new connection and round-trip the
+    // session; doing that every overlay focus poll makes gated buttons laggy whenever
+    // an X11 window holds focus.
+    if std::env::var_os("DISPLAY").is_some() {
+        if let Ok(Some(w)) = x11_focus::get_active_window() {
+            return Ok(Some(w));
+        }
+    }
     if let Ok(Some(w)) = foreign_toplevel::active_window() {
         return Ok(Some(w));
     }
