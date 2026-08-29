@@ -91,6 +91,18 @@ pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
     x11_secondary::owns(display)
 }
 
+/// Register a Sqyre-owned X11 `Display*` so winit's error hook does not poison it.
+#[cfg(target_os = "linux")]
+pub fn register_secondary_x_display(display: *mut std::ffi::c_void) {
+    x11_secondary::register(display.cast());
+}
+
+/// Unregister after `XCloseDisplay`.
+#[cfg(target_os = "linux")]
+pub fn unregister_secondary_x_display(display: *mut std::ffi::c_void) {
+    x11_secondary::unregister(display.cast());
+}
+
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 pub use outline_stub::SelectionOutline;
 
@@ -491,23 +503,6 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
 
 #[cfg(not(any(target_os = "windows", target_os = "linux")))]
 pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
-    Ok(())
-}
-
-/// Wayland: winit cannot position overlay viewports; move XWayland windows directly.
-#[cfg(target_os = "linux")]
-pub fn sync_overlay_window_geometry(
-    hints: &[(String, i32, i32, u32, u32)],
-    last_positions: &mut std::collections::HashMap<String, (i32, i32)>,
-) -> Result<(), CaptureError> {
-    x11_focus::sync_overlay_window_geometry(hints, last_positions)
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn sync_overlay_window_geometry(
-    _hints: &[(String, i32, i32, u32, u32)],
-    _last_positions: &mut std::collections::HashMap<String, (i32, i32)>,
-) -> Result<(), CaptureError> {
     Ok(())
 }
 

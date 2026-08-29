@@ -1,0 +1,36 @@
+[package]
+name = "sqyre-overlay"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Floating macro overlay buttons (icons + OS viewports); iterated separately from sqyre-app"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "overlay_sandbox"
+path = "src/bin/overlay_sandbox.rs"
+required-features = ["sandbox"]
+
+[features]
+default = ["runtime"]
+# Focus / X11 geometry / skip-taskbar for live overlay windows.
+runtime = ["dep:sqyre-capture"]
+# Tiny eframe harness to iterate overlays without building sqyre-app.
+sandbox = ["runtime", "dep:eframe"]
+
+[dependencies]
+egui = { workspace = true }
+egui-phosphor = { workspace = true }
+parking_lot = { workspace = true }
+sqyre-persist = { path = "../sqyre-persist" }
+web-time = { workspace = true }
+fontdue = "0.9"
+epaint_default_fonts = "0.35"
+sqyre-capture = { path = "../sqyre-capture", optional = true }
+eframe = { workspace = true, optional = true, features = ["glow"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11 = { workspace = true }
+libc = "0.2"

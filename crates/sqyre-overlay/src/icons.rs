@@ -1,6 +1,6 @@
 //! Phosphor icon catalog for floating macro overlay buttons.
 
-use eframe::egui::{self, Color32, FontFamily, FontId};
+use egui::{self, Color32, FontFamily, FontId};
 use egui_phosphor::regular::ICONS as PHOSPHOR_ICONS;
 use sqyre_persist::OverlayButtonConfig;
 use std::sync::OnceLock;
@@ -50,7 +50,7 @@ pub const DEFAULT_ICON_ID: &str = "play";
 const PHOSPHOR_FAMILY: &str = "phosphor";
 
 /// Font for painting Phosphor catalog glyphs (overlay buttons, command palette).
-pub(crate) fn glyph_font_id(size: f32) -> FontId {
+pub fn glyph_font_id(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name(PHOSPHOR_FAMILY.into()))
 }
 
@@ -120,25 +120,52 @@ pub fn register_phosphor_family(fonts: &mut egui::FontDefinitions) {
     );
 }
 
-/// Paint a Phosphor glyph with configurable chrome (floating overlay buttons).
-///
-/// When `busy`, the glyph is dimmed and an indeterminate spinner is drawn over it
-/// so the user sees that the bound macro is currently running.
-pub fn paint_glyph_bare(
+/// When `busy`, the glyph is dimmed and a time-based spinner is drawn over it.
+/// Animation frames come from the overlay pointer-wake thread (~50ms) — do not
+/// call `egui::Spinner` (it `request_repaint()`s every frame and thrash-lags games).
+pub(crate) fn paint_glyph_bare(
     ui: &mut egui::Ui,
     icon: &OverlayIcon,
     size: f32,
     busy: bool,
     style: &OverlayPaintStyle,
 ) -> egui::Response {
+    let (response, hit_rect) = allocate_glyph_hit(ui, size, busy);
+    let hovered = response.hovered() && !busy;
+    paint_glyph_contents(ui, icon, hit_rect, size, busy, style, hovered);
+    response
+}
+
+/// Allocate the interact / hit rect for an overlay glyph button.
+pub(crate) fn allocate_glyph_hit(
+    ui: &mut egui::Ui,
+    hit_size: f32,
+    busy: bool,
+) -> (egui::Response, egui::Rect) {
     let sense = if busy {
         egui::Sense::hover()
     } else {
         egui::Sense::click()
     };
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), sense);
-    let hovered = response.hovered() && !busy;
-    paint_overlay_chrome(ui, rect, hovered, style);
+    let (hit_rect, response) = ui.allocate_exact_size(egui::vec2(hit_size, hit_size), sense);
+    (response, hit_rect)
+}
+
+/// Paint glyph chrome into an already-allocated hit rect.
+pub(crate) fn paint_glyph_contents(
+    ui: &mut egui::Ui,
+    icon: &OverlayIcon,
+    hit_rect: egui::Rect,
+    icon_size: f32,
+    busy: bool,
+    style: &OverlayPaintStyle,
+    hovered: bool,
+) {
+    let icon_rect = egui::Rect::from_center_size(hit_rect.center(), egui::vec2(icon_size, icon_size));
+    let hovered = hovered && !busy;
+
+    paint_overlay_chrome(ui, icon_rect, hovered, style);
+
     let color = if busy {
         let c = style.icon;
         Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (c.a() as u16 * 90 / 255) as u8)
@@ -149,22 +176,42 @@ pub fn paint_glyph_bare(
     };
     crate::theme::paint_text_centered(
         ui,
-        rect,
+        icon_rect,
         icon.glyph,
-        glyph_font_id((size * 0.55).round()),
+        glyph_font_id((icon_size * 0.55).round()),
         color,
     );
     if busy {
-        egui::Spinner::new()
-            .size(size * 0.55)
-            .color(style.icon_hover)
-            .paint_at(ui, rect);
+        paint_busy_spinner(ui, icon_rect, style.icon_hover);
     }
-    response
+}
+
+/// Draw an 8-tick spinner from `ui.input.time` (no per-frame request_repaint).
+fn paint_busy_spinner(ui: &mut egui::Ui, rect: egui::Rect, color: Color32) {
+    let time = ui.input(|i| i.time) as f32;
+    let center = rect.center();
+    let r = (rect.width().min(rect.height()) * 0.32).max(4.0);
+    let stroke_w = (r * 0.22).clamp(1.5, 3.0);
+    const TICKS: i32 = 8;
+    for i in 0..TICKS {
+        let phase = time * std::f32::consts::TAU + (i as f32) * (std::f32::consts::TAU / TICKS as f32);
+        let fade = 0.25 + 0.75 * (1.0 - (i as f32) / TICKS as f32);
+        let c = Color32::from_rgba_unmultiplied(
+            color.r(),
+            color.g(),
+            color.b(),
+            ((color.a() as f32) * fade).round().clamp(0.0, 255.0) as u8,
+        );
+        let dir = egui::vec2(phase.cos(), phase.sin());
+        ui.painter().line_segment(
+            [center + dir * (r * 0.45), center + dir * r],
+            egui::Stroke::new(stroke_w, c),
+        );
+    }
 }
 
 /// Compact preview button used in the editor / picker (with selection chrome).
-pub fn icon_glyph_button(
+pub(crate) fn icon_glyph_button(
     ui: &mut egui::Ui,
     icon: &OverlayIcon,
     selected: bool,
@@ -275,7 +322,7 @@ pub fn show_icon_picker_grid(
 
     let mut picked = None;
     let cols = 10;
-    crate::pickers::scroll_vertical()
+    egui::ScrollArea::vertical()
         .max_height(360.0)
         .show(ui, |ui| {
             egui::Grid::new("overlay_icon_picker_grid")

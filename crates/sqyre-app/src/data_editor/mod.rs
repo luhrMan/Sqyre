@@ -331,6 +331,8 @@ impl DataEditor {
     /// Live Overlay-tab form as an on-screen button preview (position, size, icon, label, style).
     ///
     /// Shown while a button is selected for editing, even before Update is clicked.
+    /// Called from `sync_macro_overlay` when `overlay-buttons` is enabled.
+    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
     pub fn overlay_edit_preview(&self) -> Option<OverlayButtonConfig> {
         if !self.open || !matches!(self.tab, EditorTab::Overlay) {
             return None;

@@ -17,7 +17,9 @@ use crate::variables_panel;
 use crate::workspace::Workspace;
 use crate::{docs_fixture, tray, SqyreApp};
 #[cfg(feature = "native-runtime")]
-use crate::{macro_overlay::MacroOverlay, recording_overlay::RecordingOverlay};
+use crate::recording_overlay::RecordingOverlay;
+#[cfg(feature = "native-runtime")]
+use sqyre_overlay::MacroOverlay;
 use eframe::egui;
 use parking_lot::Mutex;
 use sqyre_hotkeys::{HotkeyService, MacroRecordBridge, NullHotkeys, ScreenClickBridge};

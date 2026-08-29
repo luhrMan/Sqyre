@@ -137,6 +137,11 @@ impl RecordingOverlay {
                 self.close_snapshot();
                 self.snapshot_failed = false;
             }
+            // Drop parked outline edges when idle — four X11 windows left mapped
+            // after recording still cost under a fullscreen XWayland game.
+            if preview_outline.is_none() {
+                self.outline = None;
+            }
         }
     }
 
