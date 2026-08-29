@@ -1,4 +1,4 @@
-# Keep in sync with .devcontainer/Dockerfile ARG RUST_VERSION.
+# Keep in sync with .devcontainer/Dockerfile and scripts/windows/Dockerfile ARG RUST_VERSION.
 [toolchain]
 channel = "1.94.0"
 components = ["rustfmt", "clippy"]

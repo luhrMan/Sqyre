@@ -272,6 +272,10 @@ run_docker() {
     -e "RELEASE_VERSION=${RELEASE_VERSION:-}" \
     "$image" \
     bash -c 'set -euo pipefail
+      # Install rust-toolchain.toml channel if needed, then ensure Windows target
+      # (image default may lag the pin; cargo alone installs host only).
+      rustup show >/dev/null
+      rustup target add x86_64-pc-windows-gnu
       cargo build -p sqyre-app --release --target x86_64-pc-windows-gnu ${CARGO_FLAGS:-}
       cp -f "${CARGO_TARGET_DIR:-target}/x86_64-pc-windows-gnu/release/sqyre.exe" /workspace/bin/sqyre.exe
       if command -v sccache >/dev/null && [ -n "${RUSTC_WRAPPER:-}" ]; then
