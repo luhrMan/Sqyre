@@ -15,6 +15,7 @@ members = [
     "crates/sqyre-capture",
     "crates/sqyre-hotkeys",
     "crates/sqyre-update",
+    "crates/sqyre-overlay",
     "crates/sqyre-app",
     "crates/sqyre-probe",
 ]

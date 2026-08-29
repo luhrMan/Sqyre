@@ -1,7 +1,7 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre probe release release-bundle windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
+.PHONY: all sqyre probe overlay-sandbox release release-bundle windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
 	release-gate run tessdata appimage install-desktop docs-media wasm wasm-check help
 
 ROOT := $(abspath .)
@@ -66,6 +66,7 @@ help:
 	@echo "Targets:"
 	@echo "  all / sqyre  - cargo build (debug) -> $(BIN)/sqyre$(BIN_EXT)  [default]"
 	@echo "  probe        - cargo build (debug) -> $(BIN)/sqyre-probe$(BIN_EXT)"
+	@echo "  overlay-sandbox - overlay buttons only (fast; no sqyre-app)"
 	@echo "  release      - fmt + check, then cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
 	@echo "  release-bundle - Linux: release + bundled Tesseract -> $(BIN)/sqyre-bundle/ (no check gate)"
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
@@ -108,6 +109,11 @@ sqyre: $(BIN)
 probe: $(BIN)
 	$(CARGO) build -p sqyre-probe --features portal-capture $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/debug/sqyre-probe$(BIN_EXT) $(BIN)/sqyre-probe$(BIN_EXT)
+
+# Iterate floating overlay buttons without compiling sqyre-app.
+overlay-sandbox: $(BIN)
+	$(CARGO) build -p sqyre-overlay --features sandbox --bin overlay_sandbox $(CARGO_FLAGS)
+	cp -f $(TARGET_DIR)/debug/overlay_sandbox$(BIN_EXT) $(BIN)/overlay_sandbox$(BIN_EXT)
 
 # Sequential fmt → check so release/packaging stays gated under make -j.
 release-gate:

@@ -16,12 +16,14 @@ path = "src/main.rs"
 
 [features]
 # Full desktop runtime: macro execution, screen capture, OCR/vision.
-default = ["native-runtime", "hooks"]
+default = ["native-runtime", "hooks", "overlay-buttons"]
 # Wayland portal ScreenCast + PipeWire (needs libpipewire ≥ 1.0 dev headers).
 portal-capture = ["sqyre-capture/portal-capture", "sqyre-probe/portal-capture"]
-native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-match", "dep:sqyre-capture", "dep:sqyre-probe"]
+native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-match", "dep:sqyre-capture", "dep:sqyre-probe", "sqyre-overlay/runtime"]
 # OS global hotkeys (rdev). Disabled for wasm builds (`--no-default-features`).
 hooks = ["sqyre-hotkeys/hooks"]
+# Floating macro overlay OS windows (Linux: native X11 host thread).
+overlay-buttons = []
 
 [lints]
 workspace = true
@@ -49,6 +51,7 @@ sqyre-serialize = { path = "../sqyre-serialize" }
 sqyre-capture = { path = "../sqyre-capture", optional = true }
 sqyre-probe = { path = "../sqyre-probe", optional = true }
 sqyre-hotkeys = { path = "../sqyre-hotkeys" }
+sqyre-overlay = { path = "../sqyre-overlay", default-features = false }
 sqyre-vision = { path = "../sqyre-vision", optional = true }
 sqyre-match = { path = "../sqyre-match", optional = true }
 serde_yaml = { workspace = true }

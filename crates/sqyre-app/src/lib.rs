@@ -31,9 +31,15 @@ mod linux_focused_keys;
 mod log;
 mod macro_meta;
 #[cfg(feature = "native-runtime")]
-mod macro_overlay;
 mod macro_record;
-mod overlay_icons;
+/// Phosphor overlay icon catalog + paint helpers (lives in `sqyre-overlay`).
+#[allow(unused_imports)] // re-export surface for `crate::overlay_icons::…`
+mod overlay_icons {
+    pub use sqyre_overlay::{
+        catalog, glyph_font_id, register_phosphor_family, resolve, show_icon_picker_grid,
+        style_preview_button, OverlayIcon, OverlayPaintStyle, DEFAULT_ICON_ID,
+    };
+}
 mod paint_ctx;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod permissions_panel;
@@ -264,7 +270,7 @@ pub struct SqyreApp {
     recording_overlay: crate::recording_overlay::RecordingOverlay,
     /// Always-on-top floating buttons that start macros.
     #[cfg(feature = "native-runtime")]
-    macro_overlay: crate::macro_overlay::MacroOverlay,
+    macro_overlay: sqyre_overlay::MacroOverlay,
     /// Left macro-list side panel visibility.
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
@@ -508,7 +514,7 @@ impl SqyreApp {
             #[cfg(feature = "native-runtime")]
             recording_overlay: recording_overlay::RecordingOverlay::new(),
             #[cfg(feature = "native-runtime")]
-            macro_overlay: macro_overlay::MacroOverlay::new(),
+            macro_overlay: sqyre_overlay::MacroOverlay::new(),
             macro_list_open: true,
             macro_list_filter: String::new(),
             tray: tray::SystemTray::default(),
@@ -732,7 +738,7 @@ impl Drop for SqyreApp {
             sqyre_capture::mark_site("app:drop:after_tray");
 
             let t = web_time::Instant::now();
-            self.macro_overlay = macro_overlay::MacroOverlay::new();
+            self.macro_overlay = sqyre_overlay::MacroOverlay::new();
             sqyre_capture::cap_log(
                 "APP",
                 "drop",

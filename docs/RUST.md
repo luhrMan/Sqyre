@@ -28,15 +28,24 @@ Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux bin
 | `sqyre-capture` | `ScreenCapturer` / focus / selection outline (`OsCapturer`, `OsWindowFocuser`: Linux X11, Windows GDI, macOS stub) |
 | `sqyre-hotkeys` | Esc stop / failsafe / macro hotkeys (`hooks` feature; stub default) |
 | `sqyre-update` | GitHub Releases check + self-replace (Linux binary/AppImage, Windows `.exe`) |
+| `sqyre-overlay` | Floating macro overlay buttons + icon catalog (sandbox bin for fast iteration) |
 | `sqyre-app` | egui shell; Run/Stop macros |
 
 ## Develop
 
-Requires **Rust ≥ 1.92** (egui 0.35 / PureCV). The repo pins `1.92.0` via [`rust-toolchain.toml`](../rust-toolchain.toml); the `.devcontainer` matches that plus clang/Tesseract for OCR.
+Requires **Rust ≥ 1.92** (egui 0.35 / PureCV). The repo pins `1.94.0` via [`rust-toolchain.toml`](../rust-toolchain.toml); the `.devcontainer` and Windows cross image match that plus clang/Tesseract for OCR.
 
 Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`, `libxinerama-dev`, `libxfixes-dev`). Windows uses GDI capture plus Win32 focus, selection outline, and low-level hotkey hooks (`windows` crate). macOS capture/focus remain stubbed.
 
 From the repo root:
+
+```bash
+make                 # debug sqyre
+make overlay-sandbox # floating-button harness only (fast)
+cargo run -p sqyre-overlay --features sandbox --bin overlay_sandbox
+# Re-enable overlays in the full app when ready:
+cargo build -p sqyre-app --features portal-capture,overlay-buttons
+```
 
 ```bash
 make                 # ./bin/sqyre (debug)
