@@ -4,6 +4,18 @@
 //! GNOME (ROOT re-registration ~1 Hz). This path owns an override-redirect
 //! window per button and reads ButtonPress/Release on its own `Display`, so
 //! clicks do not wait for the egui ROOT frame.
+//!
+//! # X11 safety (`HostState`)
+//!
+//! All Xlib/`xfixes` use on the host thread assumes:
+//! - `display` is non-null, opened with `XOpenDisplay` on this thread only
+//! - it is registered via [`register_secondary_x_display`] for its lifetime
+//! - `gc` / `root` / `xfd` come from that display and stay valid until close
+//! - every `Window` in `buttons` / `tip` was created on that display and is
+//!   destroyed before `unregister_secondary_x_display` + `XCloseDisplay`
+//!
+//! Thin `x_*` helpers carry a single `SAFETY` contract; larger blocks document
+//! the same invariant at the call boundary (see `x11_focus` for the same style).
 
 use crate::raster::{self, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX};
 use egui::Context as EguiContext;
@@ -135,6 +147,9 @@ struct TipWindow {
     mapped: bool,
 }
 
+/// X11 resources owned exclusively by the overlay host thread.
+///
+/// See module-level **X11 safety** for the invariants every `unsafe` call relies on.
 struct HostState {
     display: *mut Display,
     screen: c_int,
@@ -152,7 +167,8 @@ fn host_loop(
     pending: Arc<Mutex<Vec<String>>>,
     stop: Arc<AtomicBool>,
 ) {
-    // SAFETY: own Display for this thread only.
+    // SAFETY: connects to the default display; pointer is owned by this thread
+    // until unregister + x_close_display below (or the early-error path).
     let display = unsafe { XOpenDisplay(std::ptr::null()) };
     if display.is_null() {
         note("overlay-x11: XOpenDisplay failed");
@@ -160,15 +176,18 @@ fn host_loop(
     }
     register_secondary_x_display(display.cast());
 
+    // SAFETY: `display` just opened and non-null.
     let screen = unsafe { XDefaultScreen(display) };
     let root = unsafe { XDefaultRootWindow(display) };
     let gc = unsafe { XCreateGC(display, root, 0, std::ptr::null_mut()) };
     if gc.is_null() {
         note("overlay-x11: XCreateGC failed");
         unregister_secondary_x_display(display.cast());
-        unsafe { XCloseDisplay(display) };
+        // SAFETY: display still live; nothing else holds it.
+        unsafe { x_close_display(display) };
         return;
     }
+    // SAFETY: `display` non-null; fd is valid for poll until XCloseDisplay.
     let xfd = unsafe { XConnectionNumber(display) };
 
     let mut state = HostState {
@@ -227,19 +246,22 @@ fn host_loop(
                     paint_button(&state, btn);
                 }
             }
-            unsafe { XFlush(state.display) };
+            // SAFETY: HostState display invariant.
+            unsafe { x_flush(state.display) };
         }
 
         wait_x_or_timeout(state.xfd, if any_busy { BUSY_TICK_MS } else { POLL_IDLE_MS });
     }
 
     destroy_all(&mut state);
+    // SAFETY: HostState display/gc still live; windows already destroyed.
     unsafe {
-        XFreeGC(state.display, state.gc);
+        x_free_gc(state.display, state.gc);
     }
     unregister_secondary_x_display(state.display.cast());
+    // SAFETY: unregistered; no further Xlib use of this pointer.
     unsafe {
-        XCloseDisplay(state.display);
+        x_close_display(state.display);
     }
     note("overlay-x11: host thread stopped");
 }
@@ -249,59 +271,55 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
     for spec in specs {
         let id = spec.id.clone();
         keep.insert(id.clone());
-        if state.buttons.contains_key(&id) {
-            let geom_changed = {
-                let live = state.buttons.get(&id).unwrap();
-                live.spec.x != spec.x
-                    || live.spec.y != spec.y
-                    || live.spec.w != spec.w
-                    || live.spec.h != spec.h
-            };
-            let radius_changed = {
-                let live = state.buttons.get(&id).unwrap();
-                (live.spec.corner_radius - spec.corner_radius).abs() > f32::EPSILON
-            };
-            let style_changed = {
-                let live = state.buttons.get(&id).unwrap();
-                live.spec.bg != spec.bg
-                    || live.spec.border != spec.border
-                    || (live.spec.border_width - spec.border_width).abs() > f32::EPSILON
-                    || radius_changed
-                    || live.spec.icon_glyph != spec.icon_glyph
-                    || live.spec.icon != spec.icon
-                    || live.spec.icon_hover != spec.icon_hover
-                    || live.spec.tip != spec.tip
-                    || live.spec.busy != spec.busy
-            };
-            let win = state.buttons.get(&id).unwrap().win;
+        let updated = if let Some(live) = state.buttons.get_mut(&id) {
+            let geom_changed = live.spec.x != spec.x
+                || live.spec.y != spec.y
+                || live.spec.w != spec.w
+                || live.spec.h != spec.h;
+            let radius_changed =
+                (live.spec.corner_radius - spec.corner_radius).abs() > f32::EPSILON;
+            let style_changed = live.spec.bg != spec.bg
+                || live.spec.border != spec.border
+                || (live.spec.border_width - spec.border_width).abs() > f32::EPSILON
+                || radius_changed
+                || live.spec.icon_glyph != spec.icon_glyph
+                || live.spec.icon != spec.icon
+                || live.spec.icon_hover != spec.icon_hover
+                || live.spec.tip != spec.tip
+                || live.spec.busy != spec.busy;
+            let win = live.win;
             if geom_changed {
+                // SAFETY: HostState display invariant; `win` is this button's Xid.
                 unsafe {
-                    XMoveResizeWindow(state.display, win, spec.x, spec.y, spec.w, spec.h);
+                    x_move_resize(state.display, win, spec.x, spec.y, spec.w, spec.h);
                 }
             }
-            if let Some(live) = state.buttons.get_mut(&id) {
-                live.spec = spec;
-            }
-            if geom_changed || radius_changed {
+            live.spec = spec;
+            Some((
+                geom_changed || radius_changed,
+                style_changed || geom_changed,
+                live.spec.w,
+                live.spec.h,
+                live.spec.corner_radius,
+            ))
+        } else {
+            None
+        };
+        if let Some((need_shape, need_paint, w, h, radius)) = updated {
+            let tip_mapped = state
+                .tip
+                .as_ref()
+                .is_some_and(|t| t.mapped && t.for_id == id);
+            if need_shape {
                 if let Some(live) = state.buttons.get(&id) {
-                    apply_rounded_shape(
-                        state.display,
-                        live.win,
-                        live.spec.w,
-                        live.spec.h,
-                        live.spec.corner_radius,
-                    );
+                    apply_rounded_shape(state.display, live.win, w, h, radius);
                 }
             }
-            if style_changed || geom_changed {
+            if need_paint {
                 if let Some(live) = state.buttons.get(&id) {
                     paint_button(state, live);
                 }
-                if state
-                    .tip
-                    .as_ref()
-                    .is_some_and(|t| t.mapped && t.for_id == id)
-                {
+                if tip_mapped {
                     show_tip_for(state, &id);
                 }
             }
@@ -328,19 +346,21 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             if state.tip.as_ref().is_some_and(|t| t.for_id == id) {
                 hide_tip(state);
             }
+            // SAFETY: HostState display invariant; `live.win` created on this display.
             unsafe {
-                XDestroyWindow(state.display, live.win);
+                x_destroy_window(state.display, live.win);
             }
         }
     }
+    // SAFETY: HostState display invariant.
     unsafe {
-        XFlush(state.display);
+        x_flush(state.display);
     }
 }
 
 fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton, String> {
     let bg_pixel = alloc_color(state, spec.bg);
-    // SAFETY: state.display is live for this thread.
+    // SAFETY: HostState display invariant — create/configure/map on this thread's Display.
     let win = unsafe {
         let mut attrs: XSetWindowAttributes = std::mem::zeroed();
         attrs.background_pixel = bg_pixel;
@@ -449,8 +469,9 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
         .unwrap_or(true);
     if need_new {
         if let Some(old) = state.tip.take() {
+            // SAFETY: HostState display invariant; tip win created on this display.
             unsafe {
-                XDestroyWindow(state.display, old.win);
+                x_destroy_window(state.display, old.win);
             }
         }
         match create_tip_window(state, tip_x, tip_y, tw, th) {
@@ -472,17 +493,19 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
     } else if let Some(tip) = state.tip.as_mut() {
         tip.for_id = button_id.to_string();
         tip.text = tip_text.clone();
+        // SAFETY: HostState display invariant; tip.win is live on this display.
         unsafe {
-            XMoveResizeWindow(state.display, tip.win, tip_x, tip_y, tw, th);
-            XMapRaised(state.display, tip.win);
-            tip.mapped = true;
+            x_move_resize(state.display, tip.win, tip_x, tip_y, tw, th);
+            x_map_raised(state.display, tip.win);
         }
+        tip.mapped = true;
     }
     if let Some(tip) = state.tip.as_ref() {
         apply_tip_shape(state.display, tip.win, tip.w, tip.h);
         blit_rgba(state, tip.win, tip.w, tip.h, &rgba);
+        // SAFETY: HostState display invariant.
         unsafe {
-            XFlush(state.display);
+            x_flush(state.display);
         }
     }
 }
@@ -490,9 +513,10 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
 fn hide_tip(state: &mut HostState) {
     if let Some(tip) = state.tip.as_mut() {
         if tip.mapped {
+            // SAFETY: HostState display invariant; tip.win is mapped on this display.
             unsafe {
-                XUnmapWindow(state.display, tip.win);
-                XFlush(state.display);
+                x_unmap(state.display, tip.win);
+                x_flush(state.display);
             }
             tip.mapped = false;
         }
@@ -509,6 +533,7 @@ fn create_tip_window(
     h: u32,
 ) -> Result<Window, String> {
     let bg_pixel = alloc_color(state, TIP_BG_RGB);
+    // SAFETY: HostState display invariant — tip window lifecycle matches buttons.
     unsafe {
         let mut attrs: XSetWindowAttributes = std::mem::zeroed();
         attrs.background_pixel = bg_pixel;
@@ -548,6 +573,7 @@ fn create_tip_window(
 /// Rounded bounding + empty input so the tip never steals hover from the button.
 fn apply_tip_shape(display: *mut Display, win: Window, w: u32, h: u32) {
     apply_rounded_shape(display, win, w, h, TIP_CORNER_PX);
+    // SAFETY: callers pass the host-thread display and a tip window created on it.
     unsafe {
         let mut event_base = 0;
         let mut error_base = 0;
@@ -564,6 +590,8 @@ fn apply_tip_shape(display: *mut Display, win: Window, w: u32, h: u32) {
 }
 
 fn blit_rgba(state: &HostState, win: Window, w: u32, h: u32, rgba: &[u8]) {
+    // SAFETY: HostState display/gc invariant; `win` is a button/tip on this display.
+    // `XCreateImage` borrows `packed` until we null `data` and destroy the image.
     unsafe {
         let visual = XDefaultVisual(state.display, state.screen);
         let depth = XDefaultDepth(state.display, state.screen);
@@ -639,16 +667,19 @@ fn place_channel(value: u8, mask: u64) -> u32 {
 
 fn drain_x_events(state: &mut HostState) {
     loop {
+        // SAFETY: HostState display invariant.
         let pending = unsafe { XPending(state.display) };
         if pending <= 0 {
             break;
         }
+        // SAFETY: `event` is written by XNextEvent before any field reads below.
         let mut event: XEvent = unsafe { std::mem::zeroed() };
         unsafe {
             XNextEvent(state.display, &mut event);
         }
         let ty = event.get_type();
         if ty == Expose {
+            // SAFETY: event type is Expose; expose union member is initialized.
             let win = unsafe { event.expose.window };
             if state.tip.as_ref().is_some_and(|t| t.win == win && t.mapped) {
                 if let Some(tip) = state.tip.as_ref() {
@@ -672,6 +703,7 @@ fn drain_x_events(state: &mut HostState) {
             continue;
         }
         if ty == EnterNotify || ty == LeaveNotify {
+            // SAFETY: event type is Enter/Leave; crossing union member is initialized.
             let win = unsafe { event.crossing.window };
             let enter = ty == EnterNotify;
             let id = state
@@ -705,6 +737,7 @@ fn drain_x_events(state: &mut HostState) {
             continue;
         }
         if ty == ButtonPress {
+            // SAFETY: event type is ButtonPress; XButtonEvent overlay is valid.
             let win = unsafe {
                 let b = &*( &event as *const XEvent as *const x11::xlib::XButtonEvent);
                 b.window
@@ -717,6 +750,7 @@ fn drain_x_events(state: &mut HostState) {
             continue;
         }
         if ty == ButtonRelease {
+            // SAFETY: event type is ButtonRelease; XButtonEvent overlay is valid.
             let win = unsafe {
                 let b = &*( &event as *const XEvent as *const x11::xlib::XButtonEvent);
                 b.window
@@ -740,29 +774,34 @@ fn drain_x_events(state: &mut HostState) {
             }
         }
     }
+    // SAFETY: HostState display invariant.
     unsafe {
-        XFlush(state.display);
+        x_flush(state.display);
     }
 }
 
 fn destroy_all(state: &mut HostState) {
     hide_tip(state);
     if let Some(tip) = state.tip.take() {
+        // SAFETY: HostState display invariant; tip win created on this display.
         unsafe {
-            XDestroyWindow(state.display, tip.win);
+            x_destroy_window(state.display, tip.win);
         }
     }
     for (_, live) in state.buttons.drain() {
+        // SAFETY: HostState display invariant; button wins created on this display.
         unsafe {
-            XDestroyWindow(state.display, live.win);
+            x_destroy_window(state.display, live.win);
         }
     }
+    // SAFETY: HostState display invariant; flushes outstanding requests before close.
     unsafe {
-        XSync(state.display, False);
+        x_sync(state.display);
     }
 }
 
 fn alloc_color(state: &HostState, rgb: [u8; 3]) -> c_ulong {
+    // SAFETY: HostState display invariant.
     unsafe {
         let cmap = XDefaultColormap(state.display, state.screen);
         let mut color = XColor {
@@ -782,6 +821,49 @@ fn alloc_color(state: &HostState, rgb: [u8; 3]) -> c_ulong {
     }
 }
 
+// --- Thin Xlib wrappers (HostState display / window invariants) ---------------
+
+// SAFETY: `display` is a live host-thread connection (see module docs).
+unsafe fn x_flush(display: *mut Display) {
+    XFlush(display);
+}
+
+// SAFETY: `display` live; `win` was created on it and not yet destroyed.
+unsafe fn x_destroy_window(display: *mut Display, win: Window) {
+    XDestroyWindow(display, win);
+}
+
+// SAFETY: `display` live; `win` was created on it and not yet destroyed.
+unsafe fn x_move_resize(display: *mut Display, win: Window, x: i32, y: i32, w: u32, h: u32) {
+    XMoveResizeWindow(display, win, x, y, w, h);
+}
+
+// SAFETY: `display` live; `win` was created on it and not yet destroyed.
+unsafe fn x_unmap(display: *mut Display, win: Window) {
+    XUnmapWindow(display, win);
+}
+
+// SAFETY: `display` live; `win` was created on it and not yet destroyed.
+unsafe fn x_map_raised(display: *mut Display, win: Window) {
+    XMapRaised(display, win);
+}
+
+// SAFETY: `display` live for this thread.
+unsafe fn x_sync(display: *mut Display) {
+    XSync(display, False);
+}
+
+// SAFETY: `display` live; `gc` was created with XCreateGC on it and not freed.
+unsafe fn x_free_gc(display: *mut Display, gc: *mut x11::xlib::_XGC) {
+    XFreeGC(display, gc);
+}
+
+// SAFETY: `display` from XOpenDisplay on this thread; no further use after return.
+unsafe fn x_close_display(display: *mut Display) {
+    XCloseDisplay(display);
+}
+
+// SAFETY: callers pass a live host-thread `display` and a `win` created on it.
 unsafe fn set_net_wm_type_notification(display: *mut Display, win: Window) {
     let ty = XInternAtom(
         display,
@@ -811,6 +893,7 @@ unsafe fn set_net_wm_type_notification(display: *mut Display, win: Window) {
     );
 }
 
+// SAFETY: callers pass a live host-thread `display`, its root, and a `win` on it.
 unsafe fn set_skip_taskbar_state(display: *mut Display, root: Window, win: Window) {
     let state = XInternAtom(
         display,
@@ -878,6 +961,7 @@ fn wait_x_or_timeout(xfd: RawFd, timeout_ms: u64) {
         events: libc::POLLIN,
         revents: 0,
     };
+    // SAFETY: `xfd` is XConnectionNumber for the live host Display; poll only reads readiness.
     unsafe {
         libc::poll(&mut fds, 1, timeout_ms as c_int);
     }
@@ -885,6 +969,7 @@ fn wait_x_or_timeout(xfd: RawFd, timeout_ms: u64) {
 
 /// Opaque window + XFixes rounded Bounding/Input — corners look punched out without ARGB lag.
 fn apply_rounded_shape(display: *mut Display, win: Window, w: u32, h: u32, radius_px: f32) {
+    // SAFETY: callers pass the host-thread display and a window created on it.
     unsafe {
         let mut event_base = 0;
         let mut error_base = 0;
