@@ -644,7 +644,9 @@ pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
     if got.is_empty() {
         let name = win.process_name.trim();
         return !name.is_empty()
-            && (name.eq_ignore_ascii_case(want) || name.eq_ignore_ascii_case(&want_base));
+            && (name.eq_ignore_ascii_case(want)
+                || name.eq_ignore_ascii_case(&want_base)
+                || wine_preloader_names_equivalent(name, &want_base));
     }
     if got.eq_ignore_ascii_case(want) {
         return true;
@@ -653,7 +655,26 @@ pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
         .unwrap_or_else(|| got.to_lowercase());
-    !want_base.is_empty() && want_base == got_base
+    if !want_base.is_empty() && want_base == got_base {
+        return true;
+    }
+    // Proton/Wine: active window may report `wine-preloader` while the catalog was
+    // bound against `wine64-preloader` (or the reverse) under the same tree.
+    wine_preloader_names_equivalent(&want_base, &got_base)
+}
+
+/// `wine-preloader` and `wine64-preloader` are interchangeable for focus matching.
+fn wine_preloader_names_equivalent(a: &str, b: &str) -> bool {
+    fn norm(s: &str) -> Option<&'static str> {
+        match s.trim().to_lowercase().as_str() {
+            "wine-preloader" | "wine64-preloader" => Some("wine-preloader"),
+            _ => None,
+        }
+    }
+    match (norm(a), norm(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
 }
 
 /// Exact trim match of window title (Focus Window / overlay binding parity).
@@ -781,6 +802,24 @@ mod tests {
         ));
         assert!(super::window_matches_title(&w, " Game A "));
         assert!(!super::window_matches_title(&w, "Game B"));
+    }
+
+    #[test]
+    fn window_matches_proton_wine_preloader_aliases() {
+        let w = WindowInfo {
+            title: "Mistfall Hunter".into(),
+            process_name: "GameThread".into(),
+            process_path: "/var/home/chris/.local/share/Steam/steamapps/common/Proton - Experimental/files/lib/wine/x86_64-unix/wine-preloader".into(),
+            icon: None,
+        };
+        let catalog = "/var/home/chris/.local/share/Steam/steamapps/common/Proton - Experimental/files/lib/wine/x86_64-unix/wine64-preloader";
+        assert!(super::window_matches_process(&w, catalog));
+        assert!(super::window_matches_binding(
+            &w,
+            catalog,
+            "Mistfall Hunter"
+        ));
+        assert!(!super::window_matches_binding(&w, catalog, "Other Game"));
     }
 
     #[test]
