@@ -128,6 +128,12 @@ impl HookCtx {
                 if let Some(btn) = record_button(*button) {
                     self.macro_record.on_button(btn, false);
                 }
+                if matches!(button, Button::Left)
+                    && self.screen_click.is_armed()
+                    && !self.screen_click.block_hook_clicks()
+                {
+                    self.screen_click.on_left_release();
+                }
             }
             EventType::KeyPress(key) => {
                 if let Some(name) = rdev_key_name(*key) {

@@ -1,8 +1,11 @@
-//! Frozen desktop snapshot as an X11 override-redirect cover.
+//! Fullscreen mouse-owning selection cover (X11 override-redirect).
 //!
 //! Used on GNOME/Wayland while Point / Color / SearchArea recording is armed so
-//! pointer events land on our window instead of an XWayland game. The gold
-//! rubber-band is painted onto this cover (separate edge windows sit under it).
+//! pointer events land on our window instead of an XWayland game.
+//!
+//! - [`FrozenSelectionOverlay::capture_and_open`]: freeze pixmap + gold stroke.
+//! - [`FrozenSelectionOverlay::open_input_cover`]: invisible `InputOnly` hit-test
+//!   cover; the gold rubber-band is drawn by [`crate::SelectionOutline`] edges.
 
 use crate::outline_geometry::{
     edge_placements, outline_should_clear, STROKE_B, STROKE_G, STROKE_R,
@@ -15,15 +18,15 @@ use sqyre_ports::DesktopRect;
 use std::os::raw::{c_char, c_int, c_uint, c_ulong};
 use std::ptr;
 use x11::xlib::{
-    ButtonPress, ButtonPressMask, ButtonReleaseMask, CWBackingStore, CWBorderPixel, CWEventMask,
-    CWOverrideRedirect, CurrentTime, Display, Expose, ExposureMask, InputOutput, KeyPress,
-    KeyPressMask, LSBFirst, MotionNotify, PointerMotionMask, RevertToParent, True, WhenMapped,
-    Window, XAllocColor, XCloseDisplay, XColor, XCopyArea, XCreateFontCursor, XCreateGC,
-    XCreateImage, XCreatePixmap, XCreateWindow, XDefaultColormap, XDefaultDepth,
-    XDefaultRootWindow, XDefaultScreen, XDefaultVisual, XDefineCursor, XDestroyImage,
+    ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask, CWBackingStore, CWBorderPixel,
+    CWEventMask, CWOverrideRedirect, CurrentTime, Display, Expose, ExposureMask, InputOnly,
+    InputOutput, KeyPress, KeyPressMask, LSBFirst, MotionNotify, PointerMotionMask, RevertToParent,
+    True, WhenMapped, Window, XAllocColor, XClearWindow, XCloseDisplay, XColor, XCopyArea,
+    XCreateFontCursor, XCreateGC, XCreateImage, XCreatePixmap, XCreateWindow, XDefaultColormap,
+    XDefaultDepth, XDefaultRootWindow, XDefaultScreen, XDefaultVisual, XDefineCursor, XDestroyImage,
     XDestroyWindow, XEvent, XFillRectangle, XFlush, XFreeCursor, XFreeGC, XFreePixmap,
     XKeycodeToKeysym, XMapRaised, XNextEvent, XOpenDisplay, XPending, XPutImage, XSelectInput,
-    XSetForeground, XSetInputFocus, XSetWindowAttributes, XSetWindowBackgroundPixmap, XSync,
+    XSetForeground, XSetInputFocus, XSetWindowAttributes, XSetWindowBackgroundPixmap,
     XUnmapWindow, ZPixmap, _XDisplay,
 };
 
@@ -45,7 +48,10 @@ impl FrozenFrame {
     }
 }
 
-/// Fullscreen frozen screenshot that owns pointer/Esc while recording is armed.
+/// Fullscreen selection cover that owns pointer/Esc while recording is armed.
+///
+/// Either a freeze pixmap (`capture_and_open`) or a nearly-transparent input
+/// cover (`open_input_cover`) with `pixmap == 0`.
 pub struct FrozenSelectionOverlay {
     display: *mut _XDisplay,
     window: Window,
@@ -66,12 +72,28 @@ pub struct FrozenSelectionOverlay {
 unsafe impl Send for FrozenSelectionOverlay {}
 
 impl FrozenSelectionOverlay {
+    /// Map an invisible `InputOnly` cover over the virtual desktop (no freeze).
+    ///
+    /// Owns pointer/Esc so clicks do not reach windows underneath. Draw the gold
+    /// rubber-band with [`crate::SelectionOutline`] — this cover has no pixels.
+    pub fn open_input_cover() -> Result<Self, CaptureError> {
+        crate::mark_site("snapshot:input_cover");
+        let bounds = input_cover_bounds()?;
+        // SAFETY: `XOpenDisplay(null)` is null-checked; failure paths close it.
+        unsafe { open_input_overlay(bounds) }
+    }
+
     /// Capture the current desktop and map a cover window over it.
     pub fn capture_and_open() -> Result<Self, CaptureError> {
+        crate::mark_site("snapshot:capture_start");
         let cap = crate::shared_capturer_nonblocking()?;
         let bounds = cap.virtual_bounds_ref()?;
+        crate::mark_site("snapshot:capture_rect");
         let image = cap.capture_rect_ref(bounds)?;
-        Self::open(image, bounds)
+        crate::mark_site("snapshot:map");
+        let overlay = Self::open(image, bounds)?;
+        crate::mark_site("snapshot:ready");
+        Ok(overlay)
     }
 
     /// Map `image` as an override-redirect window at `bounds`.
@@ -105,9 +127,20 @@ impl FrozenSelectionOverlay {
         }
     }
 
-    /// Sample `rrggbb` from the freeze at absolute desktop `(x, y)`.
+    /// Sample `rrggbb` from a freeze pixmap at absolute desktop `(x, y)`.
+    ///
+    /// Input covers have no freeze pixels — returns `None` so callers fall back
+    /// to live capture.
     pub fn sample_hex(&self, x: i32, y: i32) -> Option<String> {
+        if self.pixmap == 0 {
+            return None;
+        }
         sample_hex(&self.image, self.bounds, x, y)
+    }
+
+    /// True when this cover holds a real freeze pixmap (not an input-only cover).
+    pub fn has_freeze_pixels(&self) -> bool {
+        self.pixmap != 0
     }
 
     /// Paint or clear the gold rubber-band in window-local coordinates.
@@ -169,8 +202,10 @@ impl FrozenSelectionOverlay {
                 );
             }
         }
+        // Expose: refill from the background pixmap (cheap) then redraw gold.
+        // Never full-desktop XCopyArea here — that stalls GNOME/XWayland.
         if self.needs_paint {
-            self.paint(self.last_rect);
+            self.repaint_from_background();
             self.needs_paint = false;
         }
         out.x = self.last_pos.0;
@@ -178,28 +213,15 @@ impl FrozenSelectionOverlay {
         out
     }
 
-    fn paint(&mut self, rect: Option<OutlineRect>) {
-        if self.display.is_null() || self.window == 0 || self.pixmap == 0 || self.gc.is_null() {
+    /// Redraw via `XClearWindow` (freeze pixmap or translucent black) + gold edges.
+    fn repaint_from_background(&mut self) {
+        if self.display.is_null() || self.window == 0 || self.gc.is_null() {
             return;
         }
-        let w = self.bounds.w.max(1) as c_uint;
-        let h = self.bounds.h.max(1) as c_uint;
-        // SAFETY: display/window/pixmap/GC are live; copy restores the freeze then
-        // gold bars are filled in window-local pixels.
+        // SAFETY: live display/window/GC.
         unsafe {
-            XCopyArea(
-                self.display,
-                self.pixmap,
-                self.window,
-                self.gc,
-                0,
-                0,
-                w,
-                h,
-                0,
-                0,
-            );
-            if let Some(rect) = rect {
+            XClearWindow(self.display, self.window);
+            if let Some(rect) = self.last_rect {
                 XSetForeground(self.display, self.gc, self.gold_pixel);
                 for (x, y, ew, eh) in window_local_edges(self.bounds, rect) {
                     XFillRectangle(self.display, self.window, self.gc, x, y, ew, eh);
@@ -208,14 +230,51 @@ impl FrozenSelectionOverlay {
             XFlush(self.display);
         }
     }
+
+    /// Draw `rect` gold edges. Freeze mode restores prior stroke from the pixmap.
+    /// Input covers (`pixmap == 0`) have no drawable pixels — outline edges paint instead.
+    fn paint(&mut self, rect: Option<OutlineRect>) {
+        if self.display.is_null() || self.window == 0 || self.gc.is_null() || self.pixmap == 0 {
+            return;
+        }
+        let t0 = std::time::Instant::now();
+        // SAFETY: display/window/GC/pixmap are live for freeze covers.
+        unsafe {
+            if let Some(prev) = self.last_rect {
+                blit_edges_from_pixmap(
+                    self.display,
+                    self.pixmap,
+                    self.window,
+                    self.gc,
+                    self.bounds,
+                    prev,
+                );
+            }
+            if let Some(rect) = rect {
+                XSetForeground(self.display, self.gc, self.gold_pixel);
+                for (x, y, ew, eh) in window_local_edges(self.bounds, rect) {
+                    XFillRectangle(self.display, self.window, self.gc, x, y, ew, eh);
+                }
+            }
+            XFlush(self.display);
+        }
+        let ms = t0.elapsed().as_millis();
+        if ms >= 32 {
+            crate::note(&format!(
+                "snapshot paint slow ms={ms} edges={}",
+                rect.is_some()
+            ));
+        }
+    }
 }
 
 impl Drop for FrozenSelectionOverlay {
     fn drop(&mut self) {
         crate::mark_site("snapshot:drop:start");
         let t0 = std::time::Instant::now();
-        // SAFETY: destroy only resources we created on `self.display`. Skip
-        // XFlush / XCloseDisplay — they hitch under fullscreen XWayland games.
+        // SAFETY: destroy only resources we created on `self.display`.
+        // Must flush/close: skipping XFlush left the override-redirect cover
+        // mapped on GNOME/XWayland until process exit (screen looked "frozen").
         unsafe {
             if !self.display.is_null() {
                 if self.window != 0 {
@@ -235,7 +294,10 @@ impl Drop for FrozenSelectionOverlay {
                     XFreeCursor(self.display, self.cursor);
                     self.cursor = 0;
                 }
+                // Flush destroy before closing so the compositor drops the cover.
+                XFlush(self.display);
                 crate::x11_secondary::unregister(self.display);
+                XCloseDisplay(self.display);
                 self.display = ptr::null_mut();
             }
         }
@@ -267,6 +329,129 @@ unsafe fn open_overlay(
             Err(e)
         }
     }
+}
+
+fn input_cover_bounds() -> Result<DesktopRect, CaptureError> {
+    if let Ok(cap) = crate::shared_capturer_nonblocking() {
+        if let Ok(b) = cap.virtual_bounds_ref() {
+            if b.w > 0 && b.h > 0 {
+                return Ok(b);
+            }
+        }
+    }
+    let rects = crate::preferred_monitor_rects();
+    let mut iter = rects.into_iter();
+    let Some(first) = iter.next() else {
+        return Err(CaptureError::Message(
+            "no monitor rects for selection cover".into(),
+        ));
+    };
+    Ok(iter.fold(first, |acc, r| DesktopRect {
+        x: acc.x.min(r.x),
+        y: acc.y.min(r.y),
+        w: (acc.x + acc.w).max(r.x + r.w) - acc.x.min(r.x),
+        h: (acc.y + acc.h).max(r.y + r.h) - acc.y.min(r.y),
+    }))
+}
+
+/// Invisible but still hit-tested (`InputOnly`, same idea as [`crate::SelectionGrab`]).
+unsafe fn open_input_overlay(bounds: DesktopRect) -> Result<FrozenSelectionOverlay, CaptureError> {
+    let display = XOpenDisplay(ptr::null());
+    if display.is_null() {
+        return Err(CaptureError::Message(
+            "XOpenDisplay failed for selection cover (need X11)".into(),
+        ));
+    }
+    crate::x11_secondary::register(display);
+    match map_input_overlay(display, bounds) {
+        Ok(overlay) => Ok(overlay),
+        Err(e) => {
+            crate::x11_secondary::unregister(display);
+            XCloseDisplay(display);
+            Err(e)
+        }
+    }
+}
+
+unsafe fn map_input_overlay(
+    display: *mut Display,
+    bounds: DesktopRect,
+) -> Result<FrozenSelectionOverlay, CaptureError> {
+    let screen = XDefaultScreen(display);
+    let root = XDefaultRootWindow(display);
+    let width = bounds.w.max(1) as c_uint;
+    let height = bounds.h.max(1) as c_uint;
+
+    let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+    attrs.override_redirect = True;
+    let window = XCreateWindow(
+        display,
+        root,
+        bounds.x,
+        bounds.y,
+        width,
+        height,
+        0,
+        0,
+        InputOnly as c_uint,
+        ptr::null_mut(),
+        CWOverrideRedirect,
+        &mut attrs,
+    );
+    if window == 0 {
+        return Err(CaptureError::Message(
+            "XCreateWindow failed for selection cover".into(),
+        ));
+    }
+
+    XSelectInput(
+        display,
+        window,
+        ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask,
+    );
+    let screen_w = x11::xlib::XDisplayWidth(display, screen);
+    let screen_h = x11::xlib::XDisplayHeight(display, screen);
+    let cached_rects = crate::x11_capture::xinerama_monitor_rects_on(
+        display,
+        DesktopRect {
+            x: 0,
+            y: 0,
+            w: screen_w,
+            h: screen_h,
+        },
+    );
+    let cursor = XCreateFontCursor(display, XC_CROSSHAIR);
+    XDefineCursor(display, window, cursor);
+    XMapRaised(display, window);
+    let _ = XSetInputFocus(display, window, RevertToParent, CurrentTime);
+    XFlush(display);
+
+    crate::event_log(
+        "SQYRE_SNAPSHOT",
+        &[
+            ("op", "input_cover"),
+            (
+                "size",
+                &format!("{}x{}+{}+{}", width, height, bounds.x, bounds.y),
+            ),
+        ],
+    );
+    crate::mark_site("snapshot:ready");
+
+    Ok(FrozenSelectionOverlay {
+        display,
+        window,
+        pixmap: 0,
+        gc: ptr::null_mut(),
+        cursor,
+        bounds,
+        image: RgbaImage::new(1, 1),
+        last_pos: (bounds.x, bounds.y),
+        gold_pixel: 0,
+        last_rect: None,
+        needs_paint: false,
+        cached_rects,
+    })
 }
 
 unsafe fn map_overlay(
@@ -381,9 +566,11 @@ unsafe fn map_overlay(
     let cursor = XCreateFontCursor(display, XC_CROSSHAIR);
     XDefineCursor(display, window, cursor);
     XMapRaised(display, window);
+    // Show the freeze background pixmap without a full XCopyArea/XSync (both
+    // stall hard on large GNOME/XWayland virtual desktops).
+    XClearWindow(display, window);
     let _ = XSetInputFocus(display, window, RevertToParent, CurrentTime);
     XFlush(display);
-    XSync(display, 0);
 
     crate::event_log(
         "SQYRE_SNAPSHOT",
@@ -430,6 +617,13 @@ unsafe fn apply_x_event(
         out.moved = true;
         if button.button == 1 {
             out.left_clicks = out.left_clicks.saturating_add(1);
+        }
+    } else if ty == ButtonRelease {
+        let button = &*(event as *const XEvent as *const x11::xlib::XButtonEvent);
+        *last_pos = (button.x_root, button.y_root);
+        out.moved = true;
+        if button.button == 1 {
+            out.left_releases = out.left_releases.saturating_add(1);
         }
     } else if ty == KeyPress {
         let key = &*(event as *const XEvent as *const x11::xlib::XKeyEvent);
@@ -478,6 +672,30 @@ fn window_local_edges(bounds: DesktopRect, rect: OutlineRect) -> Vec<(i32, i32, 
             clip_to_window(x - bounds.x, y - bounds.y, w, h, bounds.w, bounds.h)
         })
         .collect()
+}
+
+unsafe fn blit_edges_from_pixmap(
+    display: *mut Display,
+    pixmap: c_ulong,
+    window: Window,
+    gc: x11::xlib::GC,
+    bounds: DesktopRect,
+    rect: OutlineRect,
+) {
+    for (x, y, ew, eh) in window_local_edges(bounds, rect) {
+        XCopyArea(
+            display,
+            pixmap,
+            window,
+            gc,
+            x,
+            y,
+            ew,
+            eh,
+            x,
+            y,
+        );
+    }
 }
 
 fn clip_to_window(

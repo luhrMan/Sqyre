@@ -643,8 +643,15 @@ impl eframe::App for SqyreApp {
         if self.hidden_for_recording
             && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed())
         {
+            // Poll grab/snapshot while the main window is unmapped. If the
+            // completing click lands this frame, fall through so visibility is
+            // restored and Data Editor can take the recorded point/area —
+            // otherwise the wake poller stops and the frozen cover stays up.
             self.sync_recording_overlay(ui.ctx());
-            return;
+            if self.screen_click.is_armed() || self.macro_record_bridge.is_armed() {
+                return;
+            }
+            self.update_recording_visibility(ui.ctx());
         }
         #[cfg(not(target_arch = "wasm32"))]
         if self.tray.application_hidden() {

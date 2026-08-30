@@ -54,6 +54,21 @@ impl SystemTray {
         false
     }
 
+    /// Map/unmap the root window the same way as the tray Hide/Show path.
+    ///
+    /// Recording hide must call this (not only `ViewportCommand::Visible`) —
+    /// on XWayland, viewport cmds alone can leave the window unmapped after
+    /// search-area / point recording finishes, which looks like a freeze.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_root_visible(&self, ctx: &Context, visible: bool) {
+        set_application_visible(ctx, self.root_window.as_ref(), visible);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn set_root_visible(&self, ctx: &Context, visible: bool) {
+        let _ = (self, ctx, visible);
+    }
+
     /// Apply tray menu actions on the egui/UI thread (`App::logic`, including while hidden).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn poll_commands(&self, ctx: &Context, frame: &eframe::Frame) {
