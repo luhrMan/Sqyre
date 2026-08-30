@@ -100,13 +100,16 @@ impl DataEditor {
         let current = self.form_overlay_icon.clone();
         let mut open = true;
         let mut close = false;
-        egui::Window::new("Choose overlay icon")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(true)
-            .default_size([420.0, 480.0])
-            .default_pos(egui::pos2(120.0, 80.0))
-            .show(ctx, |ui| {
+        crate::widgets::fit_dialog_window(
+            egui::Window::new("Choose overlay icon")
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(true)
+                .default_size([420.0, 480.0])
+                .default_pos(egui::pos2(120.0, 80.0)),
+            ctx,
+        )
+        .show(ctx, |ui| {
                 ui.weak("Phosphor Icons — search by name, then click to select.");
                 ui.add_space(4.0);
                 if let Some(id) = overlay_icons::show_icon_picker_grid(

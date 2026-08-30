@@ -92,11 +92,14 @@ impl VariablesPanelUi {
         let num_monitors = self.resolve_monitor_count();
         let mut persist = false;
         let mut open = self.open;
-        egui::Window::new(format!("Variables — {}", macro_.name))
-            .open(&mut open)
-            .default_width(520.0)
-            .default_height(480.0)
-            .show(ctx, |ui| {
+        crate::widgets::fit_dialog_window(
+            egui::Window::new(format!("Variables — {}", macro_.name))
+                .open(&mut open)
+                .default_width(520.0)
+                .default_height(480.0),
+            ctx,
+        )
+        .show(ctx, |ui| {
                 ui.add_enabled_ui(enabled, |ui| {
                     persist |= self.body(ui, macro_);
                 });

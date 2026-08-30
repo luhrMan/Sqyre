@@ -118,17 +118,20 @@ impl CommandPaletteUi {
             });
 
         let mut open = self.open;
-        egui::Window::new("Command palette")
-            .id(egui::Id::new(WINDOW_ID))
-            .title_bar(false)
-            .collapsible(false)
-            .resizable(false)
-            .anchor(egui::Align2::CENTER_TOP, [0.0, 72.0])
-            .default_size([520.0, 380.0])
-            .min_size([400.0, 200.0])
-            .order(egui::Order::Foreground)
-            .open(&mut open)
-            .show(ctx, |ui| {
+        crate::widgets::fit_dialog_window(
+            egui::Window::new("Command palette")
+                .id(egui::Id::new(WINDOW_ID))
+                .title_bar(false)
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_TOP, [0.0, 72.0])
+                .default_size([520.0, 380.0])
+                .min_size([400.0, 200.0])
+                .order(egui::Order::Foreground)
+                .open(&mut open),
+            ctx,
+        )
+        .show(ctx, |ui| {
                 let (esc, enter, down, up) = ui.input_mut(|i| {
                     (
                         i.consume_key(Modifiers::NONE, Key::Escape),

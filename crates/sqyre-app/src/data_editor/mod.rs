@@ -469,14 +469,16 @@ impl DataEditor {
         self.poll_screen_click(env, previews);
         let mut open = self.open;
         let ctx = env.ctx;
-        egui::Window::new(WINDOW_TITLE)
-            .open(&mut open)
-            .default_size([880.0, 560.0])
-            .min_size([520.0, 280.0])
-            // No huge max_size — egui auto-expands toward max when content min_size ratchets.
-            .resizable(true)
-            .constrain(true)
-            .show(ctx, |ui| {
+        crate::widgets::fit_dialog_window(
+            egui::Window::new(WINDOW_TITLE)
+                .open(&mut open)
+                .default_size([880.0, 560.0])
+                .min_size([520.0, 280.0])
+                // No huge max_size — egui auto-expands toward max when content min_size ratchets.
+                .resizable(true),
+            ctx,
+        )
+        .show(ctx, |ui| {
                 self.ui(ui, env, selected_macro, previews);
             });
         self.open = open;

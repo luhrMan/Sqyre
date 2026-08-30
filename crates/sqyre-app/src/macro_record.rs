@@ -268,7 +268,7 @@ fn paint_review(
     let mut adopt_nearby: Option<(usize, String, String)> = None;
     let known_vars = collect_known_variable_names(draft);
 
-    let screen = ctx.content_rect();
+    let screen = crate::widgets::dialog_constrain_rect(ctx);
     let default_w = (screen.width() * 0.75).max(480.0);
     let default_h = (screen.height() * 0.50).max(320.0);
     let default_pos = egui::pos2(
@@ -276,14 +276,16 @@ fn paint_review(
         screen.center().y - default_h * 0.5,
     );
 
-    egui::Window::new("Recorded actions")
-        .collapsible(false)
-        .resizable(true)
-        .default_size([default_w, default_h])
-        .default_pos(default_pos)
-        .min_size([400.0, 280.0])
-        .constrain(true)
-        .show(ctx, |ui| {
+    crate::widgets::fit_dialog_window(
+        egui::Window::new("Recorded actions")
+            .collapsible(false)
+            .resizable(true)
+            .default_size([default_w, default_h])
+            .default_pos(default_pos)
+            .min_size([400.0, 280.0]),
+        ctx,
+    )
+    .show(ctx, |ui| {
             is_dark = ui.visuals().dark_mode;
             ui.label(
                 "Hover for view tip, right-click or double-click to edit. Copy and paste into a macro.",

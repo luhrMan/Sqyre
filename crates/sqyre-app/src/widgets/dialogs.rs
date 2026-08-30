@@ -1,6 +1,54 @@
 //! Shared dialog chrome: Save/Cancel and Confirm/Cancel rows.
 
 use eframe::egui::{self, Key, Modifiers};
+use egui::containers::scroll_area::{DragScroll, ScrollBarVisibility};
+
+/// Keep floating dialogs at least this fraction of the viewport away from each edge.
+pub const DIALOG_EDGE_MARGIN_FRAC: f32 = 0.025;
+
+/// [`egui::Context::content_rect`] inset by [`DIALOG_EDGE_MARGIN_FRAC`] on each side.
+pub fn dialog_constrain_rect(ctx: &egui::Context) -> egui::Rect {
+    let rect = ctx.content_rect();
+    rect.shrink2(egui::vec2(
+        rect.width() * DIALOG_EDGE_MARGIN_FRAC,
+        rect.height() * DIALOG_EDGE_MARGIN_FRAC,
+    ))
+}
+
+fn apply_dialog_bounds<'a>(
+    window: egui::Window<'a>,
+    ctx: &egui::Context,
+) -> egui::Window<'a> {
+    let rect = dialog_constrain_rect(ctx);
+    window.constrain_to(rect).max_size(rect.size())
+}
+
+/// Keep a floating dialog inside [`dialog_constrain_rect`], scrolling overflow.
+///
+/// egui allows windows larger than their constrain rect to be panned (overhang
+/// drag), which looks like the contents slide while the frame stays put. Cap
+/// size and scroll overflow inside the frame so that cannot happen.
+///
+/// Use for resizable / default-sized panels. For small auto-sized popups use
+/// [`fit_dialog_popup`] so they still shrink to their content.
+pub fn fit_dialog_window<'a>(
+    window: egui::Window<'a>,
+    ctx: &egui::Context,
+) -> egui::Window<'a> {
+    apply_dialog_bounds(window, ctx)
+        .scroll([true, true])
+        .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
+        .drag_to_scroll(DragScroll::Never)
+}
+
+/// Like [`fit_dialog_window`] but without an outer scroll area — for compact
+/// auto-sized confirms / record modals that must size to their content.
+pub fn fit_dialog_popup<'a>(
+    window: egui::Window<'a>,
+    ctx: &egui::Context,
+) -> egui::Window<'a> {
+    apply_dialog_bounds(window, ctx)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveCancel {
@@ -87,12 +135,15 @@ pub fn confirm_cancel_row(ui: &mut egui::Ui) -> ConfirmCancel {
 /// state in that case, same as an explicit Cancel).
 pub fn confirm_window(ctx: &egui::Context, title: &str, body: impl FnOnce(&mut egui::Ui)) -> bool {
     let mut open = true;
-    egui::Window::new(title)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .order(egui::Order::Foreground)
-        .open(&mut open)
-        .show(ctx, body);
+    fit_dialog_popup(
+        egui::Window::new(title)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .order(egui::Order::Foreground)
+            .open(&mut open),
+        ctx,
+    )
+    .show(ctx, body);
     open
 }
