@@ -1010,7 +1010,8 @@ mod tests {
         });
         m.init_runtime_variables();
 
-        assert!(!validate_set_variable_value("hello", Some(&m)).blocks_submit());
+        assert!(!validate_set_variable_value("hello world", Some(&m)).blocks_submit());
+        assert!(!validate_set_variable_value("Mistfall Hunter Item", None).blocks_submit());
         assert!(!validate_set_variable_value("1+${x}", Some(&m)).blocks_submit());
         let missing = validate_set_variable_value("${missing}", Some(&m));
         assert!(!missing.blocks_submit());
@@ -1345,5 +1346,26 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("left operand"));
+    }
+
+    #[test]
+    fn validate_conditional_allows_spaced_string_literals() {
+        let a = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Conditional {
+                condition: sqyre_domain::ConditionBlock {
+                    name: "c".into(),
+                    match_mode: sqyre_domain::MatchMode::All,
+                    clauses: vec![sqyre_domain::ConditionClause {
+                        left: ScalarValue::String("${ItemName}".into()),
+                        operator: sqyre_domain::ConditionOperator::Equals,
+                        right: ScalarValue::String("Mistfall Hunter Item Top".into()),
+                    }],
+                },
+                subactions: vec![],
+                else_actions: vec![],
+            },
+        };
+        assert!(validate_action(&a, None).is_ok());
     }
 }

@@ -869,6 +869,35 @@ pub(super) fn scalar_field(
     }
 }
 
+/// Condition L/R operands: plain text (including spaces) is allowed; only
+/// arithmetic-looking values are expression-checked — same rules as Set value.
+fn condition_operand_field(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut ScalarValue,
+    known_vars: &KnownVariableNames,
+    is_dark: bool,
+    active_macro: Option<&Macro>,
+) {
+    let mut text = value.as_display();
+    let before = text.clone();
+    let validation = validate_set_variable_value(&text, active_macro);
+    var_pills::validated_var_ref_edit(
+        ui,
+        label,
+        &mut text,
+        known_vars,
+        is_dark,
+        W_VAR,
+        &validation,
+        help_text,
+    );
+    if text != before {
+        *value = ScalarValue::String(text);
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn var_ref_field(
     ui: &mut egui::Ui,
@@ -1233,7 +1262,7 @@ fn clauses_editor(
         // Unique id so each clause's "op" ComboBox is distinct (same label salt).
         ui.push_id(i, |ui| {
             ui.horizontal(|ui| {
-                scalar_field(
+                condition_operand_field(
                     ui,
                     "L",
                     h::CLAUSE_LEFT,
@@ -1243,7 +1272,7 @@ fn clauses_editor(
                     active_macro,
                 );
                 combo_condition_operator(ui, "op", h::CLAUSE_OP, &mut clause.operator);
-                scalar_field(
+                condition_operand_field(
                     ui,
                     "R",
                     h::CLAUSE_RIGHT,
