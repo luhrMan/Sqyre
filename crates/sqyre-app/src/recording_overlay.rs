@@ -6,10 +6,11 @@
 //!   relative-capture the mouse cannot block selection. Do **not** use an eframe
 //!   fullscreen viewport for this on GNOME/Wayland: Mutter un-redirects those
 //!   surfaces and they paint as opaque black.
-//! - On GNOME/Wayland, a frozen screenshot cover ([`sqyre_capture::FrozenSelectionOverlay`])
-//!   sits over XWayland windows, owns pointer events, and paints the gold rubber-band
-//!   onto that freeze (separate edge windows would sit under the cover).
-//! - Native X11 uses the grab + edge windows without a snapshot.
+//! - On GNOME/Wayland, an invisible `InputOnly` cover
+//!   ([`sqyre_capture::FrozenSelectionOverlay::open_input_cover`]) owns pointer
+//!   events; the gold rubber-band is drawn by opaque [`sqyre_capture::SelectionOutline`]
+//!   edge windows (no desktop freeze, no translucent stroke).
+//! - Native X11 uses the grab + edge windows without a cover.
 //! - A small always-on-top egui viewport for live coords / status while recording
 //!   (needed when the main window is hidden via `hide_app_during_recording`).
 //!   The HUD sits on the opposite vertical edge of the monitor from the cursor so
@@ -19,7 +20,7 @@
 //! poller only `request_repaint`s while recording is armed so the HUD keeps updating
 //! when the root viewport is `Visible(false)`. On Wayland the main window is unmapped
 //! during recording (GSR-style) so portal captures exclude Sqyre; selection uses the
-//! frozen snapshot cover and a deferred HUD viewport.
+//! translucent input cover and a deferred HUD viewport.
 
 use crate::theme;
 use eframe::egui::{self, Pos2, TextStyle, Vec2, ViewportBuilder, ViewportClass, ViewportId};
@@ -72,12 +73,12 @@ pub struct RecordingOverlay {
     logged_outline_ptr: bool,
     last_x11_ptr: Option<(i32, i32)>,
     last_portal_ptr: Option<(i32, i32)>,
-    /// Wayland: frozen screenshot cover over X11/XWayland windows.
+    /// Wayland: translucent input cover over X11/XWayland windows.
     #[cfg(target_os = "linux")]
     snapshot: Option<FrozenSelectionOverlay>,
     #[cfg(target_os = "linux")]
     snapshot_failed: bool,
-    /// Freeze kept after the cover unmaps so Find Pixel can sample it.
+    /// Optional kept frame after cover close (legacy freeze path / Color sample).
     #[cfg(target_os = "linux")]
     freeze: Option<FrozenFrame>,
 }
@@ -98,22 +99,60 @@ impl RecordingOverlay {
         macro_record: Option<&sqyre_hotkeys::MacroRecordBridge>,
         preview_outline: Option<OutlineCorners>,
         main_window_hidden: bool,
+        expect_hide_for_recording: bool,
     ) {
-        let macro_armed = macro_record.is_some_and(|b| b.is_armed());
-        let recording = screen_click.is_armed() || macro_armed;
+        let was_recording =
+            screen_click.is_armed() || macro_record.is_some_and(|b| b.is_armed());
         self.sync_selection_grab(screen_click);
         #[cfg(target_os = "linux")]
         {
-            if !self.sync_linux_snapshot(screen_click) {
+            if !self.sync_linux_snapshot(
+                screen_click,
+                main_window_hidden,
+                expect_hide_for_recording,
+            ) {
                 self.sync_linux_pointer(screen_click);
             }
+        }
+        // Grab/snapshot poll may complete or cancel this frame — re-check before
+        // deciding whether to keep the cover / wake poller alive.
+        let recording =
+            screen_click.is_armed() || macro_record.is_some_and(|b| b.is_armed());
+        if was_recording && !recording {
+            mark_site("recording:complete_frame");
+            event_log(
+                "SQYRE_RECORD",
+                &[
+                    ("op", "complete"),
+                    (
+                        "hidden",
+                        if main_window_hidden { "yes" } else { "no" },
+                    ),
+                ],
+            );
+            // Wake poller stops requesting frames once disarmed; without this the
+            // main window can stay Visible(false) under the frozen snapshot cover.
+            ctx.request_repaint();
         }
         let selection = screen_click.peek_search_area_selection();
         let rect = selection.or(preview_outline);
 
         #[cfg(target_os = "linux")]
         if self.snapshot.is_some() {
-            self.apply_snapshot_rect(selection);
+            // Skip rubber-band paint once the gesture finished — close_snapshot
+            // destroys the cover; a clear blit here only stalls XWayland.
+            if recording {
+                let use_outline = self
+                    .snapshot
+                    .as_ref()
+                    .is_some_and(|s| !s.has_freeze_pixels());
+                if use_outline {
+                    // InputOnly cover owns clicks; opaque edge windows draw gold.
+                    self.apply_outline(selection);
+                } else {
+                    self.apply_snapshot_rect(selection);
+                }
+            }
         } else if rect.is_some() || self.outline.is_some() {
             self.apply_outline(rect);
         }
@@ -217,6 +256,9 @@ impl RecordingOverlay {
         for _ in 0..poll.left_clicks {
             screen_click.on_left_click_at(poll.x, poll.y);
         }
+        for _ in 0..poll.left_releases {
+            screen_click.on_left_release_at(poll.x, poll.y);
+        }
         if poll.escape {
             let _ = screen_click.on_escape();
         }
@@ -240,7 +282,12 @@ impl RecordingOverlay {
     }
 
     #[cfg(target_os = "linux")]
-    fn sync_linux_snapshot(&mut self, screen_click: &ScreenClickBridge) -> bool {
+    fn sync_linux_snapshot(
+        &mut self,
+        screen_click: &ScreenClickBridge,
+        main_window_hidden: bool,
+        expect_hide_for_recording: bool,
+    ) -> bool {
         if !skip_x11_pointer_grab() {
             self.close_snapshot();
             return false;
@@ -250,17 +297,23 @@ impl RecordingOverlay {
             return false;
         }
         if self.snapshot.is_none() && !self.snapshot_failed {
+            // Wait until Sqyre is hidden so the cover sits over the desktop only.
+            if expect_hide_for_recording && !main_window_hidden {
+                return false;
+            }
             mark_site("snapshot:open");
-            match FrozenSelectionOverlay::capture_and_open() {
+            match FrozenSelectionOverlay::open_input_cover() {
                 Ok(overlay) => {
                     self.freeze = None;
                     self.snapshot = Some(overlay);
                     screen_click.set_grab_owns_input(true);
                 }
-                Err(e) if FrozenSelectionOverlay::capture_retryable(&e) => return false,
+                Err(e) if FrozenSelectionOverlay::capture_retryable(&e) => {
+                    return false;
+                }
                 Err(e) => {
                     self.snapshot_failed = true;
-                    crate::log::warn(format_args!("frozen snapshot overlay unavailable: {e}"));
+                    crate::log::warn(format_args!("selection cover unavailable: {e}"));
                     return false;
                 }
             }
@@ -276,7 +329,18 @@ impl RecordingOverlay {
             screen_click.on_mouse_move(poll.x, poll.y);
         }
         for _ in 0..poll.left_clicks {
+            mark_site("snapshot:click");
+            sqyre_capture::note(&format!(
+                "snapshot click at {},{} armed={}",
+                poll.x,
+                poll.y,
+                screen_click.is_armed()
+            ));
             screen_click.on_left_click_at(poll.x, poll.y);
+        }
+        for _ in 0..poll.left_releases {
+            mark_site("snapshot:release");
+            screen_click.on_left_release_at(poll.x, poll.y);
         }
         if poll.escape {
             let _ = screen_click.on_escape();
@@ -293,7 +357,10 @@ impl RecordingOverlay {
     fn close_snapshot(&mut self) {
         if let Some(overlay) = self.snapshot.take() {
             mark_site("snapshot:close");
-            self.freeze = Some(overlay.into_frame());
+            if overlay.has_freeze_pixels() {
+                self.freeze = Some(overlay.into_frame());
+            }
+            // else: drop input cover (Drop unmaps + flushes)
         }
     }
 
@@ -308,7 +375,7 @@ impl RecordingOverlay {
         }
     }
 
-    /// Sample Find Pixel from the freeze (cover or kept frame). `None` if no freeze.
+    /// Sample Color from a freeze frame when present. `None` → live capture.
     #[cfg(target_os = "linux")]
     pub(crate) fn sample_frozen_pixel_hex(&self, x: i32, y: i32) -> Option<String> {
         if let Some(snapshot) = self.snapshot.as_ref() {

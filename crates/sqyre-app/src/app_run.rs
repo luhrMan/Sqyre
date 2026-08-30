@@ -43,10 +43,9 @@ impl SqyreApp {
                 self.hidden_for_recording = true;
                 #[cfg(feature = "native-runtime")]
                 sqyre_capture::mark_site("recording:hide_main");
-                // GSR destroys its overlay (`window.reset()`) before portal capture so
-                // the UI is not in the screencast. Unmap the main viewport; the wake
-                // poller keeps outline/HUD updates alive while hidden.
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                // Same unmap path as tray Hide — ViewportCommand alone is not enough
+                // to remap afterward on GNOME/XWayland (recording looks "frozen").
+                self.tray.set_root_visible(ctx, false);
                 #[cfg(all(feature = "native-runtime", target_os = "linux"))]
                 if sqyre_capture::LinuxSessionInfo::detect().has_wayland {
                     sqyre_capture::event_log("SQYRE_HUD", &[("hide", "wayland-unmap")]);
@@ -54,9 +53,11 @@ impl SqyreApp {
                 }
             } else if !should_hide && self.hidden_for_recording {
                 self.hidden_for_recording = false;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                #[cfg(feature = "native-runtime")]
+                sqyre_capture::mark_site("recording:show_main");
+                self.tray.set_root_visible(ctx, true);
+                #[cfg(all(feature = "native-runtime", target_os = "linux"))]
+                sqyre_capture::event_log("SQYRE_HUD", &[("show", "remap")]);
             }
         }
     }
@@ -73,6 +74,7 @@ impl SqyreApp {
                 Some(&self.macro_record_bridge),
                 preview_outline,
                 self.hidden_for_recording,
+                self.settings_ui.settings().hide_app_during_recording,
             );
         }
         #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]

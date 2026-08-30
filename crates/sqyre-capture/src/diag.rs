@@ -84,6 +84,9 @@ fn ensure_parent(path: &Path) {
     }
 }
 
+/// Append-only site trail (quit overwrites [`LAST_SITE_FILE`]; this keeps history).
+pub const SITE_HIST_FILE: &str = "site_hist.txt";
+
 /// Record the current code site (memory + [`LAST_SITE_FILE`] always).
 pub fn mark_site(site: &str) {
     let line = format!("{}\t{site}", stamp());
@@ -101,6 +104,11 @@ pub fn mark_site(site: &str) {
     {
         let _ = f.write_all(file_line.as_bytes());
         let _ = f.flush();
+    }
+    // Always append a short trail so tray/quit cannot erase the freeze breadcrumb.
+    let hist = log_dir().join(SITE_HIST_FILE);
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&hist) {
+        let _ = f.write_all(file_line.as_bytes());
     }
 }
 
