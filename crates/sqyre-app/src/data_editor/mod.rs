@@ -354,6 +354,42 @@ impl DataEditor {
         Some(btn)
     }
 
+    /// True while the Data Editor Overlay tab is open (drag-to-relocate mode).
+    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
+    pub fn overlay_relocate_mode(&self) -> bool {
+        self.open && matches!(self.tab, EditorTab::Overlay)
+    }
+
+    /// Apply desktop positions from overlay drag-relocate; clears catalog point refs.
+    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
+    pub fn apply_overlay_relocations(
+        &mut self,
+        settings: &mut UserSettings,
+        moves: impl IntoIterator<Item = (String, i32, i32)>,
+    ) {
+        let mut dirty = false;
+        for (id, x, y) in moves {
+            let xf = x as f32;
+            let yf = y as f32;
+            if let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == id) {
+                btn.point.clear();
+                btn.x = xf;
+                btn.y = yf;
+                dirty = true;
+            }
+            if self.selected_entity.as_deref() == Some(id.as_str())
+                && matches!(self.tab, EditorTab::Overlay)
+            {
+                self.form_overlay_point.clear();
+                self.form_overlay_x = xf;
+                self.form_overlay_y = yf;
+            }
+        }
+        if dirty {
+            let _ = self.persist_overlay_settings(settings);
+        }
+    }
+
     pub(crate) fn apply_overlay_style_to_config(&self, btn: &mut OverlayButtonConfig) {
         btn.corner_radius = self.form_overlay_corner_radius;
         btn.border_width = self.form_overlay_border_width;

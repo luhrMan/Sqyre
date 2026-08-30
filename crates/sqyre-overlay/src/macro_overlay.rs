@@ -7,7 +7,7 @@
 //! **Other OS:** no-op for now (reintroduce per-OS later).
 
 use crate::icons::{self as overlay_icons};
-use egui::{self, Color32};
+use egui::{self};
 use parking_lot::Mutex;
 use sqyre_capture::{
     get_active_window, note, window_is_our_process, window_is_transient_shell_focus,
@@ -25,6 +25,18 @@ use web_time::{Duration, Instant};
 #[cfg(target_os = "linux")]
 use crate::x11_buttons::{NativeButtonSpec, X11ButtonHost};
 
+#[cfg(target_os = "linux")]
+pub use crate::x11_buttons::OverlayButtonMove;
+
+/// Desktop position committed after a relocate-mode drag (root coordinates).
+#[cfg(not(target_os = "linux"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverlayButtonMove {
+    pub id: String,
+    pub x: i32,
+    pub y: i32,
+}
+
 const FOCUS_POLL: Duration = Duration::from_millis(500);
 const FOCUS_ERR_LOG_EVERY: Duration = Duration::from_secs(5);
 
@@ -40,6 +52,10 @@ pub struct MacroOverlay {
     wake_sent: bool,
     #[cfg(target_os = "linux")]
     last_native_specs: Option<Vec<NativeButtonSpec>>,
+    #[cfg(target_os = "linux")]
+    pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
+    #[cfg(target_os = "linux")]
+    last_relocate: Option<bool>,
 }
 
 struct FocusSlot {
@@ -83,6 +99,40 @@ impl MacroOverlay {
             wake_sent: false,
             #[cfg(target_os = "linux")]
             last_native_specs: None,
+            #[cfg(target_os = "linux")]
+            pending_moves: Arc::new(Mutex::new(Vec::new())),
+            #[cfg(target_os = "linux")]
+            last_relocate: None,
+        }
+    }
+
+    /// Positions committed by drag-relocate while the Overlay editor tab is open.
+    pub fn drain_moves(&self) -> Vec<OverlayButtonMove> {
+        #[cfg(target_os = "linux")]
+        {
+            std::mem::take(&mut *self.pending_moves.lock())
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            Vec::new()
+        }
+    }
+
+    /// Enable/disable drag-to-relocate (move cursor + no macro enqueue on click).
+    pub fn set_relocate_mode(&mut self, enabled: bool) {
+        #[cfg(target_os = "linux")]
+        {
+            if self.last_relocate == Some(enabled) {
+                return;
+            }
+            if let Some(host) = &self.x11_host {
+                host.set_relocate_mode(enabled);
+            }
+            self.last_relocate = Some(enabled);
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = enabled;
         }
     }
 
@@ -95,6 +145,7 @@ impl MacroOverlay {
         catalog: &ProgramCatalog,
         pending_macros: &Arc<Mutex<Vec<String>>>,
         running_macro: Option<&str>,
+        relocate: bool,
     ) {
         let any_enabled = buttons
             .iter()
@@ -108,6 +159,7 @@ impl MacroOverlay {
                 }
                 self.last_native_specs = Some(Vec::new());
             }
+            self.set_relocate_mode(false);
             return;
         }
 
@@ -173,6 +225,7 @@ impl MacroOverlay {
         #[cfg(target_os = "linux")]
         {
             self.ensure_x11_host(pending_macros);
+            self.set_relocate_mode(relocate);
             if let Some(host) = &self.x11_host {
                 if !self.wake_sent {
                     host.set_wake(ctx.clone());
@@ -191,7 +244,7 @@ impl MacroOverlay {
 
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = (ctx, pending_macros, specs);
+            let _ = (ctx, pending_macros, specs, relocate);
         }
     }
 
@@ -200,12 +253,13 @@ impl MacroOverlay {
         if self.x11_host.is_some() {
             return;
         }
-        match X11ButtonHost::start(Arc::clone(pending)) {
+        match X11ButtonHost::start(Arc::clone(pending), Arc::clone(&self.pending_moves)) {
             Ok(host) => {
                 note("overlay: using native X11 button host (direct enqueue)");
                 self.x11_host = Some(host);
                 self.wake_sent = false;
                 self.last_native_specs = None;
+                self.last_relocate = None;
             }
             Err(e) => note(&format!("overlay: X11 host failed: {e}")),
         }
@@ -263,25 +317,21 @@ fn focus_poll_loop(
         match get_active_window() {
             Ok(Some(active)) => {
                 let mut g = focus_slot.lock();
-                if window_is_our_process(&active) || window_is_transient_shell_focus(&active) {
-                    // Keep last foreign target so clicking overlay chrome does not hide gated buttons.
-                    g.cached = g.last_foreign.clone();
-                } else {
-                    let key = focus_identity_key(&active);
-                    let prev = g.last_foreign.as_ref().map(focus_identity_key);
-                    if prev.as_deref() != Some(key.as_str()) {
-                        g.last_foreign = Some(active.clone());
-                        g.cached = Some(active);
-                        ctx.request_repaint();
-                    } else {
-                        g.cached = g.last_foreign.clone();
-                    }
-                }
+                let repaint = apply_active_focus(&mut g, &active);
                 g.last_err = None;
+                drop(g);
+                if repaint {
+                    ctx.request_repaint();
+                }
             }
             Ok(None) => {
                 let mut g = focus_slot.lock();
-                g.cached = g.last_foreign.clone();
+                // Fullscreen games often report no focus; keep last foreign only when we
+                // already had a foreign focus cached. Do not revive buttons after Sqyre
+                // main UI cleared the cache.
+                if g.cached.is_some() {
+                    g.cached = g.last_foreign.clone();
+                }
                 g.last_err = None;
             }
             Err(e) => {
@@ -294,13 +344,51 @@ fn focus_poll_loop(
     }
 }
 
+/// Update focus slot from a fresh active window. Returns true when callers should repaint.
+///
+/// - Overlay chrome / portal / shell dialogs: keep `last_foreign` (clicks must not hide buttons).
+/// - Sqyre main UI: clear cached focus so program-gated buttons hide.
+/// - Other apps: store as `last_foreign` (identity includes title for shared Wine/Proton exes).
+fn apply_active_focus(g: &mut FocusSlot, active: &WindowInfo) -> bool {
+    if window_is_transient_shell_focus(active) {
+        // Includes overlay button / tip WM titles — do not poison last_foreign.
+        let before = g.cached.as_ref().map(focus_identity_key);
+        g.cached = g.last_foreign.clone();
+        return before != g.cached.as_ref().map(focus_identity_key);
+    }
+    if window_is_our_process(active) {
+        // Main Sqyre window (not overlay chrome): hide gated buttons.
+        let had = g.cached.is_some();
+        g.cached = None;
+        return had;
+    }
+    let key = focus_identity_key(active);
+    let prev = g.last_foreign.as_ref().map(focus_identity_key);
+    if prev.as_deref() != Some(key.as_str()) {
+        g.last_foreign = Some(active.clone());
+        g.cached = Some(active.clone());
+        true
+    } else {
+        // Same identity — refresh fields in case path/title casing changed.
+        g.last_foreign = Some(active.clone());
+        g.cached = Some(active.clone());
+        false
+    }
+}
+
 struct ButtonDraw {
     cfg: OverlayButtonConfig,
     busy: bool,
 }
 
+/// Process + title so shared Proton `wine-preloader` windows still distinguish games.
 fn focus_identity_key(w: &WindowInfo) -> String {
-    format!("{}|{}", w.process_path.trim(), w.process_name.trim())
+    format!(
+        "{}|{}|{}",
+        w.process_path.trim(),
+        w.process_name.trim(),
+        w.title.trim()
+    )
 }
 
 fn button_is_focus_gated(btn: &OverlayButtonConfig) -> bool {
@@ -352,7 +440,12 @@ fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeBu
         y: btn.y.round() as i32,
         w: phys as u32,
         h: phys as u32,
-        bg: opaque_rgb(style.bg),
+        bg: [
+            style.bg.r(),
+            style.bg.g(),
+            style.bg.b(),
+            style.bg.a(),
+        ],
         border: [
             style.border.r(),
             style.border.g(),
@@ -386,10 +479,125 @@ fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeBu
     }
 }
 
-fn opaque_rgb(c: Color32) -> [u8; 3] {
-    if c.a() == 0 {
-        [20, 18, 14]
-    } else {
-        [c.r(), c.g(), c.b()]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_capture::OVERLAY_WM_TITLE;
+    use sqyre_persist::ProgramCatalog;
+
+    fn wine_win(title: &str) -> WindowInfo {
+        WindowInfo {
+            title: title.into(),
+            process_name: "wine-preloader".into(),
+            process_path: "/opt/proton/files/lib/wine/x86_64-unix/wine-preloader".into(),
+            icon: None,
+        }
+    }
+
+    #[test]
+    fn focus_identity_includes_title_for_shared_exe() {
+        let a = wine_win("Mistfall Hunter");
+        let b = wine_win("Other Game");
+        assert_ne!(focus_identity_key(&a), focus_identity_key(&b));
+        assert_eq!(focus_identity_key(&a), focus_identity_key(&wine_win("Mistfall Hunter")));
+    }
+
+    #[test]
+    fn apply_focus_switches_between_shared_proton_titles() {
+        let mut g = FocusSlot {
+            cached: None,
+            last_foreign: None,
+            last_err: None,
+            last_err_at: None,
+        };
+        let mist = wine_win("Mistfall Hunter");
+        assert!(apply_active_focus(&mut g, &mist));
+        assert_eq!(g.cached.as_ref().map(|w| w.title.as_str()), Some("Mistfall Hunter"));
+
+        let other = wine_win("Other Game");
+        assert!(apply_active_focus(&mut g, &other));
+        assert_eq!(g.cached.as_ref().map(|w| w.title.as_str()), Some("Other Game"));
+        assert_eq!(
+            g.last_foreign.as_ref().map(|w| w.title.as_str()),
+            Some("Other Game")
+        );
+    }
+
+    #[test]
+    fn apply_focus_overlay_chrome_keeps_last_foreign() {
+        let mut g = FocusSlot {
+            cached: None,
+            last_foreign: None,
+            last_err: None,
+            last_err_at: None,
+        };
+        let mist = wine_win("Mistfall Hunter");
+        apply_active_focus(&mut g, &mist);
+        let chrome = WindowInfo {
+            title: OVERLAY_WM_TITLE.into(),
+            process_name: "sqyre".into(),
+            process_path: "/bin/sqyre".into(),
+            icon: None,
+        };
+        assert!(!apply_active_focus(&mut g, &chrome));
+        assert_eq!(g.cached.as_ref().map(|w| w.title.as_str()), Some("Mistfall Hunter"));
+    }
+
+    #[test]
+    fn apply_focus_our_main_ui_hides_gated_without_poisoning() {
+        let exe = std::env::current_exe().expect("test exe");
+        let mut g = FocusSlot {
+            cached: None,
+            last_foreign: None,
+            last_err: None,
+            last_err_at: None,
+        };
+        apply_active_focus(&mut g, &wine_win("Mistfall Hunter"));
+        let main = WindowInfo {
+            title: "Sqyre".into(),
+            process_name: "sqyre".into(),
+            process_path: exe.to_string_lossy().into_owned(),
+            icon: None,
+        };
+        assert!(apply_active_focus(&mut g, &main));
+        assert!(g.cached.is_none());
+        assert_eq!(
+            g.last_foreign.as_ref().map(|w| w.title.as_str()),
+            Some("Mistfall Hunter")
+        );
+    }
+
+    #[test]
+    fn program_owns_focus_requires_bound_title() {
+        let mut catalog = ProgramCatalog::default();
+        catalog.create_program("Mistfall Hunter").unwrap();
+        catalog
+            .set_process_binding(
+                "Mistfall Hunter",
+                "/opt/proton/files/lib/wine/x86_64-unix/wine-preloader",
+                "Mistfall Hunter",
+            )
+            .unwrap();
+        assert!(program_owns_focus(
+            &catalog,
+            "Mistfall Hunter",
+            Some(&wine_win("Mistfall Hunter"))
+        ));
+        assert!(!program_owns_focus(
+            &catalog,
+            "Mistfall Hunter",
+            Some(&wine_win("Other Game"))
+        ));
+        assert!(!program_owns_focus(&catalog, "Mistfall Hunter", None));
+    }
+
+    #[test]
+    fn general_buttons_are_not_focus_gated() {
+        let mut btn = OverlayButtonConfig::new("g", GENERAL_PROGRAM);
+        btn.enabled = true;
+        btn.macro_name = "x".into();
+        assert!(!button_is_focus_gated(&btn));
+        btn.program = "Mistfall Hunter".into();
+        assert!(button_is_focus_gated(&btn));
     }
 }

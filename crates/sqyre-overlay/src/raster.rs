@@ -30,11 +30,14 @@ const UI_FONT_CANDIDATES: &[&str] = &[
 ];
 
 /// Style + content needed to paint one button face.
+///
+/// `bg[3] == 0` means no fill: only border / icon / spinner ink are written
+/// (alpha channel marks pixels for XFixes ShapeBounding — not ARGB compositing).
 #[derive(Debug, Clone)]
 pub struct ButtonPaint {
     pub w: u32,
     pub h: u32,
-    pub bg: [u8; 3],
+    pub bg: [u8; 4],
     pub border: [u8; 4],
     pub border_width: f32,
     pub corner_radius: f32,
@@ -235,11 +238,18 @@ fn downsample_box(src: &[u8], sw: u32, sh: u32, factor: u32) -> (u32, u32, Vec<u
     (dw, dh, out)
 }
 
-/// Paint an opaque RGBA8 buffer (row-major, length `w*h*4`).
+/// Alpha above this is included in the XFixes shape (binary punch-out, not soft glass).
+pub const SHAPE_ALPHA_MIN: u8 = 96;
+
+/// Paint an RGBA8 buffer (row-major, length `w*h*4`).
+///
+/// With an opaque `bg`, every in-shape pixel is filled (alpha 255). With
+/// `bg[3] == 0`, only chrome ink is written and alpha marks the punch-out mask.
 pub fn rasterize(paint: &ButtonPaint) -> Vec<u8> {
     let w = paint.w.max(1) as i32;
     let h = paint.h.max(1) as i32;
     let mut rgba = vec![0u8; (w * h * 4) as usize];
+    let fill_bg = paint.bg[3] > 0;
 
     let r = paint.corner_radius.clamp(0.0, (w.min(h) as f32) * 0.5);
     let bw = paint.border_width.max(0.0);
@@ -248,16 +258,25 @@ pub fn rasterize(paint: &ButtonPaint) -> Vec<u8> {
         for x in 0..w {
             let d = sd_rounded_rect(x as f32 + 0.5, y as f32 + 0.5, w as f32, h as f32, r);
             let i = ((y * w + x) * 4) as usize;
-            if d <= 0.0 {
+            if d > 0.0 {
+                continue;
+            }
+            if fill_bg {
                 rgba[i] = paint.bg[0];
                 rgba[i + 1] = paint.bg[1];
                 rgba[i + 2] = paint.bg[2];
                 rgba[i + 3] = 255;
-                // Inner border band.
                 if bw > 0.0 && paint.border[3] > 0 && d >= -bw {
                     let a = (paint.border[3] as f32 / 255.0).clamp(0.0, 1.0);
                     blend(&mut rgba[i..i + 4], paint.border, a);
                 }
+            } else if bw > 0.0 && paint.border[3] > 0 && d >= -bw {
+                // Border ring only — solid ink for opaque-window + Shape punch-out.
+                let a = paint.border[3];
+                rgba[i] = paint.border[0];
+                rgba[i + 1] = paint.border[1];
+                rgba[i + 2] = paint.border[2];
+                rgba[i + 3] = a;
             }
         }
     }
@@ -288,14 +307,50 @@ pub fn rasterize(paint: &ButtonPaint) -> Vec<u8> {
             paint.icon_glyph,
             (w.min(h) as f32 * 0.55).max(8.0),
             icon_c,
+            fill_bg,
         );
     }
 
     if paint.busy {
-        draw_spinner(&mut rgba, w as u32, h as u32, paint.busy_phase, paint.icon_hover);
+        draw_spinner(
+            &mut rgba,
+            w as u32,
+            h as u32,
+            paint.busy_phase,
+            paint.icon_hover,
+            fill_bg,
+        );
     }
 
     rgba
+}
+
+/// Scanline rectangles for pixels with alpha ≥ [`SHAPE_ALPHA_MIN`].
+pub fn shape_rects_from_alpha(rgba: &[u8], w: u32, h: u32) -> Vec<(i16, i16, u16, u16)> {
+    if w == 0 || h == 0 || rgba.len() < (w * h * 4) as usize {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for y in 0..h {
+        let mut x = 0u32;
+        while x < w {
+            while x < w && rgba[((y * w + x) * 4 + 3) as usize] < SHAPE_ALPHA_MIN {
+                x += 1;
+            }
+            if x >= w {
+                break;
+            }
+            let start = x;
+            while x < w && rgba[((y * w + x) * 4 + 3) as usize] >= SHAPE_ALPHA_MIN {
+                x += 1;
+            }
+            let width = (x - start) as u16;
+            if width > 0 {
+                out.push((start as i16, y as i16, width, 1));
+            }
+        }
+    }
+    out
 }
 
 fn sd_rounded_rect(px: f32, py: f32, w: f32, h: f32, r: f32) -> f32 {
@@ -315,7 +370,34 @@ fn blend(dst: &mut [u8], src: [u8; 4], a: f32) {
     dst[3] = 255;
 }
 
-fn blit_glyph(rgba: &mut [u8], w: u32, h: u32, ch: char, px: f32, color: [u8; 4]) {
+/// Write ink for punch-out windows: keep RGB, accumulate alpha for the shape mask.
+fn stamp_ink(dst: &mut [u8], src: [u8; 4], a: f32) {
+    let a = a.clamp(0.0, 1.0);
+    if a < 0.01 {
+        return;
+    }
+    if dst[3] == 0 {
+        dst[0] = src[0];
+        dst[1] = src[1];
+        dst[2] = src[2];
+        dst[3] = (a * 255.0).round().clamp(0.0, 255.0) as u8;
+        return;
+    }
+    for i in 0..3 {
+        dst[i] = ((src[i] as f32) * a + (dst[i] as f32) * (1.0 - a)).round() as u8;
+    }
+    dst[3] = dst[3].max((a * 255.0).round().clamp(0.0, 255.0) as u8);
+}
+
+fn blit_glyph(
+    rgba: &mut [u8],
+    w: u32,
+    h: u32,
+    ch: char,
+    px: f32,
+    color: [u8; 4],
+    fill_bg: bool,
+) {
     let font = phosphor_font();
     let (metrics, bitmap) = font.rasterize(ch, px);
     if metrics.width == 0 || metrics.height == 0 || bitmap.is_empty() {
@@ -336,12 +418,24 @@ fn blit_glyph(rgba: &mut [u8], w: u32, h: u32, ch: char, px: f32, color: [u8; 4]
                 continue;
             }
             let i = ((y as u32 * w + x as u32) * 4) as usize;
-            blend(&mut rgba[i..i + 4], color, cover * a_scale);
+            let a = cover * a_scale;
+            if fill_bg {
+                blend(&mut rgba[i..i + 4], color, a);
+            } else {
+                stamp_ink(&mut rgba[i..i + 4], color, a);
+            }
         }
     }
 }
 
-fn draw_spinner(rgba: &mut [u8], w: u32, h: u32, phase: f32, color: [u8; 4]) {
+fn draw_spinner(
+    rgba: &mut [u8],
+    w: u32,
+    h: u32,
+    phase: f32,
+    color: [u8; 4],
+    fill_bg: bool,
+) {
     let cx = w as f32 * 0.5;
     let cy = h as f32 * 0.5;
     let r = (w.min(h) as f32) * 0.32;
@@ -361,7 +455,7 @@ fn draw_spinner(rgba: &mut [u8], w: u32, h: u32, phase: f32, color: [u8; 4]) {
         let y0 = cy + dy * (r * 0.45);
         let x1 = cx + dx * r;
         let y1 = cy + dy * r;
-        draw_line(rgba, w, h, x0, y0, x1, y1, stroke, c);
+        draw_line(rgba, w, h, x0, y0, x1, y1, stroke, c, fill_bg);
     }
 }
 
@@ -375,6 +469,7 @@ fn draw_line(
     y1: f32,
     stroke: f32,
     color: [u8; 4],
+    fill_bg: bool,
 ) {
     let steps = ((x1 - x0).hypot(y1 - y0) * 2.0).ceil().max(1.0) as i32;
     let half = stroke * 0.5;
@@ -395,7 +490,11 @@ fn draw_line(
                     continue;
                 }
                 let i = ((y as u32 * w + x as u32) * 4) as usize;
-                blend(&mut rgba[i..i + 4], color, a_scale);
+                if fill_bg {
+                    blend(&mut rgba[i..i + 4], color, a_scale);
+                } else {
+                    stamp_ink(&mut rgba[i..i + 4], color, a_scale);
+                }
             }
         }
     }
@@ -456,5 +555,30 @@ mod tip_tests {
         // Monospace "Remove all Gems" is much wider; proportional should be compact.
         let (w, _, _) = rasterize_tip("Remove all Gems");
         assert!(w < 160, "expected proportional tip width, got {w}");
+    }
+
+    #[test]
+    fn transparent_bg_leaves_interior_clear_and_shapes_chrome() {
+        let paint = ButtonPaint {
+            w: 32,
+            h: 32,
+            bg: [0, 0, 0, 0],
+            border: [0xdc, 0x9d, 0x2e, 0xff],
+            border_width: 2.0,
+            corner_radius: 8.0,
+            icon_glyph: '\u{0}',
+            icon: [0, 0, 0, 0],
+            icon_hover: [0, 0, 0, 0],
+            hovered: false,
+            busy: false,
+            busy_phase: 0.0,
+        };
+        let rgba = rasterize(&paint);
+        let cx = ((16 * 32 + 16) * 4) as usize;
+        assert_eq!(rgba[cx + 3], 0, "center must stay clear");
+        let rects = shape_rects_from_alpha(&rgba, 32, 32);
+        assert!(!rects.is_empty(), "border ring must produce a shape");
+        let ink = rgba.chunks_exact(4).filter(|p| p[3] >= SHAPE_ALPHA_MIN).count();
+        assert!(ink > 20 && ink < 32 * 32 / 2, "ink={ink}");
     }
 }
