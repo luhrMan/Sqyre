@@ -60,14 +60,17 @@ pub fn show_active_picker(
     let mut cancel = false;
     let mut back = false;
 
-    egui::Window::new(title)
-        .collapsible(false)
-        .resizable(true)
-        .default_size([560.0, 460.0])
-        .min_size([400.0, 280.0])
-        .order(egui::Order::Foreground)
-        .open(&mut open)
-        .show(ctx, |ui| {
+    crate::widgets::fit_dialog_window(
+        egui::Window::new(title)
+            .collapsible(false)
+            .resizable(true)
+            .default_size([560.0, 460.0])
+            .min_size([400.0, 280.0])
+            .order(egui::Order::Foreground)
+            .open(&mut open),
+        ctx,
+    )
+    .show(ctx, |ui| {
             match picker {
                 ActivePicker::Items { search, staged } => {
                     let mut header_click = None;

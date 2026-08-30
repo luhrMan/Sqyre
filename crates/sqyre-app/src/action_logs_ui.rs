@@ -96,12 +96,15 @@ pub fn show_logs_window(
 
     let mut open = true;
     let mut close_clicked = false;
-    egui::Window::new(title)
-        .open(&mut open)
-        .default_size([640.0, 560.0])
-        .min_width(420.0)
-        .min_height(280.0)
-        .show(ctx, |ui| {
+    crate::widgets::fit_dialog_window(
+        egui::Window::new(title)
+            .open(&mut open)
+            .default_size([640.0, 560.0])
+            .min_width(420.0)
+            .min_height(280.0),
+        ctx,
+    )
+    .show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("Copy text").clicked() {
                     ui.ctx().copy_text(lines_for(&entries).join("\n"));

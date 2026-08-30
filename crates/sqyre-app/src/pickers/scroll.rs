@@ -112,7 +112,7 @@ pub fn picker_searchable_scroll(
 /// `footer_reserve` is space still to be laid out below the scroll (buttons, status).
 pub fn popup_scroll_max_height(ui: &egui::Ui, footer_reserve: f32) -> f32 {
     const FALLBACK: f32 = 360.0;
-    let screen_cap = (ui.ctx().content_rect().height() * 0.65).max(100.0);
+    let screen_cap = (crate::widgets::dialog_constrain_rect(ui.ctx()).height() * 0.65).max(100.0);
     let h = ui.available_height() - footer_reserve;
     let capped = if h.is_finite() { h.max(40.0) } else { FALLBACK };
     capped.min(screen_cap)

@@ -259,13 +259,15 @@ impl SettingsUi {
             return;
         }
         let mut open = self.open;
-        egui::Window::new("User Settings")
-            .open(&mut open)
-            .default_size([680.0, 640.0])
-            .min_size([520.0, 360.0])
-            .resizable(true)
-            .constrain(true)
-            .show(ctx, |ui| {
+        crate::widgets::fit_dialog_window(
+            egui::Window::new("User Settings")
+                .open(&mut open)
+                .default_size([680.0, 640.0])
+                .min_size([520.0, 360.0])
+                .resizable(true),
+            ctx,
+        )
+        .show(ctx, |ui| {
                 #[cfg(not(target_arch = "wasm32"))]
                 self.ui(ui, ctx, db, macros, catalog, update);
                 #[cfg(target_arch = "wasm32")]

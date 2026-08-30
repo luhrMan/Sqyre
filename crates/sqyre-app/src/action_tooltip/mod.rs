@@ -402,7 +402,7 @@ pub(crate) fn show_action_view_tip(
 
     // Prefer growing left when near the right edge so constrain() is less likely
     // to slide the tip over the hovered row (which would steal hover).
-    let screen = ctx.content_rect();
+    let screen = crate::widgets::dialog_constrain_rect(ctx);
     let max_w = tip_max_width(coord_preview.is_some());
     let near_right = pointer.x + 14.0 + max_w > screen.right();
     let (pivot, pos) = if near_right {
@@ -417,7 +417,7 @@ pub(crate) fn show_action_view_tip(
         .fixed_pos(pos)
         .interactable(false)
         .sense(egui::Sense::hover())
-        .constrain(true)
+        .constrain_to(screen)
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style())
                 .inner_margin(egui::Margin::symmetric(10, 8))
@@ -561,7 +561,7 @@ fn show_edit_window(
     let label = action_type_label(type_key);
     let pastel = tree_chrome::rgba_pub(action_pastel_color(type_key, is_dark));
     let max_w = tip_max_width(has_coord_preview);
-    let screen = ctx.content_rect();
+    let screen = crate::widgets::dialog_constrain_rect(ctx);
     // Grow with content from a modest default; ScrollArea caps at the window height.
     const EDIT_CHROME: f32 = 72.0; // type pill + Save/Cancel + separator + margins
     let max_scroll_h = (screen.height() - EDIT_CHROME).max(100.0);
@@ -595,22 +595,23 @@ fn show_edit_window(
 
     // Popup chrome (no title bar). On open, size to content (no ScrollArea) so
     // height matches the fields; afterward ScrollArea lets the user shrink/grow.
-    egui::Window::new(label)
-        .id(area_id)
-        .open(&mut open)
-        .title_bar(false)
-        .collapsible(false)
-        .resizable(true)
-        .constrain(true)
-        .default_pos(anchor + Vec2::new(12.0, 12.0))
-        .default_size([max_w, 1.0])
-        .min_size([220.0, 48.0])
-        .max_size(screen.size())
-        .frame(
-            egui::Frame::popup(ctx.global_style().as_ref())
-                .inner_margin(egui::Margin::symmetric(10, 8)),
-        )
-        .show(ctx, |ui| {
+    crate::widgets::fit_dialog_window(
+        egui::Window::new(label)
+            .id(area_id)
+            .open(&mut open)
+            .title_bar(false)
+            .collapsible(false)
+            .resizable(true)
+            .default_pos(anchor + Vec2::new(12.0, 12.0))
+            .default_size([max_w, 1.0])
+            .min_size([220.0, 48.0])
+            .frame(
+                egui::Frame::popup(ctx.global_style().as_ref())
+                    .inner_margin(egui::Margin::symmetric(10, 8)),
+            ),
+        ctx,
+    )
+    .show(ctx, |ui| {
             let (err, save_enabled) = match state {
                 TooltipState::Edit(edit) => (edit.error.as_deref(), edit.save_enabled()),
                 _ => (None, false),
