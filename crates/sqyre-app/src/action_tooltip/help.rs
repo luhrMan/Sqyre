@@ -92,9 +92,11 @@ pub const LOOP_JUMP_MODE: &str =
 
 pub const MATCH_ALL: &str = "All clauses must pass. Uncheck to require any one.";
 pub const MAX_ITERATIONS: &str = "Hard stop for While (0 = use the default limit).";
-pub const CLAUSE_LEFT: &str = "Left side of the comparison (value or ${var}).";
+pub const CLAUSE_LEFT: &str =
+    "Left side of the comparison (text, ${var}, or expression). Spaces are allowed in text.";
 pub const CLAUSE_OP: &str = "Comparison operator.";
-pub const CLAUSE_RIGHT: &str = "Right side of the comparison (value or ${var}).";
+pub const CLAUSE_RIGHT: &str =
+    "Right side of the comparison (text, ${var}, or expression). Spaces are allowed in text.";
 pub const CLAUSE_ADD: &str = "Add another condition clause.";
 pub const CLAUSE_REMOVE: &str = "Remove this clause.";
 
