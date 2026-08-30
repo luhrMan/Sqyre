@@ -19,11 +19,29 @@ use std::sync::atomic::Ordering;
 /// host with `cargo run -p sqyre-overlay --features sandbox --bin overlay_sandbox`.
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
+    let moves = app.macro_overlay.drain_moves();
+    if !moves.is_empty() {
+        app.data_editor.apply_overlay_relocations(
+            app.settings_ui.settings_mut(),
+            moves.into_iter().map(|m| (m.id, m.x, m.y)),
+        );
+    }
     if app.screen_click.is_armed() || app.macro_record_bridge.is_armed() {
+        // Comment above: hidden while recording — clear native buttons (do not leave last sync).
+        app.macro_overlay.sync(
+            ctx,
+            &[],
+            None,
+            &app.workspace.catalog,
+            &app.pending_hotkey_macros,
+            None,
+            false,
+        );
         return;
     }
     let buttons = app.settings_ui.settings().overlay_buttons.clone();
     let preview = app.data_editor.overlay_edit_preview();
+    let relocate = app.data_editor.overlay_relocate_mode();
     let running_macro = if app.run_session.state.running.load(Ordering::SeqCst)
         && !app.workspace.macros.is_empty()
     {
@@ -42,6 +60,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         &app.workspace.catalog,
         &app.pending_hotkey_macros,
         running_macro,
+        relocate,
     );
 }
 

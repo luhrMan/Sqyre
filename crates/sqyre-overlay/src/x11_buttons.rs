@@ -38,14 +38,16 @@ use x11::xfixes::{
 };
 use x11::xlib::{
     ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask, CWBackPixel, CWBackingStore,
-    CWBorderPixel, CWEventMask, CWOverrideRedirect, Display, EnterNotify, EnterWindowMask, Expose,
-    ExposureMask, False, InputOutput, LeaveNotify, LeaveWindowMask, StructureNotifyMask, True,
-    WhenMapped, Window, XAllocColor, XCloseDisplay, XColor, XConnectionNumber, XCreateGC,
-    XCreateImage, XCreateWindow, XDefaultColormap, XDefaultDepth, XDefaultRootWindow,
-    XDefaultScreen, XDefaultVisual, XDestroyImage, XDestroyWindow, XEvent, XFlush, XFreeGC,
-    XInternAtom, XMapRaised, XMoveResizeWindow, XNextEvent, XOpenDisplay, XPending, XPutImage,
-    XRectangle, XSelectInput, XSetWindowAttributes, XStoreName, XSync, XUnmapWindow, ZPixmap,
-    LSBFirst,
+    CWBorderPixel, CWEventMask, CWOverrideRedirect, CurrentTime, Display, EnterNotify,
+    EnterWindowMask, Expose, ExposureMask, False, GrabModeAsync, InputOnly, InputOutput,
+    LeaveNotify, LeaveWindowMask, MotionNotify, PointerMotionMask, StructureNotifyMask, Success,
+    True, WhenMapped, Window, XAllocColor, XCloseDisplay, XColor, XConnectionNumber,
+    XCreateFontCursor, XCreateGC, XCreateImage, XCreateWindow, XDefaultColormap, XDefaultDepth,
+    XDefaultRootWindow, XDefaultScreen, XDefaultVisual, XDefineCursor, XDestroyImage,
+    XDestroyWindow, XEvent, XFlush, XFreeCursor, XFreeGC, XGrabPointer, XInternAtom, XMapRaised,
+    XMoveResizeWindow, XNextEvent, XOpenDisplay, XPending, XPutImage, XRectangle, XSelectInput,
+    XSetWindowAttributes, XStoreName, XSync, XUndefineCursor, XUngrabPointer, XUnmapWindow,
+    ZPixmap, LSBFirst,
 };
 
 /// `ShapeBounding` / `ShapeInput` from `X11/extensions/shapeconst.h`.
@@ -55,6 +57,9 @@ const SHAPE_INPUT: c_int = 2;
 const POLL_IDLE_MS: u64 = 16;
 const BUSY_TICK_MS: u64 = 50;
 const TIP_GAP_PX: i32 = 6;
+/// X11 cursorfont fleur (four-way move arrow).
+const XC_FLEUR: c_uint = 52;
+const BUTTON_LEFT: c_uint = 1;
 
 /// Desired on-screen button (physical pixels, root coordinates).
 #[derive(Debug, Clone, PartialEq)]
@@ -65,7 +70,8 @@ pub struct NativeButtonSpec {
     pub y: i32,
     pub w: u32,
     pub h: u32,
-    pub bg: [u8; 3],
+    /// Fill RGBA. Alpha 0 = no fill (Shape punch-out from chrome ink only).
+    pub bg: [u8; 4],
     pub border: [u8; 4],
     pub border_width: f32,
     pub corner_radius: f32,
@@ -77,8 +83,18 @@ pub struct NativeButtonSpec {
     pub busy: bool,
 }
 
+/// Desktop position committed after a relocate-mode drag (root coordinates).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OverlayButtonMove {
+    pub id: String,
+    pub x: i32,
+    pub y: i32,
+}
+
 enum HostCmd {
     SetButtons(Vec<NativeButtonSpec>),
+    /// When true, left-drag relocates buttons instead of enqueueing macros.
+    SetRelocateMode(bool),
     /// egui context used to wake ROOT immediately after a click (busy UI / drain).
     SetWake(EguiContext),
     Shutdown,
@@ -92,13 +108,16 @@ pub struct X11ButtonHost {
 }
 
 impl X11ButtonHost {
-    pub fn start(pending: Arc<Mutex<Vec<String>>>) -> Result<Self, String> {
+    pub fn start(
+        pending: Arc<Mutex<Vec<String>>>,
+        pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
+    ) -> Result<Self, String> {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let stop_t = Arc::clone(&stop);
         let join = thread::Builder::new()
             .name("sqyre-x11-overlay".into())
-            .spawn(move || host_loop(cmd_rx, pending, stop_t))
+            .spawn(move || host_loop(cmd_rx, pending, pending_moves, stop_t))
             .map_err(|e| format!("spawn x11 overlay thread: {e}"))?;
         Ok(Self {
             cmd_tx,
@@ -109,6 +128,10 @@ impl X11ButtonHost {
 
     pub fn set_buttons(&self, buttons: Vec<NativeButtonSpec>) {
         let _ = self.cmd_tx.send(HostCmd::SetButtons(buttons));
+    }
+
+    pub fn set_relocate_mode(&self, enabled: bool) {
+        let _ = self.cmd_tx.send(HostCmd::SetRelocateMode(enabled));
     }
 
     pub fn set_wake(&self, ctx: EguiContext) {
@@ -132,7 +155,10 @@ impl Drop for X11ButtonHost {
 
 struct LiveButton {
     spec: NativeButtonSpec,
+    /// Painted face (`InputOutput`). Empty ShapeInput — clicks go to [`Self::hit`].
     win: Window,
+    /// Invisible full hit target (`InputOnly`). Owns pointer events for the button disk.
+    hit: Window,
     armed: bool,
     hovered: bool,
     busy_phase: f32,
@@ -147,6 +173,15 @@ struct TipWindow {
     mapped: bool,
 }
 
+struct DragState {
+    id: String,
+    /// Pointer offset from button top-left in root coordinates.
+    grab_dx: i32,
+    grab_dy: i32,
+    start_x: i32,
+    start_y: i32,
+}
+
 /// X11 resources owned exclusively by the overlay host thread.
 ///
 /// See module-level **X11 safety** for the invariants every `unsafe` call relies on.
@@ -159,12 +194,17 @@ struct HostState {
     tip: Option<TipWindow>,
     xfd: RawFd,
     pending: Arc<Mutex<Vec<String>>>,
+    pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
     wake: Option<EguiContext>,
+    relocate_mode: bool,
+    drag: Option<DragState>,
+    move_cursor: c_ulong,
 }
 
 fn host_loop(
     cmd_rx: Receiver<HostCmd>,
     pending: Arc<Mutex<Vec<String>>>,
+    pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
     stop: Arc<AtomicBool>,
 ) {
     // SAFETY: connects to the default display; pointer is owned by this thread
@@ -189,6 +229,8 @@ fn host_loop(
     }
     // SAFETY: `display` non-null; fd is valid for poll until XCloseDisplay.
     let xfd = unsafe { XConnectionNumber(display) };
+    // SAFETY: host-thread display; cursor freed in destroy_all before close.
+    let move_cursor = unsafe { XCreateFontCursor(display, XC_FLEUR) };
 
     let mut state = HostState {
         display,
@@ -199,7 +241,11 @@ fn host_loop(
         tip: None,
         xfd,
         pending,
+        pending_moves,
         wake: None,
+        relocate_mode: false,
+        drag: None,
+        move_cursor,
     };
 
     note("overlay-x11: host thread started (override-redirect buttons)");
@@ -209,6 +255,7 @@ fn host_loop(
         loop {
             match cmd_rx.try_recv() {
                 Ok(HostCmd::SetButtons(specs)) => apply_specs(&mut state, specs),
+                Ok(HostCmd::SetRelocateMode(enabled)) => set_relocate_mode(&mut state, enabled),
                 Ok(HostCmd::SetWake(ctx)) => {
                     state.wake = Some(ctx);
                 }
@@ -271,6 +318,7 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
     for spec in specs {
         let id = spec.id.clone();
         keep.insert(id.clone());
+        let dragging = state.drag.as_ref().is_some_and(|d| d.id == id);
         let updated = if let Some(live) = state.buttons.get_mut(&id) {
             let geom_changed = live.spec.x != spec.x
                 || live.spec.y != spec.y
@@ -287,22 +335,57 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                 || live.spec.icon_hover != spec.icon_hover
                 || live.spec.tip != spec.tip
                 || live.spec.busy != spec.busy;
+            let was_filled = live.spec.bg[3] > 0;
             let win = live.win;
-            if geom_changed {
-                // SAFETY: HostState display invariant; `win` is this button's Xid.
+            let hit = live.hit;
+            // While relocating, keep the live drag position — app specs may still be stale.
+            if geom_changed && !dragging {
+                // SAFETY: HostState display invariant; face+hit created on this display.
                 unsafe {
+                    x_move_resize(state.display, hit, spec.x, spec.y, spec.w, spec.h);
                     x_move_resize(state.display, win, spec.x, spec.y, spec.w, spec.h);
                 }
             }
+            let (keep_x, keep_y) = (live.spec.x, live.spec.y);
             live.spec = spec;
+            if dragging {
+                live.spec.x = keep_x;
+                live.spec.y = keep_y;
+            }
+            let filled = live.spec.bg[3] > 0;
+            let geom_applied = geom_changed && !dragging;
             Some((
-                geom_changed || radius_changed,
-                style_changed || geom_changed,
+                // Opaque: rounded face Bounding (+ empty Input). Transparent: paint
+                // reapplies chrome Bounding. Hit window keeps the full rounded Input.
+                filled && (geom_applied || radius_changed || !was_filled),
+                style_changed || geom_applied,
                 live.spec.w,
                 live.spec.h,
                 live.spec.corner_radius,
             ))
         } else {
+            // Create here so `spec` is not used after the update arm moves it.
+            if let Ok(live) = create_button(state, spec) {
+                if live.spec.bg[3] > 0 {
+                    apply_face_rounded_bounding(
+                        state.display,
+                        live.win,
+                        live.spec.w,
+                        live.spec.h,
+                        live.spec.corner_radius,
+                    );
+                }
+                apply_hit_rounded_input(
+                    state.display,
+                    live.hit,
+                    live.spec.w,
+                    live.spec.h,
+                    live.spec.corner_radius,
+                );
+                paint_button(state, &live);
+                apply_button_cursor(state, live.hit, live.hovered);
+                state.buttons.insert(live.spec.id.clone(), live);
+            }
             None
         };
         if let Some((need_shape, need_paint, w, h, radius)) = updated {
@@ -312,27 +395,27 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                 .is_some_and(|t| t.mapped && t.for_id == id);
             if need_shape {
                 if let Some(live) = state.buttons.get(&id) {
-                    apply_rounded_shape(state.display, live.win, w, h, radius);
+                    apply_face_rounded_bounding(state.display, live.win, w, h, radius);
+                    apply_hit_rounded_input(state.display, live.hit, w, h, radius);
                 }
             }
             if need_paint {
                 if let Some(live) = state.buttons.get(&id) {
                     paint_button(state, live);
+                    if live.spec.bg[3] == 0 {
+                        apply_hit_rounded_input(
+                            state.display,
+                            live.hit,
+                            live.spec.w,
+                            live.spec.h,
+                            live.spec.corner_radius,
+                        );
+                    }
                 }
                 if tip_mapped {
                     show_tip_for(state, &id);
                 }
             }
-        } else if let Ok(live) = create_button(state, spec) {
-            apply_rounded_shape(
-                state.display,
-                live.win,
-                live.spec.w,
-                live.spec.h,
-                live.spec.corner_radius,
-            );
-            paint_button(state, &live);
-            state.buttons.insert(live.spec.id.clone(), live);
         }
     }
     let drop_ids: Vec<String> = state
@@ -342,13 +425,17 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
         .cloned()
         .collect();
     for id in drop_ids {
+        if state.drag.as_ref().is_some_and(|d| d.id == id) {
+            cancel_drag(state);
+        }
         if let Some(live) = state.buttons.remove(&id) {
             if state.tip.as_ref().is_some_and(|t| t.for_id == id) {
                 hide_tip(state);
             }
-            // SAFETY: HostState display invariant; `live.win` created on this display.
+            // SAFETY: HostState display invariant; face+hit created on this display.
             unsafe {
                 x_destroy_window(state.display, live.win);
+                x_destroy_window(state.display, live.hit);
             }
         }
     }
@@ -358,63 +445,194 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
     }
 }
 
+fn set_relocate_mode(state: &mut HostState, enabled: bool) {
+    if state.relocate_mode == enabled {
+        return;
+    }
+    if !enabled {
+        cancel_drag(state);
+    }
+    state.relocate_mode = enabled;
+    let wins: Vec<(Window, bool)> = state
+        .buttons
+        .values()
+        .map(|b| (b.hit, b.hovered))
+        .collect();
+    for (hit, hovered) in wins {
+        // SAFETY: HostState display invariant; `hit` is a live InputOnly cover.
+        unsafe {
+            x_select_button_input(state.display, hit, enabled);
+        }
+        apply_button_cursor(state, hit, hovered);
+    }
+    // SAFETY: HostState display invariant.
+    unsafe {
+        x_flush(state.display);
+    }
+    note(&format!("overlay-x11: relocate_mode={enabled}"));
+}
+
+fn button_event_mask(relocate: bool) -> c_long {
+    let mut mask = ButtonPressMask
+        | ButtonReleaseMask
+        | EnterWindowMask
+        | LeaveWindowMask;
+    if relocate {
+        mask |= PointerMotionMask;
+    }
+    mask
+}
+
+fn button_id_for_event_win(state: &HostState, win: Window) -> Option<String> {
+    state
+        .buttons
+        .values()
+        .find(|b| b.hit == win || b.win == win)
+        .map(|b| b.spec.id.clone())
+}
+
+fn apply_button_cursor(state: &HostState, win: Window, hovered: bool) {
+    // SAFETY: HostState display invariant; cursor created on this display.
+    unsafe {
+        if state.relocate_mode && hovered && state.move_cursor != 0 {
+            XDefineCursor(state.display, win, state.move_cursor);
+        } else {
+            XUndefineCursor(state.display, win);
+        }
+    }
+}
+
+fn cancel_drag(state: &mut HostState) {
+    if state.drag.take().is_some() {
+        // SAFETY: HostState display invariant; matches a prior XGrabPointer on this display.
+        unsafe {
+            XUngrabPointer(state.display, CurrentTime);
+            x_flush(state.display);
+        }
+    }
+}
+
+fn commit_drag(state: &mut HostState) {
+    let Some(drag) = state.drag.take() else {
+        return;
+    };
+    // SAFETY: HostState display invariant; matches a prior XGrabPointer on this display.
+    unsafe {
+        XUngrabPointer(state.display, CurrentTime);
+    }
+    let Some(btn) = state.buttons.get(&drag.id) else {
+        unsafe {
+            x_flush(state.display);
+        }
+        return;
+    };
+    if btn.spec.x == drag.start_x && btn.spec.y == drag.start_y {
+        // Click without move — keep catalog point bindings intact.
+        unsafe {
+            x_flush(state.display);
+        }
+        return;
+    }
+    let mv = OverlayButtonMove {
+        id: drag.id.clone(),
+        x: btn.spec.x,
+        y: btn.spec.y,
+    };
+    mark_site(&format!("overlay-x11:move:{}", mv.id));
+    note(&format!(
+        "overlay-x11: relocate id={} -> {},{}",
+        mv.id, mv.x, mv.y
+    ));
+    state.pending_moves.lock().push(mv);
+    if let Some(ctx) = &state.wake {
+        ctx.request_repaint();
+    }
+    // SAFETY: HostState display invariant.
+    unsafe {
+        x_flush(state.display);
+    }
+}
+
 fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton, String> {
-    let bg_pixel = alloc_color(state, spec.bg);
+    // Transparent fill still needs a backing pixel for any unshaped flecks / Expose.
+    let bg_rgb = if spec.bg[3] > 0 {
+        [spec.bg[0], spec.bg[1], spec.bg[2]]
+    } else {
+        [0, 0, 0]
+    };
+    let bg_pixel = alloc_color(state, bg_rgb);
+    let w = spec.w.max(1);
+    let h = spec.h.max(1);
     // SAFETY: HostState display invariant — create/configure/map on this thread's Display.
-    let win = unsafe {
-        let mut attrs: XSetWindowAttributes = std::mem::zeroed();
-        attrs.background_pixel = bg_pixel;
-        attrs.border_pixel = bg_pixel;
-        attrs.override_redirect = True;
-        attrs.backing_store = WhenMapped;
-        attrs.event_mask = ButtonPressMask
-            | ButtonReleaseMask
-            | ExposureMask
-            | StructureNotifyMask
-            | EnterWindowMask
-            | LeaveWindowMask;
+    // Hit (InputOnly) owns pointer events; face paints chrome and has empty ShapeInput so
+    // Mutter can punch Bounding without swallowing hollow-center clicks (Input∩Bounding).
+    let (hit, win) = unsafe {
+        let mut hit_attrs: XSetWindowAttributes = std::mem::zeroed();
+        hit_attrs.override_redirect = True;
+        hit_attrs.event_mask = button_event_mask(state.relocate_mode);
+        let hit = XCreateWindow(
+            state.display,
+            state.root,
+            spec.x,
+            spec.y,
+            w,
+            h,
+            0,
+            0,
+            InputOnly as c_uint,
+            std::ptr::null_mut(),
+            CWOverrideRedirect | CWEventMask,
+            &mut hit_attrs,
+        );
+        if hit == 0 {
+            return Err("XCreateWindow hit failed".into());
+        }
+
+        let mut face_attrs: XSetWindowAttributes = std::mem::zeroed();
+        face_attrs.background_pixel = bg_pixel;
+        face_attrs.border_pixel = bg_pixel;
+        face_attrs.override_redirect = True;
+        face_attrs.backing_store = WhenMapped;
+        face_attrs.event_mask = ExposureMask | StructureNotifyMask;
         let win = XCreateWindow(
             state.display,
             state.root,
             spec.x,
             spec.y,
-            spec.w.max(1),
-            spec.h.max(1),
+            w,
+            h,
             0,
             XDefaultDepth(state.display, state.screen),
             InputOutput as c_uint,
             XDefaultVisual(state.display, state.screen),
             CWBackPixel | CWBorderPixel | CWOverrideRedirect | CWBackingStore | CWEventMask,
-            &mut attrs,
+            &mut face_attrs,
         );
         if win == 0 {
-            return Err("XCreateWindow failed".into());
+            x_destroy_window(state.display, hit);
+            return Err("XCreateWindow face failed".into());
         }
         let c_title = std::ffi::CString::new(OVERLAY_WM_TITLE).unwrap_or_default();
         XStoreName(state.display, win, c_title.as_ptr());
         set_net_wm_type_notification(state.display, win);
         set_skip_taskbar_state(state.display, state.root, win);
-        XSelectInput(
-            state.display,
-            win,
-            ButtonPressMask
-                | ButtonReleaseMask
-                | ExposureMask
-                | EnterWindowMask
-                | LeaveWindowMask,
-        );
+        apply_empty_input_shape(state.display, win);
+        x_select_button_input(state.display, hit, state.relocate_mode);
+        // Hit under face: face is visual-only (empty Input); hollow clicks reach hit.
+        XMapRaised(state.display, hit);
         XMapRaised(state.display, win);
         XFlush(state.display);
-        win
+        (hit, win)
     };
     mark_site(&format!("overlay-x11:map:{}", spec.id));
     note(&format!(
-        "overlay-x11: mapped id={} {}x{}+{}+{}",
+        "overlay-x11: mapped id={} {}x{}+{}+{} (face+hit)",
         spec.id, spec.w, spec.h, spec.x, spec.y
     ));
     Ok(LiveButton {
         spec,
         win,
+        hit,
         armed: false,
         hovered: false,
         busy_phase: 0.0,
@@ -437,6 +655,15 @@ fn paint_button(state: &HostState, btn: &LiveButton) {
         busy_phase: btn.busy_phase,
     };
     let rgba = raster::rasterize(&paint);
+    if paint.bg[3] == 0 {
+        apply_face_chrome_bounding(
+            state.display,
+            btn.win,
+            paint.w,
+            paint.h,
+            &rgba,
+        );
+    }
     blit_rgba(state, btn.win, paint.w, paint.h, &rgba);
 }
 
@@ -573,20 +800,6 @@ fn create_tip_window(
 /// Rounded bounding + empty input so the tip never steals hover from the button.
 fn apply_tip_shape(display: *mut Display, win: Window, w: u32, h: u32) {
     apply_rounded_shape(display, win, w, h, TIP_CORNER_PX);
-    // SAFETY: callers pass the host-thread display and a tip window created on it.
-    unsafe {
-        let mut event_base = 0;
-        let mut error_base = 0;
-        if XFixesQueryExtension(display, &mut event_base, &mut error_base) == 0 {
-            return;
-        }
-        let empty = XFixesCreateRegion(display, std::ptr::null_mut(), 0);
-        if empty == 0 {
-            return;
-        }
-        XFixesSetWindowShapeRegion(display, win, SHAPE_INPUT, 0, 0, empty);
-        XFixesDestroyRegion(display, empty);
-    }
 }
 
 fn blit_rgba(state: &HostState, win: Window, w: u32, h: u32, rgba: &[u8]) {
@@ -690,11 +903,7 @@ fn drain_x_events(state: &mut HostState) {
                 }
                 continue;
             }
-            let id = state
-                .buttons
-                .values()
-                .find(|b| b.win == win)
-                .map(|b| b.spec.id.clone());
+            let id = button_id_for_event_win(state, win);
             if let Some(id) = id {
                 if let Some(b) = state.buttons.get(&id) {
                     paint_button(state, b);
@@ -706,11 +915,11 @@ fn drain_x_events(state: &mut HostState) {
             // SAFETY: event type is Enter/Leave; crossing union member is initialized.
             let win = unsafe { event.crossing.window };
             let enter = ty == EnterNotify;
-            let id = state
-                .buttons
-                .values()
-                .find(|b| b.win == win)
-                .map(|b| b.spec.id.clone());
+            // Ignore leave/enter chatter while a grab drag is active.
+            if state.drag.is_some() {
+                continue;
+            }
+            let id = button_id_for_event_win(state, win);
             if let Some(id) = id {
                 let mut need_paint = false;
                 let mut tip_action: Option<(bool, String)> = None;
@@ -724,10 +933,11 @@ fn drain_x_events(state: &mut HostState) {
                 if need_paint {
                     if let Some(b) = state.buttons.get(&id) {
                         paint_button(state, b);
+                        apply_button_cursor(state, b.hit, b.hovered);
                     }
                 }
                 if let Some((show, tip_id)) = tip_action {
-                    if show {
+                    if show && !state.relocate_mode {
                         show_tip_for(state, &tip_id);
                     } else if state.tip.as_ref().is_some_and(|t| t.for_id == tip_id) {
                         hide_tip(state);
@@ -736,13 +946,78 @@ fn drain_x_events(state: &mut HostState) {
             }
             continue;
         }
+        if ty == MotionNotify {
+            // SAFETY: event type is MotionNotify; XMotionEvent overlay is valid.
+            let (root_x, root_y) = unsafe {
+                let m = &*( &event as *const XEvent as *const x11::xlib::XMotionEvent);
+                (m.x_root, m.y_root)
+            };
+            if let Some(drag) = state.drag.as_ref() {
+                let nx = root_x - drag.grab_dx;
+                let ny = root_y - drag.grab_dy;
+                let id = drag.id.clone();
+                if let Some(btn) = state.buttons.get_mut(&id) {
+                    if btn.spec.x != nx || btn.spec.y != ny {
+                        btn.spec.x = nx;
+                        btn.spec.y = ny;
+                        let (hit, face, w, h) = (btn.hit, btn.win, btn.spec.w, btn.spec.h);
+                        // SAFETY: HostState display invariant; face+hit are this button.
+                        unsafe {
+                            x_move_resize(state.display, hit, nx, ny, w, h);
+                            x_move_resize(state.display, face, nx, ny, w, h);
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         if ty == ButtonPress {
             // SAFETY: event type is ButtonPress; XButtonEvent overlay is valid.
-            let win = unsafe {
+            let (win, button, root_x, root_y) = unsafe {
                 let b = &*( &event as *const XEvent as *const x11::xlib::XButtonEvent);
-                b.window
+                (b.window, b.button, b.x_root, b.y_root)
             };
-            if let Some(btn) = state.buttons.values_mut().find(|b| b.win == win) {
+            if button != BUTTON_LEFT {
+                continue;
+            }
+            let id = button_id_for_event_win(state, win);
+            let Some(id) = id else {
+                continue;
+            };
+            if state.relocate_mode {
+                hide_tip(state);
+                let (bx, by, bhit) = {
+                    let Some(btn) = state.buttons.get(&id) else {
+                        continue;
+                    };
+                    (btn.spec.x, btn.spec.y, btn.hit)
+                };
+                // SAFETY: HostState display invariant; grab on this button's hit cover.
+                let grab_ok = unsafe {
+                    XGrabPointer(
+                        state.display,
+                        bhit,
+                        False,
+                        (ButtonPressMask | ButtonReleaseMask | PointerMotionMask) as c_uint,
+                        GrabModeAsync,
+                        GrabModeAsync,
+                        0,
+                        state.move_cursor,
+                        CurrentTime,
+                    ) == Success as c_int
+                };
+                if grab_ok {
+                    state.drag = Some(DragState {
+                        id,
+                        grab_dx: root_x - bx,
+                        grab_dy: root_y - by,
+                        start_x: bx,
+                        start_y: by,
+                    });
+                }
+                continue;
+            }
+            if let Some(btn) = state.buttons.get_mut(&id) {
                 if !btn.spec.busy {
                     btn.armed = true;
                 }
@@ -751,25 +1026,33 @@ fn drain_x_events(state: &mut HostState) {
         }
         if ty == ButtonRelease {
             // SAFETY: event type is ButtonRelease; XButtonEvent overlay is valid.
-            let win = unsafe {
+            let (win, button) = unsafe {
                 let b = &*( &event as *const XEvent as *const x11::xlib::XButtonEvent);
-                b.window
+                (b.window, b.button)
             };
-            if let Some(btn) = state.buttons.values_mut().find(|b| b.win == win) {
-                if btn.armed && !btn.spec.busy {
-                    btn.armed = false;
-                    let id = btn.spec.id.clone();
-                    let macro_name = btn.spec.macro_name.clone();
-                    mark_site(&format!("overlay-x11:click:{id}"));
-                    note(&format!("overlay-x11: click id={id} macro={macro_name}"));
-                    // Enqueue immediately — do not wait for the next egui ROOT sync
-                    // (that was ~1s under GameThread while the spinner already ran fine).
-                    state.pending.lock().push(macro_name);
-                    if let Some(ctx) = &state.wake {
-                        ctx.request_repaint();
+            if button != BUTTON_LEFT {
+                continue;
+            }
+            if state.drag.is_some() {
+                commit_drag(state);
+                continue;
+            }
+            let id = button_id_for_event_win(state, win);
+            if let Some(id) = id {
+                if let Some(btn) = state.buttons.get_mut(&id) {
+                    if btn.armed && !btn.spec.busy {
+                        btn.armed = false;
+                        let id = btn.spec.id.clone();
+                        let macro_name = btn.spec.macro_name.clone();
+                        mark_site(&format!("overlay-x11:click:{id}"));
+                        note(&format!("overlay-x11: click id={id} macro={macro_name}"));
+                        state.pending.lock().push(macro_name);
+                        if let Some(ctx) = &state.wake {
+                            ctx.request_repaint();
+                        }
+                    } else {
+                        btn.armed = false;
                     }
-                } else {
-                    btn.armed = false;
                 }
             }
         }
@@ -781,6 +1064,7 @@ fn drain_x_events(state: &mut HostState) {
 }
 
 fn destroy_all(state: &mut HostState) {
+    cancel_drag(state);
     hide_tip(state);
     if let Some(tip) = state.tip.take() {
         // SAFETY: HostState display invariant; tip win created on this display.
@@ -789,10 +1073,18 @@ fn destroy_all(state: &mut HostState) {
         }
     }
     for (_, live) in state.buttons.drain() {
-        // SAFETY: HostState display invariant; button wins created on this display.
+        // SAFETY: HostState display invariant; face+hit created on this display.
         unsafe {
             x_destroy_window(state.display, live.win);
+            x_destroy_window(state.display, live.hit);
         }
+    }
+    if state.move_cursor != 0 {
+        // SAFETY: cursor from XCreateFontCursor on this display; not used after.
+        unsafe {
+            XFreeCursor(state.display, state.move_cursor);
+        }
+        state.move_cursor = 0;
     }
     // SAFETY: HostState display invariant; flushes outstanding requests before close.
     unsafe {
@@ -822,6 +1114,11 @@ fn alloc_color(state: &HostState, rgb: [u8; 3]) -> c_ulong {
 }
 
 // --- Thin Xlib wrappers (HostState display / window invariants) ---------------
+
+// SAFETY: `display` live; `win` was created on it and not yet destroyed.
+unsafe fn x_select_button_input(display: *mut Display, win: Window, relocate: bool) {
+    XSelectInput(display, win, button_event_mask(relocate));
+}
 
 // SAFETY: `display` is a live host-thread connection (see module docs).
 unsafe fn x_flush(display: *mut Display) {
@@ -967,8 +1264,112 @@ fn wait_x_or_timeout(xfd: RawFd, timeout_ms: u64) {
     }
 }
 
-/// Opaque window + XFixes rounded Bounding/Input — corners look punched out without ARGB lag.
+/// Opaque face: rounded Bounding + empty Input (hit cover owns clicks).
+fn apply_face_rounded_bounding(
+    display: *mut Display,
+    win: Window,
+    w: u32,
+    h: u32,
+    radius_px: f32,
+) {
+    if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
+        return;
+    }
+    let radius = radius_px.round().max(0.0) as i32;
+    let mut rects = rounded_rect_xrectangles(w as i32, h as i32, radius);
+    apply_shape_region(display, win, SHAPE_BOUNDING, &mut rects);
+    apply_empty_input_shape(display, win);
+}
+
+/// Transparent face: chrome-only Bounding + empty Input (hollow stays clickable via hit).
+fn apply_face_chrome_bounding(display: *mut Display, win: Window, w: u32, h: u32, rgba: &[u8]) {
+    if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
+        return;
+    }
+    let runs = raster::shape_rects_from_alpha(rgba, w, h);
+    let mut bound: Vec<XRectangle> = runs
+        .into_iter()
+        .map(|(x, y, width, height)| XRectangle {
+            x,
+            y,
+            width,
+            height,
+        })
+        .collect();
+    if bound.is_empty() {
+        bound.push(XRectangle {
+            x: (w / 2) as i16,
+            y: (h / 2) as i16,
+            width: 1,
+            height: 1,
+        });
+    }
+    apply_shape_region(display, win, SHAPE_BOUNDING, &mut bound);
+    apply_empty_input_shape(display, win);
+}
+
+/// Hit cover: rounded ShapeInput matching the button disk.
+fn apply_hit_rounded_input(
+    display: *mut Display,
+    hit: Window,
+    w: u32,
+    h: u32,
+    radius_px: f32,
+) {
+    if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
+        return;
+    }
+    let radius = radius_px.round().max(0.0) as i32;
+    let mut rects = rounded_rect_xrectangles(w as i32, h as i32, radius);
+    if rects.is_empty() {
+        rects.push(XRectangle {
+            x: 0,
+            y: 0,
+            width: w as u16,
+            height: h as u16,
+        });
+    }
+    apply_shape_region(display, hit, SHAPE_INPUT, &mut rects);
+}
+
+/// Tip / face: no pointer events (visual-only).
+fn apply_empty_input_shape(display: *mut Display, win: Window) {
+    // SAFETY: callers pass the host-thread display and a window created on it.
+    unsafe {
+        let mut event_base = 0;
+        let mut error_base = 0;
+        if XFixesQueryExtension(display, &mut event_base, &mut error_base) == 0 {
+            return;
+        }
+        let empty = XFixesCreateRegion(display, std::ptr::null_mut(), 0);
+        if empty == 0 {
+            return;
+        }
+        XFixesSetWindowShapeRegion(display, win, SHAPE_INPUT, 0, 0, empty);
+        XFixesDestroyRegion(display, empty);
+    }
+}
+
+/// Opaque tip panel: rounded Bounding + empty Input.
 fn apply_rounded_shape(display: *mut Display, win: Window, w: u32, h: u32, radius_px: f32) {
+    if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
+        return;
+    }
+    let radius = radius_px.round().max(0.0) as i32;
+    let mut rects = rounded_rect_xrectangles(w as i32, h as i32, radius);
+    apply_shape_region(display, win, SHAPE_BOUNDING, &mut rects);
+    apply_empty_input_shape(display, win);
+}
+
+fn apply_shape_region(
+    display: *mut Display,
+    win: Window,
+    kind: c_int,
+    rects: &mut [XRectangle],
+) {
+    if rects.is_empty() {
+        return;
+    }
     // SAFETY: callers pass the host-thread display and a window created on it.
     unsafe {
         let mut event_base = 0;
@@ -986,20 +1387,11 @@ fn apply_rounded_shape(display: *mut Display, win: Window, w: u32, h: u32, radiu
         {
             return;
         }
-        if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
-            return;
-        }
-        let radius = radius_px.round().max(0.0) as i32;
-        let mut rects = rounded_rect_xrectangles(w as i32, h as i32, radius);
-        if rects.is_empty() {
-            return;
-        }
         let region = XFixesCreateRegion(display, rects.as_mut_ptr(), rects.len() as c_int);
         if region == 0 {
             return;
         }
-        XFixesSetWindowShapeRegion(display, win, SHAPE_BOUNDING, 0, 0, region);
-        XFixesSetWindowShapeRegion(display, win, SHAPE_INPUT, 0, 0, region);
+        XFixesSetWindowShapeRegion(display, win, kind, 0, 0, region);
         XFixesDestroyRegion(display, region);
     }
 }
