@@ -572,6 +572,11 @@ pub fn window_is_transient_shell_focus(win: &WindowInfo) -> bool {
         || name == "gnome-shell"
         || path_base == "gnome-shell"
         || name == "gsd-xsettings"
+        // Steam *client* flashes (not Proton games under .../Steam/steamapps/...).
+        || name == "steam"
+        || name == "steamwebhelper"
+        || path_base == "steam"
+        || path_base == "steamwebhelper"
         || (title.contains("share") && (title.contains("screen") || title.contains("audio")))
         || title.contains("screen sharing")
         || title.contains("screencast")
@@ -860,5 +865,22 @@ mod tests {
             icon: None,
         };
         assert!(!super::window_is_transient_shell_focus(&game));
+
+        let steam = WindowInfo {
+            title: "Steam".into(),
+            process_name: "steamwebhelper".into(),
+            process_path: "/home/chris/.local/share/Steam/ubuntu12_64/steamwebhelper".into(),
+            icon: None,
+        };
+        assert!(super::window_is_transient_shell_focus(&steam));
+
+        // Proton games live under .../Steam/steamapps/... — must NOT be treated as Steam chrome.
+        let proton_game = WindowInfo {
+            title: "Mistfall Hunter".into(),
+            process_name: "wine-preloader".into(),
+            process_path: "/home/chris/.local/share/Steam/steamapps/common/Proton - Experimental/files/lib/wine/x86_64-unix/wine-preloader".into(),
+            icon: None,
+        };
+        assert!(!super::window_is_transient_shell_focus(&proton_game));
     }
 }

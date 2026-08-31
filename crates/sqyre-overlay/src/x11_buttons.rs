@@ -45,9 +45,10 @@ use x11::xlib::{
     XCreateFontCursor, XCreateGC, XCreateImage, XCreateWindow, XDefaultColormap, XDefaultDepth,
     XDefaultRootWindow, XDefaultScreen, XDefaultVisual, XDefineCursor, XDestroyImage,
     XDestroyWindow, XEvent, XFlush, XFreeCursor, XFreeGC, XGrabPointer, XInternAtom, XMapRaised,
-    XMoveResizeWindow, XNextEvent, XOpenDisplay, XPending, XPutImage, XRectangle, XSelectInput,
-    XSetWindowAttributes, XStoreName, XSync, XUndefineCursor, XUngrabPointer, XUnmapWindow,
-    ZPixmap, LSBFirst,
+    XMapWindow, XMoveResizeWindow, XNextEvent, XOpenDisplay, XPending, XPutImage, XRectangle,
+    XSelectInput, XSetWindowAttributes, XStoreName, XSync, XUndefineCursor, XUngrabPointer,
+    XUnmapWindow, XConfigureWindow, XWindowChanges, ZPixmap, LSBFirst, Below, CWSibling,
+    CWStackMode,
 };
 
 /// `ShapeBounding` / `ShapeInput` from `X11/extensions/shapeconst.h`.
@@ -111,13 +112,14 @@ impl X11ButtonHost {
     pub fn start(
         pending: Arc<Mutex<Vec<String>>>,
         pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
+        running_macro: Arc<Mutex<Option<String>>>,
     ) -> Result<Self, String> {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let stop_t = Arc::clone(&stop);
         let join = thread::Builder::new()
             .name("sqyre-x11-overlay".into())
-            .spawn(move || host_loop(cmd_rx, pending, pending_moves, stop_t))
+            .spawn(move || host_loop(cmd_rx, pending, pending_moves, running_macro, stop_t))
             .map_err(|e| format!("spawn x11 overlay thread: {e}"))?;
         Ok(Self {
             cmd_tx,
@@ -199,12 +201,15 @@ struct HostState {
     relocate_mode: bool,
     drag: Option<DragState>,
     move_cursor: c_ulong,
+    /// Skip Enter/Leave tip logic while mapping/stacking tip (avoids leave↔show loops).
+    suppress_crossing: bool,
 }
 
 fn host_loop(
     cmd_rx: Receiver<HostCmd>,
     pending: Arc<Mutex<Vec<String>>>,
     pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
+    running_macro: Arc<Mutex<Option<String>>>,
     stop: Arc<AtomicBool>,
 ) {
     // SAFETY: connects to the default display; pointer is owned by this thread
@@ -246,15 +251,22 @@ fn host_loop(
         relocate_mode: false,
         drag: None,
         move_cursor,
+        suppress_crossing: false,
     };
 
     note("overlay-x11: host thread started (override-redirect buttons)");
     let mut last_busy_tick = Instant::now();
+    let mut last_x_growth = Instant::now();
+    let mut stall_raised = false;
+    let mut last_running: Option<String> = None;
 
     while !stop.load(Ordering::Relaxed) {
         loop {
             match cmd_rx.try_recv() {
-                Ok(HostCmd::SetButtons(specs)) => apply_specs(&mut state, specs),
+                Ok(HostCmd::SetButtons(specs)) => {
+                    apply_specs(&mut state, specs);
+                    apply_running_busy(&mut state, last_running.as_deref());
+                }
                 Ok(HostCmd::SetRelocateMode(enabled)) => set_relocate_mode(&mut state, enabled),
                 Ok(HostCmd::SetWake(ctx)) => {
                     state.wake = Some(ctx);
@@ -274,7 +286,33 @@ fn host_loop(
             break;
         }
 
-        drain_x_events(&mut state);
+        // Busy must not wait on egui sync — ROOT starves under fullscreen games.
+        let running_now = running_macro.lock().clone();
+        if running_now != last_running {
+            apply_running_busy(&mut state, running_now.as_deref());
+            last_running = running_now;
+            stall_raised = false;
+            last_x_growth = Instant::now();
+        }
+
+        let before_pending = unsafe { XPending(state.display) };
+        let _got_pointer = drain_x_events(&mut state);
+        if before_pending > 0 {
+            last_x_growth = Instant::now();
+            stall_raised = false;
+        }
+
+        // After macros, the game often restacks above OR hits. Re-raise when the
+        // X queue goes quiet (no events at all — not only pointer).
+        let any_busy = state.buttons.values().any(|b| b.spec.busy);
+        if !state.buttons.is_empty()
+            && !any_busy
+            && !stall_raised
+            && last_x_growth.elapsed() >= Duration::from_millis(800)
+        {
+            raise_all_hits(&state);
+            stall_raised = true;
+        }
 
         let any_busy = state.buttons.values().any(|b| b.spec.busy);
         if any_busy && last_busy_tick.elapsed() >= Duration::from_millis(BUSY_TICK_MS) {
@@ -290,7 +328,9 @@ fn host_loop(
                     btn.busy_phase = (btn.busy_phase + 0.12) % std::f32::consts::TAU;
                 }
                 if let Some(btn) = state.buttons.get(&id) {
-                    paint_button(&state, btn);
+                    // Pixels only — reapplying Shape* every spinner frame made the
+                    // face eat clicks (empty ShapeInput regresses on XWayland/Mutter).
+                    paint_button(&state, btn, false);
                 }
             }
             // SAFETY: HostState display invariant.
@@ -382,17 +422,13 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                     live.spec.h,
                     live.spec.corner_radius,
                 );
-                paint_button(state, &live);
+                paint_button(state, &live, true);
                 apply_button_cursor(state, live.hit, live.hovered);
                 state.buttons.insert(live.spec.id.clone(), live);
             }
             None
         };
         if let Some((need_shape, need_paint, w, h, radius)) = updated {
-            let tip_mapped = state
-                .tip
-                .as_ref()
-                .is_some_and(|t| t.mapped && t.for_id == id);
             if need_shape {
                 if let Some(live) = state.buttons.get(&id) {
                     apply_face_rounded_bounding(state.display, live.win, w, h, radius);
@@ -401,7 +437,7 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             }
             if need_paint {
                 if let Some(live) = state.buttons.get(&id) {
-                    paint_button(state, live);
+                    paint_button(state, live, true);
                     if live.spec.bg[3] == 0 {
                         apply_hit_rounded_input(
                             state.display,
@@ -411,10 +447,10 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                             live.spec.corner_radius,
                         );
                     }
+                    // Do not XMapRaised here — restacking after busy/style updates
+                    // broke hit-testing until windows were remapped (focus cycle).
                 }
-                if tip_mapped {
-                    show_tip_for(state, &id);
-                }
+                // Tips disabled (see EnterNotify); never re-show from apply_specs.
             }
         }
     }
@@ -453,17 +489,19 @@ fn set_relocate_mode(state: &mut HostState, enabled: bool) {
         cancel_drag(state);
     }
     state.relocate_mode = enabled;
-    let wins: Vec<(Window, bool)> = state
+    let wins: Vec<(Window, Window, bool)> = state
         .buttons
         .values()
-        .map(|b| (b.hit, b.hovered))
+        .map(|b| (b.hit, b.win, b.hovered))
         .collect();
-    for (hit, hovered) in wins {
-        // SAFETY: HostState display invariant; `hit` is a live InputOnly cover.
+    for (hit, face, hovered) in wins {
+        // SAFETY: HostState display invariant; `hit`/`face` are live for this button.
         unsafe {
             x_select_button_input(state.display, hit, enabled);
+            x_select_face_input(state.display, face, enabled);
         }
         apply_button_cursor(state, hit, hovered);
+        raise_hit_above_face(state.display, hit, face);
     }
     // SAFETY: HostState display invariant.
     unsafe {
@@ -564,8 +602,9 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
     let w = spec.w.max(1);
     let h = spec.h.max(1);
     // SAFETY: HostState display invariant — create/configure/map on this thread's Display.
-    // Hit (InputOnly) owns pointer events; face paints chrome and has empty ShapeInput so
-    // Mutter can punch Bounding without swallowing hollow-center clicks (Input∩Bounding).
+    // Face paints chrome; InputOnly hit sits above it (invisible, owns pointer). Putting
+    // face on top + empty ShapeInput used to work until busy-spinner shape churn made the
+    // face eat clicks on XWayland/Mutter with no ButtonPress selected.
     let (hit, win) = unsafe {
         let mut hit_attrs: XSetWindowAttributes = std::mem::zeroed();
         hit_attrs.override_redirect = True;
@@ -593,7 +632,9 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
         face_attrs.border_pixel = bg_pixel;
         face_attrs.override_redirect = True;
         face_attrs.backing_store = WhenMapped;
-        face_attrs.event_mask = ExposureMask | StructureNotifyMask;
+        // Button events as fallback if stacking ever puts face above hit.
+        face_attrs.event_mask =
+            ExposureMask | StructureNotifyMask | button_event_mask(state.relocate_mode);
         let win = XCreateWindow(
             state.display,
             state.root,
@@ -618,9 +659,9 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
         set_skip_taskbar_state(state.display, state.root, win);
         apply_empty_input_shape(state.display, win);
         x_select_button_input(state.display, hit, state.relocate_mode);
-        // Hit under face: face is visual-only (empty Input); hollow clicks reach hit.
-        XMapRaised(state.display, hit);
+        // Face first, then hit on top — InputOnly does not obscure the face pixels.
         XMapRaised(state.display, win);
+        XMapRaised(state.display, hit);
         XFlush(state.display);
         (hit, win)
     };
@@ -639,7 +680,7 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
     })
 }
 
-fn paint_button(state: &HostState, btn: &LiveButton) {
+fn paint_button(state: &HostState, btn: &LiveButton, update_shape: bool) {
     let paint = ButtonPaint {
         w: btn.spec.w.max(1),
         h: btn.spec.h.max(1),
@@ -655,7 +696,7 @@ fn paint_button(state: &HostState, btn: &LiveButton) {
         busy_phase: btn.busy_phase,
     };
     let rgba = raster::rasterize(&paint);
-    if paint.bg[3] == 0 {
+    if update_shape && paint.bg[3] == 0 {
         apply_face_chrome_bounding(
             state.display,
             btn.win,
@@ -665,6 +706,76 @@ fn paint_button(state: &HostState, btn: &LiveButton) {
         );
     }
     blit_rgba(state, btn.win, paint.w, paint.h, &rgba);
+}
+
+fn raise_hit_above_face(display: *mut Display, hit: Window, face: Window) {
+    // SAFETY: caller passes host-thread display and live face+hit for one button.
+    unsafe {
+        XMapRaised(display, face);
+        XMapRaised(display, hit);
+    }
+}
+
+fn raise_all_hits(state: &HostState) {
+    for btn in state.buttons.values() {
+        raise_hit_above_face(state.display, btn.hit, btn.win);
+    }
+    if state.tip.as_ref().is_some_and(|t| t.mapped) {
+        stack_tip_below_buttons(state);
+    }
+    // SAFETY: HostState display invariant.
+    unsafe {
+        x_flush(state.display);
+    }
+}
+
+/// Apply busy from the shared running-macro slot (not egui sync).
+///
+/// While busy: empty the hit ShapeInput so macro mouse clicks reach the game.
+/// When cleared: restore hit shape and raise above the game.
+fn apply_running_busy(state: &mut HostState, running: Option<&str>) {
+    let running = running.map(str::trim).filter(|s| !s.is_empty());
+    let mut flipped = false;
+    let mut became_idle = false;
+    let ids: Vec<String> = state.buttons.keys().cloned().collect();
+    for id in ids {
+        let Some(btn) = state.buttons.get_mut(&id) else {
+            continue;
+        };
+        let want = running.is_some_and(|n| btn.spec.macro_name.eq_ignore_ascii_case(n));
+        if btn.spec.busy == want {
+            continue;
+        }
+        if btn.spec.busy && !want {
+            became_idle = true;
+        }
+        btn.spec.busy = want;
+        btn.armed = false;
+        flipped = true;
+        let (hit, w, h, radius) = (btn.hit, btn.spec.w, btn.spec.h, btn.spec.corner_radius);
+        if want {
+            apply_empty_input_shape(state.display, hit);
+        } else {
+            apply_hit_rounded_input(state.display, hit, w, h, radius);
+        }
+    }
+    if !flipped {
+        return;
+    }
+    hide_tip(state);
+    let paint_ids: Vec<String> = state.buttons.keys().cloned().collect();
+    for id in paint_ids {
+        if let Some(btn) = state.buttons.get(&id) {
+            paint_button(state, btn, true);
+        }
+    }
+    if became_idle || running.is_none() {
+        raise_all_hits(state);
+    }
+    // SAFETY: HostState display invariant.
+    unsafe {
+        x_flush(state.display);
+    }
 }
 
 fn show_tip_for(state: &mut HostState, button_id: &str) {
@@ -685,7 +796,8 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
         hide_tip(state);
         return;
     }
-    // Center under the button with a gap (tip has empty ShapeInput — no steal/flicker).
+    // Center under the button with a gap. Tip must stay *below* button hit windows —
+    // a raised tip over a neighbor button eats clicks if ShapeInput pass-through fails.
     let tip_x = btn_x + (btn_w - tw as i32) / 2;
     let tip_y = btn_y + btn_h + TIP_GAP_PX;
 
@@ -723,33 +835,95 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
         // SAFETY: HostState display invariant; tip.win is live on this display.
         unsafe {
             x_move_resize(state.display, tip.win, tip_x, tip_y, tw, th);
-            x_map_raised(state.display, tip.win);
+            XMapWindow(state.display, tip.win);
         }
         tip.mapped = true;
     }
     if let Some(tip) = state.tip.as_ref() {
         apply_tip_shape(state.display, tip.win, tip.w, tip.h);
         blit_rgba(state, tip.win, tip.w, tip.h, &rgba);
+        // Keep tip under button hits. ConfigureWindow can synthesize Leave/Enter —
+        // suppress crossing and discard those events before re-enabling tip logic.
+        state.suppress_crossing = true;
+        stack_tip_below_buttons(state);
         // SAFETY: HostState display invariant.
         unsafe {
             x_flush(state.display);
         }
+        discard_pending_crossing(state);
+        state.suppress_crossing = false;
+    }
+}
+
+fn stack_tip_below_buttons(state: &HostState) {
+    let Some(tip) = state.tip.as_ref() else {
+        return;
+    };
+    let Some(sibling) = state.buttons.values().next().map(|b| b.hit) else {
+        return;
+    };
+    // SAFETY: tip + sibling are live windows on this display.
+    unsafe {
+        let mut changes: XWindowChanges = std::mem::zeroed();
+        changes.sibling = sibling;
+        changes.stack_mode = Below as c_int;
+        XConfigureWindow(
+            state.display,
+            tip.win,
+            (CWSibling | CWStackMode) as c_uint,
+            &mut changes,
+        );
+    }
+}
+
+/// Drop Enter/Leave already queued after tip map/stack (prevents tip show↔hide loops).
+fn discard_pending_crossing(state: &mut HostState) {
+    loop {
+        // SAFETY: HostState display invariant.
+        let pending = unsafe { XPending(state.display) };
+        if pending <= 0 {
+            break;
+        }
+        let mut event: XEvent = unsafe { std::mem::zeroed() };
+        // SAFETY: event written by XNextEvent before type check.
+        unsafe {
+            XNextEvent(state.display, &mut event);
+        }
+        let ty = event.get_type();
+        if ty == EnterNotify || ty == LeaveNotify {
+            continue;
+        }
+        // Put non-crossing events back by handling them inline is hard; re-queue via
+        // XPutBackEvent so ButtonPress/etc. are not lost.
+        // SAFETY: event was just received on this display.
+        unsafe {
+            x11::xlib::XPutBackEvent(state.display, &mut event);
+        }
+        break;
     }
 }
 
 fn hide_tip(state: &mut HostState) {
-    if let Some(tip) = state.tip.as_mut() {
-        if tip.mapped {
-            // SAFETY: HostState display invariant; tip.win is mapped on this display.
-            unsafe {
-                x_unmap(state.display, tip.win);
-                x_flush(state.display);
-            }
-            tip.mapped = false;
-        }
+    let Some(tip) = state.tip.as_mut() else {
+        return;
+    };
+    if !tip.mapped {
         tip.for_id.clear();
         tip.text.clear();
+        return;
     }
+    let tip_win = tip.win;
+    tip.mapped = false;
+    tip.for_id.clear();
+    tip.text.clear();
+    state.suppress_crossing = true;
+    // SAFETY: HostState display invariant; tip.win is mapped on this display.
+    unsafe {
+        x_unmap(state.display, tip_win);
+        x_flush(state.display);
+    }
+    discard_pending_crossing(state);
+    state.suppress_crossing = false;
 }
 
 fn create_tip_window(
@@ -791,7 +965,8 @@ fn create_tip_window(
         set_net_wm_type_notification(state.display, win);
         set_skip_taskbar_state(state.display, state.root, win);
         apply_tip_shape(state.display, win, w, h);
-        XMapRaised(state.display, win);
+        // Map without raising — show_tip stacks tip below button hits.
+        XMapWindow(state.display, win);
         XFlush(state.display);
         Ok(win)
     }
@@ -878,7 +1053,8 @@ fn place_channel(value: u8, mask: u64) -> u32 {
     (u32::from(value) << shift) & mask as u32
 }
 
-fn drain_x_events(state: &mut HostState) {
+fn drain_x_events(state: &mut HostState) -> bool {
+    let mut saw_pointer = false;
     loop {
         // SAFETY: HostState display invariant.
         let pending = unsafe { XPending(state.display) };
@@ -891,6 +1067,14 @@ fn drain_x_events(state: &mut HostState) {
             XNextEvent(state.display, &mut event);
         }
         let ty = event.get_type();
+        if ty == EnterNotify
+            || ty == LeaveNotify
+            || ty == MotionNotify
+            || ty == ButtonPress
+            || ty == ButtonRelease
+        {
+            saw_pointer = true;
+        }
         if ty == Expose {
             // SAFETY: event type is Expose; expose union member is initialized.
             let win = unsafe { event.expose.window };
@@ -906,7 +1090,7 @@ fn drain_x_events(state: &mut HostState) {
             let id = button_id_for_event_win(state, win);
             if let Some(id) = id {
                 if let Some(b) = state.buttons.get(&id) {
-                    paint_button(state, b);
+                    paint_button(state, b, true);
                 }
             }
             continue;
@@ -915,8 +1099,8 @@ fn drain_x_events(state: &mut HostState) {
             // SAFETY: event type is Enter/Leave; crossing union member is initialized.
             let win = unsafe { event.crossing.window };
             let enter = ty == EnterNotify;
-            // Ignore leave/enter chatter while a grab drag is active.
-            if state.drag.is_some() {
+            // Ignore leave/enter chatter while a grab drag is active or tip restack.
+            if state.drag.is_some() || state.suppress_crossing {
                 continue;
             }
             let id = button_id_for_event_win(state, win);
@@ -932,7 +1116,9 @@ fn drain_x_events(state: &mut HostState) {
                 }
                 if need_paint {
                     if let Some(b) = state.buttons.get(&id) {
-                        paint_button(state, b);
+                        // Do not raise/restack here — that synthesizes more Leave/Enter
+                        // and used to loop tip show↔hide (~1ms) freezing the host.
+                        paint_button(state, b, true);
                         apply_button_cursor(state, b.hit, b.hovered);
                     }
                 }
@@ -980,6 +1166,8 @@ fn drain_x_events(state: &mut HostState) {
             if button != BUTTON_LEFT {
                 continue;
             }
+            // Tip can sit over a neighboring button; hide before hit-test routing.
+            hide_tip(state);
             let id = button_id_for_event_win(state, win);
             let Some(id) = id else {
                 continue;
@@ -1018,8 +1206,13 @@ fn drain_x_events(state: &mut HostState) {
                 continue;
             }
             if let Some(btn) = state.buttons.get_mut(&id) {
-                if !btn.spec.busy {
+                if btn.spec.busy {
+                    mark_site(&format!("overlay-x11:press-busy:{id}"));
+                    note(&format!("overlay-x11: press-busy-ignore id={id}"));
+                } else {
                     btn.armed = true;
+                    mark_site(&format!("overlay-x11:press:{id}"));
+                    note(&format!("overlay-x11: press id={id}"));
                 }
             }
             continue;
@@ -1047,13 +1240,27 @@ fn drain_x_events(state: &mut HostState) {
                         mark_site(&format!("overlay-x11:click:{id}"));
                         note(&format!("overlay-x11: click id={id} macro={macro_name}"));
                         state.pending.lock().push(macro_name);
+                        // Macro mouse/focus often restacks the game above us — re-raise now.
+                        raise_all_hits(state);
                         if let Some(ctx) = &state.wake {
                             ctx.request_repaint();
                         }
                     } else {
+                        mark_site(&format!(
+                            "overlay-x11:release-ign:{}:a{}b{}",
+                            id,
+                            btn.armed as u8,
+                            btn.spec.busy as u8
+                        ));
+                        note(&format!(
+                            "overlay-x11: release-ignored id={id} armed={} busy={}",
+                            btn.armed, btn.spec.busy
+                        ));
                         btn.armed = false;
                     }
                 }
+            } else {
+                note("overlay-x11: release on unknown window");
             }
         }
     }
@@ -1061,6 +1268,7 @@ fn drain_x_events(state: &mut HostState) {
     unsafe {
         x_flush(state.display);
     }
+    saw_pointer
 }
 
 fn destroy_all(state: &mut HostState) {
@@ -1120,6 +1328,15 @@ unsafe fn x_select_button_input(display: *mut Display, win: Window, relocate: bo
     XSelectInput(display, win, button_event_mask(relocate));
 }
 
+// SAFETY: face is InputOutput — keep Expose/StructureNotify with button masks.
+unsafe fn x_select_face_input(display: *mut Display, win: Window, relocate: bool) {
+    XSelectInput(
+        display,
+        win,
+        ExposureMask | StructureNotifyMask | button_event_mask(relocate),
+    );
+}
+
 // SAFETY: `display` is a live host-thread connection (see module docs).
 unsafe fn x_flush(display: *mut Display) {
     XFlush(display);
@@ -1138,11 +1355,6 @@ unsafe fn x_move_resize(display: *mut Display, win: Window, x: i32, y: i32, w: u
 // SAFETY: `display` live; `win` was created on it and not yet destroyed.
 unsafe fn x_unmap(display: *mut Display, win: Window) {
     XUnmapWindow(display, win);
-}
-
-// SAFETY: `display` live; `win` was created on it and not yet destroyed.
-unsafe fn x_map_raised(display: *mut Display, win: Window) {
-    XMapRaised(display, win);
 }
 
 // SAFETY: `display` live for this thread.
