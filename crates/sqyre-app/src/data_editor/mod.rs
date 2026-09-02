@@ -4,7 +4,7 @@ const WINDOW_TITLE: &str = "Data Editor";
 
 mod form_state;
 mod forms;
-mod helpers;
+pub(crate) mod helpers;
 mod lists;
 mod overlay;
 mod persist;
@@ -21,7 +21,7 @@ use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::status_banner::StatusBanner;
 use eframe::egui;
-use helpers::{overlay_hex_or_empty, rgba_color};
+use helpers::{editor_program_names, is_editor_listed_program, overlay_hex_or_empty, rgba_color};
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
@@ -453,7 +453,7 @@ impl DataEditor {
         self.request_open(ctx);
         self.switch_tab(tab, catalog, settings);
         if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
-            if let Some(name) = catalog.program_names().next() {
+            if let Some(name) = editor_program_names(catalog).next() {
                 self.select_program(name, catalog, settings);
             }
         }
@@ -501,10 +501,21 @@ impl DataEditor {
         if !self.open {
             return;
         }
+        if self
+            .selected_program
+            .as_deref()
+            .is_some_and(|n| !is_editor_listed_program(n))
+        {
+            self.selected_program = None;
+            self.clear_entity_selection();
+        }
         self.poll_screen_click(env, previews);
         let mut open = self.open;
         let ctx = env.ctx;
-        crate::widgets::fit_dialog_window(
+        // Bounds only — this pane allocates body/footer and owns its ScrollAreas.
+        // An outer window scroll (fit_dialog_window) caused intermittent H bars and
+        // clipped header buttons when children claimed available_width as min_width.
+        crate::widgets::fit_dialog_popup(
             egui::Window::new(WINDOW_TITLE)
                 .open(&mut open)
                 .default_size([880.0, 560.0])
@@ -514,8 +525,8 @@ impl DataEditor {
             ctx,
         )
         .show(ctx, |ui| {
-                self.ui(ui, env, selected_macro, previews);
-            });
+            self.ui(ui, env, selected_macro, previews);
+        });
         self.open = open;
         self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings);
         self.draw_confirm(env, previews);

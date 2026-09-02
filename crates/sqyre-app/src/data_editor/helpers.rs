@@ -1,7 +1,18 @@
 //! Shared parsing / naming helpers for the data editor.
 
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::{ProgramCatalog, TEMPORARY_PROGRAM};
 use web_time::{SystemTime, UNIX_EPOCH};
+
+/// Recording scratch program — omitted from Data Editor lists and selectors.
+pub(crate) fn is_editor_listed_program(name: &str) -> bool {
+    name != TEMPORARY_PROGRAM
+}
+
+pub(crate) fn editor_program_names(catalog: &ProgramCatalog) -> impl Iterator<Item = &String> {
+    catalog
+        .program_names()
+        .filter(|n| is_editor_listed_program(n))
+}
 
 pub(crate) fn new_overlay_button_id() -> String {
     let ms = SystemTime::now()
@@ -106,6 +117,18 @@ mod tests {
     use super::*;
     use sqyre_domain::ScalarValue;
     use sqyre_persist::{ProgramCatalog, ProgramItem};
+
+    #[test]
+    fn editor_lists_omit_temporary_program() {
+        let mut cat = ProgramCatalog::default();
+        cat.create_program("Game").unwrap();
+        cat.create_program(sqyre_persist::TEMPORARY_PROGRAM)
+            .unwrap();
+        let names: Vec<_> = editor_program_names(&cat).map(|s| s.as_str()).collect();
+        assert_eq!(names, ["Game"]);
+        assert!(!is_editor_listed_program(sqyre_persist::TEMPORARY_PROGRAM));
+        assert!(is_editor_listed_program("Game"));
+    }
 
     #[test]
     fn unique_name_appends_suffix() {
