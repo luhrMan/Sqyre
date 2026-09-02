@@ -9,7 +9,7 @@ use crate::error::{ExecError, Result, SearchError};
 use crate::log_draw::{crop_match_preview, draw_rect_rgb};
 use crate::run::Executor;
 use rayon::prelude::*;
-use sqyre_domain::{action_type_label, Action, ActionKind, Macro, MatchMethod};
+use sqyre_domain::{action_type_label, variant_name_from_path, Action, ActionKind, Macro, MatchMethod, PROGRAM_DELIMITER};
 use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_prepared, prepare_search,
     search_blur_kernel, ImageBuf, Point,
@@ -103,11 +103,12 @@ struct NamedPoint {
     tmpl_w: i32,
     tmpl_h: i32,
     name: String,
+    variant_name: String,
 }
 
 struct VariantJob {
     target: String,
-    variant_i: usize,
+    variant_name: String,
     path: PathBuf,
     meta: Option<ItemMeta>,
     mask_path: Option<PathBuf>,
@@ -197,10 +198,15 @@ fn capture_and_match(
         }
         let meta = icons.item_meta(target);
         let mask_path = icons.mask_path(target);
-        for (variant_i, path) in paths.into_iter().enumerate() {
+        let item = target
+            .split_once(PROGRAM_DELIMITER)
+            .map(|(_, item)| item)
+            .unwrap_or(target.as_str());
+        for path in paths {
+            let variant_name = variant_name_from_path(&path, item);
             jobs.push(VariantJob {
                 target: target.clone(),
-                variant_i,
+                variant_name,
                 path,
                 meta: meta.clone(),
                 mask_path: mask_path.clone(),
@@ -299,15 +305,7 @@ fn capture_and_match(
 
     let mut out = Vec::new();
     for outcome in outcomes {
-        let variant_label = if outcome.job.variant_i == 0 {
-            outcome.job.target.clone()
-        } else {
-            format!(
-                "{} variant {}",
-                outcome.job.target,
-                outcome.job.variant_i + 1
-            )
-        };
+        let variant_label = variant_log_label(&outcome.job.target, &outcome.job.variant_name);
 
         if outcome.tmpl_w == 0 {
             if let Err(e) = &outcome.matches {
@@ -436,6 +434,7 @@ fn capture_and_match(
                 ));
                 out.push(NamedPoint {
                     name: outcome.job.target.clone(),
+                    variant_name: outcome.job.variant_name.clone(),
                     point: p,
                     origin,
                     meta: outcome.job.meta.clone(),
@@ -483,6 +482,7 @@ fn capture_and_match(
                 p.y += half_h;
                 out.push(NamedPoint {
                     name: outcome.job.target.clone(),
+                    variant_name: outcome.job.variant_name.clone(),
                     point: p,
                     origin,
                     meta: outcome.job.meta.clone(),
@@ -512,9 +512,18 @@ fn capture_and_match(
                 meta: np.meta,
                 tmpl_w: np.tmpl_w,
                 tmpl_h: np.tmpl_h,
+                variant_name: np.variant_name,
             },
         })
         .collect();
     sort_hits(&mut hits, order);
     Ok(hits)
+}
+
+fn variant_log_label(target: &str, variant_name: &str) -> String {
+    if variant_name.is_empty() {
+        target.to_string()
+    } else {
+        format!("{target}{PROGRAM_DELIMITER}{variant_name}")
+    }
 }

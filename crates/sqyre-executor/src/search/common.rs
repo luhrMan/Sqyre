@@ -186,6 +186,7 @@ pub(super) enum DetectionExtras {
         meta: Option<ItemMeta>,
         tmpl_w: i32,
         tmpl_h: i32,
+        variant_name: String,
     },
 }
 
@@ -296,6 +297,7 @@ pub(super) fn run_matches(
             meta,
             tmpl_w,
             tmpl_h,
+            variant_name,
         } = &hit.extras
         {
             if let Some(meta) = meta {
@@ -312,6 +314,9 @@ pub(super) fn run_matches(
                     .variables
                     .set("ItemName", ScalarValue::String(meta.name.clone()));
             }
+            macro_
+                .variables
+                .set("VariantName", ScalarValue::String(variant_name.clone()));
             macro_
                 .variables
                 .set("ImagePixelWidth", ScalarValue::Int(*tmpl_w as i64));
