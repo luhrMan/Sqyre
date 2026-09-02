@@ -430,6 +430,9 @@ pub struct UserSettings {
     /// Unix seconds of the last successful update check (0 = never).
     #[serde(default, skip_serializing_if = "is_zero_i64")]
     pub last_update_check_unix: i64,
+    /// Active macro-list hotkey tag filter (`None` = no hotkeys; `Some("")` = untagged).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hotkey_tag_filter: Option<String>,
 }
 
 fn default_hide_recording() -> bool {
@@ -508,6 +511,7 @@ impl Default for UserSettings {
             last_backup_unix: 0,
             auto_update_check: DEFAULT_AUTO_UPDATE_CHECK,
             last_update_check_unix: 0,
+            hotkey_tag_filter: None,
         }
     }
 }
@@ -811,6 +815,7 @@ mod tests {
             highlight_active_action: true,
             image_search_close_matches_distance: 25,
             ui_scale: 1.2,
+            hotkey_tag_filter: Some("combat".into()),
             ..Default::default()
         };
         s.action_colors.detection = "#aabbcc".into();
@@ -855,6 +860,16 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].bg_alpha, 128);
         assert_eq!(loaded.overlay_buttons[0].icon_color, "#abcdef");
         assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
+        assert_eq!(loaded.hotkey_tag_filter.as_deref(), Some("combat"));
+    }
+
+    #[test]
+    fn hotkey_tag_filter_omitted_defaults_none() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.yaml");
+        std::fs::write(&path, "save_meta_images: true\n").unwrap();
+        let loaded = UserSettings::load_from_path(&path).unwrap();
+        assert_eq!(loaded.hotkey_tag_filter, None);
     }
 
     #[test]

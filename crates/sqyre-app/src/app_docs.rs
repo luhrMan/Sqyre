@@ -10,19 +10,19 @@ use crate::key_record::KeyRecordUi;
 use crate::macro_meta::MacroMetaUi;
 use crate::macro_record::MacroRecordUi;
 use crate::preview_tooltip::PreviewTooltipCache;
+#[cfg(feature = "native-runtime")]
+use crate::recording_overlay::RecordingOverlay;
 use crate::run_session::RunSession;
 use crate::settings::SettingsUi;
 use crate::tree_state::TreeState;
 use crate::variables_panel;
 use crate::workspace::Workspace;
 use crate::{docs_fixture, tray, SqyreApp};
-#[cfg(feature = "native-runtime")]
-use crate::recording_overlay::RecordingOverlay;
-#[cfg(feature = "native-runtime")]
-use sqyre_overlay::MacroOverlay;
 use eframe::egui;
 use parking_lot::Mutex;
 use sqyre_hotkeys::{HotkeyService, MacroRecordBridge, NullHotkeys, ScreenClickBridge};
+#[cfg(feature = "native-runtime")]
+use sqyre_overlay::MacroOverlay;
 use sqyre_persist::UserSettings;
 use sqyre_ports::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
@@ -77,7 +77,7 @@ impl SqyreApp {
                 save_error: None,
                 selected_macro: 0,
                 macro_meta: MacroMetaUi::default(),
-                hotkey_tag_filter: None,
+                hotkey_tag_filter: settings_ui.settings().hotkey_tag_filter.clone(),
             },
             run_session: RunSession {
                 state: run,
