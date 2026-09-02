@@ -328,7 +328,7 @@ impl DataEditor {
         ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, area_id));
     }
 
-    /// Live Overlay-tab form as an on-screen button preview (position, size, icon, label, style).
+    /// Live Overlay-tab form as an on-screen button preview (position, size, icon, style).
     ///
     /// Shown while a button is selected for editing, even before Update is clicked.
     /// Called from `sync_macro_overlay` when `overlay-buttons` is enabled.
@@ -342,7 +342,6 @@ impl DataEditor {
             id.clone(),
             self.selected_program.clone().unwrap_or_default(),
         );
-        btn.label = self.form_name.clone();
         btn.macro_name = self.form_overlay_macro.clone();
         btn.enabled = self.form_overlay_enabled;
         btn.icon = self.form_overlay_icon.clone();

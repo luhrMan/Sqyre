@@ -478,11 +478,7 @@ fn push_catalog_entities(
         );
     }
     for btn in overlay_buttons {
-        let title = if btn.label.trim().is_empty() {
-            btn.id.clone()
-        } else {
-            btn.label.clone()
-        };
+        let title = btn.display_name().to_string();
         let program = if btn.program.is_empty() {
             "Overlay".to_string()
         } else {

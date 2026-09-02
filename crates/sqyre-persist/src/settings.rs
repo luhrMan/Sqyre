@@ -151,10 +151,8 @@ pub struct OverlayButtonConfig {
     /// When false the button is not drawn (except live Data Editor preview).
     #[serde(default = "default_overlay_button_enabled")]
     pub enabled: bool,
-    /// Tooltip / optional caption under the icon.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub label: String,
     /// Macro name to start (must match an entry in `db.yaml`).
+    /// Also used as the button's display name / tooltip.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub macro_name: String,
     /// Icon catalog id (Phosphor kebab-case, e.g. `play`, `lightning`). Empty = default play.
@@ -270,7 +268,6 @@ impl OverlayButtonConfig {
             id: id.into(),
             program: program.into(),
             enabled: true,
-            label: String::new(),
             macro_name: String::new(),
             icon: String::new(),
             point: String::new(),
@@ -289,12 +286,8 @@ impl OverlayButtonConfig {
         }
     }
 
-    /// Display name for lists (label, else macro, else id).
+    /// Display name for lists (macro name, else id).
     pub fn display_name(&self) -> &str {
-        let label = self.label.trim();
-        if !label.is_empty() {
-            return label;
-        }
         let macro_name = self.macro_name.trim();
         if !macro_name.is_empty() {
             return macro_name;
@@ -825,7 +818,6 @@ mod tests {
             id: "btn-1".into(),
             program: "Demo Game".into(),
             enabled: true,
-            label: "Go".into(),
             macro_name: "demo".into(),
             icon: "bolt".into(),
             point: String::new(),
