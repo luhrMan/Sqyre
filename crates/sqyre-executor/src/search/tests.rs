@@ -1814,19 +1814,19 @@ fn image_search_multi_variant_matches_either_template() {
     sqyre_vision::with_search_cache_test_lock(|| {
         sqyre_vision::reset_search_cache_for_testing();
         let dir = tempfile::tempdir().unwrap();
-        let v1 = dir.path().join("v1.png");
-        let v2 = dir.path().join("v2.png");
+        let default_path = dir.path().join("Item.png");
+        let alt_path = dir.path().join("Item~Alt.png");
         let first = patterned_rgba(10, 10, 1);
         let second = patterned_rgba(10, 10, 90);
-        first.save(&v1).unwrap();
-        second.save(&v2).unwrap();
+        first.save(&default_path).unwrap();
+        second.save(&alt_path).unwrap();
 
-        // Screen contains only the second variant.
+        // Screen contains only the named Alt variant.
         let mut search = RgbaImage::from_pixel(50, 50, Rgba([40, 40, 40, 255]));
         stamp_rgba(&mut search, &second, 15, 18);
 
         let icons = MapIcons {
-            paths: HashMap::from([("Prog~Item".into(), vec![v1, v2])]),
+            paths: HashMap::from([("Prog~Item".into(), vec![default_path, alt_path])]),
             masks: HashMap::new(),
             meta: HashMap::from([(
                 "Prog~Item".into(),
@@ -1886,14 +1886,22 @@ fn image_search_multi_variant_matches_either_template() {
 
         assert!(
             backend.log.iter().any(|e| e == "sleep:2"),
-            "expected match via second variant: {:?}",
+            "expected match via Alt variant: {:?}",
             backend.log
         );
         assert_eq!(
             macro_.variables.get("StackMax").map(|v| v.as_display()),
             Some("3".into())
         );
+        assert_eq!(
+            macro_.variables.get("VariantName").map(|v| v.as_display()),
+            Some("Alt".into())
+        );
         let lines = lines_for(&logger.entries_for(search_id));
+        assert!(
+            lines.iter().any(|l| l.contains("Prog~Item~Alt")),
+            "expected named variant in logs: {lines:?}"
+        );
         assert!(
             lines.iter().any(|l| l.contains("Total # found:")),
             "{lines:?}"
