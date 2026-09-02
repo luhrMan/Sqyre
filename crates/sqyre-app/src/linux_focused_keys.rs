@@ -45,8 +45,10 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
         if i.modifiers.alt {
             pressed.insert("alt");
         }
-        // On Linux Wayland, egui-winit maps Super to `command`.
-        if i.modifiers.command {
+        // egui-winit sets `command` to Ctrl on Linux/Windows and Super only on macOS.
+        // Never treat `command` as Sqyre `cmd` here — that made Ctrl+X match a recorded
+        // cmd+ctrl+X chord while focused, while unfocused evdev (real Super) did not.
+        if i.modifiers.mac_cmd {
             pressed.insert("cmd");
         }
         for key in &i.keys_down {
@@ -76,10 +78,7 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
     app.run_session
         .macro_hotkeys
         .on_pressed_keys(&pressed, &move |name| {
-            pending.lock().push(name);
-            if let Some(ctx) = repaint.lock().as_ref() {
-                ctx.request_repaint();
-            }
+            crate::hotkey_wake::queue_macro_hotkey(&pending, &repaint, name);
         });
 
     if esc_pressed && !app.hotkey_record.is_open() && !app.key_record.is_open() {

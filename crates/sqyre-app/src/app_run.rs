@@ -19,6 +19,11 @@ impl SqyreApp {
     pub(crate) fn drain_pending_hotkey_macros(&mut self, ctx: &egui::Context) {
         let pending: Vec<String> = std::mem::take(&mut *self.pending_hotkey_macros.lock());
         for name in pending {
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            sqyre_capture::event_log(
+                "SQYRE_HOTKEY",
+                &[("fire", "start"), ("name", name.as_str())],
+            );
             self.start_macro_by_name(&name, ctx);
         }
     }
@@ -130,7 +135,11 @@ mod native_run {
                 ));
                 sqyre_capture::event_log(
                     "SQYRE_OVERLAY",
-                    &[("start", "skip"), ("reason", "already-running"), ("name", name)],
+                    &[
+                        ("start", "skip"),
+                        ("reason", "already-running"),
+                        ("name", name),
+                    ],
                 );
                 return;
             }
@@ -141,15 +150,16 @@ mod native_run {
                 .position(|m| m.name.eq_ignore_ascii_case(name))
             else {
                 sqyre_capture::mark_site("overlay:start:skip-unknown");
-                sqyre_capture::note(&format!(
-                    "overlay: start skipped unknown-macro name={name}"
-                ));
+                sqyre_capture::note(&format!("overlay: start skipped unknown-macro name={name}"));
                 sqyre_capture::event_log(
                     "SQYRE_OVERLAY",
-                    &[("start", "skip"), ("reason", "unknown-macro"), ("name", name)],
+                    &[
+                        ("start", "skip"),
+                        ("reason", "unknown-macro"),
+                        ("name", name),
+                    ],
                 );
-                *self.run_session.state.status.lock() =
-                    format!("No macro named \"{name}\".");
+                *self.run_session.state.status.lock() = format!("No macro named \"{name}\".");
                 ctx.request_repaint();
                 return;
             };

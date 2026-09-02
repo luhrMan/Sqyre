@@ -73,10 +73,7 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
     app.run_session
         .macro_hotkeys
         .on_pressed_keys(&pressed, &move |name| {
-            pending.lock().push(name);
-            if let Some(ctx) = repaint.lock().as_ref() {
-                ctx.request_repaint();
-            }
+            crate::hotkey_wake::queue_macro_hotkey(&pending, &repaint, name);
         });
 
     if esc_pressed && !app.hotkey_record.is_open() && !app.key_record.is_open() {
