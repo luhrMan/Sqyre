@@ -253,6 +253,15 @@ run_docker() {
   if [ "$use_linux_cache_vols" = 1 ]; then
     cache_note=", linux-cache-vols"
   fi
+  # rust-toolchain.toml lists host std only. A same-version recut then leaves
+  # rustup thinking windows-gnu is installed (E0463: can't find crate for core).
+  local rust_channel
+  rust_channel="$(sed -n 's/^channel[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$REPO_ROOT/rust-toolchain.toml" | head -n1)"
+  if [ -z "$rust_channel" ]; then
+    echo "error: could not read channel from rust-toolchain.toml" >&2
+    exit 1
+  fi
+
   echo "Building Windows release (docker: $image, CARGO_HOME=$cargo_home_in, CARGO_TARGET_DIR=$cargo_target_in, incremental=${cargo_incremental:-off}, sccache=$use_sccache$cache_note)…"
   docker run --rm \
     -u "$(id -u):$(id -g)" \
@@ -270,12 +279,24 @@ run_docker() {
     -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
     -e "CARGO_FLAGS=${CARGO_FLAGS:-}" \
     -e "RELEASE_VERSION=${RELEASE_VERSION:-}" \
+    -e "SQYRE_RUST_CHANNEL=$rust_channel" \
     "$image" \
     bash -c 'set -euo pipefail
-      # Install rust-toolchain.toml channel if needed, then ensure Windows target
-      # (image default may lag the pin; cargo alone installs host only).
-      rustup show >/dev/null
-      rustup target add x86_64-pc-windows-gnu
+      rustup toolchain install "$SQYRE_RUST_CHANNEL" \
+        --profile minimal \
+        --component rustfmt \
+        --component clippy \
+        --target x86_64-pc-windows-gnu
+      gnu_std="$(rustc --print sysroot)/lib/rustlib/x86_64-pc-windows-gnu/lib"
+      if [ ! -d "$gnu_std" ]; then
+        rustup component add rust-std --toolchain "$SQYRE_RUST_CHANNEL" \
+          --target x86_64-pc-windows-gnu --force
+      fi
+      if [ ! -d "$gnu_std" ]; then
+        echo "error: rust-std for x86_64-pc-windows-gnu missing under $(rustc --print sysroot)" >&2
+        rustup target list --installed
+        exit 1
+      fi
       cargo build -p sqyre-app --release --target x86_64-pc-windows-gnu ${CARGO_FLAGS:-}
       cp -f "${CARGO_TARGET_DIR:-target}/x86_64-pc-windows-gnu/release/sqyre.exe" /workspace/bin/sqyre.exe
       if command -v sccache >/dev/null && [ -n "${RUSTC_WRAPPER:-}" ]; then

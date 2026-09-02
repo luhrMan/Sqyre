@@ -364,14 +364,10 @@ fn focus_poll_loop(
                 let started = *g.none_since.get_or_insert_with(Instant::now);
                 let repaint = if started.elapsed() >= NONE_HIDE_AFTER {
                     // Sustained no-focus (alt-tab to Wayland / desktop) — hide gated buttons.
-                    let had = g.cached.is_some();
-                    g.cached = None;
-                    had
+                    clear_focus_gate(&mut g)
                 } else {
-                    // Brief None blip (fullscreen flicker) — keep last foreign.
-                    let before = g.cached.as_ref().map(focus_identity_key);
-                    g.cached = g.last_foreign.clone();
-                    before != g.cached.as_ref().map(focus_identity_key)
+                    // Brief None blip (fullscreen flicker) — keep last foreign while gate is live.
+                    hold_last_foreign(&mut g)
                 };
                 g.last_err = None;
                 drop(g);
@@ -398,31 +394,28 @@ fn focus_poll_loop(
 
 /// Update focus slot from a fresh active window. Returns true when callers should repaint.
 ///
-/// - Overlay chrome / portal / Steam helper: keep `last_foreign` (brief flashes).
+/// - Overlay chrome / portal / Steam helper: leave `cached` alone (do not poison
+///   `last_foreign`, and do not revive a gate already cleared by hide grace).
 /// - Sqyre main UI: keep `last_foreign` briefly (overlay click wake); hide after
 ///   [`OUR_HIDE_AFTER`] so alt-tabbing to Sqyre clears gated buttons.
 /// - Other apps: store as `last_foreign` (identity includes title for shared Wine/Proton exes).
 fn apply_active_focus(g: &mut FocusSlot, active: &WindowInfo) -> bool {
     if window_is_transient_shell_focus(active) {
         // Includes overlay button / tip WM titles — do not poison last_foreign.
+        // Do not copy last_foreign into an empty cached: after hide grace that
+        // would flash gated buttons on every GNOME overview / portal blip.
         g.none_since = None;
         g.our_since = None;
-        let before = g.cached.as_ref().map(focus_identity_key);
-        g.cached = g.last_foreign.clone();
-        return before != g.cached.as_ref().map(focus_identity_key);
+        return false;
     }
     if window_is_our_process(active) {
         g.none_since = None;
         let started = *g.our_since.get_or_insert_with(Instant::now);
         if started.elapsed() >= OUR_HIDE_AFTER {
-            let before = g.cached.as_ref().map(focus_identity_key);
-            g.cached = None;
-            return before.is_some();
+            return clear_focus_gate(g);
         }
         // Brief Sqyre focus (overlay click / macro wake) — keep game gate.
-        let before = g.cached.as_ref().map(focus_identity_key);
-        g.cached = g.last_foreign.clone();
-        return before != g.cached.as_ref().map(focus_identity_key);
+        return hold_last_foreign(g);
     }
     g.none_since = None;
     g.our_since = None;
@@ -438,6 +431,23 @@ fn apply_active_focus(g: &mut FocusSlot, active: &WindowInfo) -> bool {
         g.cached = Some(active.clone());
         false
     }
+}
+
+/// Drop gated focus after hide grace. Clears `last_foreign` so later None / Sqyre /
+/// shell blips cannot resurrect buttons for a window that is no longer focused.
+fn clear_focus_gate(g: &mut FocusSlot) -> bool {
+    let had = g.cached.is_some() || g.last_foreign.is_some();
+    g.cached = None;
+    g.last_foreign = None;
+    had
+}
+
+/// Keep showing the last real foreign window while a grace timer is active.
+/// No-op when the gate was already cleared (`last_foreign` is None).
+fn hold_last_foreign(g: &mut FocusSlot) -> bool {
+    let before = g.cached.as_ref().map(focus_identity_key);
+    g.cached = g.last_foreign.clone();
+    before != g.cached.as_ref().map(focus_identity_key)
 }
 
 struct ButtonDraw {
@@ -660,6 +670,68 @@ mod tests {
             g.last_foreign.as_ref().map(|w| w.title.as_str()),
             Some("Mistfall Hunter")
         );
+    }
+
+    #[test]
+    fn hide_grace_clears_last_foreign_so_focus_blips_do_not_resurrect() {
+        let exe = std::env::current_exe().expect("test exe");
+        let mut g = FocusSlot {
+            cached: None,
+            last_foreign: None,
+            last_err: None,
+            last_err_at: None,
+            none_since: None,
+            our_since: None,
+        };
+        apply_active_focus(&mut g, &wine_win("Mistfall Hunter"));
+        let main = WindowInfo {
+            title: "Sqyre".into(),
+            process_name: "sqyre".into(),
+            process_path: exe.to_string_lossy().into_owned(),
+            icon: None,
+        };
+        // Simulate parked on Sqyre past OUR_HIDE_AFTER.
+        g.our_since = Some(Instant::now() - OUR_HIDE_AFTER - Duration::from_millis(1));
+        assert!(apply_active_focus(&mut g, &main));
+        assert!(g.cached.is_none());
+        assert!(g.last_foreign.is_none());
+
+        // GNOME overview / portal must not revive the old game gate.
+        let shell = WindowInfo {
+            title: "gnome-shell".into(),
+            process_name: "gnome-shell".into(),
+            process_path: "/usr/bin/gnome-shell".into(),
+            icon: None,
+        };
+        assert!(!apply_active_focus(&mut g, &shell));
+        assert!(g.cached.is_none());
+        assert!(g.last_foreign.is_none());
+
+        // Fresh Sqyre focus after hide must not flash buttons for 1.5s.
+        g.our_since = None;
+        assert!(!apply_active_focus(&mut g, &main));
+        assert!(g.cached.is_none());
+        assert!(g.last_foreign.is_none());
+    }
+
+    #[test]
+    fn none_hide_grace_clears_last_foreign() {
+        let mut g = FocusSlot {
+            cached: None,
+            last_foreign: None,
+            last_err: None,
+            last_err_at: None,
+            none_since: None,
+            our_since: None,
+        };
+        apply_active_focus(&mut g, &wine_win("Mistfall Hunter"));
+        g.none_since = Some(Instant::now() - NONE_HIDE_AFTER - Duration::from_millis(1));
+        assert!(clear_focus_gate(&mut g));
+        assert!(g.cached.is_none());
+        assert!(g.last_foreign.is_none());
+        // Mid-grace hold after clear must stay empty (no resurrection).
+        assert!(!hold_last_foreign(&mut g));
+        assert!(g.cached.is_none());
     }
 
     #[test]
