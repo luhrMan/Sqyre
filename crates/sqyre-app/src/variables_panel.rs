@@ -92,30 +92,38 @@ impl VariablesPanelUi {
         let num_monitors = self.resolve_monitor_count();
         let mut persist = false;
         let mut open = self.open;
-        crate::widgets::fit_dialog_window(
+        crate::widgets::fit_dialog_popup(
             egui::Window::new(format!("Variables — {}", macro_.name))
                 .open(&mut open)
+                .resizable(true)
                 .default_width(520.0)
-                .default_height(480.0),
+                .default_height(480.0)
+                .min_size([360.0, 320.0]),
             ctx,
         )
         .show(ctx, |ui| {
-                ui.add_enabled_ui(enabled, |ui| {
-                    persist |= self.body(ui, macro_);
-                });
-                ui.separator();
-                ui.horizontal(|ui| {
-                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Runtime, "Runtime")
-                        .on_hover_text(help::VAR_TAB_RUNTIME);
-                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Builtins, "Built-ins")
-                        .on_hover_text(help::VAR_TAB_BUILTINS);
-                });
-                ui.separator();
-                match self.bottom_tab {
-                    BottomTab::Runtime => self.show_runtime(ui, runtime_vars, running),
-                    BottomTab::Builtins => self.show_builtins(ui, num_monitors),
-                }
+            // Split remaining height between declared list (top) and Runtime/Built-ins.
+            const TAB_CHROME: f32 = 48.0;
+            let avail = ui.available_height();
+            let bottom_h = ((avail - TAB_CHROME) * 0.38).max(100.0);
+            let top_h = (avail - TAB_CHROME - bottom_h).max(120.0);
+
+            ui.add_enabled_ui(enabled, |ui| {
+                persist |= self.body(ui, macro_, top_h);
             });
+            ui.separator();
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.bottom_tab, BottomTab::Runtime, "Runtime")
+                    .on_hover_text(help::VAR_TAB_RUNTIME);
+                ui.selectable_value(&mut self.bottom_tab, BottomTab::Builtins, "Built-ins")
+                    .on_hover_text(help::VAR_TAB_BUILTINS);
+            });
+            ui.separator();
+            match self.bottom_tab {
+                BottomTab::Runtime => self.show_runtime(ui, runtime_vars, running, bottom_h),
+                BottomTab::Builtins => self.show_builtins(ui, num_monitors, bottom_h),
+            }
+        });
         self.open = open;
         if running {
             ctx.request_repaint();
@@ -123,13 +131,23 @@ impl VariablesPanelUi {
         persist
     }
 
-    fn show_runtime(&self, ui: &mut egui::Ui, runtime_vars: &SharedRuntimeVars, running: bool) {
-        ui.heading(if running {
-            "Live runtime"
-        } else {
-            "Last runtime"
-        });
+    fn show_runtime(
+        &self,
+        ui: &mut egui::Ui,
+        runtime_vars: &SharedRuntimeVars,
+        running: bool,
+        max_h: f32,
+    ) {
         let snap = runtime_vars.snapshot();
+        crate::widgets::heading_with_count(
+            ui,
+            if running {
+                "Live runtime"
+            } else {
+                "Last runtime"
+            },
+            snap.len(),
+        );
         if snap.is_empty() {
             ui.weak(if running {
                 "Waiting for variables…"
@@ -138,8 +156,10 @@ impl VariablesPanelUi {
             });
             return;
         }
+        let list_h = (max_h - 28.0).max(60.0);
         crate::pickers::scroll_vertical()
-            .max_height(180.0)
+            .auto_shrink([false, false])
+            .max_height(list_h)
             .show(ui, |ui| {
                 for (name, value) in snap {
                     ui.horizontal(|ui| {
@@ -151,7 +171,7 @@ impl VariablesPanelUi {
             });
     }
 
-    fn show_builtins(&self, ui: &mut egui::Ui, num_monitors: usize) {
+    fn show_builtins(&self, ui: &mut egui::Ui, num_monitors: usize, max_h: f32) {
         ui.label(
             egui::RichText::new(
                 "Set automatically by the runtime or certain actions. Names are fixed.",
@@ -160,8 +180,10 @@ impl VariablesPanelUi {
         );
         ui.add_space(4.0);
         let catalog = builtin_variable_catalog(num_monitors);
+        let list_h = (max_h - 28.0).max(60.0);
         crate::pickers::scroll_vertical()
-            .max_height(220.0)
+            .auto_shrink([false, false])
+            .max_height(list_h)
             .show(ui, |ui| {
                 for info in &catalog {
                     ui.horizontal(|ui| {
@@ -172,30 +194,36 @@ impl VariablesPanelUi {
             });
     }
 
-    fn body(&mut self, ui: &mut egui::Ui, macro_: &mut Macro) -> bool {
+    fn body(&mut self, ui: &mut egui::Ui, macro_: &mut Macro, max_h: f32) -> bool {
         let mut persist = false;
 
-        ui.horizontal(|ui| {
-            ui.heading("Declared variables");
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .button(egui::RichText::new("+ Add").color(crate::theme::MACRO_START))
-                    .clicked()
-                {
-                    self.editing = Some(EditState {
-                        index: None,
-                        name: String::new(),
-                        type_: VariableType::Auto,
-                        initial_value: String::new(),
-                        description: String::new(),
-                        error: None,
-                        baseline_name: String::new(),
-                        baseline_type: VariableType::Auto,
-                        baseline_initial: String::new(),
-                        baseline_description: String::new(),
-                    });
-                    self.status = None;
-                }
+        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+            ui.set_max_width(crate::widgets::visible_width(ui));
+            ui.horizontal(|ui| {
+                ui.heading("Declared variables");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .button(egui::RichText::new("+ Add").color(crate::theme::MACRO_START))
+                        .clicked()
+                    {
+                        self.editing = Some(EditState {
+                            index: None,
+                            name: String::new(),
+                            type_: VariableType::Auto,
+                            initial_value: String::new(),
+                            description: String::new(),
+                            error: None,
+                            baseline_name: String::new(),
+                            baseline_type: VariableType::Auto,
+                            baseline_initial: String::new(),
+                            baseline_description: String::new(),
+                        });
+                        self.status = None;
+                    }
+                    ui.label(
+                        egui::RichText::new(format!("({})", macro_.variable_decls.len())).weak(),
+                    );
+                });
             });
         });
         ui.label(
@@ -206,8 +234,14 @@ impl VariablesPanelUi {
         let mut remove_idx: Option<usize> = None;
         let mut start_edit: Option<usize> = None;
 
+        // Reserve space for optional edit form / status below the list.
+        let edit_reserve = if self.editing.is_some() { 168.0 } else { 0.0 };
+        let status_reserve = if self.status.is_some() { 24.0 } else { 0.0 };
+        let list_h = (max_h - 56.0 - edit_reserve - status_reserve).max(80.0);
+
         crate::pickers::scroll_vertical()
-            .max_height(220.0)
+            .auto_shrink([false, false])
+            .max_height(list_h)
             .show(ui, |ui| {
                 if macro_.variable_decls.is_empty() {
                     ui.weak("No declared variables yet.");

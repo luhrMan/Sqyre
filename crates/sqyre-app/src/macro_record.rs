@@ -293,7 +293,7 @@ fn paint_review(
             ui.separator();
 
             if !points.is_empty() {
-                ui.heading("Temporary points");
+                crate::widgets::heading_with_count(ui, "Temporary points", points.len());
                 ui.label(format!(
                     "Saved into program “{TEMPORARY_PROGRAM}” at the current resolution (replaced each recording). Enabled points are drawn on screen."
                 ));
@@ -376,7 +376,8 @@ fn paint_review(
                 ui.separator();
             }
 
-            ui.heading("Actions");
+            let action_count = draft.root.children().len();
+            crate::widgets::heading_with_count(ui, "Actions", action_count);
             // Leave room for Copy/Close (+ status) so the list grows with the window.
             let footer_reserve = if status.is_empty() { 40.0 } else { 60.0 };
             let actions_h = (ui.available_height() - footer_reserve).max(80.0);
@@ -385,7 +386,7 @@ fn paint_review(
                 .max_height(actions_h)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.set_min_width(ui.available_width());
+                    ui.set_max_width(crate::widgets::visible_width(ui));
                     let actions: Vec<Action> = draft.root.children().to_vec();
                     for action in &actions {
                         let interaction = tree_chrome::paint_action_row(

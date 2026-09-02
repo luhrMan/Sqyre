@@ -137,21 +137,21 @@ impl MacroMetaUi {
             ui.ctx(),
         )
         .show(ui.ctx(), |ui| {
-                ui.add_enabled_ui(enabled, |ui| {
-                    if delay_row(ui, "Global (ms)", &mut m.global_delay) {
-                        out.persist = true;
-                    }
-                    if delay_row(ui, "Keyboard (ms)", &mut m.keyboard_delay) {
-                        out.persist = true;
-                    }
-                    if delay_row(ui, "Mouse (ms)", &mut m.mouse_delay) {
-                        out.persist = true;
-                    }
-                    if ui.button("Close").clicked() {
-                        close = true;
-                    }
-                });
+            ui.add_enabled_ui(enabled, |ui| {
+                if delay_row(ui, "Global (ms)", &mut m.global_delay) {
+                    out.persist = true;
+                }
+                if delay_row(ui, "Keyboard (ms)", &mut m.keyboard_delay) {
+                    out.persist = true;
+                }
+                if delay_row(ui, "Mouse (ms)", &mut m.mouse_delay) {
+                    out.persist = true;
+                }
+                if ui.button("Close").clicked() {
+                    close = true;
+                }
             });
+        });
         if close {
             self.delay_open = false;
         }

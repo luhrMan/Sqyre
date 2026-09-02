@@ -293,7 +293,7 @@ pub fn paint_process_icon(ui: &mut egui::Ui, tex: &TextureHandle, side: f32) {
 pub enum ProgramLabelStyle {
     /// Plain selectable list row.
     Selectable { selected: bool },
-    /// Strong 16px header with leading child count in parentheses.
+    /// Strong 16px header; child count is painted flush-right of the name.
     /// `selected: None` → non-interactive label.
     Header {
         selected: Option<bool>,
@@ -304,7 +304,7 @@ pub enum ProgramLabelStyle {
 /// Paint optional process icon + program name as one selectable (or label) widget.
 ///
 /// When `compact` is true and the program has a process icon, header styles omit the
-/// name and show only `({child_count})` (full name on hover).
+/// name (full name on hover) and keep the child count on the right.
 pub fn paint_program_label(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -316,58 +316,70 @@ pub fn paint_program_label(
     let tex = icons.for_program(ui.ctx(), catalog, program);
     let hide_name = compact && tex.is_some();
 
-    let (selected, text, interactive) = match style {
+    match style {
+        ProgramLabelStyle::Header {
+            selected,
+            child_count,
+        } => paint_program_header(ui, program, tex.as_ref(), selected, child_count, hide_name),
         ProgramLabelStyle::Selectable { selected } => {
             // Flat program rows have no child count; always keep the name.
-            (selected, program.to_string(), true)
+            let rich = egui::RichText::new(program);
+            let icon = tex.as_ref().map(|tex| {
+                egui::Image::new((tex.id(), Vec2::splat(PROCESS_ICON_SIDE)))
+                    .fit_to_exact_size(Vec2::splat(PROCESS_ICON_SIDE))
+                    .maintain_aspect_ratio(true)
+            });
+            match icon {
+                Some(icon) => ui.selectable_label(selected, (icon, rich)),
+                None => ui.selectable_label(selected, rich),
+            }
         }
-        ProgramLabelStyle::Header {
-            selected: Some(selected),
-            child_count,
-        } => {
-            let text = if hide_name {
-                format!("({child_count})")
-            } else {
-                format!("({child_count}) {program}")
-            };
-            (selected, text, true)
-        }
-        ProgramLabelStyle::Header {
-            selected: None,
-            child_count,
-        } => {
-            let text = if hide_name {
-                format!("({child_count})")
-            } else {
-                format!("({child_count}) {program}")
-            };
-            (false, text, false)
-        }
-    };
+    }
+}
 
-    let rich = match style {
-        ProgramLabelStyle::Selectable { .. } => egui::RichText::new(text),
-        ProgramLabelStyle::Header { .. } => egui::RichText::new(text).strong(),
-    };
-
-    let icon = tex.as_ref().map(|tex| {
-        egui::Image::new((tex.id(), Vec2::splat(PROCESS_ICON_SIDE)))
-            .fit_to_exact_size(Vec2::splat(PROCESS_ICON_SIDE))
-            .maintain_aspect_ratio(true)
-    });
-
-    let response = match (icon, interactive) {
-        (Some(icon), true) => ui.selectable_label(selected, (icon, rich)),
-        (None, true) => ui.selectable_label(selected, rich),
-        (Some(icon), false) => {
-            ui.horizontal(|ui| {
-                ui.add(icon);
-                ui.label(rich);
-            })
-            .response
-        }
-        (None, false) => ui.label(rich),
-    };
+fn paint_program_header(
+    ui: &mut egui::Ui,
+    program: &str,
+    tex: Option<&TextureHandle>,
+    selected: Option<bool>,
+    child_count: usize,
+    hide_name: bool,
+) -> egui::Response {
+    let row_w = ui.available_width().max(0.0);
+    let count = format!("({child_count})");
+    let response = ui
+        .allocate_ui_with_layout(
+            egui::vec2(row_w, ui.spacing().interact_size.y),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                let icon = tex.map(|tex| {
+                    egui::Image::new((tex.id(), Vec2::splat(PROCESS_ICON_SIDE)))
+                        .fit_to_exact_size(Vec2::splat(PROCESS_ICON_SIDE))
+                        .maintain_aspect_ratio(true)
+                });
+                // `hide_name` is only set when an icon is present.
+                let title_resp = match (selected, hide_name, icon) {
+                    (Some(selected), true, Some(icon)) => ui.selectable_label(selected, icon),
+                    (Some(selected), false, Some(icon)) => {
+                        ui.selectable_label(selected, (icon, egui::RichText::new(program).strong()))
+                    }
+                    (Some(selected), _, None) => {
+                        ui.selectable_label(selected, egui::RichText::new(program).strong())
+                    }
+                    (None, true, Some(icon)) => ui.add(icon),
+                    (None, false, Some(icon)) => {
+                        ui.add(icon);
+                        ui.label(egui::RichText::new(program).strong())
+                    }
+                    (None, _, None) => ui.label(egui::RichText::new(program).strong()),
+                };
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(egui::RichText::new(count).weak());
+                });
+                title_resp
+            },
+        )
+        .inner;
 
     if hide_name {
         response.on_hover_text(program)

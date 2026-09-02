@@ -259,7 +259,9 @@ impl SettingsUi {
             return;
         }
         let mut open = self.open;
-        crate::widgets::fit_dialog_window(
+        // Bounds only — settings owns sidebar/content ScrollAreas; outer window
+        // scroll produced phantom H bars when content claimed available_width.
+        crate::widgets::fit_dialog_popup(
             egui::Window::new("User Settings")
                 .open(&mut open)
                 .default_size([680.0, 640.0])
@@ -268,11 +270,11 @@ impl SettingsUi {
             ctx,
         )
         .show(ctx, |ui| {
-                #[cfg(not(target_arch = "wasm32"))]
-                self.ui(ui, ctx, db, macros, catalog, update);
-                #[cfg(target_arch = "wasm32")]
-                self.ui(ui, ctx, db, macros, catalog);
-            });
+            #[cfg(not(target_arch = "wasm32"))]
+            self.ui(ui, ctx, db, macros, catalog, update);
+            #[cfg(target_arch = "wasm32")]
+            self.ui(ui, ctx, db, macros, catalog);
+        });
         self.open = open;
         if self.dirty {
             self.persist();
@@ -1111,7 +1113,7 @@ impl SettingsUi {
                     "Compact program headers with icons",
                 )
                 .on_hover_text(
-                    "When a program has a process icon, list headers show only the icon and child count (name on hover).",
+                    "When a program has a process icon, list headers show only the icon with the child count on the right (name on hover).",
                 )
                 .changed()
         {

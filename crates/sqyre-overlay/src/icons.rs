@@ -288,21 +288,40 @@ fn paint_picker_chrome(ui: &mut egui::Ui, rect: egui::Rect, selected: bool, hove
 }
 
 /// Searchable grid of Phosphor icons; returns the newly selected id when clicked.
+///
+/// Must be shown inside a sized parent (prefer [`crate`]-side `fill_resize_body`
+/// in a `fit_dialog_popup` Window). Do not place this in a Window that also has
+/// `.scroll(...)` — nested scroll + fill widgets ratchet toward `max_size`.
 pub fn show_icon_picker_grid(
     ui: &mut egui::Ui,
     current_id: &str,
     search: &mut String,
 ) -> Option<&'static str> {
+    const CELL: f32 = 32.0;
+    const GAP: f32 = 6.0;
+
+    // Search row: `desired_width(INFINITY)` fills leftover space without an
+    // absolute min_width (absolute widths + item_spacing ratchet the parent).
     ui.horizontal(|ui| {
         ui.label(egui_phosphor::regular::MAGNIFYING_GLASS)
             .on_hover_text("Search");
-        ui.add(
-            egui::TextEdit::singleline(search)
-                .desired_width(220.0)
-                .hint_text("e.g. play, lightning, mouse"),
-        );
-        if !search.is_empty() && ui.small_button("Clear").clicked() {
-            search.clear();
+        if search.is_empty() {
+            ui.add(
+                egui::TextEdit::singleline(search)
+                    .desired_width(f32::INFINITY)
+                    .hint_text("e.g. play, lightning, mouse"),
+            );
+        } else {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.small_button("Clear").clicked() {
+                    search.clear();
+                }
+                ui.add(
+                    egui::TextEdit::singleline(search)
+                        .desired_width(f32::INFINITY)
+                        .hint_text("e.g. play, lightning, mouse"),
+                );
+            });
         }
     });
     ui.add_space(4.0);
@@ -321,25 +340,28 @@ pub fn show_icon_picker_grid(
     ui.add_space(4.0);
 
     let mut picked = None;
-    let cols = 10;
+    let rem = ui.available_size();
+    // Explicit max viewport: ScrollArea's outer min_size stays at the viewport
+    // (not the full icon catalog). auto_shrink x=true keeps width ≤ parent so
+    // Resize can shrink the window.
     egui::ScrollArea::vertical()
-        .max_height(360.0)
+        .max_width(rem.x)
+        .max_height(rem.y.max(120.0))
+        .auto_shrink([true, false])
         .show(ui, |ui| {
-            egui::Grid::new("overlay_icon_picker_grid")
-                .num_columns(cols)
-                .spacing([6.0, 6.0])
-                .show(ui, |ui| {
-                    for (i, icon) in icons.iter().enumerate() {
-                        let selected = icon.id == current_id
-                            || (current_id.trim().is_empty() && icon.id == DEFAULT_ICON_ID);
-                        if icon_glyph_button(ui, icon, selected, 32.0).clicked() {
-                            picked = Some(icon.id);
-                        }
-                        if (i + 1) % cols == 0 {
-                            ui.end_row();
-                        }
+            ui.set_max_width(ui.available_width());
+            ui.spacing_mut().item_spacing = egui::vec2(GAP, GAP);
+            // Wrapped row: min_size is one cell, not a full-width Grid row that
+            // locks the window to available_width.
+            ui.horizontal_wrapped(|ui| {
+                for icon in &icons {
+                    let selected = icon.id == current_id
+                        || (current_id.trim().is_empty() && icon.id == DEFAULT_ICON_ID);
+                    if icon_glyph_button(ui, icon, selected, CELL).clicked() {
+                        picked = Some(icon.id);
                     }
-                });
+                }
+            });
         });
     picked
 }

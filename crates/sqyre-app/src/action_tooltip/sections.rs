@@ -33,12 +33,43 @@ pub fn tip_wrapped_section(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egu
     });
 }
 
+const ADVANCED_ID_SALT: &str = "tip_advanced";
+
+fn edit_tip_refit_id() -> egui::Id {
+    egui::Id::new("sqyre_action_edit_tip_refit")
+}
+
+/// Consume a pending edit-tooltip height re-fit request (set by [`tip_advanced`]).
+pub(crate) fn take_edit_tip_refit(ctx: &egui::Context) -> bool {
+    ctx.data_mut(|d| d.remove_temp::<bool>(edit_tip_refit_id()).unwrap_or(false))
+}
+
 /// Collapsed-by-default Advanced header. Prefer tip_* sections inside for framing.
+///
+/// Clicking the header requests an edit-tooltip height re-fit so newly shown
+/// (or hidden) widgets resize the window instead of only scrolling.
 pub fn tip_advanced(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
-    egui::CollapsingHeader::new("Advanced")
+    let id = ui.make_persistent_id(ADVANCED_ID_SALT);
+    let response = egui::CollapsingHeader::new("Advanced")
         .default_open(false)
+        .id_salt(ADVANCED_ID_SALT)
         .show(ui, |ui| {
             add_contents(ui);
         });
+    // `changed` is set when the open state toggles (click or `.open(…)`).
+    if response.header_response.changed() {
+        let open = egui::collapsing_header::CollapsingState::load_with_default_open(
+            ui.ctx(),
+            id,
+            false,
+        )
+        .is_open();
+        // Snap the open animation so body height is final next frame (otherwise
+        // auto-fit chases a tween and can settle too early).
+        let _ = ui.ctx().animate_bool_with_time(id, open, 0.0);
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(edit_tip_refit_id(), true));
+        ui.ctx().request_repaint();
+    }
     ui.add_space(SECTION_GAP);
 }

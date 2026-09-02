@@ -99,16 +99,29 @@ impl DataEditor {
         let current = self.form_overlay_icon.clone();
         let mut open = true;
         let mut close = false;
-        crate::widgets::fit_dialog_window(
+        // Bounds only (no Window scroll). `fill_resize_body` pins content to the
+        // Resize region so fill widgets cannot ratchet/lock the window size.
+        // Salt bump drops huge sizes persisted from earlier ratchets.
+        let constrain = crate::widgets::dialog_constrain_rect(ctx).size();
+        crate::widgets::fit_dialog_popup(
             egui::Window::new("Choose overlay icon")
+                .id(egui::Id::new(("overlay_icon_picker", "resize_v4")))
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(true)
                 .default_size([420.0, 480.0])
+                .min_size([320.0, 280.0])
                 .default_pos(egui::pos2(120.0, 80.0)),
             ctx,
         )
+        // Override fit_dialog_popup's screen-sized max so a layout bug cannot
+        // stretch this picker to the full monitor; user can still resize up to this.
+        .max_size(egui::vec2(
+            constrain.x.min(720.0),
+            constrain.y.min(900.0),
+        ))
         .show(ctx, |ui| {
+            crate::widgets::fill_resize_body(ui, |ui| {
                 ui.weak("Phosphor Icons — search by name, then click to select.");
                 ui.add_space(4.0);
                 if let Some(id) = overlay_icons::show_icon_picker_grid(
@@ -120,6 +133,7 @@ impl DataEditor {
                     close = true;
                 }
             });
+        });
         if !open || close {
             self.overlay_icon_picker_for = None;
         }

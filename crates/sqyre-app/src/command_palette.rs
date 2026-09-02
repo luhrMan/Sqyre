@@ -1,12 +1,13 @@
 //! App-wide command window (Ctrl/Cmd+K): add actions, jump to macros, open editors.
 
+use crate::data_editor::helpers::is_editor_listed_program;
 use crate::data_editor::{DataEditorCtx, EditorTab};
 use crate::overlay_icons;
 use crate::pickers::fuzzy_match_fold;
 use crate::SqyreApp;
 use eframe::egui::{self, Color32, CornerRadius, Key, Modifiers, Sense};
 use sqyre_domain::{action_type_table, Macro};
-use sqyre_persist::{OverlayButtonConfig, ProgramCatalog};
+use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, TEMPORARY_PROGRAM};
 use sqyre_ui_model::action_picker_category;
 
 const WINDOW_ID: &str = "sqyre_command_palette";
@@ -132,74 +133,74 @@ impl CommandPaletteUi {
             ctx,
         )
         .show(ctx, |ui| {
-                let (esc, enter, down, up) = ui.input_mut(|i| {
-                    (
-                        i.consume_key(Modifiers::NONE, Key::Escape),
-                        i.consume_key(Modifiers::NONE, Key::Enter),
-                        i.consume_key(Modifiers::NONE, Key::ArrowDown),
-                        i.consume_key(Modifiers::NONE, Key::ArrowUp),
-                    )
-                });
-                if esc {
-                    close = true;
-                    return;
-                }
-
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(
-                        egui_phosphor::regular::MAGNIFYING_GLASS,
-                    ));
-                    let edit = egui::TextEdit::singleline(&mut self.query)
-                        .hint_text("Add action, open macro, new item…")
-                        .desired_width(f32::INFINITY);
-                    let resp = ui.add(edit);
-                    if self.focus_search {
-                        resp.request_focus();
-                        self.focus_search = false;
-                    }
-                    query_changed = resp.changed();
-                });
-                ui.separator();
-
-                let filtered = filter_ranked(&self.query, commands);
-                if query_changed {
-                    self.selected = 0;
-                    self.scroll_selected = true;
-                }
-                if filtered.is_empty() {
-                    ui.weak("No matching commands.");
-                    return;
-                }
-                if down {
-                    self.selected = (self.selected + 1).min(filtered.len() - 1);
-                    self.scroll_selected = true;
-                } else if up {
-                    self.selected = self.selected.saturating_sub(1);
-                    self.scroll_selected = true;
-                }
-                self.selected = self.selected.min(filtered.len() - 1);
-
-                if enter {
-                    run = Some(filtered[self.selected].kind.clone());
-                    return;
-                }
-
-                crate::pickers::scroll_vertical()
-                    .auto_shrink([false, false])
-                    .max_height(ROW_H * 10.0 + 8.0)
-                    .show(ui, |ui| {
-                        for (i, item) in filtered.iter().enumerate() {
-                            let resp = command_row(ui, item, i == self.selected);
-                            if resp.clicked() {
-                                run = Some(item.kind.clone());
-                            }
-                            if i == self.selected && self.scroll_selected {
-                                ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));
-                                self.scroll_selected = false;
-                            }
-                        }
-                    });
+            let (esc, enter, down, up) = ui.input_mut(|i| {
+                (
+                    i.consume_key(Modifiers::NONE, Key::Escape),
+                    i.consume_key(Modifiers::NONE, Key::Enter),
+                    i.consume_key(Modifiers::NONE, Key::ArrowDown),
+                    i.consume_key(Modifiers::NONE, Key::ArrowUp),
+                )
             });
+            if esc {
+                close = true;
+                return;
+            }
+
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(
+                    egui_phosphor::regular::MAGNIFYING_GLASS,
+                ));
+                let edit = egui::TextEdit::singleline(&mut self.query)
+                    .hint_text("Add action, open macro, new item…")
+                    .desired_width(f32::INFINITY);
+                let resp = ui.add(edit);
+                if self.focus_search {
+                    resp.request_focus();
+                    self.focus_search = false;
+                }
+                query_changed = resp.changed();
+            });
+            ui.separator();
+
+            let filtered = filter_ranked(&self.query, commands);
+            if query_changed {
+                self.selected = 0;
+                self.scroll_selected = true;
+            }
+            if filtered.is_empty() {
+                ui.weak("No matching commands.");
+                return;
+            }
+            if down {
+                self.selected = (self.selected + 1).min(filtered.len() - 1);
+                self.scroll_selected = true;
+            } else if up {
+                self.selected = self.selected.saturating_sub(1);
+                self.scroll_selected = true;
+            }
+            self.selected = self.selected.min(filtered.len() - 1);
+
+            if enter {
+                run = Some(filtered[self.selected].kind.clone());
+                return;
+            }
+
+            crate::pickers::scroll_vertical()
+                .auto_shrink([false, false])
+                .max_height(ROW_H * 10.0 + 8.0)
+                .show(ui, |ui| {
+                    for (i, item) in filtered.iter().enumerate() {
+                        let resp = command_row(ui, item, i == self.selected);
+                        if resp.clicked() {
+                            run = Some(item.kind.clone());
+                        }
+                        if i == self.selected && self.scroll_selected {
+                            ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));
+                            self.scroll_selected = false;
+                        }
+                    }
+                });
+        });
         if close || run.is_some() {
             self.close();
         } else {
@@ -396,6 +397,9 @@ fn push_catalog_entities(
     overlay_buttons: &[OverlayButtonConfig],
 ) {
     for name in catalog.program_names() {
+        if !is_editor_listed_program(name) {
+            continue;
+        }
         out.push(CommandItem {
             title: name.clone(),
             hint: "Program".into(),
@@ -863,6 +867,31 @@ mod tests {
         assert!(items
             .iter()
             .any(|i| matches!(i.kind, CommandKind::OpenDataEditor)));
+    }
+
+    #[test]
+    fn temporary_program_is_omitted() {
+        let mut catalog = ProgramCatalog::default();
+        catalog.create_program(TEMPORARY_PROGRAM).unwrap();
+        catalog.programs_mut().insert(
+            "Game".into(),
+            ProgramData {
+                name: "Game".into(),
+                items: BTreeMap::from([(
+                    "Flask".into(),
+                    ProgramItem {
+                        name: "Health Flask".into(),
+                        ..Default::default()
+                    },
+                )]),
+                ..Default::default()
+            },
+        );
+        let items = collect_commands(sources(&[], &catalog, &[], false));
+        assert!(!items.iter().any(|i| i.title == TEMPORARY_PROGRAM
+            || matches!(&i.kind, CommandKind::OpenProgram { name } if name == TEMPORARY_PROGRAM)
+            || matches!(&i.kind, CommandKind::OpenCatalogEntity { program, .. } if program == TEMPORARY_PROGRAM)));
+        assert!(titles("game", &items).iter().any(|t| t == "Game"));
     }
 
     #[test]

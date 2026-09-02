@@ -41,7 +41,8 @@ pub struct TooltipEdit {
     /// Unclipped height of the fields column from the last frame.
     fields_height: f32,
     /// While true, size the window height to content (capped at screen max).
-    /// Cleared after the initial fit settles, or when the user resizes.
+    /// Cleared after height settles, or when the user resizes. Re-enabled when
+    /// the Advanced section is toggled so newly shown widgets grow the window.
     auto_fit: bool,
 }
 
@@ -589,13 +590,28 @@ fn show_edit_window(
     let mut open = true;
 
     // Stable Area id (also keys egui's resize state as `area_id.with("resize")`).
-    // Bump salt when changing default/min sizing so persisted fat heights are discarded.
-    let area_id = egui::Id::new(("action_edit_tip", "grow_v5", action_id));
-    let fitting = matches!(state, TooltipState::Edit(edit) if edit.auto_fit);
+    // Bump salt when changing default/min sizing so persisted fat/tiny sizes are discarded
+    // (grow_v7 could ratchet width without a max_width cap).
+    let area_id = egui::Id::new(("action_edit_tip", "grow_v8", action_id));
+    let (fitting, fit_fields_h) = match state {
+        TooltipState::Edit(edit) => (edit.auto_fit, edit.fields_height),
+        _ => (false, 0.0),
+    };
+    // While fitting, raise min height to the last measured fields column so
+    // egui's sticky Resize `desired_size` grows. Always keep a ScrollArea +
+    // max_width — painting uncapped content lets `framed_section`'s
+    // `set_width(available)` ratchet the window past the screen edge.
+    let fit_min_h = if fitting && fit_fields_h > 0.0 {
+        (EDIT_CHROME + fit_fields_h.min(max_scroll_h)).clamp(48.0, screen.height())
+    } else {
+        48.0
+    };
 
-    // Popup chrome (no title bar). On open, size to content (no ScrollArea) so
-    // height matches the fields; afterward ScrollArea lets the user shrink/grow.
-    crate::widgets::fit_dialog_window(
+    // Popup chrome (no title bar). Height is driven by `fit_min_h` while
+    // `auto_fit` is set. `fit_dialog_popup` applies `max_size(screen)` — call
+    // `.max_width(max_w)` *after* that so the tip width cap is not overwritten
+    // (without it, `framed_section` + Resize ratchets the window off-screen).
+    crate::widgets::fit_dialog_popup(
         egui::Window::new(label)
             .id(area_id)
             .open(&mut open)
@@ -604,14 +620,17 @@ fn show_edit_window(
             .resizable(true)
             .default_pos(anchor + Vec2::new(12.0, 12.0))
             .default_size([max_w, 1.0])
-            .min_size([220.0, 48.0])
+            .min_size([220.0, fit_min_h])
             .frame(
                 egui::Frame::popup(ctx.global_style().as_ref())
                     .inner_margin(egui::Margin::symmetric(10, 8)),
             ),
         ctx,
     )
+    .max_width(max_w)
     .show(ctx, |ui| {
+            // Cap content width even when Resize desired_size is briefly larger.
+            ui.set_max_width(max_w);
             let (err, save_enabled) = match state {
                 TooltipState::Edit(edit) => (edit.error.as_deref(), edit.save_enabled()),
                 _ => (None, false),
@@ -638,29 +657,15 @@ fn show_edit_window(
                     macros,
                     active_macro: Some(&*macro_),
                 };
-                // During the initial fit, paint fields directly so the window's
-                // resize state tracks real content height. `Ui::set_min_height`
-                // after the header would allocate *below the cursor* and leave
-                // blank space ≈ header height — do not use it here.
-                // Once settled (or content exceeds the screen cap), wrap in a
-                // ScrollArea so the user can shrink/grow.
-                let need_scroll = !fitting || edit.fields_height > max_scroll_h;
-                let measured = if need_scroll {
-                    let out = crate::pickers::scroll_vertical()
-                        .id_salt("edit_fields")
-                        .auto_shrink([false, false])
-                        .max_height(max_scroll_h)
-                        .show(ui, |ui| {
-                            edit::paint_edit_fields(
-                                ui,
-                                &mut edit.draft,
-                                &mut edit.picker,
-                                &mut fields,
-                            );
-                        });
-                    out.content_size.y
-                } else {
-                    ui.scope(|ui| {
+                // Always scroll: avoids the uncapped layout path that ratchets
+                // width via `framed_section`. Grow height through `fit_min_h`
+                // while `auto_fit` is set (open + Advanced toggle).
+                let measured = crate::pickers::scroll_vertical()
+                    .id_salt("edit_fields")
+                    .auto_shrink([false, false])
+                    .max_height(max_scroll_h)
+                    .show(ui, |ui| {
+                        ui.set_max_width(max_w);
                         edit::paint_edit_fields(
                             ui,
                             &mut edit.draft,
@@ -668,21 +673,44 @@ fn show_edit_window(
                             &mut fields,
                         );
                     })
-                    .response
-                    .rect
-                    .height()
-                };
-                if (measured - edit.fields_height).abs() > 1.0 {
+                    .content_size
+                    .y;
+                let prev_h = edit.fields_height;
+                let height_stable = (measured - prev_h).abs() <= 1.0;
+                if !height_stable {
                     ui.ctx().request_repaint();
                 }
                 edit.fields_height = measured;
 
-                if edit.auto_fit {
-                    if measured > max_scroll_h {
-                        // Next frame will scroll; keep fitting until that layout runs.
-                        ui.ctx().request_repaint();
-                    } else if measured > 0.0 {
+                let refit = sections::take_edit_tip_refit(ui.ctx());
+                if refit {
+                    edit.auto_fit = true;
+                    if sqyre_capture::disk_logging_enabled() {
+                        sqyre_capture::event_log(
+                            "SQYRE_EDIT_TIP",
+                            &[
+                                ("refit", "advanced"),
+                                ("measured", &format!("{measured:.0}")),
+                                ("prev", &format!("{prev_h:.0}")),
+                                ("fit_min", &format!("{fit_min_h:.0}")),
+                            ],
+                        );
+                    }
+                    ui.ctx().request_repaint();
+                } else if edit.auto_fit {
+                    if measured > 0.0 && height_stable && fitting {
+                        // Settle only after a frame that applied fit_min_h.
                         edit.auto_fit = false;
+                        if sqyre_capture::disk_logging_enabled() {
+                            sqyre_capture::event_log(
+                                "SQYRE_EDIT_TIP",
+                                &[
+                                    ("fit", "settle"),
+                                    ("measured", &format!("{measured:.0}")),
+                                    ("fit_min", &format!("{fit_min_h:.0}")),
+                                ],
+                            );
+                        }
                     } else {
                         ui.ctx().request_repaint();
                     }
