@@ -22,6 +22,8 @@ pub mod docs_fixture;
 mod egui_keys;
 mod file_dialogs;
 mod hotkey_record;
+#[cfg(not(target_arch = "wasm32"))]
+mod hotkey_wake;
 mod icon_cache;
 mod icon_variants;
 mod image_view;
@@ -354,10 +356,7 @@ impl SqyreApp {
                 std::process::exit(0);
             }),
             on_macro_hotkey: Arc::new(move |name| {
-                pending_for_cb.lock().push(name);
-                if let Some(ctx) = repaint_for_cb.lock().as_ref() {
-                    ctx.request_repaint();
-                }
+                crate::hotkey_wake::queue_macro_hotkey(&pending_for_cb, &repaint_for_cb, name);
             }),
         };
         #[cfg(all(
