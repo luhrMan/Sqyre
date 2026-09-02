@@ -176,6 +176,7 @@ fn fill_rounded_panel(rgba: &mut [u8], w: u32, h: u32, corner: f32, border_w: f3
     }
 }
 
+#[allow(clippy::too_many_arguments)] // dest buffer + glyph coverage rectangle in one blit
 fn blit_coverage(
     rgba: &mut [u8],
     w: u32,
@@ -288,12 +289,7 @@ pub fn rasterize(paint: &ButtonPaint) -> Vec<u8> {
         } else {
             paint.icon
         };
-        [
-            c[0],
-            c[1],
-            c[2],
-            ((c[3] as u16 * 90) / 255) as u8,
-        ]
+        [c[0], c[1], c[2], ((c[3] as u16 * 90) / 255) as u8]
     } else if paint.hovered {
         paint.icon_hover
     } else {
@@ -389,15 +385,7 @@ fn stamp_ink(dst: &mut [u8], src: [u8; 4], a: f32) {
     dst[3] = dst[3].max((a * 255.0).round().clamp(0.0, 255.0) as u8);
 }
 
-fn blit_glyph(
-    rgba: &mut [u8],
-    w: u32,
-    h: u32,
-    ch: char,
-    px: f32,
-    color: [u8; 4],
-    fill_bg: bool,
-) {
+fn blit_glyph(rgba: &mut [u8], w: u32, h: u32, ch: char, px: f32, color: [u8; 4], fill_bg: bool) {
     let font = phosphor_font();
     let (metrics, bitmap) = font.rasterize(ch, px);
     if metrics.width == 0 || metrics.height == 0 || bitmap.is_empty() {
@@ -428,14 +416,7 @@ fn blit_glyph(
     }
 }
 
-fn draw_spinner(
-    rgba: &mut [u8],
-    w: u32,
-    h: u32,
-    phase: f32,
-    color: [u8; 4],
-    fill_bg: bool,
-) {
+fn draw_spinner(rgba: &mut [u8], w: u32, h: u32, phase: f32, color: [u8; 4], fill_bg: bool) {
     let cx = w as f32 * 0.5;
     let cy = h as f32 * 0.5;
     let r = (w.min(h) as f32) * 0.32;
@@ -459,6 +440,7 @@ fn draw_spinner(
     }
 }
 
+#[allow(clippy::too_many_arguments)] // buffer + segment geometry + stroke style in one pass
 fn draw_line(
     rgba: &mut [u8],
     w: u32,
@@ -507,8 +489,8 @@ mod tip_tests {
     #[test]
     fn tip_is_compact_and_has_ink() {
         let (w, h, rgba) = rasterize_tip("Remove all Gems");
-        assert!(w >= 70 && w <= 200, "w={w}");
-        assert!(h >= 18 && h <= 36, "h={h}");
+        assert!((70..=200).contains(&w), "w={w}");
+        assert!((18..=36).contains(&h), "h={h}");
         assert_eq!(rgba.len(), (w * h * 4) as usize);
 
         let is_ink = |i: usize| {
@@ -578,7 +560,10 @@ mod tip_tests {
         assert_eq!(rgba[cx + 3], 0, "center must stay clear");
         let rects = shape_rects_from_alpha(&rgba, 32, 32);
         assert!(!rects.is_empty(), "border ring must produce a shape");
-        let ink = rgba.chunks_exact(4).filter(|p| p[3] >= SHAPE_ALPHA_MIN).count();
+        let ink = rgba
+            .chunks_exact(4)
+            .filter(|p| p[3] >= SHAPE_ALPHA_MIN)
+            .count();
         assert!(ink > 20 && ink < 32 * 32 / 2, "ink={ink}");
     }
 }

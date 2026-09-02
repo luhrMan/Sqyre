@@ -14,9 +14,9 @@ pub mod theme;
 mod macro_overlay;
 
 #[cfg(all(feature = "runtime", target_os = "linux"))]
-mod x11_buttons;
-#[cfg(all(feature = "runtime", target_os = "linux"))]
 mod raster;
+#[cfg(all(feature = "runtime", target_os = "linux"))]
+mod x11_buttons;
 
 #[cfg(feature = "runtime")]
 pub use macro_overlay::{MacroOverlay, OverlayButtonMove};
