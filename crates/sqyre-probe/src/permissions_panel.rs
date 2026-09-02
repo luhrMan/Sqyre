@@ -134,13 +134,13 @@ fn input_device_group_item(
         copy_command = None;
         (
             PermissionEligibility::NotRequired,
-            Some("X11 sessions use display hooks; no input group is required.".into()),
+            Some("X11 sessions use display hooks; no /dev/input access is required.".into()),
         )
-    } else if cap_ok(caps, "permissions.input_group") {
+    } else if cap_ok(caps, "permissions.evdev_access") {
         copy_command = None;
         (PermissionEligibility::Granted, None)
     } else {
-        setup_steps.push("Add your user to the input group, then log out and back in.".into());
+        setup_steps.push("If /dev/input is not readable, add your user to the input group, then log out and back in.".into());
         setup_steps
             .push("On some distros the group is named plugdev — add both if they exist.".into());
         #[cfg(target_os = "linux")]
@@ -151,7 +151,7 @@ fn input_device_group_item(
         copy_command = Some("sudo usermod -aG input $USER".into());
         (
             PermissionEligibility::Needed,
-            cap_fail_detail(caps, "permissions.input_group"),
+            cap_fail_detail(caps, "permissions.evdev_access"),
         )
     };
 
@@ -327,9 +327,9 @@ mod tests {
     }
 
     #[test]
-    fn input_group_needed_on_wayland_when_missing() {
+    fn evdev_access_needed_on_wayland_when_missing() {
         let mut caps = BTreeMap::new();
-        caps.insert("permissions.input_group".into(), fail_cap("not in group"));
+        caps.insert("permissions.evdev_access".into(), fail_cap("cannot open /dev/input"));
         caps.insert("capture.open".into(), ok_cap());
         caps.insert("hotkeys.start".into(), ok_cap());
         caps.insert("input.open".into(), ok_cap());

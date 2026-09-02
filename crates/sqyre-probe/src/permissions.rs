@@ -6,10 +6,10 @@ use std::collections::BTreeMap;
 pub fn probe_permissions(_session: &SessionReport, caps: &mut BTreeMap<String, CapabilityResult>) {
     #[cfg(target_os = "linux")]
     {
-        let in_input = in_input_group();
+        let can_open = user_can_open_evdev();
         caps.insert(
-            "permissions.input_group".into(),
-            if in_input {
+            "permissions.evdev_access".into(),
+            if can_open {
                 CapabilityResult {
                     status: CapStatus::Ok,
                     ..CapabilityResult::default()
@@ -17,7 +17,7 @@ pub fn probe_permissions(_session: &SessionReport, caps: &mut BTreeMap<String, C
             } else {
                 CapabilityResult {
                     status: CapStatus::Fail,
-                    error: Some("user not in 'input' group".into()),
+                    error: Some("cannot open /dev/input event devices".into()),
                     ..CapabilityResult::default()
                 }
             },
@@ -26,9 +26,9 @@ pub fn probe_permissions(_session: &SessionReport, caps: &mut BTreeMap<String, C
 
     #[cfg(not(target_os = "linux"))]
     {
-        let _ = session;
+        let _ = _session;
         caps.insert(
-            "permissions.input_group".into(),
+            "permissions.evdev_access".into(),
             CapabilityResult {
                 status: CapStatus::Skip,
                 reason: Some("Linux-only".into()),
@@ -67,11 +67,11 @@ pub fn collect_hints(
         }
 
         if matches!(
-            caps.get("permissions.input_group").map(|c| &c.status),
+            caps.get("permissions.evdev_access").map(|c| &c.status),
             Some(CapStatus::Fail)
         ) {
             hints.push(
-                "Add user to 'input' group for synthetic input on Wayland: sudo usermod -aG input $USER (re-login)."
+                "Cannot read /dev/input on Wayland — grant seat access or: sudo usermod -aG input $USER (re-login)."
                     .into(),
             );
         }
@@ -125,23 +125,14 @@ pub(crate) fn screen_recording_hint(desktop: Option<&str>) -> String {
     }
 }
 
+/// Whether `/dev/input` event nodes are readable (seat ACL and/or `input` group).
 #[cfg(target_os = "linux")]
-fn in_input_group() -> bool {
-    let Ok(out) = std::process::Command::new("id").arg("-Gn").output() else {
-        return false;
-    };
-    let groups = String::from_utf8_lossy(&out.stdout);
-    groups.split_whitespace().any(|g| g == "input")
-}
-
-/// Whether the current user belongs to the `input` group (Wayland evdev access).
-#[cfg(target_os = "linux")]
-pub fn user_in_input_group() -> bool {
-    in_input_group()
+pub fn user_can_open_evdev() -> bool {
+    sqyre_hotkeys::linux_can_open_evdev()
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn user_in_input_group() -> bool {
+pub fn user_can_open_evdev() -> bool {
     true
 }
 
