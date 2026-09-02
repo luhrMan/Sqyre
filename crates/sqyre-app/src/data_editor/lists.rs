@@ -1,5 +1,6 @@
 //! Left entity list + program selector (cached against catalog generation).
 
+use super::helpers::{editor_program_names, is_editor_listed_program};
 use super::{DataEditor, EditorTab, ListCache};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::show_file_hover;
@@ -35,7 +36,7 @@ impl DataEditor {
         let tab = self.tab;
         // Owned names so expand/collapse trailing does not borrow `catalog` across the list body.
         let program_names_for_collapse: Vec<String> = if show_collapse_chrome {
-            catalog.program_names().cloned().collect()
+            editor_program_names(catalog).cloned().collect()
         } else {
             Vec::new()
         };
@@ -84,7 +85,7 @@ impl DataEditor {
         let mut search = std::mem::take(&mut self.search);
         pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| match self.tab {
             EditorTab::Programs => {
-                for name in catalog.program_names() {
+                for name in editor_program_names(catalog) {
                     if !q.is_empty() && !pickers::fuzzy_match_fold(q, name) {
                         continue;
                     }
@@ -301,7 +302,7 @@ impl DataEditor {
                 }
             }
             EditorTab::Overlay => {
-                for prog in catalog.program_names() {
+                for prog in editor_program_names(catalog) {
                     let buttons: Vec<(String, String, bool)> = settings
                         .overlay_buttons
                         .iter()
@@ -430,7 +431,7 @@ impl DataEditor {
         let res = catalog.resolution_key().to_string();
         let tab = self.tab;
         let mut entities_by_program: HashMap<String, Vec<String>> = HashMap::new();
-        let program_names: Vec<String> = catalog.program_names().cloned().collect();
+        let program_names: Vec<String> = editor_program_names(catalog).cloned().collect();
         for prog in &program_names {
             let names = compute_entity_names(catalog, tab, prog);
             entities_by_program.insert(prog.clone(), names);
@@ -450,6 +451,9 @@ impl DataEditor {
         catalog: &ProgramCatalog,
         settings: &UserSettings,
     ) {
+        if !is_editor_listed_program(name) {
+            return;
+        }
         self.selected_program = Some(name.to_string());
         self.selected_entity = None;
         self.load_form(catalog, settings);
@@ -475,6 +479,9 @@ impl DataEditor {
         catalog: &ProgramCatalog,
         settings: &UserSettings,
     ) {
+        if !is_editor_listed_program(program) {
+            return;
+        }
         self.selected_program = Some(program.to_string());
         self.selected_entity = Some(entity.to_string());
         self.load_form(catalog, settings);
