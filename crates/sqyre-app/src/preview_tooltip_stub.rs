@@ -95,6 +95,16 @@ impl PreviewTooltipCache {
     ) -> (egui::Rect, egui::Vec2) {
         (paint_unavailable_panel(ui, view), egui::Vec2::ZERO)
     }
+
+    pub fn screen_cap_image(
+        &self,
+        _left: i32,
+        _top: i32,
+        _right: i32,
+        _bottom: i32,
+    ) -> Option<std::sync::Arc<image::RgbaImage>> {
+        None
+    }
 }
 
 fn paint_unavailable_panel(ui: &mut egui::Ui, _view: &mut ImageViewTransform) -> egui::Rect {

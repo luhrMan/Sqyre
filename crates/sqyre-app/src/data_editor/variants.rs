@@ -10,7 +10,6 @@ use crate::icon_variants::{self, AddVariantError};
 use eframe::egui;
 use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
 use sqyre_persist::{screen_cap_path, ProgramCatalog, UserSettings};
-use sqyre_ports::DesktopRect;
 #[cfg(feature = "native-runtime")]
 use sqyre_vision::invalidate_search_masks_under;
 
@@ -32,24 +31,38 @@ impl DataEditor {
         let paths = crate::demo_icons::merged_variant_paths(catalog, target);
         ui.add_space(8.0);
         ui.separator();
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Icon variants").strong());
-            if crate::theme::icon_button(ui, "↻")
-                .on_hover_text("Refresh")
-                .clicked()
-            {
-                icons.invalidate_target(target);
-                for path in &paths {
-                    icons.invalidate_path(path);
-                }
-            }
-            if ui
-                .button(egui::RichText::new("Add Icon Variant").color(crate::theme::MACRO_START))
-                .clicked()
-            {
-                self.pick_and_add_variant(catalog, icons, settings);
-            }
-        });
+        // Cap to the visible row width — `set_min_width(available_width)` inside a
+        // ScrollArea ratchets content wider than the viewport once a scrollbar
+        // appears, which clips the trailing buttons.
+        let row_w = ui.available_width().max(0.0);
+        ui.allocate_ui_with_layout(
+            egui::vec2(row_w, ui.spacing().interact_size.y),
+            egui::Layout::left_to_right(egui::Align::Center),
+            |ui| {
+                ui.label(egui::RichText::new("Icon variants").strong());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui
+                        .button(
+                            egui::RichText::new("Add Icon Variant")
+                                .color(crate::theme::MACRO_START),
+                        )
+                        .clicked()
+                    {
+                        self.pick_and_add_variant(catalog, icons, settings);
+                    }
+                    if crate::theme::icon_button(ui, "↻")
+                        .on_hover_text("Refresh")
+                        .clicked()
+                    {
+                        icons.invalidate_target(target);
+                        for path in &paths {
+                            icons.invalidate_path(path);
+                        }
+                    }
+                    ui.label(egui::RichText::new(format!("({})", paths.len())).weak());
+                });
+            },
+        );
         if paths.is_empty() {
             let fallback = icons.for_target_or_fallback(ui.ctx(), catalog, target);
             let [tw, th] = fallback.size();
@@ -310,16 +323,20 @@ impl DataEditor {
         true
     }
 
-    pub(crate) fn save_screen_cap(&mut self) {
+    pub(crate) fn save_screen_cap(
+        &mut self,
+        previews: &crate::preview_tooltip::PreviewTooltipCache,
+    ) {
         #[cfg(not(feature = "native-runtime"))]
         {
+            let _ = previews;
             self.set_err("ScreenCap requires the desktop app.");
             return;
         }
         #[cfg(feature = "native-runtime")]
         {
             if self.screen_cap_pending.is_some() {
-                self.set_ok("ScreenCap: capturing…");
+                self.set_ok("ScreenCap: saving…");
                 return;
             }
             let name = self.form_name.trim().to_string();
@@ -335,34 +352,23 @@ impl DataEditor {
             let ty = form_coord_i32(&self.form_top);
             let rx = form_coord_i32(&self.form_right);
             let by = form_coord_i32(&self.form_bottom);
-            let (lx, rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
-            let (ty, by) = if ty <= by { (ty, by) } else { (by, ty) };
-            if rx - lx <= 0 || by - ty <= 0 {
+            let (norm_lx, norm_rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
+            let (norm_ty, norm_by) = if ty <= by { (ty, by) } else { (by, ty) };
+            if norm_rx - norm_lx <= 0 || norm_by - norm_ty <= 0 {
                 self.set_err("ScreenCap: invalid capture dimensions.");
                 return;
             }
 
-            let capturer = match sqyre_capture::shared_capturer_nonblocking() {
-                Ok(c) => c,
-                Err(e) => {
-                    self.set_err(format!("ScreenCap: {e}"));
-                    return;
-                }
+            // Prefer the framed preview pixels (same key as paint_search_area_panel).
+            let Some(img) = previews.screen_cap_image(lx, ty, rx, by) else {
+                self.set_err("ScreenCap: wait for the preview screenshot to finish, then Save.");
+                return;
             };
-            let right = rx;
-            let bottom = by;
+
             let (tx, result_rx) = mpsc::channel();
             let area_name = name.clone();
             thread::spawn(move || {
                 let result = (|| -> Result<String, String> {
-                    let img = capturer
-                        .capture_rect_ref(DesktopRect {
-                            x: lx,
-                            y: ty,
-                            w: right - lx,
-                            h: bottom - ty,
-                        })
-                        .map_err(|e| format!("ScreenCap: {e} (area: {area_name})"))?;
                     let dir = screen_cap_path();
                     std::fs::create_dir_all(&dir)
                         .map_err(|e| format!("ScreenCap: create dir: {e}"))?;
@@ -400,7 +406,7 @@ impl DataEditor {
                 let _ = tx.send(result);
             });
             self.screen_cap_pending = Some(result_rx);
-            self.set_ok("ScreenCap: capturing…");
+            self.set_ok("ScreenCap: saving…");
         }
     }
 

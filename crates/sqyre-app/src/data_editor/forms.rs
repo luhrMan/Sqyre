@@ -881,7 +881,7 @@ impl DataEditor {
             EditorTab::ScreenCap => {
                 ui.heading("ScreenCap");
                 ui.weak(
-                    "Set LeftX/TopY/RightX/BottomY (type, screen-record, or optional reference), name the file, then save a PNG into images/ScreenCap.",
+                    "Set LeftX/TopY/RightX/BottomY (type, screen-record, or optional reference), name the file, then Save writes the framed preview screenshot to images/ScreenCap.",
                 );
                 ui.add_space(4.0);
                 self.paint_name_record_row(
@@ -1005,7 +1005,7 @@ impl DataEditor {
                     )
                     .clicked()
                 {
-                    self.save_screen_cap();
+                    self.save_screen_cap(previews);
                     ui.ctx().request_repaint();
                 }
                 ui.weak(path_hint);

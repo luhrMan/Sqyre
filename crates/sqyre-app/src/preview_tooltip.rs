@@ -44,6 +44,8 @@ pub enum PreviewKind {
 struct CacheEntry {
     texture: TextureHandle,
     caption: String,
+    /// Exclusive search-area crop (panel previews only); ScreenCap Save source.
+    region: Option<Arc<RgbaImage>>,
 }
 
 struct FailureEntry {
@@ -53,7 +55,14 @@ struct FailureEntry {
 
 struct PendingCapture {
     caption: String,
-    rx: Receiver<Result<RgbaImage, CaptureError>>,
+    /// Panel search-area captures also return the exclusive region crop for ScreenCap.
+    rx: Receiver<Result<CapturedPreview, CaptureError>>,
+}
+
+struct CapturedPreview {
+    display: RgbaImage,
+    /// Exclusive `[left,right)×[top,bottom)` pixels before overlay/downscale.
+    region: Option<RgbaImage>,
 }
 
 /// Lazy capturer + LRU texture cache for coordinate preview tooltips.
@@ -102,6 +111,23 @@ impl PreviewTooltipCache {
         self.failures.clear();
         self.desktop_outline = None;
         self.desktop_outline_hover = None;
+    }
+
+    /// Full-res pixels inside the panel preview outline for these bounds, if cached.
+    ///
+    /// ScreenCap Save uses this so the PNG matches the screenshot the user is looking at
+    /// instead of grabbing the live desktop (which can include Sqyre and disrupt the flow).
+    pub fn screen_cap_image(
+        &self,
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    ) -> Option<Arc<RgbaImage>> {
+        let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
+        self.entries
+            .get(&key)
+            .and_then(|e| e.region.as_ref().map(Arc::clone))
     }
 
     /// Absolute desktop corners requested by a tooltip preview last frame, if any.
@@ -311,6 +337,8 @@ impl PreviewTooltipCache {
         force: bool,
         max_dim: u32,
     ) -> Result<(TextureHandle, String), String> {
+        let keep_region = max_dim >= PANEL_MAX_DIM
+            && matches!(coords, PreviewCoords::SearchArea { grid: None, .. });
         if force {
             self.entries.remove(key);
             self.order.retain(|k| k != key);
@@ -318,10 +346,16 @@ impl PreviewTooltipCache {
             self.failures.remove(key);
         }
         if let Some(entry) = self.entries.get(key) {
-            let tex = entry.texture.clone();
-            let caption = entry.caption.clone();
-            self.touch(key);
-            return Ok((tex, caption));
+            // Panel ScreenCap needs the exclusive crop; recapture if a stale entry lacks it.
+            if keep_region && entry.region.is_none() {
+                self.entries.remove(key);
+                self.order.retain(|k| k != key);
+            } else {
+                let tex = entry.texture.clone();
+                let caption = entry.caption.clone();
+                self.touch(key);
+                return Ok((tex, caption));
+            }
         }
 
         let now = Instant::now();
@@ -335,14 +369,14 @@ impl PreviewTooltipCache {
         if self.pending.contains_key(key) {
             let recv = self.pending[key].rx.try_recv();
             match recv {
-                Ok(Ok(img)) => {
+                Ok(Ok(captured)) => {
                     let caption = self
                         .pending
                         .remove(key)
                         .map(|p| p.caption)
                         .unwrap_or_else(|| caption.to_string());
                     self.failures.remove(key);
-                    return self.finish_texture(ctx, key, &caption, img, max_dim);
+                    return self.finish_texture(ctx, key, &caption, captured, keep_region);
                 }
                 Ok(Err(e)) => {
                     self.pending.remove(key);
@@ -372,10 +406,10 @@ impl PreviewTooltipCache {
         #[cfg(target_os = "windows")]
         {
             mark_site("preview:capture_sync");
-            match capture_preview(capturer.as_ref(), coords, max_dim, force) {
-                Ok(img) => {
+            match capture_preview(capturer.as_ref(), coords, max_dim, force, keep_region) {
+                Ok(captured) => {
                     self.failures.remove(key);
-                    return self.finish_texture(ctx, key, caption, img, max_dim);
+                    return self.finish_texture(ctx, key, caption, captured, keep_region);
                 }
                 Err(e) => {
                     let e = e.to_string();
@@ -390,7 +424,13 @@ impl PreviewTooltipCache {
             let (tx, rx) = std::sync::mpsc::channel();
             let fresh = force;
             thread::spawn(move || {
-                let _ = tx.send(capture_preview(capturer.as_ref(), coords, max_dim, fresh));
+                let _ = tx.send(capture_preview(
+                    capturer.as_ref(),
+                    coords,
+                    max_dim,
+                    fresh,
+                    keep_region,
+                ));
             });
             self.pending.insert(
                 key.to_string(),
@@ -419,24 +459,31 @@ impl PreviewTooltipCache {
         ctx: &egui::Context,
         key: &str,
         caption: &str,
-        img: RgbaImage,
-        max_dim: u32,
+        captured: CapturedPreview,
+        keep_region: bool,
     ) -> Result<(TextureHandle, String), String> {
+        let img = captured.display;
         let size = [img.width() as usize, img.height() as usize];
         mark_site(&format!("preview:finish_texture:{}x{}", size[0], size[1]));
         let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
         // Mipmaps help panel zoom; tooltips stay cheap without them.
-        let opts = if max_dim >= PANEL_MAX_DIM {
+        let opts = if key.starts_with("panel:") {
             TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear))
         } else {
             TextureOptions::LINEAR
         };
         let tex = ctx.load_texture(key.to_string(), color, opts);
+        let region = if keep_region {
+            captured.region.map(Arc::new)
+        } else {
+            None
+        };
         self.insert(
             key.to_string(),
             CacheEntry {
                 texture: tex.clone(),
                 caption: caption.to_string(),
+                region,
             },
         );
         mark_site("preview:finish_texture:done");
@@ -508,7 +555,8 @@ fn capture_preview(
     coords: PreviewCoords,
     max_dim: u32,
     fresh: bool,
-) -> Result<RgbaImage, CaptureError> {
+    keep_region: bool,
+) -> Result<CapturedPreview, CaptureError> {
     let capture_rect = |bounds: DesktopRect| {
         if fresh {
             capturer.capture_rect_fresh_ref(bounds)
@@ -531,7 +579,10 @@ fn capture_preview(
             let bounds = preview_bounds_for_point(x, y, vb);
             let mut img = capture_rect(bounds)?;
             draw_point_marker(&mut img, x - bounds.x, y - bounds.y, OVERLAY, 2);
-            Ok(downscale_max_dim(img, max_dim))
+            Ok(CapturedPreview {
+                display: downscale_max_dim(img, max_dim),
+                region: None,
+            })
         }
         PreviewCoords::SearchArea {
             left,
@@ -555,13 +606,35 @@ fn capture_preview(
             let oty = ty - bounds.y;
             let orx = rx - bounds.x;
             let oby = by - bounds.y;
+            let region = if keep_region {
+                crop_exclusive_region(&img, olx, oty, orx, oby)
+            } else {
+                None
+            };
             draw_rect_outline(&mut img, olx, oty, orx, oby, OVERLAY);
             if let Some((rows, cols)) = grid {
                 draw_grid_lines(&mut img, (olx, oty, orx, oby), rows, cols, OVERLAY, 1);
             }
-            Ok(downscale_max_dim(img, max_dim))
+            Ok(CapturedPreview {
+                display: downscale_max_dim(img, max_dim),
+                region,
+            })
         }
     }
+}
+
+/// Exclusive `[lx,rx)×[ty,by)` crop in image space, clamped to the bitmap.
+fn crop_exclusive_region(img: &RgbaImage, lx: i32, ty: i32, rx: i32, by: i32) -> Option<RgbaImage> {
+    let (lx, ty, rx, by) = normalize_rect(lx, ty, rx, by);
+    let (w, h) = img.dimensions();
+    let x0 = lx.max(0) as u32;
+    let y0 = ty.max(0) as u32;
+    let x1 = (rx.max(0) as u32).min(w);
+    let y1 = (by.max(0) as u32).min(h);
+    if x1 <= x0 || y1 <= y0 {
+        return None;
+    }
+    Some(image::imageops::crop_imm(img, x0, y0, x1 - x0, y1 - y0).to_image())
 }
 
 /// Coordinate ref + preview kind for actions that show point/search-area captures.
@@ -1116,6 +1189,22 @@ mod tests {
             assert_eq!(*img.get_pixel(2, y), OVERLAY);
             assert_eq!(*img.get_pixel(7, y), OVERLAY);
         }
+    }
+
+    #[test]
+    fn crop_exclusive_region_matches_outline_interior() {
+        let fill = Rgba([10, 20, 30, 255]);
+        let mut img = RgbaImage::from_pixel(20, 20, fill);
+        // Paint a distinct interior for exclusive [4, 12) × [5, 15).
+        for y in 5..15 {
+            for x in 4..12 {
+                img.put_pixel(x, y, Rgba([1, 2, 3, 255]));
+            }
+        }
+        let crop = crop_exclusive_region(&img, 4, 5, 12, 15).expect("crop");
+        assert_eq!(crop.dimensions(), (8, 10));
+        assert_eq!(*crop.get_pixel(0, 0), Rgba([1, 2, 3, 255]));
+        assert_eq!(*crop.get_pixel(7, 9), Rgba([1, 2, 3, 255]));
     }
 
     #[test]
