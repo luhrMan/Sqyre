@@ -356,10 +356,7 @@ mod tests {
         #[cfg(target_os = "linux")]
         assert_eq!(keys, vec!["2".to_string(), "ctrl".into()]);
         #[cfg(not(target_os = "linux"))]
-        assert_eq!(
-            keys,
-            vec!["2".to_string(), "cmd".into(), "ctrl".into()]
-        );
+        assert_eq!(keys, vec!["2".to_string(), "cmd".into(), "ctrl".into()]);
     }
 
     #[test]

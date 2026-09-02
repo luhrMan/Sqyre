@@ -116,10 +116,7 @@ impl DataEditor {
         )
         // Override fit_dialog_popup's screen-sized max so a layout bug cannot
         // stretch this picker to the full monitor; user can still resize up to this.
-        .max_size(egui::vec2(
-            constrain.x.min(720.0),
-            constrain.y.min(900.0),
-        ))
+        .max_size(egui::vec2(constrain.x.min(720.0), constrain.y.min(900.0)))
         .show(ctx, |ui| {
             crate::widgets::fill_resize_body(ui, |ui| {
                 ui.weak("Phosphor Icons — search by name, then click to select.");

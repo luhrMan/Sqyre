@@ -58,12 +58,9 @@ pub fn tip_advanced(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui))
         });
     // `changed` is set when the open state toggles (click or `.open(…)`).
     if response.header_response.changed() {
-        let open = egui::collapsing_header::CollapsingState::load_with_default_open(
-            ui.ctx(),
-            id,
-            false,
-        )
-        .is_open();
+        let open =
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+                .is_open();
         // Snap the open animation so body height is final next frame (otherwise
         // auto-fit chases a tween and can settle too early).
         let _ = ui.ctx().animate_bool_with_time(id, open, 0.0);

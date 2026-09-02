@@ -9,7 +9,10 @@ use crate::error::{ExecError, Result, SearchError};
 use crate::log_draw::{crop_match_preview, draw_rect_rgb};
 use crate::run::Executor;
 use rayon::prelude::*;
-use sqyre_domain::{action_type_label, variant_name_from_path, Action, ActionKind, Macro, MatchMethod, PROGRAM_DELIMITER};
+use sqyre_domain::{
+    action_type_label, variant_name_from_path, Action, ActionKind, Macro, MatchMethod,
+    PROGRAM_DELIMITER,
+};
 use sqyre_match::{
     blur_image_owned, find_template_matches_preblurred_with_prepared, prepare_search,
     search_blur_kernel, ImageBuf, Point,

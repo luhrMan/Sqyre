@@ -329,7 +329,10 @@ mod tests {
     #[test]
     fn evdev_access_needed_on_wayland_when_missing() {
         let mut caps = BTreeMap::new();
-        caps.insert("permissions.evdev_access".into(), fail_cap("cannot open /dev/input"));
+        caps.insert(
+            "permissions.evdev_access".into(),
+            fail_cap("cannot open /dev/input"),
+        );
         caps.insert("capture.open".into(), ok_cap());
         caps.insert("hotkeys.start".into(), ok_cap());
         caps.insert("input.open".into(), ok_cap());
