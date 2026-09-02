@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use web_time::Instant as WebInstant;
 
 pub use checksum::fnv1a_hex;
-pub use permissions::user_in_input_group;
+pub use permissions::user_can_open_evdev;
 pub use permissions_panel::{build_permission_items, PermissionEligibility, PermissionItem};
 
 /// Result of one capability check.
@@ -664,10 +664,10 @@ fn probe_hotkeys_inferred(session: &SessionReport, caps: &mut BTreeMap<String, C
         timed(|| {
             let backend = hotkeys_backend_label();
             #[cfg(target_os = "linux")]
-            if session.session_type == "wayland" && !permissions::user_in_input_group() {
-                cap_log("HOTKEY", "fail", "reason=not_in_input_group");
+            if session.session_type == "wayland" && !permissions::user_can_open_evdev() {
+                cap_log("HOTKEY", "fail", "reason=evdev_unreadable");
                 return CapabilityResult::fail(
-                    "user not in 'input' group (evdev grab unavailable)",
+                    "cannot open /dev/input (evdev unavailable)",
                 );
             }
             cap_log("HOTKEY", "ok", &format!("backend={backend} inferred"));
@@ -687,10 +687,10 @@ fn probe_hotkeys(session: &SessionReport, caps: &mut BTreeMap<String, Capability
         timed(|| {
             let backend = hotkeys_backend_label();
             #[cfg(target_os = "linux")]
-            if session.session_type == "wayland" && !permissions::user_in_input_group() {
-                cap_log("HOTKEY", "fail", "reason=not_in_input_group");
+            if session.session_type == "wayland" && !permissions::user_can_open_evdev() {
+                cap_log("HOTKEY", "fail", "reason=evdev_unreadable");
                 return CapabilityResult::fail(
-                    "user not in 'input' group (evdev grab unavailable)",
+                    "cannot open /dev/input (evdev unavailable)",
                 );
             }
             let result = std::panic::catch_unwind(|| {
@@ -875,7 +875,7 @@ mod tests {
         probe_hotkeys_inferred(&session, &mut caps);
         let cap = caps.get("hotkeys.start").expect("hotkeys cap");
         #[cfg(target_os = "linux")]
-        if !permissions::user_in_input_group() {
+        if !permissions::user_can_open_evdev() {
             assert_eq!(cap.status, CapStatus::Fail);
         } else {
             assert_eq!(cap.status, CapStatus::Ok);
