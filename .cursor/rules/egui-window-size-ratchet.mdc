@@ -48,7 +48,7 @@ egui::ScrollArea::vertical()
     });
 ```
 
-`pin_visible` is a last resort. Prefer `fill_resize_body`, `auto_shrink([true, …])`, and `desired_width(INFINITY)`.
+Prefer `fill_resize_body`, `auto_shrink([true, …])`, and `desired_width(INFINITY)`.
 
 ## Helpers
 
@@ -56,7 +56,6 @@ egui::ScrollArea::vertical()
 |--------|-----|
 | `fill_resize_body` | Window body that must fill but stay resizable |
 | `visible_width` / `visible_height` / `visible_size` | Layout budget from clip ∩ max_rect |
-| `pin_visible` | `set_max_size(visible_size)` only |
 | `popup_scroll_max_height` | Scroll pane height that will not ratchet |
 
 `sqyre-overlay` cannot import `sqyre-app`; keep picker layout local (see `icons.rs`).

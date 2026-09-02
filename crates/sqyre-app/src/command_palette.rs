@@ -7,7 +7,7 @@ use crate::pickers::fuzzy_match_fold;
 use crate::SqyreApp;
 use eframe::egui::{self, Color32, CornerRadius, Key, Modifiers, Sense};
 use sqyre_domain::{action_type_table, Macro};
-use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, TEMPORARY_PROGRAM};
+use sqyre_persist::{OverlayButtonConfig, ProgramCatalog};
 use sqyre_ui_model::action_picker_category;
 
 const WINDOW_ID: &str = "sqyre_command_palette";
@@ -734,7 +734,7 @@ impl SqyreApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_persist::{ProgramData, ProgramItem};
+    use sqyre_persist::{ProgramData, ProgramItem, TEMPORARY_PROGRAM};
     use std::collections::BTreeMap;
 
     fn sources<'a>(
