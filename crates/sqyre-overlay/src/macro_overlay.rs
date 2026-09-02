@@ -158,6 +158,7 @@ impl MacroOverlay {
     }
 
     /// Show/hide buttons from settings + focus gate; drain native clicks into `pending_macros`.
+    #[allow(clippy::too_many_arguments)] // ctx + button set, catalog, queues, and relocate in one sync
     pub fn sync(
         &mut self,
         ctx: &egui::Context,
@@ -216,10 +217,7 @@ impl MacroOverlay {
             let (x, y) = btn.resolved_position(catalog);
             drawn.x = x;
             drawn.y = y;
-            specs.push(ButtonDraw {
-                cfg: drawn,
-                busy,
-            });
+            specs.push(ButtonDraw { cfg: drawn, busy });
             shown += 1;
         }
 
@@ -232,10 +230,7 @@ impl MacroOverlay {
             let (x, y) = btn.resolved_position(catalog);
             drawn.x = x;
             drawn.y = y;
-            specs.push(ButtonDraw {
-                cfg: drawn,
-                busy,
-            });
+            specs.push(ButtonDraw { cfg: drawn, busy });
             shown += 1;
         }
 
@@ -342,11 +337,7 @@ impl MacroOverlay {
     }
 }
 
-fn focus_poll_loop(
-    focus_slot: Arc<Mutex<FocusSlot>>,
-    stop: Arc<AtomicBool>,
-    ctx: egui::Context,
-) {
+fn focus_poll_loop(focus_slot: Arc<Mutex<FocusSlot>>, stop: Arc<AtomicBool>, ctx: egui::Context) {
     while !stop.load(Ordering::Relaxed) {
         match get_active_window() {
             Ok(Some(active)) => {
@@ -470,11 +461,7 @@ fn button_is_focus_gated(btn: &OverlayButtonConfig) -> bool {
     !p.is_empty() && p != GENERAL_PROGRAM
 }
 
-fn program_owns_focus(
-    catalog: &ProgramCatalog,
-    program: &str,
-    focus: Option<&WindowInfo>,
-) -> bool {
+fn program_owns_focus(catalog: &ProgramCatalog, program: &str, focus: Option<&WindowInfo>) -> bool {
     let Some(win) = focus else {
         return false;
     };
@@ -514,12 +501,7 @@ fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeBu
         y: btn.y.round() as i32,
         w: phys as u32,
         h: phys as u32,
-        bg: [
-            style.bg.r(),
-            style.bg.g(),
-            style.bg.b(),
-            style.bg.a(),
-        ],
+        bg: [style.bg.r(), style.bg.g(), style.bg.b(), style.bg.a()],
         border: [
             style.border.r(),
             style.border.g(),
@@ -566,7 +548,10 @@ mod tests {
         let a = wine_win("Mistfall Hunter");
         let b = wine_win("Other Game");
         assert_ne!(focus_identity_key(&a), focus_identity_key(&b));
-        assert_eq!(focus_identity_key(&a), focus_identity_key(&wine_win("Mistfall Hunter")));
+        assert_eq!(
+            focus_identity_key(&a),
+            focus_identity_key(&wine_win("Mistfall Hunter"))
+        );
     }
 
     #[test]
@@ -581,11 +566,17 @@ mod tests {
         };
         let mist = wine_win("Mistfall Hunter");
         assert!(apply_active_focus(&mut g, &mist));
-        assert_eq!(g.cached.as_ref().map(|w| w.title.as_str()), Some("Mistfall Hunter"));
+        assert_eq!(
+            g.cached.as_ref().map(|w| w.title.as_str()),
+            Some("Mistfall Hunter")
+        );
 
         let other = wine_win("Other Game");
         assert!(apply_active_focus(&mut g, &other));
-        assert_eq!(g.cached.as_ref().map(|w| w.title.as_str()), Some("Other Game"));
+        assert_eq!(
+            g.cached.as_ref().map(|w| w.title.as_str()),
+            Some("Other Game")
+        );
         assert_eq!(
             g.last_foreign.as_ref().map(|w| w.title.as_str()),
             Some("Other Game")
@@ -611,7 +602,10 @@ mod tests {
             icon: None,
         };
         assert!(!apply_active_focus(&mut g, &chrome));
-        assert_eq!(g.cached.as_ref().map(|w| w.title.as_str()), Some("Mistfall Hunter"));
+        assert_eq!(
+            g.cached.as_ref().map(|w| w.title.as_str()),
+            Some("Mistfall Hunter")
+        );
     }
 
     #[test]

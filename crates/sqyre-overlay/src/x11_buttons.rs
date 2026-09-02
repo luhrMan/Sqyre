@@ -37,18 +37,17 @@ use x11::xfixes::{
     XFixesSetWindowShapeRegion,
 };
 use x11::xlib::{
-    ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask, CWBackPixel, CWBackingStore,
-    CWBorderPixel, CWEventMask, CWOverrideRedirect, CurrentTime, Display, EnterNotify,
-    EnterWindowMask, Expose, ExposureMask, False, GrabModeAsync, InputOnly, InputOutput,
-    LeaveNotify, LeaveWindowMask, MotionNotify, PointerMotionMask, StructureNotifyMask, Success,
-    True, WhenMapped, Window, XAllocColor, XCloseDisplay, XColor, XConnectionNumber,
-    XCreateFontCursor, XCreateGC, XCreateImage, XCreateWindow, XDefaultColormap, XDefaultDepth,
-    XDefaultRootWindow, XDefaultScreen, XDefaultVisual, XDefineCursor, XDestroyImage,
-    XDestroyWindow, XEvent, XFlush, XFreeCursor, XFreeGC, XGrabPointer, XInternAtom, XMapRaised,
-    XMapWindow, XMoveResizeWindow, XNextEvent, XOpenDisplay, XPending, XPutImage, XRectangle,
-    XSelectInput, XSetWindowAttributes, XStoreName, XSync, XUndefineCursor, XUngrabPointer,
-    XUnmapWindow, XConfigureWindow, XWindowChanges, ZPixmap, LSBFirst, Below, CWSibling,
-    CWStackMode,
+    Below, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask, CWBackPixel,
+    CWBackingStore, CWBorderPixel, CWEventMask, CWOverrideRedirect, CWSibling, CWStackMode,
+    CurrentTime, Display, EnterNotify, EnterWindowMask, Expose, ExposureMask, False, GrabModeAsync,
+    InputOnly, InputOutput, LSBFirst, LeaveNotify, LeaveWindowMask, MotionNotify,
+    PointerMotionMask, StructureNotifyMask, Success, True, WhenMapped, Window, XAllocColor,
+    XCloseDisplay, XColor, XConfigureWindow, XConnectionNumber, XCreateFontCursor, XCreateGC,
+    XCreateImage, XCreateWindow, XDefaultColormap, XDefaultDepth, XDefaultRootWindow,
+    XDefaultScreen, XDefaultVisual, XDefineCursor, XDestroyImage, XDestroyWindow, XEvent, XFlush,
+    XFreeCursor, XFreeGC, XGrabPointer, XInternAtom, XMapRaised, XMapWindow, XMoveResizeWindow,
+    XNextEvent, XOpenDisplay, XPending, XPutImage, XRectangle, XSelectInput, XSetWindowAttributes,
+    XStoreName, XSync, XUndefineCursor, XUngrabPointer, XUnmapWindow, XWindowChanges, ZPixmap,
 };
 
 /// `ShapeBounding` / `ShapeInput` from `X11/extensions/shapeconst.h`.
@@ -344,7 +343,10 @@ fn host_loop(
             unsafe { x_flush(state.display) };
         }
 
-        wait_x_or_timeout(state.xfd, if any_busy { BUSY_TICK_MS } else { POLL_IDLE_MS });
+        wait_x_or_timeout(
+            state.xfd,
+            if any_busy { BUSY_TICK_MS } else { POLL_IDLE_MS },
+        );
     }
 
     destroy_all(&mut state);
@@ -518,10 +520,7 @@ fn set_relocate_mode(state: &mut HostState, enabled: bool) {
 }
 
 fn button_event_mask(relocate: bool) -> c_long {
-    let mut mask = ButtonPressMask
-        | ButtonReleaseMask
-        | EnterWindowMask
-        | LeaveWindowMask;
+    let mut mask = ButtonPressMask | ButtonReleaseMask | EnterWindowMask | LeaveWindowMask;
     if relocate {
         mask |= PointerMotionMask;
     }
@@ -704,13 +703,7 @@ fn paint_button(state: &HostState, btn: &LiveButton, update_shape: bool) {
     };
     let rgba = raster::rasterize(&paint);
     if update_shape && paint.bg[3] == 0 {
-        apply_face_chrome_bounding(
-            state.display,
-            btn.win,
-            paint.w,
-            paint.h,
-            &rgba,
-        );
+        apply_face_chrome_bounding(state.display, btn.win, paint.w, paint.h, &rgba);
     }
     blit_rgba(state, btn.win, paint.w, paint.h, &rgba);
 }
@@ -933,13 +926,7 @@ fn hide_tip(state: &mut HostState) {
     state.suppress_crossing = false;
 }
 
-fn create_tip_window(
-    state: &HostState,
-    x: i32,
-    y: i32,
-    w: u32,
-    h: u32,
-) -> Result<Window, String> {
+fn create_tip_window(state: &HostState, x: i32, y: i32, w: u32, h: u32) -> Result<Window, String> {
     let bg_pixel = alloc_color(state, TIP_BG_RGB);
     // SAFETY: HostState display invariant — tip window lifecycle matches buttons.
     unsafe {
@@ -1017,18 +1004,7 @@ fn blit_rgba(state: &HostState, win: Window, w: u32, h: u32, rgba: &[u8]) {
         }
         (*ximage).byte_order = LSBFirst;
         (*ximage).bits_per_pixel = 32;
-        XPutImage(
-            state.display,
-            win,
-            state.gc,
-            ximage,
-            0,
-            0,
-            0,
-            0,
-            w,
-            h,
-        );
+        XPutImage(state.display, win, state.gc, ximage, 0, 0, 0, 0, w, h);
         (*ximage).data = std::ptr::null_mut();
         XDestroyImage(ximage);
     }
@@ -1142,7 +1118,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
         if ty == MotionNotify {
             // SAFETY: event type is MotionNotify; XMotionEvent overlay is valid.
             let (root_x, root_y) = unsafe {
-                let m = &*( &event as *const XEvent as *const x11::xlib::XMotionEvent);
+                let m = &*(&event as *const XEvent as *const x11::xlib::XMotionEvent);
                 (m.x_root, m.y_root)
             };
             if let Some(drag) = state.drag.as_ref() {
@@ -1167,7 +1143,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
         if ty == ButtonPress {
             // SAFETY: event type is ButtonPress; XButtonEvent overlay is valid.
             let (win, button, root_x, root_y) = unsafe {
-                let b = &*( &event as *const XEvent as *const x11::xlib::XButtonEvent);
+                let b = &*(&event as *const XEvent as *const x11::xlib::XButtonEvent);
                 (b.window, b.button, b.x_root, b.y_root)
             };
             if button != BUTTON_LEFT {
@@ -1227,7 +1203,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
         if ty == ButtonRelease {
             // SAFETY: event type is ButtonRelease; XButtonEvent overlay is valid.
             let (win, button) = unsafe {
-                let b = &*( &event as *const XEvent as *const x11::xlib::XButtonEvent);
+                let b = &*(&event as *const XEvent as *const x11::xlib::XButtonEvent);
                 (b.window, b.button)
             };
             if button != BUTTON_LEFT {
@@ -1255,9 +1231,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
                     } else {
                         mark_site(&format!(
                             "overlay-x11:release-ign:{}:a{}b{}",
-                            id,
-                            btn.armed as u8,
-                            btn.spec.busy as u8
+                            id, btn.armed as u8, btn.spec.busy as u8
                         ));
                         note(&format!(
                             "overlay-x11: release-ignored id={id} armed={} busy={}",
@@ -1381,18 +1355,8 @@ unsafe fn x_close_display(display: *mut Display) {
 
 // SAFETY: callers pass a live host-thread `display` and a `win` created on it.
 unsafe fn set_net_wm_type_notification(display: *mut Display, win: Window) {
-    let ty = XInternAtom(
-        display,
-        b"_NET_WM_WINDOW_TYPE\0".as_ptr().cast::<c_char>(),
-        False,
-    );
-    let notification = XInternAtom(
-        display,
-        b"_NET_WM_WINDOW_TYPE_NOTIFICATION\0"
-            .as_ptr()
-            .cast::<c_char>(),
-        False,
-    );
+    let ty = XInternAtom(display, c"_NET_WM_WINDOW_TYPE".as_ptr(), False);
+    let notification = XInternAtom(display, c"_NET_WM_WINDOW_TYPE_NOTIFICATION".as_ptr(), False);
     if ty == 0 || notification == 0 {
         return;
     }
@@ -1411,26 +1375,10 @@ unsafe fn set_net_wm_type_notification(display: *mut Display, win: Window) {
 
 // SAFETY: callers pass a live host-thread `display`, its root, and a `win` on it.
 unsafe fn set_skip_taskbar_state(display: *mut Display, root: Window, win: Window) {
-    let state = XInternAtom(
-        display,
-        b"_NET_WM_STATE\0".as_ptr().cast::<c_char>(),
-        False,
-    );
-    let skip_taskbar = XInternAtom(
-        display,
-        b"_NET_WM_STATE_SKIP_TASKBAR\0".as_ptr().cast::<c_char>(),
-        False,
-    );
-    let skip_pager = XInternAtom(
-        display,
-        b"_NET_WM_STATE_SKIP_PAGER\0".as_ptr().cast::<c_char>(),
-        False,
-    );
-    let above = XInternAtom(
-        display,
-        b"_NET_WM_STATE_ABOVE\0".as_ptr().cast::<c_char>(),
-        False,
-    );
+    let state = XInternAtom(display, c"_NET_WM_STATE".as_ptr(), False);
+    let skip_taskbar = XInternAtom(display, c"_NET_WM_STATE_SKIP_TASKBAR".as_ptr(), False);
+    let skip_pager = XInternAtom(display, c"_NET_WM_STATE_SKIP_PAGER".as_ptr(), False);
+    let above = XInternAtom(display, c"_NET_WM_STATE_ABOVE".as_ptr(), False);
     if state == 0 || skip_taskbar == 0 {
         return;
     }
@@ -1484,13 +1432,7 @@ fn wait_x_or_timeout(xfd: RawFd, timeout_ms: u64) {
 }
 
 /// Opaque face: rounded Bounding + empty Input (hit cover owns clicks).
-fn apply_face_rounded_bounding(
-    display: *mut Display,
-    win: Window,
-    w: u32,
-    h: u32,
-    radius_px: f32,
-) {
+fn apply_face_rounded_bounding(display: *mut Display, win: Window, w: u32, h: u32, radius_px: f32) {
     if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
         return;
     }
@@ -1528,13 +1470,7 @@ fn apply_face_chrome_bounding(display: *mut Display, win: Window, w: u32, h: u32
 }
 
 /// Hit cover: rounded ShapeInput matching the button disk.
-fn apply_hit_rounded_input(
-    display: *mut Display,
-    hit: Window,
-    w: u32,
-    h: u32,
-    radius_px: f32,
-) {
+fn apply_hit_rounded_input(display: *mut Display, hit: Window, w: u32, h: u32, radius_px: f32) {
     if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
         return;
     }
@@ -1580,12 +1516,7 @@ fn apply_rounded_shape(display: *mut Display, win: Window, w: u32, h: u32, radiu
     apply_empty_input_shape(display, win);
 }
 
-fn apply_shape_region(
-    display: *mut Display,
-    win: Window,
-    kind: c_int,
-    rects: &mut [XRectangle],
-) {
+fn apply_shape_region(display: *mut Display, win: Window, kind: c_int, rects: &mut [XRectangle]) {
     if rects.is_empty() {
         return;
     }

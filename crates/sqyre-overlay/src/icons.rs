@@ -161,7 +161,8 @@ pub(crate) fn paint_glyph_contents(
     style: &OverlayPaintStyle,
     hovered: bool,
 ) {
-    let icon_rect = egui::Rect::from_center_size(hit_rect.center(), egui::vec2(icon_size, icon_size));
+    let icon_rect =
+        egui::Rect::from_center_size(hit_rect.center(), egui::vec2(icon_size, icon_size));
     let hovered = hovered && !busy;
 
     paint_overlay_chrome(ui, icon_rect, hovered, style);
@@ -194,7 +195,8 @@ fn paint_busy_spinner(ui: &mut egui::Ui, rect: egui::Rect, color: Color32) {
     let stroke_w = (r * 0.22).clamp(1.5, 3.0);
     const TICKS: i32 = 8;
     for i in 0..TICKS {
-        let phase = time * std::f32::consts::TAU + (i as f32) * (std::f32::consts::TAU / TICKS as f32);
+        let phase =
+            time * std::f32::consts::TAU + (i as f32) * (std::f32::consts::TAU / TICKS as f32);
         let fade = 0.25 + 0.75 * (1.0 - (i as f32) / TICKS as f32);
         let c = Color32::from_rgba_unmultiplied(
             color.r(),
