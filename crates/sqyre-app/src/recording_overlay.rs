@@ -6,10 +6,9 @@
 //!   relative-capture the mouse cannot block selection. Do **not** use an eframe
 //!   fullscreen viewport for this on GNOME/Wayland: Mutter un-redirects those
 //!   surfaces and they paint as opaque black.
-//! - On GNOME/Wayland, an invisible `InputOnly` cover
+//! - On GNOME/Wayland, an ARGB (or low-opacity) input cover
 //!   ([`sqyre_capture::FrozenSelectionOverlay::open_input_cover`]) owns pointer
-//!   events; the gold rubber-band is drawn by opaque [`sqyre_capture::SelectionOutline`]
-//!   edge windows (no desktop freeze, no translucent stroke).
+//!   events and paints the gold rubber-band without freezing a screenshot.
 //! - Native X11 uses the grab + edge windows without a cover.
 //! - A small always-on-top egui viewport for live coords / status while recording
 //!   (needed when the main window is hidden via `hide_app_during_recording`).
@@ -101,8 +100,7 @@ impl RecordingOverlay {
         main_window_hidden: bool,
         expect_hide_for_recording: bool,
     ) {
-        let was_recording =
-            screen_click.is_armed() || macro_record.is_some_and(|b| b.is_armed());
+        let was_recording = screen_click.is_armed() || macro_record.is_some_and(|b| b.is_armed());
         self.sync_selection_grab(screen_click);
         #[cfg(target_os = "linux")]
         {
@@ -116,18 +114,14 @@ impl RecordingOverlay {
         }
         // Grab/snapshot poll may complete or cancel this frame — re-check before
         // deciding whether to keep the cover / wake poller alive.
-        let recording =
-            screen_click.is_armed() || macro_record.is_some_and(|b| b.is_armed());
+        let recording = screen_click.is_armed() || macro_record.is_some_and(|b| b.is_armed());
         if was_recording && !recording {
             mark_site("recording:complete_frame");
             event_log(
                 "SQYRE_RECORD",
                 &[
                     ("op", "complete"),
-                    (
-                        "hidden",
-                        if main_window_hidden { "yes" } else { "no" },
-                    ),
+                    ("hidden", if main_window_hidden { "yes" } else { "no" }),
                 ],
             );
             // Wake poller stops requesting frames once disarmed; without this the
@@ -142,16 +136,7 @@ impl RecordingOverlay {
             // Skip rubber-band paint once the gesture finished — close_snapshot
             // destroys the cover; a clear blit here only stalls XWayland.
             if recording {
-                let use_outline = self
-                    .snapshot
-                    .as_ref()
-                    .is_some_and(|s| !s.has_freeze_pixels());
-                if use_outline {
-                    // InputOnly cover owns clicks; opaque edge windows draw gold.
-                    self.apply_outline(selection);
-                } else {
-                    self.apply_snapshot_rect(selection);
-                }
+                self.apply_snapshot_rect(selection);
             }
         } else if rect.is_some() || self.outline.is_some() {
             self.apply_outline(rect);
@@ -176,10 +161,19 @@ impl RecordingOverlay {
                 self.close_snapshot();
                 self.snapshot_failed = false;
             }
-            // Drop parked outline edges when idle — four X11 windows left mapped
-            // after recording still cost under a fullscreen XWayland game.
+            // SelectionOutline::Drop destroys without XFlush (avoids stalls under
+            // fullscreen XWayland games). Without a flushed clear first, gold
+            // edges stay mapped permanently on GNOME/XWayland after recording.
             if preview_outline.is_none() {
+                if let Some(outline) = self.outline.as_mut() {
+                    if outline.is_active() {
+                        mark_site("outline:clear_on_idle");
+                        outline.clear();
+                    }
+                }
                 self.outline = None;
+            } else {
+                self.apply_outline(preview_outline);
             }
         }
     }
@@ -285,8 +279,8 @@ impl RecordingOverlay {
     fn sync_linux_snapshot(
         &mut self,
         screen_click: &ScreenClickBridge,
-        main_window_hidden: bool,
-        expect_hide_for_recording: bool,
+        _main_window_hidden: bool,
+        _expect_hide_for_recording: bool,
     ) -> bool {
         if !skip_x11_pointer_grab() {
             self.close_snapshot();
@@ -297,10 +291,8 @@ impl RecordingOverlay {
             return false;
         }
         if self.snapshot.is_none() && !self.snapshot_failed {
-            // Wait until Sqyre is hidden so the cover sits over the desktop only.
-            if expect_hide_for_recording && !main_window_hidden {
-                return false;
-            }
+            // Open the cover immediately — waiting for hide left a window where
+            // the first click reached the app underneath (InputOnly/hooks race).
             mark_site("snapshot:open");
             match FrozenSelectionOverlay::open_input_cover() {
                 Ok(overlay) => {
@@ -330,12 +322,6 @@ impl RecordingOverlay {
         }
         for _ in 0..poll.left_clicks {
             mark_site("snapshot:click");
-            sqyre_capture::note(&format!(
-                "snapshot click at {},{} armed={}",
-                poll.x,
-                poll.y,
-                screen_click.is_armed()
-            ));
             screen_click.on_left_click_at(poll.x, poll.y);
         }
         for _ in 0..poll.left_releases {
@@ -659,7 +645,11 @@ impl Drop for RecordingOverlay {
             stop.store(true, Ordering::Relaxed);
         }
         if let Some(join) = self.join.take() {
-            let _ = join.join();
+            if sqyre_capture::process_exiting() {
+                std::mem::forget(join);
+            } else {
+                let _ = join.join();
+            }
         }
         mark_site("recording_overlay:drop:after_wake");
         if let Some(mut grab) = self.grab.take() {
