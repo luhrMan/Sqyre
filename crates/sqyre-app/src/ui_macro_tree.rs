@@ -173,38 +173,47 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     // (content ≈ viewport + rounding). Cap available height so the tree
                     // sizes to its nodes; allocate_rect still grows content for scrolling.
                     ui.set_max_height(0.0);
-                    let (_, tree_actions) = TreeView::new(id)
-                        .allow_drag_and_drop(allow_dnd)
-                        .allow_multi_selection(true)
-                        .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
-                        .show_state(
-                            ui,
-                            &mut state,
-                            |builder: &mut TreeViewBuilder<'_, ActionId>| {
-                                // Invisible flattened root so top-level rows have a parent for DnD
-                                // Root loop is not painted.
-                                builder.node(
-                                    NodeBuilder::dir(root_aid)
-                                        .flatten(true)
-                                        .drop_allowed(true)
-                                        .default_open(true),
-                                );
-                                for child in root_children {
-                                    build_tree(
-                                        builder,
-                                        child,
-                                        &mut open_logs,
-                                        &mut delete_action,
-                                        &mut row_events,
-                                        &mut tree_paint,
-                                        scroll_to,
-                                        &mut scrolled_follow,
-                                        interact_y,
+                    // egui_ltreeview Hook indent clamps against an unnormalized clip rect
+                    // and panics when that rect is inverted (window resize / collapse).
+                    // Upstream #47 added normalize_rect but missed one Hook clamp site.
+                    // Skip the frame when invisible rather than panic.
+                    let tree_actions = if ui.clip_rect().is_negative() {
+                        Vec::new()
+                    } else {
+                        let (_, tree_actions) = TreeView::new(id)
+                            .allow_drag_and_drop(allow_dnd)
+                            .allow_multi_selection(true)
+                            .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
+                            .show_state(
+                                ui,
+                                &mut state,
+                                |builder: &mut TreeViewBuilder<'_, ActionId>| {
+                                    // Invisible flattened root so top-level rows have a parent for DnD
+                                    // Root loop is not painted.
+                                    builder.node(
+                                        NodeBuilder::dir(root_aid)
+                                            .flatten(true)
+                                            .drop_allowed(true)
+                                            .default_open(true),
                                     );
-                                }
-                                builder.close_dir();
-                            },
-                        );
+                                    for child in root_children {
+                                        build_tree(
+                                            builder,
+                                            child,
+                                            &mut open_logs,
+                                            &mut delete_action,
+                                            &mut row_events,
+                                            &mut tree_paint,
+                                            scroll_to,
+                                            &mut scrolled_follow,
+                                            interact_y,
+                                        );
+                                    }
+                                    builder.close_dir();
+                                },
+                            );
+                        tree_actions
+                    };
                     // Off-clip rows skip label_ui — estimate Y so ScrollArea can still follow.
                     if let Some(target) = scroll_to {
                         if !scrolled_follow {
@@ -726,6 +735,10 @@ fn build_else_dir(
     interact_y: f32,
 ) {
     let else_id = ActionId::else_folder(detection.id);
+    let else_count = detection
+        .else_children()
+        .map(|kids| kids.len())
+        .unwrap_or(0);
     let row_h = tree_chrome::default_row_height(interact_y);
     let should_scroll = scroll_to == Some(else_id);
     let is_open = builder.node(
@@ -735,7 +748,10 @@ fn build_else_dir(
             .label_ui(|ui| {
                 let resp = help::tip(
                     ui.add(
-                        egui::Label::new(egui::RichText::new("Else").strong()).selectable(false),
+                        egui::Label::new(
+                            egui::RichText::new(format!("Else ({else_count})")).strong(),
+                        )
+                        .selectable(false),
                     ),
                     help::ELSE_BRANCH,
                 );
