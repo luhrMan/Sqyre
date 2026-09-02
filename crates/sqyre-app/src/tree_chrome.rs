@@ -295,7 +295,11 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     if targets.is_empty() {
         return;
     }
-    ui.label(egui::RichText::new("Items").small().strong());
+    crate::widgets::title_with_count(
+        ui,
+        egui::RichText::new("Items").small().strong(),
+        targets.len(),
+    );
     crate::pickers::paint_even_icon_grid(
         ui,
         catalog,

@@ -106,14 +106,13 @@ pub fn picker_searchable_scroll(
     search_changed
 }
 
-/// Finite height for scroll panes inside content-sized popup windows.
-/// Without this, `ScrollArea` + `auto_shrink([false, false])` grows the window forever.
+/// Finite height for scroll panes inside popup / dialog windows.
+///
+/// Uses [`crate::widgets::visible_height`] so resizable dialogs fill with the
+/// window without treating leftover room toward Window `max_size` as a minimum
+/// (that ratchets the window open — see `pin_visible`).
 ///
 /// `footer_reserve` is space still to be laid out below the scroll (buttons, status).
 pub fn popup_scroll_max_height(ui: &egui::Ui, footer_reserve: f32) -> f32 {
-    const FALLBACK: f32 = 360.0;
-    let screen_cap = (crate::widgets::dialog_constrain_rect(ui.ctx()).height() * 0.65).max(100.0);
-    let h = ui.available_height() - footer_reserve;
-    let capped = if h.is_finite() { h.max(40.0) } else { FALLBACK };
-    capped.min(screen_cap)
+    (crate::widgets::visible_height(ui) - footer_reserve).max(40.0)
 }

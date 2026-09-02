@@ -143,7 +143,18 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             let pane_w = ui.available_width();
             ui.set_max_width(pane_w);
 
-            ui.heading("Macros");
+            crate::widgets::heading_with_count(ui, "Macros", {
+                let filter = app.macro_list_filter.trim();
+                if filter.is_empty() {
+                    app.workspace.macros.len()
+                } else {
+                    app.workspace
+                        .macros
+                        .iter()
+                        .filter(|m| pickers::query_matches_name_or_tags(filter, &m.name, &m.tags))
+                        .count()
+                }
+            });
             // True load failures only (corrupt db / undecodable macros). Per-macro
             // validation issues are shown on the macro rows and action tree.
             if let Some(err) = &app.workspace.load_error {
@@ -249,17 +260,31 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                             let header_budget =
                                 (ui.available_width() - ui.spacing().button_padding.x).max(0.0);
                             let font = egui::FontSelection::Default.resolve(ui.style());
-                            let header_text = elide_to_width(ui, header, header_budget, font);
-                            let resp = ui
-                                .selectable_label(
-                                    selected,
-                                    egui::RichText::new(header_text).strong(),
+                            // Reserve room for a flush-right count so elision doesn't eat it.
+                            let count_text = format!("({})", indices.len());
+                            let count_w = ui
+                                .painter()
+                                .layout_no_wrap(
+                                    count_text.clone(),
+                                    font.clone(),
+                                    egui::Color32::WHITE,
                                 )
-                                .on_hover_text(if selected {
-                                    "Hotkeys enabled for this tag. Click again to disable."
-                                } else {
-                                    "Enable hotkeys for macros with this tag."
-                                });
+                                .size()
+                                .x;
+                            let name_budget =
+                                (header_budget - count_w - ui.spacing().item_spacing.x).max(0.0);
+                            let header_text = elide_to_width(ui, header, name_budget, font);
+                            let resp = crate::widgets::selectable_title_with_count(
+                                ui,
+                                selected,
+                                egui::RichText::new(header_text).strong(),
+                                indices.len(),
+                            )
+                            .on_hover_text(if selected {
+                                "Hotkeys enabled for this tag. Click again to disable."
+                            } else {
+                                "Enable hotkeys for macros with this tag."
+                            });
                             if resp.clicked() {
                                 clicked_tag = Some(tag.clone());
                             }
