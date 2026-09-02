@@ -30,8 +30,8 @@ fn apply_dialog_bounds<'a>(window: egui::Window<'a>, ctx: &egui::Context) -> egu
 /// every frame until it hits the screen edge.
 ///
 /// Prefer the painted region (`clip_rect` ∩ `max_rect`), then clamp to available
-/// and the dialog constrain rect. Call [`pin_visible`] at the start of a Window
-/// body when children size themselves from available space.
+/// and the dialog constrain rect. Prefer [`fill_resize_body`] for Window bodies
+/// whose children size themselves from available space.
 pub fn visible_size(ui: &egui::Ui) -> egui::Vec2 {
     let constrain = dialog_constrain_rect(ui.ctx()).size();
     let clip = ui.clip_rect().size();
@@ -66,16 +66,6 @@ pub fn visible_width(ui: &egui::Ui) -> f32 {
 /// [`visible_size`].y
 pub fn visible_height(ui: &egui::Ui) -> f32 {
     visible_size(ui).y
-}
-
-/// Cap this Ui so children cannot ratchet a Window toward `max_size`.
-///
-/// Prefer fixing the child instead when possible: `ScrollArea::auto_shrink([false, _])`
-/// and `set_width(available)` set `min_size` equal to the current window size, which
-/// both grows the window and blocks shrinking. Use `auto_shrink([true, …])` and
-/// `TextEdit::desired_width(f32::INFINITY)` for fill-without-lock layouts.
-pub fn pin_visible(ui: &mut egui::Ui) {
-    ui.set_max_size(visible_size(ui));
 }
 
 /// Fill a resizable [`egui::Window`] body without ratcheting its Resize state.

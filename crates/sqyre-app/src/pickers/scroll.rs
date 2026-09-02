@@ -110,7 +110,7 @@ pub fn picker_searchable_scroll(
 ///
 /// Uses [`crate::widgets::visible_height`] so resizable dialogs fill with the
 /// window without treating leftover room toward Window `max_size` as a minimum
-/// (that ratchets the window open — see `pin_visible`).
+/// (that ratchets the window open — see `fill_resize_body`).
 ///
 /// `footer_reserve` is space still to be laid out below the scroll (buttons, status).
 pub fn popup_scroll_max_height(ui: &egui::Ui, footer_reserve: f32) -> f32 {

@@ -14,7 +14,7 @@ fn count_row(
 ) -> egui::Response {
     // Justified layout fills the parent without raising min_size above it.
     // `allocate_ui(available_width)` would claim that width as min_size and
-    // ratchet Windows toward max_size (see `crate::widgets::pin_visible`).
+    // ratchet Windows toward max_size (see `crate::widgets::visible_width`).
     let row_w = crate::widgets::visible_width(ui);
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
         ui.set_max_width(row_w);
