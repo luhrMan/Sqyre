@@ -40,8 +40,9 @@ mod x11_secondary;
 mod x11_snapshot_overlay;
 
 pub use diag::{
-    cap_log, disk_logging_enabled, event_log, mark_site, note, read_last_site, set_disk_logging,
-    set_log_dir, CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
+    cap_log, disk_logging_enabled, event_log, mark_site, note, process_exiting, read_last_site,
+    set_disk_logging, set_log_dir, set_process_exiting, CRASH_LOG_FILE, DIAG_LOG_FILE,
+    LAST_SITE_FILE,
 };
 pub use error::{linux_session_capture_warning, CaptureError};
 #[cfg(target_os = "linux")]

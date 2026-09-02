@@ -451,7 +451,17 @@ impl Drop for PortalCapturer {
         mark_site("portal:drop:before_pw_join");
         let t_pw = Instant::now();
         if let Some(handle) = self.thread.lock().take() {
-            let _ = handle.join();
+            // On process quit, don't block the UI thread on PipeWire / portal
+            // Session::Close — the kernel reaps the thread and D-Bus disconnect
+            // ends the screencast. Mid-session reset still joins.
+            if crate::process_exiting() {
+                cap_log("PORTAL", "drop", "pw_join=abandon");
+                mark_site("portal:drop:abandon_pw");
+                // Detach: dropping JoinHandle without join does not abort the thread.
+                std::mem::forget(handle);
+            } else {
+                let _ = handle.join();
+            }
         }
         let pw_ms = t_pw.elapsed().as_millis();
         mark_site("portal:drop:after_pw_join");
@@ -816,7 +826,21 @@ fn portal_pw_thread(
     drop(stream_holds);
     stop_eis_thread();
     REMOTE_DESKTOP_GRANTED.store(false, Ordering::SeqCst);
-    drop(portal_hold);
+    // Session Drop may call portal Close over D-Bus (often ~1–2s on GNOME).
+    // On process exit, forget the hold — disconnect tears the session down.
+    if crate::process_exiting() {
+        mark_site("portal:pw:forget_session");
+        std::mem::forget(portal_hold);
+    } else {
+        mark_site("portal:pw:before_session_drop");
+        let t = Instant::now();
+        drop(portal_hold);
+        cap_log(
+            "PORTAL",
+            "pw",
+            &format!("session_drop_ms={}", t.elapsed().as_millis()),
+        );
+    }
 
     if !first_ready.load(Ordering::Acquire) {
         return propagate_ready(

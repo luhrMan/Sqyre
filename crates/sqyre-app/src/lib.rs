@@ -175,7 +175,7 @@ pub fn run() -> eframe::Result<()> {
         #[cfg(feature = "native-runtime")]
         sqyre_capture::note("ui: X11/XWayland event loop (tray hide + overlay Alt-Tab)");
     }
-    eframe::run_native(
+    let result = eframe::run_native(
         assets::APP_ID,
         options,
         Box::new(move |cc| {
@@ -187,7 +187,10 @@ pub fn run() -> eframe::Result<()> {
             app.tray = tray::SystemTray::install(cc.egui_ctx.clone(), cc.winit_window().cloned());
             Ok(Box::new(app))
         }),
-    )
+    );
+    #[cfg(feature = "native-runtime")]
+    sqyre_capture::mark_site("app:run_native:returned");
+    result
 }
 
 /// Handle `--version` / `--help` before starting the GUI.
@@ -632,6 +635,18 @@ impl eframe::App for SqyreApp {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         #[cfg(not(target_arch = "wasm32"))]
         self.tray.poll_commands(ctx, frame);
+        // Unmap as soon as the WM asks to close so portal/tray/wgpu teardown
+        // is not user-visible (Drop alone was finishing in <1s while the window
+        // stayed up for ~2s afterward).
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        if ctx.input(|i| i.viewport().close_requested()) {
+            sqyre_capture::set_process_exiting();
+            sqyre_capture::mark_site("app:close_requested");
+            if let Some(win) = frame.winit_window().or(self.tray.root_window()) {
+                win.set_visible(false);
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -713,7 +728,14 @@ impl eframe::App for SqyreApp {
 impl Drop for SqyreApp {
     fn drop(&mut self) {
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
-        sqyre_capture::mark_site("app:drop:start");
+        {
+            sqyre_capture::set_process_exiting();
+            sqyre_capture::mark_site("app:drop:start");
+            // Belt-and-suspenders if close_requested was missed (e.g. tray Quit).
+            if let Some(win) = self.tray.root_window() {
+                win.set_visible(false);
+            }
+        }
         #[cfg(not(target_arch = "wasm32"))]
         sqyre_input::release_held_inputs();
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]

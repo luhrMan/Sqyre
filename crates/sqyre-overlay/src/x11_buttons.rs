@@ -144,7 +144,14 @@ impl X11ButtonHost {
         self.stop.store(true, Ordering::Relaxed);
         let _ = self.cmd_tx.send(HostCmd::Shutdown);
         if let Some(join) = self.join.lock().take() {
-            let _ = join.join();
+            // XCloseDisplay / flush under a busy XWayland client can stall for
+            // seconds; on process exit abandon the host thread.
+            if sqyre_capture::process_exiting() {
+                sqyre_capture::note("overlay-x11: shutdown abandon join");
+                std::mem::forget(join);
+            } else {
+                let _ = join.join();
+            }
         }
     }
 }

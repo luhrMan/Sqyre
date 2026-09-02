@@ -8,8 +8,13 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use web_time::{SystemTime, UNIX_EPOCH};
+
+/// Set at the start of process quit so Drop paths can skip blocking joins
+/// (portal session Close, tray D-Bus unregister, kick/overlay thread joins).
+static PROCESS_EXITING: AtomicBool = AtomicBool::new(false);
 
 /// Overwritten single-line file: last code site before a hard abort.
 pub const LAST_SITE_FILE: &str = "last_site.txt";
@@ -71,10 +76,20 @@ pub fn log_dir() -> PathBuf {
     }
 }
 
-fn stamp() -> u64 {
+/// Mark that the process is quitting. Blocking teardown should detach/abandon.
+pub fn set_process_exiting() {
+    PROCESS_EXITING.store(true, Ordering::SeqCst);
+}
+
+/// True after [`set_process_exiting`] (title-bar close, tray Quit, or `SqyreApp` Drop).
+pub fn process_exiting() -> bool {
+    PROCESS_EXITING.load(Ordering::SeqCst)
+}
+
+fn stamp() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_millis())
         .unwrap_or(0)
 }
 
