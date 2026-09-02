@@ -484,7 +484,7 @@ impl SqyreApp {
                 save_error: None,
                 selected_macro: 0,
                 macro_meta: MacroMetaUi::default(),
-                hotkey_tag_filter: None,
+                hotkey_tag_filter: settings_ui.settings().hotkey_tag_filter.clone(),
             },
             run_session: RunSession {
                 state: run,
