@@ -48,6 +48,12 @@ impl SystemTray {
         self.application_hidden.load(Ordering::SeqCst)
     }
 
+    /// Root winit window (for immediate unmap on quit).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn root_window(&self) -> Option<&Arc<winit::window::Window>> {
+        self.root_window.as_ref()
+    }
+
     #[cfg(target_arch = "wasm32")]
     pub fn application_hidden(&self) -> bool {
         let _ = self;
@@ -93,8 +99,10 @@ impl SystemTray {
                     );
                 }
                 Ok(TrayCommand::Quit) => {
-                    self.stop_wake_poller();
+                    // Close first (and wake the loop); stop the poller after so a
+                    // tray-hidden quit cannot stall waiting for another repaint.
                     quit_app(ctx, window);
+                    self.stop_wake_poller();
                 }
                 Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
             }
@@ -141,6 +149,12 @@ impl SystemTray {
         let mut poller = self.wake_poller.lock().expect("tray wake lock");
         if let Some((stop, join)) = poller.take() {
             stop.store(true, Ordering::Relaxed);
+            #[cfg(feature = "native-runtime")]
+            if sqyre_capture::process_exiting() {
+                // Up to 250ms otherwise; process exit does not need a clean join.
+                std::mem::forget(join);
+                return;
+            }
             let _ = join.join();
         }
     }
@@ -160,13 +174,24 @@ impl Drop for SystemTray {
         #[cfg(target_os = "linux")]
         {
             let t0 = std::time::Instant::now();
-            drop(self._handle.take());
-            #[cfg(feature = "native-runtime")]
-            sqyre_capture::cap_log(
-                "TRAY",
-                "drop",
-                &format!("handle_ms={}", t0.elapsed().as_millis()),
-            );
+            if let Some(handle) = self._handle.take() {
+                // ksni unregister is a sync D-Bus round-trip; abandon on process
+                // exit — the connection drop cleans up the StatusNotifierItem.
+                #[cfg(feature = "native-runtime")]
+                if sqyre_capture::process_exiting() {
+                    sqyre_capture::cap_log("TRAY", "drop", "handle=abandon");
+                    std::mem::forget(handle);
+                } else {
+                    drop(handle);
+                    sqyre_capture::cap_log(
+                        "TRAY",
+                        "drop",
+                        &format!("handle_ms={}", t0.elapsed().as_millis()),
+                    );
+                }
+                #[cfg(not(feature = "native-runtime"))]
+                drop(handle);
+            }
         }
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         sqyre_capture::mark_site("tray:drop:done");
@@ -216,10 +241,17 @@ fn set_application_visible(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn quit_app(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
-    if let Some(win) = window {
-        win.set_visible(true);
+    #[cfg(feature = "native-runtime")]
+    {
+        sqyre_capture::set_process_exiting();
+        sqyre_capture::mark_site("app:tray_quit");
     }
-    ctx.send_viewport_cmd(ViewportCommand::Visible(true));
+    // Hide immediately — do not map the window just to tear it down (that made
+    // tray Quit flash the UI for the whole portal/wgpu shutdown).
+    if let Some(win) = window {
+        win.set_visible(false);
+    }
+    ctx.send_viewport_cmd(ViewportCommand::Visible(false));
     ctx.send_viewport_cmd(ViewportCommand::Close);
     ctx.request_repaint();
 }

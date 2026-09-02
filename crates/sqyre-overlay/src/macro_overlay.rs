@@ -385,7 +385,14 @@ fn focus_poll_loop(
                 g.last_err_at = Some(Instant::now());
             }
         }
-        thread::sleep(FOCUS_POLL);
+        // Short slices so stop_focus_poller can join quickly on quit.
+        let deadline = Instant::now() + FOCUS_POLL;
+        while Instant::now() < deadline {
+            if stop.load(Ordering::Relaxed) {
+                break;
+            }
+            thread::sleep(std::time::Duration::from_millis(50));
+        }
     }
 }
 

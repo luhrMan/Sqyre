@@ -160,14 +160,25 @@ impl Drop for DamageKick {
         self.shutting_down.store(true, Ordering::SeqCst);
         let _ = self.tx.send(KickCmd::Shutdown);
         if let Some(t) = self.thread.take() {
-            let _ = t.join();
+            // A in-flight compositor round-trip can block join for seconds; on
+            // process exit abandon the kick thread (fds reclaimed on exit).
+            if crate::process_exiting() {
+                cap_log(
+                    "PORTAL",
+                    "kick-drop",
+                    &format!("pending={pending} join=abandon"),
+                );
+                std::mem::forget(t);
+            } else {
+                let _ = t.join();
+                let ms = t0.elapsed().as_millis();
+                cap_log(
+                    "PORTAL",
+                    "kick-drop",
+                    &format!("pending={pending} join_ms={ms}"),
+                );
+            }
         }
-        let ms = t0.elapsed().as_millis();
-        cap_log(
-            "PORTAL",
-            "kick-drop",
-            &format!("pending={pending} join_ms={ms}"),
-        );
         mark_site("kick:drop:after_join");
     }
 }
