@@ -827,18 +827,7 @@ unsafe fn blit_edges_from_pixmap(
     rect: OutlineRect,
 ) {
     for (x, y, ew, eh) in window_local_edges(bounds, rect) {
-        XCopyArea(
-            display,
-            pixmap,
-            window,
-            gc,
-            x,
-            y,
-            ew,
-            eh,
-            x,
-            y,
-        );
+        XCopyArea(display, pixmap, window, gc, x, y, ew, eh, x, y);
     }
 }
 

@@ -8,14 +8,13 @@ use std::os::raw::{c_int, c_uint};
 use std::ptr;
 use x11::xlib::{
     Above, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask, CWHeight,
-    CWOverrideRedirect,
-    CWStackMode, CWWidth, CurrentTime, Display, GrabModeAsync, InputOnly, KeyPress, KeyPressMask,
-    MotionNotify, PointerMotionMask, RevertToParent, Success, True, Window, XConfigureWindow,
-    XCreateFontCursor, XCreateWindow, XDefaultRootWindow, XDefaultScreen, XDestroyWindow,
-    XDisplayHeight, XDisplayWidth, XEvent, XFlush, XFreeCursor, XGrabKeyboard, XGrabPointer,
-    XKeycodeToKeysym, XMapRaised, XNextEvent, XOpenDisplay, XPending, XSelectInput, XSetInputFocus,
-    XSetWindowAttributes, XUngrabKeyboard, XUngrabPointer, XUnmapWindow, XWindowChanges, _XDisplay,
-    CWX, CWY,
+    CWOverrideRedirect, CWStackMode, CWWidth, CurrentTime, Display, GrabModeAsync, InputOnly,
+    KeyPress, KeyPressMask, MotionNotify, PointerMotionMask, RevertToParent, Success, True, Window,
+    XConfigureWindow, XCreateFontCursor, XCreateWindow, XDefaultRootWindow, XDefaultScreen,
+    XDestroyWindow, XDisplayHeight, XDisplayWidth, XEvent, XFlush, XFreeCursor, XGrabKeyboard,
+    XGrabPointer, XKeycodeToKeysym, XMapRaised, XNextEvent, XOpenDisplay, XPending, XSelectInput,
+    XSetInputFocus, XSetWindowAttributes, XUngrabKeyboard, XUngrabPointer, XUnmapWindow,
+    XWindowChanges, _XDisplay, CWX, CWY,
 };
 
 use crate::selection_grab::GrabPoll;

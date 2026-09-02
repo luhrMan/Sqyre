@@ -404,7 +404,8 @@ mod tests {
         assert!(b.is_armed());
 
         // Pretend the press started >1s ago.
-        b.inner.lock().search_press_at = Some(Instant::now() - SEARCH_DRAG_HOLD - Duration::from_millis(50));
+        b.inner.lock().search_press_at =
+            Some(Instant::now() - SEARCH_DRAG_HOLD - Duration::from_millis(50));
         b.on_left_release();
         assert_eq!(b.take_search_area(), Some((10, 20, 80, 90)));
         assert!(!b.is_armed());

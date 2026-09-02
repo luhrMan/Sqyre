@@ -666,9 +666,7 @@ fn probe_hotkeys_inferred(session: &SessionReport, caps: &mut BTreeMap<String, C
             #[cfg(target_os = "linux")]
             if session.session_type == "wayland" && !permissions::user_can_open_evdev() {
                 cap_log("HOTKEY", "fail", "reason=evdev_unreadable");
-                return CapabilityResult::fail(
-                    "cannot open /dev/input (evdev unavailable)",
-                );
+                return CapabilityResult::fail("cannot open /dev/input (evdev unavailable)");
             }
             cap_log("HOTKEY", "ok", &format!("backend={backend} inferred"));
             CapabilityResult {
@@ -689,9 +687,7 @@ fn probe_hotkeys(session: &SessionReport, caps: &mut BTreeMap<String, Capability
             #[cfg(target_os = "linux")]
             if session.session_type == "wayland" && !permissions::user_can_open_evdev() {
                 cap_log("HOTKEY", "fail", "reason=evdev_unreadable");
-                return CapabilityResult::fail(
-                    "cannot open /dev/input (evdev unavailable)",
-                );
+                return CapabilityResult::fail("cannot open /dev/input (evdev unavailable)");
             }
             let result = std::panic::catch_unwind(|| {
                 let (mut hk, _, _, _, _) = sqyre_hotkeys::default_hotkeys();
