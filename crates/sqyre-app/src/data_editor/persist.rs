@@ -271,9 +271,6 @@ impl DataEditor {
                 btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;
                 if let Some(first) = macros.first() {
                     btn.macro_name = first.name.clone();
-                    btn.label = first.name.clone();
-                } else {
-                    btn.label = format!("Button {}", n + 1);
                 }
                 let id = btn.id.clone();
                 settings.overlay_buttons.push(btn);

@@ -71,7 +71,6 @@ impl DataEditor {
             return;
         };
         btn.program = prog;
-        btn.label = self.form_name.trim().to_string();
         btn.macro_name = self.form_overlay_macro.trim().to_string();
         btn.enabled = self.form_overlay_enabled;
         btn.icon = self.form_overlay_icon.clone();

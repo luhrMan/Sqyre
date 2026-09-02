@@ -133,7 +133,6 @@ impl DataEditor {
             self.reset_overlay_form();
             return;
         };
-        self.form_name = btn.label.clone();
         self.form_overlay_point = btn.point.clone();
         self.form_overlay_x = btn.x;
         self.form_overlay_y = btn.y;
@@ -153,7 +152,6 @@ impl DataEditor {
     }
 
     pub(crate) fn reset_overlay_form(&mut self) {
-        self.form_name.clear();
         self.form_overlay_point.clear();
         let (x, y) = default_overlay_position(
             0.0,
@@ -1061,16 +1059,6 @@ impl DataEditor {
                     });
                 });
                 ui.add_space(6.0);
-                help::label(ui, "Label", help::DE_OVERLAY_LABEL);
-                help::tip(
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name)
-                            .desired_width(f32::INFINITY)
-                            .hint_text("optional"),
-                    ),
-                    help::DE_OVERLAY_LABEL,
-                );
-                ui.add_space(4.0);
                 help::label(ui, "Macro", help::DE_OVERLAY_MACRO);
                 let mut selected = self.form_overlay_macro.clone();
                 let before = selected.clone();

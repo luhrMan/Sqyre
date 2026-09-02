@@ -27,7 +27,6 @@ impl SandboxApp {
         let mut btn = OverlayButtonConfig::new("sandbox", "Sandbox");
         btn.enabled = true;
         btn.macro_name = "sandbox".into();
-        btn.label = "Go".into();
         btn.icon = "play".into();
         btn.x = 120.0;
         btn.y = 120.0;

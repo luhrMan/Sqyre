@@ -222,8 +222,7 @@ pub const DE_COLLECTION_COLS: &str = "Number of columns in the collection grid."
 pub const DE_ATLAS_MEMBERS: &str =
     "Collections included in this Atlas. Neighbors are derived from their on-screen positions.";
 pub const DE_MASK_SHAPE: &str = "Rectangle or circle geometry for the mask.";
-pub const DE_OVERLAY_LABEL: &str = "Text shown on the overlay button.";
-pub const DE_OVERLAY_MACRO: &str = "Macro launched when the overlay button is clicked.";
+pub const DE_OVERLAY_MACRO: &str = "Macro launched when the overlay button is clicked (also used as the button name).";
 pub const DE_OVERLAY_ENABLED: &str =
     "When off, this button is hidden from the screen (still editable in the detail form).";
 pub const DE_OVERLAY_POINT: &str =

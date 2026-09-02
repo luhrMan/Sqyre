@@ -531,14 +531,7 @@ fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeBu
             style.icon_hover.b(),
             style.icon_hover.a(),
         ],
-        tip: {
-            let label = btn.label.trim();
-            if !label.is_empty() {
-                label.to_string()
-            } else {
-                btn.macro_name.trim().to_string()
-            }
-        },
+        tip: btn.macro_name.trim().to_string(),
         busy,
     }
 }
