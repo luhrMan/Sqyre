@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Lightweight devcontainer bootstrap. Avoid cargo fetch / recursive chown here —
-# both can OOM or stall Cursor server install on large caches.
+# Lightweight devcontainer bootstrap. Avoid cargo fetch / recursive chown of
+# the whole workspace — both can OOM or stall Cursor server install.
 set -euo pipefail
 
-if [ ! -w "${CARGO_HOME:-/home/vscode/.cargo}" ]; then
-  sudo chown -R vscode:vscode "${CARGO_HOME:-/home/vscode/.cargo}" 2>/dev/null || true
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Ownership + git safe.directory (also runs on every attach via post-start).
+bash "${SCRIPT_DIR}/post-start.sh"
 
 rustup component add rust-src 2>/dev/null || true
 rustup target add wasm32-unknown-unknown 2>/dev/null || true

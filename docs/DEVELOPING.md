@@ -8,6 +8,12 @@ Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`$
 
 If Cursor reports **“container is not running”** during attach, stale containers are usually the cause — remove them (`docker ps -a` → `docker rm -f <id>`) and **Rebuild Container**. Large `target/` trees are excluded from file watchers (see `.devcontainer/devcontainer.json`); run `cargo clean` locally if the cache has grown huge (>50 GiB).
 
+### Host permissions / SELinux / git
+
+On Fedora, Bazzite, and other SELinux-enforcing hosts, a plain bind mount of the repo often yields **Permission denied** on files and broken git (“dubious ownership”) inside the container. The devcontainer sets `--security-opt=label=disable`, remaps the `vscode` user to the host UID (`updateRemoteUserUID`), marks `/workspace` as a git `safe.directory`, and re-owns writable caches (`target/`, `.cache/`, cargo home) on each attach. Nested `make windows` / AppImage Docker binds use the `:z` SELinux label.
+
+After pulling these changes, **Rebuild Container** (not just reopen). If `target/` or `.cache/` were created as root on another machine, delete them on the host or let `post-start.sh` chown them once they are unwritable.
+
 From the repo root:
 
 ```bash
