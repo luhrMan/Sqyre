@@ -179,11 +179,23 @@ impl PermissionsPanel {
         }
 
         for item in self.items.clone() {
-            if paint_permission_row(ui, ctx, &item) {
-                sqyre_capture::request_portal_screencast_picker();
-                self.refresh_when_capture_ready = true;
-                apply_live_capture_status(&mut self.items);
-                ctx.request_repaint();
+            match paint_permission_row(ui, ctx, &item) {
+                PermissionRowAction::ShareScreen => {
+                    sqyre_capture::request_portal_screencast_picker();
+                    self.refresh_when_capture_ready = true;
+                    apply_live_capture_status(&mut self.items);
+                    ctx.request_repaint();
+                }
+                PermissionRowAction::Revoke => {
+                    sqyre_capture::revoke_portal_grants();
+                    mark_portal_permissions_revoked(&mut self.items);
+                    apply_live_capture_status(&mut self.items);
+                    self.refresh(ctx);
+                    // `refresh` waits for a capturer that we just dropped on purpose.
+                    self.refresh_when_capture_ready = false;
+                    ctx.request_repaint();
+                }
+                PermissionRowAction::None => {}
             }
             ui.add_space(10.0);
         }
@@ -191,24 +203,68 @@ impl PermissionsPanel {
 }
 
 fn apply_live_capture_status(items: &mut [PermissionItem]) {
-    let Some(item) = items.iter_mut().find(|i| i.id == "screen_recording") else {
-        return;
-    };
-    if sqyre_capture::portal_screencast_granted() {
-        item.eligibility = PermissionEligibility::Granted;
-        item.detail = None;
-        item.setup_steps.clear();
-        return;
-    }
-    if sqyre_capture::shared_capturer_is_opening() {
-        item.eligibility = PermissionEligibility::Checking;
-        item.detail = Some("Waiting for the screen sharing dialog.".into());
-        item.setup_steps.clear();
+    let portal_session = sqyre_capture::shared_capturer_open_may_block();
+    let capture_granted = sqyre_capture::portal_screencast_granted();
+    let opening = sqyre_capture::shared_capturer_is_opening();
+    let input_ready = sqyre_capture::portal_input_ready();
+
+    for item in items {
+        match item.id {
+            "screen_recording" if portal_session => {
+                if capture_granted {
+                    item.eligibility = PermissionEligibility::Granted;
+                    item.detail = None;
+                    item.setup_steps.clear();
+                } else if opening {
+                    item.eligibility = PermissionEligibility::Checking;
+                    item.detail = Some("Waiting for the screen sharing dialog.".into());
+                    item.setup_steps.clear();
+                } else if item.eligibility == PermissionEligibility::Granted {
+                    item.eligibility = PermissionEligibility::Needed;
+                }
+            }
+            "automation_input" if portal_session => {
+                if input_ready {
+                    item.eligibility = PermissionEligibility::Granted;
+                    item.detail = None;
+                    item.setup_steps.clear();
+                } else if item.eligibility == PermissionEligibility::Granted {
+                    item.eligibility = PermissionEligibility::Needed;
+                }
+            }
+            _ => {}
+        }
     }
 }
 
-fn paint_permission_row(ui: &mut egui::Ui, ctx: &egui::Context, item: &PermissionItem) -> bool {
-    let mut share_clicked = false;
+fn mark_portal_permissions_revoked(items: &mut [PermissionItem]) {
+    for item in items {
+        if matches!(item.id, "screen_recording" | "automation_input")
+            && matches!(
+                item.eligibility,
+                PermissionEligibility::Granted | PermissionEligibility::Checking
+            )
+        {
+            item.eligibility = PermissionEligibility::Needed;
+            item.detail = Some("Portal grant revoked.".into());
+            item.setup_steps.clear();
+        }
+    }
+}
+
+enum PermissionRowAction {
+    None,
+    ShareScreen,
+    Revoke,
+}
+
+fn paint_permission_row(
+    ui: &mut egui::Ui,
+    ctx: &egui::Context,
+    item: &PermissionItem,
+) -> PermissionRowAction {
+    let mut action = PermissionRowAction::None;
+    let portal_session = sqyre_capture::shared_capturer_open_may_block();
     egui::Frame::NONE
         .fill(crate::theme::overlay_panel_fill())
         .stroke(egui::Stroke::new(
@@ -249,26 +305,42 @@ fn paint_permission_row(ui: &mut egui::Ui, ctx: &egui::Context, item: &Permissio
                     }
                 });
             }
-            if item.id == "screen_recording" && sqyre_capture::shared_capturer_open_may_block() {
+            let share_screen = item.id == "screen_recording" && portal_session;
+            let revoke = item.portal_grant_revocable() && portal_session;
+            if share_screen || revoke {
                 ui.add_space(6.0);
-                let label = if item.eligibility == PermissionEligibility::Granted {
-                    "Change shared screen"
-                } else {
-                    "Share screen"
-                };
-                let enabled = !sqyre_capture::shared_capturer_is_opening();
-                if ui
-                    .add_enabled(enabled, egui::Button::new(label))
-                    .on_hover_text(
-                        "Open the desktop portal picker to choose which screens Sqyre can capture.",
-                    )
-                    .clicked()
-                {
-                    share_clicked = true;
-                }
+                ui.horizontal(|ui| {
+                    if share_screen {
+                        let label = if item.eligibility == PermissionEligibility::Granted {
+                            "Change shared screen"
+                        } else {
+                            "Share screen"
+                        };
+                        let enabled = !sqyre_capture::shared_capturer_is_opening();
+                        if ui
+                            .add_enabled(enabled, egui::Button::new(label))
+                            .on_hover_text(
+                                "Open the desktop portal picker to choose which screens Sqyre can capture.",
+                            )
+                            .clicked()
+                        {
+                            action = PermissionRowAction::ShareScreen;
+                        }
+                    }
+                    if revoke
+                        && ui
+                            .button("Revoke")
+                            .on_hover_text(
+                                "Stop capturing and forget the saved portal grant. Sqyre will ask again the next time it needs screen access.",
+                            )
+                            .clicked()
+                    {
+                        action = PermissionRowAction::Revoke;
+                    }
+                });
             }
         });
-    share_clicked
+    action
 }
 
 fn eligibility_color(status: PermissionEligibility) -> Color32 {
@@ -290,5 +362,35 @@ mod tests {
         let panel = PermissionsPanel::default();
         assert!(!panel.running);
         assert!(panel.items.is_empty());
+    }
+
+    fn granted_item(id: &'static str) -> PermissionItem {
+        PermissionItem {
+            id,
+            title: id,
+            summary: "",
+            eligibility: PermissionEligibility::Granted,
+            detail: None,
+            setup_steps: Vec::new(),
+            copy_command: None,
+            tooltip: None,
+        }
+    }
+
+    #[test]
+    fn revoke_marks_portal_rows_needed() {
+        let mut items = vec![
+            granted_item("screen_recording"),
+            granted_item("automation_input"),
+            granted_item("global_hotkeys"),
+        ];
+        mark_portal_permissions_revoked(&mut items);
+        assert_eq!(items[0].eligibility, PermissionEligibility::Needed);
+        assert_eq!(items[1].eligibility, PermissionEligibility::Needed);
+        assert_eq!(items[2].eligibility, PermissionEligibility::Granted);
+        assert!(items[0]
+            .detail
+            .as_deref()
+            .is_some_and(|d| d.contains("revoked")));
     }
 }

@@ -1,6 +1,8 @@
 //! Item icon variants, mask images, ScreenCap save.
 
-use super::helpers::{copy_image_as_png, form_coord_i32};
+use super::helpers::copy_image_as_png;
+#[cfg(feature = "native-runtime")]
+use super::helpers::form_coord_i32;
 use super::{DataEditor, PendingConfirm, VariantPrompt};
 use crate::data_editor_preview::{
     fit_panel, fit_thumbnail, variant_display_label, variant_name_from_path,
@@ -15,7 +17,10 @@ use sqyre_vision::invalidate_search_masks_under;
 
 #[cfg(not(feature = "native-runtime"))]
 fn invalidate_search_masks_under(_path: &std::path::Path) {}
-use std::sync::mpsc::{self, TryRecvError};
+#[cfg(feature = "native-runtime")]
+use std::sync::mpsc;
+use std::sync::mpsc::TryRecvError;
+#[cfg(feature = "native-runtime")]
 use std::thread;
 
 impl DataEditor {
@@ -442,6 +447,7 @@ impl DataEditor {
     ) -> Result<(), String> {
         #[cfg(not(feature = "native-runtime"))]
         {
+            let _ = (catalog, program, collection, rollback_collection);
             self.set_err("Collection capture requires the desktop app.");
             return Ok(());
         }

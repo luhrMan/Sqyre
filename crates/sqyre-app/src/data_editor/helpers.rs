@@ -76,6 +76,7 @@ pub(crate) fn uuid_simple() -> String {
     format!("{n}")
 }
 
+#[cfg(feature = "native-runtime")]
 pub(crate) fn form_coord_i32(s: &str) -> i32 {
     form_coord_literal(s).unwrap_or(0)
 }

@@ -1274,6 +1274,7 @@ const SECTION_PERMISSIONS: &[&str] = &[
     "portal",
     "wayland",
     "access",
+    "revoke",
 ];
 const SECTION_DATA: &[&str] = &["data", "folder", "backup", "restore", "archive"];
 #[cfg(not(target_arch = "wasm32"))]
@@ -1331,6 +1332,7 @@ const PERMISSIONS_PANEL: &[&str] = &[
     "portal",
     "wayland",
     "evdev",
+    "revoke",
 ];
 
 const DATA_LOCATION: &[&str] = &[

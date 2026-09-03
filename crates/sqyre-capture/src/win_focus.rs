@@ -41,7 +41,7 @@ impl WindowFocuser for OsWindowFocuser {
 
 /// List open top-level windows with title + executable path.
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
-    let hwnds = enum_top_level_windows().map_err(CaptureError::Message)?;
+    let hwnds = enum_top_level_windows().map_err(|e| CaptureError::Message(e.to_string()))?;
     let mut out = Vec::with_capacity(hwnds.len());
     let mut seen = HashSet::new();
     for hwnd in hwnds {

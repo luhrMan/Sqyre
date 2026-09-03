@@ -370,6 +370,16 @@ pub fn request_portal_screencast_picker() {
     }
 }
 
+/// Drop the live portal session and forget persisted ScreenCast / Remote Desktop grants.
+///
+/// No-op on targets without portal capture. Does not reopen the picker.
+pub fn revoke_portal_grants() {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::revoke_portal_grants();
+    }
+}
+
 /// After unmapping Sqyre's main window, wait for a fresh portal frame so captures
 /// exclude the hidden surface (GPU Screen Recorder destroys its overlay before portal capture).
 #[cfg(all(target_os = "linux", feature = "portal-capture"))]

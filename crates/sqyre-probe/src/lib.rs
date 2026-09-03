@@ -645,15 +645,20 @@ fn probe_input(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityRe
 }
 
 fn hotkeys_backend_label() -> &'static str {
-    if cfg!(target_os = "windows") {
+    #[cfg(target_os = "windows")]
+    {
         "win32-llhook"
-    } else if cfg!(target_os = "linux") {
+    }
+    #[cfg(target_os = "linux")]
+    {
         if sqyre_hotkeys::linux_uses_evdev_grab() {
             "evdev"
         } else {
             "rdev-x11"
         }
-    } else {
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
         "null"
     }
 }

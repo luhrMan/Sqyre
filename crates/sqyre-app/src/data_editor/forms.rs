@@ -1231,6 +1231,15 @@ impl DataEditor {
         ui.heading("PixelCheck");
         #[cfg(not(feature = "native-runtime"))]
         {
+            let _ = (
+                catalog,
+                previews,
+                screen_click,
+                active_macro,
+                known,
+                is_dark,
+                settings,
+            );
             ui.colored_label(
                 crate::theme::error_fg(),
                 "PixelCheck requires the desktop app.",

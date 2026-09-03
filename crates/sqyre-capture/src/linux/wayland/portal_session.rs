@@ -328,10 +328,8 @@ pub(super) fn spawn_eis_thread(fd: OwnedFd) {
 /// Drop the current ScreenCast session and show the share picker again (ignores restore token).
 pub fn request_portal_screencast_picker() {
     FORCE_SCREENCAST_PICKER.store(true, Ordering::SeqCst);
-    SCREENCAST_SESSION_GRANTED.store(false, Ordering::SeqCst);
-    stop_eis_thread();
-    write_restore_token_at(&restore_token_path(), None);
-    write_restore_token_at(&legacy_screencast_token_path(), None);
+    forget_live_portal_grant();
+    clear_restore_tokens();
     crate::linux::reset_shared_capturer();
     cap_log("PORTAL", "picker", "requested");
     let _ = thread::Builder::new()
@@ -341,6 +339,73 @@ pub fn request_portal_screencast_picker() {
                 cap_log("PORTAL", "picker", &format!("reopen failed: {e}"));
             }
         });
+}
+
+/// Forget persistent ScreenCast / Remote Desktop grants and drop the live session.
+///
+/// Unlike [`request_portal_screencast_picker`], this does not reopen capture.
+pub fn revoke_portal_grants() {
+    let mut tokens = restore_tokens_on_disk();
+    forget_live_portal_grant();
+    clear_restore_tokens();
+    crate::linux::reset_shared_capturer();
+    // An in-flight `open()` may rewrite a token after the first clear; pick it up.
+    forget_live_portal_grant();
+    tokens.extend(restore_tokens_on_disk());
+    tokens.sort();
+    tokens.dedup();
+    clear_restore_tokens();
+    wipe_portal_permission_store(&tokens);
+    forget_live_portal_grant();
+    cap_log("PORTAL", "revoke", &format!("tokens={}", tokens.len()));
+}
+
+fn forget_live_portal_grant() {
+    SCREENCAST_SESSION_GRANTED.store(false, Ordering::SeqCst);
+    stop_eis_thread();
+}
+
+fn restore_tokens_on_disk() -> Vec<String> {
+    [restore_token_path(), legacy_screencast_token_path()]
+        .iter()
+        .filter_map(|p| read_restore_token_at(p))
+        .collect()
+}
+
+fn clear_restore_tokens() {
+    write_restore_token_at(&restore_token_path(), None);
+    write_restore_token_at(&legacy_screencast_token_path(), None);
+}
+
+/// Best-effort: drop persist entries keyed by restore token and `com.sqyre.app`.
+fn wipe_portal_permission_store(tokens: &[String]) {
+    let Ok(conn) = zbus::blocking::Connection::session() else {
+        cap_log("PORTAL", "revoke", "permission-store: no session bus");
+        return;
+    };
+    let Ok(proxy) = zbus::blocking::Proxy::new(
+        &conn,
+        "org.freedesktop.impl.portal.PermissionStore",
+        "/org/freedesktop/impl/portal/PermissionStore",
+        "org.freedesktop.impl.portal.PermissionStore",
+    ) else {
+        cap_log("PORTAL", "revoke", "permission-store: proxy failed");
+        return;
+    };
+    const TABLES: &[&str] = &["remote-desktop", "screencast"];
+    for table in TABLES {
+        for token in tokens {
+            // Not-found is the usual case after a local token clear.
+            let _ = proxy.call::<_, _, ()>("Delete", &(table, token.as_str()));
+        }
+        let Ok(ids) = proxy.call::<_, _, Vec<String>>("List", &(table,)) else {
+            continue;
+        };
+        for id in ids {
+            let _ =
+                proxy.call::<_, _, ()>("DeletePermission", &(table, id.as_str(), PORTAL_APP_ID));
+        }
+    }
 }
 
 fn take_force_screencast_picker() -> bool {

@@ -150,6 +150,7 @@ impl IconCache {
         }
         #[cfg(not(feature = "native-runtime"))]
         {
+            let _ = (ctx, window_title);
             self.process_missing.insert(key, ());
             None
         }
