@@ -210,60 +210,64 @@ impl AddActionPicker {
         let mut edit_request: Option<(String, egui::Pos2)> = None;
         let editing = self.tip.as_ref().is_some_and(|t| t.is_editing());
 
-        egui::Window::new("Add Action")
-            .open(&mut open)
-            .collapsible(false)
-            .resizable(true)
-            .default_size([900.0, 420.0])
-            .min_size([100.0, 100.0])
-            .show(ctx, |ui| {
-                let is_dark = ui.visuals().dark_mode;
-                let templates = action_templates();
-                let list_h = pickers::popup_scroll_max_height(ui, 0.0);
-                // Content-sized columns (not equal-split) so shrinking the window
-                // yields horizontal scroll instead of squashing tiles.
-                pickers::scroll_both()
-                    .auto_shrink([false, false])
-                    .max_height(list_h)
-                    .show(ui, |ui| {
-                        // Horizontal layout assigns leftover viewport width to later
-                        // columns; without Extend they wrap letter-by-letter when shrunk.
-                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                        ui.label(
-                            "Pick an action type — hover ~1s to preview defaults, right-click to edit",
-                        );
-                        ui.add_space(6.0);
-                        ui.horizontal_top(|ui| {
-                            for category in ACTION_PICKER_CATEGORIES {
-                                ui.vertical(|ui| {
-                                    ui.strong(*category);
-                                    ui.add_space(4.0);
-                                    for tmpl in
-                                        templates.iter().filter(|t| action_picker_category(t.action_type) == *category)
-                                    {
-                                        let sample = self
-                                            .prototype_for(tmpl.action_type)
-                                            .unwrap_or_else(|| tmpl.create());
-                                        let resp = picker_tile(ui, tmpl, &sample, is_dark);
-                                        if resp.secondary_clicked() {
-                                            edit_request = Some((
-                                                tmpl.action_type.to_string(),
-                                                resp.rect.right_top(),
-                                            ));
-                                        } else if resp.clicked() {
-                                            picked = self.create_action(tmpl.action_type);
-                                        } else if resp.hovered() {
-                                            hover_type = Some((
-                                                tmpl.action_type.to_string(),
-                                                resp.rect.right_top(),
-                                            ));
-                                        }
+        crate::widgets::fit_dialog_window(
+            egui::Window::new("Add Action")
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(true)
+                .default_size([900.0, 420.0])
+                .min_size([100.0, 100.0]),
+            ctx,
+        )
+        .show(ctx, |ui| {
+            let is_dark = ui.visuals().dark_mode;
+            let templates = action_templates();
+            let list_h = pickers::popup_scroll_max_height(ui, 0.0);
+            // Content-sized columns (not equal-split) so shrinking the window
+            // yields horizontal scroll instead of squashing tiles.
+            pickers::scroll_both()
+                .auto_shrink([false, false])
+                .max_height(list_h)
+                .show(ui, |ui| {
+                    // Horizontal layout assigns leftover viewport width to later
+                    // columns; without Extend they wrap letter-by-letter when shrunk.
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    ui.label(
+                        "Pick an action type — hover ~1s to preview defaults, right-click to edit",
+                    );
+                    ui.add_space(6.0);
+                    ui.horizontal_top(|ui| {
+                        for category in ACTION_PICKER_CATEGORIES {
+                            ui.vertical(|ui| {
+                                ui.strong(*category);
+                                ui.add_space(4.0);
+                                for tmpl in templates
+                                    .iter()
+                                    .filter(|t| action_picker_category(t.action_type) == *category)
+                                {
+                                    let sample = self
+                                        .prototype_for(tmpl.action_type)
+                                        .unwrap_or_else(|| tmpl.create());
+                                    let resp = picker_tile(ui, tmpl, &sample, is_dark);
+                                    if resp.secondary_clicked() {
+                                        edit_request = Some((
+                                            tmpl.action_type.to_string(),
+                                            resp.rect.right_top(),
+                                        ));
+                                    } else if resp.clicked() {
+                                        picked = self.create_action(tmpl.action_type);
+                                    } else if resp.hovered() {
+                                        hover_type = Some((
+                                            tmpl.action_type.to_string(),
+                                            resp.rect.right_top(),
+                                        ));
                                     }
-                                });
-                            }
-                        });
+                                }
+                            });
+                        }
                     });
-            });
+                });
+        });
 
         if let Some((ty, anchor)) = edit_request {
             self.open_edit(ty, anchor);
@@ -458,58 +462,60 @@ impl AddActionPicker {
         let save_enabled =
             matches!(&self.tip, Some(DefaultsTip::Edit(edit)) if edit.save_enabled());
 
-        egui::Window::new(format!("Default: {label}"))
-            .id(egui::Id::new(("action_default_edit", type_key.as_str())))
-            .open(&mut open)
-            .title_bar(true)
-            .collapsible(false)
-            .resizable(true)
-            .constrain(true)
-            .default_pos(anchor + Vec2::new(8.0, 0.0))
-            .default_size([340.0, 360.0])
-            .min_size([220.0, 120.0])
-            .show(ctx, |ui| {
-                match paint_action_edit_header(
-                    ui,
-                    label,
-                    pastel,
-                    Some("New actions of this type start with these values"),
-                    err_msg.as_deref(),
-                    save_enabled,
-                ) {
-                    SaveCancel::Cancel => cancel = true,
-                    SaveCancel::Save => save = true,
-                    SaveCancel::None => {}
-                }
-                let list_h = pickers::popup_scroll_max_height(ui, 0.0);
-                pickers::scroll_vertical()
-                    .auto_shrink([false, false])
-                    .max_height(list_h)
-                    .show(ui, |ui| {
-                        if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
-                            let mut fields = EditFieldsCtx {
-                                paint: CatalogPaint {
-                                    catalog,
-                                    icons,
-                                    previews,
-                                },
-                                bridges: RecordBridges {
-                                    key_record,
-                                    hotkey_record,
-                                    macro_hotkeys,
-                                    screen_click,
-                                },
-                                theme: VarTheme {
-                                    known_vars,
-                                    is_dark,
-                                },
-                                macros,
-                                active_macro: None,
-                            };
-                            paint_edit_fields(ui, &mut edit.draft, &mut edit.picker, &mut fields);
-                        }
-                    });
-            });
+        crate::widgets::fit_dialog_window(
+            egui::Window::new(format!("Default: {label}"))
+                .id(egui::Id::new(("action_default_edit", type_key.as_str())))
+                .open(&mut open)
+                .title_bar(true)
+                .collapsible(false)
+                .resizable(true)
+                .default_pos(anchor + Vec2::new(8.0, 0.0))
+                .default_size([340.0, 360.0])
+                .min_size([220.0, 120.0]),
+            ctx,
+        )
+        .show(ctx, |ui| {
+            match paint_action_edit_header(
+                ui,
+                label,
+                pastel,
+                Some("New actions of this type start with these values"),
+                err_msg.as_deref(),
+                save_enabled,
+            ) {
+                SaveCancel::Cancel => cancel = true,
+                SaveCancel::Save => save = true,
+                SaveCancel::None => {}
+            }
+            let list_h = pickers::popup_scroll_max_height(ui, 0.0);
+            pickers::scroll_vertical()
+                .auto_shrink([false, false])
+                .max_height(list_h)
+                .show(ui, |ui| {
+                    if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
+                        let mut fields = EditFieldsCtx {
+                            paint: CatalogPaint {
+                                catalog,
+                                icons,
+                                previews,
+                            },
+                            bridges: RecordBridges {
+                                key_record,
+                                hotkey_record,
+                                macro_hotkeys,
+                                screen_click,
+                            },
+                            theme: VarTheme {
+                                known_vars,
+                                is_dark,
+                            },
+                            macros,
+                            active_macro: None,
+                        };
+                        paint_edit_fields(ui, &mut edit.draft, &mut edit.picker, &mut fields);
+                    }
+                });
+        });
 
         if !open || cancel {
             self.tip = None;

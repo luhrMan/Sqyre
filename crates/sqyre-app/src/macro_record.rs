@@ -268,7 +268,7 @@ fn paint_review(
     let mut adopt_nearby: Option<(usize, String, String)> = None;
     let known_vars = collect_known_variable_names(draft);
 
-    let screen = ctx.content_rect();
+    let screen = crate::widgets::dialog_constrain_rect(ctx);
     let default_w = (screen.width() * 0.75).max(480.0);
     let default_h = (screen.height() * 0.50).max(320.0);
     let default_pos = egui::pos2(
@@ -276,14 +276,16 @@ fn paint_review(
         screen.center().y - default_h * 0.5,
     );
 
-    egui::Window::new("Recorded actions")
-        .collapsible(false)
-        .resizable(true)
-        .default_size([default_w, default_h])
-        .default_pos(default_pos)
-        .min_size([400.0, 280.0])
-        .constrain(true)
-        .show(ctx, |ui| {
+    crate::widgets::fit_dialog_window(
+        egui::Window::new("Recorded actions")
+            .collapsible(false)
+            .resizable(true)
+            .default_size([default_w, default_h])
+            .default_pos(default_pos)
+            .min_size([400.0, 280.0]),
+        ctx,
+    )
+    .show(ctx, |ui| {
             is_dark = ui.visuals().dark_mode;
             ui.label(
                 "Hover for view tip, right-click or double-click to edit. Copy and paste into a macro.",
@@ -291,7 +293,7 @@ fn paint_review(
             ui.separator();
 
             if !points.is_empty() {
-                ui.heading("Temporary points");
+                crate::widgets::heading_with_count(ui, "Temporary points", points.len());
                 ui.label(format!(
                     "Saved into program “{TEMPORARY_PROGRAM}” at the current resolution (replaced each recording). Enabled points are drawn on screen."
                 ));
@@ -374,7 +376,8 @@ fn paint_review(
                 ui.separator();
             }
 
-            ui.heading("Actions");
+            let action_count = draft.root.children().len();
+            crate::widgets::heading_with_count(ui, "Actions", action_count);
             // Leave room for Copy/Close (+ status) so the list grows with the window.
             let footer_reserve = if status.is_empty() { 40.0 } else { 60.0 };
             let actions_h = (ui.available_height() - footer_reserve).max(80.0);
@@ -383,7 +386,7 @@ fn paint_review(
                 .max_height(actions_h)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.set_min_width(ui.available_width());
+                    ui.set_max_width(crate::widgets::visible_width(ui));
                     let actions: Vec<Action> = draft.root.children().to_vec();
                     for action in &actions {
                         let interaction = tree_chrome::paint_action_row(
@@ -958,6 +961,7 @@ fn key_action(key: &str, state: PressState) -> Action {
 
 /// Move points that would be created from the live event stream (same distance
 /// rules as [`events_to_actions`]), for on-screen crosshairs while recording.
+#[cfg(any(test, feature = "native-runtime"))]
 fn live_record_points(events: &[MacroRecordEvent]) -> Vec<TempPoint> {
     let compressed = compress_events(events);
     let mut out = Vec::new();
@@ -1001,8 +1005,11 @@ fn live_record_points(events: &[MacroRecordEvent]) -> Vec<TempPoint> {
 }
 
 /// Default / hover / editing colors for on-screen temp-point markers.
+#[cfg(feature = "native-runtime")]
 const MARKER_DEFAULT: egui::Color32 = crate::theme::PRIMARY;
+#[cfg(feature = "native-runtime")]
 const MARKER_HOVER: egui::Color32 = crate::theme::MACRO_START;
+#[cfg(feature = "native-runtime")]
 const MARKER_EDIT: egui::Color32 = crate::theme::MACRO_STOP;
 
 #[cfg(feature = "native-runtime")]

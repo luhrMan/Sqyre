@@ -510,6 +510,8 @@ impl FormState for PixelCheckForm {
                 ed.pixel_check.variant = variant;
             }
         }
+        #[cfg(not(feature = "native-runtime"))]
+        let _ = ed;
         let _ = catalog;
     }
 
@@ -555,8 +557,7 @@ impl FormState for OverlayForm {
         let Some(btn) = settings.overlay_buttons.iter().find(|b| b.id == id) else {
             return true;
         };
-        ed.form_name.trim() != btn.label.trim()
-            || ed.form_overlay_macro.trim() != btn.macro_name.trim()
+        ed.form_overlay_macro.trim() != btn.macro_name.trim()
             || ed.form_overlay_enabled != btn.enabled
             || ed.form_overlay_icon != btn.icon
             || ed.form_overlay_point.trim() != btn.point.trim()

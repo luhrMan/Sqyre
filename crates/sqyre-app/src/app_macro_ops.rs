@@ -62,9 +62,10 @@ impl SqyreApp {
     }
 
     /// Clear a stale tag filter when no macro still carries that tag.
-    pub(crate) fn sanitize_hotkey_tag_filter(&mut self) {
+    /// Returns `true` when the filter was cleared.
+    pub(crate) fn sanitize_hotkey_tag_filter(&mut self) -> bool {
         let Some(tag) = self.workspace.hotkey_tag_filter.as_deref() else {
-            return;
+            return false;
         };
         let still_valid = if tag.is_empty() {
             self.workspace.macros.iter().any(|m| m.tags.is_empty())
@@ -76,6 +77,20 @@ impl SqyreApp {
         };
         if !still_valid {
             self.workspace.hotkey_tag_filter = None;
+            return true;
+        }
+        false
+    }
+
+    /// Write [`Workspace::hotkey_tag_filter`] into settings when it drifted.
+    pub(crate) fn persist_hotkey_tag_filter(&mut self) {
+        let filter = self.workspace.hotkey_tag_filter.clone();
+        if self.settings_ui.settings().hotkey_tag_filter == filter {
+            return;
+        }
+        self.settings_ui.settings_mut().hotkey_tag_filter = filter;
+        if let Err(e) = self.settings_ui.save_settings() {
+            crate::log::warn(format!("failed to save hotkey tag filter: {e}"));
         }
     }
 
@@ -86,11 +101,14 @@ impl SqyreApp {
         } else {
             self.workspace.hotkey_tag_filter = Some(tag);
         }
+        self.persist_hotkey_tag_filter();
         self.refresh_macro_hotkey_bindings();
     }
 
     pub(crate) fn refresh_macro_hotkey_bindings(&mut self) {
-        self.sanitize_hotkey_tag_filter();
+        if self.sanitize_hotkey_tag_filter() {
+            self.persist_hotkey_tag_filter();
+        }
         let filter = self.workspace.hotkey_tag_filter.as_deref();
         let bindings = self
             .workspace

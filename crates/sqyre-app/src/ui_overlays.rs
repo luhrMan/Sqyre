@@ -14,13 +14,34 @@ use sqyre_domain::ActionId;
 use std::sync::atomic::Ordering;
 
 /// Always-on-top macro buttons (settings-backed); hidden while recording is armed.
-#[cfg(feature = "native-runtime")]
+///
+/// Gated by `overlay-buttons` (on by default with `native-runtime`). Iterate the
+/// host with `cargo run -p sqyre-overlay --features sandbox --bin overlay_sandbox`.
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
+    let moves = app.macro_overlay.drain_moves();
+    if !moves.is_empty() {
+        app.data_editor.apply_overlay_relocations(
+            app.settings_ui.settings_mut(),
+            moves.into_iter().map(|m| (m.id, m.x, m.y)),
+        );
+    }
     if app.screen_click.is_armed() || app.macro_record_bridge.is_armed() {
+        // Comment above: hidden while recording — clear native buttons (do not leave last sync).
+        app.macro_overlay.sync(
+            ctx,
+            &[],
+            None,
+            &app.workspace.catalog,
+            &app.pending_hotkey_macros,
+            None,
+            false,
+        );
         return;
     }
     let buttons = app.settings_ui.settings().overlay_buttons.clone();
     let preview = app.data_editor.overlay_edit_preview();
+    let relocate = app.data_editor.overlay_relocate_mode();
     let running_macro = if app.run_session.state.running.load(Ordering::SeqCst)
         && !app.workspace.macros.is_empty()
     {
@@ -39,8 +60,12 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         &app.workspace.catalog,
         &app.pending_hotkey_macros,
         running_macro,
+        relocate,
     );
 }
+
+#[cfg(all(feature = "native-runtime", not(feature = "overlay-buttons")))]
+pub fn sync_macro_overlay(_app: &mut SqyreApp, _ctx: &egui::Context) {}
 
 fn action_display_name(app: &SqyreApp, action_id: ActionId) -> String {
     if app.workspace.macros.is_empty() {
@@ -425,10 +450,12 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     let running = app.run_session.state.running.load(Ordering::SeqCst);
-    if running {
-        // Macro tree highlighter; overlay spinner has its own wake thread.
-        // Keep this coarser than 60 Hz so Wayland focus/hint work is not on the hot path.
+    let highlight_on = app.settings_ui.settings().highlight_active_action;
+    if running && highlight_on {
         ctx.request_repaint_after(std::time::Duration::from_millis(50));
+    } else if running {
+        // Keep ROOT coarse while a macro runs.
+        ctx.request_repaint_after(std::time::Duration::from_millis(1000));
     } else if app.hotkey_record.is_open()
         || app.key_record.is_open()
         || app.macro_record.is_open()
@@ -443,9 +470,8 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         .iter()
         .any(|b| b.enabled)
     {
-        // Overlay focus-gating polls on its own schedule; avoid per-frame
-        // transparent window clears (flicker) while still draining click queue promptly.
-        ctx.request_repaint_after(std::time::Duration::from_millis(250));
+        // Overlay focus-gating + native click drain into pending macros.
+        ctx.request_repaint_after(std::time::Duration::from_millis(1000));
     } else {
         #[cfg(not(target_arch = "wasm32"))]
         {

@@ -83,6 +83,11 @@ pub fn watch_events(
     Ok(())
 }
 
+/// True when at least one `/dev/input` event node opens (group membership **or** seat ACL).
+pub fn can_open_devices() -> bool {
+    matches!(device_files(), Ok(files) if !files.is_empty())
+}
+
 fn device_files() -> std::io::Result<Vec<File>> {
     let mut out = Vec::new();
     for entry in read_dir(DEV_PATH)? {

@@ -2,22 +2,29 @@
 //! Armed by the UI; delivered via the hotkey rdev listener when hooks are enabled.
 
 use parking_lot::Mutex;
+#[cfg(feature = "hooks")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 type AbsolutePosFn = Arc<dyn Fn() -> Option<(i32, i32)> + Send + Sync>;
 
 /// Fast path for OS hooks: skip mouse-move work unless a recording is armed.
 /// Windows uses this to avoid flooding WH_MOUSE_LL; Linux evdev grab uses it so
 /// pointer motion is not serialized on bridge mutexes (that stalls the cursor).
+#[cfg(feature = "hooks")]
 static HOOK_WANTS_MOVES: AtomicBool = AtomicBool::new(false);
 
+#[cfg(feature = "hooks")]
 pub(crate) fn hook_wants_mouse_moves() -> bool {
     HOOK_WANTS_MOVES.load(Ordering::Relaxed)
 }
 
 fn sync_hook_wants_moves(armed: bool) {
+    #[cfg(feature = "hooks")]
     HOOK_WANTS_MOVES.store(armed, Ordering::Relaxed);
+    #[cfg(not(feature = "hooks"))]
+    let _ = armed;
 }
 
 #[derive(Debug, Clone)]
@@ -48,7 +55,12 @@ struct Inner {
     /// Compositor-absolute pointer (portal cursor). Used on every click so the
     /// first corner is Wayland-accurate even over XWayland windows.
     absolute_pos: Option<AbsolutePosFn>,
+    /// When the first search-area corner was pressed (drag-release hold gate).
+    search_press_at: Option<Instant>,
 }
+
+/// Hold the first corner at least this long before button-up finishes a drag.
+const SEARCH_DRAG_HOLD: Duration = Duration::from_secs(1);
 
 fn normalize_rect(ax: i32, ay: i32, bx: i32, by: i32) -> (i32, i32, i32, i32) {
     // Keep local: hotkeys cannot depend on sqyre-executor (cycle).
@@ -151,7 +163,7 @@ impl ScreenClickBridge {
             }) => {
                 let (l, t, r, b) = normalize_rect(*lx, *ty, x, y);
                 Some(format!(
-                    "Recording search area — ({l},{t})–({r},{b}) — click opposite corner, Esc to cancel"
+                    "Recording search area — ({l},{t})–({r},{b}) — hold 1s then release, or click opposite corner, Esc to cancel"
                 ))
             }
             None => None,
@@ -221,6 +233,24 @@ impl ScreenClickBridge {
         apply_left_click(&mut g);
     }
 
+    /// Hotkey / overlay: left button release (finishes search-area drag).
+    pub fn on_left_release(&self) {
+        let sample = self.inner.lock().absolute_pos.clone();
+        let sampled = sample.as_ref().and_then(|f| f());
+        let mut g = self.inner.lock();
+        if let Some(pos) = sampled {
+            g.last_pos = pos;
+        }
+        apply_left_release(&mut g);
+    }
+
+    /// Overlay/grab release at a known desktop point.
+    pub fn on_left_release_at(&self, x: i32, y: i32) {
+        let mut g = self.inner.lock();
+        g.last_pos = (x, y);
+        apply_left_release(&mut g);
+    }
+
     /// Hotkey thread: Esc while armed cancels.
     pub fn on_escape(&self) -> bool {
         let mut g = self.inner.lock();
@@ -268,23 +298,48 @@ fn apply_left_click(g: &mut Inner) {
         Some(Armed::Point) => {
             g.point = Some(pos);
             g.armed = None;
+            g.search_press_at = None;
         }
         Some(Armed::Color) => {
             g.color_point = Some(pos);
             g.armed = None;
+            g.search_press_at = None;
         }
         Some(Armed::SearchArea { first: None }) => {
             g.armed = Some(Armed::SearchArea { first: Some(pos) });
+            g.search_press_at = Some(Instant::now());
         }
         Some(Armed::SearchArea {
             first: Some((lx, ty)),
         }) => {
             g.search_area = Some(normalize_rect(lx, ty, pos.0, pos.1));
             g.armed = None;
+            g.search_press_at = None;
         }
         None => {}
     }
     sync_hook_wants_moves(g.armed.is_some());
+}
+
+fn apply_left_release(g: &mut Inner) {
+    let pos = g.last_pos;
+    let Some(Armed::SearchArea {
+        first: Some((lx, ty)),
+    }) = g.armed.clone()
+    else {
+        return;
+    };
+    // Require a 1s hold so a normal click (press→release) does not finish the area.
+    let held_long_enough = g
+        .search_press_at
+        .is_some_and(|t0| t0.elapsed() >= SEARCH_DRAG_HOLD);
+    if !held_long_enough {
+        return;
+    }
+    g.search_area = Some(normalize_rect(lx, ty, pos.0, pos.1));
+    g.armed = None;
+    g.search_press_at = None;
+    sync_hook_wants_moves(false);
 }
 
 #[cfg(test)]
@@ -340,6 +395,38 @@ mod tests {
         assert_eq!(b.take_search_area(), Some((0, 0, 30, 40)));
         assert!(b.peek_search_area_draft().is_none());
         assert!(b.status_label().is_none());
+    }
+
+    #[test]
+    fn search_area_drag_release_requires_hold() {
+        let b = ScreenClickBridge::new();
+        b.arm_search_area();
+        b.on_mouse_move(10, 20);
+        b.on_left_click();
+        // Immediate release must not finish (click path / short hold).
+        b.on_mouse_move(80, 90);
+        b.on_left_release();
+        assert!(b.take_search_area().is_none());
+        assert!(b.is_armed());
+
+        // Pretend the press started >1s ago.
+        b.inner.lock().search_press_at =
+            Some(Instant::now() - SEARCH_DRAG_HOLD - Duration::from_millis(50));
+        b.on_left_release();
+        assert_eq!(b.take_search_area(), Some((10, 20, 80, 90)));
+        assert!(!b.is_armed());
+    }
+
+    #[test]
+    fn search_area_second_click_completes_without_hold() {
+        let b = ScreenClickBridge::new();
+        b.arm_search_area();
+        b.on_mouse_move(10, 20);
+        b.on_left_click();
+        b.on_left_release(); // short hold — still armed
+        b.on_mouse_move(80, 90);
+        b.on_left_click();
+        assert_eq!(b.take_search_area(), Some((10, 20, 80, 90)));
     }
 
     #[test]

@@ -369,12 +369,15 @@ fn handle_mouse(wparam: WPARAM, lparam: LPARAM) {
     ctx.macro_record.set_last_pos(mouse.pt.x, mouse.pt.y);
     ctx.screen_click.on_mouse_move(mouse.pt.x, mouse.pt.y);
     ctx.macro_record.on_button(button, pressed);
-    if pressed
-        && button == RecordMouseButton::Left
+    if button == RecordMouseButton::Left
         && ctx.screen_click.is_armed()
-        && !ctx.screen_click.grab_owns_input()
+        && !ctx.screen_click.block_hook_clicks()
     {
-        ctx.screen_click.on_left_click();
+        if pressed {
+            ctx.screen_click.on_left_click();
+        } else {
+            ctx.screen_click.on_left_release();
+        }
     }
 }
 

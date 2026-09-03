@@ -2,9 +2,14 @@
 //!
 //! The title-bar close button quits Sqyre. Hide the window from the tray menu only.
 
-use egui::{Context, ViewportCommand};
+use egui::Context;
+#[cfg(not(target_arch = "wasm32"))]
+use egui::ViewportCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
+#[cfg(target_arch = "wasm32")]
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -48,10 +53,31 @@ impl SystemTray {
         self.application_hidden.load(Ordering::SeqCst)
     }
 
+    /// Root winit window (for immediate unmap on quit).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn root_window(&self) -> Option<&Arc<winit::window::Window>> {
+        self.root_window.as_ref()
+    }
+
     #[cfg(target_arch = "wasm32")]
     pub fn application_hidden(&self) -> bool {
         let _ = self;
         false
+    }
+
+    /// Map/unmap the root window the same way as the tray Hide/Show path.
+    ///
+    /// Recording hide must call this (not only `ViewportCommand::Visible`) —
+    /// on XWayland, viewport cmds alone can leave the window unmapped after
+    /// search-area / point recording finishes, which looks like a freeze.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_root_visible(&self, ctx: &Context, visible: bool) {
+        set_application_visible(ctx, self.root_window.as_ref(), visible);
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn set_root_visible(&self, ctx: &Context, visible: bool) {
+        let _ = (self, ctx, visible);
     }
 
     /// Apply tray menu actions on the egui/UI thread (`App::logic`, including while hidden).
@@ -78,8 +104,10 @@ impl SystemTray {
                     );
                 }
                 Ok(TrayCommand::Quit) => {
-                    self.stop_wake_poller();
+                    // Close first (and wake the loop); stop the poller after so a
+                    // tray-hidden quit cannot stall waiting for another repaint.
                     quit_app(ctx, window);
+                    self.stop_wake_poller();
                 }
                 Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
             }
@@ -126,6 +154,12 @@ impl SystemTray {
         let mut poller = self.wake_poller.lock().expect("tray wake lock");
         if let Some((stop, join)) = poller.take() {
             stop.store(true, Ordering::Relaxed);
+            #[cfg(feature = "native-runtime")]
+            if sqyre_capture::process_exiting() {
+                // Up to 250ms otherwise; process exit does not need a clean join.
+                std::mem::forget(join);
+                return;
+            }
             let _ = join.join();
         }
     }
@@ -145,13 +179,24 @@ impl Drop for SystemTray {
         #[cfg(target_os = "linux")]
         {
             let t0 = std::time::Instant::now();
-            drop(self._handle.take());
-            #[cfg(feature = "native-runtime")]
-            sqyre_capture::cap_log(
-                "TRAY",
-                "drop",
-                &format!("handle_ms={}", t0.elapsed().as_millis()),
-            );
+            if let Some(handle) = self._handle.take() {
+                // ksni unregister is a sync D-Bus round-trip; abandon on process
+                // exit — the connection drop cleans up the StatusNotifierItem.
+                #[cfg(feature = "native-runtime")]
+                if sqyre_capture::process_exiting() {
+                    sqyre_capture::cap_log("TRAY", "drop", "handle=abandon");
+                    std::mem::forget(handle);
+                } else {
+                    drop(handle);
+                    sqyre_capture::cap_log(
+                        "TRAY",
+                        "drop",
+                        &format!("handle_ms={}", t0.elapsed().as_millis()),
+                    );
+                }
+                #[cfg(not(feature = "native-runtime"))]
+                drop(handle);
+            }
         }
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         sqyre_capture::mark_site("tray:drop:done");
@@ -201,10 +246,17 @@ fn set_application_visible(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn quit_app(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
-    if let Some(win) = window {
-        win.set_visible(true);
+    #[cfg(feature = "native-runtime")]
+    {
+        sqyre_capture::set_process_exiting();
+        sqyre_capture::mark_site("app:tray_quit");
     }
-    ctx.send_viewport_cmd(ViewportCommand::Visible(true));
+    // Hide immediately — do not map the window just to tear it down (that made
+    // tray Quit flash the UI for the whole portal/wgpu shutdown).
+    if let Some(win) = window {
+        win.set_visible(false);
+    }
+    ctx.send_viewport_cmd(ViewportCommand::Visible(false));
     ctx.send_viewport_cmd(ViewportCommand::Close);
     ctx.request_repaint();
 }
@@ -374,6 +426,13 @@ fn install_inner(
 
     std::mem::forget(quit_item);
 
+    // CheckMenuItem is !Send on Windows (Rc). Keep the leaked item here and only
+    // move MenuIds into the listener; set_checked runs on macOS only.
+    #[cfg(target_os = "macos")]
+    let hide_for_thread = hide_item;
+    #[cfg(target_os = "windows")]
+    let _hide_item = hide_item;
+
     let application_hidden = Arc::new(AtomicBool::new(false));
     let hidden_flag = application_hidden.clone();
     let wake_thread = wake.clone();
@@ -386,7 +445,8 @@ fn install_inner(
                     let now_hidden = !hidden_flag.load(Ordering::SeqCst);
                     hidden_flag.store(now_hidden, Ordering::SeqCst);
                     send_tray_command(&cmd_tx, &wake_thread, TrayCommand::SetVisible(!now_hidden));
-                    hide_item.set_checked(now_hidden);
+                    #[cfg(target_os = "macos")]
+                    hide_for_thread.set_checked(now_hidden);
                 } else if event.id == quit_id {
                     send_tray_command(&cmd_tx, &wake_thread, TrayCommand::Quit);
                 }

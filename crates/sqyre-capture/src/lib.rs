@@ -40,8 +40,9 @@ mod x11_secondary;
 mod x11_snapshot_overlay;
 
 pub use diag::{
-    cap_log, disk_logging_enabled, event_log, mark_site, note, read_last_site, set_disk_logging,
-    set_log_dir, CRASH_LOG_FILE, DIAG_LOG_FILE, LAST_SITE_FILE,
+    cap_log, disk_logging_enabled, event_log, mark_site, note, process_exiting, read_last_site,
+    set_disk_logging, set_log_dir, set_process_exiting, CRASH_LOG_FILE, DIAG_LOG_FILE,
+    LAST_SITE_FILE,
 };
 pub use error::{linux_session_capture_warning, CaptureError};
 #[cfg(target_os = "linux")]
@@ -89,6 +90,18 @@ pub use win_grab::SelectionGrab;
 #[cfg(target_os = "linux")]
 pub fn owns_secondary_x_display(display: *mut std::ffi::c_void) -> bool {
     x11_secondary::owns(display)
+}
+
+/// Register a Sqyre-owned X11 `Display*` so winit's error hook does not poison it.
+#[cfg(target_os = "linux")]
+pub fn register_secondary_x_display(display: *mut std::ffi::c_void) {
+    x11_secondary::register(display.cast());
+}
+
+/// Unregister after `XCloseDisplay`.
+#[cfg(target_os = "linux")]
+pub fn unregister_secondary_x_display(display: *mut std::ffi::c_void) {
+    x11_secondary::unregister(display.cast());
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -357,6 +370,16 @@ pub fn request_portal_screencast_picker() {
     }
 }
 
+/// Drop the live portal session and forget persisted ScreenCast / Remote Desktop grants.
+///
+/// No-op on targets without portal capture. Does not reopen the picker.
+pub fn revoke_portal_grants() {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::revoke_portal_grants();
+    }
+}
+
 /// After unmapping Sqyre's main window, wait for a fresh portal frame so captures
 /// exclude the hidden surface (GPU Screen Recorder destroys its overlay before portal capture).
 #[cfg(all(target_os = "linux", feature = "portal-capture"))]
@@ -494,23 +517,6 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
     Ok(())
 }
 
-/// Wayland: winit cannot position overlay viewports; move XWayland windows directly.
-#[cfg(target_os = "linux")]
-pub fn sync_overlay_window_geometry(
-    hints: &[(String, i32, i32, u32, u32)],
-    last_positions: &mut std::collections::HashMap<String, (i32, i32)>,
-) -> Result<(), CaptureError> {
-    x11_focus::sync_overlay_window_geometry(hints, last_positions)
-}
-
-#[cfg(not(target_os = "linux"))]
-pub fn sync_overlay_window_geometry(
-    _hints: &[(String, i32, i32, u32, u32)],
-    _last_positions: &mut std::collections::HashMap<String, (i32, i32)>,
-) -> Result<(), CaptureError> {
-    Ok(())
-}
-
 /// Stable WM title used by floating macro-overlay viewports.
 #[cfg(target_os = "linux")]
 pub use x11_focus::{OVERLAY_TIP_WM_TITLE, OVERLAY_WM_TITLE};
@@ -577,6 +583,11 @@ pub fn window_is_transient_shell_focus(win: &WindowInfo) -> bool {
         || name == "gnome-shell"
         || path_base == "gnome-shell"
         || name == "gsd-xsettings"
+        // Steam *client* flashes (not Proton games under .../Steam/steamapps/...).
+        || name == "steam"
+        || name == "steamwebhelper"
+        || path_base == "steam"
+        || path_base == "steamwebhelper"
         || (title.contains("share") && (title.contains("screen") || title.contains("audio")))
         || title.contains("screen sharing")
         || title.contains("screencast")
@@ -644,7 +655,9 @@ pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
     if got.is_empty() {
         let name = win.process_name.trim();
         return !name.is_empty()
-            && (name.eq_ignore_ascii_case(want) || name.eq_ignore_ascii_case(&want_base));
+            && (name.eq_ignore_ascii_case(want)
+                || name.eq_ignore_ascii_case(&want_base)
+                || wine_preloader_names_equivalent(name, &want_base));
     }
     if got.eq_ignore_ascii_case(want) {
         return true;
@@ -653,7 +666,26 @@ pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
         .file_name()
         .map(|n| n.to_string_lossy().to_lowercase())
         .unwrap_or_else(|| got.to_lowercase());
-    !want_base.is_empty() && want_base == got_base
+    if !want_base.is_empty() && want_base == got_base {
+        return true;
+    }
+    // Proton/Wine: active window may report `wine-preloader` while the catalog was
+    // bound against `wine64-preloader` (or the reverse) under the same tree.
+    wine_preloader_names_equivalent(&want_base, &got_base)
+}
+
+/// `wine-preloader` and `wine64-preloader` are interchangeable for focus matching.
+fn wine_preloader_names_equivalent(a: &str, b: &str) -> bool {
+    fn norm(s: &str) -> Option<&'static str> {
+        match s.trim().to_lowercase().as_str() {
+            "wine-preloader" | "wine64-preloader" => Some("wine-preloader"),
+            _ => None,
+        }
+    }
+    match (norm(a), norm(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
 }
 
 /// Exact trim match of window title (Focus Window / overlay binding parity).
@@ -784,6 +816,24 @@ mod tests {
     }
 
     #[test]
+    fn window_matches_proton_wine_preloader_aliases() {
+        let w = WindowInfo {
+            title: "Mistfall Hunter".into(),
+            process_name: "GameThread".into(),
+            process_path: "/var/home/chris/.local/share/Steam/steamapps/common/Proton - Experimental/files/lib/wine/x86_64-unix/wine-preloader".into(),
+            icon: None,
+        };
+        let catalog = "/var/home/chris/.local/share/Steam/steamapps/common/Proton - Experimental/files/lib/wine/x86_64-unix/wine64-preloader";
+        assert!(super::window_matches_process(&w, catalog));
+        assert!(super::window_matches_binding(
+            &w,
+            catalog,
+            "Mistfall Hunter"
+        ));
+        assert!(!super::window_matches_binding(&w, catalog, "Other Game"));
+    }
+
+    #[test]
     fn transient_shell_focus_detects_portal_and_overlay() {
         let portal = WindowInfo {
             title: "Share your screen".into(),
@@ -826,5 +876,22 @@ mod tests {
             icon: None,
         };
         assert!(!super::window_is_transient_shell_focus(&game));
+
+        let steam = WindowInfo {
+            title: "Steam".into(),
+            process_name: "steamwebhelper".into(),
+            process_path: "/home/chris/.local/share/Steam/ubuntu12_64/steamwebhelper".into(),
+            icon: None,
+        };
+        assert!(super::window_is_transient_shell_focus(&steam));
+
+        // Proton games live under .../Steam/steamapps/... — must NOT be treated as Steam chrome.
+        let proton_game = WindowInfo {
+            title: "Mistfall Hunter".into(),
+            process_name: "wine-preloader".into(),
+            process_path: "/home/chris/.local/share/Steam/steamapps/common/Proton - Experimental/files/lib/wine/x86_64-unix/wine-preloader".into(),
+            icon: None,
+        };
+        assert!(!super::window_is_transient_shell_focus(&proton_game));
     }
 }

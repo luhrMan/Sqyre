@@ -115,6 +115,13 @@ fn normalize_chord(keys: &[String]) -> Vec<String> {
     // Stable order for display/compare; match does not require order.
     out.sort();
     out.dedup();
+    // Linux egui formerly mapped `modifiers.command` → `cmd` while it is actually
+    // Ctrl, so recorded chords often contain both `cmd` and `ctrl` for Ctrl-only
+    // shortcuts. Drop the spurious `cmd` so focused and unfocused (evdev) agree.
+    #[cfg(target_os = "linux")]
+    if out.iter().any(|k| k == "ctrl") && out.iter().any(|k| k == "cmd") {
+        out.retain(|k| k != "cmd");
+    }
     out
 }
 
@@ -341,6 +348,15 @@ mod tests {
         assert_eq!(format_hotkey(&keys), "a + ctrl + shift");
         assert!(parse_hotkey("—").is_empty());
         assert!(parse_hotkey("").is_empty());
+    }
+
+    #[test]
+    fn linux_strips_spurious_cmd_when_ctrl_present() {
+        let keys = parse_hotkey("cmd + ctrl + 2");
+        #[cfg(target_os = "linux")]
+        assert_eq!(keys, vec!["2".to_string(), "ctrl".into()]);
+        #[cfg(not(target_os = "linux"))]
+        assert_eq!(keys, vec!["2".to_string(), "cmd".into(), "ctrl".into()]);
     }
 
     #[test]

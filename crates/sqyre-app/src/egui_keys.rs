@@ -65,6 +65,8 @@ pub(crate) fn egui_key_name(key: Key) -> Option<&'static str> {
         Key::Num7 => "7",
         Key::Num8 => "8",
         Key::Num9 => "9",
+        Key::SuperLeft => "cmd",
+        Key::SuperRight => "rcmd",
         _ => return None,
     })
 }
@@ -80,5 +82,7 @@ mod tests {
         assert_eq!(egui_key_name(Key::A), Some("a"));
         assert_eq!(egui_key_name(Key::F5), Some("f5"));
         assert_eq!(egui_key_name(Key::Enter), Some("enter"));
+        assert_eq!(egui_key_name(Key::SuperLeft), Some("cmd"));
+        assert_eq!(egui_key_name(Key::SuperRight), Some("rcmd"));
     }
 }

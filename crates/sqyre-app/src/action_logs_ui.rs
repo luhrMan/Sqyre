@@ -96,91 +96,94 @@ pub fn show_logs_window(
 
     let mut open = true;
     let mut close_clicked = false;
-    egui::Window::new(title)
-        .open(&mut open)
-        .default_size([640.0, 560.0])
-        .min_width(420.0)
-        .min_height(280.0)
-        .show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if ui.button("Copy text").clicked() {
-                    ui.ctx().copy_text(lines_for(&entries).join("\n"));
+    crate::widgets::fit_dialog_window(
+        egui::Window::new(title)
+            .open(&mut open)
+            .default_size([640.0, 560.0])
+            .min_width(420.0)
+            .min_height(280.0),
+        ctx,
+    )
+    .show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            if ui.button("Copy text").clicked() {
+                ui.ctx().copy_text(lines_for(&entries).join("\n"));
+            }
+            if ui.button("Clear logs").clicked() {
+                action_log.clear();
+                image_cache.clear();
+            }
+            ui.label(format!(
+                "{text_count} line(s) · {image_count} image(s) · {item_count} item(s)"
+            ));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.button("Close").clicked() {
+                    close_clicked = true;
                 }
-                if ui.button("Clear logs").clicked() {
-                    action_log.clear();
-                    image_cache.clear();
-                }
-                ui.label(format!(
-                    "{text_count} line(s) · {image_count} image(s) · {item_count} item(s)"
-                ));
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Close").clicked() {
-                        close_clicked = true;
-                    }
-                });
             });
-            ui.separator();
+        });
+        ui.separator();
 
-            let list_h = crate::pickers::popup_scroll_max_height(ui, 0.0);
-            crate::pickers::scroll_vertical()
-                .auto_shrink([false, false])
-                .max_height(list_h)
-                .show(ui, |ui| {
-                    if entries.is_empty() {
-                        ui.label("No logs yet — run the macro.");
-                        return;
-                    }
+        let list_h = crate::pickers::popup_scroll_max_height(ui, 0.0);
+        crate::pickers::scroll_vertical()
+            .auto_shrink([false, false])
+            .max_height(list_h)
+            .show(ui, |ui| {
+                if entries.is_empty() {
+                    ui.label("No logs yet — run the macro.");
+                    return;
+                }
 
-                    // Detail view for a selected image-search item.
-                    if let Some(sel) = image_cache.selected_item {
-                        if let Some(ActionLogEntry::ItemPipeline {
+                // Detail view for a selected image-search item.
+                if let Some(sel) = image_cache.selected_item {
+                    if let Some(ActionLogEntry::ItemPipeline {
+                        title,
+                        summary,
+                        steps,
+                        details,
+                        ..
+                    }) = entries.get(sel)
+                    {
+                        show_item_detail(
+                            ui,
+                            action_id,
+                            image_cache,
+                            sel,
                             title,
                             summary,
-                            steps,
                             details,
-                            ..
-                        }) = entries.get(sel)
-                        {
-                            show_item_detail(
+                            steps,
+                        );
+                        return;
+                    }
+                }
+
+                let avail_w = ui.available_width().max(120.0);
+                let mut pending_items: Vec<(usize, &ActionLogEntry)> = Vec::new();
+
+                for (i, entry) in entries.iter().enumerate() {
+                    match entry {
+                        ActionLogEntry::Text(line) => {
+                            ui.monospace(line);
+                        }
+                        ActionLogEntry::Image(img) => {
+                            show_labeled_image(
                                 ui,
                                 action_id,
                                 image_cache,
-                                sel,
-                                title,
-                                summary,
-                                details,
-                                steps,
+                                TexKey::Entry(i),
+                                img,
+                                avail_w,
                             );
-                            return;
+                        }
+                        ActionLogEntry::ItemPipeline { .. } => {
+                            pending_items.push((i, entry));
                         }
                     }
-
-                    let avail_w = ui.available_width().max(120.0);
-                    let mut pending_items: Vec<(usize, &ActionLogEntry)> = Vec::new();
-
-                    for (i, entry) in entries.iter().enumerate() {
-                        match entry {
-                            ActionLogEntry::Text(line) => {
-                                ui.monospace(line);
-                            }
-                            ActionLogEntry::Image(img) => {
-                                show_labeled_image(
-                                    ui,
-                                    action_id,
-                                    image_cache,
-                                    TexKey::Entry(i),
-                                    img,
-                                    avail_w,
-                                );
-                            }
-                            ActionLogEntry::ItemPipeline { .. } => {
-                                pending_items.push((i, entry));
-                            }
-                        }
-                    }
-                    flush_item_gallery(ui, action_id, image_cache, &mut pending_items);
-                });
-        });
+                }
+                flush_item_gallery(ui, action_id, image_cache, &mut pending_items);
+            });
+    });
 
     if !open || close_clicked {
         image_cache.clear();
@@ -200,10 +203,12 @@ fn flush_item_gallery(
         return;
     }
     ui.add_space(10.0);
-    ui.label(
+    crate::widgets::title_with_count(
+        ui,
         egui::RichText::new("Items — click an image to inspect processing & finds")
             .strong()
             .small(),
+        pending.len(),
     );
     ui.add_space(4.0);
     ui.horizontal_wrapped(|ui| {

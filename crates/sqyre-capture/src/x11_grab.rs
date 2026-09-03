@@ -7,14 +7,14 @@
 use std::os::raw::{c_int, c_uint};
 use std::ptr;
 use x11::xlib::{
-    Above, ButtonPress, ButtonPressMask, ButtonReleaseMask, CWHeight, CWOverrideRedirect,
-    CWStackMode, CWWidth, CurrentTime, Display, GrabModeAsync, InputOnly, KeyPress, KeyPressMask,
-    MotionNotify, PointerMotionMask, RevertToParent, Success, True, Window, XConfigureWindow,
-    XCreateFontCursor, XCreateWindow, XDefaultRootWindow, XDefaultScreen, XDestroyWindow,
-    XDisplayHeight, XDisplayWidth, XEvent, XFlush, XFreeCursor, XGrabKeyboard, XGrabPointer,
-    XKeycodeToKeysym, XMapRaised, XNextEvent, XOpenDisplay, XPending, XSelectInput, XSetInputFocus,
-    XSetWindowAttributes, XUngrabKeyboard, XUngrabPointer, XUnmapWindow, XWindowChanges, _XDisplay,
-    CWX, CWY,
+    Above, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask, CWHeight,
+    CWOverrideRedirect, CWStackMode, CWWidth, CurrentTime, Display, GrabModeAsync, InputOnly,
+    KeyPress, KeyPressMask, MotionNotify, PointerMotionMask, RevertToParent, Success, True, Window,
+    XConfigureWindow, XCreateFontCursor, XCreateWindow, XDefaultRootWindow, XDefaultScreen,
+    XDestroyWindow, XDisplayHeight, XDisplayWidth, XEvent, XFlush, XFreeCursor, XGrabKeyboard,
+    XGrabPointer, XKeycodeToKeysym, XMapRaised, XNextEvent, XOpenDisplay, XPending, XSelectInput,
+    XSetInputFocus, XSetWindowAttributes, XUngrabKeyboard, XUngrabPointer, XUnmapWindow,
+    XWindowChanges, _XDisplay, CWX, CWY,
 };
 
 use crate::selection_grab::GrabPoll;
@@ -239,6 +239,13 @@ unsafe fn apply_x_event(
         out.moved = true;
         if button.button == 1 {
             out.left_clicks = out.left_clicks.saturating_add(1);
+        }
+    } else if ty == ButtonRelease {
+        let button = &*(event as *const XEvent as *const x11::xlib::XButtonEvent);
+        *last_pos = (button.x_root, button.y_root);
+        out.moved = true;
+        if button.button == 1 {
+            out.left_releases = out.left_releases.saturating_add(1);
         }
     } else if ty == KeyPress {
         let key = &*(event as *const XEvent as *const x11::xlib::XKeyEvent);

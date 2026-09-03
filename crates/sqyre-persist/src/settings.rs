@@ -151,10 +151,8 @@ pub struct OverlayButtonConfig {
     /// When false the button is not drawn (except live Data Editor preview).
     #[serde(default = "default_overlay_button_enabled")]
     pub enabled: bool,
-    /// Tooltip / optional caption under the icon.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub label: String,
     /// Macro name to start (must match an entry in `db.yaml`).
+    /// Also used as the button's display name / tooltip.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub macro_name: String,
     /// Icon catalog id (Phosphor kebab-case, e.g. `play`, `lightning`). Empty = default play.
@@ -270,7 +268,6 @@ impl OverlayButtonConfig {
             id: id.into(),
             program: program.into(),
             enabled: true,
-            label: String::new(),
             macro_name: String::new(),
             icon: String::new(),
             point: String::new(),
@@ -289,12 +286,8 @@ impl OverlayButtonConfig {
         }
     }
 
-    /// Display name for lists (label, else macro, else id).
+    /// Display name for lists (macro name, else id).
     pub fn display_name(&self) -> &str {
-        let label = self.label.trim();
-        if !label.is_empty() {
-            return label;
-        }
         let macro_name = self.macro_name.trim();
         if !macro_name.is_empty() {
             return macro_name;
@@ -437,6 +430,9 @@ pub struct UserSettings {
     /// Unix seconds of the last successful update check (0 = never).
     #[serde(default, skip_serializing_if = "is_zero_i64")]
     pub last_update_check_unix: i64,
+    /// Active macro-list hotkey tag filter (`None` = no hotkeys; `Some("")` = untagged).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hotkey_tag_filter: Option<String>,
 }
 
 fn default_hide_recording() -> bool {
@@ -515,6 +511,7 @@ impl Default for UserSettings {
             last_backup_unix: 0,
             auto_update_check: DEFAULT_AUTO_UPDATE_CHECK,
             last_update_check_unix: 0,
+            hotkey_tag_filter: None,
         }
     }
 }
@@ -818,6 +815,7 @@ mod tests {
             highlight_active_action: true,
             image_search_close_matches_distance: 25,
             ui_scale: 1.2,
+            hotkey_tag_filter: Some("combat".into()),
             ..Default::default()
         };
         s.action_colors.detection = "#aabbcc".into();
@@ -825,7 +823,6 @@ mod tests {
             id: "btn-1".into(),
             program: "Demo Game".into(),
             enabled: true,
-            label: "Go".into(),
             macro_name: "demo".into(),
             icon: "bolt".into(),
             point: String::new(),
@@ -863,6 +860,16 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].bg_alpha, 128);
         assert_eq!(loaded.overlay_buttons[0].icon_color, "#abcdef");
         assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
+        assert_eq!(loaded.hotkey_tag_filter.as_deref(), Some("combat"));
+    }
+
+    #[test]
+    fn hotkey_tag_filter_omitted_defaults_none() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.yaml");
+        std::fs::write(&path, "save_meta_images: true\n").unwrap();
+        let loaded = UserSettings::load_from_path(&path).unwrap();
+        assert_eq!(loaded.hotkey_tag_filter, None);
     }
 
     #[test]

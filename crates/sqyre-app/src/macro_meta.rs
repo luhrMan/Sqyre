@@ -128,27 +128,30 @@ impl MacroMetaUi {
         }
 
         let mut close = false;
-        egui::Window::new("Delay between actions")
-            .collapsible(false)
-            .resizable(false)
-            .auto_sized()
-            .open(&mut self.delay_open)
-            .show(ui.ctx(), |ui| {
-                ui.add_enabled_ui(enabled, |ui| {
-                    if delay_row(ui, "Global (ms)", &mut m.global_delay) {
-                        out.persist = true;
-                    }
-                    if delay_row(ui, "Keyboard (ms)", &mut m.keyboard_delay) {
-                        out.persist = true;
-                    }
-                    if delay_row(ui, "Mouse (ms)", &mut m.mouse_delay) {
-                        out.persist = true;
-                    }
-                    if ui.button("Close").clicked() {
-                        close = true;
-                    }
-                });
+        crate::widgets::fit_dialog_popup(
+            egui::Window::new("Delay between actions")
+                .collapsible(false)
+                .resizable(false)
+                .auto_sized()
+                .open(&mut self.delay_open),
+            ui.ctx(),
+        )
+        .show(ui.ctx(), |ui| {
+            ui.add_enabled_ui(enabled, |ui| {
+                if delay_row(ui, "Global (ms)", &mut m.global_delay) {
+                    out.persist = true;
+                }
+                if delay_row(ui, "Keyboard (ms)", &mut m.keyboard_delay) {
+                    out.persist = true;
+                }
+                if delay_row(ui, "Mouse (ms)", &mut m.mouse_delay) {
+                    out.persist = true;
+                }
+                if ui.button("Close").clicked() {
+                    close = true;
+                }
             });
+        });
         if close {
             self.delay_open = false;
         }

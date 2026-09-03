@@ -19,6 +19,11 @@ impl SqyreApp {
     pub(crate) fn drain_pending_hotkey_macros(&mut self, ctx: &egui::Context) {
         let pending: Vec<String> = std::mem::take(&mut *self.pending_hotkey_macros.lock());
         for name in pending {
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            sqyre_capture::event_log(
+                "SQYRE_HOTKEY",
+                &[("fire", "start"), ("name", name.as_str())],
+            );
             self.start_macro_by_name(&name, ctx);
         }
     }
@@ -43,10 +48,9 @@ impl SqyreApp {
                 self.hidden_for_recording = true;
                 #[cfg(feature = "native-runtime")]
                 sqyre_capture::mark_site("recording:hide_main");
-                // GSR destroys its overlay (`window.reset()`) before portal capture so
-                // the UI is not in the screencast. Unmap the main viewport; the wake
-                // poller keeps outline/HUD updates alive while hidden.
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                // Same unmap path as tray Hide — ViewportCommand alone is not enough
+                // to remap afterward on GNOME/XWayland (recording looks "frozen").
+                self.tray.set_root_visible(ctx, false);
                 #[cfg(all(feature = "native-runtime", target_os = "linux"))]
                 if sqyre_capture::LinuxSessionInfo::detect().has_wayland {
                     sqyre_capture::event_log("SQYRE_HUD", &[("hide", "wayland-unmap")]);
@@ -54,9 +58,11 @@ impl SqyreApp {
                 }
             } else if !should_hide && self.hidden_for_recording {
                 self.hidden_for_recording = false;
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
-                ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                #[cfg(feature = "native-runtime")]
+                sqyre_capture::mark_site("recording:show_main");
+                self.tray.set_root_visible(ctx, true);
+                #[cfg(all(feature = "native-runtime", target_os = "linux"))]
+                sqyre_capture::event_log("SQYRE_HUD", &[("show", "remap")]);
             }
         }
     }
@@ -73,6 +79,7 @@ impl SqyreApp {
                 Some(&self.macro_record_bridge),
                 preview_outline,
                 self.hidden_for_recording,
+                self.settings_ui.settings().hide_app_during_recording,
             );
         }
         #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]
@@ -99,20 +106,68 @@ mod native_run {
     use sqyre_persist::variables_path;
     use sqyre_vision::shared_leptess;
     use std::collections::BTreeMap;
-    use std::sync::atomic::Ordering;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::thread;
+
+    /// Clears `running` and wakes the UI even if the worker panics mid-macro.
+    /// Without this, overlay buttons stay busy and `start_macro_by_name` no-ops forever.
+    struct RunningClearOnDrop {
+        running: Arc<AtomicBool>,
+        running_macro: Arc<parking_lot::Mutex<Option<String>>>,
+        ctx: egui::Context,
+    }
+
+    impl Drop for RunningClearOnDrop {
+        fn drop(&mut self) {
+            self.running.store(false, Ordering::SeqCst);
+            *self.running_macro.lock() = None;
+            self.ctx.request_repaint();
+        }
+    }
 
     impl SqyreApp {
         pub(crate) fn start_macro_by_name(&mut self, name: &str, ctx: &egui::Context) {
             if self.run_session.state.running.load(Ordering::SeqCst) {
+                sqyre_capture::mark_site("overlay:start:skip-running");
+                sqyre_capture::note(&format!(
+                    "overlay: start skipped already-running name={name}"
+                ));
+                sqyre_capture::event_log(
+                    "SQYRE_OVERLAY",
+                    &[
+                        ("start", "skip"),
+                        ("reason", "already-running"),
+                        ("name", name),
+                    ],
+                );
                 return;
             }
-            let Some(idx) = self.workspace.macros.iter().position(|m| m.name == name) else {
+            let Some(idx) = self
+                .workspace
+                .macros
+                .iter()
+                .position(|m| m.name.eq_ignore_ascii_case(name))
+            else {
+                sqyre_capture::mark_site("overlay:start:skip-unknown");
+                sqyre_capture::note(&format!("overlay: start skipped unknown-macro name={name}"));
+                sqyre_capture::event_log(
+                    "SQYRE_OVERLAY",
+                    &[
+                        ("start", "skip"),
+                        ("reason", "unknown-macro"),
+                        ("name", name),
+                    ],
+                );
+                *self.run_session.state.status.lock() = format!("No macro named \"{name}\".");
+                ctx.request_repaint();
                 return;
             };
             if let Err(e) = sqyre_validate::validate_macro(&self.workspace.macros[idx]) {
                 *self.run_session.state.status.lock() = format!("Cannot run {name}: {e}");
+                sqyre_capture::note(&format!(
+                    "overlay: start skipped invalid-macro name={name} err={e}"
+                ));
                 return;
             }
             // Show the running macro's tree so highlight overlays have matching rows.
@@ -157,13 +212,24 @@ mod native_run {
             let ctx = ctx.clone();
             running.store(true, Ordering::SeqCst);
             *status.lock() = format!("Running {}…", macro_.name);
+            let running_macro_slot = self.macro_overlay.running_macro_slot();
+            self.macro_overlay
+                .set_running_macro(Some(macro_.name.clone()));
+            sqyre_capture::mark_site(&format!("overlay:start:ok:{name}"));
+            sqyre_capture::note(&format!("overlay: start ok name={name}"));
+            sqyre_capture::event_log("SQYRE_OVERLAY", &[("start", "ok"), ("name", name)]);
 
             // Must run on the UI thread: winit's SetCapture/ReleaseCapture are
             // thread-affine. Doing this only on the worker never clears Start-click capture.
             sqyre_input::prepare_for_automation();
 
             thread::spawn(move || {
-                let result = (|| -> Result<(), String> {
+                let _clear_running = RunningClearOnDrop {
+                    running: Arc::clone(&running),
+                    running_macro: running_macro_slot,
+                    ctx: ctx.clone(),
+                };
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let mut automation = os_automation().map_err(|e| format!("automation: {e}"))?;
                     let capturer_arc = shared_capturer().map_err(|e| format!("capture: {e}"))?;
                     let mut capturer = SharedRunCapturer(capturer_arc);
@@ -205,24 +271,32 @@ mod native_run {
                         },
                     )
                     .map_err(|e| e.to_string())
-                })();
+                }));
 
                 sqyre_vision::clear_search_cache();
                 trim_process_heap();
 
                 let msg = match result {
-                    Ok(()) if stop_flag.is_stopped() => "Stopped.".into(),
-                    Ok(()) => {
+                    Ok(Ok(())) if stop_flag.is_stopped() => "Stopped.".into(),
+                    Ok(Ok(())) => {
                         if play_finish_sound {
                             crate::sound::play_finish_sound(sound_volume);
                         }
                         "Finished.".into()
                     }
-                    Err(e) => format!("Error: {e}"),
+                    Ok(Err(e)) => format!("Error: {e}"),
+                    Err(_) => {
+                        sqyre_capture::note("overlay: run worker panicked; cleared running");
+                        sqyre_capture::event_log(
+                            "SQYRE_OVERLAY",
+                            &[("run", "panic"), ("running", "cleared")],
+                        );
+                        "Crashed (see crash.log).".into()
+                    }
                 };
                 *status.lock() = msg;
-                running.store(false, Ordering::SeqCst);
-                ctx.request_repaint();
+                let done = status.lock().clone().replace(' ', "_");
+                sqyre_capture::note(&format!("overlay: run done status={done}"));
             });
         }
     }

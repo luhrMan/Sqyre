@@ -1,7 +1,7 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre probe release release-bundle windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
+.PHONY: all sqyre probe overlay-sandbox release release-bundle windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
 	release-gate run tessdata appimage install-desktop docs-media wasm wasm-check help
 
 ROOT := $(abspath .)
@@ -66,6 +66,7 @@ help:
 	@echo "Targets:"
 	@echo "  all / sqyre  - cargo build (debug) -> $(BIN)/sqyre$(BIN_EXT)  [default]"
 	@echo "  probe        - cargo build (debug) -> $(BIN)/sqyre-probe$(BIN_EXT)"
+	@echo "  overlay-sandbox - overlay buttons only (fast; no sqyre-app)"
 	@echo "  release      - fmt + check, then cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
 	@echo "  release-bundle - Linux: release + bundled Tesseract -> $(BIN)/sqyre-bundle/ (no check gate)"
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
@@ -82,7 +83,7 @@ help:
 	@echo "  machete      - cargo machete (unused path/crate deps)"
 	@echo "  check        - check-fmt + clippy + deny (CI quality gates)"
 	@echo "  release-gate - fmt then check (used by release/packaging targets)"
-	@echo "  coverage     - cargo llvm-cov HTML + lcov (install: cargo install cargo-llvm-cov)"
+	@echo "  coverage     - llvm-cov nextest → HTML + lcov + summary.json (install: cargo-llvm-cov)"
 	@echo "  coverage-floors - line-coverage gates for pure crates (see scripts/coverage-floors.json)"
 	@echo "  run          - cargo run -p sqyre-app"
 	@echo "  tessdata     - scripts/download-tessdata.sh"
@@ -108,6 +109,11 @@ sqyre: $(BIN)
 probe: $(BIN)
 	$(CARGO) build -p sqyre-probe --features portal-capture $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/debug/sqyre-probe$(BIN_EXT) $(BIN)/sqyre-probe$(BIN_EXT)
+
+# Iterate floating overlay buttons without compiling sqyre-app.
+overlay-sandbox: $(BIN)
+	$(CARGO) build -p sqyre-overlay --features sandbox --bin overlay_sandbox $(CARGO_FLAGS)
+	cp -f $(TARGET_DIR)/debug/overlay_sandbox$(BIN_EXT) $(BIN)/overlay_sandbox$(BIN_EXT)
 
 # Sequential fmt → check so release/packaging stays gated under make -j.
 release-gate:
@@ -194,7 +200,8 @@ machete:
 check: check-fmt clippy deny
 
 # Report-only coverage (no % gate). Requires cargo-llvm-cov + llvm-tools-preview.
-# One instrumented run; emit both HTML and LCOV from the same profile data.
+# One instrumented nextest (fallback: cargo test) run; HTML + LCOV + JSON summary.
+# CI uses this instead of a separate `make test` to avoid compiling twice.
 coverage:
 	@if ! $(CARGO) llvm-cov --version >/dev/null 2>&1; then \
 		echo "cargo-llvm-cov not found. Install with:"; \
@@ -204,16 +211,24 @@ coverage:
 	fi
 	@mkdir -p $(TARGET_DIR)/coverage
 	$(CARGO) llvm-cov clean --workspace
-	$(CARGO) llvm-cov --workspace --no-report $(CARGO_FLAGS)
+	@if $(CARGO) nextest --version >/dev/null 2>&1; then \
+		$(CARGO) llvm-cov nextest --workspace --no-report $(CARGO_FLAGS); \
+	else \
+		echo "cargo-nextest not found; falling back to cargo llvm-cov (cargo test)"; \
+		$(CARGO) llvm-cov --workspace --no-report $(CARGO_FLAGS); \
+	fi
 	$(CARGO) llvm-cov report --html --output-dir $(TARGET_DIR)/coverage
 	$(CARGO) llvm-cov report --lcov --output-path $(TARGET_DIR)/coverage/lcov.info
+	$(CARGO) llvm-cov report --json --summary-only --output-path $(TARGET_DIR)/coverage/summary.json
 	@echo "HTML report: $(TARGET_DIR)/coverage/html/index.html"
 	@echo "LCOV:        $(TARGET_DIR)/coverage/lcov.info"
+	@echo "JSON:        $(TARGET_DIR)/coverage/summary.json"
 ifdef COVERAGE_FLOORS
-	$(MAKE) coverage-floors
+	COVERAGE_REPORT_JSON=$(TARGET_DIR)/coverage/summary.json $(MAKE) coverage-floors
 endif
 
 # Optional floors for pure crates/modules only (not OS crates). Requires cargo-llvm-cov.
+# Set COVERAGE_REPORT_JSON to a prior `llvm-cov report --json` file to skip re-instrumenting.
 coverage-floors:
 	./scripts/check-coverage-floors.sh
 

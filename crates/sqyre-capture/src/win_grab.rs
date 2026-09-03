@@ -20,8 +20,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     SetLayeredWindowAttributes, SetWindowPos, ShowCursor, ShowWindow, TranslateMessage, CS_HREDRAW,
     CS_VREDRAW, HWND_TOPMOST, IDC_CROSS, LWA_ALPHA, MSG, PM_REMOVE, SM_CXVIRTUALSCREEN,
     SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_SHOWWINDOW, SW_HIDE, SW_SHOW,
-    WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN, WM_MOUSEMOVE, WM_SETCURSOR, WNDCLASSW, WS_EX_LAYERED,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    WM_DESTROY, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_SETCURSOR, WNDCLASSW,
+    WS_EX_LAYERED, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 
 use crate::selection_grab::GrabPoll;
@@ -35,6 +35,7 @@ static POS_X: AtomicI32 = AtomicI32::new(0);
 static POS_Y: AtomicI32 = AtomicI32::new(0);
 static MOVED: AtomicBool = AtomicBool::new(false);
 static LEFT_CLICKS: AtomicU32 = AtomicU32::new(0);
+static LEFT_RELEASES: AtomicU32 = AtomicU32::new(0);
 static ESCAPE: AtomicBool = AtomicBool::new(false);
 
 /// Fullscreen layered popup that owns the mouse while screen-click recording is armed.
@@ -157,6 +158,7 @@ impl SelectionGrab {
         out.y = POS_Y.load(Ordering::Relaxed);
         out.moved = MOVED.swap(false, Ordering::Relaxed);
         out.left_clicks = LEFT_CLICKS.swap(0, Ordering::Relaxed);
+        out.left_releases = LEFT_RELEASES.swap(0, Ordering::Relaxed);
         out.escape = ESCAPE.swap(false, Ordering::Relaxed);
         // Cursor sampling counts as a position update for the HUD.
         out.moved = true;
@@ -228,6 +230,7 @@ fn virtual_screen() -> Result<(i32, i32, i32, i32), CaptureError> {
 fn clear_pending() {
     MOVED.store(false, Ordering::Relaxed);
     LEFT_CLICKS.store(0, Ordering::Relaxed);
+    LEFT_RELEASES.store(0, Ordering::Relaxed);
     ESCAPE.store(false, Ordering::Relaxed);
 }
 
@@ -249,11 +252,13 @@ unsafe extern "system" fn grab_wnd_proc(
     lparam: LPARAM,
 ) -> LRESULT {
     match msg {
-        WM_MOUSEMOVE | WM_LBUTTONDOWN => {
+        WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP => {
             seed_pos_from_cursor();
             MOVED.store(true, Ordering::Relaxed);
             if msg == WM_LBUTTONDOWN {
                 LEFT_CLICKS.fetch_add(1, Ordering::Relaxed);
+            } else if msg == WM_LBUTTONUP {
+                LEFT_RELEASES.fetch_add(1, Ordering::Relaxed);
             }
             LRESULT(0)
         }

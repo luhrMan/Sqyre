@@ -11,7 +11,7 @@ make windows          # Docker MinGW cross from Linux/macOS; native on Windows
 [`Dockerfile`](./Dockerfile) (based on the former Go fyne-cross Windows image) produces `sqyre-windows-cross:latest` with:
 
 - Debian bookworm + MinGW-w64 posix
-- Rust `1.92` + `x86_64-pc-windows-gnu` (plus `rustfmt`/`clippy` to match `rust-toolchain.toml`)
+- Rust `1.94` + `x86_64-pc-windows-gnu` (plus `rustfmt`/`clippy` to match `rust-toolchain.toml`)
 - Static zlib / libpng / libjpeg-turbo / leptonica / tesseract under `/usr/local/mingw64-static`
 - `sccache` available in-image (`sccache-rustc-wrapper`); enabled in CI via `SQYRE_WINDOWS_SCCACHE=1`
 - Linker: `mingw-lld-link` (MinGW g++ driver + `rust-lld` via `-fuse-ld=lld`) — bookworm GNU ld segfaults on Rust 1.92 COFF

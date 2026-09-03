@@ -4,7 +4,7 @@
 FROM debian:bookworm-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG RUST_VERSION=1.92.0
+ARG RUST_VERSION=1.94.0
 ARG MINGW_PREFIX=/usr/local/mingw64-static
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -81,7 +81,7 @@ RUN set -eux \
  && ln -sfn "${LIBSTDCPP_DIR}" /usr/local/mingw-libstdcpp \
  && ls -la /usr/local/mingw-libstdcpp/libstdc++.a /usr/local/mingw-libstdcpp/libgcc*.a 2>/dev/null || true
 
-# rust-lld wrapper + MinGW lib paths (LLVM 14 system lld rejects Rust 1.92 COFF).
+# rust-lld wrapper + MinGW lib paths (LLVM 14 system lld rejects Rust ≥1.92 COFF).
 # Static MinGW runtimes are appended by mingw-lld-link (libstdc++.a / libpthread.a / libgcc)
 # so sqyre.exe needs no MinGW sidecar DLLs. CXXSTDLIB=static=stdc++ covers link-cplusplus.
 # RUSTFLAGS only supplies tessdata dep libs + -L paths (wrapper owns -l:libstdc++.a order).

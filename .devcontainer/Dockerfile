@@ -51,6 +51,22 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y \
     && cargo machete --version && trunk --version \
     && rustup target list --installed | grep -q wasm32-unknown-unknown
 
+# Host-mounted SCCACHE_DIR reuses rustc outputs across clean target/ trees and CI runners.
+# Wrapper unsets CARGO_INCREMENTAL*: sccache rejects those vars when present at all.
+ARG SCCACHE_VERSION=0.16.0
+RUN set -eux \
+ && curl -fsSL "https://github.com/mozilla/sccache/releases/download/v${SCCACHE_VERSION}/sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+    | tar -xz -C /usr/local/bin --strip-components=1 \
+      "sccache-v${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache" \
+ && chmod 755 /usr/local/bin/sccache \
+ && printf '%s\n' \
+      '#!/bin/sh' \
+      'unset CARGO_INCREMENTAL CARGO_BUILD_INCREMENTAL' \
+      'exec /usr/local/bin/sccache "$@"' \
+      > /usr/local/bin/sccache-rustc-wrapper \
+ && chmod 755 /usr/local/bin/sccache-rustc-wrapper \
+ && sccache --version
+
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=1000
