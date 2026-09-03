@@ -32,7 +32,7 @@ impl PreviewTooltipCache {
 
     pub fn show_for_entity(
         &mut self,
-        ui: &mut egui::Ui,
+        _ui: &mut egui::Ui,
         response: &egui::Response,
         _catalog: &ProgramCatalog,
         program: &str,
@@ -59,7 +59,7 @@ impl PreviewTooltipCache {
 
     pub fn show_for_coordinate_ref(
         &mut self,
-        ui: &mut egui::Ui,
+        _ui: &mut egui::Ui,
         response: &egui::Response,
         _catalog: &ProgramCatalog,
         coord_ref: &CoordinateRef,

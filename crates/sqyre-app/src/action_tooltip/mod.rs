@@ -685,6 +685,7 @@ fn show_edit_window(
                 let refit = sections::take_edit_tip_refit(ui.ctx());
                 if refit {
                     edit.auto_fit = true;
+                    #[cfg(feature = "native-runtime")]
                     if sqyre_capture::disk_logging_enabled() {
                         sqyre_capture::event_log(
                             "SQYRE_EDIT_TIP",
@@ -701,6 +702,7 @@ fn show_edit_window(
                     if measured > 0.0 && height_stable && fitting {
                         // Settle only after a frame that applied fit_min_h.
                         edit.auto_fit = false;
+                        #[cfg(feature = "native-runtime")]
                         if sqyre_capture::disk_logging_enabled() {
                             sqyre_capture::event_log(
                                 "SQYRE_EDIT_TIP",

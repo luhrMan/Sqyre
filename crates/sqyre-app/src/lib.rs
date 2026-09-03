@@ -32,7 +32,6 @@ mod key_record;
 mod linux_focused_keys;
 mod log;
 mod macro_meta;
-#[cfg(feature = "native-runtime")]
 mod macro_record;
 /// Phosphor overlay icon catalog + paint helpers (lives in `sqyre-overlay`).
 #[allow(unused_imports)] // re-export surface for `crate::overlay_icons::…`
@@ -633,6 +632,10 @@ impl SqyreApp {
 
 impl eframe::App for SqyreApp {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (ctx, frame);
+        }
         #[cfg(not(target_arch = "wasm32"))]
         self.tray.poll_commands(ctx, frame);
         // Unmap as soon as the WM asks to close so portal/tray/wgpu teardown

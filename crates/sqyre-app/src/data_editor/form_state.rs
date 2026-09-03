@@ -510,6 +510,8 @@ impl FormState for PixelCheckForm {
                 ed.pixel_check.variant = variant;
             }
         }
+        #[cfg(not(feature = "native-runtime"))]
+        let _ = ed;
         let _ = catalog;
     }
 

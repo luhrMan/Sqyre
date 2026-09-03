@@ -961,6 +961,7 @@ fn key_action(key: &str, state: PressState) -> Action {
 
 /// Move points that would be created from the live event stream (same distance
 /// rules as [`events_to_actions`]), for on-screen crosshairs while recording.
+#[cfg(any(test, feature = "native-runtime"))]
 fn live_record_points(events: &[MacroRecordEvent]) -> Vec<TempPoint> {
     let compressed = compress_events(events);
     let mut out = Vec::new();
@@ -1004,8 +1005,11 @@ fn live_record_points(events: &[MacroRecordEvent]) -> Vec<TempPoint> {
 }
 
 /// Default / hover / editing colors for on-screen temp-point markers.
+#[cfg(feature = "native-runtime")]
 const MARKER_DEFAULT: egui::Color32 = crate::theme::PRIMARY;
+#[cfg(feature = "native-runtime")]
 const MARKER_HOVER: egui::Color32 = crate::theme::MACRO_START;
+#[cfg(feature = "native-runtime")]
 const MARKER_EDIT: egui::Color32 = crate::theme::MACRO_STOP;
 
 #[cfg(feature = "native-runtime")]
