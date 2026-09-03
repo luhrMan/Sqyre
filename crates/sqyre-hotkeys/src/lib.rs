@@ -94,7 +94,7 @@ mod hooks;
 mod linux_evdev;
 
 #[cfg(all(feature = "hooks", not(target_os = "windows")))]
-pub use hooks::{linux_in_input_group, linux_uses_evdev_grab, RdevHotkeys};
+pub use hooks::{linux_can_open_evdev, linux_uses_evdev_grab, RdevHotkeys};
 
 #[cfg(all(feature = "hooks", target_os = "windows"))]
 mod win_hooks;

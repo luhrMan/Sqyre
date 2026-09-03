@@ -10,6 +10,8 @@ pub struct GrabPoll {
     pub moved: bool,
     /// Number of left-button presses observed.
     pub left_clicks: u32,
+    /// Number of left-button releases observed (search-area drag-to-select).
+    pub left_releases: u32,
     /// True when Escape was pressed.
     pub escape: bool,
 }

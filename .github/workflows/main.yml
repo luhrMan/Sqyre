@@ -5,9 +5,12 @@
 # Caching (share what can be shared):
 # - Cargo registry (.cache/cargo): one key for all Linux jobs — warmed once per run
 # - Cargo target/: per triple (linux host / windows-gnu / wasm32) — not cross-shareable
+# - Linux sccache (.cache/sccache-linux): rustc outputs across profiles (clippy/test/cov/wasm)
+# - Windows sccache (.cache/sccache-windows): MinGW cross only — not shared with Linux
 # - Linux/Windows Docker images: content-hash tags on GHCR; Buildx layers as fallback
 # - tessdata: shared keys across runs
 # Criterion benches (`make bench`) are local-only; Linux tests run `make wasm-check`.
+# Linux `test` runs coverage (instrumented nextest) instead of a separate `make test`.
 
 name: Build and Release
 
@@ -112,7 +115,7 @@ jobs:
 
       - name: Install Rust toolchain
         if: steps.reg.outputs.cache-hit != 'true'
-        uses: dtolnay/rust-toolchain@1.92.0
+        uses: dtolnay/rust-toolchain@1.94.0
 
       - name: Fetch crate sources
         if: steps.reg.outputs.cache-hit != 'true'
@@ -220,10 +223,19 @@ jobs:
             ${{ runner.os }}-cargo-target-linux-v3-
             ${{ runner.os }}-cargo-target-
 
-      - name: Prepare Cargo cache dirs
-        run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}"
+      - name: Cache sccache (Linux)
+        uses: actions/cache@v6
+        with:
+          path: .cache/sccache-linux
+          key: ${{ runner.os }}-sccache-linux-v1-${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-sccache-linux-v1-
+            ${{ runner.os }}-sccache-linux-
 
-      - name: Run Rust quality checks and tests
+      - name: Prepare Cargo cache dirs
+        run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}" .cache/sccache-linux
+
+      - name: Run Rust quality checks, tests, and coverage
         run: |
           docker run --rm -u "$(id -u):$(id -g)" \
             -v ${{ github.workspace }}:/workspace -w /workspace \
@@ -231,32 +243,22 @@ jobs:
             -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
             -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
             -e RUSTUP_HOME=/usr/local/rustup \
-            -e PATH=/usr/local/cargo/bin:/usr/bin:/bin \
+            -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
+            -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper \
+            -e SCCACHE_DIR=/workspace/.cache/sccache-linux \
+            -e SCCACHE_CACHE_SIZE=10G \
             -e WGPU_BACKEND=vulkan \
             -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
               make check
               make machete
-              make test
-              make smoke
-              make wasm-check'
-
-      - name: Coverage report
-        run: |
-          docker run --rm -u "$(id -u):$(id -g)" \
-            -v ${{ github.workspace }}:/workspace -w /workspace \
-            -e HOME=/tmp \
-            -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
-            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
-            -e RUSTUP_HOME=/usr/local/rustup \
-            -e PATH=/usr/local/cargo/bin:/usr/bin:/bin \
-            -e WGPU_BACKEND=vulkan \
-            -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
-            sqyre-linux-build \
-            bash -c 'set -euo pipefail
+              # Instrumented nextest (replaces separate make test + make coverage).
               make coverage
-              make coverage-floors'
+              COVERAGE_REPORT_JSON=/workspace/target/coverage/summary.json make coverage-floors
+              make smoke
+              make wasm-check
+              sccache --show-stats || true'
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
@@ -351,8 +353,17 @@ jobs:
             ${{ runner.os }}-cargo-target-linux-v3-
             ${{ runner.os }}-cargo-target-
 
+      - name: Cache sccache (Linux)
+        uses: actions/cache@v6
+        with:
+          path: .cache/sccache-linux
+          key: ${{ runner.os }}-sccache-linux-v1-${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-sccache-linux-v1-
+            ${{ runner.os }}-sccache-linux-
+
       - name: Prepare Cargo cache dirs
-        run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}"
+        run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}" .cache/sccache-linux
 
       - name: Build Linux binary and AppImage
         run: |
@@ -364,13 +375,17 @@ jobs:
             -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
             -e RUSTUP_HOME=/usr/local/rustup \
             -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
+            -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper \
+            -e SCCACHE_DIR=/workspace/.cache/sccache-linux \
+            -e SCCACHE_CACHE_SIZE=10G \
             -e RELEASE_VERSION="$VERSION" \
             -e SQYRE_APPIMAGE_FORCE_NATIVE=1 \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
               scripts/linux/packaging/appimage/build-appimage.sh
               cp scripts/linux/packaging/appimage/sqyre.AppDir/usr/bin/sqyre \
-                "/workspace/sqyre-v${RELEASE_VERSION}-linux-amd64"'
+                "/workspace/sqyre-v${RELEASE_VERSION}-linux-amd64"
+              sccache --show-stats || true'
           mv "bin/Sqyre-${VERSION}-x86_64.AppImage" \
              "Sqyre-v${VERSION}-x86_64.AppImage"
 
@@ -535,8 +550,17 @@ jobs:
             ${{ runner.os }}-cargo-target-wasm32-v3-
             ${{ runner.os }}-cargo-target-wasm-
 
+      - name: Cache sccache (Linux)
+        uses: actions/cache@v6
+        with:
+          path: .cache/sccache-linux
+          key: ${{ runner.os }}-sccache-linux-v1-${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-sccache-linux-v1-
+            ${{ runner.os }}-sccache-linux-
+
       - name: Prepare Cargo cache dirs
-        run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}"
+        run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}" .cache/sccache-linux
 
       - name: Build WASM editor
         run: |
@@ -548,11 +572,15 @@ jobs:
             -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
             -e RUSTUP_HOME=/usr/local/rustup \
             -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
+            -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper \
+            -e SCCACHE_DIR=/workspace/.cache/sccache-linux \
+            -e SCCACHE_CACHE_SIZE=10G \
             -e RELEASE_VERSION="$VERSION" \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
               make wasm
-              test -f bin/wasm/index.html'
+              test -f bin/wasm/index.html
+              sccache --show-stats || true'
 
       - name: Install zip
         run: sudo apt-get update && sudo apt-get install -y zip
@@ -604,7 +632,7 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
 
       - name: Install Rust toolchain (sign checksums)
-        uses: dtolnay/rust-toolchain@1.92.0
+        uses: dtolnay/rust-toolchain@1.94.0
 
       - name: Verify update public key is configured
         working-directory: src

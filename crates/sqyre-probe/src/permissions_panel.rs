@@ -40,6 +40,14 @@ pub struct PermissionItem {
     pub tooltip: Option<String>,
 }
 
+impl PermissionItem {
+    /// Portal ScreenCast / Remote Desktop grants that Settings can forget.
+    pub fn portal_grant_revocable(&self) -> bool {
+        self.eligibility == PermissionEligibility::Granted
+            && matches!(self.id, "screen_recording" | "automation_input")
+    }
+}
+
 /// Build all permission rows for the current probe report.
 pub fn build_permission_items(
     session: &SessionReport,
@@ -56,10 +64,6 @@ pub fn build_permission_items(
 
 fn cap_ok(caps: &BTreeMap<String, CapabilityResult>, key: &str) -> bool {
     matches!(caps.get(key).map(|c| &c.status), Some(CapStatus::Ok))
-}
-
-fn cap_pending(caps: &BTreeMap<String, CapabilityResult>, key: &str) -> bool {
-    matches!(caps.get(key).map(|c| &c.status), Some(CapStatus::Pending))
 }
 
 fn live_capture_granted() -> bool {
@@ -90,10 +94,7 @@ fn screen_recording_item(
         || cap_ok(caps, "portal.screencast")
     {
         (PermissionEligibility::Granted, None)
-    } else if cap_pending(caps, "capture.open")
-        || cap_pending(caps, "portal.screencast")
-        || sqyre_capture::shared_capturer_is_opening()
-    {
+    } else if sqyre_capture::shared_capturer_is_opening() {
         (
             PermissionEligibility::Checking,
             Some("Waiting for the screen sharing dialog.".into()),
@@ -134,13 +135,13 @@ fn input_device_group_item(
         copy_command = None;
         (
             PermissionEligibility::NotRequired,
-            Some("X11 sessions use display hooks; no input group is required.".into()),
+            Some("X11 sessions use display hooks; no /dev/input access is required.".into()),
         )
-    } else if cap_ok(caps, "permissions.input_group") {
+    } else if cap_ok(caps, "permissions.evdev_access") {
         copy_command = None;
         (PermissionEligibility::Granted, None)
     } else {
-        setup_steps.push("Add your user to the input group, then log out and back in.".into());
+        setup_steps.push("If /dev/input is not readable, add your user to the input group, then log out and back in.".into());
         setup_steps
             .push("On some distros the group is named plugdev — add both if they exist.".into());
         #[cfg(target_os = "linux")]
@@ -151,7 +152,7 @@ fn input_device_group_item(
         copy_command = Some("sudo usermod -aG input $USER".into());
         (
             PermissionEligibility::Needed,
-            cap_fail_detail(caps, "permissions.input_group"),
+            cap_fail_detail(caps, "permissions.evdev_access"),
         )
     };
 
@@ -327,9 +328,12 @@ mod tests {
     }
 
     #[test]
-    fn input_group_needed_on_wayland_when_missing() {
+    fn evdev_access_needed_on_wayland_when_missing() {
         let mut caps = BTreeMap::new();
-        caps.insert("permissions.input_group".into(), fail_cap("not in group"));
+        caps.insert(
+            "permissions.evdev_access".into(),
+            fail_cap("cannot open /dev/input"),
+        );
         caps.insert("capture.open".into(), ok_cap());
         caps.insert("hotkeys.start".into(), ok_cap());
         caps.insert("input.open".into(), ok_cap());
@@ -368,7 +372,7 @@ mod tests {
     }
 
     #[test]
-    fn screen_recording_pending_is_checking() {
+    fn screen_recording_pending_without_open_is_needed() {
         let mut caps = BTreeMap::new();
         caps.insert("capture.open".into(), pending_cap());
         caps.insert("portal.screencast".into(), pending_cap());
@@ -377,8 +381,34 @@ mod tests {
             .iter()
             .find(|i| i.id == "screen_recording")
             .expect("screen recording row");
-        assert_eq!(row.eligibility, PermissionEligibility::Checking);
-        assert!(row.setup_steps.is_empty());
+        assert_eq!(row.eligibility, PermissionEligibility::Needed);
+        assert!(!row.setup_steps.is_empty());
+        assert!(!row.portal_grant_revocable());
+    }
+
+    #[test]
+    fn portal_grants_are_revocable_when_granted() {
+        let mut caps = BTreeMap::new();
+        caps.insert("capture.open".into(), ok_cap());
+        caps.insert("portal.screencast".into(), ok_cap());
+        caps.insert("input.open".into(), ok_cap());
+        caps.insert("hotkeys.start".into(), ok_cap());
+        let items = build_permission_items(&session_wayland(), &caps);
+        let screen = items
+            .iter()
+            .find(|i| i.id == "screen_recording")
+            .expect("screen recording row");
+        assert!(screen.portal_grant_revocable());
+        let automation = items
+            .iter()
+            .find(|i| i.id == "automation_input")
+            .expect("automation row");
+        assert!(automation.portal_grant_revocable());
+        let hotkeys = items
+            .iter()
+            .find(|i| i.id == "global_hotkeys")
+            .expect("hotkeys row");
+        assert!(!hotkeys.portal_grant_revocable());
     }
 
     #[test]
@@ -413,6 +443,7 @@ mod tests {
             .find(|i| i.id == "screen_recording")
             .expect("screen recording row");
         assert_eq!(row.eligibility, PermissionEligibility::Granted);
+        assert!(row.portal_grant_revocable());
     }
 
     #[test]

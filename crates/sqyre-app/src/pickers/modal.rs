@@ -60,239 +60,236 @@ pub fn show_active_picker(
     let mut cancel = false;
     let mut back = false;
 
-    egui::Window::new(title)
-        .collapsible(false)
-        .resizable(true)
-        .default_size([560.0, 460.0])
-        .min_size([400.0, 280.0])
-        .order(egui::Order::Foreground)
-        .open(&mut open)
-        .show(ctx, |ui| {
-            match picker {
-                ActivePicker::Items { search, staged } => {
-                    let mut header_click = None;
+    crate::widgets::fit_dialog_window(
+        egui::Window::new(title)
+            .collapsible(false)
+            .resizable(true)
+            .default_size([560.0, 460.0])
+            .min_size([400.0, 280.0])
+            .order(egui::Order::Foreground)
+            .open(&mut open),
+        ctx,
+    )
+    .show(ctx, |ui| {
+        match picker {
+            ActivePicker::Items { search, staged } => {
+                let mut header_click = None;
+                let program_names: Vec<String> = paint.catalog.program_names().cloned().collect();
+                let mut opts = PickerScrollOpts::list(ui);
+                let mut trailing = |ui: &mut egui::Ui| {
+                    super::collapse_all_buttons(ui, |ctx, open| {
+                        super::set_items_icon_grid_openness(
+                            ctx,
+                            program_names.iter().map(|n| n.as_str()),
+                            open,
+                        );
+                    });
+                };
+                opts.trailing = Some(&mut trailing);
+                picker_searchable_scroll(ui, search, opts, |ui, q| {
+                    paint_items_icon_grid(
+                        ui,
+                        paint.catalog,
+                        paint.icons,
+                        q,
+                        staged,
+                        true,
+                        None,
+                        &mut header_click,
+                        compact_program_headers,
+                    );
+                });
+                ui.separator();
+                ui.label(format!("{} selected", staged.len()));
+            }
+            ActivePicker::Coord {
+                kind,
+                search,
+                value,
+                cell_pick,
+                scroll_to_selection,
+            } => {
+                if let Some(pick) = cell_pick.as_mut() {
+                    paint_collection_cell_picker(ui, paint.catalog, paint.icons, pick);
+                } else {
+                    let kind = *kind;
                     let program_names: Vec<String> =
                         paint.catalog.program_names().cloned().collect();
-                    let mut opts = PickerScrollOpts::list(ui);
-                    let mut trailing = |ui: &mut egui::Ui| {
+                    // Search chrome only — list owns its own ScrollArea (program groups).
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new(
+                            egui_phosphor::regular::MAGNIFYING_GLASS,
+                        ))
+                        .on_hover_text("Search");
+                        if ui.text_edit_singleline(search).changed() {
+                            *scroll_to_selection = true;
+                        }
                         super::collapse_all_buttons(ui, |ctx, open| {
-                            super::set_items_icon_grid_openness(
+                            super::set_coord_list_openness(
                                 ctx,
+                                kind,
                                 program_names.iter().map(|n| n.as_str()),
                                 open,
                             );
                         });
-                    };
-                    opts.trailing = Some(&mut trailing);
-                    picker_searchable_scroll(ui, search, opts, |ui, q| {
-                        paint_items_icon_grid(
-                            ui,
-                            paint.catalog,
-                            paint.icons,
-                            q,
-                            staged,
-                            true,
-                            None,
-                            &mut header_click,
-                            compact_program_headers,
-                        );
                     });
                     ui.separator();
-                    ui.label(format!("{} selected", staged.len()));
-                }
-                ActivePicker::Coord {
-                    kind,
-                    search,
-                    value,
-                    cell_pick,
-                    scroll_to_selection,
-                } => {
-                    if let Some(pick) = cell_pick.as_mut() {
-                        paint_collection_cell_picker(ui, paint.catalog, paint.icons, pick);
-                    } else {
-                        let kind = *kind;
-                        let program_names: Vec<String> =
-                            paint.catalog.program_names().cloned().collect();
-                        // Search chrome only — list owns its own ScrollArea (program groups).
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(
-                                egui_phosphor::regular::MAGNIFYING_GLASS,
-                            ))
-                            .on_hover_text("Search");
-                            if ui.text_edit_singleline(search).changed() {
-                                *scroll_to_selection = true;
-                            }
-                            super::collapse_all_buttons(ui, |ctx, open| {
-                                super::set_coord_list_openness(
-                                    ctx,
-                                    kind,
-                                    program_names.iter().map(|n| n.as_str()),
-                                    open,
-                                );
-                            });
-                        });
-                        ui.separator();
-                        paint_coord_ref_list(
-                            ui,
-                            paint,
-                            search,
-                            value,
-                            kind,
-                            cell_pick,
-                            scroll_to_selection,
-                            compact_program_headers,
-                        );
-                    }
-                }
-                ActivePicker::Macro {
-                    search,
-                    value,
-                    scroll_to_selection,
-                } => {
-                    let mut did_scroll = false;
-                    let search_changed = picker_searchable_scroll(
+                    paint_coord_ref_list(
                         ui,
+                        paint,
                         search,
-                        PickerScrollOpts::list(ui),
-                        |ui, q| {
-                            for (name, tags) in macros {
-                                if !query_matches_name_or_tags(q, name, tags) {
-                                    continue;
-                                }
-                                let selected = value == name;
-                                let resp = ui.selectable_label(
-                                    selected,
-                                    egui::RichText::new(name.as_str()).small(),
-                                );
-                                if selected && *scroll_to_selection && !did_scroll {
-                                    maybe_scroll_to(ui, &resp, scroll_to_selection);
-                                    did_scroll = true;
-                                }
-                                if resp.clicked() {
-                                    *value = name.clone();
-                                }
-                            }
-                        },
+                        value,
+                        kind,
+                        cell_pick,
+                        scroll_to_selection,
+                        compact_program_headers,
                     );
-                    if search_changed {
-                        *scroll_to_selection = true;
-                    } else if *scroll_to_selection && !did_scroll {
-                        *scroll_to_selection = false;
-                    }
                 }
-                ActivePicker::Window {
-                    search,
-                    process_path,
-                    window_title,
-                    windows,
-                    load_error,
-                    scroll_to_selection,
-                    pending,
-                } => {
-                    let loading = pending.is_some();
-                    let mut did_scroll = false;
-                    let mut refresh_clicked = false;
-                    let mut opts = PickerScrollOpts::list(ui);
-                    let mut trailing = |ui: &mut egui::Ui| {
-                        refresh_clicked = ui
-                            .add_enabled_ui(!loading, |ui| crate::theme::icon_button(ui, "↻"))
-                            .inner
-                            .on_hover_text(if loading { "Refreshing…" } else { "Refresh" })
-                            .clicked();
-                    };
-                    opts.trailing = Some(&mut trailing);
-                    let search_changed = picker_searchable_scroll(ui, search, opts, |ui, q| {
-                        if loading {
-                            ui.label("Loading windows…");
-                        }
-                        if let Some(err) = load_error.as_ref() {
-                            ui.colored_label(crate::theme::error_fg(), err.as_str());
-                        }
-                        for w in windows.iter() {
-                            if !query_matches_window(q, w) {
+            }
+            ActivePicker::Macro {
+                search,
+                value,
+                scroll_to_selection,
+            } => {
+                let mut did_scroll = false;
+                let search_changed =
+                    picker_searchable_scroll(ui, search, PickerScrollOpts::list(ui), |ui, q| {
+                        for (name, tags) in macros {
+                            if !query_matches_name_or_tags(q, name, tags) {
                                 continue;
                             }
-                            let selected =
-                                window_title == &w.title && process_path == &w.process_path;
-                            // Prefer icon bytes from the list fetch; avoid per-row OS re-scan.
-                            let process_tex = match w.icon.as_ref() {
-                                Some(icon) => {
-                                    paint
-                                        .icons
-                                        .seed_process_icon(ui.ctx(), &w.process_path, icon)
-                                }
-                                None => paint.icons.cached_process(&w.process_path),
-                            };
-                            let resp = ui
-                                .horizontal(|ui| {
-                                    if let Some(tex) = process_tex.as_ref() {
-                                        crate::icon_cache::paint_process_icon(
-                                            ui,
-                                            tex,
-                                            crate::icon_cache::PROCESS_ICON_SIDE,
-                                        );
-                                    }
-                                    ui.selectable_label(
-                                        selected,
-                                        egui::RichText::new(w.label()).small(),
-                                    )
-                                })
-                                .inner;
+                            let selected = value == name;
+                            let resp = ui.selectable_label(
+                                selected,
+                                egui::RichText::new(name.as_str()).small(),
+                            );
                             if selected && *scroll_to_selection && !did_scroll {
                                 maybe_scroll_to(ui, &resp, scroll_to_selection);
                                 did_scroll = true;
                             }
                             if resp.clicked() {
-                                *window_title = w.title.clone();
-                                *process_path = w.process_path.clone();
+                                *value = name.clone();
                             }
                         }
                     });
-                    if refresh_clicked && pending.is_none() {
-                        *load_error = None;
-                        let (tx, rx) = mpsc::channel();
-                        #[cfg(feature = "native-runtime")]
-                        thread::spawn(move || {
-                            let _ = tx.send(fetch_open_windows());
-                        });
-                        #[cfg(not(feature = "native-runtime"))]
-                        {
-                            let _ = tx.send(Ok(Vec::new()));
-                        }
-                        *pending = Some(rx);
-                        *scroll_to_selection = true;
-                        ui.ctx().request_repaint();
-                    } else if search_changed {
-                        *scroll_to_selection = true;
-                    } else if *scroll_to_selection && !did_scroll {
-                        *scroll_to_selection = false;
-                    }
+                if search_changed {
+                    *scroll_to_selection = true;
+                } else if *scroll_to_selection && !did_scroll {
+                    *scroll_to_selection = false;
                 }
-                ActivePicker::None => {}
             }
+            ActivePicker::Window {
+                search,
+                process_path,
+                window_title,
+                windows,
+                load_error,
+                scroll_to_selection,
+                pending,
+            } => {
+                let loading = pending.is_some();
+                let mut did_scroll = false;
+                let mut refresh_clicked = false;
+                let mut opts = PickerScrollOpts::list(ui);
+                let mut trailing = |ui: &mut egui::Ui| {
+                    refresh_clicked = ui
+                        .add_enabled_ui(!loading, |ui| crate::theme::icon_button(ui, "↻"))
+                        .inner
+                        .on_hover_text(if loading { "Refreshing…" } else { "Refresh" })
+                        .clicked();
+                };
+                opts.trailing = Some(&mut trailing);
+                let search_changed = picker_searchable_scroll(ui, search, opts, |ui, q| {
+                    if loading {
+                        ui.label("Loading windows…");
+                    }
+                    if let Some(err) = load_error.as_ref() {
+                        ui.colored_label(crate::theme::error_fg(), err.as_str());
+                    }
+                    for w in windows.iter() {
+                        if !query_matches_window(q, w) {
+                            continue;
+                        }
+                        let selected = window_title == &w.title && process_path == &w.process_path;
+                        // Prefer icon bytes from the list fetch; avoid per-row OS re-scan.
+                        let process_tex = match w.icon.as_ref() {
+                            Some(icon) => {
+                                paint
+                                    .icons
+                                    .seed_process_icon(ui.ctx(), &w.process_path, icon)
+                            }
+                            None => paint.icons.cached_process(&w.process_path),
+                        };
+                        let resp = ui
+                            .horizontal(|ui| {
+                                if let Some(tex) = process_tex.as_ref() {
+                                    crate::icon_cache::paint_process_icon(
+                                        ui,
+                                        tex,
+                                        crate::icon_cache::PROCESS_ICON_SIDE,
+                                    );
+                                }
+                                ui.selectable_label(
+                                    selected,
+                                    egui::RichText::new(w.label()).small(),
+                                )
+                            })
+                            .inner;
+                        if selected && *scroll_to_selection && !did_scroll {
+                            maybe_scroll_to(ui, &resp, scroll_to_selection);
+                            did_scroll = true;
+                        }
+                        if resp.clicked() {
+                            *window_title = w.title.clone();
+                            *process_path = w.process_path.clone();
+                        }
+                    }
+                });
+                if refresh_clicked && pending.is_none() {
+                    *load_error = None;
+                    let (tx, rx) = mpsc::channel();
+                    #[cfg(feature = "native-runtime")]
+                    thread::spawn(move || {
+                        let _ = tx.send(fetch_open_windows());
+                    });
+                    #[cfg(not(feature = "native-runtime"))]
+                    {
+                        let _ = tx.send(Ok(Vec::new()));
+                    }
+                    *pending = Some(rx);
+                    *scroll_to_selection = true;
+                    ui.ctx().request_repaint();
+                } else if search_changed {
+                    *scroll_to_selection = true;
+                } else if *scroll_to_selection && !did_scroll {
+                    *scroll_to_selection = false;
+                }
+            }
+            ActivePicker::None => {}
+        }
 
-            ui.separator();
-            let cell_has_sel = picker
-                .cell_pick_mut()
-                .and_then(|c| c.as_ref())
-                .and_then(|p| p.sel)
-                .is_some();
-            ui.horizontal(|ui| {
-                if in_cell_pick && ui.button("Back").clicked() {
-                    back = true;
-                }
-                if ui.button("Cancel").clicked() {
-                    cancel = true;
-                }
-                let save_enabled = !in_cell_pick || cell_has_sel;
-                if ui
-                    .add_enabled(save_enabled, egui::Button::new("Save"))
-                    .clicked()
-                {
-                    save = true;
-                }
-            });
+        ui.separator();
+        let cell_has_sel = picker
+            .cell_pick_mut()
+            .and_then(|c| c.as_ref())
+            .and_then(|p| p.sel)
+            .is_some();
+        ui.horizontal(|ui| {
+            if in_cell_pick && ui.button("Back").clicked() {
+                back = true;
+            }
+            if ui.button("Cancel").clicked() {
+                cancel = true;
+            }
+            let save_enabled = !in_cell_pick || cell_has_sel;
+            if ui
+                .add_enabled(save_enabled, egui::Button::new("Save"))
+                .clicked()
+            {
+                save = true;
+            }
         });
+    });
 
     if !open || cancel {
         *picker = ActivePicker::None;

@@ -1420,6 +1420,19 @@ mod tests {
             &macro_
         )
         .unwrap());
+        macro_
+            .variables
+            .set("item", ScalarValue::String("Mistfall Hunter".into()));
+        assert!(eval_clauses(
+            MatchMode::All,
+            &[sqyre_domain::ConditionClause {
+                left: ScalarValue::String("${item}".into()),
+                operator: ConditionOperator::Equals,
+                right: ScalarValue::String("Mistfall Hunter".into()),
+            }],
+            &macro_
+        )
+        .unwrap());
         assert!(eval_clauses(
             MatchMode::All,
             &[

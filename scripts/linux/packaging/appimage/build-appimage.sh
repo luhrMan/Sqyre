@@ -127,7 +127,7 @@ run_docker() {
   echo "Building AppImage v${APP_VERSION} (docker: $IMAGE, CARGO_HOME=$CARGO_HOME_REL)…"
   docker run --rm \
     -u "$(id -u):$(id -g)" \
-    -v "$(docker_host_path "$REPO_ROOT"):/workspace" -w /workspace \
+    -v "$(docker_host_path "$REPO_ROOT"):/workspace$(docker_bind_selinux_z)" -w /workspace \
     -e HOME=/tmp \
     -e "CARGO_HOME=/workspace/$CARGO_HOME_REL" \
     -e CARGO_TARGET_DIR=/workspace/target \

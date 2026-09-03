@@ -12,6 +12,7 @@ pub const IMAGE_SEARCH_BUILTIN_VARS: &[&str] = &[
     "Cols",
     "Rows",
     "ItemName",
+    "VariantName",
     "ImagePixelWidth",
     "ImagePixelHeight",
 ];
@@ -22,6 +23,7 @@ const IMAGE_SEARCH_BUILTIN_DESCS: &[&str] = &[
     "Column count of the matched grid (Image Search)",
     "Row count of the matched grid (Image Search)",
     "Name of the matched item (Image Search)",
+    "Name of the matched icon variant, or empty for the default (Image Search)",
     "Template image width in pixels (Image Search)",
     "Template image height in pixels (Image Search)",
 ];

@@ -4,7 +4,7 @@ const WINDOW_TITLE: &str = "Data Editor";
 
 mod form_state;
 mod forms;
-mod helpers;
+pub(crate) mod helpers;
 mod lists;
 mod overlay;
 mod persist;
@@ -21,7 +21,7 @@ use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::status_banner::StatusBanner;
 use eframe::egui;
-use helpers::{overlay_hex_or_empty, rgba_color};
+use helpers::{editor_program_names, is_editor_listed_program, overlay_hex_or_empty, rgba_color};
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
@@ -328,9 +328,11 @@ impl DataEditor {
         ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, area_id));
     }
 
-    /// Live Overlay-tab form as an on-screen button preview (position, size, icon, label, style).
+    /// Live Overlay-tab form as an on-screen button preview (position, size, icon, style).
     ///
     /// Shown while a button is selected for editing, even before Update is clicked.
+    /// Called from `sync_macro_overlay` when `overlay-buttons` is enabled.
+    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
     pub fn overlay_edit_preview(&self) -> Option<OverlayButtonConfig> {
         if !self.open || !matches!(self.tab, EditorTab::Overlay) {
             return None;
@@ -340,7 +342,6 @@ impl DataEditor {
             id.clone(),
             self.selected_program.clone().unwrap_or_default(),
         );
-        btn.label = self.form_name.clone();
         btn.macro_name = self.form_overlay_macro.clone();
         btn.enabled = self.form_overlay_enabled;
         btn.icon = self.form_overlay_icon.clone();
@@ -350,6 +351,42 @@ impl DataEditor {
         btn.size = self.form_overlay_size;
         self.apply_overlay_style_to_config(&mut btn);
         Some(btn)
+    }
+
+    /// True while the Data Editor Overlay tab is open (drag-to-relocate mode).
+    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
+    pub fn overlay_relocate_mode(&self) -> bool {
+        self.open && matches!(self.tab, EditorTab::Overlay)
+    }
+
+    /// Apply desktop positions from overlay drag-relocate; clears catalog point refs.
+    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
+    pub fn apply_overlay_relocations(
+        &mut self,
+        settings: &mut UserSettings,
+        moves: impl IntoIterator<Item = (String, i32, i32)>,
+    ) {
+        let mut dirty = false;
+        for (id, x, y) in moves {
+            let xf = x as f32;
+            let yf = y as f32;
+            if let Some(btn) = settings.overlay_buttons.iter_mut().find(|b| b.id == id) {
+                btn.point.clear();
+                btn.x = xf;
+                btn.y = yf;
+                dirty = true;
+            }
+            if self.selected_entity.as_deref() == Some(id.as_str())
+                && matches!(self.tab, EditorTab::Overlay)
+            {
+                self.form_overlay_point.clear();
+                self.form_overlay_x = xf;
+                self.form_overlay_y = yf;
+            }
+        }
+        if dirty {
+            let _ = self.persist_overlay_settings(settings);
+        }
     }
 
     pub(crate) fn apply_overlay_style_to_config(&self, btn: &mut OverlayButtonConfig) {
@@ -416,7 +453,7 @@ impl DataEditor {
         self.request_open(ctx);
         self.switch_tab(tab, catalog, settings);
         if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
-            if let Some(name) = catalog.program_names().next() {
+            if let Some(name) = editor_program_names(catalog).next() {
                 self.select_program(name, catalog, settings);
             }
         }
@@ -464,19 +501,32 @@ impl DataEditor {
         if !self.open {
             return;
         }
+        if self
+            .selected_program
+            .as_deref()
+            .is_some_and(|n| !is_editor_listed_program(n))
+        {
+            self.selected_program = None;
+            self.clear_entity_selection();
+        }
         self.poll_screen_click(env, previews);
         let mut open = self.open;
         let ctx = env.ctx;
-        egui::Window::new(WINDOW_TITLE)
-            .open(&mut open)
-            .default_size([880.0, 560.0])
-            .min_size([520.0, 280.0])
-            // No huge max_size — egui auto-expands toward max when content min_size ratchets.
-            .resizable(true)
-            .constrain(true)
-            .show(ctx, |ui| {
-                self.ui(ui, env, selected_macro, previews);
-            });
+        // Bounds only — this pane allocates body/footer and owns its ScrollAreas.
+        // An outer window scroll (fit_dialog_window) caused intermittent H bars and
+        // clipped header buttons when children claimed available_width as min_width.
+        crate::widgets::fit_dialog_popup(
+            egui::Window::new(WINDOW_TITLE)
+                .open(&mut open)
+                .default_size([880.0, 560.0])
+                .min_size([520.0, 280.0])
+                // No huge max_size — egui auto-expands toward max when content min_size ratchets.
+                .resizable(true),
+            ctx,
+        )
+        .show(ctx, |ui| {
+            self.ui(ui, env, selected_macro, previews);
+        });
         self.open = open;
         self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings);
         self.draw_confirm(env, previews);

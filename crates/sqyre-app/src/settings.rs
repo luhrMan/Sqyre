@@ -259,18 +259,22 @@ impl SettingsUi {
             return;
         }
         let mut open = self.open;
-        egui::Window::new("User Settings")
-            .open(&mut open)
-            .default_size([680.0, 640.0])
-            .min_size([520.0, 360.0])
-            .resizable(true)
-            .constrain(true)
-            .show(ctx, |ui| {
-                #[cfg(not(target_arch = "wasm32"))]
-                self.ui(ui, ctx, db, macros, catalog, update);
-                #[cfg(target_arch = "wasm32")]
-                self.ui(ui, ctx, db, macros, catalog);
-            });
+        // Bounds only — settings owns sidebar/content ScrollAreas; outer window
+        // scroll produced phantom H bars when content claimed available_width.
+        crate::widgets::fit_dialog_popup(
+            egui::Window::new("User Settings")
+                .open(&mut open)
+                .default_size([680.0, 640.0])
+                .min_size([520.0, 360.0])
+                .resizable(true),
+            ctx,
+        )
+        .show(ctx, |ui| {
+            #[cfg(not(target_arch = "wasm32"))]
+            self.ui(ui, ctx, db, macros, catalog, update);
+            #[cfg(target_arch = "wasm32")]
+            self.ui(ui, ctx, db, macros, catalog);
+        });
         self.open = open;
         if self.dirty {
             self.persist();
@@ -1109,7 +1113,7 @@ impl SettingsUi {
                     "Compact program headers with icons",
                 )
                 .on_hover_text(
-                    "When a program has a process icon, list headers show only the icon and child count (name on hover).",
+                    "When a program has a process icon, list headers show only the icon with the child count on the right (name on hover).",
                 )
                 .changed()
         {
@@ -1270,6 +1274,7 @@ const SECTION_PERMISSIONS: &[&str] = &[
     "portal",
     "wayland",
     "access",
+    "revoke",
 ];
 const SECTION_DATA: &[&str] = &["data", "folder", "backup", "restore", "archive"];
 #[cfg(not(target_arch = "wasm32"))]
@@ -1327,6 +1332,7 @@ const PERMISSIONS_PANEL: &[&str] = &[
     "portal",
     "wayland",
     "evdev",
+    "revoke",
 ];
 
 const DATA_LOCATION: &[&str] = &[

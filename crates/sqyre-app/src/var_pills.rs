@@ -536,11 +536,22 @@ pub fn var_name_text_edit(
 }
 
 /// Trailing error/warning icon. Errors take priority.
+///
+/// Uses Phosphor glyphs (Proportional fallback) — emoji ✕/⚠ often render as
+/// missing-glyph tofu with the Ubuntu/Hack chain.
 pub fn paint_entry_validation_icon(ui: &mut egui::Ui, v: &EntryValidation) {
     let (glyph, color, tip) = if !v.error.is_empty() {
-        ("✕", Color32::from_rgb(220, 70, 70), v.error.as_str())
+        (
+            egui_phosphor::regular::X_CIRCLE,
+            Color32::from_rgb(220, 70, 70),
+            v.error.as_str(),
+        )
     } else if !v.warning.is_empty() {
-        ("⚠", Color32::from_rgb(220, 170, 40), v.warning.as_str())
+        (
+            egui_phosphor::regular::WARNING,
+            Color32::from_rgb(220, 170, 40),
+            v.warning.as_str(),
+        )
     } else {
         return;
     };

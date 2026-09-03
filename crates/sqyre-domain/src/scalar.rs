@@ -1,6 +1,7 @@
 //! Scalar values and coordinate refs (serde wire: untagged YAML scalars / strings).
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use std::path::Path;
 
 /// Operand / count / time value: literal number or string (often `${var}`).
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -115,6 +116,21 @@ impl ScalarValue {
 
 /// Delimiter between program and entity in coordinate / target refs.
 pub const PROGRAM_DELIMITER: &str = "~";
+
+/// Variant suffix from an icon path stem relative to `item`.
+///
+/// `Item.png` → `""`; `Item~Blue.png` → `"Blue"`. Stems that do not follow the
+/// `item` / `item~…` convention return the raw stem (tests / ad-hoc paths).
+pub fn variant_name_from_path(path: &Path, item: &str) -> String {
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return String::new();
+    };
+    if stem == item {
+        return String::new();
+    }
+    let prefix = format!("{item}{PROGRAM_DELIMITER}");
+    stem.strip_prefix(&prefix).unwrap_or(stem).to_string()
+}
 
 /// Coordinate / search-area reference: `program~entity` or legacy name string.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -267,5 +283,16 @@ mod tests {
             let de: ScalarValue = serde_yaml::from_value(ser).unwrap();
             assert_eq!(de, v);
         }
+    }
+
+    #[test]
+    fn variant_name_from_path_default_and_named() {
+        use std::path::Path;
+        assert_eq!(variant_name_from_path(Path::new("Item.png"), "Item"), "");
+        assert_eq!(
+            variant_name_from_path(Path::new("Item~Blue.png"), "Item"),
+            "Blue"
+        );
+        assert_eq!(variant_name_from_path(Path::new("v2.png"), "Item"), "v2");
     }
 }

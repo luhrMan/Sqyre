@@ -1,0 +1,81 @@
+---
+description: Prevent egui Window width/height from ratcheting open forever
+globs: crates/sqyre-app/**/*.rs, crates/sqyre-overlay/**/*.rs
+alwaysApply: false
+---
+
+# egui Window size ratchet
+
+egui [`Window`]s **auto-expand to content `min_size` and never shrink**. Sqyre dialogs use `fit_dialog_window` / `fit_dialog_popup`, which set `max_size` to the screen constrain rect. Content that treats `available_width()` / `available_height()` as a **minimum** therefore grows the window every frame until it hits the screen edge.
+
+## Do not
+
+```rust
+// ❌ claims available as min_size → window grows toward max_size
+ui.set_width(ui.available_width());
+ui.set_min_width(ui.available_width());
+ui.allocate_ui(egui::vec2(ui.available_width(), h), |ui| { ... });
+
+ui.add(egui::TextEdit::singleline(s).desired_width(ui.available_width())); // + siblings
+
+let cols = (ui.available_width() / cell).floor() as usize; // before ScrollArea
+egui::ScrollArea::vertical()
+    .auto_shrink([false, false]) // claims full available as min without max_*
+    .show(ui, |ui| { grid with cols });
+```
+
+## Do
+
+```rust
+// ✅ Window: bounds only when the body owns its ScrollArea
+crate::widgets::fit_dialog_popup(window.resizable(true).default_size([420.0, 480.0]), ctx)
+    // optional: tighter than full screen so a layout bug cannot fill the monitor
+    .max_size(egui::vec2(constrain.x.min(720.0), constrain.y.min(900.0)));
+
+// ✅ Pin content to the Resize region (prevents min_size > window)
+crate::widgets::fill_resize_body(ui, |ui| { /* … */ });
+
+// ✅ Fill leftover width without an absolute min_width
+ui.add(egui::TextEdit::singleline(s).desired_width(f32::INFINITY));
+
+// ✅ ScrollArea: viewport-capped; shrink width to content so Resize can shrink
+egui::ScrollArea::vertical()
+    .max_width(ui.available_width())
+    .max_height(ui.available_height())
+    .auto_shrink([true, false]) // NOT [false, false]
+    .show(ui, |ui| {
+        ui.horizontal_wrapped(|ui| { /* fixed-size cells */ });
+    });
+```
+
+Prefer `fill_resize_body`, `auto_shrink([true, …])`, and `desired_width(INFINITY)`.
+
+## Helpers
+
+| Helper | Use |
+|--------|-----|
+| `fill_resize_body` | Window body that must fill but stay resizable |
+| `visible_width` / `visible_height` / `visible_size` | Layout budget from clip ∩ max_rect |
+| `popup_scroll_max_height` | Scroll pane height that will not ratchet |
+
+`sqyre-overlay` cannot import `sqyre-app`; keep picker layout local (see `icons.rs`).
+
+## Why it feels like “forever”
+
+1. Child min_size ≥ available (fill widgets, grid columns, TextEdit + siblings).
+2. Window expands to that min_size (Resize never auto-shrinks).
+3. Next frame available is larger → repeat until `max_size` (almost full screen).
+4. A vertical scrollbar that appears after layout also steals width; a grid sized *before* the scrollbar then overflows and grows again.
+5. Once content min_size equals the current window size, **Resize cannot shrink** — it feels “stuck”.
+
+When changing dialog layout, prefer `fill_resize_body` + `set_max_*` over `set_min_width(available)` / `set_width(available)`.
+
+
+## Why it feels like “forever”
+
+1. Child min_size ≥ available (fill widgets, grid columns, TextEdit + siblings).
+2. Window expands to that min_size (Resize never auto-shrinks).
+3. Next frame available is larger → repeat until `max_size` (almost full screen).
+4. A vertical scrollbar that appears after layout also steals width; a grid sized *before* the scrollbar then overflows and grows again.
+
+When changing dialog layout, prefer `set_max_*` + justified layouts over `set_min_width(available)` / `set_width(available)`.

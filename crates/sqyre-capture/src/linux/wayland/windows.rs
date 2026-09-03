@@ -160,7 +160,9 @@ fn merge_window_lists(
     let mut out: Vec<WindowInfo> = Vec::new();
     for list in lists {
         for w in list.as_ref() {
-            if w.title.trim() == x11_focus::OVERLAY_WM_TITLE {
+            if w.title.trim() == x11_focus::OVERLAY_WM_TITLE
+                || w.title.trim() == x11_focus::OVERLAY_TIP_WM_TITLE
+            {
                 continue;
             }
             if let Some(existing) = out.iter_mut().find(|e| same_window(e, w)) {

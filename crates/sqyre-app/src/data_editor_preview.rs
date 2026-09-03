@@ -3,7 +3,7 @@ use crate::image_view::{self, ImageViewTransform};
 use crate::theme;
 use crate::var_pills;
 use eframe::egui;
-use sqyre_domain::{KnownVariableNames, PROGRAM_DELIMITER};
+use sqyre_domain::KnownVariableNames;
 use sqyre_validate::EntryValidation;
 
 pub(crate) fn paint_preview_toolbar(
@@ -241,14 +241,7 @@ pub(crate) fn paint_preview_coord_chip(
 }
 
 pub(crate) fn variant_name_from_path(path: &std::path::Path, item: &str) -> String {
-    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-        return String::new();
-    };
-    if stem == item {
-        return String::new();
-    }
-    let prefix = format!("{item}{PROGRAM_DELIMITER}");
-    stem.strip_prefix(&prefix).unwrap_or(stem).to_string()
+    sqyre_domain::variant_name_from_path(path, item)
 }
 
 pub(crate) fn variant_display_label(name: &str) -> &str {

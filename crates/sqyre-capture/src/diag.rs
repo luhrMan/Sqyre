@@ -8,8 +8,13 @@
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use web_time::{SystemTime, UNIX_EPOCH};
+
+/// Set at the start of process quit so Drop paths can skip blocking joins
+/// (portal session Close, tray D-Bus unregister, kick/overlay thread joins).
+static PROCESS_EXITING: AtomicBool = AtomicBool::new(false);
 
 /// Overwritten single-line file: last code site before a hard abort.
 pub const LAST_SITE_FILE: &str = "last_site.txt";
@@ -71,10 +76,20 @@ pub fn log_dir() -> PathBuf {
     }
 }
 
-fn stamp() -> u64 {
+/// Mark that the process is quitting. Blocking teardown should detach/abandon.
+pub fn set_process_exiting() {
+    PROCESS_EXITING.store(true, Ordering::SeqCst);
+}
+
+/// True after [`set_process_exiting`] (title-bar close, tray Quit, or `SqyreApp` Drop).
+pub fn process_exiting() -> bool {
+    PROCESS_EXITING.load(Ordering::SeqCst)
+}
+
+fn stamp() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_millis())
         .unwrap_or(0)
 }
 
@@ -83,6 +98,9 @@ fn ensure_parent(path: &Path) {
         let _ = fs::create_dir_all(parent);
     }
 }
+
+/// Append-only site trail (quit overwrites [`LAST_SITE_FILE`]; this keeps history).
+pub const SITE_HIST_FILE: &str = "site_hist.txt";
 
 /// Record the current code site (memory + [`LAST_SITE_FILE`] always).
 pub fn mark_site(site: &str) {
@@ -101,6 +119,11 @@ pub fn mark_site(site: &str) {
     {
         let _ = f.write_all(file_line.as_bytes());
         let _ = f.flush();
+    }
+    // Always append a short trail so tray/quit cannot erase the freeze breadcrumb.
+    let hist = log_dir().join(SITE_HIST_FILE);
+    if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&hist) {
+        let _ = f.write_all(file_line.as_bytes());
     }
 }
 

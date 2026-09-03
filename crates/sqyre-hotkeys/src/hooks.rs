@@ -55,19 +55,17 @@ pub fn linux_uses_evdev_grab() -> bool {
         .is_some_and(|s| !s.is_empty())
 }
 
-/// Whether the current user can access evdev (`input` group on Wayland).
+/// Whether `/dev/input` event nodes are readable (logind seat ACL and/or `input` group).
+///
+/// Do **not** gate on `id -Gn` containing `input`: Toolbx and some Atomic hosts grant
+/// access via ACLs while the container's group list omits `input`.
 #[cfg(target_os = "linux")]
-pub fn linux_in_input_group() -> bool {
-    let Ok(out) = std::process::Command::new("id").arg("-Gn").output() else {
-        return false;
-    };
-    String::from_utf8_lossy(&out.stdout)
-        .split_whitespace()
-        .any(|g| g == "input")
+pub fn linux_can_open_evdev() -> bool {
+    crate::linux_evdev::can_open_devices()
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn linux_in_input_group() -> bool {
+pub fn linux_can_open_evdev() -> bool {
     true
 }
 
@@ -128,6 +126,12 @@ impl HookCtx {
                 if let Some(btn) = record_button(*button) {
                     self.macro_record.on_button(btn, false);
                 }
+                if matches!(button, Button::Left)
+                    && self.screen_click.is_armed()
+                    && !self.screen_click.block_hook_clicks()
+                {
+                    self.screen_click.on_left_release();
+                }
             }
             EventType::KeyPress(key) => {
                 if let Some(name) = rdev_key_name(*key) {
@@ -177,10 +181,11 @@ impl HookCtx {
 fn run_hook_loop(mut ctx: HookCtx) {
     #[cfg(target_os = "linux")]
     if linux_uses_evdev_grab() {
-        if !linux_in_input_group() {
+        if !linux_can_open_evdev() {
             eprintln!(
-                "sqyre-hotkeys: evdev watch skipped (user not in 'input' group). \
-                 Global hotkeys and macro recording need: sudo usermod -aG input $USER, then re-login."
+                "sqyre-hotkeys: evdev watch skipped (cannot open /dev/input). \
+                 Global hotkeys need seat access to input devices (logind ACL), or: \
+                 sudo usermod -aG input $USER, then re-login."
             );
             return;
         }
@@ -193,7 +198,7 @@ fn run_hook_loop(mut ctx: HookCtx) {
             Err(e) => {
                 eprintln!(
                     "sqyre-hotkeys: evdev watch failed ({e}). \
-                     Add your user to the 'input' group and re-login: sudo usermod -aG input $USER"
+                     Ensure /dev/input is readable (seat ACL or: sudo usermod -aG input $USER, then re-login)"
                 );
             }
         }
@@ -255,6 +260,6 @@ mod tests {
     fn wayland_detection_from_env() {
         // Do not mutate env in parallel tests; just ensure the helper is callable.
         let _ = linux_uses_evdev_grab();
-        let _ = linux_in_input_group();
+        let _ = linux_can_open_evdev();
     }
 }

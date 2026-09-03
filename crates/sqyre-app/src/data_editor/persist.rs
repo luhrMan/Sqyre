@@ -1,6 +1,6 @@
 //! Create / update / delete / persist catalog entities.
 
-use super::helpers::{new_overlay_button_id, parse_i32, unique_name};
+use super::helpers::{is_editor_listed_program, new_overlay_button_id, parse_i32, unique_name};
 use super::{DataEditor, DataEditorCtx, EditorTab, PendingConfirm};
 use crate::overlay_icons;
 use crate::preview_tooltip::PreviewTooltipCache;
@@ -47,17 +47,23 @@ impl DataEditor {
         self.save_after_record = false;
         let created = match self.tab {
             EditorTab::Programs => {
-                let name =
-                    new_entity_name(&self.form_name, "New Program", |n| catalog.get(n).is_some());
-                match catalog.create_program(&name) {
-                    Ok(()) => {
-                        self.selected_program = Some(name.clone());
-                        self.form_name = name;
-                        self.form_process_path.clear();
-                        self.form_window_title.clear();
-                        Ok("Created program.")
+                let requested = self.form_name.trim();
+                if !requested.is_empty() && !is_editor_listed_program(requested) {
+                    Err("That name is reserved for recording.".into())
+                } else {
+                    let name = new_entity_name(&self.form_name, "New Program", |n| {
+                        catalog.get(n).is_some()
+                    });
+                    match catalog.create_program(&name) {
+                        Ok(()) => {
+                            self.selected_program = Some(name.clone());
+                            self.form_name = name;
+                            self.form_process_path.clear();
+                            self.form_window_title.clear();
+                            Ok("Created program.")
+                        }
+                        Err(e) => Err(e.to_string()),
                     }
-                    Err(e) => Err(e.to_string()),
                 }
             }
             EditorTab::Items => {
@@ -246,7 +252,7 @@ impl DataEditor {
                 }
             }
             EditorTab::ScreenCap => {
-                self.set_err("Use Save on the ScreenCap tab to capture the preview region.");
+                self.set_err("Use Save on the ScreenCap tab to write the preview screenshot.");
                 return;
             }
             EditorTab::PixelCheck => {
@@ -271,9 +277,6 @@ impl DataEditor {
                 btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;
                 if let Some(first) = macros.first() {
                     btn.macro_name = first.name.clone();
-                    btn.label = first.name.clone();
-                } else {
-                    btn.label = format!("Button {}", n + 1);
                 }
                 let id = btn.id.clone();
                 settings.overlay_buttons.push(btn);

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Instrument pure crates with llvm-cov and fail when line coverage drops below floors.
+# Fail when pure-crate line coverage drops below floors in coverage-floors.json.
 # OS-specific crates (sqyre-capture, etc.) are intentionally excluded.
+#
+# Default: run a small instrumented llvm-cov pass over pure crates.
+# Set COVERAGE_REPORT_JSON to a prior `llvm-cov report --json` file (e.g. from
+# `make coverage`) to skip re-instrumenting.
 set -euo pipefail
 
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -11,30 +15,40 @@ cd "$REPO_ROOT"
 CARGO="${CARGO:-cargo}"
 CONFIG="${COVERAGE_FLOORS_CONFIG:-$_here/coverage-floors.json}"
 
-if ! "$CARGO" llvm-cov --version >/dev/null 2>&1; then
-	echo "cargo-llvm-cov not found. Install with:" >&2
-	echo "  rustup component add llvm-tools-preview" >&2
-	echo "  cargo install cargo-llvm-cov --locked" >&2
-	exit 1
-fi
-
 if [[ ! -f "$CONFIG" ]]; then
 	echo "coverage floor config not found: $CONFIG" >&2
 	exit 1
 fi
 
-REPORT_JSON="$(mktemp)"
-trap 'rm -f "$REPORT_JSON"' EXIT
-
-echo "Running llvm-cov for pure crates (sqyre-domain, sqyre-varref, sqyre-persist, sqyre-serialize, sqyre-validate, sqyre-executor)..."
-"$CARGO" llvm-cov \
-	-p sqyre-domain \
-	-p sqyre-varref \
-	-p sqyre-persist \
-	-p sqyre-serialize \
-	-p sqyre-validate \
-	-p sqyre-executor \
-	--json --summary-only --output-path "$REPORT_JSON" -q
+REPORT_JSON=""
+CLEANUP_REPORT=0
+if [[ -n "${COVERAGE_REPORT_JSON:-}" ]]; then
+	if [[ ! -f "$COVERAGE_REPORT_JSON" ]]; then
+		echo "COVERAGE_REPORT_JSON not found: $COVERAGE_REPORT_JSON" >&2
+		exit 1
+	fi
+	REPORT_JSON="$COVERAGE_REPORT_JSON"
+	echo "Reusing coverage report: $REPORT_JSON"
+else
+	if ! "$CARGO" llvm-cov --version >/dev/null 2>&1; then
+		echo "cargo-llvm-cov not found. Install with:" >&2
+		echo "  rustup component add llvm-tools-preview" >&2
+		echo "  cargo install cargo-llvm-cov --locked" >&2
+		exit 1
+	fi
+	REPORT_JSON="$(mktemp)"
+	CLEANUP_REPORT=1
+	trap '[[ "$CLEANUP_REPORT" -eq 1 ]] && rm -f "$REPORT_JSON"' EXIT
+	echo "Running llvm-cov for pure crates (sqyre-domain, sqyre-varref, sqyre-persist, sqyre-serialize, sqyre-validate, sqyre-executor)..."
+	"$CARGO" llvm-cov \
+		-p sqyre-domain \
+		-p sqyre-varref \
+		-p sqyre-persist \
+		-p sqyre-serialize \
+		-p sqyre-validate \
+		-p sqyre-executor \
+		--json --summary-only --output-path "$REPORT_JSON" -q
+fi
 
 python3 - "$REPORT_JSON" "$CONFIG" <<'PY'
 import json

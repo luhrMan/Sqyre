@@ -22,6 +22,8 @@ pub mod docs_fixture;
 mod egui_keys;
 mod file_dialogs;
 mod hotkey_record;
+#[cfg(not(target_arch = "wasm32"))]
+mod hotkey_wake;
 mod icon_cache;
 mod icon_variants;
 mod image_view;
@@ -30,10 +32,15 @@ mod key_record;
 mod linux_focused_keys;
 mod log;
 mod macro_meta;
-#[cfg(feature = "native-runtime")]
-mod macro_overlay;
 mod macro_record;
-mod overlay_icons;
+/// Phosphor overlay icon catalog + paint helpers (lives in `sqyre-overlay`).
+#[allow(unused_imports)] // re-export surface for `crate::overlay_icons::…`
+mod overlay_icons {
+    pub use sqyre_overlay::{
+        catalog, glyph_font_id, register_phosphor_family, resolve, show_icon_picker_grid,
+        style_preview_button, OverlayIcon, OverlayPaintStyle, DEFAULT_ICON_ID,
+    };
+}
 mod paint_ctx;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod permissions_panel;
@@ -167,7 +174,7 @@ pub fn run() -> eframe::Result<()> {
         #[cfg(feature = "native-runtime")]
         sqyre_capture::note("ui: X11/XWayland event loop (tray hide + overlay Alt-Tab)");
     }
-    eframe::run_native(
+    let result = eframe::run_native(
         assets::APP_ID,
         options,
         Box::new(move |cc| {
@@ -179,7 +186,10 @@ pub fn run() -> eframe::Result<()> {
             app.tray = tray::SystemTray::install(cc.egui_ctx.clone(), cc.winit_window().cloned());
             Ok(Box::new(app))
         }),
-    )
+    );
+    #[cfg(feature = "native-runtime")]
+    sqyre_capture::mark_site("app:run_native:returned");
+    result
 }
 
 /// Handle `--version` / `--help` before starting the GUI.
@@ -264,7 +274,7 @@ pub struct SqyreApp {
     recording_overlay: crate::recording_overlay::RecordingOverlay,
     /// Always-on-top floating buttons that start macros.
     #[cfg(feature = "native-runtime")]
-    macro_overlay: crate::macro_overlay::MacroOverlay,
+    macro_overlay: sqyre_overlay::MacroOverlay,
     /// Left macro-list side panel visibility.
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
@@ -348,10 +358,7 @@ impl SqyreApp {
                 std::process::exit(0);
             }),
             on_macro_hotkey: Arc::new(move |name| {
-                pending_for_cb.lock().push(name);
-                if let Some(ctx) = repaint_for_cb.lock().as_ref() {
-                    ctx.request_repaint();
-                }
+                crate::hotkey_wake::queue_macro_hotkey(&pending_for_cb, &repaint_for_cb, name);
             }),
         };
         #[cfg(all(
@@ -476,7 +483,7 @@ impl SqyreApp {
                 save_error: None,
                 selected_macro: 0,
                 macro_meta: MacroMetaUi::default(),
-                hotkey_tag_filter: None,
+                hotkey_tag_filter: settings_ui.settings().hotkey_tag_filter.clone(),
             },
             run_session: RunSession {
                 state: run,
@@ -508,7 +515,7 @@ impl SqyreApp {
             #[cfg(feature = "native-runtime")]
             recording_overlay: recording_overlay::RecordingOverlay::new(),
             #[cfg(feature = "native-runtime")]
-            macro_overlay: macro_overlay::MacroOverlay::new(),
+            macro_overlay: sqyre_overlay::MacroOverlay::new(),
             macro_list_open: true,
             macro_list_filter: String::new(),
             tray: tray::SystemTray::default(),
@@ -625,8 +632,24 @@ impl SqyreApp {
 
 impl eframe::App for SqyreApp {
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = (ctx, frame);
+        }
         #[cfg(not(target_arch = "wasm32"))]
         self.tray.poll_commands(ctx, frame);
+        // Unmap as soon as the WM asks to close so portal/tray/wgpu teardown
+        // is not user-visible (Drop alone was finishing in <1s while the window
+        // stayed up for ~2s afterward).
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        if ctx.input(|i| i.viewport().close_requested()) {
+            sqyre_capture::set_process_exiting();
+            sqyre_capture::mark_site("app:close_requested");
+            if let Some(win) = frame.winit_window().or(self.tray.root_window()) {
+                win.set_visible(false);
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -637,8 +660,15 @@ impl eframe::App for SqyreApp {
         if self.hidden_for_recording
             && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed())
         {
+            // Poll grab/snapshot while the main window is unmapped. If the
+            // completing click lands this frame, fall through so visibility is
+            // restored and Data Editor can take the recorded point/area —
+            // otherwise the wake poller stops and the frozen cover stays up.
             self.sync_recording_overlay(ui.ctx());
-            return;
+            if self.screen_click.is_armed() || self.macro_record_bridge.is_armed() {
+                return;
+            }
+            self.update_recording_visibility(ui.ctx());
         }
         #[cfg(not(target_arch = "wasm32"))]
         if self.tray.application_hidden() {
@@ -701,7 +731,14 @@ impl eframe::App for SqyreApp {
 impl Drop for SqyreApp {
     fn drop(&mut self) {
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
-        sqyre_capture::mark_site("app:drop:start");
+        {
+            sqyre_capture::set_process_exiting();
+            sqyre_capture::mark_site("app:drop:start");
+            // Belt-and-suspenders if close_requested was missed (e.g. tray Quit).
+            if let Some(win) = self.tray.root_window() {
+                win.set_visible(false);
+            }
+        }
         #[cfg(not(target_arch = "wasm32"))]
         sqyre_input::release_held_inputs();
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
@@ -732,7 +769,7 @@ impl Drop for SqyreApp {
             sqyre_capture::mark_site("app:drop:after_tray");
 
             let t = web_time::Instant::now();
-            self.macro_overlay = macro_overlay::MacroOverlay::new();
+            self.macro_overlay = sqyre_overlay::MacroOverlay::new();
             sqyre_capture::cap_log(
                 "APP",
                 "drop",

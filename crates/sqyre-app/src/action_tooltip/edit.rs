@@ -647,17 +647,22 @@ fn targets_editor(
     picker: &mut ActivePicker,
 ) {
     ui.horizontal(|ui| {
+        let width = ui.available_width();
+        ui.set_min_width(width);
         help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
-        if ui
-            .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
-            .on_hover_text(h::IS_ITEMS)
-            .clicked()
-        {
-            *picker = ActivePicker::Items {
-                search: String::new(),
-                staged: targets.clone(),
-            };
-        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
+                .on_hover_text(h::IS_ITEMS)
+                .clicked()
+            {
+                *picker = ActivePicker::Items {
+                    search: String::new(),
+                    staged: targets.clone(),
+                };
+            }
+            ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
+        });
     });
     if targets.is_empty() {
         ui.label("(none)");
@@ -866,6 +871,35 @@ pub(super) fn scalar_field(
     );
     if text != before {
         *value = ScalarValue::parse_edit(&text);
+    }
+}
+
+/// Condition L/R operands: plain text (including spaces) is allowed; only
+/// arithmetic-looking values are expression-checked — same rules as Set value.
+fn condition_operand_field(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut ScalarValue,
+    known_vars: &KnownVariableNames,
+    is_dark: bool,
+    active_macro: Option<&Macro>,
+) {
+    let mut text = value.as_display();
+    let before = text.clone();
+    let validation = validate_set_variable_value(&text, active_macro);
+    var_pills::validated_var_ref_edit(
+        ui,
+        label,
+        &mut text,
+        known_vars,
+        is_dark,
+        W_VAR,
+        &validation,
+        help_text,
+    );
+    if text != before {
+        *value = ScalarValue::String(text);
     }
 }
 
@@ -1203,17 +1237,22 @@ fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
 }
 
 /// Header row for repeatable list editors. Returns true when `+` was clicked.
-fn list_header(ui: &mut egui::Ui, title: &str, add_help: &str) -> bool {
+fn list_header(ui: &mut egui::Ui, title: &str, count: usize, add_help: &str) -> bool {
     let mut add = false;
+    let width = ui.available_width();
     ui.horizontal(|ui| {
+        ui.set_min_width(width);
         ui.label(title);
-        if ui
-            .add(egui::Button::new(egui::RichText::new("+").color(theme::MACRO_START)).small())
-            .on_hover_text(add_help)
-            .clicked()
-        {
-            add = true;
-        }
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add(egui::Button::new(egui::RichText::new("+").color(theme::MACRO_START)).small())
+                .on_hover_text(add_help)
+                .clicked()
+            {
+                add = true;
+            }
+            ui.label(egui::RichText::new(format!("({count})")).weak());
+        });
     });
     add
 }
@@ -1225,7 +1264,7 @@ fn clauses_editor(
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
-    if list_header(ui, "Clauses", h::CLAUSE_ADD) {
+    if list_header(ui, "Clauses", clauses.len(), h::CLAUSE_ADD) {
         clauses.push(ConditionClause::default());
     }
     let mut remove: Option<usize> = None;
@@ -1233,7 +1272,7 @@ fn clauses_editor(
         // Unique id so each clause's "op" ComboBox is distinct (same label salt).
         ui.push_id(i, |ui| {
             ui.horizontal(|ui| {
-                scalar_field(
+                condition_operand_field(
                     ui,
                     "L",
                     h::CLAUSE_LEFT,
@@ -1243,7 +1282,7 @@ fn clauses_editor(
                     active_macro,
                 );
                 combo_condition_operator(ui, "op", h::CLAUSE_OP, &mut clause.operator);
-                scalar_field(
+                condition_operand_field(
                     ui,
                     "R",
                     h::CLAUSE_RIGHT,
@@ -1277,7 +1316,7 @@ pub(super) fn list_columns_editor(
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
-    if list_header(ui, "Sources", h::FOREACH_ADD_SOURCE) {
+    if list_header(ui, "Sources", sources.len(), h::FOREACH_ADD_SOURCE) {
         sources.push(ListColumn::default());
     }
     let mut remove: Option<usize> = None;
@@ -1336,7 +1375,7 @@ fn assignments_editor(
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
-    if list_header(ui, "Assignments", h::SET_ADD_ASSIGNMENT) {
+    if list_header(ui, "Assignments", assignments.len(), h::SET_ADD_ASSIGNMENT) {
         assignments.push(VariableAssignment::default());
     }
     let mut remove: Option<usize> = None;

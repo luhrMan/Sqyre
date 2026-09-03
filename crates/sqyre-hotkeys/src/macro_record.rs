@@ -2,19 +2,25 @@
 
 use parking_lot::Mutex;
 use std::collections::HashSet;
+#[cfg(feature = "hooks")]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
 /// Fast path for OS hooks: skip mouse-move work unless macro recording is armed.
+#[cfg(feature = "hooks")]
 static HOOK_WANTS_MOVES: AtomicBool = AtomicBool::new(false);
 
+#[cfg(feature = "hooks")]
 pub(crate) fn hook_wants_mouse_moves() -> bool {
     HOOK_WANTS_MOVES.load(Ordering::Relaxed)
 }
 
 fn sync_hook_wants_moves(armed: bool) {
+    #[cfg(feature = "hooks")]
     HOOK_WANTS_MOVES.store(armed, Ordering::Relaxed);
+    #[cfg(not(feature = "hooks"))]
+    let _ = armed;
 }
 
 /// Mouse button for recorded click events.

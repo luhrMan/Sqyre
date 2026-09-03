@@ -92,9 +92,11 @@ pub const LOOP_JUMP_MODE: &str =
 
 pub const MATCH_ALL: &str = "All clauses must pass. Uncheck to require any one.";
 pub const MAX_ITERATIONS: &str = "Hard stop for While (0 = use the default limit).";
-pub const CLAUSE_LEFT: &str = "Left side of the comparison (value or ${var}).";
+pub const CLAUSE_LEFT: &str =
+    "Left side of the comparison (text, ${var}, or expression). Spaces are allowed in text.";
 pub const CLAUSE_OP: &str = "Comparison operator.";
-pub const CLAUSE_RIGHT: &str = "Right side of the comparison (value or ${var}).";
+pub const CLAUSE_RIGHT: &str =
+    "Right side of the comparison (text, ${var}, or expression). Spaces are allowed in text.";
 pub const CLAUSE_ADD: &str = "Add another condition clause.";
 pub const CLAUSE_REMOVE: &str = "Remove this clause.";
 
@@ -220,8 +222,8 @@ pub const DE_COLLECTION_COLS: &str = "Number of columns in the collection grid."
 pub const DE_ATLAS_MEMBERS: &str =
     "Collections included in this Atlas. Neighbors are derived from their on-screen positions.";
 pub const DE_MASK_SHAPE: &str = "Rectangle or circle geometry for the mask.";
-pub const DE_OVERLAY_LABEL: &str = "Text shown on the overlay button.";
-pub const DE_OVERLAY_MACRO: &str = "Macro launched when the overlay button is clicked.";
+pub const DE_OVERLAY_MACRO: &str =
+    "Macro launched when the overlay button is clicked (also used as the button name).";
 pub const DE_OVERLAY_ENABLED: &str =
     "When off, this button is hidden from the screen (still editable in the detail form).";
 pub const DE_OVERLAY_POINT: &str =

@@ -1,5 +1,6 @@
 //! Shared chord-record modal chrome for key and hotkey capture.
 
+use crate::widgets::fit_dialog_popup;
 use eframe::egui;
 use sqyre_hotkeys::{chord_fully_released, MacroHotkeyBridge};
 use std::collections::HashSet;
@@ -10,11 +11,14 @@ pub(crate) fn record_modal(
     title: &str,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
-    egui::Window::new(title)
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .show(ctx, add_contents);
+    fit_dialog_popup(
+        egui::Window::new(title)
+            .collapsible(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]),
+        ctx,
+    )
+    .show(ctx, add_contents);
 }
 
 /// Waiting-for-release step: resume hotkeys when chord is up, else show hint.
