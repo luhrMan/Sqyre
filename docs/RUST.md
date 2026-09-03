@@ -57,7 +57,7 @@ make test            # cargo nextest (falls back to cargo test)
 make smoke           # debug bin/sqyre --version
 make bench           # criterion (match / vision / serialize; not CI)
 make wasm-check      # cargo check wasm32 sqyre-app --no-default-features
-make coverage        # llvm-cov HTML + lcov under target/coverage/
+make coverage        # llvm-cov nextest → HTML + lcov + summary.json under target/coverage/
 make run             # cargo run -p sqyre-app; loads ~/.sqyre/db.yaml
 make appimage        # fmt + check, then Linux AppImage
 make wasm            # fmt + check, then bin/wasm/ GUI-only browser editor

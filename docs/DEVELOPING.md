@@ -47,6 +47,7 @@ Build caches (all gitignored):
 | `target/` | Incremental compile artifacts (host + docker bind-mount; Windows under `target/x86_64-pc-windows-gnu/`) |
 | `.cargo-home/` | Optional workspace-local cargo/rustup install |
 | `.cache/cargo/` | Cargo registry/git cache used by CI and docker AppImage / Windows builds |
+| `.cache/sccache-linux/` | sccache rustc cache for Linux CI (`test` / `build-linux` / `build-wasm`) |
 | `.cache/sccache-windows/` | sccache rustc cache for `make windows` (Linux/CI bind mount) |
 | Docker volumes `sqyre-windows-*` | Windows cross cargo/target/sccache when the repo is on a Docker Desktop Windows path |
 | Dev container volume `sqyre-cargo-home` | Persistent `/home/vscode/.cargo` in the container |
@@ -71,7 +72,7 @@ Build caches (all gitignored):
 | `smoke` | Debug `bin/sqyre --version` (no display) |
 | `bench` | Criterion benches for `sqyre-match`, `sqyre-vision`, `sqyre-serialize` (local only; not CI) |
 | `wasm-check` | `cargo check` of the GUI-only WASM editor (no Trunk) |
-| `coverage` | llvm-cov HTML + `lcov.info` under `target/coverage/` (report only; no % gate) |
+| `coverage` | llvm-cov nextest → HTML + `lcov.info` + `summary.json` under `target/coverage/` (no % gate) |
 | `coverage-floors` | Line-coverage floors for pure crates (`sqyre-domain`, `sqyre-varref`, `path_confine`, `migrate`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`, `sqyre-executor`; see `scripts/coverage-floors.json`) |
 | `run` | `cargo run -p sqyre-app` |
 | `docs-media` | Regenerate `docs/images/` screenshots |
@@ -118,7 +119,7 @@ Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make rel
 
 ### CI and GitHub Releases
 
-Push/PR to `main` runs Linux tests (including `make smoke` / `sqyre --version` and `make wasm-check`) and a Windows job that tests OS-agnostic crates (`sqyre-domain`, `sqyre-varref`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`) — **not** a GitHub Release. Capture, hotkeys, and GPU UI tests stay Linux-only. Criterion benches (`make bench`) are local-only.
+Push/PR to `main` runs Linux quality checks, an instrumented coverage/test pass (`make coverage` + floors), `make smoke` / `sqyre --version`, and `make wasm-check`, plus a Windows job that tests OS-agnostic crates (`sqyre-domain`, `sqyre-varref`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`) — **not** a GitHub Release. Capture, hotkeys, and GPU UI tests stay Linux-only. Criterion benches (`make bench`) are local-only.
 
 Releases come from [`.github/workflows/main.yml`](../.github/workflows/main.yml) on **schedule** or **manual dispatch** only:
 
@@ -151,9 +152,10 @@ CI caches (shared where possible):
 |-------|-----------|--------|
 | Cargo registry (`.cache/cargo`) | All Linux jobs | One key on `Cargo.lock`; warmed once per run via `cargo-registry` |
 | Cargo `target/` | Per triple | `linux` / `windows-gnu` / `wasm32` / macOS — not cross-shareable |
+| Linux sccache (`.cache/sccache-linux`) | `test`, `build-linux`, `build-wasm` | rustc outputs across clippy / coverage / release / wasm |
 | Linux build image | `test`, `build-linux`, `build-wasm` | Content-hash tag on GHCR + Buildx layers; built once per run |
 | Windows cross image | `build-windows` (+ local `make windows`) | Content-hash tag on GHCR + Buildx layers |
-| Windows sccache | `build-windows` | Separate from Cargo target |
+| Windows sccache | `build-windows` | Separate from Cargo target and Linux sccache |
 | tessdata / Homebrew | Across runs | Stable keys |
 
 Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>` and `…-windows-cross:<scripts-hash>` (also `:latest`).
@@ -198,9 +200,9 @@ Headless CI uses Null* backends / stub hotkeys where hooks are unavailable.
 
 ### Coverage
 
-`make coverage` instruments the full workspace and writes HTML + LCOV under `target/coverage/` with **no** percentage gate. Requires `cargo-llvm-cov` and `llvm-tools-preview` (preinstalled in the dev container). Normal `make test` does **not** need these tools.
+`make coverage` instruments the full workspace (nextest when available), runs tests once, and writes HTML + LCOV + JSON under `target/coverage/` with **no** percentage gate. Requires `cargo-llvm-cov` and `llvm-tools-preview` (preinstalled in the dev container). CI uses this instead of a separate `make test` so the suite is not compiled twice. Normal local `make test` does **not** need these tools.
 
-`make coverage-floors` runs a separate, smaller instrumented test pass over pure crates only (`sqyre-domain`, `sqyre-varref`, `sqyre-persist`, `sqyre-serialize`, `sqyre-validate`, `sqyre-executor`) and fails when line coverage drops below the floors in [`scripts/coverage-floors.json`](../scripts/coverage-floors.json):
+`make coverage-floors` fails when line coverage drops below the floors in [`scripts/coverage-floors.json`](../scripts/coverage-floors.json):
 
 | Target | Scope | Default floor |
 |--------|-------|---------------|
@@ -213,7 +215,7 @@ Headless CI uses Null* backends / stub hotkeys where hooks are unavailable.
 | `sqyre-persist` | whole crate | 77% |
 | `sqyre-executor` | whole crate | 85% |
 
-OS-specific crates (`sqyre-capture`, etc.) are intentionally **not** gated. Set `COVERAGE_FLOORS=1` when running `make coverage` to also run the floor check after the report. CI runs `make coverage-floors` after the report-only coverage step.
+OS-specific crates (`sqyre-capture`, etc.) are intentionally **not** gated. By default floors run a smaller instrumented pass over pure crates only. After `make coverage`, pass `COVERAGE_REPORT_JSON=target/coverage/summary.json` to reuse that report (no second instrumented build) — CI does this. Set `COVERAGE_FLOORS=1` when running `make coverage` to run the floor check automatically after the report.
 
 ### README screenshots
 
