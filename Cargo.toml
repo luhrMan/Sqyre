@@ -43,7 +43,7 @@ purecv = { version = "0.6.1", default-features = false, features = ["std", "para
 eframe = "0.35"
 egui = "0.35"
 egui-phosphor = "0.13"
-egui_ltreeview = "0.8"
+egui_ltreeview = "0.9"
 pulp = "0.22"
 rayon = "1.12"
 thiserror = "2"
