@@ -265,7 +265,7 @@ run_docker() {
   echo "Building Windows release (docker: $image, CARGO_HOME=$cargo_home_in, CARGO_TARGET_DIR=$cargo_target_in, incremental=${cargo_incremental:-off}, sccache=$use_sccache$cache_note)…"
   docker run --rm \
     -u "$(id -u):$(id -g)" \
-    -v "$host_repo:/workspace" \
+    -v "$host_repo:/workspace$(docker_bind_selinux_z)" \
     "${vol_args[@]}" \
     -w /workspace \
     -e HOME=/tmp \

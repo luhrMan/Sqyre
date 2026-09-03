@@ -9,6 +9,9 @@
   "mounts": [
     "source=sqyre-cargo-home,target=/home/vscode/.cargo,type=volume"
   ],
+  "runArgs": [
+    "--security-opt=label=disable"
+  ],
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
       "moby": false,
@@ -47,6 +50,7 @@
     }
   },
   "postCreateCommand": "bash .devcontainer/post-create.sh",
+  "postStartCommand": "bash .devcontainer/post-start.sh",
   "remoteUser": "vscode",
   "updateRemoteUserUID": true
 }

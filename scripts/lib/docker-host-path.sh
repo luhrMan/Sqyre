@@ -69,5 +69,13 @@ docker_host_path() {
   esac
 }
 
+# SELinux shared-label suffix for host bind mounts (`-v host:container:z`).
+# Required on Fedora/Bazzite/RHEL when the daemon enforces SELinux; ignored
+# when SELinux is off. Prefer :z (shared) over :Z so the same host path can
+# be mounted by the outer devcontainer and nested build containers.
+docker_bind_selinux_z() {
+  printf '%s' ':z'
+}
+
 unset _docker_host_path_lib
 return 0 2>/dev/null || exit 0
