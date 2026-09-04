@@ -13,7 +13,7 @@ use crate::theme;
 use crate::var_pills;
 use crate::widgets::{
     combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
-    searchable_combo, searchable_combo_with, text_field, W_MULTILINE, W_TEXT, W_VAR,
+    searchable_combo, searchable_combo_with, text_field, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
@@ -647,22 +647,18 @@ fn targets_editor(
     picker: &mut ActivePicker,
 ) {
     ui.horizontal(|ui| {
-        let width = ui.available_width();
-        ui.set_min_width(width);
         help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
-                .on_hover_text(h::IS_ITEMS)
-                .clicked()
-            {
-                *picker = ActivePicker::Items {
-                    search: String::new(),
-                    staged: targets.clone(),
-                };
-            }
-            ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
-        });
+        ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
+        if ui
+            .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
+            .on_hover_text(h::IS_ITEMS)
+            .clicked()
+        {
+            *picker = ActivePicker::Items {
+                search: String::new(),
+                staged: targets.clone(),
+            };
+        }
     });
     if targets.is_empty() {
         ui.label("(none)");
@@ -935,7 +931,8 @@ fn string_list_field(ui: &mut egui::Ui, label: &str, values: &mut Vec<String>, h
     if help::tip(
         ui.add(
             egui::TextEdit::multiline(&mut text)
-                .desired_width(W_MULTILINE)
+                // Fill the tip section; a fixed width locks horizontal resize.
+                .desired_width(f32::INFINITY)
                 .desired_rows(3),
         ),
         help_text,
@@ -1005,7 +1002,7 @@ fn yaml_value_field(
         &mut text,
         known_vars,
         is_dark,
-        W_MULTILINE,
+        f32::INFINITY,
         2,
         &validation,
         h::SET_VALUE,
@@ -1239,20 +1236,18 @@ fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
 /// Header row for repeatable list editors. Returns true when `+` was clicked.
 fn list_header(ui: &mut egui::Ui, title: &str, count: usize, add_help: &str) -> bool {
     let mut add = false;
-    let width = ui.available_width();
+    // Content-sized row (no `set_min_width(available)`) so the edit tip can
+    // shrink horizontally — see egui-window-size-ratchet.
     ui.horizontal(|ui| {
-        ui.set_min_width(width);
         ui.label(title);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .add(egui::Button::new(egui::RichText::new("+").color(theme::MACRO_START)).small())
-                .on_hover_text(add_help)
-                .clicked()
-            {
-                add = true;
-            }
-            ui.label(egui::RichText::new(format!("({count})")).weak());
-        });
+        ui.label(egui::RichText::new(format!("({count})")).weak());
+        if ui
+            .add(egui::Button::new(egui::RichText::new("+").color(theme::MACRO_START)).small())
+            .on_hover_text(add_help)
+            .clicked()
+        {
+            add = true;
+        }
     });
     add
 }

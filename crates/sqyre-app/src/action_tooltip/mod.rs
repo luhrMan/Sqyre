@@ -590,17 +590,15 @@ fn show_edit_window(
     let mut open = true;
 
     // Stable Area id (also keys egui's resize state as `area_id.with("resize")`).
-    // Bump salt when changing default/min sizing so persisted fat/tiny sizes are discarded
-    // (grow_v7 could ratchet width without a max_width cap).
-    let area_id = egui::Id::new(("action_edit_tip", "grow_v8", action_id));
+    // Bump salt when changing default/min sizing so persisted locked widths are discarded.
+    let area_id = egui::Id::new(("action_edit_tip", "grow_v9", action_id));
     let (fitting, fit_fields_h) = match state {
         TooltipState::Edit(edit) => (edit.auto_fit, edit.fields_height),
         _ => (false, 0.0),
     };
     // While fitting, raise min height to the last measured fields column so
-    // egui's sticky Resize `desired_size` grows. Always keep a ScrollArea +
-    // max_width — painting uncapped content lets `framed_section`'s
-    // `set_width(available)` ratchet the window past the screen edge.
+    // egui's sticky Resize `desired_size` grows. Content is pinned with
+    // `fill_resize_body` so sections cannot lock/ratchet horizontal size.
     let fit_min_h = if fitting && fit_fields_h > 0.0 {
         (EDIT_CHROME + fit_fields_h.min(max_scroll_h)).clamp(48.0, screen.height())
     } else {
@@ -608,9 +606,9 @@ fn show_edit_window(
     };
 
     // Popup chrome (no title bar). Height is driven by `fit_min_h` while
-    // `auto_fit` is set. `fit_dialog_popup` applies `max_size(screen)` — call
-    // `.max_width(max_w)` *after* that so the tip width cap is not overwritten
-    // (without it, `framed_section` + Resize ratchets the window off-screen).
+    // `auto_fit` is set. Default width matches the view tip; user can drag
+    // wider (up to EDIT_TIP_MAX_W) or narrower (down to min_size).
+    const EDIT_TIP_MAX_W: f32 = 560.0;
     crate::widgets::fit_dialog_popup(
         egui::Window::new(label)
             .id(area_id)
@@ -627,10 +625,12 @@ fn show_edit_window(
             ),
         ctx,
     )
-    .max_width(max_w)
+    .max_size(egui::vec2(
+        screen.width().min(EDIT_TIP_MAX_W),
+        screen.height(),
+    ))
     .show(ctx, |ui| {
-            // Cap content width even when Resize desired_size is briefly larger.
-            ui.set_max_width(max_w);
+        crate::widgets::fill_resize_body(ui, |ui| {
             let (err, save_enabled) = match state {
                 TooltipState::Edit(edit) => (edit.error.as_deref(), edit.save_enabled()),
                 _ => (None, false),
@@ -657,15 +657,15 @@ fn show_edit_window(
                     macros,
                     active_macro: Some(&*macro_),
                 };
-                // Always scroll: avoids the uncapped layout path that ratchets
-                // width via `framed_section`. Grow height through `fit_min_h`
-                // while `auto_fit` is set (open + Advanced toggle).
+                // Scroll remaining height; shrink width to content so the user
+                // can drag the window narrower than the longest section.
+                let scroll_h = ui.available_height().max(40.0).min(max_scroll_h);
                 let measured = crate::pickers::scroll_vertical()
                     .id_salt("edit_fields")
-                    .auto_shrink([false, false])
-                    .max_height(max_scroll_h)
+                    .auto_shrink([true, false])
+                    .max_width(ui.available_width())
+                    .max_height(scroll_h)
                     .show(ui, |ui| {
-                        ui.set_max_width(max_w);
                         edit::paint_edit_fields(
                             ui,
                             &mut edit.draft,
@@ -730,6 +730,7 @@ fn show_edit_window(
                 }
             }
         });
+    });
 
     if edit_window_user_resized(ctx, area_id) {
         if let TooltipState::Edit(edit) = state {

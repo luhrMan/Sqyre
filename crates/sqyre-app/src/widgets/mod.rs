@@ -14,7 +14,7 @@ pub use dialogs::{
 pub use fields::{
     combo_condition_operator, combo_enum, combo_str, combo_str_labeled, drag_field,
     drag_field_enabled, searchable_combo, searchable_combo_width, searchable_combo_with,
-    text_field, text_field_width, W_MULTILINE, W_TEXT, W_VAR,
+    text_field, text_field_width, W_TEXT, W_VAR,
 };
 pub use headers::{heading_with_count, selectable_title_with_count, title_with_count};
 pub use match_settings::configure_match_blur_drag;
