@@ -605,6 +605,7 @@ fn seed_program_from_theme(
             theme.name,
             ProgramPoint {
                 name: "Match center".into(),
+                monitor: 1,
                 x: ScalarValue::String("${foundX}".into()),
                 y: ScalarValue::String("${foundY}".into()),
             },
@@ -662,6 +663,7 @@ fn seed_program_from_theme(
                 theme.name,
                 ProgramPoint {
                     name: theme.points[i].into(),
+                    monitor: 1,
                     x: ScalarValue::Int((100 + (i + 1) * 80 + program_idx * 10) as i64),
                     y: ScalarValue::Int((200 + (i + 1) * 60) as i64),
                 },
@@ -676,6 +678,7 @@ fn seed_program_from_theme(
                 theme.name,
                 ProgramSearchArea {
                     name: theme.search_areas[i].into(),
+                    monitor: 1,
                     left_x: ScalarValue::Int(10 + j * 5),
                     top_y: ScalarValue::Int(20 + j * 5),
                     right_x: ScalarValue::Int(800 - j * 10),

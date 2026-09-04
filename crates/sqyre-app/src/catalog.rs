@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 /// Set catalog resolution + DPI scale from the primary monitor.
+/// Also refreshes live monitor layout for slot-relative coordinate resolve.
 /// No-op when capture is unavailable (headless / WASM editor).
 pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
     #[cfg(feature = "native-runtime")]
@@ -15,6 +16,20 @@ pub fn apply_main_monitor_resolution(catalog: &mut ProgramCatalog) {
         }
         if let Some(scale) = sqyre_capture::main_monitor_scale() {
             catalog.set_runtime_scale(scale);
+        }
+        let rects: Vec<MonitorRect> = sqyre_capture::preferred_monitor_rects()
+            .into_iter()
+            .map(|r| (r.x, r.y, r.w, r.h))
+            .collect();
+        // Never shrink the catalog layout from a transient incomplete source —
+        // that remaps slot identities (right display becomes "Monitor 1") and
+        // reseeds General over the wrong geometry.
+        let cached = catalog.monitor_rects();
+        if !rects.is_empty()
+            && rects.as_slice() != cached
+            && (cached.is_empty() || rects.len() >= cached.len())
+        {
+            catalog.set_monitor_rects(rects);
         }
     }
     #[cfg(not(feature = "native-runtime"))]
@@ -31,8 +46,16 @@ pub fn seed_monitor_rects(catalog: &ProgramCatalog) -> Vec<MonitorRect> {
             .into_iter()
             .map(|r| (r.x, r.y, r.w, r.h))
             .collect();
+        let cached = catalog.monitor_rects();
         if !from_layout.is_empty() {
+            // Keep the richer cached layout when live briefly reports fewer outputs.
+            if !cached.is_empty() && from_layout.len() < cached.len() {
+                return cached.to_vec();
+            }
             return from_layout;
+        }
+        if !cached.is_empty() {
+            return cached.to_vec();
         }
     }
     let (w, h) = parse_resolution_wh(catalog.resolution_key()).unwrap_or((1920, 1080));
@@ -47,6 +70,7 @@ fn parse_resolution_wh(key: &str) -> Option<(i32, i32)> {
 /// Create/update the seeded `General` program when missing entries. Returns `true` if changed.
 pub fn ensure_general_program_seeded(catalog: &mut ProgramCatalog) -> bool {
     let monitors = seed_monitor_rects(catalog);
+    catalog.set_monitor_rects(monitors.clone());
     #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
     {
         let n = monitors.len();
@@ -60,13 +84,14 @@ pub fn ensure_general_program_seeded(catalog: &mut ProgramCatalog) -> bool {
             &[("monitors", &n.to_string()), ("layout", &layout)],
         );
     }
-    match ensure_general_program(catalog, &monitors) {
+    let changed = match ensure_general_program(catalog, &monitors) {
         Ok(created) => created,
         Err(e) => {
             crate::log::warn(format_args!("failed to seed General program: {e}"));
             false
         }
-    }
+    };
+    changed
 }
 
 /// Apply primary-monitor resolution, then seed `General` if needed and persist.

@@ -100,6 +100,51 @@ pub(crate) fn form_coord_literal(s: &str) -> Option<i32> {
     None
 }
 
+/// Origin of a 1-based monitor slot from the catalog layout snapshot.
+pub(crate) fn monitor_origin(catalog: &ProgramCatalog, monitor: u32) -> (i32, i32) {
+    let slot = monitor.max(1) as usize;
+    let mut rects = catalog.monitor_rects().to_vec();
+    #[cfg(feature = "native-runtime")]
+    if rects.is_empty() {
+        rects = sqyre_capture::preferred_monitor_rects()
+            .into_iter()
+            .map(|r| (r.x, r.y, r.w, r.h))
+            .collect();
+    }
+    rects
+        .get(slot - 1)
+        .map(|&(ox, oy, _, _)| (ox, oy))
+        .unwrap_or((0, 0))
+}
+
+/// Relative form literals → absolute desktop coords for capture preview.
+pub(crate) fn form_absolute_xy(
+    catalog: &ProgramCatalog,
+    monitor: u32,
+    x: Option<i32>,
+    y: Option<i32>,
+) -> (Option<i32>, Option<i32>) {
+    let (ox, oy) = monitor_origin(catalog, monitor);
+    (x.map(|v| ox + v), y.map(|v| oy + v))
+}
+
+pub(crate) fn form_absolute_area(
+    catalog: &ProgramCatalog,
+    monitor: u32,
+    lx: Option<i32>,
+    ty: Option<i32>,
+    rx: Option<i32>,
+    by: Option<i32>,
+) -> (Option<i32>, Option<i32>, Option<i32>, Option<i32>) {
+    let (ox, oy) = monitor_origin(catalog, monitor);
+    (
+        lx.map(|v| ox + v),
+        ty.map(|v| oy + v),
+        rx.map(|v| ox + v),
+        by.map(|v| oy + v),
+    )
+}
+
 pub(crate) fn copy_image_as_png(
     src: &std::path::Path,
     dest: &std::path::Path,

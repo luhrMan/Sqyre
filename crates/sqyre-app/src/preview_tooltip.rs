@@ -731,10 +731,17 @@ fn entity_preview_spec(
                 .ok_or(EntityPreviewError::Missing)?;
             let x = coord_to_literal(&pt.x).ok_or(EntityPreviewError::NonLiteral)?;
             let y = coord_to_literal(&pt.y).ok_or(EntityPreviewError::NonLiteral)?;
+            let (ox, oy) = catalog
+                .monitor_rects()
+                .get(pt.monitor.max(1) as usize - 1)
+                .map(|&(x, y, _, _)| (x, y))
+                .unwrap_or((0, 0));
+            let abs_x = ox + x;
+            let abs_y = oy + y;
             Ok((
                 cache_key_point(pt),
                 point_caption(pt),
-                PreviewCoords::Point { x, y },
+                PreviewCoords::Point { x: abs_x, y: abs_y },
             ))
         }
         PreviewKind::SearchArea => {
@@ -748,14 +755,19 @@ fn entity_preview_spec(
             let top = coord_to_literal(&sa.top_y).ok_or(EntityPreviewError::NonLiteral)?;
             let right = coord_to_literal(&sa.right_x).ok_or(EntityPreviewError::NonLiteral)?;
             let bottom = coord_to_literal(&sa.bottom_y).ok_or(EntityPreviewError::NonLiteral)?;
+            let (ox, oy) = catalog
+                .monitor_rects()
+                .get(sa.monitor.max(1) as usize - 1)
+                .map(|&(x, y, _, _)| (x, y))
+                .unwrap_or((0, 0));
             Ok((
                 cache_key_search_area(sa),
                 search_area_caption(sa),
                 PreviewCoords::SearchArea {
-                    left,
-                    top,
-                    right,
-                    bottom,
+                    left: ox + left,
+                    top: oy + top,
+                    right: ox + right,
+                    bottom: oy + bottom,
                     grid: None,
                 },
             ))
@@ -780,14 +792,19 @@ fn entity_preview_spec(
             let bottom = coord_to_literal(&sa.bottom_y).ok_or(EntityPreviewError::NonLiteral)?;
             let rows = col.rows.max(1);
             let cols = col.cols.max(1);
+            let (ox, oy) = catalog
+                .monitor_rects()
+                .get(sa.monitor.max(1) as usize - 1)
+                .map(|&(x, y, _, _)| (x, y))
+                .unwrap_or((0, 0));
             Ok((
                 cache_key_collection(&col.name, sa, rows, cols),
                 collection_caption(sa, rows, cols),
                 PreviewCoords::SearchArea {
-                    left,
-                    top,
-                    right,
-                    bottom,
+                    left: ox + left,
+                    top: oy + top,
+                    right: ox + right,
+                    bottom: oy + bottom,
                     grid: Some((rows, cols)),
                 },
             ))
@@ -796,13 +813,20 @@ fn entity_preview_spec(
 }
 
 fn cache_key_point(pt: &ProgramPoint) -> String {
-    format!("pt:{}:{}:{}", pt.name, pt.x.as_display(), pt.y.as_display())
+    format!(
+        "pt:{}:m{}:{}:{}",
+        pt.name,
+        pt.monitor,
+        pt.x.as_display(),
+        pt.y.as_display()
+    )
 }
 
 fn cache_key_search_area(sa: &ProgramSearchArea) -> String {
     format!(
-        "sa:{}:{}:{}:{}:{}",
+        "sa:{}:m{}:{}:{}:{}:{}",
         sa.name,
+        sa.monitor,
         sa.left_x.as_display(),
         sa.top_y.as_display(),
         sa.right_x.as_display(),
@@ -1273,12 +1297,14 @@ mod tests {
     fn captions_use_expected_format() {
         let pt = ProgramPoint {
             name: "Spot".into(),
+            monitor: 1,
             x: ScalarValue::Int(100),
             y: ScalarValue::Int(200),
         };
         assert_eq!(point_caption(&pt), "X: 100, Y: 200");
         let sa = ProgramSearchArea {
             name: "Box".into(),
+            monitor: 1,
             left_x: ScalarValue::Int(10),
             top_y: ScalarValue::Int(20),
             right_x: ScalarValue::Int(110),

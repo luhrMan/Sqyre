@@ -1,7 +1,9 @@
 //! Form buffers: load, draw, dirty, valid.
 
 use super::form_state;
-use super::helpers::{collect_program_item_tags, form_coord_literal, parse_i32};
+use super::helpers::{
+    collect_program_item_tags, form_absolute_area, form_absolute_xy, form_coord_literal, parse_i32,
+};
 use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::{
@@ -421,9 +423,21 @@ impl DataEditor {
                     "Recording… left-click to capture.",
                     ScreenClickBridge::arm_point,
                 );
-                ui.weak("X/Y overlay the preview; integers or ${var}.");
-                let x = form_coord_literal(&self.form_x);
-                let y = form_coord_literal(&self.form_y);
+                ui.weak("X/Y are relative to the monitor; integers or ${var}.");
+                ui.horizontal(|ui| {
+                    ui.label("Monitor");
+                    ui.add(
+                        egui::DragValue::new(&mut self.form_monitor)
+                            .speed(1)
+                            .range(1..=8),
+                    );
+                });
+                let (x, y) = form_absolute_xy(
+                    catalog,
+                    self.form_monitor,
+                    form_coord_literal(&self.form_x),
+                    form_coord_literal(&self.form_y),
+                );
                 self.sync_coord_preview_view();
                 let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
                 let rect = previews.paint_point_panel(ui, x, y, force, &mut self.coord_preview);
@@ -455,11 +469,23 @@ impl DataEditor {
                     "Recording… click two corners.",
                     ScreenClickBridge::arm_search_area,
                 );
-                ui.weak("Bounds overlay the preview edges; integers or ${var}.");
-                let lx = form_coord_literal(&self.form_left);
-                let ty = form_coord_literal(&self.form_top);
-                let rx = form_coord_literal(&self.form_right);
-                let by = form_coord_literal(&self.form_bottom);
+                ui.weak("Bounds are relative to one monitor; integers or ${var}.");
+                ui.horizontal(|ui| {
+                    ui.label("Monitor");
+                    ui.add(
+                        egui::DragValue::new(&mut self.form_monitor)
+                            .speed(1)
+                            .range(1..=8),
+                    );
+                });
+                let (lx, ty, rx, by) = form_absolute_area(
+                    catalog,
+                    self.form_monitor,
+                    form_coord_literal(&self.form_left),
+                    form_coord_literal(&self.form_top),
+                    form_coord_literal(&self.form_right),
+                    form_coord_literal(&self.form_bottom),
+                );
                 self.sync_coord_preview_view();
                 let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
                 let (rect, _) = previews.paint_search_area_panel(

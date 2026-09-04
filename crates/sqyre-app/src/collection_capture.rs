@@ -102,6 +102,7 @@ mod tests {
             "Demo",
             ProgramSearchArea {
                 name: "Box".into(),
+                monitor: 1,
                 left_x: ScalarValue::Int(10),
                 top_y: ScalarValue::Int(20),
                 right_x: ScalarValue::Int(110),
