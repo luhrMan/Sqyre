@@ -106,7 +106,7 @@ pub fn release_held_inputs() {
             return;
         }
     }
-    let Ok(gui) = RustAutoGui::new(false) else {
+    let Ok(gui) = open_rustautogui() else {
         return;
     };
     for key in keys {
@@ -468,12 +468,26 @@ pub struct OsAutomation {
     portal: Option<Arc<dyn PortalRemoteInput>>,
 }
 
+/// Open rustautogui without letting Linux `Screen::new` abort the process.
+///
+/// On Linux, rustautogui panics inside `XOpenDisplay` failure (including
+/// "Maximum number of clients reached") instead of returning `Err`.
+fn open_rustautogui() -> Result<RustAutoGui, AutomationError> {
+    match std::panic::catch_unwind(|| RustAutoGui::new(false)) {
+        Ok(Ok(gui)) => Ok(gui),
+        Ok(Err(e)) => Err(AutomationError::Backend(format!("rustautogui: {e}"))),
+        Err(_) => Err(AutomationError::Backend(
+            "rustautogui panicked opening X display (X11 unavailable or max clients reached)"
+                .into(),
+        )),
+    }
+}
+
 impl OsAutomation {
     #[cfg(not(target_os = "linux"))]
     pub fn new() -> Result<Self, AutomationError> {
         let clipboard = Clipboard::new().ok();
-        let gui = RustAutoGui::new(false)
-            .map_err(|e| AutomationError::Backend(format!("rustautogui: {e}")))?;
+        let gui = open_rustautogui()?;
         Ok(Self {
             gui: Some(gui),
             clipboard,
@@ -493,13 +507,12 @@ impl OsAutomation {
         if let Some(ref p) = portal {
             install_process_portal(Arc::clone(p));
             return Ok(Self {
-                gui: RustAutoGui::new(false).ok(),
+                gui: open_rustautogui().ok(),
                 clipboard,
                 portal,
             });
         }
-        let gui = RustAutoGui::new(false)
-            .map_err(|e| AutomationError::Backend(format!("rustautogui: {e}")))?;
+        let gui = open_rustautogui()?;
         Ok(Self {
             gui: Some(gui),
             clipboard,
