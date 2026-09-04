@@ -1,7 +1,7 @@
 use crate::paint_ctx::VarTheme;
 use crate::var_pills;
 use crate::widgets::{
-    drag_field, drag_field_enabled, text_field, W_MULTILINE, W_TEXT, W_VAR,
+    drag_field, drag_field_enabled, text_field, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{KnownVariableNames, ScalarValue, VariableAssignment};
@@ -73,7 +73,7 @@ fn string_list_field(ui: &mut egui::Ui, label: &str, values: &mut Vec<String>, h
     if help::tip(
         ui.add(
             egui::TextEdit::multiline(&mut text)
-                .desired_width(W_MULTILINE)
+                .desired_width(f32::INFINITY)
                 .desired_rows(3),
         ),
         help_text,
@@ -143,7 +143,7 @@ fn yaml_value_field(
         &mut text,
         known_vars,
         is_dark,
-        W_MULTILINE,
+        f32::INFINITY,
         2,
         &validation,
         h::SET_VALUE,

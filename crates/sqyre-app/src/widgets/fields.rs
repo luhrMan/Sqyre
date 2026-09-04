@@ -9,8 +9,6 @@ use std::hash::Hash;
 pub const W_TEXT: f32 = 220.0;
 /// Standard variable / scalar ref edit width.
 pub const W_VAR: f32 = 160.0;
-/// Standard multiline edit width.
-pub const W_MULTILINE: f32 = 280.0;
 
 pub fn text_field(ui: &mut egui::Ui, label: &str, help_text: &str, value: &mut String) {
     text_field_width(ui, label, help_text, value, W_TEXT);

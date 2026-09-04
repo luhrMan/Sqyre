@@ -61,6 +61,21 @@ fn paint_plain_segment(ui: &mut egui::Ui, text: &str, color: Color32) {
     paint_galley_centered(ui, rect, galley, color);
 }
 
+/// Plain value text with the same content-band height as a nested var chip.
+///
+/// Labeled pills (`Variable: [name]`) wrap a nested chip; plain value pills
+/// must match that height or they sit lower in the same horizontal row.
+fn paint_plain_value_segment(ui: &mut egui::Ui, text: &str, color: Color32) {
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, color);
+    let size = Vec2::new(
+        galley.size().x,
+        galley.size().y + NESTED_MARGIN_Y as f32 * 2.0,
+    );
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    paint_galley_centered(ui, rect, galley, color);
+}
+
 /// Compact nested chip for a variable name.
 pub fn paint_nested_var_chip(
     ui: &mut egui::Ui,
@@ -165,21 +180,14 @@ pub fn paint_value_pill(
     } else {
         rgba_pub(action_pastel_color(action_type, is_dark))
     };
-    // Plain text: single centered chip (avoids Label top-bias inside a composite frame).
-    if !sqyre_varref::contains(text) {
-        return paint_text_chip(
-            ui,
-            text,
-            fill,
-            OUTER_RADIUS,
-            OUTER_MARGIN_X,
-            OUTER_MARGIN_Y,
-            ("value_pill", text),
-        );
-    }
     let plain_fg = contrast_fg(fill);
+    // Always use outer_frame so plain values share height with labeled name pills.
     outer_frame(ui, fill, |ui| {
-        paint_var_ref_content(ui, text, known, is_dark, plain_fg);
+        if sqyre_varref::contains(text) {
+            paint_var_ref_content(ui, text, known, is_dark, plain_fg);
+        } else {
+            paint_plain_value_segment(ui, text, plain_fg);
+        }
     })
 }
 
@@ -322,12 +330,14 @@ fn take_var_ac_keys(ui: &mut egui::Ui, was_open: bool) -> (bool, bool, bool, boo
 ///
 /// Callers may pass [`f32::INFINITY`] to mean "fill remaining row space".
 /// Non-finite widths must never reach `Rect::expand2` — that reports an
-/// infinite min size and ratchets parent windows forever.
+/// infinite min size and ratchets parent windows forever. Use
+/// [`crate::widgets::visible_width`] (not `available_width`) so fill does not
+/// claim leftover room toward Window `max_size`.
 fn resolve_edit_width(ui: &egui::Ui, desired_width: f32, reserve_trailing: f32) -> f32 {
     if desired_width.is_finite() {
         desired_width.max(0.0)
     } else {
-        (ui.available_width() - reserve_trailing).max(40.0)
+        (crate::widgets::visible_width(ui) - reserve_trailing).max(40.0)
     }
 }
 
@@ -746,6 +756,31 @@ mod tests {
                 prefix: None,
             };
             paint_summary_pill(ui, "setvariable", &pill, &known, true);
+        });
+    }
+
+    #[test]
+    fn plain_value_and_name_pills_share_row_height() {
+        let ctx = egui::Context::default();
+        let known = known_variable_set(["foundY"]);
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.horizontal(|ui| {
+                let name =
+                    paint_variable_name_pill(ui, "Variable", "foundY", "setvariable", &known, true);
+                let value = paint_value_pill(ui, "foundY -10", "setvariable", &known, true);
+                assert!(
+                    (name.rect.height() - value.rect.height()).abs() < 0.5,
+                    "name {:.1} vs value {:.1}",
+                    name.rect.height(),
+                    value.rect.height()
+                );
+                assert!(
+                    (name.rect.min.y - value.rect.min.y).abs() < 0.5,
+                    "tops diverge: name {:.1} vs value {:.1}",
+                    name.rect.min.y,
+                    value.rect.min.y
+                );
+            });
         });
     }
 }
