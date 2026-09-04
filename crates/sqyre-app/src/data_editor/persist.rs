@@ -106,6 +106,7 @@ impl DataEditor {
                 });
                 let pt = ProgramPoint {
                     name: name.clone(),
+                    monitor: 1,
                     x: ScalarValue::Int(0),
                     y: ScalarValue::Int(0),
                 };
@@ -133,6 +134,7 @@ impl DataEditor {
                 });
                 let sa = ProgramSearchArea {
                     name: name.clone(),
+                    monitor: 1,
                     left_x: ScalarValue::Int(0),
                     top_y: ScalarValue::Int(0),
                     right_x: ScalarValue::Int(100),
@@ -574,6 +576,7 @@ impl DataEditor {
             .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
         let pt = ProgramPoint {
             name: new_name.to_string(),
+            monitor: self.form_monitor.max(1),
             x: ScalarValue::parse_edit(&self.form_x),
             y: ScalarValue::parse_edit(&self.form_y),
         };
@@ -612,6 +615,7 @@ impl DataEditor {
             .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
         let sa = ProgramSearchArea {
             name: new_name.to_string(),
+            monitor: self.form_monitor.max(1),
             left_x: ScalarValue::parse_edit(&self.form_left),
             top_y: ScalarValue::parse_edit(&self.form_top),
             right_x: ScalarValue::parse_edit(&self.form_right),

@@ -182,6 +182,7 @@ impl FormState for PointsForm {
             return;
         };
         ed.form_name = pt.name.clone();
+        ed.form_monitor = pt.monitor.max(1);
         ed.form_x = pt.x.as_display();
         ed.form_y = pt.y.as_display();
     }
@@ -202,6 +203,7 @@ impl FormState for PointsForm {
             return true;
         };
         ed.form_name.trim() != pt.name
+            || ed.form_monitor.max(1) != pt.monitor.max(1)
             || ScalarValue::parse_edit(&ed.form_x) != pt.x
             || ScalarValue::parse_edit(&ed.form_y) != pt.y
     }
@@ -237,6 +239,7 @@ impl FormState for SearchAreasForm {
             return;
         };
         ed.form_name = sa.name.clone();
+        ed.form_monitor = sa.monitor.max(1);
         ed.form_left = sa.left_x.as_display();
         ed.form_top = sa.top_y.as_display();
         ed.form_right = sa.right_x.as_display();
@@ -263,6 +266,7 @@ impl FormState for SearchAreasForm {
             return true;
         };
         ed.form_name.trim() != sa.name
+            || ed.form_monitor.max(1) != sa.monitor.max(1)
             || ScalarValue::parse_edit(&ed.form_left) != sa.left_x
             || ScalarValue::parse_edit(&ed.form_top) != sa.top_y
             || ScalarValue::parse_edit(&ed.form_right) != sa.right_x

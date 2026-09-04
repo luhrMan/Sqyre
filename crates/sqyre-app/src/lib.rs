@@ -604,10 +604,23 @@ impl SqyreApp {
         catalog: &mut ProgramCatalog,
     ) -> Result<(), String> {
         let previous_generation = catalog.generation();
+        // Runtime layout/scale are not serialized in db.yaml — preserve across reload.
+        let saved_rects = catalog.monitor_rects().to_vec();
+        let saved_res_key = catalog.resolution_key().to_string();
+        let saved_scale = catalog.runtime_scale();
         sync_and_save_database(db, macros, catalog)?;
         *catalog = Arc::unwrap_or_clone(db.program_catalog().map_err(|e| e.to_string())?);
         // YAML reload resets generation to 0; keep ListCache invalidation working.
         catalog.continue_generation_after_reload(previous_generation);
+        if !saved_rects.is_empty() {
+            catalog.set_monitor_rects(saved_rects);
+        }
+        if !saved_res_key.is_empty() {
+            catalog.set_resolution_key(saved_res_key);
+        }
+        catalog.set_runtime_scale(saved_scale);
+        // Refresh from live layout when available (won't shrink a richer cache).
+        apply_main_monitor_resolution(catalog);
         Ok(())
     }
 

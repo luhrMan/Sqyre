@@ -557,13 +557,16 @@ fn replace_temporary_points(
         if name.is_empty() {
             return Err("point name cannot be empty".into());
         }
+        let (monitor, rx, ry) =
+            sqyre_persist::absolute_point_to_relative(catalog.monitor_rects(), pt.x, pt.y);
         catalog
             .upsert_point(
                 TEMPORARY_PROGRAM,
                 ProgramPoint {
                     name: name.to_string(),
-                    x: ScalarValue::Int(pt.x as i64),
-                    y: ScalarValue::Int(pt.y as i64),
+                    monitor,
+                    x: ScalarValue::Int(rx as i64),
+                    y: ScalarValue::Int(ry as i64),
                 },
             )
             .map_err(|e| e.to_string())?;

@@ -128,6 +128,8 @@ pub struct DataEditor {
     selected_entity: Option<String>,
     // Form buffers
     form_name: String,
+    /// 1-based monitor slot for Points / Search Areas (relative coords in form_*).
+    form_monitor: u32,
     form_x: String,
     form_y: String,
     form_left: String,
@@ -249,6 +251,7 @@ impl Default for DataEditor {
             selected_program: None,
             selected_entity: None,
             form_name: String::new(),
+            form_monitor: 1,
             form_x: String::new(),
             form_y: String::new(),
             form_left: String::new(),
@@ -607,19 +610,28 @@ impl DataEditor {
     ) {
         let mut captured = false;
         if let Some((x, y)) = env.screen_click.take_point() {
-            self.form_x = x.to_string();
-            self.form_y = y.to_string();
+            let live = live_monitor_rects_for_record(env.catalog);
+            let (monitor, rx, ry) = sqyre_persist::absolute_point_to_relative(&live, x, y);
+            self.form_monitor = monitor;
+            self.form_x = rx.to_string();
+            self.form_y = ry.to_string();
             previews.invalidate_entity(self.form_name.trim());
-            self.set_ok(format!("Recorded point ({x}, {y})."));
+            self.set_ok(format!("Recorded point monitor {monitor} ({rx}, {ry})."));
             captured = true;
         }
-        if let Some((lx, ty, rx, by)) = env.screen_click.take_search_area() {
+        if let Some((px, py, ax, ay, bx, by)) = env.screen_click.take_search_area() {
+            let live = live_monitor_rects_for_record(env.catalog);
+            let (monitor, lx, ty, rx, by) =
+                sqyre_persist::absolute_area_to_relative(&live, px, py, ax, ay, bx, by);
+            self.form_monitor = monitor;
             self.form_left = lx.to_string();
             self.form_top = ty.to_string();
             self.form_right = rx.to_string();
             self.form_bottom = by.to_string();
             previews.invalidate_entity(self.form_name.trim());
-            self.set_ok(format!("Recorded search area ({lx},{ty})–({rx},{by})."));
+            self.set_ok(format!(
+                "Recorded search area monitor {monitor} ({lx},{ty})–({rx},{by})."
+            ));
             captured = true;
         }
         if env.screen_click.take_cancelled() {
@@ -634,7 +646,29 @@ impl DataEditor {
             }
         }
     }
+}
 
+/// Live layout for record→relative conversion. Prefers capture/X11 over a stale
+/// catalog snapshot so slot assignment matches the rubber-band cover.
+fn live_monitor_rects_for_record(catalog: &mut ProgramCatalog) -> Vec<(i32, i32, i32, i32)> {
+    #[cfg(feature = "native-runtime")]
+    {
+        let live: Vec<(i32, i32, i32, i32)> = sqyre_capture::preferred_monitor_rects()
+            .into_iter()
+            .map(|r| (r.x, r.y, r.w, r.h))
+            .collect();
+        if !live.is_empty() {
+            let cached = catalog.monitor_rects();
+            if cached.is_empty() || live.len() >= cached.len() {
+                catalog.set_monitor_rects(live.clone());
+            }
+            return live;
+        }
+    }
+    catalog.monitor_rects().to_vec()
+}
+
+impl DataEditor {
     fn ui(
         &mut self,
         ui: &mut egui::Ui,
