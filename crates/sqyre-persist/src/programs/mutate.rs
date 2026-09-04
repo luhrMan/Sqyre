@@ -403,6 +403,7 @@ impl ProgramCatalog {
             images_root: self.images_root.clone(),
             resolution_key: self.resolution_key.clone(),
             runtime_scale: self.runtime_scale,
+            monitor_rects: self.monitor_rects.clone(),
             ..Default::default()
         };
         for (name, data) in &self.programs {

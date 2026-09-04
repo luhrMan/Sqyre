@@ -7,6 +7,69 @@ use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_ports::PortError;
 use std::collections::BTreeMap;
 
+/// 1-based slot + origin for the monitor that contains `(x, y)`.
+/// Prefers containment; if none contain the point, uses the nearest monitor center.
+/// Empty `rects` → slot 1 at `(0, 0)`.
+pub fn monitor_slot_for_point(rects: &[MonitorRect], x: i32, y: i32) -> (u32, i32, i32) {
+    if rects.is_empty() {
+        return (1, 0, 0);
+    }
+    if let Some((i, &(ox, oy, _, _))) = rects
+        .iter()
+        .enumerate()
+        .find(|(_, &(ox, oy, w, h))| x >= ox && y >= oy && x < ox + w && y < oy + h)
+    {
+        return ((i + 1) as u32, ox, oy);
+    }
+    let (i, &(ox, oy, _, _)) = rects
+        .iter()
+        .enumerate()
+        .min_by_key(|(_, &(ox, oy, w, h))| {
+            let cx = ox + w / 2;
+            let cy = oy + h / 2;
+            (x.abs_diff(cx) as u64).saturating_add(y.abs_diff(cy) as u64)
+        })
+        .expect("rects non-empty");
+    ((i + 1) as u32, ox, oy)
+}
+
+/// Convert absolute desktop point → `(monitor, rel_x, rel_y)`.
+pub fn absolute_point_to_relative(rects: &[MonitorRect], x: i32, y: i32) -> (u32, i32, i32) {
+    let (slot, ox, oy) = monitor_slot_for_point(rects, x, y);
+    (slot, x - ox, y - oy)
+}
+
+/// Clamp a search-area drag to the monitor of the **press** origin.
+///
+/// `press_x`/`press_y` must be the first click (before corner normalization). Using the
+/// normalized top-left as the anchor mis-assigns the slot when the user presses on
+/// monitor B and the sorted top-left lands on monitor A.
+/// Returns `(monitor, rel_left, rel_top, rel_right, rel_bottom)`.
+pub fn absolute_area_to_relative(
+    rects: &[MonitorRect],
+    press_x: i32,
+    press_y: i32,
+    ax: i32,
+    ay: i32,
+    bx: i32,
+    by: i32,
+) -> (u32, i32, i32, i32, i32) {
+    let (slot, ox, oy) = monitor_slot_for_point(rects, press_x, press_y);
+    let (_, _, w, h) = rects
+        .get(slot as usize - 1)
+        .copied()
+        .unwrap_or((0, 0, 1920, 1080));
+    let clamp = |v: i32, lo: i32, hi: i32| v.clamp(lo, hi);
+    let max_x = ox + w - 1;
+    let max_y = oy + h - 1;
+    let ax = clamp(ax, ox, max_x);
+    let ay = clamp(ay, oy, max_y);
+    let bx = clamp(bx, ox, max_x);
+    let by = clamp(by, oy, max_y);
+    let (left, top, right, bottom) = sqyre_ports::DesktopRect::normalize_corners(ax, ay, bx, by);
+    (slot, left - ox, top - oy, right - ox, bottom - oy)
+}
+
 pub(super) fn ensure_resolution(p: &mut ProgramData, res: &str, scale: f32) {
     p.points.entry(res.to_string()).or_default();
     p.search_areas.entry(res.to_string()).or_default();
@@ -183,33 +246,6 @@ pub(super) fn search_area_from<'a>(
     Err(PortError::not_found(format!(
         "search area {name:?} not in {program}"
     )))
-}
-
-/// Parse `"WxH"` resolution key into positive dimensions.
-pub(super) fn parse_resolution_key(key: &str) -> std::result::Result<(i32, i32), PortError> {
-    let (w, h) = key.split_once('x').ok_or_else(|| {
-        PortError::invalid(format!("invalid resolution key {key:?} (expected WxH)"))
-    })?;
-    let w: i32 = w
-        .parse()
-        .map_err(|_| PortError::invalid(format!("invalid resolution width in {key:?}")))?;
-    let h: i32 = h
-        .parse()
-        .map_err(|_| PortError::invalid(format!("invalid resolution height in {key:?}")))?;
-    if w <= 0 || h <= 0 {
-        return Err(PortError::invalid(format!(
-            "non-positive resolution in {key:?}"
-        )));
-    }
-    Ok((w, h))
-}
-
-/// Map a stored coordinate from source bucket space into runtime space.
-pub(super) fn remap_coord(v: i32, src_dim: i32, rt_dim: i32, src_scale: f32, rt_scale: f32) -> i32 {
-    let src_scale = if src_scale > 0.0 { src_scale } else { 1.0 };
-    let rt_scale = if rt_scale > 0.0 { rt_scale } else { 1.0 };
-    let factor = (rt_dim as f64 / src_dim as f64) * (rt_scale as f64 / src_scale as f64);
-    (v as f64 * factor).round() as i32
 }
 
 pub(super) fn bucket_scale(program: &ProgramData, res_key: &str) -> f32 {

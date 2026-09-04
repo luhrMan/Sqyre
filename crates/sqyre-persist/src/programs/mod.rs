@@ -9,12 +9,13 @@ mod types;
 mod util;
 
 pub use seed_general::{
-    ensure_general_program, MonitorRect, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE, TEMPORARY_PROGRAM,
+    ensure_general_program, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE, TEMPORARY_PROGRAM,
 };
 pub use types::{
-    ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask,
-    ProgramPoint, ProgramSearchArea,
+    MonitorRect, ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem,
+    ProgramMask, ProgramPoint, ProgramSearchArea,
 };
+pub use util::{absolute_area_to_relative, absolute_point_to_relative, monitor_slot_for_point};
 
 use crate::fs_name::{confined_join_or_invalid, is_safe_fs_entity_name};
 use crate::{images_path, PersistError, Result};
@@ -80,6 +81,16 @@ impl ProgramCatalog {
         } else {
             1.0
         }
+    }
+
+    /// Live layout used to turn slot-relative coords into absolute desktop pixels.
+    pub fn set_monitor_rects(&mut self, rects: Vec<MonitorRect>) {
+        self.monitor_rects = rects;
+        self.bump_generation();
+    }
+
+    pub fn monitor_rects(&self) -> &[MonitorRect] {
+        &self.monitor_rects
     }
 
     /// Monotonic counter bumped when programs/entities change (or resolution key).
@@ -258,6 +269,7 @@ Game:
             "Game",
             ProgramPoint {
                 name: "Spawn".into(),
+                monitor: 1,
                 x: ScalarValue::Int(10),
                 y: ScalarValue::Int(20),
             },
@@ -438,12 +450,12 @@ Game:
         let (x, y) = cat
             .resolve_point(&CoordinateRef("Game~Spot".into()), &m)
             .unwrap();
-        // 192 * 2560/1920 = 256, 108 * 1440/1080 = 144
-        assert_eq!((x, y), (256, 144));
+        // Monitor-relative: no primary WxH remap — only DPI (scale 1.0 → unchanged).
+        assert_eq!((x, y), (192, 108));
         let sa = cat
             .resolve_search_area(&CoordinateRef("Game~Box".into()), &m)
             .unwrap();
-        assert_eq!(sa, (0, 0, 256, 144));
+        assert_eq!(sa, (0, 0, 192, 108));
     }
 
     #[test]
@@ -521,8 +533,8 @@ Game:
         let (x, y) = cat
             .resolve_point(&CoordinateRef("Game~Spot".into()), &m)
             .unwrap();
-        // 100 * (2560/1920) * 1.5 = 200, 50 * (1440/1080) * 1.5 = 100
-        assert_eq!((x, y), (200, 100));
+        // Monitor-relative: DPI only — 100 * 1.5 = 150 (no WxH term).
+        assert_eq!((x, y), (150, 75));
     }
 
     #[test]
@@ -560,6 +572,7 @@ Game:
             "Demo",
             ProgramPoint {
                 name: "A".into(),
+                monitor: 1,
                 x: ScalarValue::Int(1),
                 y: ScalarValue::Int(2),
             },
@@ -648,6 +661,7 @@ Game:
             TEMPORARY_PROGRAM,
             ProgramPoint {
                 name: "A".into(),
+                monitor: 1,
                 x: ScalarValue::Int(1),
                 y: ScalarValue::Int(2),
             },
@@ -658,6 +672,7 @@ Game:
             TEMPORARY_PROGRAM,
             ProgramPoint {
                 name: "B".into(),
+                monitor: 1,
                 x: ScalarValue::Int(3),
                 y: ScalarValue::Int(4),
             },
@@ -719,6 +734,7 @@ Demo:
                 "Demo",
                 ProgramPoint {
                     name: "A".into(),
+                    monitor: 1,
                     x: ScalarValue::Int(5),
                     y: ScalarValue::Int(6),
                 },
@@ -728,6 +744,7 @@ Demo:
                 "Demo",
                 ProgramSearchArea {
                     name: "Zone".into(),
+                    monitor: 1,
                     left_x: ScalarValue::Int(0),
                     top_y: ScalarValue::Int(0),
                     right_x: ScalarValue::Int(50),

@@ -1,6 +1,6 @@
 //! Seeded `General` program with common Points, Search Areas, and Collections.
 
-use super::{ProgramCatalog, ProgramCollection, ProgramPoint, ProgramSearchArea};
+use super::{MonitorRect, ProgramCatalog, ProgramCollection, ProgramPoint, ProgramSearchArea};
 use crate::Result;
 use sqyre_domain::ScalarValue;
 
@@ -12,19 +12,16 @@ pub const TEMPORARY_PROGRAM: &str = "temporary";
 /// Point that resolves to Image Search match coordinates (`foundX` / `foundY`).
 pub const IMAGE_SEARCH_REFERENCE: &str = "Image Search Reference";
 
-/// One display in virtual-desktop coordinates (`x`, `y`, `w`, `h`).
-pub type MonitorRect = (i32, i32, i32, i32);
-
-/// Create/update the `General` program with Whole Screen, one search area + 2×2 Collection
+/// Create/update the `General` program with one search area + 2×2 Collection
 /// per monitor (quadrants / halves via cell ranges), and per-monitor corner / center /
-/// corner-mid Points.
+/// corner-mid Points. Coordinates are **monitor-relative** (origin at each slot's top-left).
 /// Always ensures [`IMAGE_SEARCH_REFERENCE`] (`${foundX}` / `${foundY}`) is present.
 ///
 /// Re-runs against the live (shared) monitor list so displays are added or
 /// removed after capture changes, and generated coordinates stay aligned.
 ///
 /// `monitors` are absolute virtual-desktop rects (`x`, `y`, `w`, `h`), typically from
-/// the live capturer. Returns `true` when the catalog was modified.
+/// the live capturer (used only for sizes / slot count). Returns `true` when modified.
 pub fn ensure_general_program(
     catalog: &mut ProgramCatalog,
     monitors: &[MonitorRect],
@@ -61,6 +58,7 @@ fn ensure_image_search_reference(catalog: &mut ProgramCatalog) -> Result<bool> {
         GENERAL_PROGRAM,
         ProgramPoint {
             name: IMAGE_SEARCH_REFERENCE.into(),
+            monitor: 1,
             x: ScalarValue::String("${foundX}".into()),
             y: ScalarValue::String("${foundY}".into()),
         },
@@ -76,13 +74,14 @@ fn program_has_point(catalog: &ProgramCatalog, name: &str) -> bool {
 }
 
 fn usable_monitors(monitors: &[MonitorRect]) -> Vec<MonitorRect> {
-    let mut usable: Vec<_> = monitors
-        .iter()
-        .copied()
-        .filter(|&(_, _, w, h)| w > 1 && h > 1)
-        .collect();
-    usable.sort_by_key(|&(x, y, w, h)| (x, y, w, h));
-    usable.dedup();
+    // Preserve caller order (preferred_monitor_rects is primary-first on Linux/Windows).
+    let mut usable = Vec::with_capacity(monitors.len());
+    for &r in monitors {
+        let (_, _, w, h) = r;
+        if w > 1 && h > 1 && !usable.contains(&r) {
+            usable.push(r);
+        }
+    }
     if usable.is_empty() {
         vec![(0, 0, 1920, 1080)]
     } else {
@@ -198,14 +197,34 @@ fn prune_generated_beyond(catalog: &mut ProgramCatalog, monitor_count: usize) ->
 
 fn seed_search_areas(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result<bool> {
     let mut changed = false;
-    let (left, top, right, bottom) = virtual_bounds(monitors);
-    if upsert_area(catalog, "Whole Screen", left, top, right, bottom)? {
+    for (i, &(_, _, w, h)) in monitors.iter().enumerate() {
+        let n = (i + 1) as u32;
+        if upsert_area(catalog, &format!("Monitor {n}"), n, 0, 0, w, h)? {
+            changed = true;
+        }
+    }
+    // Drop legacy virtual-desktop union if still present.
+    if prune_named_area(catalog, "Whole Screen")? {
         changed = true;
     }
+    Ok(changed)
+}
 
-    for (i, &(ox, oy, w, h)) in monitors.iter().enumerate() {
-        let n = i + 1;
-        if upsert_area(catalog, &format!("Monitor {n}"), ox, oy, ox + w, oy + h)? {
+fn prune_named_area(catalog: &mut ProgramCatalog, name: &str) -> Result<bool> {
+    let Some(p) = catalog.get(GENERAL_PROGRAM) else {
+        return Ok(false);
+    };
+    let present = p
+        .search_areas
+        .values()
+        .any(|bucket| bucket.contains_key(name));
+    if !present {
+        return Ok(false);
+    }
+    let p = catalog.program_mut(GENERAL_PROGRAM)?;
+    let mut changed = false;
+    for bucket in p.search_areas.values_mut() {
+        if bucket.remove(name).is_some() {
             changed = true;
         }
     }
@@ -225,35 +244,42 @@ fn seed_collections(catalog: &mut ProgramCatalog, monitor_count: usize) -> Resul
 
 fn seed_points(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result<bool> {
     let mut changed = false;
-    for (i, &(ox, oy, w, h)) in monitors.iter().enumerate() {
-        let n = i + 1;
-        let right = ox + w - 1;
-        let bottom = oy + h - 1;
-        let cx = ox + w / 2;
-        let cy = oy + h / 2;
-        let mid_left_x = ox + w / 4;
-        let mid_right_x = ox + (3 * w) / 4;
-        let mid_top_y = oy + h / 4;
-        let mid_bottom_y = oy + (3 * h) / 4;
+    for (i, &(_, _, w, h)) in monitors.iter().enumerate() {
+        let n = (i + 1) as u32;
+        let right = w - 1;
+        let bottom = h - 1;
+        let cx = w / 2;
+        let cy = h / 2;
+        let mid_left_x = w / 4;
+        let mid_right_x = (3 * w) / 4;
+        let mid_top_y = h / 4;
+        let mid_bottom_y = (3 * h) / 4;
 
-        if upsert_point(catalog, &format!("Monitor {n} Top Left"), ox, oy)? {
+        if upsert_point(catalog, &format!("Monitor {n} Top Left"), n, 0, 0)? {
             changed = true;
         }
-        if upsert_point(catalog, &format!("Monitor {n} Top Right"), right, oy)? {
+        if upsert_point(catalog, &format!("Monitor {n} Top Right"), n, right, 0)? {
             changed = true;
         }
-        if upsert_point(catalog, &format!("Monitor {n} Bottom Left"), ox, bottom)? {
+        if upsert_point(catalog, &format!("Monitor {n} Bottom Left"), n, 0, bottom)? {
             changed = true;
         }
-        if upsert_point(catalog, &format!("Monitor {n} Bottom Right"), right, bottom)? {
+        if upsert_point(
+            catalog,
+            &format!("Monitor {n} Bottom Right"),
+            n,
+            right,
+            bottom,
+        )? {
             changed = true;
         }
-        if upsert_point(catalog, &format!("Monitor {n} Center"), cx, cy)? {
+        if upsert_point(catalog, &format!("Monitor {n} Center"), n, cx, cy)? {
             changed = true;
         }
         if upsert_point(
             catalog,
             &format!("Monitor {n} Top Left Mid"),
+            n,
             mid_left_x,
             mid_top_y,
         )? {
@@ -262,6 +288,7 @@ fn seed_points(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result
         if upsert_point(
             catalog,
             &format!("Monitor {n} Top Right Mid"),
+            n,
             mid_right_x,
             mid_top_y,
         )? {
@@ -270,6 +297,7 @@ fn seed_points(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result
         if upsert_point(
             catalog,
             &format!("Monitor {n} Bottom Left Mid"),
+            n,
             mid_left_x,
             mid_bottom_y,
         )? {
@@ -278,6 +306,7 @@ fn seed_points(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result
         if upsert_point(
             catalog,
             &format!("Monitor {n} Bottom Right Mid"),
+            n,
             mid_right_x,
             mid_bottom_y,
         )? {
@@ -287,23 +316,10 @@ fn seed_points(catalog: &mut ProgramCatalog, monitors: &[MonitorRect]) -> Result
     Ok(changed)
 }
 
-fn virtual_bounds(monitors: &[MonitorRect]) -> (i32, i32, i32, i32) {
-    let mut left = i32::MAX;
-    let mut top = i32::MAX;
-    let mut right = i32::MIN;
-    let mut bottom = i32::MIN;
-    for &(x, y, w, h) in monitors {
-        left = left.min(x);
-        top = top.min(y);
-        right = right.max(x + w);
-        bottom = bottom.max(y + h);
-    }
-    (left, top, right, bottom)
-}
-
 fn upsert_area(
     catalog: &mut ProgramCatalog,
     name: &str,
+    monitor: u32,
     left: i32,
     top: i32,
     right: i32,
@@ -315,7 +331,8 @@ fn upsert_area(
         .and_then(|p| p.search_areas.get(res))
         .and_then(|m| m.get(name))
     {
-        if existing.left_x == ScalarValue::Int(left as i64)
+        if existing.monitor == monitor
+            && existing.left_x == ScalarValue::Int(left as i64)
             && existing.top_y == ScalarValue::Int(top as i64)
             && existing.right_x == ScalarValue::Int(right as i64)
             && existing.bottom_y == ScalarValue::Int(bottom as i64)
@@ -327,6 +344,7 @@ fn upsert_area(
         GENERAL_PROGRAM,
         ProgramSearchArea {
             name: name.into(),
+            monitor,
             left_x: ScalarValue::Int(left as i64),
             top_y: ScalarValue::Int(top as i64),
             right_x: ScalarValue::Int(right as i64),
@@ -363,14 +381,23 @@ fn upsert_collection(
     Ok(true)
 }
 
-fn upsert_point(catalog: &mut ProgramCatalog, name: &str, x: i32, y: i32) -> Result<bool> {
+fn upsert_point(
+    catalog: &mut ProgramCatalog,
+    name: &str,
+    monitor: u32,
+    x: i32,
+    y: i32,
+) -> Result<bool> {
     let res = catalog.resolution_key();
     if let Some(existing) = catalog
         .get(GENERAL_PROGRAM)
         .and_then(|p| p.points.get(res))
         .and_then(|m| m.get(name))
     {
-        if existing.x == ScalarValue::Int(x as i64) && existing.y == ScalarValue::Int(y as i64) {
+        if existing.monitor == monitor
+            && existing.x == ScalarValue::Int(x as i64)
+            && existing.y == ScalarValue::Int(y as i64)
+        {
             return Ok(false);
         }
     }
@@ -378,6 +405,7 @@ fn upsert_point(catalog: &mut ProgramCatalog, name: &str, x: i32, y: i32) -> Res
         GENERAL_PROGRAM,
         ProgramPoint {
             name: name.into(),
+            monitor,
             x: ScalarValue::Int(x as i64),
             y: ScalarValue::Int(y as i64),
         },
@@ -387,6 +415,7 @@ fn upsert_point(catalog: &mut ProgramCatalog, name: &str, x: i32, y: i32) -> Res
 
 #[cfg(test)]
 mod tests {
+    use super::super::{absolute_area_to_relative, absolute_point_to_relative};
     use super::*;
 
     #[test]
@@ -398,18 +427,13 @@ mod tests {
         let p = cat.get(GENERAL_PROGRAM).expect("General");
         let res = "1920x1080";
         let areas = p.search_areas.get(res).expect("areas");
-        assert!(areas.contains_key("Whole Screen"));
+        assert!(!areas.contains_key("Whole Screen"));
         assert!(areas.contains_key("Monitor 1"));
         assert!(!areas.contains_key("Monitor 1 Left Half"));
-        assert_eq!(areas.len(), 2);
-
-        let whole = &areas["Whole Screen"];
-        assert_eq!(whole.left_x, ScalarValue::Int(0));
-        assert_eq!(whole.top_y, ScalarValue::Int(0));
-        assert_eq!(whole.right_x, ScalarValue::Int(1920));
-        assert_eq!(whole.bottom_y, ScalarValue::Int(1080));
+        assert_eq!(areas.len(), 1);
 
         let monitor = &areas["Monitor 1"];
+        assert_eq!(monitor.monitor, 1);
         assert_eq!(monitor.left_x, ScalarValue::Int(0));
         assert_eq!(monitor.top_y, ScalarValue::Int(0));
         assert_eq!(monitor.right_x, ScalarValue::Int(1920));
@@ -422,6 +446,7 @@ mod tests {
 
         let points = p.points.get(res).expect("points");
         assert_eq!(points.len(), 10);
+        assert_eq!(points["Monitor 1 Top Left"].monitor, 1);
         assert_eq!(points["Monitor 1 Top Left"].x, ScalarValue::Int(0));
         assert_eq!(points["Monitor 1 Top Left"].y, ScalarValue::Int(0));
         assert_eq!(points["Monitor 1 Top Right"].x, ScalarValue::Int(1919));
@@ -444,7 +469,7 @@ mod tests {
     }
 
     #[test]
-    fn seeds_multi_monitor_geometry() {
+    fn seeds_multi_monitor_relative_geometry() {
         let mut cat = ProgramCatalog::default();
         cat.set_resolution_key("2560x1440");
         let monitors = [(0, 0, 2560, 1440), (2560, 0, 1920, 1080)];
@@ -452,16 +477,14 @@ mod tests {
 
         let p = cat.get(GENERAL_PROGRAM).expect("General");
         let areas = p.search_areas.get("2560x1440").expect("areas");
-        assert_eq!(areas.len(), 3);
-        let whole = &areas["Whole Screen"];
-        assert_eq!(whole.left_x, ScalarValue::Int(0));
-        assert_eq!(whole.right_x, ScalarValue::Int(4480));
-        assert_eq!(whole.bottom_y, ScalarValue::Int(1440));
+        assert_eq!(areas.len(), 2);
+        assert!(!areas.contains_key("Whole Screen"));
 
         let m2 = &areas["Monitor 2"];
-        assert_eq!(m2.left_x, ScalarValue::Int(2560));
+        assert_eq!(m2.monitor, 2);
+        assert_eq!(m2.left_x, ScalarValue::Int(0));
         assert_eq!(m2.top_y, ScalarValue::Int(0));
-        assert_eq!(m2.right_x, ScalarValue::Int(4480));
+        assert_eq!(m2.right_x, ScalarValue::Int(1920));
         assert_eq!(m2.bottom_y, ScalarValue::Int(1080));
 
         assert_eq!(p.collections.len(), 2);
@@ -475,7 +498,8 @@ mod tests {
 
         let points = p.points.get("2560x1440").expect("points");
         assert_eq!(points.len(), 19);
-        assert_eq!(points["Monitor 2 Center"].x, ScalarValue::Int(2560 + 960));
+        assert_eq!(points["Monitor 2 Center"].monitor, 2);
+        assert_eq!(points["Monitor 2 Center"].x, ScalarValue::Int(960));
         assert_eq!(points["Monitor 2 Center"].y, ScalarValue::Int(540));
         assert!(points.contains_key(IMAGE_SEARCH_REFERENCE));
     }
@@ -501,14 +525,17 @@ mod tests {
         let monitors = [(0, 360, 1920, 1080), (1920, 0, 2560, 1440)];
         assert!(ensure_general_program(&mut cat, &monitors).unwrap());
         let points = &cat.get(GENERAL_PROGRAM).unwrap().points["1920x1080"];
-        assert_eq!(points["Monitor 1 Top Left"].y, ScalarValue::Int(360));
-        assert_eq!(points["Monitor 2 Center"].x, ScalarValue::Int(1920 + 1280));
+        // Relative to each slot — Monitor 1 top-left stays (0,0) even if absolute origin shifts.
+        assert_eq!(points["Monitor 1 Top Left"].y, ScalarValue::Int(0));
+        assert_eq!(points["Monitor 1 Top Left"].monitor, 1);
+        assert_eq!(points["Monitor 2 Center"].monitor, 2);
+        assert_eq!(points["Monitor 2 Center"].x, ScalarValue::Int(1280));
         assert_eq!(points["Monitor 2 Center"].y, ScalarValue::Int(720));
         let p = cat.get(GENERAL_PROGRAM).unwrap();
         assert!(p.collections.contains_key("Monitor 2"));
         assert_eq!(
             p.search_areas["1920x1080"]["Monitor 2"].left_x,
-            ScalarValue::Int(1920)
+            ScalarValue::Int(0)
         );
     }
 
@@ -518,7 +545,8 @@ mod tests {
         cat.set_resolution_key("1920x1080");
         assert!(ensure_general_program(&mut cat, &[(0, 0, 1, 1)]).unwrap());
         let areas = &cat.get(GENERAL_PROGRAM).unwrap().search_areas["1920x1080"];
-        assert_eq!(areas["Whole Screen"].right_x, ScalarValue::Int(1920));
+        assert!(!areas.contains_key("Whole Screen"));
+        assert_eq!(areas["Monitor 1"].right_x, ScalarValue::Int(1920));
     }
 
     #[test]
@@ -550,6 +578,7 @@ mod tests {
             GENERAL_PROGRAM,
             ProgramSearchArea {
                 name: "Monitor 1 Left Half".into(),
+                monitor: 1,
                 left_x: ScalarValue::Int(0),
                 top_y: ScalarValue::Int(0),
                 right_x: ScalarValue::Int(960),
@@ -566,10 +595,78 @@ mod tests {
     }
 
     #[test]
+    fn drops_legacy_whole_screen_area() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.create_program(GENERAL_PROGRAM).unwrap();
+        cat.upsert_search_area(
+            GENERAL_PROGRAM,
+            ProgramSearchArea {
+                name: "Whole Screen".into(),
+                monitor: 1,
+                left_x: ScalarValue::Int(0),
+                top_y: ScalarValue::Int(0),
+                right_x: ScalarValue::Int(3840),
+                bottom_y: ScalarValue::Int(1080),
+            },
+        )
+        .unwrap();
+        assert!(ensure_general_program(&mut cat, &[(0, 0, 1920, 1080)]).unwrap());
+        let areas = &cat.get(GENERAL_PROGRAM).unwrap().search_areas["1920x1080"];
+        assert!(!areas.contains_key("Whole Screen"));
+        assert!(areas.contains_key("Monitor 1"));
+    }
+
+    #[test]
+    fn resolve_applies_monitor_origin() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.set_monitor_rects(vec![(0, 0, 1920, 1080), (2560, 100, 1920, 1080)]);
+        ensure_general_program(&mut cat, &[(0, 0, 1920, 1080), (2560, 100, 1920, 1080)]).unwrap();
+        let macro_ = sqyre_domain::Macro::new("t", 0, Vec::new());
+        let (x, y) = cat
+            .resolve_point(
+                &sqyre_domain::CoordinateRef(format!("{GENERAL_PROGRAM}~Monitor 2 Center")),
+                &macro_,
+            )
+            .unwrap();
+        assert_eq!((x, y), (2560 + 960, 100 + 540));
+        let area = cat
+            .resolve_search_area(
+                &sqyre_domain::CoordinateRef(format!("{GENERAL_PROGRAM}~Monitor 2")),
+                &macro_,
+            )
+            .unwrap();
+        assert_eq!(area, (2560, 100, 2560 + 1920, 100 + 1080));
+    }
+
+    #[test]
+    fn resolve_errors_when_monitor_slot_missing() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.set_monitor_rects(vec![(0, 0, 1920, 1080)]);
+        ensure_general_program(&mut cat, &[(0, 0, 1920, 1080), (1920, 0, 1920, 1080)]).unwrap();
+        // Keep Monitor 2 entity but shrink live layout to one slot.
+        cat.set_monitor_rects(vec![(0, 0, 1920, 1080)]);
+        let macro_ = sqyre_domain::Macro::new("t", 0, Vec::new());
+        let err = cat
+            .resolve_point(
+                &sqyre_domain::CoordinateRef(format!("{GENERAL_PROGRAM}~Monitor 2 Center")),
+                &macro_,
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string().contains("monitor slot 2"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn monitor_collection_cells_cover_quadrants_and_halves() {
         let mut cat = ProgramCatalog::default();
         cat.set_resolution_key("1920x1080");
-        ensure_general_program(&mut cat, &[(0, 0, 1920, 1080)]).unwrap();
+        cat.set_monitor_rects(vec![(100, 50, 1920, 1080)]);
+        ensure_general_program(&mut cat, &[(100, 50, 1920, 1080)]).unwrap();
         let macro_ = sqyre_domain::Macro::new("t", 0, Vec::new());
         let tl = cat
             .resolve_search_area(
@@ -577,20 +674,76 @@ mod tests {
                 &macro_,
             )
             .unwrap();
-        assert_eq!(tl, (0, 0, 960, 540));
+        assert_eq!(tl, (100, 50, 100 + 960, 50 + 540));
         let left = cat
             .resolve_search_area(
                 &sqyre_domain::CoordinateRef::collection(GENERAL_PROGRAM, "Monitor 1", 1, 1, 2, 1),
                 &macro_,
             )
             .unwrap();
-        assert_eq!(left, (0, 0, 960, 1080));
+        assert_eq!(left, (100, 50, 100 + 960, 50 + 1080));
         let whole = cat
             .resolve_search_area(
                 &sqyre_domain::CoordinateRef::collection(GENERAL_PROGRAM, "Monitor 1", 1, 1, 2, 2),
                 &macro_,
             )
             .unwrap();
-        assert_eq!(whole, (0, 0, 1920, 1080));
+        assert_eq!(whole, (100, 50, 100 + 1920, 50 + 1080));
+    }
+
+    #[test]
+    fn absolute_point_to_relative_uses_containing_monitor() {
+        let rects = [(0, 0, 1920, 1080), (1920, 0, 2560, 1440)];
+        assert_eq!(absolute_point_to_relative(&rects, 100, 200), (1, 100, 200));
+        assert_eq!(
+            absolute_point_to_relative(&rects, 1920 + 10, 20),
+            (2, 10, 20)
+        );
+    }
+
+    #[test]
+    fn absolute_area_clamps_to_press_monitor() {
+        let rects = [(0, 0, 1920, 1080), (1920, 0, 1920, 1080)];
+        // Drag from monitor 1 into monitor 2 — clamp stays on monitor 1.
+        let (mon, lx, ty, rx, by) =
+            absolute_area_to_relative(&rects, 100, 100, 100, 100, 2000, 500);
+        assert_eq!(mon, 1);
+        assert_eq!((lx, ty, rx, by), (100, 100, 1919, 500));
+        // Press on monitor 2 even when normalized top-left would fall on monitor 1.
+        let (mon2, _, _, _, _) = absolute_area_to_relative(&rects, 2000, 500, 100, 100, 2000, 500);
+        assert_eq!(mon2, 2);
+    }
+
+    #[test]
+    fn parse_defaults_missing_monitor_to_one() {
+        let yaml = r#"
+Demo:
+  name: Demo
+  coordinates:
+    1920x1080:
+      scale: 1.0
+      points:
+        Spot:
+          name: Spot
+          x: 10
+          y: 20
+      searchareas:
+        Box:
+          name: Box
+          leftx: 0
+          topy: 0
+          rightx: 50
+          bottomy: 50
+"#;
+        let v: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+        let cat = ProgramCatalog::from_yaml_value(&v).unwrap();
+        let p = cat.get("Demo").unwrap();
+        assert_eq!(p.points["1920x1080"]["Spot"].monitor, 1);
+        assert_eq!(p.search_areas["1920x1080"]["Box"].monitor, 1);
+        let encoded = cat.to_yaml_value(&serde_yaml::Value::Null);
+        let reparsed = ProgramCatalog::from_yaml_value(&encoded).unwrap();
+        let spot = &reparsed.get("Demo").unwrap().points["1920x1080"]["Spot"];
+        assert_eq!(spot.monitor, 1);
+        assert_eq!(spot.x, ScalarValue::Int(10));
     }
 }
