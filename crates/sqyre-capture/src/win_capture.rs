@@ -9,8 +9,9 @@ use windows::core::BOOL;
 use windows::Win32::Foundation::{LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
-    EnumDisplayMonitors, GetDC, GetDIBits, MonitorFromPoint, ReleaseDC, SelectObject, BITMAPINFO,
-    BITMAPINFOHEADER, DIB_RGB_COLORS, HDC, HGDIOBJ, HMONITOR, MONITOR_DEFAULTTOPRIMARY, SRCCOPY,
+    EnumDisplayMonitors, GetDC, GetDIBits, GetMonitorInfoW, MonitorFromPoint, ReleaseDC,
+    SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HDC, HGDIOBJ, HMONITOR,
+    MONITORINFO, MONITOR_DEFAULTTOPRIMARY, SRCCOPY,
 };
 use windows::Win32::UI::HiDpi::{
     GetDpiForMonitor, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
@@ -243,7 +244,44 @@ fn enum_monitor_rects() -> Result<Vec<DesktopRect>, CaptureError> {
         }
     }
     rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
-    Ok(rects)
+    // Match Linux: Windows Settings primary display is Sqyre Monitor 1.
+    Ok(order_primary_first(rects))
+}
+
+/// Virtual-desktop rect of the Windows primary monitor (`MONITOR_DEFAULTTOPRIMARY`).
+pub(crate) fn query_windows_primary_rect() -> Option<DesktopRect> {
+    // SAFETY: MonitorFromPoint / GetMonitorInfoW use stack out-params; no GDI handle retained.
+    unsafe {
+        let mon = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
+        if mon.is_invalid() {
+            return None;
+        }
+        let mut mi = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(mon, &mut mi).as_bool() {
+            return None;
+        }
+        let r = mi.rcMonitor;
+        let w = r.right - r.left;
+        let h = r.bottom - r.top;
+        if w > 1 && h > 1 {
+            Some(DesktopRect {
+                x: r.left,
+                y: r.top,
+                w,
+                h,
+            })
+        } else {
+            None
+        }
+    }
+}
+
+/// Put the Windows primary display first, then keep remaining L→R.
+pub(crate) fn order_primary_first(rects: Vec<DesktopRect>) -> Vec<DesktopRect> {
+    crate::with_primary_monitor_first(rects, query_windows_primary_rect())
 }
 
 /// Primary monitor DPI scale (`dpi / 96`).

@@ -265,11 +265,57 @@ fn usable_desktop_rects(
         rects.into_iter().filter(|r| r.w > 1 && r.h > 1).collect();
     usable.sort_by_key(|r| (r.x, r.y, r.w, r.h));
     usable.dedup();
-    usable
+    // OS primary display becomes Monitor 1 (GNOME / Windows Settings numbering).
+    with_primary_monitor_first(usable, query_os_primary_rect())
 }
 
-/// Live ScreenCast/X11 capturer rects, preferring Linux Xinerama when it reports
-/// more outputs than the portal currently has (e.g. one stream failed to connect).
+/// Move `primary` to index 0; remaining monitors keep their relative order.
+/// Used so Sqyre slot 1 matches the OS "primary" / Monitor 1 display.
+pub(crate) fn with_primary_monitor_first(
+    mut rects: Vec<sqyre_ports::DesktopRect>,
+    primary: Option<sqyre_ports::DesktopRect>,
+) -> Vec<sqyre_ports::DesktopRect> {
+    if rects.len() < 2 {
+        return rects;
+    }
+    let Some(primary) = primary else {
+        return rects;
+    };
+    let idx = rects.iter().position(|r| *r == primary).or_else(|| {
+        rects
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.w == primary.w && r.h == primary.h)
+            .min_by_key(|(_, r)| r.x.abs_diff(primary.x) as u64 + r.y.abs_diff(primary.y) as u64)
+            .map(|(i, _)| i)
+    });
+    if let Some(i) = idx {
+        if i != 0 {
+            let p = rects.remove(i);
+            rects.insert(0, p);
+        }
+    }
+    rects
+}
+
+fn query_os_primary_rect() -> Option<sqyre_ports::DesktopRect> {
+    #[cfg(target_os = "linux")]
+    {
+        crate::x11_capture::query_x11_primary_rect()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        crate::win_capture::query_windows_primary_rect()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+/// Live ScreenCast/X11 capturer rects. On Linux, prefer Xinerama/RandR when it
+/// reports **more** outputs than the portal (partial ScreenCast streams must not
+/// shrink the logical slot map and reseed General).
 pub fn preferred_monitor_rects() -> Vec<sqyre_ports::DesktopRect> {
     let capture = shared_capturer_nonblocking()
         .ok()
@@ -280,25 +326,45 @@ pub fn preferred_monitor_rects() -> Vec<sqyre_ports::DesktopRect> {
     let x11 = usable_desktop_rects(physical_monitor_rects());
     #[cfg(not(target_os = "linux"))]
     let x11: Vec<sqyre_ports::DesktopRect> = Vec::new();
-    if x11.len() > capture.len() {
+    // Prefer the richer layout. Incomplete portal (1 of N streams) must not win.
+    let use_x11 = x11.len() > capture.len();
+    if use_x11 {
         x11
-    } else {
+    } else if !capture.is_empty() {
         capture
+    } else {
+        x11
     }
 }
 
-/// Leftmost live monitor resolution key (`"{w}x{h}"`).
-/// Uses capturer monitor rects sorted by position (shared outputs on portal),
-/// not whichever screen the Sqyre window is on.
+/// Sorted 1-based monitor slots from [`preferred_monitor_rects`].
+pub fn monitor_slots() -> Vec<sqyre_ports::MonitorSlot> {
+    preferred_monitor_rects()
+        .into_iter()
+        .enumerate()
+        .map(|(i, rect)| sqyre_ports::MonitorSlot {
+            index: (i + 1) as u32,
+            rect,
+        })
+        .collect()
+}
+
+/// Slot-1 live monitor resolution key (`"{w}x{h}"`).
+/// Uses [`preferred_monitor_rects`] so the key matches logical Monitor 1
+/// (OS primary-first on Linux/Windows).
 /// Returns `None` when no display is available (headless / CI).
 ///
 /// Does not block on a portal ScreenCast picker: if opening may block and the
 /// capturer is not ready yet, returns `None`.
 pub fn main_monitor_resolution_key() -> Option<String> {
-    let capturer = shared_capturer_nonblocking().ok()?;
-    let mut rects = capturer.monitor_rects_ref().ok()?;
-    rects.retain(|r| r.w > 0 && r.h > 0);
-    rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
+    let mut rects = preferred_monitor_rects();
+    if rects.is_empty() {
+        let capturer = shared_capturer_nonblocking().ok()?;
+        rects = capturer.monitor_rects_ref().ok()?;
+        rects.retain(|r| r.w > 0 && r.h > 0);
+        rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
+        rects = with_primary_monitor_first(rects, query_os_primary_rect());
+    }
     let r = rects.first()?;
     Some(format!("{}x{}", r.w, r.h))
 }
@@ -723,6 +789,70 @@ impl sqyre_ports::WindowFocuser for OsWindowFocuser {
 #[cfg(test)]
 mod tests {
     use super::WindowInfo;
+    use sqyre_ports::DesktopRect;
+
+    #[test]
+    fn with_primary_monitor_first_moves_primary_to_slot_one() {
+        let left = DesktopRect {
+            x: 0,
+            y: 128,
+            w: 1920,
+            h: 1080,
+        };
+        let primary = DesktopRect {
+            x: 1920,
+            y: 0,
+            w: 2560,
+            h: 1440,
+        };
+        // L→R sorted input (left first), primary is the right display.
+        let ordered = super::with_primary_monitor_first(vec![left, primary], Some(primary));
+        assert_eq!(ordered, vec![primary, left]);
+    }
+
+    #[test]
+    fn with_primary_monitor_first_noop_without_primary() {
+        let a = DesktopRect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        };
+        let b = DesktopRect {
+            x: 1920,
+            y: 0,
+            w: 2560,
+            h: 1440,
+        };
+        let ordered = super::with_primary_monitor_first(vec![a, b], None);
+        assert_eq!(ordered, vec![a, b]);
+    }
+
+    #[test]
+    fn with_primary_monitor_first_matches_by_size_near_origin() {
+        let left = DesktopRect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        };
+        let right = DesktopRect {
+            x: 1920,
+            y: 0,
+            w: 2560,
+            h: 1440,
+        };
+        // Primary rect slightly off (timing/hotplug) but same size as right.
+        let primary_approx = DesktopRect {
+            x: 1921,
+            y: 1,
+            w: 2560,
+            h: 1440,
+        };
+        let ordered = super::with_primary_monitor_first(vec![left, right], Some(primary_approx));
+        assert_eq!(ordered[0], right);
+        assert_eq!(ordered[1], left);
+    }
 
     #[test]
     fn window_info_label() {
