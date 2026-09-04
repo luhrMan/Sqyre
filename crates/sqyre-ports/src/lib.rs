@@ -46,6 +46,13 @@ pub struct DesktopRect {
     pub h: i32,
 }
 
+/// One display in sorted slot order (`index` is 1-based).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MonitorSlot {
+    pub index: u32,
+    pub rect: DesktopRect,
+}
+
 impl DesktopRect {
     /// Normalize two corners so left≤right and top≤bottom.
     pub fn normalize_corners(ax: i32, ay: i32, bx: i32, by: i32) -> (i32, i32, i32, i32) {

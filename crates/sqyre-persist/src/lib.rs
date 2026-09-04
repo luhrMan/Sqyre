@@ -17,7 +17,8 @@ pub use fs_name::{confined_join, is_safe_fs_entity_name, validate_fs_entity_name
 pub use import::{merge_databases_prefer_imported, ImportMode};
 pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
-    ensure_general_program, MonitorRect, ProgramAtlas, ProgramCatalog, ProgramCollection,
+    absolute_area_to_relative, absolute_point_to_relative, ensure_general_program,
+    monitor_slot_for_point, MonitorRect, ProgramAtlas, ProgramCatalog, ProgramCollection,
     ProgramData, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea, GENERAL_PROGRAM,
     IMAGE_SEARCH_REFERENCE, TEMPORARY_PROGRAM,
 };

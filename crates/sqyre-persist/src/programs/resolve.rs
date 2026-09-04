@@ -1,9 +1,8 @@
 //! Coordinate / entity resolution against the program catalog.
 
 use super::{
-    bucket_scale, cell_rect, collection_from, parse_resolution_key, point_from, remap_coord,
-    search_area_from, split_target, ProgramCatalog, ProgramCollection, ProgramData, ProgramPoint,
-    ProgramSearchArea,
+    bucket_scale, cell_rect, collection_from, point_from, search_area_from, split_target,
+    ProgramCatalog, ProgramCollection, ProgramData, ProgramPoint, ProgramSearchArea,
 };
 use sqyre_domain::{resolve_scalar_int, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
 use sqyre_ports::PortError;
@@ -137,7 +136,9 @@ impl ProgramCatalog {
         if scalar_has_runtime_ref(&pt.x) || scalar_has_runtime_ref(&pt.y) {
             return Ok((x, y));
         }
-        self.remap_xy(x, y, src_key, data)
+        let (x, y) = self.remap_monitor_relative(x, y, src_key, data)?;
+        let abs = self.apply_monitor_origin(pt.monitor, x, y)?;
+        Ok(abs)
     }
 
     pub fn resolve_search_area(
@@ -164,29 +165,63 @@ impl ProgramCatalog {
         {
             return Ok((lx, ty, rx, by));
         }
-        let (lx, ty) = self.remap_xy(lx, ty, src_key, data)?;
-        let (rx, by) = self.remap_xy(rx, by, src_key, data)?;
+        let (lx, ty) = self.remap_monitor_relative(lx, ty, src_key, data)?;
+        let (rx, by) = self.remap_monitor_relative(rx, by, src_key, data)?;
+        let (lx, ty) = self.apply_monitor_origin(sa.monitor, lx, ty)?;
+        let (rx, by) = self.apply_monitor_origin(sa.monitor, rx, by)?;
         Ok((lx, ty, rx, by))
     }
 
-    pub(super) fn remap_xy(
+    /// Map a 1-based slot to its live origin. Missing slot → error (no silent clamp).
+    fn monitor_origin(&self, monitor: u32) -> std::result::Result<(i32, i32), PortError> {
+        let slot = monitor.max(1) as usize;
+        let fallback = [(0, 0, 1920, 1080)];
+        let rects = if self.monitor_rects.is_empty() {
+            fallback.as_slice()
+        } else {
+            self.monitor_rects.as_slice()
+        };
+        let Some(&(ox, oy, _, _)) = rects.get(slot - 1) else {
+            return Err(PortError::invalid(format!(
+                "monitor slot {slot} not available ({} live monitor{})",
+                rects.len(),
+                if rects.len() == 1 { "" } else { "s" }
+            )));
+        };
+        Ok((ox, oy))
+    }
+
+    fn apply_monitor_origin(
+        &self,
+        monitor: u32,
+        x: i32,
+        y: i32,
+    ) -> std::result::Result<(i32, i32), PortError> {
+        let (ox, oy) = self.monitor_origin(monitor)?;
+        Ok((ox + x, oy + y))
+    }
+
+    /// Remap monitor-relative pixels: DPI scale only (not primary WxH).
+    /// WxH remapping was for virtual-desktop absolutes and warps per-monitor relatives
+    /// when the runtime resolution key is the leftmost monitor's size.
+    fn remap_monitor_relative(
         &self,
         x: i32,
         y: i32,
         src_key: &str,
         data: &ProgramData,
     ) -> std::result::Result<(i32, i32), PortError> {
-        let rt_key = self.resolution_key();
-        if rt_key.is_empty() {
-            return Ok((x, y));
-        }
-        let (src_w, src_h) = parse_resolution_key(src_key)?;
-        let (rt_w, rt_h) = parse_resolution_key(rt_key)?;
         let src_scale = bucket_scale(data, src_key);
         let rt_scale = self.runtime_scale();
+        let src_scale = if src_scale > 0.0 { src_scale } else { 1.0 };
+        let rt_scale = if rt_scale > 0.0 { rt_scale } else { 1.0 };
+        if (src_scale - rt_scale).abs() < f32::EPSILON {
+            return Ok((x, y));
+        }
+        let factor = rt_scale as f64 / src_scale as f64;
         Ok((
-            remap_coord(x, src_w, rt_w, src_scale, rt_scale),
-            remap_coord(y, src_h, rt_h, src_scale, rt_scale),
+            (x as f64 * factor).round() as i32,
+            (y as f64 * factor).round() as i32,
         ))
     }
 
