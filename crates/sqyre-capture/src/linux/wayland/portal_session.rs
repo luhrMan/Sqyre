@@ -674,6 +674,17 @@ async fn finish_pipewire_setup(
             ),
         );
     }
+    // Partial share (restore token or picker) leaves unshared outputs uncapturable
+    // and used to shrink the selection cover — reject and clear tokens so the next
+    // open re-prompts for every display.
+    let usable_x11 = x11_layout.iter().filter(|r| r.w > 1 && r.h > 1).count();
+    if usable_x11 >= 2 && streams.len() < usable_x11 {
+        clear_restore_tokens();
+        return Err(CaptureError::Message(format!(
+            "portal shared {} monitor(s) but desktop has {usable_x11}; share all displays",
+            streams.len()
+        )));
+    }
     let virtual_bounds = monitor_rects
         .iter()
         .copied()
