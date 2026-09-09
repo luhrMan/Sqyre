@@ -1,11 +1,13 @@
 //! Coordinate / entity resolution against the program catalog.
 
 use super::{
-    bucket_scale, cell_rect, collection_from, point_from, search_area_from, split_target,
-    ProgramCatalog, ProgramCollection, ProgramData, ProgramPoint, ProgramSearchArea,
+    bucket_scale, collection_from, point_from, search_area_from, split_target, ProgramCatalog,
+    ProgramCollection, ProgramData, ProgramPoint, ProgramSearchArea,
 };
-use sqyre_domain::{resolve_scalar_int, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
-use sqyre_ports::PortError;
+use sqyre_domain::{
+    grid_cell_rect, resolve_scalar_int, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER,
+};
+use sqyre_ports::{CollectionArea, PortError};
 use std::path::PathBuf;
 
 /// Runtime screen coords (e.g. `${foundX}`) must not be remapped by catalog DPI/resolution.
@@ -234,6 +236,21 @@ impl ProgramCatalog {
         r2: i32,
         c2: i32,
     ) -> std::result::Result<(i32, i32, i32, i32), PortError> {
+        let area = self.resolve_collection_area(r, macro_)?;
+        grid_cell_rect(area.bounds(), area.rows, area.cols, r1, c1, r2, c2).ok_or_else(|| {
+            PortError::invalid(format!(
+                "cell range {r1},{c1}-{r2},{c2} out of bounds for {}x{} grid",
+                area.rows, area.cols
+            ))
+        })
+    }
+
+    /// Full collection search-area rect and grid. Ignores any `@cell` suffix on `r`.
+    pub fn resolve_collection_area(
+        &self,
+        r: &CoordinateRef,
+        macro_: &Macro,
+    ) -> std::result::Result<CollectionArea, PortError> {
         let col = self.lookup_collection(r)?;
         if col.search_area.is_empty() {
             return Err(PortError::invalid(format!(
@@ -245,10 +262,15 @@ impl ProgramCatalog {
             Some(prog) => CoordinateRef(format!("{prog}{PROGRAM_DELIMITER}{}", col.search_area)),
             None => CoordinateRef(col.search_area.clone()),
         };
-        let (left_x, top_y, right_x, bottom_y) = self.resolve_search_area(&sa_ref, macro_)?;
-        cell_rect(
-            left_x, top_y, right_x, bottom_y, col.rows, col.cols, r1, c1, r2, c2,
-        )
+        let (left, top, right, bottom) = self.resolve_search_area(&sa_ref, macro_)?;
+        Ok(CollectionArea {
+            left,
+            top,
+            right,
+            bottom,
+            rows: col.rows,
+            cols: col.cols,
+        })
     }
 
     /// `program~item` → icon PNG paths (variants + legacy).

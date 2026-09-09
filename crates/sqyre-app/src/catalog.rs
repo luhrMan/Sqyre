@@ -1,6 +1,8 @@
 use sqyre_domain::{CoordinateRef, Macro};
 use sqyre_persist::{ensure_general_program, Database, MonitorRect, ProgramCatalog};
-use sqyre_ports::{CoordinateResolver, IconStore, ItemMeta, MacroLookup, PortError};
+use sqyre_ports::{
+    CollectionArea, CoordinateResolver, IconStore, ItemMeta, MacroLookup, PortError,
+};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -134,6 +136,14 @@ impl CoordinateResolver for CatalogResolver<'_> {
         Ok((col.rows, col.cols))
     }
 
+    fn collection_area(
+        &self,
+        r: &CoordinateRef,
+        macro_: &Macro,
+    ) -> Result<CollectionArea, PortError> {
+        self.0.resolve_collection_area(r, macro_)
+    }
+
     fn atlas_members(&self, program: &str, atlas: &str) -> Result<Vec<String>, PortError> {
         Ok(self.0.lookup_atlas(program, atlas)?.collections.clone())
     }
@@ -229,6 +239,11 @@ Game:
             (0, 0, 100, 80)
         );
         assert_eq!(resolver.collection_grid("Game", "Bag").unwrap(), (4, 5));
+        let bag_area = resolver
+            .collection_area(&CoordinateRef("Game~Bag@1,1-1,1".into()), &m)
+            .unwrap();
+        assert_eq!(bag_area.bounds(), (0, 0, 100, 80));
+        assert_eq!((bag_area.rows, bag_area.cols), (4, 5));
         assert_eq!(
             resolver.atlas_members("Game", "Inventory").unwrap(),
             vec!["Bag".to_string()]
