@@ -5,11 +5,12 @@ use super::{DataEditor, EditorTab, ListCache};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::show_file_hover;
 use crate::icon_cache::IconCache;
+use crate::overlay_icons;
 use crate::pickers::{self, PickerScrollOpts};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::widgets::searchable_combo_with;
 use eframe::egui;
-use sqyre_persist::{ProgramCatalog, UserSettings};
+use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, UserSettings};
 use std::collections::HashMap;
 
 impl DataEditor {
@@ -302,18 +303,19 @@ impl DataEditor {
                 }
             }
             EditorTab::Overlay => {
+                let live_preview = self.overlay_edit_preview();
                 for prog in editor_program_names(catalog) {
-                    let buttons: Vec<(String, String, bool)> = settings
+                    let buttons: Vec<_> = settings
                         .overlay_buttons
                         .iter()
                         .filter(|b| b.program == *prog)
-                        .map(|b| (b.id.clone(), b.display_name().to_string(), b.enabled))
+                        .cloned()
                         .collect();
                     let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
-                    let any_btn = buttons.iter().any(|(id, name, _)| {
+                    let any_btn = buttons.iter().any(|b| {
                         q.is_empty()
-                            || pickers::fuzzy_match_fold(q, name)
-                            || pickers::fuzzy_match_fold(q, id)
+                            || pickers::fuzzy_match_fold(q, b.display_name())
+                            || pickers::fuzzy_match_fold(q, &b.id)
                     });
                     if !prog_match && !any_btn {
                         continue;
@@ -345,27 +347,37 @@ impl DataEditor {
                     })
                     .body(|ui| {
                         ui.set_max_width(ui.available_width());
-                        for (btn_id, display_name, enabled) in &buttons {
+                        for btn in &buttons {
+                            let display_name = btn.display_name();
                             if !q.is_empty()
                                 && !pickers::fuzzy_match_fold(q, display_name)
-                                && !pickers::fuzzy_match_fold(q, btn_id)
+                                && !pickers::fuzzy_match_fold(q, &btn.id)
                                 && !prog_match
                             {
                                 continue;
                             }
                             let selected = self.selected_program.as_deref() == Some(prog.as_str())
-                                && self.selected_entity.as_deref() == Some(btn_id.as_str());
+                                && self.selected_entity.as_deref() == Some(btn.id.as_str());
                             ui.horizontal(|ui| {
-                                let mut enabled = *enabled;
+                                let mut enabled = btn.enabled;
                                 if ui
                                     .checkbox(&mut enabled, "")
                                     .on_hover_text(help::DE_OVERLAY_ENABLED)
                                     .changed()
                                 {
-                                    overlay_enabled_updates.push((btn_id.clone(), enabled));
+                                    overlay_enabled_updates.push((btn.id.clone(), enabled));
                                 }
-                                if ui.selectable_label(selected, display_name).clicked() {
-                                    clicked_overlay = Some((prog.clone(), btn_id.clone()));
+                                let paint = live_preview
+                                    .as_ref()
+                                    .filter(|p| p.id == btn.id)
+                                    .unwrap_or(btn);
+                                let thumb = paint_overlay_list_thumb(ui, paint);
+                                if thumb.clicked()
+                                    || ui
+                                        .selectable_label(selected, paint.display_name())
+                                        .clicked()
+                                {
+                                    clicked_overlay = Some((prog.clone(), btn.id.clone()));
                                 }
                             });
                         }
@@ -529,6 +541,21 @@ impl DataEditor {
 
 fn data_editor_list_collapse_id(tab: EditorTab, program: &str) -> egui::Id {
     egui::Id::new(("data_editor_list", tab_collapse_key(tab), program))
+}
+
+/// Miniature overlay button using the configured fill, border, radius, and icon colors.
+fn paint_overlay_list_thumb(ui: &mut egui::Ui, btn: &OverlayButtonConfig) -> egui::Response {
+    let icon = overlay_icons::resolve(&btn.icon);
+    let thumb = ui
+        .spacing()
+        .interact_size
+        .y
+        .max(crate::icon_cache::PROCESS_ICON_SIDE);
+    let mut style = overlay_icons::OverlayPaintStyle::from_config(btn);
+    let k = thumb / btn.size.max(1.0);
+    style.corner_radius *= k;
+    style.border_width *= k;
+    overlay_icons::style_preview_button(ui, icon, thumb, &style)
 }
 
 fn tab_collapse_key(tab: EditorTab) -> &'static str {

@@ -17,17 +17,26 @@ impl SqyreApp {
     }
 
     pub(crate) fn drain_pending_hotkey_macros(&mut self, ctx: &egui::Context) {
+        // Don't take while a chooser is open — overlay clicks share this queue
+        // and used to be discarded here.
+        if self.hotkey_chooser.is_some() {
+            return;
+        }
         let pending: Vec<String> = std::mem::take(&mut *self.pending_hotkey_macros.lock());
         if pending.is_empty() {
             return;
         }
-        // While a chooser is open, ignore further fires (avoid stacking menus).
-        if self.hotkey_chooser.is_some() {
-            return;
-        }
 
-        let groups =
-            crate::hotkey_chooser::group_pending_by_chord(&pending, &self.workspace.macros);
+        let (groups, direct) =
+            crate::hotkey_chooser::partition_pending(&pending, &self.workspace.macros);
+        for name in direct {
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            sqyre_capture::event_log(
+                "SQYRE_OVERLAY",
+                &[("fire", "direct"), ("name", name.as_str())],
+            );
+            self.start_macro_by_name(&name, ctx);
+        }
         for (chord_key, _trigger, names) in groups {
             if names.len() <= 1 {
                 if let Some(name) = names.into_iter().next() {
@@ -57,6 +66,8 @@ impl SqyreApp {
     }
 
     pub(crate) fn request_stop(&mut self) {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        sqyre_capture::mark_site("run:stop:requested");
         self.run_session.state.stop.request_stop();
         *self.run_session.state.status.lock() = "Stop requested…".into();
     }
