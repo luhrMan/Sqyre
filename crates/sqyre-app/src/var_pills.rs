@@ -52,20 +52,9 @@ fn paint_text_chip(
     ui.interact(rect, ui.id().with(id_salt), Sense::hover())
 }
 
-/// Plain text segment (no chrome): sized to the galley and ink-centered so it
-/// aligns with nested chips under parent `Align::Center`.
+/// Plain text segment (no chrome): same content-band height as a nested var chip
+/// so `Variable:` / ` -10` share tops and bottoms with adjacent chips.
 fn paint_plain_segment(ui: &mut egui::Ui, text: &str, color: Color32) {
-    let font = egui::TextStyle::Small.resolve(ui.style());
-    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, color);
-    let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
-    paint_galley_centered(ui, rect, galley, color);
-}
-
-/// Plain value text with the same content-band height as a nested var chip.
-///
-/// Labeled pills (`Variable: [name]`) wrap a nested chip; plain value pills
-/// must match that height or they sit lower in the same horizontal row.
-fn paint_plain_value_segment(ui: &mut egui::Ui, text: &str, color: Color32) {
     let font = egui::TextStyle::Small.resolve(ui.style());
     let galley = ui.painter().layout_no_wrap(text.to_owned(), font, color);
     let size = Vec2::new(
@@ -181,13 +170,23 @@ pub fn paint_value_pill(
         rgba_pub(action_pastel_color(action_type, is_dark))
     };
     let plain_fg = contrast_fg(fill);
-    // Always use outer_frame so plain values share height with labeled name pills.
+    // Paint segments directly into outer_frame's LTR layout so name pills and
+    // value pills share the same nesting (no extra `ui.horizontal` wrapper).
     outer_frame(ui, fill, |ui| {
+        let prev_spacing = ui.spacing().item_spacing;
+        ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
         if sqyre_varref::contains(text) {
-            paint_var_ref_content(ui, text, known, is_dark, plain_fg);
+            for seg in sqyre_varref::segments(text) {
+                if seg.is_ref {
+                    paint_nested_var_chip(ui, &seg.name, known, is_dark);
+                } else if !seg.text.is_empty() {
+                    paint_plain_segment(ui, &seg.text, plain_fg);
+                }
+            }
         } else {
-            paint_plain_value_segment(ui, text, plain_fg);
+            paint_plain_segment(ui, text, plain_fg);
         }
+        ui.spacing_mut().item_spacing = prev_spacing;
     })
 }
 
@@ -203,16 +202,17 @@ pub fn paint_variable_name_pill(
     let fill = rgba_pub(action_pastel_color(action_type, is_dark));
     let name = var_name.trim();
     let fg = contrast_fg(fill);
+    // Paint directly into outer_frame's LTR Center layout (no nested horizontal).
     outer_frame(ui, fill, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
-            if !label.is_empty() {
-                paint_plain_segment(ui, &format!("{label}: "), fg);
-            }
-            if !name.is_empty() {
-                paint_nested_var_chip(ui, name, known, is_dark);
-            }
-        });
+        let prev_spacing = ui.spacing().item_spacing;
+        ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
+        if !label.is_empty() {
+            paint_plain_segment(ui, &format!("{label}: "), fg);
+        }
+        if !name.is_empty() {
+            paint_nested_var_chip(ui, name, known, is_dark);
+        }
+        ui.spacing_mut().item_spacing = prev_spacing;
     })
 }
 
@@ -767,19 +767,22 @@ mod tests {
             ui.horizontal(|ui| {
                 let name =
                     paint_variable_name_pill(ui, "Variable", "foundY", "setvariable", &known, true);
-                let value = paint_value_pill(ui, "foundY -10", "setvariable", &known, true);
-                assert!(
-                    (name.rect.height() - value.rect.height()).abs() < 0.5,
-                    "name {:.1} vs value {:.1}",
-                    name.rect.height(),
-                    value.rect.height()
-                );
-                assert!(
-                    (name.rect.min.y - value.rect.min.y).abs() < 0.5,
-                    "tops diverge: name {:.1} vs value {:.1}",
-                    name.rect.min.y,
-                    value.rect.min.y
-                );
+                let plain = paint_value_pill(ui, "foundY -10", "setvariable", &known, true);
+                let with_ref = paint_value_pill(ui, "${foundY} -10", "setvariable", &known, true);
+                for (label, value) in [("plain", plain), ("ref", with_ref)] {
+                    assert!(
+                        (name.rect.height() - value.rect.height()).abs() < 0.5,
+                        "{label}: name {:.1} vs value {:.1}",
+                        name.rect.height(),
+                        value.rect.height()
+                    );
+                    assert!(
+                        (name.rect.min.y - value.rect.min.y).abs() < 0.5,
+                        "{label}: tops diverge name {:.1} vs value {:.1}",
+                        name.rect.min.y,
+                        value.rect.min.y
+                    );
+                }
             });
         });
     }

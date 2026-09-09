@@ -99,7 +99,10 @@ pub fn paint_edit_fields(
         }
         ActionKind::Click { button, state } => {
             tip_section(ui, |ui| {
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                // `ui.horizontal` starts at interact_size.y and grows to the
+                // mouse/slider — not `with_layout(… Align::Center)`, which fills
+                // ScrollArea's unbounded height and ratchets the tip to the screen.
+                ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
                     help::tip(theme::mouse_button_picker(ui, button), h::CLICK_BUTTON);
                     ui.vertical(|ui| {
@@ -243,8 +246,15 @@ pub fn paint_edit_fields(
             process_path,
             window_title,
         } => {
-            tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Window title", h::FOCUS_TITLE, window_title);
+            // Stack vertically; path wraps so long executables stay inside the tip.
+            tip_section(ui, |ui| {
+                crate::widgets::text_field_width(
+                    ui,
+                    "Window title",
+                    h::FOCUS_TITLE,
+                    window_title,
+                    f32::INFINITY,
+                );
                 let mut pick = false;
                 ui.horizontal(|ui| {
                     help::label(ui, "Process path", h::FOCUS_PROCESS);
@@ -254,18 +264,26 @@ pub fn paint_edit_fields(
                         process_path,
                         window_title,
                     );
-                    help::tip(
-                        ui.add(
-                            egui::TextEdit::singleline(process_path)
-                                .desired_width(W_TEXT)
-                                .hint_text("/path/to/app"),
-                        ),
-                        h::FOCUS_PROCESS,
-                    );
                     if pick_icon_btn(ui).clicked() {
                         pick = true;
                     }
                 });
+                // Paths never contain newlines; disable Return so Enter doesn't
+                // insert one. Multiline still wraps soft-breaks for display.
+                if process_path.contains(['\n', '\r']) {
+                    process_path.retain(|c| c != '\n' && c != '\r');
+                }
+                let path_rows = path_wrap_rows(crate::widgets::visible_width(ui), process_path);
+                help::tip(
+                    ui.add(
+                        egui::TextEdit::multiline(process_path)
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(path_rows)
+                            .return_key(None)
+                            .hint_text("/path/to/app"),
+                    ),
+                    h::FOCUS_PROCESS,
+                );
                 if pick {
                     *picker = pickers::open_window_picker(process_path, window_title);
                 }
@@ -685,6 +703,15 @@ fn targets_editor(
 
 fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {
     crate::theme::icon_button(ui, "☰").on_hover_text("Pick…")
+}
+
+/// Soft-wrap row count for a process path in the Focus Window tip.
+fn path_wrap_rows(available_width: f32, path: &str) -> usize {
+    // ~7px per monospace-ish char at default tip font size; clamp so the tip
+    // stays compact for short paths and readable for Steam/Proton-length ones.
+    let chars_per_line = (available_width / 7.0).floor().max(24.0) as usize;
+    let len = path.chars().count().max(1);
+    len.div_ceil(chars_per_line).clamp(1, 4)
 }
 
 /// Label + read-only value + pick button. Returns true when pick was clicked.
