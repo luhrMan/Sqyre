@@ -590,8 +590,8 @@ fn show_edit_window(
     let mut open = true;
 
     // Stable Area id (also keys egui's resize state as `area_id.with("resize")`).
-    // Bump salt when changing default/min sizing so persisted locked widths are discarded.
-    let area_id = egui::Id::new(("action_edit_tip", "grow_v9", action_id));
+    // Bump salt when changing default/min sizing so persisted locked sizes are discarded.
+    let area_id = egui::Id::new(("action_edit_tip", "grow_v11", action_id));
     let (fitting, fit_fields_h) = match state {
         TooltipState::Edit(edit) => (edit.auto_fit, edit.fields_height),
         _ => (false, 0.0),

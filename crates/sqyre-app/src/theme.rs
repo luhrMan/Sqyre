@@ -209,11 +209,10 @@ pub fn section_frame(style: &egui::Style) -> egui::Frame {
 
 /// Full-width framed card, then vertical `gap` after it.
 pub fn framed_section(ui: &mut egui::Ui, gap: f32, add_contents: impl FnOnce(&mut egui::Ui)) {
-    // `set_width(available)` becomes content min_size and ratchets Windows toward
-    // max_size — cap with visible_width instead (see `fill_resize_body`).
-    let row_w = crate::widgets::visible_width(ui);
+    // Cap width *inside* the frame. Measuring outside and then applying
+    // `set_max_width` ignores inner_margin/stroke, so the right border clips.
     section_frame(ui.style()).show(ui, |ui| {
-        ui.set_max_width(row_w);
+        ui.set_max_width(crate::widgets::visible_width(ui));
         add_contents(ui);
     });
     ui.add_space(gap);
