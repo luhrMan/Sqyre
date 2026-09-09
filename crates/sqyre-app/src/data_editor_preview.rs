@@ -479,8 +479,12 @@ pub(crate) fn paint_grid_overlay_painter(
 }
 
 /// Per-monitor `(x, y, w, h)` in virtual-desktop coordinates for the atlas plane.
-/// Prefers real positions from the capturer; falls back to L→R layout from sizes.
+/// Catalog layout first so monitor boxes match [`sqyre_persist::ProgramCatalog::resolve_search_area`].
 fn atlas_monitor_rects(catalog: &sqyre_persist::ProgramCatalog) -> Vec<(i32, i32, i32, i32)> {
+    let cached = catalog.monitor_rects();
+    if !cached.is_empty() {
+        return cached.to_vec();
+    }
     #[cfg(feature = "native-runtime")]
     {
         let preferred: Vec<_> = sqyre_capture::preferred_monitor_rects()
