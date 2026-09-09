@@ -741,10 +741,16 @@ unsafe fn send_net_wm_state_add(
 // SAFETY: callers must pass a live, non-null Xlib `display` connection; the
 // `CString` outlives the `XInternAtom` call that reads its pointer.
 unsafe fn intern(display: *mut Display, name: &str) -> Result<Atom, CaptureError> {
-    let c = CString::new(name).map_err(|e| CaptureError::Message(e.to_string()))?;
+    let c = CString::new(name).map_err(|e| CaptureError::X11 {
+        op: "XInternAtom",
+        detail: format!("{name}: {e}"),
+    })?;
     let atom = XInternAtom(display, c.as_ptr(), False);
     if atom == 0 {
-        Err(CaptureError::Message(format!("XInternAtom {name} failed")))
+        Err(CaptureError::X11 {
+            op: "XInternAtom",
+            detail: format!("{name} failed"),
+        })
     } else {
         Ok(atom)
     }

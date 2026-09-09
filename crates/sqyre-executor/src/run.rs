@@ -575,7 +575,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             for ch in resolved.chars() {
                 exec.check_stopped()?;
                 exec.mark_capture_dirty();
-                exec.deps.automation.type_char(ch);
+                exec.deps.automation.type_char(ch)?;
                 if *delay_ms > 0 {
                     exec.interruptible_sleep(*delay_ms)?;
                 }

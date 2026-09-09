@@ -14,7 +14,7 @@ pub use action_log::{
     lines_for, ActionLogEntry, ActionLogger, LogImage, SharedActionLog, MAX_ENTRIES_PER_ACTION,
 };
 pub use automation_error::AutomationError;
-pub use capture_error::CaptureError;
+pub use capture_error::{CaptureError, NotReady};
 pub use domain_ports::{
     CollectionArea, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup,
 };
@@ -141,7 +141,9 @@ pub trait AutomationBackend {
     fn scroll(&mut self, up: bool) -> Result<(), AutomationError>;
     fn key_down(&mut self, key: &str) -> Result<(), AutomationError>;
     fn key_up(&mut self, key: &str) -> Result<(), AutomationError>;
-    fn type_char(&mut self, ch: char);
+    /// Type one character. Returns `Err` like the other key methods so a failed
+    /// keystroke surfaces instead of silently dropping out of typed text.
+    fn type_char(&mut self, ch: char) -> Result<(), AutomationError>;
     fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError>;
 }
 

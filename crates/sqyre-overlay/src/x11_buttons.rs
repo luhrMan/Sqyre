@@ -32,6 +32,7 @@ use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+use thiserror::Error;
 use x11::xfixes::{
     XFixesCreateRegion, XFixesDestroyRegion, XFixesHideCursor, XFixesQueryExtension,
     XFixesQueryVersion, XFixesSetWindowShapeRegion, XFixesShowCursor,
@@ -129,6 +130,16 @@ pub struct X11ButtonHost {
     join: Mutex<Option<JoinHandle<()>>>,
 }
 
+/// Failure starting or drawing the native X11 overlay.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum OverlayError {
+    #[error("spawn x11 overlay thread: {0}")]
+    ThreadSpawn(String),
+    /// `XCreateWindow` returned no window for the named overlay surface.
+    #[error("XCreateWindow failed for overlay {0}")]
+    CreateWindow(&'static str),
+}
+
 impl X11ButtonHost {
     pub fn start(
         pending: Arc<Mutex<Vec<String>>>,
@@ -136,7 +147,7 @@ impl X11ButtonHost {
         running_macro: Arc<Mutex<Option<String>>>,
         pending_chooser: Arc<Mutex<Option<HotkeyChooserResult>>>,
         visibility: Arc<Mutex<HashMap<String, bool>>>,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, OverlayError> {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let stop_t = Arc::clone(&stop);
@@ -153,7 +164,7 @@ impl X11ButtonHost {
                     stop_t,
                 )
             })
-            .map_err(|e| format!("spawn x11 overlay thread: {e}"))?;
+            .map_err(|e| OverlayError::ThreadSpawn(e.to_string()))?;
         Ok(Self {
             cmd_tx,
             stop,
@@ -705,7 +716,7 @@ fn commit_drag(state: &mut HostState) {
     }
 }
 
-fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton, String> {
+fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton, OverlayError> {
     // Transparent fill still needs a backing pixel for any unshaped flecks / Expose.
     let bg_rgb = if spec.bg[3] > 0 {
         [spec.bg[0], spec.bg[1], spec.bg[2]]
@@ -738,7 +749,7 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
             &mut hit_attrs,
         );
         if hit == 0 {
-            return Err("XCreateWindow hit failed".into());
+            return Err(OverlayError::CreateWindow("button"));
         }
 
         let mut face_attrs: XSetWindowAttributes = std::mem::zeroed();
@@ -765,7 +776,7 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
         );
         if win == 0 {
             x_destroy_window(state.display, hit);
-            return Err("XCreateWindow face failed".into());
+            return Err(OverlayError::CreateWindow("button face"));
         }
         let c_title = std::ffi::CString::new(OVERLAY_WM_TITLE).unwrap_or_default();
         XStoreName(state.display, win, c_title.as_ptr());
@@ -1387,7 +1398,13 @@ fn apply_chooser_hit_shape(display: *mut Display, hit: Window, w: u32, h: u32, r
     apply_shape_region(display, hit, SHAPE_INPUT, &mut rects);
 }
 
-fn create_tip_window(state: &HostState, x: i32, y: i32, w: u32, h: u32) -> Result<Window, String> {
+fn create_tip_window(
+    state: &HostState,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+) -> Result<Window, OverlayError> {
     let bg_pixel = alloc_color(state, TIP_BG_RGB);
     // SAFETY: HostState display invariant — tip window lifecycle matches buttons.
     unsafe {
@@ -1413,7 +1430,7 @@ fn create_tip_window(state: &HostState, x: i32, y: i32, w: u32, h: u32) -> Resul
             &mut attrs,
         );
         if win == 0 {
-            return Err("XCreateWindow tip failed".into());
+            return Err(OverlayError::CreateWindow("tip"));
         }
         let c_title = std::ffi::CString::new(OVERLAY_TIP_WM_TITLE).unwrap_or_default();
         XStoreName(state.display, win, c_title.as_ptr());

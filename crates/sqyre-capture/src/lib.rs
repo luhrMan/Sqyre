@@ -44,7 +44,7 @@ pub use diag::{
     set_disk_logging, set_log_dir, set_process_exiting, CRASH_LOG_FILE, DIAG_LOG_FILE,
     LAST_SITE_FILE,
 };
-pub use error::{linux_session_capture_warning, CaptureError};
+pub use error::{linux_session_capture_warning, CaptureError, NotReady};
 #[cfg(target_os = "linux")]
 pub use linux::{
     reset_shared_capturer, shared_capturer, shared_capturer_if_ready, shared_capturer_is_opening,
@@ -498,13 +498,9 @@ pub fn shared_capturer_nonblocking() -> Result<std::sync::Arc<OsCapturer>, Captu
         match shared_capturer_if_ready() {
             Some(r) => r,
             None if shared_capturer_is_opening() || portal_screencast_granted() => {
-                Err(CaptureError::Message(
-                    "screen capture is starting (waiting for the first frame)".into(),
-                ))
+                Err(NotReady::AwaitingFirstFrame.into())
             }
-            None => Err(CaptureError::Message(
-                "screen capture is still waiting for portal permission".into(),
-            )),
+            None => Err(NotReady::AwaitingPortalPermission.into()),
         }
     } else {
         shared_capturer()

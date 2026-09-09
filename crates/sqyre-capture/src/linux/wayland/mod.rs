@@ -47,8 +47,8 @@ pub fn portal_capture_available() -> Result<(), CaptureError> {
     if portal_capture_implemented() {
         Ok(())
     } else {
-        Err(CaptureError::Message(
-            "portal capture not enabled in this build (missing portal-capture feature)".into(),
+        Err(CaptureError::Portal(
+            "not enabled in this build (missing portal-capture feature)".into(),
         ))
     }
 }

@@ -142,8 +142,10 @@ fn info_from_draft(draft: &Draft) -> WindowInfo {
 }
 
 fn bind() -> Result<(Connection, EventQueue<State>, State), CaptureError> {
-    let conn = Connection::connect_to_env()
-        .map_err(|e| CaptureError::Message(format!("wayland connect: {e}")))?;
+    let conn = Connection::connect_to_env().map_err(|e| CaptureError::Wayland {
+        op: "connect",
+        detail: e.to_string(),
+    })?;
     let mut queue = conn.new_event_queue();
     let qh = queue.handle();
     let display = conn.display();
@@ -151,7 +153,10 @@ fn bind() -> Result<(Connection, EventQueue<State>, State), CaptureError> {
     let mut state = State::default();
     queue
         .roundtrip(&mut state)
-        .map_err(|e| CaptureError::Message(format!("registry roundtrip: {e}")))?;
+        .map_err(|e| CaptureError::Wayland {
+            op: "registry roundtrip",
+            detail: e.to_string(),
+        })?;
     Ok((conn, queue, state))
 }
 
@@ -160,9 +165,10 @@ fn pump(queue: &mut EventQueue<State>, state: &mut State) -> Result<(), CaptureE
         return Ok(());
     }
     for _ in 0..4 {
-        queue
-            .roundtrip(state)
-            .map_err(|e| CaptureError::Message(format!("toplevel roundtrip: {e}")))?;
+        queue.roundtrip(state).map_err(|e| CaptureError::Wayland {
+            op: "toplevel roundtrip",
+            detail: e.to_string(),
+        })?;
     }
     Ok(())
 }

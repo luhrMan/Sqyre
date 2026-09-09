@@ -494,7 +494,9 @@ fn capture_and_match(
         let tw = outcome.tmpl_w as i32;
         let th = outcome.tmpl_h as i32;
 
-        if want_pipeline {
+        // Binding the capture here ties the pipeline branch to it actually
+        // existing, instead of re-deriving that from `want_pipeline`.
+        if let Some(search_raw) = search_raw.as_ref() {
             let blur_label = format!("2. Preprocess — blur item (amount={blur})");
             let mut owned_steps: Vec<(String, ImageBuf)> = Vec::new();
             let mut details = vec![
@@ -508,7 +510,7 @@ fn capture_and_match(
                     matches.len()
                 ),
             ];
-            let mut item_overlay = search_raw.as_ref().unwrap().clone();
+            let mut item_overlay = search_raw.clone();
             const MAX_MATCH_PREVIEWS: usize = 8;
             for (mi, mut p) in matches.into_iter().enumerate() {
                 let local_tl_x = p.x;
@@ -522,14 +524,9 @@ fn capture_and_match(
                     [255, 40, 40],
                 );
                 if mi < MAX_MATCH_PREVIEWS {
-                    if let Some(crop) = crop_match_preview(
-                        search_raw.as_ref().unwrap(),
-                        local_tl_x,
-                        local_tl_y,
-                        tw,
-                        th,
-                        12,
-                    ) {
+                    if let Some(crop) =
+                        crop_match_preview(search_raw, local_tl_x, local_tl_y, tw, th, 12)
+                    {
                         owned_steps.push((
                             format!("Find #{} — crop around ({local_tl_x},{local_tl_y})", mi + 1),
                             crop,

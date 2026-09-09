@@ -67,8 +67,11 @@ fn x11_error_to_capture(err: X11Error) -> CaptureError {
         17 => "BadImplementation",
         _ => "XError",
     };
-    CaptureError::Message(format!(
-        "X11 {name} (request {} minor {} serial {})",
-        err.request_code, err.minor_code, err.serial
-    ))
+    CaptureError::X11 {
+        op: name,
+        detail: format!(
+            "request {} minor {} serial {}",
+            err.request_code, err.minor_code, err.serial
+        ),
+    }
 }

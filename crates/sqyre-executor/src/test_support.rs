@@ -268,8 +268,9 @@ impl AutomationBackend for RecordingBackend {
         self.log.push(format!("keyup:{key}"));
         Ok(())
     }
-    fn type_char(&mut self, ch: char) {
+    fn type_char(&mut self, ch: char) -> Result<(), AutomationError> {
         self.log.push(format!("type:{ch}"));
+        Ok(())
     }
     fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError> {
         self.log.push(format!("clipboard:{s}"));

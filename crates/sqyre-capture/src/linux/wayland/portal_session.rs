@@ -895,7 +895,7 @@ pub(super) fn union_rect(a: DesktopRect, b: DesktopRect) -> DesktopRect {
 fn portal_err(step: &'static str) -> impl Fn(ashpd::Error) -> CaptureError {
     move |e| {
         cap_log("PORTAL", "fail", &format!("step={step} error={e}"));
-        CaptureError::Message(format!("portal {step}: {e}"))
+        CaptureError::Portal(format!("{step}: {e}"))
     }
 }
 
