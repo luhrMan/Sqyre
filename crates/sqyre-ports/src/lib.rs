@@ -15,7 +15,9 @@ pub use action_log::{
 };
 pub use automation_error::AutomationError;
 pub use capture_error::CaptureError;
-pub use domain_ports::{ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup};
+pub use domain_ports::{
+    CollectionArea, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup,
+};
 pub use highlight::{
     clear_highlights, highlight_clear, highlight_cursor, highlight_fill, ActionHighlighter,
     HighlightEvent, HighlightKind, HighlightSnapshot, SharedHighlighter,

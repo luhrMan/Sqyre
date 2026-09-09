@@ -4,24 +4,25 @@ use super::common::{
     apply_detection_hits, capture_search_buf, close_matches_distance, run_detection_shell,
     sort_hits, DetectionCtx, DetectionExtras, DetectionHit,
 };
-use crate::backends::{DesktopRect, ItemMeta};
+use crate::backends::{CollectionArea, DesktopRect, ItemMeta};
 use crate::error::{ExecError, Result, SearchError};
 use crate::log_draw::{crop_match_preview, draw_rect_rgb};
 use crate::run::Executor;
 use rayon::prelude::*;
 use sqyre_domain::{
-    action_type_label, variant_name_from_path, Action, ActionKind, Macro, MatchMethod,
-    PROGRAM_DELIMITER,
+    action_type_label, grid_item_placements, variant_name_from_path, Action, ActionKind, Macro,
+    MatchMethod, PROGRAM_DELIMITER,
 };
 use sqyre_match::{
-    blur_image_owned, find_template_matches_preblurred_with_prepared, prepare_search,
-    search_blur_kernel, ImageBuf, Point,
+    blur_image_owned, cluster_points, find_template_matches_preblurred_with_prepared,
+    prepare_search, search_blur_kernel, ImageBuf, MatchError, Point,
 };
 use sqyre_ports::{highlight_clear, highlight_fill};
 use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
     load_rgb_image,
 };
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -109,12 +110,22 @@ struct NamedPoint {
     variant_name: String,
 }
 
+struct CollectionLayout {
+    sel_r1: i32,
+    sel_c1: i32,
+    sel_r2: i32,
+    sel_c2: i32,
+    area: CollectionArea,
+}
+
 struct VariantJob {
     target: String,
     variant_name: String,
     path: PathBuf,
     meta: Option<ItemMeta>,
     mask_path: Option<PathBuf>,
+    /// Screen rect of one item-footprint placement; `None` searches the full capture.
+    placement: Option<(i32, i32, i32, i32)>,
 }
 
 struct VariantMatchOutcome {
@@ -129,6 +140,7 @@ struct VariantMatchOutcome {
     mask_bytes: Option<Arc<Vec<u8>>>,
     matches: std::result::Result<Vec<Point>, SearchError>,
     match_ms: f64,
+    placements: usize,
 }
 
 fn capture_and_match(
@@ -192,6 +204,29 @@ fn capture_and_match(
     }
     exec.log_timing(action_id, "capture+preprocess", capture_started.elapsed());
 
+    let collection_layout = match ctx.search_area.cell_range() {
+        None => None,
+        Some((sel_r1, sel_c1, sel_r2, sel_c2)) => match exec.deps.resolver {
+            Some(resolver) => match resolver.collection_area(ctx.search_area, macro_) {
+                Ok(area) => Some(CollectionLayout {
+                    sel_r1,
+                    sel_c1,
+                    sel_r2,
+                    sel_c2,
+                    area,
+                }),
+                Err(e) => {
+                    exec.log(action_id, format!("{label}: collection layout: {e}"));
+                    return Ok(Vec::new());
+                }
+            },
+            None => {
+                exec.log(action_id, format!("{label}: missing CoordinateResolver"));
+                return Ok(Vec::new());
+            }
+        },
+    };
+
     let mut jobs = Vec::new();
     for target in targets {
         let paths = icons.variant_paths(target);
@@ -205,15 +240,44 @@ fn capture_and_match(
             .split_once(PROGRAM_DELIMITER)
             .map(|(_, item)| item)
             .unwrap_or(target.as_str());
+        let placement_rects = collection_layout.as_ref().map(|layout| {
+            let (item_rows, item_cols) = item_footprint(&meta);
+            let rects = grid_item_placements(
+                layout.area.bounds(),
+                (layout.area.rows, layout.area.cols),
+                (layout.sel_r1, layout.sel_c1, layout.sel_r2, layout.sel_c2),
+                (item_rows, item_cols),
+            );
+            exec.log(
+                action_id,
+                format!(
+                    "{label}: {target} footprint {item_rows}x{item_cols} → {} placement(s)",
+                    rects.len()
+                ),
+            );
+            rects
+        });
+        if let Some(rects) = &placement_rects {
+            if rects.is_empty() {
+                continue;
+            }
+        }
+        let placements: Vec<Option<(i32, i32, i32, i32)>> = match &placement_rects {
+            None => vec![None],
+            Some(rects) => rects.iter().copied().map(Some).collect(),
+        };
         for path in paths {
             let variant_name = variant_name_from_path(&path, item);
-            jobs.push(VariantJob {
-                target: target.clone(),
-                variant_name,
-                path,
-                meta: meta.clone(),
-                mask_path: mask_path.clone(),
-            });
+            for placement in &placements {
+                jobs.push(VariantJob {
+                    target: target.clone(),
+                    variant_name: variant_name.clone(),
+                    path: path.clone(),
+                    meta: meta.clone(),
+                    mask_path: mask_path.clone(),
+                    placement: *placement,
+                });
+            }
         }
     }
 
@@ -221,38 +285,25 @@ fn capture_and_match(
     let close_dist = close_matches_distance(exec);
     let match_started = Instant::now();
     let stop_flag: Option<&AtomicBool> = exec.deps.stop_flag;
-    let search_prep = Arc::new(prepare_search(&search_blurred));
+    let search_prep = if collection_layout.is_none() {
+        Some(Arc::new(prepare_search(&search_blurred)))
+    } else {
+        None
+    };
     let method = match_method;
 
     let outcomes: Vec<VariantMatchOutcome> = jobs
         .into_par_iter()
         .map(|job| {
             if stop_flag.is_some_and(|f| f.load(Ordering::SeqCst)) {
-                return VariantMatchOutcome {
-                    tmpl_w: 0,
-                    tmpl_h: 0,
-                    template_raw: None,
-                    template_blurred: Arc::new(ImageBuf::new(1, 1, 3, 0)),
-                    mask_bytes: None,
-                    matches: Ok(Vec::new()),
-                    match_ms: 0.0,
-                    job,
-                };
+                return skipped_outcome(job, Ok(Vec::new()));
             }
 
             let template_blurred = match get_cached_blurred_template(&job.path, kernel) {
                 Ok(t) => t,
                 Err(e) => {
-                    return VariantMatchOutcome {
-                        tmpl_w: 0,
-                        tmpl_h: 0,
-                        template_raw: None,
-                        template_blurred: Arc::new(ImageBuf::new(1, 1, 3, 0)),
-                        mask_bytes: None,
-                        matches: Err(SearchError::Template(format!("load {:?}: {e}", job.path))),
-                        match_ms: 0.0,
-                        job,
-                    };
+                    let err = SearchError::Template(format!("load {:?}: {e}", job.path));
+                    return skipped_outcome(job, Err(err));
                 }
             };
             let tmpl_w = template_blurred.width;
@@ -269,6 +320,28 @@ fn capture_and_match(
                 None
             };
 
+            let cropped = job
+                .placement
+                .and_then(|rect| crop_placement(&search_blurred, origin, rect));
+            if job.placement.is_some() && cropped.is_none() {
+                return VariantMatchOutcome {
+                    job,
+                    tmpl_w,
+                    tmpl_h,
+                    template_raw,
+                    template_blurred,
+                    mask_bytes,
+                    matches: Ok(Vec::new()),
+                    match_ms: 0.0,
+                    placements: 1,
+                };
+            }
+            let (ox, oy) = cropped.as_ref().map(|(_, x, y)| (*x, *y)).unwrap_or((0, 0));
+            let crop_img = cropped.map(|(img, _, _)| img);
+            let crop_prep = crop_img.as_ref().map(prepare_search);
+            let search_img = crop_img.as_ref().unwrap_or(&search_blurred);
+            let prep = crop_prep.as_ref().or(search_prep.as_deref());
+
             let t0 = Instant::now();
             let matches = get_cached_prepared_template(
                 &job.path,
@@ -281,16 +354,27 @@ fn capture_and_match(
             .map_err(|e| SearchError::Template(format!("prepare {:?}: {e}", job.path)))
             .and_then(|prepared| {
                 find_template_matches_preblurred_with_prepared(
-                    &search_blurred,
+                    search_img,
                     template_blurred.as_ref(),
                     &prepared,
                     threshold,
                     close_dist,
                     method,
-                    Some(search_prep.as_ref()),
+                    prep,
                 )
                 .map_err(SearchError::from)
             });
+            let matches = match matches {
+                Err(SearchError::Match(MatchError::TemplateTooLarge { .. })) => Ok(Vec::new()),
+                Ok(mut pts) => {
+                    for p in &mut pts {
+                        p.x += ox;
+                        p.y += oy;
+                    }
+                    Ok(pts)
+                }
+                other => other,
+            };
             let match_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
             VariantMatchOutcome {
@@ -302,9 +386,11 @@ fn capture_and_match(
                 mask_bytes,
                 matches,
                 match_ms,
+                placements: 1,
             }
         })
         .collect();
+    let outcomes = merge_variant_outcomes(outcomes, close_dist);
 
     let mut out = Vec::new();
     for outcome in outcomes {
@@ -320,8 +406,16 @@ fn capture_and_match(
         exec.log(
             action_id,
             format!(
-                "{label}: matching {variant_label} ({}x{}) against {}x{}",
-                outcome.tmpl_w, outcome.tmpl_h, search_blurred.width, search_blurred.height
+                "{label}: matching {variant_label} ({}x{}) against {}x{}{}",
+                outcome.tmpl_w,
+                outcome.tmpl_h,
+                search_blurred.width,
+                search_blurred.height,
+                if outcome.placements > 1 {
+                    format!(" ({} placements)", outcome.placements)
+                } else {
+                    String::new()
+                }
             ),
         );
 
@@ -529,4 +623,84 @@ fn variant_log_label(target: &str, variant_name: &str) -> String {
     } else {
         format!("{target}{PROGRAM_DELIMITER}{variant_name}")
     }
+}
+
+fn item_footprint(meta: &Option<ItemMeta>) -> (i32, i32) {
+    let rows = meta.as_ref().map(|m| m.rows).unwrap_or(0).max(1);
+    let cols = meta.as_ref().map(|m| m.cols).unwrap_or(0).max(1);
+    (rows, cols)
+}
+
+fn skipped_outcome(
+    job: VariantJob,
+    matches: std::result::Result<Vec<Point>, SearchError>,
+) -> VariantMatchOutcome {
+    VariantMatchOutcome {
+        tmpl_w: 0,
+        tmpl_h: 0,
+        template_raw: None,
+        template_blurred: Arc::new(ImageBuf::new(1, 1, 3, 0)),
+        mask_bytes: None,
+        matches,
+        match_ms: 0.0,
+        placements: 1,
+        job,
+    }
+}
+
+fn crop_placement(
+    search: &ImageBuf,
+    origin: DesktopRect,
+    (slx, sty, srx, sby): (i32, i32, i32, i32),
+) -> Option<(ImageBuf, i32, i32)> {
+    let x = (slx - origin.x).max(0);
+    let y = (sty - origin.y).max(0);
+    let x1 = (srx - origin.x).min(search.width as i32).max(0);
+    let y1 = (sby - origin.y).min(search.height as i32).max(0);
+    if x1 <= x || y1 <= y {
+        return None;
+    }
+    let crop = search.crop(x as usize, y as usize, (x1 - x) as usize, (y1 - y) as usize)?;
+    Some((crop, x, y))
+}
+
+fn merge_variant_outcomes(
+    outcomes: Vec<VariantMatchOutcome>,
+    close_dist: i32,
+) -> Vec<VariantMatchOutcome> {
+    let mut order: Vec<(String, String)> = Vec::new();
+    let mut map: HashMap<(String, String), VariantMatchOutcome> = HashMap::new();
+    for o in outcomes {
+        let key = (o.job.target.clone(), o.job.variant_name.clone());
+        if let Some(acc) = map.get_mut(&key) {
+            acc.placements += o.placements;
+            acc.match_ms += o.match_ms;
+            if acc.tmpl_w == 0 && o.tmpl_w > 0 {
+                acc.tmpl_w = o.tmpl_w;
+                acc.tmpl_h = o.tmpl_h;
+                acc.template_raw = o.template_raw;
+                acc.template_blurred = o.template_blurred;
+                acc.mask_bytes = o.mask_bytes;
+            }
+            match (&mut acc.matches, o.matches) {
+                (Ok(dst), Ok(src)) => dst.extend(src),
+                (Ok(_), Err(_)) => {}
+                (Err(_), Ok(src)) => acc.matches = Ok(src),
+                (Err(_), Err(_)) => {}
+            }
+        } else {
+            order.push(key.clone());
+            map.insert(key, o);
+        }
+    }
+    order
+        .into_iter()
+        .filter_map(|k| {
+            let mut o = map.remove(&k)?;
+            if let Ok(pts) = &mut o.matches {
+                *pts = cluster_points(pts, close_dist);
+            }
+            Some(o)
+        })
+        .collect()
 }

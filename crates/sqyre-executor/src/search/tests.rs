@@ -2,7 +2,9 @@ use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionCtx, Det
 use super::ocr::ocr_target_matched;
 use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
-use crate::test_support::{RecordingBackend, RecordingCapturer, SEARCH_FIXED_AREA};
+use crate::test_support::{
+    FixedCollection, FixedResolver, RecordingBackend, RecordingCapturer, SEARCH_FIXED_AREA,
+};
 use crate::{lines_for, SharedActionLog};
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
@@ -2179,4 +2181,253 @@ fn run_matches_clears_coords_on_miss() {
     run_matches(&mut exec, &ctx, &[], &mut macro_).unwrap();
     assert!(macro_.variables.get("foundX").is_none());
     assert!(macro_.variables.get("foundY").is_none());
+}
+
+fn bag_2x2_resolver() -> FixedResolver {
+    FixedResolver {
+        point: (0, 0),
+        area: (0, 0, 40, 40),
+        grid: None,
+        collections: Some(HashMap::from([(
+            "bag".into(),
+            FixedCollection {
+                rows: 2,
+                cols: 2,
+                bounds: (0, 0, 40, 40),
+            },
+        )])),
+        atlas_members: None,
+    }
+}
+
+#[test]
+fn image_search_collection_matches_inside_cell_not_across() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("Item.png");
+        let tmpl = patterned_rgba(12, 12, 21);
+        tmpl.save(&tmpl_path).unwrap();
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::from([(
+                "Prog~Item".into(),
+                ItemMeta {
+                    name: "Item".into(),
+                    stack_max: 1,
+                    cols: 1,
+                    rows: 1,
+                },
+            )]),
+        };
+        let resolver = bag_2x2_resolver();
+        let search_area = CoordinateRef::collection("Demo", "bag", 1, 1, 2, 2);
+
+        let mut in_cell = RgbaImage::from_pixel(40, 40, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut in_cell, &tmpl, 4, 4);
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(in_cell),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let logger = SharedActionLog::new();
+        let search_id = ActionId::new();
+        let mut macro_ = quiet_macro(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "bag".into(),
+                targets: vec!["Prog~Item".into()],
+                search_area: search_area.clone(),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![wait_child(4)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .logger(&logger)
+                .close_matches_distance(8),
+        )
+        .unwrap();
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:4"),
+            "in-cell 1x1 item should match: {:?}",
+            backend.log
+        );
+        let Some(ScalarValue::Int(fx)) = macro_.variables.get("foundX").cloned() else {
+            panic!(
+                "expected foundX int, got {:?}",
+                macro_.variables.get("foundX")
+            );
+        };
+        let Some(ScalarValue::Int(fy)) = macro_.variables.get("foundY").cloned() else {
+            panic!(
+                "expected foundY int, got {:?}",
+                macro_.variables.get("foundY")
+            );
+        };
+        assert!(
+            (0..20).contains(&fx) && (0..20).contains(&fy),
+            "expected hit in cell 1,1, got ({fx},{fy})"
+        );
+        let lines = lines_for(&logger.entries_for(search_id));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("footprint 1x1 → 4 placement(s)")),
+            "{lines:?}"
+        );
+
+        sqyre_vision::reset_search_cache_for_testing();
+        let mut straddle = RgbaImage::from_pixel(40, 40, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut straddle, &tmpl, 14, 4);
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(straddle),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let mut macro_ = quiet_macro(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "bag".into(),
+                targets: vec!["Prog~Item".into()],
+                search_area,
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![wait_child(4)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(8),
+        )
+        .unwrap();
+        assert!(
+            macro_.variables.get("foundX").is_none(),
+            "straddling template should not match a 1x1 cell search"
+        );
+        assert_did_not_sleep(&backend, 4);
+    });
+}
+
+#[test]
+fn image_search_collection_uses_item_grid_footprint() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("Item.png");
+        // Larger than one 20×20 cell; fits the 2×2 (40×40) footprint.
+        let tmpl = patterned_rgba(28, 28, 33);
+        tmpl.save(&tmpl_path).unwrap();
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::from([(
+                "Prog~Item".into(),
+                ItemMeta {
+                    name: "Item".into(),
+                    stack_max: 1,
+                    cols: 2,
+                    rows: 2,
+                },
+            )]),
+        };
+        let mut screen = RgbaImage::from_pixel(40, 40, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut screen, &tmpl, 6, 6);
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(screen),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let resolver = bag_2x2_resolver();
+        let logger = SharedActionLog::new();
+        let search_id = ActionId::new();
+        let mut macro_ = quiet_macro(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "bag".into(),
+                targets: vec!["Prog~Item".into()],
+                search_area: CoordinateRef::collection("Demo", "bag", 1, 1, 2, 2),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![wait_child(6)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .logger(&logger)
+                .close_matches_distance(8),
+        )
+        .unwrap();
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:6"),
+            "2x2 item should match its 2x2 footprint: {:?}",
+            backend.log
+        );
+        let lines = lines_for(&logger.entries_for(search_id));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("footprint 2x2 → 1 placement(s)")),
+            "{lines:?}"
+        );
+        let Some(ScalarValue::Int(fx)) = macro_.variables.get("foundX").cloned() else {
+            panic!(
+                "expected foundX int, got {:?}",
+                macro_.variables.get("foundX")
+            );
+        };
+        let Some(ScalarValue::Int(fy)) = macro_.variables.get("foundY").cloned() else {
+            panic!(
+                "expected foundY int, got {:?}",
+                macro_.variables.get("foundY")
+            );
+        };
+        assert!(
+            (0..40).contains(&fx) && (0..40).contains(&fy),
+            "expected hit in 2x2 footprint, got ({fx},{fy})"
+        );
+    });
 }

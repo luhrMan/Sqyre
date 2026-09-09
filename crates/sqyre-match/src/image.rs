@@ -53,6 +53,28 @@ impl ImageBuf {
             }
         }
     }
+
+    /// Copy a sub-rect. Clamps to this image; `None` if the result would be empty.
+    pub fn crop(&self, x: usize, y: usize, width: usize, height: usize) -> Option<Self> {
+        if width == 0 || height == 0 || x >= self.width || y >= self.height {
+            return None;
+        }
+        let width = width.min(self.width - x);
+        let height = height.min(self.height - y);
+        let mut data = vec![0u8; width * height * self.channels];
+        for row in 0..height {
+            let src = self.pixel_offset(x, y + row);
+            let dst = row * width * self.channels;
+            let n = width * self.channels;
+            data[dst..dst + n].copy_from_slice(&self.data[src..src + n]);
+        }
+        Some(Self {
+            width,
+            height,
+            channels: self.channels,
+            data,
+        })
+    }
 }
 
 /// Top-left match coordinate in the result / search image.
@@ -76,6 +98,22 @@ mod tests {
         assert_eq!(dst.data[dst.pixel_offset(3, 3)], 200);
         assert_eq!(dst.data[dst.pixel_offset(0, 0)], 0);
         assert_eq!(dst.data[dst.pixel_offset(1, 1)], 0);
+    }
+
+    #[test]
+    fn crop_copies_subrect() {
+        let mut img = ImageBuf::new(4, 3, 3, 0);
+        let i9 = img.pixel_offset(1, 1);
+        let i8 = img.pixel_offset(2, 1) + 1;
+        img.data[i9] = 9;
+        img.data[i8] = 8;
+        let crop = img.crop(1, 1, 2, 1).expect("crop");
+        assert_eq!(crop.width, 2);
+        assert_eq!(crop.height, 1);
+        assert_eq!(crop.data[0], 9);
+        assert_eq!(crop.data[4], 8);
+        assert!(img.crop(4, 0, 1, 1).is_none());
+        assert!(img.crop(0, 0, 0, 1).is_none());
     }
 
     #[test]
