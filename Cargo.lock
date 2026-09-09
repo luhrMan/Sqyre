@@ -5036,6 +5036,7 @@ dependencies = [
  "parking_lot",
  "pulp",
  "rayon",
+ "sha2",
  "sqyre-domain",
  "sqyre-match",
  "sqyre-ports",

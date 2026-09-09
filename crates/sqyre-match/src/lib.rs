@@ -14,7 +14,8 @@ pub use blur::{blur_image, blur_image_owned, search_blur_kernel};
 pub use corr_simd::{map_rgb_to_gray_u8, threshold_gray_in_place};
 pub use image::{ImageBuf, Point};
 pub use peaks::{
-    cluster_points, find_peaks, find_peaks_for_method, DEFAULT_CLOSE_MATCHES_DISTANCE,
+    cluster_points, cluster_points_from, find_peaks, find_peaks_for_method, PointClusterer,
+    DEFAULT_CLOSE_MATCHES_DISTANCE,
 };
 pub use template::{
     match_template, match_template_with_prepared, prepare_search, prepare_template, MatchError,

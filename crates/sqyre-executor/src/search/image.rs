@@ -15,7 +15,7 @@ use sqyre_domain::{
 };
 use sqyre_match::{
     blur_image_owned, cluster_points, find_template_matches_preblurred_with_prepared,
-    prepare_search, search_blur_kernel, ImageBuf, MatchError, Point,
+    prepare_search, search_blur_kernel, ImageBuf, MatchError, Point, SearchPrep,
 };
 use sqyre_ports::{highlight_clear, highlight_fill};
 use sqyre_vision::{
@@ -292,6 +292,11 @@ fn capture_and_match(
     } else {
         None
     };
+    // Collection searches crop per placement; prepare each distinct cell once
+    // and share it across the variants that search it.
+    let job_placements: Vec<Option<(i32, i32, i32, i32)>> =
+        jobs.iter().map(|j| j.placement).collect();
+    let crop_preps = prepare_crops(&search_blurred, origin, &job_placements);
     let method = match_method;
 
     // Load templates on this thread before the parallel match. Inflight cache
@@ -329,7 +334,7 @@ fn capture_and_match(
 
             let cropped = job
                 .placement
-                .and_then(|rect| crop_placement(&search_blurred, origin, rect));
+                .and_then(|rect| crop_preps.get(&rect).cloned().flatten());
             if job.placement.is_some() && cropped.is_none() {
                 return VariantMatchOutcome {
                     job,
@@ -343,11 +348,9 @@ fn capture_and_match(
                     placements: 1,
                 };
             }
-            let (ox, oy) = cropped.as_ref().map(|(_, x, y)| (*x, *y)).unwrap_or((0, 0));
-            let crop_img = cropped.map(|(img, _, _)| img);
-            let crop_prep = crop_img.as_ref().map(prepare_search);
-            let search_img = crop_img.as_ref().unwrap_or(&search_blurred);
-            let prep = crop_prep.as_ref().or(search_prep.as_deref());
+            let (ox, oy) = cropped.as_ref().map(|c| (c.ox, c.oy)).unwrap_or((0, 0));
+            let search_img = cropped.as_ref().map(|c| &c.img).unwrap_or(&search_blurred);
+            let prep = cropped.as_ref().map(|c| &c.prep).or(search_prep.as_deref());
 
             let t0 = Instant::now();
             let matches = get_cached_prepared_template(
@@ -690,6 +693,45 @@ fn skipped_outcome(
         placements: 1,
         job,
     }
+}
+
+/// One collection cell cropped out of the capture, with its search preparation.
+///
+/// Every variant searching the same cell shares this: `prepare_search` builds
+/// integral images and a planar `f32` copy, which is wasted work if each
+/// variant rebuilds it for the same rect.
+struct CropPrep {
+    img: ImageBuf,
+    prep: SearchPrep,
+    /// Offset of the crop within the capture, added back to match coordinates.
+    ox: i32,
+    oy: i32,
+}
+
+/// Prepare each distinct placement rect once. `None` marks rects that fall
+/// outside the capture, which callers report as a no-match.
+fn prepare_crops(
+    search: &ImageBuf,
+    origin: DesktopRect,
+    placements: &[Option<(i32, i32, i32, i32)>],
+) -> HashMap<(i32, i32, i32, i32), Option<Arc<CropPrep>>> {
+    let rects: Vec<(i32, i32, i32, i32)> = placements
+        .iter()
+        .flatten()
+        .copied()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    rects
+        .into_par_iter()
+        .map(|rect| {
+            let prepped = crop_placement(search, origin, rect).map(|(img, ox, oy)| {
+                let prep = prepare_search(&img);
+                Arc::new(CropPrep { img, prep, ox, oy })
+            });
+            (rect, prepped)
+        })
+        .collect()
 }
 
 fn crop_placement(
