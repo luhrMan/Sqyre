@@ -26,7 +26,7 @@ pub(crate) fn item_tooltip_parts(catalog: &ProgramCatalog, target: &str) -> (Str
     (item_key.to_string(), Vec::new())
 }
 
-/// Rich hover tooltip: bold name, 12×12 variant icons, then italic primary-colored tags.
+/// Rich hover tooltip: bold name, vertical 12×12 variant rows, then italic tags.
 pub fn attach_item_icon_tooltip(
     response: &egui::Response,
     catalog: &ProgramCatalog,
@@ -57,20 +57,27 @@ fn paint_item_icon_tooltip(
 
     let paths = crate::demo_icons::merged_variant_paths(catalog, target);
     if !paths.is_empty() {
+        let item_key = target
+            .split_once(PROGRAM_DELIMITER)
+            .map(|(_, rest)| {
+                rest.split_once(PROGRAM_DELIMITER)
+                    .map(|(base, _)| base)
+                    .unwrap_or(rest)
+            })
+            .unwrap_or(target);
         ui.add_space(4.0);
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::splat(2.0);
-            for path in &paths {
-                let Some(tex) = icons.for_path(ui.ctx(), path) else {
-                    continue;
-                };
-                let [tw, th] = tex.size();
-                let size = image_view::fit_icon_thumb(
-                    tw as f32,
-                    th as f32,
-                    VARIANT_TIP_THUMB,
-                    VARIANT_TIP_THUMB,
-                );
+        for path in &paths {
+            let Some(tex) = icons.for_path(ui.ctx(), path) else {
+                continue;
+            };
+            let [tw, th] = tex.size();
+            let size = image_view::fit_icon_thumb(
+                tw as f32,
+                th as f32,
+                VARIANT_TIP_THUMB,
+                VARIANT_TIP_THUMB,
+            );
+            ui.horizontal(|ui| {
                 let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
                 crate::icon_cache::paint_icon_thumb_at(
                     ui,
@@ -81,8 +88,17 @@ fn paint_item_icon_tooltip(
                     0.0,
                     None,
                 );
-            }
-        });
+                let variant = crate::data_editor_preview::variant_name_from_path(path, item_key);
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{}  {}",
+                        crate::data_editor_preview::variant_display_label(&variant),
+                        crate::data_editor_preview::pixel_size_text(tw as i32, th as i32)
+                    ))
+                    .small(),
+                );
+            });
+        }
     }
 
     if tags.is_empty() {

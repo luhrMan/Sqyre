@@ -1,7 +1,6 @@
 //! Macro tree row chrome: icon badge, pastel pills, swatches.
 
 use crate::icon_cache::IconCache;
-#[cfg(test)]
 use crate::image_view;
 use crate::pickers::attach_item_icon_tooltip;
 use crate::theme::paint_galley_centered;
@@ -24,7 +23,8 @@ const PILL_RADIUS: f32 = 5.0;
 const TARGET_THUMB_MAX_H: f32 = ICON_SIZE;
 /// Cap very wide icons so a row cannot grow unboundedly.
 const TARGET_THUMB_MAX_W: f32 = 30.0;
-const MAX_TARGET_THUMBS: usize = 8;
+/// Tight gap between image-search thumbs (default item_spacing leaves them sparse).
+const TARGET_THUMB_GAP: f32 = 2.0;
 
 /// Default tree-row height (icon column + chrome).
 pub fn default_row_height(interact_y: f32) -> f32 {
@@ -127,9 +127,46 @@ fn rgba(c: [u8; 4]) -> Color32 {
 /// Foreground that contrasts with a pastel/solid fill (relative luminance).
 pub(crate) use crate::theme::contrast_fg;
 
-/// How many overflow targets to show as a `+N` pill (0 = none).
-pub(crate) fn image_search_overflow_count(total: usize) -> usize {
-    total.saturating_sub(MAX_TARGET_THUMBS)
+/// How many thumbs fit in `available`, leaving room for a `+N` pill when not all fit.
+fn image_search_visible_thumbs(
+    total: usize,
+    available: f32,
+    thumb_w: f32,
+    gap: f32,
+    overflow_pill_w: f32,
+) -> usize {
+    if total == 0 || thumb_w <= 0.0 {
+        return 0;
+    }
+    let all = thumb_w * total as f32 + gap * (total - 1) as f32;
+    if all <= available {
+        return total;
+    }
+    let n = ((available - overflow_pill_w).max(0.0) / (thumb_w + gap)).floor() as usize;
+    n.min(total - 1)
+}
+
+fn overflow_pill_width(ui: &egui::Ui, hidden: usize) -> f32 {
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(format!("+{hidden}"), font, Color32::WHITE);
+    galley.size().x + PILL_MARGIN_X as f32 * 2.0
+}
+
+fn target_thumb_size(
+    ui: &egui::Ui,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    target: &str,
+) -> Vec2 {
+    icons
+        .for_target(ui.ctx(), catalog, target)
+        .map(|tex| {
+            let [tw, th] = tex.size();
+            image_view::fit_icon_thumb(tw as f32, th as f32, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H)
+        })
+        .unwrap_or(Vec2::splat(TARGET_THUMB_MAX_H))
 }
 
 fn row_action_btn(
@@ -216,24 +253,21 @@ fn paint_target_thumb(
     icons: &mut IconCache,
     target: &str,
 ) -> egui::Response {
-    // Fixed slot so mixed aspect ratios align across action rows.
-    let slot = Vec2::new(TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
-    let (slot_rect, slot_resp) = ui.allocate_exact_size(slot, Sense::hover());
+    let size = target_thumb_size(ui, catalog, icons, target);
+    let (slot_rect, slot_resp) = ui.allocate_exact_size(size, Sense::hover());
     if let Some(tex) = icons.for_target(ui.ctx(), catalog, target) {
         crate::icon_cache::paint_icon_thumb_at(
             ui,
             &tex,
             slot_rect.center(),
-            TARGET_THUMB_MAX_W,
-            TARGET_THUMB_MAX_H,
+            size.x,
+            size.y,
             3.0,
             Some(Color32::from_black_alpha(20)),
         );
     } else {
-        let inner =
-            egui::Rect::from_center_size(slot_rect.center(), Vec2::splat(TARGET_THUMB_MAX_H));
         ui.painter().rect(
-            inner,
+            slot_rect,
             3.0,
             Color32::from_gray(80),
             Stroke::new(1.0, Color32::from_gray(120)),
@@ -257,29 +291,40 @@ fn paint_image_search_extras(
     };
     let mut tip_hovered = false;
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
+    let prev_gap = ui.spacing().item_spacing.x;
+    ui.spacing_mut().item_spacing.x = TARGET_THUMB_GAP;
     let count_pill = paint_pill(ui, &format!("🔍 {}", targets.len()), pastel);
     extend_drag_handle(drag_handle, count_pill.rect);
     if count_pill.hovered() {
         tip_hovered = true;
     }
-    for target in targets.iter().take(MAX_TARGET_THUMBS) {
+    let thumb_w = targets
+        .first()
+        .map(|target| target_thumb_size(ui, catalog, icons, target).x)
+        .unwrap_or(TARGET_THUMB_MAX_H);
+    let visible = image_search_visible_thumbs(
+        targets.len(),
+        ui.available_width(),
+        thumb_w,
+        TARGET_THUMB_GAP,
+        overflow_pill_width(ui, targets.len()),
+    );
+    for target in targets.iter().take(visible) {
         let thumb = paint_target_thumb(ui, catalog, icons, target);
         extend_drag_handle(drag_handle, thumb.rect);
         if thumb.hovered() {
             tip_hovered = true;
         }
     }
-    if targets.len() > MAX_TARGET_THUMBS {
-        let overflow = paint_pill(
-            ui,
-            &format!("+{}", image_search_overflow_count(targets.len())),
-            pastel,
-        );
+    let hidden = targets.len().saturating_sub(visible);
+    if hidden > 0 {
+        let overflow = paint_pill(ui, &format!("+{hidden}"), pastel);
         extend_drag_handle(drag_handle, overflow.rect);
         if overflow.hovered() {
             tip_hovered = true;
         }
     }
+    ui.spacing_mut().item_spacing.x = prev_gap;
     tip_hovered
 }
 
@@ -609,10 +654,17 @@ mod tests {
     }
 
     #[test]
-    fn overflow_count() {
-        assert_eq!(image_search_overflow_count(3), 0);
-        assert_eq!(image_search_overflow_count(MAX_TARGET_THUMBS), 0);
-        assert_eq!(image_search_overflow_count(MAX_TARGET_THUMBS + 3), 3);
+    fn visible_thumbs_fill_available_width() {
+        const THUMB: f32 = 18.0;
+        const GAP: f32 = 2.0;
+        const PILL: f32 = 30.0;
+        assert_eq!(image_search_visible_thumbs(3, 200.0, THUMB, GAP, PILL), 3);
+        assert_eq!(image_search_visible_thumbs(2, 38.0, THUMB, GAP, PILL), 2);
+        assert_eq!(image_search_visible_thumbs(8, 100.0, THUMB, GAP, PILL), 3);
+        assert_eq!(image_search_visible_thumbs(0, 100.0, THUMB, GAP, PILL), 0);
+        assert_eq!(image_search_visible_thumbs(10, 10.0, THUMB, GAP, PILL), 0);
+        // Old 8-wide 30px slots wasted space; 400px should show far more than 8.
+        assert!(image_search_visible_thumbs(30, 400.0, THUMB, GAP, PILL) > 8);
     }
 
     #[test]
@@ -774,7 +826,7 @@ mod tests {
             );
 
             let mut targets = Vec::new();
-            for i in 0..(MAX_TARGET_THUMBS + 2) {
+            for i in 0..10 {
                 targets.push(format!("Prog~Item{i}"));
             }
             let search = Action {
@@ -872,9 +924,36 @@ mod tests {
         });
     }
 
+    #[test]
+    fn image_search_row_fills_wide_width_with_thumbs() {
+        with_ui(|ui| {
+            let wide = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(640.0, 40.0));
+            ui.scope_builder(egui::UiBuilder::new().max_rect(wide), |ui| {
+                ui.set_clip_rect(wide);
+                let result = paint_image_search_row_with(ui, 30);
+                // Previous layout capped at 8×30px slots; a wide row should pack more.
+                assert!(
+                    result.drag_handle_rect.width() > 8.0 * TARGET_THUMB_MAX_W + 80.0,
+                    "thumbs should continue across unused row space (handle {})",
+                    result.drag_handle_rect.width()
+                );
+                assert!(
+                    result.drag_handle_rect.right() <= result.row_rect.right() + 1.0,
+                    "thumbs spilled past row chrome: {} > {}",
+                    result.drag_handle_rect.right(),
+                    result.row_rect.right()
+                );
+            });
+        });
+    }
+
     fn paint_image_search_row(ui: &mut egui::Ui) -> RowInteraction {
+        paint_image_search_row_with(ui, 12)
+    }
+
+    fn paint_image_search_row_with(ui: &mut egui::Ui, n: usize) -> RowInteraction {
         let mut targets = Vec::new();
-        for i in 0..MAX_TARGET_THUMBS {
+        for i in 0..n {
             targets.push(format!("Prog~WideItem{i}"));
         }
         let search = Action {
