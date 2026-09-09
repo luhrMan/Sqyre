@@ -250,6 +250,56 @@ fn sync_and_save_database(
     db.save_default().map_err(|e| e.to_string())
 }
 
+/// Results awaited from worker threads, drained on the UI thread each frame.
+///
+/// Grouped so the shared `not(wasm32)` gate is written once.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Default)]
+pub(crate) struct BackgroundTasks {
+    /// In-flight automatic backup.
+    pub backup: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
+    /// Find Pixel color sample taken off the UI thread.
+    pub pixel_sample: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+}
+
+/// Deferred Linux/Wayland startup work.
+///
+/// Grouped so the shared `not(wasm32) + native-runtime + linux` gate is written
+/// once instead of on each field.
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    feature = "native-runtime",
+    target_os = "linux"
+))]
+#[derive(Default)]
+pub(crate) struct PortalProbe {
+    /// Background portal ScreenCast probe (must not block startup).
+    pending: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
+    /// True once the deferred probe has been started (or skipped).
+    finished: bool,
+    /// Do not start portal ScreenCast before this instant, so the first frames
+    /// stay responsive.
+    not_before: Option<std::time::Instant>,
+    /// Wayland: start evdev after the ScreenCast picker so device fds do not
+    /// steal clicks.
+    hotkeys_deferred: Option<HotkeyCallbacks>,
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    feature = "native-runtime",
+    target_os = "linux"
+))]
+impl PortalProbe {
+    /// Already-probed state, for harnesses that never start capture.
+    pub(crate) fn finished() -> Self {
+        Self {
+            finished: true,
+            ..Self::default()
+        }
+    }
+}
+
 pub struct SqyreApp {
     pub(crate) workspace: Workspace,
     pub(crate) run_session: RunSession,
@@ -301,40 +351,16 @@ pub struct SqyreApp {
     /// WASM async YAML import result (unused on native).
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pending_import: PendingImport,
-    /// In-flight automatic backup (native only).
+    /// Work handed to worker threads and polled each frame (native only).
     #[cfg(not(target_arch = "wasm32"))]
-    backup_task: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
-    /// Background Find Pixel color sample (native only).
-    #[cfg(not(target_arch = "wasm32"))]
-    pixel_sample_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
-    /// Background portal ScreenCast probe (Linux Wayland — must not block startup).
+    pub(crate) tasks: BackgroundTasks,
+    /// Deferred Linux/Wayland portal startup.
     #[cfg(all(
         not(target_arch = "wasm32"),
         feature = "native-runtime",
         target_os = "linux"
     ))]
-    capture_probe_pending: Option<std::sync::mpsc::Receiver<Result<(), String>>>,
-    /// True after the deferred portal probe has been started (or skipped).
-    #[cfg(all(
-        not(target_arch = "wasm32"),
-        feature = "native-runtime",
-        target_os = "linux"
-    ))]
-    capture_probe_finished: bool,
-    /// Do not start portal ScreenCast before this instant (lets the first frames stay responsive).
-    #[cfg(all(
-        not(target_arch = "wasm32"),
-        feature = "native-runtime",
-        target_os = "linux"
-    ))]
-    capture_probe_not_before: Option<std::time::Instant>,
-    /// Wayland: start evdev after the ScreenCast picker so device fds do not steal clicks.
-    #[cfg(all(
-        not(target_arch = "wasm32"),
-        feature = "native-runtime",
-        target_os = "linux"
-    ))]
-    hotkeys_deferred: Option<HotkeyCallbacks>,
+    pub(crate) portal_probe: PortalProbe,
     /// Background update check / download (native only).
     #[cfg(not(target_arch = "wasm32"))]
     update: update::UpdateManager,
@@ -544,33 +570,16 @@ impl SqyreApp {
             pending_delete_macro: None,
             pending_import: wasm_io::new_pending_import(),
             #[cfg(not(target_arch = "wasm32"))]
-            backup_task: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            pixel_sample_pending: None,
+            tasks: BackgroundTasks::default(),
             #[cfg(all(
                 not(target_arch = "wasm32"),
                 feature = "native-runtime",
                 target_os = "linux"
             ))]
-            capture_probe_pending: None,
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                feature = "native-runtime",
-                target_os = "linux"
-            ))]
-            capture_probe_finished: false,
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                feature = "native-runtime",
-                target_os = "linux"
-            ))]
-            capture_probe_not_before: None,
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                feature = "native-runtime",
-                target_os = "linux"
-            ))]
-            hotkeys_deferred,
+            portal_probe: PortalProbe {
+                hotkeys_deferred,
+                ..PortalProbe::default()
+            },
             #[cfg(not(target_arch = "wasm32"))]
             update: update::UpdateManager::default(),
         };
@@ -586,7 +595,7 @@ impl SqyreApp {
         target_os = "linux"
     ))]
     pub(crate) fn start_deferred_hotkeys(&mut self) {
-        let Some(callbacks) = self.hotkeys_deferred.take() else {
+        let Some(callbacks) = self.portal_probe.hotkeys_deferred.take() else {
             return;
         };
         if let Err(e) = self.hotkeys.start(callbacks) {

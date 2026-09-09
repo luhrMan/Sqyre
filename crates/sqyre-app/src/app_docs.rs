@@ -125,35 +125,16 @@ impl SqyreApp {
             pending_delete_macro: None,
             pending_import: crate::wasm_io::new_pending_import(),
             #[cfg(not(target_arch = "wasm32"))]
-            backup_task: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            pixel_sample_pending: None,
+            tasks: crate::BackgroundTasks::default(),
             #[cfg(not(target_arch = "wasm32"))]
             update: crate::update::UpdateManager::default(),
+            // Screenshots never run the probe; mark it already finished.
             #[cfg(all(
                 not(target_arch = "wasm32"),
                 feature = "native-runtime",
                 target_os = "linux"
             ))]
-            capture_probe_pending: None,
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                feature = "native-runtime",
-                target_os = "linux"
-            ))]
-            capture_probe_finished: true,
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                feature = "native-runtime",
-                target_os = "linux"
-            ))]
-            capture_probe_not_before: None,
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                feature = "native-runtime",
-                target_os = "linux"
-            ))]
-            hotkeys_deferred: None,
+            portal_probe: crate::PortalProbe::finished(),
         };
         if let Some(m) = app.workspace.macros.first() {
             app.workspace.macro_meta.sync_selection(0, m);

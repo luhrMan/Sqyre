@@ -240,20 +240,20 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
     use std::sync::mpsc::TryRecvError;
     use std::time::Duration;
 
-    if app.capture_probe_finished {
+    if app.portal_probe.finished {
         return;
     }
 
-    if app.capture_probe_pending.is_none() {
+    if app.portal_probe.pending.is_none() {
         if !sqyre_capture::shared_capturer_open_may_block() {
-            app.capture_probe_finished = true;
+            app.portal_probe.finished = true;
             app.start_deferred_hotkeys();
             return;
         }
         let now = std::time::Instant::now();
-        match app.capture_probe_not_before {
+        match app.portal_probe.not_before {
             None => {
-                app.capture_probe_not_before = Some(now + Duration::from_millis(750));
+                app.portal_probe.not_before = Some(now + Duration::from_millis(750));
                 ctx.request_repaint_after(Duration::from_millis(750));
                 return;
             }
@@ -265,7 +265,7 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
             }
         }
         let (tx, rx) = std::sync::mpsc::channel();
-        app.capture_probe_pending = Some(rx);
+        app.portal_probe.pending = Some(rx);
         std::thread::spawn(move || {
             let result = match sqyre_capture::shared_capturer() {
                 Ok(_) => Ok(()),
@@ -275,13 +275,13 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
         });
     }
 
-    let Some(rx) = app.capture_probe_pending.as_ref() else {
+    let Some(rx) = app.portal_probe.pending.as_ref() else {
         return;
     };
     match rx.try_recv() {
         Ok(Ok(())) => {
-            app.capture_probe_pending = None;
-            app.capture_probe_finished = true;
+            app.portal_probe.pending = None;
+            app.portal_probe.finished = true;
             app.start_deferred_hotkeys();
             apply_main_monitor_resolution(&mut app.workspace.catalog);
             let _ =
@@ -289,8 +289,8 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
             ctx.request_repaint();
         }
         Ok(Err(warn)) => {
-            app.capture_probe_pending = None;
-            app.capture_probe_finished = true;
+            app.portal_probe.pending = None;
+            app.portal_probe.finished = true;
             app.start_deferred_hotkeys();
             app.workspace.platform_warning = Some(match app.workspace.platform_warning.take() {
                 Some(existing) => format!("{existing}\n{warn}"),
@@ -300,8 +300,8 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
         }
         Err(TryRecvError::Empty) => ctx.request_repaint_after(Duration::from_millis(100)),
         Err(TryRecvError::Disconnected) => {
-            app.capture_probe_pending = None;
-            app.capture_probe_finished = true;
+            app.portal_probe.pending = None;
+            app.portal_probe.finished = true;
             app.start_deferred_hotkeys();
         }
     }
@@ -359,25 +359,25 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     {
         use std::sync::mpsc::TryRecvError;
 
-        if let Some(rx) = app.pixel_sample_pending.as_ref() {
+        if let Some(rx) = app.tasks.pixel_sample.as_ref() {
             match rx.try_recv() {
                 Ok(Ok(hex)) => {
-                    app.pixel_sample_pending = None;
+                    app.tasks.pixel_sample = None;
                     app.tree.tooltip.apply_recorded_color(hex.clone());
                     app.add_action_picker.apply_recorded_color(hex);
                 }
                 Ok(Err(e)) => {
-                    app.pixel_sample_pending = None;
+                    app.tasks.pixel_sample = None;
                     crate::log::warn(format!("sample pixel color: {e}"));
                 }
                 Err(TryRecvError::Empty) => ctx.request_repaint(),
                 Err(TryRecvError::Disconnected) => {
-                    app.pixel_sample_pending = None;
+                    app.tasks.pixel_sample = None;
                     crate::log::warn("sample pixel color: capture failed");
                 }
             }
         }
-        if app.pixel_sample_pending.is_none() {
+        if app.tasks.pixel_sample.is_none() {
             if let Some((x, y)) = app.screen_click.take_color_point() {
                 #[cfg(target_os = "linux")]
                 if let Some(hex) = app.recording_overlay.sample_frozen_pixel_hex(x, y) {
@@ -386,7 +386,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                 } else {
                     match pixel_color::spawn_sample_pixel_hex(x, y) {
                         Ok(rx) => {
-                            app.pixel_sample_pending = Some(rx);
+                            app.tasks.pixel_sample = Some(rx);
                             ctx.request_repaint();
                         }
                         Err(e) => crate::log::warn(format!("sample pixel color: {e}")),
@@ -395,7 +395,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                 #[cfg(not(target_os = "linux"))]
                 match pixel_color::spawn_sample_pixel_hex(x, y) {
                     Ok(rx) => {
-                        app.pixel_sample_pending = Some(rx);
+                        app.tasks.pixel_sample = Some(rx);
                         ctx.request_repaint();
                     }
                     Err(e) => crate::log::warn(format!("sample pixel color: {e}")),
@@ -540,7 +540,7 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     // Poll in-flight task first.
-    if let Some(rx) = app.backup_task.take() {
+    if let Some(rx) = app.tasks.backup.take() {
         match rx.try_recv() {
             Ok(Ok(path)) => {
                 app.settings_ui.note_backup_success(&path);
@@ -549,7 +549,7 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
                 crate::log::warn(format!("automatic backup failed: {e}"));
             }
             Err(mpsc::TryRecvError::Empty) => {
-                app.backup_task = Some(rx);
+                app.tasks.backup = Some(rx);
                 ctx.request_repaint_after(std::time::Duration::from_millis(250));
                 return;
             }
@@ -558,7 +558,7 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     let settings = app.settings_ui.settings();
-    if !settings.backup_enabled || app.backup_task.is_some() {
+    if !settings.backup_enabled || app.tasks.backup.is_some() {
         return;
     }
     let interval_secs = (settings.backup_interval_hours.max(1) as u64).saturating_mul(3600);
@@ -574,7 +574,7 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
 
     let keep = settings.backup_max_keep.max(1) as usize;
     let (tx, rx) = mpsc::channel();
-    app.backup_task = Some(rx);
+    app.tasks.backup = Some(rx);
     thread::spawn(move || {
         let result = (|| {
             let path = sqyre_persist::create_backup().map_err(|e| e.to_string())?;
