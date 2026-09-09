@@ -54,11 +54,16 @@ struct Inner {
     paused: AtomicBool,
 }
 
+/// What the poller was last configured with: `(button id + gate pairs,
+/// close-match distance, catalog resolution key)`. Re-polling is skipped while
+/// this is unchanged.
+type PollSignature = (Vec<(String, OverlayVisibilityGate)>, i32, String);
+
 /// Background image-match results used to filter overlay buttons.
 pub struct OverlayVisibilityPoller {
     inner: Arc<Inner>,
     join: Mutex<Option<JoinHandle<()>>>,
-    last_sig: Option<(Vec<(String, OverlayVisibilityGate)>, i32, String)>,
+    last_sig: Option<PollSignature>,
 }
 
 impl Default for OverlayVisibilityPoller {

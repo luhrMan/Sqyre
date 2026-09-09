@@ -82,6 +82,13 @@ pub trait ActionLogger: Send + Sync {
         false
     }
 
+    /// When false, callers must skip diagnostics whose *cost is in producing the
+    /// value*, not in logging it — frame checksums, full OCR text, variable
+    /// values. Guard the computation, not just the [`Self::log`] call.
+    fn log_verbose_enabled(&self) -> bool {
+        false
+    }
+
     fn log_image(&self, action_id: ActionId, image: &LogImage) {
         let _ = (action_id, image);
     }
@@ -107,15 +114,18 @@ pub trait ActionLogger: Send + Sync {
 pub struct SharedActionLog {
     inner: Arc<Mutex<HashMap<ActionId, Vec<ActionLogEntry>>>>,
     log_images: Arc<AtomicBool>,
+    log_verbose: Arc<AtomicBool>,
 }
 
 impl Default for SharedActionLog {
     fn default() -> Self {
-        // Enabled by default so unit tests that assert images need no setup;
-        // the app sets this from `UserSettings::save_meta_images` (default off).
+        // Both enabled by default so unit tests that assert images / diagnostic
+        // lines need no setup; the app sets them from
+        // `UserSettings::save_meta_images` (default off).
         Self {
             inner: Arc::new(Mutex::new(HashMap::new())),
             log_images: Arc::new(AtomicBool::new(true)),
+            log_verbose: Arc::new(AtomicBool::new(true)),
         }
     }
 }
@@ -131,6 +141,14 @@ impl SharedActionLog {
 
     pub fn log_images_enabled(&self) -> bool {
         self.log_images.load(Ordering::SeqCst)
+    }
+
+    pub fn set_log_verbose(&self, enabled: bool) {
+        self.log_verbose.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn log_verbose_enabled(&self) -> bool {
+        self.log_verbose.load(Ordering::SeqCst)
     }
 
     pub fn clear(&self) {
@@ -175,6 +193,10 @@ impl ActionLogger for SharedActionLog {
 
     fn log_images_enabled(&self) -> bool {
         SharedActionLog::log_images_enabled(self)
+    }
+
+    fn log_verbose_enabled(&self) -> bool {
+        SharedActionLog::log_verbose_enabled(self)
     }
 
     fn log_image(&self, action_id: ActionId, image: &LogImage) {

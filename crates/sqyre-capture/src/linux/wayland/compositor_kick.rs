@@ -660,6 +660,8 @@ fn transparent_shm_file(bytes: usize) -> Option<File> {
     if bytes == 0 {
         return None;
     }
+    // SAFETY: `memfd_create` takes a NUL-terminated name; the `c"…"` literal is
+    // 'static and NUL-terminated. The flags are valid `MFD_*` constants.
     let fd = unsafe {
         libc::memfd_create(
             c"sqyre-kick".as_ptr(),
@@ -669,11 +671,17 @@ fn transparent_shm_file(bytes: usize) -> Option<File> {
     if fd < 0 {
         return None;
     }
+    // SAFETY: `memfd_create` returned a fresh, open fd (checked `>= 0` above)
+    // that nothing else owns, so transferring ownership here is sound. `owned`
+    // closes it on every early return below.
     let owned = unsafe { OwnedFd::from_raw_fd(fd) };
+    // SAFETY: `owned` keeps the fd open for the duration of this call.
     if unsafe { libc::ftruncate(owned.as_raw_fd(), bytes as libc::off_t) } != 0 {
         return None;
     }
     let raw = owned.into_raw_fd();
+    // SAFETY: `into_raw_fd` released ownership without closing, so `raw` is
+    // still open and unowned; `File` becomes its sole owner.
     Some(unsafe { File::from_raw_fd(raw) })
 }
 

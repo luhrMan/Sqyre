@@ -93,6 +93,10 @@ impl CommandPaletteUi {
         }
     }
 
+    pub(crate) fn is_open(&self) -> bool {
+        self.open
+    }
+
     pub(crate) fn show(
         &mut self,
         ctx: &egui::Context,

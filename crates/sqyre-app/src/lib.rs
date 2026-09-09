@@ -37,11 +37,10 @@ mod log;
 mod macro_meta;
 mod macro_record;
 /// Phosphor overlay icon catalog + paint helpers (lives in `sqyre-overlay`).
-#[allow(unused_imports)] // re-export surface for `crate::overlay_icons::…`
 mod overlay_icons {
     pub use sqyre_overlay::{
-        catalog, glyph_font_id, register_phosphor_family, resolve, show_icon_picker_grid,
-        style_preview_button, OverlayIcon, OverlayPaintStyle, DEFAULT_ICON_ID,
+        glyph_font_id, register_phosphor_family, resolve, show_icon_picker_grid,
+        style_preview_button, OverlayPaintStyle, DEFAULT_ICON_ID,
     };
 }
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
@@ -412,6 +411,7 @@ impl SqyreApp {
         let settings_ui = SettingsUi::from_settings(settings);
         let action_log = SharedActionLog::new();
         action_log.set_log_images(settings_ui.settings().save_meta_images);
+        action_log.set_log_verbose(settings_ui.settings().save_meta_images);
         let mut add_action_picker = AddActionPicker::default();
         add_action_picker.load_from_settings(settings_ui.settings());
 
