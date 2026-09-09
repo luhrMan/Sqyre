@@ -55,6 +55,7 @@ impl SqyreApp {
         let settings_ui = SettingsUi::from_settings(settings);
         let action_log = SharedActionLog::new();
         action_log.set_log_images(settings_ui.settings().save_meta_images);
+        action_log.set_log_verbose(settings_ui.settings().save_meta_images);
         let mut add_action_picker = AddActionPicker::default();
         add_action_picker.load_from_settings(settings_ui.settings());
 

@@ -328,6 +328,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
     let log_images = app.settings_ui.settings().save_meta_images;
     app.run_session.action_log.set_log_images(log_images);
+    app.run_session.action_log.set_log_verbose(log_images);
     if !log_images && app.run_session.logs_window.take().is_some() {
         app.run_session.logs_image_cache.clear();
     }
@@ -696,6 +697,11 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
 }
 
 pub fn show_command_palette(app: &mut SqyreApp, ctx: &egui::Context) {
+    // `collect_commands` walks every macro and catalog entity; skip it entirely
+    // while the palette is closed rather than building a list `show` discards.
+    if !app.command_palette.is_open() {
+        return;
+    }
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     let commands =
         crate::command_palette::collect_commands(crate::command_palette::CommandSources {

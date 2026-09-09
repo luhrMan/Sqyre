@@ -193,6 +193,25 @@ impl<'a> Executor<'a> {
             .unwrap_or(false)
     }
 
+    pub fn log_verbose_enabled(&self) -> bool {
+        self.deps
+            .logger
+            .map(|l| l.log_verbose_enabled())
+            .unwrap_or(false)
+    }
+
+    /// Log a line whose *value* is expensive to produce. `f` runs only when
+    /// verbose diagnostics are on.
+    pub fn log_verbose(&self, action_id: ActionId, f: impl FnOnce() -> String) {
+        let Some(logger) = self.deps.logger else {
+            return;
+        };
+        if !logger.log_verbose_enabled() {
+            return;
+        }
+        logger.log(action_id, f());
+    }
+
     pub fn log_image(
         &self,
         action_id: ActionId,

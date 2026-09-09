@@ -116,14 +116,15 @@ pub(super) fn capture_search_buf(
     };
     exec.log_timing(action_id, "capture", capture_started.elapsed());
     let buf = rgb_capture_to_image_buf(img);
-    let checksum = capture_checksum(&buf.data);
-    exec.log(
-        action_id,
+    // Checksum hashes the whole frame, so keep it behind the verbose gate.
+    exec.log_verbose(action_id, || {
         format!(
             "{label}: capture {}×{} checksum={:#x}",
-            buf.width, buf.height, checksum
-        ),
-    );
+            buf.width,
+            buf.height,
+            capture_checksum(&buf.data)
+        )
+    });
     Some((buf, origin))
 }
 

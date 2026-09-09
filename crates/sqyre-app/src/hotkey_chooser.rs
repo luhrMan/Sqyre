@@ -22,12 +22,15 @@ pub(crate) struct HotkeyChooserState {
     pub native: bool,
 }
 
+/// Macros sharing one chord: `(normalized chord, trigger, macro names)`.
+pub(crate) type ChordGroup = (String, HotkeyTrigger, Vec<String>);
+
 /// Group pending macro names by normalized chord + trigger.
 /// Returns groups of unique macro names (order preserved within each group).
 pub(crate) fn group_pending_by_chord(
     pending: &[String],
     macros: &[sqyre_domain::Macro],
-) -> Vec<(String, HotkeyTrigger, Vec<String>)> {
+) -> Vec<ChordGroup> {
     let by_name: BTreeMap<&str, &sqyre_domain::Macro> =
         macros.iter().map(|m| (m.name.as_str(), m)).collect();
 
@@ -80,7 +83,7 @@ pub(crate) fn group_pending_by_chord(
 pub(crate) fn partition_pending(
     pending: &[String],
     macros: &[sqyre_domain::Macro],
-) -> (Vec<(String, HotkeyTrigger, Vec<String>)>, Vec<String>) {
+) -> (Vec<ChordGroup>, Vec<String>) {
     let groups = group_pending_by_chord(pending, macros);
     let in_group: HashSet<&str> = groups
         .iter()
