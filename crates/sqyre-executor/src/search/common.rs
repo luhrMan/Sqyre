@@ -387,6 +387,7 @@ pub(super) fn run_detection_shell<T>(
     let wait = &ctx.branch.wait;
     let wait_interval_ms = ctx.wait_interval_ms;
     let repeat_interval_ms = ctx.repeat_interval_ms;
+    exec.check_stopped()?;
     let mut state = try_once(exec, macro_, false)?;
 
     let wait_started = Instant::now();
