@@ -284,7 +284,7 @@ fn flush_item_gallery(
     ui.add_space(8.0);
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // log card/detail: cache, entry identity, captions, and image payloads
 fn show_item_card(
     ui: &mut egui::Ui,
     action_id: ActionId,
@@ -338,7 +338,7 @@ fn show_item_card(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // log card/detail: cache, entry identity, captions, and image payloads
 fn show_item_detail(
     ui: &mut egui::Ui,
     action_id: ActionId,

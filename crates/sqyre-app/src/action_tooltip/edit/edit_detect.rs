@@ -51,20 +51,67 @@ fn match_method_editor(ui: &mut egui::Ui, match_method: &mut MatchMethod) {
     match_settings::paint_match_method(ui, match_method);
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Borrowed [`ActionKind::ImageSearch`] fields, so the painter takes one
+/// argument for the action instead of one per field.
+///
+/// The caller still matches the variant, which keeps the field set statically
+/// checked; this only bundles the resulting `&mut` bindings.
+///
+/// [`ActionKind::ImageSearch`]: sqyre_domain::ActionKind::ImageSearch
+pub(super) struct ImageSearchFields<'a> {
+    pub name: &'a mut String,
+    pub targets: &'a mut Vec<String>,
+    pub search_area: &'a mut CoordinateRef,
+    pub tolerance: &'a mut f64,
+    pub blur: &'a mut i32,
+    pub match_method: &'a mut MatchMethod,
+    pub detection: &'a mut DetectionBranch,
+}
+
+/// Borrowed [`ActionKind::Ocr`] fields. See [`ImageSearchFields`].
+///
+/// [`ActionKind::Ocr`]: sqyre_domain::ActionKind::Ocr
+pub(super) struct OcrFields<'a> {
+    pub name: &'a mut String,
+    pub target: &'a mut String,
+    pub search_area: &'a mut CoordinateRef,
+    pub output_variable: &'a mut String,
+    pub blur: &'a mut i32,
+    pub min_threshold: &'a mut i32,
+    pub resize: &'a mut f64,
+    pub grayscale: &'a mut bool,
+    pub threshold_otsu: &'a mut bool,
+    pub threshold_invert: &'a mut bool,
+    pub detection: &'a mut DetectionBranch,
+}
+
+/// Borrowed [`ActionKind::FindPixel`] fields. See [`ImageSearchFields`].
+///
+/// [`ActionKind::FindPixel`]: sqyre_domain::ActionKind::FindPixel
+pub(super) struct FindPixelFields<'a> {
+    pub name: &'a mut String,
+    pub search_area: &'a mut CoordinateRef,
+    pub target_color: &'a mut String,
+    pub color_tolerance: &'a mut i32,
+    pub detection: &'a mut DetectionBranch,
+}
+
 pub(super) fn paint_image_search_fields(
     ui: &mut egui::Ui,
     paint: &mut CatalogPaint<'_>,
     picker: &mut ActivePicker,
     theme: VarTheme<'_>,
-    name: &mut String,
-    targets: &mut Vec<String>,
-    search_area: &mut CoordinateRef,
-    tolerance: &mut f64,
-    blur: &mut i32,
-    match_method: &mut MatchMethod,
-    detection: &mut DetectionBranch,
+    fields: ImageSearchFields<'_>,
 ) {
+    let ImageSearchFields {
+        name,
+        targets,
+        search_area,
+        tolerance,
+        blur,
+        match_method,
+        detection,
+    } = fields;
     detection_primary_header(ui, paint, picker, name, search_area);
     tip_section(ui, |ui| {
         targets_editor(ui, paint.catalog, paint.icons, targets, picker);
@@ -80,25 +127,27 @@ pub(super) fn paint_image_search_fields(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn paint_ocr_fields(
     ui: &mut egui::Ui,
     paint: &mut CatalogPaint<'_>,
     picker: &mut ActivePicker,
     theme: VarTheme<'_>,
     active_macro: Option<&Macro>,
-    name: &mut String,
-    target: &mut String,
-    search_area: &mut CoordinateRef,
-    output_variable: &mut String,
-    blur: &mut i32,
-    min_threshold: &mut i32,
-    resize: &mut f64,
-    grayscale: &mut bool,
-    threshold_otsu: &mut bool,
-    threshold_invert: &mut bool,
-    detection: &mut DetectionBranch,
+    fields: OcrFields<'_>,
 ) {
+    let OcrFields {
+        name,
+        target,
+        search_area,
+        output_variable,
+        blur,
+        min_threshold,
+        resize,
+        grayscale,
+        threshold_otsu,
+        threshold_invert,
+        detection,
+    } = fields;
     detection_primary_header(ui, paint, picker, name, search_area);
     tip_wrapped_section(ui, |ui| {
         var_pills::var_name_text_edit(
@@ -113,10 +162,9 @@ pub(super) fn paint_ocr_fields(
         var_ref_field(
             ui,
             "Target",
-            h::OCR_TARGET,
             target,
-            theme.known_vars,
-            theme.is_dark,
+            theme,
+            h::OCR_TARGET,
             W_VAR,
             active_macro,
         );
@@ -150,7 +198,6 @@ pub(super) fn paint_ocr_fields(
     });
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) fn paint_find_pixel_fields(
     ui: &mut egui::Ui,
     paint: &mut CatalogPaint<'_>,
@@ -158,22 +205,24 @@ pub(super) fn paint_find_pixel_fields(
     theme: VarTheme<'_>,
     active_macro: Option<&Macro>,
     screen_click: &ScreenClickBridge,
-    name: &mut String,
-    search_area: &mut CoordinateRef,
-    target_color: &mut String,
-    color_tolerance: &mut i32,
-    detection: &mut DetectionBranch,
+    fields: FindPixelFields<'_>,
 ) {
+    let FindPixelFields {
+        name,
+        search_area,
+        target_color,
+        color_tolerance,
+        detection,
+    } = fields;
     detection_primary_header(ui, paint, picker, name, search_area);
     tip_wrapped_section(ui, |ui| {
         ui.horizontal(|ui| {
             var_ref_field(
                 ui,
                 "Target color",
-                h::PIXEL_COLOR,
                 target_color,
-                theme.known_vars,
-                theme.is_dark,
+                theme,
+                h::PIXEL_COLOR,
                 W_VAR,
                 active_macro,
             );

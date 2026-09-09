@@ -196,16 +196,19 @@ impl MacroRecordUi {
             }
             Self::Review(review) => match paint_review(
                 review,
-                ctx,
-                macro_hotkeys,
-                catalog,
-                icons,
-                previews,
-                key_record,
-                hotkey_record,
-                screen_click,
-                macros,
-                compact_program_headers,
+                MacroRecordShow {
+                    ctx,
+                    macro_hotkeys,
+                    bridge,
+                    catalog,
+                    icons,
+                    previews,
+                    key_record,
+                    hotkey_record,
+                    screen_click,
+                    macros,
+                    compact_program_headers,
+                },
             ) {
                 ReviewFrame::Continue { catalog_changed } => MacroRecordShowResult {
                     copy: None,
@@ -233,20 +236,20 @@ enum ReviewFrame {
     Close,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn paint_review(
-    review: &mut ReviewState,
-    ctx: &egui::Context,
-    macro_hotkeys: &MacroHotkeyBridge,
-    catalog: &mut ProgramCatalog,
-    icons: &mut IconCache,
-    previews: &mut PreviewTooltipCache,
-    key_record: &mut KeyRecordUi,
-    hotkey_record: &mut HotkeyRecordUi,
-    screen_click: &ScreenClickBridge,
-    macros: &[(String, Vec<String>)],
-    compact_program_headers: bool,
-) -> ReviewFrame {
+fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFrame {
+    let MacroRecordShow {
+        ctx,
+        macro_hotkeys,
+        bridge: _,
+        catalog,
+        icons,
+        previews,
+        key_record,
+        hotkey_record,
+        screen_click,
+        macros,
+        compact_program_headers,
+    } = ui;
     let ReviewState {
         draft,
         points,

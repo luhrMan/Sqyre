@@ -4,6 +4,7 @@ use crate::add_action::AddActionPicker;
 use crate::catalog::apply_main_monitor_resolution;
 use crate::data_editor::{DataEditor, DataEditorCtx};
 use crate::icon_cache::IconCache;
+use crate::paint_ctx::{CatalogPaint, RecordBridges, TipUiCtx, VarTheme};
 #[cfg(feature = "native-runtime")]
 use crate::pixel_color;
 use crate::preview_tooltip::PreviewTooltipCache;
@@ -194,22 +195,28 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
                 .clone()
         };
         let mut defaults_to_persist = false;
-        let picked = app.add_action_picker.show(
-            ctx,
-            catalog,
-            icons,
-            previews,
-            &macros,
-            &known_vars,
-            &mut app.key_record,
-            &mut app.hotkey_record,
-            &app.run_session.macro_hotkeys,
-            &app.screen_click,
-            app.settings_ui.settings().compact_program_headers,
-            |_| {
-                defaults_to_persist = true;
+        let is_dark = ctx.global_style().visuals.dark_mode;
+        let mut tip = TipUiCtx {
+            paint: CatalogPaint {
+                catalog,
+                icons,
+                previews,
             },
-        );
+            theme: VarTheme {
+                known_vars: &known_vars,
+                is_dark,
+            },
+            bridges: RecordBridges {
+                key_record: &mut app.key_record,
+                hotkey_record: &mut app.hotkey_record,
+                macro_hotkeys: &app.run_session.macro_hotkeys,
+                screen_click: &app.screen_click,
+            },
+            compact_program_headers: app.settings_ui.settings().compact_program_headers,
+        };
+        let picked = app.add_action_picker.show(ctx, &mut tip, &macros, |_| {
+            defaults_to_persist = true;
+        });
         if defaults_to_persist {
             app.add_action_picker
                 .store_into_settings(app.settings_ui.settings_mut());
