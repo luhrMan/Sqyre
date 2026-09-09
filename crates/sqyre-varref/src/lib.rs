@@ -347,12 +347,12 @@ mod tests {
             dollar in any::<bool>(),
         ) {
             // Avoid accidental new refs in prefix/suffix by stripping braces.
-            // Also strip trailing `$` so prefix=`$` + `${name}` does not become `$${name}` escape.
+            // Trailing `$` must go in both branches: before `${name}` it forms
+            // the `$${name}` escape, and before `{name}` it forms a `${name}`
+            // reference — either way the generated text is not what we assert.
             let mut prefix = prefix.replace(['{', '}'], "");
-            if dollar {
-                while prefix.ends_with('$') {
-                    prefix.pop();
-                }
+            while prefix.ends_with('$') {
+                prefix.pop();
             }
             let suffix = suffix.replace(['{', '}'], "");
             let text = if dollar {

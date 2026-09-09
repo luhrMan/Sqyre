@@ -17,10 +17,23 @@ pub(crate) fn execute_set_variable(
     for a in assignments {
         let scalar = resolve_set_variable_value(&a.value, &macro_.variables)
             .map_err(|e| ExecError::Message(e.to_string()))?;
-        exec.log(
-            action_id,
-            format!("Set: {} = {}", a.variable_name, scalar.as_display()),
-        );
+        // Values can hold passwords / tokens pulled from the screen or
+        // clipboard, so only the name and length are logged by default.
+        if exec.log_verbose_enabled() {
+            exec.log(
+                action_id,
+                format!("Set: {} = {}", a.variable_name, scalar.as_display()),
+            );
+        } else {
+            exec.log(
+                action_id,
+                format!(
+                    "Set: {} ({} chars)",
+                    a.variable_name,
+                    scalar.as_display().chars().count()
+                ),
+            );
+        }
         macro_.variables.set(&a.variable_name, scalar);
     }
     Ok(())

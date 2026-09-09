@@ -36,6 +36,9 @@ const MAX_CHECKSUMS_BYTES: u64 = 64 * 1024;
 const MAX_CHECKSUMS_SIG_BYTES: u64 = 4 * 1024;
 /// Cap for GitHub API JSON bodies.
 const MAX_API_BYTES: u64 = 2 * 1024 * 1024;
+/// Redirect hops allowed while downloading; every hop is re-checked against the
+/// host allowlist.
+const MAX_REDIRECTS: u32 = 5;
 
 /// Result of comparing the running build against the latest GitHub release.
 #[derive(Debug, Clone)]
@@ -58,12 +61,21 @@ pub struct ReleaseAsset {
 }
 
 /// Extracted update file ready to replace the running install.
+///
+/// Holds the staging directory open: dropping this removes the staged payload.
+/// The directory is created by `tempfile` (mode 0700 on Unix) rather than at a
+/// predictable path, and [`apply`] re-hashes the payload immediately before
+/// installing it, so a swap between staging and apply cannot land.
 #[derive(Debug)]
 pub struct StagedUpdate {
     /// Path to the extracted binary / AppImage on disk (temp).
     pub staged_path: PathBuf,
     /// Absolute path that will be replaced.
     pub target_path: PathBuf,
+    /// SHA-256 of the extracted payload, re-checked by [`apply`].
+    staged_sha256: String,
+    /// Owns the staging directory for the lifetime of this value.
+    _staging: tempfile::TempDir,
 }
 
 #[derive(Debug, Error)]
@@ -209,15 +221,68 @@ fn sibling_dot_old(path: &Path) -> PathBuf {
     PathBuf::from(old_os)
 }
 
+/// Hosts this updater will talk to. Checked on the initial URL *and* on every
+/// redirect hop, so an allowed host cannot bounce a fetch off-allowlist.
+const ALLOWED_URL_PREFIXES: &[&str] = &[
+    "https://api.github.com/",
+    "https://github.com/",
+    "https://objects.githubusercontent.com/",
+    "https://release-assets.githubusercontent.com/",
+];
+
 fn assert_allowed_download_url(url: &str) -> Result<(), UpdateError> {
-    let ok = url.starts_with("https://github.com/")
-        || url.starts_with("https://objects.githubusercontent.com/")
-        || url.starts_with("https://release-assets.githubusercontent.com/");
-    if ok {
+    if ALLOWED_URL_PREFIXES.iter().any(|p| url.starts_with(p)) {
         Ok(())
     } else {
         Err(UpdateError::BadDownloadUrl(url.to_string()))
     }
+}
+
+/// Follow redirects manually so every hop is checked against the host
+/// allowlist. `ureq` follows them internally by default, which would let an
+/// allowed host bounce the download to an arbitrary origin.
+fn get_allowlisted(
+    url: &str,
+    accept: &str,
+) -> Result<ureq::http::Response<ureq::Body>, UpdateError> {
+    let mut current = url.to_string();
+    for _ in 0..MAX_REDIRECTS {
+        assert_allowed_download_url(&current)?;
+        let response = ureq::get(&current)
+            .config()
+            .max_redirects(0)
+            .build()
+            .header("User-Agent", USER_AGENT)
+            .header("Accept", accept)
+            .call()
+            .map_err(|e| UpdateError::Http(e.to_string()))?;
+        let status = response.status().as_u16();
+        if (300..400).contains(&status) {
+            let location = response
+                .headers()
+                .get("location")
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| {
+                    UpdateError::Http(format!("status {status} with no Location for {current}"))
+                })?;
+            // Relative redirects stay on the already-approved host.
+            current = match ureq::http::Uri::try_from(location) {
+                Ok(uri) if uri.scheme().is_some() => location.to_string(),
+                _ => return Err(UpdateError::BadDownloadUrl(location.to_string())),
+            };
+            continue;
+        }
+        if !(200..300).contains(&status) {
+            return Err(UpdateError::Http(format!(
+                "status {} fetching {current}",
+                response.status()
+            )));
+        }
+        return Ok(response);
+    }
+    Err(UpdateError::Http(format!(
+        "too many redirects fetching {url}"
+    )))
 }
 
 /// Parse GNU `sha256sum` style lines (`<hex>  <name>` or `<hex> *<name>`).
@@ -356,31 +421,33 @@ pub fn download_and_stage(asset: &ReleaseAsset) -> Result<StagedUpdate, UpdateEr
     }
 
     let extracted = extract_single_file(&zip_path, tmp_dir.path())?;
-    let durable = std::env::temp_dir().join(format!(
-        "sqyre-update-{}-{}",
-        std::process::id(),
-        extracted
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("payload")
-    ));
-    if durable.exists() {
-        let _ = fs::remove_file(&durable);
-    }
-    if fs::rename(&extracted, &durable).is_err() {
-        fs::copy(&extracted, &durable)?;
-        let _ = fs::remove_file(&extracted);
-    }
-    drop(tmp_dir);
+    // Keep the payload inside the private temp dir (0700, unpredictable name)
+    // instead of moving it to a guessable path in the shared temp directory.
+    let _ = fs::remove_file(&zip_path);
+    let staged_sha256 = sha256_hex_file(&extracted)?;
 
     Ok(StagedUpdate {
-        staged_path: durable,
+        staged_path: extracted,
         target_path,
+        staged_sha256,
+        _staging: tmp_dir,
     })
 }
 
 /// Atomically replace the running install with `staged`.
+///
+/// Re-hashes the staged payload first: it was verified at download time, and
+/// this closes the window between staging and install.
 pub fn apply(staged: StagedUpdate) -> Result<(), UpdateError> {
+    let actual = sha256_hex_file(&staged.staged_path)?;
+    if actual != staged.staged_sha256 {
+        return Err(UpdateError::ChecksumMismatch {
+            name: staged.staged_path.display().to_string(),
+            expected: staged.staged_sha256.clone(),
+            actual,
+        });
+    }
+
     #[cfg(target_os = "windows")]
     {
         apply_windows(&staged.staged_path, &staged.target_path)
@@ -455,47 +522,20 @@ fn strip_v(tag: &str) -> &str {
 }
 
 fn http_get_string(url: &str, max_bytes: u64) -> Result<String, UpdateError> {
-    let response = ureq::get(url)
-        .header("User-Agent", USER_AGENT)
-        .header("Accept", "application/vnd.github+json")
-        .call()
-        .map_err(|e| UpdateError::Http(e.to_string()))?;
-    if !(200..300).contains(&response.status().as_u16()) {
-        return Err(UpdateError::Http(format!(
-            "status {} fetching {url}",
-            response.status()
-        )));
-    }
-    let mut reader = response.into_body().into_reader();
-    let mut buf = Vec::new();
-    let mut chunk = [0u8; 16 * 1024];
-    loop {
-        let n = reader
-            .read(&mut chunk)
-            .map_err(|e| UpdateError::Http(e.to_string()))?;
-        if n == 0 {
-            break;
-        }
-        if (buf.len() as u64).saturating_add(n as u64) > max_bytes {
-            return Err(UpdateError::AssetTooLarge(max_bytes.saturating_add(1)));
-        }
-        buf.extend_from_slice(&chunk[..n]);
-    }
+    let buf = http_get_bytes_with_accept(url, max_bytes, "application/vnd.github+json")?;
     String::from_utf8(buf).map_err(|e| UpdateError::Http(format!("response not UTF-8: {e}")))
 }
 
 fn http_get_bytes(url: &str, max_bytes: u64) -> Result<Vec<u8>, UpdateError> {
-    let response = ureq::get(url)
-        .header("User-Agent", USER_AGENT)
-        .header("Accept", "application/octet-stream")
-        .call()
-        .map_err(|e| UpdateError::Http(e.to_string()))?;
-    if !(200..300).contains(&response.status().as_u16()) {
-        return Err(UpdateError::Http(format!(
-            "status {} fetching {url}",
-            response.status()
-        )));
-    }
+    http_get_bytes_with_accept(url, max_bytes, "application/octet-stream")
+}
+
+fn http_get_bytes_with_accept(
+    url: &str,
+    max_bytes: u64,
+    accept: &str,
+) -> Result<Vec<u8>, UpdateError> {
+    let response = get_allowlisted(url, accept)?;
     let mut reader = response.into_body().into_reader();
     let mut buf = Vec::new();
     let mut chunk = [0u8; 16 * 1024];
@@ -515,17 +555,7 @@ fn http_get_bytes(url: &str, max_bytes: u64) -> Result<Vec<u8>, UpdateError> {
 }
 
 fn http_download(url: &str, dest: &Path, max_bytes: u64) -> Result<u64, UpdateError> {
-    let response = ureq::get(url)
-        .header("User-Agent", USER_AGENT)
-        .header("Accept", "application/octet-stream")
-        .call()
-        .map_err(|e| UpdateError::Http(e.to_string()))?;
-    if !(200..300).contains(&response.status().as_u16()) {
-        return Err(UpdateError::Http(format!(
-            "status {} downloading {url}",
-            response.status()
-        )));
-    }
+    let response = get_allowlisted(url, "application/octet-stream")?;
     let mut file = File::create(dest)?;
     let mut reader = response.into_body().into_reader();
     let mut total = 0u64;
@@ -718,6 +748,77 @@ fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210 *Sqyre.AppImage
         )
         .is_ok());
         assert!(assert_allowed_download_url("https://evil.example/a.zip").is_err());
+    }
+
+    #[test]
+    fn allowlist_covers_api_and_asset_hosts() {
+        for url in [
+            "https://api.github.com/repos/luhrMan/Squire/releases/latest",
+            "https://objects.githubusercontent.com/x",
+            "https://release-assets.githubusercontent.com/x",
+        ] {
+            assert!(assert_allowed_download_url(url).is_ok(), "{url}");
+        }
+        // A lookalike host must not pass the prefix check.
+        for url in [
+            "https://github.com.evil.example/a.zip",
+            "http://github.com/a.zip",
+            "https://raw.githubusercontent.com/a.zip",
+        ] {
+            assert!(assert_allowed_download_url(url).is_err(), "{url}");
+        }
+    }
+
+    #[test]
+    fn apply_rejects_staged_payload_swapped_after_download() {
+        let staging = tempfile::tempdir().unwrap();
+        let payload = staging.path().join("sqyre");
+        fs::write(&payload, b"good").unwrap();
+        let staged_sha256 = sha256_hex_file(&payload).unwrap();
+
+        let target_dir = tempfile::tempdir().unwrap();
+        let target = target_dir.path().join("sqyre");
+        fs::write(&target, b"original").unwrap();
+
+        // Attacker replaces the staged file between staging and apply.
+        fs::write(&payload, b"evil").unwrap();
+
+        let err = apply(StagedUpdate {
+            staged_path: payload,
+            target_path: target.clone(),
+            staged_sha256,
+            _staging: staging,
+        })
+        .unwrap_err();
+
+        assert!(
+            matches!(err, UpdateError::ChecksumMismatch { .. }),
+            "expected checksum mismatch, got {err:?}"
+        );
+        // Install must be untouched.
+        assert_eq!(fs::read(&target).unwrap(), b"original");
+    }
+
+    #[test]
+    fn apply_installs_untampered_payload() {
+        let staging = tempfile::tempdir().unwrap();
+        let payload = staging.path().join("sqyre");
+        fs::write(&payload, b"new-build").unwrap();
+        let staged_sha256 = sha256_hex_file(&payload).unwrap();
+
+        let target_dir = tempfile::tempdir().unwrap();
+        let target = target_dir.path().join("sqyre");
+        fs::write(&target, b"original").unwrap();
+
+        apply(StagedUpdate {
+            staged_path: payload,
+            target_path: target.clone(),
+            staged_sha256,
+            _staging: staging,
+        })
+        .unwrap();
+
+        assert_eq!(fs::read(&target).unwrap(), b"new-build");
     }
 
     #[test]
