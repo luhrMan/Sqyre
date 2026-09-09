@@ -75,9 +75,21 @@ fn find_peaks_polarity(
 /// Keep the first point of each spatial cluster (scan order), dropping neighbors
 /// within `close_matches_distance` (Chebyshev).
 pub fn cluster_points(points: &[Point], close_matches_distance: i32) -> Vec<Point> {
-    let mut dedup = MatchPointDedup::new(close_matches_distance);
+    cluster_points_from(points.iter().copied(), close_matches_distance)
+}
+
+/// [`cluster_points`] over an iterator, so callers that can generate points
+/// lazily never materialize the full pre-cluster list.
+///
+/// Yields the same result as `cluster_points` for the same point sequence:
+/// clustering is greedy in iteration order, so the order must match.
+pub fn cluster_points_from(
+    points: impl IntoIterator<Item = Point>,
+    close_matches_distance: i32,
+) -> Vec<Point> {
+    let mut dedup = PointClusterer::new(close_matches_distance);
     let mut out = Vec::new();
-    for &p in points {
+    for p in points {
         if dedup.add_if_far(p) {
             out.push(p);
         }
@@ -85,20 +97,32 @@ pub fn cluster_points(points: &[Point], close_matches_distance: i32) -> Vec<Poin
     out
 }
 
-struct MatchPointDedup {
+/// Greedy spatial dedup: the first point of each cluster wins, and any later
+/// point within `distance` (Chebyshev) of a kept point is dropped.
+///
+/// Exposed so callers that generate points in scan order can skip work when a
+/// point is kept — every point within `distance` of it is then known to be
+/// rejected without testing it (see [`Self::distance`]).
+pub struct PointClusterer {
     distance: i32,
     buckets: HashMap<(i32, i32), Vec<Point>>,
 }
 
-impl MatchPointDedup {
-    fn new(distance: i32) -> Self {
+impl PointClusterer {
+    pub fn new(distance: i32) -> Self {
         Self {
             distance: distance.max(0),
             buckets: HashMap::new(),
         }
     }
 
-    fn add_if_far(&mut self, point: Point) -> bool {
+    /// Clamped cluster radius: points within this of a kept point are dropped.
+    pub fn distance(&self) -> i32 {
+        self.distance
+    }
+
+    /// Record `point` and return whether it starts a new cluster.
+    pub fn add_if_far(&mut self, point: Point) -> bool {
         if self.distance <= 0 {
             self.buckets.entry((0, 0)).or_default().push(point);
             return true;
@@ -130,7 +154,7 @@ mod tests {
 
     #[test]
     fn dedup_rejects_nearby() {
-        let mut d = MatchPointDedup::new(5);
+        let mut d = PointClusterer::new(5);
         assert!(d.add_if_far(Point { x: 10, y: 10 }));
         assert!(!d.add_if_far(Point { x: 12, y: 12 }));
         assert!(d.add_if_far(Point { x: 20, y: 20 }));
