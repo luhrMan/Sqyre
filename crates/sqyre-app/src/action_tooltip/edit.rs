@@ -10,7 +10,7 @@ use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use crate::pickers::{self, options, ActivePicker, CoordKind};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
-use crate::var_pills;
+use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{
     combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
     searchable_combo, searchable_combo_with, text_field, W_TEXT, W_VAR,
@@ -886,11 +886,15 @@ pub(super) fn scalar_field(
         ui,
         label,
         &mut text,
-        known_vars,
-        is_dark,
-        W_VAR,
-        &validation,
-        help_text,
+        VarTheme {
+            known_vars,
+            is_dark,
+        },
+        VarFieldOpts {
+            desired_width: W_VAR,
+            validation: &validation,
+            help: help_text,
+        },
     );
     if text != before {
         *value = ScalarValue::parse_edit(&text);
@@ -915,11 +919,15 @@ fn condition_operand_field(
         ui,
         label,
         &mut text,
-        known_vars,
-        is_dark,
-        W_VAR,
-        &validation,
-        help_text,
+        VarTheme {
+            known_vars,
+            is_dark,
+        },
+        VarFieldOpts {
+            desired_width: W_VAR,
+            validation: &validation,
+            help: help_text,
+        },
     );
     if text != before {
         *value = ScalarValue::String(text);
@@ -942,11 +950,15 @@ fn var_ref_field(
         ui,
         label,
         value,
-        known_vars,
-        is_dark,
-        desired_width,
-        &validation,
-        help_text,
+        VarTheme {
+            known_vars,
+            is_dark,
+        },
+        VarFieldOpts {
+            desired_width,
+            validation: &validation,
+            help: help_text,
+        },
     );
 }
 
@@ -1027,12 +1039,16 @@ fn yaml_value_field(
         ui,
         label,
         &mut text,
-        known_vars,
-        is_dark,
-        f32::INFINITY,
+        VarTheme {
+            known_vars,
+            is_dark,
+        },
         2,
-        &validation,
-        h::SET_VALUE,
+        VarFieldOpts {
+            desired_width: f32::INFINITY,
+            validation: &validation,
+            help: h::SET_VALUE,
+        },
     );
 
     // Live preview.

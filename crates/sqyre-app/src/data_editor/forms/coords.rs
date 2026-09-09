@@ -225,22 +225,30 @@ impl DataEditor {
                 ui,
                 "Center X %",
                 &mut self.form_center_x,
-                known,
-                is_dark,
-                f32::INFINITY,
-                &cx,
-                "Horizontal center of the shape (0–100%).",
+                VarTheme {
+                    known_vars: known,
+                    is_dark,
+                },
+                VarFieldOpts {
+                    desired_width: f32::INFINITY,
+                    validation: &cx,
+                    help: "Horizontal center of the shape (0–100%).",
+                },
             );
             let cy = validate_numeric_expression(&self.form_center_y, active_macro);
             var_pills::validated_var_ref_edit(
                 ui,
                 "Center Y %",
                 &mut self.form_center_y,
-                known,
-                is_dark,
-                f32::INFINITY,
-                &cy,
-                "Vertical center of the shape (0–100%).",
+                VarTheme {
+                    known_vars: known,
+                    is_dark,
+                },
+                VarFieldOpts {
+                    desired_width: f32::INFINITY,
+                    validation: &cy,
+                    help: "Vertical center of the shape (0–100%).",
+                },
             );
             if self.form_shape == "circle" {
                 let radius = validate_numeric_expression(&self.form_radius, active_macro);
@@ -248,11 +256,15 @@ impl DataEditor {
                     ui,
                     "Radius",
                     &mut self.form_radius,
-                    known,
-                    is_dark,
-                    f32::INFINITY,
-                    &radius,
-                    "Circle radius as a percent of the search area.",
+                    VarTheme {
+                        known_vars: known,
+                        is_dark,
+                    },
+                    VarFieldOpts {
+                        desired_width: f32::INFINITY,
+                        validation: &radius,
+                        help: "Circle radius as a percent of the search area.",
+                    },
                 );
             } else {
                 let base = validate_numeric_expression(&self.form_base, active_macro);
@@ -260,22 +272,30 @@ impl DataEditor {
                     ui,
                     "Base",
                     &mut self.form_base,
-                    known,
-                    is_dark,
-                    f32::INFINITY,
-                    &base,
-                    "Rectangle width as a percent of the search area.",
+                    VarTheme {
+                        known_vars: known,
+                        is_dark,
+                    },
+                    VarFieldOpts {
+                        desired_width: f32::INFINITY,
+                        validation: &base,
+                        help: "Rectangle width as a percent of the search area.",
+                    },
                 );
                 let height = validate_numeric_expression(&self.form_height, active_macro);
                 var_pills::validated_var_ref_edit(
                     ui,
                     "Height",
                     &mut self.form_height,
-                    known,
-                    is_dark,
-                    f32::INFINITY,
-                    &height,
-                    "Rectangle height as a percent of the search area.",
+                    VarTheme {
+                        known_vars: known,
+                        is_dark,
+                    },
+                    VarFieldOpts {
+                        desired_width: f32::INFINITY,
+                        validation: &height,
+                        help: "Rectangle height as a percent of the search area.",
+                    },
                 );
             }
             ui.weak("Numeric fields accept literals or ${var} expressions.");
@@ -471,38 +491,5 @@ impl DataEditor {
             }
         });
         ui.weak(path_hint);
-    }
-
-    pub(super) fn draw_pixel_check_form(
-        &mut self,
-        ui: &mut egui::Ui,
-        paint: &mut CatalogPaint<'_>,
-        ctx: FormCtx<'_>,
-        settings: &mut UserSettings,
-    ) {
-        let CatalogPaint {
-            catalog,
-            icons,
-            previews,
-            ..
-        } = paint;
-        let FormCtx {
-            screen_click,
-            active_macro,
-            known,
-            is_dark,
-            ..
-        } = ctx;
-        self.paint_pixel_check_form(
-            ui,
-            catalog,
-            icons,
-            previews,
-            screen_click,
-            active_macro,
-            known,
-            is_dark,
-            settings,
-        );
     }
 }

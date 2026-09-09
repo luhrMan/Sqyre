@@ -22,10 +22,11 @@ use crate::data_editor_preview::{
 };
 use crate::overlay_icons;
 use crate::paint_ctx::CatalogPaint;
+use crate::paint_ctx::VarTheme;
 use crate::pickers;
 use crate::preview_tooltip::PreviewKind;
 use crate::theme;
-use crate::var_pills;
+use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{match_settings, searchable_combo_width, searchable_combo_with};
 use eframe::egui;
 use sqyre_domain::{
@@ -293,26 +294,33 @@ impl DataEditor {
                 false
             }
             EditorTab::PixelCheck => {
-                self.draw_pixel_check_form(ui, paint, ctx, settings);
+                self.paint_pixel_check_form(ui, paint, ctx, settings);
                 false
             }
             EditorTab::Overlay => self.draw_overlay_form(ui, paint, ctx, settings),
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    fn paint_pixel_check_form(
+    pub(super) fn paint_pixel_check_form(
         &mut self,
         ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
-        _icons: &mut crate::icon_cache::IconCache,
-        previews: &mut crate::preview_tooltip::PreviewTooltipCache,
-        screen_click: &ScreenClickBridge,
-        active_macro: Option<&Macro>,
-        known: &KnownVariableNames,
-        is_dark: bool,
+        paint: &mut CatalogPaint<'_>,
+        ctx: FormCtx<'_>,
         settings: &UserSettings,
     ) {
+        let CatalogPaint {
+            catalog,
+            icons,
+            previews,
+            ..
+        } = paint;
+        let FormCtx {
+            screen_click,
+            active_macro,
+            known,
+            is_dark,
+            ..
+        } = ctx;
         ui.heading("PixelCheck");
         #[cfg(not(feature = "native-runtime"))]
         {
@@ -363,7 +371,7 @@ impl DataEditor {
             ui.horizontal(|ui| {
                 help::label(ui, "Reference", help::DE_SCREENCAP_REF);
                 if let Some(prog) = reference.program() {
-                    crate::icon_cache::paint_program_icon(ui, catalog, _icons, prog);
+                    crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
                 let resp = ui.monospace(display);
                 if !reference.is_empty() {

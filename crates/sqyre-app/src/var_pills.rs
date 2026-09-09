@@ -9,6 +9,7 @@ use sqyre_domain::{is_known_variable, KnownVariableNames};
 use sqyre_ui_model::{action_pastel_color, nested_var_ref_color, SummaryPill};
 use sqyre_validate::EntryValidation;
 
+use crate::paint_ctx::VarTheme;
 use crate::theme::{contrast_fg, paint_galley_centered};
 use crate::tree_chrome::rgba_pub;
 
@@ -386,14 +387,26 @@ fn var_ref_text_edit(
         value,
         cursor_char,
         known,
-        down,
-        up,
-        accept,
-        dismiss,
+        AutocompleteKeys {
+            down,
+            up,
+            accept,
+            dismiss,
+        },
     );
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Keys consumed by the autocomplete popup this frame.
+///
+/// Grouped because four adjacent bools are trivially transposed at the call.
+#[derive(Clone, Copy, Default)]
+struct AutocompleteKeys {
+    down: bool,
+    up: bool,
+    accept: bool,
+    dismiss: bool,
+}
+
 fn show_var_ref_autocomplete(
     ui: &mut egui::Ui,
     edit_id: egui::Id,
@@ -401,11 +414,14 @@ fn show_var_ref_autocomplete(
     value: &mut String,
     cursor_char: Option<usize>,
     known: &KnownVariableNames,
-    down: bool,
-    up: bool,
-    accept: bool,
-    dismiss: bool,
+    keys: AutocompleteKeys,
 ) {
+    let AutocompleteKeys {
+        down,
+        up,
+        accept,
+        dismiss,
+    } = keys;
     let ac_id = edit_id.with("var_ac");
     let Some(cursor_char) = cursor_char else {
         ui.ctx()
@@ -593,19 +609,34 @@ pub fn entry_validation_tip(v: &EntryValidation) -> Option<&str> {
 
 /// Labeled var-ref field with live validation icon.
 ///
+/// Presentation of one var-ref field, separate from its value and theme.
+#[derive(Clone, Copy)]
+pub struct VarFieldOpts<'a> {
+    /// Finite width, or [`f32::INFINITY`] to fill the remaining row.
+    pub desired_width: f32,
+    pub validation: &'a EntryValidation,
+    /// Hover text on the label; empty for none.
+    pub help: &'a str,
+}
+
 /// Pass a finite width, or [`f32::INFINITY`] to fill the remaining row
 /// (after the label, leaving room for a validation icon when present).
-#[allow(clippy::too_many_arguments)]
 pub fn validated_var_ref_edit(
     ui: &mut egui::Ui,
     label: &str,
     value: &mut String,
-    known: &KnownVariableNames,
-    is_dark: bool,
-    desired_width: f32,
-    validation: &EntryValidation,
-    help: &str,
+    theme: VarTheme<'_>,
+    opts: VarFieldOpts<'_>,
 ) {
+    let VarTheme {
+        known_vars: known,
+        is_dark,
+    } = theme;
+    let VarFieldOpts {
+        desired_width,
+        validation,
+        help,
+    } = opts;
     ui.horizontal(|ui| {
         let lab = ui.label(label);
         if !help.is_empty() {
@@ -638,18 +669,23 @@ pub fn validated_var_ref_edit(
 /// Multiline var-ref field with live validation icon.
 ///
 /// Pass a finite width, or [`f32::INFINITY`] to fill available width.
-#[allow(clippy::too_many_arguments)]
 pub fn validated_var_ref_multiline_edit(
     ui: &mut egui::Ui,
     label: &str,
     value: &mut String,
-    known: &KnownVariableNames,
-    is_dark: bool,
-    desired_width: f32,
+    theme: VarTheme<'_>,
     rows: usize,
-    validation: &EntryValidation,
-    help: &str,
+    opts: VarFieldOpts<'_>,
 ) {
+    let VarTheme {
+        known_vars: known,
+        is_dark,
+    } = theme;
+    let VarFieldOpts {
+        desired_width,
+        validation,
+        help,
+    } = opts;
     ui.horizontal(|ui| {
         let lab = ui.label(label);
         if !help.is_empty() {
