@@ -4,7 +4,7 @@ use crate::image_view::{self, ImageViewTransform};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions, Vec2};
 use image::{Rgba, RgbaImage};
 use sqyre_capture::{mark_site, shared_capturer_nonblocking, OsCapturer};
-use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue};
+use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
 use sqyre_ports::{CaptureError, DesktopRect};
 use std::collections::HashMap;
@@ -708,6 +708,7 @@ fn cache_key_ref(coord_ref: &CoordinateRef, coords: PreviewCoords) -> String {
     }
 }
 
+#[derive(Debug)]
 enum EntityPreviewError {
     Missing,
     NonLiteral,
@@ -721,6 +722,7 @@ fn entity_preview_spec(
 ) -> Result<(String, String, PreviewCoords), EntityPreviewError> {
     let pdata = catalog.get(program).ok_or(EntityPreviewError::Missing)?;
     let res = catalog.resolution_key();
+    let empty = Macro::new("", 0, vec![]);
     match kind {
         PreviewKind::Point => {
             let pt = pdata
@@ -729,19 +731,16 @@ fn entity_preview_spec(
                 .or_else(|| pdata.points.values().next())
                 .and_then(|m| m.get(name))
                 .ok_or(EntityPreviewError::Missing)?;
-            let x = coord_to_literal(&pt.x).ok_or(EntityPreviewError::NonLiteral)?;
-            let y = coord_to_literal(&pt.y).ok_or(EntityPreviewError::NonLiteral)?;
-            let (ox, oy) = catalog
-                .monitor_rects()
-                .get(pt.monitor.max(1) as usize - 1)
-                .map(|&(x, y, _, _)| (x, y))
-                .unwrap_or((0, 0));
-            let abs_x = ox + x;
-            let abs_y = oy + y;
+            let _ = coord_to_literal(&pt.x).ok_or(EntityPreviewError::NonLiteral)?;
+            let _ = coord_to_literal(&pt.y).ok_or(EntityPreviewError::NonLiteral)?;
+            let coord = CoordinateRef(format!("{program}{PROGRAM_DELIMITER}{name}"));
+            let (x, y) = catalog
+                .resolve_point(&coord, &empty)
+                .map_err(|_| EntityPreviewError::Missing)?;
             Ok((
                 cache_key_point(pt),
                 point_caption(pt),
-                PreviewCoords::Point { x: abs_x, y: abs_y },
+                PreviewCoords::Point { x, y },
             ))
         }
         PreviewKind::SearchArea => {
@@ -751,23 +750,19 @@ fn entity_preview_spec(
                 .or_else(|| pdata.search_areas.values().next())
                 .and_then(|m| m.get(name))
                 .ok_or(EntityPreviewError::Missing)?;
-            let left = coord_to_literal(&sa.left_x).ok_or(EntityPreviewError::NonLiteral)?;
-            let top = coord_to_literal(&sa.top_y).ok_or(EntityPreviewError::NonLiteral)?;
-            let right = coord_to_literal(&sa.right_x).ok_or(EntityPreviewError::NonLiteral)?;
-            let bottom = coord_to_literal(&sa.bottom_y).ok_or(EntityPreviewError::NonLiteral)?;
-            let (ox, oy) = catalog
-                .monitor_rects()
-                .get(sa.monitor.max(1) as usize - 1)
-                .map(|&(x, y, _, _)| (x, y))
-                .unwrap_or((0, 0));
+            require_literal_area(sa)?;
+            let coord = CoordinateRef(format!("{program}{PROGRAM_DELIMITER}{name}"));
+            let (left, top, right, bottom) = catalog
+                .resolve_search_area(&coord, &empty)
+                .map_err(|_| EntityPreviewError::Missing)?;
             Ok((
                 cache_key_search_area(sa),
                 search_area_caption(sa),
                 PreviewCoords::SearchArea {
-                    left: ox + left,
-                    top: oy + top,
-                    right: ox + right,
-                    bottom: oy + bottom,
+                    left,
+                    top,
+                    right,
+                    bottom,
                     grid: None,
                 },
             ))
@@ -786,30 +781,34 @@ fn entity_preview_spec(
                 .or_else(|| pdata.search_areas.values().next())
                 .and_then(|m| m.get(&col.search_area))
                 .ok_or(EntityPreviewError::Missing)?;
-            let left = coord_to_literal(&sa.left_x).ok_or(EntityPreviewError::NonLiteral)?;
-            let top = coord_to_literal(&sa.top_y).ok_or(EntityPreviewError::NonLiteral)?;
-            let right = coord_to_literal(&sa.right_x).ok_or(EntityPreviewError::NonLiteral)?;
-            let bottom = coord_to_literal(&sa.bottom_y).ok_or(EntityPreviewError::NonLiteral)?;
+            require_literal_area(sa)?;
             let rows = col.rows.max(1);
             let cols = col.cols.max(1);
-            let (ox, oy) = catalog
-                .monitor_rects()
-                .get(sa.monitor.max(1) as usize - 1)
-                .map(|&(x, y, _, _)| (x, y))
-                .unwrap_or((0, 0));
+            let cell = CoordinateRef::collection(program, name, 1, 1, rows, cols);
+            let (left, top, right, bottom) = catalog
+                .resolve_search_area(&cell, &empty)
+                .map_err(|_| EntityPreviewError::Missing)?;
             Ok((
                 cache_key_collection(&col.name, sa, rows, cols),
                 collection_caption(sa, rows, cols),
                 PreviewCoords::SearchArea {
-                    left: ox + left,
-                    top: oy + top,
-                    right: ox + right,
-                    bottom: oy + bottom,
+                    left,
+                    top,
+                    right,
+                    bottom,
                     grid: Some((rows, cols)),
                 },
             ))
         }
     }
+}
+
+fn require_literal_area(sa: &ProgramSearchArea) -> Result<(), EntityPreviewError> {
+    let _ = coord_to_literal(&sa.left_x).ok_or(EntityPreviewError::NonLiteral)?;
+    let _ = coord_to_literal(&sa.top_y).ok_or(EntityPreviewError::NonLiteral)?;
+    let _ = coord_to_literal(&sa.right_x).ok_or(EntityPreviewError::NonLiteral)?;
+    let _ = coord_to_literal(&sa.bottom_y).ok_or(EntityPreviewError::NonLiteral)?;
+    Ok(())
 }
 
 fn cache_key_point(pt: &ProgramPoint) -> String {
@@ -1329,5 +1328,107 @@ mod tests {
         );
         assert_eq!(coord_to_literal(&ScalarValue::String("${x}".into())), None);
         assert_eq!(coord_to_literal(&ScalarValue::Null), None);
+    }
+
+    fn catalog_two_monitors() -> ProgramCatalog {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.set_monitor_rects(vec![(0, 0, 1920, 1080), (1920, 100, 1920, 1080)]);
+        cat.create_program("Game").unwrap();
+        cat
+    }
+
+    #[test]
+    fn entity_preview_point_uses_monitor_origin() {
+        let mut cat = catalog_two_monitors();
+        cat.upsert_point(
+            "Game",
+            ProgramPoint {
+                name: "Spot".into(),
+                monitor: 2,
+                x: ScalarValue::Int(10),
+                y: ScalarValue::Int(20),
+            },
+        )
+        .unwrap();
+        let (_, _, coords) = entity_preview_spec(&cat, "Game", "Spot", PreviewKind::Point).unwrap();
+        match coords {
+            PreviewCoords::Point { x, y } => assert_eq!((x, y), (1930, 120)),
+            _ => panic!("expected point"),
+        }
+    }
+
+    #[test]
+    fn entity_preview_search_area_uses_monitor_origin() {
+        let mut cat = catalog_two_monitors();
+        cat.upsert_search_area(
+            "Game",
+            ProgramSearchArea {
+                name: "Box".into(),
+                monitor: 2,
+                left_x: ScalarValue::Int(10),
+                top_y: ScalarValue::Int(20),
+                right_x: ScalarValue::Int(110),
+                bottom_y: ScalarValue::Int(80),
+            },
+        )
+        .unwrap();
+        let (_, _, coords) =
+            entity_preview_spec(&cat, "Game", "Box", PreviewKind::SearchArea).unwrap();
+        match coords {
+            PreviewCoords::SearchArea {
+                left,
+                top,
+                right,
+                bottom,
+                grid,
+            } => {
+                assert_eq!((left, top, right, bottom), (1930, 120, 2030, 180));
+                assert_eq!(grid, None);
+            }
+            _ => panic!("expected search area"),
+        }
+    }
+
+    #[test]
+    fn entity_preview_collection_uses_linked_search_area_origin() {
+        let mut cat = catalog_two_monitors();
+        cat.upsert_search_area(
+            "Game",
+            ProgramSearchArea {
+                name: "Box".into(),
+                monitor: 2,
+                left_x: ScalarValue::Int(0),
+                top_y: ScalarValue::Int(0),
+                right_x: ScalarValue::Int(100),
+                bottom_y: ScalarValue::Int(100),
+            },
+        )
+        .unwrap();
+        cat.upsert_collection(
+            "Game",
+            sqyre_persist::ProgramCollection {
+                name: "Bag".into(),
+                search_area: "Box".into(),
+                rows: 2,
+                cols: 2,
+            },
+        )
+        .unwrap();
+        let (_, _, coords) =
+            entity_preview_spec(&cat, "Game", "Bag", PreviewKind::Collection).unwrap();
+        match coords {
+            PreviewCoords::SearchArea {
+                left,
+                top,
+                right,
+                bottom,
+                grid,
+            } => {
+                assert_eq!((left, top, right, bottom), (1920, 100, 2020, 200));
+                assert_eq!(grid, Some((2, 2)));
+            }
+            _ => panic!("expected collection area"),
+        }
     }
 }

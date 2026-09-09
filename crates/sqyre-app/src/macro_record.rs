@@ -551,14 +551,14 @@ fn replace_temporary_points(
     points: &[TempPoint],
 ) -> Result<usize, String> {
     reset_temporary_program(catalog)?;
+    let live = crate::data_editor::helpers::sync_live_monitor_rects(catalog);
     let mut n = 0;
     for pt in points.iter().filter(|p| p.save) {
         let name = pt.name.trim();
         if name.is_empty() {
             return Err("point name cannot be empty".into());
         }
-        let (monitor, rx, ry) =
-            sqyre_persist::absolute_point_to_relative(catalog.monitor_rects(), pt.x, pt.y);
+        let (monitor, rx, ry) = sqyre_persist::absolute_point_to_relative(&live, pt.x, pt.y);
         catalog
             .upsert_point(
                 TEMPORARY_PROGRAM,
