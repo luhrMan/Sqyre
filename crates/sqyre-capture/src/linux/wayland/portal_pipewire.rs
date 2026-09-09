@@ -1284,9 +1284,7 @@ fn cache_crop_geom(cache: &FrameCache, rect: DesktopRect) -> Result<CacheCrop, C
         return Err(CaptureError::EmptyRect);
     }
     if !cache.ready {
-        return Err(CaptureError::Message(
-            "portal capture: no frame yet from PipeWire".into(),
-        ));
+        return Err(sqyre_ports::NotReady::NoFrameYet.into());
     }
 
     let vb = cache.virtual_bounds;

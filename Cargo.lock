@@ -4927,6 +4927,7 @@ dependencies = [
  "parking_lot",
  "sqyre-capture",
  "sqyre-persist",
+ "thiserror 2.0.20",
  "web-time",
  "x11",
 ]

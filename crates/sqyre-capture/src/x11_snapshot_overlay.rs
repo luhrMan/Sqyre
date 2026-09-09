@@ -898,15 +898,7 @@ pub(crate) fn sample_hex(image: &RgbaImage, bounds: DesktopRect, x: i32, y: i32)
 
 /// True when capture is not ready yet (retry next UI frame; do not stall).
 pub(crate) fn snapshot_capture_retryable(err: &CaptureError) -> bool {
-    match err {
-        CaptureError::Message(m) => {
-            m.contains("no frame yet")
-                || m.contains("waiting for portal")
-                || m.contains("waiting for the first frame")
-                || m.contains("still waiting")
-        }
-        _ => false,
-    }
+    err.is_retryable()
 }
 
 #[cfg(test)]
@@ -938,10 +930,17 @@ mod tests {
 
     #[test]
     fn retryable_portal_not_ready() {
-        assert!(snapshot_capture_retryable(&CaptureError::Message(
+        assert!(snapshot_capture_retryable(
+            &sqyre_ports::NotReady::NoFrameYet.into()
+        ));
+        assert!(snapshot_capture_retryable(
+            &sqyre_ports::NotReady::AwaitingPortalPermission.into()
+        ));
+        assert!(!snapshot_capture_retryable(&CaptureError::EmptyRect));
+        // Message text no longer drives the retry decision.
+        assert!(!snapshot_capture_retryable(&CaptureError::Message(
             "portal capture: no frame yet from PipeWire".into(),
         )));
-        assert!(!snapshot_capture_retryable(&CaptureError::EmptyRect));
     }
 
     #[test]

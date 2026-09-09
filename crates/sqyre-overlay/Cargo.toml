@@ -24,6 +24,7 @@ sandbox = ["runtime", "dep:eframe"]
 egui = { workspace = true }
 egui-phosphor = { workspace = true }
 parking_lot = { workspace = true }
+thiserror = { workspace = true }
 sqyre-persist = { path = "../sqyre-persist" }
 web-time = { workspace = true }
 fontdue = "0.9"

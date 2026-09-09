@@ -949,7 +949,10 @@ impl AutomationBackend for OsAutomation {
         if let Some(portal) = self.portal.as_ref() {
             let evdev = evdev_for_name(key)
                 .ok_or_else(|| AutomationError::InvalidArg(format!("unknown key: {key}")))?;
-            let _ = portal.key(evdev, false);
+            // A dropped release leaves the key stuck down for the user.
+            portal
+                .key(evdev, false)
+                .map_err(|e| AutomationError::Backend(format!("key up {key}: {e}")))?;
             note_key_up(key);
             return Ok(());
         }
@@ -961,22 +964,24 @@ impl AutomationBackend for OsAutomation {
         Ok(())
     }
 
-    fn type_char(&mut self, ch: char) {
+    fn type_char(&mut self, ch: char) -> Result<(), AutomationError> {
         #[cfg(target_os = "linux")]
         if let Some(portal) = self.portal.as_ref() {
             if portal.ensure().is_ok() {
                 if let Some(evdev) = evdev_for_name(&ch.to_ascii_lowercase().to_string()) {
-                    let _ = portal.key(evdev, true);
-                    let _ = portal.key(evdev, false);
-                    return;
+                    portal
+                        .key(evdev, true)
+                        .and_then(|()| portal.key(evdev, false))
+                        .map_err(|e| AutomationError::Backend(format!("type {ch:?}: {e}")))?;
+                    return Ok(());
                 }
             }
         }
         let mut buf = [0u8; 4];
         let s = ch.encode_utf8(&mut buf);
-        if let Ok(gui) = self.gui() {
-            let _ = gui.keyboard_input(s);
-        }
+        self.gui()?
+            .keyboard_input(s)
+            .map_err(|e| AutomationError::Backend(format!("type {ch:?}: {e}")))
     }
 
     fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError> {

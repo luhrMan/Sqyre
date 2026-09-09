@@ -87,7 +87,7 @@ impl Action {
             return Some(self);
         }
         let path = self.find_child_path(id)?;
-        Some(Self::follow_child_path_mut(self, &path))
+        Self::follow_child_path_mut(self, &path)
     }
 
     /// Path of `(in_else_list, index)` steps from this node to a descendant.
@@ -115,17 +115,23 @@ impl Action {
         None
     }
 
-    fn follow_child_path_mut<'a>(node: &'a mut Action, path: &[(bool, usize)]) -> &'a mut Action {
+    /// Walk `path` from `node`. Returns `None` if a step does not exist, so a
+    /// stale path (undo, clipboard, a tree edited since the path was built)
+    /// misses instead of panicking.
+    fn follow_child_path_mut<'a>(
+        node: &'a mut Action,
+        path: &[(bool, usize)],
+    ) -> Option<&'a mut Action> {
         let mut cur = node;
         for &(in_else, index) in path {
             let list = if in_else {
-                cur.else_children_mut().expect("else path")
+                cur.else_children_mut()?
             } else {
-                cur.children_mut().expect("then path")
+                cur.children_mut()?
             };
-            cur = &mut list[index];
+            cur = list.get_mut(index)?;
         }
-        cur
+        Some(cur)
     }
 
     /// Remove a descendant by id (not self). Returns the detached node.
@@ -136,14 +142,14 @@ impl Action {
 
     fn remove_at_path(node: &mut Action, path: &[(bool, usize)]) -> Option<Action> {
         let [(in_else, index)] = path else {
-            let (in_else, index) = path[0];
+            let &(in_else, index) = path.first()?;
             let child = {
                 let list = if in_else {
                     node.else_children_mut()?
                 } else {
                     node.children_mut()?
                 };
-                &mut list[index]
+                list.get_mut(index)?
             };
             return Self::remove_at_path(child, &path[1..]);
         };
@@ -152,7 +158,7 @@ impl Action {
         } else {
             node.children_mut()?
         };
-        Some(list.remove(*index))
+        (*index < list.len()).then(|| list.remove(*index))
     }
 
     /// True if `id` is this node or any descendant (then or else).

@@ -47,9 +47,8 @@ impl ProgramCatalog {
                 .ok_or_else(|| PortError::not_found(format!("program {prog:?} not found")))?;
             return Ok((pt, src, data));
         }
-        for prog in self.programs.keys() {
+        for (prog, data) in &self.programs {
             if let Ok((pt, src)) = point_from(self, prog, name, resolution_key) {
-                let data = self.programs.get(prog).expect("program exists");
                 return Ok((pt, src, data));
             }
         }
@@ -86,9 +85,8 @@ impl ProgramCatalog {
                 .ok_or_else(|| PortError::not_found(format!("program {prog:?} not found")))?;
             return Ok((sa, src, data));
         }
-        for prog in self.programs.keys() {
+        for (prog, data) in &self.programs {
             if let Ok((sa, src)) = search_area_from(self, prog, name, resolution_key) {
-                let data = self.programs.get(prog).expect("program exists");
                 return Ok((sa, src, data));
             }
         }

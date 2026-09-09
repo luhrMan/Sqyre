@@ -399,11 +399,16 @@ impl ProgramCatalog {
     }
 
     pub(crate) fn program_mut(&mut self, name: &str) -> Result<&mut ProgramData> {
+        // Presence is checked up front so the generation is only bumped for a
+        // lookup that will succeed; `get_mut` then borrows `self.programs` for
+        // the returned reference, which rules out calling `&mut self` methods.
         if !self.programs.contains_key(name) {
             return Err(PersistError::Message(format!("program {name:?} not found")));
         }
         self.bump_generation();
-        Ok(self.programs.get_mut(name).expect("program exists"))
+        self.programs
+            .get_mut(name)
+            .ok_or_else(|| PersistError::Message(format!("program {name:?} not found")))
     }
 
     pub(crate) fn default_resolution_key(&self) -> String {

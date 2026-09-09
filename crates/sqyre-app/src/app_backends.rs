@@ -128,10 +128,11 @@ mod native {
         fn key_up(&mut self, key: &str) -> Result<(), AutomationError> {
             self.inner.key_up(key)
         }
-        fn type_char(&mut self, ch: char) {
-            if !self.stop.is_stopped() {
-                self.inner.type_char(ch);
+        fn type_char(&mut self, ch: char) -> Result<(), AutomationError> {
+            if self.stop.is_stopped() {
+                return Ok(());
             }
+            self.inner.type_char(ch)
         }
         fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError> {
             if self.stop.is_stopped() {

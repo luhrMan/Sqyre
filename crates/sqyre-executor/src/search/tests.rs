@@ -1177,8 +1177,8 @@ fn find_pixel_wait_until_found_stops_when_flag_set() {
         fn key_up(&mut self, key: &str) -> Result<(), crate::backends::AutomationError> {
             self.inner.key_up(key)
         }
-        fn type_char(&mut self, ch: char) {
-            self.inner.type_char(ch);
+        fn type_char(&mut self, ch: char) -> Result<(), crate::backends::AutomationError> {
+            self.inner.type_char(ch)
         }
         fn write_clipboard(&mut self, s: &str) -> Result<(), crate::backends::AutomationError> {
             self.inner.write_clipboard(s)
@@ -1502,8 +1502,8 @@ fn image_search_wait_until_found_stops_when_flag_set() {
             fn key_up(&mut self, key: &str) -> Result<(), crate::backends::AutomationError> {
                 self.inner.key_up(key)
             }
-            fn type_char(&mut self, ch: char) {
-                self.inner.type_char(ch);
+            fn type_char(&mut self, ch: char) -> Result<(), crate::backends::AutomationError> {
+                self.inner.type_char(ch)
             }
             fn write_clipboard(&mut self, s: &str) -> Result<(), crate::backends::AutomationError> {
                 self.inner.write_clipboard(s)
