@@ -93,22 +93,30 @@ impl FormState for ProgramsForm {
         if let Some(p) = ed.selected_program.as_deref().and_then(|n| catalog.get(n)) {
             ed.form_process_path = p.process_path.clone();
             ed.form_window_title = p.window_title.clone();
+            ed.form_tags = p.tags.clone();
         } else {
             ed.form_process_path.clear();
             ed.form_window_title.clear();
+            ed.form_tags.clear();
         }
+        ed.tag_draft.clear();
     }
 
     fn is_dirty(ed: &DataEditor, catalog: &ProgramCatalog, _settings: &UserSettings) -> bool {
         let Some(sel) = ed.selected_program.as_deref() else {
             return !ed.form_name.trim().is_empty()
                 || !ed.form_process_path.is_empty()
-                || !ed.form_window_title.is_empty();
+                || !ed.form_window_title.is_empty()
+                || !ed.form_tags.is_empty();
         };
         let bound = catalog.get(sel);
         let path = bound.map(|p| p.process_path.as_str()).unwrap_or("");
         let title = bound.map(|p| p.window_title.as_str()).unwrap_or("");
-        ed.form_name.trim() != sel || ed.form_process_path != path || ed.form_window_title != title
+        let tags = bound.map(|p| p.tags.as_slice()).unwrap_or(&[]);
+        ed.form_name.trim() != sel
+            || ed.form_process_path != path
+            || ed.form_window_title != title
+            || ed.form_tags != tags
     }
 
     fn is_valid(_ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {
@@ -486,6 +494,7 @@ impl FormState for ScreenCapForm {
         };
         ed.form_name = sa.name.clone();
         ed.form_search_area = format!("{prog}{}{name}", sqyre_domain::PROGRAM_DELIMITER);
+        ed.form_monitor = sa.monitor.max(1);
         ed.form_left = sa.left_x.as_display();
         ed.form_top = sa.top_y.as_display();
         ed.form_right = sa.right_x.as_display();
@@ -575,6 +584,13 @@ impl FormState for OverlayForm {
             || ed.form_overlay_icon_color != rgba_color(btn.icon_rgba())
             || ed.form_overlay_icon_hover != rgba_color(btn.icon_hover_rgba())
             || ed.selected_program.as_deref() != Some(btn.program.as_str())
+            || ed.form_overlay_gate_enabled != btn.visibility_gate.is_active()
+            || ed.form_overlay_gate_targets != btn.visibility_gate.targets
+            || ed.form_overlay_gate_search_area.trim() != btn.visibility_gate.search_area.trim()
+            || (ed.form_overlay_gate_tolerance - btn.visibility_gate.tolerance).abs() > f64::EPSILON
+            || ed.form_overlay_gate_blur != btn.visibility_gate.blur
+            || ed.form_overlay_gate_match_method != btn.visibility_gate.match_method
+            || ed.form_overlay_gate_interval_ms != btn.visibility_gate.interval_ms
     }
 
     fn is_valid(ed: &DataEditor, _active_macro: Option<&Macro>) -> bool {

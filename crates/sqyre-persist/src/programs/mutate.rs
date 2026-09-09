@@ -135,6 +135,13 @@ impl ProgramCatalog {
         Ok(())
     }
 
+    /// Set macro tags used for while-focused hotkey selection.
+    pub fn set_program_tags(&mut self, program: &str, tags: Vec<String>) -> Result<()> {
+        let p = self.program_mut(program)?;
+        p.tags = tags;
+        Ok(())
+    }
+
     pub fn upsert_item(&mut self, program: &str, item: ProgramItem) -> Result<()> {
         let key = item.name.clone();
         upsert_named_entity(self, program, key, item, |p| &mut p.items)
@@ -444,6 +451,7 @@ fn merge_nested_maps_prefer_imported<V: Clone>(
 fn merge_program_data_prefer_imported(live: &mut ProgramData, imported: &ProgramData) {
     live.process_path = imported.process_path.clone();
     live.window_title = imported.window_title.clone();
+    live.tags = imported.tags.clone();
     merge_nested_maps_prefer_imported(&mut live.points, &imported.points);
     merge_nested_maps_prefer_imported(&mut live.search_areas, &imported.search_areas);
     merge_map_prefer_imported(&mut live.coord_scales, &imported.coord_scales);

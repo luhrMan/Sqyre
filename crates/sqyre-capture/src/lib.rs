@@ -428,6 +428,32 @@ pub fn portal_cursor_position() -> Option<(i32, i32)> {
     None
 }
 
+/// Absolute desktop cursor in physical pixels (portal → X11 capturer → Win32).
+pub fn desktop_cursor_position() -> Option<(i32, i32)> {
+    if let Some(pos) = portal_cursor_position() {
+        return Some(pos);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(Ok(cap)) = shared_capturer_if_ready() {
+            if let Ok(pos) = cap.pointer_position() {
+                return Some(pos);
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        let mut pt = POINT::default();
+        // SAFETY: `pt` is a valid out-param for GetCursorPos.
+        if unsafe { GetCursorPos(&mut pt) }.is_ok() {
+            return Some((pt.x, pt.y));
+        }
+    }
+    None
+}
+
 /// Show the portal ScreenCast picker again (Wayland). No-op on other targets.
 pub fn request_portal_screencast_picker() {
     #[cfg(all(target_os = "linux", feature = "portal-capture"))]

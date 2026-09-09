@@ -203,8 +203,12 @@ pub const DE_NAME: &str =
     "Unique name within this program. Cannot contain < > : \" / \\ | ? * or end with a period.";
 pub const DE_RUNNING_PROGRAM: &str =
     "Process and window title that must be focused for overlay buttons.";
-pub const DE_COLS: &str = "Grid columns for this item (0 = unset).";
-pub const DE_ROWS: &str = "Grid rows for this item (0 = unset).";
+pub const DE_PROGRAM_MACRO_TAGS: &str =
+    "Macro tags auto-selected for hotkeys when this program owns focus (Settings: while focused). Same labels as macro tags.";
+pub const DE_COLS: &str =
+    "Grid columns this item occupies in a collection. Image Search uses this footprint (0 = 1).";
+pub const DE_ROWS: &str =
+    "Grid rows this item occupies in a collection. Image Search uses this footprint (0 = 1).";
 pub const DE_STACK_MAX: &str = "Max stacked instances when capturing variants (0 = unset).";
 pub const DE_MASK: &str = "Optional mask applied during image search.";
 pub const DE_TAGS: &str = "Labels for filtering items in pickers.";
@@ -234,6 +238,14 @@ pub const DE_OVERLAY_SIZE: &str = "Button size in pixels.";
 pub const DE_OVERLAY_RADIUS: &str = "Corner roundness of the button.";
 pub const DE_OVERLAY_BORDER: &str = "Border thickness of the button.";
 pub const DE_OVERLAY_ICON: &str = "Optional Phosphor icon glyph on the button.";
+pub const DE_OVERLAY_GATE: &str =
+    "When enabled, the button only appears while an Image Search match is found in the search area (polled on an interval).";
+pub const DE_OVERLAY_GATE_AREA: &str =
+    "Catalog search area to capture each poll (program~name). Resolved with live monitor slots.";
+pub const DE_OVERLAY_GATE_ITEMS: &str =
+    "Catalog items (icon templates) to look for — same as Image Search targets.";
+pub const DE_OVERLAY_GATE_INTERVAL: &str =
+    "Milliseconds between capture+match polls while the button's program focus gate allows it.";
 
 // --- Variables panel ---
 

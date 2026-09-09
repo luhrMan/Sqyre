@@ -18,13 +18,41 @@ impl SqyreApp {
 
     pub(crate) fn drain_pending_hotkey_macros(&mut self, ctx: &egui::Context) {
         let pending: Vec<String> = std::mem::take(&mut *self.pending_hotkey_macros.lock());
-        for name in pending {
+        if pending.is_empty() {
+            return;
+        }
+        // While a chooser is open, ignore further fires (avoid stacking menus).
+        if self.hotkey_chooser.is_some() {
+            return;
+        }
+
+        let groups =
+            crate::hotkey_chooser::group_pending_by_chord(&pending, &self.workspace.macros);
+        for (chord_key, _trigger, names) in groups {
+            if names.len() <= 1 {
+                if let Some(name) = names.into_iter().next() {
+                    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                    sqyre_capture::event_log(
+                        "SQYRE_HOTKEY",
+                        &[("fire", "start"), ("name", name.as_str())],
+                    );
+                    self.start_macro_by_name(&name, ctx);
+                }
+                continue;
+            }
+            let chord_label = chord_key.replace('+', " + ");
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             sqyre_capture::event_log(
                 "SQYRE_HOTKEY",
-                &[("fire", "start"), ("name", name.as_str())],
+                &[
+                    ("fire", "choose"),
+                    ("chord", chord_label.as_str()),
+                    ("count", &names.len().to_string()),
+                ],
             );
-            self.start_macro_by_name(&name, ctx);
+            self.open_hotkey_chooser(names, chord_label, ctx);
+            // One chooser at a time; remaining groups wait for a later fire.
+            break;
         }
     }
 
@@ -141,6 +169,9 @@ mod native_run {
                         ("name", name),
                     ],
                 );
+                *self.run_session.state.status.lock() =
+                    format!("Already running — stop first to run \"{name}\".");
+                ctx.request_repaint();
                 return;
             }
             let Some(idx) = self
@@ -168,6 +199,7 @@ mod native_run {
                 sqyre_capture::note(&format!(
                     "overlay: start skipped invalid-macro name={name} err={e}"
                 ));
+                ctx.request_repaint();
                 return;
             }
             // Show the running macro's tree so highlight overlays have matching rows.

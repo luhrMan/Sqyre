@@ -22,6 +22,10 @@ pub(super) fn encode_program(data: &ProgramData, previous: &Mapping) -> Value {
             Value::String(data.window_title.clone()),
         );
     }
+    if !data.tags.is_empty() {
+        let tags: Vec<Value> = data.tags.iter().map(|t| Value::String(t.clone())).collect();
+        map.insert(Value::String("tags".into()), Value::Sequence(tags));
+    }
 
     let mut items = Mapping::new();
     for (k, item) in &data.items {

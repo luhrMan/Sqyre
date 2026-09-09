@@ -78,6 +78,7 @@ impl DataEditor {
         btn.x = self.form_overlay_x;
         btn.y = self.form_overlay_y;
         btn.size = self.form_overlay_size;
+        btn.visibility_gate = self.overlay_gate_from_form();
         self.apply_overlay_style_to_config(btn);
         if self.persist_overlay_settings(settings) {
             self.set_ok("Saved overlay button.");

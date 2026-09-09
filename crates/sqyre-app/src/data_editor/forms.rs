@@ -2,7 +2,7 @@
 
 use super::form_state;
 use super::helpers::{
-    collect_program_item_tags, form_absolute_area, form_absolute_xy, form_coord_literal, parse_i32,
+    collect_program_item_tags, form_absolute_xy, form_coord_literal, form_desktop_area, parse_i32,
 };
 use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
@@ -16,16 +16,19 @@ use crate::pickers;
 use crate::preview_tooltip::PreviewKind;
 use crate::theme;
 use crate::var_pills;
-use crate::widgets::{searchable_combo_width, searchable_combo_with};
+use crate::widgets::{match_settings, searchable_combo_width, searchable_combo_with};
 use eframe::egui;
-use sqyre_domain::{collect_known_variable_names, KnownVariableNames, Macro, PROGRAM_DELIMITER};
+use sqyre_domain::{
+    collect_known_variable_names, CoordinateRef, KnownVariableNames, Macro, PROGRAM_DELIMITER,
+};
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
     default_overlay_position, screen_cap_path, OverlayButtonConfig, ProgramCatalog,
     ProgramCollection, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
     DEFAULT_OVERLAY_FALLBACK_SCREEN_H, DEFAULT_OVERLAY_FALLBACK_SCREEN_W, MAX_OVERLAY_BORDER_WIDTH,
-    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MIN_OVERLAY_BORDER_WIDTH,
-    MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
+    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_GATE_INTERVAL_MS,
+    MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
+    MIN_OVERLAY_GATE_INTERVAL_MS,
 };
 use sqyre_validate::{validate_entity_name, validate_numeric_expression};
 
@@ -121,6 +124,17 @@ impl DataEditor {
         paint_fs_name_hint(ui, &self.form_name);
     }
 
+    fn paint_monitor_slot(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Monitor");
+            ui.add(
+                egui::DragValue::new(&mut self.form_monitor)
+                    .speed(1)
+                    .range(1..=8),
+            );
+        });
+    }
+
     pub(crate) fn load_form(&mut self, catalog: &ProgramCatalog, settings: &UserSettings) {
         self.clear_status();
         form_state::load_tab(self.tab, self, catalog, settings);
@@ -151,6 +165,7 @@ impl DataEditor {
             DEFAULT_OVERLAY_BUTTON_SIZE
         };
         self.load_overlay_style_from_config(btn);
+        self.load_overlay_gate_from_config(&btn.visibility_gate);
     }
 
     pub(crate) fn reset_overlay_form(&mut self) {
@@ -170,6 +185,7 @@ impl DataEditor {
         self.form_overlay_icon = overlay_icons::DEFAULT_ICON_ID.into();
         self.form_overlay_size = DEFAULT_OVERLAY_BUTTON_SIZE;
         self.reset_overlay_style_form();
+        self.reset_overlay_gate_form();
     }
 
     pub(crate) fn reset_item_form(&mut self) {
@@ -293,6 +309,19 @@ impl DataEditor {
                         self.form_window_title.clear();
                     }
                 });
+                ui.add_space(8.0);
+                help::label(ui, "Macro tags", help::DE_PROGRAM_MACRO_TAGS);
+                ui.weak(
+                    "When Settings → while focused is on, these tags become the hotkey selection while this program owns focus.",
+                );
+                let macro_tag_completions = crate::macro_meta::collect_all_macro_tags(macros);
+                crate::widgets::tag_chip_editor(
+                    ui,
+                    &mut self.form_tags,
+                    &mut self.tag_draft,
+                    &macro_tag_completions,
+                    crate::widgets::TagChipOptions::default(),
+                );
             }
             EditorTab::Items => {
                 ui.heading("Item");
@@ -424,14 +453,7 @@ impl DataEditor {
                     ScreenClickBridge::arm_point,
                 );
                 ui.weak("X/Y are relative to the monitor; integers or ${var}.");
-                ui.horizontal(|ui| {
-                    ui.label("Monitor");
-                    ui.add(
-                        egui::DragValue::new(&mut self.form_monitor)
-                            .speed(1)
-                            .range(1..=8),
-                    );
-                });
+                self.paint_monitor_slot(ui);
                 let (x, y) = form_absolute_xy(
                     catalog,
                     self.form_monitor,
@@ -470,21 +492,14 @@ impl DataEditor {
                     ScreenClickBridge::arm_search_area,
                 );
                 ui.weak("Bounds are relative to one monitor; integers or ${var}.");
-                ui.horizontal(|ui| {
-                    ui.label("Monitor");
-                    ui.add(
-                        egui::DragValue::new(&mut self.form_monitor)
-                            .speed(1)
-                            .range(1..=8),
-                    );
-                });
-                let (lx, ty, rx, by) = form_absolute_area(
+                self.paint_monitor_slot(ui);
+                let (lx, ty, rx, by) = form_desktop_area(
                     catalog,
                     self.form_monitor,
-                    form_coord_literal(&self.form_left),
-                    form_coord_literal(&self.form_top),
-                    form_coord_literal(&self.form_right),
-                    form_coord_literal(&self.form_bottom),
+                    &self.form_left,
+                    &self.form_top,
+                    &self.form_right,
+                    &self.form_bottom,
                 );
                 self.sync_coord_preview_view();
                 let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
@@ -907,7 +922,7 @@ impl DataEditor {
             EditorTab::ScreenCap => {
                 ui.heading("ScreenCap");
                 ui.weak(
-                    "Set LeftX/TopY/RightX/BottomY (type, screen-record, or optional reference), name the file, then Save writes the framed preview screenshot to images/ScreenCap.",
+                    "Set monitor-relative LeftX/TopY/RightX/BottomY (type, screen-record, or optional reference), name the file, then Save writes the framed preview screenshot to images/ScreenCap.",
                 );
                 ui.add_space(4.0);
                 self.paint_name_record_row(
@@ -954,11 +969,16 @@ impl DataEditor {
                         }
                     });
                 }
-                ui.weak("Bounds overlay the preview edges; edit them to crop the capture.");
-                let lx = form_coord_literal(&self.form_left);
-                let ty = form_coord_literal(&self.form_top);
-                let rx = form_coord_literal(&self.form_right);
-                let by = form_coord_literal(&self.form_bottom);
+                ui.weak("Bounds overlay the preview edges; they are relative to one monitor.");
+                self.paint_monitor_slot(ui);
+                let (lx, ty, rx, by) = form_desktop_area(
+                    catalog,
+                    self.form_monitor,
+                    &self.form_left,
+                    &self.form_top,
+                    &self.form_right,
+                    &self.form_bottom,
+                );
                 self.sync_coord_preview_view();
                 let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
                 // Keep Save + path hint below the preview (panel fills remaining height).
@@ -1031,7 +1051,7 @@ impl DataEditor {
                     )
                     .clicked()
                 {
-                    self.save_screen_cap(previews);
+                    self.save_screen_cap(catalog, previews);
                     ui.ctx().request_repaint();
                 }
                 ui.weak(path_hint);
@@ -1181,6 +1201,128 @@ impl DataEditor {
                     let (rx, ry) = loc.resolved_position(catalog);
                     ui.weak(format!("Position from point → ({rx:.0}, {ry:.0})"));
                 }
+                ui.add_space(8.0);
+                ui.collapsing("Visibility gate (image search)", |ui| {
+                    ui.checkbox(
+                        &mut self.form_overlay_gate_enabled,
+                        "Show only when image found",
+                    )
+                    .on_hover_text(help::DE_OVERLAY_GATE);
+                    ui.add_enabled_ui(self.form_overlay_gate_enabled, |ui| {
+                        {
+                            use crate::pickers::{ActivePicker, CoordKind};
+                            let area = CoordinateRef(self.form_overlay_gate_search_area.clone());
+                            let display = if area.is_empty() {
+                                "(pick search area)"
+                            } else {
+                                area.as_str()
+                            };
+                            ui.horizontal(|ui| {
+                                help::label(ui, "Search area", help::DE_OVERLAY_GATE_AREA);
+                                if let Some(prog) = area.program() {
+                                    crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
+                                }
+                                let resp = ui.monospace(display);
+                                if !area.is_empty() {
+                                    previews.show_for_coordinate_ref(
+                                        ui,
+                                        &resp,
+                                        catalog,
+                                        &area,
+                                        PreviewKind::SearchArea,
+                                    );
+                                }
+                                if crate::theme::icon_button(ui, "☰")
+                                    .on_hover_text("Pick search area…")
+                                    .clicked()
+                                {
+                                    self.window_picker = ActivePicker::Coord {
+                                        kind: CoordKind::SearchArea,
+                                        search: String::new(),
+                                        value: self.form_overlay_gate_search_area.clone(),
+                                        cell_pick: None,
+                                        scroll_to_selection: true,
+                                    };
+                                }
+                                if !self.form_overlay_gate_search_area.is_empty()
+                                    && ui.small_button("Clear").clicked()
+                                {
+                                    self.form_overlay_gate_search_area.clear();
+                                }
+                            });
+                        }
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            help::tip(
+                                ui.label(egui::RichText::new("Items").strong()),
+                                help::DE_OVERLAY_GATE_ITEMS,
+                            );
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "({})",
+                                    self.form_overlay_gate_targets.len()
+                                ))
+                                .weak(),
+                            );
+                            if ui
+                                .button(
+                                    egui::RichText::new("Add / edit…").color(theme::MACRO_START),
+                                )
+                                .on_hover_text(help::DE_OVERLAY_GATE_ITEMS)
+                                .clicked()
+                            {
+                                self.window_picker = pickers::ActivePicker::Items {
+                                    search: String::new(),
+                                    staged: self.form_overlay_gate_targets.clone(),
+                                };
+                            }
+                        });
+                        if self.form_overlay_gate_targets.is_empty() {
+                            ui.label("(none)");
+                        } else {
+                            let mut remove: Option<usize> = None;
+                            let snapshot = self.form_overlay_gate_targets.clone();
+                            pickers::paint_even_icon_grid(
+                                ui,
+                                catalog,
+                                icons,
+                                &snapshot,
+                                |_| true,
+                                pickers::IconGridKind::Targets { removable: true },
+                                |_, _| {},
+                                |i| {
+                                    remove = Some(i);
+                                },
+                            );
+                            if let Some(i) = remove {
+                                self.form_overlay_gate_targets.remove(i);
+                            }
+                        }
+                        ui.add_space(4.0);
+                        match_settings::paint_match_settings(
+                            ui,
+                            &mut self.form_overlay_gate_tolerance,
+                            &mut self.form_overlay_gate_blur,
+                            &mut self.form_overlay_gate_match_method,
+                            true,
+                        );
+                        ui.horizontal(|ui| {
+                            help::label(ui, "Interval", help::DE_OVERLAY_GATE_INTERVAL);
+                            help::tip(
+                                ui.add(
+                                    egui::DragValue::new(&mut self.form_overlay_gate_interval_ms)
+                                        .speed(50)
+                                        .range(
+                                            MIN_OVERLAY_GATE_INTERVAL_MS
+                                                ..=MAX_OVERLAY_GATE_INTERVAL_MS,
+                                        )
+                                        .suffix(" ms"),
+                                ),
+                                help::DE_OVERLAY_GATE_INTERVAL,
+                            );
+                        });
+                    });
+                });
                 ui.add_space(8.0);
                 ui.collapsing("Appearance", |ui| {
                     ui.horizontal(|ui| {
@@ -1354,11 +1496,18 @@ impl DataEditor {
                 &mut self.pixel_check.match_method,
                 true,
             );
-            ui.weak("Bounds overlay the preview edges; integers or ${var}.");
-            let lx = form_coord_literal(&self.form_left);
-            let ty = form_coord_literal(&self.form_top);
-            let rx = form_coord_literal(&self.form_right);
-            let by = form_coord_literal(&self.form_bottom);
+            ui.weak(
+                "Bounds overlay the preview edges; relative to one monitor; integers or ${var}.",
+            );
+            self.paint_monitor_slot(ui);
+            let (lx, ty, rx, by) = form_desktop_area(
+                catalog,
+                self.form_monitor,
+                &self.form_left,
+                &self.form_top,
+                &self.form_right,
+                &self.form_bottom,
+            );
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),

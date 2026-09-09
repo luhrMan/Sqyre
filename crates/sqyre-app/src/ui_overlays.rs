@@ -40,6 +40,16 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         return;
     }
     let buttons = app.settings_ui.settings().overlay_buttons.clone();
+    let close_dist = app
+        .settings_ui
+        .settings()
+        .image_search_close_matches_distance;
+    app.overlay_visibility
+        .tick(ctx, &buttons, &app.workspace.catalog, close_dist);
+    let visible: Vec<_> = buttons
+        .into_iter()
+        .filter(|b| app.overlay_visibility.allows_draw(b))
+        .collect();
     let preview = app.data_editor.overlay_edit_preview();
     let relocate = app.data_editor.overlay_relocate_mode();
     let running_macro = if app.run_session.state.running.load(Ordering::SeqCst)
@@ -55,7 +65,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     };
     app.macro_overlay.sync(
         ctx,
-        &buttons,
+        &visible,
         preview.as_ref(),
         &app.workspace.catalog,
         &app.pending_hotkey_macros,
@@ -407,6 +417,36 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     #[cfg(all(target_os = "linux", feature = "native-runtime"))]
     crate::linux_focused_keys::feed_focused_keyboard(app, ctx);
     app.drain_pending_hotkey_macros(ctx);
+    if let Some(name) = app.paint_hotkey_chooser(ctx) {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        sqyre_capture::event_log(
+            "SQYRE_HOTKEY",
+            &[("fire", "chosen"), ("name", name.as_str())],
+        );
+        // Explicit pick: if a macro is already running, stop it and start this
+        // one when the worker clears (silent already-running skips felt broken).
+        if app.run_session.state.running.load(Ordering::SeqCst) {
+            app.request_stop();
+            app.start_when_idle = Some(name);
+            *app.run_session.state.status.lock() = "Stopping…".into();
+        } else {
+            app.start_when_idle = None;
+            app.start_macro_by_name(&name, ctx);
+        }
+    }
+    if !app.run_session.state.running.load(Ordering::SeqCst) {
+        if let Some(name) = app.start_when_idle.take() {
+            app.start_macro_by_name(&name, ctx);
+        }
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    {
+        let enabled = app.settings_ui.settings().hotkey_tags_while_focused;
+        if let Some(tags) = app.hotkey_focus_tags.poll(enabled, &app.workspace.catalog) {
+            app.set_hotkey_tag_filters(tags);
+        }
+    }
 
     if let Some(chord) = app.hotkey_record.show(ctx, &app.run_session.macro_hotkeys) {
         if !app.tree.tooltip.apply_recorded_chord(chord.clone())

@@ -497,6 +497,20 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        if setting_visible(q, section_hit, SETTING_HOTKEY_TAGS_FOCUSED)
+            && ui
+                .checkbox(
+                    &mut self.settings.hotkey_tags_while_focused,
+                    "Select hotkey tags while a Program is focused",
+                )
+                .on_hover_text(
+                    "When enabled, focusing a Program that has macro tags sets the hotkey tag selection to those tags; otherwise hotkeys turn off. When disabled, tag selection is manual only (macro list headers).",
+                )
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
         if setting_visible(q, section_hit, SETTING_WHILE_BUDGET) {
             ui.add_space(6.0);
             ui.horizontal(|ui| {
@@ -1299,6 +1313,15 @@ const SETTING_RELEASE_HELD: &[&str] = &[
     "inputs",
     "macro ends",
 ];
+const SETTING_HOTKEY_TAGS_FOCUSED: &[&str] = &[
+    "hotkey",
+    "hotkeys",
+    "tags",
+    "focused",
+    "focus",
+    "program",
+    "while focused",
+];
 const SETTING_WHILE_BUDGET: &[&str] = &[
     "while",
     "safety budget",
@@ -1378,6 +1401,7 @@ const GENERAL_SETTINGS: &[&[&str]] = &[
     SETTING_HIGHLIGHT_ACTION,
     SETTING_HIDE_WHILE_RECORDING,
     SETTING_RELEASE_HELD,
+    SETTING_HOTKEY_TAGS_FOCUSED,
     SETTING_WHILE_BUDGET,
     SETTING_RUN_MACRO_DEPTH,
     SETTING_IMAGE_SEARCH_DISTANCE,

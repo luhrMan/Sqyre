@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 
 use crate::{PersistError, Result};
 use sqyre_domain::{
-    rename_coordinate_entity, rename_coordinate_program, CoordinateRef, Macro,
-    ACTION_COLOR_KEY_CONTROL_FLOW, ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_DETECTION,
-    ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES,
-    ACTION_COLOR_KEY_WAIT,
+    clamp_match_blur, clamp_match_tolerance, rename_coordinate_entity, rename_coordinate_program,
+    CoordinateRef, Macro, MatchMethod, ACTION_COLOR_KEY_CONTROL_FLOW, ACTION_COLOR_KEY_DEFAULT,
+    ACTION_COLOR_KEY_DETECTION, ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD,
+    ACTION_COLOR_KEY_VARIABLES, ACTION_COLOR_KEY_WAIT,
 };
 
 pub const DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE: i32 = 10;
@@ -139,6 +139,74 @@ impl ActionColorPrefs {
     }
 }
 
+/// How an overlay button reacts to periodic image search.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverlayVisibilityMode {
+    /// No image gate — visibility follows enabled + focus only.
+    #[default]
+    Off,
+    /// Show the button only while a template match is found in the search area.
+    ShowWhenFound,
+}
+
+/// Per-button image-search gate that can hide an overlay until a template is found.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct OverlayVisibilityGate {
+    #[serde(default)]
+    pub mode: OverlayVisibilityMode,
+    /// Catalog item refs (`program~item`), same as Image Search targets.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub targets: Vec<String>,
+    /// Catalog search area (`program~area`); resolved with live monitor slots.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub search_area: String,
+    #[serde(default = "default_overlay_gate_tolerance")]
+    pub tolerance: f64,
+    #[serde(default = "default_overlay_gate_blur")]
+    pub blur: i32,
+    #[serde(default)]
+    pub match_method: MatchMethod,
+    /// Milliseconds between capture+match polls.
+    #[serde(default = "default_overlay_gate_interval_ms")]
+    pub interval_ms: u64,
+}
+
+impl Default for OverlayVisibilityGate {
+    fn default() -> Self {
+        Self {
+            mode: OverlayVisibilityMode::Off,
+            targets: Vec::new(),
+            search_area: String::new(),
+            tolerance: DEFAULT_OVERLAY_GATE_TOLERANCE,
+            blur: DEFAULT_OVERLAY_GATE_BLUR,
+            match_method: MatchMethod::CcoeffNormed,
+            interval_ms: DEFAULT_OVERLAY_GATE_INTERVAL_MS,
+        }
+    }
+}
+
+impl OverlayVisibilityGate {
+    pub fn is_active(&self) -> bool {
+        self.mode == OverlayVisibilityMode::ShowWhenFound
+    }
+
+    pub fn is_off_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub fn clamp(&mut self) {
+        self.blur = clamp_match_blur(self.blur);
+        self.tolerance = clamp_match_tolerance(self.tolerance, self.match_method);
+        if self.interval_ms == 0 {
+            self.interval_ms = DEFAULT_OVERLAY_GATE_INTERVAL_MS;
+        }
+        self.interval_ms = self
+            .interval_ms
+            .clamp(MIN_OVERLAY_GATE_INTERVAL_MS, MAX_OVERLAY_GATE_INTERVAL_MS);
+    }
+}
+
 /// Always-on-top screen button that starts a named macro.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OverlayButtonConfig {
@@ -198,6 +266,9 @@ pub struct OverlayButtonConfig {
     /// Hover icon color as `#rrggbb` (empty = Sqyre gold).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub icon_hover_color: String,
+    /// Optional image-search visibility gate (show when template found).
+    #[serde(default, skip_serializing_if = "OverlayVisibilityGate::is_off_default")]
+    pub visibility_gate: OverlayVisibilityGate,
 }
 
 pub const DEFAULT_OVERLAY_BUTTON_SIZE: f32 = 26.0;
@@ -217,8 +288,29 @@ pub const DEFAULT_OVERLAY_ACCENT_HEX: &str = "#dc9d2e";
 /// Default idle icon when `icon_color` is empty (`#f5e6c0`).
 pub const DEFAULT_OVERLAY_ICON_HEX: &str = "#f5e6c0";
 
+/// Default Image Search tolerance for overlay visibility gates.
+pub const DEFAULT_OVERLAY_GATE_TOLERANCE: f64 = 0.95;
+/// Default Image Search blur for overlay visibility gates.
+pub const DEFAULT_OVERLAY_GATE_BLUR: i32 = 5;
+/// Default poll interval for overlay visibility gates.
+pub const DEFAULT_OVERLAY_GATE_INTERVAL_MS: u64 = 1000;
+pub const MIN_OVERLAY_GATE_INTERVAL_MS: u64 = 100;
+pub const MAX_OVERLAY_GATE_INTERVAL_MS: u64 = 60_000;
+
 fn default_overlay_button_size() -> f32 {
     DEFAULT_OVERLAY_BUTTON_SIZE
+}
+
+fn default_overlay_gate_tolerance() -> f64 {
+    DEFAULT_OVERLAY_GATE_TOLERANCE
+}
+
+fn default_overlay_gate_blur() -> i32 {
+    DEFAULT_OVERLAY_GATE_BLUR
+}
+
+fn default_overlay_gate_interval_ms() -> u64 {
+    DEFAULT_OVERLAY_GATE_INTERVAL_MS
 }
 
 /// Top-left for an overlay button centered on a desktop rect.
@@ -283,6 +375,7 @@ impl OverlayButtonConfig {
             icon_color: String::new(),
             icon_alpha: 255,
             icon_hover_color: String::new(),
+            visibility_gate: OverlayVisibilityGate::default(),
         }
     }
 
@@ -430,9 +523,13 @@ pub struct UserSettings {
     /// Unix seconds of the last successful update check (0 = never).
     #[serde(default, skip_serializing_if = "is_zero_i64")]
     pub last_update_check_unix: i64,
-    /// Active macro-list hotkey tag filter (`None` = no hotkeys; `Some("")` = untagged).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub hotkey_tag_filter: Option<String>,
+    /// Active macro-list hotkey tag filters (empty = no hotkeys; `""` entry = untagged).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hotkey_tag_filters: Vec<String>,
+    /// When true, focusing a Program with macro tags sets `hotkey_tag_filters` to those tags
+    /// (cleared when no tagged Program owns focus). When false, filters are manual only.
+    #[serde(default)]
+    pub hotkey_tags_while_focused: bool,
 }
 
 fn default_hide_recording() -> bool {
@@ -511,7 +608,8 @@ impl Default for UserSettings {
             last_backup_unix: 0,
             auto_update_check: DEFAULT_AUTO_UPDATE_CHECK,
             last_update_check_unix: 0,
-            hotkey_tag_filter: None,
+            hotkey_tag_filters: Vec::new(),
+            hotkey_tags_while_focused: false,
         }
     }
 }
@@ -592,7 +690,26 @@ impl UserSettings {
         changed
     }
 
-    /// Propagate a program rename into overlay button point refs.
+    /// Propagate a catalog search-area rename into overlay visibility-gate refs.
+    pub fn rename_overlay_search_area_entity(
+        &mut self,
+        program: &str,
+        old_name: &str,
+        new_name: &str,
+    ) -> bool {
+        let mut changed = false;
+        for btn in &mut self.overlay_buttons {
+            let cur = CoordinateRef(btn.visibility_gate.search_area.clone());
+            let next = rename_coordinate_entity(&cur, program, old_name, new_name);
+            if next != cur {
+                btn.visibility_gate.search_area = next.0;
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    /// Propagate a program rename into overlay button point / gate search-area refs.
     pub fn rename_overlay_point_program(&mut self, old_program: &str, new_program: &str) -> bool {
         let mut changed = false;
         for btn in &mut self.overlay_buttons {
@@ -600,6 +717,12 @@ impl UserSettings {
             let next = rename_coordinate_program(&cur, old_program, new_program);
             if next != cur {
                 btn.point = next.0;
+                changed = true;
+            }
+            let cur = CoordinateRef(btn.visibility_gate.search_area.clone());
+            let next = rename_coordinate_program(&cur, old_program, new_program);
+            if next != cur {
+                btn.visibility_gate.search_area = next.0;
                 changed = true;
             }
         }
@@ -620,6 +743,26 @@ impl UserSettings {
             };
             if matches {
                 btn.point.clear();
+                changed = true;
+            }
+        }
+        changed
+    }
+
+    /// Clear overlay visibility-gate search-area refs that target a deleted area.
+    pub fn clear_overlay_search_area_refs(&mut self, program: &str, name: &str) -> bool {
+        let mut changed = false;
+        for btn in &mut self.overlay_buttons {
+            let cur = CoordinateRef(btn.visibility_gate.search_area.clone());
+            if cur.is_empty() || cur.name() != name {
+                continue;
+            }
+            let matches = match cur.program() {
+                Some(p) => p == program,
+                None => true,
+            };
+            if matches {
+                btn.visibility_gate.search_area.clear();
                 changed = true;
             }
         }
@@ -676,6 +819,7 @@ impl UserSettings {
             btn.border_width = btn
                 .border_width
                 .clamp(MIN_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BORDER_WIDTH);
+            btn.visibility_gate.clamp();
         }
         if self.backup_interval_hours < MIN_BACKUP_INTERVAL_HOURS {
             self.backup_interval_hours = DEFAULT_BACKUP_INTERVAL_HOURS;
@@ -815,7 +959,7 @@ mod tests {
             highlight_active_action: true,
             image_search_close_matches_distance: 25,
             ui_scale: 1.2,
-            hotkey_tag_filter: Some("combat".into()),
+            hotkey_tag_filters: vec!["combat".into()],
             ..Default::default()
         };
         s.action_colors.detection = "#aabbcc".into();
@@ -838,6 +982,7 @@ mod tests {
             icon_color: "#abcdef".into(),
             icon_alpha: 240,
             icon_hover_color: "#fedcba".into(),
+            visibility_gate: OverlayVisibilityGate::default(),
         });
         s.save_to_path(&path).unwrap();
 
@@ -860,16 +1005,18 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].bg_alpha, 128);
         assert_eq!(loaded.overlay_buttons[0].icon_color, "#abcdef");
         assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
-        assert_eq!(loaded.hotkey_tag_filter.as_deref(), Some("combat"));
+        assert_eq!(loaded.hotkey_tag_filters, vec!["combat".to_string()]);
+        assert!(!loaded.hotkey_tags_while_focused);
     }
 
     #[test]
-    fn hotkey_tag_filter_omitted_defaults_none() {
+    fn hotkey_tag_filters_omitted_defaults_empty() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("settings.yaml");
         std::fs::write(&path, "save_meta_images: true\n").unwrap();
         let loaded = UserSettings::load_from_path(&path).unwrap();
-        assert_eq!(loaded.hotkey_tag_filter, None);
+        assert!(loaded.hotkey_tag_filters.is_empty());
+        assert!(!loaded.hotkey_tags_while_focused);
     }
 
     #[test]

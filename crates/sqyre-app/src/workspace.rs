@@ -16,7 +16,7 @@ pub(crate) struct Workspace {
     /// Last failed macro/db save; shown in the macro list until a save succeeds.
     pub(crate) save_error: Option<String>,
     pub(crate) macro_meta: MacroMetaUi,
-    /// When set, only macros with this tag (empty string = untagged) have hotkeys enabled.
-    /// Persisted in [`sqyre_persist::UserSettings::hotkey_tag_filter`].
-    pub(crate) hotkey_tag_filter: Option<String>,
+    /// When set, macros matching any of these tags (empty string = untagged) have hotkeys enabled.
+    /// Empty = hotkeys off. Persisted in [`sqyre_persist::UserSettings::hotkey_tag_filters`].
+    pub(crate) hotkey_tag_filters: Vec<String>,
 }

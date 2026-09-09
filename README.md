@@ -33,7 +33,7 @@ Sqyre lets you build and run macros without writing code. Each macro is a tree o
 - **Data editor** — programs, items (with icon variants), masks, points, search areas, collections, atlases; ScreenCap and PixelCheck tools; on-screen **overlay buttons** (drag-relocate while the Overlay tab is open)
 - **Command palette** (Ctrl+K) — jump to macros, add actions, open editor tabs
 - **Macro recording** — capture moves, clicks, keys, and waits, then review / copy into a tree
-- **Hotkeys** — press or release, tag-scoped macros, persistent tag filter on the macro list
+- **Hotkeys** — press or release, multiselect tag filter on the macro list (optional while-focused Program tags), chooser when multiple macros share a chord
 - **System tray** — hide / show the main window
 - Zip backups of `~/.sqyre/`; in-app auto-update from GitHub Releases (Linux/Windows); global delay per macro; runtime variable panel while a macro runs
 

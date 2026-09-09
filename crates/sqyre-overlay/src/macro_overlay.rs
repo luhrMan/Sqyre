@@ -23,10 +23,17 @@ use std::thread::{self, JoinHandle};
 use web_time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
-use crate::x11_buttons::{NativeButtonSpec, X11ButtonHost};
+use crate::x11_buttons::{HotkeyChooserSpec, NativeButtonSpec, X11ButtonHost};
 
 #[cfg(target_os = "linux")]
-pub use crate::x11_buttons::OverlayButtonMove;
+pub use crate::x11_buttons::{HotkeyChooserResult as NativeHotkeyChooserResult, OverlayButtonMove};
+
+#[cfg(not(target_os = "linux"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NativeHotkeyChooserResult {
+    Picked(String),
+    Dismissed,
+}
 
 /// Desktop position committed after a relocate-mode drag (root coordinates).
 #[cfg(not(target_os = "linux"))]
@@ -60,6 +67,8 @@ pub struct MacroOverlay {
     last_native_specs: Option<Vec<NativeButtonSpec>>,
     #[cfg(target_os = "linux")]
     pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
+    #[cfg(target_os = "linux")]
+    pending_chooser: Arc<Mutex<Option<crate::x11_buttons::HotkeyChooserResult>>>,
     #[cfg(target_os = "linux")]
     last_relocate: Option<bool>,
 }
@@ -113,6 +122,8 @@ impl MacroOverlay {
             #[cfg(target_os = "linux")]
             pending_moves: Arc::new(Mutex::new(Vec::new())),
             #[cfg(target_os = "linux")]
+            pending_chooser: Arc::new(Mutex::new(None)),
+            #[cfg(target_os = "linux")]
             last_relocate: None,
         }
     }
@@ -126,6 +137,59 @@ impl MacroOverlay {
         #[cfg(not(target_os = "linux"))]
         {
             Vec::new()
+        }
+    }
+
+    /// Show a native X11 near-cursor macro picker (Linux). No-op elsewhere.
+    pub fn show_hotkey_chooser(
+        &mut self,
+        ctx: &egui::Context,
+        pending_macros: &Arc<Mutex<Vec<String>>>,
+        title: impl Into<String>,
+        names: Vec<String>,
+        x_phys: i32,
+        y_phys: i32,
+    ) -> bool {
+        #[cfg(target_os = "linux")]
+        {
+            self.ensure_x11_host(pending_macros);
+            let Some(host) = &self.x11_host else {
+                return false;
+            };
+            if !self.wake_sent {
+                host.set_wake(ctx.clone());
+                self.wake_sent = true;
+            }
+            *self.pending_chooser.lock() = None;
+            host.show_chooser(HotkeyChooserSpec {
+                title: title.into(),
+                names,
+                x: x_phys,
+                y: y_phys,
+            })
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = (ctx, pending_macros, title, names, x_phys, y_phys);
+            false
+        }
+    }
+
+    pub fn hide_hotkey_chooser(&self) {
+        #[cfg(target_os = "linux")]
+        if let Some(host) = &self.x11_host {
+            host.hide_chooser();
+        }
+    }
+
+    pub fn take_hotkey_chooser_result(&self) -> Option<NativeHotkeyChooserResult> {
+        #[cfg(target_os = "linux")]
+        {
+            self.pending_chooser.lock().take()
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
         }
     }
 
@@ -282,6 +346,7 @@ impl MacroOverlay {
             Arc::clone(pending),
             Arc::clone(&self.pending_moves),
             Arc::clone(&self.running_macro),
+            Arc::clone(&self.pending_chooser),
         ) {
             Ok(host) => {
                 note("overlay: using native X11 button host (direct enqueue)");
@@ -290,7 +355,9 @@ impl MacroOverlay {
                 self.last_native_specs = None;
                 self.last_relocate = None;
             }
-            Err(e) => note(&format!("overlay: X11 host failed: {e}")),
+            Err(e) => {
+                note(&format!("overlay: X11 host failed: {e}"));
+            }
         }
     }
 

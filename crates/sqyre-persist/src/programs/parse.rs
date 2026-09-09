@@ -33,6 +33,12 @@ pub(super) fn parse_program(name: &str, v: &Value) -> Result<ProgramData> {
     {
         data.window_title = t.to_string();
     }
+    if let Some(Value::Sequence(tags)) = map.get(Value::String("tags".into())) {
+        data.tags = tags
+            .iter()
+            .filter_map(|t| t.as_str().map(str::to_string))
+            .collect();
+    }
 
     if let Some(Value::Mapping(items)) = map.get(Value::String("items".into())) {
         for (ik, iv) in items {

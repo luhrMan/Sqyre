@@ -77,7 +77,7 @@ impl SqyreApp {
                 save_error: None,
                 selected_macro: 0,
                 macro_meta: MacroMetaUi::default(),
-                hotkey_tag_filter: settings_ui.settings().hotkey_tag_filter.clone(),
+                hotkey_tag_filters: settings_ui.settings().hotkey_tag_filters.clone(),
             },
             run_session: RunSession {
                 state: run,
@@ -110,6 +110,12 @@ impl SqyreApp {
             recording_overlay: RecordingOverlay::new(),
             #[cfg(feature = "native-runtime")]
             macro_overlay: MacroOverlay::new(),
+            #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+            overlay_visibility: crate::overlay_visibility::OverlayVisibilityPoller::new(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
+            hotkey_chooser: None,
+            start_when_idle: None,
             // Match product default so main-window goldens include the Macros sidebar.
             macro_list_open: true,
             macro_list_filter: String::new(),

@@ -21,6 +21,9 @@ mod diag;
 pub mod docs_fixture;
 mod egui_keys;
 mod file_dialogs;
+mod hotkey_chooser;
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+mod hotkey_focus_tags;
 mod hotkey_record;
 #[cfg(not(target_arch = "wasm32"))]
 mod hotkey_wake;
@@ -41,6 +44,8 @@ mod overlay_icons {
         style_preview_button, OverlayIcon, OverlayPaintStyle, DEFAULT_ICON_ID,
     };
 }
+#[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+mod overlay_visibility;
 mod paint_ctx;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod permissions_panel;
@@ -275,6 +280,16 @@ pub struct SqyreApp {
     /// Always-on-top floating buttons that start macros.
     #[cfg(feature = "native-runtime")]
     macro_overlay: sqyre_overlay::MacroOverlay,
+    /// Image-search visibility gate for overlay buttons.
+    #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+    overlay_visibility: overlay_visibility::OverlayVisibilityPoller,
+    /// Auto-select Program macro tags for hotkeys while that program owns focus.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller,
+    /// Near-cursor menu when multiple macros share a hotkey chord.
+    hotkey_chooser: Option<hotkey_chooser::HotkeyChooserState>,
+    /// Macro to start once the current run stops (chooser pick while busy).
+    start_when_idle: Option<String>,
     /// Left macro-list side panel visibility.
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
@@ -483,7 +498,7 @@ impl SqyreApp {
                 save_error: None,
                 selected_macro: 0,
                 macro_meta: MacroMetaUi::default(),
-                hotkey_tag_filter: settings_ui.settings().hotkey_tag_filter.clone(),
+                hotkey_tag_filters: settings_ui.settings().hotkey_tag_filters.clone(),
             },
             run_session: RunSession {
                 state: run,
@@ -516,6 +531,12 @@ impl SqyreApp {
             recording_overlay: recording_overlay::RecordingOverlay::new(),
             #[cfg(feature = "native-runtime")]
             macro_overlay: sqyre_overlay::MacroOverlay::new(),
+            #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+            overlay_visibility: overlay_visibility::OverlayVisibilityPoller::new(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller::new(),
+            hotkey_chooser: None,
+            start_when_idle: None,
             macro_list_open: true,
             macro_list_filter: String::new(),
             tray: tray::SystemTray::default(),
@@ -783,6 +804,10 @@ impl Drop for SqyreApp {
 
             let t = web_time::Instant::now();
             self.macro_overlay = sqyre_overlay::MacroOverlay::new();
+            #[cfg(feature = "overlay-buttons")]
+            {
+                self.overlay_visibility = overlay_visibility::OverlayVisibilityPoller::new();
+            }
             sqyre_capture::cap_log(
                 "APP",
                 "drop",

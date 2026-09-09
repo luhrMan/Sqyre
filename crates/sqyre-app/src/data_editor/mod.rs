@@ -25,9 +25,11 @@ use helpers::{editor_program_names, is_editor_listed_program, overlay_hex_or_emp
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    default_overlay_position, Database, OverlayButtonConfig, ProgramCatalog, UserSettings,
-    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS,
-    DEFAULT_OVERLAY_FALLBACK_SCREEN_H, DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
+    default_overlay_position, Database, OverlayButtonConfig, OverlayVisibilityGate,
+    OverlayVisibilityMode, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BORDER_WIDTH,
+    DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS, DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
+    DEFAULT_OVERLAY_FALLBACK_SCREEN_W, DEFAULT_OVERLAY_GATE_BLUR, DEFAULT_OVERLAY_GATE_INTERVAL_MS,
+    DEFAULT_OVERLAY_GATE_TOLERANCE,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -180,6 +182,14 @@ pub struct DataEditor {
     form_overlay_icon_color: egui::Color32,
     /// Overlay button form: hover icon color (alpha follows icon color on save).
     form_overlay_icon_hover: egui::Color32,
+    /// Overlay visibility gate: show button only when image search finds a match.
+    form_overlay_gate_enabled: bool,
+    form_overlay_gate_targets: Vec<String>,
+    form_overlay_gate_search_area: String,
+    form_overlay_gate_tolerance: f64,
+    form_overlay_gate_blur: i32,
+    form_overlay_gate_match_method: sqyre_domain::MatchMethod,
+    form_overlay_gate_interval_ms: u64,
     /// Bound OS process path for the selected Program.
     form_process_path: String,
     /// Bound window title for the selected Program.
@@ -287,6 +297,13 @@ impl Default for DataEditor {
             form_overlay_bg: rgba_color([0, 0, 0, 0]),
             form_overlay_icon_color: rgba_color([0xf5, 0xe6, 0xc0, 255]),
             form_overlay_icon_hover: rgba_color([0xdc, 0x9d, 0x2e, 255]),
+            form_overlay_gate_enabled: false,
+            form_overlay_gate_targets: Vec::new(),
+            form_overlay_gate_search_area: String::new(),
+            form_overlay_gate_tolerance: DEFAULT_OVERLAY_GATE_TOLERANCE,
+            form_overlay_gate_blur: DEFAULT_OVERLAY_GATE_BLUR,
+            form_overlay_gate_match_method: sqyre_domain::MatchMethod::CcoeffNormed,
+            form_overlay_gate_interval_ms: DEFAULT_OVERLAY_GATE_INTERVAL_MS,
             form_process_path: String::new(),
             form_window_title: String::new(),
             variant_name_draft: String::new(),
@@ -352,8 +369,41 @@ impl DataEditor {
         btn.x = self.form_overlay_x;
         btn.y = self.form_overlay_y;
         btn.size = self.form_overlay_size;
+        btn.visibility_gate = self.overlay_gate_from_form();
         self.apply_overlay_style_to_config(&mut btn);
         Some(btn)
+    }
+
+    pub(crate) fn overlay_gate_from_form(&self) -> OverlayVisibilityGate {
+        let mut gate = OverlayVisibilityGate {
+            mode: if self.form_overlay_gate_enabled {
+                OverlayVisibilityMode::ShowWhenFound
+            } else {
+                OverlayVisibilityMode::Off
+            },
+            targets: self.form_overlay_gate_targets.clone(),
+            search_area: self.form_overlay_gate_search_area.trim().to_string(),
+            tolerance: self.form_overlay_gate_tolerance,
+            blur: self.form_overlay_gate_blur,
+            match_method: self.form_overlay_gate_match_method,
+            interval_ms: self.form_overlay_gate_interval_ms,
+        };
+        gate.clamp();
+        gate
+    }
+
+    pub(crate) fn load_overlay_gate_from_config(&mut self, gate: &OverlayVisibilityGate) {
+        self.form_overlay_gate_enabled = gate.is_active();
+        self.form_overlay_gate_targets = gate.targets.clone();
+        self.form_overlay_gate_search_area = gate.search_area.clone();
+        self.form_overlay_gate_tolerance = gate.tolerance;
+        self.form_overlay_gate_blur = gate.blur;
+        self.form_overlay_gate_match_method = gate.match_method;
+        self.form_overlay_gate_interval_ms = gate.interval_ms;
+    }
+
+    pub(crate) fn reset_overlay_gate_form(&mut self) {
+        self.load_overlay_gate_from_config(&OverlayVisibilityGate::default());
     }
 
     /// True while the Data Editor Overlay tab is open (drag-to-relocate mode).
@@ -595,9 +645,19 @@ impl DataEditor {
                 }
             }
             PickerResult::SearchArea(coord)
-                if matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck) =>
+                if matches!(
+                    self.tab,
+                    EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay
+                ) =>
             {
-                self.apply_screen_cap_reference(env.catalog, coord);
+                if matches!(self.tab, EditorTab::Overlay) {
+                    self.form_overlay_gate_search_area = coord.0;
+                } else {
+                    self.apply_screen_cap_reference(env.catalog, coord);
+                }
+            }
+            PickerResult::Items(targets) if matches!(self.tab, EditorTab::Overlay) => {
+                self.form_overlay_gate_targets = targets;
             }
             _ => {}
         }
@@ -610,7 +670,7 @@ impl DataEditor {
     ) {
         let mut captured = false;
         if let Some((x, y)) = env.screen_click.take_point() {
-            let live = live_monitor_rects_for_record(env.catalog);
+            let live = helpers::sync_live_monitor_rects(env.catalog);
             let (monitor, rx, ry) = sqyre_persist::absolute_point_to_relative(&live, x, y);
             self.form_monitor = monitor;
             self.form_x = rx.to_string();
@@ -620,7 +680,7 @@ impl DataEditor {
             captured = true;
         }
         if let Some((px, py, ax, ay, bx, by)) = env.screen_click.take_search_area() {
-            let live = live_monitor_rects_for_record(env.catalog);
+            let live = helpers::sync_live_monitor_rects(env.catalog);
             let (monitor, lx, ty, rx, by) =
                 sqyre_persist::absolute_area_to_relative(&live, px, py, ax, ay, bx, by);
             self.form_monitor = monitor;
@@ -646,26 +706,6 @@ impl DataEditor {
             }
         }
     }
-}
-
-/// Live layout for record→relative conversion. Prefers capture/X11 over a stale
-/// catalog snapshot so slot assignment matches the rubber-band cover.
-fn live_monitor_rects_for_record(catalog: &mut ProgramCatalog) -> Vec<(i32, i32, i32, i32)> {
-    #[cfg(feature = "native-runtime")]
-    {
-        let live: Vec<(i32, i32, i32, i32)> = sqyre_capture::preferred_monitor_rects()
-            .into_iter()
-            .map(|r| (r.x, r.y, r.w, r.h))
-            .collect();
-        if !live.is_empty() {
-            let cached = catalog.monitor_rects();
-            if cached.is_empty() || live.len() >= cached.len() {
-                catalog.set_monitor_rects(live.clone());
-            }
-            return live;
-        }
-    }
-    catalog.monitor_rects().to_vec()
 }
 
 impl DataEditor {
@@ -1056,7 +1096,15 @@ impl DataEditor {
             }
             return;
         }
-        use helpers::form_coord_literal;
+        use helpers::form_desktop_area;
+        let (lx, ty, rx, by) = form_desktop_area(
+            catalog,
+            self.form_monitor,
+            &self.form_left,
+            &self.form_top,
+            &self.form_right,
+            &self.form_bottom,
+        );
         let coords_ok = match (
             self.selected_program.as_deref(),
             self.selected_entity.as_deref(),
@@ -1066,10 +1114,10 @@ impl DataEditor {
                 prog,
                 item,
                 &self.pixel_check.variant,
-                form_coord_literal(&self.form_left),
-                form_coord_literal(&self.form_top),
-                form_coord_literal(&self.form_right),
-                form_coord_literal(&self.form_bottom),
+                lx,
+                ty,
+                rx,
+                by,
             ),
             _ => false,
         };
