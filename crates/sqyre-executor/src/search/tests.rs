@@ -1451,6 +1451,116 @@ fn image_search_wait_until_found_retries_then_succeeds() {
 }
 
 #[test]
+fn image_search_wait_until_found_stops_when_flag_set() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("tmpl.png");
+        patterned_rgba(10, 10, 11).save(&tmpl_path).unwrap();
+        let miss = RgbaImage::from_pixel(50, 50, Rgba([0, 255, 0, 255]));
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::new(),
+        };
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_for_backend = Arc::clone(&stop);
+
+        struct StopOnSleep {
+            inner: RecordingBackend,
+            stop: Arc<AtomicBool>,
+            sleeps: usize,
+        }
+        impl crate::backends::AutomationBackend for StopOnSleep {
+            fn milli_sleep(&mut self, ms: i32) {
+                self.inner.milli_sleep(ms);
+                self.sleeps += 1;
+                if self.sleeps >= 1 {
+                    self.stop.store(true, Ordering::SeqCst);
+                }
+            }
+            fn move_to(&mut self, x: i32, y: i32, opts: crate::backends::MoveOptions) {
+                self.inner.move_to(x, y, opts);
+            }
+            fn click(
+                &mut self,
+                button: &str,
+                down: bool,
+            ) -> Result<(), crate::backends::AutomationError> {
+                self.inner.click(button, down)
+            }
+            fn scroll(&mut self, up: bool) -> Result<(), crate::backends::AutomationError> {
+                self.inner.scroll(up)
+            }
+            fn key_down(&mut self, key: &str) -> Result<(), crate::backends::AutomationError> {
+                self.inner.key_down(key)
+            }
+            fn key_up(&mut self, key: &str) -> Result<(), crate::backends::AutomationError> {
+                self.inner.key_up(key)
+            }
+            fn type_char(&mut self, ch: char) {
+                self.inner.type_char(ch);
+            }
+            fn write_clipboard(&mut self, s: &str) -> Result<(), crate::backends::AutomationError> {
+                self.inner.write_clipboard(s)
+            }
+        }
+
+        let mut backend = StopOnSleep {
+            inner: RecordingBackend::default(),
+            stop: stop_for_backend,
+            sleeps: 0,
+        };
+        let mut capturer = RecordingCapturer {
+            next: Some(miss),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let resolver = SEARCH_FIXED_AREA;
+        let mut macro_ = quiet_macro(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "find".into(),
+                targets: vec!["Prog~Item".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                detection: sqyre_domain::DetectionBranch {
+                    wait: wait_until_found(30, 50),
+                    subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                        time: ScalarValue::Int(3),
+                    })],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .stop_flag(stop.as_ref()),
+        )
+        .unwrap();
+
+        assert!(stop.load(Ordering::SeqCst));
+        assert!(backend.sleeps >= 1);
+        assert!(
+            !backend.inner.log.iter().any(|e| e == "sleep:3"),
+            "stop should abort before running find children: {:?}",
+            backend.inner.log
+        );
+    });
+}
+
+#[test]
 fn nested_image_search_after_click_captures_fresh_screen() {
     sqyre_vision::with_search_cache_test_lock(|| {
         sqyre_vision::reset_search_cache_for_testing();

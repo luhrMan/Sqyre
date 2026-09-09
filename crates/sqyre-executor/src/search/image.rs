@@ -5,7 +5,7 @@ use super::common::{
     sort_hits, DetectionCtx, DetectionExtras, DetectionHit,
 };
 use crate::backends::{CollectionArea, DesktopRect, ItemMeta};
-use crate::error::{ExecError, Result, SearchError};
+use crate::error::{ExecError, FlowSignal, Result, SearchError};
 use crate::log_draw::{crop_match_preview, draw_rect_rgb};
 use crate::run::Executor;
 use rayon::prelude::*;
@@ -22,7 +22,7 @@ use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
     load_rgb_image,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -158,6 +158,7 @@ fn capture_and_match(
     let order = &ctx.branch.order;
     // Capture/resolve/blur failures are logged as misses so wait-until-found can retry
     // instead of aborting the macro (same policy as OCR / Find Pixel).
+    exec.check_stopped()?;
     let Some(icons) = exec.deps.icons else {
         exec.log(action_id, format!("{label}: missing IconStore"));
         return Ok(Vec::new());
@@ -203,6 +204,7 @@ fn capture_and_match(
         );
     }
     exec.log_timing(action_id, "capture+preprocess", capture_started.elapsed());
+    exec.check_stopped()?;
 
     let collection_layout = match ctx.search_area.cell_range() {
         None => None,
@@ -291,6 +293,11 @@ fn capture_and_match(
         None
     };
     let method = match_method;
+
+    // Load templates on this thread before the parallel match. Inflight cache
+    // gates taken inside `into_par_iter` deadlock when nested FFT work needs
+    // those same rayon workers (stop then sticks at "Stop requested…").
+    warm_variant_caches(exec, &jobs, kernel, method)?;
 
     let outcomes: Vec<VariantMatchOutcome> = jobs
         .into_par_iter()
@@ -390,6 +397,13 @@ fn capture_and_match(
             }
         })
         .collect();
+    if exec.check_stopped().is_err() {
+        exec.log(
+            action_id,
+            format!("{label}: stop requested, aborting match"),
+        );
+        return Err(FlowSignal::Stopped.into());
+    }
     let outcomes = merge_variant_outcomes(outcomes, close_dist);
 
     let mut out = Vec::new();
@@ -629,6 +643,36 @@ fn item_footprint(meta: &Option<ItemMeta>) -> (i32, i32) {
     let rows = meta.as_ref().map(|m| m.rows).unwrap_or(0).max(1);
     let cols = meta.as_ref().map(|m| m.cols).unwrap_or(0).max(1);
     (rows, cols)
+}
+
+fn warm_variant_caches(
+    exec: &Executor<'_>,
+    jobs: &[VariantJob],
+    kernel: i32,
+    method: MatchMethod,
+) -> Result<()> {
+    let mut seen: HashSet<(PathBuf, Option<PathBuf>)> = HashSet::new();
+    for job in jobs {
+        exec.check_stopped()?;
+        if !seen.insert((job.path.clone(), job.mask_path.clone())) {
+            continue;
+        }
+        let Ok(template_blurred) = get_cached_blurred_template(&job.path, kernel) else {
+            continue;
+        };
+        let mask_bytes = job.mask_path.as_ref().and_then(|p| {
+            get_cached_image_mask(p, template_blurred.height, template_blurred.width)
+        });
+        let _ = get_cached_prepared_template(
+            &job.path,
+            kernel,
+            template_blurred.as_ref(),
+            job.mask_path.as_deref(),
+            mask_bytes.as_deref().map(|m| m.as_slice()),
+            method,
+        );
+    }
+    Ok(())
 }
 
 fn skipped_outcome(
