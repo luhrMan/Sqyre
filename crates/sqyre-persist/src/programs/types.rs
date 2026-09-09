@@ -48,7 +48,7 @@ impl Default for ProgramSearchArea {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ProgramItem {
     pub name: String,
     pub mask: String,
@@ -56,6 +56,19 @@ pub struct ProgramItem {
     pub grid_cols: i32,
     pub grid_rows: i32,
     pub tags: Vec<String>,
+}
+
+impl Default for ProgramItem {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            mask: String::new(),
+            stack_max: 0,
+            grid_cols: 1,
+            grid_rows: 1,
+            tags: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

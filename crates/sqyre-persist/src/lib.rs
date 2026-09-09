@@ -168,6 +168,10 @@ pub fn screen_cap_path() -> PathBuf {
     images_path().join("ScreenCap")
 }
 
+pub fn screen_cap_trash_path() -> PathBuf {
+    screen_cap_path().join("trash")
+}
+
 pub fn initialize_directories() -> Result<()> {
     #[cfg(target_arch = "wasm32")]
     {
@@ -178,6 +182,7 @@ pub fn initialize_directories() -> Result<()> {
         for p in [
             sqyre_dir().join("images/icons"),
             sqyre_dir().join("images/ScreenCap"),
+            screen_cap_trash_path(),
             sqyre_dir().join("images/Collections"),
             sqyre_dir().join("images/masks"),
             variables_path(),
