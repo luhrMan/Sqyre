@@ -76,11 +76,6 @@ pub(crate) fn uuid_simple() -> String {
     format!("{n}")
 }
 
-#[cfg(feature = "native-runtime")]
-pub(crate) fn form_coord_i32(s: &str) -> i32 {
-    form_coord_literal(s).unwrap_or(0)
-}
-
 /// Parse a form coordinate as a literal number suitable for live preview capture.
 /// Returns `None` for `${var}` refs and other non-numeric expressions.
 pub(crate) fn form_coord_literal(s: &str) -> Option<i32> {
@@ -100,17 +95,50 @@ pub(crate) fn form_coord_literal(s: &str) -> Option<i32> {
     None
 }
 
-/// Origin of a 1-based monitor slot from the catalog layout snapshot.
-pub(crate) fn monitor_origin(catalog: &ProgramCatalog, monitor: u32) -> (i32, i32) {
-    let slot = monitor.max(1) as usize;
-    let mut rects = catalog.monitor_rects().to_vec();
+/// Live layout for record→relative conversion. Prefers capture/X11 over a stale
+/// catalog snapshot so slot assignment matches the rubber-band cover.
+pub(crate) fn live_monitor_rects(catalog: &ProgramCatalog) -> Vec<sqyre_persist::MonitorRect> {
     #[cfg(feature = "native-runtime")]
-    if rects.is_empty() {
-        rects = sqyre_capture::preferred_monitor_rects()
+    {
+        let live: Vec<sqyre_persist::MonitorRect> = sqyre_capture::preferred_monitor_rects()
             .into_iter()
             .map(|r| (r.x, r.y, r.w, r.h))
             .collect();
+        if !live.is_empty() {
+            let cached = catalog.monitor_rects();
+            if cached.is_empty() || live.len() >= cached.len() {
+                return live;
+            }
+        }
     }
+    catalog.monitor_rects().to_vec()
+}
+
+/// Prefer live rects, then persist them on the catalog when they are at least as rich.
+pub(crate) fn sync_live_monitor_rects(
+    catalog: &mut ProgramCatalog,
+) -> Vec<sqyre_persist::MonitorRect> {
+    let live = live_monitor_rects(catalog);
+    if !live.is_empty() {
+        let cached = catalog.monitor_rects();
+        if cached.is_empty() || live.len() >= cached.len() {
+            catalog.set_monitor_rects(live.clone());
+        }
+    }
+    live
+}
+
+/// Origin of a 1-based monitor slot. Catalog layout first so this matches
+/// [`sqyre_persist::ProgramCatalog::resolve_search_area`]; live capture only
+/// when the catalog snapshot is empty.
+pub(crate) fn monitor_origin(catalog: &ProgramCatalog, monitor: u32) -> (i32, i32) {
+    let slot = monitor.max(1) as usize;
+    let cached = catalog.monitor_rects();
+    let rects = if cached.is_empty() {
+        live_monitor_rects(catalog)
+    } else {
+        cached.to_vec()
+    };
     rects
         .get(slot - 1)
         .map(|&(ox, oy, _, _)| (ox, oy))
@@ -142,6 +170,25 @@ pub(crate) fn form_absolute_area(
         ty.map(|v| oy + v),
         rx.map(|v| ox + v),
         by.map(|v| oy + v),
+    )
+}
+
+/// Monitor-relative form strings → absolute desktop pixels for capture/preview.
+pub(crate) fn form_desktop_area(
+    catalog: &ProgramCatalog,
+    monitor: u32,
+    left: &str,
+    top: &str,
+    right: &str,
+    bottom: &str,
+) -> (Option<i32>, Option<i32>, Option<i32>, Option<i32>) {
+    form_absolute_area(
+        catalog,
+        monitor,
+        form_coord_literal(left),
+        form_coord_literal(top),
+        form_coord_literal(right),
+        form_coord_literal(bottom),
     )
 }
 
@@ -262,5 +309,43 @@ mod tests {
         let c = eframe::egui::Color32::from_rgb(0x12, 0x34, 0x56);
         assert!(overlay_hex_or_empty(c, "#123456").is_empty());
         assert!(!overlay_hex_or_empty(c, "#000000").is_empty());
+    }
+
+    #[test]
+    fn form_absolute_area_adds_monitor_origin() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_monitor_rects(vec![(0, 0, 1920, 1080), (1920, 100, 1920, 1080)]);
+        let (lx, ty, rx, by) = form_absolute_area(&cat, 2, Some(10), Some(20), Some(110), Some(80));
+        assert_eq!(
+            (lx, ty, rx, by),
+            (Some(1930), Some(120), Some(2030), Some(180))
+        );
+        let (x, y) = form_absolute_xy(&cat, 2, Some(10), Some(20));
+        assert_eq!((x, y), (Some(1930), Some(120)));
+    }
+
+    #[test]
+    fn form_desktop_area_roundtrips_recorded_relative() {
+        let mut cat = ProgramCatalog::default();
+        cat.set_monitor_rects(vec![(0, 0, 1920, 1080), (2560, 0, 1920, 1080)]);
+        let (monitor, lx, ty, rx, by) = sqyre_persist::absolute_area_to_relative(
+            cat.monitor_rects(),
+            2660,
+            40,
+            2660,
+            40,
+            2760,
+            140,
+        );
+        assert_eq!(monitor, 2);
+        let abs = form_desktop_area(
+            &cat,
+            monitor,
+            &lx.to_string(),
+            &ty.to_string(),
+            &rx.to_string(),
+            &by.to_string(),
+        );
+        assert_eq!(abs, (Some(2660), Some(40), Some(2760), Some(140)));
     }
 }

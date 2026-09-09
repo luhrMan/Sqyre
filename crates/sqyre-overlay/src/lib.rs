@@ -19,7 +19,7 @@ mod raster;
 mod x11_buttons;
 
 #[cfg(feature = "runtime")]
-pub use macro_overlay::{MacroOverlay, OverlayButtonMove};
+pub use macro_overlay::{MacroOverlay, NativeHotkeyChooserResult, OverlayButtonMove};
 
 pub use icons::{
     catalog, glyph_font_id, register_phosphor_family, resolve, show_icon_picker_grid,

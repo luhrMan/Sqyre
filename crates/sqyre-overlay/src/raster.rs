@@ -20,6 +20,12 @@ pub const TIP_BG_RGB: [u8; 3] = [0x1c, 0x19, 0x14];
 const TIP_BORDER: [u8; 4] = [0xdc, 0x9d, 0x2e, 0xa0];
 /// Cream text `#f5e6c0`.
 const TIP_FG: [u8; 4] = [0xf5, 0xe6, 0xc0, 0xff];
+const MENU_ROW_H: f32 = 28.0;
+const MENU_PAD_X: f32 = 12.0;
+const MENU_PAD_Y: f32 = 8.0;
+const MENU_TITLE_H: f32 = 22.0;
+const MENU_MAX_W: f32 = 360.0;
+const MENU_MIN_W: f32 = 180.0;
 
 const UI_FONT_CANDIDATES: &[&str] = &[
     "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
@@ -154,6 +160,224 @@ pub fn rasterize_tip(text: &str) -> (u32, u32, Vec<u8>) {
         return (hi_w, hi_h, hi);
     }
     downsample_box(&hi, hi_w, hi_h, TIP_SSAA)
+}
+
+/// Opaque hotkey-conflict menu: `(w, h, rgba, row_hits)` where each hit is
+/// `(name, x, y, w, h)` in window coordinates (physical pixels).
+/// An empty `name` marks the Cancel row.
+/// `hover` / `pressed` are optional row indices (including Cancel).
+pub fn rasterize_chooser(
+    title: &str,
+    names: &[String],
+    hover: Option<usize>,
+    pressed: Option<usize>,
+) -> (u32, u32, Vec<u8>, Vec<(String, i32, i32, u32, u32)>) {
+    if names.is_empty() {
+        return (0, 0, Vec::new(), Vec::new());
+    }
+    let font = ui_font();
+    let title = title.trim();
+    let mut max_text = title.len().max(12) as f32 * 7.5;
+    for n in names {
+        max_text = max_text.max(n.len() as f32 * 7.5);
+    }
+    max_text = max_text.max(6.0 * 7.5); // "Cancel"
+    let content_w = max_text.clamp(MENU_MIN_W - MENU_PAD_X * 2.0, MENU_MAX_W - MENU_PAD_X * 2.0);
+    let w = (content_w + MENU_PAD_X * 2.0)
+        .ceil()
+        .clamp(MENU_MIN_W, MENU_MAX_W) as u32;
+    let title_h = if title.is_empty() { 0.0 } else { MENU_TITLE_H };
+    // title + macro rows + gap + Cancel
+    let h = (MENU_PAD_Y * 2.0 + title_h + names.len() as f32 * MENU_ROW_H + 6.0 + MENU_ROW_H + 4.0)
+        .ceil() as u32;
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    fill_rounded_panel(&mut rgba, w, h, TIP_CORNER_PX, TIP_BORDER_W);
+
+    let mut y = MENU_PAD_Y;
+    if !title.is_empty() {
+        draw_line_text(
+            &mut rgba,
+            w,
+            h,
+            font,
+            title,
+            MENU_PAD_X,
+            y + 2.0,
+            TIP_FONT_PX * 0.9,
+            [0xb8, 0xa8, 0x88, 0xff],
+        );
+        y += title_h;
+    }
+
+    let mut hits = Vec::with_capacity(names.len() + 1);
+    let row_x = 6i32;
+    let row_w = w.saturating_sub(12);
+    for (i, name) in names.iter().enumerate() {
+        let row_y = y.round() as i32;
+        let row_h = MENU_ROW_H.round() as u32;
+        let state = row_chip_state(i, hover, pressed);
+        fill_row_chip(&mut rgba, w, h, row_x, row_y, row_w, row_h, false, state);
+        hits.push((name.clone(), row_x, row_y, row_w, row_h));
+        let fg = match state {
+            ChipState::Pressed => [0xff, 0xf0, 0xc8, 0xff],
+            ChipState::Hover => [0xff, 0xf6, 0xd8, 0xff],
+            ChipState::Idle => TIP_FG,
+        };
+        draw_line_text(
+            &mut rgba,
+            w,
+            h,
+            font,
+            name,
+            MENU_PAD_X,
+            y + 6.0,
+            TIP_FONT_PX,
+            fg,
+        );
+        y += MENU_ROW_H;
+    }
+
+    y += 6.0;
+    let cancel_i = names.len();
+    let row_y = y.round() as i32;
+    let row_h = MENU_ROW_H.round() as u32;
+    let state = row_chip_state(cancel_i, hover, pressed);
+    fill_row_chip(&mut rgba, w, h, row_x, row_y, row_w, row_h, true, state);
+    hits.push((String::new(), row_x, row_y, row_w, row_h));
+    let fg = match state {
+        ChipState::Pressed => [0xe8, 0xd8, 0xb8, 0xff],
+        ChipState::Hover => [0xd8, 0xc8, 0xa8, 0xff],
+        ChipState::Idle => [0xc8, 0xb8, 0x98, 0xff],
+    };
+    draw_line_text(
+        &mut rgba,
+        w,
+        h,
+        font,
+        "Cancel",
+        MENU_PAD_X,
+        y + 6.0,
+        TIP_FONT_PX,
+        fg,
+    );
+
+    (w, h, rgba, hits)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ChipState {
+    Idle,
+    Hover,
+    Pressed,
+}
+
+fn row_chip_state(i: usize, hover: Option<usize>, pressed: Option<usize>) -> ChipState {
+    if pressed == Some(i) {
+        ChipState::Pressed
+    } else if hover == Some(i) {
+        ChipState::Hover
+    } else {
+        ChipState::Idle
+    }
+}
+
+fn fill_row_chip(
+    rgba: &mut [u8],
+    w: u32,
+    h: u32,
+    x: i32,
+    y: i32,
+    rw: u32,
+    rh: u32,
+    muted: bool,
+    state: ChipState,
+) {
+    let (bg, border) = match (muted, state) {
+        (false, ChipState::Idle) => ([0x32, 0x2c, 0x24, 0xff], [0x9a, 0x78, 0x38, 0xff]),
+        (false, ChipState::Hover) => ([0x4a, 0x3e, 0x2a, 0xff], [0xef, 0xc0, 0x4a, 0xff]),
+        (false, ChipState::Pressed) => ([0x24, 0x1e, 0x16, 0xff], [0xdc, 0x9d, 0x2e, 0xff]),
+        (true, ChipState::Idle) => ([0x2a, 0x26, 0x20, 0xff], [0x6a, 0x5c, 0x44, 0xff]),
+        (true, ChipState::Hover) => ([0x3a, 0x34, 0x2c, 0xff], [0x9a, 0x88, 0x68, 0xff]),
+        (true, ChipState::Pressed) => ([0x1e, 0x1a, 0x16, 0xff], [0x8a, 0x78, 0x58, 0xff]),
+    };
+    let radius = 5.0_f32;
+    let border_w = if state == ChipState::Idle { 1.2 } else { 2.0 };
+    for py in y..(y + rh as i32) {
+        for px in x..(x + rw as i32) {
+            if px < 0 || py < 0 || px >= w as i32 || py >= h as i32 {
+                continue;
+            }
+            let lx = px - x;
+            let ly = py - y;
+            let d = sd_rounded_rect(
+                lx as f32 + 0.5,
+                ly as f32 + 0.5,
+                rw as f32,
+                rh as f32,
+                radius,
+            );
+            if d > 0.0 {
+                continue;
+            }
+            let i = ((py as u32 * w + px as u32) * 4) as usize;
+            rgba[i] = bg[0];
+            rgba[i + 1] = bg[1];
+            rgba[i + 2] = bg[2];
+            rgba[i + 3] = 255;
+            if d >= -border_w {
+                rgba[i] = border[0];
+                rgba[i + 1] = border[1];
+                rgba[i + 2] = border[2];
+            }
+        }
+    }
+}
+
+fn draw_line_text(
+    rgba: &mut [u8],
+    w: u32,
+    h: u32,
+    font: &Font,
+    text: &str,
+    x: f32,
+    y: f32,
+    px: f32,
+    color: [u8; 4],
+) {
+    let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+    layout.reset(&LayoutSettings {
+        x: 0.0,
+        y: 0.0,
+        max_width: Some((w as f32 - x - MENU_PAD_X).max(8.0)),
+        ..LayoutSettings::default()
+    });
+    layout.append(&[font], &TextStyle::new(text, px, 0));
+    let glyphs = layout.glyphs();
+    if glyphs.is_empty() {
+        return;
+    }
+    let mut ink_min_y = f32::INFINITY;
+    for g in glyphs {
+        ink_min_y = ink_min_y.min(g.y);
+    }
+    let oy = y - ink_min_y;
+    for g in glyphs {
+        let (metrics, bitmap) = font.rasterize_config(g.key);
+        if metrics.width == 0 || metrics.height == 0 || bitmap.is_empty() {
+            continue;
+        }
+        blit_coverage(
+            rgba,
+            w,
+            h,
+            &bitmap,
+            metrics.width,
+            metrics.height,
+            (x + g.x).round() as i32,
+            (oy + g.y).round() as i32,
+            color,
+        );
+    }
 }
 
 fn fill_rounded_panel(rgba: &mut [u8], w: u32, h: u32, corner: f32, border_w: f32) {
@@ -537,6 +761,36 @@ mod tip_tests {
         // Monospace "Remove all Gems" is much wider; proportional should be compact.
         let (w, _, _) = rasterize_tip("Remove all Gems");
         assert!(w < 160, "expected proportional tip width, got {w}");
+    }
+
+    #[test]
+    fn chooser_draws_row_chips_and_cancel_hit() {
+        let names = vec!["Macro A".into(), "Macro B".into()];
+        let (w, h, rgba, hits) = rasterize_chooser("Hotkey: f1", &names, None, None);
+        assert!(w >= 180 && h > 80, "w={w} h={h}");
+        assert_eq!(hits.len(), 3); // 2 macros + Cancel
+        assert_eq!(hits[0].0, "Macro A");
+        assert_eq!(hits[1].0, "Macro B");
+        assert!(hits[2].0.is_empty(), "cancel sentinel");
+        assert_eq!(rgba.len(), (w * h * 4) as usize);
+        let bright = rgba
+            .chunks(4)
+            .filter(|p| p[0] > 40 || p[1] > 40 || p[2] > 40)
+            .count();
+        assert!(
+            bright > 100,
+            "expected row chip / text ink, bright={bright}"
+        );
+        let (w2, _, rgba2, _) = rasterize_chooser("Hotkey: f1", &names, Some(0), None);
+        assert_eq!(w, w2);
+        let hover_gold = rgba2
+            .chunks(4)
+            .filter(|p| p[0] > 0xE0 && p[1] > 0xA0 && p[2] < 0x80)
+            .count();
+        assert!(
+            hover_gold > 20,
+            "expected brighter hover border pixels, hover_gold={hover_gold}"
+        );
     }
 
     #[test]

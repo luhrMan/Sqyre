@@ -690,6 +690,7 @@ Demo:
   name: Demo
   processpath: /opt/demo/bin/DemoGame
   windowtitle: Demo Game
+  tags: [combat, loot]
   items: {}
   coordinates: {}
   masks: {}
@@ -700,13 +701,16 @@ Demo:
         let p = cat.get("Demo").unwrap();
         assert_eq!(p.process_path, "/opt/demo/bin/DemoGame");
         assert_eq!(p.window_title, "Demo Game");
+        assert_eq!(p.tags, vec!["combat".to_string(), "loot".to_string()]);
         cat.set_process_binding("Demo", "/usr/bin/other", "Other")
             .unwrap();
+        cat.set_program_tags("Demo", vec!["raid".into()]).unwrap();
         let encoded = cat.to_yaml_value(&Value::Null);
         let cat2 = ProgramCatalog::from_yaml_value(&encoded).unwrap();
         let p2 = cat2.get("Demo").unwrap();
         assert_eq!(p2.process_path, "/usr/bin/other");
         assert_eq!(p2.window_title, "Other");
+        assert_eq!(p2.tags, vec!["raid".to_string()]);
     }
 
     #[test]

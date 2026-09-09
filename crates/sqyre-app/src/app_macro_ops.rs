@@ -7,14 +7,19 @@ use eframe::egui;
 use sqyre_domain::{Action, ActionId, InsertSlot, Macro};
 use sqyre_hotkeys::{HotkeyTrigger, MacroHotkeyBinding};
 
-/// Whether `m` should receive hotkeys under `filter`.
-/// `None` = none (no tag header selected); `Some("")` = untagged only; otherwise macros that include the tag.
-pub(crate) fn macro_matches_hotkey_tag(m: &Macro, filter: Option<&str>) -> bool {
-    match filter {
-        None => false,
-        Some("") => m.tags.is_empty(),
-        Some(tag) => m.tags.iter().any(|t| t == tag),
+/// Whether `m` should receive hotkeys under `filters`.
+/// Empty = none (no tag headers selected); `""` entry = untagged; otherwise macros that include any listed tag.
+pub(crate) fn macro_matches_hotkey_tag(m: &Macro, filters: &[String]) -> bool {
+    if filters.is_empty() {
+        return false;
     }
+    filters.iter().any(|tag| {
+        if tag.is_empty() {
+            m.tags.is_empty()
+        } else {
+            m.tags.iter().any(|t| t == tag)
+        }
+    })
 }
 
 impl SqyreApp {
@@ -61,45 +66,61 @@ impl SqyreApp {
         self.tree.selected_actions.retain(|&a| a != id);
     }
 
-    /// Clear a stale tag filter when no macro still carries that tag.
-    /// Returns `true` when the filter was cleared.
+    /// Drop stale filter entries when no macro still carries that tag.
+    /// Returns `true` when the filter set changed.
     pub(crate) fn sanitize_hotkey_tag_filter(&mut self) -> bool {
-        let Some(tag) = self.workspace.hotkey_tag_filter.as_deref() else {
-            return false;
-        };
-        let still_valid = if tag.is_empty() {
-            self.workspace.macros.iter().any(|m| m.tags.is_empty())
-        } else {
-            self.workspace
-                .macros
-                .iter()
-                .any(|m| m.tags.iter().any(|t| t == tag))
-        };
-        if !still_valid {
-            self.workspace.hotkey_tag_filter = None;
-            return true;
-        }
-        false
+        let before = self.workspace.hotkey_tag_filters.len();
+        self.workspace.hotkey_tag_filters.retain(|tag| {
+            if tag.is_empty() {
+                self.workspace.macros.iter().any(|m| m.tags.is_empty())
+            } else {
+                self.workspace
+                    .macros
+                    .iter()
+                    .any(|m| m.tags.iter().any(|t| t == tag))
+            }
+        });
+        self.workspace.hotkey_tag_filters.len() != before
     }
 
-    /// Write [`Workspace::hotkey_tag_filter`] into settings when it drifted.
+    /// Write [`Workspace::hotkey_tag_filters`] into settings when it drifted.
     pub(crate) fn persist_hotkey_tag_filter(&mut self) {
-        let filter = self.workspace.hotkey_tag_filter.clone();
-        if self.settings_ui.settings().hotkey_tag_filter == filter {
+        let filter = self.workspace.hotkey_tag_filters.clone();
+        if self.settings_ui.settings().hotkey_tag_filters == filter {
             return;
         }
-        self.settings_ui.settings_mut().hotkey_tag_filter = filter;
+        self.settings_ui.settings_mut().hotkey_tag_filters = filter;
         if let Err(e) = self.settings_ui.save_settings() {
             crate::log::warn(format!("failed to save hotkey tag filter: {e}"));
         }
     }
 
-    /// Toggle which tag's macros receive hotkeys. Clicking the active tag clears the filter (no hotkeys).
+    /// Set the hotkey tag selection (sorted, deduped). Persists and refreshes bindings.
+    pub(crate) fn set_hotkey_tag_filters(&mut self, tags: Vec<String>) {
+        let mut tags = tags;
+        tags.sort();
+        tags.dedup();
+        if self.workspace.hotkey_tag_filters == tags {
+            return;
+        }
+        self.workspace.hotkey_tag_filters = tags;
+        self.persist_hotkey_tag_filter();
+        self.refresh_macro_hotkey_bindings();
+    }
+
+    /// Toggle membership of a tag in the multiselect filter.
     pub(crate) fn toggle_hotkey_tag_filter(&mut self, tag: String) {
-        if self.workspace.hotkey_tag_filter.as_ref() == Some(&tag) {
-            self.workspace.hotkey_tag_filter = None;
+        if let Some(i) = self
+            .workspace
+            .hotkey_tag_filters
+            .iter()
+            .position(|t| t == &tag)
+        {
+            self.workspace.hotkey_tag_filters.remove(i);
         } else {
-            self.workspace.hotkey_tag_filter = Some(tag);
+            self.workspace.hotkey_tag_filters.push(tag);
+            self.workspace.hotkey_tag_filters.sort();
+            self.workspace.hotkey_tag_filters.dedup();
         }
         self.persist_hotkey_tag_filter();
         self.refresh_macro_hotkey_bindings();
@@ -109,13 +130,13 @@ impl SqyreApp {
         if self.sanitize_hotkey_tag_filter() {
             self.persist_hotkey_tag_filter();
         }
-        let filter = self.workspace.hotkey_tag_filter.as_deref();
+        let filters = self.workspace.hotkey_tag_filters.as_slice();
         let bindings = self
             .workspace
             .macros
             .iter()
             .filter(|m| !m.hotkey.is_empty())
-            .filter(|m| macro_matches_hotkey_tag(m, filter))
+            .filter(|m| macro_matches_hotkey_tag(m, filters))
             .filter(|m| sqyre_validate::validate_macro(m).is_ok())
             .map(|m| {
                 MacroHotkeyBinding::new(
@@ -689,12 +710,20 @@ mod tests {
     fn hotkey_tag_filter_matches() {
         let tagged = m(&["combat", "farm"]);
         let bare = m(&[]);
-        assert!(!macro_matches_hotkey_tag(&tagged, None));
-        assert!(!macro_matches_hotkey_tag(&bare, None));
-        assert!(macro_matches_hotkey_tag(&tagged, Some("combat")));
-        assert!(!macro_matches_hotkey_tag(&tagged, Some("other")));
-        assert!(!macro_matches_hotkey_tag(&bare, Some("combat")));
-        assert!(macro_matches_hotkey_tag(&bare, Some("")));
-        assert!(!macro_matches_hotkey_tag(&tagged, Some("")));
+        assert!(!macro_matches_hotkey_tag(&tagged, &[]));
+        assert!(!macro_matches_hotkey_tag(&bare, &[]));
+        assert!(macro_matches_hotkey_tag(&tagged, &["combat".into()]));
+        assert!(!macro_matches_hotkey_tag(&tagged, &["other".into()]));
+        assert!(!macro_matches_hotkey_tag(&bare, &["combat".into()]));
+        assert!(macro_matches_hotkey_tag(&bare, &["".into()]));
+        assert!(!macro_matches_hotkey_tag(&tagged, &["".into()]));
+        assert!(macro_matches_hotkey_tag(
+            &tagged,
+            &["other".into(), "farm".into()]
+        ));
+        assert!(macro_matches_hotkey_tag(
+            &bare,
+            &["combat".into(), "".into()]
+        ));
     }
 }

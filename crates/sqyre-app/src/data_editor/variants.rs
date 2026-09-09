@@ -1,8 +1,6 @@
 //! Item icon variants, mask images, ScreenCap save.
 
 use super::helpers::copy_image_as_png;
-#[cfg(feature = "native-runtime")]
-use super::helpers::form_coord_i32;
 use super::{DataEditor, PendingConfirm, VariantPrompt};
 use crate::data_editor_preview::{
     fit_panel, fit_thumbnail, variant_display_label, variant_name_from_path,
@@ -305,6 +303,16 @@ impl DataEditor {
                 return false;
             }
         };
+        let (monitor, lx, ty, rx, by) = sqyre_persist::absolute_area_to_relative(
+            catalog.monitor_rects(),
+            lx,
+            ty,
+            lx,
+            ty,
+            rx,
+            by,
+        );
+        self.form_monitor = monitor;
         self.form_left = lx.to_string();
         self.form_top = ty.to_string();
         self.form_right = rx.to_string();
@@ -330,11 +338,12 @@ impl DataEditor {
 
     pub(crate) fn save_screen_cap(
         &mut self,
+        catalog: &ProgramCatalog,
         previews: &crate::preview_tooltip::PreviewTooltipCache,
     ) {
         #[cfg(not(feature = "native-runtime"))]
         {
-            let _ = previews;
+            let _ = (catalog, previews);
             self.set_err("ScreenCap requires the desktop app.");
             return;
         }
@@ -353,10 +362,17 @@ impl DataEditor {
                 self.set_err(format!("ScreenCap: {e}"));
                 return;
             }
-            let lx = form_coord_i32(&self.form_left);
-            let ty = form_coord_i32(&self.form_top);
-            let rx = form_coord_i32(&self.form_right);
-            let by = form_coord_i32(&self.form_bottom);
+            let (Some(lx), Some(ty), Some(rx), Some(by)) = super::helpers::form_desktop_area(
+                catalog,
+                self.form_monitor,
+                &self.form_left,
+                &self.form_top,
+                &self.form_right,
+                &self.form_bottom,
+            ) else {
+                self.set_err("ScreenCap: invalid capture dimensions.");
+                return;
+            };
             let (norm_lx, norm_rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
             let (norm_ty, norm_by) = if ty <= by { (ty, by) } else { (by, ty) };
             if norm_rx - norm_lx <= 0 || norm_by - norm_ty <= 0 {

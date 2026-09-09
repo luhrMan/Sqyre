@@ -210,9 +210,17 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             )
             .on_hover_text("Filter by macro name or tag.");
             {
-                let label = match app.workspace.hotkey_tag_filter.as_deref() {
-                    Some(tag) => format!("Hotkeys: {}", tag_header_label(tag)),
-                    None => "Hotkeys: off".to_string(),
+                let label = if app.workspace.hotkey_tag_filters.is_empty() {
+                    "Hotkeys: off".to_string()
+                } else {
+                    let joined = app
+                        .workspace
+                        .hotkey_tag_filters
+                        .iter()
+                        .map(|t| tag_header_label(t))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("Hotkeys: {joined}")
                 };
                 let font = egui::TextStyle::Small.resolve(ui.style());
                 ui.small(elide_to_width(ui, &label, pane_w, font));
@@ -256,7 +264,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         )
                         .show_header(ui, |ui| {
                             let selected =
-                                app.workspace.hotkey_tag_filter.as_deref() == Some(tag.as_str());
+                                app.workspace.hotkey_tag_filters.iter().any(|t| t == tag);
                             let header_budget =
                                 (ui.available_width() - ui.spacing().button_padding.x).max(0.0);
                             let font = egui::FontSelection::Default.resolve(ui.style());
@@ -281,9 +289,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                                 indices.len(),
                             )
                             .on_hover_text(if selected {
-                                "Hotkeys enabled for this tag. Click again to disable."
+                                "Hotkeys enabled for this tag (multiselect). Click again to remove."
                             } else {
-                                "Enable hotkeys for macros with this tag."
+                                "Add this tag to the hotkey selection (multiselect)."
                             });
                             if resp.clicked() {
                                 clicked_tag = Some(tag.clone());

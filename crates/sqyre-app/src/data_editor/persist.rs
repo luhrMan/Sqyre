@@ -60,6 +60,8 @@ impl DataEditor {
                             self.form_name = name;
                             self.form_process_path.clear();
                             self.form_window_title.clear();
+                            self.form_tags.clear();
+                            self.tag_draft.clear();
                             Ok("Created program.")
                         }
                         Err(e) => Err(e.to_string()),
@@ -444,6 +446,7 @@ impl DataEditor {
                                 self.form_process_path.clone(),
                                 self.form_window_title.clone(),
                             )
+                            .and_then(|_| catalog.set_program_tags(&old, self.form_tags.clone()))
                             .map(|_| ())
                     } else {
                         if overwrite {
@@ -455,6 +458,7 @@ impl DataEditor {
                                 self.form_process_path.clone(),
                                 self.form_window_title.clone(),
                             );
+                            let _ = catalog.set_program_tags(&new_name, self.form_tags.clone());
                             for m in macros.iter_mut() {
                                 m.rename_program(&old, &new_name);
                             }
@@ -475,6 +479,7 @@ impl DataEditor {
                             self.form_process_path.clone(),
                             self.form_window_title.clone(),
                         );
+                        let _ = catalog.set_program_tags(&new_name, self.form_tags.clone());
                         self.selected_program = Some(new_name.clone());
                     })
                 }
@@ -488,9 +493,14 @@ impl DataEditor {
                 &new_name,
                 overwrite,
             ),
-            EditorTab::SearchAreas => {
-                self.update_search_area(catalog, macros, &new_name, overwrite)
-            }
+            EditorTab::SearchAreas => self.update_search_area(
+                catalog,
+                macros,
+                settings,
+                &mut overlay_settings_dirty,
+                &new_name,
+                overwrite,
+            ),
             EditorTab::Masks => self.update_mask(catalog, &new_name, overwrite),
             EditorTab::Collections => self.update_collection(catalog, macros, &new_name, overwrite),
             EditorTab::Atlases => self.update_atlas(catalog, macros, &new_name, overwrite),
@@ -606,6 +616,8 @@ impl DataEditor {
         &mut self,
         catalog: &mut ProgramCatalog,
         macros: &mut [Macro],
+        settings: &mut UserSettings,
+        overlay_settings_dirty: &mut bool,
         new_name: &str,
         overwrite: bool,
     ) -> Result<(), sqyre_persist::PersistError> {
@@ -629,6 +641,9 @@ impl DataEditor {
                 catalog.rename_search_area(&prog, &old, new_name)?;
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::SearchArea, &prog, &old, new_name);
+                }
+                if settings.rename_overlay_search_area_entity(&prog, &old, new_name) {
+                    *overlay_settings_dirty = true;
                 }
                 self.selected_entity = Some(new_name.to_string());
             }
@@ -846,6 +861,9 @@ impl DataEditor {
                     return;
                 };
                 catalog.delete_search_area(&prog, &name).map(|_| {
+                    if settings.clear_overlay_search_area_refs(&prog, &name) {
+                        let _ = self.persist_overlay_settings(settings);
+                    }
                     self.selected_entity = None;
                     self.form_name.clear();
                 })
