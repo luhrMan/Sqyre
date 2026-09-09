@@ -1,4 +1,4 @@
-//! Floating Data Editor: Programs / Items (Masks, ScreenCap, PixelCheck) / Coordinates / Overlay.
+//! Floating Data Editor: Programs / Items (Masks) / Coordinates / Tools (Overlay, ScreenCap, PixelCheck).
 
 const WINDOW_TITLE: &str = "Data Editor";
 
@@ -51,21 +51,19 @@ pub(crate) enum EditorSection {
     Programs,
     Items,
     Coordinates,
-    Overlay,
+    Tools,
 }
 
 impl EditorSection {
     fn of(tab: EditorTab) -> Self {
         match tab {
             EditorTab::Programs => Self::Programs,
-            EditorTab::Items | EditorTab::Masks | EditorTab::ScreenCap | EditorTab::PixelCheck => {
-                Self::Items
-            }
+            EditorTab::Items | EditorTab::Masks => Self::Items,
             EditorTab::Points
             | EditorTab::SearchAreas
             | EditorTab::Collections
             | EditorTab::Atlases => Self::Coordinates,
-            EditorTab::Overlay => Self::Overlay,
+            EditorTab::Overlay | EditorTab::ScreenCap | EditorTab::PixelCheck => Self::Tools,
         }
     }
 
@@ -74,7 +72,7 @@ impl EditorSection {
             Self::Programs => EditorTab::Programs,
             Self::Items => EditorTab::Items,
             Self::Coordinates => EditorTab::Points,
-            Self::Overlay => EditorTab::Overlay,
+            Self::Tools => EditorTab::Overlay,
         }
     }
 }
@@ -220,6 +218,8 @@ pub struct DataEditor {
     window_picker: ActivePicker,
     /// Background ScreenCap capture+save; polled each frame.
     screen_cap_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    /// Create a catalog item from the current ScreenCap preview (processed after paint).
+    screen_cap_new_item: bool,
     /// Background collection image capture+save; polled each frame.
     collection_capture_pending: Option<CollectionCapturePending>,
     /// Cached program/entity name lists keyed by catalog generation.
@@ -321,6 +321,7 @@ impl Default for DataEditor {
             overlay_icon_search: String::new(),
             window_picker: ActivePicker::None,
             screen_cap_pending: None,
+            screen_cap_new_item: false,
             collection_capture_pending: None,
             list_cache: ListCache::default(),
             #[cfg(feature = "native-runtime")]
@@ -586,6 +587,10 @@ impl DataEditor {
         self.draw_overlay_icon_picker(ctx, env.settings);
         self.poll_form_picker(env, previews);
         self.poll_screen_cap(ctx);
+        if self.screen_cap_new_item {
+            self.screen_cap_new_item = false;
+            self.create_item_from_screen_cap(env, previews);
+        }
         self.poll_collection_capture(ctx, env.catalog, env.icons);
         #[cfg(feature = "native-runtime")]
         self.poll_pixel_check(ctx, env.catalog, previews);
@@ -722,7 +727,7 @@ impl DataEditor {
                 (EditorSection::Programs, "Programs"),
                 (EditorSection::Items, "Items"),
                 (EditorSection::Coordinates, "Coordinates"),
-                (EditorSection::Overlay, "Overlay"),
+                (EditorSection::Tools, "Tools"),
             ] {
                 if ui.selectable_label(section == sec, label).clicked() && section != sec {
                     self.switch_tab(sec.default_tab(), env.catalog, env.settings);
@@ -730,15 +735,16 @@ impl DataEditor {
             }
         });
         let section = EditorSection::of(self.tab);
-        if matches!(section, EditorSection::Items | EditorSection::Coordinates) {
+        if matches!(
+            section,
+            EditorSection::Items | EditorSection::Coordinates | EditorSection::Tools
+        ) {
             ui.horizontal(|ui| {
                 let prev = self.tab;
                 match section {
                     EditorSection::Items => {
                         ui.selectable_value(&mut self.tab, EditorTab::Items, "Items");
                         ui.selectable_value(&mut self.tab, EditorTab::Masks, "Masks");
-                        ui.selectable_value(&mut self.tab, EditorTab::ScreenCap, "ScreenCap");
-                        ui.selectable_value(&mut self.tab, EditorTab::PixelCheck, "PixelCheck");
                     }
                     EditorSection::Coordinates => {
                         ui.label(egui::RichText::new("Basic").weak().small());
@@ -748,6 +754,11 @@ impl DataEditor {
                         ui.label(egui::RichText::new("Advanced").weak().small());
                         ui.selectable_value(&mut self.tab, EditorTab::Collections, "Collections");
                         ui.selectable_value(&mut self.tab, EditorTab::Atlases, "Atlases");
+                    }
+                    EditorSection::Tools => {
+                        ui.selectable_value(&mut self.tab, EditorTab::Overlay, "Overlay");
+                        ui.selectable_value(&mut self.tab, EditorTab::ScreenCap, "ScreenCap");
+                        ui.selectable_value(&mut self.tab, EditorTab::PixelCheck, "PixelCheck");
                     }
                     _ => {}
                 }
@@ -787,6 +798,7 @@ impl DataEditor {
         let max_left = (avail_w - SPLITTER_W - MIN_RIGHT - item_gap * 2.0).max(MIN_LEFT);
         self.left_width = self.left_width.clamp(MIN_LEFT, max_left);
         let body_left = body_rect.left();
+        let mut tag_submit = false;
 
         ui.scope_builder(egui::UiBuilder::new().max_rect(body_rect), |ui| {
             ui.set_clip_rect(body_rect);
@@ -832,7 +844,7 @@ impl DataEditor {
                         let mut paint_form = |ui: &mut egui::Ui| {
                             ui.set_max_width(ui.available_width());
                             let macros: &[Macro] = env.macros;
-                            self.draw_form(
+                            tag_submit = self.draw_form(
                                 ui,
                                 &mut CatalogPaint {
                                     catalog: env.catalog,
@@ -881,9 +893,15 @@ impl DataEditor {
                     let valid = self.form_valid(env.macros.get(selected_macro));
                     let can_update =
                         !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-                    if crate::theme::dirty_action_button(ui, "Update", can_update && dirty && valid)
-                        .clicked()
-                    {
+                    let update_enabled = can_update && dirty && valid;
+                    let update_clicked =
+                        crate::theme::dirty_action_button(ui, "Update", update_enabled).clicked();
+                    // Enter submits when Update is able: this window is in front,
+                    // and no confirm / picker / combo is using the key.
+                    let update_enter = update_enabled
+                        && self.enter_commits_update(ui)
+                        && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+                    if update_clicked || update_enter || (tag_submit && update_enabled) {
                         self.on_update(env, previews);
                     }
                     let can_delete = match self.tab {
@@ -938,6 +956,19 @@ impl DataEditor {
                 });
             });
         });
+    }
+
+    /// Enter → Update only when this window is in front and no overlay owns the key.
+    fn enter_commits_update(&self, ui: &egui::Ui) -> bool {
+        self.confirm.is_none()
+            && self.variant_prompt.is_none()
+            && !self.window_picker.is_open()
+            && self.overlay_icon_picker_for.is_none()
+            && !ui.ctx().any_popup_open()
+            && ui.ctx().top_layer_id() == Some(ui.layer_id())
+            && ui
+                .ctx()
+                .memory(|m| m.areas().top_layer_id(egui::Order::Foreground).is_none())
     }
 
     fn draw_confirm(&mut self, env: &mut DataEditorCtx<'_>, previews: &mut PreviewTooltipCache) {

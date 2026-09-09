@@ -114,6 +114,7 @@ impl MacroMetaUi {
                 draft_first: true,
             },
         )
+        .changed
     }
 
     pub fn paint_delay_popup(

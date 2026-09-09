@@ -25,6 +25,17 @@ fn play_ui_delete_sound(settings: &UserSettings) {
     let _ = settings;
 }
 
+fn set_program_identity(
+    catalog: &mut ProgramCatalog,
+    program: &str,
+    process_path: String,
+    window_title: String,
+    tags: Vec<String>,
+) -> Result<(), sqyre_persist::PersistError> {
+    catalog.set_process_binding(program, process_path, window_title)?;
+    catalog.set_program_tags(program, tags)
+}
+
 fn new_entity_name(form_name: &str, default_base: &str, exists: impl Fn(&str) -> bool) -> String {
     let base = match form_name.trim() {
         "" => default_base,
@@ -440,25 +451,25 @@ impl DataEditor {
             EditorTab::Programs => {
                 if let Some(old) = self.selected_program.clone() {
                     if old == new_name {
-                        catalog
-                            .set_process_binding(
-                                &old,
-                                self.form_process_path.clone(),
-                                self.form_window_title.clone(),
-                            )
-                            .and_then(|_| catalog.set_program_tags(&old, self.form_tags.clone()))
-                            .map(|_| ())
+                        set_program_identity(
+                            catalog,
+                            &old,
+                            self.form_process_path.clone(),
+                            self.form_window_title.clone(),
+                            self.form_tags.clone(),
+                        )
                     } else {
                         if overwrite {
                             let _ = catalog.delete_program(&new_name);
                         }
-                        catalog.rename_program(&old, &new_name).map(|_| {
-                            let _ = catalog.set_process_binding(
+                        catalog.rename_program(&old, &new_name).and_then(|_| {
+                            set_program_identity(
+                                catalog,
                                 &new_name,
                                 self.form_process_path.clone(),
                                 self.form_window_title.clone(),
-                            );
-                            let _ = catalog.set_program_tags(&new_name, self.form_tags.clone());
+                                self.form_tags.clone(),
+                            )?;
                             for m in macros.iter_mut() {
                                 m.rename_program(&old, &new_name);
                             }
@@ -470,17 +481,20 @@ impl DataEditor {
                             let _ = settings.rename_overlay_point_program(&old, &new_name);
                             overlay_settings_dirty = true;
                             self.selected_program = Some(new_name.clone());
+                            Ok(())
                         })
                     }
                 } else {
-                    catalog.create_program(&new_name).map(|_| {
-                        let _ = catalog.set_process_binding(
+                    catalog.create_program(&new_name).and_then(|_| {
+                        set_program_identity(
+                            catalog,
                             &new_name,
                             self.form_process_path.clone(),
                             self.form_window_title.clone(),
-                        );
-                        let _ = catalog.set_program_tags(&new_name, self.form_tags.clone());
+                            self.form_tags.clone(),
+                        )?;
                         self.selected_program = Some(new_name.clone());
+                        Ok(())
                     })
                 }
             }

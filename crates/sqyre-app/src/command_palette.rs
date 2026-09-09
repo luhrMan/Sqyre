@@ -326,14 +326,21 @@ fn catalog_kinds() -> &'static [CatalogKind] {
             open_title: "Open ScreenCap",
             new_title: None,
             icon: "camera",
-            open_keys: &["screencap", "screen", "capture", "screenshot", "goto"],
+            open_keys: &[
+                "screencap",
+                "screen",
+                "capture",
+                "screenshot",
+                "tools",
+                "goto",
+            ],
         },
         CatalogKind {
             tab: EditorTab::PixelCheck,
             open_title: "Open PixelCheck",
             new_title: None,
             icon: "crosshair",
-            open_keys: &["pixelcheck", "pixel", "match", "heatmap", "goto"],
+            open_keys: &["pixelcheck", "pixel", "match", "heatmap", "tools", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Points,
@@ -368,7 +375,7 @@ fn catalog_kinds() -> &'static [CatalogKind] {
             open_title: "Open Overlay",
             new_title: Some("New Overlay Button"),
             icon: "square",
-            open_keys: &["overlay", "button", "model", "goto"],
+            open_keys: &["overlay", "button", "model", "tools", "goto"],
         },
     ]
 }

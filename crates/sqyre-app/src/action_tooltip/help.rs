@@ -220,6 +220,8 @@ pub const DE_AREA_RIGHT: &str = "Right edge X of the search area.";
 pub const DE_AREA_BOTTOM: &str = "Bottom edge Y of the search area.";
 pub const DE_SCREENCAP_REF: &str =
     "Optional. Picking a search area or collection cell loads its bounds into LeftX/TopY/RightX/BottomY and suggests a filename.";
+pub const DE_SCREENCAP_NEW_ITEM: &str =
+    "Create a catalog item in the selected program using Name, with the preview screenshot as the Original icon.";
 pub const DE_COLLECTION_AREA: &str = "Search area used when capturing this collection.";
 pub const DE_COLLECTION_ROWS: &str = "Number of rows in the collection grid.";
 pub const DE_COLLECTION_COLS: &str = "Number of columns in the collection grid.";
@@ -239,13 +241,13 @@ pub const DE_OVERLAY_RADIUS: &str = "Corner roundness of the button.";
 pub const DE_OVERLAY_BORDER: &str = "Border thickness of the button.";
 pub const DE_OVERLAY_ICON: &str = "Optional Phosphor icon glyph on the button.";
 pub const DE_OVERLAY_GATE: &str =
-    "When enabled, the button only appears while an Image Search match is found in the search area (polled on an interval).";
+    "When enabled, the button only appears while an Image Search match is found in the search area (polled in the background).";
 pub const DE_OVERLAY_GATE_AREA: &str =
     "Catalog search area to capture each poll (program~name). Resolved with live monitor slots.";
 pub const DE_OVERLAY_GATE_ITEMS: &str =
     "Catalog items (icon templates) to look for — same as Image Search targets.";
 pub const DE_OVERLAY_GATE_INTERVAL: &str =
-    "Milliseconds between capture+match polls while the button's program focus gate allows it.";
+    "Milliseconds between capture+match polls. Polls run on a background thread so they do not wait for the main window.";
 
 // --- Variables panel ---
 
