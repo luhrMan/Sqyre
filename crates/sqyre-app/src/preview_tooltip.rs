@@ -297,7 +297,7 @@ impl PreviewTooltipCache {
     /// Embedded form-panel preview for a search area (uses form field coords).
     /// Returns the viewport rect and native image size (for heatmap alignment).
     /// Pass `None` for a coordinate that is a variable or non-literal expression.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // search-area panel: optional LTRB literals, force refresh, and view transform
     pub fn paint_search_area_panel(
         &mut self,
         ui: &mut egui::Ui,

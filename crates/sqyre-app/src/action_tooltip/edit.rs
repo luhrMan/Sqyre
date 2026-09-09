@@ -122,10 +122,12 @@ pub fn paint_edit_fields(
                     var_ref_field(
                         ui,
                         "Key",
-                        h::KEY,
                         key,
-                        known_vars,
-                        is_dark,
+                        VarTheme {
+                            known_vars,
+                            is_dark,
+                        },
+                        h::KEY,
                         W_VAR,
                         active_macro,
                     );
@@ -150,10 +152,12 @@ pub fn paint_edit_fields(
                 var_ref_field(
                     ui,
                     "Text",
-                    h::TYPE_TEXT,
                     text,
-                    known_vars,
-                    is_dark,
+                    VarTheme {
+                        known_vars,
+                        is_dark,
+                    },
+                    h::TYPE_TEXT,
                     W_VAR,
                     active_macro,
                 );
@@ -212,10 +216,12 @@ pub fn paint_edit_fields(
                 var_ref_field(
                     ui,
                     "Message",
-                    h::PAUSE_MESSAGE,
                     message,
-                    known_vars,
-                    is_dark,
+                    VarTheme {
+                        known_vars,
+                        is_dark,
+                    },
+                    h::PAUSE_MESSAGE,
                     W_TEXT,
                     active_macro,
                 );
@@ -324,10 +330,12 @@ pub fn paint_edit_fields(
                 var_ref_field(
                     ui,
                     "Destination",
-                    h::SAVE_DEST,
                     destination,
-                    known_vars,
-                    is_dark,
+                    VarTheme {
+                        known_vars,
+                        is_dark,
+                    },
+                    h::SAVE_DEST,
                     W_VAR,
                     active_macro,
                 );
@@ -369,12 +377,16 @@ pub fn paint_edit_fields(
         } => {
             edit_control_flow::paint_foreach_row(
                 ui,
-                name,
-                sources,
-                start_row,
-                end_row,
-                known_vars,
-                is_dark,
+                edit_control_flow::ForEachRowFields {
+                    name,
+                    sources,
+                    start_row,
+                    end_row,
+                },
+                VarTheme {
+                    known_vars,
+                    is_dark,
+                },
                 active_macro,
             );
         }
@@ -399,13 +411,15 @@ pub fn paint_edit_fields(
                     known_vars,
                     is_dark,
                 },
-                name,
-                targets,
-                search_area,
-                tolerance,
-                blur,
-                match_method,
-                detection,
+                edit_detect::ImageSearchFields {
+                    name,
+                    targets,
+                    search_area,
+                    tolerance,
+                    blur,
+                    match_method,
+                    detection,
+                },
             );
         }
         ActionKind::Ocr {
@@ -434,17 +448,19 @@ pub fn paint_edit_fields(
                     is_dark,
                 },
                 active_macro,
-                name,
-                target,
-                search_area,
-                output_variable,
-                blur,
-                min_threshold,
-                resize,
-                grayscale,
-                threshold_otsu,
-                threshold_invert,
-                detection,
+                edit_detect::OcrFields {
+                    name,
+                    target,
+                    search_area,
+                    output_variable,
+                    blur,
+                    min_threshold,
+                    resize,
+                    grayscale,
+                    threshold_otsu,
+                    threshold_invert,
+                    detection,
+                },
             );
         }
         ActionKind::FindPixel {
@@ -468,11 +484,13 @@ pub fn paint_edit_fields(
                 },
                 active_macro,
                 screen_click,
-                name,
-                search_area,
-                target_color,
-                color_tolerance,
-                detection,
+                edit_detect::FindPixelFields {
+                    name,
+                    search_area,
+                    target_color,
+                    color_tolerance,
+                    detection,
+                },
             );
         }
         ActionKind::NavigateSelect(data) => {
@@ -934,14 +952,12 @@ fn condition_operand_field(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn var_ref_field(
+pub(super) fn var_ref_field(
     ui: &mut egui::Ui,
     label: &str,
-    help_text: &str,
     value: &mut String,
-    known_vars: &KnownVariableNames,
-    is_dark: bool,
+    theme: VarTheme<'_>,
+    help_text: &str,
     desired_width: f32,
     active_macro: Option<&Macro>,
 ) {
@@ -950,10 +966,7 @@ fn var_ref_field(
         ui,
         label,
         value,
-        VarTheme {
-            known_vars,
-            is_dark,
-        },
+        theme,
         VarFieldOpts {
             desired_width,
             validation: &validation,
@@ -1367,10 +1380,12 @@ pub(super) fn list_columns_editor(
                 var_ref_field(
                     ui,
                     "Source",
-                    h::FOREACH_SOURCE,
                     &mut col.source,
-                    known_vars,
-                    is_dark,
+                    VarTheme {
+                        known_vars,
+                        is_dark,
+                    },
+                    h::FOREACH_SOURCE,
                     W_TEXT,
                     active_macro,
                 );

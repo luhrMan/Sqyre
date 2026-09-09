@@ -295,7 +295,7 @@ fn build_packed_template(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // match kernel: image geometry, packed template, method, and optional prep
 fn match_direct(
     search: &ImageBuf,
     pack: &PackedTemplate,
@@ -525,7 +525,7 @@ fn forward_fft_search(search: &ImageBuf, dft_w: usize, dft_h: usize) -> SearchFf
 }
 
 /// DFT cross-correlation of packed template vs search, then method-specific finish.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // match kernel: image geometry, packed template, method, and optional prep
 fn match_fft(
     search: &ImageBuf,
     pack: &PackedTemplate,

@@ -6,21 +6,14 @@
 use crate::action_tooltip::{
     apply_picker_result, paint_action_edit_header, paint_edit_fields, show_action_view_tip,
 };
-use crate::hotkey_record::HotkeyRecordUi;
-use crate::icon_cache::IconCache;
-use crate::key_record::KeyRecordUi;
-use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
+use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, TipUiCtx};
 use crate::pickers::{self, ActivePicker};
-use crate::preview_tooltip::PreviewTooltipCache;
 use crate::tree_chrome;
 use crate::widgets::SaveCancel;
 use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2, WidgetInfo, WidgetType};
 use sqyre_domain::{
     action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
-    KnownVariableNames,
 };
-use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
-use sqyre_persist::ProgramCatalog;
 use sqyre_persist::UserSettings;
 use sqyre_serialize::{action_from_map, action_to_map};
 use sqyre_ui_model::{
@@ -184,20 +177,11 @@ impl AddActionPicker {
 
     /// Draw the picker when open. Returns a freshly constructed blank [`Action`] when
     /// the user picks a tile (caller inserts it into the tree).
-    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         ctx: &egui::Context,
-        catalog: &ProgramCatalog,
-        icons: &mut IconCache,
-        previews: &mut PreviewTooltipCache,
+        tip: &mut TipUiCtx<'_>,
         macros: &[(String, Vec<String>)],
-        known_vars: &KnownVariableNames,
-        key_record: &mut KeyRecordUi,
-        hotkey_record: &mut HotkeyRecordUi,
-        macro_hotkeys: &MacroHotkeyBridge,
-        screen_click: &ScreenClickBridge,
-        compact_program_headers: bool,
         mut on_defaults_saved: impl FnMut(&AddActionPicker),
     ) -> Option<Action> {
         if !self.open {
@@ -316,25 +300,13 @@ impl AddActionPicker {
             }
         }
 
-        let is_dark = ctx.global_style().visuals.dark_mode;
+        tip.theme.is_dark = ctx.global_style().visuals.dark_mode;
         let defaults_saved = match &self.tip {
             Some(DefaultsTip::View { .. }) => {
-                self.show_defaults_view(ctx, catalog, icons, previews, known_vars, is_dark);
+                self.show_defaults_view(ctx, tip);
                 false
             }
-            Some(DefaultsTip::Edit { .. }) => self.show_defaults_edit(
-                ctx,
-                catalog,
-                icons,
-                previews,
-                macros,
-                known_vars,
-                key_record,
-                hotkey_record,
-                macro_hotkeys,
-                screen_click,
-                compact_program_headers,
-            ),
+            Some(DefaultsTip::Edit { .. }) => self.show_defaults_edit(ctx, tip, macros),
             None => false,
         };
         if defaults_saved {
@@ -354,15 +326,7 @@ impl AddActionPicker {
         picked
     }
 
-    fn show_defaults_view(
-        &self,
-        ctx: &egui::Context,
-        catalog: &ProgramCatalog,
-        icons: &mut IconCache,
-        previews: &mut PreviewTooltipCache,
-        known_vars: &KnownVariableNames,
-        is_dark: bool,
-    ) {
+    fn show_defaults_view(&self, ctx: &egui::Context, tip: &mut TipUiCtx<'_>) {
         let Some(DefaultsTip::View {
             action_type,
             action,
@@ -374,43 +338,34 @@ impl AddActionPicker {
             ctx,
             egui::Id::new(("action_default_view", action_type.as_str())),
             action,
-            &mut CatalogPaint {
-                catalog,
-                icons,
-                previews,
-            },
-            VarTheme {
-                known_vars,
-                is_dark,
-            },
+            &mut tip.paint,
+            tip.theme,
         );
     }
 
     /// Returns true when defaults were saved this frame.
-    #[allow(clippy::too_many_arguments)]
     fn show_defaults_edit(
         &mut self,
         ctx: &egui::Context,
-        catalog: &ProgramCatalog,
-        icons: &mut IconCache,
-        previews: &mut PreviewTooltipCache,
+        tip: &mut TipUiCtx<'_>,
         macros: &[(String, Vec<String>)],
-        known_vars: &KnownVariableNames,
-        key_record: &mut KeyRecordUi,
-        hotkey_record: &mut HotkeyRecordUi,
-        macro_hotkeys: &MacroHotkeyBridge,
-        screen_click: &ScreenClickBridge,
-        compact_program_headers: bool,
     ) -> bool {
         if !matches!(&self.tip, Some(DefaultsTip::Edit { .. })) {
             return false;
         }
 
+        let TipUiCtx {
+            paint,
+            theme,
+            bridges,
+            compact_program_headers,
+        } = tip;
+
         // Escape: close nested pickers first, then the edit tip.
         // Skip while key / chord / screen recording.
-        if !key_record.is_open()
-            && !hotkey_record.is_open()
-            && !screen_click.is_armed()
+        if !bridges.key_record.is_open()
+            && !bridges.hotkey_record.is_open()
+            && !bridges.screen_click.is_armed()
             && ctx.input(|i| i.key_pressed(Key::Escape))
         {
             if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
@@ -434,20 +389,16 @@ impl AddActionPicker {
             _ => return false,
         };
         let label = action_type_label(&type_key);
-        let is_dark = ctx.global_style().visuals.dark_mode;
+        let is_dark = theme.is_dark;
         let pastel = tree_chrome::rgba_pub(action_pastel_color(&type_key, is_dark));
 
         if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
             let result = pickers::show_active_picker(
                 ctx,
                 &mut edit.picker,
-                &mut CatalogPaint {
-                    catalog,
-                    icons,
-                    previews,
-                },
+                paint,
                 macros,
-                compact_program_headers,
+                *compact_program_headers,
             );
             apply_picker_result(&mut edit.draft, result);
         }
@@ -495,20 +446,17 @@ impl AddActionPicker {
                     if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
                         let mut fields = EditFieldsCtx {
                             paint: CatalogPaint {
-                                catalog,
-                                icons,
-                                previews,
+                                catalog: paint.catalog,
+                                icons: paint.icons,
+                                previews: paint.previews,
                             },
                             bridges: RecordBridges {
-                                key_record,
-                                hotkey_record,
-                                macro_hotkeys,
-                                screen_click,
+                                key_record: bridges.key_record,
+                                hotkey_record: bridges.hotkey_record,
+                                macro_hotkeys: bridges.macro_hotkeys,
+                                screen_click: bridges.screen_click,
                             },
-                            theme: VarTheme {
-                                known_vars,
-                                is_dark,
-                            },
+                            theme: *theme,
                             macros,
                             active_macro: None,
                         };
@@ -540,6 +488,7 @@ impl AddActionPicker {
         false
     }
 }
+
 
 fn reassign_uids(action: &mut Action) {
     action.id = ActionId::new();

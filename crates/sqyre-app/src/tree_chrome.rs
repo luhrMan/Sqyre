@@ -368,7 +368,7 @@ fn floating_scrollbar_overlay_width(ui: &egui::Ui) -> f32 {
 }
 
 /// Full tree-row label content. Tooltip show/hide is handled by `action_tooltip`.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // row paint: catalog, theme, highlight, pills cache, and chrome flags
 pub fn paint_action_row(
     ui: &mut egui::Ui,
     action: &Action,
