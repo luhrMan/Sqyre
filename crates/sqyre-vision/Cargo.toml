@@ -21,6 +21,7 @@ sqyre-ports = { path = "../sqyre-ports" }
 leptess = "0.14"
 dirs = { workspace = true }
 ureq = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
