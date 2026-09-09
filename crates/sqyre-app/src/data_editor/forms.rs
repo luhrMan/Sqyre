@@ -7,8 +7,10 @@ use super::helpers::{
 use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::{
-    paint_disk_preview, paint_preview_coord_chip, paint_preview_toolbar,
-    paint_zoomable_atlas_preview, paint_zoomable_collection_preview, show_file_hover, CardinalEdge,
+    area_size_from_opts, catalog_search_area_pixel_size, collection_size_label, paint_disk_preview,
+    paint_preview_coord_chip, paint_preview_toolbar, paint_search_area_preview_sizes,
+    paint_zoomable_atlas_preview, paint_zoomable_collection_preview, pixel_size_text,
+    show_file_hover, CardinalEdge,
 };
 use crate::overlay_icons;
 use crate::paint_ctx::CatalogPaint;
@@ -221,6 +223,7 @@ impl DataEditor {
         self.form_atlas_add.clear();
     }
 
+    /// Returns true when a tag was committed this frame (auto-Update).
     pub(crate) fn draw_form(
         &mut self,
         ui: &mut egui::Ui,
@@ -229,13 +232,14 @@ impl DataEditor {
         macros: &[Macro],
         active_macro: Option<&Macro>,
         settings: &mut UserSettings,
-    ) {
+    ) -> bool {
         let CatalogPaint {
             catalog,
             icons,
             previews,
             ..
         } = paint;
+        let mut tag_submit = false;
         let known = active_macro
             .map(collect_known_variable_names)
             .unwrap_or_default();
@@ -315,13 +319,14 @@ impl DataEditor {
                     "When Settings → while focused is on, these tags become the hotkey selection while this program owns focus.",
                 );
                 let macro_tag_completions = crate::macro_meta::collect_all_macro_tags(macros);
-                crate::widgets::tag_chip_editor(
+                tag_submit = crate::widgets::tag_chip_editor(
                     ui,
                     &mut self.form_tags,
                     &mut self.tag_draft,
                     &macro_tag_completions,
                     crate::widgets::TagChipOptions::default(),
-                );
+                )
+                .submitted;
             }
             EditorTab::Items => {
                 ui.heading("Item");
@@ -343,13 +348,14 @@ impl DataEditor {
                     .as_deref()
                     .map(|prog| collect_program_item_tags(catalog, prog))
                     .unwrap_or_default();
-                crate::widgets::tag_chip_editor(
+                tag_submit = crate::widgets::tag_chip_editor(
                     ui,
                     &mut self.form_tags,
                     &mut self.tag_draft,
                     &program_tags,
                     crate::widgets::TagChipOptions::default(),
-                );
+                )
+                .submitted;
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     help::label(ui, "Cols", help::DE_COLS);
@@ -481,7 +487,20 @@ impl DataEditor {
                 );
             }
             EditorTab::SearchAreas => {
-                ui.heading("Search Area");
+                let (lx, ty, rx, by) = form_desktop_area(
+                    catalog,
+                    self.form_monitor,
+                    &self.form_left,
+                    &self.form_top,
+                    &self.form_right,
+                    &self.form_bottom,
+                );
+                ui.horizontal(|ui| {
+                    ui.heading("Search Area");
+                    if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
+                        ui.weak(pixel_size_text(w, h));
+                    }
+                });
                 self.program_selector(ui, catalog, icons, settings);
                 ui.add_space(4.0);
                 self.paint_name_record_row(
@@ -493,17 +512,9 @@ impl DataEditor {
                 );
                 ui.weak("Bounds are relative to one monitor; integers or ${var}.");
                 self.paint_monitor_slot(ui);
-                let (lx, ty, rx, by) = form_desktop_area(
-                    catalog,
-                    self.form_monitor,
-                    &self.form_left,
-                    &self.form_top,
-                    &self.form_right,
-                    &self.form_bottom,
-                );
                 self.sync_coord_preview_view();
                 let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
-                let (rect, _) = previews.paint_search_area_panel(
+                let (rect, preview_image_size) = previews.paint_search_area_panel(
                     ui,
                     lx,
                     ty,
@@ -512,6 +523,7 @@ impl DataEditor {
                     force,
                     &mut self.coord_preview,
                 );
+                paint_search_area_preview_sizes(ui, rect, lx, ty, rx, by, preview_image_size);
                 paint_coord_chips(
                     ui,
                     rect,
@@ -685,7 +697,21 @@ impl DataEditor {
                 }
             }
             EditorTab::Collections => {
-                ui.heading("Collection");
+                let collection_area = self.selected_program.as_deref().and_then(|prog| {
+                    let sa = self.form_search_area.trim();
+                    if sa.is_empty() {
+                        return None;
+                    }
+                    catalog_search_area_pixel_size(catalog, prog, sa)
+                });
+                let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
+                let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
+                ui.horizontal(|ui| {
+                    ui.heading("Collection");
+                    if let Some(area) = collection_area {
+                        ui.weak(collection_size_label(area, rows, cols));
+                    }
+                });
                 self.program_selector(ui, catalog, icons, settings);
                 ui.add_space(4.0);
                 ui.label("Name").on_hover_text(help::DE_NAME);
@@ -763,8 +789,6 @@ impl DataEditor {
                     (self.selected_program.clone(), self.selected_entity.clone())
                 {
                     let path = catalog.collection_image_path(&prog, &col_name);
-                    let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
-                    let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
                     let key = (prog.clone(), col_name.clone());
                     if self.collection_preview_key.as_ref() != Some(&key) {
                         self.collection_preview.reset();
@@ -778,6 +802,7 @@ impl DataEditor {
                         path.as_path(),
                         rows,
                         cols,
+                        collection_area,
                         &mut self.collection_preview,
                         &mut replace,
                         capturing,
@@ -922,9 +947,10 @@ impl DataEditor {
             EditorTab::ScreenCap => {
                 ui.heading("ScreenCap");
                 ui.weak(
-                    "Set monitor-relative LeftX/TopY/RightX/BottomY (type, screen-record, or optional reference), name the file, then Save writes the framed preview screenshot to images/ScreenCap.",
+                    "Set monitor-relative LeftX/TopY/RightX/BottomY (type, screen-record, or optional reference), name the capture, then Save writes the framed preview to images/ScreenCap. New Item creates a catalog item with that name and the capture as Original.",
                 );
                 ui.add_space(4.0);
+                self.program_selector(ui, catalog, icons, settings);
                 self.paint_name_record_row(
                     ui,
                     screen_click,
@@ -979,6 +1005,9 @@ impl DataEditor {
                     &self.form_right,
                     &self.form_bottom,
                 );
+                if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
+                    ui.weak(pixel_size_text(w, h));
+                }
                 self.sync_coord_preview_view();
                 let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
                 // Keep Save + path hint below the preview (panel fills remaining height).
@@ -998,7 +1027,7 @@ impl DataEditor {
                     egui::vec2(ui.available_width(), preview_h),
                     egui::Layout::top_down(egui::Align::Min),
                     |ui| {
-                        let (rect, _) = previews.paint_search_area_panel(
+                        let (rect, preview_image_size) = previews.paint_search_area_panel(
                             ui,
                             lx,
                             ty,
@@ -1006,6 +1035,15 @@ impl DataEditor {
                             by,
                             force,
                             &mut self.coord_preview,
+                        );
+                        paint_search_area_preview_sizes(
+                            ui,
+                            rect,
+                            lx,
+                            ty,
+                            rx,
+                            by,
+                            preview_image_size,
                         );
                         paint_coord_chips(
                             ui,
@@ -1044,16 +1082,30 @@ impl DataEditor {
                 );
                 ui.add_space(8.0);
                 let saving = self.screen_cap_pending.is_some();
-                if ui
-                    .add_enabled(
-                        !saving,
-                        egui::Button::new(if saving { "Saving…" } else { "Save" }),
-                    )
-                    .clicked()
-                {
-                    self.save_screen_cap(catalog, previews);
-                    ui.ctx().request_repaint();
-                }
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(
+                            !saving,
+                            egui::Button::new(if saving { "Saving…" } else { "Save" }),
+                        )
+                        .clicked()
+                    {
+                        self.save_screen_cap(catalog, previews);
+                        ui.ctx().request_repaint();
+                    }
+                    if ui
+                        .add_enabled(
+                            !saving,
+                            egui::Button::new(
+                                egui::RichText::new("New Item").color(crate::theme::MACRO_START),
+                            ),
+                        )
+                        .on_hover_text(help::DE_SCREENCAP_NEW_ITEM)
+                        .clicked()
+                    {
+                        self.screen_cap_new_item = true;
+                    }
+                });
                 ui.weak(path_hint);
             }
             EditorTab::PixelCheck => {
@@ -1079,11 +1131,11 @@ impl DataEditor {
                 self.program_selector(ui, catalog, icons, settings);
                 if self.selected_program.is_none() {
                     ui.weak("Select a program, then New to add a button.");
-                    return;
+                    return false;
                 }
                 if self.selected_entity.is_none() {
                     ui.weak("Select a button from the list, or click New.");
-                    return;
+                    return false;
                 }
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
@@ -1381,6 +1433,7 @@ impl DataEditor {
                 });
             }
         }
+        tag_submit
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1508,6 +1561,9 @@ impl DataEditor {
                 &self.form_right,
                 &self.form_bottom,
             );
+            if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
+                ui.weak(pixel_size_text(w, h));
+            }
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
@@ -1543,7 +1599,7 @@ impl DataEditor {
                 egui::vec2(ui.available_width(), preview_h),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
-                    let (rect, _preview_image_size) = previews.paint_search_area_panel(
+                    let (rect, preview_image_size) = previews.paint_search_area_panel(
                         ui,
                         lx,
                         ty,
@@ -1587,6 +1643,7 @@ impl DataEditor {
                             );
                         }
                     }
+                    paint_search_area_preview_sizes(ui, rect, lx, ty, rx, by, preview_image_size);
                     paint_coord_chips(
                         ui,
                         rect,

@@ -170,7 +170,12 @@ impl PreviewTooltipCache {
                 let preview =
                     self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
                 response.clone().on_hover_ui(|ui| match &preview {
-                    Ok((tex, cap)) => paint_preview(ui, tex, cap),
+                    Ok((tex, cap)) => paint_preview(
+                        ui,
+                        tex,
+                        cap,
+                        matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection),
+                    ),
                     Err(err) => {
                         ui.label(caption.as_str());
                         ui.colored_label(crate::theme::error_fg(), err);
@@ -209,7 +214,12 @@ impl PreviewTooltipCache {
         match preview {
             // Tip/edit surface is capped around tip_max_width (~280); use the smaller
             // display fit so preview doesn't force the tooltip wider than view mode.
-            Ok((tex, cap)) => paint_preview(ui, &tex, &cap),
+            Ok((tex, cap)) => paint_preview(
+                ui,
+                &tex,
+                &cap,
+                matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection),
+            ),
             Err(err) => {
                 ui.colored_label(crate::theme::error_fg(), err);
             }
@@ -241,7 +251,12 @@ impl PreviewTooltipCache {
             Err(err) => Err((label.clone(), err)),
         };
         response.clone().on_hover_ui(|ui| match &preview {
-            Ok((tex, cap)) => paint_preview(ui, tex, cap),
+            Ok((tex, cap)) => paint_preview(
+                ui,
+                tex,
+                cap,
+                matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection),
+            ),
             Err((cap, err)) => {
                 ui.label(cap.as_str());
                 ui.colored_label(crate::theme::error_fg(), err);
@@ -300,7 +315,14 @@ impl PreviewTooltipCache {
             );
         };
         let key = format!("panel:sa:{left}:{top}:{right}:{bottom}");
-        let caption = format!("Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}");
+        let caption =
+            match crate::data_editor_preview::exclusive_pixel_size(left, top, right, bottom) {
+                Some((w, h)) => format!(
+                    "Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom} · area {}",
+                    crate::data_editor_preview::pixel_size_text(w, h)
+                ),
+                None => format!("Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}"),
+            };
         let preview = self.texture_for(
             ui.ctx(),
             &key,
@@ -851,17 +873,33 @@ fn point_caption(pt: &ProgramPoint) -> String {
 }
 
 fn search_area_caption(sa: &ProgramSearchArea) -> String {
-    format!(
+    let bounds = format!(
         "Left: {}, Top: {}, Right: {}, Bottom: {}",
         sa.left_x.as_display(),
         sa.top_y.as_display(),
         sa.right_x.as_display(),
         sa.bottom_y.as_display()
-    )
+    );
+    match crate::data_editor_preview::search_area_pixel_size(sa) {
+        Some((w, h)) => format!(
+            "{bounds} · area {}",
+            crate::data_editor_preview::pixel_size_text(w, h)
+        ),
+        None => bounds,
+    }
 }
 
 fn collection_caption(sa: &ProgramSearchArea, rows: i32, cols: i32) -> String {
-    format!("{} ({rows}×{cols})", search_area_caption(sa))
+    let bounds = search_area_caption(sa);
+    match crate::data_editor_preview::search_area_pixel_size(sa)
+        .and_then(|(w, h)| crate::data_editor_preview::collection_cell_pixel_size(w, h, rows, cols))
+    {
+        Some((cw, ch)) => format!(
+            "{bounds} · cell {} · {rows} rows × {cols} cols",
+            crate::data_editor_preview::pixel_size_text(cw, ch)
+        ),
+        None => format!("{bounds} · {rows} rows × {cols} cols"),
+    }
 }
 
 /// Literal numeric coordinate suitable for a live screen preview.
@@ -884,11 +922,21 @@ fn coord_to_literal(v: &ScalarValue) -> Option<i32> {
     }
 }
 
-fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str) {
+fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_image_size: bool) {
     let [tw, th] = tex.size();
     let size = fit_display(tw as f32, th as f32);
     ui.add(egui::Image::new((tex.id(), size)));
     ui.label(caption);
+    if show_image_size {
+        ui.label(
+            egui::RichText::new(format!(
+                "Preview {}",
+                crate::data_editor_preview::pixel_size_text(tw as i32, th as i32)
+            ))
+            .weak()
+            .small(),
+        );
+    }
 }
 
 fn panel_viewport_size(ui: &egui::Ui) -> Vec2 {
@@ -1311,11 +1359,11 @@ mod tests {
         };
         assert_eq!(
             search_area_caption(&sa),
-            "Left: 10, Top: 20, Right: 110, Bottom: 80"
+            "Left: 10, Top: 20, Right: 110, Bottom: 80 · area 100×60 px"
         );
         assert_eq!(
             collection_caption(&sa, 2, 2),
-            "Left: 10, Top: 20, Right: 110, Bottom: 80 (2×2)"
+            "Left: 10, Top: 20, Right: 110, Bottom: 80 · area 100×60 px · cell 50×30 px · 2 rows × 2 cols"
         );
     }
 

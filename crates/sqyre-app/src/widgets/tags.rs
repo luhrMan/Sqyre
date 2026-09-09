@@ -1,6 +1,6 @@
 //! Removable tag chips with draft entry and completion suggestions.
 
-use eframe::egui;
+use eframe::egui::{self, Key, Modifiers};
 
 /// Filter `all_tags` by substring match, excluding tags already present.
 pub fn tag_completion_options(
@@ -39,58 +39,212 @@ pub fn remove_tag(tags: &mut Vec<String>, tag: &str) -> bool {
     tags.len() != before
 }
 
+/// Result of one [`tag_chip_editor`] frame.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TagChipEdit {
+    /// `tags` was mutated (add or remove).
+    pub changed: bool,
+    /// A tag was committed (Enter, Add, or suggestion). Caller should persist/update.
+    pub submitted: bool,
+}
+
+/// `None` = draft field; `Some(i)` = suggestion index.
+/// Down/Right move onto and along suggestions; Up/Left return toward the field.
+fn step_tag_suggest_selection(selected: Option<usize>, len: usize, next: bool) -> Option<usize> {
+    if len == 0 {
+        return None;
+    }
+    if next {
+        Some(selected.map(|i| (i + 1).min(len - 1)).unwrap_or(0))
+    } else {
+        match selected {
+            None | Some(0) => None,
+            Some(i) => Some(i - 1),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct TagSuggestNav {
+    /// `None` keeps keyboard focus on the draft field.
+    selected: Option<usize>,
+    query: String,
+}
+
+#[derive(Clone, Copy, Default)]
+struct TagSuggestKeys {
+    next: bool,
+    prev: bool,
+    accept: bool,
+}
+
+/// Capture nav keys when suggestions were showing last frame.
+fn take_tag_suggest_keys(
+    ui: &mut egui::Ui,
+    was_open: bool,
+    selected: Option<usize>,
+    draft_has_text: bool,
+) -> TagSuggestKeys {
+    if !was_open {
+        return TagSuggestKeys::default();
+    }
+    let on_suggest = selected.is_some();
+    let keys = TagSuggestKeys {
+        next: ui.input(|i| {
+            i.key_pressed(Key::ArrowDown) || (on_suggest && i.key_pressed(Key::ArrowRight))
+        }),
+        prev: ui.input(|i| {
+            i.key_pressed(Key::ArrowUp) || (on_suggest && i.key_pressed(Key::ArrowLeft))
+        }),
+        accept: (on_suggest || draft_has_text) && ui.input(|i| i.key_pressed(Key::Enter)),
+    };
+    ui.input_mut(|i| {
+        i.consume_key(Modifiers::NONE, Key::ArrowDown);
+        i.consume_key(Modifiers::NONE, Key::ArrowUp);
+        if on_suggest {
+            i.consume_key(Modifiers::NONE, Key::ArrowLeft);
+            i.consume_key(Modifiers::NONE, Key::ArrowRight);
+        }
+        if keys.accept {
+            i.consume_key(Modifiers::NONE, Key::Enter);
+        }
+    });
+    keys
+}
+
 /// Paint removable chips + draft field (+ optional Add button) + suggestions.
 ///
-/// Returns `true` when `tags` changed.
+/// Returns whether `tags` changed and whether a tag was committed.
 pub fn tag_chip_editor(
     ui: &mut egui::Ui,
     tags: &mut Vec<String>,
     draft: &mut String,
     all_suggestions: &[String],
     opts: TagChipOptions<'_>,
-) -> bool {
-    let mut changed = false;
+) -> TagChipEdit {
+    let mut edit = TagChipEdit::default();
+    let nav_id = ui.id().with("tag_suggest_nav");
+    let open_id = nav_id.with("open");
+    let mut nav = ui
+        .ctx()
+        .data(|d| d.get_temp::<TagSuggestNav>(nav_id))
+        .unwrap_or_default();
+    let was_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(open_id))
+        .unwrap_or(false);
+    let keys = take_tag_suggest_keys(ui, was_open, nav.selected, !draft.trim().is_empty());
 
-    if opts.draft_first {
+    let tag_resp = if opts.draft_first {
         ui.horizontal_wrapped(|ui| {
-            paint_tag_draft(ui, draft, &opts, &mut changed, tags);
+            let resp = paint_tag_draft(ui, draft, &opts, &mut edit, tags);
             let label = ui.label("Tags:");
             if let Some(tip) = opts.draft_hover {
                 label.on_hover_text(tip);
             }
-            paint_tag_chips(ui, tags, opts.enabled, &mut changed);
-        });
+            paint_tag_chips(ui, tags, opts.enabled, &mut edit.changed);
+            resp
+        })
+        .inner
     } else {
         ui.horizontal_wrapped(|ui| {
-            paint_tag_chips(ui, tags, opts.enabled, &mut changed);
+            paint_tag_chips(ui, tags, opts.enabled, &mut edit.changed);
         });
+        ui.horizontal(|ui| paint_tag_draft(ui, draft, &opts, &mut edit, tags))
+            .inner
+    };
 
-        ui.horizontal(|ui| {
-            paint_tag_draft(ui, draft, &opts, &mut changed, tags);
+    let suggestions = if opts.enabled && !draft.trim().is_empty() {
+        tag_completion_options(draft, tags, all_suggestions, opts.suggestion_limit)
+    } else {
+        Vec::new()
+    };
+    if nav.query != *draft {
+        nav.query = draft.clone();
+        nav.selected = None;
+    }
+    if let Some(i) = nav.selected {
+        if i >= suggestions.len() {
+            nav.selected = suggestions.len().checked_sub(1);
+        }
+    }
+    if !suggestions.is_empty() && (was_open || tag_resp.has_focus()) {
+        if keys.next {
+            nav.selected = step_tag_suggest_selection(nav.selected, suggestions.len(), true);
+        }
+        if keys.prev {
+            nav.selected = step_tag_suggest_selection(nav.selected, suggestions.len(), false);
+        }
+        // First frame suggestions appear: Down was not consumed above.
+        if !was_open && nav.selected.is_none() && ui.input(|i| i.key_pressed(Key::ArrowDown)) {
+            nav.selected = step_tag_suggest_selection(None, suggestions.len(), true);
+            ui.input_mut(|i| {
+                i.consume_key(Modifiers::NONE, Key::ArrowDown);
+            });
+        }
+    } else if suggestions.is_empty() {
+        nav.selected = None;
+    }
+
+    let mut pending: Option<String> = None;
+    if keys.accept {
+        pending = nav
+            .selected
+            .and_then(|i| suggestions.get(i).cloned())
+            .or_else(|| {
+                let t = draft.trim();
+                (!t.is_empty()).then(|| t.to_string())
+            });
+    }
+
+    if opts.enabled && !suggestions.is_empty() {
+        if opts.suggestions_with_separator {
+            ui.separator();
+        }
+        ui.horizontal_wrapped(|ui| {
+            for (i, sug) in suggestions.iter().enumerate() {
+                let selected = nav.selected == Some(i);
+                if ui
+                    .add(egui::Button::new(sug).small().selected(selected))
+                    .clicked()
+                {
+                    pending = Some(sug.clone());
+                }
+            }
         });
     }
 
-    if opts.enabled && !draft.trim().is_empty() {
-        let suggestions =
-            tag_completion_options(draft, tags, all_suggestions, opts.suggestion_limit);
-        if !suggestions.is_empty() {
-            if opts.suggestions_with_separator {
-                ui.separator();
-            }
-            ui.horizontal_wrapped(|ui| {
-                for sug in suggestions {
-                    if ui.small_button(&sug).clicked() {
-                        if try_add_tag(tags, &sug) {
-                            changed = true;
-                        }
-                        draft.clear();
-                    }
-                }
-            });
+    if pending.is_none()
+        && opts.enabled
+        && tag_resp.lost_focus()
+        && ui.input(|i| i.key_pressed(Key::Enter))
+    {
+        let t = draft.trim();
+        if !t.is_empty() {
+            pending = Some(t.to_string());
         }
     }
 
-    changed
+    if let Some(raw) = pending {
+        if try_add_tag(tags, &raw) {
+            edit.changed = true;
+            edit.submitted = true;
+        }
+        draft.clear();
+        nav = TagSuggestNav::default();
+        ui.memory_mut(|m| m.request_focus(tag_resp.id));
+    }
+
+    let open = opts.enabled
+        && !draft.trim().is_empty()
+        && !suggestions.is_empty()
+        && (tag_resp.has_focus() || nav.selected.is_some());
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(nav_id, nav);
+        d.insert_temp(open_id, open);
+    });
+
+    edit
 }
 
 fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, changed: &mut bool) {
@@ -146,9 +300,9 @@ fn paint_tag_draft(
     ui: &mut egui::Ui,
     draft: &mut String,
     opts: &TagChipOptions<'_>,
-    changed: &mut bool,
+    edit: &mut TagChipEdit,
     tags: &mut Vec<String>,
-) {
+) -> egui::Response {
     let tag_te = egui::TextEdit::singleline(draft)
         .desired_width(140.0)
         .hint_text("Add tag…");
@@ -156,8 +310,6 @@ fn paint_tag_draft(
     if let Some(tip) = opts.draft_hover {
         tag_resp = tag_resp.on_hover_text(tip);
     }
-    // Singleline TextEdit loses focus on Enter, so check lost_focus — not has_focus.
-    let add_enter = tag_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     let add_clicked = opts.show_add_button
         && ui
             .add_enabled(
@@ -165,12 +317,14 @@ fn paint_tag_draft(
                 egui::Button::new(egui::RichText::new("Add tag").color(crate::theme::MACRO_START)),
             )
             .clicked();
-    if opts.enabled && (add_enter || add_clicked) {
+    if opts.enabled && add_clicked {
         if try_add_tag(tags, draft) {
-            *changed = true;
+            edit.changed = true;
+            edit.submitted = true;
         }
         draft.clear();
     }
+    tag_resp
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -222,5 +376,16 @@ mod tests {
         assert_eq!(tags, vec!["alpha", "beta"]);
         assert!(remove_tag(&mut tags, "alpha"));
         assert_eq!(tags, vec!["beta"]);
+    }
+
+    #[test]
+    fn suggest_selection_moves_from_field_and_back() {
+        assert_eq!(step_tag_suggest_selection(None, 3, true), Some(0));
+        assert_eq!(step_tag_suggest_selection(Some(0), 3, true), Some(1));
+        assert_eq!(step_tag_suggest_selection(Some(2), 3, true), Some(2));
+        assert_eq!(step_tag_suggest_selection(Some(0), 3, false), None);
+        assert_eq!(step_tag_suggest_selection(Some(2), 3, false), Some(1));
+        assert_eq!(step_tag_suggest_selection(None, 3, false), None);
+        assert_eq!(step_tag_suggest_selection(None, 0, true), None);
     }
 }
