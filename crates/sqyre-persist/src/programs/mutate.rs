@@ -12,6 +12,7 @@ use serde_yaml::{Mapping, Value};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_ports::PortError;
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 impl ProgramCatalog {
     pub fn programs_mut(&mut self) -> &mut BTreeMap<String, ProgramData> {
@@ -163,28 +164,38 @@ impl ProgramCatalog {
     /// Move `{old}.png` and `{old}~*.png` icon files to the new item name.
     fn rename_item_icon_files(&self, program: &str, old: &str, new: &str) {
         let dir = self.icons_dir(program);
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            return;
-        };
         let prefix = format!("{old}{PROGRAM_DELIMITER}");
         let legacy = format!("{old}.png");
-        for entry in rd.flatten() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            let dest_name = if name.as_ref() == legacy {
+        visit_item_icon_files(&dir, old, |path, name| {
+            let dest_name = if name == legacy {
                 format!("{new}.png")
-            } else if name.starts_with(&prefix) && name.ends_with(".png") {
-                format!("{new}{PROGRAM_DELIMITER}{}", &name[prefix.len()..])
             } else {
-                continue;
+                format!("{new}{PROGRAM_DELIMITER}{}", &name[prefix.len()..])
             };
             let dest = dir.join(dest_name);
-            let _ = std::fs::rename(entry.path(), dest);
-        }
+            let _ = std::fs::rename(path, dest);
+        });
     }
 
     pub fn delete_item(&mut self, program: &str, name: &str) -> Result<()> {
-        delete_named_entity(self, program, name, "item", |p| &mut p.items)
+        delete_named_entity(self, program, name, "item", |p| &mut p.items)?;
+        if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
+            self.trash_item_icon_files(program, name);
+        }
+        Ok(())
+    }
+
+    /// Move `{name}.png` and `{name}~*.png` into `images/ScreenCap/trash/{program}/`.
+    fn trash_item_icon_files(&self, program: &str, name: &str) {
+        let dir = self.icons_dir(program);
+        let trash = self.screen_cap_trash_dir(program);
+        if std::fs::create_dir_all(&trash).is_err() {
+            return;
+        }
+        visit_item_icon_files(&dir, name, |path, file_name| {
+            let dest = unique_dest(&trash, file_name);
+            let _ = std::fs::rename(path, dest);
+        });
     }
 
     pub fn upsert_point(&mut self, program: &str, point: ProgramPoint) -> Result<()> {
@@ -426,6 +437,46 @@ impl ProgramCatalog {
         }
         out.bump_generation();
         out
+    }
+}
+
+fn visit_item_icon_files(dir: &Path, item: &str, mut visit: impl FnMut(PathBuf, &str)) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let prefix = format!("{item}{PROGRAM_DELIMITER}");
+    let legacy = format!("{item}.png");
+    for entry in rd.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name == legacy || (name.starts_with(&prefix) && name.ends_with(".png")) {
+            visit(entry.path(), name);
+        }
+    }
+}
+
+fn unique_dest(dir: &Path, file_name: &str) -> PathBuf {
+    let dest = dir.join(file_name);
+    if !dest.exists() {
+        return dest;
+    }
+    let stem = dest
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(file_name);
+    let ext = dest.extension().and_then(|s| s.to_str()).unwrap_or("png");
+    let mut n = 2u32;
+    loop {
+        let candidate = dir.join(format!("{stem}_{n}.{ext}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+        if n == u32::MAX {
+            return candidate;
+        }
+        n += 1;
     }
 }
 

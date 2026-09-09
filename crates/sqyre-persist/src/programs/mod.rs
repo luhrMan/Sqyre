@@ -124,6 +124,15 @@ impl ProgramCatalog {
         confined_join_or_invalid(&self.images_root().join("icons"), program)
     }
 
+    fn screen_cap_dir(&self) -> PathBuf {
+        self.images_root().join("ScreenCap")
+    }
+
+    /// `images/ScreenCap/trash/{program}` — deleted item icons land here.
+    fn screen_cap_trash_dir(&self, program: &str) -> PathBuf {
+        confined_join_or_invalid(&self.screen_cap_dir().join("trash"), program)
+    }
+
     pub fn masks_dir(&self, program: &str) -> PathBuf {
         confined_join_or_invalid(&self.images_root().join("masks"), program)
     }
@@ -650,6 +659,83 @@ Game:
         );
         // Items stay under the renamed program entry (names unchanged).
         assert!(cat.get("Beta").unwrap().items.contains_key("Potion"));
+    }
+
+    #[test]
+    fn delete_item_moves_icons_to_screencap_trash() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let icons = images.join("icons").join("Alpha");
+        std::fs::create_dir_all(&icons).unwrap();
+        std::fs::write(icons.join("Potion.png"), b"legacy").unwrap();
+        std::fs::write(icons.join("Potion~Original.png"), b"orig").unwrap();
+        std::fs::write(icons.join("Potion~Alt.png"), b"alt").unwrap();
+        std::fs::write(icons.join("Other~Original.png"), b"keep").unwrap();
+
+        cat.delete_item("Alpha", "Potion").unwrap();
+
+        assert!(!cat.get("Alpha").unwrap().items.contains_key("Potion"));
+        assert!(!icons.join("Potion.png").exists());
+        assert!(!icons.join("Potion~Original.png").exists());
+        assert!(!icons.join("Potion~Alt.png").exists());
+        assert_eq!(
+            std::fs::read(icons.join("Other~Original.png")).unwrap(),
+            b"keep"
+        );
+        let trash = images.join("ScreenCap").join("trash").join("Alpha");
+        assert_eq!(std::fs::read(trash.join("Potion.png")).unwrap(), b"legacy");
+        assert_eq!(
+            std::fs::read(trash.join("Potion~Original.png")).unwrap(),
+            b"orig"
+        );
+        assert_eq!(std::fs::read(trash.join("Potion~Alt.png")).unwrap(), b"alt");
+    }
+
+    #[test]
+    fn delete_item_trashed_icons_do_not_overwrite() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let icons = images.join("icons").join("Alpha");
+        let trash = images.join("ScreenCap").join("trash").join("Alpha");
+        std::fs::create_dir_all(&icons).unwrap();
+        std::fs::create_dir_all(&trash).unwrap();
+        std::fs::write(icons.join("Potion~Original.png"), b"new").unwrap();
+        std::fs::write(trash.join("Potion~Original.png"), b"old").unwrap();
+
+        cat.delete_item("Alpha", "Potion").unwrap();
+
+        assert_eq!(
+            std::fs::read(trash.join("Potion~Original.png")).unwrap(),
+            b"old"
+        );
+        assert_eq!(
+            std::fs::read(trash.join("Potion~Original_2.png")).unwrap(),
+            b"new"
+        );
     }
 
     #[test]
