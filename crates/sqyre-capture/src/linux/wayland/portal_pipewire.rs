@@ -38,6 +38,8 @@ const FRESH_CAPTURE_BUDGET: Duration = Duration::from_millis(200);
 /// Brief no-kick wait only when a region frame arrived very recently (continuous /
 /// max-framerate streams). Stale caches skip this and kick without waiting.
 const SPONTANEOUS_WAIT: Duration = Duration::from_millis(16);
+/// Overlay visibility polls: wait this long for a spontaneous frame, never kick.
+const QUIET_CAPTURE_WAIT: Duration = Duration::from_millis(150);
 /// Region copy older than this → treat as stale and kick without spontaneous wait.
 const STALE_REGION_AGE: Duration = Duration::from_millis(40);
 /// Post-kick wait slices (short first; kick runs concurrently so we poll soon).
@@ -349,6 +351,22 @@ impl PortalCapturer {
         );
     }
 
+    /// Wait for a newer overlapping PipeWire frame without mapping a kick surface.
+    fn wait_for_spontaneous_stream_frame(&self, rect: DesktopRect) -> bool {
+        let min_gen = {
+            let slot = self.frame.0.lock();
+            region_generation(&slot, rect)
+        };
+        let after = wait_until_region_after(
+            &self.frame.0,
+            &self.frame.1,
+            rect,
+            min_gen,
+            QUIET_CAPTURE_WAIT,
+        );
+        after > min_gen
+    }
+
     /// Open damage kick once (layer-shell, else windowed-xdg). `false` if neither.
     fn ensure_compositor_kick(&self) -> bool {
         let mut slot = self.kick.lock();
@@ -392,6 +410,16 @@ impl PortalCapturer {
     ) -> Result<RgbCapture, CaptureError> {
         self.wait_for_overlapping_stream_frame(rect);
         self.capture_rect_rgb_ref(rect)
+    }
+
+    /// Crop after waiting briefly for a spontaneous overlapping frame (no kick).
+    /// Second value is true when the overlapping stream copied a newer dest.
+    pub fn capture_rect_rgb_quiet_ref(
+        &self,
+        rect: DesktopRect,
+    ) -> Result<(RgbCapture, bool), CaptureError> {
+        let fresh = self.wait_for_spontaneous_stream_frame(rect);
+        Ok((self.capture_rect_rgb_ref(rect)?, fresh))
     }
 
     fn crop_cached_rgba(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {

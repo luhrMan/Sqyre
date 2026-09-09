@@ -64,6 +64,14 @@ impl OsCapturer {
         self.capture_rect_rgb_ref(rect)
     }
 
+    /// GDI capture is always live; identical to [`Self::capture_rect_rgb_ref`].
+    pub fn capture_rect_rgb_quiet_ref(
+        &self,
+        rect: DesktopRect,
+    ) -> Result<(RgbCapture, bool), CaptureError> {
+        self.capture_rect_rgb_ref(rect).map(|rgb| (rgb, true))
+    }
+
     /// Virtual desktop bounds (`&self`).
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         let _guard = self.inner.lock();
