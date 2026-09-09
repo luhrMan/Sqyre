@@ -19,6 +19,8 @@ use std::sync::atomic::Ordering;
 /// host with `cargo run -p sqyre-overlay --features sandbox --bin overlay_sandbox`.
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
+    app.macro_overlay
+        .set_visibility_map(app.overlay_visibility.found_map());
     let moves = app.macro_overlay.drain_moves();
     if !moves.is_empty() {
         app.data_editor.apply_overlay_relocations(
@@ -45,11 +47,14 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         .settings()
         .image_search_close_matches_distance;
     app.overlay_visibility
-        .tick(ctx, &buttons, &app.workspace.catalog, close_dist);
-    let visible: Vec<_> = buttons
-        .into_iter()
-        .filter(|b| app.overlay_visibility.allows_draw(b))
-        .collect();
+        .set_paused(app.run_session.state.running.load(Ordering::SeqCst));
+    app.overlay_visibility.tick(
+        ctx,
+        &buttons,
+        &app.workspace.catalog,
+        close_dist,
+        app.macro_overlay.last_foreign_focus(),
+    );
     let preview = app.data_editor.overlay_edit_preview();
     let relocate = app.data_editor.overlay_relocate_mode();
     let running_macro = if app.run_session.state.running.load(Ordering::SeqCst)
@@ -65,7 +70,7 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     };
     app.macro_overlay.sync(
         ctx,
-        &visible,
+        &buttons,
         preview.as_ref(),
         &app.workspace.catalog,
         &app.pending_hotkey_macros,

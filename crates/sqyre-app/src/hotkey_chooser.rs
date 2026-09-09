@@ -3,7 +3,7 @@
 use crate::SqyreApp;
 use eframe::egui::{self, Pos2, Vec2, ViewportBuilder, ViewportId};
 use sqyre_hotkeys::{HotkeyTrigger, MacroHotkeyBinding};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 const CHOOSER_ID: &str = "sqyre_hotkey_chooser";
 const MENU_OFFSET: Vec2 = Vec2::new(12.0, 12.0);
@@ -70,6 +70,32 @@ pub(crate) fn group_pending_by_chord(
             Some((chord_key, trigger, names))
         })
         .collect()
+}
+
+/// Split pending names into hotkey-chord groups vs direct starts.
+///
+/// Overlay button clicks share the hotkey queue. [`group_pending_by_chord`]
+/// skips macros with no chord, so those names (and unknown/case-mismatched
+/// names) must still be started by exact name.
+pub(crate) fn partition_pending(
+    pending: &[String],
+    macros: &[sqyre_domain::Macro],
+) -> (Vec<(String, HotkeyTrigger, Vec<String>)>, Vec<String>) {
+    let groups = group_pending_by_chord(pending, macros);
+    let in_group: HashSet<&str> = groups
+        .iter()
+        .flat_map(|(_, _, names)| names.iter().map(String::as_str))
+        .collect();
+    let mut seen = HashSet::new();
+    let mut direct = Vec::new();
+    for name in pending {
+        let n = name.as_str();
+        if n.trim().is_empty() || in_group.contains(n) || !seen.insert(n) {
+            continue;
+        }
+        direct.push(name.clone());
+    }
+    (groups, direct)
 }
 
 /// Desktop cursor in physical pixels, when available.
@@ -351,5 +377,27 @@ mod tests {
         let groups = group_pending_by_chord(&pending, &macros);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].2, vec!["A".to_string(), "B".to_string()]);
+    }
+
+    #[test]
+    fn overlay_macros_without_hotkey_start_directly() {
+        let macros = vec![
+            m("Hot", &["f1"], "press"),
+            Macro::new("NoKey", 0, Vec::new()),
+        ];
+        let pending = vec!["NoKey".into(), "Hot".into(), "NoKey".into()];
+        let (groups, direct) = partition_pending(&pending, &macros);
+        assert_eq!(direct, vec!["NoKey".to_string()]);
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].2, vec!["Hot".to_string()]);
+    }
+
+    #[test]
+    fn unknown_pending_name_is_direct() {
+        let macros = vec![m("Hot", &["f1"], "press")];
+        let pending = vec!["Missing".into()];
+        let (groups, direct) = partition_pending(&pending, &macros);
+        assert!(groups.is_empty());
+        assert_eq!(direct, vec!["Missing".to_string()]);
     }
 }

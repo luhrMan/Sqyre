@@ -293,7 +293,7 @@ pub const DEFAULT_OVERLAY_GATE_TOLERANCE: f64 = 0.95;
 /// Default Image Search blur for overlay visibility gates.
 pub const DEFAULT_OVERLAY_GATE_BLUR: i32 = 5;
 /// Default poll interval for overlay visibility gates.
-pub const DEFAULT_OVERLAY_GATE_INTERVAL_MS: u64 = 1000;
+pub const DEFAULT_OVERLAY_GATE_INTERVAL_MS: u64 = 250;
 pub const MIN_OVERLAY_GATE_INTERVAL_MS: u64 = 100;
 pub const MAX_OVERLAY_GATE_INTERVAL_MS: u64 = 60_000;
 

@@ -17,6 +17,7 @@ use sqyre_persist::{
     OverlayButtonConfig, ProgramCatalog, DEFAULT_OVERLAY_BUTTON_SIZE, GENERAL_PROGRAM,
     MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
 };
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -46,7 +47,9 @@ pub struct OverlayButtonMove {
 
 const FOCUS_POLL: Duration = Duration::from_millis(500);
 const FOCUS_ERR_LOG_EVERY: Duration = Duration::from_secs(5);
-/// Fullscreen XWayland often reports no focus briefly; hide only after it sticks.
+/// Fullscreen XWayland often reports no focus for the whole session.
+/// Clear `cached` after this so focus-only buttons hide, but keep `last_foreign`
+/// so image-gated overlays keep specs and keep polling.
 const NONE_HIDE_AFTER: Duration = Duration::from_millis(1500);
 /// Overlay click steals focus to Sqyre briefly; hide only if the user stays on Sqyre.
 const OUR_HIDE_AFTER: Duration = Duration::from_millis(1500);
@@ -71,6 +74,8 @@ pub struct MacroOverlay {
     pending_chooser: Arc<Mutex<Option<crate::x11_buttons::HotkeyChooserResult>>>,
     #[cfg(target_os = "linux")]
     last_relocate: Option<bool>,
+    /// Image-gate found map shared with [`crate::x11_buttons`] (Linux).
+    visibility: Arc<Mutex<HashMap<String, bool>>>,
 }
 
 struct FocusSlot {
@@ -125,6 +130,7 @@ impl MacroOverlay {
             pending_chooser: Arc::new(Mutex::new(None)),
             #[cfg(target_os = "linux")]
             last_relocate: None,
+            visibility: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -203,6 +209,11 @@ impl MacroOverlay {
         *self.running_macro.lock() = name;
     }
 
+    /// Shared image-gate found map (X11 host maps/unmaps without waiting for ROOT).
+    pub fn set_visibility_map(&mut self, map: Arc<Mutex<HashMap<String, bool>>>) {
+        self.visibility = map;
+    }
+
     /// Enable/disable drag-to-relocate (move cursor + no macro enqueue on click).
     pub fn set_relocate_mode(&mut self, enabled: bool) {
         #[cfg(target_os = "linux")]
@@ -250,7 +261,7 @@ impl MacroOverlay {
         }
 
         self.ensure_focus_poller(ctx);
-        let focus = self.resolve_focus();
+        let (focus, last_foreign) = self.resolve_focus_views();
         let preview_id = preview.map(|b| b.id.as_str());
         let mut any_gated = false;
         let mut gated_skips = 0usize;
@@ -268,7 +279,8 @@ impl MacroOverlay {
             let gated = button_is_focus_gated(btn);
             if gated {
                 any_gated = true;
-                if !program_owns_focus(catalog, &btn.program, focus.as_ref()) {
+                let win = focus_for_overlay_button(btn, focus.as_ref(), last_foreign.as_ref());
+                if !keep_focus_gated_button(btn, catalog, win) {
                     gated_skips += 1;
                     continue;
                 }
@@ -322,7 +334,13 @@ impl MacroOverlay {
                 }
                 let native: Vec<NativeButtonSpec> = specs
                     .iter()
-                    .map(|d| spec_from_config(&d.cfg, d.busy, ctx.pixels_per_point()))
+                    .map(|d| {
+                        let mut spec = spec_from_config(&d.cfg, d.busy, ctx.pixels_per_point());
+                        if preview_id == Some(spec.id.as_str()) {
+                            spec.visibility_gated = false;
+                        }
+                        spec
+                    })
                     .collect();
                 if self.last_native_specs.as_ref() != Some(&native) {
                     host.set_buttons(native.clone());
@@ -347,6 +365,7 @@ impl MacroOverlay {
             Arc::clone(&self.pending_moves),
             Arc::clone(&self.running_macro),
             Arc::clone(&self.pending_chooser),
+            Arc::clone(&self.visibility),
         ) {
             Ok(host) => {
                 note("overlay: using native X11 button host (direct enqueue)");
@@ -387,7 +406,13 @@ impl MacroOverlay {
         }
     }
 
-    fn resolve_focus(&mut self) -> Option<WindowInfo> {
+    /// Last real foreign window — image-gated buttons keep using this when
+    /// fullscreen XWayland reports no active window (`cached` may be empty).
+    pub fn last_foreign_focus(&self) -> Option<WindowInfo> {
+        self.focus_slot.lock().last_foreign.clone()
+    }
+
+    fn resolve_focus_views(&mut self) -> (Option<WindowInfo>, Option<WindowInfo>) {
         let mut g = self.focus_slot.lock();
         if let Some(err) = g.last_err.take() {
             let now = Instant::now();
@@ -400,7 +425,7 @@ impl MacroOverlay {
                 note(&format!("overlay: get_active_window failed: {err}"));
             }
         }
-        g.cached.clone()
+        (g.cached.clone(), g.last_foreign.clone())
     }
 }
 
@@ -421,8 +446,10 @@ fn focus_poll_loop(focus_slot: Arc<Mutex<FocusSlot>>, stop: Arc<AtomicBool>, ctx
                 g.our_since = None;
                 let started = *g.none_since.get_or_insert_with(Instant::now);
                 let repaint = if started.elapsed() >= NONE_HIDE_AFTER {
-                    // Sustained no-focus (alt-tab to Wayland / desktop) — hide gated buttons.
-                    clear_focus_gate(&mut g)
+                    // Sustained no-focus: hide focus-only overlays, but keep
+                    // last_foreign so image-gated buttons stay on the X11 host
+                    // (fullscreen games often report None for the whole session).
+                    hide_cached_keep_foreign(&mut g)
                 } else {
                     // Brief None blip (fullscreen flicker) — keep last foreign while gate is live.
                     hold_last_foreign(&mut g)
@@ -500,12 +527,52 @@ fn clear_focus_gate(g: &mut FocusSlot) -> bool {
     had
 }
 
+/// Hide focus-only overlays after sustained None, but keep `last_foreign` so
+/// image-gated buttons can stay mapped and keep polling.
+fn hide_cached_keep_foreign(g: &mut FocusSlot) -> bool {
+    let had = g.cached.take().is_some();
+    if had {
+        note("overlay: none-focus cleared cached (keep last_foreign for image gate)");
+        sqyre_capture::mark_site("overlay:none-hide-cached");
+    }
+    had
+}
+
 /// Keep showing the last real foreign window while a grace timer is active.
 /// No-op when the gate was already cleared (`last_foreign` is None).
 fn hold_last_foreign(g: &mut FocusSlot) -> bool {
     let before = g.cached.as_ref().map(focus_identity_key);
     g.cached = g.last_foreign.clone();
     before != g.cached.as_ref().map(focus_identity_key)
+}
+
+/// Image-gated buttons keep the last game through fullscreen "no focus" reports.
+fn focus_for_overlay_button<'a>(
+    btn: &OverlayButtonConfig,
+    cached: Option<&'a WindowInfo>,
+    last_foreign: Option<&'a WindowInfo>,
+) -> Option<&'a WindowInfo> {
+    if button_is_focus_gated(btn) && btn.visibility_gate.is_active() {
+        cached.or(last_foreign)
+    } else {
+        cached
+    }
+}
+
+/// Focus-gated overlay: show when the bound program owns focus.
+///
+/// Fullscreen XWayland often reports no active window for the whole session
+/// (`win` is None). Image-gated buttons stay hosted so the found-map can
+/// map/unmap without waiting for an alt-tab to populate `last_foreign`.
+fn keep_focus_gated_button(
+    btn: &OverlayButtonConfig,
+    catalog: &ProgramCatalog,
+    win: Option<&WindowInfo>,
+) -> bool {
+    if program_owns_focus(catalog, &btn.program, win) {
+        return true;
+    }
+    btn.visibility_gate.is_active() && win.is_none()
 }
 
 struct ButtonDraw {
@@ -592,6 +659,7 @@ fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeBu
         ],
         tip: btn.macro_name.trim().to_string(),
         busy,
+        visibility_gated: btn.visibility_gate.is_active(),
     }
 }
 
@@ -776,7 +844,7 @@ mod tests {
     }
 
     #[test]
-    fn none_hide_grace_clears_last_foreign() {
+    fn none_hide_grace_clears_cached_keeps_last_foreign() {
         let mut g = FocusSlot {
             cached: None,
             last_foreign: None,
@@ -787,12 +855,23 @@ mod tests {
         };
         apply_active_focus(&mut g, &wine_win("Mistfall Hunter"));
         g.none_since = Some(Instant::now() - NONE_HIDE_AFTER - Duration::from_millis(1));
-        assert!(clear_focus_gate(&mut g));
+        assert!(hide_cached_keep_foreign(&mut g));
         assert!(g.cached.is_none());
-        assert!(g.last_foreign.is_none());
-        // Mid-grace hold after clear must stay empty (no resurrection).
-        assert!(!hold_last_foreign(&mut g));
-        assert!(g.cached.is_none());
+        assert_eq!(
+            g.last_foreign.as_ref().map(|w| w.title.as_str()),
+            Some("Mistfall Hunter")
+        );
+        // Image-gated buttons still resolve via last_foreign.
+        let mut btn = OverlayButtonConfig::new("g", "Mistfall Hunter");
+        btn.visibility_gate.mode = sqyre_persist::OverlayVisibilityMode::ShowWhenFound;
+        assert!(
+            focus_for_overlay_button(&btn, g.cached.as_ref(), g.last_foreign.as_ref()).is_some()
+        );
+        // Focus-only buttons stay hidden while cached is empty.
+        btn.visibility_gate.mode = sqyre_persist::OverlayVisibilityMode::Off;
+        assert!(
+            focus_for_overlay_button(&btn, g.cached.as_ref(), g.last_foreign.as_ref()).is_none()
+        );
     }
 
     #[test]
@@ -817,6 +896,16 @@ mod tests {
             Some(&wine_win("Other Game"))
         ));
         assert!(!program_owns_focus(&catalog, "Mistfall Hunter", None));
+        let mut gated = OverlayButtonConfig::new("g", "Mistfall Hunter");
+        gated.visibility_gate.mode = sqyre_persist::OverlayVisibilityMode::ShowWhenFound;
+        assert!(keep_focus_gated_button(&gated, &catalog, None));
+        assert!(!keep_focus_gated_button(
+            &gated,
+            &catalog,
+            Some(&wine_win("Other Game"))
+        ));
+        gated.visibility_gate.mode = sqyre_persist::OverlayVisibilityMode::Off;
+        assert!(!keep_focus_gated_button(&gated, &catalog, None));
     }
 
     #[test]

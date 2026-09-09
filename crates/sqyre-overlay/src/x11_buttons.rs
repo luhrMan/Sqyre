@@ -21,7 +21,7 @@ use crate::raster::{self, ButtonPaint, TIP_BG_RGB, TIP_CORNER_PX};
 use egui::Context as EguiContext;
 use parking_lot::Mutex;
 use sqyre_capture::{
-    mark_site, note, register_secondary_x_display, unregister_secondary_x_display,
+    event_log, mark_site, note, register_secondary_x_display, unregister_secondary_x_display,
     OVERLAY_TIP_WM_TITLE, OVERLAY_WM_TITLE,
 };
 use std::collections::HashMap;
@@ -83,6 +83,8 @@ pub struct NativeButtonSpec {
     /// Hover tip text (label / display name). Empty = no tip.
     pub tip: String,
     pub busy: bool,
+    /// When true, the host maps this button only while [`HostState`] visibility says found.
+    pub visibility_gated: bool,
 }
 
 /// Desktop position committed after a relocate-mode drag (root coordinates).
@@ -133,6 +135,7 @@ impl X11ButtonHost {
         pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
         running_macro: Arc<Mutex<Option<String>>>,
         pending_chooser: Arc<Mutex<Option<HotkeyChooserResult>>>,
+        visibility: Arc<Mutex<HashMap<String, bool>>>,
     ) -> Result<Self, String> {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
@@ -146,6 +149,7 @@ impl X11ButtonHost {
                     pending_moves,
                     running_macro,
                     pending_chooser,
+                    visibility,
                     stop_t,
                 )
             })
@@ -208,6 +212,7 @@ struct LiveButton {
     armed: bool,
     hovered: bool,
     busy_phase: f32,
+    mapped: bool,
 }
 
 struct TipWindow {
@@ -265,6 +270,8 @@ struct HostState {
     pending: Arc<Mutex<Vec<String>>>,
     pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
     pending_chooser: Arc<Mutex<Option<HotkeyChooserResult>>>,
+    /// Image-gate found map (id → show). Empty / missing → hide gated buttons.
+    visibility: Arc<Mutex<HashMap<String, bool>>>,
     wake: Option<EguiContext>,
     relocate_mode: bool,
     drag: Option<DragState>,
@@ -281,6 +288,7 @@ fn host_loop(
     pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
     running_macro: Arc<Mutex<Option<String>>>,
     pending_chooser: Arc<Mutex<Option<HotkeyChooserResult>>>,
+    visibility: Arc<Mutex<HashMap<String, bool>>>,
     stop: Arc<AtomicBool>,
 ) {
     // SAFETY: connects to the default display; pointer is owned by this thread
@@ -321,6 +329,7 @@ fn host_loop(
         pending,
         pending_moves,
         pending_chooser,
+        visibility,
         wake: None,
         relocate_mode: false,
         drag: None,
@@ -378,6 +387,7 @@ fn host_loop(
             last_x_growth = Instant::now();
             stall_raised = false;
         }
+        apply_gate_visibility(&mut state);
 
         // After macros, the game often restacks above OR hits. Re-raise when the
         // X queue goes quiet (no events at all — not only pointer).
@@ -405,6 +415,15 @@ fn host_loop(
             stall_raised = true;
         }
 
+        // Overlay clicks enqueue here, but start_macro only runs on a ROOT frame.
+        // A single request_repaint is often ignored while a fullscreen game has
+        // focus (same reason hotkeys use hotkey_wake). Keep nudging until drain.
+        if !state.pending.lock().is_empty() {
+            if let Some(ctx) = &state.wake {
+                ctx.request_repaint();
+            }
+        }
+
         let any_busy = state.buttons.values().any(|b| b.spec.busy);
         if any_busy && last_busy_tick.elapsed() >= Duration::from_millis(BUSY_TICK_MS) {
             last_busy_tick = Instant::now();
@@ -419,6 +438,9 @@ fn host_loop(
                     btn.busy_phase = (btn.busy_phase + 0.12) % std::f32::consts::TAU;
                 }
                 if let Some(btn) = state.buttons.get(&id) {
+                    if !btn.mapped {
+                        continue;
+                    }
                     // Pixels only — reapplying Shape* every spinner frame made the
                     // face eat clicks (empty ShapeInput regresses on XWayland/Mutter).
                     paint_button(&state, btn, false);
@@ -569,6 +591,7 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             }
         }
     }
+    apply_gate_visibility(state);
     // SAFETY: HostState display invariant.
     unsafe {
         x_flush(state.display);
@@ -753,7 +776,6 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
         // Face first, then hit on top — InputOnly does not obscure the face pixels.
         XMapRaised(state.display, win);
         XMapRaised(state.display, hit);
-        XFlush(state.display);
         (hit, win)
     };
     mark_site(&format!("overlay-x11:map:{}", spec.id));
@@ -768,6 +790,7 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
         armed: false,
         hovered: false,
         busy_phase: 0.0,
+        mapped: true,
     })
 }
 
@@ -803,6 +826,9 @@ fn raise_hit_above_face(display: *mut Display, hit: Window, face: Window) {
 
 fn raise_all_hits(state: &HostState) {
     for btn in state.buttons.values() {
+        if !btn.mapped {
+            continue;
+        }
         raise_hit_above_face(state.display, btn.hit, btn.win);
     }
     if state.tip.as_ref().is_some_and(|t| t.mapped) {
@@ -811,6 +837,71 @@ fn raise_all_hits(state: &HostState) {
     // SAFETY: HostState display invariant.
     unsafe {
         x_flush(state.display);
+    }
+}
+
+fn fire_overlay_click(state: &mut HostState, id: &str, macro_name: String) {
+    mark_site(&format!("overlay-x11:click:{id}"));
+    note(&format!("overlay-x11: click id={id} macro={macro_name}"));
+    event_log(
+        "SQYRE_OVERLAY",
+        &[
+            ("click", "press"),
+            ("id", id),
+            ("name", macro_name.as_str()),
+        ],
+    );
+    state.pending.lock().push(macro_name);
+    // Macro mouse/focus often restacks the game above us — re-raise now.
+    raise_all_hits(state);
+    if let Some(ctx) = &state.wake {
+        ctx.request_repaint();
+    }
+}
+
+/// Map/unmap gated buttons from the image-search found map (no egui frame needed).
+fn apply_gate_visibility(state: &mut HostState) {
+    let found = state.visibility.lock().clone();
+    let ids: Vec<String> = state.buttons.keys().cloned().collect();
+    let mut changed = false;
+    for id in ids {
+        let Some(btn) = state.buttons.get(&id) else {
+            continue;
+        };
+        let show = !btn.spec.visibility_gated || found.get(&id).copied().unwrap_or(false);
+        if show == btn.mapped {
+            continue;
+        }
+        let (hit, face) = (btn.hit, btn.win);
+        if show {
+            raise_hit_above_face(state.display, hit, face);
+        } else {
+            if state.drag.as_ref().is_some_and(|d| d.id == id) {
+                cancel_drag(state);
+            }
+            if state.tip.as_ref().is_some_and(|t| t.for_id == id) {
+                hide_tip(state);
+            }
+            // SAFETY: HostState display invariant; face+hit created on this display.
+            unsafe {
+                x_unmap(state.display, hit);
+                x_unmap(state.display, face);
+            }
+        }
+        if let Some(btn) = state.buttons.get_mut(&id) {
+            btn.mapped = show;
+            if !show {
+                btn.armed = false;
+                btn.hovered = false;
+            }
+        }
+        changed = true;
+    }
+    if changed {
+        // SAFETY: HostState display invariant.
+        unsafe {
+            x_flush(state.display);
+        }
     }
 }
 
@@ -1623,15 +1714,24 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 }
                 continue;
             }
-            if let Some(btn) = state.buttons.get_mut(&id) {
+            // Fire on press. Waiting for ButtonRelease lost clicks when the game
+            // restacked or hide_tip unmapped under the pointer (no grab).
+            let queued = if let Some(btn) = state.buttons.get_mut(&id) {
                 if btn.spec.busy {
                     mark_site(&format!("overlay-x11:press-busy:{id}"));
                     note(&format!("overlay-x11: press-busy-ignore id={id}"));
+                    None
+                } else if btn.armed {
+                    None
                 } else {
                     btn.armed = true;
-                    mark_site(&format!("overlay-x11:press:{id}"));
-                    note(&format!("overlay-x11: press id={id}"));
+                    Some((btn.spec.id.clone(), btn.spec.macro_name.clone()))
                 }
+            } else {
+                None
+            };
+            if let Some((click_id, macro_name)) = queued {
+                fire_overlay_click(state, &click_id, macro_name);
             }
             continue;
         }
@@ -1685,29 +1785,8 @@ fn drain_x_events(state: &mut HostState) -> bool {
             let id = button_id_for_event_win(state, win);
             if let Some(id) = id {
                 if let Some(btn) = state.buttons.get_mut(&id) {
-                    if btn.armed && !btn.spec.busy {
-                        btn.armed = false;
-                        let id = btn.spec.id.clone();
-                        let macro_name = btn.spec.macro_name.clone();
-                        mark_site(&format!("overlay-x11:click:{id}"));
-                        note(&format!("overlay-x11: click id={id} macro={macro_name}"));
-                        state.pending.lock().push(macro_name);
-                        // Macro mouse/focus often restacks the game above us — re-raise now.
-                        raise_all_hits(state);
-                        if let Some(ctx) = &state.wake {
-                            ctx.request_repaint();
-                        }
-                    } else {
-                        mark_site(&format!(
-                            "overlay-x11:release-ign:{}:a{}b{}",
-                            id, btn.armed as u8, btn.spec.busy as u8
-                        ));
-                        note(&format!(
-                            "overlay-x11: release-ignored id={id} armed={} busy={}",
-                            btn.armed, btn.spec.busy
-                        ));
-                        btn.armed = false;
-                    }
+                    mark_site(&format!("overlay-x11:release:{id}"));
+                    btn.armed = false;
                 }
             } else {
                 note("overlay-x11: release on unknown window");
