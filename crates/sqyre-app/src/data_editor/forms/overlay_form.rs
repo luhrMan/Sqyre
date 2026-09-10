@@ -20,11 +20,7 @@ impl DataEditor {
             ..
         } = paint;
         let FormCtx { macros, .. } = ctx;
-        ui.heading("Overlay Button");
-        ui.weak(
-            "General buttons stay on screen when enabled. Other programs show only while their bound process and window title own focus (bind a window on the Programs tab).",
-        );
-        ui.weak("The selected button is previewed on screen while you edit.");
+        help::heading(ui, "Overlay Button", help::DE_OVERLAY_INTRO);
         ui.add_space(6.0);
         self.program_selector(ui, catalog, icons, settings);
         if self.selected_program.is_none() {
@@ -50,8 +46,7 @@ impl DataEditor {
                 }
             }
             ui.vertical(|ui| {
-                ui.label(icon.label).on_hover_text(help::DE_OVERLAY_ICON);
-                ui.weak("Click icon to choose from Phosphor library");
+                help::label(ui, icon.label, help::DE_OVERLAY_ICON);
             });
         });
         ui.add_space(6.0);
@@ -67,8 +62,7 @@ impl DataEditor {
             "(pick macro)",
             Some("(none)"),
             Some(220.0),
-        )
-        .on_hover_text(help::DE_OVERLAY_MACRO);
+        );
         if selected != before {
             self.form_overlay_macro = selected;
         }
@@ -153,11 +147,13 @@ impl DataEditor {
         }
         ui.add_space(8.0);
         ui.collapsing("Visibility gate (image search)", |ui| {
-            ui.checkbox(
-                &mut self.form_overlay_gate_enabled,
-                "Show only when image found",
-            )
-            .on_hover_text(help::DE_OVERLAY_GATE);
+            ui.horizontal(|ui| {
+                ui.checkbox(
+                    &mut self.form_overlay_gate_enabled,
+                    "Show only when image found",
+                );
+                help::icon(ui, help::DE_OVERLAY_GATE);
+            });
             ui.add_enabled_ui(self.form_overlay_gate_enabled, |ui| {
                 {
                     use crate::pickers::{ActivePicker, CoordKind};
@@ -203,17 +199,13 @@ impl DataEditor {
                 }
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    help::tip(
-                        ui.label(egui::RichText::new("Items").strong()),
-                        help::DE_OVERLAY_GATE_ITEMS,
-                    );
+                    help::label(ui, "Items", help::DE_OVERLAY_GATE_ITEMS);
                     ui.label(
                         egui::RichText::new(format!("({})", self.form_overlay_gate_targets.len()))
                             .weak(),
                     );
                     if ui
                         .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
-                        .on_hover_text(help::DE_OVERLAY_GATE_ITEMS)
                         .clicked()
                     {
                         self.window_picker = pickers::ActivePicker::Items {
@@ -306,14 +298,13 @@ impl DataEditor {
             });
             ui.horizontal(|ui| {
                 color_alpha_drag(ui, "Background", &mut self.form_overlay_bg);
-                ui.weak("(α 0 = none)");
+                help::icon(ui, help::DE_OVERLAY_ALPHA_NONE);
             });
             ui.horizontal(|ui| {
                 color_alpha_drag(ui, "Icon", &mut self.form_overlay_icon_color);
             });
             ui.horizontal(|ui| {
-                ui.label("Icon hover")
-                    .on_hover_text("Icon color when the pointer is over the button.");
+                help::label(ui, "Icon hover", help::DE_OVERLAY_ICON_HOVER);
                 ui.color_edit_button_srgba(&mut self.form_overlay_icon_hover);
             });
             ui.add_space(4.0);

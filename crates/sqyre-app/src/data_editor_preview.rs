@@ -17,6 +17,9 @@ pub(crate) fn paint_preview_toolbar(
     let show_zoom_hint = view.is_some();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Preview").strong());
+        if show_zoom_hint {
+            crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
+        }
         if crate::theme::icon_button(ui, "↻")
             .on_hover_text("Refresh")
             .clicked()
@@ -38,9 +41,6 @@ pub(crate) fn paint_preview_toolbar(
             });
         }
     });
-    if show_zoom_hint {
-        ui.weak("Scroll to zoom; drag to pan when zoomed.");
-    }
     force
 }
 
@@ -481,6 +481,7 @@ pub(crate) fn paint_zoomable_collection_preview(
     ui.separator();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Collection image").strong());
+        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
         if crate::theme::icon_button(ui, "↻")
             .on_hover_text("Refresh")
             .clicked()
@@ -513,7 +514,6 @@ pub(crate) fn paint_zoomable_collection_preview(
             }
         });
     });
-    ui.weak("Scroll to zoom; drag to pan when zoomed.");
 
     let tex = icons.for_path(ui.ctx(), path);
     let avail_w = ui.available_width();
@@ -740,6 +740,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
     ui.separator();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Atlas plane").strong());
+        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_ATLAS_PLANE);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .add_enabled(view.needs_reset_button(), egui::Button::new("Reset view"))
@@ -753,7 +754,6 @@ pub(crate) fn paint_zoomable_atlas_preview(
             }
         });
     });
-    ui.weak("Monitors behind Collections; neighbors from search-area positions.");
 
     let empty_macro = Macro::new("", 0, vec![]);
     let mut nodes = Vec::new();

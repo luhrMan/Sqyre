@@ -438,23 +438,18 @@ impl SettingsUi {
 
     fn draw_general(&mut self, ui: &mut egui::Ui, q: &str, section_hit: bool) {
         if setting_visible(q, section_hit, SETTING_LOG_META) {
-            if ui
-                .checkbox(
-                    &mut self.settings.save_meta_images,
-                    "Log Meta Images",
-                )
-                .on_hover_text(
-                    "When enabled, image search / OCR keep debug frames in action logs (in memory). Can be very memory intensive.",
-                )
-                .changed()
-            {
-                self.mark_dirty();
-            }
-            ui.label(
-                egui::RichText::new("Warning: can be very memory intensive.")
-                    .weak()
-                    .small(),
-            );
+            ui.horizontal(|ui| {
+                if ui
+                    .checkbox(&mut self.settings.save_meta_images, "Log Meta Images")
+                    .changed()
+                {
+                    self.mark_dirty();
+                }
+                crate::action_tooltip::help::icon(
+                    ui,
+                    crate::action_tooltip::help::SETTING_LOG_META,
+                );
+            });
         }
 
         if setting_visible(q, section_hit, SETTING_HIGHLIGHT_ACTION)

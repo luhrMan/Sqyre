@@ -26,6 +26,7 @@ pub fn paint_collection_cell_picker(
             ))
             .strong(),
         );
+        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_COLLECTION_CELL_ZOOM);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .add_enabled(
@@ -42,7 +43,6 @@ pub fn paint_collection_cell_picker(
             }
         });
     });
-    ui.weak("Scroll to zoom; drag to pan when zoomed; click/drag selects cells at 100%.");
 
     let path = catalog.collection_image_path(&pick.program, &pick.collection);
     let tex = icons.for_path(ui.ctx(), &path);

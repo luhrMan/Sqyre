@@ -533,10 +533,7 @@ pub fn var_name_text_edit(
     help: &str,
 ) {
     ui.horizontal(|ui| {
-        let lab = ui.label(label);
-        if !help.is_empty() {
-            lab.on_hover_text(help);
-        }
+        crate::action_tooltip::help::label(ui, label, help);
         let width = resolve_edit_width(ui, desired_width, 0.0);
         let id = ui.id().with(("var_name_edit", label));
         let focused = ui.memory(|m| m.has_focus(id));
@@ -638,10 +635,7 @@ pub fn validated_var_ref_edit(
         help,
     } = opts;
     ui.horizontal(|ui| {
-        let lab = ui.label(label);
-        if !help.is_empty() {
-            lab.on_hover_text(help);
-        }
+        crate::action_tooltip::help::label(ui, label, help);
         let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
         let id = ui.id().with(("validated_var_ref", label));
         let focused = ui.memory(|m| m.has_focus(id));
@@ -687,10 +681,7 @@ pub fn validated_var_ref_multiline_edit(
         help,
     } = opts;
     ui.horizontal(|ui| {
-        let lab = ui.label(label);
-        if !help.is_empty() {
-            lab.on_hover_text(help);
-        }
+        crate::action_tooltip::help::label(ui, label, help);
         paint_entry_validation_icon(ui, validation);
     });
     let width = resolve_edit_width(ui, desired_width, 0.0);

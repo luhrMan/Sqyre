@@ -23,10 +23,7 @@ pub fn text_field_width(
 ) {
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
-        help::tip(
-            ui.add(egui::TextEdit::singleline(value).desired_width(width)),
-            help_text,
-        );
+        ui.add(egui::TextEdit::singleline(value).desired_width(width));
     });
 }
 
@@ -51,10 +48,7 @@ pub fn drag_field_enabled<Num: egui::emath::Numeric>(
 ) {
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
-        help::tip(
-            ui.add_enabled(enabled, configure(egui::DragValue::new(value))),
-            help_text,
-        );
+        ui.add_enabled(enabled, configure(egui::DragValue::new(value)));
     });
 }
 
@@ -76,21 +70,17 @@ pub fn combo_str(
         if !options.contains(&value.as_str()) && !value.is_empty() {
             custom = Some(value.clone());
         }
-        help::tip(
-            egui::ComboBox::from_id_salt(label)
-                .selected_text(display)
-                .show_ui(ui, |ui| {
-                    for opt in options {
-                        let text = if opt.is_empty() { "(unset)" } else { opt };
-                        ui.selectable_value(value, (*opt).to_string(), text);
-                    }
-                    if let Some(c) = custom {
-                        ui.selectable_value(value, c.clone(), c);
-                    }
-                })
-                .response,
-            help_text,
-        );
+        egui::ComboBox::from_id_salt(label)
+            .selected_text(display)
+            .show_ui(ui, |ui| {
+                for opt in options {
+                    let text = if opt.is_empty() { "(unset)" } else { opt };
+                    ui.selectable_value(value, (*opt).to_string(), text);
+                }
+                if let Some(c) = custom {
+                    ui.selectable_value(value, c.clone(), c);
+                }
+            });
     });
 }
 
@@ -123,17 +113,13 @@ pub fn combo_enum<T: Copy + PartialEq>(
 ) {
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
-        help::tip(
-            egui::ComboBox::from_id_salt(label)
-                .selected_text(display(*value))
-                .show_ui(ui, |ui| {
-                    for opt in options {
-                        ui.selectable_value(value, *opt, display(*opt));
-                    }
-                })
-                .response,
-            help_text,
-        );
+        egui::ComboBox::from_id_salt(label)
+            .selected_text(display(*value))
+            .show_ui(ui, |ui| {
+                for opt in options {
+                    ui.selectable_value(value, *opt, display(*opt));
+                }
+            });
     });
 }
 
@@ -174,22 +160,18 @@ pub fn combo_str_labeled(
         if !value.is_empty() && !options.iter().any(|(v, _)| *v == value.as_str()) {
             custom = Some(value.clone());
         }
-        help::tip(
-            egui::ComboBox::from_id_salt(label)
-                .selected_text(display)
-                .show_ui(ui, |ui| {
-                    for &(stored, shown) in options {
-                        if ui.selectable_label(current == stored, shown).clicked() {
-                            *value = stored.to_string();
-                        }
+        egui::ComboBox::from_id_salt(label)
+            .selected_text(display)
+            .show_ui(ui, |ui| {
+                for &(stored, shown) in options {
+                    if ui.selectable_label(current == stored, shown).clicked() {
+                        *value = stored.to_string();
                     }
-                    if let Some(c) = custom {
-                        ui.selectable_value(value, c.clone(), c);
-                    }
-                })
-                .response,
-            help_text,
-        );
+                }
+                if let Some(c) = custom {
+                    ui.selectable_value(value, c.clone(), c);
+                }
+            });
     });
 }
 
