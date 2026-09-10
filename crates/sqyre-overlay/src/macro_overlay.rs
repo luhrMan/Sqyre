@@ -210,8 +210,18 @@ impl MacroOverlay {
     }
 
     /// Shared image-gate found map (X11 host maps/unmaps without waiting for ROOT).
+    ///
+    /// If the X11 host is already running, forwards the new Arc so map/unmap cannot
+    /// keep reading a stale empty map after the poller is replaced.
     pub fn set_visibility_map(&mut self, map: Arc<Mutex<HashMap<String, bool>>>) {
-        self.visibility = map;
+        if Arc::ptr_eq(&self.visibility, &map) {
+            return;
+        }
+        self.visibility = Arc::clone(&map);
+        #[cfg(target_os = "linux")]
+        if let Some(host) = &self.x11_host {
+            host.set_visibility_map(map);
+        }
     }
 
     /// Enable/disable drag-to-relocate (move cursor + no macro enqueue on click).
@@ -221,10 +231,12 @@ impl MacroOverlay {
             if self.last_relocate == Some(enabled) {
                 return;
             }
+            // Only record the mode once the host accepted it — otherwise a pre-host
+            // call could skip the real SetRelocateMode after ensure_x11_host.
             if let Some(host) = &self.x11_host {
                 host.set_relocate_mode(enabled);
+                self.last_relocate = Some(enabled);
             }
-            self.last_relocate = Some(enabled);
         }
         #[cfg(not(target_os = "linux"))]
         {
