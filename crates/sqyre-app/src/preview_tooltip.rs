@@ -44,6 +44,8 @@ pub enum PreviewKind {
 struct CacheEntry {
     texture: TextureHandle,
     caption: String,
+    /// Absolute desktop region this texture was captured for (manual ↻ clears matches).
+    coords: PreviewCoords,
     /// Exclusive search-area crop (panel previews only); ScreenCap Save source.
     region: Option<Arc<RgbaImage>>,
 }
@@ -51,10 +53,12 @@ struct CacheEntry {
 struct FailureEntry {
     error: String,
     expires: Instant,
+    coords: PreviewCoords,
 }
 
 struct PendingCapture {
     caption: String,
+    coords: PreviewCoords,
     /// Panel search-area captures also return the exclusive region crop for ScreenCap.
     rx: Receiver<Result<CapturedPreview, CaptureError>>,
 }
@@ -102,6 +106,20 @@ impl PreviewTooltipCache {
         self.order.retain(|k| !drop(k));
         self.pending.retain(|k, _| !drop(k));
         self.failures.retain(|k, _| !drop(k));
+    }
+
+    /// Drop every cached / pending / failed preview for the same absolute desktop region.
+    ///
+    /// Panel, list-hover, and action-tooltip keys for one point or search area must all
+    /// refresh together when the user hits ↻ — otherwise a stale tooltip can outlive the
+    /// panel capture they just updated.
+    fn invalidate_coords(&mut self, coords: PreviewCoords) {
+        let related = |c: PreviewCoords| same_capture_region(c, coords);
+        self.entries.retain(|_, e| !related(e.coords));
+        self.order
+            .retain(|k| self.entries.contains_key(k));
+        self.pending.retain(|_, p| !related(p.coords));
+        self.failures.retain(|_, f| !related(f.coords));
     }
 
     pub fn clear(&mut self) {
@@ -161,29 +179,27 @@ impl PreviewTooltipCache {
         name: &str,
         kind: PreviewKind,
     ) {
-        if !response.hovered() {
+        // Keep preparing while the tip is already open so a large preview that briefly
+        // covers the row does not drop capture / outline and restart a flash loop.
+        let tip_open = response.is_tooltip_open();
+        if !response.hovered() && !tip_open {
             return;
         }
         match entity_preview_spec(catalog, program, name, kind) {
             Ok((key, caption, coords)) => {
                 self.request_desktop_outline_hover(coords);
+                log_hover_outline_transition(kind, program, name, coords);
                 let preview =
                     self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
-                response.clone().on_hover_ui(|ui| match &preview {
-                    Ok((tex, cap)) => paint_preview(
-                        ui,
-                        tex,
-                        cap,
-                        matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection),
-                    ),
-                    Err(err) => {
-                        ui.label(caption.as_str());
-                        ui.colored_label(crate::theme::error_fg(), err);
-                    }
+                let show_size =
+                    matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection);
+                show_preview_hover_ui(response, |ui| match &preview {
+                    Ok((tex, cap)) => paint_preview(ui, tex, cap, show_size),
+                    Err(err) => paint_preview_status(ui, caption.as_str(), err),
                 });
             }
             Err(EntityPreviewError::NonLiteral) => {
-                response.clone().on_hover_ui(|ui| {
+                show_preview_hover_ui(response, |ui| {
                     ui.label(format!("{program}~{name}"));
                     ui.colored_label(crate::theme::error_fg(), LITERAL_COORDS_MSG);
                 });
@@ -235,7 +251,11 @@ impl PreviewTooltipCache {
         coord_ref: &CoordinateRef,
         kind: PreviewKind,
     ) {
-        if !response.hovered() || coord_ref.is_empty() {
+        if coord_ref.is_empty() {
+            return;
+        }
+        let tip_open = response.is_tooltip_open();
+        if !response.hovered() && !tip_open {
             return;
         }
         let label = coord_ref.as_str().to_string();
@@ -250,17 +270,10 @@ impl PreviewTooltipCache {
             }
             Err(err) => Err((label.clone(), err)),
         };
-        response.clone().on_hover_ui(|ui| match &preview {
-            Ok((tex, cap)) => paint_preview(
-                ui,
-                tex,
-                cap,
-                matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection),
-            ),
-            Err((cap, err)) => {
-                ui.label(cap.as_str());
-                ui.colored_label(crate::theme::error_fg(), err);
-            }
+        let show_size = matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection);
+        show_preview_hover_ui(response, |ui| match &preview {
+            Ok((tex, cap)) => paint_preview(ui, tex, cap, show_size),
+            Err((cap, err)) => paint_preview_status(ui, cap, err),
         });
     }
 
@@ -362,10 +375,7 @@ impl PreviewTooltipCache {
         let keep_region = max_dim >= PANEL_MAX_DIM
             && matches!(coords, PreviewCoords::SearchArea { grid: None, .. });
         if force {
-            self.entries.remove(key);
-            self.order.retain(|k| k != key);
-            self.pending.remove(key);
-            self.failures.remove(key);
+            self.invalidate_coords(coords);
         }
         if let Some(entry) = self.entries.get(key) {
             // Panel ScreenCap needs the exclusive crop; recapture if a stale entry lacks it.
@@ -392,18 +402,26 @@ impl PreviewTooltipCache {
             let recv = self.pending[key].rx.try_recv();
             match recv {
                 Ok(Ok(captured)) => {
-                    let caption = self
-                        .pending
-                        .remove(key)
-                        .map(|p| p.caption)
-                        .unwrap_or_else(|| caption.to_string());
+                    let pending = self.pending.remove(key);
+                    let (caption, finish_coords) = match pending {
+                        Some(p) => (p.caption, p.coords),
+                        None => (caption.to_string(), coords),
+                    };
                     self.failures.remove(key);
-                    return self.finish_texture(ctx, key, &caption, captured, keep_region);
+                    return self.finish_texture(
+                        ctx,
+                        key,
+                        &caption,
+                        finish_coords,
+                        captured,
+                        keep_region,
+                    );
                 }
                 Ok(Err(e)) => {
-                    self.pending.remove(key);
+                    let pending = self.pending.remove(key);
                     let e = e.to_string();
-                    self.remember_failure(key, e.clone(), now);
+                    let fail_coords = pending.map(|p| p.coords).unwrap_or(coords);
+                    self.remember_failure(key, e.clone(), now, fail_coords);
                     return Err(e.to_string());
                 }
                 Err(TryRecvError::Empty) => {
@@ -411,9 +429,10 @@ impl PreviewTooltipCache {
                     return Err("Capturing…".into());
                 }
                 Err(TryRecvError::Disconnected) => {
-                    self.pending.remove(key);
+                    let pending = self.pending.remove(key);
                     let e = "capture failed".to_string();
-                    self.remember_failure(key, e.clone(), now);
+                    let fail_coords = pending.map(|p| p.coords).unwrap_or(coords);
+                    self.remember_failure(key, e.clone(), now, fail_coords);
                     return Err(e.to_string());
                 }
             }
@@ -431,11 +450,11 @@ impl PreviewTooltipCache {
             match capture_preview(capturer.as_ref(), coords, max_dim, force, keep_region) {
                 Ok(captured) => {
                     self.failures.remove(key);
-                    return self.finish_texture(ctx, key, caption, captured, keep_region);
+                    return self.finish_texture(ctx, key, caption, coords, captured, keep_region);
                 }
                 Err(e) => {
                     let e = e.to_string();
-                    self.remember_failure(key, e.clone(), Instant::now());
+                    self.remember_failure(key, e.clone(), Instant::now(), coords);
                     return Err(e);
                 }
             }
@@ -458,6 +477,7 @@ impl PreviewTooltipCache {
                 key.to_string(),
                 PendingCapture {
                     caption: caption.to_string(),
+                    coords,
                     rx,
                 },
             );
@@ -466,12 +486,19 @@ impl PreviewTooltipCache {
         }
     }
 
-    fn remember_failure(&mut self, key: &str, error: String, now: Instant) {
+    fn remember_failure(
+        &mut self,
+        key: &str,
+        error: String,
+        now: Instant,
+        coords: PreviewCoords,
+    ) {
         self.failures.insert(
             key.to_string(),
             FailureEntry {
                 error,
                 expires: now + FAIL_CACHE_TTL,
+                coords,
             },
         );
     }
@@ -481,6 +508,7 @@ impl PreviewTooltipCache {
         ctx: &egui::Context,
         key: &str,
         caption: &str,
+        coords: PreviewCoords,
         captured: CapturedPreview,
         keep_region: bool,
     ) -> Result<(TextureHandle, String), String> {
@@ -505,6 +533,7 @@ impl PreviewTooltipCache {
             CacheEntry {
                 texture: tex.clone(),
                 caption: caption.to_string(),
+                coords,
                 region,
             },
         );
@@ -570,6 +599,32 @@ enum PreviewCoords {
         bottom: i32,
         grid: Option<(i32, i32)>,
     },
+}
+
+/// True when both describe the same absolute desktop region (grid overlay ignored).
+fn same_capture_region(a: PreviewCoords, b: PreviewCoords) -> bool {
+    match (a, b) {
+        (PreviewCoords::Point { x: x1, y: y1 }, PreviewCoords::Point { x: x2, y: y2 }) => {
+            x1 == x2 && y1 == y2
+        }
+        (
+            PreviewCoords::SearchArea {
+                left: l1,
+                top: t1,
+                right: r1,
+                bottom: b1,
+                ..
+            },
+            PreviewCoords::SearchArea {
+                left: l2,
+                top: t2,
+                right: r2,
+                bottom: b2,
+                ..
+            },
+        ) => l1 == l2 && t1 == t2 && r1 == r2 && b1 == b2,
+        _ => false,
+    }
 }
 
 fn capture_preview(
@@ -857,8 +912,9 @@ fn cache_key_search_area(sa: &ProgramSearchArea) -> String {
 
 fn cache_key_collection(name: &str, sa: &ProgramSearchArea, rows: i32, cols: i32) -> String {
     format!(
-        "col:{}:{}:{}:{}:{}:{}x{}",
+        "col:{}:m{}:{}:{}:{}:{}:{}x{}",
         name,
+        sa.monitor,
         sa.left_x.as_display(),
         sa.top_y.as_display(),
         sa.right_x.as_display(),
@@ -922,10 +978,29 @@ fn coord_to_literal(v: &ScalarValue) -> Option<i32> {
     }
 }
 
+/// List/combo hover tips open to the **right** of the row so a tall collection
+/// preview cannot cover the pointer and start an open/close flash loop.
+fn show_preview_hover_ui(response: &egui::Response, add_contents: impl FnOnce(&mut egui::Ui)) {
+    let mut tip = egui::Tooltip::for_enabled(response);
+    tip.popup = tip
+        .popup
+        .align(egui::RectAlign::RIGHT)
+        .align_alternatives(&[
+            egui::RectAlign::RIGHT_START,
+            egui::RectAlign::RIGHT_END,
+            egui::RectAlign::LEFT,
+            egui::RectAlign::BOTTOM_START,
+        ])
+        .gap(10.0);
+    tip.show(add_contents);
+}
+
 fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_image_size: bool) {
     let [tw, th] = tex.size();
     let size = fit_display(tw as f32, th as f32);
-    ui.add(egui::Image::new((tex.id(), size)));
+    // Click sense makes the tip "interactive" so egui keeps it open while the
+    // pointer is over the image — needed when a tall tip still overlaps the row.
+    ui.add(egui::Image::new((tex.id(), size)).sense(egui::Sense::click()));
     ui.label(caption);
     if show_image_size {
         ui.label(
@@ -936,6 +1011,60 @@ fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_ima
             .weak()
             .small(),
         );
+    }
+}
+
+/// Status line while capture is pending/failed. Reserves the display footprint so
+/// the tip does not grow under the cursor when the texture arrives.
+fn paint_preview_status(ui: &mut egui::Ui, caption: &str, err: &str) {
+    let (rect, _) = ui.allocate_exact_size(
+        Vec2::new(DISPLAY_MAX_W, DISPLAY_MAX_H),
+        egui::Sense::click(),
+    );
+    ui.painter()
+        .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        err,
+        egui::TextStyle::Small.resolve(ui.style()),
+        crate::theme::error_fg(),
+    );
+    ui.label(caption);
+}
+
+fn log_hover_outline_transition(
+    kind: PreviewKind,
+    program: &str,
+    name: &str,
+    coords: PreviewCoords,
+) {
+    #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+    {
+        use std::sync::Mutex;
+        static LAST: Mutex<Option<(String, (i32, i32, i32, i32))>> = Mutex::new(None);
+        let rect = desktop_outline_rect(coords);
+        let key = format!("{kind:?}:{program}~{name}");
+        let mut guard = LAST.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.as_ref() == Some(&(key.clone(), rect)) {
+            return;
+        }
+        *guard = Some((key.clone(), rect));
+        sqyre_capture::event_log(
+            "SQYRE_PREVIEW",
+            &[
+                ("op", "hover_outline"),
+                ("entity", &key),
+                (
+                    "rect",
+                    &format!("{},{}-{},{}", rect.0, rect.1, rect.2, rect.3),
+                ),
+            ],
+        );
+    }
+    #[cfg(any(not(feature = "native-runtime"), target_arch = "wasm32"))]
+    {
+        let _ = (kind, program, name, coords);
     }
 }
 
@@ -1478,5 +1607,91 @@ mod tests {
             }
             _ => panic!("expected collection area"),
         }
+    }
+
+    #[test]
+    fn same_capture_region_ignores_grid_overlay() {
+        let a = PreviewCoords::SearchArea {
+            left: 1,
+            top: 2,
+            right: 10,
+            bottom: 20,
+            grid: None,
+        };
+        let b = PreviewCoords::SearchArea {
+            left: 1,
+            top: 2,
+            right: 10,
+            bottom: 20,
+            grid: Some((3, 4)),
+        };
+        let c = PreviewCoords::SearchArea {
+            left: 1,
+            top: 2,
+            right: 11,
+            bottom: 20,
+            grid: None,
+        };
+        assert!(same_capture_region(a, b));
+        assert!(!same_capture_region(a, c));
+        assert!(!same_capture_region(PreviewCoords::Point { x: 1, y: 2 }, a));
+    }
+
+    #[test]
+    fn invalidate_coords_clears_related_keys_only() {
+        let mut cache = PreviewTooltipCache::new();
+        let coords = PreviewCoords::Point { x: 10, y: 20 };
+        let other = PreviewCoords::Point { x: 99, y: 99 };
+        let now = Instant::now();
+        cache.failures.insert(
+            "panel:pt:10:20".into(),
+            FailureEntry {
+                error: "a".into(),
+                expires: now + FAIL_CACHE_TTL,
+                coords,
+            },
+        );
+        cache.failures.insert(
+            "ref:pt:Game~Spot:10:20".into(),
+            FailureEntry {
+                error: "b".into(),
+                expires: now + FAIL_CACHE_TTL,
+                coords,
+            },
+        );
+        cache.failures.insert(
+            "panel:pt:99:99".into(),
+            FailureEntry {
+                error: "c".into(),
+                expires: now + FAIL_CACHE_TTL,
+                coords: other,
+            },
+        );
+        let (_tx, rx) = std::sync::mpsc::channel();
+        cache.pending.insert(
+            "pt:Spot:m1:5:5".into(),
+            PendingCapture {
+                caption: "pending".into(),
+                coords,
+                rx,
+            },
+        );
+        let (_tx2, rx2) = std::sync::mpsc::channel();
+        cache.pending.insert(
+            "pt:Other:m1:1:1".into(),
+            PendingCapture {
+                caption: "keep".into(),
+                coords: other,
+                rx: rx2,
+            },
+        );
+
+        cache.invalidate_coords(coords);
+
+        assert!(!cache.failures.contains_key("panel:pt:10:20"));
+        assert!(!cache.failures.contains_key("ref:pt:Game~Spot:10:20"));
+        assert!(cache.failures.contains_key("panel:pt:99:99"));
+        assert!(!cache.pending.contains_key("pt:Spot:m1:5:5"));
+        assert!(cache.pending.contains_key("pt:Other:m1:1:1"));
     }
 }
