@@ -35,7 +35,11 @@ Default dir: `~/.sqyre` (`sqyre_capture::diag::log_dir()`, set at app startup).
 
 Stderr always gets `sqyre: …` lines from `diag::note` and `crate::log::warn`. Terminals folder and the user's run output count as logs.
 
-Memory / leak checks: run with `SQYRE_MEM=1 ./bin/sqyre` and watch `~/.sqyre/mem.log` (or stderr). Rising `rss_kib` / `since_start_kib` after idle, or `SQYRE_MEM=grow` after macro runs, is a smell. For allocation stacks, rebuild with `--features dhat-heap` and quit cleanly → `dhat-heap.json` in the cwd.
+Memory / leak checks: run with `SQYRE_MEM=1 ./bin/sqyre` and watch `~/.sqyre/mem.log` (or stderr). Rising `rss_kib` / `since_start_kib` after idle, or `SQYRE_MEM=grow` after macro runs, is a smell. For allocation stacks: `make release-bundle-dhat` then `SQYRE_MEM=1 ./bin/sqyre-bundle-dhat/sqyre`, quit cleanly → `dhat-heap.json` in the cwd (or `cargo run -p sqyre-app --features dhat-heap --release`). View at https://nnethercote.github.io/dh_view/dh_view.html.
+
+CI-safe memory contracts (no RSS): `clear_search_cache` zeros stats (incl. prepared); `clear_match_scratch` stays usable after clear; portal FrameCache shrink/refill + buffering gate; `SharedActionLog::image_bytes` is 0 when Log Meta Images is off / after clear; `release_capture_frame_cache` is a no-op without a shared capturer. Portal unit tests run via `make test` on Linux (`sqyre-capture --features portal-capture`).
+
+Known hot retainers: Rayon `FFT_SCRATCH` TLS (cleared by `clear_match_scratch` / `clear_search_cache` after each macro). Portal PipeWire CPU frame mirror (~full desktop RGBA) is released after each macro via `release_capture_frame_cache` (copies pause until the next capture wait/crop, which re-enables buffering — Image Search / OCR / Find Pixel keep working). If post-run RSS still ratchets with `search_cache_kib=0` and `portal_cache_kib=0`, look at action-log images, GPU textures, or glibc arena retention (`tune_process_heap` / `malloc_trim`) — not the search cache.
 
 Desktop/capture issues: also run `./bin/sqyre-probe --json` (see linux-desktop-parity skill).
 

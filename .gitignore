@@ -21,6 +21,7 @@ notes.md
 /AppDir/
 /VERSION
 /target/
+/target-dhat/
 **/*.rs.bk
 
 # Linux packaging build artifacts

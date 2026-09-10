@@ -34,9 +34,10 @@ make macos      # fmt + check, then bin/sqyre (macOS host)
 make wasm       # fmt + check, then bin/wasm/ GUI-only browser editor (Trunk)
 make tessdata   # download eng.traineddata into assets/tessdata/
 make release-bundle  # portable bin/sqyre-bundle/ (release only; no check gate — see scripts/linux/packaging/PACKAGING.md)
+make release-bundle-dhat  # same + dhat-heap → bin/sqyre-bundle-dhat/ (leak hunts; not for shipping)
 ```
 
-Release builds (`make release`, `make release-bundle`) need **≥4 GiB** container RAM on a cold `target/`; if rustc is SIGKILL'd, raise Docker memory or set `CARGO_BUILD_JOBS=1`. With a warm `target/` cache, `make release-bundle` is much faster and lighter than before (it no longer runs clippy/deny first).
+Release builds (`make release`, `make release-bundle`, `make release-bundle-dhat`) need **≥4 GiB** container RAM on a cold `target/`; if rustc is SIGKILL'd, raise Docker memory or set `CARGO_BUILD_JOBS=1`. With a warm `target/` cache, `make release-bundle` is much faster and lighter than before (it no longer runs clippy/deny first). `release-bundle-dhat` uses a separate `target-dhat/` so it does not overwrite the normal release binary.
 
 Run `make help` for the full target list. Workspace layout: [RUST.md](./RUST.md).
 
@@ -45,6 +46,7 @@ Build caches (all gitignored):
 | Path | Role |
 |------|------|
 | `target/` | Incremental compile artifacts (host + docker bind-mount; Windows under `target/x86_64-pc-windows-gnu/`) |
+| `target-dhat/` | Separate release artifacts for `make release-bundle-dhat` (avoids clobbering normal `target/release`) |
 | `.cargo-home/` | Optional workspace-local cargo/rustup install |
 | `.cache/cargo/` | Cargo registry/git cache used by CI and docker AppImage / Windows builds |
 | `.cache/sccache-linux/` | sccache rustc cache for Linux CI (`test` / `build-linux` / `build-wasm`) |
@@ -77,6 +79,8 @@ Build caches (all gitignored):
 | `run` | `cargo run -p sqyre-app` |
 | `docs-media` | Regenerate `docs/images/` screenshots |
 | `appimage` | `bin/Sqyre-*.AppImage` |
+| `release-bundle` | `bin/sqyre-bundle/` (portable Linux + Tesseract; no check gate) |
+| `release-bundle-dhat` | `bin/sqyre-bundle-dhat/` (same + `dhat-heap`; local leak hunts only) |
 | `windows` | `bin/sqyre.exe` (Docker MinGW cross on Linux; native on Windows) |
 | `macos` | `bin/sqyre` (release; macOS host only) |
 | `wasm` | GUI-only browser editor → `bin/wasm/` (Trunk; no Run/capture/OCR) |
