@@ -1,6 +1,7 @@
 //! Pure atlas layout: Collections placed by screen bounds, neighbors by geometry.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// One Collection member of an atlas, with resolved pixel bounds and grid size.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +74,39 @@ pub fn grid_cell_rect(
     ))
 }
 
+/// One sliding footprint placement inside a collection grid selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GridPlacement {
+    /// Pixel union of the covered cells `(left, top, right, bottom)`.
+    pub rect: (i32, i32, i32, i32),
+    /// Inclusive 1-based cell range covered by this footprint.
+    pub r1: i32,
+    pub c1: i32,
+    pub r2: i32,
+    pub c2: i32,
+}
+
+impl GridPlacement {
+    /// Every cell `(row, col)` covered by this footprint.
+    pub fn cells(self) -> impl Iterator<Item = (i32, i32)> {
+        let r1 = self.r1;
+        let r2 = self.r2;
+        let c1 = self.c1;
+        let c2 = self.c2;
+        (r1..=r2).flat_map(move |r| (c1..=c2).map(move |c| (r, c)))
+    }
+
+    /// True when any covered cell is already claimed.
+    pub fn overlaps_occupied(self, occupied: &HashSet<(i32, i32)>) -> bool {
+        self.cells().any(|cell| occupied.contains(&cell))
+    }
+
+    /// Mark every covered cell as claimed.
+    pub fn claim_into(self, occupied: &mut HashSet<(i32, i32)>) {
+        occupied.extend(self.cells());
+    }
+}
+
 /// Slide an `item` rows×cols footprint through a selected cell range.
 ///
 /// Each placement is the pixel union of that many cells. Origins step by one
@@ -83,7 +117,7 @@ pub fn grid_item_placements(
     grid: (i32, i32),
     selection: (i32, i32, i32, i32),
     item: (i32, i32),
-) -> Vec<(i32, i32, i32, i32)> {
+) -> Vec<GridPlacement> {
     let (grid_rows, grid_cols) = grid;
     let (sel_r1, sel_c1, sel_r2, sel_c2) = selection;
     let (item_rows, item_cols) = item;
@@ -107,16 +141,16 @@ pub fn grid_item_placements(
     let mut out = Vec::new();
     for r in sel_r1..=max_r {
         for c in sel_c1..=max_c {
-            if let Some(rect) = grid_cell_rect(
-                bounds,
-                grid_rows,
-                grid_cols,
-                r,
-                c,
-                r + item_rows - 1,
-                c + item_cols - 1,
-            ) {
-                out.push(rect);
+            let r2 = r + item_rows - 1;
+            let c2 = c + item_cols - 1;
+            if let Some(rect) = grid_cell_rect(bounds, grid_rows, grid_cols, r, c, r2, c2) {
+                out.push(GridPlacement {
+                    rect,
+                    r1: r,
+                    c1: c,
+                    r2,
+                    c2,
+                });
             }
         }
     }
@@ -412,17 +446,44 @@ mod tests {
         );
         assert_eq!(
             grid_item_placements(bounds, (2, 2), (1, 1, 2, 2), (2, 2)),
-            vec![(0, 0, 40, 40)]
+            vec![GridPlacement {
+                rect: (0, 0, 40, 40),
+                r1: 1,
+                c1: 1,
+                r2: 2,
+                c2: 2,
+            }]
         );
         assert_eq!(
             grid_item_placements(bounds, (2, 2), (1, 1, 2, 2), (2, 1)),
-            vec![(0, 0, 20, 40), (20, 0, 40, 40)]
+            vec![
+                GridPlacement {
+                    rect: (0, 0, 20, 40),
+                    r1: 1,
+                    c1: 1,
+                    r2: 2,
+                    c2: 1,
+                },
+                GridPlacement {
+                    rect: (20, 0, 40, 40),
+                    r1: 1,
+                    c1: 2,
+                    r2: 2,
+                    c2: 2,
+                },
+            ]
         );
         assert!(grid_item_placements(bounds, (2, 2), (1, 1, 2, 2), (3, 1)).is_empty());
         assert_eq!(
             grid_item_placements(bounds, (2, 2), (1, 1, 2, 2), (0, 0)).len(),
             4
         );
+        let one = grid_item_placements(bounds, (2, 2), (1, 1, 2, 2), (1, 1))[0];
+        assert_eq!(one.cells().collect::<Vec<_>>(), vec![(1, 1)]);
+        let mut occupied = HashSet::from([(1, 1)]);
+        assert!(one.overlaps_occupied(&occupied));
+        one.claim_into(&mut occupied);
+        assert_eq!(occupied.len(), 1);
     }
 
     #[test]

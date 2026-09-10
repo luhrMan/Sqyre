@@ -22,7 +22,9 @@ mod variables;
 
 pub use action::WIRE_TYPE_KEYS;
 pub use action::*;
-pub use atlas::{grid_cell_rect, grid_item_placements, AtlasLayout, AtlasNode, AtlasPos, NavDir};
+pub use atlas::{
+    grid_cell_rect, grid_item_placements, AtlasLayout, AtlasNode, AtlasPos, GridPlacement, NavDir,
+};
 pub use bindings::{BindingRole, VariableBinding};
 pub use blank::{action_templates, blank_action, test_action, ActionTemplate};
 pub use color::{
