@@ -100,6 +100,8 @@ enum HostCmd {
     SetButtons(Vec<NativeButtonSpec>),
     /// When true, left-drag relocates buttons instead of enqueueing macros.
     SetRelocateMode(bool),
+    /// Replace the image-gate found map Arc (poller recreate / late wire-up).
+    SetVisibilityMap(Arc<Mutex<HashMap<String, bool>>>),
     /// egui context used to wake ROOT immediately after a click (busy UI / drain).
     SetWake(EguiContext),
     ShowChooser(HotkeyChooserSpec),
@@ -178,6 +180,10 @@ impl X11ButtonHost {
 
     pub fn set_relocate_mode(&self, enabled: bool) {
         let _ = self.cmd_tx.send(HostCmd::SetRelocateMode(enabled));
+    }
+
+    pub fn set_visibility_map(&self, map: Arc<Mutex<HashMap<String, bool>>>) {
+        let _ = self.cmd_tx.send(HostCmd::SetVisibilityMap(map));
     }
 
     pub fn set_wake(&self, ctx: EguiContext) {
@@ -363,6 +369,11 @@ fn host_loop(
                     apply_running_busy(&mut state, last_running.as_deref());
                 }
                 Ok(HostCmd::SetRelocateMode(enabled)) => set_relocate_mode(&mut state, enabled),
+                Ok(HostCmd::SetVisibilityMap(map)) => {
+                    state.visibility = map;
+                    apply_gate_visibility(&mut state);
+                    note("overlay-x11: visibility map replaced");
+                }
                 Ok(HostCmd::SetWake(ctx)) => {
                     state.wake = Some(ctx);
                 }
@@ -888,6 +899,8 @@ fn apply_gate_visibility(state: &mut HostState) {
     let found = state.visibility.lock().clone();
     let ids: Vec<String> = state.buttons.keys().cloned().collect();
     let mut changed = false;
+    let mut shown = 0usize;
+    let mut hidden = 0usize;
     for id in ids {
         let Some(btn) = state.buttons.get(&id) else {
             continue;
@@ -903,6 +916,7 @@ fn apply_gate_visibility(state: &mut HostState) {
         let (hit, face) = (btn.hit, btn.win);
         if show {
             raise_hit_above_face(state.display, hit, face);
+            shown += 1;
         } else {
             if state.drag.as_ref().is_some_and(|d| d.id == id) {
                 cancel_drag(state);
@@ -915,6 +929,7 @@ fn apply_gate_visibility(state: &mut HostState) {
                 x_unmap(state.display, hit);
                 x_unmap(state.display, face);
             }
+            hidden += 1;
         }
         if let Some(btn) = state.buttons.get_mut(&id) {
             btn.mapped = show;
@@ -926,6 +941,11 @@ fn apply_gate_visibility(state: &mut HostState) {
         changed = true;
     }
     if changed {
+        note(&format!(
+            "overlay-x11: gate-map show={shown} hide={hidden} relocate={} found={}",
+            state.relocate_mode,
+            found.len()
+        ));
         // SAFETY: HostState display invariant.
         unsafe {
             x_flush(state.display);
