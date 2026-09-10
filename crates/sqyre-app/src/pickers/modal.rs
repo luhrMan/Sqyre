@@ -97,6 +97,7 @@ pub fn show_active_picker(
                         None,
                         &mut header_click,
                         compact_program_headers,
+                        None,
                     );
                 });
                 ui.separator();
