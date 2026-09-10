@@ -6,7 +6,7 @@ Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
 
-If Cursor reports **“container is not running”** during attach, stale containers are usually the cause — remove them (`docker ps -a` → `docker rm -f <id>`) and **Rebuild Container**. Large `target/` trees are excluded from file watchers (see `.devcontainer/devcontainer.json`); run `cargo clean` locally if the cache has grown huge (>50 GiB).
+If Cursor reports **“container is not running”** during attach, stale containers are usually the cause — remove them (`docker ps -a` → `docker rm -f <id>`) and **Rebuild Container**. Large `target/` trees are excluded from file watchers (see `.devcontainer/devcontainer.json`). Prefer `make clean-sweep` to keep `target/` (and `target-dhat/` when present) under ~20 GiB; use `cargo clean` only if you need a full cold rebuild.
 
 ### Host permissions / SELinux / git
 
@@ -27,6 +27,7 @@ make bench      # criterion: match, vision (no Tesseract), serialize (not in CI)
 make wasm-check # cargo check -p sqyre-app --target wasm32-unknown-unknown --no-default-features
 make coverage   # llvm-cov HTML + lcov under target/coverage/
 make coverage-floors  # line-% gates for pure crates (needs cargo-llvm-cov)
+make clean-sweep # cargo-sweep target/ (+ target-dhat/) down to 20GB (SWEEP_MAXSIZE=…)
 make docs-media # regenerate docs/images screenshots
 make appimage   # fmt + check, then bin/*.AppImage (Linux)
 make windows    # fmt + check, then bin/sqyre.exe (Docker MinGW cross / native on Windows)
@@ -45,8 +46,8 @@ Build caches (all gitignored):
 
 | Path | Role |
 |------|------|
-| `target/` | Incremental compile artifacts (host + docker bind-mount; Windows under `target/x86_64-pc-windows-gnu/`) |
-| `target-dhat/` | Separate release artifacts for `make release-bundle-dhat` (avoids clobbering normal `target/release`) |
+| `target/` | Incremental compile artifacts (host + docker bind-mount; Windows under `target/x86_64-pc-windows-gnu/`). Cap with `make clean-sweep` (~20 GB). |
+| `target-dhat/` | Separate release artifacts for `make release-bundle-dhat` (avoids clobbering normal `target/release`). Also swept by `make clean-sweep`. |
 | `.cargo-home/` | Optional workspace-local cargo/rustup install |
 | `.cache/cargo/` | Cargo registry/git cache used by CI and docker AppImage / Windows builds |
 | `.cache/sccache-linux/` | sccache rustc cache for Linux CI (`test` / `build-linux` / `build-wasm`) |
@@ -76,6 +77,7 @@ Build caches (all gitignored):
 | `wasm-check` | `cargo check` of the GUI-only WASM editor (no Trunk) |
 | `coverage` | llvm-cov nextest → HTML + `lcov.info` + `summary.json` under `target/coverage/` (no % gate) |
 | `coverage-floors` | Line-coverage floors for pure crates (`sqyre-domain`, `sqyre-varref`, `path_confine`, `migrate`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`, `sqyre-executor`; see `scripts/coverage-floors.json`) |
+| `clean-sweep` | `cargo-sweep --maxsize 20GB` on `target/` (and `target-dhat/` if present); override with `SWEEP_MAXSIZE=` |
 | `run` | `cargo run -p sqyre-app` |
 | `docs-media` | Regenerate `docs/images/` screenshots |
 | `appimage` | `bin/Sqyre-*.AppImage` |
