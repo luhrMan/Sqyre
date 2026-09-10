@@ -124,7 +124,10 @@ use workspace::Workspace;
 pub fn run() -> eframe::Result<()> {
     let _ = sqyre_persist::initialize_directories();
     #[cfg(feature = "native-runtime")]
-    diag::install(sqyre_persist::sqyre_dir());
+    {
+        crate::app_backends::tune_process_heap();
+        diag::install(sqyre_persist::sqyre_dir());
+    }
     sqyre_update::cleanup_stale_update();
     #[cfg(all(
         not(target_arch = "wasm32"),

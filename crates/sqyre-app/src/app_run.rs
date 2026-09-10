@@ -320,7 +320,7 @@ mod native_run {
                 sqyre_vision::clear_search_cache();
                 sqyre_capture::release_capture_frame_cache();
                 trim_process_heap();
-                crate::mem_diag::sample("post_run");
+                crate::mem_diag::sample_with_action_log("post_run", &action_log);
 
                 let msg = match result {
                     Ok(Ok(())) if stop_flag.is_stopped() => "Stopped.".into(),

@@ -109,12 +109,23 @@ pub fn tick(ctx: &eframe::egui::Context) {
 
 /// Sample immediately (e.g. before/after macro run cleanup).
 pub fn sample(reason: &str) {
+    sample_inner(reason, None);
+}
+
+/// Like [`sample`], including action-log image retention (post-run baselines).
+pub fn sample_with_action_log(reason: &str, log: &sqyre_ports::SharedActionLog) {
+    sample_inner(reason, Some(log.image_bytes()));
+}
+
+fn sample_inner(reason: &str, action_log_bytes: Option<usize>) {
     if !enabled() {
         return;
     }
     let proc = read_process_mem();
     let cache = sqyre_vision::search_cache_stats();
     let cache_kib = (cache.bytes / 1024) as u64;
+    let portal_kib = (sqyre_capture::capture_frame_cache_bytes() / 1024) as u64;
+    let action_log_kib = action_log_bytes.map(|b| (b / 1024) as u64);
 
     let (delta_rss, since_start, grow) = {
         let Ok(mut g) = STATE.lock() else {
@@ -145,7 +156,7 @@ pub fn sample(reason: &str) {
         (delta_rss, since_start, grow)
     };
 
-    let mut fields: Vec<(&str, String)> = Vec::with_capacity(12);
+    let mut fields: Vec<(&str, String)> = Vec::with_capacity(14);
     fields.push(("reason", reason.to_string()));
     if let Some(v) = proc.rss_kib {
         fields.push(("rss_kib", v.to_string()));
@@ -169,6 +180,10 @@ pub fn sample(reason: &str) {
     fields.push(("search_tmpl", cache.templates.to_string()));
     fields.push(("search_mask", cache.masks.to_string()));
     fields.push(("search_prep", cache.prepared.to_string()));
+    fields.push(("portal_cache_kib", portal_kib.to_string()));
+    if let Some(v) = action_log_kib {
+        fields.push(("action_log_kib", v.to_string()));
+    }
 
     let owned: Vec<(&str, &str)> = fields.iter().map(|(k, v)| (*k, v.as_str())).collect();
     event_log("SQYRE_MEM=sample", &owned);
