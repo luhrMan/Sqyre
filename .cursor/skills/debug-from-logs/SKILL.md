@@ -31,8 +31,11 @@ Default dir: `~/.sqyre` (`sqyre_capture::diag::log_dir()`, set at app startup).
 | `last_site.txt` | Always (`mark_site`) | Hard abort / hang: last code site |
 | `crash.log` | Panic hook | Panic location, payload, backtrace, last site |
 | `diag.log` | Only if `SQYRE_DIAG=1`/`true`/`yes` | Timeline of `note` / `event_log` / `cap_log` |
+| `mem.log` | Only if `SQYRE_MEM=1`/`true`/`yes` | RSS / search-cache samples (`SQYRE_MEM=sample`); growth warns |
 
 Stderr always gets `sqyre: …` lines from `diag::note` and `crate::log::warn`. Terminals folder and the user's run output count as logs.
+
+Memory / leak checks: run with `SQYRE_MEM=1 ./bin/sqyre` and watch `~/.sqyre/mem.log` (or stderr). Rising `rss_kib` / `since_start_kib` after idle, or `SQYRE_MEM=grow` after macro runs, is a smell. For allocation stacks, rebuild with `--features dhat-heap` and quit cleanly → `dhat-heap.json` in the cwd.
 
 Desktop/capture issues: also run `./bin/sqyre-probe --json` (see linux-desktop-parity skill).
 
