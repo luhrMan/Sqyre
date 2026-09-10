@@ -17,7 +17,10 @@ pub fn tag_is_under_or_eq(tag: &str, prefix: &str) -> bool {
     if prefix.is_empty() {
         return tag.is_empty();
     }
-    tag == prefix || tag.strip_prefix(prefix).is_some_and(|rest| rest.starts_with('/'))
+    tag == prefix
+        || tag
+            .strip_prefix(prefix)
+            .is_some_and(|rest| rest.starts_with('/'))
 }
 
 /// True when `filters` contains `path` or an ancestor path that covers it.
@@ -147,8 +150,11 @@ pub fn tag_chip_editor(
     opts: TagChipOptions<'_>,
 ) -> TagChipEdit {
     let mut edit = TagChipEdit::default();
+    // Stable across chip-count changes so focus survives add/remove + Update/load_form.
+    let draft_id = ui.id().with("tag_draft_edit");
     let nav_id = ui.id().with("tag_suggest_nav");
     let open_id = nav_id.with("open");
+    let refocus_id = nav_id.with("refocus");
     let mut nav = ui
         .ctx()
         .data(|d| d.get_temp::<TagSuggestNav>(nav_id))
@@ -157,15 +163,16 @@ pub fn tag_chip_editor(
         .ctx()
         .data(|d| d.get_temp::<bool>(open_id))
         .unwrap_or(false);
+    let refocus = ui
+        .ctx()
+        .data_mut(|d| d.remove_temp::<bool>(refocus_id))
+        .unwrap_or(false);
     let keys = take_tag_suggest_keys(ui, was_open, nav.selected, !draft.trim().is_empty());
 
     let tag_resp = if opts.draft_first {
         ui.horizontal_wrapped(|ui| {
-            let resp = paint_tag_draft(ui, draft, &opts, &mut edit, tags);
-            let label = ui.label("Tags:");
-            if let Some(tip) = opts.draft_hover {
-                label.on_hover_text(tip);
-            }
+            let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
+            crate::action_tooltip::help::label(ui, "Tags:", opts.draft_hover.unwrap_or(""));
             paint_tag_chips(ui, tags, opts.enabled, &mut edit.changed);
             resp
         })
@@ -174,9 +181,12 @@ pub fn tag_chip_editor(
         ui.horizontal_wrapped(|ui| {
             paint_tag_chips(ui, tags, opts.enabled, &mut edit.changed);
         });
-        ui.horizontal(|ui| paint_tag_draft(ui, draft, &opts, &mut edit, tags))
+        ui.horizontal(|ui| paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags))
             .inner
     };
+    if refocus {
+        tag_resp.request_focus();
+    }
 
     let suggestions = if opts.enabled && !draft.trim().is_empty() {
         tag_completion_options(draft, tags, all_suggestions, opts.suggestion_limit)
@@ -249,6 +259,7 @@ pub fn tag_chip_editor(
         }
     }
 
+    let had_pending = pending.is_some();
     if let Some(raw) = pending {
         if try_add_tag(tags, &raw) {
             edit.changed = true;
@@ -256,7 +267,13 @@ pub fn tag_chip_editor(
         }
         draft.clear();
         nav = TagSuggestNav::default();
-        ui.memory_mut(|m| m.request_focus(tag_resp.id));
+    }
+
+    // Keep the entrybox focused so multiple tags can be added without re-clicking.
+    // Next-frame flag covers Enter/button focus steal and Data Editor Update/load_form.
+    if edit.submitted || had_pending {
+        tag_resp.request_focus();
+        ui.ctx().data_mut(|d| d.insert_temp(refocus_id, true));
     }
 
     let open = opts.enabled
@@ -322,12 +339,14 @@ fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, cha
 
 fn paint_tag_draft(
     ui: &mut egui::Ui,
+    draft_id: egui::Id,
     draft: &mut String,
     opts: &TagChipOptions<'_>,
     edit: &mut TagChipEdit,
     tags: &mut Vec<String>,
 ) -> egui::Response {
     let tag_te = egui::TextEdit::singleline(draft)
+        .id(draft_id)
         .desired_width(140.0)
         .hint_text("Add tag…");
     let mut tag_resp = ui.add_enabled(opts.enabled, tag_te);
@@ -344,8 +363,9 @@ fn paint_tag_draft(
     if opts.enabled && add_clicked {
         if try_add_tag(tags, draft) {
             edit.changed = true;
-            edit.submitted = true;
         }
+        // Mark submitted so the entrybox is refocused even when the add was a no-op.
+        edit.submitted = true;
         draft.clear();
     }
     tag_resp
