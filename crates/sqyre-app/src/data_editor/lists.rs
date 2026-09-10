@@ -82,25 +82,31 @@ impl DataEditor {
         let mut clicked_overlay: Option<(String, String)> = None;
         let mut overlay_enabled_updates: Vec<(String, bool)> = Vec::new();
 
-        // Take search out so the scroll body can borrow `&mut self`.
+        // Take search / scroll flag out so the scroll body can borrow `&mut self`.
         let mut search = std::mem::take(&mut self.search);
-        pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| match self.tab {
+        let mut scroll_to = std::mem::take(&mut self.scroll_left_list_to_selection);
+        let mut did_scroll = false;
+        let search_changed =
+            pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| match self.tab {
             EditorTab::Programs => {
                 for name in editor_program_names(catalog) {
                     if !q.is_empty() && !pickers::fuzzy_match_fold(q, name) {
                         continue;
                     }
                     let selected = self.selected_program.as_deref() == Some(name.as_str());
-                    if crate::icon_cache::paint_program_label(
+                    let resp = crate::icon_cache::paint_program_label(
                         ui,
                         catalog,
                         icons,
                         name,
                         crate::icon_cache::ProgramLabelStyle::Selectable { selected },
                         settings.compact_program_headers,
-                    )
-                    .clicked()
-                    {
+                    );
+                    if selected && scroll_to && !did_scroll {
+                        pickers::maybe_scroll_to(ui, &resp, &mut scroll_to);
+                        did_scroll = true;
+                    }
+                    if resp.clicked() {
                         self.select_program(name, catalog, settings);
                     }
                 }
@@ -117,6 +123,7 @@ impl DataEditor {
                     self.selected_program.as_deref(),
                     &mut clicked_program,
                     settings.compact_program_headers,
+                    Some(&mut scroll_to),
                 );
             }
             EditorTab::Points
@@ -143,13 +150,18 @@ impl DataEditor {
                     }
                     let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
                     let id = data_editor_list_collapse_id(self.tab, prog);
-                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
                         ui.ctx(),
                         id,
                         false,
-                    )
+                    );
+                    if scroll_to && prog_selected && !state.is_open() {
+                        state.set_open(true);
+                        state.store(ui.ctx());
+                    }
+                    state
                     .show_header(ui, |ui| {
-                        if crate::icon_cache::paint_program_label(
+                        let resp = crate::icon_cache::paint_program_label(
                             ui,
                             catalog,
                             icons,
@@ -159,9 +171,12 @@ impl DataEditor {
                                 child_count: entities.len(),
                             },
                             settings.compact_program_headers,
-                        )
-                        .clicked()
-                        {
+                        );
+                        if prog_selected && scroll_to && !did_scroll {
+                            pickers::maybe_scroll_to(ui, &resp, &mut scroll_to);
+                            did_scroll = true;
+                        }
+                        if resp.clicked() {
                             clicked_program = Some(prog.clone());
                         }
                     })
@@ -214,13 +229,18 @@ impl DataEditor {
                     let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
                     let child_count = search_areas.len() + collections.len();
                     let id = data_editor_list_collapse_id(self.tab, prog);
-                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
                         ui.ctx(),
                         id,
                         false,
-                    )
+                    );
+                    if scroll_to && prog_selected && !state.is_open() {
+                        state.set_open(true);
+                        state.store(ui.ctx());
+                    }
+                    state
                     .show_header(ui, |ui| {
-                        if crate::icon_cache::paint_program_label(
+                        let resp = crate::icon_cache::paint_program_label(
                             ui,
                             catalog,
                             icons,
@@ -230,9 +250,12 @@ impl DataEditor {
                                 child_count,
                             },
                             settings.compact_program_headers,
-                        )
-                        .clicked()
-                        {
+                        );
+                        if prog_selected && scroll_to && !did_scroll {
+                            pickers::maybe_scroll_to(ui, &resp, &mut scroll_to);
+                            did_scroll = true;
+                        }
+                        if resp.clicked() {
                             clicked_program = Some(prog.clone());
                         }
                     })
@@ -323,13 +346,18 @@ impl DataEditor {
                     let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
                     let child_count = buttons.len();
                     let id = data_editor_list_collapse_id(EditorTab::Overlay, prog);
-                    egui::collapsing_header::CollapsingState::load_with_default_open(
+                    let mut state = egui::collapsing_header::CollapsingState::load_with_default_open(
                         ui.ctx(),
                         id,
                         false,
-                    )
+                    );
+                    if scroll_to && prog_selected && !state.is_open() {
+                        state.set_open(true);
+                        state.store(ui.ctx());
+                    }
+                    state
                     .show_header(ui, |ui| {
-                        if crate::icon_cache::paint_program_label(
+                        let resp = crate::icon_cache::paint_program_label(
                             ui,
                             catalog,
                             icons,
@@ -339,9 +367,12 @@ impl DataEditor {
                                 child_count,
                             },
                             settings.compact_program_headers,
-                        )
-                        .clicked()
-                        {
+                        );
+                        if prog_selected && scroll_to && !did_scroll {
+                            pickers::maybe_scroll_to(ui, &resp, &mut scroll_to);
+                            did_scroll = true;
+                        }
+                        if resp.clicked() {
                             clicked_program = Some(prog.clone());
                         }
                     })
@@ -386,6 +417,8 @@ impl DataEditor {
             }
         });
         self.search = search;
+        // Re-arm after filter edits so a newly-visible selection can scroll into view.
+        self.scroll_left_list_to_selection = search_changed && self.selected_program.is_some();
 
         if !overlay_enabled_updates.is_empty() {
             for (id, enabled) in &overlay_enabled_updates {

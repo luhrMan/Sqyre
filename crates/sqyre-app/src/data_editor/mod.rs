@@ -126,6 +126,8 @@ pub struct DataEditor {
     selected_program: Option<String>,
     /// Selected entity within program (items / points / search areas).
     selected_entity: Option<String>,
+    /// Expand + scroll the left list to [`Self::selected_program`] (armed on tab switch).
+    scroll_left_list_to_selection: bool,
     // Form buffers
     form_name: String,
     /// 1-based monitor slot for Points / Search Areas (relative coords in form_*).
@@ -260,6 +262,7 @@ impl Default for DataEditor {
             left_width: 280.0,
             selected_program: None,
             selected_entity: None,
+            scroll_left_list_to_selection: false,
             form_name: String::new(),
             form_monitor: 1,
             form_x: String::new(),
@@ -492,6 +495,7 @@ impl DataEditor {
         if self.tab != tab {
             self.tab = tab;
             self.clear_entity_selection();
+            self.scroll_left_list_to_selection = self.selected_program.is_some();
         }
         self.load_form(catalog, settings);
     }
@@ -764,6 +768,7 @@ impl DataEditor {
                 }
                 if self.tab != prev {
                     self.clear_entity_selection();
+                    self.scroll_left_list_to_selection = self.selected_program.is_some();
                     self.load_form(env.catalog, env.settings);
                 }
             });
