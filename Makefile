@@ -2,7 +2,7 @@
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
 .PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
-	release-gate run tessdata appimage install-desktop docs-media wasm wasm-check help
+	clean-sweep release-gate run tessdata appimage install-desktop docs-media wasm wasm-check help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
@@ -11,6 +11,8 @@ CARGO ?= cargo
 CARGO_FLAGS ?=
 # Honor CARGO_TARGET_DIR when set (CI / sandbox); otherwise ./target
 TARGET_DIR := $(if $(CARGO_TARGET_DIR),$(CARGO_TARGET_DIR),$(ROOT)/target)
+# cargo-sweep --maxsize unit default is MB; prefer an explicit unit (e.g. 20GB).
+SWEEP_MAXSIZE ?= 20GB
 
 # Host OS for native binary targets (Windows_NT / Darwin / Linux / MinGW / MSYS).
 ifeq ($(OS),Windows_NT)
@@ -86,6 +88,7 @@ help:
 	@echo "  release-gate - fmt then check (used by release/packaging targets)"
 	@echo "  coverage     - llvm-cov nextest → HTML + lcov + summary.json (install: cargo-llvm-cov)"
 	@echo "  coverage-floors - line-coverage gates for pure crates (see scripts/coverage-floors.json)"
+	@echo "  clean-sweep  - cargo-sweep target dirs down to SWEEP_MAXSIZE ($(SWEEP_MAXSIZE))"
 	@echo "  run          - cargo run -p sqyre-app"
 	@echo "  tessdata     - scripts/download-tessdata.sh"
 	@echo "  docs-media   - regenerate docs/images screenshots"
@@ -221,6 +224,22 @@ machete:
 		exit 1; \
 	fi
 	$(CARGO) machete
+
+# Shrink Cargo target dirs without a full `cargo clean`. Requires cargo-sweep.
+# Default cap: 20GB (override with SWEEP_MAXSIZE=…). Also sweeps target-dhat/ when present.
+clean-sweep:
+	@if ! $(CARGO) sweep --help >/dev/null 2>&1; then \
+		echo "cargo-sweep not found. Install with:"; \
+		echo "  cargo install cargo-sweep --locked"; \
+		exit 1; \
+	fi
+	@echo "Sweeping $(TARGET_DIR) to $(SWEEP_MAXSIZE)…"
+	CARGO_TARGET_DIR=$(TARGET_DIR) $(CARGO) sweep --maxsize $(SWEEP_MAXSIZE) $(ROOT)
+	@if [ -d "$(TARGET_DIR)-dhat" ]; then \
+		echo "Sweeping $(TARGET_DIR)-dhat to $(SWEEP_MAXSIZE)…"; \
+		CARGO_TARGET_DIR=$(TARGET_DIR)-dhat $(CARGO) sweep --maxsize $(SWEEP_MAXSIZE) $(ROOT); \
+	fi
+	@du -sh $(TARGET_DIR) $(TARGET_DIR)-dhat 2>/dev/null || true
 
 check: check-fmt clippy deny
 
