@@ -1,6 +1,7 @@
 //! Left macro list panel and delete confirmation.
 
 use crate::pickers;
+use crate::widgets::tags::{filters_cover_path, normalize_tag_path};
 use crate::SqyreApp;
 use eframe::egui;
 use sqyre_domain::Macro;
@@ -9,6 +10,37 @@ use std::collections::BTreeMap;
 
 /// Empty-string group key for macros with no tags.
 const UNTAGGED_KEY: &str = "";
+
+/// One node in the `/`-nested tag tree for the macrolist.
+#[derive(Debug, Default)]
+struct TagTreeNode {
+    /// Macro indices with this exact normalized path (leaf placement only).
+    macros: Vec<usize>,
+    /// Child segments → nodes (BTreeMap keeps alphabetical order).
+    children: BTreeMap<String, TagTreeNode>,
+}
+
+impl TagTreeNode {
+    fn subtree_macro_count(&self) -> usize {
+        self.macros.len()
+            + self
+                .children
+                .values()
+                .map(TagTreeNode::subtree_macro_count)
+                .sum::<usize>()
+    }
+
+    fn insert_macro(&mut self, segments: &[&str], macro_idx: usize) {
+        let Some((head, rest)) = segments.split_first() else {
+            self.macros.push(macro_idx);
+            return;
+        };
+        self.children
+            .entry((*head).to_string())
+            .or_default()
+            .insert_macro(rest, macro_idx);
+    }
+}
 
 /// Elide `text` to a single line that fits `max_width`, appending `…` only when needed.
 fn elide_to_width(ui: &egui::Ui, text: &str, max_width: f32, font_id: egui::FontId) -> String {
@@ -107,9 +139,9 @@ fn tag_header_label(tag: &str) -> &str {
     }
 }
 
-/// Group filtered macros under each of their tags (sorted). Untagged macros last.
-fn group_macros_by_tag(macros: &[Macro], filter: &str) -> Vec<(String, Vec<usize>)> {
-    let mut by_tag: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+/// Build a nested tag tree from filtered macros. Untagged macros are a separate root entry.
+fn build_tag_tree(macros: &[Macro], filter: &str) -> (TagTreeNode, Vec<usize>) {
+    let mut root = TagTreeNode::default();
     let mut untagged = Vec::new();
     for (i, m) in macros.iter().enumerate() {
         if !pickers::query_matches_name_or_tags(filter, &m.name, &m.tags) {
@@ -120,14 +152,145 @@ fn group_macros_by_tag(macros: &[Macro], filter: &str) -> Vec<(String, Vec<usize
             continue;
         }
         for tag in &m.tags {
-            by_tag.entry(tag.clone()).or_default().push(i);
+            let path = normalize_tag_path(tag);
+            if path.is_empty() {
+                continue;
+            }
+            let segments: Vec<&str> = path.split('/').collect();
+            root.insert_macro(&segments, i);
         }
     }
-    let mut groups: Vec<(String, Vec<usize>)> = by_tag.into_iter().collect();
-    if !untagged.is_empty() {
-        groups.push((UNTAGGED_KEY.to_string(), untagged));
+    (root, untagged)
+}
+
+fn paint_macro_rows(
+    ui: &mut egui::Ui,
+    app: &SqyreApp,
+    list_w: f32,
+    indices: &[usize],
+    clicked_macro: &mut Option<usize>,
+) {
+    for &i in indices {
+        let Some(m) = app.workspace.macros.get(i) else {
+            continue;
+        };
+        let width = ui.available_width().min(list_w).max(0.0);
+        let text_width = (width - ui.spacing().button_padding.x * 2.0).max(0.0);
+        let validation_err = sqyre_validate::validate_macro(m)
+            .err()
+            .map(|e| e.to_string());
+        let label = macro_list_item_text(ui, m, text_width, validation_err.as_deref());
+        let mut resp = ui.add(
+            egui::Button::selectable(app.workspace.selected_macro == i, label)
+                .wrap_mode(egui::TextWrapMode::Extend)
+                .min_size(egui::vec2(width, 0.0)),
+        );
+        if let Some(err) = validation_err.as_deref() {
+            resp = resp.on_hover_text(format!("Validation: {err}"));
+        }
+        if resp.clicked() {
+            *clicked_macro = Some(i);
+        }
     }
-    groups
+}
+
+struct PaintTagCtx<'a> {
+    app: &'a SqyreApp,
+    list_w: f32,
+    clicked_macro: &'a mut Option<usize>,
+    clicked_tag: &'a mut Option<String>,
+}
+
+fn paint_tag_node(
+    ui: &mut egui::Ui,
+    ctx: &mut PaintTagCtx<'_>,
+    path: &str,
+    label: &str,
+    node: &TagTreeNode,
+    is_first_root: bool,
+) {
+    if !is_first_root {
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(4.0);
+    }
+
+    let id = ui.make_persistent_id(("macro_list_tag", path));
+    let count = node.subtree_macro_count();
+    let filters = ctx.app.workspace.hotkey_tag_filters.as_slice();
+    let exact_selected = filters.iter().any(|t| t == path);
+    let covered = filters_cover_path(filters, path);
+    // body_unindented: show_body_indented calls expand_to_include_x which widens the panel.
+    egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+        .show_header(ui, |ui| {
+            let header_budget = (ui.available_width() - ui.spacing().button_padding.x).max(0.0);
+            let font = egui::FontSelection::Default.resolve(ui.style());
+            let count_text = format!("({count})");
+            let count_w = ui
+                .painter()
+                .layout_no_wrap(count_text, font.clone(), egui::Color32::WHITE)
+                .size()
+                .x;
+            let name_budget = (header_budget - count_w - ui.spacing().item_spacing.x).max(0.0);
+            let header_text = elide_to_width(ui, label, name_budget, font);
+            let hover = if exact_selected {
+                "Hotkeys enabled for this tag (multiselect). Click again to remove."
+            } else if covered {
+                "Hotkeys covered by a parent tag. Deselect the parent to pick this tag alone."
+            } else {
+                "Add this tag to the hotkey selection (multiselect). Parents include nested tags."
+            };
+            let resp = crate::widgets::selectable_title_with_count(
+                ui,
+                covered,
+                egui::RichText::new(header_text).strong(),
+                count,
+            )
+            .on_hover_text(hover);
+            if resp.clicked() {
+                *ctx.clicked_tag = Some(path.to_string());
+            }
+        })
+        .body_unindented(|ui| {
+            ui.set_max_width(ctx.list_w);
+            paint_macro_rows(
+                ui,
+                ctx.app,
+                ctx.list_w,
+                &node.macros,
+                ctx.clicked_macro,
+            );
+            for (seg, child) in &node.children {
+                let child_path = if path.is_empty() {
+                    seg.clone()
+                } else {
+                    format!("{path}/{seg}")
+                };
+                // Nested headers: no root separators; slight indent without expand_to_include_x.
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(12.0);
+                    ui.vertical(|ui| {
+                        let nested_w = (ctx.list_w - 12.0).max(0.0);
+                        ui.set_max_width(nested_w);
+                        let mut nested = PaintTagCtx {
+                            app: ctx.app,
+                            list_w: nested_w,
+                            clicked_macro: ctx.clicked_macro,
+                            clicked_tag: ctx.clicked_tag,
+                        };
+                        paint_tag_node(
+                            ui,
+                            &mut nested,
+                            &child_path,
+                            seg,
+                            child,
+                            true, // suppress root separators inside nest
+                        );
+                    });
+                });
+            }
+        });
 }
 
 pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
@@ -243,94 +406,35 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     let list_w = ui.available_width().min(pane_w);
                     ui.set_max_width(list_w);
                     let filter = app.macro_list_filter.trim().to_string();
-                    let groups = group_macros_by_tag(&app.workspace.macros, &filter);
+                    let (tree, untagged) = build_tag_tree(&app.workspace.macros, &filter);
                     let mut clicked_macro: Option<usize> = None;
                     let mut clicked_tag: Option<String> = None;
-
-                    for (group_i, (tag, indices)) in groups.iter().enumerate() {
-                        if group_i > 0 {
-                            ui.add_space(8.0);
-                            ui.separator();
-                            ui.add_space(4.0);
+                    {
+                        let mut ctx = PaintTagCtx {
+                            app,
+                            list_w,
+                            clicked_macro: &mut clicked_macro,
+                            clicked_tag: &mut clicked_tag,
+                        };
+                        let mut first = true;
+                        for (seg, child) in &tree.children {
+                            paint_tag_node(ui, &mut ctx, seg, seg, child, first);
+                            first = false;
                         }
-                        let id = ui.make_persistent_id(("macro_list_tag", tag.as_str()));
-                        let header = tag_header_label(tag);
-                        // body_unindented: show_body_indented calls expand_to_include_x
-                        // which widens the panel.
-                        egui::collapsing_header::CollapsingState::load_with_default_open(
-                            ui.ctx(),
-                            id,
-                            false,
-                        )
-                        .show_header(ui, |ui| {
-                            let selected =
-                                app.workspace.hotkey_tag_filters.iter().any(|t| t == tag);
-                            let header_budget =
-                                (ui.available_width() - ui.spacing().button_padding.x).max(0.0);
-                            let font = egui::FontSelection::Default.resolve(ui.style());
-                            // Reserve room for a flush-right count so elision doesn't eat it.
-                            let count_text = format!("({})", indices.len());
-                            let count_w = ui
-                                .painter()
-                                .layout_no_wrap(
-                                    count_text.clone(),
-                                    font.clone(),
-                                    egui::Color32::WHITE,
-                                )
-                                .size()
-                                .x;
-                            let name_budget =
-                                (header_budget - count_w - ui.spacing().item_spacing.x).max(0.0);
-                            let header_text = elide_to_width(ui, header, name_budget, font);
-                            let resp = crate::widgets::selectable_title_with_count(
+                        if !untagged.is_empty() {
+                            let untagged_node = TagTreeNode {
+                                macros: untagged,
+                                children: BTreeMap::new(),
+                            };
+                            paint_tag_node(
                                 ui,
-                                selected,
-                                egui::RichText::new(header_text).strong(),
-                                indices.len(),
-                            )
-                            .on_hover_text(if selected {
-                                "Hotkeys enabled for this tag (multiselect). Click again to remove."
-                            } else {
-                                "Add this tag to the hotkey selection (multiselect)."
-                            });
-                            if resp.clicked() {
-                                clicked_tag = Some(tag.clone());
-                            }
-                        })
-                        .body_unindented(|ui| {
-                            ui.set_max_width(list_w);
-                            for &i in indices {
-                                let Some(m) = app.workspace.macros.get(i) else {
-                                    continue;
-                                };
-                                let width = ui.available_width().min(list_w).max(0.0);
-                                let text_width =
-                                    (width - ui.spacing().button_padding.x * 2.0).max(0.0);
-                                let validation_err = sqyre_validate::validate_macro(m)
-                                    .err()
-                                    .map(|e| e.to_string());
-                                let label = macro_list_item_text(
-                                    ui,
-                                    m,
-                                    text_width,
-                                    validation_err.as_deref(),
-                                );
-                                let mut resp = ui.add(
-                                    egui::Button::selectable(
-                                        app.workspace.selected_macro == i,
-                                        label,
-                                    )
-                                    .wrap_mode(egui::TextWrapMode::Extend)
-                                    .min_size(egui::vec2(width, 0.0)),
-                                );
-                                if let Some(err) = validation_err.as_deref() {
-                                    resp = resp.on_hover_text(format!("Validation: {err}"));
-                                }
-                                if resp.clicked() {
-                                    clicked_macro = Some(i);
-                                }
-                            }
-                        });
+                                &mut ctx,
+                                UNTAGGED_KEY,
+                                "Untagged",
+                                &untagged_node,
+                                first,
+                            );
+                        }
                     }
 
                     if let Some(tag) = clicked_tag {
@@ -392,28 +496,47 @@ mod tests {
     }
 
     #[test]
-    fn groups_by_each_tag_and_untagged() {
+    fn nests_slash_tags_leaf_only() {
         let macros = vec![
             m("alpha", &["combat"]),
-            m("beta", &["combat", "farm"]),
-            m("gamma", &[]),
+            m("beta", &["combat/pve"]),
+            m("gamma", &["combat/pvp"]),
+            m("delta", &["farm"]),
+            m("epsilon", &[]),
         ];
-        let groups = group_macros_by_tag(&macros, "");
-        assert_eq!(groups.len(), 3);
-        assert_eq!(groups[0].0, "combat");
-        assert_eq!(groups[0].1, vec![0, 1]);
-        assert_eq!(groups[1].0, "farm");
-        assert_eq!(groups[1].1, vec![1]);
-        assert_eq!(groups[2].0, UNTAGGED_KEY);
-        assert_eq!(groups[2].1, vec![2]);
+        let (tree, untagged) = build_tag_tree(&macros, "");
+        assert_eq!(untagged, vec![4]);
+        let combat = tree.children.get("combat").expect("combat");
+        assert_eq!(combat.macros, vec![0]);
+        assert_eq!(combat.children.get("pve").unwrap().macros, vec![1]);
+        assert_eq!(combat.children.get("pvp").unwrap().macros, vec![2]);
+        assert_eq!(combat.subtree_macro_count(), 3);
+        assert_eq!(tree.children.get("farm").unwrap().macros, vec![3]);
     }
 
     #[test]
-    fn filter_hides_empty_groups() {
-        let macros = vec![m("alpha", &["combat"]), m("beta", &["farm"])];
-        let groups = group_macros_by_tag(&macros, "farm");
-        assert_eq!(groups.len(), 1);
-        assert_eq!(groups[0].0, "farm");
-        assert_eq!(groups[0].1, vec![1]);
+    fn filter_hides_empty_branches() {
+        let macros = vec![m("alpha", &["combat/pve"]), m("beta", &["farm"])];
+        let (tree, untagged) = build_tag_tree(&macros, "farm");
+        assert!(untagged.is_empty());
+        assert!(tree.children.get("combat").is_none());
+        assert_eq!(tree.children.get("farm").unwrap().macros, vec![1]);
+    }
+
+    #[test]
+    fn multi_tag_appears_under_each_leaf() {
+        let macros = vec![m("beta", &["combat/pve", "farm"])];
+        let (tree, _) = build_tag_tree(&macros, "");
+        assert_eq!(
+            tree.children
+                .get("combat")
+                .unwrap()
+                .children
+                .get("pve")
+                .unwrap()
+                .macros,
+            vec![0]
+        );
+        assert_eq!(tree.children.get("farm").unwrap().macros, vec![0]);
     }
 }

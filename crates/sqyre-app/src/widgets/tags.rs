@@ -2,6 +2,29 @@
 
 use eframe::egui::{self, Key, Modifiers};
 
+/// Collapse `/`-separated tag paths: trim, drop empty segments, rejoin.
+/// `" combat/pve/ "` → `"combat/pve"`; `"///"` → `""`.
+pub fn normalize_tag_path(tag: &str) -> String {
+    tag.split('/')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// True when `tag` equals `prefix` or is a nested path under it (`prefix/...`).
+pub fn tag_is_under_or_eq(tag: &str, prefix: &str) -> bool {
+    if prefix.is_empty() {
+        return tag.is_empty();
+    }
+    tag == prefix || tag.strip_prefix(prefix).is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// True when `filters` contains `path` or an ancestor path that covers it.
+pub fn filters_cover_path(filters: &[String], path: &str) -> bool {
+    filters.iter().any(|f| tag_is_under_or_eq(path, f))
+}
+
 /// Filter `all_tags` by substring match, excluding tags already present.
 pub fn tag_completion_options(
     search: &str,
@@ -23,12 +46,13 @@ pub fn tag_completion_options(
 }
 
 /// Try to append a trimmed unique tag. Returns true when the list changed.
+/// Paths are normalized (`a//b/` → `a/b`) so nested tags stay consistent.
 pub fn try_add_tag(tags: &mut Vec<String>, raw: &str) -> bool {
-    let t = raw.trim();
-    if t.is_empty() || tags.iter().any(|x| x == t) {
+    let t = normalize_tag_path(raw);
+    if t.is_empty() || tags.iter().any(|x| normalize_tag_path(x) == t) {
         return false;
     }
-    tags.push(t.to_string());
+    tags.push(t);
     true
 }
 
@@ -387,5 +411,18 @@ mod tests {
         assert_eq!(step_tag_suggest_selection(Some(2), 3, false), Some(1));
         assert_eq!(step_tag_suggest_selection(None, 3, false), None);
         assert_eq!(step_tag_suggest_selection(None, 0, true), None);
+    }
+
+    #[test]
+    fn normalize_and_under_paths() {
+        assert_eq!(normalize_tag_path(" combat/pve/ "), "combat/pve");
+        assert_eq!(normalize_tag_path("a//b"), "a/b");
+        assert_eq!(normalize_tag_path("///"), "");
+        assert!(tag_is_under_or_eq("combat", "combat"));
+        assert!(tag_is_under_or_eq("combat/pve", "combat"));
+        assert!(!tag_is_under_or_eq("combatant", "combat"));
+        assert!(!tag_is_under_or_eq("combat", "combat/pve"));
+        assert!(filters_cover_path(&["combat".into()], "combat/pve"));
+        assert!(!filters_cover_path(&["combat/pve".into()], "combat"));
     }
 }
