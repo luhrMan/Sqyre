@@ -1743,6 +1743,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "evdev-rs"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d28ab5638ed883532ae91b8f0e8b5ffa6e7296c0127855d6f8f9c0a1f468889a"
+dependencies = [
+ "bitflags 2.13.1",
+ "evdev-sys",
+ "libc",
+ "log",
+]
+
+[[package]]
 name = "evdev-sys"
 version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4129,7 +4141,7 @@ dependencies = [
  "core-foundation-sys 0.7.0",
  "core-graphics 0.19.2",
  "epoll",
- "evdev-rs",
+ "evdev-rs 0.4.0",
  "inotify",
  "lazy_static",
  "libc",
@@ -4881,7 +4893,7 @@ name = "sqyre-hotkeys"
 version = "0.1.0"
 dependencies = [
  "epoll",
- "evdev-rs",
+ "evdev-rs 0.6.3",
  "parking_lot",
  "rdev",
  "sqyre-domain",
