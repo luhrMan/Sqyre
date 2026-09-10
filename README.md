@@ -264,6 +264,7 @@ Contributions are welcome. A practical path:
 
 Helpful docs:
 
+- [Image Search](docs/IMAGE_SEARCH.md) — collections, variants, cell occupation
 - [Developing](docs/DEVELOPING.md) — build, CI, packaging, coverage
 - [Rust workspace](docs/RUST.md) — crate map
 - [Documentation index](docs/README.md)
