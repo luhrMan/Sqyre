@@ -496,6 +496,9 @@ impl DataEditor {
             self.tab = tab;
             self.clear_entity_selection();
             self.scroll_left_list_to_selection = self.selected_program.is_some();
+            if tab == EditorTab::ScreenCap {
+                self.reset_item_param_fields();
+            }
         }
         self.load_form(catalog, settings);
     }
@@ -769,6 +772,9 @@ impl DataEditor {
                 if self.tab != prev {
                     self.clear_entity_selection();
                     self.scroll_left_list_to_selection = self.selected_program.is_some();
+                    if self.tab == EditorTab::ScreenCap {
+                        self.reset_item_param_fields();
+                    }
                     self.load_form(env.catalog, env.settings);
                 }
             });

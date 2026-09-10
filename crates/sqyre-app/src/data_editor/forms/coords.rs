@@ -26,7 +26,7 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        ui.heading("Point");
+        help::heading(ui, "Point", help::DE_POINT_COORDS);
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(4.0);
         self.paint_name_record_row(
@@ -36,7 +36,6 @@ impl DataEditor {
             "Recording… left-click to capture.",
             ScreenClickBridge::arm_point,
         );
-        ui.weak("X/Y are relative to the monitor; integers or ${var}.");
         self.paint_monitor_slot(ui);
         let (x, y) = form_absolute_xy(
             catalog,
@@ -95,6 +94,7 @@ impl DataEditor {
         );
         ui.horizontal(|ui| {
             ui.heading("Search Area");
+            help::icon(ui, help::DE_AREA_BOUNDS);
             if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
                 ui.weak(pixel_size_text(w, h));
             }
@@ -108,7 +108,6 @@ impl DataEditor {
             "Recording… click two corners.",
             ScreenClickBridge::arm_search_area,
         );
-        ui.weak("Bounds are relative to one monitor; integers or ${var}.");
         self.paint_monitor_slot(ui);
         self.sync_coord_preview_view();
         let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
@@ -167,11 +166,8 @@ impl DataEditor {
         ui.heading("Mask");
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(4.0);
-        ui.label("Name").on_hover_text(help::DE_NAME);
-        help::tip(
-            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY)),
-            help::DE_NAME,
-        );
+        help::label(ui, "Name", help::DE_NAME);
+        ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
         paint_fs_name_hint(ui, &self.form_name);
         let has_image = self
             .selected_program
@@ -202,23 +198,24 @@ impl DataEditor {
             {
                 self.remove_mask_image(catalog, icons);
             }
+            if has_image {
+                help::icon(ui, help::DE_MASK_IMAGE_MODE);
+            }
         });
-        if has_image {
-            ui.weak("Image mask mode — shape fields hidden while a PNG is on disk.");
-        } else {
+        if !has_image {
             ui.add_space(4.0);
             help::label(ui, "Shape", help::DE_MASK_SHAPE);
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle")
-                    .on_hover_text(help::DE_MASK_SHAPE);
-                ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle")
-                    .on_hover_text(help::DE_MASK_SHAPE);
+                ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle");
+                ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle");
             });
-            ui.checkbox(
-                &mut self.form_inverse,
-                "Inverse (shape included, rest excluded)",
-            )
-            .on_hover_text("When on, only the shape region is kept; the rest is masked out.");
+            ui.horizontal(|ui| {
+                ui.checkbox(
+                    &mut self.form_inverse,
+                    "Inverse (shape included, rest excluded)",
+                );
+                help::icon(ui, help::DE_MASK_INVERSE);
+            });
             ui.add_space(4.0);
             let cx = validate_numeric_expression(&self.form_center_x, active_macro);
             var_pills::validated_var_ref_edit(
@@ -298,7 +295,6 @@ impl DataEditor {
                     },
                 );
             }
-            ui.weak("Numeric fields accept literals or ${var} expressions.");
         }
         if let (Some(prog), Some(mask)) = (
             self.selected_program.as_deref(),
@@ -337,10 +333,7 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        ui.heading("ScreenCap");
-        ui.weak(
-            "Set monitor-relative LeftX/TopY/RightX/BottomY (type, screen-record, or optional reference), name the capture, then Save writes the framed preview to images/ScreenCap. New Item creates a catalog item with that name and the capture as Original.",
-        );
+        help::heading(ui, "ScreenCap", help::DE_SCREENCAP_INTRO);
         ui.add_space(4.0);
         self.program_selector(ui, catalog, icons, settings);
         self.paint_name_record_row(
@@ -350,44 +343,10 @@ impl DataEditor {
             "Recording… click two corners.",
             ScreenClickBridge::arm_search_area,
         );
-        {
-            use crate::pickers::{ActivePicker, CoordKind};
-            use sqyre_domain::CoordinateRef;
-            let reference = CoordinateRef(self.form_search_area.clone());
-            let display = if reference.is_empty() {
-                "(optional — seed coords from a search area or cell)"
-            } else {
-                reference.as_str()
-            };
-            ui.horizontal(|ui| {
-                help::label(ui, "Reference", help::DE_SCREENCAP_REF);
-                if let Some(prog) = reference.program() {
-                    crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
-                }
-                let resp = ui.monospace(display);
-                if !reference.is_empty() {
-                    let kind = if reference.is_collection() {
-                        PreviewKind::Collection
-                    } else {
-                        PreviewKind::SearchArea
-                    };
-                    previews.show_for_coordinate_ref(ui, &resp, catalog, &reference, kind);
-                }
-                if crate::theme::icon_button(ui, "☰")
-                    .on_hover_text("Pick search area or collection cell…")
-                    .clicked()
-                {
-                    self.window_picker = ActivePicker::Coord {
-                        kind: CoordKind::SearchArea,
-                        search: String::new(),
-                        value: self.form_search_area.clone(),
-                        cell_pick: None,
-                        scroll_to_selection: true,
-                    };
-                }
-            });
-        }
-        ui.weak("Bounds overlay the preview edges; they are relative to one monitor.");
+        ui.add_space(4.0);
+        self.paint_item_param_fields(ui, catalog, icons);
+        ui.add_space(4.0);
+        help::label(ui, "Bounds", help::DE_BOUNDS_PREVIEW);
         self.paint_monitor_slot(ui);
         let (lx, ty, rx, by) = form_desktop_area(
             catalog,
