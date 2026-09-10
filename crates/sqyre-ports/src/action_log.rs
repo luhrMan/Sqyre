@@ -155,6 +155,12 @@ impl SharedActionLog {
         self.inner.lock().clear();
     }
 
+    /// Total RGBA bytes retained in log images (for `SQYRE_MEM` samples).
+    pub fn image_bytes(&self) -> usize {
+        let map = self.inner.lock();
+        map.values().map(|entries| entries_image_bytes(entries)).sum()
+    }
+
     /// Snapshot of the entries logged for `action_id`.
     pub fn entries_for(&self, action_id: ActionId) -> Vec<ActionLogEntry> {
         self.inner
@@ -162,6 +168,22 @@ impl SharedActionLog {
             .get(&action_id)
             .cloned()
             .unwrap_or_default()
+    }
+}
+
+fn entries_image_bytes(entries: &[ActionLogEntry]) -> usize {
+    entries.iter().map(entry_image_bytes).sum()
+}
+
+fn entry_image_bytes(entry: &ActionLogEntry) -> usize {
+    match entry {
+        ActionLogEntry::Text(_) => 0,
+        ActionLogEntry::Image(img) => img.pixels.len(),
+        ActionLogEntry::ItemPipeline {
+            thumbnail, steps, ..
+        } => {
+            thumbnail.pixels.len() + steps.iter().map(|s| s.pixels.len()).sum::<usize>()
+        }
     }
 }
 
@@ -324,6 +346,37 @@ mod tests {
         log.log_image(id, &solid("capture", 128));
         let entries = log.entries_for(id);
         assert_eq!(entries.len(), 1);
+        assert_eq!(log.image_bytes(), 0, "disabled images must not retain pixels");
+    }
+
+    #[test]
+    fn image_bytes_tracks_retained_pixels_and_clear() {
+        let log = SharedActionLog::new();
+        log.set_log_images(true);
+        let id = ActionId::new();
+        log.log(id, "text-only".into());
+        assert_eq!(log.image_bytes(), 0);
+
+        let img = solid("shot", 64);
+        let expected = img.pixels.len();
+        log.log_image(id, &img);
+        assert_eq!(log.image_bytes(), expected);
+
+        let thumb = solid("thumb", 1);
+        let step = solid("step", 2);
+        let pipeline_bytes = thumb.pixels.len() + step.pixels.len();
+        log.log_item_pipeline(
+            id,
+            "item".into(),
+            "sum".into(),
+            &thumb,
+            &[step],
+            vec!["d".into()],
+        );
+        assert_eq!(log.image_bytes(), expected + pipeline_bytes);
+
+        log.clear();
+        assert_eq!(log.image_bytes(), 0);
     }
 
     #[test]
