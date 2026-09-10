@@ -629,13 +629,26 @@ fn set_relocate_mode(state: &mut HostState, enabled: bool) {
             x_select_face_input(state.display, face, enabled);
         }
         apply_button_cursor(state, hit, hovered);
-        raise_hit_above_face(state.display, hit, face);
+    }
+    if enabled {
+        // Editor relocate: show every hosted button (including image-gated ones that
+        // were unmapped). Keep `mapped` in sync — MapRaised without that left ghosts
+        // that apply_gate_visibility skipped (show==mapped==false) until a fresh find.
+        let n = state.buttons.len();
+        for btn in state.buttons.values_mut() {
+            raise_hit_above_face(state.display, btn.hit, btn.win);
+            btn.mapped = true;
+        }
+        note(&format!("overlay-x11: relocate_mode=true shown={n}"));
+    } else {
+        // Leaving the Overlay editor — restore image/focus gate map state.
+        apply_gate_visibility(state);
+        note("overlay-x11: relocate_mode=false gate-restored");
     }
     // SAFETY: HostState display invariant.
     unsafe {
         x_flush(state.display);
     }
-    note(&format!("overlay-x11: relocate_mode={enabled}"));
 }
 
 fn button_event_mask(relocate: bool) -> c_long {
@@ -879,7 +892,11 @@ fn apply_gate_visibility(state: &mut HostState) {
         let Some(btn) = state.buttons.get(&id) else {
             continue;
         };
-        let show = !btn.spec.visibility_gated || found.get(&id).copied().unwrap_or(false);
+        // Relocate (Overlay editor open): keep every hosted button mapped so the
+        // user can drag them; do not let the found-map hide them mid-edit.
+        let show = state.relocate_mode
+            || !btn.spec.visibility_gated
+            || found.get(&id).copied().unwrap_or(false);
         if show == btn.mapped {
             continue;
         }
