@@ -1,6 +1,7 @@
 //! Concise hover help for action editor fields.
 //!
 //! One short sentence per setting. Empty string means no tip.
+//! Prefer a `?` icon ([`icon`] / [`label`]) over inline weak helper paragraphs.
 
 use eframe::egui;
 
@@ -13,9 +14,46 @@ pub fn tip(resp: egui::Response, help: &str) -> egui::Response {
     }
 }
 
-/// Label that shows `help` on hover when non-empty.
+/// Small `?` that shows `help` on hover. Draws nothing when `help` is empty.
+pub fn icon(ui: &mut egui::Ui, help: &str) -> Option<egui::Response> {
+    if help.is_empty() {
+        return None;
+    }
+    let size = ui.text_style_height(&egui::TextStyle::Small);
+    Some(
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(egui_phosphor::regular::QUESTION)
+                    .weak()
+                    .size(size),
+            )
+            .sense(egui::Sense::hover()),
+        )
+        .on_hover_text(help),
+    )
+}
+
+/// Label with an adjacent `?` help icon when `help` is non-empty.
 pub fn label(ui: &mut egui::Ui, text: &str, help: &str) -> egui::Response {
-    tip(ui.label(text), help)
+    if help.is_empty() {
+        return ui.label(text);
+    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 2.0;
+        let resp = ui.label(text);
+        icon(ui, help);
+        resp
+    })
+    .inner
+}
+
+/// Heading with an adjacent `?` help icon when `help` is non-empty.
+pub fn heading(ui: &mut egui::Ui, text: &str, help: &str) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.heading(text);
+        icon(ui, help);
+    });
 }
 
 // --- Shared / common ---
@@ -202,9 +240,9 @@ pub const NAV_KEY_CHORD: &str = "Keys that trigger this branch (one per line).";
 pub const DE_NAME: &str =
     "Unique name within this program. Cannot contain < > : \" / \\ | ? * or end with a period.";
 pub const DE_RUNNING_PROGRAM: &str =
-    "Process and window title that must be focused for overlay buttons.";
+    "Process and window title that must own focus for this program's overlay buttons to show.";
 pub const DE_PROGRAM_MACRO_TAGS: &str =
-    "Macro tags auto-selected for hotkeys when this program owns focus (Settings: while focused). Same labels as macro tags.";
+    "When Settings → while focused is on, these tags become the hotkey selection while this program owns focus. Same labels as macro tags.";
 pub const DE_COLS: &str =
     "Grid columns this item occupies in a collection. Image Search uses this footprint (0 = 1).";
 pub const DE_ROWS: &str =
@@ -212,22 +250,45 @@ pub const DE_ROWS: &str =
 pub const DE_STACK_MAX: &str = "Max stacked instances when capturing variants (0 = unset).";
 pub const DE_MASK: &str = "Optional mask applied during image search.";
 pub const DE_TAGS: &str = "Labels for filtering items in pickers.";
+pub const DE_POINT_COORDS: &str =
+    "X/Y are relative to the monitor; integers or ${var} expressions.";
 pub const DE_POINT_X: &str = "X coordinate (number or expression).";
 pub const DE_POINT_Y: &str = "Y coordinate (number or expression).";
+pub const DE_AREA_BOUNDS: &str =
+    "Bounds are relative to one monitor; integers or ${var} expressions.";
 pub const DE_AREA_LEFT: &str = "Left edge X of the search area.";
 pub const DE_AREA_TOP: &str = "Top edge Y of the search area.";
 pub const DE_AREA_RIGHT: &str = "Right edge X of the search area.";
 pub const DE_AREA_BOTTOM: &str = "Bottom edge Y of the search area.";
+pub const DE_BOUNDS_PREVIEW: &str =
+    "Bounds overlay the preview edges; they are relative to one monitor.";
+pub const DE_SCREENCAP_INTRO: &str =
+    "Set monitor-relative LeftX/TopY/RightX/BottomY (type or screen-record), name the capture, then Save writes the framed preview to images/ScreenCap. New Item creates a catalog item with Name, Tags, Cols/Rows/Stack max, and Mask, using the capture as Original.";
 pub const DE_SCREENCAP_REF: &str =
     "Optional. Picking a search area or collection cell loads its bounds into LeftX/TopY/RightX/BottomY and suggests a filename.";
 pub const DE_SCREENCAP_NEW_ITEM: &str =
-    "Create a catalog item in the selected program using Name, with the preview screenshot as the Original icon.";
+    "Create a catalog item in the selected program using Name, Tags, Cols/Rows/Stack max, and Mask, with the preview screenshot as the Original icon.";
+pub const DE_PIXELCHECK_INTRO: &str =
+    "Select an item, set a search area (reference or inline coords), tune match settings, then inspect the similarity heatmap.";
+pub const DE_PIXELCHECK_BOUNDS: &str =
+    "Bounds overlay the preview edges; relative to one monitor; integers or ${var}.";
 pub const DE_COLLECTION_AREA: &str = "Search area used when capturing this collection.";
 pub const DE_COLLECTION_ROWS: &str = "Number of rows in the collection grid.";
 pub const DE_COLLECTION_COLS: &str = "Number of columns in the collection grid.";
 pub const DE_ATLAS_MEMBERS: &str =
     "Collections included in this Atlas. Neighbors are derived from their on-screen positions.";
-pub const DE_MASK_SHAPE: &str = "Rectangle or circle geometry for the mask.";
+pub const DE_ATLAS_PLANE: &str =
+    "Monitors behind Collections; neighbors from search-area positions.";
+pub const DE_MASK_SHAPE: &str =
+    "Rectangle or circle geometry for the mask. Numeric fields accept literals or ${var} expressions.";
+pub const DE_MASK_IMAGE_MODE: &str =
+    "Image mask mode — shape fields are hidden while a PNG is on disk.";
+pub const DE_MASK_INVERSE: &str = "When on, only the shape region is kept; the rest is masked out.";
+pub const DE_PREVIEW_ZOOM: &str = "Scroll to zoom; drag to pan when zoomed.";
+pub const DE_COLLECTION_CELL_ZOOM: &str =
+    "Scroll to zoom; drag to pan when zoomed; click/drag selects cells at 100%.";
+pub const DE_OVERLAY_INTRO: &str =
+    "General buttons stay on screen when enabled. Other programs show only while their bound process and window title own focus (bind a window on the Programs tab). The selected button is previewed on screen while you edit.";
 pub const DE_OVERLAY_MACRO: &str =
     "Macro launched when the overlay button is clicked (also used as the button name).";
 pub const DE_OVERLAY_ENABLED: &str =
@@ -239,7 +300,10 @@ pub const DE_OVERLAY_Y: &str = "Button Y on the desktop (pixels). Ignored when a
 pub const DE_OVERLAY_SIZE: &str = "Button size in pixels.";
 pub const DE_OVERLAY_RADIUS: &str = "Corner roundness of the button.";
 pub const DE_OVERLAY_BORDER: &str = "Border thickness of the button.";
-pub const DE_OVERLAY_ICON: &str = "Optional Phosphor icon glyph on the button.";
+pub const DE_OVERLAY_ICON: &str =
+    "Optional Phosphor icon glyph on the button. Click the preview to choose from the library.";
+pub const DE_OVERLAY_ICON_PICKER: &str = "Search Phosphor icons by name, then click to select.";
+pub const DE_OVERLAY_ICON_HOVER: &str = "Icon color when the pointer is over the button.";
 pub const DE_OVERLAY_GATE: &str =
     "When enabled, the button only appears while an Image Search match is found in the search area (polled in the background).";
 pub const DE_OVERLAY_GATE_AREA: &str =
@@ -248,6 +312,9 @@ pub const DE_OVERLAY_GATE_ITEMS: &str =
     "Catalog items (icon templates) to look for — same as Image Search targets.";
 pub const DE_OVERLAY_GATE_INTERVAL: &str =
     "Milliseconds between capture+match polls. Polls run on a background thread so they do not wait for the main window.";
+pub const DE_OVERLAY_ALPHA_NONE: &str = "Alpha 0 = fully transparent / none.";
+pub const SETTING_LOG_META: &str =
+    "When enabled, image search / OCR keep debug frames in action logs (in memory). Warning: can be very memory intensive.";
 
 // --- Variables panel ---
 

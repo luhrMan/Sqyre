@@ -35,11 +35,8 @@ impl DataEditor {
         });
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(4.0);
-        ui.label("Name").on_hover_text(help::DE_NAME);
-        help::tip(
-            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY)),
-            help::DE_NAME,
-        );
+        help::label(ui, "Name", help::DE_NAME);
+        ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(4.0);
         help::label(ui, "Search area", help::DE_COLLECTION_AREA);
@@ -147,11 +144,8 @@ impl DataEditor {
         ui.heading("Atlas");
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(4.0);
-        ui.label("Name").on_hover_text(help::DE_NAME);
-        help::tip(
-            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY)),
-            help::DE_NAME,
-        );
+        help::label(ui, "Name", help::DE_NAME);
+        ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(4.0);
         help::label(ui, "Collections", help::DE_ATLAS_MEMBERS);

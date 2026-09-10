@@ -120,7 +120,11 @@ impl DataEditor {
         .max_size(egui::vec2(constrain.x.min(720.0), constrain.y.min(900.0)))
         .show(ctx, |ui| {
             crate::widgets::fill_resize_body(ui, |ui| {
-                ui.weak("Phosphor Icons — search by name, then click to select.");
+                crate::action_tooltip::help::label(
+                    ui,
+                    "Icons",
+                    crate::action_tooltip::help::DE_OVERLAY_ICON_PICKER,
+                );
                 ui.add_space(4.0);
                 if let Some(id) = overlay_icons::show_icon_picker_grid(
                     ui,
