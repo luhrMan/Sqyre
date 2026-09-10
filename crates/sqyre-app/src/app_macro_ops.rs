@@ -2,22 +2,26 @@
 
 use crate::tree_clipboard;
 use crate::tree_history::TreeHistory;
+use crate::widgets::tags::{normalize_tag_path, tag_is_under_or_eq};
 use crate::SqyreApp;
 use eframe::egui;
 use sqyre_domain::{Action, ActionId, InsertSlot, Macro};
 use sqyre_hotkeys::{HotkeyTrigger, MacroHotkeyBinding};
 
 /// Whether `m` should receive hotkeys under `filters`.
-/// Empty = none (no tag headers selected); `""` entry = untagged; otherwise macros that include any listed tag.
+/// Empty = none (no tag headers selected); `""` entry = untagged; otherwise a macro
+/// matches when any of its tags equals a filter or is nested under one (`filter/...`).
 pub(crate) fn macro_matches_hotkey_tag(m: &Macro, filters: &[String]) -> bool {
     if filters.is_empty() {
         return false;
     }
-    filters.iter().any(|tag| {
-        if tag.is_empty() {
+    filters.iter().any(|filter| {
+        if filter.is_empty() {
             m.tags.is_empty()
         } else {
-            m.tags.iter().any(|t| t == tag)
+            m.tags
+                .iter()
+                .any(|t| tag_is_under_or_eq(&normalize_tag_path(t), filter))
         }
     })
 }
@@ -66,7 +70,7 @@ impl SqyreApp {
         self.tree.selected_actions.retain(|&a| a != id);
     }
 
-    /// Drop stale filter entries when no macro still carries that tag.
+    /// Drop stale filter entries when no macro still carries that tag (or a nested path under it).
     /// Returns `true` when the filter set changed.
     pub(crate) fn sanitize_hotkey_tag_filter(&mut self) -> bool {
         let before = self.workspace.hotkey_tag_filters.len();
@@ -74,10 +78,11 @@ impl SqyreApp {
             if tag.is_empty() {
                 self.workspace.macros.iter().any(|m| m.tags.is_empty())
             } else {
-                self.workspace
-                    .macros
-                    .iter()
-                    .any(|m| m.tags.iter().any(|t| t == tag))
+                self.workspace.macros.iter().any(|m| {
+                    m.tags
+                        .iter()
+                        .any(|t| tag_is_under_or_eq(&normalize_tag_path(t), tag))
+                })
             }
         });
         self.workspace.hotkey_tag_filters.len() != before
@@ -97,7 +102,16 @@ impl SqyreApp {
 
     /// Set the hotkey tag selection (sorted, deduped). Persists and refreshes bindings.
     pub(crate) fn set_hotkey_tag_filters(&mut self, tags: Vec<String>) {
-        let mut tags = tags;
+        let mut tags: Vec<String> = tags
+            .into_iter()
+            .map(|t| {
+                if t.is_empty() {
+                    t
+                } else {
+                    normalize_tag_path(&t)
+                }
+            })
+            .collect();
         tags.sort();
         tags.dedup();
         if self.workspace.hotkey_tag_filters == tags {
@@ -109,7 +123,14 @@ impl SqyreApp {
     }
 
     /// Toggle membership of a tag in the multiselect filter.
+    /// Selecting a parent covers descendants for matching; redundant child entries are dropped.
+    /// If an ancestor is already selected, the click is a no-op (deselect the parent to pick leaves).
     pub(crate) fn toggle_hotkey_tag_filter(&mut self, tag: String) {
+        let tag = if tag.is_empty() {
+            tag
+        } else {
+            normalize_tag_path(&tag)
+        };
         if let Some(i) = self
             .workspace
             .hotkey_tag_filters
@@ -117,7 +138,20 @@ impl SqyreApp {
             .position(|t| t == &tag)
         {
             self.workspace.hotkey_tag_filters.remove(i);
+        } else if !tag.is_empty()
+            && self.workspace.hotkey_tag_filters.iter().any(|f| {
+                !f.is_empty() && tag_is_under_or_eq(&tag, f) && f != &tag
+            })
+        {
+            // Covered by an ancestor selection — pick leaves only after clearing the parent.
+            return;
         } else {
+            // Drop filters nested under the newly selected path (now redundant).
+            if !tag.is_empty() {
+                self.workspace
+                    .hotkey_tag_filters
+                    .retain(|t| t.is_empty() || !tag_is_under_or_eq(t, &tag));
+            }
             self.workspace.hotkey_tag_filters.push(tag);
             self.workspace.hotkey_tag_filters.sort();
             self.workspace.hotkey_tag_filters.dedup();
@@ -725,5 +759,15 @@ mod tests {
             &bare,
             &["combat".into(), "".into()]
         ));
+    }
+
+    #[test]
+    fn hotkey_tag_filter_includes_nested_descendants() {
+        let nested = m(&["combat/pve"]);
+        assert!(macro_matches_hotkey_tag(&nested, &["combat".into()]));
+        assert!(macro_matches_hotkey_tag(&nested, &["combat/pve".into()]));
+        assert!(!macro_matches_hotkey_tag(&nested, &["combat/pvp".into()]));
+        assert!(!macro_matches_hotkey_tag(&m(&["combatant"]), &["combat".into()]));
+        assert!(!macro_matches_hotkey_tag(&m(&["combat"]), &["combat/pve".into()]));
     }
 }
