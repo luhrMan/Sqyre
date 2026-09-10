@@ -116,8 +116,7 @@ impl PreviewTooltipCache {
     fn invalidate_coords(&mut self, coords: PreviewCoords) {
         let related = |c: PreviewCoords| same_capture_region(c, coords);
         self.entries.retain(|_, e| !related(e.coords));
-        self.order
-            .retain(|k| self.entries.contains_key(k));
+        self.order.retain(|k| self.entries.contains_key(k));
         self.pending.retain(|_, p| !related(p.coords));
         self.failures.retain(|_, f| !related(f.coords));
     }
@@ -191,8 +190,7 @@ impl PreviewTooltipCache {
                 log_hover_outline_transition(kind, program, name, coords);
                 let preview =
                     self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
-                let show_size =
-                    matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection);
+                let show_size = matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection);
                 show_preview_hover_ui(response, |ui| match &preview {
                     Ok((tex, cap)) => paint_preview(ui, tex, cap, show_size),
                     Err(err) => paint_preview_status(ui, caption.as_str(), err),
@@ -486,13 +484,7 @@ impl PreviewTooltipCache {
         }
     }
 
-    fn remember_failure(
-        &mut self,
-        key: &str,
-        error: String,
-        now: Instant,
-        coords: PreviewCoords,
-    ) {
+    fn remember_failure(&mut self, key: &str, error: String, now: Instant, coords: PreviewCoords) {
         self.failures.insert(
             key.to_string(),
             FailureEntry {

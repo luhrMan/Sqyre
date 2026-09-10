@@ -133,10 +133,7 @@ pub fn paint_items_icon_grid(
         let id = items_icon_grid_collapse_id(prog);
         let mut state =
             egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
-        let want_scroll = scroll_to_selected_program
-            .as_ref()
-            .is_some_and(|s| **s)
-            && prog_selected;
+        let want_scroll = scroll_to_selected_program.as_ref().is_some_and(|s| **s) && prog_selected;
         if want_scroll && !state.is_open() {
             state.set_open(true);
             state.store(ui.ctx());

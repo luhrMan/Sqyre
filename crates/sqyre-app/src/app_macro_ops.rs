@@ -139,9 +139,11 @@ impl SqyreApp {
         {
             self.workspace.hotkey_tag_filters.remove(i);
         } else if !tag.is_empty()
-            && self.workspace.hotkey_tag_filters.iter().any(|f| {
-                !f.is_empty() && tag_is_under_or_eq(&tag, f) && f != &tag
-            })
+            && self
+                .workspace
+                .hotkey_tag_filters
+                .iter()
+                .any(|f| !f.is_empty() && tag_is_under_or_eq(&tag, f) && f != &tag)
         {
             // Covered by an ancestor selection — pick leaves only after clearing the parent.
             return;
@@ -767,7 +769,13 @@ mod tests {
         assert!(macro_matches_hotkey_tag(&nested, &["combat".into()]));
         assert!(macro_matches_hotkey_tag(&nested, &["combat/pve".into()]));
         assert!(!macro_matches_hotkey_tag(&nested, &["combat/pvp".into()]));
-        assert!(!macro_matches_hotkey_tag(&m(&["combatant"]), &["combat".into()]));
-        assert!(!macro_matches_hotkey_tag(&m(&["combat"]), &["combat/pve".into()]));
+        assert!(!macro_matches_hotkey_tag(
+            &m(&["combatant"]),
+            &["combat".into()]
+        ));
+        assert!(!macro_matches_hotkey_tag(
+            &m(&["combat"]),
+            &["combat/pve".into()]
+        ));
     }
 }
