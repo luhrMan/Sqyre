@@ -462,6 +462,13 @@ impl DirectScratch {
             zeroed(s, out_w);
         }
     }
+
+    /// Drop capacity so Rayon worker TLS does not retain peak row widths.
+    fn shrink(&mut self) {
+        self.numer = Vec::new();
+        self.sum_sq = Vec::new();
+        self.sums = Vec::new();
+    }
 }
 
 fn zeroed(buf: &mut Vec<f32>, len: usize) {
@@ -476,15 +483,19 @@ thread_local! {
 
 /// Per-thread FFT planner plus correlation scratch.
 ///
-/// Both buffers are sized `dft_w * dft_h`, which for a full-screen search is
-/// several megabytes. Reusing them keeps every variant match on a rayon worker
-/// from allocating and freeing that much per channel.
+/// Both spectrum buffers are sized `dft_w * dft_h`, which for a full-screen
+/// search is several megabytes. Reusing them keeps every variant match on a
+/// rayon worker from allocating and freeing that much per channel — but the
+/// capacity ratchets to the largest DFT seen on that worker for the process
+/// lifetime unless [`clear_match_scratch`] runs (after each macro).
 struct FftScratch {
     planner: FftPlanner<f32>,
     /// Mutable copy of the search spectrum (consumed by the inverse transform).
     img: Vec<Complex<f32>>,
     /// Zero-padded template spectrum.
     tmpl: Vec<Complex<f32>>,
+    /// Column gather buffer for [`fft2d_forward`] / [`fft2d_inverse`].
+    col: Vec<Complex<f32>>,
 }
 
 impl FftScratch {
@@ -493,13 +504,39 @@ impl FftScratch {
             planner: FftPlanner::new(),
             img: Vec::new(),
             tmpl: Vec::new(),
+            col: Vec::new(),
         }
+    }
+
+    /// Release peak DFT / planner capacity held in this worker's TLS.
+    fn shrink(&mut self) {
+        self.img = Vec::new();
+        self.tmpl = Vec::new();
+        self.col = Vec::new();
+        // Drop cached FFT plans (can be ~1 MiB+ of tables per worker).
+        self.planner = FftPlanner::new();
     }
 }
 
 thread_local! {
     static FFT_SCRATCH: std::cell::RefCell<FftScratch> =
         std::cell::RefCell::new(FftScratch::new());
+}
+
+fn shrink_local_match_scratch() {
+    DIRECT_SCRATCH.with(|c| c.borrow_mut().shrink());
+    FFT_SCRATCH.with(|c| c.borrow_mut().shrink());
+}
+
+/// Release per-Rayon-worker match scratch (FFT spectra + direct-row buffers).
+///
+/// Call after a macro finishes (wired through [`sqyre_vision::clear_search_cache`])
+/// so full-screen DFT buffers do not keep RSS ratcheted across runs. Safe to call
+/// at any time; the next match reallocates as needed.
+pub fn clear_match_scratch() {
+    shrink_local_match_scratch();
+    // Idle pool workers never hit the calling thread's TLS; broadcast reaches them.
+    rayon::broadcast(|_| shrink_local_match_scratch());
 }
 
 /// Forward-FFT each channel of `search`, zero-padded to `dft_w`×`dft_h`.
@@ -517,7 +554,14 @@ fn forward_fft_search(search: &ImageBuf, dft_w: usize, dft_h: usize) -> SearchFf
                 }
             }
             FFT_SCRATCH.with(|s| {
-                fft2d_forward(&mut img, dft_w, dft_h, &mut s.borrow_mut().planner);
+                let scratch = &mut *s.borrow_mut();
+                fft2d_forward(
+                    &mut img,
+                    dft_w,
+                    dft_h,
+                    &mut scratch.planner,
+                    &mut scratch.col,
+                );
             });
             img
         })
@@ -555,7 +599,12 @@ fn match_fft(
         .into_par_iter()
         .map(|c| {
             FFT_SCRATCH.with(|s| {
-                let FftScratch { planner, img, tmpl } = &mut *s.borrow_mut();
+                let FftScratch {
+                    planner,
+                    img,
+                    tmpl,
+                    col,
+                } = &mut *s.borrow_mut();
 
                 // Overwritten wholesale, so no need to clear first.
                 img.clear();
@@ -569,9 +618,9 @@ fn match_fft(
                     tmpl[y * dft_w + x] = Complex::new(pack.vals_at(i)[c] as f32, 0.0);
                 }
 
-                fft2d_forward(tmpl, dft_w, dft_h, planner);
+                fft2d_forward(tmpl, dft_w, dft_h, planner, col);
                 crate::corr_simd::complex_mul_conj(img, tmpl);
-                fft2d_inverse(img, dft_w, dft_h, planner);
+                fft2d_inverse(img, dft_w, dft_h, planner, col);
 
                 let mut out = vec![0.0_f32; out_w * out_h];
                 let arch = pulp::Arch::new();
@@ -679,18 +728,20 @@ fn fft2d_forward(
     width: usize,
     height: usize,
     planner: &mut FftPlanner<f32>,
+    col: &mut Vec<Complex<f32>>,
 ) {
     let fft_row = planner.plan_fft_forward(width);
     for row in buf.chunks_exact_mut(width) {
         fft_row.process(row);
     }
     let fft_col = planner.plan_fft_forward(height);
-    let mut col = vec![Complex::default(); height];
+    col.clear();
+    col.resize(height, Complex::default());
     for x in 0..width {
         for y in 0..height {
             col[y] = buf[y * width + x];
         }
-        fft_col.process(&mut col);
+        fft_col.process(col);
         for y in 0..height {
             buf[y * width + x] = col[y];
         }
@@ -702,18 +753,20 @@ fn fft2d_inverse(
     width: usize,
     height: usize,
     planner: &mut FftPlanner<f32>,
+    col: &mut Vec<Complex<f32>>,
 ) {
     let ifft_row = planner.plan_fft_inverse(width);
     for row in buf.chunks_exact_mut(width) {
         ifft_row.process(row);
     }
     let ifft_col = planner.plan_fft_inverse(height);
-    let mut col = vec![Complex::default(); height];
+    col.clear();
+    col.resize(height, Complex::default());
     for x in 0..width {
         for y in 0..height {
             col[y] = buf[y * width + x];
         }
-        ifft_col.process(&mut col);
+        ifft_col.process(col);
         for y in 0..height {
             buf[y * width + x] = col[y];
         }
@@ -1120,5 +1173,46 @@ mod tests {
             matches!(err, MatchError::TemplateTooLarge { .. }),
             "got {err:?}"
         );
+    }
+
+    #[test]
+    fn clear_match_scratch_does_not_break_subsequent_fft() {
+        // Force the FFT path (large search relative to template).
+        let tmpl = patterned(16, 16);
+        let mut search = gray(128, 128, 30);
+        search.stamp(&tmpl, 40, 40);
+        let map = match_template(&search, &tmpl, None, MatchMethod::CcoeffNormed).unwrap();
+        assert!(!map.scores.is_empty());
+        clear_match_scratch();
+        let map2 = match_template(&search, &tmpl, None, MatchMethod::CcoeffNormed).unwrap();
+        let peaks = find_peaks_for_method(
+            &map2,
+            0.9,
+            DEFAULT_CLOSE_MATCHES_DISTANCE,
+            MatchMethod::CcoeffNormed,
+        );
+        assert!(
+            !peaks.is_empty(),
+            "expected a hit after clearing TLS scratch"
+        );
+    }
+
+    /// Post-run contract: clear is idempotent and Rayon workers stay usable.
+    #[test]
+    fn clear_match_scratch_twice_then_parallel_fft_ok() {
+        let tmpl = patterned(16, 16);
+        let mut search = gray(96, 96, 25);
+        search.stamp(&tmpl, 20, 20);
+        let _ = match_template(&search, &tmpl, None, MatchMethod::CcoeffNormed).unwrap();
+        clear_match_scratch();
+        clear_match_scratch();
+        let maps: Vec<_> = (0..4)
+            .into_par_iter()
+            .map(|_| match_template(&search, &tmpl, None, MatchMethod::CcoeffNormed).unwrap())
+            .collect();
+        assert!(maps.iter().all(|m| !m.scores.is_empty()));
+        clear_match_scratch();
+        let again = match_template(&search, &tmpl, None, MatchMethod::CcoeffNormed).unwrap();
+        assert!(!again.scores.is_empty());
     }
 }

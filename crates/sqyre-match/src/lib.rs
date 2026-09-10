@@ -18,8 +18,8 @@ pub use peaks::{
     DEFAULT_CLOSE_MATCHES_DISTANCE,
 };
 pub use template::{
-    match_template, match_template_with_prepared, prepare_search, prepare_template, MatchError,
-    MatchMap, PreparedTemplate, SearchPrep,
+    clear_match_scratch, match_template, match_template_with_prepared, prepare_search,
+    prepare_template, MatchError, MatchMap, PreparedTemplate, SearchPrep,
 };
 
 pub use sqyre_domain::MatchMethod;
