@@ -1,14 +1,12 @@
 //! While-focused hotkey tag selection from Program macro tags.
 
 use sqyre_capture::{
-    get_active_window, window_is_our_process, window_is_transient_shell_focus,
+    get_active_window, note, window_is_our_process, window_is_transient_shell_focus,
     window_matches_binding, window_matches_program, WindowInfo,
 };
 use sqyre_persist::{ProgramCatalog, GENERAL_PROGRAM};
 use std::time::{Duration, Instant};
 
-/// Hold last tagged Program across brief Sqyre / shell focus blips.
-const HOLD_GRACE: Duration = Duration::from_millis(1500);
 /// Throttle OS focus queries.
 const POLL_EVERY: Duration = Duration::from_millis(250);
 
@@ -17,14 +15,11 @@ pub(crate) struct HotkeyFocusTagPoller {
     last_poll: Option<Instant>,
     /// Last emitted filter set (for change detection).
     last_emitted: Option<Vec<String>>,
-    our_since: Option<Instant>,
-    none_since: Option<Instant>,
 }
 
 enum FocusResolve<'a> {
     Window(&'a WindowInfo),
     Hold,
-    Clear,
 }
 
 impl HotkeyFocusTagPoller {
@@ -33,12 +28,10 @@ impl HotkeyFocusTagPoller {
     }
 
     /// When `enabled`, return the filters that should be active (`None` = no change this tick).
-    /// Empty vec = hotkeys off.
+    /// Empty vec = hotkeys off (unmatched foreign window, or program with no tags).
     pub fn poll(&mut self, enabled: bool, catalog: &ProgramCatalog) -> Option<Vec<String>> {
         if !enabled {
             self.last_emitted = None;
-            self.our_since = None;
-            self.none_since = None;
             self.last_poll = None;
             return None;
         }
@@ -53,9 +46,8 @@ impl HotkeyFocusTagPoller {
         self.last_poll = Some(now);
 
         let focus = get_active_window().ok().flatten();
-        let desired = match self.resolve(focus.as_ref()) {
+        let desired = match resolve(focus.as_ref()) {
             FocusResolve::Hold => return None,
-            FocusResolve::Clear => Vec::new(),
             FocusResolve::Window(win) => match find_focused_program(catalog, win) {
                 Some((_, tags)) if !tags.is_empty() => tags,
                 _ => Vec::new(),
@@ -65,41 +57,31 @@ impl HotkeyFocusTagPoller {
         if self.last_emitted.as_ref() == Some(&desired) {
             return None;
         }
-        self.last_emitted = Some(desired.clone());
+        let prev = self.last_emitted.replace(desired.clone());
+        let focus_label = focus
+            .as_ref()
+            .map(|w| format!("{} ({})", w.process_name.trim(), w.process_path.trim()))
+            .unwrap_or_else(|| "(none)".into());
+        note(&format!(
+            "hotkey-focus: tags {:?} -> {:?} focus={focus_label}",
+            prev.unwrap_or_default(),
+            desired
+        ));
         Some(desired)
     }
 }
 
-impl HotkeyFocusTagPoller {
-    fn resolve<'a>(&mut self, focus: Option<&'a WindowInfo>) -> FocusResolve<'a> {
-        let Some(active) = focus else {
-            let started = *self.none_since.get_or_insert_with(Instant::now);
-            self.our_since = None;
-            if started.elapsed() >= HOLD_GRACE {
-                return FocusResolve::Clear;
-            }
-            return FocusResolve::Hold;
-        };
-
-        if window_is_transient_shell_focus(active) {
-            self.none_since = None;
-            self.our_since = None;
-            return FocusResolve::Hold;
-        }
-
-        if window_is_our_process(active) {
-            self.none_since = None;
-            let started = *self.our_since.get_or_insert_with(Instant::now);
-            if started.elapsed() >= HOLD_GRACE {
-                return FocusResolve::Clear;
-            }
-            return FocusResolve::Hold;
-        }
-
-        self.none_since = None;
-        self.our_since = None;
-        FocusResolve::Window(active)
+/// Hold last tags across no-focus / Sqyre / shell blips (mirrors overlay `last_foreign`).
+/// Fullscreen XWayland often reports `None` for the whole session — clearing tags
+/// there used to disable all hotkeys while overlay gates kept polling.
+fn resolve(focus: Option<&WindowInfo>) -> FocusResolve<'_> {
+    let Some(active) = focus else {
+        return FocusResolve::Hold;
+    };
+    if window_is_transient_shell_focus(active) || window_is_our_process(active) {
+        return FocusResolve::Hold;
     }
+    FocusResolve::Window(active)
 }
 
 /// Prefer process-bound Programs; skip General.
@@ -164,5 +146,28 @@ mod tests {
         let (name, tags) = find_focused_program(&cat, &win).expect("match");
         assert_eq!(name, "Bound");
         assert_eq!(tags, vec!["combat".to_string()]);
+    }
+
+    #[test]
+    fn none_and_overlay_focus_hold() {
+        assert!(matches!(resolve(None), FocusResolve::Hold));
+        let overlay = WindowInfo {
+            title: sqyre_capture::OVERLAY_WM_TITLE.into(),
+            process_name: "sqyre".into(),
+            process_path: "/opt/sqyre".into(),
+            icon: None,
+        };
+        assert!(matches!(resolve(Some(&overlay)), FocusResolve::Hold));
+    }
+
+    #[test]
+    fn foreign_window_resolves() {
+        let win = WindowInfo {
+            title: "Other".into(),
+            process_name: "other".into(),
+            process_path: "/usr/bin/other".into(),
+            icon: None,
+        };
+        assert!(matches!(resolve(Some(&win)), FocusResolve::Window(_)));
     }
 }
