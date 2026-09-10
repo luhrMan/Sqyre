@@ -215,11 +215,17 @@ impl DataEditor {
 
     pub(crate) fn reset_item_form(&mut self) {
         self.form_name.clear();
+        self.reset_item_param_fields();
+    }
+
+    /// Tags / grid / mask buffers used by Items and ScreenCap New Item (keeps Name).
+    pub(crate) fn reset_item_param_fields(&mut self) {
         self.form_cols = "1".into();
         self.form_rows = "1".into();
         self.form_stack_max = "0".into();
         self.form_mask.clear();
         self.form_tags.clear();
+        self.tag_draft.clear();
     }
 
     pub(crate) fn reset_mask_form(&mut self) {
@@ -321,6 +327,9 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
+        #[cfg(feature = "native-runtime")]
+        help::heading(ui, "PixelCheck", help::DE_PIXELCHECK_INTRO);
+        #[cfg(not(feature = "native-runtime"))]
         ui.heading("PixelCheck");
         #[cfg(not(feature = "native-runtime"))]
         {
@@ -346,9 +355,6 @@ impl DataEditor {
             use crate::widgets::match_settings;
             use sqyre_domain::CoordinateRef;
 
-            ui.weak(
-                "Select an item, set a search area (reference or inline coords), tune match settings, then inspect the similarity heatmap.",
-            );
             ui.add_space(4.0);
             if self.selected_entity.is_none() {
                 self.stop_pixel_check_compute();
@@ -421,9 +427,7 @@ impl DataEditor {
                 &mut self.pixel_check.match_method,
                 true,
             );
-            ui.weak(
-                "Bounds overlay the preview edges; relative to one monitor; integers or ${var}.",
-            );
+            help::label(ui, "Bounds", help::DE_PIXELCHECK_BOUNDS);
             self.paint_monitor_slot(ui);
             let (lx, ty, rx, by) = form_desktop_area(
                 catalog,

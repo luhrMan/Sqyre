@@ -2,7 +2,7 @@
 
 use super::helpers::copy_image_as_png;
 #[cfg(any(test, feature = "native-runtime"))]
-use super::helpers::unique_name;
+use super::helpers::{parse_i32, unique_name};
 use super::{DataEditor, DataEditorCtx, PendingConfirm, VariantPrompt};
 use crate::data_editor_preview::{
     fit_panel, fit_thumbnail, pixel_size_text, variant_display_label, variant_name_from_path,
@@ -15,7 +15,7 @@ use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
 use sqyre_persist::ProgramItem;
 use sqyre_persist::{screen_cap_path, ProgramCatalog, UserSettings};
 #[cfg(feature = "native-runtime")]
-use sqyre_validate::validate_entity_name;
+use sqyre_validate::{validate_entity_name, validate_item_grid_fields};
 #[cfg(feature = "native-runtime")]
 use sqyre_vision::invalidate_search_masks_under;
 
@@ -489,6 +489,12 @@ impl DataEditor {
                     return;
                 }
             };
+            if let Err(e) =
+                validate_item_grid_fields(&self.form_cols, &self.form_rows, &self.form_stack_max)
+            {
+                self.set_err(format!("ScreenCap: {e}"));
+                return;
+            }
             let img = match self.screen_cap_preview_image(catalog, previews) {
                 Ok(img) => img,
                 Err(e) => {
@@ -496,7 +502,15 @@ impl DataEditor {
                     return;
                 }
             };
-            match create_item_with_original(catalog, &prog, &requested, img.as_ref()) {
+            let item = ProgramItem {
+                name: requested,
+                mask: self.form_mask.clone(),
+                stack_max: parse_i32(&self.form_stack_max).unwrap_or(0),
+                grid_cols: parse_i32(&self.form_cols).unwrap_or(1),
+                grid_rows: parse_i32(&self.form_rows).unwrap_or(1),
+                tags: self.form_tags.clone(),
+            };
+            match create_item_with_original(catalog, &prog, item, img.as_ref()) {
                 Ok(name) => {
                     let target = format!("{prog}{PROGRAM_DELIMITER}{name}");
                     let path = icon_variants::variant_path(catalog, &prog, &name, "Original");
@@ -628,20 +642,13 @@ impl DataEditor {
 fn create_item_with_original(
     catalog: &mut ProgramCatalog,
     program: &str,
-    requested_name: &str,
+    mut item: ProgramItem,
     img: &image::RgbaImage,
 ) -> Result<String, String> {
-    let name = unique_name(requested_name, |n| {
+    let name = unique_name(&item.name, |n| {
         catalog.get(program).and_then(|p| p.items.get(n)).is_some()
     });
-    let item = ProgramItem {
-        name: name.clone(),
-        mask: String::new(),
-        stack_max: 0,
-        grid_cols: 1,
-        grid_rows: 1,
-        tags: Vec::new(),
-    };
+    item.name = name.clone();
     catalog
         .upsert_item(program, item)
         .map_err(|e| e.to_string())?;
@@ -667,12 +674,24 @@ mod tests {
         c
     }
 
+    fn sample_item(name: &str) -> ProgramItem {
+        ProgramItem {
+            name: name.into(),
+            mask: String::new(),
+            stack_max: 0,
+            grid_cols: 1,
+            grid_rows: 1,
+            tags: Vec::new(),
+        }
+    }
+
     #[test]
     fn create_item_with_original_uses_name_and_writes_png() {
         let dir = tempdir().unwrap();
         let mut cat = catalog_with_icons(dir.path());
         let img = image::RgbaImage::from_pixel(3, 2, image::Rgba([1, 2, 3, 255]));
-        let name = create_item_with_original(&mut cat, "Game", "Potion", &img).unwrap();
+        let name =
+            create_item_with_original(&mut cat, "Game", sample_item("Potion"), &img).unwrap();
         assert_eq!(name, "Potion");
         let item = cat.get("Game").unwrap().items.get("Potion").unwrap();
         assert_eq!(item.grid_cols, 1);
@@ -683,12 +702,36 @@ mod tests {
     }
 
     #[test]
+    fn create_item_with_original_applies_item_fields() {
+        let dir = tempdir().unwrap();
+        let mut cat = catalog_with_icons(dir.path());
+        let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([4, 5, 6, 255]));
+        let item = ProgramItem {
+            name: "Elixir".into(),
+            mask: "round".into(),
+            stack_max: 9,
+            grid_cols: 2,
+            grid_rows: 3,
+            tags: vec!["potion".into(), "craft".into()],
+        };
+        let name = create_item_with_original(&mut cat, "Game", item, &img).unwrap();
+        assert_eq!(name, "Elixir");
+        let saved = cat.get("Game").unwrap().items.get("Elixir").unwrap();
+        assert_eq!(saved.mask, "round");
+        assert_eq!(saved.stack_max, 9);
+        assert_eq!(saved.grid_cols, 2);
+        assert_eq!(saved.grid_rows, 3);
+        assert_eq!(saved.tags, ["potion", "craft"]);
+    }
+
+    #[test]
     fn create_item_with_original_uniques_existing_name() {
         let dir = tempdir().unwrap();
         let mut cat = catalog_with_icons(dir.path());
         let img = image::RgbaImage::from_pixel(1, 1, image::Rgba([9, 9, 9, 255]));
-        create_item_with_original(&mut cat, "Game", "Potion", &img).unwrap();
-        let name = create_item_with_original(&mut cat, "Game", "Potion", &img).unwrap();
+        create_item_with_original(&mut cat, "Game", sample_item("Potion"), &img).unwrap();
+        let name =
+            create_item_with_original(&mut cat, "Game", sample_item("Potion"), &img).unwrap();
         assert_eq!(name, "Potion 2");
         assert!(cat.get("Game").unwrap().items.contains_key("Potion 2"));
         assert!(icon_variants::variant_path(&cat, "Game", "Potion 2", "Original").is_file());
