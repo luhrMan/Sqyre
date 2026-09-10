@@ -318,6 +318,7 @@ mod native_run {
 
                 crate::mem_diag::sample("pre_clear");
                 sqyre_vision::clear_search_cache();
+                sqyre_capture::release_capture_frame_cache();
                 trim_process_heap();
                 crate::mem_diag::sample("post_run");
 

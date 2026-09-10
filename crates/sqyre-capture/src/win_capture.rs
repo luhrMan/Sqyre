@@ -72,6 +72,14 @@ impl OsCapturer {
         self.capture_rect_rgb_ref(rect).map(|rgb| (rgb, true))
     }
 
+    /// No CPU frame mirror on GDI — no-op.
+    pub fn release_cpu_frame_cache(&self) {}
+
+    /// Always 0 on GDI (no retained frame buffer).
+    pub fn cpu_frame_cache_bytes(&self) -> usize {
+        0
+    }
+
     /// Virtual desktop bounds (`&self`).
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         let _guard = self.inner.lock();

@@ -489,6 +489,35 @@ pub fn nudge_portal_capture_after_ui_hide() {
 #[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
 pub fn nudge_portal_capture_after_ui_hide() {}
 
+/// Release the portal PipeWire CPU frame mirror after a macro (no-op if unused / X11).
+///
+/// Stops further frame copies until the next capture wait so the full-desktop RGBA
+/// buffer does not keep RSS elevated while idle. Streams stay connected.
+pub fn release_capture_frame_cache() {
+    #[cfg(target_os = "linux")]
+    {
+        let Some(Ok(cap)) = shared_capturer_if_ready() else {
+            return;
+        };
+        cap.release_cpu_frame_cache();
+    }
+}
+
+/// Current portal CPU frame-cache size in bytes (0 if unused / released / non-portal).
+pub fn capture_frame_cache_bytes() -> usize {
+    #[cfg(target_os = "linux")]
+    {
+        return match shared_capturer_if_ready() {
+            Some(Ok(cap)) => cap.cpu_frame_cache_bytes(),
+            _ => 0,
+        };
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        0
+    }
+}
+
 /// [`shared_capturer`] unless that would wait on a portal picker from this thread.
 ///
 /// Use from the UI thread. The deferred Linux probe (or a worker) should call
@@ -812,6 +841,13 @@ impl sqyre_ports::WindowFocuser for OsWindowFocuser {
 mod tests {
     use super::WindowInfo;
     use sqyre_ports::DesktopRect;
+
+    #[test]
+    fn release_capture_frame_cache_is_noop_without_shared_capturer() {
+        // No portal session in unit tests — public post-run hooks must stay safe.
+        crate::release_capture_frame_cache();
+        assert_eq!(crate::capture_frame_cache_bytes(), 0);
+    }
 
     #[test]
     fn with_primary_monitor_first_moves_primary_to_slot_one() {
