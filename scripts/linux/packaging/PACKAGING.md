@@ -49,6 +49,16 @@ make release-bundle
 ./bin/sqyre-bundle/sqyre
 ```
 
+**Heap-profile variant** (local leak hunts only — slower allocator, not for shipping):
+
+```bash
+make release-bundle-dhat
+cd /tmp && SQYRE_MEM=1 /path/to/bin/sqyre-bundle-dhat/sqyre
+# quit cleanly → dhat-heap.json in cwd; view at https://nnethercote.github.io/dh_view/dh_view.html
+```
+
+Uses a separate Cargo target dir (`target-dhat/`) so it does not overwrite `target/release/sqyre`.
+
 Requires **patchelf** (installed in the devcontainer). Build on the target glibc family you intend to ship against (same constraint as AppImage). Does **not** run `make check` (unlike `make appimage`); run `make check` yourself before shipping.
 
 **Wayland portal capture:** `libpipewire` / `libspa-*` are **not** bundled — the host PipeWire stack (GNOME/KDE already ship it) must provide SPA plugins. Bundling breaks with `can't make support.system handle`.
@@ -62,4 +72,5 @@ Requires **patchelf** (installed in the devcontainer). Build on the target glibc
 | Format | Command | Main requirement |
 |--------|---------|------------------|
 | **Bundled dir** | `make release-bundle` | Rust + Tesseract dev libs + patchelf |
+| **Bundled + dhat** | `make release-bundle-dhat` | Same; `dhat-heap` for allocation profiles (not shipping) |
 | **AppImage** | `make appimage` | Rust + Tesseract on host + appimage-builder |

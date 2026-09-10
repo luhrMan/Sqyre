@@ -1,7 +1,7 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre probe overlay-sandbox release release-bundle windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
+.PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
 	release-gate run tessdata appimage install-desktop docs-media wasm wasm-check help
 
 ROOT := $(abspath .)
@@ -69,6 +69,7 @@ help:
 	@echo "  overlay-sandbox - overlay buttons only (fast; no sqyre-app)"
 	@echo "  release      - fmt + check, then cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
 	@echo "  release-bundle - Linux: release + bundled Tesseract -> $(BIN)/sqyre-bundle/ (no check gate)"
+	@echo "  release-bundle-dhat - same + dhat-heap profiler -> $(BIN)/sqyre-bundle-dhat/ (local leak hunts)"
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
 	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
 	@echo "  macos        - fmt + check, then native macOS release -> $(BIN)/sqyre  (macOS host)"
@@ -133,6 +134,21 @@ release-bundle: $(BIN)
 	fi
 	$(CARGO) build -p sqyre-app --release $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	SQYRE_BUNDLE_SKIP_BUILD=1 ./scripts/linux/packaging/bundle-release.sh
+
+# Same layout as release-bundle, but with dhat-heap (allocation stacks → dhat-heap.json on quit).
+# Uses a separate Cargo target dir so it does not overwrite the normal release binary.
+release-bundle-dhat: $(BIN)
+	@if [ "$(HOST_OS)" != "linux" ]; then \
+		echo "make release-bundle-dhat requires a Linux host (got $(HOST_OS))"; \
+		exit 1; \
+	fi
+	$(CARGO) build -p sqyre-app --release --features portal-capture,dhat-heap \
+		--target-dir $(TARGET_DIR)-dhat $(CARGO_FLAGS)
+	SQYRE_BUNDLE_SKIP_BUILD=1 \
+		CARGO_TARGET_DIR=$(TARGET_DIR)-dhat \
+		SQYRE_BUNDLE_NAME=sqyre-bundle-dhat \
+		SQYRE_APP_FEATURES="--features portal-capture,dhat-heap" \
+		./scripts/linux/packaging/bundle-release.sh
 
 # Windows release binary (no MSI). Docker MinGW cross from Linux; native on Windows.
 windows: release-gate $(BIN)
