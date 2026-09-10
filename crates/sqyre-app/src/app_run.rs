@@ -316,8 +316,10 @@ mod native_run {
                     .map_err(|e| e.to_string())
                 }));
 
+                crate::mem_diag::sample("pre_clear");
                 sqyre_vision::clear_search_cache();
                 trim_process_heap();
+                crate::mem_diag::sample("post_run");
 
                 let msg = match result {
                     Ok(Ok(())) if stop_flag.is_stopped() => "Stopped.".into(),

@@ -24,6 +24,10 @@ native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-match", "
 hooks = ["sqyre-hotkeys/hooks"]
 # Floating macro overlay OS windows (Linux: native X11 host thread).
 overlay-buttons = []
+# Heap allocation profiler (dhat). Writes `dhat-heap.json` on clean exit.
+# Build: `cargo run -p sqyre-app --features dhat-heap`
+# Pair with `SQYRE_MEM=1` for live RSS / search-cache samples in `~/.sqyre/mem.log`.
+dhat-heap = ["dep:dhat"]
 
 [lints]
 workspace = true
@@ -59,6 +63,7 @@ rfd = { workspace = true }
 parking_lot = { workspace = true }
 thiserror = { workspace = true }
 web-time = { workspace = true }
+dhat = { version = "0.3", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 fs2 = "0.4"
