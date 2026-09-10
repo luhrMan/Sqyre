@@ -489,7 +489,6 @@ impl AddActionPicker {
     }
 }
 
-
 fn reassign_uids(action: &mut Action) {
     action.id = ActionId::new();
     if let Some(kids) = action.children_mut() {

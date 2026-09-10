@@ -253,13 +253,7 @@ fn paint_tag_node(
         })
         .body_unindented(|ui| {
             ui.set_max_width(ctx.list_w);
-            paint_macro_rows(
-                ui,
-                ctx.app,
-                ctx.list_w,
-                &node.macros,
-                ctx.clicked_macro,
-            );
+            paint_macro_rows(ui, ctx.app, ctx.list_w, &node.macros, ctx.clicked_macro);
             for (seg, child) in &node.children {
                 let child_path = if path.is_empty() {
                     seg.clone()
