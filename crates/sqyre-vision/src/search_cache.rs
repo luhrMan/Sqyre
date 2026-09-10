@@ -3,7 +3,8 @@
 //! Entries are keyed by path + mtime (+ blur kernel / size). Invalidation helpers
 //! drop prefixes when icons or masks change on disk. The cache is process-global
 //! for reuse within a macro; call [`clear_search_cache`] when a run finishes so
-//! peak RSS can be released.
+//! peak RSS can be released (also clears Rayon FFT/direct TLS via
+//! [`sqyre_match::clear_match_scratch`]).
 
 use crate::image_util::{load_rgb_image, mask_as_u8, resize_mask};
 use parking_lot::{Mutex, RwLock};
@@ -257,11 +258,15 @@ pub fn search_cache_stats() -> SearchCacheStats {
 }
 
 /// Clears all cached templates, masks, and prepared templates (call after a macro finishes).
+///
+/// Also releases per-Rayon-worker FFT/direct match scratch so peak DFT buffers do not
+/// keep process RSS ratcheted across runs.
 pub fn clear_search_cache() {
     cache().write().clear();
     template_inflight().lock().clear();
     mask_inflight().lock().clear();
     prepared_inflight().lock().clear();
+    sqyre_match::clear_match_scratch();
 }
 
 /// Clears all cached templates and masks (tests).
@@ -551,6 +556,39 @@ mod tests {
             assert!(stats.bytes > 0);
             clear_search_cache();
             assert_eq!(search_cache_stats(), SearchCacheStats::default());
+        });
+    }
+
+    /// Post-macro cleanup contract: templates + prepared entries drop to zero.
+    #[test]
+    fn clear_search_cache_zeros_prepared_and_templates() {
+        with_search_cache_test_lock(|| {
+            reset_search_cache_for_testing();
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("icon.png");
+            write_rgb(&path, 12, 12, [9, 8, 7]);
+            let k = search_blur_kernel(0);
+            let tmpl = get_cached_blurred_template(&path, k).unwrap();
+            let _prepared = get_cached_prepared_template(
+                &path,
+                k,
+                tmpl.as_ref(),
+                None,
+                None,
+                MatchMethod::CcoeffNormed,
+            )
+            .unwrap();
+            let before = search_cache_stats();
+            assert_eq!(before.templates, 1);
+            assert_eq!(before.prepared, 1);
+            assert!(before.bytes > 0);
+
+            clear_search_cache();
+            assert_eq!(
+                search_cache_stats(),
+                SearchCacheStats::default(),
+                "post-run clear must drop every search-cache retainer"
+            );
         });
     }
 
