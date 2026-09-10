@@ -117,6 +117,24 @@ impl OsCapturer {
             Inner::Portal(c) => c.monitor_sizes_ref(),
         }
     }
+
+    /// Drop portal CPU frame mirror (no-op for X11). See [`PortalCapturer::release_cpu_frame_cache`].
+    pub fn release_cpu_frame_cache(&self) {
+        match &self.0 {
+            Inner::X11(_) => {}
+            #[cfg(feature = "portal-capture")]
+            Inner::Portal(c) => c.release_cpu_frame_cache(),
+        }
+    }
+
+    /// Bytes in the portal CPU frame cache (0 on X11 / when released).
+    pub fn cpu_frame_cache_bytes(&self) -> usize {
+        match &self.0 {
+            Inner::X11(_) => 0,
+            #[cfg(feature = "portal-capture")]
+            Inner::Portal(c) => c.cpu_frame_cache_bytes(),
+        }
+    }
 }
 
 fn open_wayland_portal() -> Result<OsCapturer, CaptureError> {

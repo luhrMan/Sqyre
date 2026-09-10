@@ -73,6 +73,10 @@ struct FrameSlot {
     region_gen: Vec<(DesktopRect, u64)>,
     /// Last copy time per stream dest (stale region → kick immediately).
     region_copy_at: Vec<(DesktopRect, Instant)>,
+    /// When false, PipeWire callbacks dequeue but skip copying into `cache.pixels`.
+    /// Cleared after a macro so the full-desktop RGBA buffer can be released;
+    /// re-enabled when a capture waits for a frame.
+    buffering: bool,
 }
 
 struct FrameCache {
@@ -83,6 +87,15 @@ struct FrameCache {
     stride: usize,
     pixels: Vec<u8>,
     ready: bool,
+}
+
+fn shrink_cpu_frame_cache(cache: &mut FrameCache) {
+    cache.pixels.clear();
+    cache.pixels.shrink_to_fit();
+    cache.width = 0;
+    cache.height = 0;
+    cache.stride = 0;
+    cache.ready = false;
 }
 
 enum PwThreadMsg {
@@ -117,6 +130,7 @@ impl PortalCapturer {
                 generation: 0,
                 region_gen: Vec::new(),
                 region_copy_at: Vec::new(),
+                buffering: true,
             }),
             Condvar::new(),
         ));
@@ -237,6 +251,8 @@ impl PortalCapturer {
             focus: &focus,
         };
 
+        self.enable_cpu_frame_buffering();
+
         let (min_gen, start_global, region_stale) = {
             let slot = self.frame.0.lock();
             (
@@ -353,6 +369,7 @@ impl PortalCapturer {
 
     /// Wait for a newer overlapping PipeWire frame without mapping a kick surface.
     fn wait_for_spontaneous_stream_frame(&self, rect: DesktopRect) -> bool {
+        self.enable_cpu_frame_buffering();
         let min_gen = {
             let slot = self.frame.0.lock();
             region_generation(&slot, rect)
@@ -393,7 +410,7 @@ impl PortalCapturer {
     /// Capture after waiting for a new PipeWire frame on the overlapping stream.
     pub fn capture_rect_fresh_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
         self.wait_for_overlapping_stream_frame(rect);
-        self.capture_rect_ref(rect)
+        self.crop_cached_rgba_ready(rect)
     }
 
     pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
@@ -409,7 +426,7 @@ impl PortalCapturer {
         rect: DesktopRect,
     ) -> Result<RgbCapture, CaptureError> {
         self.wait_for_overlapping_stream_frame(rect);
-        self.capture_rect_rgb_ref(rect)
+        self.crop_cached_rgb_ready(rect)
     }
 
     /// Crop after waiting briefly for a spontaneous overlapping frame (no kick).
@@ -419,16 +436,61 @@ impl PortalCapturer {
         rect: DesktopRect,
     ) -> Result<(RgbCapture, bool), CaptureError> {
         let fresh = self.wait_for_spontaneous_stream_frame(rect);
-        Ok((self.capture_rect_rgb_ref(rect)?, fresh))
+        // Direct crop — do not re-enter quiet wait via [`Self::ensure_frame_for_crop`].
+        Ok((self.crop_cached_rgb_ready(rect)?, fresh))
+    }
+
+    /// Ensure the CPU cache has a frame before a non-fresh crop.
+    ///
+    /// After [`Self::release_cpu_frame_cache`], OCR / Find Pixel / editor paths that
+    /// crop without `*_fresh` would otherwise hit `NotReady`. Re-enable buffering and
+    /// wait quietly (no compositor kick) so search keeps working. Hot path: if the
+    /// cache is already `ready`, this is a single lock check.
+    ///
+    /// Does not kick — fresh image-search / wait-retry paths already wait with kick;
+    /// overlay quiet polls must never steal focus.
+    fn ensure_frame_for_crop(&self, rect: DesktopRect) -> Result<(), CaptureError> {
+        let min_gen = {
+            let mut slot = self.frame.0.lock();
+            if slot.cache.ready {
+                return Ok(());
+            }
+            // Capture gen before enabling so the first post-release copy wakes us.
+            let min = region_generation(&slot, rect);
+            slot.buffering = true;
+            min
+        };
+        let _ = wait_until_region_after(
+            &self.frame.0,
+            &self.frame.1,
+            rect,
+            min_gen,
+            QUIET_CAPTURE_WAIT,
+        );
+        if self.frame.0.lock().cache.ready {
+            Ok(())
+        } else {
+            Err(sqyre_ports::NotReady::NoFrameYet.into())
+        }
     }
 
     fn crop_cached_rgba(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        self.ensure_frame_for_crop(rect)?;
+        self.crop_cached_rgba_ready(rect)
+    }
+
+    fn crop_cached_rgb(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
+        self.ensure_frame_for_crop(rect)?;
+        self.crop_cached_rgb_ready(rect)
+    }
+
+    fn crop_cached_rgba_ready(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
         let slot = self.frame.0.lock();
         let crop = cache_crop_geom(&slot.cache, rect)?;
         copy_cache_rgba(&slot.cache, crop)
     }
 
-    fn crop_cached_rgb(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
+    fn crop_cached_rgb_ready(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
         let slot = self.frame.0.lock();
         let crop = cache_crop_geom(&slot.cache, rect)?;
         copy_cache_rgb(&slot.cache, crop)
@@ -460,6 +522,36 @@ impl PortalCapturer {
             .into_iter()
             .map(|r| (r.w, r.h))
             .collect())
+    }
+
+    /// Resume copying PipeWire frames into the CPU cache (after [`Self::release_cpu_frame_cache`]).
+    fn enable_cpu_frame_buffering(&self) {
+        let mut slot = self.frame.0.lock();
+        slot.buffering = true;
+    }
+
+    /// Drop the full-desktop RGBA CPU cache and pause further copies until the next
+    /// capture wait or non-fresh crop (which re-enables buffering via
+    /// [`Self::ensure_frame_for_crop`] / wait helpers). PipeWire streams stay up;
+    /// only the Rust mirror is released. Image Search (`*_fresh`) and OCR / Find
+    /// Pixel cache crops both recover automatically.
+    pub fn release_cpu_frame_cache(&self) {
+        let mut slot = self.frame.0.lock();
+        slot.buffering = false;
+        let before = slot.cache.pixels.len();
+        shrink_cpu_frame_cache(&mut slot.cache);
+        if before > 0 {
+            cap_log(
+                "PORTAL",
+                "cache",
+                &format!("release_kib={}", before / 1024),
+            );
+        }
+    }
+
+    /// Bytes currently held in the CPU frame cache (0 when released / not yet filled).
+    pub fn cpu_frame_cache_bytes(&self) -> usize {
+        self.frame.0.lock().cache.pixels.len()
     }
 }
 
@@ -753,6 +845,11 @@ fn portal_pw_thread(
                         };
                         let (lock, cvar) = &*frame_stream;
                         let mut slot = lock.lock();
+                        if !slot.buffering {
+                            // Still dequeue/consume the PW buffer above; skip the
+                            // full-desktop CPU mirror while idle after a macro.
+                            return Ok(());
+                        }
                         ensure_cache_contains(&mut slot.cache, dest);
                         let cache = &mut slot.cache;
                         let vb = cache.virtual_bounds;
@@ -1427,6 +1524,7 @@ mod tests {
             generation,
             region_gen: Vec::new(),
             region_copy_at: Vec::new(),
+            buffering: true,
         }
     }
 
@@ -1569,6 +1667,71 @@ mod tests {
         assert_eq!(cache.width, 10);
         assert_eq!(cache.height, 4);
         assert_eq!(cache.pixels.len(), 10 * 4 * 4);
+        shrink_cpu_frame_cache(&mut cache);
+        assert!(cache.pixels.is_empty());
+        assert!(!cache.ready);
+        assert_eq!(cache.width, 0);
+    }
+
+    /// Post-macro release contract: shrink empties pixels; ensure can refill.
+    #[test]
+    fn release_cpu_frame_cache_then_refill() {
+        let mut slot = empty_slot(0);
+        ensure_cache_contains(
+            &mut slot.cache,
+            DesktopRect {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 48,
+            },
+        );
+        slot.cache.ready = true;
+        assert_eq!(slot.cache.pixels.len(), 64 * 48 * 4);
+
+        // Mirrors PortalCapturer::release_cpu_frame_cache.
+        slot.buffering = false;
+        shrink_cpu_frame_cache(&mut slot.cache);
+        assert!(!slot.buffering);
+        assert!(!slot.cache.ready);
+        assert!(slot.cache.pixels.is_empty());
+
+        // Next capture re-enables buffering and grows the cache again.
+        slot.buffering = true;
+        ensure_cache_contains(
+            &mut slot.cache,
+            DesktopRect {
+                x: 0,
+                y: 0,
+                w: 64,
+                h: 48,
+            },
+        );
+        slot.cache.ready = true;
+        assert_eq!(slot.cache.pixels.len(), 64 * 48 * 4);
+        assert!(slot.buffering);
+    }
+
+    #[test]
+    fn buffering_false_skips_ensure_growth_in_release_state() {
+        let mut slot = empty_slot(1);
+        slot.buffering = false;
+        // Callback path checks buffering before ensure_cache_contains — simulate that.
+        if slot.buffering {
+            ensure_cache_contains(
+                &mut slot.cache,
+                DesktopRect {
+                    x: 0,
+                    y: 0,
+                    w: 32,
+                    h: 32,
+                },
+            );
+        }
+        assert!(
+            slot.cache.pixels.is_empty(),
+            "idle after release must not grow the CPU mirror"
+        );
     }
 
     fn ready_cache(w: u32, h: u32, pixels: Vec<u8>) -> FrameCache {

@@ -154,6 +154,15 @@ test:
 		echo "  Install: cargo install cargo-nextest --locked"; \
 		$(CARGO) test --workspace $(CARGO_FLAGS); \
 	fi
+ifeq ($(HOST_OS),linux)
+	@# Portal FrameCache release/refill unit tests need the portal-capture feature
+	@# (not on by default for the capture crate alone).
+	@if $(CARGO) nextest --version >/dev/null 2>&1; then \
+		$(CARGO) nextest run -p sqyre-capture --features portal-capture $(CARGO_FLAGS); \
+	else \
+		$(CARGO) test -p sqyre-capture --features portal-capture $(CARGO_FLAGS); \
+	fi
+endif
 
 smoke: sqyre
 	$(BIN)/sqyre$(BIN_EXT) --version
