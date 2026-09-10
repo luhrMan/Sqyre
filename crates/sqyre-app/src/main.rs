@@ -1,8 +1,15 @@
 // Release GUI: no console window on Windows. Debug keeps a console for stderr.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+#[cfg(all(feature = "dhat-heap", not(target_arch = "wasm32")))]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 fn main() -> eframe::Result<()> {
+    #[cfg(feature = "dhat-heap")]
+    let _dhat = dhat::Profiler::new_heap();
+
     if sqyre_app::handle_cli_args() {
         return Ok(());
     }
@@ -12,6 +19,9 @@ fn main() -> eframe::Result<()> {
 
 #[cfg(all(not(target_arch = "wasm32"), not(feature = "native-runtime")))]
 fn main() -> eframe::Result<()> {
+    #[cfg(feature = "dhat-heap")]
+    let _dhat = dhat::Profiler::new_heap();
+
     if sqyre_app::handle_cli_args() {
         return Ok(());
     }

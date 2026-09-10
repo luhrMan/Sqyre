@@ -235,6 +235,27 @@ fn file_mtime(path: &Path) -> Option<SystemTime> {
     std::fs::metadata(path).ok()?.modified().ok()
 }
 
+/// Snapshot of process-global search-cache occupancy (for leak / RSS diagnostics).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct SearchCacheStats {
+    /// Approximate retained bytes across templates, masks, and prepared entries.
+    pub bytes: usize,
+    pub templates: usize,
+    pub masks: usize,
+    pub prepared: usize,
+}
+
+/// Current search-cache size (does not clear or mutate the cache).
+pub fn search_cache_stats() -> SearchCacheStats {
+    let guard = cache().read();
+    SearchCacheStats {
+        bytes: guard.bytes,
+        templates: guard.templates.len(),
+        masks: guard.image_masks.len(),
+        prepared: guard.prepared.len(),
+    }
+}
+
 /// Clears all cached templates, masks, and prepared templates (call after a macro finishes).
 pub fn clear_search_cache() {
     cache().write().clear();
@@ -513,6 +534,23 @@ mod tests {
             let a = get_cached_blurred_template(&path, k).unwrap();
             let b = get_cached_blurred_template(&path, k).unwrap();
             assert!(Arc::ptr_eq(&a, &b));
+        });
+    }
+
+    #[test]
+    fn stats_track_bytes_and_clear() {
+        with_search_cache_test_lock(|| {
+            reset_search_cache_for_testing();
+            assert_eq!(search_cache_stats(), SearchCacheStats::default());
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("icon.png");
+            write_rgb(&path, 8, 8, [10, 20, 30]);
+            let _ = get_cached_blurred_template(&path, search_blur_kernel(0)).unwrap();
+            let stats = search_cache_stats();
+            assert_eq!(stats.templates, 1);
+            assert!(stats.bytes > 0);
+            clear_search_cache();
+            assert_eq!(search_cache_stats(), SearchCacheStats::default());
         });
     }
 
