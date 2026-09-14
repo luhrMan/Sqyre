@@ -540,32 +540,38 @@ pub fn clear_match_scratch() {
 }
 
 /// Forward-FFT each channel of `search`, zero-padded to `dft_w`×`dft_h`.
-fn forward_fft_search(search: &ImageBuf, dft_w: usize, dft_h: usize) -> SearchFft {
+///
+/// When `parallel` is false, channels are transformed on the calling thread so
+/// single-flight builders can run safely while other rayon workers wait on a
+/// gate (nested `par_iter` would otherwise deadlock the pool).
+fn forward_fft_search(search: &ImageBuf, dft_w: usize, dft_h: usize, parallel: bool) -> SearchFft {
     let ch = search.channels;
     let area = dft_w * dft_h;
-    (0..ch)
-        .into_par_iter()
-        .map(|c| {
-            let mut img = vec![Complex::new(0.0, 0.0); area];
-            for y in 0..search.height {
-                for x in 0..search.width {
-                    let v = search.data[(y * search.width + x) * ch + c] as f32;
-                    img[y * dft_w + x] = Complex::new(v, 0.0);
-                }
+    let build_channel = |c: usize| {
+        let mut img = vec![Complex::new(0.0, 0.0); area];
+        for y in 0..search.height {
+            for x in 0..search.width {
+                let v = search.data[(y * search.width + x) * ch + c] as f32;
+                img[y * dft_w + x] = Complex::new(v, 0.0);
             }
-            FFT_SCRATCH.with(|s| {
-                let scratch = &mut *s.borrow_mut();
-                fft2d_forward(
-                    &mut img,
-                    dft_w,
-                    dft_h,
-                    &mut scratch.planner,
-                    &mut scratch.col,
-                );
-            });
-            img
-        })
-        .collect()
+        }
+        FFT_SCRATCH.with(|s| {
+            let scratch = &mut *s.borrow_mut();
+            fft2d_forward(
+                &mut img,
+                dft_w,
+                dft_h,
+                &mut scratch.planner,
+                &mut scratch.col,
+            );
+        });
+        img
+    };
+    if parallel {
+        (0..ch).into_par_iter().map(build_channel).collect()
+    } else {
+        (0..ch).map(build_channel).collect()
+    }
 }
 
 /// DFT cross-correlation of packed template vs search, then method-specific finish.
@@ -591,7 +597,7 @@ fn match_fft(
         owned_search_fft = prep.fft_for_size(search, dft_w, dft_h);
         owned_search_fft.as_ref()
     } else {
-        owned_search_fft = Arc::new(forward_fft_search(search, dft_w, dft_h));
+        owned_search_fft = Arc::new(forward_fft_search(search, dft_w, dft_h, true));
         owned_search_fft.as_ref()
     };
 
@@ -789,21 +795,62 @@ pub struct SearchPrep {
     integrals: SearchIntegrals,
     planar: crate::corr_simd::PlanarF32,
     fft_cache: Mutex<HashMap<(usize, usize), Arc<SearchFft>>>,
+    /// Single-flight gates so parallel variant matches do not stampede the same DFT.
+    fft_inflight: FftInflightGates,
 }
 
 /// Forward-FFT'd search image, one plane per channel.
 type SearchFft = Vec<Vec<Complex<f32>>>;
+type FftInflightGates = Mutex<HashMap<(usize, usize), Arc<Mutex<()>>>>;
 
 impl SearchPrep {
     fn fft_for_size(&self, search: &ImageBuf, dft_w: usize, dft_h: usize) -> Arc<SearchFft> {
         if let Some(hit) = self.fft_cache.lock().get(&(dft_w, dft_h)) {
             return Arc::clone(hit);
         }
-        let built = Arc::new(forward_fft_search(search, dft_w, dft_h));
+        let gate = {
+            let mut gates = self.fft_inflight.lock();
+            Arc::clone(
+                gates
+                    .entry((dft_w, dft_h))
+                    .or_insert_with(|| Arc::new(Mutex::new(()))),
+            )
+        };
+        let _busy = gate.lock();
+        if let Some(hit) = self.fft_cache.lock().get(&(dft_w, dft_h)) {
+            self.fft_inflight.lock().remove(&(dft_w, dft_h));
+            return Arc::clone(hit);
+        }
+        // Serial channel FFT: callers may be rayon workers waiting on this gate.
+        let built = Arc::new(forward_fft_search(search, dft_w, dft_h, false));
         self.fft_cache
             .lock()
             .insert((dft_w, dft_h), Arc::clone(&built));
+        self.fft_inflight.lock().remove(&(dft_w, dft_h));
         built
+    }
+
+    /// Precompute the search-frame FFT used for an unmasked template of size `tw`×`th`
+    /// when the match would take the DFT path. Call from the main thread before
+    /// parallel variant matching.
+    pub fn warm_fft_for_template(&self, search: &ImageBuf, tw: usize, th: usize) {
+        if tw == 0 || th == 0 || search.width < tw || search.height < th {
+            return;
+        }
+        let out_w = search.width - tw + 1;
+        let out_h = search.height - th + 1;
+        let ch = search.channels.max(1);
+        let direct_cost = (out_w as u64)
+            .saturating_mul(out_h as u64)
+            .saturating_mul(tw as u64)
+            .saturating_mul(th as u64)
+            .saturating_mul(ch as u64);
+        if direct_cost <= FFT_DIRECT_COST_THRESHOLD {
+            return;
+        }
+        let dft_w = optimal_dft_size(search.width + tw - 1);
+        let dft_h = optimal_dft_size(search.height + th - 1);
+        let _ = self.fft_for_size(search, dft_w, dft_h);
     }
 }
 
@@ -814,6 +861,7 @@ pub fn prepare_search(img: &ImageBuf) -> SearchPrep {
         integrals: build_integrals(img),
         planar: crate::corr_simd::PlanarF32::from_interleaved(img),
         fft_cache: Mutex::new(HashMap::new()),
+        fft_inflight: Mutex::new(HashMap::new()),
     }
 }
 
