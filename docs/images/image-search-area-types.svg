@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720">
+  <rect width="1400" height="720" fill="#ffffff"/>
+  <text x="700" y="56" text-anchor="middle" font-family="DejaVu Sans, Liberation Sans, sans-serif" font-size="36" font-weight="700" fill="#1f2937">Two kinds of Search area</text>
+
+  <!-- Left card -->
+  <rect x="60" y="100" width="600" height="460" rx="18" fill="#f3f4f6" stroke="#9ca3af" stroke-width="2"/>
+  <text x="100" y="148" font-family="DejaVu Sans, Liberation Sans, sans-serif" font-size="26" font-weight="700" fill="#1f2937">Desktop region</text>
+
+  <!-- Window -->
+  <rect x="140" y="200" width="420" height="230" rx="10" fill="#ffffff" stroke="#374151" stroke-width="3"/>
+  <rect x="140" y="200" width="420" height="28" rx="10" fill="#e5e7eb"/>
+  <rect x="140" y="214" width="420" height="14" fill="#e5e7eb"/>
+  <circle cx="162" cy="214" r="5" fill="#ef4444"/>
+  <circle cx="178" cy="214" r="5" fill="#f59e0b"/>
+  <circle cx="194" cy="214" r="5" fill="#22c55e"/>
+  <!-- Search region -->
+  <rect x="190" y="260" width="290" height="130" rx="8" fill="#ccfbf1" stroke="#0f766e" stroke-width="3" stroke-dasharray="10 6"/>
+
+  <text x="360" y="500" text-anchor="middle" font-family="DejaVu Sans, Liberation Sans, sans-serif" font-size="18" fill="#6b7280">One full-frame capture; match template anywhere inside.</text>
+
+  <!-- Right card -->
+  <rect x="740" y="100" width="600" height="460" rx="18" fill="#f3f4f6" stroke="#9ca3af" stroke-width="2"/>
+  <text x="780" y="148" font-family="DejaVu Sans, Liberation Sans, sans-serif" font-size="26" font-weight="700" fill="#1f2937">Collection cell range</text>
+
+  <!-- 3x3 grid; top-left 2x2 selected -->
+  <!-- row 0 -->
+  <rect x="860" y="210" width="90" height="90" rx="10" fill="#99f6e4" stroke="#0f766e" stroke-width="4" stroke-dasharray="10 6"/>
+  <rect x="962" y="210" width="90" height="90" rx="10" fill="#99f6e4" stroke="#0f766e" stroke-width="4" stroke-dasharray="10 6"/>
+  <rect x="1064" y="210" width="90" height="90" rx="10" fill="#e5e7eb" stroke="#9ca3af" stroke-width="2"/>
+  <!-- row 1 -->
+  <rect x="860" y="312" width="90" height="90" rx="10" fill="#99f6e4" stroke="#0f766e" stroke-width="4" stroke-dasharray="10 6"/>
+  <rect x="962" y="312" width="90" height="90" rx="10" fill="#99f6e4" stroke="#0f766e" stroke-width="4" stroke-dasharray="10 6"/>
+  <rect x="1064" y="312" width="90" height="90" rx="10" fill="#e5e7eb" stroke="#9ca3af" stroke-width="2"/>
+  <!-- row 2 -->
+  <rect x="860" y="414" width="90" height="90" rx="10" fill="#e5e7eb" stroke="#9ca3af" stroke-width="2"/>
+  <rect x="962" y="414" width="90" height="90" rx="10" fill="#e5e7eb" stroke="#9ca3af" stroke-width="2"/>
+  <rect x="1064" y="414" width="90" height="90" rx="10" fill="#e5e7eb" stroke="#9ca3af" stroke-width="2"/>
+
+  <text x="1170" y="310" font-family="DejaVu Sans Mono, Liberation Mono, monospace" font-size="18" font-weight="700" fill="#0f766e">Program~Bag@1,1-2,2</text>
+
+  <text x="1040" y="540" text-anchor="middle" font-family="DejaVu Sans, Liberation Sans, sans-serif" font-size="18" fill="#6b7280">Capture only selected cells; search slides by placement.</text>
+
+  <!-- Footer -->
+  <rect x="280" y="600" width="840" height="60" rx="16" fill="#f3f4f6" stroke="#9ca3af" stroke-width="2"/>
+  <text x="700" y="638" text-anchor="middle" font-family="DejaVu Sans, Liberation Sans, sans-serif" font-size="20" font-weight="700" fill="#1f2937">Same Image Search action — different capture and placement rules.</text>
+</svg>

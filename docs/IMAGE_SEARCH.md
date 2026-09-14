@@ -27,6 +27,12 @@ On a hit, builtin variables include `ItemName`, `VariantName` (empty for Origina
 1. **Desktop region** — a named screen rectangle. The whole capture is searched once per item.
 2. **Collection cell range** — `Program~Collection@r1,c1-r2,c2` (1-based, inclusive). Only those cells are captured; matching uses **placements** (below).
 
+![Two kinds of Search area](images/image-search-area-types.png)
+
+Match centers feed **Output X** / **Output Y**. Nest a **Move** to `General~Image Search Reference` (`${foundX}` / `${foundY}`) to follow each hit:
+
+![From hit to mouse move](images/image-search-found-to-move.png)
+
 ## Collection grids and placements
 
 A **Collection** has its own search bounds plus a **Rows** × **Cols** grid. When Image Search targets a cell range on that collection, Sqyre slides each item’s footprint through the selection **one cell at a time**. Each slide position is a **placement** (the pixel union of the covered cells).
@@ -45,10 +51,12 @@ Straddling a cell boundary does not count: a 1×1 search only accepts icons that
 
 On a **collection** search with multiple items, Sqyre treats cells as single-occupant slots:
 
-1. Items with **larger footprints** (`rows × cols`) are searched first (ties break by name).
+1. Items are searched in **Search sorting** order (default **Name A→Z**).
 2. When a placement finds a match, **every cell in that footprint is claimed**.
 3. Later items skip any placement that overlaps claimed cells.
 4. Overlapping placements of the **same** item are also resolved so one hit cannot double-claim the same cells.
+
+**Search sorting** (Items row): **Sort by** (Name / Footprint / Tags / Manual) plus **Then** (Name A→Z / Z→A, footprint, or list order). Default is Name then A→Z. Dragging an item switches to Manual. Tag priority chips are drag-reorderable when Sort by is Tags.
 
 ![Occupied cells](images/image-search-cell-occupation.png)
 
@@ -61,7 +69,7 @@ That keeps large icons from losing their slots to overlapping footprints.
 
 ## Variants and early exit
 
-Variants of one item are tried **in order** (Original, then named alts). As soon as one variant hits on a given search, remaining variants for **that** search stop.
+Variants of one item are tried **in order** (Original, then named alts). With **variant exit early** enabled in User Settings (the default), as soon as one variant hits on a given search, remaining variants for **that** search stop. Disable the setting to try every variant on every search.
 
 Early exit is **per placement** on collections, and **per full-frame search** on desktop regions. Finding Original in one cell does **not** skip Alt on another cell.
 
