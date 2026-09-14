@@ -52,3 +52,5 @@ db.migrated.yaml
 .cursor/rules/clean-git-messages.mdc
 mem.log
 dhat-heap.json
+
+docs/blog

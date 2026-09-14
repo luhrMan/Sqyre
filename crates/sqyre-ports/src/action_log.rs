@@ -158,7 +158,9 @@ impl SharedActionLog {
     /// Total RGBA bytes retained in log images (for `SQYRE_MEM` samples).
     pub fn image_bytes(&self) -> usize {
         let map = self.inner.lock();
-        map.values().map(|entries| entries_image_bytes(entries)).sum()
+        map.values()
+            .map(|entries| entries_image_bytes(entries))
+            .sum()
     }
 
     /// Snapshot of the entries logged for `action_id`.
@@ -181,9 +183,7 @@ fn entry_image_bytes(entry: &ActionLogEntry) -> usize {
         ActionLogEntry::Image(img) => img.pixels.len(),
         ActionLogEntry::ItemPipeline {
             thumbnail, steps, ..
-        } => {
-            thumbnail.pixels.len() + steps.iter().map(|s| s.pixels.len()).sum::<usize>()
-        }
+        } => thumbnail.pixels.len() + steps.iter().map(|s| s.pixels.len()).sum::<usize>(),
     }
 }
 
@@ -346,7 +346,11 @@ mod tests {
         log.log_image(id, &solid("capture", 128));
         let entries = log.entries_for(id);
         assert_eq!(entries.len(), 1);
-        assert_eq!(log.image_bytes(), 0, "disabled images must not retain pixels");
+        assert_eq!(
+            log.image_bytes(),
+            0,
+            "disabled images must not retain pixels"
+        );
     }
 
     #[test]
