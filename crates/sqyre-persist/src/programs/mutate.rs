@@ -104,6 +104,10 @@ impl ProgramCatalog {
             }
             let _ = std::fs::rename(&src, &dst);
         }
+        crate::invalidate_icon_fs_cache_under(&self.icons_dir(old));
+        crate::invalidate_icon_fs_cache_under(&self.icons_dir(new));
+        crate::invalidate_icon_fs_cache_under(&self.masks_dir(old));
+        crate::invalidate_icon_fs_cache_under(&self.masks_dir(new));
     }
 
     pub fn delete_program(&mut self, name: &str) -> Result<()> {
@@ -115,8 +119,10 @@ impl ProgramCatalog {
             let icons = self.icons_dir(name);
             let masks = self.masks_dir(name);
             let collections = self.collections_dir(name);
-            let _ = std::fs::remove_dir_all(icons);
-            let _ = std::fs::remove_dir_all(masks);
+            crate::invalidate_icon_fs_cache_under(&icons);
+            crate::invalidate_icon_fs_cache_under(&masks);
+            let _ = std::fs::remove_dir_all(&icons);
+            let _ = std::fs::remove_dir_all(&masks);
             let _ = std::fs::remove_dir_all(collections);
         }
         self.bump_generation();
@@ -175,6 +181,7 @@ impl ProgramCatalog {
             let dest = dir.join(dest_name);
             let _ = std::fs::rename(path, dest);
         });
+        crate::invalidate_icon_fs_cache_under(&dir);
     }
 
     pub fn delete_item(&mut self, program: &str, name: &str) -> Result<()> {
@@ -196,6 +203,7 @@ impl ProgramCatalog {
             let dest = unique_dest(&trash, file_name);
             let _ = std::fs::rename(path, dest);
         });
+        crate::invalidate_icon_fs_cache_under(&dir);
     }
 
     pub fn upsert_point(&mut self, program: &str, point: ProgramPoint) -> Result<()> {
@@ -293,6 +301,8 @@ impl ProgramCatalog {
                 let _ = std::fs::create_dir_all(parent);
             }
             let _ = std::fs::rename(&old_path, &new_path);
+            crate::invalidate_icon_fs_cache_under(&old_path);
+            crate::invalidate_icon_fs_cache_under(&new_path);
         }
         Ok(())
     }
@@ -307,6 +317,7 @@ impl ProgramCatalog {
             }
         }
         if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
+            crate::invalidate_icon_fs_cache_under(&path);
             let _ = std::fs::remove_file(path);
         }
         Ok(())

@@ -272,25 +272,14 @@ impl ProgramCatalog {
     }
 
     /// `program~item` → icon PNG paths (variants + legacy).
+    ///
+    /// Directory listings are cached process-wide (keyed by dir mtime); call
+    /// [`crate::invalidate_icon_fs_cache_under`] after adding/removing icons.
     pub fn variant_paths(&self, target: &str) -> Vec<PathBuf> {
         let Some((program, item)) = split_target(target) else {
             return Vec::new();
         };
-        let dir = self.icons_dir(program);
-        let mut paths = Vec::new();
-        if let Ok(rd) = std::fs::read_dir(&dir) {
-            let prefix = format!("{item}{PROGRAM_DELIMITER}");
-            let legacy = format!("{item}.png");
-            for entry in rd.flatten() {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                if name == legacy || (name.starts_with(&prefix) && name.ends_with(".png")) {
-                    paths.push(entry.path());
-                }
-            }
-        }
-        paths.sort();
-        paths
+        crate::icon_fs_cache::cached_variant_paths(&self.icons_dir(program), item)
     }
 
     pub fn mask_path(&self, target: &str) -> Option<PathBuf> {
@@ -300,11 +289,7 @@ impl ProgramCatalog {
             return None;
         }
         let path = self.mask_image_path(program, &item.mask);
-        if path.is_file() {
-            Some(path)
-        } else {
-            None
-        }
+        crate::icon_fs_cache::cached_mask_if_exists(path)
     }
 
     pub fn item_meta(&self, target: &str) -> Option<sqyre_ports::ItemMeta> {
@@ -315,6 +300,7 @@ impl ProgramCatalog {
             stack_max: item.stack_max,
             cols: item.grid_cols,
             rows: item.grid_rows,
+            tags: item.tags.clone(),
         })
     }
 }

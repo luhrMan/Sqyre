@@ -268,6 +268,7 @@ impl DataEditor {
             Ok(()) => {
                 icons.invalidate_path(&dest);
                 invalidate_search_masks_under(&dest);
+                sqyre_persist::invalidate_icon_fs_cache_under(&dest);
                 self.set_ok("Uploaded mask image.");
             }
             Err(e) => self.set_err(e),
@@ -285,11 +286,13 @@ impl DataEditor {
             Ok(()) => {
                 icons.invalidate_path(&path);
                 invalidate_search_masks_under(&path);
+                sqyre_persist::invalidate_icon_fs_cache_under(&path);
                 self.set_ok("Removed mask image.");
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 icons.invalidate_path(&path);
                 invalidate_search_masks_under(&path);
+                sqyre_persist::invalidate_icon_fs_cache_under(&path);
                 self.set_ok("Removed mask image.");
             }
             Err(e) => self.set_err(format!("remove mask image: {e}")),
