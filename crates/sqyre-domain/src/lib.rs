@@ -11,6 +11,7 @@ mod blank;
 mod color;
 mod expr;
 mod expr_error;
+mod item_sort;
 mod keys;
 mod macro_model;
 mod match_method;
@@ -35,6 +36,10 @@ pub use color::{
 };
 pub use expr::{evaluate_expression, numeric_to_scalar};
 pub use expr_error::{ExprError, ResolveError};
+pub use item_sort::{
+    apply_display_reorder, ordered_catalog_items, ordered_item_targets, CatalogItemSort,
+    ItemSortInfo,
+};
 pub use keys::{
     failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
     validate_continue_key, validate_not_failsafe, KeyError, FAILSAFE_KEYS, FAILSAFE_LABEL,

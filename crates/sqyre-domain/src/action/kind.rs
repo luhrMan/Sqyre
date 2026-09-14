@@ -1,8 +1,9 @@
 //! Action kind enum and tree-shape helpers.
 
 use super::{
-    Action, ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, MatchMethod,
-    MouseButton, NavigateSelectData, PressState, ScalarValue, VariableAssignment,
+    Action, ConditionBlock, CoordinateRef, DetectionBranch, ItemSortBy, ItemSortThen, ListColumn,
+    LoopJumpMode, MatchMethod, MouseButton, NavigateSelectData, PressState, ScalarValue,
+    VariableAssignment,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +30,12 @@ pub enum ActionKind {
         tolerance: f64,
         blur: i32,
         match_method: MatchMethod,
+        /// Primary order for matching items and for the Items grid display.
+        sort_by: ItemSortBy,
+        /// Within-group order after [`sort_by`](Self::ImageSearch::sort_by).
+        sort_then: ItemSortThen,
+        /// Tag priority when sort_by is Tags.
+        tag_priority: Vec<String>,
         detection: DetectionBranch,
     },
     Ocr {

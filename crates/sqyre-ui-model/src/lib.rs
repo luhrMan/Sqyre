@@ -86,6 +86,9 @@ mod tests {
                 tolerance: 0.9,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: DetectionBranch::default(),
             },
         };
@@ -315,6 +318,9 @@ mod tests {
                 tolerance: 0.9,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: DetectionBranch {
                     coords: CoordinateOutputs {
                         output_x_variable: "x".into(),
@@ -343,6 +349,9 @@ mod tests {
                 tolerance: 0.9,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: DetectionBranch::default(),
             },
         };
@@ -467,6 +476,9 @@ mod tests {
                     tolerance: 0.0,
                     blur: 0,
                     match_method: Default::default(),
+                    sort_by: Default::default(),
+                    sort_then: Default::default(),
+                    tag_priority: Vec::new(),
                     detection: DetectionBranch::default(),
                 },
                 "🔍",

@@ -399,6 +399,56 @@ string_enum! {
     }
 }
 
+string_enum! {
+    /// Primary key for Image Search item order (search + Items grid).
+    pub enum ItemSortBy {
+        /// Display name (direction from [`ItemSortThen`] name variants).
+        #[default]
+        Name = "name",
+        /// Grid footprint `rows × cols` (direction from footprint then-variants).
+        Footprint = "footprint",
+        /// [`ActionKind::ImageSearch`] tag priority list.
+        Tags = "tags",
+        /// Stored `targets` list order (drag-reorderable).
+        Manual = "manual",
+    }
+}
+
+impl ItemSortBy {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Name => "Name",
+            Self::Footprint => "Footprint",
+            Self::Tags => "Tags",
+            Self::Manual => "Manual",
+        }
+    }
+}
+
+string_enum! {
+    /// Within-group / secondary order after [`ItemSortBy`].
+    pub enum ItemSortThen {
+        #[default]
+        NameAsc = "name_asc",
+        NameDesc = "name_desc",
+        FootprintLarge = "footprint_large",
+        FootprintSmall = "footprint_small",
+        ListOrder = "list_order",
+    }
+}
+
+impl ItemSortThen {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::NameAsc => "Name A→Z",
+            Self::NameDesc => "Name Z→A",
+            Self::FootprintLarge => "Larger footprint",
+            Self::FootprintSmall => "Smaller footprint",
+            Self::ListOrder => "List order",
+        }
+    }
+}
+
 impl MatchGrouping {
     pub const fn label(self) -> &'static str {
         match self {
@@ -789,6 +839,14 @@ pub(crate) fn is_default_match_method(v: &MatchMethod) -> bool {
 
 fn is_default_match_grouping(v: &MatchGrouping) -> bool {
     *v == MatchGrouping::Row
+}
+
+pub(crate) fn is_default_item_sort_by(v: &ItemSortBy) -> bool {
+    *v == ItemSortBy::Name
+}
+
+pub(crate) fn is_default_item_sort_then(v: &ItemSortThen) -> bool {
+    *v == ItemSortThen::NameAsc
 }
 
 fn is_default_nav_select_device(v: &NavSelectDevice) -> bool {
