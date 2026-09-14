@@ -9,6 +9,7 @@ use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::Duration;
 
 const FALLBACK_KEY: &str = "__sqyre_fallback__";
@@ -21,9 +22,16 @@ fn icon_texture_options() -> TextureOptions {
     TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear))
 }
 
+enum PendingDecode {
+    Ready(ColorImage),
+    Failed,
+}
+
 #[derive(Default)]
 pub struct IconCache {
     textures: HashMap<PathBuf, TextureHandle>,
+    /// Background PNG decodes (native); uploaded on the UI thread when ready.
+    pending: HashMap<PathBuf, Receiver<PendingDecode>>,
     /// Remember targets that failed so we do not spam disk/read errors.
     missing: HashMap<String, ()>,
     fallback: Option<TextureHandle>,
@@ -53,7 +61,14 @@ impl IconCache {
         match self.for_target_random_variant(ctx, catalog, target) {
             Some(t) => Some(t),
             None => {
-                self.missing.insert(target.to_string(), ());
+                // Do not sticky-miss while a decode is still in flight.
+                let paths = demo_icons::merged_variant_paths(catalog, target);
+                let waiting = paths.iter().any(|p| self.pending.contains_key(p.as_path()));
+                if !waiting {
+                    self.missing.insert(target.to_string(), ());
+                } else {
+                    ctx.request_repaint();
+                }
                 None
             }
         }
@@ -108,10 +123,10 @@ impl IconCache {
     /// Load an arbitrary image path into a retained texture.
     /// Also resolves in-memory [`demo_icons`] when the path is not on disk.
     pub fn for_path(&mut self, ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
-        if path.is_file() || demo_icons::contains(path) {
-            return self.get_or_load(ctx, path);
+        if let Some(t) = self.textures.get(path) {
+            return Some(t.clone());
         }
-        None
+        self.get_or_load(ctx, path)
     }
 
     /// OS process icon for a bound executable path (and optional window title).
@@ -197,6 +212,7 @@ impl IconCache {
     /// Drop a cached texture so the next load re-reads from disk / demo store.
     pub fn invalidate_path(&mut self, path: &Path) {
         self.textures.remove(path);
+        self.pending.remove(path);
     }
 
     /// Forget a sticky miss for `program~item` so listings recheck disk.
@@ -226,9 +242,64 @@ impl IconCache {
         if let Some(t) = self.textures.get(path) {
             return Some(t.clone());
         }
-        let tex = load_texture(ctx, path)?;
-        self.textures.insert(path.to_path_buf(), tex.clone());
-        Some(tex)
+        if let Some(rx) = self.pending.get(path) {
+            match rx.try_recv() {
+                Ok(PendingDecode::Ready(color)) => {
+                    self.pending.remove(path);
+                    let tex =
+                        ctx.load_texture(path.to_string_lossy(), color, icon_texture_options());
+                    self.textures.insert(path.to_path_buf(), tex.clone());
+                    return Some(tex);
+                }
+                Ok(PendingDecode::Failed) => {
+                    self.pending.remove(path);
+                    return None;
+                }
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint();
+                    return None;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.pending.remove(path);
+                    return None;
+                }
+            }
+        }
+
+        // Demo assets and WASM: decode on the UI thread (tiny / no background threads).
+        #[cfg(target_arch = "wasm32")]
+        {
+            let tex = load_texture(ctx, path)?;
+            self.textures.insert(path.to_path_buf(), tex.clone());
+            return Some(tex);
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if demo_icons::contains(path) {
+                let tex = load_texture(ctx, path)?;
+                self.textures.insert(path.to_path_buf(), tex.clone());
+                return Some(tex);
+            }
+            let path_buf = path.to_path_buf();
+            if !path_buf.is_file() {
+                return None;
+            }
+            let (tx, rx) = mpsc::channel();
+            self.pending.insert(path_buf.clone(), rx);
+            std::thread::spawn(move || {
+                let result = match std::fs::read(&path_buf)
+                    .ok()
+                    .and_then(|bytes| decode_png_color(&bytes))
+                {
+                    Some(color) => PendingDecode::Ready(color),
+                    None => PendingDecode::Failed,
+                };
+                let _ = tx.send(result);
+            });
+            ctx.request_repaint();
+            None
+        }
     }
 }
 
@@ -463,10 +534,14 @@ fn load_texture(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
     Some(ctx.load_texture(path.to_string_lossy(), color, icon_texture_options()))
 }
 
-fn load_png_bytes(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<TextureHandle> {
+fn decode_png_color(bytes: &[u8]) -> Option<ColorImage> {
     let img = image::load_from_memory(bytes).ok()?.into_rgba8();
     let size = [img.width() as usize, img.height() as usize];
-    let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
+    Some(ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
+}
+
+fn load_png_bytes(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<TextureHandle> {
+    let color = decode_png_color(bytes)?;
     Some(ctx.load_texture(name.to_owned(), color, icon_texture_options()))
 }
 
