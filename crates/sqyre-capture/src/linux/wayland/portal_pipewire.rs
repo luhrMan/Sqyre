@@ -541,11 +541,7 @@ impl PortalCapturer {
         let before = slot.cache.pixels.len();
         shrink_cpu_frame_cache(&mut slot.cache);
         if before > 0 {
-            cap_log(
-                "PORTAL",
-                "cache",
-                &format!("release_kib={}", before / 1024),
-            );
+            cap_log("PORTAL", "cache", &format!("release_kib={}", before / 1024));
         }
     }
 
