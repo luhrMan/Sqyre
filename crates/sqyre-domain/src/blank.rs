@@ -130,6 +130,9 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
             tolerance: 0.95,
             blur: 5,
             match_method: MatchMethod::CcoeffNormed,
+            sort_by: Default::default(),
+            sort_then: Default::default(),
+            tag_priority: Vec::new(),
             detection: DetectionBranch::default(),
         },
         "ocr" => ActionKind::Ocr {

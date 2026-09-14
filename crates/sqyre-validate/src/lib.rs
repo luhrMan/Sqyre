@@ -1117,6 +1117,9 @@ mod tests {
                 tolerance: 0.95,
                 blur: 5,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: Default::default(),
             },
         };
@@ -1136,6 +1139,9 @@ mod tests {
                 tolerance: 0.95,
                 blur: 5,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
@@ -1166,6 +1172,9 @@ mod tests {
                 tolerance: 0.95,
                 blur: 5,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
@@ -1262,6 +1271,9 @@ mod tests {
                 tolerance: 0.95,
                 blur: 5,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: Default::default(),
             },
         };

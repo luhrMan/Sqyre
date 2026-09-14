@@ -318,6 +318,7 @@ impl ActionKindDisplay for ActionKind {
                 blur,
                 match_method,
                 detection,
+                ..
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
                 params.push(DisplayParam::new("Items", targets.len().to_string()));

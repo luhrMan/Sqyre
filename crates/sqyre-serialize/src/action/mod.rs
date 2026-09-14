@@ -298,6 +298,9 @@ mod tests {
                 tolerance: 0.87,
                 blur: 3,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
@@ -355,6 +358,9 @@ mod tests {
                 tolerance: 0.0,
                 blur: 5,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::RepeatWhileFound,
@@ -396,10 +402,63 @@ blur: 5
             ActionKind::ImageSearch {
                 targets,
                 search_area,
+                sort_by,
+                sort_then,
                 ..
             } => {
                 assert_eq!(targets, vec!["Game~Sword".to_string()]);
                 assert_eq!(search_area.as_str(), "Game~Arena");
+                assert_eq!(sort_by, sqyre_domain::ItemSortBy::Name);
+                assert_eq!(sort_then, sqyre_domain::ItemSortThen::NameAsc);
+            }
+            other => panic!("expected ImageSearch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn image_search_sorting_and_tag_priority_roundtrip() {
+        let yaml = r#"
+type: imagesearch
+name: find
+targets: [Game~Sword, Game~Shield]
+searcharea: Game~Arena
+sortby: tags
+sortthen: name_asc
+tagpriority: [rare, heal]
+"#;
+        let value: Value = serde_yaml::from_str(yaml).unwrap();
+        let map = value.as_mapping().unwrap();
+        let action = action_from_map(map).unwrap();
+        match &action.kind {
+            ActionKind::ImageSearch {
+                sort_by,
+                sort_then,
+                tag_priority,
+                ..
+            } => {
+                assert_eq!(*sort_by, sqyre_domain::ItemSortBy::Tags);
+                assert_eq!(*sort_then, sqyre_domain::ItemSortThen::NameAsc);
+                assert_eq!(tag_priority, &vec!["rare".to_string(), "heal".to_string()]);
+            }
+            other => panic!("expected ImageSearch, got {other:?}"),
+        }
+        let map = action_to_map(&action).unwrap();
+        assert_eq!(
+            map.get(Value::String("sortby".into()))
+                .and_then(|v| v.as_str()),
+            Some("tags")
+        );
+        let restored = action_from_map(&map).unwrap();
+        match restored.kind {
+            ActionKind::ImageSearch {
+                sort_by,
+                sort_then,
+                tag_priority,
+                ..
+            } => {
+                assert_eq!(sort_by, sqyre_domain::ItemSortBy::Tags);
+                assert_eq!(sort_then, sqyre_domain::ItemSortThen::NameAsc);
+                assert_eq!(tag_priority, vec!["rare".to_string(), "heal".to_string()]);
             }
             other => panic!("expected ImageSearch, got {other:?}"),
         }
