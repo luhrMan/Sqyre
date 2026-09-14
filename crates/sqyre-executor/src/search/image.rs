@@ -10,8 +10,9 @@ use crate::log_draw::{crop_match_preview, draw_rect_rgb};
 use crate::run::Executor;
 use rayon::prelude::*;
 use sqyre_domain::{
-    action_type_label, grid_item_placements, variant_name_from_path, Action, ActionKind,
-    GridPlacement, Macro, MatchMethod, PROGRAM_DELIMITER,
+    action_type_label, grid_item_placements, ordered_item_targets, variant_name_from_path, Action,
+    ActionKind, GridPlacement, ItemSortBy, ItemSortInfo, ItemSortThen, Macro, MatchMethod,
+    PROGRAM_DELIMITER,
 };
 use sqyre_match::{
     blur_image_owned, cluster_points, find_template_matches_preblurred_with_prepared,
@@ -39,6 +40,9 @@ pub(crate) fn execute_image_search(
         tolerance,
         blur,
         match_method,
+        sort_by,
+        sort_then,
+        tag_priority,
         detection,
         ..
     } = &action.kind
@@ -48,7 +52,8 @@ pub(crate) fn execute_image_search(
     highlight_fill(exec.deps.highlighter, &macro_.name, action.id, 0.0);
     let action_id = action.id;
     let label = action_type_label(action.type_key());
-    let ctx = DetectionCtx::new(action_id, label, search_area, targets, detection);
+    let sorted_targets = ordered_search_targets(exec, targets, *sort_by, *sort_then, tag_priority);
+    let ctx = DetectionCtx::new(action_id, label, search_area, &sorted_targets, detection);
     let wait = &detection.wait;
     let macro_name = macro_.name.clone();
     let result = (|| {
@@ -128,8 +133,6 @@ struct TargetSearch {
     target: String,
     meta: Option<ItemMeta>,
     mask_path: Option<PathBuf>,
-    item_rows: i32,
-    item_cols: i32,
     variants: Vec<VariantSpec>,
     /// Empty means non-collection: search the full capture once.
     placements: Vec<GridPlacement>,
@@ -285,8 +288,6 @@ fn capture_and_match(
             target: target.clone(),
             meta,
             mask_path,
-            item_rows,
-            item_cols,
             variants,
             placements,
         });
@@ -303,25 +304,24 @@ fn capture_and_match(
     };
     let method = match_method;
 
-    // Load templates on this thread before the parallel match. Inflight cache
-    // gates taken inside `into_par_iter` deadlock when nested FFT work needs
-    // those same rayon workers (stop then sticks at "Stop requested…").
+    // Load templates before the parallel match. Inflight cache gates taken inside
+    // `into_par_iter` deadlock when nested FFT work needs those same rayon workers
+    // (stop then sticks at "Stop requested…"). Warm uses rayon only for independent
+    // disk/blur/prepare work (no nested FFT).
     warm_variant_caches(exec, &targets_search, kernel, method)?;
-
-    // Larger footprints claim cells first so small items cannot steal their slots.
-    if collection_layout.is_some() {
-        targets_search.sort_by(|a, b| {
-            (b.item_rows * b.item_cols)
-                .cmp(&(a.item_rows * a.item_cols))
-                .then_with(|| a.target.cmp(&b.target))
-        });
+    if let Some(ref prep) = search_prep {
+        warm_search_ffts(prep, &search_blurred, &targets_search, kernel);
     }
+
+    // Search order comes from sort_by/sort_then (via DetectionCtx targets). Collection
+    // searches still claim occupied cells as hits are accepted below.
 
     let match_ctx = MatchCtx {
         kernel,
         method,
         threshold,
         close_dist,
+        variant_exit_early: exec.deps.variant_exit_early,
         want_pipeline,
         stop_flag,
     };
@@ -352,14 +352,16 @@ fn capture_and_match(
                 continue;
             }
 
-            let free_rects: Vec<(i32, i32, i32, i32)> =
-                free.iter().map(|p| p.rect).collect();
+            let free_rects: Vec<(i32, i32, i32, i32)> = free.iter().map(|p| p.rect).collect();
             let crop_preps = prepare_crops(&search_blurred, origin, &free_rects);
 
             let wave: Vec<Vec<VariantMatchOutcome>> = free
                 .par_iter()
                 .map(|placement| {
-                    if match_ctx.stop_flag.is_some_and(|f| f.load(Ordering::SeqCst)) {
+                    if match_ctx
+                        .stop_flag
+                        .is_some_and(|f| f.load(Ordering::SeqCst))
+                    {
                         return Vec::new();
                     }
                     let cropped = crop_preps.get(&placement.rect).cloned().flatten();
@@ -393,12 +395,15 @@ fn capture_and_match(
             }
         }
     } else {
-        // Non-collection: independent targets in parallel; variants early-exit
-        // within each target (one full-frame search).
+        // Non-collection: independent targets in parallel; variants may early-exit
+        // within each target (one full-frame search) when variant_exit_early is on.
         let wave: Vec<Vec<VariantMatchOutcome>> = targets_search
             .par_iter()
             .map(|target| {
-                if match_ctx.stop_flag.is_some_and(|f| f.load(Ordering::SeqCst)) {
+                if match_ctx
+                    .stop_flag
+                    .is_some_and(|f| f.load(Ordering::SeqCst))
+                {
                     return Vec::new();
                 }
                 match_variants_until_hit(
@@ -660,36 +665,95 @@ fn item_footprint(meta: &Option<ItemMeta>) -> (i32, i32) {
     (rows, cols)
 }
 
+fn ordered_search_targets(
+    exec: &Executor<'_>,
+    targets: &[String],
+    sort_by: ItemSortBy,
+    sort_then: ItemSortThen,
+    tag_priority: &[String],
+) -> Vec<String> {
+    let infos: Vec<ItemSortInfo> = targets
+        .iter()
+        .map(|target| {
+            let meta = exec.deps.icons.and_then(|icons| icons.item_meta(target));
+            let (name, rows, cols, tags) = match meta {
+                Some(m) => (m.name, m.rows, m.cols, m.tags),
+                None => (String::new(), 1, 1, Vec::new()),
+            };
+            ItemSortInfo::from_parts(target.clone(), name, rows, cols, tags)
+        })
+        .collect();
+    ordered_item_targets(&infos, sort_by, sort_then, tag_priority)
+}
+
 fn warm_variant_caches(
     exec: &Executor<'_>,
     targets: &[TargetSearch],
     kernel: i32,
     method: MatchMethod,
 ) -> Result<()> {
+    let mut jobs: Vec<(PathBuf, Option<PathBuf>)> = Vec::new();
     let mut seen: HashSet<(PathBuf, Option<PathBuf>)> = HashSet::new();
     for target in targets {
         for variant in &target.variants {
-            exec.check_stopped()?;
-            if !seen.insert((variant.path.clone(), target.mask_path.clone())) {
-                continue;
+            if seen.insert((variant.path.clone(), target.mask_path.clone())) {
+                jobs.push((variant.path.clone(), target.mask_path.clone()));
             }
-            let Ok(template_blurred) = get_cached_blurred_template(&variant.path, kernel) else {
-                continue;
-            };
-            let mask_bytes = target.mask_path.as_ref().and_then(|p| {
-                get_cached_image_mask(p, template_blurred.height, template_blurred.width)
-            });
-            let _ = get_cached_prepared_template(
-                &variant.path,
-                kernel,
-                template_blurred.as_ref(),
-                target.mask_path.as_deref(),
-                mask_bytes.as_deref().map(|m| m.as_slice()),
-                method,
-            );
         }
     }
+    // Stop check before spawning parallel warm work.
+    exec.check_stopped()?;
+    let stop = exec.deps.stop_flag;
+    jobs.into_par_iter().for_each(|(path, mask_path)| {
+        if stop.is_some_and(|f| f.load(Ordering::SeqCst)) {
+            return;
+        }
+        let Ok(template_blurred) = get_cached_blurred_template(&path, kernel) else {
+            return;
+        };
+        let mask_bytes = mask_path.as_ref().and_then(|p| {
+            get_cached_image_mask(p, template_blurred.height, template_blurred.width)
+        });
+        let _ = get_cached_prepared_template(
+            &path,
+            kernel,
+            template_blurred.as_ref(),
+            mask_path.as_deref(),
+            mask_bytes.as_deref().map(|m| m.as_slice()),
+            method,
+        );
+    });
+    if stop.is_some_and(|f| f.load(Ordering::SeqCst)) {
+        return Err(FlowSignal::Stopped.into());
+    }
     Ok(())
+}
+
+/// Precompute search-frame FFTs for template sizes that will take the DFT path.
+fn warm_search_ffts(
+    prep: &SearchPrep,
+    search: &ImageBuf,
+    targets: &[TargetSearch],
+    kernel: i32,
+) {
+    let mut seen_sizes: HashSet<(usize, usize)> = HashSet::new();
+    for target in targets {
+        // Masked matches use the direct correlator — skip FFT warm.
+        if target.mask_path.is_some() {
+            continue;
+        }
+        for variant in &target.variants {
+            let Ok(tmpl) = get_cached_blurred_template(&variant.path, kernel) else {
+                continue;
+            };
+            let tw = tmpl.width;
+            let th = tmpl.height;
+            if !seen_sizes.insert((tw, th)) {
+                continue;
+            }
+            prep.warm_fft_for_template(search, tw, th);
+        }
+    }
 }
 
 struct MatchCtx<'a> {
@@ -697,12 +761,14 @@ struct MatchCtx<'a> {
     method: MatchMethod,
     threshold: f32,
     close_dist: i32,
+    variant_exit_early: bool,
     want_pipeline: bool,
     stop_flag: Option<&'a AtomicBool>,
 }
 
-/// Try each variant on one search image; stop after the first that finds a hit.
+/// Try each variant on one search image.
 ///
+/// When [`MatchCtx::variant_exit_early`] is set, stop after the first hit.
 /// Missed variants are still returned (for logging). Later variants of the same
 /// item remain eligible on *other* placements — early-exit is per search only.
 fn match_variants_until_hit(
@@ -721,7 +787,7 @@ fn match_variants_until_hit(
         let outcome = match_one_variant(target, variant, search_img, prep, ox, oy, ctx);
         let hit = matches!(&outcome.matches, Ok(pts) if !pts.is_empty());
         out.push(outcome);
-        if hit {
+        if hit && ctx.variant_exit_early {
             break;
         }
     }
@@ -743,7 +809,10 @@ fn match_one_variant(
             return skipped_outcome(
                 target,
                 variant,
-                Err(SearchError::Template(format!("load {:?}: {e}", variant.path))),
+                Err(SearchError::Template(format!(
+                    "load {:?}: {e}",
+                    variant.path
+                ))),
             );
         }
     };
@@ -851,7 +920,12 @@ fn prepare_crops(
     origin: DesktopRect,
     rects: &[(i32, i32, i32, i32)],
 ) -> HashMap<(i32, i32, i32, i32), Option<Arc<CropPrep>>> {
-    let unique: Vec<(i32, i32, i32, i32)> = rects.iter().copied().collect::<HashSet<_>>().into_iter().collect();
+    let unique: Vec<(i32, i32, i32, i32)> = rects
+        .iter()
+        .copied()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
     unique
         .into_par_iter()
         .map(|rect| {

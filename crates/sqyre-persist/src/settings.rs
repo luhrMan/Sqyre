@@ -17,6 +17,8 @@ use sqyre_domain::{
 };
 
 pub const DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE: i32 = 10;
+/// Skip later icon variants once one hits on the same search/placement.
+pub const DEFAULT_IMAGE_SEARCH_VARIANT_EXIT_EARLY: bool = true;
 pub const DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 150;
 pub const MIN_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 25;
 pub const DEFAULT_HIDE_APP_DURING_RECORDING: bool = true;
@@ -487,6 +489,9 @@ pub struct UserSettings {
     pub sound_volume: f32,
     #[serde(default = "default_close_matches")]
     pub image_search_close_matches_distance: i32,
+    /// When true, stop trying later icon variants after one hits on the same search.
+    #[serde(default = "default_variant_exit_early")]
+    pub image_search_variant_exit_early: bool,
     #[serde(default = "default_drag_debounce")]
     pub drag_preview_debounce_ms: i32,
     /// Absolute path override for the `.sqyre` data directory (empty = `~/.sqyre`).
@@ -556,6 +561,9 @@ fn default_sound_volume() -> f32 {
 fn default_close_matches() -> i32 {
     DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE
 }
+fn default_variant_exit_early() -> bool {
+    DEFAULT_IMAGE_SEARCH_VARIANT_EXIT_EARLY
+}
 fn default_drag_debounce() -> i32 {
     DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS
 }
@@ -595,6 +603,7 @@ impl Default for UserSettings {
             play_ui_sounds: DEFAULT_PLAY_UI_SOUNDS,
             sound_volume: DEFAULT_SOUND_VOLUME,
             image_search_close_matches_distance: DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE,
+            image_search_variant_exit_early: DEFAULT_IMAGE_SEARCH_VARIANT_EXIT_EARLY,
             drag_preview_debounce_ms: DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
             sqyre_dir: String::new(),
             ui_font_size: DEFAULT_UI_FONT_SIZE,
@@ -958,6 +967,7 @@ mod tests {
             save_meta_images: true,
             highlight_active_action: true,
             image_search_close_matches_distance: 25,
+            image_search_variant_exit_early: false,
             ui_scale: 1.2,
             hotkey_tag_filters: vec!["combat".into()],
             ..Default::default()
@@ -990,6 +1000,7 @@ mod tests {
         assert!(loaded.save_meta_images);
         assert!(loaded.highlight_active_action);
         assert_eq!(loaded.image_search_close_matches_distance, 25);
+        assert!(!loaded.image_search_variant_exit_early);
         assert!((loaded.ui_scale - 1.2).abs() < f32::EPSILON);
         assert_eq!(loaded.action_colors.detection, "#aabbcc");
         assert_eq!(loaded.overlay_buttons.len(), 1);
@@ -1017,6 +1028,7 @@ mod tests {
         let loaded = UserSettings::load_from_path(&path).unwrap();
         assert!(loaded.hotkey_tag_filters.is_empty());
         assert!(!loaded.hotkey_tags_while_focused);
+        assert!(loaded.image_search_variant_exit_early);
     }
 
     #[test]

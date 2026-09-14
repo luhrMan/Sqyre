@@ -572,6 +572,20 @@ impl SettingsUi {
                 }
             });
         }
+
+        if setting_visible(q, section_hit, SETTING_VARIANT_EXIT_EARLY)
+            && ui
+                .checkbox(
+                    &mut self.settings.image_search_variant_exit_early,
+                    "Image search variant exit early",
+                )
+                .on_hover_text(
+                    "When enabled, stop trying later icon variants after one hits on the same search (or collection cell). Disable to match every variant.",
+                )
+                .changed()
+        {
+            self.mark_dirty();
+        }
     }
 
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
@@ -1331,6 +1345,14 @@ const SETTING_IMAGE_SEARCH_DISTANCE: &[&str] = &[
     "close match",
     "distance",
     "duplicate",
+];
+const SETTING_VARIANT_EXIT_EARLY: &[&str] = &[
+    "variant",
+    "variants",
+    "exit early",
+    "early exit",
+    "image search",
+    "icon variants",
 ];
 
 const SETTING_FINISH_SOUND: &[&str] = &["finish sound", "macro finishes", "complete"];

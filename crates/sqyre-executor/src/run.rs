@@ -290,6 +290,8 @@ pub struct ExecDeps<'a> {
     pub capturer: Option<&'a mut dyn ScreenCapturer>,
     /// Spatial dedup distance for image-search peaks; `0` uses the library default.
     pub close_matches_distance: i32,
+    /// When true, stop trying later icon variants after one hits on the same search.
+    pub variant_exit_early: bool,
     /// Release keys/buttons still held when the macro ends (success, stop, or error).
     pub release_held_inputs: bool,
     /// Safety budget for While actions with `max_iterations` ≤ 0.
@@ -316,6 +318,7 @@ impl<'a> ExecDeps<'a> {
             automation,
             capturer: None,
             close_matches_distance: 0,
+            variant_exit_early: true,
             release_held_inputs: true,
             while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
             run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -385,6 +388,11 @@ impl<'a> ExecDeps<'a> {
 
     pub fn close_matches_distance(mut self, d: i32) -> Self {
         self.close_matches_distance = d;
+        self
+    }
+
+    pub fn variant_exit_early(mut self, enabled: bool) -> Self {
+        self.variant_exit_early = enabled;
         self
     }
 }
@@ -916,6 +924,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: Some(&mut capturer),
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -963,6 +972,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -1010,6 +1020,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -1150,6 +1161,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: false,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -1210,6 +1222,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -1298,6 +1311,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -1635,6 +1649,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,

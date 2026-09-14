@@ -237,6 +237,10 @@ mod native_run {
                 .settings_ui
                 .settings()
                 .image_search_close_matches_distance;
+            let variant_exit_early = self
+                .settings_ui
+                .settings()
+                .image_search_variant_exit_early;
             let release_held_inputs = self.settings_ui.settings().release_held_inputs_on_end;
             let while_max_iterations = self.settings_ui.settings().while_max_iterations;
             let run_macro_max_depth =
@@ -297,6 +301,7 @@ mod native_run {
                             automation: &mut watched,
                             capturer: Some(&mut capturer),
                             close_matches_distance: close_matches,
+                            variant_exit_early,
                             release_held_inputs,
                             while_max_iterations,
                             run_macro_max_depth,
