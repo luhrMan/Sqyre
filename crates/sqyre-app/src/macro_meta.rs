@@ -112,6 +112,7 @@ impl MacroMetaUi {
                 suggestions_with_separator: true,
                 draft_hover: Some(help::META_TAGS),
                 draft_first: true,
+                reorderable: false,
             },
         )
         .changed

@@ -104,6 +104,8 @@ pub fn show_active_picker(
                             &mut header_click,
                             compact_program_headers,
                             None,
+                            sqyre_domain::CatalogItemSort::NameAsc,
+                            &[],
                         );
                     });
                     ui.separator();
@@ -159,8 +161,11 @@ pub fn show_active_picker(
                     scroll_to_selection,
                 } => {
                     let mut did_scroll = false;
-                    let search_changed =
-                        picker_searchable_scroll(ui, search, PickerScrollOpts::list(ui), |ui, q| {
+                    let search_changed = picker_searchable_scroll(
+                        ui,
+                        search,
+                        PickerScrollOpts::list(ui),
+                        |ui, q| {
                             for (name, tags) in macros {
                                 if !query_matches_name_or_tags(q, name, tags) {
                                     continue;
@@ -178,7 +183,8 @@ pub fn show_active_picker(
                                     *value = name.clone();
                                 }
                             }
-                        });
+                        },
+                    );
                     if search_changed {
                         *scroll_to_selection = true;
                     } else if *scroll_to_selection && !did_scroll {
@@ -221,11 +227,11 @@ pub fn show_active_picker(
                                 window_title == &w.title && process_path == &w.process_path;
                             // Prefer icon bytes from the list fetch; avoid per-row OS re-scan.
                             let process_tex = match w.icon.as_ref() {
-                                Some(icon) => paint.icons.seed_process_icon(
-                                    ui.ctx(),
-                                    &w.process_path,
-                                    icon,
-                                ),
+                                Some(icon) => {
+                                    paint
+                                        .icons
+                                        .seed_process_icon(ui.ctx(), &w.process_path, icon)
+                                }
                                 None => paint.icons.cached_process(&w.process_path),
                             };
                             let resp = ui

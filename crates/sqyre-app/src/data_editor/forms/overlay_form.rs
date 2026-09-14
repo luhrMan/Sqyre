@@ -230,6 +230,7 @@ impl DataEditor {
                         |i| {
                             remove = Some(i);
                         },
+                        None,
                     );
                     if let Some(i) = remove {
                         self.form_overlay_gate_targets.remove(i);

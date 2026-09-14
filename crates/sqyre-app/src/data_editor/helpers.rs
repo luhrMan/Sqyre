@@ -68,6 +68,16 @@ pub(crate) fn collect_program_item_tags(catalog: &ProgramCatalog, program: &str)
     )
 }
 
+/// Sorted unique tags across all editor-listed programs.
+pub(crate) fn collect_all_item_tags(catalog: &ProgramCatalog) -> Vec<String> {
+    crate::macro_meta::unique_sorted(
+        editor_program_names(catalog)
+            .filter_map(|n| catalog.get(n))
+            .flat_map(|p| p.items.values().flat_map(|it| it.tags.iter().cloned()))
+            .collect(),
+    )
+}
+
 pub(crate) fn uuid_simple() -> String {
     let n = SystemTime::now()
         .duration_since(UNIX_EPOCH)

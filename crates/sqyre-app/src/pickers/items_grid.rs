@@ -73,6 +73,8 @@ pub fn paint_items_icon_grid(
     clicked_program: &mut Option<String>,
     compact_program_headers: bool,
     mut scroll_to_selected_program: Option<&mut bool>,
+    item_sort: sqyre_domain::CatalogItemSort,
+    tag_priority: &[String],
 ) {
     let q = search.trim().to_ascii_lowercase();
     let pane_w = ui.available_width();
@@ -96,12 +98,11 @@ pub fn paint_items_icon_grid(
         if items.is_empty() {
             continue;
         }
-        let mut targets: Vec<(String, String)> = items
+        let infos: Vec<sqyre_domain::ItemSortInfo> = items
             .iter()
             .map(|item_key| {
-                let display = pdata
-                    .items
-                    .get(item_key)
+                let item = pdata.items.get(item_key);
+                let display = item
                     .map(|it| {
                         if it.name.trim().is_empty() {
                             item_key.clone()
@@ -110,11 +111,19 @@ pub fn paint_items_icon_grid(
                         }
                     })
                     .unwrap_or_else(|| item_key.clone());
-                (format!("{prog}{PROGRAM_DELIMITER}{item_key}"), display)
+                let (rows, cols, tags) = item
+                    .map(|it| (it.grid_rows, it.grid_cols, it.tags.clone()))
+                    .unwrap_or((1, 1, Vec::new()));
+                sqyre_domain::ItemSortInfo::from_parts(
+                    format!("{prog}{PROGRAM_DELIMITER}{item_key}"),
+                    display,
+                    rows,
+                    cols,
+                    tags,
+                )
             })
             .collect();
-        sort_by_display_name(&mut targets);
-        let targets: Vec<String> = targets.into_iter().map(|(t, _)| t).collect();
+        let targets = sqyre_domain::ordered_catalog_items(&infos, item_sort, tag_priority);
 
         let selected_in_group = targets
             .iter()
@@ -191,6 +200,7 @@ pub fn paint_items_icon_grid(
                         clicked = Some(t.to_string());
                     },
                     |_| {},
+                    None,
                 );
                 if let Some(target) = clicked {
                     let is_sel = selected.iter().any(|t| t == &target);
@@ -231,6 +241,7 @@ pub(crate) fn toggle_select_all_filtered(selected: &mut Vec<String>, filtered: &
 }
 
 /// Sort `(key, display_name)` rows by display name (case-insensitive), then key.
+#[cfg(test)]
 pub(crate) fn sort_by_display_name(rows: &mut [(String, String)]) {
     rows.sort_by(|a, b| {
         a.1.to_ascii_lowercase()

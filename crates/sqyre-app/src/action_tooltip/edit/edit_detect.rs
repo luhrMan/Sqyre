@@ -16,8 +16,8 @@ use crate::widgets::{configure_match_blur_drag, drag_field, match_settings, text
 use eframe::egui;
 use sqyre_domain::{
     clamp_color_tolerance, clamp_ocr_resize, clamp_ocr_threshold, parse_hex_color, CoordinateRef,
-    DetectionBranch, Macro, MatchMethod, MAX_COLOR_TOLERANCE, MAX_OCR_RESIZE, MAX_OCR_THRESHOLD,
-    MIN_COLOR_TOLERANCE, MIN_OCR_RESIZE, MIN_OCR_THRESHOLD,
+    DetectionBranch, ItemSortBy, ItemSortThen, Macro, MatchMethod, MAX_COLOR_TOLERANCE,
+    MAX_OCR_RESIZE, MAX_OCR_THRESHOLD, MIN_COLOR_TOLERANCE, MIN_OCR_RESIZE, MIN_OCR_THRESHOLD,
 };
 use sqyre_hotkeys::ScreenClickBridge;
 
@@ -65,6 +65,9 @@ pub(super) struct ImageSearchFields<'a> {
     pub tolerance: &'a mut f64,
     pub blur: &'a mut i32,
     pub match_method: &'a mut MatchMethod,
+    pub sort_by: &'a mut ItemSortBy,
+    pub sort_then: &'a mut ItemSortThen,
+    pub tag_priority: &'a mut Vec<String>,
     pub detection: &'a mut DetectionBranch,
 }
 
@@ -110,11 +113,23 @@ pub(super) fn paint_image_search_fields(
         tolerance,
         blur,
         match_method,
+        sort_by,
+        sort_then,
+        tag_priority,
         detection,
     } = fields;
     detection_primary_header(ui, paint, picker, name, search_area);
     tip_section(ui, |ui| {
-        targets_editor(ui, paint.catalog, paint.icons, targets, picker);
+        targets_editor(
+            ui,
+            paint.catalog,
+            paint.icons,
+            targets,
+            sort_by,
+            sort_then,
+            tag_priority,
+            picker,
+        );
     });
     tip_wrapped_section(ui, |ui| {
         match_settings::paint_match_settings(ui, tolerance, blur, match_method, false);

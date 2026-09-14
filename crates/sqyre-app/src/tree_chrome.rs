@@ -286,9 +286,17 @@ fn paint_image_search_extras(
     is_dark: bool,
     drag_handle: &mut egui::Rect,
 ) -> bool {
-    let ActionKind::ImageSearch { targets, .. } = &action.kind else {
+    let ActionKind::ImageSearch {
+        targets,
+        sort_by,
+        sort_then,
+        tag_priority,
+        ..
+    } = &action.kind
+    else {
         return false;
     };
+    let targets = sorted_image_search_targets(catalog, targets, *sort_by, *sort_then, tag_priority);
     let mut tip_hovered = false;
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
     let prev_gap = ui.spacing().item_spacing.x;
@@ -334,27 +342,58 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
 ) {
-    let ActionKind::ImageSearch { targets, .. } = &action.kind else {
+    let ActionKind::ImageSearch {
+        targets,
+        sort_by,
+        sort_then,
+        tag_priority,
+        ..
+    } = &action.kind
+    else {
         return;
     };
     if targets.is_empty() {
         return;
     }
+    let display = sorted_image_search_targets(catalog, targets, *sort_by, *sort_then, tag_priority);
     crate::widgets::title_with_count(
         ui,
         egui::RichText::new("Items").small().strong(),
-        targets.len(),
+        display.len(),
     );
     crate::pickers::paint_even_icon_grid(
         ui,
         catalog,
         icons,
-        targets,
+        &display,
         |_| false,
         crate::pickers::IconGridKind::Targets { removable: false },
         |_, _| {},
         |_| {},
+        None,
     );
+}
+
+/// Display / search order for Image Search targets.
+pub(crate) fn sorted_image_search_targets(
+    catalog: &ProgramCatalog,
+    targets: &[String],
+    sort_by: sqyre_domain::ItemSortBy,
+    sort_then: sqyre_domain::ItemSortThen,
+    tag_priority: &[String],
+) -> Vec<String> {
+    let infos: Vec<_> = targets
+        .iter()
+        .map(|target| {
+            let (name, tags) = crate::pickers::item_tooltip_parts(catalog, target);
+            let (rows, cols) = catalog
+                .item_meta(target)
+                .map(|m| (m.rows, m.cols))
+                .unwrap_or((1, 1));
+            sqyre_domain::ItemSortInfo::from_parts(target.clone(), name, rows, cols, tags)
+        })
+        .collect();
+    sqyre_domain::ordered_item_targets(&infos, sort_by, sort_then, tag_priority)
 }
 
 /// Right-edge space covered by a floating vertical scrollbar (egui default allocates 0).
@@ -689,6 +728,9 @@ mod tests {
                 tolerance: 0.9,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: DetectionBranch::default(),
             },
         };
@@ -703,6 +745,9 @@ mod tests {
                 tolerance: 0.9,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: DetectionBranch::default(),
             },
         };
@@ -838,6 +883,9 @@ mod tests {
                     tolerance: 0.9,
                     blur: 0,
                     match_method: Default::default(),
+                    sort_by: Default::default(),
+                    sort_then: Default::default(),
+                    tag_priority: Vec::new(),
                     detection: DetectionBranch::default(),
                 },
             };
@@ -965,6 +1013,9 @@ mod tests {
                 tolerance: 0.9,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: DetectionBranch::default(),
             },
         };

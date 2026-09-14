@@ -128,7 +128,7 @@ fn adaptive_icon_cell_shrinks_as_count_grows() {
 
 #[test]
 fn adaptive_icon_cell_fits_one_row_between_min_and_max() {
-    // 4 cells: (280 - 3*4) / 4 = 67, inside [40, 112].
+    // 4 cells: (280 - 3*6) / 4 = 65.5, inside [40, 112].
     let cell = adaptive_icon_cell(4, 280.0, EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP);
-    assert!((cell - 67.0).abs() < 0.01);
+    assert!((cell - 65.5).abs() < 0.01);
 }
