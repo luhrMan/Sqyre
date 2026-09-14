@@ -6,6 +6,7 @@
 
 use eframe::egui;
 use parking_lot::Mutex;
+use rayon::prelude::*;
 use sqyre_capture::{
     event_log, get_active_window, mark_site, note, shared_capturer, window_is_our_process,
     window_is_transient_shell_focus, window_matches_binding, window_matches_program, WindowInfo,
@@ -473,29 +474,54 @@ fn match_once(
             continue;
         }
         let mask_path = catalog.mask_path(target);
-        for path in paths {
-            let Ok(template_blurred) = get_cached_blurred_template(&path, kernel) else {
+        // Warm caches on this thread before parallel variant match (same deadlock
+        // class as image search: inflight gates + nested FFT rayon).
+        for path in &paths {
+            let Ok(template_blurred) = get_cached_blurred_template(path, kernel) else {
                 continue;
+            };
+            let mask_bytes = mask_path.as_ref().and_then(|p| {
+                get_cached_image_mask(p, template_blurred.height, template_blurred.width)
+            });
+            let _ = get_cached_prepared_template(
+                path,
+                kernel,
+                template_blurred.as_ref(),
+                mask_path.as_deref(),
+                mask_bytes.as_deref().map(|m| m.as_slice()),
+                method,
+            );
+            if mask_path.is_none() {
+                search_prep.warm_fft_for_template(
+                    &search_blurred,
+                    template_blurred.width,
+                    template_blurred.height,
+                );
+            }
+        }
+        let hit = paths.par_iter().any(|path| {
+            let Ok(template_blurred) = get_cached_blurred_template(path, kernel) else {
+                return false;
             };
             let tmpl_w = template_blurred.width;
             let tmpl_h = template_blurred.height;
             if tmpl_w == 0 || tmpl_h == 0 {
-                continue;
+                return false;
             }
             let mask_bytes = mask_path
                 .as_ref()
                 .and_then(|p| get_cached_image_mask(p, tmpl_h, tmpl_w));
             let Ok(prepared) = get_cached_prepared_template(
-                &path,
+                path,
                 kernel,
                 template_blurred.as_ref(),
                 mask_path.as_deref(),
                 mask_bytes.as_deref().map(|m| m.as_slice()),
                 method,
             ) else {
-                continue;
+                return false;
             };
-            let Ok(hits) = find_template_matches_preblurred_with_prepared(
+            find_template_matches_preblurred_with_prepared(
                 &search_blurred,
                 template_blurred.as_ref(),
                 &prepared,
@@ -503,12 +529,12 @@ fn match_once(
                 close_dist,
                 method,
                 Some(&search_prep),
-            ) else {
-                continue;
-            };
-            if !hits.is_empty() {
-                return Some((true, fresh));
-            }
+            )
+            .ok()
+            .is_some_and(|hits| !hits.is_empty())
+        });
+        if hit {
+            return Some((true, fresh));
         }
     }
     Some((false, fresh))

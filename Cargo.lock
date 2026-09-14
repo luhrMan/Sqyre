@@ -4911,6 +4911,7 @@ dependencies = [
  "ksni",
  "log",
  "parking_lot",
+ "rayon",
  "resvg",
  "rfd",
  "rodio",
