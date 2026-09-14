@@ -186,7 +186,7 @@ fn metrics_for(kind: IconGridKind, count: usize, avail_w: f32) -> (IconCellStyle
 }
 
 /// Paint a selectable icon cell (fixed square, no under-icon label).
-/// Returns `(cell_clicked, remove_clicked)`.
+/// Returns `(cell_clicked, remove_clicked, cell_response)`.
 fn icon_grid_cell_ex(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -194,7 +194,7 @@ fn icon_grid_cell_ex(
     target: &str,
     selected: bool,
     style: IconCellStyle,
-) -> (bool, bool) {
+) -> (bool, bool, egui::Response) {
     let IconCellStyle {
         cell,
         thumb,
@@ -204,7 +204,7 @@ fn icon_grid_cell_ex(
 
     let mut remove_clicked = false;
     let desired = Vec2::splat(cell);
-    let (rect, resp) = ui.allocate_exact_size(desired, Sense::click());
+    let (rect, resp) = ui.allocate_exact_size(desired, Sense::click_and_drag());
 
     let fill = if selected {
         Color32::from_rgba_unmultiplied(80, 160, 100, 60)
@@ -256,11 +256,14 @@ fn icon_grid_cell_ex(
 
     attach_item_icon_tooltip(&resp, catalog, icons, target);
 
-    (resp.clicked() && !remove_clicked, remove_clicked)
+    (resp.clicked() && !remove_clicked, remove_clicked, resp)
 }
 
 /// Lay out `targets` in even rows (no column stretch, no staircase wrap).
-#[allow(clippy::too_many_arguments)] // even grid: selection, kind, and click/remove callbacks
+///
+/// When `on_reorder` is provided, dragging a cell onto another reorders the list
+/// (`from_index`, `to_index` in the displayed `targets` slice).
+#[allow(clippy::too_many_arguments)] // even grid: selection, kind, and click/remove/reorder callbacks
 pub fn paint_even_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -270,6 +273,7 @@ pub fn paint_even_icon_grid(
     kind: IconGridKind,
     mut on_cell: impl FnMut(usize, &str),
     mut on_remove: impl FnMut(usize),
+    mut on_reorder: Option<&mut dyn FnMut(usize, usize)>,
 ) {
     if targets.is_empty() {
         return;
@@ -282,6 +286,8 @@ pub fn paint_even_icon_grid(
     let old_spacing = ui.spacing().item_spacing;
     ui.spacing_mut().item_spacing = Vec2::splat(gap);
 
+    let reorderable = on_reorder.is_some();
+    let mut pending_reorder: Option<(usize, usize)> = None;
     let mut i = 0;
     while i < targets.len() {
         ui.allocate_ui_with_layout(
@@ -293,18 +299,49 @@ pub fn paint_even_icon_grid(
                 let end = (i + cols).min(targets.len());
                 for (k, target) in targets.iter().enumerate().take(end).skip(i) {
                     let sel = is_selected(target);
-                    let (clicked, remove) =
-                        icon_grid_cell_ex(ui, catalog, icons, target, sel, style);
-                    if clicked {
-                        on_cell(k, target);
-                    }
-                    if remove {
-                        on_remove(k);
+                    let cell_id = ui.id().with(("icon_dnd", k, target));
+                    if reorderable {
+                        let drag = ui.dnd_drag_source(cell_id, k, |ui| {
+                            let (clicked, remove, _) =
+                                icon_grid_cell_ex(ui, catalog, icons, target, sel, style);
+                            if clicked {
+                                on_cell(k, target);
+                            }
+                            if remove {
+                                on_remove(k);
+                            }
+                        });
+                        if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
+                            let from = *payload;
+                            if from != k {
+                                pending_reorder = Some((from, k));
+                            }
+                        } else if drag.response.dnd_hover_payload::<usize>().is_some() {
+                            ui.painter().rect_stroke(
+                                drag.response.rect,
+                                3.0,
+                                egui::Stroke::new(2.0, Color32::from_rgb(80, 140, 200)),
+                                egui::StrokeKind::Outside,
+                            );
+                        }
+                    } else {
+                        let (clicked, remove, _) =
+                            icon_grid_cell_ex(ui, catalog, icons, target, sel, style);
+                        if clicked {
+                            on_cell(k, target);
+                        }
+                        if remove {
+                            on_remove(k);
+                        }
                     }
                 }
             },
         );
         i += cols;
+    }
+
+    if let (Some((from, to)), Some(cb)) = (pending_reorder, on_reorder.as_mut()) {
+        cb(from, to);
     }
 
     ui.spacing_mut().item_spacing = old_spacing;

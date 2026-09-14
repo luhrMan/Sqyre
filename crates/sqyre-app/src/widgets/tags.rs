@@ -173,13 +173,13 @@ pub fn tag_chip_editor(
         ui.horizontal_wrapped(|ui| {
             let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
             crate::action_tooltip::help::label(ui, "Tags:", opts.draft_hover.unwrap_or(""));
-            paint_tag_chips(ui, tags, opts.enabled, &mut edit.changed);
+            paint_tag_chips(ui, tags, opts.enabled, opts.reorderable, &mut edit.changed);
             resp
         })
         .inner
     } else {
         ui.horizontal_wrapped(|ui| {
-            paint_tag_chips(ui, tags, opts.enabled, &mut edit.changed);
+            paint_tag_chips(ui, tags, opts.enabled, opts.reorderable, &mut edit.changed);
         });
         ui.horizontal(|ui| paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags))
             .inner
@@ -288,8 +288,15 @@ pub fn tag_chip_editor(
     edit
 }
 
-fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, changed: &mut bool) {
+fn paint_tag_chips(
+    ui: &mut egui::Ui,
+    tags: &mut Vec<String>,
+    enabled: bool,
+    reorderable: bool,
+    changed: &mut bool,
+) {
     let mut remove: Option<String> = None;
+    let mut pending_reorder: Option<(usize, usize)> = None;
     let small_h = ui.text_style_height(&egui::TextStyle::Small);
     let fill = if enabled {
         crate::theme::PRIMARY
@@ -303,32 +310,64 @@ fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, cha
         .corner_radius(egui::CornerRadius::same(6))
         .inner_margin(egui::Margin::same(2));
 
-    for tag in tags.iter() {
-        // Pill wraps label + × so `horizontal_wrapped` treats each chip as one unit.
-        chip.show(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            ui.spacing_mut().button_padding = egui::vec2(0.0, 0.0);
-            ui.spacing_mut().interact_size.y = small_h;
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(tag.as_str()).small().color(fg));
-                if ui
-                    .add_enabled(
-                        enabled,
-                        egui::Button::new(
-                            egui::RichText::new("×")
-                                .small()
-                                .color(crate::theme::MACRO_STOP),
+    for (i, tag) in tags.iter().enumerate() {
+        let mut paint_chip = |ui: &mut egui::Ui| {
+            // Pill wraps label + × so `horizontal_wrapped` treats each chip as one unit.
+            chip.show(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.spacing_mut().button_padding = egui::vec2(0.0, 0.0);
+                ui.spacing_mut().interact_size.y = small_h;
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new(tag.as_str()).small().color(fg));
+                    if ui
+                        .add_enabled(
+                            enabled,
+                            egui::Button::new(
+                                egui::RichText::new("×")
+                                    .small()
+                                    .color(crate::theme::MACRO_STOP),
+                            )
+                            .frame(false)
+                            .min_size(egui::vec2(small_h, small_h)),
                         )
-                        .frame(false)
-                        .min_size(egui::vec2(small_h, small_h)),
-                    )
-                    .on_hover_text("Remove tag")
-                    .clicked()
-                {
-                    remove = Some(tag.clone());
-                }
+                        .on_hover_text("Remove tag")
+                        .clicked()
+                    {
+                        remove = Some(tag.clone());
+                    }
+                });
             });
-        });
+        };
+
+        if reorderable && enabled {
+            let id = ui.id().with(("tag_dnd", i, tag.as_str()));
+            let drag = ui.dnd_drag_source(id, i, paint_chip);
+            if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
+                let from = *payload;
+                if from != i {
+                    pending_reorder = Some((from, i));
+                }
+            } else if drag.response.dnd_hover_payload::<usize>().is_some() {
+                ui.painter().rect_stroke(
+                    drag.response.rect,
+                    6.0,
+                    egui::Stroke::new(1.5, crate::theme::MACRO_START),
+                    egui::StrokeKind::Outside,
+                );
+            }
+        } else {
+            paint_chip(ui);
+        }
+    }
+    if let Some((from, to)) = pending_reorder {
+        if from < tags.len() && to < tags.len() && from != to {
+            if from < to {
+                tags[from..=to].rotate_left(1);
+            } else {
+                tags[to..=from].rotate_right(1);
+            }
+            *changed = true;
+        }
     }
     if let Some(tag) = remove {
         if remove_tag(tags, &tag) {
@@ -380,6 +419,8 @@ pub struct TagChipOptions<'a> {
     pub draft_hover: Option<&'a str>,
     /// When true, paint the draft field before the `Tags:` label in the chip row.
     pub draft_first: bool,
+    /// When true, chips can be drag-reordered (tag priority lists).
+    pub reorderable: bool,
 }
 
 impl Default for TagChipOptions<'_> {
@@ -391,6 +432,7 @@ impl Default for TagChipOptions<'_> {
             suggestions_with_separator: false,
             draft_hover: None,
             draft_first: false,
+            reorderable: false,
         }
     }
 }

@@ -169,6 +169,12 @@ pub const ELSE_BRANCH: &str =
 // --- Image search ---
 
 pub const IS_ITEMS: &str = "Template images to find (from the Data Editor).";
+pub const IS_SEARCH_SORTING: &str =
+    "Primary order for searching and displaying Items. Dragging an item switches Sort by to Manual.";
+pub const IS_SORT_THEN: &str =
+    "Secondary order within each Sort by group (e.g. Tags then Name A→Z).";
+pub const IS_TAG_PRIORITY: &str =
+    "When Sort by is Tags: drag chips to set priority. Unmatched items keep Then-order at the end.";
 pub const IS_TOLERANCE: &str =
     "Score threshold for a hit. For CCOEFF/CCORR (and normed): higher is better; for SQDIFF*: lower is better. Normed methods are typically 0–1.";
 pub const IS_TOLERANCE_SQDIFF: &str =

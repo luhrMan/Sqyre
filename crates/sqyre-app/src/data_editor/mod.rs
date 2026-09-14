@@ -120,6 +120,11 @@ pub struct DataEditor {
     pub open: bool,
     tab: EditorTab,
     search: String,
+    /// Sort for Items / Pixel Check left-list icon grids (UI-only).
+    items_list_sort: sqyre_domain::CatalogItemSort,
+    /// Tag priority when [`Self::items_list_sort`] is Tags.
+    items_tag_priority: Vec<String>,
+    items_tag_priority_draft: String,
     /// Width of the left list pane (drag-adjustable).
     left_width: f32,
     /// Selected program name (all tabs).
@@ -259,6 +264,9 @@ impl Default for DataEditor {
             open: false,
             tab: EditorTab::Programs,
             search: String::new(),
+            items_list_sort: sqyre_domain::CatalogItemSort::default(),
+            items_tag_priority: Vec::new(),
+            items_tag_priority_draft: String::new(),
             left_width: 280.0,
             selected_program: None,
             selected_entity: None,

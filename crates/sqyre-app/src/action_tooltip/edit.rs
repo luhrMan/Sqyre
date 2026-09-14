@@ -18,10 +18,11 @@ use crate::widgets::{
 use eframe::egui;
 use sqyre_domain::{
     Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs, CoordinateRef,
-    DetectionBranch, KnownVariableNames, ListColumn, Macro, MatchGrouping, MatchMode, MatchOrder,
-    MouseButton, NavPressMode, NavSelectDevice, RepeatMode, ScalarValue, VariableAssignment,
-    WaitTilFoundConfig, MAX_DETECTION_INTERVAL_MS, MAX_SMOOTH_DELAY_MS, MAX_TYPE_DELAY_MS,
-    MIN_DETECTION_INTERVAL_MS, MIN_SMOOTH_DELAY_MS, MIN_TYPE_DELAY_MS,
+    DetectionBranch, ItemSortBy, ItemSortThen, KnownVariableNames, ListColumn, Macro,
+    MatchGrouping, MatchMode, MatchOrder, MouseButton, NavPressMode, NavSelectDevice, RepeatMode,
+    ScalarValue, VariableAssignment, WaitTilFoundConfig, MAX_DETECTION_INTERVAL_MS,
+    MAX_SMOOTH_DELAY_MS, MAX_TYPE_DELAY_MS, MIN_DETECTION_INTERVAL_MS, MIN_SMOOTH_DELAY_MS,
+    MIN_TYPE_DELAY_MS,
 };
 use sqyre_persist::{ProgramCatalog, MAX_WHILE_MAX_ITERATIONS};
 use sqyre_validate::{
@@ -397,6 +398,9 @@ pub fn paint_edit_fields(
             tolerance,
             blur,
             match_method,
+            sort_by,
+            sort_then,
+            tag_priority,
             detection,
         } => {
             edit_detect::paint_image_search_fields(
@@ -418,6 +422,9 @@ pub fn paint_edit_fields(
                     tolerance,
                     blur,
                     match_method,
+                    sort_by,
+                    sort_then,
+                    tag_priority,
                     detection,
                 },
             );
@@ -680,9 +687,12 @@ fn targets_editor(
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     targets: &mut Vec<String>,
+    sort_by: &mut ItemSortBy,
+    sort_then: &mut ItemSortThen,
+    tag_priority: &mut Vec<String>,
     picker: &mut ActivePicker,
 ) {
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
         ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
         if ui
@@ -695,28 +705,125 @@ fn targets_editor(
                 staged: targets.clone(),
             };
         }
+        combo_enum(
+            ui,
+            "Sort by",
+            h::IS_SEARCH_SORTING,
+            sort_by,
+            ItemSortBy::ALL,
+            ItemSortBy::label,
+        );
+        if *sort_by != ItemSortBy::Manual {
+            combo_enum(
+                ui,
+                "Then",
+                h::IS_SORT_THEN,
+                sort_then,
+                ItemSortThen::ALL,
+                ItemSortThen::label,
+            );
+        }
     });
+    if *sort_by == ItemSortBy::Tags {
+        let suggestions = item_tag_suggestions(catalog, targets);
+        let draft_id = ui.id().with("image_search_tag_priority_draft");
+        let mut draft = ui
+            .ctx()
+            .data(|d| d.get_temp::<String>(draft_id))
+            .unwrap_or_default();
+        help::tip(
+            ui.label(egui::RichText::new("Tag priority").strong()),
+            h::IS_TAG_PRIORITY,
+        );
+        let edit = crate::widgets::tag_chip_editor(
+            ui,
+            tag_priority,
+            &mut draft,
+            &suggestions,
+            crate::widgets::TagChipOptions {
+                enabled: true,
+                show_add_button: false,
+                suggestion_limit: 12,
+                suggestions_with_separator: false,
+                draft_hover: Some(h::IS_TAG_PRIORITY),
+                draft_first: false,
+                reorderable: true,
+            },
+        );
+        let _ = edit;
+        ui.ctx().data_mut(|d| d.insert_temp(draft_id, draft));
+    }
     if targets.is_empty() {
         ui.label("(none)");
         return;
     }
+    let infos = target_sort_infos(catalog, targets);
+    let display = sqyre_domain::ordered_item_targets(&infos, *sort_by, *sort_then, tag_priority);
     let mut remove: Option<usize> = None;
-    let snapshot = targets.clone();
+    let mut reorder: Option<(usize, usize)> = None;
+    let mut on_reorder = |from: usize, to: usize| {
+        reorder = Some((from, to));
+    };
     pickers::paint_even_icon_grid(
         ui,
         catalog,
         icons,
-        &snapshot,
+        &display,
         |_| true,
         pickers::IconGridKind::Targets { removable: true },
         |_, _| {},
         |i| {
             remove = Some(i);
         },
+        Some(&mut on_reorder),
     );
-    if let Some(i) = remove {
-        targets.remove(i);
+    if let Some((from, to)) = reorder {
+        let _ = sqyre_domain::apply_display_reorder(
+            targets,
+            sort_by,
+            *sort_then,
+            tag_priority,
+            &infos,
+            from,
+            to,
+        );
     }
+    if let Some(i) = remove {
+        if let Some(target) = display.get(i) {
+            targets.retain(|t| t != target);
+        }
+    }
+}
+
+fn target_sort_infos(
+    catalog: &ProgramCatalog,
+    targets: &[String],
+) -> Vec<sqyre_domain::ItemSortInfo> {
+    targets
+        .iter()
+        .map(|target| {
+            let (name, tags) = pickers::item_tooltip_parts(catalog, target);
+            let (rows, cols) = catalog
+                .item_meta(target)
+                .map(|m| (m.rows, m.cols))
+                .unwrap_or((1, 1));
+            sqyre_domain::ItemSortInfo::from_parts(target.clone(), name, rows, cols, tags)
+        })
+        .collect()
+}
+
+fn item_tag_suggestions(catalog: &ProgramCatalog, targets: &[String]) -> Vec<String> {
+    let mut tags = Vec::new();
+    for target in targets {
+        let (_, item_tags) = pickers::item_tooltip_parts(catalog, target);
+        for tag in item_tags {
+            if !tags.iter().any(|t| t == &tag) {
+                tags.push(tag);
+            }
+        }
+    }
+    tags.sort_by_key(|t| t.to_ascii_lowercase());
+    tags
 }
 
 fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {

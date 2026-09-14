@@ -43,7 +43,42 @@ impl DataEditor {
         };
         let mut opts = PickerScrollOpts::pane();
         opts.id_salt = Some(id_salt);
+
+        let mut item_selection: Vec<String> = match (
+            self.tab,
+            self.selected_program.as_deref(),
+            self.selected_entity.as_deref(),
+        ) {
+            (EditorTab::Items | EditorTab::PixelCheck, Some(p), Some(e)) => {
+                vec![format!("{p}{}{e}", sqyre_domain::PROGRAM_DELIMITER)]
+            }
+            _ => Vec::new(),
+        };
+        let mut clicked_program: Option<String> = None;
+        let mut clicked_overlay: Option<(String, String)> = None;
+        let mut overlay_enabled_updates: Vec<(String, bool)> = Vec::new();
+
+        // Take search / sort / scroll out so trailing + body can share locals.
+        let mut search = std::mem::take(&mut self.search);
+        let items_list_sort = std::cell::Cell::new(self.items_list_sort);
+        let mut items_tag_priority = std::mem::take(&mut self.items_tag_priority);
+        let mut items_tag_priority_draft = std::mem::take(&mut self.items_tag_priority_draft);
+        let mut scroll_to = std::mem::take(&mut self.scroll_left_list_to_selection);
+        let mut did_scroll = false;
+
         let mut trailing = |ui: &mut egui::Ui| {
+            if matches!(tab, EditorTab::Items | EditorTab::PixelCheck) {
+                let mut sort = items_list_sort.get();
+                crate::widgets::combo_enum(
+                    ui,
+                    "Sort",
+                    "Order of items in this list. Tags uses the priority list below.",
+                    &mut sort,
+                    sqyre_domain::CatalogItemSort::ALL,
+                    sqyre_domain::CatalogItemSort::label,
+                );
+                items_list_sort.set(sort);
+            }
             if !show_collapse_chrome {
                 return;
             }
@@ -68,24 +103,6 @@ impl DataEditor {
         };
         opts.trailing = Some(&mut trailing);
 
-        let mut item_selection: Vec<String> = match (
-            self.tab,
-            self.selected_program.as_deref(),
-            self.selected_entity.as_deref(),
-        ) {
-            (EditorTab::Items | EditorTab::PixelCheck, Some(p), Some(e)) => {
-                vec![format!("{p}{}{e}", sqyre_domain::PROGRAM_DELIMITER)]
-            }
-            _ => Vec::new(),
-        };
-        let mut clicked_program: Option<String> = None;
-        let mut clicked_overlay: Option<(String, String)> = None;
-        let mut overlay_enabled_updates: Vec<(String, bool)> = Vec::new();
-
-        // Take search / scroll flag out so the scroll body can borrow `&mut self`.
-        let mut search = std::mem::take(&mut self.search);
-        let mut scroll_to = std::mem::take(&mut self.scroll_left_list_to_selection);
-        let mut did_scroll = false;
         let search_changed =
             pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| match self.tab {
                 EditorTab::Programs => {
@@ -113,6 +130,28 @@ impl DataEditor {
                 }
                 EditorTab::Items | EditorTab::PixelCheck => {
                     ui.set_max_width(ui.available_width());
+                    if items_list_sort.get() == sqyre_domain::CatalogItemSort::Tags {
+                        let suggestions = super::helpers::collect_all_item_tags(catalog);
+                        ui.label(egui::RichText::new("Tag priority").strong().small());
+                        let _ = crate::widgets::tag_chip_editor(
+                            ui,
+                            &mut items_tag_priority,
+                            &mut items_tag_priority_draft,
+                            &suggestions,
+                            crate::widgets::TagChipOptions {
+                                enabled: true,
+                                show_add_button: false,
+                                suggestion_limit: 12,
+                                suggestions_with_separator: false,
+                                draft_hover: Some(
+                                    "Drag chips to set priority. Unmatched items sort by name after.",
+                                ),
+                                draft_first: false,
+                                reorderable: true,
+                            },
+                        );
+                        ui.add_space(4.0);
+                    }
                     pickers::paint_items_icon_grid(
                         ui,
                         catalog,
@@ -124,6 +163,8 @@ impl DataEditor {
                         &mut clicked_program,
                         settings.compact_program_headers,
                         Some(&mut scroll_to),
+                        items_list_sort.get(),
+                        &items_tag_priority,
                     );
                 }
                 EditorTab::Points
@@ -433,6 +474,9 @@ impl DataEditor {
                 }
             });
         self.search = search;
+        self.items_list_sort = items_list_sort.get();
+        self.items_tag_priority = items_tag_priority;
+        self.items_tag_priority_draft = items_tag_priority_draft;
         // Re-arm after filter edits so a newly-visible selection can scroll into view.
         self.scroll_left_list_to_selection = search_changed && self.selected_program.is_some();
 
