@@ -202,9 +202,10 @@ pub fn delete_variant(
 }
 
 fn invalidate_item_templates(catalog: &ProgramCatalog, program: &str, item: &str) {
-    let _prefix = catalog.icons_dir(program).join(item);
+    let prefix = catalog.icons_dir(program).join(item);
+    sqyre_persist::invalidate_icon_fs_cache_under(&prefix);
     #[cfg(feature = "native-runtime")]
-    invalidate_search_templates_under(&_prefix);
+    invalidate_search_templates_under(&prefix);
 }
 
 #[cfg(test)]

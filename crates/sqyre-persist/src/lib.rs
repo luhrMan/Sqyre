@@ -3,6 +3,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod backup;
 mod fs_name;
+mod icon_fs_cache;
 mod import;
 mod migrate;
 mod programs;
@@ -14,6 +15,9 @@ pub use backup::{
     BackupError,
 };
 pub use fs_name::{confined_join, is_safe_fs_entity_name, validate_fs_entity_name};
+pub use icon_fs_cache::{
+    clear_icon_fs_cache, invalidate_icon_fs_cache_under,
+};
 pub use import::{merge_databases_prefer_imported, ImportMode};
 pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
@@ -27,7 +31,8 @@ pub use settings::{
     ActionColorPrefs, OverlayButtonConfig, OverlayVisibilityGate, OverlayVisibilityMode,
     UserSettings, DEFAULT_AUTO_UPDATE_CHECK, DEFAULT_BACKUP_INTERVAL_HOURS,
     DEFAULT_BACKUP_MAX_KEEP, DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS, DEFAULT_HIDE_APP_DURING_RECORDING,
-    DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE, DEFAULT_OVERLAY_ACCENT_HEX,
+    DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE, DEFAULT_IMAGE_SEARCH_VARIANT_EXIT_EARLY,
+    DEFAULT_OVERLAY_ACCENT_HEX,
     DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS,
     DEFAULT_OVERLAY_FALLBACK_SCREEN_H, DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
     DEFAULT_OVERLAY_GATE_BLUR, DEFAULT_OVERLAY_GATE_INTERVAL_MS, DEFAULT_OVERLAY_GATE_TOLERANCE,

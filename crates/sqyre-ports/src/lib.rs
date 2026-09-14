@@ -216,11 +216,12 @@ pub trait WindowFocuser: Send + Sync {
     fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError>;
 }
 
-/// Catalog item metadata (name, stack size, grid dimensions) for icon lookups.
+/// Catalog item metadata (name, stack size, grid dimensions, tags) for icon lookups.
 #[derive(Debug, Clone, Default)]
 pub struct ItemMeta {
     pub name: String,
     pub stack_max: i32,
     pub cols: i32,
     pub rows: i32,
+    pub tags: Vec<String>,
 }
