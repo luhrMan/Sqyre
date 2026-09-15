@@ -28,6 +28,15 @@ const STATE_ACTIVE: u32 = 1;
 const STATE_DEFUNCT: u32 = 6;
 const STATE_FOCUSED: u32 = 12;
 
+// AtspiRole values from atspi-constants.h (stable; GetRoleName is optional).
+const ROLE_ALERT: u32 = 2;
+const ROLE_DIALOG: u32 = 16;
+const ROLE_FILE_CHOOSER: u32 = 19;
+const ROLE_FRAME: u32 = 23;
+const ROLE_TERMINAL: u32 = 60;
+const ROLE_WINDOW: u32 = 69;
+const ROLE_APPLICATION: u32 = 75;
+
 struct AtspiRef {
     dest: String,
     path: OwnedObjectPath,
@@ -39,14 +48,21 @@ pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     let root = root_ref()?;
     wait_for_children(&conn, &root);
     let kids = children(&conn, &root)?;
-    crate::cap_log(
-        "FOCUS",
-        if kids.is_empty() { "atspi" } else { "ok" },
-        &format!("atspi root_children={}", kids.len()),
-    );
+    let root_n = kids.len();
     let mut out = Vec::new();
     for app in walk_applications_from(&conn, kids)? {
         out.extend(app);
+    }
+    crate::cap_log(
+        "FOCUS",
+        if out.is_empty() { "atspi" } else { "ok" },
+        &format!("atspi root_children={root_n} windows={}", out.len()),
+    );
+    if out.is_empty() && root_n > 0 {
+        // Re-fetch for diag only — cheap vs a silent empty list.
+        if let Ok(kids) = children(&conn, &root) {
+            log_empty_walk(&conn, &kids);
+        }
     }
     Ok(out)
 }
@@ -61,19 +77,16 @@ pub(crate) fn active_window() -> Result<Option<WindowInfo>, CaptureError> {
             .map_err(|e: zbus::zvariant::Error| CaptureError::Message(e.to_string()))?,
     };
     for app in children(&conn, &root)? {
-        if is_application_role(&role_name(&conn, &app).unwrap_or_default()) {
-            for frame in children(&conn, &app)? {
-                if !is_window_role(&role_name(&conn, &frame).unwrap_or_default()) {
-                    continue;
-                }
-                if has_state(&conn, &frame, STATE_DEFUNCT) {
-                    continue;
-                }
-                if has_state(&conn, &frame, STATE_FOCUSED) || has_state(&conn, &frame, STATE_ACTIVE)
-                {
-                    focused = window_info(&conn, &app, &frame);
-                    break;
-                }
+        if !is_application(&conn, &app) {
+            continue;
+        }
+        for frame in children(&conn, &app)? {
+            if !is_window(&conn, &frame) || has_state(&conn, &frame, STATE_DEFUNCT) {
+                continue;
+            }
+            if has_state(&conn, &frame, STATE_FOCUSED) || has_state(&conn, &frame, STATE_ACTIVE) {
+                focused = window_info(&conn, &app, &frame);
+                break;
             }
         }
         if focused.is_some() {
@@ -92,7 +105,7 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, A
             .map_err(|e: zbus::zvariant::Error| AutomationError::Backend(e.to_string()))?,
     };
     for app in children(&conn, &root).map_err(|e| AutomationError::Backend(e.to_string()))? {
-        if !is_application_role(&role_name(&conn, &app).unwrap_or_default()) {
+        if !is_application(&conn, &app) {
             continue;
         }
         let pid = unix_pid(&conn, &app).unwrap_or(0);
@@ -103,10 +116,7 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, A
         } else {
             frames
                 .into_iter()
-                .filter(|f| {
-                    is_window_role(&role_name(&conn, f).unwrap_or_default())
-                        && !has_state(&conn, f, STATE_DEFUNCT)
-                })
+                .filter(|f| is_window(&conn, f) && !has_state(&conn, f, STATE_DEFUNCT))
                 .collect()
         };
         for frame in targets {
@@ -149,10 +159,7 @@ fn walk_applications_from(
 ) -> Result<Vec<Vec<WindowInfo>>, CaptureError> {
     let mut groups = Vec::new();
     for app in apps {
-        if !is_application_role(&role_name(conn, &app).unwrap_or_default()) {
-            continue;
-        }
-        if has_state(conn, &app, STATE_DEFUNCT) {
+        if !is_application(conn, &app) || has_state(conn, &app, STATE_DEFUNCT) {
             continue;
         }
         let pid = unix_pid(conn, &app).unwrap_or(0);
@@ -160,10 +167,7 @@ fn walk_applications_from(
         let mut windows = Vec::new();
         let frames = children(conn, &app)?;
         for frame in &frames {
-            if !is_window_role(&role_name(conn, frame).unwrap_or_default()) {
-                continue;
-            }
-            if has_state(conn, frame, STATE_DEFUNCT) {
+            if !is_window(conn, frame) || has_state(conn, frame, STATE_DEFUNCT) {
                 continue;
             }
             if let Some(info) =
@@ -182,6 +186,21 @@ fn walk_applications_from(
         }
     }
     Ok(groups)
+}
+
+/// When the tree is non-empty but we listed nothing, log a few nodes for diag.
+fn log_empty_walk(conn: &Connection, kids: &[AtspiRef]) {
+    for (i, app) in kids.iter().take(5).enumerate() {
+        let role = role_id(conn, app)
+            .map(|r| r.to_string())
+            .unwrap_or_else(|e| format!("err:{e}"));
+        let name = name_of(conn, app).unwrap_or_else(|e| format!("err:{e}"));
+        let frames = children(conn, app).map(|c| c.len()).unwrap_or(0);
+        crate::note(&format!(
+            "atspi: empty walk[{i}] dest={} role={role} name={name:?} frames={frames}",
+            app.dest
+        ));
+    }
 }
 
 fn window_info(conn: &Connection, app: &AtspiRef, frame: &AtspiRef) -> Option<WindowInfo> {
@@ -208,30 +227,89 @@ fn window_info_from(
     })
 }
 
-fn is_window_role(role: &str) -> bool {
+fn is_application(conn: &Connection, node: &AtspiRef) -> bool {
+    match role_id(conn, node) {
+        Ok(role) => role == ROLE_APPLICATION,
+        Err(_) => is_application_role_name(&role_name(conn, node).unwrap_or_default()),
+    }
+}
+
+fn is_window(conn: &Connection, node: &AtspiRef) -> bool {
+    match role_id(conn, node) {
+        Ok(role) => is_window_role_id(role),
+        Err(_) => is_window_role_name(&role_name(conn, node).unwrap_or_default()),
+    }
+}
+
+fn is_window_role_id(role: u32) -> bool {
+    matches!(
+        role,
+        ROLE_FRAME | ROLE_WINDOW | ROLE_DIALOG | ROLE_TERMINAL | ROLE_ALERT | ROLE_FILE_CHOOSER
+    )
+}
+
+fn is_window_role_name(role: &str) -> bool {
     matches!(
         role.to_ascii_lowercase().as_str(),
         "frame" | "window" | "terminal" | "dialog" | "file chooser" | "alert"
     )
 }
 
-fn is_application_role(role: &str) -> bool {
-    role.is_empty() || role.eq_ignore_ascii_case("application")
+fn is_application_role_name(role: &str) -> bool {
+    role.eq_ignore_ascii_case("application")
 }
 
 fn a11y_connection() -> Result<Connection, CaptureError> {
     let session =
         Connection::session().map_err(|e| CaptureError::Message(format!("session bus: {e}")))?;
     enable_toolkit_a11y(&session);
-    let proxy = Proxy::new(&session, A11Y_BUS, A11Y_BUS_PATH, A11Y_BUS_IFACE)
-        .map_err(|e| CaptureError::Message(format!("a11y bus proxy: {e}")))?;
-    let address: String = proxy
-        .call("GetAddress", &())
-        .map_err(|e| CaptureError::Message(format!("GetAddress: {e}")))?;
+    let address = resolve_a11y_address(&session)?;
     zbus::blocking::connection::Builder::address(address.as_str())
         .map_err(|e| CaptureError::Message(format!("a11y address: {e}")))?
         .build()
         .map_err(|e| CaptureError::Message(format!("a11y connect: {e}")))
+}
+
+/// Resolve the AT-SPI bus the same way libatspi does, with a Flatpak caveat.
+///
+/// Flatpak always injects a **filtered** a11y proxy via `AT_SPI_BUS_ADDRESS`
+/// (`unix:path=/run/flatpak/at-spi-bus`). That proxy is enough for an app to
+/// *export* its own tree, but it blocks browsing other apps — which GNOME
+/// Wayland needs because Mutter does not advertise foreign-toplevel.
+/// Prefer the host `$XDG_RUNTIME_DIR/at-spi/bus` when visible (Flatpak:
+/// `--filesystem=xdg-run/at-spi`).
+fn resolve_a11y_address(session: &Connection) -> Result<String, CaptureError> {
+    let env_addr = std::env::var("AT_SPI_BUS_ADDRESS")
+        .ok()
+        .filter(|a| !a.is_empty());
+    if let Some(addr) = env_addr
+        .as_ref()
+        .filter(|a| !is_flatpak_filtered_a11y_bus(a))
+    {
+        return Ok(addr.clone());
+    }
+    if let Some(addr) = host_a11y_bus_address() {
+        return Ok(addr);
+    }
+    if let Some(addr) = env_addr {
+        return Ok(addr);
+    }
+    let proxy = Proxy::new(session, A11Y_BUS, A11Y_BUS_PATH, A11Y_BUS_IFACE)
+        .map_err(|e| CaptureError::Message(format!("a11y bus proxy: {e}")))?;
+    proxy
+        .call("GetAddress", &())
+        .map_err(|e| CaptureError::Message(format!("GetAddress: {e}")))
+}
+
+fn is_flatpak_filtered_a11y_bus(addr: &str) -> bool {
+    addr.contains("/run/flatpak/at-spi-bus")
+}
+
+fn host_a11y_bus_address() -> Option<String> {
+    let runtime = std::env::var_os("XDG_RUNTIME_DIR")?;
+    let path = std::path::Path::new(&runtime).join("at-spi/bus");
+    path.exists()
+        .then(|| format!("unix:path={}", path.display()))
 }
 
 /// GTK/Qt only export AT-SPI when this is true. Already-running apps may still need a restart.
@@ -297,11 +375,22 @@ fn child_ref(parent: &AtspiRef, dest: String, path: OwnedObjectPath) -> AtspiRef
     }
 }
 
+/// libatspi reads the `Name` property; `GetName` is not part of modern Accessible.xml.
 fn name_of(conn: &Connection, node: &AtspiRef) -> Result<String, CaptureError> {
     let proxy = accessible(conn, node)?;
+    match proxy.get_property::<String>("Name") {
+        Ok(name) => Ok(name),
+        Err(_) => proxy
+            .call("GetName", &())
+            .map_err(|e| CaptureError::Message(format!("Name: {e}"))),
+    }
+}
+
+fn role_id(conn: &Connection, node: &AtspiRef) -> Result<u32, CaptureError> {
+    let proxy = accessible(conn, node)?;
     proxy
-        .call("GetName", &())
-        .map_err(|e| CaptureError::Message(format!("GetName: {e}")))
+        .call("GetRole", &())
+        .map_err(|e| CaptureError::Message(format!("GetRole: {e}")))
 }
 
 fn role_name(conn: &Connection, node: &AtspiRef) -> Result<String, CaptureError> {
@@ -360,6 +449,25 @@ mod tests {
     #[test]
     fn a11y_bus_path_matches_at_spi_launcher() {
         assert_eq!(A11Y_BUS_PATH, "/org/a11y/bus");
+    }
+
+    #[test]
+    fn flatpak_filtered_a11y_bus_detected() {
+        assert!(is_flatpak_filtered_a11y_bus(
+            "unix:path=/run/flatpak/at-spi-bus"
+        ));
+        assert!(!is_flatpak_filtered_a11y_bus(
+            "unix:path=/run/user/1000/at-spi/bus"
+        ));
+    }
+
+    #[test]
+    fn role_ids_match_atspi_constants() {
+        assert!(is_window_role_id(ROLE_FRAME));
+        assert!(is_window_role_id(ROLE_WINDOW));
+        assert!(!is_window_role_id(ROLE_APPLICATION));
+        assert_eq!(ROLE_APPLICATION, 75);
+        assert_eq!(ROLE_FRAME, 23);
     }
 
     #[test]
