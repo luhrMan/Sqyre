@@ -38,17 +38,18 @@ use x11::xfixes::{
     XFixesQueryVersion, XFixesSetWindowShapeRegion, XFixesShowCursor,
 };
 use x11::xlib::{
-    Below, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask, CWBackPixel,
-    CWBackingStore, CWBorderPixel, CWEventMask, CWOverrideRedirect, CWSibling, CWStackMode,
-    CurrentTime, Display, EnterNotify, EnterWindowMask, Expose, ExposureMask, False, GrabModeAsync,
-    InputOnly, InputOutput, LSBFirst, LeaveNotify, LeaveWindowMask, MotionNotify,
+    Below, Button1Mask, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask,
+    CWBackPixel, CWBackingStore, CWBorderPixel, CWEventMask, CWOverrideRedirect, CWSibling,
+    CWStackMode, CurrentTime, Display, EnterNotify, EnterWindowMask, Expose, ExposureMask, False,
+    GrabModeAsync, InputOnly, InputOutput, LSBFirst, LeaveNotify, LeaveWindowMask, MotionNotify,
     PointerMotionMask, StructureNotifyMask, Success, True, WhenMapped, Window, XAllocColor,
     XCloseDisplay, XColor, XConfigureWindow, XConnectionNumber, XCreateFontCursor, XCreateGC,
     XCreateImage, XCreateWindow, XDefaultColormap, XDefaultDepth, XDefaultRootWindow,
     XDefaultScreen, XDefaultVisual, XDefineCursor, XDestroyImage, XDestroyWindow, XEvent, XFlush,
     XFreeCursor, XFreeGC, XGrabPointer, XInternAtom, XMapRaised, XMapWindow, XMoveResizeWindow,
-    XNextEvent, XOpenDisplay, XPending, XPutImage, XRectangle, XSelectInput, XSetWindowAttributes,
-    XStoreName, XSync, XUndefineCursor, XUngrabPointer, XUnmapWindow, XWindowChanges, ZPixmap,
+    XNextEvent, XOpenDisplay, XPending, XPutImage, XQueryPointer, XRectangle, XSelectInput,
+    XSetWindowAttributes, XStoreName, XSync, XUndefineCursor, XUngrabPointer, XUnmapWindow,
+    XWindowChanges, ZPixmap,
 };
 
 /// `ShapeBounding` / `ShapeInput` from `X11/extensions/shapeconst.h`.
@@ -270,6 +271,8 @@ struct DragState {
     grab_dy: i32,
     start_x: i32,
     start_y: i32,
+    /// Motion events handled while relocating (diag / coalesce).
+    motion_n: u32,
 }
 
 /// X11 resources owned exclusively by the overlay host thread.
@@ -409,12 +412,16 @@ fn host_loop(
             last_x_growth = Instant::now();
             stall_raised = false;
         }
+        // Relocate must not XGrabPointer — an active grab steals pointer events from
+        // every other client (underlying window "freezes") until ungrab/focus cycle.
+        poll_relocate_drag(&mut state);
         apply_gate_visibility(&mut state);
 
         // After macros, the game often restacks above OR hits. Re-raise when the
         // X queue goes quiet (no events at all — not only pointer).
         let any_busy = state.buttons.values().any(|b| b.spec.busy);
         let chooser_open = state.chooser.as_ref().is_some_and(|c| c.mapped);
+        let relocating = state.drag.is_some();
         if chooser_open {
             // Face then hit — same stacking as overlay buttons.
             if let Some(ch) = state.chooser.as_ref() {
@@ -428,7 +435,8 @@ fn host_loop(
                     x_flush(state.display);
                 }
             }
-        } else if !state.buttons.is_empty()
+        } else if !relocating
+            && !state.buttons.is_empty()
             && !any_busy
             && !stall_raised
             && last_x_growth.elapsed() >= Duration::from_millis(800)
@@ -474,7 +482,11 @@ fn host_loop(
 
         wait_x_or_timeout(
             state.xfd,
-            if any_busy { BUSY_TICK_MS } else { POLL_IDLE_MS },
+            if state.drag.is_some() || any_busy {
+                BUSY_TICK_MS
+            } else {
+                POLL_IDLE_MS
+            },
         );
     }
 
@@ -690,10 +702,31 @@ fn apply_button_cursor(state: &HostState, win: Window, hovered: bool) {
 }
 
 fn cancel_drag(state: &mut HostState) {
-    if state.drag.take().is_some() {
-        // SAFETY: HostState display invariant; matches a prior XGrabPointer on this display.
+    let Some(drag) = state.drag.take() else {
+        return;
+    };
+    note(&format!(
+        "overlay-x11: relocate-cancel id={} motions={}",
+        drag.id, drag.motion_n
+    ));
+    mark_site(&format!("overlay-x11:relocate-cancel:{}", drag.id));
+    if let Some(btn) = state.buttons.get_mut(&drag.id) {
+        btn.spec.x = drag.start_x;
+        btn.spec.y = drag.start_y;
+        let (hit, face, w, h, radius) = (
+            btn.hit,
+            btn.win,
+            btn.spec.w,
+            btn.spec.h,
+            btn.spec.corner_radius,
+        );
+        // SAFETY: HostState display invariant; face+hit are this button's.
         unsafe {
-            XUngrabPointer(state.display, CurrentTime);
+            x_move_resize(state.display, face, drag.start_x, drag.start_y, w, h);
+            x_move_resize(state.display, hit, drag.start_x, drag.start_y, w, h);
+        }
+        apply_hit_rounded_input(state.display, hit, w, h, radius);
+        unsafe {
             x_flush(state.display);
         }
     }
@@ -703,40 +736,125 @@ fn commit_drag(state: &mut HostState) {
     let Some(drag) = state.drag.take() else {
         return;
     };
-    // SAFETY: HostState display invariant; matches a prior XGrabPointer on this display.
-    unsafe {
-        XUngrabPointer(state.display, CurrentTime);
-    }
     let Some(btn) = state.buttons.get(&drag.id) else {
-        unsafe {
-            x_flush(state.display);
-        }
         return;
     };
-    if btn.spec.x == drag.start_x && btn.spec.y == drag.start_y {
+    let (nx, ny, hit, w, h, radius) = (
+        btn.spec.x,
+        btn.spec.y,
+        btn.hit,
+        btn.spec.w,
+        btn.spec.h,
+        btn.spec.corner_radius,
+    );
+    // Face already tracks the pointer; park the hit at the final spot and restore
+    // its ShapeInput (cleared for the drag so Mutter does not freeze).
+    // SAFETY: HostState display invariant; hit is this button's.
+    unsafe {
+        x_move_resize(state.display, hit, nx, ny, w, h);
+    }
+    apply_hit_rounded_input(state.display, hit, w, h, radius);
+    unsafe {
+        x_flush(state.display);
+    }
+    if nx == drag.start_x && ny == drag.start_y {
         // Click without move — keep catalog point bindings intact.
-        unsafe {
-            x_flush(state.display);
-        }
+        note(&format!(
+            "overlay-x11: relocate-noop id={} motions={}",
+            drag.id, drag.motion_n
+        ));
         return;
     }
     let mv = OverlayButtonMove {
         id: drag.id.clone(),
-        x: btn.spec.x,
-        y: btn.spec.y,
+        x: nx,
+        y: ny,
     };
     mark_site(&format!("overlay-x11:move:{}", mv.id));
     note(&format!(
-        "overlay-x11: relocate id={} -> {},{}",
-        mv.id, mv.x, mv.y
+        "overlay-x11: relocate id={} -> {},{} motions={}",
+        mv.id, mv.x, mv.y, drag.motion_n
     ));
     state.pending_moves.lock().push(mv);
     if let Some(ctx) = &state.wake {
         ctx.request_repaint();
     }
-    // SAFETY: HostState display invariant.
+}
+
+/// Slide the face under the pointer. Hit stays parked (and input-cleared) for the
+/// drag — moving an InputOnly OR window under the cursor every motion freezes
+/// Mutter/XWayland tracking (same issue as `x11_outline` ShapeInput passthrough).
+fn relocate_drag_to(state: &mut HostState, root_x: i32, root_y: i32) {
+    let Some(drag) = state.drag.as_ref() else {
+        return;
+    };
+    let nx = root_x - drag.grab_dx;
+    let ny = root_y - drag.grab_dy;
+    let id = drag.id.clone();
+    let Some(btn) = state.buttons.get_mut(&id) else {
+        return;
+    };
+    if btn.spec.x == nx && btn.spec.y == ny {
+        return;
+    }
+    btn.spec.x = nx;
+    btn.spec.y = ny;
+    let (face, w, h) = (btn.win, btn.spec.w, btn.spec.h);
+    let motion_n = state
+        .drag
+        .as_mut()
+        .map(|d| {
+            d.motion_n = d.motion_n.saturating_add(1);
+            d.motion_n
+        })
+        .unwrap_or(0);
+    // SAFETY: HostState display invariant; face is this button's (empty ShapeInput).
     unsafe {
+        x_move_resize(state.display, face, nx, ny, w, h);
         x_flush(state.display);
+    }
+    if motion_n == 1 || motion_n == 10 {
+        note(&format!(
+            "overlay-x11: relocate-motion id={id} n={motion_n} -> {nx},{ny} (face-only)"
+        ));
+    }
+}
+
+/// Track relocate without `XGrabPointer` (grab freezes every other client's pointer).
+fn poll_relocate_drag(state: &mut HostState) {
+    if state.drag.is_none() {
+        return;
+    }
+    let mut root_ret: Window = 0;
+    let mut child: Window = 0;
+    let mut root_x = 0;
+    let mut root_y = 0;
+    let mut win_x = 0;
+    let mut win_y = 0;
+    let mut mask = 0u32;
+    // SAFETY: HostState display invariant; query against this connection's root.
+    let ok = unsafe {
+        XQueryPointer(
+            state.display,
+            state.root,
+            &mut root_ret,
+            &mut child,
+            &mut root_x,
+            &mut root_y,
+            &mut win_x,
+            &mut win_y,
+            &mut mask,
+        )
+    } != 0;
+    if !ok {
+        note("overlay-x11: relocate-poll query-fail");
+        return;
+    }
+    relocate_drag_to(state, root_x, root_y);
+    if mask & Button1Mask as u32 == 0 {
+        note("overlay-x11: relocate-poll button-up");
+        mark_site("overlay-x11:relocate-poll-up");
+        commit_drag(state);
     }
 }
 
@@ -1576,6 +1694,16 @@ fn drain_x_events(state: &mut HostState) -> bool {
         if ty == Expose {
             // SAFETY: event type is Expose; expose union member is initialized.
             let win = unsafe { event.expose.window };
+            // Skip face redraw storms while the grab window is fixed and only the
+            // face is sliding — Expose on every move used to pile up under the grab.
+            if state.drag.as_ref().is_some_and(|d| {
+                state
+                    .buttons
+                    .get(&d.id)
+                    .is_some_and(|b| b.win == win || b.hit == win)
+            }) {
+                continue;
+            }
             if state
                 .chooser
                 .as_ref()
@@ -1666,22 +1794,8 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 continue;
             }
             let _ = (win, x, y);
-            if let Some(drag) = state.drag.as_ref() {
-                let nx = root_x - drag.grab_dx;
-                let ny = root_y - drag.grab_dy;
-                let id = drag.id.clone();
-                if let Some(btn) = state.buttons.get_mut(&id) {
-                    if btn.spec.x != nx || btn.spec.y != ny {
-                        btn.spec.x = nx;
-                        btn.spec.y = ny;
-                        let (hit, face, w, h) = (btn.hit, btn.win, btn.spec.w, btn.spec.h);
-                        // SAFETY: HostState display invariant; face+hit are this button.
-                        unsafe {
-                            x_move_resize(state.display, hit, nx, ny, w, h);
-                            x_move_resize(state.display, face, nx, ny, w, h);
-                        }
-                    }
-                }
+            if state.drag.is_some() {
+                relocate_drag_to(state, root_x, root_y);
             }
             continue;
         }
@@ -1743,29 +1857,30 @@ fn drain_x_events(state: &mut HostState) -> bool {
                     };
                     (btn.spec.x, btn.spec.y, btn.hit)
                 };
-                // SAFETY: HostState display invariant; grab on this button's hit cover.
-                let grab_ok = unsafe {
-                    XGrabPointer(
-                        state.display,
-                        bhit,
-                        False,
-                        (ButtonPressMask | ButtonReleaseMask | PointerMotionMask) as c_uint,
-                        GrabModeAsync,
-                        GrabModeAsync,
-                        0,
-                        state.move_cursor,
-                        CurrentTime,
-                    ) == Success as c_int
-                };
-                if grab_ok {
-                    state.drag = Some(DragState {
-                        id,
-                        grab_dx: root_x - bx,
-                        grab_dy: root_y - by,
-                        start_x: bx,
-                        start_y: by,
-                    });
+                // No XGrabPointer — it freezes every other client's pointer until
+                // ungrab. Clear hit ShapeInput and slide only the face (passthrough)
+                // so Mutter does not freeze when an OR input window moves under the
+                // cursor (see x11_outline input-passthrough).
+                apply_empty_input_shape(state.display, bhit);
+                // SAFETY: HostState display invariant; cursor created on this display.
+                unsafe {
+                    if state.move_cursor != 0 {
+                        XDefineCursor(state.display, bhit, state.move_cursor);
+                    }
+                    x_flush(state.display);
                 }
+                note(&format!(
+                    "overlay-x11: relocate-press id={id} (no-grab face-only hit-passthrough)"
+                ));
+                mark_site(&format!("overlay-x11:relocate-press:{id}"));
+                state.drag = Some(DragState {
+                    id,
+                    grab_dx: root_x - bx,
+                    grab_dy: root_y - by,
+                    start_x: bx,
+                    start_y: by,
+                    motion_n: 0,
+                });
                 continue;
             }
             // Fire on press. Waiting for ButtonRelease lost clicks when the game
@@ -1833,6 +1948,8 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 continue;
             }
             if state.drag.is_some() {
+                note("overlay-x11: relocate-release");
+                mark_site("overlay-x11:relocate-release");
                 commit_drag(state);
                 continue;
             }
