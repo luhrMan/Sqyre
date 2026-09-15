@@ -79,7 +79,7 @@ Assets under `docs/images/` are generated from in-memory egui tests (`make docs-
 
 **End users** — grab a build from [GitHub Releases](https://github.com/luhrMan/Squire/releases):
 
-1. Download the Linux binary / AppImage, Windows `sqyre.exe`, or the WASM editor zip.
+1. Download the Linux binary / AppImage / Flatpak, Windows `sqyre.exe`, or the WASM editor zip.
 2. Run the binary (or open the WASM editor in a static file server).
 3. Create a macro — the root is always a **loop** — add actions from the picker or command palette, then **Run** from the toolbar, a hotkey, or an overlay button.
 
@@ -100,7 +100,7 @@ make run        # cargo run -p sqyre-app
 
 | Artifact | Notes |
 |----------|--------|
-| Linux binary / AppImage | Native automation on X11 / Wayland |
+| Linux binary / AppImage / Flatpak | Native automation on X11 / Wayland |
 | Windows `sqyre.exe` | Portable; no MSI installer |
 | WASM editor zip | Edit macros in the browser; no Run / capture / OCR |
 
@@ -114,6 +114,7 @@ Shipped Linux/Windows builds can check GitHub Releases for updates (Ed25519-sign
 make                 # debug → ./bin/sqyre
 make release         # release → ./bin/sqyre
 make appimage        # → bin/Sqyre-*.AppImage
+make flatpak         # → bin/com.sqyre.app.flatpak
 make windows         # → bin/sqyre.exe (Docker MinGW cross on Linux)
 make wasm            # → bin/wasm/ (Trunk)
 ```
@@ -125,6 +126,7 @@ make wasm            # → bin/wasm/ (Trunk)
 | Release binary | `make release` |
 | Windows / macOS | `make windows` · `make macos` (macOS host only) |
 | AppImage | `make appimage` |
+| Flatpak | `make flatpak` |
 | WASM editor | `make wasm` → `bin/wasm/` |
 | Tesseract data (dev fallback) | `make tessdata` |
 

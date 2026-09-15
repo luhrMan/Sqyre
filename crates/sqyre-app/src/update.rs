@@ -81,6 +81,12 @@ impl UpdateManager {
             };
             return;
         }
+        if sqyre_update::is_flatpak_install() {
+            self.state = UpdateState::Unavailable {
+                reason: "Flatpak install — use flatpak update or your software center".into(),
+            };
+            return;
+        }
         self.banner_dismissed = false;
         self.state = UpdateState::Checking;
         let (tx, rx) = mpsc::channel();
@@ -144,6 +150,11 @@ impl UpdateManager {
                         reason: format!(
                             "Dev build ({SQYRE_VERSION}) — stamp RELEASE_VERSION when building to enable updates"
                         ),
+                    };
+                } else if message.contains("Flatpak installs update via flatpak update") {
+                    self.state = UpdateState::Unavailable {
+                        reason: "Flatpak install — use flatpak update or your software center"
+                            .into(),
                     };
                 } else if message.contains("not supported on this platform") {
                     self.state = UpdateState::Unavailable {

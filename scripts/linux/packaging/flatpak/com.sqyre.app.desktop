@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Sqyre
+Comment=Desktop macro builder — screen-aware automation
+Categories=Development;Utility;
+Keywords=sqyre;macro;automation;ocr;image-search;
+Icon=com.sqyre.app
+Exec=sqyre
+Terminal=false
+StartupWMClass=sqyre
+StartupNotify=true

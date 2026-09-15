@@ -1,6 +1,7 @@
 //! Check GitHub Releases for a newer Sqyre build and self-replace the running binary.
 //!
 //! Supported install shapes: Linux raw binary, Linux AppImage (`$APPIMAGE`), Windows `.exe`.
+//! Flatpak installs (`FLATPAK_ID`) are unsupported — use `flatpak update` instead.
 //! On Windows the install is always written as `sqyre.exe` (even if the running file was a
 //! versioned release name). macOS compiles but returns [`UpdateError::Unsupported`].
 //!
@@ -82,6 +83,10 @@ pub struct StagedUpdate {
 pub enum UpdateError {
     #[error("auto-update is not supported on this platform")]
     Unsupported,
+    #[error(
+        "Flatpak installs update via flatpak update / your software center (not in-app self-replace)"
+    )]
+    Flatpak,
     #[error("dev builds (version {0}) do not auto-update")]
     DevBuild(String),
     #[error("HTTP error: {0}")]
@@ -133,6 +138,16 @@ struct GhAsset {
     browser_download_url: String,
 }
 
+/// True when running inside a Flatpak sandbox (`FLATPAK_ID` or `container=flatpak`).
+pub fn is_flatpak_install() -> bool {
+    if std::env::var_os("FLATPAK_ID").is_some() {
+        return true;
+    }
+    std::env::var("container")
+        .map(|v| v.eq_ignore_ascii_case("flatpak"))
+        .unwrap_or(false)
+}
+
 /// Which install shape we are updating.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)] // variants are selected per target OS; all used in tests
@@ -144,6 +159,9 @@ enum InstallKind {
 
 impl InstallKind {
     fn detect() -> Result<Self, UpdateError> {
+        if is_flatpak_install() {
+            return Err(UpdateError::Flatpak);
+        }
         #[cfg(target_os = "windows")]
         {
             Ok(Self::WindowsExe)
@@ -682,6 +700,12 @@ mod tests {
         assert_eq!(InstallKind::LinuxBinary.asset_suffix(), "-linux-amd64.zip");
         assert_eq!(InstallKind::LinuxAppImage.asset_suffix(), ".AppImage.zip");
         assert_eq!(InstallKind::WindowsExe.asset_suffix(), "-windows-amd64.zip");
+    }
+
+    #[test]
+    fn flatpak_update_error_mentions_flatpak_update() {
+        let msg = UpdateError::Flatpak.to_string();
+        assert!(msg.contains("flatpak update"), "{msg}");
     }
 
     #[test]

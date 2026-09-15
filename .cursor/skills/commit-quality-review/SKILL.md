@@ -95,7 +95,7 @@ Apply the workspace rules to the patch; do not re-litigate files the commit did 
 
 - **Rust:** `idiomatic-rust`, `rust-api-design`, `rust-clippy-safety` (`.cursor/rules/`)
 - **Platform:** `#[cfg]` modules, OS imports scoped inside those blocks, one public capture/focus surface
-- **Product:** no second language/stack; no dual codecs; no MSI/DMG/Flatpak unless asked
+- **Product:** no second language/stack; no dual codecs; no MSI/DMG unless asked
 - **Unsafe:** every `unsafe` block has a `// SAFETY:` invariant; no unsafe to dodge the borrow checker
 - **Errors:** library crates use `thiserror` types, not `String`/`anyhow`
 - **Logging:** native paths use `sqyre_capture` diag macros / `crate::log::warn`, not `println!` / `tracing` / a new log crate

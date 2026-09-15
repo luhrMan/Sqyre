@@ -858,8 +858,20 @@ impl SettingsUi {
     ) {
         use crate::update::{UpdateState, SQYRE_VERSION};
 
+        let flatpak = sqyre_update::is_flatpak_install();
+
         if setting_visible(q, section_hit, SETTING_UPDATE_VERSION) {
             ui.label(format!("Current version: {SQYRE_VERSION}"));
+        }
+
+        if flatpak {
+            if setting_visible(q, section_hit, SETTING_UPDATE_ACTIONS) {
+                ui.label(
+                    "Flatpak install: updates come from flatpak update or your software center \
+                     (in-app self-replace is not supported).",
+                );
+            }
+            return;
         }
 
         if setting_visible(q, section_hit, SETTING_AUTO_UPDATE)
