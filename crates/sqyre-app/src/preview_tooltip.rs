@@ -1034,7 +1034,8 @@ fn log_hover_outline_transition(
     #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
     {
         use std::sync::Mutex;
-        static LAST: Mutex<Option<(String, (i32, i32, i32, i32))>> = Mutex::new(None);
+        type LastOutline = (String, (i32, i32, i32, i32));
+        static LAST: Mutex<Option<LastOutline>> = Mutex::new(None);
         let rect = desktop_outline_rect(coords);
         let key = format!("{kind:?}:{program}~{name}");
         let mut guard = LAST.lock().unwrap_or_else(|e| e.into_inner());

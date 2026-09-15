@@ -76,10 +76,9 @@ pub fn cached_variant_paths(icons_dir: &Path, item: &str) -> Vec<PathBuf> {
     }
     let by_item = scan_icons_dir(icons_dir);
     let paths = by_item.get(item).cloned().unwrap_or_default();
-    guard.dirs.insert(
-        icons_dir.to_path_buf(),
-        DirListing { mtime, by_item },
-    );
+    guard
+        .dirs
+        .insert(icons_dir.to_path_buf(), DirListing { mtime, by_item });
     paths
 }
 
@@ -100,7 +99,9 @@ pub fn cached_mask_if_exists(path: PathBuf) -> Option<PathBuf> {
 /// (`…/icons/Prog/Sword`), or a single file path.
 pub fn invalidate_icon_fs_cache_under(prefix: &Path) {
     let mut guard = cache().lock();
-    guard.dirs.retain(|dir, _| !dir.starts_with(prefix) && !prefix.starts_with(dir));
+    guard
+        .dirs
+        .retain(|dir, _| !dir.starts_with(prefix) && !prefix.starts_with(dir));
     guard.masks.retain(|path, _| !path.starts_with(prefix));
 }
 

@@ -507,10 +507,10 @@ pub fn release_capture_frame_cache() {
 pub fn capture_frame_cache_bytes() -> usize {
     #[cfg(target_os = "linux")]
     {
-        return match shared_capturer_if_ready() {
+        match shared_capturer_if_ready() {
             Some(Ok(cap)) => cap.cpu_frame_cache_bytes(),
             _ => 0,
-        };
+        }
     }
     #[cfg(not(target_os = "linux"))]
     {

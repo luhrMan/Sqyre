@@ -103,8 +103,8 @@ impl DataEditor {
         };
         opts.trailing = Some(&mut trailing);
 
-        let search_changed =
-            pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| match self.tab {
+        let search_changed = pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| {
+            match self.tab {
                 EditorTab::Programs => {
                     for name in editor_program_names(catalog) {
                         if !q.is_empty() && !pickers::fuzzy_match_fold(q, name) {
@@ -472,7 +472,8 @@ impl DataEditor {
                             });
                     }
                 }
-            });
+            }
+        });
         self.search = search;
         self.items_list_sort = items_list_sort.get();
         self.items_tag_priority = items_tag_priority;

@@ -686,12 +686,15 @@ fn targets_editor(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
-    targets: &mut Vec<String>,
-    sort_by: &mut ItemSortBy,
-    sort_then: &mut ItemSortThen,
-    tag_priority: &mut Vec<String>,
+    edit: TargetsSortEdit<'_>,
     picker: &mut ActivePicker,
 ) {
+    let TargetsSortEdit {
+        targets,
+        sort_by,
+        sort_then,
+        tag_priority,
+    } = edit;
     ui.horizontal_wrapped(|ui| {
         help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
         ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
@@ -769,7 +772,7 @@ fn targets_editor(
         catalog,
         icons,
         &display,
-        |_| true,
+        |_| false,
         pickers::IconGridKind::Targets { removable: true },
         |_, _| {},
         |i| {
@@ -793,6 +796,13 @@ fn targets_editor(
             targets.retain(|t| t != target);
         }
     }
+}
+
+struct TargetsSortEdit<'a> {
+    targets: &'a mut Vec<String>,
+    sort_by: &'a mut ItemSortBy,
+    sort_then: &'a mut ItemSortThen,
+    tag_priority: &'a mut Vec<String>,
 }
 
 fn target_sort_infos(

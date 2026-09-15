@@ -513,7 +513,7 @@ mod tests {
         let macros = vec![m("alpha", &["combat/pve"]), m("beta", &["farm"])];
         let (tree, untagged) = build_tag_tree(&macros, "farm");
         assert!(untagged.is_empty());
-        assert!(tree.children.get("combat").is_none());
+        assert!(!tree.children.contains_key("combat"));
         assert_eq!(tree.children.get("farm").unwrap().macros, vec![1]);
     }
 

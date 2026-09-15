@@ -124,10 +124,12 @@ pub(super) fn paint_image_search_fields(
             ui,
             paint.catalog,
             paint.icons,
-            targets,
-            sort_by,
-            sort_then,
-            tag_priority,
+            super::TargetsSortEdit {
+                targets,
+                sort_by,
+                sort_then,
+                tag_priority,
+            },
             picker,
         );
     });

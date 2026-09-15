@@ -452,9 +452,7 @@ pub fn get_cached_image_mask(
 
     let gate = inflight_gate(mask_inflight(), &key);
     let _busy = gate.lock();
-    if let Some(hit) =
-        mask_cache_hit_trusted(&key).or_else(|| mask_cache_hit(&key, mod_time))
-    {
+    if let Some(hit) = mask_cache_hit_trusted(&key).or_else(|| mask_cache_hit(&key, mod_time)) {
         drop(_busy);
         drop_inflight_gate(mask_inflight(), &key);
         return Some(hit);
@@ -539,9 +537,9 @@ pub fn get_cached_prepared_template(
 
     let gate = inflight_gate(prepared_inflight(), &key);
     let _busy = gate.lock();
-    if let Some(hit) = prepared_cache_hit_trusted(&key, blur_kernel).or_else(|| {
-        prepared_cache_hit(&key, tmpl_mod_time, mask_mod_time, blur_kernel)
-    }) {
+    if let Some(hit) = prepared_cache_hit_trusted(&key, blur_kernel)
+        .or_else(|| prepared_cache_hit(&key, tmpl_mod_time, mask_mod_time, blur_kernel))
+    {
         drop(_busy);
         drop_inflight_gate(prepared_inflight(), &key);
         return Ok(hit);
