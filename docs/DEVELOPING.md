@@ -2,7 +2,7 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.94, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows` and AppImage Docker fallbacks work inside the container.
+Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.94, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
 
@@ -10,7 +10,7 @@ If Cursor reports **“container is not running”** during attach, stale contai
 
 ### Host permissions / SELinux / git
 
-On Fedora, Bazzite, and other SELinux-enforcing hosts, a plain bind mount of the repo often yields **Permission denied** on files and broken git (“dubious ownership”) inside the container. The devcontainer sets `--security-opt=label=disable`, remaps the `vscode` user to the host UID (`updateRemoteUserUID`), marks `/workspace` as a git `safe.directory`, and re-owns writable caches (`target/`, `.cache/`, cargo home) on each attach. Nested `make windows` / AppImage Docker binds use the `:z` SELinux label.
+On Fedora, Bazzite, and other SELinux-enforcing hosts, a plain bind mount of the repo often yields **Permission denied** on files and broken git (“dubious ownership”) inside the container. The devcontainer sets `--security-opt=label=disable`, remaps the `vscode` user to the host UID (`updateRemoteUserUID`), marks `/workspace` as a git `safe.directory`, and re-owns writable caches (`target/`, `.cache/`, cargo home) on each attach. Nested `make windows` / AppImage / Flatpak Docker binds use the `:z` SELinux label.
 
 After pulling these changes, **Rebuild Container** (not just reopen). If `target/` or `.cache/` were created as root on another machine, delete them on the host or let `post-start.sh` chown them once they are unwritable.
 
@@ -30,6 +30,7 @@ make coverage-floors  # line-% gates for pure crates (needs cargo-llvm-cov)
 make clean-sweep # cargo-sweep target/ (+ target-dhat/) down to 20GB (SWEEP_MAXSIZE=…)
 make docs-media # regenerate docs/images screenshots
 make appimage   # fmt + check, then bin/*.AppImage (Linux)
+make flatpak    # fmt + check, then bin/com.sqyre.app.flatpak (Linux; Docker fallback if needed)
 make windows    # fmt + check, then bin/sqyre.exe (Docker MinGW cross / native on Windows)
 make macos      # fmt + check, then bin/sqyre (macOS host)
 make wasm       # fmt + check, then bin/wasm/ GUI-only browser editor (Trunk)
@@ -81,6 +82,7 @@ Build caches (all gitignored):
 | `run` | `cargo run -p sqyre-app` |
 | `docs-media` | Regenerate `docs/images/` screenshots |
 | `appimage` | `bin/Sqyre-*.AppImage` |
+| `flatpak` | `bin/com.sqyre.app.flatpak` |
 | `release-bundle` | `bin/sqyre-bundle/` (portable Linux + Tesseract; no check gate) |
 | `release-bundle-dhat` | `bin/sqyre-bundle-dhat/` (same + `dhat-heap`; local leak hunts only) |
 | `windows` | `bin/sqyre.exe` (Docker MinGW cross on Linux; native on Windows) |
@@ -88,7 +90,7 @@ Build caches (all gitignored):
 | `wasm` | GUI-only browser editor → `bin/wasm/` (Trunk; no Run/capture/OCR) |
 | `tessdata` | Tesseract trained data via `scripts/download-tessdata.sh` |
 
-Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` / `make release` / `make windows` to stamp the AppImage name and embed `SQYRE_VERSION` in the binary for auto-update checks. Local builds without either default to `0.0.0-dev` (update checks disabled).
+Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` / `make flatpak` / `make release` / `make windows` to stamp package names and embed `SQYRE_VERSION` in the binary for auto-update checks (Flatpak disables in-app self-replace — use `flatpak update`). Local builds without either default to `0.0.0-dev` (update checks disabled).
 
 ### OCR data (`eng.traineddata`)
 
@@ -138,9 +140,9 @@ The `version` job sets `should_release=true` only when there is no prior `v*` ta
 
 **Tag shape:** `vYYYY.MM.DD` (UTC date). If that tag already exists, CI uses `vYYYY.MM.DD.HHMM`.
 
-**Artifacts:** Linux binary + AppImage, Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the WASM editor zip (`make wasm`). `make macos` stays native; MSI/DMG packaging is not shipped yet.
+**Artifacts:** Linux binary + AppImage + Flatpak (`com.sqyre.app.flatpak`), Windows `.exe` (MinGW cross via [`scripts/windows/`](../scripts/windows/PACKAGING.md)), and the WASM editor zip (`make wasm`). `make macos` stays native; MSI/DMG packaging is not shipped yet.
 
-Shipped Linux/Windows builds embed `SQYRE_VERSION` so the in-app updater can compare against GitHub Releases (local `0.0.0-dev` builds skip update checks).
+Shipped Linux AppImage/Windows builds embed `SQYRE_VERSION` so the in-app updater can compare against GitHub Releases (local `0.0.0-dev` builds skip update checks). Flatpak installs use `flatpak update` instead of in-app self-replace.
 
 **Signed updates:** Releases must publish `SHA256SUMS` and `SHA256SUMS.sig` (Ed25519 over the exact `SHA256SUMS` bytes). The client verifies the signature with the public key in `crates/sqyre-update/update_pubkey.hex` before trusting hashes.
 
@@ -172,8 +174,8 @@ Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>
 
 | Resource | Purpose |
 |----------|---------|
-| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Rust + Tesseract + AppImage tools + Trunk/wasm32 |
-| [.devcontainer/devcontainer.json](../.devcontainer/devcontainer.json) | Docker-outside-of-Docker (CLI + host socket) for `make windows` |
+| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Rust + Tesseract + AppImage/Flatpak tools + Trunk/wasm32 |
+| [.devcontainer/devcontainer.json](../.devcontainer/devcontainer.json) | Docker-outside-of-Docker (CLI + host socket) for `make windows` / packaging fallbacks |
 | [scripts/windows/Dockerfile](../scripts/windows/Dockerfile) | MinGW cross image for `make windows` on Linux |
 | [crates/sqyre-app/assets/icons/](../crates/sqyre-app/assets/icons/) | Brand icons (embedded SVG) |
 | [assets/tessdata/](../assets/tessdata/) | Optional local `eng.traineddata` fallback |
@@ -191,7 +193,7 @@ make            # or: cargo build -p sqyre-app
 ./bin/sqyre
 ```
 
-For AppImage on the host, also install `appimage-builder`, `patchelf`, and `squashfs-tools`.
+For AppImage on the host, also install `appimage-builder`, `patchelf`, and `squashfs-tools`. For Flatpak, install `flatpak`, `flatpak-builder`, and `ostree` (and ensure user namespaces / bwrap work), or use the Docker fallback in `scripts/linux/packaging/flatpak/build-flatpak.sh`.
 
 ---
 
@@ -246,4 +248,4 @@ Needs wgpu (lavapipe in the dev container / CI image).
 
 ## Packaging
 
-See [scripts/linux/packaging/PACKAGING.md](../scripts/linux/packaging/PACKAGING.md) for AppImage builds.
+See [scripts/linux/packaging/PACKAGING.md](../scripts/linux/packaging/PACKAGING.md) for AppImage and Flatpak builds.

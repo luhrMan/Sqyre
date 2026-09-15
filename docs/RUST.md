@@ -1,6 +1,6 @@
 # Sqyre Rust workspace
 
-Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux binary + AppImage, Windows `sqyre.exe` (MinGW cross), and the WASM editor zip. macOS is not CI-checked yet.
+Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux binary + AppImage + Flatpak, Windows `sqyre.exe` (MinGW cross), and the WASM editor zip. macOS is not CI-checked yet.
 
 ## Layout
 
@@ -27,7 +27,7 @@ Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux bin
 | `sqyre-input` | `AutomationBackend` (rustautogui lite + arboard) |
 | `sqyre-capture` | `ScreenCapturer` / focus / selection outline (`OsCapturer`, `OsWindowFocuser`: Linux X11, Windows GDI, macOS stub) |
 | `sqyre-hotkeys` | Esc stop / failsafe / macro hotkeys (`hooks` feature; stub default) |
-| `sqyre-update` | GitHub Releases check + self-replace (Linux binary/AppImage, Windows `.exe`) |
+| `sqyre-update` | GitHub Releases check + self-replace (Linux binary/AppImage, Windows `.exe`; Flatpak unsupported) |
 | `sqyre-overlay` | Floating macro overlay buttons + icon catalog (sandbox bin for fast iteration) |
 | `sqyre-app` | egui shell; Run/Stop macros |
 
@@ -60,6 +60,7 @@ make wasm-check      # cargo check wasm32 sqyre-app --no-default-features
 make coverage        # llvm-cov nextest → HTML + lcov + summary.json under target/coverage/
 make run             # cargo run -p sqyre-app; loads ~/.sqyre/db.yaml
 make appimage        # fmt + check, then Linux AppImage
+make flatpak         # fmt + check, then Flatpak bundle
 make wasm            # fmt + check, then bin/wasm/ GUI-only browser editor
 ```
 

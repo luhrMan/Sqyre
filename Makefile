@@ -2,7 +2,7 @@
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
 .PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
-	clean-sweep release-gate run tessdata appimage install-desktop docs-media wasm wasm-check help
+	clean-sweep release-gate run tessdata appimage flatpak install-desktop docs-media wasm wasm-check help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
@@ -93,6 +93,7 @@ help:
 	@echo "  tessdata     - scripts/download-tessdata.sh"
 	@echo "  docs-media   - regenerate docs/images screenshots"
 	@echo "  appimage     - fmt + check, then AppImage -> $(BIN)/ (Docker fallback if tools missing)"
+	@echo "  flatpak      - fmt + check, then Flatpak bundle -> $(BIN)/com.sqyre.app.flatpak"
 	@echo "                 (RELEASE_VERSION=…; SQYRE_APPIMAGE_FORCE_NATIVE=1)"
 	@echo "  install-desktop - install .desktop + icon for GNOME/Wayland (Linux dev builds)"
 	@echo "  wasm         - fmt + check, then GUI-only WASM editor -> $(BIN)/wasm/ (requires Trunk)"
@@ -287,6 +288,13 @@ docs-media:
 
 appimage: release-gate
 	./scripts/linux/packaging/appimage/build-appimage.sh
+
+flatpak: release-gate
+	@if [ "$(HOST_OS)" != "linux" ]; then \
+		echo "make flatpak requires a Linux host (got $(HOST_OS))"; \
+		exit 1; \
+	fi
+	./scripts/linux/packaging/flatpak/build-flatpak.sh
 
 # GNOME/Wayland dock icons need a matching .desktop file (see crates/sqyre-app APP_ID).
 install-desktop: release $(BIN)

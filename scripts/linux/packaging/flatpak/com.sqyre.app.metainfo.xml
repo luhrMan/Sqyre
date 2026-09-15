@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metainfo for Flathub / software centers.
+  Keep in sync with README project description; bump <releases> when tagging.
+-->
+<component type="desktop-application">
+  <id>com.sqyre.app</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <name>Sqyre</name>
+  <summary>Desktop macro builder with screen-aware automation</summary>
+  <developer_name>luhrMan</developer_name>
+  <url type="homepage">https://github.com/luhrMan/Squire</url>
+  <url type="bugtracker">https://github.com/luhrMan/Squire/issues</url>
+  <description>
+    <p>
+      Sqyre is a desktop app for building and running macros without writing code.
+      Each macro is a tree of actions: loops and branches for flow control,
+      detection steps when the screen matters, and leaf actions for mouse and
+      keyboard input.
+    </p>
+    <p>
+      Image Search, OCR, and Find Pixel use PureCV and Tesseract. On Wayland,
+      capture and synthetic input go through xdg-desktop-portal (ScreenCast /
+      RemoteDesktop) and PipeWire where the session supports them.
+    </p>
+    <p>
+      Flatpak data lives under ~/.var/app/com.sqyre.app/.sqyre (via --persist),
+      separate from native or AppImage ~/.sqyre. Updates: use flatpak update or
+      your software center — in-app self-replace is not supported for Flatpak.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.sqyre.app.desktop</launchable>
+  <provides>
+    <binary>sqyre</binary>
+  </provides>
+  <categories>
+    <category>Development</category>
+    <category>Utility</category>
+  </categories>
+  <keywords>
+    <keyword>macro</keyword>
+    <keyword>automation</keyword>
+    <keyword>ocr</keyword>
+    <keyword>image search</keyword>
+  </keywords>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <!-- RELEASE_VERSION stamped at package time; placeholder for unstamped builds -->
+    <release version="0.0.0-dev" date="2026-09-14" />
+  </releases>
+</component>
