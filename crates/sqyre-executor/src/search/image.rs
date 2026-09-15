@@ -730,12 +730,7 @@ fn warm_variant_caches(
 }
 
 /// Precompute search-frame FFTs for template sizes that will take the DFT path.
-fn warm_search_ffts(
-    prep: &SearchPrep,
-    search: &ImageBuf,
-    targets: &[TargetSearch],
-    kernel: i32,
-) {
+fn warm_search_ffts(prep: &SearchPrep, search: &ImageBuf, targets: &[TargetSearch], kernel: i32) {
     let mut seen_sizes: HashSet<(usize, usize)> = HashSet::new();
     for target in targets {
         // Masked matches use the direct correlator — skip FFT warm.

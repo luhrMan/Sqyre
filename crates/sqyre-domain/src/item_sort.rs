@@ -207,18 +207,12 @@ pub fn ordered_catalog_items(
     tag_priority: &[String],
 ) -> Vec<String> {
     match sort {
-        CatalogItemSort::NameAsc => ordered_item_targets(
-            items,
-            ItemSortBy::Name,
-            ItemSortThen::NameAsc,
-            &[],
-        ),
-        CatalogItemSort::NameDesc => ordered_item_targets(
-            items,
-            ItemSortBy::Name,
-            ItemSortThen::NameDesc,
-            &[],
-        ),
+        CatalogItemSort::NameAsc => {
+            ordered_item_targets(items, ItemSortBy::Name, ItemSortThen::NameAsc, &[])
+        }
+        CatalogItemSort::NameDesc => {
+            ordered_item_targets(items, ItemSortBy::Name, ItemSortThen::NameDesc, &[])
+        }
         CatalogItemSort::FootprintLarge => ordered_item_targets(
             items,
             ItemSortBy::Footprint,
@@ -231,12 +225,9 @@ pub fn ordered_catalog_items(
             ItemSortThen::FootprintSmall,
             &[],
         ),
-        CatalogItemSort::Tags => ordered_item_targets(
-            items,
-            ItemSortBy::Tags,
-            ItemSortThen::NameAsc,
-            tag_priority,
-        ),
+        CatalogItemSort::Tags => {
+            ordered_item_targets(items, ItemSortBy::Tags, ItemSortThen::NameAsc, tag_priority)
+        }
     }
 }
 
