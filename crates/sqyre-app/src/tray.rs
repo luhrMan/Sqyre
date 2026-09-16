@@ -297,7 +297,14 @@ fn install_inner(
         cmd_tx,
         wake,
     };
+    // Flatpak/Snap cannot own org.kde.StatusNotifierItem-PID-ID; use the
+    // connection's unique name instead (Chromium-style). Host installs keep
+    // the well-known name. Flatpak also needs talk-name=StatusNotifierWatcher.
+    let sandboxed = sqyre_update::is_flatpak_install()
+        || std::path::Path::new("/.flatpak-info").exists()
+        || std::env::var_os("SNAP").is_some();
     let handle = tray
+        .disable_dbus_name(sandboxed)
         .spawn()
         .map_err(|e| format!("StatusNotifierItem: {e}"))?;
 
