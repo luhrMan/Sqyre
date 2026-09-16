@@ -57,9 +57,14 @@ Manifest: [`flatpak/com.sqyre.app.yml`](flatpak/com.sqyre.app.yml) — Freedeskt
 If native tools work but bubblewrap cannot create user namespaces (common in
 Devcontainers), or tools are missing, `build-flatpak.sh` falls back to Docker
 (`ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08`, `--privileged`,
-host UID). Builds pass `--disable-rofiles-fuse` so they work without `/dev/fuse`.
-If a prior Docker build left root-owned files under
-`scripts/linux/packaging/flatpak/.flatpak-builder/`, the script reclaims them with
+host UID). Builds pass `--disable-rofiles-fuse` so they work without `/dev/fuse`,
+and `--ccache` for leptonica/tesseract. Parallelism defaults to **~50% of
+`nproc`** (`flatpak-builder --jobs`, plus ninja/cargo `-j` via
+`FLATPAK_BUILDER_N_JOBS`); override with `SQYRE_FLATPAK_JOBS=N`. Docker builds
+persist Flatpak user data under
+`scripts/linux/packaging/flatpak/.flatpak-builder/docker-home/` so
+Platform/Sdk/extensions are not reinstalled every run. If a prior Docker build
+left root-owned files under `.flatpak-builder/`, the script reclaims them with
 `sudo chown` before a native rebuild (otherwise flatpak-builder fails writing
 `ccache.conf`).
 
@@ -71,6 +76,10 @@ make flatpak
 ```
 
 Output: **`bin/com.sqyre.app.flatpak`**.
+
+Rebuilds reuse `.flatpak-builder` module cache for leptonica, tesseract, and
+the offline `cargo-vendor` tree; only the `sqyre` module (local dir sources)
+always recompiles. Keep that state dir around for faster iteration.
 
 ```bash
 flatpak install --user bin/com.sqyre.app.flatpak
@@ -93,7 +102,7 @@ Regenerate and commit whenever `Cargo.lock` changes.
 
 - **No `--filesystem=home`** — Flatpak data is separate from AppImage/native `~/.sqyre`.
 - **`--persist=.sqyre`** — required because Sqyre writes `$HOME/.sqyre` (not XDG). Maps to host `~/.var/app/com.sqyre.app/.sqyre`; without it Flatpak uses a tmpfs and every quit resets macros/settings/portal tokens.
-- **Finish-args** (see comments in the YAML): X11 + Wayland, Pulse, DRI, `--device=input` (Wayland hotkeys), Notifications, host AT-SPI (`xdg-run/at-spi` + `org.a11y.Bus` for GNOME Wayland window list); ScreenCast/RemoteDesktop via portals.
+- **Finish-args** (see comments in the YAML): X11 + Wayland, Pulse (`--socket=pulseaudio` + read-only `xdg-config/pulse` for the host cookie — cpal’s pure-Rust Pulse client needs it), DRI, `--device=input` (Wayland hotkeys), Notifications, StatusNotifierWatcher (tray), host AT-SPI (`xdg-run/at-spi` + `org.a11y.Bus` for GNOME Wayland window list); ScreenCast/RemoteDesktop via portals. Cue audio falls back to runtime ALSA→libpulse inside Flatpak if Pulse host open fails. Tray uses `ksni` with `disable_dbus_name` under Flatpak (no `--own-name=org.kde.*`).
 - **Tesseract/Leptonica** install into `/app/lib` (`CMAKE_INSTALL_LIBDIR=lib` / `--libdir`) — `/app/lib64` is not on Flatpak’s runtime linker path.
 - **Do not** ship a private `libpipewire` that shadows SPA plugins (same rule as AppImage).
 - **In-app auto-update** is disabled under Flatpak (`FLATPAK_ID`); use `flatpak update`.

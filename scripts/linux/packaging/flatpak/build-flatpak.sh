@@ -18,7 +18,24 @@ cd "$SCRIPT_DIR"
 
 have_cmd() { command -v "$1" >/dev/null 2>&1; }
 
+# Cap parallel build jobs at ~50% of host CPUs so `make flatpak` does not
+# peg the machine. Override with SQYRE_FLATPAK_JOBS (positive integer).
+flatpak_build_jobs() {
+  if [ -n "${SQYRE_FLATPAK_JOBS:-}" ]; then
+    echo "$SQYRE_FLATPAK_JOBS"
+    return
+  fi
+  local n half
+  n="$(nproc 2>/dev/null || echo 2)"
+  half=$((n / 2))
+  if [ "$half" -lt 1 ]; then
+    half=1
+  fi
+  echo "$half"
+}
+
 APP_ID="com.sqyre.app"
+BUILD_JOBS="$(flatpak_build_jobs)"
 MANIFEST_SRC="$SCRIPT_DIR/${APP_ID}.yml"
 BUILD_DIR="$SCRIPT_DIR/build-dir"
 REPO_DIR="$SCRIPT_DIR/repo"
@@ -96,11 +113,25 @@ ensure_runtimes() {
     flatpak remote-add --user --if-not-exists flathub \
       https://flathub.org/repo/flathub.flatpakrepo
   fi
-  flatpak install -y --user flathub \
-    org.freedesktop.Platform//25.08 \
-    org.freedesktop.Sdk//25.08 \
-    org.freedesktop.Sdk.Extension.rust-stable//25.08 \
+  # Only install missing refs — `flatpak install` on an already-present runtime
+  # still walks remotes and is slow in Docker/CI loops.
+  local refs=(
+    org.freedesktop.Platform//25.08
+    org.freedesktop.Sdk//25.08
+    org.freedesktop.Sdk.Extension.rust-stable//25.08
     org.freedesktop.Sdk.Extension.llvm21//25.08
+  )
+  local missing=()
+  local ref
+  for ref in "${refs[@]}"; do
+    if ! flatpak info --user "$ref" >/dev/null 2>&1; then
+      missing+=("$ref")
+    fi
+  done
+  if [ "${#missing[@]}" -gt 0 ]; then
+    echo "Installing Flatpak runtimes: ${missing[*]}"
+    flatpak install -y --user flathub "${missing[@]}"
+  fi
 }
 
 run_native() {
@@ -120,19 +151,23 @@ run_native() {
   mkdir -p "$OUT_DIR"
   BUNDLE="$OUT_DIR/${APP_ID}.flatpak"
 
-  echo "Building Flatpak v${APP_VERSION} (native flatpak-builder)…"
-  # Build from repo root so type:dir path ../../../.. resolves correctly
-  # when SOURCE_DIR is the recipe parent (flatpak/).
+  echo "Building Flatpak v${APP_VERSION} (native flatpak-builder, --jobs=${BUILD_JOBS})…"
+  # Manifest paths are relative to the recipe directory (flatpak/).
   #
   # --disable-rofiles-fuse: required when /dev/fuse is missing (typical
   # Devcontainer / nested Docker). Without it flatpak-builder fails with
   # "fuse: device not found" / "rofiles … not initialized".
+  # --ccache: speeds leptonica/tesseract rebuilds when module cache misses.
+  # --jobs: ~50% of nproc (see flatpak_build_jobs); sets FLATPAK_BUILDER_N_JOBS
+  # for make/ninja/cargo in the manifest.
   (
     cd "$REPO_ROOT"
     flatpak-builder \
       --user \
       --force-clean \
+      --ccache \
       --disable-rofiles-fuse \
+      --jobs="$BUILD_JOBS" \
       --install-deps-from=flathub \
       --state-dir="$STATE_DIR" \
       --repo="$REPO_DIR" \
@@ -161,7 +196,10 @@ run_docker() {
   ensure_icon
   ensure_cargo_sources
 
-  mkdir -p "$REPO_ROOT/bin" "$STATE_DIR" "$BUILD_DIR" "$REPO_DIR"
+  # Persist flatpak user data across Docker runs. HOME=/tmp forced a full
+  # Platform/Sdk/extension reinstall on every build (~GB + minutes).
+  DOCKER_HOME="$STATE_DIR/docker-home"
+  mkdir -p "$REPO_ROOT/bin" "$STATE_DIR" "$BUILD_DIR" "$REPO_DIR" "$DOCKER_HOME"
 
   echo "Building Flatpak v${APP_VERSION} (docker: $IMAGE)…"
   # Match host UID so .flatpak-builder / build-dir / repo stay writable for
@@ -169,12 +207,17 @@ run_docker() {
   docker run --rm --privileged \
     -u "$(id -u):$(id -g)" \
     -v "$(docker_host_path "$REPO_ROOT"):/workspace$(docker_bind_selinux_z)" \
+    -v "$(docker_host_path "$DOCKER_HOME"):/flatpak-home$(docker_bind_selinux_z)" \
     -w /workspace \
-    -e HOME=/tmp \
+    -e HOME=/flatpak-home \
+    -e XDG_DATA_HOME=/flatpak-home/.local/share \
+    -e XDG_CACHE_HOME=/flatpak-home/.cache \
     -e RELEASE_VERSION="$APP_VERSION" \
     -e SQYRE_FLATPAK_FORCE_NATIVE=1 \
+    -e SQYRE_FLATPAK_JOBS="$BUILD_JOBS" \
     "$IMAGE" \
     bash -c 'set -euo pipefail
+      mkdir -p "$HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
       # Image ships flatpak-builder; ensure flathub remote for the build user.
       flatpak remote-add --user --if-not-exists flathub \
         https://flathub.org/repo/flathub.flatpakrepo || true
