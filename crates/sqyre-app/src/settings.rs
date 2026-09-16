@@ -650,9 +650,9 @@ impl SettingsUi {
     fn draw_data(
         &mut self,
         ui: &mut egui::Ui,
-        _db: &mut Database,
-        _macros: &mut Vec<Macro>,
-        _catalog: &mut ProgramCatalog,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
         q: &str,
         section_hit: bool,
     ) {
@@ -661,6 +661,7 @@ impl SettingsUi {
         }
         #[cfg(target_arch = "wasm32")]
         {
+            let _ = (db, macros, catalog);
             ui.label(
                 "Browser editor: macros live in memory. Use Import / Export on the toolbar for db.yaml. Full backups are not available.",
             );
@@ -675,6 +676,19 @@ impl SettingsUi {
             };
             ui.label(current.display().to_string());
 
+            let flatpak = sqyre_update::is_flatpak_install();
+            if flatpak {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(
+                        "Flatpak keeps a private data copy by default. To share macros \
+                         with AppImage/native, grant access and point at host ~/.sqyre.",
+                    )
+                    .weak()
+                    .small(),
+                );
+            }
+
             ui.horizontal(|ui| {
                 if ui.button("Open .sqyre folder").clicked() {
                     match open_sqyre_dir() {
@@ -684,6 +698,31 @@ impl SettingsUi {
                 }
                 if ui.button("Choose location…").clicked() {
                     self.choose_sqyre_location();
+                }
+                if flatpak {
+                    if ui
+                        .button("Use host ~/.sqyre…")
+                        .on_hover_text(
+                            "Opens a folder picker (portal grant). Select your host \
+                             ~/.sqyre folder, or its parent (Home). For a permanent \
+                             Flatpak permission you can also run:\n\
+                             flatpak override --user --filesystem=~/.sqyre:create com.sqyre.app",
+                        )
+                        .clicked()
+                    {
+                        self.choose_host_sqyre_location();
+                    }
+                    if !self.settings.sqyre_dir.trim().is_empty()
+                        && ui
+                            .button("Use Flatpak sandbox")
+                            .on_hover_text(
+                                "Clear the custom path and return to the private \
+                                 Flatpak data directory (~/.var/app/com.sqyre.app/.sqyre).",
+                            )
+                            .clicked()
+                    {
+                        self.reset_sqyre_to_sandbox(db, macros, catalog);
+                    }
                 }
             });
         }
@@ -944,16 +983,50 @@ impl SettingsUi {
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(sqyre_dir);
-        let Some(parent) = crate::file_dialogs::pick_folder("Choose .sqyre location", &start)
+        let Some(picked) = crate::file_dialogs::pick_folder("Choose .sqyre location", &start)
         else {
             return;
         };
-        let new_dir = parent.join(".sqyre");
+        self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(picked));
+    }
+
+    /// Flatpak: portal-pick host `~/.sqyre` (or its parent) so the sandbox can use it.
+    fn choose_host_sqyre_location(&mut self) {
+        let start = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(sqyre_dir);
+        let Some(picked) =
+            crate::file_dialogs::pick_folder("Select host ~/.sqyre (or your Home folder)", &start)
+        else {
+            return;
+        };
+        self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(picked));
+    }
+
+    fn confirm_sqyre_location(&mut self, new_dir: PathBuf) {
         let old_dir = sqyre_dir();
         if new_dir == old_dir {
             return;
         }
         self.confirm = Some(PendingConfirm::MoveData { old_dir, new_dir });
+    }
+
+    /// Clear a custom data path and reload from the default Flatpak/native location.
+    fn reset_sqyre_to_sandbox(
+        &mut self,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
+    ) {
+        if self.settings.sqyre_dir.trim().is_empty() {
+            return;
+        }
+        self.settings.sqyre_dir.clear();
+        set_sqyre_dir_override(None);
+        self.persist();
+        let path = sqyre_dir();
+        self.reload_data_from_disk(db, macros, catalog, &path, "Using Flatpak sandbox data");
     }
 
     fn draw_confirm(
@@ -1105,7 +1178,23 @@ impl SettingsUi {
         self.settings.sqyre_dir = new_dir.display().to_string();
         set_sqyre_dir_override(Some(new_dir.clone()));
         self.persist();
+        self.reload_data_from_disk(
+            db,
+            macros,
+            catalog,
+            &new_dir,
+            &format!("Data location changed to {}.", new_dir.display()),
+        );
+    }
 
+    fn reload_data_from_disk(
+        &mut self,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
+        path: &std::path::Path,
+        ok_msg: &str,
+    ) {
         match Database::load_default() {
             Ok(mut loaded) => {
                 let mut cat = Arc::unwrap_or_clone(loaded.program_catalog().unwrap_or_default());
@@ -1116,10 +1205,9 @@ impl SettingsUi {
                 *macros = list;
                 *catalog = cat;
                 self.reload_requested = true;
-                self.set_ok(format!("Data location changed to {}.", new_dir.display()));
+                self.set_ok(ok_msg.to_string());
             }
             Err(e) => {
-                // Still switched dirs; surface load error.
                 *db = Database::default();
                 macros.clear();
                 *catalog = ProgramCatalog::default();
@@ -1128,7 +1216,7 @@ impl SettingsUi {
                 self.reload_requested = true;
                 self.set_err(format!(
                     "Switched to {} but failed to load db.yaml: {e}",
-                    new_dir.display()
+                    path.display()
                 ));
             }
         }
@@ -1395,6 +1483,9 @@ const DATA_LOCATION: &[&str] = &[
     "location",
     "choose location",
     "open folder",
+    "flatpak",
+    "host",
+    "sandbox",
 ];
 const DATA_BACKUP: &[&str] = &[
     "backup",
@@ -1479,6 +1570,15 @@ fn appearance_section_visible(q: &str) -> bool {
             .any(|&(_, label)| crate::pickers::fuzzy_match_fold(q, label))
 }
 
+/// If the user picked `.sqyre` itself, use it; otherwise treat the pick as its parent.
+fn resolve_sqyre_dir_from_pick(picked: PathBuf) -> PathBuf {
+    if picked.file_name().is_some_and(|n| n == ".sqyre") {
+        picked
+    } else {
+        picked.join(".sqyre")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1488,6 +1588,16 @@ mod tests {
         assert!(section_visible("", SECTION_GENERAL, GENERAL_SETTINGS));
         assert!(section_visible("", SECTION_SOUND, SOUND_SETTINGS));
         assert!(appearance_section_visible(""));
+    }
+
+    #[test]
+    fn resolve_sqyre_dir_accepts_dot_sqyre_or_parent() {
+        let direct = PathBuf::from("/home/me/.sqyre");
+        assert_eq!(resolve_sqyre_dir_from_pick(direct.clone()), direct);
+        assert_eq!(
+            resolve_sqyre_dir_from_pick(PathBuf::from("/home/me")),
+            PathBuf::from("/home/me/.sqyre")
+        );
     }
 
     #[test]
