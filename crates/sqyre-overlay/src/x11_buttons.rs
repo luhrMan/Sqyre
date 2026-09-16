@@ -851,7 +851,7 @@ fn poll_relocate_drag(state: &mut HostState) {
         return;
     }
     relocate_drag_to(state, root_x, root_y);
-    if mask & Button1Mask as u32 == 0 {
+    if mask & Button1Mask == 0 {
         note("overlay-x11: relocate-poll button-up");
         mark_site("overlay-x11:relocate-poll-up");
         commit_drag(state);
@@ -926,16 +926,33 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
         set_skip_taskbar_state(state.display, state.root, win);
         apply_empty_input_shape(state.display, win);
         x_select_button_input(state.display, hit, state.relocate_mode);
-        // Face first, then hit on top — InputOnly does not obscure the face pixels.
-        XMapRaised(state.display, win);
-        XMapRaised(state.display, hit);
         (hit, win)
     };
-    mark_site(&format!("overlay-x11:map:{}", spec.id));
-    note(&format!(
-        "overlay-x11: mapped id={} {}x{}+{}+{} (face+hit)",
-        spec.id, spec.w, spec.h, spec.x, spec.y
-    ));
+    // Do not MapRaised gated buttons until the found-map says so — mapping here
+    // then relying on apply_gate_visibility left a visible flash (and ghosts if
+    // the mapped flag ever drifted).
+    let map_now = state.relocate_mode
+        || !spec.visibility_gated
+        || state
+            .visibility
+            .lock()
+            .get(&spec.id)
+            .copied()
+            .unwrap_or(false);
+    if map_now {
+        raise_hit_above_face(state.display, hit, win);
+        mark_site(&format!("overlay-x11:map:{}", spec.id));
+        note(&format!(
+            "overlay-x11: mapped id={} {}x{}+{}+{} (face+hit)",
+            spec.id, spec.w, spec.h, spec.x, spec.y
+        ));
+    } else {
+        mark_site(&format!("overlay-x11:create-hidden:{}", spec.id));
+        note(&format!(
+            "overlay-x11: created-hidden id={} {}x{}+{}+{} (gated)",
+            spec.id, spec.w, spec.h, spec.x, spec.y
+        ));
+    }
     Ok(LiveButton {
         spec,
         win,
@@ -943,7 +960,7 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
         armed: false,
         hovered: false,
         busy_phase: 0.0,
-        mapped: true,
+        mapped: map_now,
     })
 }
 
@@ -1028,26 +1045,34 @@ fn apply_gate_visibility(state: &mut HostState) {
         let show = state.relocate_mode
             || !btn.spec.visibility_gated
             || found.get(&id).copied().unwrap_or(false);
-        if show == btn.mapped {
-            continue;
-        }
         let (hit, face) = (btn.hit, btn.win);
         if show {
+            if btn.mapped {
+                continue;
+            }
             raise_hit_above_face(state.display, hit, face);
             shown += 1;
+            changed = true;
         } else {
-            if state.drag.as_ref().is_some_and(|d| d.id == id) {
-                cancel_drag(state);
-            }
-            if state.tip.as_ref().is_some_and(|t| t.for_id == id) {
-                hide_tip(state);
+            // Always Unmap when hidden — XUnmapWindow is idempotent. Skipping when
+            // `mapped` was already false left ghosts after MapRaised without a
+            // matching flag update (see relocate_mode comment above).
+            let was_mapped = btn.mapped;
+            if was_mapped {
+                if state.drag.as_ref().is_some_and(|d| d.id == id) {
+                    cancel_drag(state);
+                }
+                if state.tip.as_ref().is_some_and(|t| t.for_id == id) {
+                    hide_tip(state);
+                }
+                hidden += 1;
+                changed = true;
             }
             // SAFETY: HostState display invariant; face+hit created on this display.
             unsafe {
                 x_unmap(state.display, hit);
                 x_unmap(state.display, face);
             }
-            hidden += 1;
         }
         if let Some(btn) = state.buttons.get_mut(&id) {
             btn.mapped = show;
@@ -1056,7 +1081,6 @@ fn apply_gate_visibility(state: &mut HostState) {
                 btn.hovered = false;
             }
         }
-        changed = true;
     }
     if changed {
         note(&format!(
