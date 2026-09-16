@@ -75,6 +75,11 @@ pub fn play_delete_sound_if(enabled: bool, volume: f32) {
 /// compile-time plugin dir (Debian path in Ubuntu-built AppImages) and then
 /// hits `get_htstamp` / `get_trigger_htstamp` errors on that plugin.
 ///
+/// Flatpak is different: the Freedesktop runtime ships a coherent ALSA→libpulse
+/// stack, and libpulse sees Flatpak's `PULSE_SERVER` / X11 cookie. If the
+/// pure-Rust Pulse host cannot open (missing host cookie in the sandbox), we
+/// fall back to ALSA only when `FLATPAK_ID` / `/.flatpak-info` is present.
+///
 /// Streams are always F32: PipeWire sink defaults are often S24 (`I24`), which
 /// `SizedSample` does not expose as `i32` and was previously skipped.
 #[cfg(target_os = "linux")]
@@ -202,23 +207,24 @@ mod linux_pulse {
         ready_tx: &mpsc::Sender<Result<(NonZeroU16, NonZeroU32), &'static str>>,
     ) -> Result<(), &'static str> {
         mark_site("sound:play:before_host");
-        let host = cpal::host_from_id(cpal::HostId::PulseAudio).map_err(|e| {
-            cap_log(
-                "SOUND",
-                "fail",
-                &format!("stage=host error={}", slug(&e.to_string())),
-            );
-            "pulse-host"
-        })?;
-        let device = output_device(&host).ok_or("no-output-device")?;
+        let OutputBackend {
+            device,
+            host_label,
+            fixed_period,
+        } = open_output_backend()?;
         let (channels, sample_rate) = output_layout(&device)?;
         // `BufferSize::Default` is `u32::MAX` on the Pulse wire protocol;
         // pipewire-pulse then asks for ~2s in one callback (cpal #1190).
         let period_frames = (sample_rate.get() / 10).max(256);
+        let buffer_size = if fixed_period {
+            cpal::BufferSize::Fixed(period_frames)
+        } else {
+            cpal::BufferSize::Default
+        };
         let config = StreamConfig {
             channels: channels.get(),
             sample_rate: sample_rate.get(),
-            buffer_size: cpal::BufferSize::Fixed(period_frames),
+            buffer_size,
         };
         let voices = Arc::new(Mutex::new(Vec::<Voice>::new()));
         let failed = Arc::new(AtomicBool::new(false));
@@ -259,7 +265,7 @@ mod linux_pulse {
             "SOUND",
             "ok",
             &format!(
-                "host=pulse mixer=start rate={} ch={} period={period_frames}",
+                "host={host_label} mixer=start rate={} ch={} period={period_frames}",
                 config.sample_rate, config.channels
             ),
         );
@@ -284,6 +290,102 @@ mod linux_pulse {
         drop(stream);
         mark_site("sound:play:done");
         Ok(())
+    }
+
+    struct OutputBackend {
+        device: cpal::Device,
+        host_label: &'static str,
+        /// Pulse needs a fixed period; ALSA (Flatpak fallback) uses default.
+        fixed_period: bool,
+    }
+
+    fn open_output_backend() -> Result<OutputBackend, &'static str> {
+        match open_pulse_device() {
+            Ok(device) => Ok(OutputBackend {
+                device,
+                host_label: "pulse",
+                fixed_period: true,
+            }),
+            Err(pulse_err) => {
+                log_pulse_env(pulse_err);
+                if !in_flatpak() {
+                    return Err(pulse_err);
+                }
+                // Freedesktop runtime ALSA→libpulse sees Flatpak's PULSE_SERVER
+                // and X11 cookie; pure-Rust Pulse often cannot.
+                let device = open_alsa_device().map_err(|alsa_err| {
+                    cap_log(
+                        "SOUND",
+                        "fail",
+                        &format!("stage={pulse_err} fallback=alsa error={alsa_err}"),
+                    );
+                    pulse_err
+                })?;
+                cap_log(
+                    "SOUND",
+                    "ok",
+                    &format!("host=alsa via=flatpak-fallback after={pulse_err}"),
+                );
+                Ok(OutputBackend {
+                    device,
+                    host_label: "alsa",
+                    fixed_period: false,
+                })
+            }
+        }
+    }
+
+    fn open_pulse_device() -> Result<cpal::Device, &'static str> {
+        let host = cpal::host_from_id(cpal::HostId::PulseAudio).map_err(|e| {
+            cap_log(
+                "SOUND",
+                "fail",
+                &format!("stage=host error={}", slug(&e.to_string())),
+            );
+            "pulse-host"
+        })?;
+        output_device(&host).ok_or("no-output-device")
+    }
+
+    fn open_alsa_device() -> Result<cpal::Device, &'static str> {
+        let host = cpal::host_from_id(cpal::HostId::Alsa).map_err(|e| {
+            cap_log(
+                "SOUND",
+                "fail",
+                &format!("stage=alsa-host error={}", slug(&e.to_string())),
+            );
+            "alsa-host"
+        })?;
+        output_device(&host).ok_or("alsa-no-output-device")
+    }
+
+    fn in_flatpak() -> bool {
+        std::env::var_os("FLATPAK_ID").is_some() || std::path::Path::new("/.flatpak-info").exists()
+    }
+
+    /// Log socket/cookie *presence* only (no paths or cookie bytes).
+    fn log_pulse_env(stage: &str) {
+        let pulse_server = std::env::var_os("PULSE_SERVER").is_some();
+        let flatpak_sock = std::path::Path::new("/run/flatpak/pulse/native").exists();
+        let cookie = std::env::var_os("PULSE_COOKIE")
+            .map(|p| std::path::PathBuf::from(p).is_file())
+            .or_else(|| {
+                let home = std::env::var_os("HOME")?;
+                Some(
+                    std::path::PathBuf::from(home)
+                        .join(".config/pulse/cookie")
+                        .is_file(),
+                )
+            })
+            .unwrap_or(false);
+        cap_log(
+            "SOUND",
+            "fail",
+            &format!(
+                "stage={stage} pulse_server={pulse_server} flatpak_sock={flatpak_sock} cookie={cookie} flatpak={}",
+                in_flatpak()
+            ),
+        );
     }
 
     fn mix_into<T: SizedSample + FromSample<f32>>(out: &mut [T], voices: &mut Vec<Voice>) {
