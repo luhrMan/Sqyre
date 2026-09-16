@@ -185,8 +185,50 @@ fn metrics_for(kind: IconGridKind, count: usize, avail_w: f32) -> (IconCellStyle
     }
 }
 
+/// Top-right × badge rect for a cell body (extends slightly past the cell edge).
+fn remove_badge_rect(body: egui::Rect) -> egui::Rect {
+    egui::Rect::from_center_size(
+        egui::pos2(
+            body.right() - REMOVE_BTN * 0.35,
+            body.top() + REMOVE_BTN * 0.35,
+        ),
+        Vec2::splat(REMOVE_BTN),
+    )
+}
+
+/// Paint and interact the remove × badge over `body`.
+///
+/// Uses [`Sense::click_and_drag`] so, when registered *after* a parent
+/// [`Ui::dnd_drag_source`]'s drag sense, this badge wins both click and drag
+/// hit-testing over its rect (pure `Sense::drag` would otherwise steal the
+/// inner half of the badge and start a reorder drag).
+fn paint_remove_badge(ui: &mut egui::Ui, body: egui::Rect, target: &str) -> egui::Response {
+    let btn_rect = remove_badge_rect(body);
+    let btn_id = ui.id().with(("icon_rm", target));
+    let btn_resp = ui.interact(btn_rect, btn_id, Sense::click_and_drag());
+    let btn_fill = if btn_resp.hovered() {
+        Color32::from_rgb(180, 60, 60)
+    } else {
+        Color32::from_gray(100)
+    };
+    ui.painter()
+        .circle_filled(btn_rect.center(), REMOVE_BTN * 0.5, btn_fill);
+    crate::theme::paint_text_centered(
+        ui,
+        btn_rect,
+        "×",
+        egui::FontId::proportional(REMOVE_BTN * 0.75),
+        Color32::WHITE,
+    );
+    btn_resp
+}
+
 /// Paint a selectable icon cell (fixed square, no under-icon label).
 /// Returns `(cell_clicked, remove_clicked, cell_response)`.
+///
+/// When `style.show_remove` is true the × is painted here only if
+/// `paint_remove` is true; reorderable grids paint the badge after
+/// [`Ui::dnd_drag_source`] so it sits above the drag sense.
 fn icon_grid_cell_ex(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -194,6 +236,7 @@ fn icon_grid_cell_ex(
     target: &str,
     selected: bool,
     style: IconCellStyle,
+    paint_remove: bool,
 ) -> (bool, bool, egui::Response) {
     let IconCellStyle {
         cell,
@@ -202,7 +245,6 @@ fn icon_grid_cell_ex(
     } = style;
     let rounding = if show_remove { 3.0 } else { 4.0 };
 
-    let mut remove_clicked = false;
     let desired = Vec2::splat(cell);
     let (rect, resp) = ui.allocate_exact_size(desired, Sense::click_and_drag());
 
@@ -227,32 +269,8 @@ fn icon_grid_cell_ex(
     let tex = icons.for_target_or_fallback(ui.ctx(), catalog, target);
     crate::icon_cache::paint_icon_thumb_at(ui, &tex, body.center(), thumb, thumb, 0.0, None);
 
-    if show_remove {
-        let btn_rect = egui::Rect::from_center_size(
-            egui::pos2(
-                body.right() - REMOVE_BTN * 0.35,
-                body.top() + REMOVE_BTN * 0.35,
-            ),
-            Vec2::splat(REMOVE_BTN),
-        );
-        let btn_id = ui.id().with(("icon_rm", target));
-        let btn_resp = ui.interact(btn_rect, btn_id, Sense::click());
-        let btn_fill = if btn_resp.hovered() {
-            Color32::from_rgb(180, 60, 60)
-        } else {
-            Color32::from_gray(100)
-        };
-        ui.painter()
-            .circle_filled(btn_rect.center(), REMOVE_BTN * 0.5, btn_fill);
-        crate::theme::paint_text_centered(
-            ui,
-            btn_rect,
-            "×",
-            egui::FontId::proportional(REMOVE_BTN * 0.75),
-            Color32::WHITE,
-        );
-        remove_clicked = btn_resp.clicked();
-    }
+    let remove_clicked =
+        show_remove && paint_remove && paint_remove_badge(ui, body, target).clicked();
 
     attach_item_icon_tooltip(&resp, catalog, icons, target);
 
@@ -301,16 +319,23 @@ pub fn paint_even_icon_grid(
                     let sel = is_selected(target);
                     let cell_id = ui.id().with(("icon_dnd", k, target));
                     if reorderable {
+                        // Paint × after `dnd_drag_source`: that API registers
+                        // Sense::drag over the whole cell *after* contents, which
+                        // would otherwise steal the badge's inner hit area.
                         let drag = ui.dnd_drag_source(cell_id, k, |ui| {
-                            let (clicked, remove, _) =
-                                icon_grid_cell_ex(ui, catalog, icons, target, sel, style);
+                            let (clicked, _, cell) =
+                                icon_grid_cell_ex(ui, catalog, icons, target, sel, style, false);
                             if clicked {
                                 on_cell(k, target);
                             }
-                            if remove {
-                                on_remove(k);
-                            }
+                            cell
                         });
+                        if style.show_remove
+                            && !ui.ctx().is_being_dragged(cell_id)
+                            && paint_remove_badge(ui, drag.inner.rect, target).clicked()
+                        {
+                            on_remove(k);
+                        }
                         if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
                             let from = *payload;
                             if from != k {
@@ -326,7 +351,7 @@ pub fn paint_even_icon_grid(
                         }
                     } else {
                         let (clicked, remove, _) =
-                            icon_grid_cell_ex(ui, catalog, icons, target, sel, style);
+                            icon_grid_cell_ex(ui, catalog, icons, target, sel, style, true);
                         if clicked {
                             on_cell(k, target);
                         }
