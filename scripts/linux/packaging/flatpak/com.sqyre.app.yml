@@ -13,6 +13,12 @@
 # Offline crates: keep cargo-sources.json in sync with Cargo.lock via
 #   scripts/linux/packaging/flatpak/generate-cargo-sources.sh
 #
+# Efficiency notes (local rebuilds):
+#   - leptonica / tesseract / cargo-vendor are archive-sourced → flatpak-builder cache
+#   - sqyre uses narrow type:dir sources (not the whole repo; dir sources never cache)
+#   - build-flatpak.sh passes --ccache; Docker fallback persists runtimes under
+#     .flatpak-builder/docker-home
+#
 # Flathub finish-arg rationale (automation / screen capture):
 #   --socket=x11          Overlay buttons / grab remain X11 (XWayland); fallback-x11
 #                         would omit X11 on pure Wayland sessions and break overlays.
@@ -21,6 +27,12 @@
 #                         Portal GlobalShortcuts is probed but not the main path yet.
 #   --device=dri          GPU for egui/wgpu.
 #   --socket=pulseaudio   Cue audio (cpal Pulse; covers PipeWire-pulse).
+#   --filesystem=xdg-config/pulse:ro
+#                         Host Pulse/PipeWire cookie (~/.config/pulse/cookie).
+#                         cpal's pure-Rust Pulse client does not read the X11
+#                         PULSE_COOKIE property the way libpulse does, and
+#                         Flatpak HOME is not the host home — without this,
+#                         AUTH fails on cookie-required servers.
 #   --share=network       Optional tessdata download; no in-app binary self-replace.
 #   --filesystem=xdg-run/at-spi:ro
 #                         GNOME Wayland window list/focus uses AT-SPI (Mutter has no
@@ -29,11 +41,19 @@
 #                         host bus so sqyre can connect unfiltered.
 #   --talk-name=org.a11y.Bus
 #                         Session-bus org.a11y.Bus.IsEnabled (toolkit a11y on).
+#   --talk-name=org.kde.StatusNotifierWatcher
+#                         System tray (ksni StatusNotifierItem). Without this,
+#                         RegisterStatusNotifierItem fails with ServiceUnknown.
+#                         Do not add --own-name=org.kde.* — tray.rs uses
+#                         disable_dbus_name(true) under Flatpak (unique bus name).
 #   --persist=.sqyre      Sqyre stores db/settings under $HOME/.sqyre (not XDG).
 #                         Without this, Flatpak puts that path on a tmpfs and
 #                         wipes macros / portal restore tokens every exit.
 #                         Host path: ~/.var/app/com.sqyre.app/.sqyre
-#   No --filesystem=home  Keep host ~/.sqyre separate from the Flatpak copy.
+#   No --filesystem=home  Keep host ~/.sqyre separate by default. Users can
+#                         opt in via Settings → Data → Use host ~/.sqyre…
+#                         (portal grant) or: flatpak override --user
+#                         --filesystem=~/.sqyre:create com.sqyre.app
 #   ScreenCast / RemoteDesktop / FileChooser: xdg-desktop-portal (implicit).
 #   Do not bundle a private libpipewire that shadows host/runtime SPA plugins.
 
@@ -52,16 +72,22 @@ finish-args:
   - --socket=x11
   - --socket=wayland
   - --socket=pulseaudio
+  - --filesystem=xdg-config/pulse:ro
   - --device=dri
   - --device=input
   - --filesystem=xdg-run/at-spi:ro
   - --talk-name=org.a11y.Bus
   - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
   - --persist=.sqyre
   - --env=TESSDATA_PREFIX=/app/share/tessdata
   - --env=SQYRE_TESSDATA=/app/share/tessdata
 
 build-options:
+  # Skip debuginfo split (eu-strip + extension) — large wall-time win for
+  # leptonica/tesseract/Rust; ship stripped-enough release binaries without
+  # a separate .Debug extension.
+  no-debuginfo: true
   append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm21/bin
   env:
     CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
@@ -91,8 +117,10 @@ modules:
         PKG_CONFIG_PATH: /app/lib/pkgconfig:/app/lib64/pkgconfig
     build-commands:
       - cmake -S . -B _build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${FLATPAK_DEST} -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON -DBUILD_TRAINING_TOOLS=OFF
-      - ninja -C _build
-      - ninja -C _build install
+      # Honor flatpak-builder --jobs (default nproc; build-flatpak.sh uses ~50%).
+      # Use $FLATPAK_BUILDER_N_JOBS (shell), not ${…} — builder owns ${FLATPAK_*}.
+      - ninja -C _build -j$FLATPAK_BUILDER_N_JOBS
+      - ninja -C _build -j$FLATPAK_BUILDER_N_JOBS install
       - |
         set -euo pipefail
         # Belt-and-suspenders: if anything still landed in lib64, move into /app/lib.
@@ -110,6 +138,21 @@ modules:
         url: https://github.com/tesseract-ocr/tesseract/archive/5.5.0.tar.gz
         sha256: f2fb34ca035b6d087a42875a35a7a5c4155fa9979c6132365b1e5a28ebc3fc11
 
+  # Offline crates only (archive sources) — cacheable across rebuilds.
+  # Dir-sourced app modules always rebuild; keeping vendor separate avoids
+  # re-extracting ~1300 crates every `make flatpak`.
+  - name: cargo-vendor
+    buildsystem: simple
+    build-commands:
+      - |
+        set -euo pipefail
+        install -d "${FLATPAK_DEST}/lib/sqyre-cargo"
+        cp -a --reflink=auto cargo/. "${FLATPAK_DEST}/lib/sqyre-cargo/"
+    cleanup:
+      - /lib/sqyre-cargo
+    sources:
+      - cargo-sources.json
+
   - name: sqyre
     buildsystem: simple
     build-options:
@@ -124,9 +167,17 @@ modules:
       - |
         set -euo pipefail
         export PKG_CONFIG_PATH="${FLATPAK_DEST}/lib/pkgconfig:${FLATPAK_DEST}/lib64/pkgconfig:${PKG_CONFIG_PATH:-}"
-        cargo --offline fetch --manifest-path Cargo.toml --verbose
-        cargo --offline build -p sqyre-app --release --features portal-capture --verbose
-        cargo --offline build -p sqyre-probe --release --features portal-capture --verbose
+        # Restore vendored crates from the cacheable cargo-vendor module.
+        if [ ! -d "${FLATPAK_DEST}/lib/sqyre-cargo" ]; then
+          echo "ERROR: missing ${FLATPAK_DEST}/lib/sqyre-cargo (cargo-vendor module)" >&2
+          exit 1
+        fi
+        rm -rf cargo
+        cp -a --reflink=auto "${FLATPAK_DEST}/lib/sqyre-cargo" cargo
+        # One cargo invocation builds both bins (shared deps compile once).
+        # -j: cargo ignores make -j; use flatpak-builder's job budget.
+        cargo --offline build -p sqyre-app -p sqyre-probe --release --features portal-capture \
+          -j"$FLATPAK_BUILDER_N_JOBS"
       - install -Dm755 target/release/sqyre ${FLATPAK_DEST}/bin/sqyre
       - install -Dm755 target/release/sqyre-probe ${FLATPAK_DEST}/bin/sqyre-probe
       - |
@@ -148,10 +199,10 @@ modules:
           exit 1
         fi
         install -Dm644 "$ICON" "${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png"
-      - install -Dm644 scripts/linux/packaging/flatpak/com.sqyre.app.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 com.sqyre.app.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
       - |
         set -euo pipefail
-        META=scripts/linux/packaging/flatpak/com.sqyre.app.metainfo.xml
+        META=com.sqyre.app.metainfo.xml
         META_OUT="${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml"
         mkdir -p "$(dirname "$META_OUT")"
         # Stamp release version into AppStream when building a release Flatpak.
@@ -172,22 +223,24 @@ modules:
       - find "${FLATPAK_DEST}" -type f -exec chmod u=rwX,go=rX {} +
       - find "${FLATPAK_DEST}" -type d -exec chmod u=rwx,go=rx {} +
     sources:
-      - cargo-sources.json
+      # Prefer narrow dirs/files — type:dir is never cached and was copying the
+      # whole repo (docs, scripts leftovers, etc.) on every rebuild.
       - type: dir
-        path: ../../../..
-        skip:
-          - .cache
-          - .cargo-home
-          - .flatpak-builder
-          - .git
-          - .rustup-home
-          - bin
-          - scripts/linux/packaging/flatpak/build-dir
-          - scripts/linux/packaging/flatpak/repo
-          - scripts/linux/packaging/flatpak/.flatpak-builder
-          - target
-          - target-dhat
-          - docs/blog
+        path: ../../../../crates
+        dest: crates
+      - type: dir
+        path: ../../../../assets
+        dest: assets
+      - type: file
+        path: ../../../../Cargo.toml
+      - type: file
+        path: ../../../../Cargo.lock
+      - type: file
+        path: ../../../../rust-toolchain.toml
+      - type: file
+        path: com.sqyre.app.desktop
+      - type: file
+        path: com.sqyre.app.metainfo.xml
 cleanup-commands:
   - find /app -type f -exec chmod u=rwX,go=rX {} +
   - find /app -type d -exec chmod u=rwx,go=rx {} +
