@@ -37,6 +37,129 @@ enum LastAttempt {
     Stale(Instant),
 }
 
+/// Deadline for keeping a gated button visible without a newer portal frame.
+struct VisHold {
+    until: Instant,
+}
+
+/// Worker-local hold / stale-block state for the shared found-map.
+struct GateVisTracker {
+    holds: HashMap<String, VisHold>,
+    /// After a stale-frame expiry, require a fresh hit before showing again (same
+    /// frozen portal pixels must not restart the hold).
+    needs_fresh: HashMap<String, ()>,
+}
+
+impl GateVisTracker {
+    fn new() -> Self {
+        Self {
+            holds: HashMap::new(),
+            needs_fresh: HashMap::new(),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.holds.clear();
+        self.needs_fresh.clear();
+    }
+
+    /// Apply one image-gate poll to the found-map.
+    ///
+    /// Stale portal frames (`fresh=false`) must not keep buttons mapped indefinitely:
+    /// a hold started by a stale hit expires after [`stale_hold`], and then the id is
+    /// blocked until a fresh hit (same frozen pixels cannot re-arm the hold).
+    ///
+    /// Returns a diag tag when visibility flips: `hit`, `miss`, or `stale-expire`.
+    fn apply_match(
+        &mut self,
+        found: &Mutex<HashMap<String, bool>>,
+        id: &str,
+        matched: bool,
+        fresh: bool,
+        interval_ms: u64,
+        now: Instant,
+    ) -> Option<&'static str> {
+        if matched && fresh {
+            self.needs_fresh.remove(id);
+            self.holds.insert(
+                id.to_string(),
+                VisHold {
+                    until: now + stale_hold(interval_ms),
+                },
+            );
+            let prev = found.lock().insert(id.to_string(), true);
+            return (prev != Some(true)).then_some("hit");
+        }
+        if !matched {
+            self.needs_fresh.remove(id);
+            self.holds.remove(id);
+            let prev = found.lock().insert(id.to_string(), false);
+            return (prev == Some(true)).then_some("miss");
+        }
+        // Stale hit — frozen portal cache still matches the gate template.
+        if self.needs_fresh.contains_key(id) {
+            let prev = found.lock().insert(id.to_string(), false);
+            self.holds.remove(id);
+            return (prev == Some(true)).then_some("stale-expire");
+        }
+        match self.holds.get(id) {
+            Some(h) if now < h.until => {
+                let prev = found.lock().insert(id.to_string(), true);
+                (prev != Some(true)).then_some("hit")
+            }
+            Some(_) => {
+                // Hold expired without a fresh renew.
+                self.holds.remove(id);
+                self.needs_fresh.insert(id.to_string(), ());
+                let prev = found.lock().insert(id.to_string(), false);
+                (prev == Some(true)).then_some("stale-expire")
+            }
+            None => {
+                // Optimistic brief show from stale; cannot renew without fresh.
+                self.holds.insert(
+                    id.to_string(),
+                    VisHold {
+                        until: now + stale_hold(interval_ms),
+                    },
+                );
+                let prev = found.lock().insert(id.to_string(), true);
+                (prev != Some(true)).then_some("hit")
+            }
+        }
+    }
+
+    /// Capture/match failed — hide and require a later fresh hit.
+    fn mark_unverified(&mut self, found: &Mutex<HashMap<String, bool>>, id: &str) -> bool {
+        self.holds.remove(id);
+        self.needs_fresh.insert(id.to_string(), ());
+        found.lock().insert(id.to_string(), false) == Some(true)
+    }
+
+    /// Drop stale hits for buttons we are not allowed to poll (wrong focus).
+    fn clear_ineligible(
+        &mut self,
+        found: &Mutex<HashMap<String, bool>>,
+        buttons: &[OverlayButtonConfig],
+        focus: Option<&WindowInfo>,
+        catalog: &ProgramCatalog,
+    ) -> usize {
+        let mut map = found.lock();
+        let mut n = 0usize;
+        for btn in buttons {
+            if poll_eligible(btn, focus, catalog) {
+                continue;
+            }
+            self.holds.remove(&btn.id);
+            self.needs_fresh.remove(&btn.id);
+            if map.get(&btn.id).copied() == Some(true) {
+                map.insert(btn.id.clone(), false);
+                n += 1;
+            }
+        }
+        n
+    }
+}
+
 #[derive(Clone)]
 struct PollSnapshot {
     buttons: Vec<OverlayButtonConfig>,
@@ -103,8 +226,18 @@ impl OverlayVisibilityPoller {
     }
 
     /// Pause image-gate polling while a macro is running.
+    ///
+    /// On resume, clear prior hits so gated buttons hide until a fresh poll
+    /// confirms the gate is still on screen (avoids stale `found=true` after
+    /// the gate left during the macro).
     pub fn set_paused(&self, paused: bool) {
-        self.inner.paused.store(paused, Ordering::Relaxed);
+        let was = self.inner.paused.swap(paused, Ordering::Relaxed);
+        if was && !paused {
+            let cleared = clear_found_hits(&self.inner.found);
+            if cleared > 0 {
+                note(&format!("overlay-vis: resume clear-found n={cleared}"));
+            }
+        }
     }
 
     #[cfg(test)]
@@ -185,9 +318,45 @@ impl OverlayVisibilityPoller {
     }
 }
 
+fn clear_found_hits(found: &Mutex<HashMap<String, bool>>) -> usize {
+    let mut map = found.lock();
+    let mut n = 0usize;
+    for v in map.values_mut() {
+        if *v {
+            *v = false;
+            n += 1;
+        }
+    }
+    n
+}
+
+/// Max time a button may stay up on stale portal pixels without a fresh frame.
+fn stale_hold(interval_ms: u64) -> Duration {
+    Duration::from_millis(interval_ms.clamp(1, 2_000))
+}
+
+fn focus_label(focus: Option<&WindowInfo>) -> String {
+    let Some(w) = focus else {
+        return "(none)".into();
+    };
+    let name = w.process_name.trim();
+    let path = w.process_path.trim();
+    let title = w.title.trim();
+    if !name.is_empty() {
+        name.to_string()
+    } else if !path.is_empty() {
+        path.to_string()
+    } else if !title.is_empty() {
+        format!("title:{title}")
+    } else {
+        "(empty)".into()
+    }
+}
+
 fn vis_worker_loop(inner: Arc<Inner>) {
     note("overlay-vis: worker started");
     let mut last_poll: HashMap<String, LastAttempt> = HashMap::new();
+    let mut tracker = GateVisTracker::new();
     let mut last_foreign: Option<WindowInfo> = None;
     let mut rr = 0usize;
     let mut paused_logged = false;
@@ -203,6 +372,7 @@ fn vis_worker_loop(inner: Arc<Inner>) {
         if paused_logged {
             note("overlay-vis: resume");
             paused_logged = false;
+            tracker.clear();
         }
         let snap = inner.snapshot.lock().clone();
         let Some(snap) = snap else {
@@ -218,6 +388,21 @@ fn vis_worker_loop(inner: Arc<Inner>) {
             last_foreign = snap.last_foreign.clone();
         }
         let focus = resolve_poll_focus(&mut last_foreign);
+        let cleared = tracker.clear_ineligible(
+            &inner.found,
+            &snap.buttons,
+            focus.as_ref(),
+            &snap.catalog,
+        );
+        if cleared > 0 {
+            note(&format!(
+                "overlay-vis: clear-ineligible n={cleared} focus={}",
+                focus_label(focus.as_ref())
+            ));
+            if let Some(ctx) = inner.wake.lock().clone() {
+                nudge_overlay_repaint(ctx);
+            }
+        }
         let now = Instant::now();
         if let Some((idx, btn)) = next_due(
             &snap.buttons,
@@ -229,10 +414,16 @@ fn vis_worker_loop(inner: Arc<Inner>) {
         ) {
             rr = idx.wrapping_add(1);
             let t0 = Instant::now();
-            let Some((found, fresh)) =
+            let Some((matched, fresh)) =
                 match_once(&snap.catalog, &btn.visibility_gate, snap.close_dist)
             else {
                 last_poll.insert(btn.id.clone(), LastAttempt::Stale(Instant::now()));
+                if tracker.mark_unverified(&inner.found, &btn.id) {
+                    note(&format!("overlay-vis: unverified-clear id={}", btn.id));
+                    if let Some(ctx) = inner.wake.lock().clone() {
+                        nudge_overlay_repaint(ctx);
+                    }
+                }
                 continue;
             };
             let ms = t0.elapsed().as_millis();
@@ -244,12 +435,15 @@ fn vis_worker_loop(inner: Arc<Inner>) {
                     LastAttempt::Stale(Instant::now())
                 },
             );
-            let prev = {
-                let mut map = inner.found.lock();
-                map.insert(btn.id.clone(), found)
-            };
-            if prev != Some(found) {
-                let gate = if found { "hit" } else { "miss" };
+            let now = Instant::now();
+            if let Some(gate) = tracker.apply_match(
+                &inner.found,
+                &btn.id,
+                matched,
+                fresh,
+                btn.visibility_gate.interval_ms,
+                now,
+            ) {
                 mark_site(&format!("overlay-vis:{gate}:{}", btn.id));
                 note(&format!(
                     "overlay-vis: {gate} id={} ms={ms} interval={} fresh={fresh}",
@@ -574,6 +768,132 @@ mod tests {
         assert!(p.is_paused());
         p.set_paused(false);
         assert!(!p.is_paused());
+    }
+
+    #[test]
+    fn resume_clears_stale_found_hits() {
+        let p = OverlayVisibilityPoller::new();
+        p.found_map().lock().insert("a".into(), true);
+        p.found_map().lock().insert("b".into(), false);
+        p.set_paused(true);
+        assert_eq!(p.found_map().lock().get("a").copied(), Some(true));
+        p.set_paused(false);
+        assert_eq!(p.found_map().lock().get("a").copied(), Some(false));
+        assert_eq!(p.found_map().lock().get("b").copied(), Some(false));
+    }
+
+    #[test]
+    fn clear_ineligible_drops_stale_hits() {
+        let mut btn = OverlayButtonConfig::new("a", "Mistfall Hunter");
+        btn.enabled = true;
+        btn.macro_name = "m".into();
+        btn.visibility_gate.mode = OverlayVisibilityMode::ShowWhenFound;
+        let catalog = ProgramCatalog::default();
+        let found = Mutex::new(HashMap::from([("a".into(), true)]));
+        let mut tracker = GateVisTracker::new();
+        let other = WindowInfo {
+            title: "Firefox".into(),
+            process_name: "firefox".into(),
+            process_path: "/usr/bin/firefox".into(),
+            icon: None,
+        };
+        let n = tracker.clear_ineligible(&found, &[btn], Some(&other), &catalog);
+        assert_eq!(n, 1);
+        assert_eq!(found.lock().get("a").copied(), Some(false));
+    }
+
+    #[test]
+    fn stale_hit_expires_and_blocks_rearm_until_fresh() {
+        let found = Mutex::new(HashMap::new());
+        let mut tracker = GateVisTracker::new();
+        let t0 = Instant::now();
+
+        assert_eq!(
+            tracker.apply_match(&found, "a", true, false, 1_000, t0),
+            Some("hit")
+        );
+        assert_eq!(found.lock().get("a").copied(), Some(true));
+
+        // Within hold — stay up, no flip.
+        assert_eq!(
+            tracker.apply_match(
+                &found,
+                "a",
+                true,
+                false,
+                1_000,
+                t0 + Duration::from_millis(500)
+            ),
+            None
+        );
+        assert_eq!(found.lock().get("a").copied(), Some(true));
+
+        // Past hold — expire and require fresh.
+        assert_eq!(
+            tracker.apply_match(
+                &found,
+                "a",
+                true,
+                false,
+                1_000,
+                t0 + Duration::from_millis(1_001)
+            ),
+            Some("stale-expire")
+        );
+        assert_eq!(found.lock().get("a").copied(), Some(false));
+
+        // Same frozen frame must not re-show.
+        assert_eq!(
+            tracker.apply_match(
+                &found,
+                "a",
+                true,
+                false,
+                1_000,
+                t0 + Duration::from_millis(1_050)
+            ),
+            None
+        );
+        assert_eq!(found.lock().get("a").copied(), Some(false));
+
+        // Fresh hit re-arms.
+        assert_eq!(
+            tracker.apply_match(
+                &found,
+                "a",
+                true,
+                true,
+                1_000,
+                t0 + Duration::from_millis(1_100)
+            ),
+            Some("hit")
+        );
+        assert_eq!(found.lock().get("a").copied(), Some(true));
+    }
+
+    #[test]
+    fn fresh_hit_renews_hold_across_stale_polls() {
+        let found = Mutex::new(HashMap::new());
+        let mut tracker = GateVisTracker::new();
+        let t0 = Instant::now();
+
+        assert_eq!(
+            tracker.apply_match(&found, "a", true, true, 1_000, t0),
+            Some("hit")
+        );
+        // Stale hit still inside renewed hold.
+        assert_eq!(
+            tracker.apply_match(
+                &found,
+                "a",
+                true,
+                false,
+                1_000,
+                t0 + Duration::from_millis(900)
+            ),
+            None
+        );
+        assert_eq!(found.lock().get("a").copied(), Some(true));
     }
 
     #[test]
