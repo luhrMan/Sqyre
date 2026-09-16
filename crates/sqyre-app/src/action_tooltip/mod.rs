@@ -590,8 +590,8 @@ fn show_edit_window(
     let mut open = true;
 
     // Stable Area id (also keys egui's resize state as `area_id.with("resize")`).
-    // Bump salt when changing default/min sizing so persisted locked sizes are discarded.
-    let area_id = egui::Id::new(("action_edit_tip", "grow_v11", action_id));
+    // Bump salt when changing default/min/max sizing so persisted locked sizes are discarded.
+    let area_id = egui::Id::new(("action_edit_tip", "grow_v12", action_id));
     let (fitting, fit_fields_h) = match state {
         TooltipState::Edit(edit) => (edit.auto_fit, edit.fields_height),
         _ => (false, 0.0),
@@ -607,8 +607,8 @@ fn show_edit_window(
 
     // Popup chrome (no title bar). Height is driven by `fit_min_h` while
     // `auto_fit` is set. Default width matches the view tip; user can drag
-    // wider (up to EDIT_TIP_MAX_W) or narrower (down to min_size).
-    const EDIT_TIP_MAX_W: f32 = 560.0;
+    // wider (up to the dialog edge margin) or narrower (down to min_size).
+    // `fit_dialog_popup` already caps max_size to `dialog_constrain_rect`.
     crate::widgets::fit_dialog_popup(
         egui::Window::new(label)
             .id(area_id)
@@ -625,10 +625,6 @@ fn show_edit_window(
             ),
         ctx,
     )
-    .max_size(egui::vec2(
-        screen.width().min(EDIT_TIP_MAX_W),
-        screen.height(),
-    ))
     .show(ctx, |ui| {
         crate::widgets::fill_resize_body(ui, |ui| {
             let (err, save_enabled) = match state {
