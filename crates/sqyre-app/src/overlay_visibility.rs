@@ -39,14 +39,16 @@ enum LastAttempt {
 
 /// Deadline for keeping a gated button visible without a newer portal frame.
 struct VisHold {
-    until: Instant,
+    /// Must see a fresh hit before this, or a continued match is treated as a
+    /// frozen pre-leave portal frame (anti-stuck).
+    renew_by: Instant,
 }
 
 /// Worker-local hold / stale-block state for the shared found-map.
 struct GateVisTracker {
     holds: HashMap<String, VisHold>,
-    /// After a stale-frame expiry, require a fresh hit before showing again (same
-    /// frozen portal pixels must not restart the hold).
+    /// After a stale-frame anti-stuck expiry, require a fresh hit before showing
+    /// again (same frozen portal pixels must not restart the hold).
     needs_fresh: HashMap<String, ()>,
 }
 
@@ -65,9 +67,12 @@ impl GateVisTracker {
 
     /// Apply one image-gate poll to the found-map.
     ///
-    /// Stale portal frames (`fresh=false`) must not keep buttons mapped indefinitely:
-    /// a hold started by a stale hit expires after [`stale_hold`], and then the id is
-    /// blocked until a fresh hit (same frozen pixels cannot re-arm the hold).
+    /// - **Miss** → hide immediately (gate gone on current pixels).
+    /// - **Fresh hit** → show and renew the anti-stuck deadline.
+    /// - **Stale hit** → keep showing while still within the deadline (portal HUDs
+    ///   often idle with `fresh=false` while the gate is still on screen). Expiring
+    ///   at the poll interval caused flicker. Only after [`anti_stuck_hold`] without
+    ///   a fresh frame do we hide and require a fresh re-arm.
     ///
     /// Returns a diag tag when visibility flips: `hit`, `miss`, or `stale-expire`.
     fn apply_match(
@@ -84,7 +89,7 @@ impl GateVisTracker {
             self.holds.insert(
                 id.to_string(),
                 VisHold {
-                    until: now + stale_hold(interval_ms),
+                    renew_by: now + anti_stuck_hold(interval_ms),
                 },
             );
             let prev = found.lock().insert(id.to_string(), true);
@@ -96,30 +101,31 @@ impl GateVisTracker {
             let prev = found.lock().insert(id.to_string(), false);
             return (prev == Some(true)).then_some("miss");
         }
-        // Stale hit — frozen portal cache still matches the gate template.
+        // Stale hit — cache still matches; keep up unless anti-stuck expired.
         if self.needs_fresh.contains_key(id) {
             let prev = found.lock().insert(id.to_string(), false);
             self.holds.remove(id);
             return (prev == Some(true)).then_some("stale-expire");
         }
         match self.holds.get(id) {
-            Some(h) if now < h.until => {
+            Some(h) if now < h.renew_by => {
                 let prev = found.lock().insert(id.to_string(), true);
                 (prev != Some(true)).then_some("hit")
             }
             Some(_) => {
-                // Hold expired without a fresh renew.
+                // No fresh frame for anti_stuck_hold while still matching — frozen
+                // portal after the gate likely left.
                 self.holds.remove(id);
                 self.needs_fresh.insert(id.to_string(), ());
                 let prev = found.lock().insert(id.to_string(), false);
                 (prev == Some(true)).then_some("stale-expire")
             }
             None => {
-                // Optimistic brief show from stale; cannot renew without fresh.
+                // Optimistic show from stale; clock starts — need fresh to renew.
                 self.holds.insert(
                     id.to_string(),
                     VisHold {
-                        until: now + stale_hold(interval_ms),
+                        renew_by: now + anti_stuck_hold(interval_ms),
                     },
                 );
                 let prev = found.lock().insert(id.to_string(), true);
@@ -330,9 +336,17 @@ fn clear_found_hits(found: &Mutex<HashMap<String, bool>>) -> usize {
     n
 }
 
-/// Max time a button may stay up on stale portal pixels without a fresh frame.
-fn stale_hold(interval_ms: u64) -> Duration {
-    Duration::from_millis(interval_ms.clamp(1, 2_000))
+/// How long a button may stay up on hits without a fresh portal frame.
+///
+/// Must be well above the gate poll interval: portal HUDs often report
+/// `fresh=false` for many polls while the gate is still visible, and expiring
+/// at ~interval caused show/hide flicker. Still bounded so a stream frozen on a
+/// pre-leave frame cannot keep buttons forever.
+fn anti_stuck_hold(interval_ms: u64) -> Duration {
+    let from_interval = Duration::from_millis(interval_ms.saturating_mul(15).max(1));
+    from_interval
+        .max(Duration::from_secs(15))
+        .min(Duration::from_secs(60))
 }
 
 fn focus_label(focus: Option<&WindowInfo>) -> String {
@@ -388,12 +402,8 @@ fn vis_worker_loop(inner: Arc<Inner>) {
             last_foreign = snap.last_foreign.clone();
         }
         let focus = resolve_poll_focus(&mut last_foreign);
-        let cleared = tracker.clear_ineligible(
-            &inner.found,
-            &snap.buttons,
-            focus.as_ref(),
-            &snap.catalog,
-        );
+        let cleared =
+            tracker.clear_ineligible(&inner.found, &snap.buttons, focus.as_ref(), &snap.catalog);
         if cleared > 0 {
             note(&format!(
                 "overlay-vis: clear-ineligible n={cleared} focus={}",
@@ -803,10 +813,36 @@ mod tests {
     }
 
     #[test]
-    fn stale_hit_expires_and_blocks_rearm_until_fresh() {
+    fn stale_hit_keeps_showing_across_poll_interval() {
         let found = Mutex::new(HashMap::new());
         let mut tracker = GateVisTracker::new();
         let t0 = Instant::now();
+
+        assert_eq!(
+            tracker.apply_match(&found, "a", true, true, 1_000, t0),
+            Some("hit")
+        );
+        // Next poll after interval with fresh=false must NOT expire (flicker bug).
+        assert_eq!(
+            tracker.apply_match(
+                &found,
+                "a",
+                true,
+                false,
+                1_000,
+                t0 + Duration::from_millis(1_150)
+            ),
+            None
+        );
+        assert_eq!(found.lock().get("a").copied(), Some(true));
+    }
+
+    #[test]
+    fn stale_hit_expires_after_anti_stuck_and_blocks_rearm() {
+        let found = Mutex::new(HashMap::new());
+        let mut tracker = GateVisTracker::new();
+        let t0 = Instant::now();
+        let hold = anti_stuck_hold(1_000);
 
         assert_eq!(
             tracker.apply_match(&found, "a", true, false, 1_000, t0),
@@ -814,7 +850,7 @@ mod tests {
         );
         assert_eq!(found.lock().get("a").copied(), Some(true));
 
-        // Within hold — stay up, no flip.
+        // Within anti-stuck — stay up.
         assert_eq!(
             tracker.apply_match(
                 &found,
@@ -822,13 +858,13 @@ mod tests {
                 true,
                 false,
                 1_000,
-                t0 + Duration::from_millis(500)
+                t0 + hold - Duration::from_millis(1)
             ),
             None
         );
         assert_eq!(found.lock().get("a").copied(), Some(true));
 
-        // Past hold — expire and require fresh.
+        // Past anti-stuck without fresh — expire and require fresh.
         assert_eq!(
             tracker.apply_match(
                 &found,
@@ -836,7 +872,7 @@ mod tests {
                 true,
                 false,
                 1_000,
-                t0 + Duration::from_millis(1_001)
+                t0 + hold + Duration::from_millis(1)
             ),
             Some("stale-expire")
         );
@@ -850,7 +886,7 @@ mod tests {
                 true,
                 false,
                 1_000,
-                t0 + Duration::from_millis(1_050)
+                t0 + hold + Duration::from_millis(50)
             ),
             None
         );
@@ -864,7 +900,7 @@ mod tests {
                 true,
                 true,
                 1_000,
-                t0 + Duration::from_millis(1_100)
+                t0 + hold + Duration::from_millis(100)
             ),
             Some("hit")
         );
@@ -872,10 +908,11 @@ mod tests {
     }
 
     #[test]
-    fn fresh_hit_renews_hold_across_stale_polls() {
+    fn fresh_hit_renews_anti_stuck_across_stale_polls() {
         let found = Mutex::new(HashMap::new());
         let mut tracker = GateVisTracker::new();
         let t0 = Instant::now();
+        let hold = anti_stuck_hold(1_000);
 
         assert_eq!(
             tracker.apply_match(&found, "a", true, true, 1_000, t0),
@@ -889,11 +926,52 @@ mod tests {
                 true,
                 false,
                 1_000,
-                t0 + Duration::from_millis(900)
+                t0 + hold - Duration::from_millis(1)
             ),
             None
         );
         assert_eq!(found.lock().get("a").copied(), Some(true));
+
+        // Fresh renews the deadline.
+        assert_eq!(
+            tracker.apply_match(&found, "a", true, true, 1_000, t0 + hold),
+            None
+        );
+        assert_eq!(
+            tracker.apply_match(
+                &found,
+                "a",
+                true,
+                false,
+                1_000,
+                t0 + hold + hold - Duration::from_millis(1)
+            ),
+            None
+        );
+        assert_eq!(found.lock().get("a").copied(), Some(true));
+    }
+
+    #[test]
+    fn miss_hides_immediately() {
+        let found = Mutex::new(HashMap::new());
+        let mut tracker = GateVisTracker::new();
+        let t0 = Instant::now();
+        assert_eq!(
+            tracker.apply_match(&found, "a", true, true, 1_000, t0),
+            Some("hit")
+        );
+        assert_eq!(
+            tracker.apply_match(
+                &found,
+                "a",
+                false,
+                false,
+                1_000,
+                t0 + Duration::from_millis(10)
+            ),
+            Some("miss")
+        );
+        assert_eq!(found.lock().get("a").copied(), Some(false));
     }
 
     #[test]
