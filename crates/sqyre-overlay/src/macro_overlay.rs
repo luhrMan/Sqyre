@@ -59,7 +59,7 @@ pub struct MacroOverlay {
     focus_slot: Arc<Mutex<FocusSlot>>,
     focus_poller: Mutex<Option<(Arc<AtomicBool>, JoinHandle<()>)>>,
     last_focus_err_log: Option<Instant>,
-    last_sync_sig: Option<(usize, bool, bool, usize, usize)>,
+    last_sync_sig: Option<(usize, bool, bool, usize, usize, bool)>,
     /// Shared with the X11 host + run worker so busy does not wait on egui frames.
     running_macro: Arc<Mutex<Option<String>>>,
     #[cfg(target_os = "linux")]
@@ -291,10 +291,14 @@ impl MacroOverlay {
             let gated = button_is_focus_gated(btn);
             if gated {
                 any_gated = true;
-                let win = focus_for_overlay_button(btn, focus.as_ref(), last_foreign.as_ref());
-                if !keep_focus_gated_button(btn, catalog, win) {
-                    gated_skips += 1;
-                    continue;
+                // Overlay editor open: keep every enabled button hosted for relocate,
+                // even when OS focus is on another monitor/app (ungrabbed drag).
+                if !relocate {
+                    let win = focus_for_overlay_button(btn, focus.as_ref(), last_foreign.as_ref());
+                    if !keep_focus_gated_button(btn, catalog, win) {
+                        gated_skips += 1;
+                        continue;
+                    }
                 }
             }
             let busy = button_is_busy(btn, running_macro);
@@ -322,7 +326,14 @@ impl MacroOverlay {
             shown += 1;
         }
 
-        let sig = (shown, any_gated, preview.is_some(), busy_shown, gated_skips);
+        let sig = (
+            shown,
+            any_gated,
+            preview.is_some(),
+            busy_shown,
+            gated_skips,
+            relocate,
+        );
         if self.last_sync_sig != Some(sig) {
             self.last_sync_sig = Some(sig);
             let focus_label = focus
@@ -330,7 +341,7 @@ impl MacroOverlay {
                 .map(|w| format!("{} ({})", w.process_name.trim(), w.process_path.trim()))
                 .unwrap_or_else(|| "(none)".into());
             note(&format!(
-                "overlay: sync shown={shown} busy={busy_shown} gated={any_gated} skips={gated_skips} preview={} focus={focus_label}",
+                "overlay: sync shown={shown} busy={busy_shown} gated={any_gated} skips={gated_skips} preview={} relocate={relocate} focus={focus_label}",
                 preview.is_some()
             ));
         }
@@ -348,7 +359,8 @@ impl MacroOverlay {
                     .iter()
                     .map(|d| {
                         let mut spec = spec_from_config(&d.cfg, d.busy, ctx.pixels_per_point());
-                        if preview_id == Some(spec.id.as_str()) {
+                        // Preview and Overlay-editor relocate: never gate-map hide.
+                        if relocate || preview_id == Some(spec.id.as_str()) {
                             spec.visibility_gated = false;
                         }
                         spec
@@ -917,6 +929,31 @@ mod tests {
             Some(&wine_win("Other Game"))
         ));
         gated.visibility_gate.mode = sqyre_persist::OverlayVisibilityMode::Off;
+        assert!(!keep_focus_gated_button(&gated, &catalog, None));
+    }
+
+    #[test]
+    fn focus_gate_would_hide_other_app_but_relocate_bypasses_in_sync() {
+        // Document the sync contract: keep_focus_gated_button hides when another
+        // app has focus; MacroOverlay::sync must still host those buttons while
+        // `relocate` is true (Overlay editor open) — see gated && !relocate branch.
+        let mut catalog = ProgramCatalog::default();
+        catalog.create_program("Mistfall Hunter").unwrap();
+        catalog
+            .set_process_binding(
+                "Mistfall Hunter",
+                "/opt/proton/files/lib/wine/x86_64-unix/wine-preloader",
+                "Mistfall Hunter",
+            )
+            .unwrap();
+        let mut gated = OverlayButtonConfig::new("g", "Mistfall Hunter");
+        gated.enabled = true;
+        gated.macro_name = "Hunt".into();
+        assert!(!keep_focus_gated_button(
+            &gated,
+            &catalog,
+            Some(&wine_win("Other Game"))
+        ));
         assert!(!keep_focus_gated_button(&gated, &catalog, None));
     }
 
