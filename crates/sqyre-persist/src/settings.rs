@@ -680,6 +680,23 @@ impl UserSettings {
         Ok(())
     }
 
+    /// Propagate a macro rename into overlay button macro refs.
+    pub fn rename_overlay_macro(&mut self, old_name: &str, new_name: &str) -> bool {
+        let old_name = old_name.trim();
+        let new_name = new_name.trim();
+        if old_name == new_name || old_name.is_empty() || new_name.is_empty() {
+            return false;
+        }
+        let mut changed = false;
+        for btn in &mut self.overlay_buttons {
+            if btn.macro_name == old_name {
+                btn.macro_name = new_name.to_string();
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Propagate a catalog point rename into overlay button point refs.
     pub fn rename_overlay_point_entity(
         &mut self,
@@ -1018,6 +1035,23 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
         assert_eq!(loaded.hotkey_tag_filters, vec!["combat".to_string()]);
         assert!(!loaded.hotkey_tags_while_focused);
+    }
+
+    #[test]
+    fn rename_overlay_macro_updates_matching_buttons() {
+        let mut s = UserSettings::default();
+        let mut a = OverlayButtonConfig::new("a", "P");
+        a.macro_name = "old".into();
+        let mut b = OverlayButtonConfig::new("b", "P");
+        b.macro_name = "other".into();
+        s.overlay_buttons.push(a);
+        s.overlay_buttons.push(b);
+        assert!(s.rename_overlay_macro("old", "new"));
+        assert_eq!(s.overlay_buttons[0].macro_name, "new");
+        assert_eq!(s.overlay_buttons[1].macro_name, "other");
+        assert!(!s.rename_overlay_macro("old", "new"));
+        assert!(!s.rename_overlay_macro("", "x"));
+        assert!(!s.rename_overlay_macro("new", "new"));
     }
 
     #[test]

@@ -286,7 +286,7 @@ impl SqyreApp {
         );
     }
 
-    /// Rename the selected macro and rewrite Run Macro refs.
+    /// Rename the selected macro and rewrite Run Macro / overlay button refs.
     pub(crate) fn rename_selected_macro(&mut self, new_name: String) {
         if self.workspace.macros.is_empty() {
             return;
@@ -303,6 +303,17 @@ impl SqyreApp {
         self.workspace.macros[idx].name = new_name.clone();
         for m in &mut self.workspace.macros {
             m.rename_macro_reference(&old_name, &new_name);
+        }
+        if self
+            .settings_ui
+            .settings_mut()
+            .rename_overlay_macro(&old_name, &new_name)
+        {
+            self.data_editor
+                .rename_overlay_form_macro(&old_name, &new_name);
+            if let Err(e) = self.settings_ui.save_settings() {
+                crate::log::warn(format_args!("rename macro overlay refs: {e}"));
+            }
         }
         if let Some(hist) = self.tree.histories.remove(&old_name) {
             self.tree.histories.insert(new_name.clone(), hist);
