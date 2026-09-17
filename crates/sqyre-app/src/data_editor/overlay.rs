@@ -53,6 +53,13 @@ impl DataEditor {
         }
     }
 
+    /// Keep the open overlay form in sync when a referenced macro is renamed.
+    pub(crate) fn rename_overlay_form_macro(&mut self, old_name: &str, new_name: &str) {
+        if self.form_overlay_macro == old_name {
+            self.form_overlay_macro = new_name.to_string();
+        }
+    }
+
     pub(crate) fn apply_overlay_update(&mut self, settings: &mut UserSettings) {
         let Some(id) = self.selected_entity.clone() else {
             self.set_err("Select an overlay button first.");
