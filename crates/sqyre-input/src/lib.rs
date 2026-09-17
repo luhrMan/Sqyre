@@ -468,16 +468,45 @@ pub struct OsAutomation {
     portal: Option<Arc<dyn PortalRemoteInput>>,
 }
 
-/// Open rustautogui without letting Linux `Screen::new` abort the process.
+/// rustautogui Linux `Keyboard::new` runs `setxkbmap -query` with `.expect`.
+/// Missing binary (common in Flatpak) panics before we can use XTest.
+#[cfg(target_os = "linux")]
+fn linux_setxkbmap_preflight() -> Result<(), AutomationError> {
+    use std::io::ErrorKind;
+    use std::process::{Command, Stdio};
+    use std::sync::OnceLock;
+    static CHECK: OnceLock<Result<(), String>> = OnceLock::new();
+    match CHECK.get_or_init(|| {
+        match Command::new("setxkbmap")
+            .arg("-query")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            Ok(_) => Ok(()),
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                Err("setxkbmap not found (required by rustautogui keyboard init)".into())
+            }
+            Err(e) => Err(format!("cannot run setxkbmap: {e}")),
+        }
+    }) {
+        Ok(()) => Ok(()),
+        Err(msg) => Err(AutomationError::Backend(msg.clone())),
+    }
+}
+
+/// Open rustautogui without letting Linux init abort the process.
 ///
-/// On Linux, rustautogui panics inside `XOpenDisplay` failure (including
-/// "Maximum number of clients reached") instead of returning `Err`.
+/// On Linux, rustautogui panics on missing `setxkbmap` and on `XOpenDisplay`
+/// failure (including "Maximum number of clients reached") instead of `Err`.
 fn open_rustautogui() -> Result<RustAutoGui, AutomationError> {
+    #[cfg(target_os = "linux")]
+    linux_setxkbmap_preflight()?;
     match std::panic::catch_unwind(|| RustAutoGui::new(false)) {
         Ok(Ok(gui)) => Ok(gui),
         Ok(Err(e)) => Err(AutomationError::Backend(format!("rustautogui: {e}"))),
         Err(_) => Err(AutomationError::Backend(
-            "rustautogui panicked opening X display (X11 unavailable or max clients reached)"
+            "rustautogui panicked during init (X11 unavailable, max clients, or missing tools)"
                 .into(),
         )),
     }
@@ -506,8 +535,15 @@ impl OsAutomation {
         let clipboard = Clipboard::new().ok();
         if let Some(ref p) = portal {
             install_process_portal(Arc::clone(p));
+            let gui = match open_rustautogui() {
+                Ok(gui) => Some(gui),
+                Err(e) => {
+                    p.note(&format!("input: rustautogui skipped: {e}"));
+                    None
+                }
+            };
             return Ok(Self {
-                gui: open_rustautogui().ok(),
+                gui,
                 clipboard,
                 portal,
             });
@@ -1112,5 +1148,33 @@ mod tests {
         assert_eq!(canonical_button("middle"), "middle");
         assert_eq!(canonical_button("center"), "middle");
         assert_eq!(canonical_button("other"), "left");
+    }
+
+    /// When `setxkbmap` is absent, rustautogui must not be opened (it would panic).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn setxkbmap_preflight_avoids_missing_binary_panic() {
+        use std::io::ErrorKind;
+        use std::process::{Command, Stdio};
+        let missing = matches!(
+            Command::new("setxkbmap")
+                .arg("-query")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status(),
+            Err(e) if e.kind() == ErrorKind::NotFound
+        );
+        if !missing {
+            return;
+        }
+        let err = linux_setxkbmap_preflight().expect_err("preflight should fail");
+        assert!(
+            err.to_string().contains("setxkbmap"),
+            "unexpected error: {err}"
+        );
+        match open_rustautogui() {
+            Ok(_) => panic!("open should not succeed without setxkbmap"),
+            Err(e) => assert!(e.to_string().contains("setxkbmap"), "unexpected error: {e}"),
+        }
     }
 }
