@@ -218,11 +218,20 @@ pub const PROCESS_ICON_TARGET_PX: u32 = 48;
 
 /// Best-effort icon for a bound process (`process_path` + optional `window_title`).
 ///
-/// Linux: `_NET_WM_ICON` from a matching open window. Windows: icon resource from the
-/// executable (works even when the app is not running). Other platforms: always `None`.
+/// Linux: `_NET_WM_ICON` from a matching open window, then freedesktop theme icons.
+/// Windows: icon resource from the executable (works even when the app is not running).
+/// Other platforms: always `None`.
 #[cfg(target_os = "linux")]
 pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIcon> {
-    x11_focus::process_icon(process_path, window_title)
+    if let Some(icon) = x11_focus::process_icon(process_path, window_title) {
+        return Some(icon);
+    }
+    let path = process_path.trim();
+    if path.is_empty() {
+        return None;
+    }
+    linux::wayland::desktop_icon_for_app_id(path)
+        .or_else(|| linux::wayland::desktop_icon_for_pid(0, path))
 }
 
 #[cfg(target_os = "windows")]
@@ -771,10 +780,16 @@ pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
     let got = win.process_path.trim();
     if got.is_empty() {
         let name = win.process_name.trim();
-        return !name.is_empty()
+        if !name.is_empty()
             && (name.eq_ignore_ascii_case(want)
                 || name.eq_ignore_ascii_case(&want_base)
-                || wine_preloader_names_equivalent(name, &want_base));
+                || wine_preloader_names_equivalent(name, &want_base))
+        {
+            return true;
+        }
+        // Flatpak often cannot resolve `/proc` for other sandboxes; the picker may
+        // have stored the window title or WM_CLASS as the process key.
+        return win.title.trim().eq_ignore_ascii_case(want);
     }
     if got.eq_ignore_ascii_case(want) {
         return true;
@@ -788,7 +803,11 @@ pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
     }
     // Proton/Wine: active window may report `wine-preloader` while the catalog was
     // bound against `wine64-preloader` (or the reverse) under the same tree.
-    wine_preloader_names_equivalent(&want_base, &got_base)
+    if wine_preloader_names_equivalent(&want_base, &got_base) {
+        return true;
+    }
+    // Binding may be a window title used when OS path was unavailable.
+    win.title.trim().eq_ignore_ascii_case(want)
 }
 
 /// `wine-preloader` and `wine64-preloader` are interchangeable for focus matching.
@@ -973,6 +992,15 @@ mod tests {
         assert!(super::window_matches_process(&unnamed, "/usr/bin/firefox"));
         assert!(super::window_matches_process(&unnamed, "firefox"));
         assert!(!super::window_matches_process(&unnamed, "chrome"));
+        // Title used as Flatpak fallback key when /proc identity is unavailable.
+        assert!(super::window_matches_process(&unnamed, "Firefox"));
+        let title_key = WindowInfo {
+            title: "Mistfall Hunter".into(),
+            process_name: "mistfall".into(),
+            process_path: "Mistfall Hunter".into(),
+            icon: None,
+        };
+        assert!(super::window_matches_process(&title_key, "Mistfall Hunter"));
     }
 
     #[test]

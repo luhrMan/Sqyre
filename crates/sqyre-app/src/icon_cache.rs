@@ -190,9 +190,11 @@ impl IconCache {
         &mut self,
         ctx: &egui::Context,
         process_path: &str,
+        window_title: &str,
+        process_name: &str,
         icon: &ProcessIcon,
     ) -> Option<TextureHandle> {
-        let key = process_cache_key(process_path);
+        let key = process_seed_key(process_path, window_title, process_name);
         if key.is_empty() {
             return None;
         }
@@ -200,9 +202,14 @@ impl IconCache {
         Some(self.insert_process_icon(ctx, &key, icon))
     }
 
-    /// Cached process icon only (no OS fetch).
-    pub fn cached_process(&self, process_path: &str) -> Option<TextureHandle> {
-        let key = process_cache_key(process_path);
+    /// Cached process icon only (no OS fetch). Uses title/name when path is empty.
+    pub fn cached_process_for(
+        &self,
+        process_path: &str,
+        window_title: &str,
+        process_name: &str,
+    ) -> Option<TextureHandle> {
+        let key = process_seed_key(process_path, window_title, process_name);
         if key.is_empty() {
             return None;
         }
@@ -522,6 +529,20 @@ fn process_cache_key(process_path: &str) -> String {
     {
         path.to_string()
     }
+}
+
+/// Cache key that stays usable when the OS path is empty (title + name).
+fn process_seed_key(process_path: &str, window_title: &str, process_name: &str) -> String {
+    let key = process_cache_key(process_path);
+    if !key.is_empty() {
+        return key;
+    }
+    let title = window_title.trim();
+    let name = process_name.trim();
+    if title.is_empty() && name.is_empty() {
+        return String::new();
+    }
+    format!("untitled:{name}:{title}")
 }
 
 fn load_texture(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {

@@ -223,39 +223,57 @@ pub fn show_active_picker(
                             if !query_matches_window(q, w) {
                                 continue;
                             }
-                            let selected =
-                                window_title == &w.title && process_path == &w.process_path;
+                            let selected = window_title == &w.title
+                                && (process_path == &w.process_path
+                                    || (process_path == &w.title
+                                        && w.process_path.trim().is_empty())
+                                    || (process_path == &w.process_name
+                                        && !w.process_name.is_empty()));
                             // Prefer icon bytes from the list fetch; avoid per-row OS re-scan.
                             let process_tex = match w.icon.as_ref() {
-                                Some(icon) => {
-                                    paint
-                                        .icons
-                                        .seed_process_icon(ui.ctx(), &w.process_path, icon)
-                                }
-                                None => paint.icons.cached_process(&w.process_path),
+                                Some(icon) => paint.icons.seed_process_icon(
+                                    ui.ctx(),
+                                    &w.process_path,
+                                    &w.title,
+                                    &w.process_name,
+                                    icon,
+                                ),
+                                None => paint.icons.cached_process_for(
+                                    &w.process_path,
+                                    &w.title,
+                                    &w.process_name,
+                                ),
                             };
-                            let resp = ui
-                                .horizontal(|ui| {
-                                    if let Some(tex) = process_tex.as_ref() {
-                                        crate::icon_cache::paint_process_icon(
-                                            ui,
-                                            tex,
-                                            crate::icon_cache::PROCESS_ICON_SIDE,
-                                        );
-                                    }
-                                    ui.selectable_label(
-                                        selected,
-                                        egui::RichText::new(w.label()).small(),
-                                    )
-                                })
-                                .inner;
+                            let label = egui::RichText::new(w.label()).small();
+                            let resp = match process_tex.as_ref() {
+                                Some(tex) => {
+                                    let icon = egui::Image::new((
+                                        tex.id(),
+                                        egui::Vec2::splat(crate::icon_cache::PROCESS_ICON_SIDE),
+                                    ))
+                                    .fit_to_exact_size(egui::Vec2::splat(
+                                        crate::icon_cache::PROCESS_ICON_SIDE,
+                                    ))
+                                    .maintain_aspect_ratio(true);
+                                    ui.selectable_label(selected, (icon, label))
+                                }
+                                None => ui.selectable_label(selected, label),
+                            };
                             if selected && *scroll_to_selection && !did_scroll {
                                 maybe_scroll_to(ui, &resp, scroll_to_selection);
                                 did_scroll = true;
                             }
                             if resp.clicked() {
                                 *window_title = w.title.clone();
-                                *process_path = w.process_path.clone();
+                                // Never bind an empty path — Focus requires a key, and the
+                                // form shows "(none)" which looks like the selection was lost.
+                                *process_path = if !w.process_path.trim().is_empty() {
+                                    w.process_path.clone()
+                                } else if !w.process_name.trim().is_empty() {
+                                    w.process_name.clone()
+                                } else {
+                                    w.title.clone()
+                                };
                             }
                         }
                     });
@@ -295,9 +313,16 @@ pub fn show_active_picker(
                 if ui.button("Cancel").clicked() {
                     cancel = true;
                 }
-                let save_enabled = !in_cell_pick || cell_has_sel;
+                let save_enabled = if in_cell_pick {
+                    cell_has_sel
+                } else if let ActivePicker::Window { process_path, .. } = picker {
+                    !process_path.trim().is_empty()
+                } else {
+                    true
+                };
                 if ui
                     .add_enabled(save_enabled, egui::Button::new("Save"))
+                    .on_disabled_hover_text("Select a window with a process identity")
                     .clicked()
                 {
                     save = true;
