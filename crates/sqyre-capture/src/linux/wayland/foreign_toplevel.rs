@@ -132,12 +132,37 @@ fn collect_infos(state: &State) -> Vec<WindowInfo> {
 }
 
 fn info_from_draft(draft: &Draft) -> WindowInfo {
-    let (process_name, process_path) = resolve_app_id(&draft.app_id);
+    let app_id = draft.app_id.trim();
+    let (mut process_name, mut process_path) = if app_id.is_empty() {
+        (String::new(), String::new())
+    } else {
+        resolve_app_id(app_id)
+    };
+    // Compositor sometimes leaves app_id empty while the title is the desktop id
+    // (e.g. `net.lutris.Lutris`), or `/proc` resolution yields nothing inside Flatpak.
+    if process_path.is_empty() {
+        let fallback = if !app_id.is_empty() {
+            app_id
+        } else {
+            draft.title.trim()
+        };
+        if !fallback.is_empty() {
+            process_path = fallback.to_string();
+            if process_name.is_empty() {
+                process_name = fallback.to_string();
+            }
+        }
+    }
+    let icon = if !app_id.is_empty() {
+        super::app_resolve::desktop_icon_for_app_id(app_id)
+    } else {
+        super::app_resolve::desktop_icon_for_app_id(&process_path)
+    };
     WindowInfo {
         title: draft.title.clone(),
         process_name,
         process_path,
-        icon: None,
+        icon,
     }
 }
 

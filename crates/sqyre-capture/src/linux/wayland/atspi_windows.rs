@@ -4,7 +4,7 @@
 //! normal clients. AT-SPI is the session API that still exposes native Wayland apps.
 
 use super::app_resolve::process_from_pid;
-use crate::window_match::{paths_equal, titles_equal};
+use crate::window_match::titles_equal;
 use crate::{window_matches_process, CaptureError, WindowInfo};
 use sqyre_ports::AutomationError;
 use zbus::blocking::{Connection, Proxy};
@@ -109,7 +109,8 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, A
             continue;
         }
         let pid = unix_pid(&conn, &app).unwrap_or(0);
-        let (name, path) = process_from_pid(pid);
+        let app_label = name_of(&conn, &app).unwrap_or_default();
+        let (name, path) = identity_with_fallback(pid, &app_label);
         let frames = children(&conn, &app).map_err(|e| AutomationError::Backend(e.to_string()))?;
         let targets: Vec<AtspiRef> = if frames.is_empty() {
             vec![app]
@@ -130,9 +131,8 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, A
             if !titles_equal(&info.title, window_title) {
                 continue;
             }
-            if !path.is_empty()
-                && !paths_equal(&path, process_path)
-                && !window_matches_process(&info, process_path)
+            if !process_binding_matches(pid, &info, process_path)
+                && !app_label.trim().eq_ignore_ascii_case(process_path.trim())
             {
                 continue;
             }
@@ -142,6 +142,21 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, A
         }
     }
     Ok(false)
+}
+
+fn process_binding_matches(pid: u32, info: &WindowInfo, process_path: &str) -> bool {
+    if window_matches_process(info, process_path) {
+        return true;
+    }
+    let want = process_path.trim();
+    if want.is_empty() {
+        return true;
+    }
+    if info.title.trim().eq_ignore_ascii_case(want) {
+        return true;
+    }
+    super::app_resolve::desktop_app_id_for_pid(pid, &info.process_path)
+        .is_some_and(|id| id.eq_ignore_ascii_case(want))
 }
 
 fn root_ref() -> Result<AtspiRef, CaptureError> {
@@ -163,7 +178,8 @@ fn walk_applications_from(
             continue;
         }
         let pid = unix_pid(conn, &app).unwrap_or(0);
-        let (process_name, process_path) = process_from_pid(pid);
+        let app_label = name_of(conn, &app).unwrap_or_default();
+        let (process_name, process_path) = identity_with_fallback(pid, &app_label);
         let mut windows = Vec::new();
         let frames = children(conn, &app)?;
         for frame in &frames {
@@ -171,13 +187,13 @@ fn walk_applications_from(
                 continue;
             }
             if let Some(info) =
-                window_info_from(process_name.clone(), process_path.clone(), conn, frame)
+                window_info_from(pid, process_name.clone(), process_path.clone(), conn, frame)
             {
                 windows.push(info);
             }
         }
         if windows.is_empty() {
-            if let Some(info) = window_info_from(process_name, process_path, conn, &app) {
+            if let Some(info) = window_info_from(pid, process_name, process_path, conn, &app) {
                 windows.push(info);
             }
         }
@@ -205,11 +221,32 @@ fn log_empty_walk(conn: &Connection, kids: &[AtspiRef]) {
 
 fn window_info(conn: &Connection, app: &AtspiRef, frame: &AtspiRef) -> Option<WindowInfo> {
     let pid = unix_pid(conn, app).unwrap_or(0);
-    let (process_name, process_path) = process_from_pid(pid);
-    window_info_from(process_name, process_path, conn, frame)
+    let app_label = name_of(conn, app).unwrap_or_default();
+    let (process_name, process_path) = identity_with_fallback(pid, &app_label);
+    window_info_from(pid, process_name, process_path, conn, frame)
+}
+
+/// Prefer `/proc` identity; when Flatpak blocks it, use the AT-SPI application name.
+fn identity_with_fallback(pid: u32, app_label: &str) -> (String, String) {
+    let (name, path) = process_from_pid(pid);
+    if !path.is_empty() {
+        return (name, path);
+    }
+    let label = app_label.trim();
+    if label.is_empty() {
+        return (name, path);
+    }
+    // `net.lutris.Lutris`-style labels are already stable app ids.
+    let name = if name.is_empty() {
+        label.to_string()
+    } else {
+        name
+    };
+    (name, label.to_string())
 }
 
 fn window_info_from(
+    pid: u32,
     process_name: String,
     process_path: String,
     conn: &Connection,
@@ -219,11 +256,13 @@ fn window_info_from(
     if title.trim().is_empty() {
         return None;
     }
+    let icon = super::app_resolve::desktop_icon_for_pid(pid, &process_path)
+        .or_else(|| super::app_resolve::desktop_icon_for_app_id(&process_path));
     Some(WindowInfo {
         title,
         process_name,
         process_path,
-        icon: None,
+        icon,
     })
 }
 

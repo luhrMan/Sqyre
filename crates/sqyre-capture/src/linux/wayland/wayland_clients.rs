@@ -36,11 +36,13 @@ pub(crate) fn list_windows() -> Result<Vec<WindowInfo>, CaptureError> {
         if title.trim().is_empty() {
             continue;
         }
+        let icon = super::app_resolve::desktop_icon_for_pid(pid, &process_path)
+            .or_else(|| super::app_resolve::desktop_icon_for_app_id(&process_path));
         out.push(WindowInfo {
             title,
             process_name,
             process_path,
-            icon: None,
+            icon,
         });
     }
     Ok(out)
@@ -51,23 +53,40 @@ pub(crate) fn activate(process_path: &str, window_title: &str) -> Result<bool, A
     if want.is_empty() {
         return Ok(false);
     }
+    let _ = window_title;
+    // Catalog may store a Flatpak / freedesktop app id directly.
+    if want.contains('.') && activate_freedesktop_application(want)? {
+        return Ok(true);
+    }
     let Some(pid) = pid_for_exe(want) else {
         return Ok(false);
     };
     let Some(app_id) = desktop_app_id_for_pid(pid, want) else {
         return Ok(false);
     };
-    let _ = window_title;
     activate_freedesktop_application(&app_id)
 }
 
 fn pid_for_exe(process_path: &str) -> Option<u32> {
     let want = Path::new(process_path).file_name()?;
+    let want_str = process_path.trim();
     let proc = fs::read_dir("/proc").ok()?;
     for ent in proc.flatten() {
         let pid = ent.file_name();
-        let pid = pid.to_str()?.parse::<u32>().ok()?;
-        let exe = fs::read_link(ent.path().join("exe")).ok()?;
+        let Some(pid) = pid.to_str().and_then(|s| s.parse::<u32>().ok()) else {
+            continue;
+        };
+        // Flatpak app-id bindings match FLATPAK_ID in the target environ.
+        if want_str.contains('.') {
+            if let Some(id) = super::app_resolve::desktop_app_id_for_pid(pid, "") {
+                if id.eq_ignore_ascii_case(want_str) {
+                    return Some(pid);
+                }
+            }
+        }
+        let Ok(exe) = fs::read_link(ent.path().join("exe")) else {
+            continue;
+        };
         if exe.file_name() == Some(want) || exe.to_string_lossy() == process_path {
             return Some(pid);
         }
