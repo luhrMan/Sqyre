@@ -112,6 +112,9 @@ impl HookCtx {
                 self.macro_record.on_mouse_move(*x as i32, *y as i32);
             }
             EventType::ButtonPress(button) => {
+                if matches!(button, Button::Left) {
+                    crate::pointer_buttons::set_left_button_down(true);
+                }
                 if let Some(btn) = record_button(*button) {
                     self.macro_record.on_button(btn, true);
                 }
@@ -123,6 +126,9 @@ impl HookCtx {
                 }
             }
             EventType::ButtonRelease(button) => {
+                if matches!(button, Button::Left) {
+                    crate::pointer_buttons::set_left_button_down(false);
+                }
                 if let Some(btn) = record_button(*button) {
                     self.macro_record.on_button(btn, false);
                 }
@@ -240,6 +246,7 @@ impl HotkeyService for RdevHotkeys {
 
     fn stop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        crate::pointer_buttons::set_left_button_down(false);
         // Wayland evdev watch uses a short epoll timeout and can join. X11 `listen` blocks forever.
         #[cfg(target_os = "linux")]
         if linux_uses_evdev_grab() {

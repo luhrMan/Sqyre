@@ -38,18 +38,20 @@ use x11::xfixes::{
     XFixesQueryVersion, XFixesSetWindowShapeRegion, XFixesShowCursor,
 };
 use x11::xlib::{
-    Below, Button1Mask, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask,
-    CWBackPixel, CWBackingStore, CWBorderPixel, CWEventMask, CWOverrideRedirect, CWSibling,
-    CWStackMode, CurrentTime, Display, EnterNotify, EnterWindowMask, Expose, ExposureMask, False,
-    GrabModeAsync, InputOnly, InputOutput, LSBFirst, LeaveNotify, LeaveWindowMask, MotionNotify,
-    PointerMotionMask, StructureNotifyMask, Success, True, WhenMapped, Window, XAllocColor,
-    XCloseDisplay, XColor, XConfigureWindow, XConnectionNumber, XCreateFontCursor, XCreateGC,
-    XCreateImage, XCreateWindow, XDefaultColormap, XDefaultDepth, XDefaultRootWindow,
-    XDefaultScreen, XDefaultVisual, XDefineCursor, XDestroyImage, XDestroyWindow, XEvent, XFlush,
-    XFreeCursor, XFreeGC, XGrabPointer, XInternAtom, XMapRaised, XMapWindow, XMoveResizeWindow,
-    XNextEvent, XOpenDisplay, XPending, XPutImage, XQueryPointer, XRectangle, XSelectInput,
-    XSetWindowAttributes, XStoreName, XSync, XUndefineCursor, XUngrabPointer, XUnmapWindow,
-    XWindowChanges, ZPixmap,
+    AllocNone, Below, Button1Mask, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask,
+    CWBackPixel, CWBackingStore, CWBorderPixel, CWColormap, CWEventMask, CWOverrideRedirect,
+    CWSibling, CWStackMode, CurrentTime, Display, EnterNotify, EnterWindowMask, Expose,
+    ExposureMask, False, GrabModeAsync, InputOnly, InputOutput, LSBFirst, LeaveNotify,
+    LeaveWindowMask, MotionNotify, PointerMotionMask, StructureNotifyMask, Success, True,
+    TrueColor, WhenMapped, Window, XAllocColor, XCloseDisplay, XColor, XConfigureWindow,
+    XConnectionNumber, XCreateColormap, XCreateFontCursor, XCreateGC, XCreateImage, XCreateWindow,
+    XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen, XDefaultVisual,
+    XDefineCursor, XDestroyImage, XDestroyWindow, XDisplayHeight, XDisplayWidth, XEvent, XFlush,
+    XFreeColormap, XFreeCursor, XFreeGC, XGrabPointer, XInternAtom, XMapRaised, XMapWindow,
+    XMatchVisualInfo, XMoveResizeWindow, XNextEvent, XOpenDisplay, XPending, XPutImage,
+    XQueryPointer, XRectangle, XSelectInput, XSetWindowAttributes, XSetWindowBackground,
+    XStoreName, XSync, XUndefineCursor, XUngrabPointer, XUnmapWindow, XVisualInfo, XWindowChanges,
+    ZPixmap,
 };
 
 /// `ShapeBounding` / `ShapeInput` from `X11/extensions/shapeconst.h`.
@@ -101,6 +103,10 @@ enum HostCmd {
     SetButtons(Vec<NativeButtonSpec>),
     /// When true, left-drag relocates buttons instead of enqueueing macros.
     SetRelocateMode(bool),
+    /// Keep OR buttons above the Sqyre editor during relocate (same XWayland stack).
+    /// Off while a foreign/game window has focus — MapRaised over fullscreen XWayland
+    /// games latches a freeze on the next drag.
+    SetRelocateKeepAbove(bool),
     /// Replace the image-gate found map Arc (poller recreate / late wire-up).
     SetVisibilityMap(Arc<Mutex<HashMap<String, bool>>>),
     /// egui context used to wake ROOT immediately after a click (busy UI / drain).
@@ -181,6 +187,10 @@ impl X11ButtonHost {
 
     pub fn set_relocate_mode(&self, enabled: bool) {
         let _ = self.cmd_tx.send(HostCmd::SetRelocateMode(enabled));
+    }
+
+    pub fn set_relocate_keep_above(&self, enabled: bool) {
+        let _ = self.cmd_tx.send(HostCmd::SetRelocateKeepAbove(enabled));
     }
 
     pub fn set_visibility_map(&self, map: Arc<Mutex<HashMap<String, bool>>>) {
@@ -283,6 +293,21 @@ struct DragState {
     poll_track: bool,
 }
 
+/// Full-desktop transparent InputOutput cover whose ShapeInput is only the button
+/// rects. InputOnly was rejected by runtime: presses stayed on poll-hit (Mutter
+/// never delivered pointer to InputOnly over Wayland). Matches selection cover.
+struct RelocateShield {
+    win: Window,
+    colormap: c_ulong,
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    mapped: bool,
+    /// Last input rects (root coords) applied to ShapeInput.
+    shape_sig: Vec<(i32, i32, u32, u32)>,
+}
+
 /// X11 resources owned exclusively by the overlay host thread.
 ///
 /// See module-level **X11 safety** for the invariants every `unsafe` call relies on.
@@ -297,6 +322,8 @@ struct HostState {
     buttons: HashMap<String, LiveButton>,
     tip: Option<TipWindow>,
     chooser: Option<ChooserWindow>,
+    /// Wayland click-absorb + fleur cursor while Overlay relocate is on.
+    shield: Option<RelocateShield>,
     xfd: RawFd,
     pending: Arc<Mutex<Vec<String>>>,
     pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
@@ -305,6 +332,8 @@ struct HostState {
     visibility: Arc<Mutex<HashMap<String, bool>>>,
     wake: Option<EguiContext>,
     relocate_mode: bool,
+    /// Raise OR buttons above the Sqyre editor while relocating (see SetRelocateKeepAbove).
+    relocate_keep_above: bool,
     drag: Option<DragState>,
     move_cursor: c_ulong,
     /// Normal arrow for the hotkey chooser (visible over games that hide the cursor).
@@ -368,6 +397,7 @@ fn host_loop(
         buttons: HashMap::new(),
         tip: None,
         chooser: None,
+        shield: None,
         xfd,
         pending,
         pending_moves,
@@ -375,6 +405,7 @@ fn host_loop(
         visibility,
         wake: None,
         relocate_mode: false,
+        relocate_keep_above: false,
         drag: None,
         move_cursor,
         arrow_cursor,
@@ -392,6 +423,8 @@ fn host_loop(
     let mut last_busy_tick = Instant::now();
     let mut last_x_growth = Instant::now();
     let mut stall_raised = false;
+    let mut last_relocate_raise = Instant::now();
+    let mut last_btn1 = false;
     let mut last_running: Option<String> = None;
 
     while !stop.load(Ordering::Relaxed) {
@@ -400,8 +433,22 @@ fn host_loop(
                 Ok(HostCmd::SetButtons(specs)) => {
                     apply_specs(&mut state, specs);
                     apply_running_busy(&mut state, last_running.as_deref());
+                    if state.relocate_mode && state.relocate_keep_above && state.drag.is_none() {
+                        raise_all_hits(&state);
+                        last_relocate_raise = Instant::now();
+                    }
                 }
                 Ok(HostCmd::SetRelocateMode(enabled)) => set_relocate_mode(&mut state, enabled),
+                Ok(HostCmd::SetRelocateKeepAbove(enabled)) => {
+                    if state.relocate_keep_above != enabled {
+                        state.relocate_keep_above = enabled;
+                        note(&format!("overlay-x11: relocate_keep_above={enabled}"));
+                        if enabled && state.relocate_mode && state.drag.is_none() {
+                            raise_all_hits(&state);
+                            last_relocate_raise = Instant::now();
+                        }
+                    }
+                }
                 Ok(HostCmd::SetVisibilityMap(map)) => {
                     state.visibility = map;
                     apply_gate_visibility(&mut state);
@@ -438,25 +485,41 @@ fn host_loop(
 
         let before_pending = unsafe { XPending(state.display) };
         let _got_pointer = drain_x_events(&mut state);
-        // Poll-track relocate: portal / quiet X conn after XUngrabPointer on press.
-        // Implicit grab + face Configure while the pointer stays over a fullscreen
-        // XWayland game freezes the game until the pointer leaves that window.
+        // Poll-track relocate: portal / quiet X after press (X11 or Wayland poll-hit).
+        // Over Wayland surfaces (Cursor, GNOME desktop) OR hit windows often get no
+        // ButtonPress — detect rising Button1 over a button rect instead.
+        let ptr = poll_relocate_pointer(&state);
         if state.drag.as_ref().is_some_and(|d| d.poll_track) {
             let mut release = false;
-            if let Some((x, y, btn1)) = poll_relocate_pointer(&state) {
+            if let Some((x, y, btn1)) = ptr {
                 relocate_drag_to(&mut state, x, y);
                 if !btn1 {
                     release = true;
                 }
+                last_btn1 = btn1;
             }
             flush_relocate_visual(&mut state);
             if release {
-                                note("overlay-x11: relocate-release (poll)");
+                note("overlay-x11: relocate-release (poll)");
                 mark_site("overlay-x11:relocate-release-poll");
                 commit_drag(&mut state);
             }
-        } else if state.drag.is_some() {
-            flush_relocate_visual(&mut state);
+        } else {
+            if state.relocate_mode && state.drag.is_none() {
+                if let Some((x, y, btn1)) = ptr {
+                    if btn1 && !last_btn1 {
+                        if let Some(id) = button_id_at_root(&state, x, y) {
+                            begin_relocate_drag(&mut state, &id, x, y, "poll-hit");
+                        }
+                    }
+                    last_btn1 = btn1;
+                }
+            } else if let Some((_, _, btn1)) = ptr {
+                last_btn1 = btn1;
+            }
+            if state.drag.is_some() {
+                flush_relocate_visual(&mut state);
+            }
         }
         if before_pending > 0 {
             last_x_growth = Instant::now();
@@ -468,6 +531,7 @@ fn host_loop(
         // so ButtonRelease sits unread until a focus cycle (see x11_outline /
         // recording_overlay).
         apply_gate_visibility(&mut state);
+        sync_relocate_shield(&mut state);
 
         // After macros, the game often restacks above OR hits. Re-raise when the
         // X queue goes quiet (no events at all — not only pointer).
@@ -487,6 +551,19 @@ fn host_loop(
                     x_flush(state.display);
                 }
             }
+        } else if state.relocate_mode
+            && state.relocate_keep_above
+            && !relocating
+            && !state.buttons.is_empty()
+            && !state.shield.as_ref().is_some_and(|s| s.mapped)
+            && last_relocate_raise.elapsed() >= Duration::from_millis(350)
+        {
+            // Without the Wayland shield, re-raise OR buttons above the Sqyre
+            // editor. Skip while the shield is mapped — periodic MapRaised on
+            // every button (plus the old per-tick shield raise) flickered the
+            // GNOME top bar.
+            raise_all_hits(&state);
+            last_relocate_raise = Instant::now();
         } else if !state.relocate_mode
             && !relocating
             && !state.buttons.is_empty()
@@ -494,10 +571,7 @@ fn host_loop(
             && !stall_raised
             && last_x_growth.elapsed() >= Duration::from_millis(800)
         {
-            // Skip while the Overlay editor is open: MapRaised over a fullscreen
-            // XWayland game makes the *next* relocate drag freeze until refocus
-            // (same hitch as outline's first MapRaised).
-                        raise_all_hits(&state);
+            raise_all_hits(&state);
             stall_raised = true;
         }
 
@@ -538,9 +612,10 @@ fn host_loop(
 
         wait_x_or_timeout(
             state.xfd,
-            if state.drag.is_some() || any_busy {
+            if any_busy && !state.relocate_mode && state.drag.is_none() {
                 BUSY_TICK_MS
             } else {
+                // Relocate needs a steady poll for Wayland poll-hit press + release.
                 POLL_IDLE_MS
             },
         );
@@ -690,6 +765,7 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
         }
     }
     apply_gate_visibility(state);
+    sync_relocate_shield(state);
     // SAFETY: HostState display invariant.
     unsafe {
         x_flush(state.display);
@@ -719,29 +795,41 @@ fn set_relocate_mode(state: &mut HostState, enabled: bool) {
     }
     if enabled {
         // Editor relocate: show every hosted button (including image-gated ones that
-        // were unmapped). Prefer XMapWindow over MapRaised — raising every button
-        // over a fullscreen XWayland game makes the next drag freeze until refocus
-        // (see x11_outline: MapRaised delayed the gold box by seconds).
+        // were unmapped). Only the selected program's buttons are hosted in this
+        // mode. MapRaised when keep_above so buttons sit above the Sqyre editor;
+        // plain Map when a game has focus (avoid XWayland drag freeze).
         let n = state.buttons.len();
         let mut newly = 0usize;
+        let raise = state.relocate_keep_above;
         for btn in state.buttons.values_mut() {
             if btn.mapped {
                 continue;
             }
             // SAFETY: HostState display invariant; face+hit created on this display.
             unsafe {
-                XMapWindow(state.display, btn.win);
-                XMapWindow(state.display, btn.hit);
+                if raise {
+                    XMapRaised(state.display, btn.win);
+                    XMapRaised(state.display, btn.hit);
+                } else {
+                    XMapWindow(state.display, btn.win);
+                    XMapWindow(state.display, btn.hit);
+                }
             }
             btn.mapped = true;
             newly += 1;
         }
+        if raise && n > 0 {
+            raise_all_hits(state);
+        }
         note(&format!(
-            "overlay-x11: relocate_mode=true shown={n} newly_mapped={newly}"
+            "overlay-x11: relocate_mode=true shown={n} newly_mapped={newly} keep_above={raise}"
         ));
+        sync_relocate_shield(state);
     } else {
+        state.relocate_keep_above = false;
         // Leaving the Overlay editor — restore image/focus gate map state.
         apply_gate_visibility(state);
+        sync_relocate_shield(state);
         note("overlay-x11: relocate_mode=false gate-restored");
     }
     // SAFETY: HostState display invariant.
@@ -848,7 +936,7 @@ fn commit_drag(state: &mut HostState) {
         x_flush(state.display);
     }
     apply_hit_rounded_input(state.display, hit, w, h, radius);
-        let mv = OverlayButtonMove {
+    let mv = OverlayButtonMove {
         id: drag.id.clone(),
         x: nx,
         y: ny,
@@ -926,13 +1014,17 @@ fn flush_relocate_visual(state: &mut HostState) {
         d.face_y = ny;
         d.face_cfg_n = d.face_cfg_n.saturating_add(1);
     }
+    // Keep Wayland click-absorb region under the moving face.
+    sync_relocate_shield(state);
 }
 
-/// Portal cursor first; else QueryPointer on the quiet connection (never the
-/// Configure connection while configures are in flight). Returns
-/// `(root_x, root_y, button1_down)`.
+/// Portal cursor + physical button state for relocate.
+///
+/// Position: portal metadata (works over Wayland) → desktop cursor → X11.
+/// Button1: X11 QueryPointer **or** evdev/rdev global left-button (X11 alone
+/// stays false while a native Wayland surface owns the click).
 fn poll_relocate_pointer(state: &HostState) -> Option<(i32, i32, bool)> {
-    let (qx, qy, btn1) = {
+    let (qx, qy, x_btn1) = {
         let dpy = if !state.ptr_display.is_null() {
             state.ptr_display
         } else {
@@ -941,6 +1033,7 @@ fn poll_relocate_pointer(state: &HostState) -> Option<(i32, i32, bool)> {
         // SAFETY: quiet or host display still open for this thread.
         unsafe { query_pointer_root(dpy)? }
     };
+    let btn1 = x_btn1 || sqyre_hotkeys::left_button_down();
     if let Some((x, y)) = sqyre_capture::portal_cursor_position() {
         return Some((x, y, btn1));
     }
@@ -948,6 +1041,330 @@ fn poll_relocate_pointer(state: &HostState) -> Option<(i32, i32, bool)> {
         return Some((x, y, btn1));
     }
     Some((qx, qy, btn1))
+}
+
+/// Mapped button whose viewport contains root `(x, y)` (for poll-hit relocate).
+fn button_id_at_root(state: &HostState, root_x: i32, root_y: i32) -> Option<String> {
+    state
+        .buttons
+        .values()
+        .filter(|b| b.mapped)
+        .find(|b| {
+            let w = b.spec.w.max(1) as i32;
+            let h = b.spec.h.max(1) as i32;
+            root_x >= b.spec.x
+                && root_y >= b.spec.y
+                && root_x < b.spec.x.saturating_add(w)
+                && root_y < b.spec.y.saturating_add(h)
+        })
+        .map(|b| b.spec.id.clone())
+}
+
+/// Start an ungrabbed poll-track relocate drag (X11 press, shield, or Wayland poll-hit).
+fn begin_relocate_drag(state: &mut HostState, id: &str, root_x: i32, root_y: i32, via: &str) {
+    hide_tip(state);
+    let Some(btn) = state.buttons.get(id) else {
+        return;
+    };
+    let (bx, by, bhit) = (btn.spec.x, btn.spec.y, btn.hit);
+    // Implicit ButtonPress grab over a fullscreen XWayland game freezes that
+    // client until the pointer leaves. Ungrab if we had one; no-op for poll-hit.
+    // SAFETY: release any automatic grab from a ButtonPress.
+    unsafe {
+        XUngrabPointer(state.display, CurrentTime);
+    }
+    apply_empty_input_shape(state.display, bhit);
+    // SAFETY: HostState display invariant; cursor created on this display.
+    unsafe {
+        if state.move_cursor != 0 {
+            XDefineCursor(state.display, bhit, state.move_cursor);
+            if let Some(shield) = state.shield.as_ref() {
+                XDefineCursor(state.display, shield.win, state.move_cursor);
+            }
+        }
+        x_flush(state.display);
+    }
+    note(&format!(
+        "overlay-x11: relocate-press id={id} ({via} coalesced-face) evdev_btn={}",
+        sqyre_hotkeys::left_button_down()
+    ));
+    mark_site(&format!("overlay-x11:relocate-press:{id}"));
+    state.drag = Some(DragState {
+        id: id.to_string(),
+        grab_dx: root_x - bx,
+        grab_dy: root_y - by,
+        start_x: bx,
+        start_y: by,
+        motion_n: 0,
+        face_x: bx,
+        face_y: by,
+        face_cfg_n: 0,
+        poll_track: true,
+    });
+}
+
+fn shield_desktop_bounds(state: &HostState) -> (i32, i32, u32, u32) {
+    let rects = sqyre_capture::preferred_monitor_rects();
+    if !rects.is_empty() {
+        let mut min_x = i32::MAX;
+        let mut min_y = i32::MAX;
+        let mut max_x = i32::MIN;
+        let mut max_y = i32::MIN;
+        for r in &rects {
+            min_x = min_x.min(r.x);
+            min_y = min_y.min(r.y);
+            max_x = max_x.max(r.x.saturating_add(r.w));
+            max_y = max_y.max(r.y.saturating_add(r.h));
+        }
+        if min_x < max_x && min_y < max_y {
+            return (min_x, min_y, (max_x - min_x) as u32, (max_y - min_y) as u32);
+        }
+    }
+    // SAFETY: HostState display invariant.
+    unsafe {
+        let w = XDisplayWidth(state.display, state.screen).max(1) as u32;
+        let h = XDisplayHeight(state.display, state.screen).max(1) as u32;
+        (0, 0, w, h)
+    }
+}
+
+fn button_root_rects(state: &HostState) -> Vec<(i32, i32, u32, u32)> {
+    const PAD: i32 = 2;
+    state
+        .buttons
+        .values()
+        .filter(|b| b.mapped)
+        .map(|b| {
+            let w = b.spec.w.max(1) as i32;
+            let h = b.spec.h.max(1) as i32;
+            (
+                b.spec.x.saturating_sub(PAD),
+                b.spec.y.saturating_sub(PAD),
+                (w + PAD * 2).max(1) as u32,
+                (h + PAD * 2).max(1) as u32,
+            )
+        })
+        .collect()
+}
+
+fn destroy_relocate_shield(state: &mut HostState) {
+    let Some(shield) = state.shield.take() else {
+        return;
+    };
+    // SAFETY: HostState display invariant; shield win created on this display.
+    unsafe {
+        x_unmap(state.display, shield.win);
+        x_destroy_window(state.display, shield.win);
+        if shield.colormap != 0 {
+            XFreeColormap(state.display, shield.colormap);
+        }
+        x_flush(state.display);
+    }
+    note("overlay-x11: relocate-shield destroyed");
+}
+
+/// Map / reshape the Wayland click-absorb shield while relocate mode is on.
+fn sync_relocate_shield(state: &mut HostState) {
+    if !state.relocate_mode {
+        destroy_relocate_shield(state);
+        return;
+    }
+    let root_rects = button_root_rects(state);
+    if root_rects.is_empty() {
+        if let Some(shield) = state.shield.as_mut() {
+            if shield.mapped {
+                // SAFETY: HostState display invariant.
+                unsafe {
+                    x_unmap(state.display, shield.win);
+                }
+                shield.mapped = false;
+                shield.shape_sig.clear();
+            }
+        }
+        return;
+    }
+
+    let (bx, by, bw, bh) = shield_desktop_bounds(state);
+    if state.shield.is_none() {
+        // InputOutput ARGB (selection-cover pattern). InputOnly never received
+        // pointer over native Wayland — poll-hit only, click-through.
+        // SAFETY: HostState display invariant.
+        let created = unsafe {
+            let mut vinfo: XVisualInfo = std::mem::zeroed();
+            let argb =
+                XMatchVisualInfo(state.display, state.screen, 32, TrueColor, &mut vinfo) != 0;
+            let (win, colormap) = if argb {
+                let visual = vinfo.visual;
+                let depth = vinfo.depth;
+                let colormap = XCreateColormap(state.display, state.root, visual, AllocNone);
+                let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+                attrs.override_redirect = True;
+                attrs.colormap = colormap;
+                attrs.border_pixel = 0;
+                attrs.background_pixel = 0;
+                attrs.backing_store = WhenMapped;
+                attrs.event_mask = ButtonPressMask
+                    | ButtonReleaseMask
+                    | PointerMotionMask
+                    | EnterWindowMask
+                    | LeaveWindowMask
+                    | ExposureMask;
+                let win = XCreateWindow(
+                    state.display,
+                    state.root,
+                    bx,
+                    by,
+                    bw.max(1),
+                    bh.max(1),
+                    0,
+                    depth,
+                    InputOutput as c_uint,
+                    visual,
+                    CWOverrideRedirect
+                        | CWColormap
+                        | CWBorderPixel
+                        | CWBackPixel
+                        | CWBackingStore
+                        | CWEventMask,
+                    &mut attrs,
+                );
+                if win == 0 {
+                    if colormap != 0 {
+                        XFreeColormap(state.display, colormap);
+                    }
+                    (0, 0)
+                } else {
+                    (win, colormap)
+                }
+            } else {
+                let visual = XDefaultVisual(state.display, state.screen);
+                let depth = XDefaultDepth(state.display, state.screen);
+                let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+                attrs.override_redirect = True;
+                attrs.border_pixel = 0;
+                attrs.backing_store = WhenMapped;
+                attrs.event_mask = ButtonPressMask
+                    | ButtonReleaseMask
+                    | PointerMotionMask
+                    | EnterWindowMask
+                    | LeaveWindowMask
+                    | ExposureMask;
+                let win = XCreateWindow(
+                    state.display,
+                    state.root,
+                    bx,
+                    by,
+                    bw.max(1),
+                    bh.max(1),
+                    0,
+                    depth,
+                    InputOutput as c_uint,
+                    visual,
+                    CWOverrideRedirect | CWBorderPixel | CWBackingStore | CWEventMask,
+                    &mut attrs,
+                );
+                if win != 0 {
+                    XSetWindowBackground(state.display, win, 0);
+                }
+                (win, 0)
+            };
+            if win == 0 {
+                None
+            } else {
+                let c_title = std::ffi::CString::new(OVERLAY_WM_TITLE).unwrap_or_default();
+                XStoreName(state.display, win, c_title.as_ptr());
+                set_net_wm_type_notification(state.display, win);
+                set_skip_taskbar_state(state.display, state.root, win);
+                // Keep full Bounding (ARGB bg=0 is invisible). ShapeInput = buttons only.
+                if state.move_cursor != 0 {
+                    XDefineCursor(state.display, win, state.move_cursor);
+                }
+                Some((win, colormap, argb))
+            }
+        };
+        let Some((win, colormap, argb)) = created else {
+            note("overlay-x11: relocate-shield create failed");
+            return;
+        };
+        state.shield = Some(RelocateShield {
+            win,
+            colormap,
+            x: bx,
+            y: by,
+            w: bw.max(1),
+            h: bh.max(1),
+            mapped: false,
+            shape_sig: Vec::new(),
+        });
+        note(&format!(
+            "overlay-x11: relocate-shield created {}x{}+{}+{} class=InputOutput argb={argb}",
+            bw, bh, bx, by
+        ));
+    }
+
+    let Some(shield) = state.shield.as_mut() else {
+        return;
+    };
+    if shield.x != bx || shield.y != by || shield.w != bw.max(1) || shield.h != bh.max(1) {
+        // SAFETY: HostState display invariant.
+        unsafe {
+            x_move_resize(state.display, shield.win, bx, by, bw.max(1), bh.max(1));
+        }
+        shield.x = bx;
+        shield.y = by;
+        shield.w = bw.max(1);
+        shield.h = bh.max(1);
+        shield.shape_sig.clear();
+    }
+
+    let shape_changed = shield.shape_sig != root_rects;
+    if shape_changed {
+        let mut local: Vec<XRectangle> = root_rects
+            .iter()
+            .filter_map(|(rx, ry, rw, rh)| {
+                let lx = rx.saturating_sub(shield.x);
+                let ly = ry.saturating_sub(shield.y);
+                if *rw == 0 || *rh == 0 {
+                    return None;
+                }
+                Some(XRectangle {
+                    x: lx as i16,
+                    y: ly as i16,
+                    width: (*rw).min(u32::from(u16::MAX)) as u16,
+                    height: (*rh).min(u32::from(u16::MAX)) as u16,
+                })
+            })
+            .collect();
+        if local.is_empty() {
+            apply_empty_input_shape(state.display, shield.win);
+        } else {
+            apply_shape_region(state.display, shield.win, SHAPE_INPUT, &mut local);
+        }
+        shield.shape_sig = root_rects;
+    }
+
+    let first_map = !shield.mapped;
+    // MapRaised only on first map — repeating it every host tick (~16ms) restacks
+    // a fullscreen OR window over the GNOME panel and makes the toolbar flicker.
+    // SAFETY: HostState display invariant.
+    unsafe {
+        if first_map {
+            XMapRaised(state.display, shield.win);
+            if state.move_cursor != 0 {
+                XDefineCursor(state.display, shield.win, state.move_cursor);
+            }
+            x_flush(state.display);
+        } else if shape_changed {
+            x_flush(state.display);
+        }
+    }
+    if first_map {
+        shield.mapped = true;
+        note(&format!(
+            "overlay-x11: relocate-shield mapped buttons={}",
+            shield.shape_sig.len()
+        ));
+    }
 }
 
 /// Root pointer + Button1 on `display`. Round-trip — prefer quiet connection.
@@ -1062,12 +1479,18 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
             .copied()
             .unwrap_or(false);
     if map_now {
-        // Prefer MapWindow over MapRaised — raising at create over an XWayland game
-        // makes the first relocate drag hitch until refocus.
+        // MapRaised when relocate keep-above: buttons must sit above the Sqyre
+        // editor (same XWayland stack). Plain Map otherwise — raising over a
+        // fullscreen XWayland game latches a freeze on the next drag.
         // SAFETY: HostState display invariant; face+hit just created on this display.
         unsafe {
-            XMapWindow(state.display, win);
-            XMapWindow(state.display, hit);
+            if state.relocate_mode && state.relocate_keep_above {
+                XMapRaised(state.display, win);
+                XMapRaised(state.display, hit);
+            } else {
+                XMapWindow(state.display, win);
+                XMapWindow(state.display, hit);
+            }
         }
         mark_site(&format!("overlay-x11:map:{}", spec.id));
         note(&format!(
@@ -1168,8 +1591,9 @@ fn apply_gate_visibility(state: &mut HostState) {
         let Some(btn) = state.buttons.get(&id) else {
             continue;
         };
-        // Relocate (Overlay editor open): keep every hosted button mapped so the
-        // user can drag them; do not let the found-map hide them mid-edit.
+        // Relocate (Overlay editor open): keep hosted buttons mapped so the user
+        // can drag them; do not let the found-map hide them mid-edit. Callers only
+        // host the selected program's buttons in this mode.
         let show = state.relocate_mode
             || !btn.spec.visibility_gated
             || found.get(&id).copied().unwrap_or(false);
@@ -1178,12 +1602,17 @@ fn apply_gate_visibility(state: &mut HostState) {
             if btn.mapped {
                 continue;
             }
-            // Map without raising — MapRaised over XWayland games freezes the next
-            // pointer interaction until a focus cycle.
+            // MapRaised when relocate keep-above so new gated buttons are not stuck
+            // under the Sqyre editor; plain Map otherwise (see create_button).
             // SAFETY: HostState display invariant; face+hit created on this display.
             unsafe {
-                XMapWindow(state.display, face);
-                XMapWindow(state.display, hit);
+                if state.relocate_mode && state.relocate_keep_above {
+                    XMapRaised(state.display, face);
+                    XMapRaised(state.display, hit);
+                } else {
+                    XMapWindow(state.display, face);
+                    XMapWindow(state.display, hit);
+                }
             }
             shown += 1;
             changed = true;
@@ -1892,6 +2321,21 @@ fn drain_x_events(state: &mut HostState) -> bool {
             let win = unsafe { event.crossing.window };
             let enter = ty == EnterNotify;
             if state
+                .shield
+                .as_ref()
+                .is_some_and(|s| s.mapped && s.win == win)
+            {
+                // Shield ShapeInput is only button disks — Enter means move cursor.
+                if enter && state.move_cursor != 0 {
+                    // SAFETY: HostState display invariant; fleur cursor on this display.
+                    unsafe {
+                        XDefineCursor(state.display, win, state.move_cursor);
+                        x_flush(state.display);
+                    }
+                }
+                continue;
+            }
+            if state
                 .chooser
                 .as_ref()
                 .is_some_and(|c| c.mapped && c.hit == win)
@@ -2001,6 +2445,18 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 }
                 continue;
             }
+            if state
+                .shield
+                .as_ref()
+                .is_some_and(|s| s.mapped && s.win == win)
+            {
+                if state.relocate_mode {
+                    if let Some(id) = button_id_at_root(state, root_x, root_y) {
+                        begin_relocate_drag(state, &id, root_x, root_y, "shield");
+                    }
+                }
+                continue;
+            }
             // Tip can sit over a neighboring button; hide before hit-test routing.
             hide_tip(state);
             let id = button_id_for_event_win(state, win);
@@ -2008,44 +2464,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 continue;
             };
             if state.relocate_mode {
-                hide_tip(state);
-                let (bx, by, bhit) = {
-                    let Some(btn) = state.buttons.get(&id) else {
-                        continue;
-                    };
-                    (btn.spec.x, btn.spec.y, btn.hit)
-                };
-                // Implicit ButtonPress grab over a fullscreen XWayland game freezes
-                // that client until the pointer leaves its window. Ungrab immediately
-                // and poll portal / quiet X for motion+release (outline pattern).
-                // SAFETY: release the automatic grab from this ButtonPress.
-                unsafe {
-                    XUngrabPointer(state.display, CurrentTime);
-                }
-                apply_empty_input_shape(state.display, bhit);
-                // SAFETY: HostState display invariant; cursor created on this display.
-                unsafe {
-                    if state.move_cursor != 0 {
-                        XDefineCursor(state.display, bhit, state.move_cursor);
-                    }
-                    x_flush(state.display);
-                }
-                note(&format!(
-                    "overlay-x11: relocate-press id={id} (ungrab+poll coalesced-face)"
-                ));
-                mark_site(&format!("overlay-x11:relocate-press:{id}"));
-                                state.drag = Some(DragState {
-                    id,
-                    grab_dx: root_x - bx,
-                    grab_dy: root_y - by,
-                    start_x: bx,
-                    start_y: by,
-                    motion_n: 0,
-                    face_x: bx,
-                    face_y: by,
-                    face_cfg_n: 0,
-                    poll_track: true,
-                });
+                begin_relocate_drag(state, &id, root_x, root_y, "ungrab+poll");
                 continue;
             }
             // Fire on press. Waiting for ButtonRelease lost clicks when the game
@@ -2144,6 +2563,7 @@ fn destroy_all(state: &mut HostState) {
     cancel_drag(state);
     hide_chooser(state, None);
     hide_tip(state);
+    destroy_relocate_shield(state);
     if let Some(tip) = state.tip.take() {
         // SAFETY: HostState display invariant; tip win created on this display.
         unsafe {
