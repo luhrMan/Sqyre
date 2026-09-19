@@ -6,6 +6,90 @@ use egui::containers::scroll_area::{DragScroll, ScrollBarVisibility};
 /// Keep floating dialogs at least this fraction of the viewport away from each edge.
 pub const DIALOG_EDGE_MARGIN_FRAC: f32 = 0.025;
 
+/// Minimum content-rect size delta (points) before treating the OS window as resized.
+const VIEWPORT_SIZE_EPSILON: f32 = 1.0;
+
+/// Old/new [`egui::Context::content_rect`] for one frame after an OS window resize.
+///
+/// Floating dialogs apply this via [`fit_dialog_popup`] / [`fit_dialog_window`] so
+/// their size and position keep the same fraction of the viewport.
+#[derive(Debug, Clone, Copy)]
+pub struct ViewportScaleEvent {
+    pub old_content: egui::Rect,
+    pub new_content: egui::Rect,
+}
+
+/// Track OS window size; set [`ViewportScaleEvent`] for one frame when it changes.
+///
+/// Steady-state (size unchanged): clear any stale pending event and return — no
+/// allocations, no layer scans.
+pub fn sync_viewport_window_scale(
+    ctx: &egui::Context,
+    last_content: &mut Option<egui::Rect>,
+    pending: &mut Option<ViewportScaleEvent>,
+) {
+    let content = ctx.content_rect();
+    let Some(prev) = *last_content else {
+        *last_content = Some(content);
+        *pending = None;
+        return;
+    };
+    let dw = (content.width() - prev.width()).abs();
+    let dh = (content.height() - prev.height()).abs();
+    if dw <= VIEWPORT_SIZE_EPSILON && dh <= VIEWPORT_SIZE_EPSILON {
+        *pending = None;
+        return;
+    }
+    if prev.width() <= 1.0 || prev.height() <= 1.0 {
+        *last_content = Some(content);
+        *pending = None;
+        return;
+    }
+    *pending = Some(ViewportScaleEvent {
+        old_content: prev,
+        new_content: content,
+    });
+    *last_content = Some(content);
+}
+
+fn scale_rect_with_viewport(rect: egui::Rect, event: &ViewportScaleEvent) -> egui::Rect {
+    let old = event.old_content;
+    let new = event.new_content;
+    let sx = new.width() / old.width();
+    let sy = new.height() / old.height();
+    let min = egui::pos2(
+        new.min.x + (rect.min.x - old.min.x) * sx,
+        new.min.y + (rect.min.y - old.min.y) * sy,
+    );
+    let size = egui::vec2(rect.width() * sx, rect.height() * sy).max(egui::vec2(1.0, 1.0));
+    egui::Rect::from_min_size(min, size)
+}
+
+/// One-frame clamp of Window min/max to the scaled outer rect so egui's private
+/// Resize `desired_size` picks up the new size; position via `current_pos`.
+fn apply_pending_viewport_scale<'a>(
+    window: egui::Window<'a>,
+    ctx: &egui::Context,
+    id: egui::Id,
+    pending: &ViewportScaleEvent,
+) -> egui::Window<'a> {
+    let Some(rect) = ctx.memory(|m| m.area_rect(id)) else {
+        return window;
+    };
+    let scaled = scale_rect_with_viewport(rect, pending);
+    let constrain = dialog_constrain_rect(ctx);
+    let scaled = scaled.intersect(constrain);
+    if scaled.width() < 1.0 || scaled.height() < 1.0 {
+        return window;
+    }
+    let size = scaled.size();
+    // min == max clamps Resize::desired_size this frame; next frame normal bounds restore.
+    window
+        .current_pos(scaled.min)
+        .min_size(size)
+        .max_size(size)
+}
+
 /// [`egui::Context::content_rect`] inset by [`DIALOG_EDGE_MARGIN_FRAC`] on each side.
 pub fn dialog_constrain_rect(ctx: &egui::Context) -> egui::Rect {
     let rect = ctx.content_rect();
@@ -18,6 +102,20 @@ pub fn dialog_constrain_rect(ctx: &egui::Context) -> egui::Rect {
 fn apply_dialog_bounds<'a>(window: egui::Window<'a>, ctx: &egui::Context) -> egui::Window<'a> {
     let rect = dialog_constrain_rect(ctx);
     window.constrain_to(rect).max_size(rect.size())
+}
+
+fn fit_dialog_common<'a>(
+    window: egui::Window<'a>,
+    ctx: &egui::Context,
+    id: egui::Id,
+    pending_scale: Option<&ViewportScaleEvent>,
+) -> egui::Window<'a> {
+    let window = window.id(id);
+    let window = apply_dialog_bounds(window, ctx);
+    match pending_scale {
+        Some(pending) => apply_pending_viewport_scale(window, ctx, id, pending),
+        None => window,
+    }
 }
 
 /// Visible layout budget for a Ui — not leftover room toward a Window `max_size`.
@@ -115,8 +213,13 @@ pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui))
 /// Panels that allocate their own split/scroll layout should use
 /// [`fit_dialog_popup`] plus [`fill_resize_body`] and an inner
 /// [`crate::pickers::dialog_scroll`].
-pub fn fit_dialog_window<'a>(window: egui::Window<'a>, ctx: &egui::Context) -> egui::Window<'a> {
-    apply_dialog_bounds(window, ctx)
+pub fn fit_dialog_window<'a>(
+    window: egui::Window<'a>,
+    ctx: &egui::Context,
+    id: egui::Id,
+    pending_scale: Option<&ViewportScaleEvent>,
+) -> egui::Window<'a> {
+    fit_dialog_common(window, ctx, id, pending_scale)
         .scroll([true, true])
         .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
         .drag_to_scroll(DragScroll::Never)
@@ -125,8 +228,13 @@ pub fn fit_dialog_window<'a>(window: egui::Window<'a>, ctx: &egui::Context) -> e
 /// Like [`fit_dialog_window`] but without an outer scroll area — for compact
 /// auto-sized confirms / record modals, and for panes that allocate their own
 /// body/footer and inner [`ScrollArea`]s (data editor, settings).
-pub fn fit_dialog_popup<'a>(window: egui::Window<'a>, ctx: &egui::Context) -> egui::Window<'a> {
-    apply_dialog_bounds(window, ctx)
+pub fn fit_dialog_popup<'a>(
+    window: egui::Window<'a>,
+    ctx: &egui::Context,
+    id: egui::Id,
+    pending_scale: Option<&ViewportScaleEvent>,
+) -> egui::Window<'a> {
+    fit_dialog_common(window, ctx, id, pending_scale)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,8 +320,14 @@ pub fn confirm_cancel_row(ui: &mut egui::Ui) -> ConfirmCancel {
 /// Runs `body` inside the window and returns `false` once the user has closed
 /// it via the titlebar close control (callers should clear their pending-confirm
 /// state in that case, same as an explicit Cancel).
-pub fn confirm_window(ctx: &egui::Context, title: &str, body: impl FnOnce(&mut egui::Ui)) -> bool {
+pub fn confirm_window(
+    ctx: &egui::Context,
+    title: &str,
+    pending_scale: Option<&ViewportScaleEvent>,
+    body: impl FnOnce(&mut egui::Ui),
+) -> bool {
     let mut open = true;
+    let id = egui::Id::new(("sqyre_confirm", title));
     fit_dialog_popup(
         egui::Window::new(title)
             .collapsible(false)
@@ -222,6 +336,8 @@ pub fn confirm_window(ctx: &egui::Context, title: &str, body: impl FnOnce(&mut e
             .order(egui::Order::Foreground)
             .open(&mut open),
         ctx,
+        id,
+        pending_scale,
     )
     .show(ctx, body);
     open
