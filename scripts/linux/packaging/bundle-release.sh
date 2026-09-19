@@ -9,7 +9,8 @@
 # Env overrides:
 #   SQYRE_BUNDLE_NAME     — directory under bin/ (default: sqyre-bundle)
 #   SQYRE_APP_FEATURES    — cargo feature flags (default: --features portal-capture)
-#   CARGO_TARGET_DIR      — where release/sqyre is built
+#   CARGO_TARGET_DIR      — where <profile>/sqyre is built
+#   SQYRE_CARGO_PROFILE   — cargo profile (default: dist — LTO shipping opts)
 #   SQYRE_BUNDLE_SKIP_BUILD=1 — skip cargo; use existing binary
 #
 # Run from repo root: make release-bundle
@@ -36,11 +37,12 @@ need_cmd readlink
 need_cmd file
 
 TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
+CARGO_PROFILE="${SQYRE_CARGO_PROFILE:-dist}"
 BUNDLE_NAME="${SQYRE_BUNDLE_NAME:-sqyre-bundle}"
 BUNDLE_DIR="$REPO_ROOT/bin/$BUNDLE_NAME"
 LIB_DIR="$BUNDLE_DIR/lib"
 TESS_DIR="$BUNDLE_DIR/tessdata"
-BINARY_SRC="$TARGET_DIR/release/sqyre"
+BINARY_SRC="$TARGET_DIR/$CARGO_PROFILE/sqyre"
 BINARY_DST="$BUNDLE_DIR/sqyre"
 
 # Prefer workspace-local rustup/cargo when present.
@@ -55,12 +57,12 @@ fi
 SQYRE_APP_FEATURES="${SQYRE_APP_FEATURES:---features portal-capture}"
 
 if [ "${SQYRE_BUNDLE_SKIP_BUILD:-}" != "1" ]; then
-  echo "Building release binary ($SQYRE_APP_FEATURES)…"
+  echo "Building $CARGO_PROFILE binary ($SQYRE_APP_FEATURES)…"
   (
     cd "$REPO_ROOT"
     # Intentionally unquoted: features string is one or more cargo args.
     # shellcheck disable=SC2086
-    cargo build -p sqyre-app --release $SQYRE_APP_FEATURES ${CARGO_FLAGS:-}
+    cargo build -p sqyre-app --profile "$CARGO_PROFILE" $SQYRE_APP_FEATURES ${CARGO_FLAGS:-}
   )
 fi
 
@@ -74,6 +76,10 @@ mkdir -p "$LIB_DIR" "$TESS_DIR"
 
 cp -f "$BINARY_SRC" "$BINARY_DST"
 chmod 755 "$BINARY_DST"
+# Strip only the bundled copy — leave cargo target/ symbols for local debugging.
+if have_cmd strip; then
+  strip --strip-unneeded "$BINARY_DST" || true
+fi
 
 # Core glibc / dynamic linker — leave to the host.
 is_system_lib() {

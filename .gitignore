@@ -30,6 +30,7 @@ notes.md
 *.flatpak
 scripts/linux/packaging/appimage/sqyre.AppDir/
 scripts/linux/packaging/appimage/appimage-build/
+scripts/linux/packaging/appimage/.runtime-cache/
 # mktemp recipe from build-appimage.sh (e.g. .AppImageBuilder.XXXXXX.yml)
 scripts/linux/packaging/appimage/.AppImageBuilder.*.yml
 scripts/linux/packaging/flatpak/build-dir/

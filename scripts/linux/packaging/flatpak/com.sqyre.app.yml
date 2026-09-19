@@ -176,10 +176,10 @@ modules:
         cp -a --reflink=auto "${FLATPAK_DEST}/lib/sqyre-cargo" cargo
         # One cargo invocation builds both bins (shared deps compile once).
         # -j: cargo ignores make -j; use flatpak-builder's job budget.
-        cargo --offline build -p sqyre-app -p sqyre-probe --release --features portal-capture \
+        cargo --offline build -p sqyre-app -p sqyre-probe --profile dist --features portal-capture \
           -j"$FLATPAK_BUILDER_N_JOBS"
-      - install -Dm755 target/release/sqyre ${FLATPAK_DEST}/bin/sqyre
-      - install -Dm755 target/release/sqyre-probe ${FLATPAK_DEST}/bin/sqyre-probe
+      - install -Dm755 target/dist/sqyre ${FLATPAK_DEST}/bin/sqyre
+      - install -Dm755 target/dist/sqyre-probe ${FLATPAK_DEST}/bin/sqyre-probe
       - |
         set -euo pipefail
         # Catch missing sonames at build time (probe may not link OCR; sqyre does).

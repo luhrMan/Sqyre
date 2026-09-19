@@ -37,6 +37,17 @@ unused = "warn"
 [workspace.lints.clippy]
 all = "warn"
 
+# Day-to-day `cargo build --release` / `make release`: fast incremental rebuilds.
+# Strip is cheap and keeps local release binaries smaller.
+[profile.release]
+strip = "symbols"
+
+# Shipping artifacts only (AppImage, Flatpak, Windows, WASM, release-bundle).
+# Thin LTO + single codegen unit shrink binaries but make repeat links/compiles slow.
+[profile.dist]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
 
 [workspace.dependencies]
 purecv = { version = "0.6.1", default-features = false, features = ["std", "parallel", "simd"] }

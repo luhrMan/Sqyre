@@ -44,7 +44,7 @@ env:
 jobs:
   version:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       version: ${{ steps.check.outputs.version }}
@@ -97,7 +97,7 @@ jobs:
         (needs.version.result == 'success' && needs.version.outputs.should_release == 'true')
       )
     needs: [version]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
@@ -131,7 +131,7 @@ jobs:
         (needs.version.result == 'success' && needs.version.outputs.should_release == 'true')
       )
     needs: [version]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -155,7 +155,7 @@ jobs:
       needs.version.result == 'success' &&
       needs.version.outputs.should_release == 'true'
     needs: [version]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -180,7 +180,7 @@ jobs:
       needs.cargo-registry.result == 'success' &&
       needs.linux-image.result == 'success'
     needs: [cargo-registry, linux-image]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -304,7 +304,7 @@ jobs:
       needs.cargo-registry.result == 'success' &&
       needs.linux-image.result == 'success'
     needs: [version, cargo-registry, linux-image]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -401,7 +401,8 @@ jobs:
       - name: Zip Linux AppImage
         run: |
           VERSION="${{ needs.version.outputs.version }}"
-          zip -9 "Sqyre-v${VERSION}-x86_64.AppImage.zip" \
+          # Store only: AppImage is already zstd squashfs + runtime.
+          zip -0 "Sqyre-v${VERSION}-x86_64.AppImage.zip" \
             "Sqyre-v${VERSION}-x86_64.AppImage"
 
       - name: Upload Linux binary artifact (zipped)
@@ -423,7 +424,7 @@ jobs:
       needs.version.outputs.should_release == 'true' &&
       needs.cargo-registry.result == 'success'
     needs: [version, cargo-registry]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     container:
@@ -487,7 +488,7 @@ jobs:
       needs.cargo-registry.result == 'success' &&
       needs.windows-image.result == 'success'
     needs: [version, cargo-registry, windows-image]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -556,7 +557,7 @@ jobs:
         run: |
           VERSION="${{ needs.version.outputs.version }}"
           cp -f bin/sqyre.exe "sqyre-v${VERSION}-windows-amd64.exe"
-          zip -9 "sqyre-v${VERSION}-windows-amd64.zip" \
+          zip -0 "sqyre-v${VERSION}-windows-amd64.zip" \
             "sqyre-v${VERSION}-windows-amd64.exe"
 
       - name: Upload Windows binary artifact (zipped)
@@ -573,7 +574,7 @@ jobs:
       needs.cargo-registry.result == 'success' &&
       needs.linux-image.result == 'success'
     needs: [version, cargo-registry, linux-image]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -669,7 +670,7 @@ jobs:
       needs.build-windows.result == 'success' &&
       needs.build-wasm.result == 'success'
     needs: [version, build-linux, build-flatpak, build-windows, build-wasm]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:

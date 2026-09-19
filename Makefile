@@ -136,11 +136,12 @@ release-bundle: $(BIN)
 		echo "make release-bundle requires a Linux host (got $(HOST_OS))"; \
 		exit 1; \
 	fi
-	$(CARGO) build -p sqyre-app --release $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
-	SQYRE_BUNDLE_SKIP_BUILD=1 ./scripts/linux/packaging/bundle-release.sh
+	$(CARGO) build -p sqyre-app --profile dist $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
+	SQYRE_BUNDLE_SKIP_BUILD=1 SQYRE_CARGO_PROFILE=dist ./scripts/linux/packaging/bundle-release.sh
 
 # Same layout as release-bundle, but with dhat-heap (allocation stacks → dhat-heap.json on quit).
 # Uses a separate Cargo target dir so it does not overwrite the normal release binary.
+# Local leak hunts use --release (fast rebuilds); not a shipping profile.
 release-bundle-dhat: $(BIN)
 	@if [ "$(HOST_OS)" != "linux" ]; then \
 		echo "make release-bundle-dhat requires a Linux host (got $(HOST_OS))"; \
@@ -150,6 +151,7 @@ release-bundle-dhat: $(BIN)
 		--target-dir $(TARGET_DIR)-dhat $(CARGO_FLAGS)
 	SQYRE_BUNDLE_SKIP_BUILD=1 \
 		CARGO_TARGET_DIR=$(TARGET_DIR)-dhat \
+		SQYRE_CARGO_PROFILE=release \
 		SQYRE_BUNDLE_NAME=sqyre-bundle-dhat \
 		SQYRE_APP_FEATURES="--features portal-capture,dhat-heap" \
 		./scripts/linux/packaging/bundle-release.sh
