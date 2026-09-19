@@ -5044,6 +5044,7 @@ dependencies = [
  "libc",
  "parking_lot",
  "sqyre-capture",
+ "sqyre-hotkeys",
  "sqyre-persist",
  "thiserror 2.0.20",
  "web-time",

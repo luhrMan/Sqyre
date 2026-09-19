@@ -74,6 +74,9 @@ pub struct MacroOverlay {
     pending_chooser: Arc<Mutex<Option<crate::x11_buttons::HotkeyChooserResult>>>,
     #[cfg(target_os = "linux")]
     last_relocate: Option<bool>,
+    /// Last [`X11ButtonHost::set_relocate_keep_above`] value sent (dedupe).
+    #[cfg(target_os = "linux")]
+    last_keep_above: Option<bool>,
     /// Image-gate found map shared with [`crate::x11_buttons`] (Linux).
     visibility: Arc<Mutex<HashMap<String, bool>>>,
 }
@@ -130,6 +133,8 @@ impl MacroOverlay {
             pending_chooser: Arc::new(Mutex::new(None)),
             #[cfg(target_os = "linux")]
             last_relocate: None,
+            #[cfg(target_os = "linux")]
+            last_keep_above: None,
             visibility: Arc::new(Mutex::new(HashMap::new())),
         }
     }
@@ -236,11 +241,26 @@ impl MacroOverlay {
             if let Some(host) = &self.x11_host {
                 host.set_relocate_mode(enabled);
                 self.last_relocate = Some(enabled);
+                if !enabled {
+                    self.last_keep_above = Some(false);
+                }
             }
         }
         #[cfg(not(target_os = "linux"))]
         {
             let _ = enabled;
+        }
+    }
+
+    /// Keep OR buttons above the Sqyre editor during relocate (XWayland stack).
+    #[cfg(target_os = "linux")]
+    fn set_relocate_keep_above(&mut self, enabled: bool) {
+        if self.last_keep_above == Some(enabled) {
+            return;
+        }
+        if let Some(host) = &self.x11_host {
+            host.set_relocate_keep_above(enabled);
+            self.last_keep_above = Some(enabled);
         }
     }
 
@@ -291,8 +311,9 @@ impl MacroOverlay {
             let gated = button_is_focus_gated(btn);
             if gated {
                 any_gated = true;
-                // Overlay editor open: keep every enabled button hosted for relocate,
-                // even when OS focus is on another monitor/app (ungrabbed drag).
+                // Overlay editor open: keep the selected program's buttons hosted for
+                // relocate even when OS focus is on another monitor/app (ungrabbed drag).
+                // Callers already filter `buttons` to that program.
                 if !relocate {
                     let win = focus_for_overlay_button(btn, focus.as_ref(), last_foreign.as_ref());
                     if !keep_focus_gated_button(btn, catalog, win) {
@@ -326,6 +347,13 @@ impl MacroOverlay {
             shown += 1;
         }
 
+        // Raise OR buttons above Sqyre while editing unless a foreign/game window
+        // owns focus (MapRaised over fullscreen XWayland latches a drag freeze).
+        let foreign_focus = focus
+            .as_ref()
+            .is_some_and(|w| !window_is_our_process(w) && !window_is_transient_shell_focus(w));
+        let keep_above = relocate && !foreign_focus;
+
         let sig = (
             shown,
             any_gated,
@@ -341,7 +369,7 @@ impl MacroOverlay {
                 .map(|w| format!("{} ({})", w.process_name.trim(), w.process_path.trim()))
                 .unwrap_or_else(|| "(none)".into());
             note(&format!(
-                "overlay: sync shown={shown} busy={busy_shown} gated={any_gated} skips={gated_skips} preview={} relocate={relocate} focus={focus_label}",
+                "overlay: sync shown={shown} busy={busy_shown} gated={any_gated} skips={gated_skips} preview={} relocate={relocate} keep_above={keep_above} focus={focus_label}",
                 preview.is_some()
             ));
         }
@@ -349,7 +377,14 @@ impl MacroOverlay {
         #[cfg(target_os = "linux")]
         {
             self.ensure_x11_host(pending_macros);
-            self.set_relocate_mode(relocate);
+            // keep_above before relocate_mode so the first map uses MapRaised.
+            if relocate {
+                self.set_relocate_keep_above(keep_above);
+                self.set_relocate_mode(true);
+            } else {
+                self.set_relocate_mode(false);
+                self.set_relocate_keep_above(false);
+            }
             if let Some(host) = &self.x11_host {
                 if !self.wake_sent {
                     host.set_wake(ctx.clone());
@@ -375,7 +410,7 @@ impl MacroOverlay {
 
         #[cfg(not(target_os = "linux"))]
         {
-            let _ = (ctx, pending_macros, specs, relocate);
+            let _ = (ctx, pending_macros, specs, relocate, keep_above);
         }
     }
 
@@ -397,6 +432,7 @@ impl MacroOverlay {
                 self.wake_sent = false;
                 self.last_native_specs = None;
                 self.last_relocate = None;
+                self.last_keep_above = None;
             }
             Err(e) => {
                 note(&format!("overlay: X11 host failed: {e}"));
@@ -935,8 +971,9 @@ mod tests {
     #[test]
     fn focus_gate_would_hide_other_app_but_relocate_bypasses_in_sync() {
         // Document the sync contract: keep_focus_gated_button hides when another
-        // app has focus; MacroOverlay::sync must still host those buttons while
-        // `relocate` is true (Overlay editor open) — see gated && !relocate branch.
+        // app has focus; MacroOverlay::sync must still host the selected program's
+        // buttons while `relocate` is true (Overlay editor open) — see gated &&
+        // !relocate branch. Callers filter `buttons` to that program first.
         let mut catalog = ProgramCatalog::default();
         catalog.create_program("Mistfall Hunter").unwrap();
         catalog
