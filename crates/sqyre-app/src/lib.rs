@@ -353,6 +353,10 @@ pub struct SqyreApp {
     instance_lock: Option<single_instance::InstanceLock>,
     /// Confirm dialog for deleting the selected macro.
     pending_delete_macro: Option<String>,
+    /// Last main-viewport [`egui::Context::content_rect`] for dialog scaling.
+    last_viewport_content: Option<egui::Rect>,
+    /// One-frame OS-resize event for proportional floating-dialog scale.
+    pending_viewport_scale: Option<crate::widgets::ViewportScaleEvent>,
     /// WASM async YAML import result (unused on native).
     #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     pending_import: PendingImport,
@@ -573,6 +577,8 @@ impl SqyreApp {
             tray: tray::SystemTray::default(),
             instance_lock: None,
             pending_delete_macro: None,
+            last_viewport_content: None,
+            pending_viewport_scale: None,
             pending_import: wasm_io::new_pending_import(),
             #[cfg(not(target_arch = "wasm32"))]
             tasks: BackgroundTasks::default(),

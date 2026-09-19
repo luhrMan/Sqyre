@@ -80,6 +80,7 @@ pub fn show_logs_window(
     title: &str,
     action_log: &SharedActionLog,
     image_cache: &mut LogsImageCache,
+    pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
 ) -> bool {
     image_cache.ensure_action(action_id);
     let entries = action_log.entries_for(action_id);
@@ -96,6 +97,7 @@ pub fn show_logs_window(
 
     let mut open = true;
     let mut close_clicked = false;
+    let id = egui::Id::new(("sqyre_logs", action_id.as_str()));
     crate::widgets::fit_dialog_window(
         egui::Window::new(title)
             .open(&mut open)
@@ -103,6 +105,8 @@ pub fn show_logs_window(
             .min_width(420.0)
             .min_height(280.0),
         ctx,
+        id,
+        pending_scale,
     )
     .show(ctx, |ui| {
         ui.horizontal(|ui| {

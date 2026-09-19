@@ -123,6 +123,7 @@ impl MacroMetaUi {
         ui: &mut egui::Ui,
         m: &mut Macro,
         enabled: bool,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) -> MetaMutations {
         let mut out = MetaMutations::default();
         if !self.delay_open {
@@ -137,6 +138,8 @@ impl MacroMetaUi {
                 .auto_sized()
                 .open(&mut self.delay_open),
             ui.ctx(),
+            egui::Id::new("Delay between actions"),
+            pending_scale,
         )
         .show(ui.ctx(), |ui| {
             ui.add_enabled_ui(enabled, |ui| {

@@ -70,6 +70,7 @@ pub(crate) struct MacroRecordShow<'a> {
     pub screen_click: &'a ScreenClickBridge,
     pub macros: &'a [(String, Vec<String>)],
     pub compact_program_headers: bool,
+    pub pending_scale: Option<&'a crate::widgets::ViewportScaleEvent>,
 }
 
 #[derive(Debug, Clone)]
@@ -130,6 +131,7 @@ impl MacroRecordUi {
             screen_click,
             macros,
             compact_program_headers,
+            pending_scale,
         } = ui;
         match self {
             Self::Closed => MacroRecordShowResult {
@@ -208,6 +210,7 @@ impl MacroRecordUi {
                     screen_click,
                     macros,
                     compact_program_headers,
+                    pending_scale,
                 },
             ) {
                 ReviewFrame::Continue { catalog_changed } => MacroRecordShowResult {
@@ -249,6 +252,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
         screen_click,
         macros,
         compact_program_headers,
+        pending_scale,
     } = ui;
     let ReviewState {
         draft,
@@ -287,6 +291,8 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
             .default_pos(default_pos)
             .min_size([400.0, 280.0]),
         ctx,
+        egui::Id::new("sqyre_macro_record_review"),
+        pending_scale,
     )
     .show(ctx, |ui| {
             is_dark = ui.visuals().dark_mode;
@@ -480,6 +486,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                 screen_click,
             },
             compact_program_headers,
+            pending_scale,
         };
         let _ = action_tooltip::show(tooltip, ctx, draft, macros, &mut tip_ui, |_| {});
     }

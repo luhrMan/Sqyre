@@ -123,6 +123,8 @@ impl SqyreApp {
             tray: tray::SystemTray::default(),
             instance_lock: None,
             pending_delete_macro: None,
+            last_viewport_content: None,
+            pending_viewport_scale: None,
             pending_import: crate::wasm_io::new_pending_import(),
             #[cfg(not(target_arch = "wasm32"))]
             tasks: crate::BackgroundTasks::default(),

@@ -41,6 +41,7 @@ impl HotkeyRecordUi {
         &mut self,
         ctx: &egui::Context,
         macro_hotkeys: &MacroHotkeyBridge,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) -> Option<Vec<String>> {
         match self {
             Self::Closed => None,
@@ -51,6 +52,7 @@ impl HotkeyRecordUi {
                     chord,
                     "Record hotkey",
                     "Release the hotkey to finish…",
+                    pending_scale,
                 ) {
                     *self = Self::Closed;
                 }
@@ -81,7 +83,7 @@ impl HotkeyRecordUi {
                     .unwrap_or(false);
 
                 let mut cancel = false;
-                record_modal(ctx, "Record hotkey", |ui| {
+                record_modal(ctx, "Record hotkey", pending_scale, |ui| {
                     ui.label(
                         "Hold your hotkey. When it stays unchanged for 1 second, it will be saved.\nPress Esc to cancel.",
                     );

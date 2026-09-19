@@ -84,6 +84,7 @@ impl VariablesPanelUi {
         enabled: bool,
         runtime_vars: &SharedRuntimeVars,
         running: bool,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) -> bool {
         if !self.open {
             return false;
@@ -100,6 +101,8 @@ impl VariablesPanelUi {
                 .default_height(480.0)
                 .min_size([360.0, 320.0]),
             ctx,
+            egui::Id::new("sqyre_variables_panel"),
+            pending_scale,
         )
         .show(ctx, |ui| {
             // Split remaining height between declared list (top) and Runtime/Built-ins.

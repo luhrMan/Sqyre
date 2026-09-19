@@ -547,6 +547,7 @@ fn show_edit_window(
         theme,
         bridges,
         compact_program_headers,
+        pending_scale,
     } = ui;
     let VarTheme { is_dark, .. } = *theme;
     let (action_id, anchor, type_key, has_coord_preview) = match state {
@@ -575,6 +576,7 @@ fn show_edit_window(
             paint,
             macros,
             *compact_program_headers,
+            *pending_scale,
         );
         apply_picker_result(&mut edit.draft, result);
     }
@@ -611,7 +613,6 @@ fn show_edit_window(
     // `fit_dialog_popup` already caps max_size to `dialog_constrain_rect`.
     crate::widgets::fit_dialog_popup(
         egui::Window::new(label)
-            .id(area_id)
             .open(&mut open)
             .title_bar(false)
             .collapsible(false)
@@ -624,6 +625,8 @@ fn show_edit_window(
                     .inner_margin(egui::Margin::symmetric(10, 8)),
             ),
         ctx,
+        area_id,
+        *pending_scale,
     )
     .show(ctx, |ui| {
         crate::widgets::fill_resize_body(ui, |ui| {

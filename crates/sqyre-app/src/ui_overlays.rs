@@ -111,7 +111,11 @@ fn action_display_name(app: &SqyreApp, action_id: ActionId) -> String {
         .unwrap_or_else(|| action_id.as_str())
 }
 
-pub fn show_logs_window(app: &mut SqyreApp, ctx: &egui::Context) {
+pub fn show_logs_window(
+    app: &mut SqyreApp,
+    ctx: &egui::Context,
+    pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
+) {
     let Some(action_id) = app.run_session.logs_window else {
         return;
     };
@@ -122,6 +126,7 @@ pub fn show_logs_window(app: &mut SqyreApp, ctx: &egui::Context) {
         &title,
         &app.run_session.action_log,
         &mut app.run_session.logs_image_cache,
+        pending_scale,
     ) {
         app.run_session.logs_window = None;
     }
@@ -129,7 +134,10 @@ pub fn show_logs_window(app: &mut SqyreApp, ctx: &egui::Context) {
 
 /// Data editor, settings, variables, add-action picker, logs.
 pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
-    show_logs_window(app, ctx);
+    // Copy so later `&mut app` borrows do not conflict with a pending ref.
+    let pending = app.pending_viewport_scale;
+    let pending_scale = pending.as_ref();
+    show_logs_window(app, ctx, pending_scale);
     app.data_editor.show(
         &mut DataEditorCtx {
             ctx,
@@ -139,6 +147,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             icons: &mut app.icon_cache,
             screen_click: &app.screen_click,
             settings: app.settings_ui.settings_mut(),
+            pending_scale,
         },
         app.workspace.selected_macro,
         &mut app.preview_tooltips,
@@ -151,6 +160,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             &mut app.workspace.macros,
             &mut app.workspace.catalog,
             &mut app.update,
+            pending_scale,
         );
         if app.settings_ui.restart_requested {
             app.settings_ui.restart_requested = false;
@@ -164,6 +174,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             &mut app.workspace.db,
             &mut app.workspace.macros,
             &mut app.workspace.catalog,
+            pending_scale,
         );
     }
     if !app.workspace.macros.is_empty() {
@@ -178,6 +189,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             !running,
             &app.run_session.runtime_vars,
             running,
+            pending_scale,
         ) {
             app.persist_macro_at(idx);
         }
@@ -222,6 +234,7 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
                 screen_click: &app.screen_click,
             },
             compact_program_headers: app.settings_ui.settings().compact_program_headers,
+            pending_scale,
         };
         let picked = app.add_action_picker.show(ctx, &mut tip, &macros, |_| {
             defaults_to_persist = true;
@@ -336,6 +349,12 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         target_os = "linux"
     ))]
     poll_deferred_capture_probe(app, ctx);
+
+    crate::widgets::sync_viewport_window_scale(
+        ctx,
+        &mut app.last_viewport_content,
+        &mut app.pending_viewport_scale,
+    );
 
     // Keep highlighter enable flag in sync with the preference.
     let highlight_on = app.settings_ui.settings().highlight_active_action;
@@ -470,18 +489,27 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         }
     }
 
-    if let Some(chord) = app.hotkey_record.show(ctx, &app.run_session.macro_hotkeys) {
+    if let Some(chord) = app.hotkey_record.show(
+        ctx,
+        &app.run_session.macro_hotkeys,
+        app.pending_viewport_scale.as_ref(),
+    ) {
         if !app.tree.tooltip.apply_recorded_chord(chord.clone())
             && !app.add_action_picker.apply_recorded_chord(chord.clone())
         {
             app.apply_hotkey_to_selected(chord, None);
         }
     }
-    if let Some(key) = app.key_record.show(ctx, &app.run_session.macro_hotkeys) {
+    if let Some(key) = app.key_record.show(
+        ctx,
+        &app.run_session.macro_hotkeys,
+        app.pending_viewport_scale.as_ref(),
+    ) {
         app.tree.tooltip.apply_recorded_key(key.clone());
         app.add_action_picker.apply_recorded_key(key);
     }
     if let Some(copied) = {
+        let pending = app.pending_viewport_scale;
         let macros: Vec<(String, Vec<String>)> = app
             .workspace
             .macros
@@ -500,6 +528,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             screen_click: &app.screen_click,
             macros: &macros,
             compact_program_headers: app.settings_ui.settings().compact_program_headers,
+            pending_scale: pending.as_ref(),
         });
         if result.catalog_changed {
             if let Err(e) = app.persist_database() {
@@ -726,7 +755,8 @@ pub fn show_command_palette(app: &mut SqyreApp, ctx: &egui::Context) {
             overlay_buttons: &app.settings_ui.settings().overlay_buttons,
             running,
         });
-    if let Some(kind) = app.command_palette.show(ctx, &commands) {
+    let pending = app.pending_viewport_scale;
+    if let Some(kind) = app.command_palette.show(ctx, &commands, pending.as_ref()) {
         app.run_palette_command(ctx, kind);
     }
 }

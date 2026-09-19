@@ -469,7 +469,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
     }
 
     if let Some(name) = app.pending_delete_macro.clone() {
-        let open = crate::widgets::confirm_window(ui.ctx(), "Delete Macro", |ui| {
+        let pending = app.pending_viewport_scale;
+        let open = crate::widgets::confirm_window(
+            ui.ctx(),
+            "Delete Macro",
+            pending.as_ref(),
+            |ui| {
             ui.label(format!("Delete macro \"{name}\"?"));
             let mut outcome = crate::widgets::ConfirmCancel::None;
             ui.horizontal(|ui| {

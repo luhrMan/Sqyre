@@ -340,6 +340,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             .tree
             .known_vars_cached(&app.workspace.macros[idx])
             .clone();
+        let pending = app.pending_viewport_scale;
         let discarded = {
             let macro_ = &mut app.workspace.macros[idx];
             let mut tip_ui = TipUiCtx {
@@ -359,6 +360,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     screen_click: &app.screen_click,
                 },
                 compact_program_headers: app.settings_ui.settings().compact_program_headers,
+                pending_scale: pending.as_ref(),
             };
             action_tooltip::show(
                 &mut app.tree.tooltip,
