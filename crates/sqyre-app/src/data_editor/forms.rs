@@ -130,8 +130,7 @@ impl DataEditor {
             help::label(ui, "Name", help::DE_NAME);
             help::tip(
                 ui.add(
-                    egui::TextEdit::singleline(&mut self.form_name)
-                        .desired_width(ui.available_width() - 48.0),
+                    egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
                 ),
                 help::DE_NAME,
             );
@@ -471,10 +470,12 @@ impl DataEditor {
             }
             let preview_h = ui.available_height().max(120.0);
             let mut hover: Option<super::pixel_check::PixelCheckHover> = None;
+            let preview_w = crate::widgets::visible_width(ui);
             ui.allocate_ui_with_layout(
-                egui::vec2(ui.available_width(), preview_h),
+                egui::vec2(preview_w, preview_h),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
+                    ui.set_max_width(preview_w);
                     let (rect, preview_image_size) = previews.paint_search_area_panel(
                         ui,
                         lx,

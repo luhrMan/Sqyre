@@ -133,9 +133,6 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 app.export_db_yaml();
             }
         }
-        if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
-            app.data_editor.request_open(ui.ctx());
-        }
 
         let status = app.run_session.state.status.lock().clone();
         let right_w = ui.available_width();
@@ -145,6 +142,9 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             |ui| {
                 if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
                     app.settings_ui.open = true;
+                }
+                if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
+                    app.data_editor.request_open(ui.ctx());
                 }
                 if !status.is_empty() {
                     ui.label(status);

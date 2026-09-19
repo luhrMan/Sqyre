@@ -111,10 +111,26 @@ fn paint_item_icon_tooltip(
     }
 }
 
+/// Minimum fraction of a cell that must fit before that column is counted.
+/// Avoids a barely-visible trailing column when the pane is only a sliver wider
+/// than N full cells (or a floating scrollbar covers most of the next cell).
+const MIN_COLUMN_VISIBLE_FRAC: f32 = 0.8;
+
+/// How many fixed-size grid columns fit in `avail_w`.
+///
+/// A column is counted only when at least [`MIN_COLUMN_VISIBLE_FRAC`] of its
+/// cell width lies inside the budget (not merely a few pixels of overflow).
 pub(crate) fn grid_column_count_for_width(avail_w: f32, cell: f32, gap: f32) -> usize {
-    let avail = avail_w.max(cell);
-    let cols = ((avail + gap) / (cell + gap)).floor() as usize;
-    cols.max(1)
+    let cell = cell.max(1.0);
+    let gap = gap.max(0.0);
+    let avail = avail_w.max(0.0);
+    let min_cell = cell * MIN_COLUMN_VISIBLE_FRAC;
+    if avail < min_cell {
+        return 1;
+    }
+    let stride = cell + gap;
+    // (n - 1) * stride + min_cell ≤ avail  →  n ≤ (avail - min_cell) / stride + 1
+    (((avail - min_cell) / stride).floor() as usize).saturating_add(1)
 }
 
 /// How an icon grid sizes cells.
@@ -296,9 +312,12 @@ pub fn paint_even_icon_grid(
     if targets.is_empty() {
         return;
     }
-    let avail_raw = ui.available_width();
+    // Visible clip ∩ max_rect, minus floating scrollbar overlay — not leftover
+    // room toward Window max_size, and not width the bar will cover.
+    let avail_raw = crate::widgets::visible_content_width(ui);
     let (style, gap) = metrics_for(kind, targets.len(), avail_raw);
-    let avail = avail_raw.max(style.cell);
+    // Cap to visible width — do not inflate past the pane (would raise min_size).
+    let avail = avail_raw;
     ui.set_max_width(avail);
     let cols = grid_column_count_for_width(avail, style.cell, gap);
     let old_spacing = ui.spacing().item_spacing;

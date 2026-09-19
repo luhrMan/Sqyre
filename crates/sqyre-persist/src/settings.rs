@@ -36,6 +36,14 @@ pub const MIN_BACKUP_MAX_KEEP: i32 = 1;
 pub const MAX_BACKUP_MAX_KEEP: i32 = 100;
 pub const DEFAULT_AUTO_UPDATE_CHECK: bool = true;
 pub const DEFAULT_RELEASE_HELD_INPUTS_ON_END: bool = true;
+/// Data Editor left-list width as a fraction of the editor body (default = min).
+pub const DEFAULT_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
+pub const MIN_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
+pub const MAX_DATA_EDITOR_LEFT_FRAC: f32 = 0.75;
+/// Macro list side panel width (points).
+pub const DEFAULT_MACRO_LIST_WIDTH: f32 = 220.0;
+pub const MIN_MACRO_LIST_WIDTH: f32 = 160.0;
+pub const MAX_MACRO_LIST_WIDTH: f32 = 420.0;
 
 /// Default While budget when a macro sets `max_iterations` ≤ 0.
 pub const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
@@ -535,6 +543,12 @@ pub struct UserSettings {
     /// (cleared when no tagged Program owns focus). When false, filters are manual only.
     #[serde(default)]
     pub hotkey_tags_while_focused: bool,
+    /// Data Editor left list width as a fraction of the editor body (`0.15`–`0.75`).
+    #[serde(default = "default_data_editor_left_frac")]
+    pub data_editor_left_split: f32,
+    /// Macro list side panel width in points.
+    #[serde(default = "default_macro_list_width")]
+    pub macro_list_width: f32,
 }
 
 fn default_hide_recording() -> bool {
@@ -585,6 +599,12 @@ fn default_backup_max_keep() -> i32 {
 fn default_auto_update_check() -> bool {
     DEFAULT_AUTO_UPDATE_CHECK
 }
+fn default_data_editor_left_frac() -> f32 {
+    DEFAULT_DATA_EDITOR_LEFT_FRAC
+}
+fn default_macro_list_width() -> f32 {
+    DEFAULT_MACRO_LIST_WIDTH
+}
 fn is_zero_i64(v: &i64) -> bool {
     *v == 0
 }
@@ -619,6 +639,8 @@ impl Default for UserSettings {
             last_update_check_unix: 0,
             hotkey_tag_filters: Vec::new(),
             hotkey_tags_while_focused: false,
+            data_editor_left_split: DEFAULT_DATA_EDITOR_LEFT_FRAC,
+            macro_list_width: DEFAULT_MACRO_LIST_WIDTH,
         }
     }
 }
@@ -865,6 +887,18 @@ impl UserSettings {
         if self.last_update_check_unix < 0 {
             self.last_update_check_unix = 0;
         }
+        if !self.data_editor_left_split.is_finite() {
+            self.data_editor_left_split = DEFAULT_DATA_EDITOR_LEFT_FRAC;
+        }
+        self.data_editor_left_split = self
+            .data_editor_left_split
+            .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
+        if !self.macro_list_width.is_finite() || self.macro_list_width <= 0.0 {
+            self.macro_list_width = DEFAULT_MACRO_LIST_WIDTH;
+        }
+        self.macro_list_width = self
+            .macro_list_width
+            .clamp(MIN_MACRO_LIST_WIDTH, MAX_MACRO_LIST_WIDTH);
     }
 
     /// Apply `sqyre_dir` override to the process-wide data directory.
@@ -1035,6 +1069,22 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
         assert_eq!(loaded.hotkey_tag_filters, vec!["combat".to_string()]);
         assert!(!loaded.hotkey_tags_while_focused);
+        assert!(
+            (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON
+        );
+    }
+
+    #[test]
+    fn clamp_data_editor_left_frac() {
+        let mut s = UserSettings {
+            data_editor_left_split: 0.05,
+            ..Default::default()
+        };
+        s.clamp();
+        assert!((s.data_editor_left_split - MIN_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON);
+        s.data_editor_left_split = 0.9;
+        s.clamp();
+        assert!((s.data_editor_left_split - MAX_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON);
     }
 
     #[test]

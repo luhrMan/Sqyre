@@ -57,7 +57,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         .scope(|ui| {
             ui.spacing_mut().scroll.floating_allocated_width = ui.spacing().scroll.bar_width;
             // Custom drag-scroll below (DnD handle vs content); disable egui drag.
-            let scroll_out = egui::ScrollArea::vertical()
+            // Both axes so a narrow central pane can scroll horizontally.
+            let scroll_out = egui::ScrollArea::both()
                 .id_salt("macro_tree_scroll")
                 .scroll_source(crate::pickers::SCROLL_SOURCE_NO_DRAG)
                 .auto_shrink([false, false])

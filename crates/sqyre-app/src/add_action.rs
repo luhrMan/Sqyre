@@ -207,15 +207,14 @@ impl AddActionPicker {
             let is_dark = ui.visuals().dark_mode;
             let templates = action_templates();
             let list_h = pickers::popup_scroll_max_height(ui, 0.0);
+            let list_w = crate::widgets::visible_width(ui);
             // Content-sized columns (not equal-split) so shrinking the window
             // yields horizontal scroll instead of squashing tiles.
-            pickers::scroll_both()
-                .auto_shrink([false, false])
-                .max_height(list_h)
-                .show(ui, |ui| {
-                    // Horizontal layout assigns leftover viewport width to later
-                    // columns; without Extend they wrap letter-by-letter when shrunk.
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+                ui.set_max_width(list_w.max(900.0)); // keep tile columns readable; H-scroll when narrow
+                // Horizontal layout assigns leftover viewport width to later
+                // columns; without Extend they wrap letter-by-letter when shrunk.
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     ui.label(
                         "Pick an action type — hover ~1s to preview defaults, right-click to edit",
                     );
@@ -439,11 +438,10 @@ impl AddActionPicker {
                 SaveCancel::None => {}
             }
             let list_h = pickers::popup_scroll_max_height(ui, 0.0);
-            pickers::scroll_vertical()
-                .auto_shrink([false, false])
-                .max_height(list_h)
-                .show(ui, |ui| {
-                    if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
+            let list_w = crate::widgets::visible_width(ui);
+            pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+                ui.set_max_width(list_w);
+                if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
                         let mut fields = EditFieldsCtx {
                             paint: CatalogPaint {
                                 catalog: paint.catalog,

@@ -396,16 +396,6 @@ pub(crate) fn sorted_image_search_targets(
     sqyre_domain::ordered_item_targets(&infos, sort_by, sort_then, tag_priority)
 }
 
-/// Right-edge space covered by a floating vertical scrollbar (egui default allocates 0).
-fn floating_scrollbar_overlay_width(ui: &egui::Ui) -> f32 {
-    let scroll = &ui.spacing().scroll;
-    if scroll.floating {
-        (scroll.bar_width - scroll.floating_allocated_width).max(0.0)
-    } else {
-        0.0
-    }
-}
-
 /// Full tree-row label content. Tooltip show/hide is handled by `action_tooltip`.
 #[allow(clippy::too_many_arguments)] // row paint: catalog, theme, highlight, pills cache, and chrome flags
 pub fn paint_action_row(
@@ -434,7 +424,8 @@ pub fn paint_action_row(
     // clip rect and anchor logs/delete on the visible right edge — inset further so a
     // floating scrollbar cannot cover the buttons.
     let spacing = ui.spacing().item_spacing.x;
-    let visible_end = ui.clip_rect().right() - floating_scrollbar_overlay_width(ui);
+    let visible_end =
+        ui.clip_rect().right() - crate::widgets::floating_scrollbar_overlay_width(ui);
     let row_start = ui.cursor().min.x;
     let max_visible_w = (visible_end - row_start).max(0.0);
     let row_w = ui.available_width().min(max_visible_w);

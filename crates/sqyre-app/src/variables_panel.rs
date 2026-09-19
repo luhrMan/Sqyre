@@ -157,18 +157,17 @@ impl VariablesPanelUi {
             return;
         }
         let list_h = (max_h - 28.0).max(60.0);
-        crate::pickers::scroll_vertical()
-            .auto_shrink([false, false])
-            .max_height(list_h)
-            .show(ui, |ui| {
-                for (name, value) in snap {
-                    ui.horizontal(|ui| {
-                        ui.monospace(name);
-                        ui.label("=");
-                        ui.weak(value);
-                    });
-                }
-            });
+        let list_w = crate::widgets::visible_width(ui);
+        crate::pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+            ui.set_max_width(list_w);
+            for (name, value) in snap {
+                ui.horizontal(|ui| {
+                    ui.monospace(name);
+                    ui.label("=");
+                    ui.weak(value);
+                });
+            }
+        });
     }
 
     fn show_builtins(&self, ui: &mut egui::Ui, num_monitors: usize, max_h: f32) {
@@ -181,17 +180,16 @@ impl VariablesPanelUi {
         ui.add_space(4.0);
         let catalog = builtin_variable_catalog(num_monitors);
         let list_h = (max_h - 28.0).max(60.0);
-        crate::pickers::scroll_vertical()
-            .auto_shrink([false, false])
-            .max_height(list_h)
-            .show(ui, |ui| {
-                for info in &catalog {
-                    ui.horizontal(|ui| {
-                        ui.monospace(&info.name);
-                        ui.weak(info.description);
-                    });
-                }
-            });
+        let list_w = crate::widgets::visible_width(ui);
+        crate::pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+            ui.set_max_width(list_w);
+            for info in &catalog {
+                ui.horizontal(|ui| {
+                    ui.monospace(&info.name);
+                    ui.weak(info.description);
+                });
+            }
+        });
     }
 
     fn body(&mut self, ui: &mut egui::Ui, macro_: &mut Macro, max_h: f32) -> bool {
@@ -238,45 +236,44 @@ impl VariablesPanelUi {
         let edit_reserve = if self.editing.is_some() { 168.0 } else { 0.0 };
         let status_reserve = if self.status.is_some() { 24.0 } else { 0.0 };
         let list_h = (max_h - 56.0 - edit_reserve - status_reserve).max(80.0);
+        let list_w = crate::widgets::visible_width(ui);
 
-        crate::pickers::scroll_vertical()
-            .auto_shrink([false, false])
-            .max_height(list_h)
-            .show(ui, |ui| {
-                if macro_.variable_decls.is_empty() {
-                    ui.weak("No declared variables yet.");
-                    return;
-                }
-                for (i, d) in macro_.variable_decls.iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        ui.monospace(&d.name);
-                        ui.label(d.type_.as_str());
-                        if !d.initial_value.trim().is_empty() {
-                            ui.weak(format!("= {}", d.initial_value));
-                        }
-                        if !d.description.trim().is_empty() {
-                            ui.weak(&d.description);
-                        }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        egui::RichText::new("Remove")
-                                            .color(crate::theme::MACRO_STOP),
-                                    )
-                                    .small(),
+        crate::pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+            ui.set_max_width(list_w);
+            if macro_.variable_decls.is_empty() {
+                ui.weak("No declared variables yet.");
+                return;
+            }
+            for (i, d) in macro_.variable_decls.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.monospace(&d.name);
+                    ui.label(d.type_.as_str());
+                    if !d.initial_value.trim().is_empty() {
+                        ui.weak(format!("= {}", d.initial_value));
+                    }
+                    if !d.description.trim().is_empty() {
+                        ui.weak(&d.description);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("Remove")
+                                        .color(crate::theme::MACRO_STOP),
                                 )
-                                .clicked()
-                            {
-                                remove_idx = Some(i);
-                            }
-                            if ui.small_button("Edit").clicked() {
-                                start_edit = Some(i);
-                            }
-                        });
+                                .small(),
+                            )
+                            .clicked()
+                        {
+                            remove_idx = Some(i);
+                        }
+                        if ui.small_button("Edit").clicked() {
+                            start_edit = Some(i);
+                        }
                     });
-                }
-            });
+                });
+            }
+        });
 
         if let Some(i) = start_edit {
             if let Some(d) = macro_.variable_decls.get(i).cloned() {
