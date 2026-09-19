@@ -21,7 +21,7 @@ export CC CXX
 ZLIB_VER="${ZLIB_VER:-1.3.1}"
 LIBPNG_VER="${LIBPNG_VER:-1.6.43}"
 LIBJPEG_VER="${LIBJPEG_VER:-2.1.5.1}"
-LEPTONICA_VER="${LEPTONICA_VER:-1.83.1}"
+LEPTONICA_VER="${LEPTONICA_VER:-1.84.1}"
 TESSERACT_VER="${TESSERACT_VER:-5.5.0}"
 
 mkdir -p "$DESTDIR" "$BUILD_DIR"
@@ -129,37 +129,41 @@ tar xzf leptonica.tar.gz
 LEPT_CMAKE_DIR="$DESTDIR/lib/cmake/leptonica"
 rm -rf "$LEPT_CMAKE_DIR"
 mkdir -p "$LEPT_CMAKE_DIR"
-cat > "$LEPT_CMAKE_DIR/LeptonicaConfig.cmake" << 'LEPTCFG'
+LEPT_MAJOR="${LEPTONICA_VER%%.*}"
+LEPT_REST="${LEPTONICA_VER#*.}"
+LEPT_MINOR="${LEPT_REST%%.*}"
+LEPT_PATCH="${LEPT_REST#*.}"
+cat > "$LEPT_CMAKE_DIR/LeptonicaConfig.cmake" << LEPTCFG
 set(Leptonica_FOUND TRUE)
-set(Leptonica_VERSION "1.83.1")
-set(Leptonica_VERSION_MAJOR 1)
-set(Leptonica_VERSION_MINOR 83)
-set(Leptonica_VERSION_PATCH 1)
-get_filename_component(_lept_prefix "${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
-set(Leptonica_INCLUDE_DIRS "${_lept_prefix}/include" "${_lept_prefix}/include/leptonica")
-set(LEPTONICA_INCLUDE_DIRS "${Leptonica_INCLUDE_DIRS}")
+set(Leptonica_VERSION "${LEPTONICA_VER}")
+set(Leptonica_VERSION_MAJOR ${LEPT_MAJOR})
+set(Leptonica_VERSION_MINOR ${LEPT_MINOR})
+set(Leptonica_VERSION_PATCH ${LEPT_PATCH})
+get_filename_component(_lept_prefix "\${CMAKE_CURRENT_LIST_DIR}/../../.." ABSOLUTE)
+set(Leptonica_INCLUDE_DIRS "\${_lept_prefix}/include" "\${_lept_prefix}/include/leptonica")
+set(LEPTONICA_INCLUDE_DIRS "\${Leptonica_INCLUDE_DIRS}")
 find_library(Leptonica_LIBRARY
-  NAMES leptonica leptonica-1.83.1 lept
-  PATHS "${_lept_prefix}/lib"
+  NAMES leptonica leptonica-${LEPTONICA_VER} lept
+  PATHS "\${_lept_prefix}/lib"
   NO_DEFAULT_PATH)
-set(Leptonica_LIBRARIES "${Leptonica_LIBRARY}")
-set(LEPTONICA_LIBRARIES "${Leptonica_LIBRARY}")
+set(Leptonica_LIBRARIES "\${Leptonica_LIBRARY}")
+set(LEPTONICA_LIBRARIES "\${Leptonica_LIBRARY}")
 if(NOT TARGET leptonica)
   add_library(leptonica STATIC IMPORTED)
   set_target_properties(leptonica PROPERTIES
-    IMPORTED_LOCATION "${Leptonica_LIBRARY}"
-    INTERFACE_INCLUDE_DIRECTORIES "${Leptonica_INCLUDE_DIRS}"
+    IMPORTED_LOCATION "\${Leptonica_LIBRARY}"
+    INTERFACE_INCLUDE_DIRECTORIES "\${Leptonica_INCLUDE_DIRS}"
   )
 endif()
 unset(_lept_prefix)
 LEPTCFG
-cat > "$LEPT_CMAKE_DIR/LeptonicaConfig-version.cmake" << 'LEPTVER'
-set(PACKAGE_VERSION "1.83.1")
-if("${PACKAGE_FIND_VERSION}" VERSION_GREATER PACKAGE_VERSION)
+cat > "$LEPT_CMAKE_DIR/LeptonicaConfig-version.cmake" << LEPTVER
+set(PACKAGE_VERSION "${LEPTONICA_VER}")
+if("\${PACKAGE_FIND_VERSION}" VERSION_GREATER PACKAGE_VERSION)
   set(PACKAGE_VERSION_COMPATIBLE FALSE)
 else()
   set(PACKAGE_VERSION_COMPATIBLE TRUE)
-  if("${PACKAGE_FIND_VERSION}" VERSION_EQUAL PACKAGE_VERSION)
+  if("\${PACKAGE_FIND_VERSION}" VERSION_EQUAL PACKAGE_VERSION)
     set(PACKAGE_VERSION_EXACT TRUE)
   endif()
 endif()

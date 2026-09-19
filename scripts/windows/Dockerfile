@@ -1,7 +1,7 @@
 # Sqyre Windows cross-compile image (Linux → x86_64-pc-windows-gnu).
 # Static MinGW zlib/libpng/libjpeg/leptonica/tesseract — adapted from the former
-# Go fyne-cross Dockerfile.windows-amd64 (debian bookworm + cmake staticbuild).
-FROM debian:bookworm-slim
+# Go fyne-cross Dockerfile.windows-amd64 (debian + cmake staticbuild).
+FROM debian:trixie-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG RUST_VERSION=1.94.0

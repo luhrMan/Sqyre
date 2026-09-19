@@ -35,6 +35,12 @@ Version resolution order: `RELEASE_VERSION` env → `VERSION` file → `crates/s
 
 Output: **`bin/*.AppImage`**. `sqyre.AppDir` and build artifacts stay under `scripts/linux/packaging/appimage/`.
 
+After `appimage-builder` finishes the AppDir (`--skip-appimage`, so no intermediate xz pack), `build-appimage.sh` **repacks** with [type2-runtime](https://github.com/AppImage/type2-runtime) (embedded FUSE3; no system `libfuse.so.2`) and **zstd** squashfs. That avoids the multi-second cold start from appimage-builder’s default **xz** payload + old AppImageKit runtime (especially when FUSE is missing and extract-and-run unpacks every launch). The type2 runtime is cached under `scripts/linux/packaging/appimage/.runtime-cache/` and verified by SHA256 (override with `SQYRE_APPIMAGE_RUNTIME_URL` / `SQYRE_APPIMAGE_RUNTIME_SHA256`). Absolute `APPDIR_PATH_MAPPINGS` from the build host are scrubbed before packing.
+
+Cargo uses workspace **`[profile.dist]`** (thin LTO) for AppImage/Flatpak/Windows/WASM/bundle shipping; everyday `make release` stays on plain `[profile.release]` for fast incremental rebuilds.
+
+On hosts without `/dev/fuse`, use `APPIMAGE_EXTRACT_AND_RUN=1` (zstd extract is ~sub-second; xz was multi-second). The AppDir binary is stripped (`strip --strip-unneeded`) before packing.
+
 ### Tesseract data
 
 The recipe copies `eng.traineddata` from `assets/tessdata/` or host `/usr/share/tessdata/` when present, and sets `TESSDATA_PREFIX` / `SQYRE_TESSDATA` at runtime.
@@ -95,6 +101,8 @@ Flathub builds are offline. Keep [`cargo-sources.json`](flatpak/cargo-sources.js
 ```bash
 scripts/linux/packaging/flatpak/generate-cargo-sources.sh
 ```
+
+The script pins `flatpak-cargo-generator.py` to a commit + SHA256 (not `master`). Override with `SQYRE_CARGO_GENERATOR_COMMIT` / `SQYRE_CARGO_GENERATOR_SHA256`, or force refresh with `SQYRE_REFRESH_CARGO_GENERATOR=1`.
 
 Regenerate and commit whenever `Cargo.lock` changes.
 
