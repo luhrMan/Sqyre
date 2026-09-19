@@ -183,6 +183,7 @@ pub fn initialize_directories() -> Result<()> {
     {
         for p in [
             sqyre_dir().join("images/icons"),
+            sqyre_dir().join("images/process"),
             sqyre_dir().join("images/ScreenCap"),
             screen_cap_trash_path(),
             sqyre_dir().join("images/Collections"),

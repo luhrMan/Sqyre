@@ -104,6 +104,17 @@ impl ProgramCatalog {
             }
             let _ = std::fs::rename(&src, &dst);
         }
+        let src_icon = self.process_icon_path(old);
+        if src_icon.is_file() {
+            let dst_icon = self.process_icon_path(new);
+            if let Some(parent) = dst_icon.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if dst_icon.exists() {
+                let _ = std::fs::remove_file(&dst_icon);
+            }
+            let _ = std::fs::rename(&src_icon, &dst_icon);
+        }
         crate::invalidate_icon_fs_cache_under(&self.icons_dir(old));
         crate::invalidate_icon_fs_cache_under(&self.icons_dir(new));
         crate::invalidate_icon_fs_cache_under(&self.masks_dir(old));
@@ -124,22 +135,42 @@ impl ProgramCatalog {
             let _ = std::fs::remove_dir_all(&icons);
             let _ = std::fs::remove_dir_all(&masks);
             let _ = std::fs::remove_dir_all(collections);
+            let _ = std::fs::remove_file(self.process_icon_path(name));
         }
         self.bump_generation();
         Ok(())
     }
 
     /// Bind a catalog program to a running OS window (`process_path` + `window_title`).
+    ///
+    /// Clearing the path (empty `process_path`) also removes any saved process icon PNG.
     pub fn set_process_binding(
         &mut self,
         program: &str,
         process_path: impl Into<String>,
         window_title: impl Into<String>,
     ) -> Result<()> {
-        let p = self.program_mut(program)?;
-        p.process_path = process_path.into();
-        p.window_title = window_title.into();
+        let process_path = process_path.into();
+        let window_title = window_title.into();
+        let clear_icon = process_path.trim().is_empty();
+        {
+            let p = self.program_mut(program)?;
+            p.process_path = process_path;
+            p.window_title = window_title;
+        }
+        if clear_icon {
+            self.clear_process_icon(program);
+        }
         Ok(())
+    }
+
+    /// Remove the persisted Running-program icon for `program` (best-effort).
+    pub fn clear_process_icon(&self, program: &str) {
+        if !is_safe_fs_entity_name(program) {
+            return;
+        }
+        let path = self.process_icon_path(program);
+        let _ = std::fs::remove_file(&path);
     }
 
     /// Set macro tags used for while-focused hotkey selection.

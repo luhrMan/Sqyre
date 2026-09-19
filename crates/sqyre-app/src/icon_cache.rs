@@ -38,6 +38,8 @@ pub struct IconCache {
     /// OS process icons keyed by process path.
     process: HashMap<String, TextureHandle>,
     process_missing: HashMap<String, ()>,
+    /// RGBA retained when an icon is seeded / fetched (for persisting on program save).
+    process_rgba: HashMap<String, ProcessIcon>,
 }
 
 impl IconCache {
@@ -172,17 +174,26 @@ impl IconCache {
     }
 
     /// OS process icon for a catalog program (via its bound `process_path`).
+    ///
+    /// Prefers a live OS / seeded icon; falls back to the PNG under
+    /// [`ProgramCatalog::process_icon_path`] so the icon still shows when the
+    /// bound app is not running.
     pub fn for_program(
         &mut self,
         ctx: &egui::Context,
         catalog: &ProgramCatalog,
         program: &str,
     ) -> Option<TextureHandle> {
-        let prog = catalog.get(program.trim())?;
+        let program = program.trim();
+        let prog = catalog.get(program)?;
         if prog.process_path.trim().is_empty() {
             return None;
         }
-        self.for_process(ctx, &prog.process_path, &prog.window_title)
+        if let Some(tex) = self.for_process(ctx, &prog.process_path, &prog.window_title) {
+            return Some(tex);
+        }
+        let path = catalog.process_icon_path(program);
+        self.for_path(ctx, &path)
     }
 
     /// Seed / refresh the process-icon cache from a listed window's icon bytes.
@@ -200,6 +211,26 @@ impl IconCache {
         }
         self.process_missing.remove(&key);
         Some(self.insert_process_icon(ctx, &key, icon))
+    }
+
+    /// RGBA retained for `process_path` (from picker seed or live OS fetch).
+    pub fn process_icon_bytes(&self, process_path: &str) -> Option<&ProcessIcon> {
+        let key = process_cache_key(process_path);
+        if key.is_empty() {
+            return None;
+        }
+        self.process_rgba.get(&key)
+    }
+
+    /// Drop sticky miss + texture for a process path so the next lookup re-fetches.
+    pub fn invalidate_process(&mut self, process_path: &str) {
+        let key = process_cache_key(process_path);
+        if key.is_empty() {
+            return;
+        }
+        self.process.remove(&key);
+        self.process_missing.remove(&key);
+        self.process_rgba.remove(&key);
     }
 
     /// Cached process icon only (no OS fetch). Uses title/name when path is empty.
@@ -242,6 +273,7 @@ impl IconCache {
         let name = format!("process_icon:{key}");
         let tex = ctx.load_texture(name, color, icon_texture_options());
         self.process.insert(key.to_string(), tex.clone());
+        self.process_rgba.insert(key.to_string(), icon.clone());
         tex
     }
 

@@ -124,6 +124,23 @@ impl ProgramCatalog {
         confined_join_or_invalid(&self.images_root().join("icons"), program)
     }
 
+    /// Directory for saved Running-program (OS process) icons.
+    pub fn process_icons_dir(&self) -> PathBuf {
+        self.images_root().join("process")
+    }
+
+    /// PNG path for a catalog program's persisted process icon (`images/process/{program}.png`).
+    ///
+    /// Written when a Running program is bound so the icon still shows when that app is closed.
+    pub fn process_icon_path(&self, program: &str) -> PathBuf {
+        let dir = self.process_icons_dir();
+        if is_safe_fs_entity_name(program) {
+            dir.join(format!("{program}.png"))
+        } else {
+            dir.join("__invalid__.png")
+        }
+    }
+
     fn screen_cap_dir(&self) -> PathBuf {
         self.images_root().join("ScreenCap")
     }
@@ -797,6 +814,32 @@ Demo:
         assert_eq!(p2.process_path, "/usr/bin/other");
         assert_eq!(p2.window_title, "Other");
         assert_eq!(p2.tags, vec!["raid".to_string()]);
+    }
+
+    #[test]
+    fn process_icon_file_follows_rename_delete_and_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(dir.path().to_path_buf()));
+        cat.create_program("Demo").unwrap();
+        cat.set_process_binding("Demo", "/usr/bin/demo", "Demo")
+            .unwrap();
+
+        let path = cat.process_icon_path("Demo");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"png").unwrap();
+        assert!(path.is_file());
+
+        cat.rename_program("Demo", "Renamed").unwrap();
+        assert!(!cat.process_icon_path("Demo").exists());
+        assert!(cat.process_icon_path("Renamed").is_file());
+
+        cat.set_process_binding("Renamed", "", "").unwrap();
+        assert!(!cat.process_icon_path("Renamed").exists());
+
+        std::fs::write(cat.process_icon_path("Renamed"), b"png").unwrap();
+        cat.delete_program("Renamed").unwrap();
+        assert!(!cat.process_icon_path("Renamed").exists());
     }
 
     #[test]
