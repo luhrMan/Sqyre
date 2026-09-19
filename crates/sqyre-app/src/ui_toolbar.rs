@@ -205,11 +205,12 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         app.persist_macro_at(idx);
     }
     {
+        let pending = app.pending_viewport_scale;
         let m = &mut app.workspace.macros[idx];
         let delay_out = app
             .workspace
             .macro_meta
-            .paint_delay_popup(ui, m, meta_enabled);
+            .paint_delay_popup(ui, m, meta_enabled, pending.as_ref());
         if delay_out.persist {
             app.persist_macro_at(idx);
         }

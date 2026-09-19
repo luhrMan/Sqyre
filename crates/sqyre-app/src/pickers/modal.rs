@@ -21,6 +21,7 @@ pub fn show_active_picker(
     // `(name, tags)` — tags are used by the macro search bar.
     macros: &[(String, Vec<String>)],
     compact_program_headers: bool,
+    pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
 ) -> PickerResult {
     let mut result = PickerResult::None;
     let mut open = picker.is_open();
@@ -71,6 +72,8 @@ pub fn show_active_picker(
             .order(egui::Order::Foreground)
             .open(&mut open),
         ctx,
+        egui::Id::new(("sqyre_picker", title)),
+        pending_scale,
     )
     .show(ctx, |ui| {
         crate::widgets::fill_resize_body(ui, |ui| {

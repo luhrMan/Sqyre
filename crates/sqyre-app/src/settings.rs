@@ -254,6 +254,7 @@ impl SettingsUi {
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
         #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) {
         if !self.open {
             return;
@@ -268,6 +269,8 @@ impl SettingsUi {
                 .min_size([520.0, 360.0])
                 .resizable(true),
             ctx,
+            egui::Id::new("User Settings"),
+            pending_scale,
         )
         .show(ctx, |ui| {
             crate::widgets::fill_resize_body(ui, |ui| {

@@ -43,6 +43,7 @@ pub struct DataEditorCtx<'a> {
     pub icons: &'a mut IconCache,
     pub screen_click: &'a ScreenClickBridge,
     pub settings: &'a mut UserSettings,
+    pub pending_scale: Option<&'a crate::widgets::ViewportScaleEvent>,
 }
 
 /// Top-level Data Editor section (tab bar).
@@ -605,14 +606,16 @@ impl DataEditor {
                 // No huge max_size — egui auto-expands toward max when content min_size ratchets.
                 .resizable(true),
             ctx,
+            egui::Id::new(WINDOW_TITLE),
+            env.pending_scale,
         )
         .show(ctx, |ui| {
             self.ui(ui, env, selected_macro, previews);
         });
         self.open = open;
-        self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings);
+        self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings, env.pending_scale);
         self.draw_confirm(env, previews);
-        self.draw_overlay_icon_picker(ctx, env.settings);
+        self.draw_overlay_icon_picker(ctx, env.settings, env.pending_scale);
         self.poll_form_picker(env, previews);
         self.poll_screen_cap(ctx);
         if self.screen_cap_new_item {
@@ -647,6 +650,7 @@ impl DataEditor {
             },
             &macro_opts,
             env.settings.compact_program_headers,
+            env.pending_scale,
         ) {
             PickerResult::Window {
                 process_path,
@@ -1067,7 +1071,7 @@ impl DataEditor {
             }
         };
         let ctx = env.ctx;
-        let open = crate::widgets::confirm_window(ctx, title, |ui| {
+        let open = crate::widgets::confirm_window(ctx, title, env.pending_scale, |ui| {
             match &confirm {
                 PendingConfirm::Delete { label } => {
                     ui.horizontal(|ui| {
@@ -1131,13 +1135,14 @@ impl DataEditor {
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
         settings: &UserSettings,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) {
         let Some(VariantPrompt::Name { source }) = self.variant_prompt.clone() else {
             return;
         };
         let mut submit = false;
         let mut cancel = false;
-        let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", |ui| {
+        let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", pending_scale, |ui| {
             ui.label("Variant name");
             ui.add(egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(220.0));
             ui.horizontal(|ui| {

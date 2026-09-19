@@ -202,6 +202,8 @@ impl AddActionPicker {
                 .default_size([900.0, 420.0])
                 .min_size([100.0, 100.0]),
             ctx,
+            egui::Id::new("Add Action"),
+            tip.pending_scale,
         )
         .show(ctx, |ui| {
             let is_dark = ui.visuals().dark_mode;
@@ -358,6 +360,7 @@ impl AddActionPicker {
             theme,
             bridges,
             compact_program_headers,
+            pending_scale,
         } = tip;
 
         // Escape: close nested pickers first, then the edit tip.
@@ -398,6 +401,7 @@ impl AddActionPicker {
                 paint,
                 macros,
                 *compact_program_headers,
+                *pending_scale,
             );
             apply_picker_result(&mut edit.draft, result);
         }
@@ -412,9 +416,9 @@ impl AddActionPicker {
         let save_enabled =
             matches!(&self.tip, Some(DefaultsTip::Edit(edit)) if edit.save_enabled());
 
+        let edit_id = egui::Id::new(("action_default_edit", type_key.as_str()));
         crate::widgets::fit_dialog_window(
             egui::Window::new(format!("Default: {label}"))
-                .id(egui::Id::new(("action_default_edit", type_key.as_str())))
                 .open(&mut open)
                 .title_bar(true)
                 .collapsible(false)
@@ -423,6 +427,8 @@ impl AddActionPicker {
                 .default_size([340.0, 360.0])
                 .min_size([220.0, 120.0]),
             ctx,
+            edit_id,
+            *pending_scale,
         )
         .show(ctx, |ui| {
             match paint_action_edit_header(

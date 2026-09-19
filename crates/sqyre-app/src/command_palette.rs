@@ -101,6 +101,7 @@ impl CommandPaletteUi {
         &mut self,
         ctx: &egui::Context,
         commands: &[CommandItem],
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) -> Option<CommandKind> {
         if !self.open {
             return None;
@@ -126,7 +127,6 @@ impl CommandPaletteUi {
         let mut open = self.open;
         crate::widgets::fit_dialog_window(
             egui::Window::new("Command palette")
-                .id(egui::Id::new(WINDOW_ID))
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
@@ -136,6 +136,8 @@ impl CommandPaletteUi {
                 .order(egui::Order::Foreground)
                 .open(&mut open),
             ctx,
+            egui::Id::new(WINDOW_ID),
+            pending_scale,
         )
         .show(ctx, |ui| {
             let (esc, enter, down, up) = ui.input_mut(|i| {
@@ -800,6 +802,7 @@ impl SqyreApp {
             CommandKind::OpenVariables => self.variables_panel.open = true,
             CommandKind::ShowMacroList => self.macro_list_open = true,
             CommandKind::NewCatalogEntity { tab } => {
+                let pending = self.pending_viewport_scale;
                 self.data_editor.open_new(
                     tab,
                     &mut DataEditorCtx {
@@ -810,6 +813,7 @@ impl SqyreApp {
                         icons: &mut self.icon_cache,
                         screen_click: &self.screen_click,
                         settings: self.settings_ui.settings_mut(),
+                        pending_scale: pending.as_ref(),
                     },
                 );
             }
