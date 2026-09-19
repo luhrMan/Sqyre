@@ -39,9 +39,17 @@ impl DataEditor {
         };
         ui.horizontal(|ui| {
             if !self.form_process_path.trim().is_empty() {
-                if let Some(tex) =
-                    icons.for_process(ui.ctx(), &self.form_process_path, &self.form_window_title)
-                {
+                let tex = icons
+                    .for_process(ui.ctx(), &self.form_process_path, &self.form_window_title)
+                    .or_else(|| {
+                        let prog = self.selected_program.as_deref()?;
+                        let bound = catalog.get(prog)?;
+                        if bound.process_path.trim() != self.form_process_path.trim() {
+                            return None;
+                        }
+                        icons.for_path(ui.ctx(), &catalog.process_icon_path(prog))
+                    });
+                if let Some(tex) = tex {
                     crate::icon_cache::paint_process_icon(
                         ui,
                         &tex,

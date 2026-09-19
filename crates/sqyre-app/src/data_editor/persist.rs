@@ -2,8 +2,10 @@
 
 use super::helpers::{is_editor_listed_program, new_overlay_button_id, parse_i32, unique_name};
 use super::{DataEditor, DataEditorCtx, EditorTab, PendingConfirm};
+use crate::icon_cache::IconCache;
 use crate::overlay_icons;
 use crate::preview_tooltip::PreviewTooltipCache;
+use crate::window_types::ProcessIcon;
 use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue};
 use sqyre_persist::{
     Database, OverlayButtonConfig, ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramItem,
@@ -27,13 +29,96 @@ fn play_ui_delete_sound(settings: &UserSettings) {
 
 fn set_program_identity(
     catalog: &mut ProgramCatalog,
+    icons: &mut IconCache,
     program: &str,
     process_path: String,
     window_title: String,
     tags: Vec<String>,
 ) -> Result<(), sqyre_persist::PersistError> {
-    catalog.set_process_binding(program, process_path, window_title)?;
-    catalog.set_program_tags(program, tags)
+    let prev_path = catalog
+        .get(program)
+        .map(|p| p.process_path.clone())
+        .unwrap_or_default();
+    catalog.set_process_binding(program, process_path.clone(), window_title.clone())?;
+    catalog.set_program_tags(program, tags)?;
+    persist_running_program_icon(
+        catalog,
+        icons,
+        program,
+        &prev_path,
+        &process_path,
+        &window_title,
+    );
+    Ok(())
+}
+
+/// Save the Running-program OS icon under `images/process/{program}.png`.
+///
+/// Uses picker/OS-retained RGBA first; otherwise asks the OS again while the
+/// window may still be open. Empty binding is cleared by [`set_process_binding`].
+/// When the process path changes and no fresh icon is available, drop any stale PNG.
+fn persist_running_program_icon(
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    program: &str,
+    prev_process_path: &str,
+    process_path: &str,
+    window_title: &str,
+) {
+    let path = process_path.trim();
+    if path.is_empty() {
+        return;
+    }
+    let path_changed = prev_process_path.trim() != path;
+    let icon = icons
+        .process_icon_bytes(path)
+        .cloned()
+        .or_else(|| fetch_process_icon(path, window_title));
+    let Some(icon) = icon else {
+        if path_changed {
+            catalog.clear_process_icon(program);
+            icons.invalidate_path(&catalog.process_icon_path(program));
+        }
+        return;
+    };
+    if let Err(e) = save_process_icon_png(catalog, program, icon) {
+        crate::log::warn(format!("save process icon for {program:?}: {e}"));
+        return;
+    }
+    // Prefer the freshly saved file next time live OS lookup misses.
+    icons.invalidate_process(path);
+    icons.invalidate_path(&catalog.process_icon_path(program));
+}
+
+fn fetch_process_icon(process_path: &str, window_title: &str) -> Option<ProcessIcon> {
+    #[cfg(feature = "native-runtime")]
+    {
+        sqyre_capture::process_icon(process_path, window_title).map(|i| ProcessIcon {
+            width: i.width,
+            height: i.height,
+            rgba: i.rgba,
+        })
+    }
+    #[cfg(not(feature = "native-runtime"))]
+    {
+        let _ = (process_path, window_title);
+        None
+    }
+}
+
+fn save_process_icon_png(
+    catalog: &ProgramCatalog,
+    program: &str,
+    icon: ProcessIcon,
+) -> Result<(), String> {
+    let dest = catalog.process_icon_path(program);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create process icons dir: {e}"))?;
+    }
+    let img = image::RgbaImage::from_raw(icon.width, icon.height, icon.rgba)
+        .ok_or_else(|| "process icon rgba does not match width×height".to_string())?;
+    img.save(&dest)
+        .map_err(|e| format!("save {}: {e}", dest.display()))
 }
 
 fn new_entity_name(form_name: &str, default_base: &str, exists: impl Fn(&str) -> bool) -> String {
@@ -432,6 +517,7 @@ impl DataEditor {
             macros,
             catalog,
             settings,
+            icons,
             ..
         } = env;
         self.clear_status();
@@ -453,6 +539,7 @@ impl DataEditor {
                     if old == new_name {
                         set_program_identity(
                             catalog,
+                            icons,
                             &old,
                             self.form_process_path.clone(),
                             self.form_window_title.clone(),
@@ -465,6 +552,7 @@ impl DataEditor {
                         catalog.rename_program(&old, &new_name).and_then(|_| {
                             set_program_identity(
                                 catalog,
+                                icons,
                                 &new_name,
                                 self.form_process_path.clone(),
                                 self.form_window_title.clone(),
@@ -488,6 +576,7 @@ impl DataEditor {
                     catalog.create_program(&new_name).and_then(|_| {
                         set_program_identity(
                             catalog,
+                            icons,
                             &new_name,
                             self.form_process_path.clone(),
                             self.form_window_title.clone(),
