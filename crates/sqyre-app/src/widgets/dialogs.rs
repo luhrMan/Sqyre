@@ -68,40 +68,56 @@ pub fn visible_height(ui: &egui::Ui) -> f32 {
     visible_size(ui).y
 }
 
+/// Right-edge width covered by a floating vertical scrollbar.
+///
+/// egui's default `floating_allocated_width` is 0, so the bar overlays content
+/// without shrinking `available_width`. Subtract this when sizing columns or
+/// anchoring chrome to the visible right edge.
+pub fn floating_scrollbar_overlay_width(ui: &egui::Ui) -> f32 {
+    let scroll = &ui.spacing().scroll;
+    if scroll.floating {
+        (scroll.bar_width - scroll.floating_allocated_width).max(0.0)
+    } else {
+        0.0
+    }
+}
+
+/// [`visible_width`] minus [`floating_scrollbar_overlay_width`] (at least 1px).
+pub fn visible_content_width(ui: &egui::Ui) -> f32 {
+    (visible_width(ui) - floating_scrollbar_overlay_width(ui)).max(1.0)
+}
+
 /// Fill a resizable [`egui::Window`] body without ratcheting its Resize state.
 ///
-/// Allocates exactly the current Resize region (`max_rect`) and runs `add_body`
-/// clipped inside it. Child fill layouts then cannot report a `min_size` larger
-/// than the window — which is what makes egui Windows grow every frame and
-/// refuse to shrink.
+/// Allocates exactly the painted window region ([`visible_size`]) and runs
+/// `add_body` in a [`Ui::new_child`] so child `min_size` cannot advance the
+/// parent (unlike [`Ui::scope_builder`], which would push edges off-screen).
 ///
 /// Use with [`fit_dialog_popup`] (not [`fit_dialog_window`]): an outer Window
 /// scroll makes `available_size` track `max_size` and defeats this.
 pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui)) {
-    let size = ui.max_rect().size().max(egui::vec2(1.0, 1.0));
+    let size = visible_size(ui).max(egui::vec2(1.0, 1.0));
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
-        ui.set_clip_rect(rect);
-        ui.set_max_size(rect.size());
-        add_body(ui);
-    });
+    let mut body = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    body.set_clip_rect(rect.intersect(ui.clip_rect()));
+    body.set_max_size(rect.size());
+    add_body(&mut body);
 }
 
-/// Keep a floating dialog inside [`dialog_constrain_rect`], scrolling overflow.
+/// Keep a floating dialog inside [`dialog_constrain_rect`], scrolling overflow
+/// on **both** axes when content is larger than the window.
 ///
-/// egui allows windows larger than their constrain rect to be panned (overhang
-/// drag), which looks like the contents slide while the frame stays put. Cap
-/// size and scroll overflow inside the frame so that cannot happen.
-///
-/// Vertical scroll only — horizontal outer bars fight nested layouts that claim
-/// `available_width` (clipped buttons, phantom H scrollbars). Panels that fully
-/// manage their own scroll/split layout should use [`fit_dialog_popup`] instead.
-///
-/// Use for resizable / default-sized panels. For small auto-sized popups use
-/// [`fit_dialog_popup`] so they still shrink to their content.
+/// Prefer this for simple dialogs whose body is mostly one scroll region.
+/// Panels that allocate their own split/scroll layout should use
+/// [`fit_dialog_popup`] plus [`fill_resize_body`] and an inner
+/// [`crate::pickers::dialog_scroll`].
 pub fn fit_dialog_window<'a>(window: egui::Window<'a>, ctx: &egui::Context) -> egui::Window<'a> {
     apply_dialog_bounds(window, ctx)
-        .scroll([false, true])
+        .scroll([true, true])
         .scroll_bar_visibility(ScrollBarVisibility::VisibleWhenNeeded)
         .drag_to_scroll(DragScroll::Never)
 }

@@ -291,9 +291,17 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
     // Local copy: `show_collapsible` borrows `&mut bool` for the whole call,
     // and the content closure also needs `&mut app`.
     let mut open = app.macro_list_open;
+    let list_w = app
+        .settings_ui
+        .settings()
+        .macro_list_width
+        .clamp(
+            sqyre_persist::MIN_MACRO_LIST_WIDTH,
+            sqyre_persist::MAX_MACRO_LIST_WIDTH,
+        );
     egui::Panel::left("macro_list_tags")
-        .default_size(220.0)
-        .size_range(160.0..=420.0)
+        .default_size(list_w)
+        .size_range(sqyre_persist::MIN_MACRO_LIST_WIDTH..=sqyre_persist::MAX_MACRO_LIST_WIDTH)
         .show_collapsible(ui, &mut open, |ui| {
             // Side panels persist last-frame content width; never let children
             // request more than the allocated pane or the panel grows every frame.
@@ -394,54 +402,71 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     .layout(egui::Layout::top_down(egui::Align::Min)),
             );
             list_ui.set_clip_rect(list_rect.intersect(ui.clip_rect()));
-            crate::pickers::scroll_vertical()
-                .auto_shrink([false, false])
-                .show(&mut list_ui, |ui| {
-                    let list_w = ui.available_width().min(pane_w);
-                    ui.set_max_width(list_w);
-                    let filter = app.macro_list_filter.trim().to_string();
-                    let (tree, untagged) = build_tag_tree(&app.workspace.macros, &filter);
-                    let mut clicked_macro: Option<usize> = None;
-                    let mut clicked_tag: Option<String> = None;
-                    {
-                        let mut ctx = PaintTagCtx {
-                            app,
-                            list_w,
-                            clicked_macro: &mut clicked_macro,
-                            clicked_tag: &mut clicked_tag,
+            crate::pickers::dialog_scroll(pane_w, list_h).show(&mut list_ui, |ui| {
+                let list_w = ui.available_width().min(pane_w);
+                ui.set_max_width(list_w);
+                let filter = app.macro_list_filter.trim().to_string();
+                let (tree, untagged) = build_tag_tree(&app.workspace.macros, &filter);
+                let mut clicked_macro: Option<usize> = None;
+                let mut clicked_tag: Option<String> = None;
+                {
+                    let mut ctx = PaintTagCtx {
+                        app,
+                        list_w,
+                        clicked_macro: &mut clicked_macro,
+                        clicked_tag: &mut clicked_tag,
+                    };
+                    let mut first = true;
+                    for (seg, child) in &tree.children {
+                        paint_tag_node(ui, &mut ctx, seg, seg, child, first);
+                        first = false;
+                    }
+                    if !untagged.is_empty() {
+                        let untagged_node = TagTreeNode {
+                            macros: untagged,
+                            children: BTreeMap::new(),
                         };
-                        let mut first = true;
-                        for (seg, child) in &tree.children {
-                            paint_tag_node(ui, &mut ctx, seg, seg, child, first);
-                            first = false;
-                        }
-                        if !untagged.is_empty() {
-                            let untagged_node = TagTreeNode {
-                                macros: untagged,
-                                children: BTreeMap::new(),
-                            };
-                            paint_tag_node(
-                                ui,
-                                &mut ctx,
-                                UNTAGGED_KEY,
-                                "Untagged",
-                                &untagged_node,
-                                first,
-                            );
-                        }
+                        paint_tag_node(
+                            ui,
+                            &mut ctx,
+                            UNTAGGED_KEY,
+                            "Untagged",
+                            &untagged_node,
+                            first,
+                        );
                     }
+                }
 
-                    if let Some(tag) = clicked_tag {
-                        app.toggle_hotkey_tag_filter(tag);
-                    }
-                    if let Some(i) = clicked_macro {
-                        app.workspace.selected_macro = i;
-                        app.tree.selected_actions.clear();
-                        app.tree.tooltip.cancel();
-                    }
-                });
+                if let Some(tag) = clicked_tag {
+                    app.toggle_hotkey_tag_filter(tag);
+                }
+                if let Some(i) = clicked_macro {
+                    app.workspace.selected_macro = i;
+                    app.tree.selected_actions.clear();
+                    app.tree.tooltip.cancel();
+                }
+            });
         });
     app.macro_list_open = open;
+
+    // Persist user-resized panel width once the drag ends.
+    let panel_id = egui::Id::new("macro_list_tags");
+    if !ui.ctx().input(|i| i.pointer.any_down()) {
+        if let Some(state) = egui::containers::panel::PanelState::load(ui.ctx(), panel_id) {
+            let w = state
+                .size()
+                .x
+                .clamp(
+                    sqyre_persist::MIN_MACRO_LIST_WIDTH,
+                    sqyre_persist::MAX_MACRO_LIST_WIDTH,
+                );
+            let cur = app.settings_ui.settings().macro_list_width;
+            if (w - cur).abs() > 0.5 {
+                app.settings_ui.settings_mut().macro_list_width = w;
+                let _ = app.settings_ui.save_settings();
+            }
+        }
+    }
 
     if let Some(name) = app.pending_delete_macro.clone() {
         let open = crate::widgets::confirm_window(ui.ctx(), "Delete Macro", |ui| {

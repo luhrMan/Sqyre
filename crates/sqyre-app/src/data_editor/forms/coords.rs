@@ -365,7 +365,7 @@ impl DataEditor {
         let path_hint = format!("Saves to {}", screen_cap_path().display());
         let spacing = ui.spacing().item_spacing.y;
         let path_font = egui::TextStyle::Body.resolve(ui.style());
-        let wrap_w = ui.available_width();
+        let wrap_w = crate::widgets::visible_width(ui);
         let path_h = ui.fonts_mut(|f| {
             f.layout(path_hint.clone(), path_font, egui::Color32::WHITE, wrap_w)
                 .size()
@@ -375,9 +375,10 @@ impl DataEditor {
         let footer_h = spacing * 3.0 + 8.0 + ui.spacing().interact_size.y + path_h + 1.0;
         let preview_h = (ui.available_height() - footer_h).max(120.0);
         ui.allocate_ui_with_layout(
-            egui::vec2(ui.available_width(), preview_h),
+            egui::vec2(wrap_w, preview_h),
             egui::Layout::top_down(egui::Align::Min),
             |ui| {
+                ui.set_max_width(wrap_w);
                 let (rect, preview_image_size) = previews.paint_search_area_panel(
                     ui,
                     lx,

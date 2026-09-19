@@ -32,23 +32,22 @@ crate::widgets::fit_dialog_popup(window.resizable(true).default_size([420.0, 480
     // optional: tighter than full screen so a layout bug cannot fill the monitor
     .max_size(egui::vec2(constrain.x.min(720.0), constrain.y.min(900.0)));
 
-// ✅ Pin content to the Resize region (prevents min_size > window)
+// ✅ Pin content without letting child min_size advance the parent
 crate::widgets::fill_resize_body(ui, |ui| { /* … */ });
+// (uses allocate_exact_size + new_child — not scope_builder)
 
 // ✅ Fill leftover width without an absolute min_width
 ui.add(egui::TextEdit::singleline(s).desired_width(f32::INFINITY));
 
-// ✅ ScrollArea: viewport-capped; shrink width to content so Resize can shrink
-egui::ScrollArea::vertical()
-    .max_width(ui.available_width())
-    .max_height(ui.available_height())
-    .auto_shrink([true, false]) // NOT [false, false]
+// ✅ Both-axis scroll, viewport-capped (vertical-only + auto_shrink false expands width)
+crate::pickers::dialog_scroll(ui.available_width(), max_h)
     .show(ui, |ui| {
-        ui.horizontal_wrapped(|ui| { /* fixed-size cells */ });
+        ui.set_max_width(w);
+        /* … */
     });
 ```
 
-Prefer `fill_resize_body`, `auto_shrink([true, …])`, and `desired_width(INFINITY)`.
+Prefer `fill_resize_body`, `dialog_scroll`, `new_child` for absolute panes, and `desired_width(INFINITY)`.
 
 ## Helpers
 

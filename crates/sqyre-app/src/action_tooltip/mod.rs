@@ -718,9 +718,10 @@ fn show_edit_window(
             if ui.input(|i| i.key_pressed(Key::Enter))
                 && !ui.input(|i| i.modifiers.shift)
             {
-                // Don't steal Enter while a picker is open.
+                // Don't steal Enter while a picker is open or a text field has focus.
                 if matches!(state, TooltipState::Edit(edit) if matches!(edit.picker, ActivePicker::None))
                     && !ui.ctx().egui_wants_keyboard_input()
+                    && !ui.ctx().text_edit_focused()
                 {
                     save = true;
                 }

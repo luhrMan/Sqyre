@@ -105,17 +105,35 @@ struct TagSuggestKeys {
     accept: bool,
 }
 
-/// Capture nav keys when suggestions were showing last frame.
+/// Capture nav / commit keys for the draft field.
+///
+/// Enter is handled whenever the draft is focused and non-empty — not only while
+/// the suggestion row is open — so free-typed tags commit and parent Enter
+/// handlers (e.g. edit-tip Save) do not steal the key.
 fn take_tag_suggest_keys(
     ui: &mut egui::Ui,
     was_open: bool,
     selected: Option<usize>,
     draft_has_text: bool,
+    draft_focused: bool,
 ) -> TagSuggestKeys {
+    let on_suggest = was_open && selected.is_some();
+    // Commit on Enter when the draft is focused, or while the suggestion row is open
+    // (arrow selection may leave focus on the field; either way Enter should add).
+    let accept =
+        draft_has_text && (draft_focused || was_open) && ui.input(|i| i.key_pressed(Key::Enter));
     if !was_open {
+        if accept {
+            ui.input_mut(|i| {
+                i.consume_key(Modifiers::NONE, Key::Enter);
+            });
+            return TagSuggestKeys {
+                accept: true,
+                ..TagSuggestKeys::default()
+            };
+        }
         return TagSuggestKeys::default();
     }
-    let on_suggest = selected.is_some();
     let keys = TagSuggestKeys {
         next: ui.input(|i| {
             i.key_pressed(Key::ArrowDown) || (on_suggest && i.key_pressed(Key::ArrowRight))
@@ -123,7 +141,7 @@ fn take_tag_suggest_keys(
         prev: ui.input(|i| {
             i.key_pressed(Key::ArrowUp) || (on_suggest && i.key_pressed(Key::ArrowLeft))
         }),
-        accept: (on_suggest || draft_has_text) && ui.input(|i| i.key_pressed(Key::Enter)),
+        accept,
     };
     ui.input_mut(|i| {
         i.consume_key(Modifiers::NONE, Key::ArrowDown);
@@ -167,7 +185,14 @@ pub fn tag_chip_editor(
         .ctx()
         .data_mut(|d| d.remove_temp::<bool>(refocus_id))
         .unwrap_or(false);
-    let keys = take_tag_suggest_keys(ui, was_open, nav.selected, !draft.trim().is_empty());
+    let draft_focused = ui.ctx().memory(|m| m.has_focus(draft_id));
+    let keys = take_tag_suggest_keys(
+        ui,
+        was_open,
+        nav.selected,
+        !draft.trim().is_empty(),
+        draft_focused,
+    );
 
     let tag_resp = if opts.draft_first {
         ui.horizontal_wrapped(|ui| {

@@ -190,21 +190,21 @@ impl CommandPaletteUi {
                 return;
             }
 
-            crate::pickers::scroll_vertical()
-                .auto_shrink([false, false])
-                .max_height(ROW_H * 10.0 + 8.0)
-                .show(ui, |ui| {
-                    for (i, item) in filtered.iter().enumerate() {
-                        let resp = command_row(ui, item, i == self.selected);
-                        if resp.clicked() {
-                            run = Some(item.kind.clone());
-                        }
-                        if i == self.selected && self.scroll_selected {
-                            ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));
-                            self.scroll_selected = false;
-                        }
+            let list_h = ROW_H * 10.0 + 8.0;
+            let list_w = crate::widgets::visible_width(ui);
+            crate::pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+                ui.set_max_width(list_w);
+                for (i, item) in filtered.iter().enumerate() {
+                    let resp = command_row(ui, item, i == self.selected);
+                    if resp.clicked() {
+                        run = Some(item.kind.clone());
                     }
-                });
+                    if i == self.selected && self.scroll_selected {
+                        ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));
+                        self.scroll_selected = false;
+                    }
+                }
+            });
         });
         if close || run.is_some() {
             self.close();

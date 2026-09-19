@@ -301,11 +301,11 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                     "Saved into program “{TEMPORARY_PROGRAM}” at the current resolution (replaced each recording). Enabled points are drawn on screen."
                 ));
                 let points_h = (ui.available_height() * 0.28).clamp(96.0, 220.0);
-                crate::pickers::scroll_vertical()
+                let points_w = crate::widgets::visible_width(ui);
+                crate::pickers::dialog_scroll(points_w, points_h)
                     .id_salt("macro_record_points")
-                    .max_height(points_h)
-                    .auto_shrink([false, false])
                     .show(ui, |ui| {
+                        ui.set_max_width(points_w);
                         for (i, pt) in points.iter_mut().enumerate() {
                             let mut row_hovered = false;
                             let mut row_editing = false;
@@ -384,12 +384,11 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
             // Leave room for Copy/Close (+ status) so the list grows with the window.
             let footer_reserve = if status.is_empty() { 40.0 } else { 60.0 };
             let actions_h = (ui.available_height() - footer_reserve).max(80.0);
-            crate::pickers::scroll_vertical()
+            let actions_w = crate::widgets::visible_width(ui);
+            crate::pickers::dialog_scroll(actions_w, actions_h)
                 .id_salt("macro_record_actions")
-                .max_height(actions_h)
-                .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.set_max_width(crate::widgets::visible_width(ui));
+                    ui.set_max_width(actions_w);
                     let actions: Vec<Action> = draft.root.children().to_vec();
                     for action in &actions {
                         let interaction = tree_chrome::paint_action_row(

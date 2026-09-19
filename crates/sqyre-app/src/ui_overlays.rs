@@ -42,7 +42,17 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         );
         return;
     }
-    let buttons = app.settings_ui.settings().overlay_buttons.clone();
+    let relocate = app.data_editor.overlay_relocate_mode();
+    let relocate_program = app.data_editor.overlay_relocate_program();
+    // Overlay editor: only host buttons for the selected program (drag-relocate).
+    let buttons: Vec<_> = {
+        let all = &app.settings_ui.settings().overlay_buttons;
+        match relocate_program {
+            Some(prog) => all.iter().filter(|b| b.program == prog).cloned().collect(),
+            None if relocate => Vec::new(),
+            None => all.clone(),
+        }
+    };
     let close_dist = app
         .settings_ui
         .settings()
@@ -57,7 +67,6 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         app.macro_overlay.last_foreign_focus(),
     );
     let preview = app.data_editor.overlay_edit_preview();
-    let relocate = app.data_editor.overlay_relocate_mode();
     let running_macro = if app.run_session.state.running.load(Ordering::SeqCst)
         && !app.workspace.macros.is_empty()
     {

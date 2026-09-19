@@ -1,4 +1,4 @@
-//! Floating Data Editor: Programs / Items (Masks) / Coordinates / Tools (Overlay, ScreenCap, PixelCheck).
+//! Floating Data Editor: Programs (Overlay) / Items (Masks) / Coordinates / Tools (ScreenCap, PixelCheck).
 
 const WINDOW_TITLE: &str = "Data Editor";
 
@@ -29,7 +29,7 @@ use sqyre_persist::{
     OverlayVisibilityMode, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BORDER_WIDTH,
     DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS, DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
     DEFAULT_OVERLAY_FALLBACK_SCREEN_W, DEFAULT_OVERLAY_GATE_BLUR, DEFAULT_OVERLAY_GATE_INTERVAL_MS,
-    DEFAULT_OVERLAY_GATE_TOLERANCE,
+    DEFAULT_OVERLAY_GATE_TOLERANCE, MAX_DATA_EDITOR_LEFT_FRAC, MIN_DATA_EDITOR_LEFT_FRAC,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -57,13 +57,13 @@ pub(crate) enum EditorSection {
 impl EditorSection {
     fn of(tab: EditorTab) -> Self {
         match tab {
-            EditorTab::Programs => Self::Programs,
+            EditorTab::Programs | EditorTab::Overlay => Self::Programs,
             EditorTab::Items | EditorTab::Masks => Self::Items,
             EditorTab::Points
             | EditorTab::SearchAreas
             | EditorTab::Collections
             | EditorTab::Atlases => Self::Coordinates,
-            EditorTab::Overlay | EditorTab::ScreenCap | EditorTab::PixelCheck => Self::Tools,
+            EditorTab::ScreenCap | EditorTab::PixelCheck => Self::Tools,
         }
     }
 
@@ -72,7 +72,7 @@ impl EditorSection {
             Self::Programs => EditorTab::Programs,
             Self::Items => EditorTab::Items,
             Self::Coordinates => EditorTab::Points,
-            Self::Tools => EditorTab::Overlay,
+            Self::Tools => EditorTab::ScreenCap,
         }
     }
 }
@@ -267,7 +267,7 @@ impl Default for DataEditor {
             items_list_sort: sqyre_domain::CatalogItemSort::default(),
             items_tag_priority: Vec::new(),
             items_tag_priority_draft: String::new(),
-            left_width: 280.0,
+            left_width: 0.0,
             selected_program: None,
             selected_entity: None,
             scroll_left_list_to_selection: false,
@@ -422,6 +422,19 @@ impl DataEditor {
     #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
     pub fn overlay_relocate_mode(&self) -> bool {
         self.open && matches!(self.tab, EditorTab::Overlay)
+    }
+
+    /// Program whose overlay buttons are shown while relocate mode is active.
+    ///
+    /// `None` when the Overlay tab is closed, or open with no program selected
+    /// (then no settings-backed buttons are hosted for drag).
+    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
+    pub fn overlay_relocate_program(&self) -> Option<&str> {
+        if self.overlay_relocate_mode() {
+            self.selected_program.as_deref()
+        } else {
+            None
+        }
     }
 
     /// Apply desktop positions from overlay drag-relocate; clears catalog point refs.
@@ -736,7 +749,29 @@ impl DataEditor {
         selected_macro: usize,
         previews: &mut PreviewTooltipCache,
     ) {
-        ui.horizontal(|ui| {
+        // Claim exactly the painted window size, then draw in a child that does
+        // *not* advance the parent by content min_rect (scope_builder would —
+        // that's what pushed the right edge off-screen when the left pane was wide).
+        let size = crate::widgets::visible_size(ui).max(egui::vec2(1.0, 1.0));
+        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+        let mut body = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        body.set_clip_rect(rect.intersect(ui.clip_rect()));
+        body.set_max_size(rect.size());
+        self.ui_body(&mut body, env, selected_macro, previews);
+    }
+
+    fn ui_body(
+        &mut self,
+        ui: &mut egui::Ui,
+        env: &mut DataEditorCtx<'_>,
+        selected_macro: usize,
+        previews: &mut PreviewTooltipCache,
+    ) {
+        ui.horizontal_wrapped(|ui| {
             let section = EditorSection::of(self.tab);
             for (sec, label) in [
                 (EditorSection::Programs, "Programs"),
@@ -752,11 +787,18 @@ impl DataEditor {
         let section = EditorSection::of(self.tab);
         if matches!(
             section,
-            EditorSection::Items | EditorSection::Coordinates | EditorSection::Tools
+            EditorSection::Programs
+                | EditorSection::Items
+                | EditorSection::Coordinates
+                | EditorSection::Tools
         ) {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let prev = self.tab;
                 match section {
+                    EditorSection::Programs => {
+                        ui.selectable_value(&mut self.tab, EditorTab::Programs, "Programs");
+                        ui.selectable_value(&mut self.tab, EditorTab::Overlay, "Overlay");
+                    }
                     EditorSection::Items => {
                         ui.selectable_value(&mut self.tab, EditorTab::Items, "Items");
                         ui.selectable_value(&mut self.tab, EditorTab::Masks, "Masks");
@@ -771,11 +813,9 @@ impl DataEditor {
                         ui.selectable_value(&mut self.tab, EditorTab::Atlases, "Atlases");
                     }
                     EditorSection::Tools => {
-                        ui.selectable_value(&mut self.tab, EditorTab::Overlay, "Overlay");
                         ui.selectable_value(&mut self.tab, EditorTab::ScreenCap, "ScreenCap");
                         ui.selectable_value(&mut self.tab, EditorTab::PixelCheck, "PixelCheck");
                     }
-                    _ => {}
                 }
                 if self.tab != prev {
                     self.clear_entity_selection();
@@ -796,9 +836,7 @@ impl DataEditor {
 
         self.status_banner.paint(ui);
 
-        // Claim exactly the remaining window area once (body + footer).
-        // Allocating body then drawing footer separately made min_size > window size,
-        // so egui's Resize auto-expand ratcheted toward max every frame.
+        // Leftover inside the pinned Resize body (not room toward max_size).
         let rem = ui.available_size();
         let (outer, _) = ui.allocate_exact_size(rem, egui::Sense::hover());
 
@@ -809,93 +847,119 @@ impl DataEditor {
         let footer_rect =
             egui::Rect::from_min_max(egui::pos2(outer.min.x, outer.min.y + body_h), outer.max);
 
-        let item_gap = ui.spacing().item_spacing.x;
         const SPLITTER_W: f32 = 6.0;
-        const MIN_LEFT: f32 = 140.0;
-        const MIN_RIGHT: f32 = 200.0;
         let avail_w = body_rect.width();
-        let max_left = (avail_w - SPLITTER_W - MIN_RIGHT - item_gap * 2.0).max(MIN_LEFT);
-        self.left_width = self.left_width.clamp(MIN_LEFT, max_left);
-        let body_left = body_rect.left();
+        let min_left = avail_w * MIN_DATA_EDITOR_LEFT_FRAC;
+        let max_left = avail_w * MAX_DATA_EDITOR_LEFT_FRAC;
+        let frac = env
+            .settings
+            .data_editor_left_split
+            .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
+        self.left_width = (avail_w * frac).clamp(min_left, max_left);
+        // Keep splitter + right inside body_rect — never allocate past the frame.
+        let left_w = self.left_width.min((avail_w - SPLITTER_W).max(0.0));
+        let left_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(left_w, body_h));
+        let split_rect = egui::Rect::from_min_size(
+            egui::pos2(left_rect.right(), body_rect.top()),
+            egui::vec2(SPLITTER_W, body_h),
+        );
+        let right_rect = egui::Rect::from_min_max(
+            egui::pos2(split_rect.right(), body_rect.top()),
+            body_rect.max,
+        );
+
         let mut tag_submit = false;
 
-        ui.scope_builder(egui::UiBuilder::new().max_rect(body_rect), |ui| {
-            ui.set_clip_rect(body_rect);
-            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                ui.allocate_ui_with_layout(
-                    egui::vec2(self.left_width, body_h),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        ui.set_max_size(egui::vec2(self.left_width, body_h));
-                        self.draw_left_list(ui, env.catalog, env.icons, previews, env.settings);
-                    },
-                );
+        // `new_child` (not scope_builder): do not advance parent by form min_size.
+        {
+            let mut left_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(left_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            left_ui.set_clip_rect(left_rect.intersect(ui.clip_rect()));
+            left_ui.set_max_size(left_rect.size());
+            self.draw_left_list(&mut left_ui, env.catalog, env.icons, previews, env.settings);
+        }
 
-                let (split_rect, split_resp) = ui.allocate_exact_size(
-                    egui::vec2(SPLITTER_W, body_h),
-                    egui::Sense::click_and_drag(),
-                );
-                let stroke = if split_resp.hovered() || split_resp.dragged() {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
-                    ui.visuals().widgets.active.fg_stroke
-                } else {
-                    ui.visuals().widgets.noninteractive.bg_stroke
-                };
-                ui.painter().vline(
-                    split_rect.center().x,
-                    split_rect.y_range(),
-                    egui::Stroke::new(1.0, stroke.color),
-                );
-                if split_resp.dragged() {
-                    if let Some(pos) = split_resp.interact_pointer_pos() {
-                        self.left_width = (pos.x - body_left - item_gap).clamp(MIN_LEFT, max_left);
-                    }
+        let split_resp =
+            ui.interact(split_rect, ui.id().with("de_split"), egui::Sense::click_and_drag());
+        let stroke = if split_resp.hovered() || split_resp.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            ui.visuals().widgets.active.fg_stroke
+        } else {
+            ui.visuals().widgets.noninteractive.bg_stroke
+        };
+        ui.painter().vline(
+            split_rect.center().x,
+            split_rect.y_range(),
+            egui::Stroke::new(1.0, stroke.color),
+        );
+        if split_resp.dragged() {
+            if let Some(pos) = split_resp.interact_pointer_pos() {
+                self.left_width = (pos.x - body_rect.left()).clamp(min_left, max_left);
+                if avail_w > 1.0 {
+                    env.settings.data_editor_left_split = (self.left_width / avail_w)
+                        .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
                 }
+            }
+        }
+        if split_resp.drag_stopped() {
+            env.settings.clamp();
+            if let Err(e) = env.settings.save_default() {
+                self.set_err(format!("Failed to save data editor layout: {e}"));
+            }
+        }
 
-                let right_w = ui.available_width().max(MIN_RIGHT);
-                ui.allocate_ui_with_layout(
-                    egui::vec2(right_w, body_h),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        ui.set_max_size(egui::vec2(right_w, body_h));
-                        let fill_tab =
-                            matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-                        let mut paint_form = |ui: &mut egui::Ui| {
-                            ui.set_max_width(ui.available_width());
-                            let macros: &[Macro] = env.macros;
-                            tag_submit = self.draw_form(
-                                ui,
-                                &mut CatalogPaint {
-                                    catalog: env.catalog,
-                                    icons: env.icons,
-                                    previews,
-                                },
-                                env.screen_click,
-                                macros,
-                                macros.get(selected_macro),
-                                env.settings,
-                            );
-                        };
-                        // ScreenCap fills remaining height; a ScrollArea would always overflow.
-                        if fill_tab {
-                            paint_form(ui);
-                        } else {
-                            pickers::scroll_vertical()
-                                .id_salt("data_editor_form")
-                                .auto_shrink([false, false])
-                                .max_height(body_h)
-                                .show(ui, paint_form);
-                        }
+        {
+            let mut right_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(right_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            right_ui.set_clip_rect(right_rect.intersect(ui.clip_rect()));
+            right_ui.set_max_size(right_rect.size());
+            let fill_tab = matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
+            let mut paint_form = |ui: &mut egui::Ui| {
+                // Cap content width so a vertical-only ScrollArea cannot report a
+                // wider content_size (that expands the pane / window).
+                ui.set_max_width(right_rect.width());
+                let macros: &[Macro] = env.macros;
+                tag_submit = self.draw_form(
+                    ui,
+                    &mut CatalogPaint {
+                        catalog: env.catalog,
+                        icons: env.icons,
+                        previews,
                     },
+                    env.screen_click,
+                    macros,
+                    macros.get(selected_macro),
+                    env.settings,
                 );
-            });
-        });
+            };
+            if fill_tab {
+                paint_form(&mut right_ui);
+            } else {
+                // Enable horizontal scroll so width stays at the viewport
+                // (`auto_shrink` false + vertical-only expands to content width).
+                pickers::dialog_scroll(right_rect.width(), body_h)
+                    .id_salt("data_editor_form")
+                    .show(&mut right_ui, paint_form);
+            }
+        }
 
-        ui.scope_builder(egui::UiBuilder::new().max_rect(footer_rect), |ui| {
-            ui.set_clip_rect(footer_rect);
-            ui.vertical(|ui| {
+        {
+            let mut footer_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(footer_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            footer_ui.set_clip_rect(footer_rect.intersect(ui.clip_rect()));
+            footer_ui.set_max_size(footer_rect.size());
+            footer_ui.vertical(|ui| {
                 ui.separator();
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let can_new = !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
                     if ui
                         .add_enabled(
@@ -974,7 +1038,7 @@ impl DataEditor {
                     }
                 });
             });
-        });
+        }
     }
 
     /// Enter → Update only when this window is in front and no overlay owns the key.

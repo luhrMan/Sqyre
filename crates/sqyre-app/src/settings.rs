@@ -270,10 +270,12 @@ impl SettingsUi {
             ctx,
         )
         .show(ctx, |ui| {
-            #[cfg(not(target_arch = "wasm32"))]
-            self.ui(ui, ctx, db, macros, catalog, update);
-            #[cfg(target_arch = "wasm32")]
-            self.ui(ui, ctx, db, macros, catalog);
+            crate::widgets::fill_resize_body(ui, |ui| {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.ui(ui, ctx, db, macros, catalog, update);
+                #[cfg(target_arch = "wasm32")]
+                self.ui(ui, ctx, db, macros, catalog);
+            });
         });
         self.open = open;
         if self.dirty {
@@ -301,12 +303,12 @@ impl SettingsUi {
                 egui_phosphor::regular::MAGNIFYING_GLASS,
             ))
             .on_hover_text("Search");
-            let search_w = (ui.available_width() - 60.0).max(120.0);
+            // Infinity fill — fixed desired_width(available) ratchets the window.
             if ui
                 .add(
                     egui::TextEdit::singleline(&mut self.search)
                         .hint_text("Search settings…")
-                        .desired_width(search_w),
+                        .desired_width(f32::INFINITY),
                 )
                 .changed()
                 && !self.search.trim().is_empty()
@@ -329,7 +331,13 @@ impl SettingsUi {
         } else {
             0.0
         };
-        let body_h = (ui.available_height() - footer).max(40.0);
+        let rem = ui.available_size();
+        let (outer, _) = ui.allocate_exact_size(rem, egui::Sense::hover());
+        let body_h = (outer.height() - footer).max(40.0);
+        let body_rect = egui::Rect::from_min_size(outer.min, egui::vec2(outer.width(), body_h));
+        let footer_rect =
+            egui::Rect::from_min_max(egui::pos2(outer.min.x, outer.min.y + body_h), outer.max);
+
         let q = self.search.trim().to_ascii_lowercase();
         let visible_sections: Vec<SettingsSection> =
             SettingsSection::all().filter(|s| s.visible(&q)).collect();
@@ -337,102 +345,109 @@ impl SettingsUi {
             self.active_section = visible_sections[0];
         }
 
-        ui.horizontal(|ui| {
-            const SIDEBAR_W: f32 = 132.0;
-            const MIN_CONTENT_W: f32 = 240.0;
-            ui.allocate_ui_with_layout(
-                egui::vec2(SIDEBAR_W, body_h),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    ui.set_max_size(egui::vec2(SIDEBAR_W, body_h));
-                    for section in visible_sections.iter().copied() {
-                        if ui
-                            .selectable_label(self.active_section == section, section.label())
-                            .clicked()
-                        {
-                            self.active_section = section;
+        const SIDEBAR_W: f32 = 132.0;
+        const SPLITTER_W: f32 = 6.0;
+        let left_w = SIDEBAR_W.min((body_rect.width() - SPLITTER_W).max(0.0));
+        let left_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(left_w, body_h));
+        let split_rect = egui::Rect::from_min_size(
+            egui::pos2(left_rect.right(), body_rect.top()),
+            egui::vec2(SPLITTER_W, body_h),
+        );
+        let right_rect = egui::Rect::from_min_max(
+            egui::pos2(split_rect.right(), body_rect.top()),
+            body_rect.max,
+        );
+
+        {
+            let mut left_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(left_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            left_ui.set_clip_rect(left_rect.intersect(ui.clip_rect()));
+            left_ui.set_max_size(left_rect.size());
+            for section in visible_sections.iter().copied() {
+                if left_ui
+                    .selectable_label(self.active_section == section, section.label())
+                    .clicked()
+                {
+                    self.active_section = section;
+                }
+            }
+        }
+        ui.painter().vline(
+            split_rect.center().x,
+            split_rect.y_range(),
+            egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+        );
+        {
+            let mut right_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(right_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            right_ui.set_clip_rect(right_rect.intersect(ui.clip_rect()));
+            right_ui.set_max_size(right_rect.size());
+            crate::pickers::dialog_scroll(right_rect.width(), body_h)
+                .id_salt("user_settings_content")
+                .show(&mut right_ui, |ui| {
+                    ui.set_max_width(right_rect.width());
+                    if visible_sections.is_empty() {
+                        ui.label(
+                            egui::RichText::new("No settings match your search.")
+                                .weak()
+                                .italics(),
+                        );
+                        return;
+                    }
+                    let section = self.active_section;
+                    ui.label(egui::RichText::new(section.label()).strong().heading());
+                    ui.label(egui::RichText::new(section.subtitle()).weak());
+                    ui.separator();
+                    let section_hit = match section {
+                        SettingsSection::General => query_matches(&q, SECTION_GENERAL),
+                        SettingsSection::Sound => query_matches(&q, SECTION_SOUND),
+                        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                        SettingsSection::Permissions => query_matches(&q, SECTION_PERMISSIONS),
+                        SettingsSection::Data => query_matches(&q, SECTION_DATA),
+                        #[cfg(not(target_arch = "wasm32"))]
+                        SettingsSection::Updates => query_matches(&q, SECTION_UPDATES),
+                        SettingsSection::Appearance => query_matches(&q, SECTION_APPEARANCE),
+                    };
+                    match section {
+                        SettingsSection::General => self.draw_general(ui, &q, section_hit),
+                        SettingsSection::Sound => self.draw_sound(ui, &q, section_hit),
+                        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                        SettingsSection::Permissions => {
+                            self.draw_permissions(ui, ctx, &q, section_hit)
+                        }
+                        SettingsSection::Data => {
+                            self.draw_data(ui, db, macros, catalog, &q, section_hit);
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if setting_visible(&q, section_hit, DATA_LOCATION)
+                                && setting_visible(&q, section_hit, DATA_BACKUP)
+                            {
+                                ui.add_space(10.0);
+                            }
+                            self.draw_backup(ui, db, macros, catalog, &q, section_hit);
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        SettingsSection::Updates => self.draw_updates(ui, update, &q, section_hit),
+                        SettingsSection::Appearance => {
+                            self.draw_appearance(ui, ctx, &q, section_hit)
                         }
                     }
-                },
-            );
-            ui.separator();
-            let content_w = ui.available_width().max(MIN_CONTENT_W);
-            ui.allocate_ui_with_layout(
-                egui::vec2(content_w, body_h),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    ui.set_max_size(egui::vec2(content_w, body_h));
-                    crate::pickers::scroll_vertical()
-                        .id_salt("user_settings_content")
-                        .auto_shrink([false, false])
-                        .max_height(body_h)
-                        .show(ui, |ui| {
-                            ui.set_max_width(ui.available_width());
-                            if visible_sections.is_empty() {
-                                ui.label(
-                                    egui::RichText::new("No settings match your search.")
-                                        .weak()
-                                        .italics(),
-                                );
-                                return;
-                            }
-                            let section = self.active_section;
-                            ui.label(egui::RichText::new(section.label()).strong().heading());
-                            ui.label(egui::RichText::new(section.subtitle()).weak());
-                            ui.separator();
-                            let section_hit = match section {
-                                SettingsSection::General => query_matches(&q, SECTION_GENERAL),
-                                SettingsSection::Sound => query_matches(&q, SECTION_SOUND),
-                                #[cfg(all(
-                                    not(target_arch = "wasm32"),
-                                    feature = "native-runtime"
-                                ))]
-                                SettingsSection::Permissions => {
-                                    query_matches(&q, SECTION_PERMISSIONS)
-                                }
-                                SettingsSection::Data => query_matches(&q, SECTION_DATA),
-                                #[cfg(not(target_arch = "wasm32"))]
-                                SettingsSection::Updates => query_matches(&q, SECTION_UPDATES),
-                                SettingsSection::Appearance => {
-                                    query_matches(&q, SECTION_APPEARANCE)
-                                }
-                            };
-                            match section {
-                                SettingsSection::General => self.draw_general(ui, &q, section_hit),
-                                SettingsSection::Sound => self.draw_sound(ui, &q, section_hit),
-                                #[cfg(all(
-                                    not(target_arch = "wasm32"),
-                                    feature = "native-runtime"
-                                ))]
-                                SettingsSection::Permissions => {
-                                    self.draw_permissions(ui, ctx, &q, section_hit)
-                                }
-                                SettingsSection::Data => {
-                                    self.draw_data(ui, db, macros, catalog, &q, section_hit);
-                                    #[cfg(not(target_arch = "wasm32"))]
-                                    if setting_visible(&q, section_hit, DATA_LOCATION)
-                                        && setting_visible(&q, section_hit, DATA_BACKUP)
-                                    {
-                                        ui.add_space(10.0);
-                                    }
-                                    self.draw_backup(ui, db, macros, catalog, &q, section_hit);
-                                }
-                                #[cfg(not(target_arch = "wasm32"))]
-                                SettingsSection::Updates => {
-                                    self.draw_updates(ui, update, &q, section_hit)
-                                }
-                                SettingsSection::Appearance => {
-                                    self.draw_appearance(ui, ctx, &q, section_hit)
-                                }
-                            }
-                        });
-                },
-            );
-        });
+                });
+        }
 
-        if self.status_banner.status.is_some() {
-            ui.separator();
-            self.status_banner.paint(ui);
+        if footer > 0.0 {
+            let mut footer_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(footer_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            footer_ui.set_clip_rect(footer_rect.intersect(ui.clip_rect()));
+            self.status_banner.paint(&mut footer_ui);
         }
     }
 

@@ -1,7 +1,7 @@
-use super::icon_grid::{adaptive_icon_cell, item_tooltip_parts};
+use super::icon_grid::{adaptive_icon_cell, grid_column_count_for_width, item_tooltip_parts};
 use super::items_grid::{sort_by_display_name, toggle_select_all_filtered};
 use super::query::{query_matches_name_or_tags, query_matches_window};
-use super::types::{EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP};
+use super::types::{EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP, GRID_CELL, GRID_GAP};
 use crate::window_types::WindowInfo;
 use sqyre_persist::{ProgramCatalog, ProgramData, ProgramItem};
 use std::collections::BTreeMap;
@@ -131,4 +131,31 @@ fn adaptive_icon_cell_fits_one_row_between_min_and_max() {
     // 4 cells: (280 - 3*6) / 4 = 65.5, inside [40, 112].
     let cell = adaptive_icon_cell(4, 280.0, EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP);
     assert!((cell - 65.5).abs() < 0.01);
+}
+
+#[test]
+fn grid_columns_require_eighty_percent_of_next_cell() {
+    let cell = GRID_CELL;
+    let gap = GRID_GAP;
+    let stride = cell + gap;
+    // Exactly 5 full columns.
+    let five = 5.0 * cell + 4.0 * gap;
+    assert_eq!(grid_column_count_for_width(five, cell, gap), 5);
+    // Only ~15% of a 6th cell — stay at 5.
+    assert_eq!(
+        grid_column_count_for_width(five + gap + 0.15 * cell, cell, gap),
+        5
+    );
+    // ≥80% of a 6th cell — allow the extra column.
+    assert_eq!(
+        grid_column_count_for_width(five + gap + 0.8 * cell, cell, gap),
+        6
+    );
+    // Barely under 80% still refuses the 6th.
+    assert_eq!(
+        grid_column_count_for_width(five + gap + 0.79 * cell, cell, gap),
+        5
+    );
+    // Sanity: one stride past five full columns is six full columns.
+    assert_eq!(grid_column_count_for_width(five + stride, cell, gap), 6);
 }

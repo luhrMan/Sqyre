@@ -745,7 +745,7 @@ fn targets_editor(
             &suggestions,
             crate::widgets::TagChipOptions {
                 enabled: true,
-                show_add_button: false,
+                show_add_button: true,
                 suggestion_limit: 12,
                 suggestions_with_separator: false,
                 draft_hover: Some(h::IS_TAG_PRIORITY),

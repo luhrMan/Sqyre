@@ -1,6 +1,6 @@
 use super::items_grid::set_collapsing_openness;
 use super::query::fuzzy_match_fold;
-use super::scroll::{maybe_scroll_to, popup_scroll_max_height, scroll_vertical};
+use super::scroll::{dialog_scroll, maybe_scroll_to, popup_scroll_max_height};
 use super::types::{CollectionCellPick, CoordKind};
 use crate::paint_ctx::CatalogPaint;
 use crate::preview_tooltip::PreviewKind;
@@ -57,11 +57,10 @@ pub fn paint_coord_ref_list(
     let current_ref = CoordinateRef(current.clone());
     let mut did_scroll = false;
     let list_h = popup_scroll_max_height(ui, 52.0);
-    scroll_vertical()
-        .auto_shrink([false, false])
-        .max_height(list_h)
-        .show(ui, |ui| {
-            for prog in catalog.program_names() {
+    let list_w = crate::widgets::visible_width(ui);
+    dialog_scroll(list_w, list_h).show(ui, |ui| {
+        ui.set_max_width(list_w);
+        for prog in catalog.program_names() {
                 let Some(pdata) = catalog.get(prog) else {
                     continue;
                 };
