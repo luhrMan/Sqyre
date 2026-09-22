@@ -57,8 +57,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         .scope(|ui| {
             ui.spacing_mut().scroll.floating_allocated_width = ui.spacing().scroll.bar_width;
             // Custom drag-scroll below (DnD handle vs content); disable egui drag.
-            // Both axes so a narrow central pane can scroll horizontally.
-            let scroll_out = egui::ScrollArea::both()
+            // Vertical only: action rows clip to the visible pane width, so an H-bar
+            // would only reflect egui_ltreeview's min_width ratchet (see new_child
+            // below). auto_shrink false keeps the viewport filled when content is short.
+            let scroll_out = egui::ScrollArea::vertical()
                 .id_salt("macro_tree_scroll")
                 .scroll_source(crate::pickers::SCROLL_SOURCE_NO_DRAG)
                 .auto_shrink([false, false])
@@ -169,16 +171,34 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         paint_revision,
                         show_logs,
                     };
-                    // egui_ltreeview sizes to max(available, content). Inside ScrollArea
-                    // that fills the viewport and trips a permanent vertical scrollbar
-                    // (content ≈ viewport + rounding). Cap available height so the tree
-                    // sizes to its nodes; allocate_rect still grows content for scrolling.
-                    ui.set_max_height(0.0);
+                    // egui_ltreeview sizes to max(available, content) and ratchets
+                    // `state.min_width` upward only. A vertical ScrollArea with
+                    // auto_shrink(false) would adopt that width and stretch the
+                    // pane (or, with ScrollArea::both, show an extreme H-bar).
+                    // Paint in a new_child so the ratchet cannot advance the
+                    // ScrollArea; claim only the viewport width (rows already
+                    // clip to the visible edge). Cap available height so the
+                    // tree sizes to its nodes (same as the vertical scrollbar
+                    // fix); allocate_rect still grows content for V-scroll.
+                    let viewport_w = ui.available_width().max(1.0);
+                    let tree_origin = ui.cursor().min;
+                    let tree_max = egui::Rect::from_min_size(
+                        tree_origin,
+                        egui::vec2(viewport_w, f32::INFINITY),
+                    );
+                    let mut tree_ui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(tree_max)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                    );
+                    tree_ui.set_clip_rect(tree_max.intersect(ui.clip_rect()));
+                    tree_ui.set_max_width(viewport_w);
+                    tree_ui.set_max_height(0.0);
                     // egui_ltreeview Hook indent clamps against an unnormalized clip rect
                     // and panics when that rect is inverted (window resize / collapse).
                     // Upstream #47 added normalize_rect but missed one Hook clamp site.
                     // Skip the frame when invisible rather than panic.
-                    let tree_actions = if ui.clip_rect().is_negative() {
+                    let tree_actions = if tree_ui.clip_rect().is_negative() {
                         Vec::new()
                     } else {
                         let (_, tree_actions) = TreeView::new(id)
@@ -186,7 +206,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                             .allow_multi_selection(true)
                             .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
                             .show_state(
-                                ui,
+                                &mut tree_ui,
                                 &mut state,
                                 |builder: &mut TreeViewBuilder<'_, ActionId>| {
                                     // Invisible flattened root so top-level rows have a parent for DnD
@@ -215,16 +235,20 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                             );
                         tree_actions
                     };
+                    let content_h = tree_ui.min_size().y.max(1.0);
+                    // Claim viewport width only — do not import TreeView's
+                    // ratcheted min_width into ScrollArea content_size.
+                    ui.allocate_exact_size(egui::vec2(viewport_w, content_h), egui::Sense::hover());
                     // Off-clip rows skip label_ui — estimate Y so ScrollArea can still follow.
                     if let Some(target) = scroll_to {
                         if !scrolled_follow {
                             if let Some(row_i) = flattened_visible_index(root, target) {
-                                let row_h =
-                                    tree_chrome::row_height(ui) + ui.spacing().item_spacing.y;
-                                let y = ui.min_rect().top() + row_i as f32 * row_h;
+                                let row_h = tree_chrome::row_height(&tree_ui)
+                                    + tree_ui.spacing().item_spacing.y;
+                                let y = tree_origin.y + row_i as f32 * row_h;
                                 let rect = egui::Rect::from_min_size(
-                                    egui::pos2(ui.min_rect().left(), y),
-                                    egui::vec2(ui.available_width().max(1.0), row_h),
+                                    egui::pos2(tree_origin.x, y),
+                                    egui::vec2(viewport_w, row_h),
                                 );
                                 ui.scroll_to_rect(rect, Some(egui::Align::Center));
                                 scrolled_follow = true;
