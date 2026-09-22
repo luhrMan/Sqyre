@@ -106,6 +106,7 @@ impl SqyreApp {
             data_editor: DataEditor::default(),
             settings_ui,
             variables_panel: variables_panel::VariablesPanelUi::default(),
+            macro_prompt_builder: crate::macro_prompt_builder::MacroPromptBuilderUi::default(),
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: RecordingOverlay::new(),
