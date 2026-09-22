@@ -32,7 +32,7 @@ pub fn watch_events(
     let mut devices = Vec::new();
     for file in files {
         let fd = file.as_raw_fd();
-        let Ok(device) = evdev_rs::Device::new_from_fd(file) else {
+        let Ok(device) = evdev_rs::Device::new_from_file(file) else {
             continue;
         };
         let idx = devices.len() as u64;

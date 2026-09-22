@@ -2,7 +2,8 @@
 //!
 //! Run: `cargo bench -p sqyre-vision` or `make bench`.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
 use sqyre_match::{cluster_points, ImageBuf};
 use sqyre_vision::{find_pixels, find_pixels_clustered, preprocess_for_ocr, OcrPreprocessOptions};
 use std::time::Duration;
