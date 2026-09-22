@@ -9,7 +9,8 @@ mod types;
 mod util;
 
 pub use seed_general::{
-    ensure_general_program, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE, TEMPORARY_PROGRAM,
+    ensure_general_program, CELL_BOUNDS, CELL_COORDINATES, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
+    TEMPORARY_PROGRAM,
 };
 pub use types::{
     MonitorRect, ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem,

@@ -136,6 +136,7 @@ impl ActionKind {
                     role: BindingRole::Output,
                 })
                 .collect(),
+            Self::ForEachCell { .. } => Vec::new(),
             Self::NavigateSelect(data) => data.outputs.variable_bindings(),
             _ => Vec::new(),
         }

@@ -719,6 +719,9 @@ pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, Pre
         {
             Some((search_area.clone(), PreviewKind::SearchArea))
         }
+        ActionKind::ForEachCell { cells, .. } if !cells.is_empty() => {
+            Some((cells.clone(), PreviewKind::SearchArea))
+        }
         _ => None,
     }
 }

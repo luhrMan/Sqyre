@@ -12,10 +12,17 @@ pub const TEMPORARY_PROGRAM: &str = "temporary";
 /// Point that resolves to Image Search match coordinates (`foundX` / `foundY`).
 pub const IMAGE_SEARCH_REFERENCE: &str = "Image Search Reference";
 
+/// Point that resolves to ForEachCell center (`CellX` / `CellY`).
+pub const CELL_COORDINATES: &str = "Cell Coordinates";
+
+/// Search area that resolves to the current ForEachCell bounds.
+pub const CELL_BOUNDS: &str = "Cell Bounds";
+
 /// Create/update the `General` program with one search area + 2×2 Collection
 /// per monitor (quadrants / halves via cell ranges), and per-monitor corner / center /
 /// corner-mid Points. Coordinates are **monitor-relative** (origin at each slot's top-left).
-/// Always ensures [`IMAGE_SEARCH_REFERENCE`] (`${foundX}` / `${foundY}`) is present.
+/// Always ensures [`IMAGE_SEARCH_REFERENCE`] (`${foundX}` / `${foundY}`),
+/// [`CELL_COORDINATES`] (`${CellX}` / `${CellY}`), and [`CELL_BOUNDS`] are present.
 ///
 /// Re-runs against the live (shared) monitor list so displays are added or
 /// removed after capture changes, and generated coordinates stay aligned.
@@ -47,6 +54,12 @@ pub fn ensure_general_program(
     if ensure_image_search_reference(catalog)? {
         changed = true;
     }
+    if ensure_cell_coordinates(catalog)? {
+        changed = true;
+    }
+    if ensure_cell_bounds(catalog)? {
+        changed = true;
+    }
     Ok(changed)
 }
 
@@ -66,10 +79,55 @@ fn ensure_image_search_reference(catalog: &mut ProgramCatalog) -> Result<bool> {
     Ok(true)
 }
 
+fn ensure_cell_coordinates(catalog: &mut ProgramCatalog) -> Result<bool> {
+    if program_has_point(catalog, CELL_COORDINATES) {
+        return Ok(false);
+    }
+    catalog.upsert_point(
+        GENERAL_PROGRAM,
+        ProgramPoint {
+            name: CELL_COORDINATES.into(),
+            monitor: 1,
+            x: ScalarValue::String("${CellX}".into()),
+            y: ScalarValue::String("${CellY}".into()),
+        },
+    )?;
+    Ok(true)
+}
+
+fn ensure_cell_bounds(catalog: &mut ProgramCatalog) -> Result<bool> {
+    if program_has_search_area(catalog, CELL_BOUNDS) {
+        return Ok(false);
+    }
+    catalog.upsert_search_area(
+        GENERAL_PROGRAM,
+        ProgramSearchArea {
+            name: CELL_BOUNDS.into(),
+            monitor: 1,
+            left_x: ScalarValue::String("${CellLeft}".into()),
+            top_y: ScalarValue::String("${CellTop}".into()),
+            right_x: ScalarValue::String("${CellRight}".into()),
+            bottom_y: ScalarValue::String("${CellBottom}".into()),
+        },
+    )?;
+    Ok(true)
+}
+
 fn program_has_point(catalog: &ProgramCatalog, name: &str) -> bool {
     catalog
         .get(GENERAL_PROGRAM)
         .map(|p| p.points.values().any(|bucket| bucket.contains_key(name)))
+        .unwrap_or(false)
+}
+
+fn program_has_search_area(catalog: &ProgramCatalog, name: &str) -> bool {
+    catalog
+        .get(GENERAL_PROGRAM)
+        .map(|p| {
+            p.search_areas
+                .values()
+                .any(|bucket| bucket.contains_key(name))
+        })
         .unwrap_or(false)
 }
 
@@ -430,7 +488,17 @@ mod tests {
         assert!(!areas.contains_key("Whole Screen"));
         assert!(areas.contains_key("Monitor 1"));
         assert!(!areas.contains_key("Monitor 1 Left Half"));
-        assert_eq!(areas.len(), 1);
+        assert_eq!(areas.len(), 2);
+        assert!(areas.contains_key(CELL_BOUNDS));
+        let cell_bounds = &areas[CELL_BOUNDS];
+        assert_eq!(
+            cell_bounds.left_x,
+            ScalarValue::String("${CellLeft}".into())
+        );
+        assert_eq!(
+            cell_bounds.bottom_y,
+            ScalarValue::String("${CellBottom}".into())
+        );
 
         let monitor = &areas["Monitor 1"];
         assert_eq!(monitor.monitor, 1);
@@ -445,7 +513,7 @@ mod tests {
         assert_eq!(col.cols, 2);
 
         let points = p.points.get(res).expect("points");
-        assert_eq!(points.len(), 10);
+        assert_eq!(points.len(), 11);
         assert_eq!(points["Monitor 1 Top Left"].monitor, 1);
         assert_eq!(points["Monitor 1 Top Left"].x, ScalarValue::Int(0));
         assert_eq!(points["Monitor 1 Top Left"].y, ScalarValue::Int(0));
@@ -466,6 +534,9 @@ mod tests {
         let found = &points[IMAGE_SEARCH_REFERENCE];
         assert_eq!(found.x, ScalarValue::String("${foundX}".into()));
         assert_eq!(found.y, ScalarValue::String("${foundY}".into()));
+        let cell = &points[CELL_COORDINATES];
+        assert_eq!(cell.x, ScalarValue::String("${CellX}".into()));
+        assert_eq!(cell.y, ScalarValue::String("${CellY}".into()));
     }
 
     #[test]
@@ -477,7 +548,8 @@ mod tests {
 
         let p = cat.get(GENERAL_PROGRAM).expect("General");
         let areas = p.search_areas.get("2560x1440").expect("areas");
-        assert_eq!(areas.len(), 2);
+        assert_eq!(areas.len(), 3);
+        assert!(areas.contains_key(CELL_BOUNDS));
         assert!(!areas.contains_key("Whole Screen"));
 
         let m2 = &areas["Monitor 2"];
@@ -497,11 +569,12 @@ mod tests {
         assert_eq!(m2_col.cols, 2);
 
         let points = p.points.get("2560x1440").expect("points");
-        assert_eq!(points.len(), 19);
+        assert_eq!(points.len(), 20);
         assert_eq!(points["Monitor 2 Center"].monitor, 2);
         assert_eq!(points["Monitor 2 Center"].x, ScalarValue::Int(960));
         assert_eq!(points["Monitor 2 Center"].y, ScalarValue::Int(540));
         assert!(points.contains_key(IMAGE_SEARCH_REFERENCE));
+        assert!(points.contains_key(CELL_COORDINATES));
     }
 
     #[test]

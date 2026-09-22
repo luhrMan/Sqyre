@@ -1,6 +1,6 @@
 use crate::actions::{
-    execute_focus_window, execute_for_each_row, execute_pause, execute_run_macro,
-    execute_save_variable, execute_set_variable, execute_while, FlowLoopCtx,
+    execute_focus_window, execute_for_each_cell, execute_for_each_row, execute_pause,
+    execute_run_macro, execute_save_variable, execute_set_variable, execute_while, FlowLoopCtx,
 };
 use crate::backends::{
     AutomationBackend, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup, MoveOptions,
@@ -678,6 +678,20 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             sources,
             start_row,
             end_row,
+            macro_,
+        ),
+        ActionKind::ForEachCell {
+            name,
+            cells,
+            subactions,
+        } => execute_for_each_cell(
+            exec,
+            &FlowLoopCtx {
+                action_id: action.id,
+                name,
+                subactions,
+            },
+            cells,
             macro_,
         ),
         ActionKind::Pause {

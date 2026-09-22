@@ -169,6 +169,16 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         delay_class: DelayClass::None,
     },
     ActionTypeMeta {
+        type_key: "foreachcell",
+        label: "For each cell",
+        description:
+            "Runs its sub-actions once per cell in a Collection range (no Image Search).",
+        color_category: "Control flow",
+        color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
+        icon: "▦",
+        delay_class: DelayClass::None,
+    },
+    ActionTypeMeta {
         type_key: "conditional",
         label: "If",
         description: "Runs its sub-actions only when the conditions are true.",
@@ -361,6 +371,11 @@ mod tests {
         assert_eq!(action_color_category("foreachrow"), "Control flow");
         assert_eq!(
             action_color_key("foreachrow"),
+            ACTION_COLOR_KEY_CONTROL_FLOW
+        );
+        assert_eq!(action_color_category("foreachcell"), "Control flow");
+        assert_eq!(
+            action_color_key("foreachcell"),
             ACTION_COLOR_KEY_CONTROL_FLOW
         );
         assert_eq!(action_color_category("conditional"), "Control flow");
