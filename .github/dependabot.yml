@@ -15,3 +15,7 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    # dtolnay pre-creates heads like 1.120.0 for future rustc releases; Dependabot
+    # treats those as newer action versions even though rustc is not released yet.
+    ignore:
+      - dependency-name: "dtolnay/rust-toolchain"
