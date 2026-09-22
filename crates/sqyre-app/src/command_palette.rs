@@ -29,6 +29,7 @@ pub(crate) enum CommandKind {
     },
     OpenSettings,
     OpenVariables,
+    OpenAiMacroBuilder,
     ShowMacroList,
     NewCatalogEntity {
         tab: EditorTab,
@@ -420,6 +421,13 @@ fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
         ));
     }
     out.push(item(
+        "Open AI Macro Builder",
+        "Go to",
+        ph("magic-wand"),
+        CommandKind::OpenAiMacroBuilder,
+        &["ai", "prompt", "generate", "import", "goto"],
+    ));
+    out.push(item(
         "Show Macro List",
         "Go to",
         ph("list"),
@@ -717,6 +725,7 @@ fn kind_priority(kind: &CommandKind) -> u8 {
         CommandKind::AddAction { .. }
         | CommandKind::OpenSettings
         | CommandKind::OpenVariables
+        | CommandKind::OpenAiMacroBuilder
         | CommandKind::ShowMacroList => 4,
         CommandKind::NewMacro | CommandKind::NewCatalogEntity { .. } => 5,
     }
@@ -732,6 +741,7 @@ fn is_static_command(kind: &CommandKind) -> bool {
         | CommandKind::OpenDataEditor
         | CommandKind::OpenSettings
         | CommandKind::OpenVariables
+        | CommandKind::OpenAiMacroBuilder
         | CommandKind::ShowMacroList
         | CommandKind::NewCatalogEntity { .. } => true,
         CommandKind::OpenMacro { .. }
@@ -801,6 +811,7 @@ impl SqyreApp {
             }
             CommandKind::OpenSettings => self.settings_ui.open = true,
             CommandKind::OpenVariables => self.variables_panel.open = true,
+            CommandKind::OpenAiMacroBuilder => self.macro_prompt_builder.open_builder(),
             CommandKind::ShowMacroList => self.macro_list_open = true,
             CommandKind::NewCatalogEntity { tab } => {
                 let pending = self.pending_viewport_scale;

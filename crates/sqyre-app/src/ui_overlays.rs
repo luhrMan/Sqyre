@@ -194,6 +194,17 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             app.persist_macro_at(idx);
         }
     }
+    match app.macro_prompt_builder.show(
+        ctx,
+        &app.workspace.macros,
+        &app.workspace.catalog,
+        pending_scale,
+    ) {
+        crate::macro_prompt_builder::PromptBuilderOutcome::ImportMacro(macro_) => {
+            app.import_macro_from_prompt_builder(*macro_);
+        }
+        crate::macro_prompt_builder::PromptBuilderOutcome::None => {}
+    }
     if let Some(action) = {
         let catalog = &app.workspace.catalog;
         let icons = &mut app.icon_cache;

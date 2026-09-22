@@ -319,6 +319,9 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         if toolbar_icon_colored(ui, "x", "Variables", true, Some(vars_color)).clicked() {
             app.variables_panel.open = true;
         }
+        if toolbar_icon(ui, "✦", "AI Macro Builder", true).clicked() {
+            app.macro_prompt_builder.open_builder();
+        }
         ui.separator();
         if toolbar_icon(ui, "📄", "Copy (Ctrl+C)", can_copy && !running).clicked() {
             app.copy_selection(ui.ctx());
