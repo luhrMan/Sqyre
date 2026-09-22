@@ -216,7 +216,14 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         }
     }
     if let Err(e) = sqyre_validate::validate_macro(&app.workspace.macros[idx]) {
-        ui.colored_label(crate::theme::error_fg(), format!("Validation: {e}"));
+        // Truncate to the pane — keep the status on one line and avoid raising
+        // CentralPanel min_size when the message is long.
+        let msg = format!("Validation: {e}");
+        ui.add(
+            egui::Label::new(egui::RichText::new(&msg).color(crate::theme::error_fg()))
+                .truncate(),
+        )
+        .on_hover_text(&msg);
     }
     // Selection / length may have changed after rename.
     let idx = app
