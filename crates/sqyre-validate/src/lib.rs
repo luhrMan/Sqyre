@@ -677,6 +677,22 @@ fn validate_action_with(
             validate_scalar_field("for each row start row", start_row, macro_)?;
             validate_scalar_field("for each row end row", end_row, macro_)?;
         }
+        ActionKind::ForEachCell { cells, .. } => {
+            if mode == ActionValidationMode::Complete {
+                if cells.is_empty() {
+                    return Err(ValidateError::Message(
+                        "for each cell: select a Collection cell range".into(),
+                    ));
+                }
+                if !cells.is_collection() {
+                    return Err(ValidateError::Message(
+                        "for each cell: cells must be a Collection range (not a desktop search area)"
+                            .into(),
+                    ));
+                }
+            }
+            validate_coordinate_ref("for each cell", "cells", cells)?;
+        }
         ActionKind::Wait { time } => {
             validate_scalar_field("wait time", time, macro_)?;
         }
@@ -883,6 +899,8 @@ mod tests {
     fn variable_name_rejects_reserved_builtins() {
         assert!(validate_variable_name("StackMax").is_err());
         assert!(validate_variable_name("Row").is_err());
+        assert!(validate_variable_name("CellX").is_err());
+        assert!(validate_variable_name("CellCount").is_err());
         assert!(validate_variable_name("monitor1Width").is_err());
         assert!(validate_variable_name("Monitor12Height").is_err());
         assert!(validate_variable_name("myStackMax").is_ok());

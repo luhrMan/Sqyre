@@ -16,7 +16,8 @@ use super::{
 use serde::{Deserialize, Serialize};
 
 use super::wire_keys::{
-    TagClick, TagConditional, TagFindPixel, TagFocusWindow, TagForEachRow, TagImageSearch, TagKey,
+    TagClick, TagConditional, TagFindPixel, TagFocusWindow, TagForEachCell, TagForEachRow,
+    TagImageSearch, TagKey,
     TagLoop, TagLoopJump, TagMove, TagNavigateKey, TagNavigateSelect, TagOcr, TagPause,
     TagRunMacro, TagSaveVariable, TagSetVariable, TagType, TagWait, TagWhile,
 };
@@ -179,6 +180,16 @@ enum ActionKindWire {
             skip_serializing_if = "ScalarValue::is_null"
         )]
         end_row: ScalarValue,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        subactions: Vec<Action>,
+    },
+    ForEachCell {
+        #[serde(rename = "type")]
+        type_: TagForEachCell,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        name: String,
+        #[serde(default)]
+        cells: CoordinateRef,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         subactions: Vec<Action>,
     },
@@ -451,6 +462,16 @@ impl From<ActionKindWire> for ActionKind {
                 end_row,
                 subactions,
             },
+            ActionKindWire::ForEachCell {
+                name,
+                cells,
+                subactions,
+                ..
+            } => Self::ForEachCell {
+                name,
+                cells,
+                subactions,
+            },
             ActionKindWire::Wait { time, .. } => Self::Wait { time },
             ActionKindWire::Pause {
                 message,
@@ -697,6 +718,16 @@ enum ActionKindWireRef<'a> {
         #[serde(default, skip_serializing_if = "is_empty_slice")]
         subactions: &'a [Action],
     },
+    ForEachCell {
+        #[serde(rename = "type")]
+        type_: TagForEachCell,
+        #[serde(default, skip_serializing_if = "str::is_empty")]
+        name: &'a str,
+        #[serde(default)]
+        cells: &'a CoordinateRef,
+        #[serde(default, skip_serializing_if = "is_empty_slice")]
+        subactions: &'a [Action],
+    },
     Wait {
         #[serde(rename = "type")]
         type_: TagWait,
@@ -934,6 +965,16 @@ impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
                 sources,
                 start_row,
                 end_row,
+                subactions,
+            },
+            ActionKind::ForEachCell {
+                name,
+                cells,
+                subactions,
+            } => Self::ForEachCell {
+                type_: TagForEachCell::Tag,
+                name,
+                cells,
                 subactions,
             },
             ActionKind::Wait { time } => Self::Wait {

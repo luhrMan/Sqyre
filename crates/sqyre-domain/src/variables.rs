@@ -1,7 +1,8 @@
 //! Declared macro variables and runtime store.
 
 use crate::{
-    Action, ActionKind, Macro, ScalarValue, FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
+    Action, ActionKind, Macro, ScalarValue, FOREACH_CELL_BUILTIN_VARS, FOREACH_ROW_BUILTIN_ROW,
+    FOREACH_ROW_BUILTIN_ROW_COUNT,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -28,6 +29,19 @@ const IMAGE_SEARCH_BUILTIN_DESCS: &[&str] = &[
     "Template image height in pixels (Image Search)",
 ];
 
+/// Fixed descriptions for ForEachCell builtins (same order as [`FOREACH_CELL_BUILTIN_VARS`]).
+const FOREACH_CELL_BUILTIN_DESCS: &[&str] = &[
+    "Cell center X in screen pixels (ForEachCell)",
+    "Cell center Y in screen pixels (ForEachCell)",
+    "Current 1-based row index in the Collection (ForEachCell)",
+    "Current 1-based column index in the Collection (ForEachCell)",
+    "Total cells in the selected range (ForEachCell)",
+    "Current cell left edge in screen pixels (ForEachCell)",
+    "Current cell top edge in screen pixels (ForEachCell)",
+    "Current cell right edge in screen pixels (ForEachCell)",
+    "Current cell bottom edge in screen pixels (ForEachCell)",
+];
+
 /// Name + description for a system-provided runtime variable.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BuiltinVariableInfo {
@@ -50,7 +64,9 @@ pub fn monitor_builtin_var_names(num_monitors: usize) -> Vec<String> {
 /// Full reference catalog of builtins for the Variables panel (not filtered by macro content).
 pub fn builtin_variable_catalog(num_monitors: usize) -> Vec<BuiltinVariableInfo> {
     let n = num_monitors.max(1);
-    let mut out = Vec::with_capacity(n * 2 + IMAGE_SEARCH_BUILTIN_VARS.len() + 2);
+    let mut out = Vec::with_capacity(
+        n * 2 + IMAGE_SEARCH_BUILTIN_VARS.len() + 2 + FOREACH_CELL_BUILTIN_VARS.len(),
+    );
     for i in 1..=n {
         out.push(BuiltinVariableInfo {
             name: format!("monitor{i}Width"),
@@ -78,6 +94,15 @@ pub fn builtin_variable_catalog(num_monitors: usize) -> Vec<BuiltinVariableInfo>
         name: FOREACH_ROW_BUILTIN_ROW_COUNT.to_string(),
         description: "Total row count of the driving source (ForEachRow)",
     });
+    for (name, description) in FOREACH_CELL_BUILTIN_VARS
+        .iter()
+        .zip(FOREACH_CELL_BUILTIN_DESCS.iter())
+    {
+        out.push(BuiltinVariableInfo {
+            name: (*name).to_string(),
+            description,
+        });
+    }
     out
 }
 
@@ -156,6 +181,7 @@ pub fn collect_known_variable_names_with_monitors(
     let mut known = KnownVariableNames::default();
     let mut has_image_search = false;
     let mut has_for_each_row = false;
+    let mut has_for_each_cell = false;
 
     for d in &macro_.variable_decls {
         known.insert(&d.name);
@@ -165,6 +191,7 @@ pub fn collect_known_variable_names_with_monitors(
         match &action.kind {
             ActionKind::ImageSearch { .. } => has_image_search = true,
             ActionKind::ForEachRow { .. } => has_for_each_row = true,
+            ActionKind::ForEachCell { .. } => has_for_each_cell = true,
             _ => {}
         }
         for b in action.variable_bindings() {
@@ -180,6 +207,11 @@ pub fn collect_known_variable_names_with_monitors(
     if has_for_each_row {
         known.insert(FOREACH_ROW_BUILTIN_ROW);
         known.insert(FOREACH_ROW_BUILTIN_ROW_COUNT);
+    }
+    if has_for_each_cell {
+        for n in FOREACH_CELL_BUILTIN_VARS {
+            known.insert(n);
+        }
     }
 
     for name in monitor_builtin_var_names(num_monitors) {
@@ -208,6 +240,12 @@ pub fn is_reserved_runtime_variable_name(name: &str) -> bool {
     }
     if name.eq_ignore_ascii_case(FOREACH_ROW_BUILTIN_ROW)
         || name.eq_ignore_ascii_case(FOREACH_ROW_BUILTIN_ROW_COUNT)
+    {
+        return true;
+    }
+    if FOREACH_CELL_BUILTIN_VARS
+        .iter()
+        .any(|n| n.eq_ignore_ascii_case(name))
     {
         return true;
     }
@@ -424,6 +462,11 @@ mod known_tests {
         assert!(names.contains(&"StackMax"));
         assert!(names.contains(&"Row"));
         assert!(names.contains(&"RowCount"));
-        assert_eq!(cat.len(), 2 * 2 + IMAGE_SEARCH_BUILTIN_VARS.len() + 2);
+        assert!(names.contains(&"CellX"));
+        assert!(names.contains(&"CellCount"));
+        assert_eq!(
+            cat.len(),
+            2 * 2 + IMAGE_SEARCH_BUILTIN_VARS.len() + 2 + FOREACH_CELL_BUILTIN_VARS.len()
+        );
     }
 }

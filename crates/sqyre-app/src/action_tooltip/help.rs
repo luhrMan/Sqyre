@@ -148,6 +148,8 @@ pub const FOREACH_IS_FILE: &str = "Treat Source as a path and read lines from th
 pub const FOREACH_SKIP_BLANK: &str = "Skip empty lines in the source.";
 pub const FOREACH_ADD_SOURCE: &str = "Add another column source.";
 pub const FOREACH_REMOVE_SOURCE: &str = "Remove this source.";
+pub const FOREACH_CELLS: &str =
+    "Collection cell range to visit (1×1 cells, row-major). Sets CellX/CellY and Cell Bounds vars.";
 
 // --- Detection shared ---
 

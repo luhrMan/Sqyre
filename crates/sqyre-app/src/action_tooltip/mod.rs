@@ -777,6 +777,7 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
             ActionKind::ImageSearch { search_area, .. }
             | ActionKind::Ocr { search_area, .. }
             | ActionKind::FindPixel { search_area, .. } => *search_area = coord,
+            ActionKind::ForEachCell { cells, .. } => *cells = coord,
             _ => {}
         },
         PickerResult::MacroName(name) => {

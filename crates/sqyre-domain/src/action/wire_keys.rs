@@ -63,6 +63,7 @@ define_action_wire_keys! {
     fields Ocr => "ocr" / TagOcr,
     fields FindPixel => "findpixel" / TagFindPixel,
     fields ForEachRow => "foreachrow" / TagForEachRow,
+    fields ForEachCell => "foreachcell" / TagForEachCell,
     fields Wait => "wait" / TagWait,
     fields Pause => "pause" / TagPause,
     fields Move => "move" / TagMove,

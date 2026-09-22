@@ -391,6 +391,24 @@ pub fn paint_edit_fields(
                 active_macro,
             );
         }
+        ActionKind::ForEachCell { name, cells, .. } => {
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Name", h::NAME, name);
+            });
+            tip_section(ui, |ui| {
+                cells_picker_row(
+                    ui,
+                    &mut CatalogPaint {
+                        catalog,
+                        icons,
+                        previews,
+                    },
+                    cells,
+                    picker,
+                );
+                paint_coord_preview(ui, catalog, previews, cells, PreviewKind::SearchArea);
+            });
+        }
         ActionKind::ImageSearch {
             name,
             targets,
@@ -918,6 +936,23 @@ fn search_area_picker_row(
         h::SEARCH_AREA,
         paint,
         area,
+        CoordKind::SearchArea,
+        picker,
+    );
+}
+
+fn cells_picker_row(
+    ui: &mut egui::Ui,
+    paint: &mut CatalogPaint<'_>,
+    cells: &mut CoordinateRef,
+    picker: &mut ActivePicker,
+) {
+    coord_picker_row(
+        ui,
+        "Cells",
+        h::FOREACH_CELLS,
+        paint,
+        cells,
         CoordKind::SearchArea,
         picker,
     );

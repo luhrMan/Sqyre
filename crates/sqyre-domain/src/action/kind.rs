@@ -65,6 +65,13 @@ pub enum ActionKind {
         end_row: ScalarValue,
         subactions: Vec<Action>,
     },
+    /// Runs nested actions once per 1×1 cell in a Collection range.
+    ForEachCell {
+        name: String,
+        /// Must be a Collection cell range (`Program~Name@r1,c1-r2,c2`).
+        cells: CoordinateRef,
+        subactions: Vec<Action>,
+    },
     Wait {
         time: ScalarValue,
     },
@@ -142,6 +149,7 @@ impl ActionKind {
                 | Self::Ocr { .. }
                 | Self::FindPixel { .. }
                 | Self::ForEachRow { .. }
+                | Self::ForEachCell { .. }
                 | Self::NavigateSelect(_)
                 | Self::NavigateKey { .. }
         )
@@ -208,6 +216,7 @@ impl ActionKind {
             | Self::While { subactions, .. }
             | Self::Conditional { subactions, .. }
             | Self::ForEachRow { subactions, .. }
+            | Self::ForEachCell { subactions, .. }
             | Self::NavigateKey { subactions, .. } => subactions,
             Self::ImageSearch { detection, .. }
             | Self::Ocr { detection, .. }
@@ -223,6 +232,7 @@ impl ActionKind {
             | Self::While { subactions, .. }
             | Self::Conditional { subactions, .. }
             | Self::ForEachRow { subactions, .. }
+            | Self::ForEachCell { subactions, .. }
             | Self::NavigateKey { subactions, .. } => Some(subactions),
             Self::ImageSearch { detection, .. }
             | Self::Ocr { detection, .. }
@@ -240,7 +250,8 @@ impl ActionKind {
             | Self::ImageSearch { name, .. }
             | Self::Ocr { name, .. }
             | Self::FindPixel { name, .. }
-            | Self::ForEachRow { name, .. } => named_branch_label(label, name),
+            | Self::ForEachRow { name, .. }
+            | Self::ForEachCell { name, .. } => named_branch_label(label, name),
             Self::While { condition, .. } | Self::Conditional { condition, .. } => {
                 named_branch_label(label, &condition.name)
             }

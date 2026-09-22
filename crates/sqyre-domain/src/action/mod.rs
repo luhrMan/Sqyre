@@ -1141,6 +1141,38 @@ pub const FOREACH_ROW_BUILTIN_ROW: &str = "Row";
 /// Total line count of the driving (first) ForEachRow source.
 pub const FOREACH_ROW_BUILTIN_ROW_COUNT: &str = "RowCount";
 
+/// Cell center X (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_X: &str = "CellX";
+/// Cell center Y (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_Y: &str = "CellY";
+/// Current 1-based row index within the Collection (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_ROW: &str = "CellRow";
+/// Current 1-based column index within the Collection (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_COL: &str = "CellCol";
+/// Total cells in the selected range (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_COUNT: &str = "CellCount";
+/// Current cell left edge in screen pixels (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_LEFT: &str = "CellLeft";
+/// Current cell top edge in screen pixels (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_TOP: &str = "CellTop";
+/// Current cell right edge in screen pixels (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_RIGHT: &str = "CellRight";
+/// Current cell bottom edge in screen pixels (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_BOTTOM: &str = "CellBottom";
+
+/// All ForEachCell runtime builtins (catalog / reserved-name checks).
+pub const FOREACH_CELL_BUILTIN_VARS: &[&str] = &[
+    FOREACH_CELL_BUILTIN_X,
+    FOREACH_CELL_BUILTIN_Y,
+    FOREACH_CELL_BUILTIN_ROW,
+    FOREACH_CELL_BUILTIN_COL,
+    FOREACH_CELL_BUILTIN_COUNT,
+    FOREACH_CELL_BUILTIN_LEFT,
+    FOREACH_CELL_BUILTIN_TOP,
+    FOREACH_CELL_BUILTIN_RIGHT,
+    FOREACH_CELL_BUILTIN_BOTTOM,
+];
+
 /// One node in a macro action tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Action {

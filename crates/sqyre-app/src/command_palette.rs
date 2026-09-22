@@ -660,6 +660,7 @@ fn action_phosphor(type_key: &str) -> &'static str {
         "loop" | "while" => "arrows-clockwise",
         "loopjump" => "stop",
         "foreachrow" => "list-bullets",
+        "foreachcell" => "grid-four",
         "conditional" => "question",
         "wait" => "timer",
         "pause" => "pause",

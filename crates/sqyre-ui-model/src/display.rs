@@ -381,6 +381,15 @@ impl ActionKindDisplay for ActionKind {
                     params.push(DisplayParam::extra("End Row", end_row.as_display()));
                 }
             }
+            Self::ForEachCell { name, cells, .. } => {
+                params.push(DisplayParam::new("Name", name.as_str()));
+                let value = cells.display_label();
+                if cells.is_empty() {
+                    params.push(DisplayParam::new("Cells", value));
+                } else {
+                    params.push(DisplayParam::extra("Cells", value));
+                }
+            }
             Self::SetVariable { assignments } => {
                 for a in assignments {
                     if a.variable_name.is_empty() {

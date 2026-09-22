@@ -15,7 +15,7 @@ fn lookup_category(type_key: &str) -> Option<&'static str> {
         "move" | "click" | "key" | "type" => "Mouse & Keyboard",
         "imagesearch" | "ocr" | "findpixel" => "Detection",
         "setvariable" | "savevariable" => "Variables",
-        "loop" | "while" | "conditional" | "foreachrow" => "Control flow",
+        "loop" | "while" | "conditional" | "foreachrow" | "foreachcell" => "Control flow",
         "wait" | "pause" | "focuswindow" | "runmacro" | "navigateselect" | "navigatekey"
         | "loopjump" => "Miscellaneous",
         _ => return None,
@@ -35,6 +35,7 @@ mod tests {
     fn control_flow_picker_buckets() {
         assert_eq!(action_picker_category("loop"), "Control flow");
         assert_eq!(action_picker_category("foreachrow"), "Control flow");
+        assert_eq!(action_picker_category("foreachcell"), "Control flow");
         assert_eq!(action_picker_category("conditional"), "Control flow");
         assert_eq!(action_picker_category("navigateselect"), "Miscellaneous");
         assert_eq!(action_picker_category("navigatekey"), "Miscellaneous");

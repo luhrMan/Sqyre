@@ -165,6 +165,11 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
             end_row: ScalarValue::Null,
             subactions: Vec::new(),
         },
+        "foreachcell" => ActionKind::ForEachCell {
+            name: String::new(),
+            cells: CoordinateRef::default(),
+            subactions: Vec::new(),
+        },
         "savevariable" => ActionKind::SaveVariable {
             variable_name: String::new(),
             destination: String::new(),

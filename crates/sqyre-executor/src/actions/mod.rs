@@ -5,7 +5,9 @@ mod io;
 mod submacro;
 mod window;
 
-pub(crate) use flow::{execute_for_each_row, execute_pause, execute_while, FlowLoopCtx};
+pub(crate) use flow::{
+    execute_for_each_cell, execute_for_each_row, execute_pause, execute_while, FlowLoopCtx,
+};
 pub(crate) use io::{execute_save_variable, execute_set_variable};
 pub(crate) use submacro::execute_run_macro;
 pub(crate) use window::execute_focus_window;
@@ -259,6 +261,189 @@ mod tests {
         }]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert!(!backend.log.iter().any(|e| e == "sleep:50"));
+    }
+
+    #[test]
+    fn for_each_cell_sets_vars_row_major() {
+        use crate::test_support::{AtlasMemberSpec, FixedCollection, FixedResolver};
+        use sqyre_domain::CoordinateRef;
+
+        let mut backend = RecordingBackend::default();
+        let resolver = FixedResolver::with_atlas(
+            vec![AtlasMemberSpec {
+                name: "bag".into(),
+                collection: FixedCollection {
+                    rows: 2,
+                    cols: 2,
+                    bounds: (0, 0, 100, 100),
+                },
+            }],
+            vec!["bag".into()],
+        );
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ForEachCell {
+                name: "cells".into(),
+                cells: CoordinateRef::collection("P", "bag", 1, 1, 2, 2),
+                subactions: vec![Action {
+                    id: ActionId::new(),
+                    kind: ActionKind::Wait {
+                        time: ScalarValue::Int(1),
+                    },
+                }],
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                close_matches_distance: 0,
+                variant_exit_early: true,
+                release_held_inputs: true,
+                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
+                resolver: Some(&resolver),
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            backend
+                .log
+                .iter()
+                .filter(|e| e.as_str() == "sleep:1")
+                .count(),
+            4
+        );
+        // Last cell is 2,2 → center (75, 75), bounds 50,50-100,100
+        assert_eq!(
+            macro_.variables.get("CellX").map(|v| v.as_display()),
+            Some("75".into())
+        );
+        assert_eq!(
+            macro_.variables.get("CellY").map(|v| v.as_display()),
+            Some("75".into())
+        );
+        assert_eq!(
+            macro_.variables.get("CellRow").map(|v| v.as_display()),
+            Some("2".into())
+        );
+        assert_eq!(
+            macro_.variables.get("CellCol").map(|v| v.as_display()),
+            Some("2".into())
+        );
+        assert_eq!(
+            macro_.variables.get("CellCount").map(|v| v.as_display()),
+            Some("4".into())
+        );
+        assert_eq!(
+            macro_.variables.get("CellLeft").map(|v| v.as_display()),
+            Some("50".into())
+        );
+        assert_eq!(
+            macro_.variables.get("CellTop").map(|v| v.as_display()),
+            Some("50".into())
+        );
+        assert_eq!(
+            macro_.variables.get("CellRight").map(|v| v.as_display()),
+            Some("100".into())
+        );
+        assert_eq!(
+            macro_.variables.get("CellBottom").map(|v| v.as_display()),
+            Some("100".into())
+        );
+    }
+
+    #[test]
+    fn for_each_cell_break_stops_early() {
+        use crate::test_support::{AtlasMemberSpec, FixedCollection, FixedResolver};
+        use sqyre_domain::CoordinateRef;
+
+        let mut backend = RecordingBackend::default();
+        let resolver = FixedResolver::with_atlas(
+            vec![AtlasMemberSpec {
+                name: "bag".into(),
+                collection: FixedCollection {
+                    rows: 2,
+                    cols: 2,
+                    bounds: (0, 0, 100, 100),
+                },
+            }],
+            vec!["bag".into()],
+        );
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ForEachCell {
+                name: "cells".into(),
+                cells: CoordinateRef::collection("P", "bag", 1, 1, 2, 2),
+                subactions: vec![
+                    Action {
+                        id: ActionId::new(),
+                        kind: ActionKind::Wait {
+                            time: ScalarValue::Int(1),
+                        },
+                    },
+                    Action {
+                        id: ActionId::new(),
+                        kind: ActionKind::LoopJump {
+                            mode: LoopJumpMode::Break,
+                        },
+                    },
+                ],
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                close_matches_distance: 0,
+                variant_exit_early: true,
+                release_held_inputs: true,
+                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
+                resolver: Some(&resolver),
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            backend
+                .log
+                .iter()
+                .filter(|e| e.as_str() == "sleep:1")
+                .count(),
+            1
+        );
+        assert_eq!(
+            macro_.variables.get("CellRow").map(|v| v.as_display()),
+            Some("1".into())
+        );
+        assert_eq!(
+            macro_.variables.get("CellCol").map(|v| v.as_display()),
+            Some("1".into())
+        );
     }
 
     #[test]

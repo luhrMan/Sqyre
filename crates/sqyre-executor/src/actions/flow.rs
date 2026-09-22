@@ -1,12 +1,15 @@
-//! Flow-control actions: While, ForEachRow, Pause.
+//! Flow-control actions: While, ForEachRow, ForEachCell, Pause.
 
 use crate::backends::PortError;
 use crate::error::{ExecError, FlowSignal, Result};
 use crate::path_confine::resolve_under_dir;
 use crate::run::{eval_clauses, resolve_int, resolve_text, run_children, Executor};
 use sqyre_domain::{
-    Action, ActionId, ConditionClause, ListColumn, Macro, MatchMode, ScalarValue,
-    FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
+    grid_cell_rect, Action, ActionId, ConditionClause, CoordinateRef, ListColumn, Macro,
+    MatchMode, ScalarValue, FOREACH_CELL_BUILTIN_BOTTOM, FOREACH_CELL_BUILTIN_COL,
+    FOREACH_CELL_BUILTIN_COUNT, FOREACH_CELL_BUILTIN_LEFT, FOREACH_CELL_BUILTIN_RIGHT,
+    FOREACH_CELL_BUILTIN_ROW, FOREACH_CELL_BUILTIN_TOP, FOREACH_CELL_BUILTIN_X,
+    FOREACH_CELL_BUILTIN_Y, FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
 };
 use sqyre_ports::{highlight_clear, highlight_fill};
 use std::fs;
@@ -153,6 +156,131 @@ pub(crate) fn execute_for_each_row(
                 return Err(e);
             }
             Ok(()) => {}
+        }
+    }
+    highlight_clear(exec.deps.highlighter, &macro_.name, action_id);
+    Ok(())
+}
+
+pub(crate) fn execute_for_each_cell(
+    exec: &mut Executor<'_>,
+    ctx: &FlowLoopCtx<'_>,
+    cells: &CoordinateRef,
+    macro_: &mut Macro,
+) -> Result<()> {
+    let action_id = ctx.action_id;
+    let name = ctx.name;
+    let subactions = ctx.subactions;
+
+    let Some((sel_r1, sel_c1, sel_r2, sel_c2)) = cells.cell_range() else {
+        return Err(ExecError::Message(format!(
+            "for each cell {name:?}: select a Collection cell range"
+        )));
+    };
+
+    let resolver = exec.deps.resolver.ok_or_else(|| {
+        ExecError::Message(format!(
+            "for each cell {name:?}: coordinate resolver is not available"
+        ))
+    })?;
+    let area = resolver.collection_area(cells, macro_).map_err(|e| {
+        ExecError::Message(format!("for each cell {name:?}: {e}"))
+    })?;
+
+    let (sel_r1, sel_r2) = if sel_r1 <= sel_r2 {
+        (sel_r1, sel_r2)
+    } else {
+        (sel_r2, sel_r1)
+    };
+    let (sel_c1, sel_c2) = if sel_c1 <= sel_c2 {
+        (sel_c1, sel_c2)
+    } else {
+        (sel_c2, sel_c1)
+    };
+
+    let cell_count = ((sel_r2 - sel_r1 + 1) * (sel_c2 - sel_c1 + 1)) as i64;
+    if cell_count <= 0 {
+        exec.log(
+            action_id,
+            format!("ForEachCell: {name} no cells in range"),
+        );
+        return Ok(());
+    }
+
+    let mut index = 0i64;
+    for row in sel_r1..=sel_r2 {
+        for col in sel_c1..=sel_c2 {
+            exec.check_stopped()?;
+            index += 1;
+            highlight_fill(
+                exec.deps.highlighter,
+                &macro_.name,
+                action_id,
+                (index - 1) as f64 / cell_count as f64,
+            );
+
+            let (left, top, right, bottom) = grid_cell_rect(
+                area.bounds(),
+                area.rows,
+                area.cols,
+                row,
+                col,
+                row,
+                col,
+            )
+            .ok_or_else(|| {
+                ExecError::Message(format!(
+                    "for each cell {name:?}: cell {row},{col} out of bounds for {}x{} grid",
+                    area.rows, area.cols
+                ))
+            })?;
+            let cx = (left + right) / 2;
+            let cy = (top + bottom) / 2;
+
+            macro_
+                .variables
+                .set(FOREACH_CELL_BUILTIN_X, ScalarValue::Int(cx as i64));
+            macro_
+                .variables
+                .set(FOREACH_CELL_BUILTIN_Y, ScalarValue::Int(cy as i64));
+            macro_
+                .variables
+                .set(FOREACH_CELL_BUILTIN_ROW, ScalarValue::Int(row as i64));
+            macro_
+                .variables
+                .set(FOREACH_CELL_BUILTIN_COL, ScalarValue::Int(col as i64));
+            macro_
+                .variables
+                .set(FOREACH_CELL_BUILTIN_COUNT, ScalarValue::Int(cell_count));
+            macro_
+                .variables
+                .set(FOREACH_CELL_BUILTIN_LEFT, ScalarValue::Int(left as i64));
+            macro_
+                .variables
+                .set(FOREACH_CELL_BUILTIN_TOP, ScalarValue::Int(top as i64));
+            macro_
+                .variables
+                .set(FOREACH_CELL_BUILTIN_RIGHT, ScalarValue::Int(right as i64));
+            macro_
+                .variables
+                .set(FOREACH_CELL_BUILTIN_BOTTOM, ScalarValue::Int(bottom as i64));
+
+            exec.log(
+                action_id,
+                format!("For each cell: {name} {row},{col} ({index}/{cell_count})"),
+            );
+            match run_children(exec, subactions, macro_) {
+                Err(ExecError::Flow(FlowSignal::Break)) => {
+                    highlight_clear(exec.deps.highlighter, &macro_.name, action_id);
+                    return Ok(());
+                }
+                Err(ExecError::Flow(FlowSignal::Continue)) => continue,
+                Err(e) => {
+                    highlight_clear(exec.deps.highlighter, &macro_.name, action_id);
+                    return Err(e);
+                }
+                Ok(()) => {}
+            }
         }
     }
     highlight_clear(exec.deps.highlighter, &macro_.name, action_id);
