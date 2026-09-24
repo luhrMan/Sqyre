@@ -9,7 +9,7 @@ use crate::tree_history::{TreeHistory, TreeSnapshot};
 use crate::SqyreApp;
 use eframe::egui;
 use egui_ltreeview::{Action as TreeAction, NodeBuilder, TreeView, TreeViewBuilder, TreeViewState};
-use sqyre_domain::{Action, ActionId, InsertSlot};
+use sqyre_domain::{Action, ActionId, InsertSlot, Macro};
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
@@ -147,6 +147,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     let icons = &mut app.icon_cache;
                     let root = &app.workspace.macros[idx].root;
                     let root_children = root.children();
+                    if root_children.is_empty() {
+                        ui.weak("No actions yet — Add Action");
+                    }
                     let known_vars = app
                         .tree
                         .known_vars_cached(&app.workspace.macros[idx])
@@ -360,6 +363,21 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             .collect();
         // Snapshot before tooltip may mutate; record via borrow-split.
         let mut pending_record: Option<TreeSnapshot> = None;
+        let meta_for_snap = {
+            let m = &app.workspace.macros[idx];
+            Macro {
+                name: m.name.clone(),
+                root: sqyre_domain::root_loop(vec![]),
+                global_delay: m.global_delay,
+                keyboard_delay: m.keyboard_delay,
+                mouse_delay: m.mouse_delay,
+                hotkey: m.hotkey.clone(),
+                hotkey_trigger: m.hotkey_trigger.clone(),
+                tags: m.tags.clone(),
+                variable_decls: m.variable_decls.clone(),
+                variables: Default::default(),
+            }
+        };
         let known_vars = app
             .tree
             .known_vars_cached(&app.workspace.macros[idx])
@@ -394,8 +412,11 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 &mut tip_ui,
                 |root_before| {
                     if pending_record.is_none() {
-                        if let Ok(snap) = TreeHistory::take_snapshot(root_before, selected.clone())
-                        {
+                        if let Ok(snap) = TreeHistory::take_snapshot_parts(
+                            root_before,
+                            &meta_for_snap,
+                            selected.clone(),
+                        ) {
                             pending_record = Some(snap);
                         }
                     }

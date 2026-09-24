@@ -106,7 +106,7 @@ impl SqyreApp {
             data_editor: DataEditor::default(),
             settings_ui,
             variables_panel: variables_panel::VariablesPanelUi::default(),
-            macro_prompt_builder: crate::macro_prompt_builder::MacroPromptBuilderUi::default(),
+            macro_yaml_builder: crate::macro_yaml_builder::MacroYamlBuilderUi::default(),
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: RecordingOverlay::new(),
@@ -203,6 +203,7 @@ impl SqyreApp {
 
     /// Open the settings window (integration / screenshot harnesses).
     pub fn open_settings_for_docs(&mut self) {
+        // Docs harness paints without a live ctx here; focus re-arms on next open cycle.
         self.settings_ui.open = true;
     }
 

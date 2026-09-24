@@ -10,5 +10,9 @@ workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+jsonschema = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }
+sqyre-serialize = { path = "../sqyre-serialize" }
 sqyre-varref = { path = "../sqyre-varref" }

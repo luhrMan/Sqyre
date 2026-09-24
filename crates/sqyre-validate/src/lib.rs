@@ -1,5 +1,13 @@
 //! Validation helpers for macro entries and actions.
 
+mod yaml_schema;
+
+pub use yaml_schema::{
+    prepare_import_macro_yaml, prepare_macro_yaml, report_macro_yaml, strip_yaml_fences,
+    unique_macro_name, validate_macro_yaml, validate_macro_yaml_schema, YamlSchemaError,
+    YamlValidateLayer, YamlValidateReport,
+};
+
 use sqyre_domain::{
     collect_known_variable_names, evaluate_expression, parse_hex_color, Action, ActionKind,
     ConditionBlock, ConditionClause, CoordinateRef, Macro, NavChords, ScalarValue, VariableStore,

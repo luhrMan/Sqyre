@@ -223,7 +223,9 @@ impl SqyreApp {
         let name = self.unique_macro_name("new macro");
         let m = Macro::new(name.clone(), 0, vec![]);
         self.workspace.macros.push(m);
-        self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        self.workspace
+            .macros
+            .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         if let Err(e) = self.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             crate::log::warn(format_args!("create macro: {e}"));
@@ -234,18 +236,113 @@ impl SqyreApp {
         self.play_ui_add_sound();
     }
 
-    /// Insert a decoded macro from the AI Macro Builder (name already uniquified).
-    pub(crate) fn import_macro_from_prompt_builder(&mut self, macro_: Macro) {
+    /// Replace the selected macro from the YAML Macro Builder (transactional).
+    pub(crate) fn apply_macro_from_yaml_builder(&mut self, mut incoming: Macro) {
+        if self.workspace.macros.is_empty() {
+            return;
+        }
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let old_name = self.workspace.macros[idx].name.clone();
+        let new_name = incoming.name.trim().to_string();
+        if new_name.is_empty() {
+            *self.run_session.state.status.lock() = "Apply failed: macro name is empty.".into();
+            return;
+        }
+        // Reject collisions with other macros.
+        if self
+            .workspace
+            .macros
+            .iter()
+            .enumerate()
+            .any(|(i, m)| i != idx && m.name == new_name)
+        {
+            *self.run_session.state.status.lock() =
+                format!("Apply failed: a macro named \"{new_name}\" already exists.");
+            self.macro_yaml_builder.set_status_message(
+                format!("Name \"{new_name}\" is already used — rename in YAML first."),
+                true,
+            );
+            return;
+        }
+
+        // Snapshot for undo before mutate.
+        self.record_tree_mutation();
+
+        let old = self.workspace.macros[idx].clone();
+        crate::macro_yaml_builder::reconcile_action_uids(&old.root, &mut incoming.root);
+        // Keep root id stable.
+        incoming.root.id = sqyre_domain::ActionId::root();
+        incoming.init_runtime_variables();
+
+        let backup = old;
+        self.workspace.macros[idx] = incoming;
+
+        if new_name != old_name {
+            if let Some(h) = self.tree.histories.remove(&old_name) {
+                self.tree.histories.insert(new_name.clone(), h);
+            }
+            self.macro_yaml_builder
+                .on_macro_renamed(&old_name, &new_name);
+            self.workspace
+                .macros
+                .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
+        }
+
+        if let Err(e) = self.persist_database() {
+            // Roll back.
+            if let Some(i) = self
+                .workspace
+                .macros
+                .iter()
+                .position(|m| m.name == new_name || m.name == old_name)
+            {
+                self.workspace.macros[i] = backup;
+            }
+            if new_name != old_name {
+                if let Some(h) = self.tree.histories.remove(&new_name) {
+                    self.tree.histories.insert(old_name.clone(), h);
+                }
+            }
+            // Drop the undo entry we just pushed for the failed apply.
+            if let Some(h) = self.tree.histories.get_mut(&old_name) {
+                h.pop_last_undo();
+            }
+            crate::log::warn(format_args!("apply YAML macro: {e}"));
+            *self.run_session.state.status.lock() = format!("Apply failed: {e}");
+            return;
+        }
+
+        self.refresh_macro_hotkey_bindings();
+        self.select_macro_by_name(&new_name);
+        self.tree.tooltip.cancel();
+        self.tree.invalidate_paint_cache();
+        // Filter selection to surviving ids.
+        let root = &self.workspace.macros[self.workspace.selected_macro].root;
+        self.tree
+            .selected_actions
+            .retain(|id| root.find_by_id(*id).is_some() || root.id == *id);
+        if let Some(m) = self.workspace.macros.get(self.workspace.selected_macro) {
+            self.macro_yaml_builder.on_applied(m);
+        }
+        *self.run_session.state.status.lock() = format!("Applied YAML to \"{new_name}\".");
+    }
+
+    /// Insert a decoded macro from the YAML Macro Builder (name already uniquified).
+    pub(crate) fn import_macro_from_yaml_builder(&mut self, macro_: Macro) {
         let name = macro_.name.clone();
-        // Defensive: re-uniquify in case the library changed since validate.
         let name = self.unique_macro_name(&name);
         let mut macro_ = macro_;
         macro_.name = name.clone();
         self.workspace.macros.push(macro_);
-        self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        self.workspace
+            .macros
+            .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         if let Err(e) = self.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
-            crate::log::warn(format_args!("import AI macro: {e}"));
+            crate::log::warn(format_args!("import YAML macro: {e}"));
             *self.run_session.state.status.lock() = format!("Import failed: {e}");
             return;
         }
@@ -253,8 +350,7 @@ impl SqyreApp {
         self.select_macro_by_name(&name);
         self.play_ui_add_sound();
         *self.run_session.state.status.lock() = format!("Imported macro \"{name}\".");
-        self.macro_prompt_builder
-            .set_status_after_import(format!("Imported \"{name}\"."));
+        self.macro_yaml_builder.on_imported(&name);
     }
 
     pub(crate) fn duplicate_selected_macro(&mut self) {
@@ -272,7 +368,9 @@ impl SqyreApp {
         dup.hotkey.clear();
         let name = dup.name.clone();
         self.workspace.macros.push(dup);
-        self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        self.workspace
+            .macros
+            .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         if let Err(e) = self.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             crate::log::warn(format_args!("duplicate macro: {e}"));
@@ -285,6 +383,7 @@ impl SqyreApp {
 
     pub(crate) fn delete_macro_named(&mut self, name: &str) {
         self.tree.histories.remove(name);
+        self.macro_yaml_builder.on_macro_deleted(name);
         self.workspace.macros.retain(|m| m.name != name);
         if let Err(e) = self.persist_database() {
             crate::log::warn(format_args!("delete macro: {e}"));
@@ -341,12 +440,16 @@ impl SqyreApp {
         if let Some(hist) = self.tree.histories.remove(&old_name) {
             self.tree.histories.insert(new_name.clone(), hist);
         }
+        self.macro_yaml_builder
+            .on_macro_renamed(&old_name, &new_name);
         if let Err(e) = self.persist_database() {
             crate::log::warn(format_args!("rename macro: {e}"));
         }
         self.refresh_macro_hotkey_bindings();
 
-        self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        self.workspace
+            .macros
+            .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         if let Some(i) = self
             .workspace
             .macros
@@ -392,7 +495,7 @@ impl SqyreApp {
             .min(self.workspace.macros.len() - 1);
         let selected = self.tree.selected_actions.clone();
         let name = self.workspace.macros[idx].name.clone();
-        let Ok(snap) = TreeHistory::take_snapshot(&self.workspace.macros[idx].root, selected)
+        let Ok(snap) = TreeHistory::take_snapshot(&self.workspace.macros[idx], selected)
         else {
             return;
         };
@@ -415,13 +518,28 @@ impl SqyreApp {
         let name = self.workspace.macros[idx].name.clone();
         let mut selected = self.tree.selected_actions.clone();
         let mut history = self.tree.histories.remove(&name).unwrap_or_default();
-        let result = history.undo(&mut self.workspace.macros[idx].root, &mut selected);
-        self.tree.histories.insert(name, history);
+        let result = history.undo(&mut self.workspace.macros[idx], &mut selected);
+        self.tree.histories.insert(name.clone(), history);
         match result {
             Ok(()) => {
+                // History may have restored a rename — remount history key.
+                let new_name = self.workspace.macros[idx].name.clone();
+                if new_name != name {
+                    if let Some(h) = self.tree.histories.remove(&name) {
+                        self.tree.histories.insert(new_name.clone(), h);
+                    }
+                    self.workspace
+                        .macros
+                        .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
+                    self.select_macro_by_name(&new_name);
+                }
                 self.set_selected_actions(selected);
                 self.tree.tooltip.cancel();
                 self.tree.invalidate_paint_cache();
+                let idx = self
+                    .workspace
+                    .selected_macro
+                    .min(self.workspace.macros.len().saturating_sub(1));
                 self.persist_macro_at(idx);
             }
             Err(e) => {
@@ -442,13 +560,27 @@ impl SqyreApp {
         let name = self.workspace.macros[idx].name.clone();
         let mut selected = self.tree.selected_actions.clone();
         let mut history = self.tree.histories.remove(&name).unwrap_or_default();
-        let result = history.redo(&mut self.workspace.macros[idx].root, &mut selected);
-        self.tree.histories.insert(name, history);
+        let result = history.redo(&mut self.workspace.macros[idx], &mut selected);
+        self.tree.histories.insert(name.clone(), history);
         match result {
             Ok(()) => {
+                let new_name = self.workspace.macros[idx].name.clone();
+                if new_name != name {
+                    if let Some(h) = self.tree.histories.remove(&name) {
+                        self.tree.histories.insert(new_name.clone(), h);
+                    }
+                    self.workspace
+                        .macros
+                        .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
+                    self.select_macro_by_name(&new_name);
+                }
                 self.set_selected_actions(selected);
                 self.tree.tooltip.cancel();
                 self.tree.invalidate_paint_cache();
+                let idx = self
+                    .workspace
+                    .selected_macro
+                    .min(self.workspace.macros.len().saturating_sub(1));
                 self.persist_macro_at(idx);
             }
             Err(e) => {
