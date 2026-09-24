@@ -2,6 +2,7 @@
 //! image-search item cards with per-item processing / find steps.
 
 use crate::image_view;
+use crate::theme::{error_fg, selection_stroke};
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use sqyre_domain::ActionId;
 use sqyre_ports::{lines_for, ActionLogEntry, LogImage, SharedActionLog};
@@ -137,55 +138,55 @@ pub fn show_logs_window(
                 return;
             }
 
-                // Detail view for a selected image-search item.
-                if let Some(sel) = image_cache.selected_item {
-                    if let Some(ActionLogEntry::ItemPipeline {
+            // Detail view for a selected image-search item.
+            if let Some(sel) = image_cache.selected_item {
+                if let Some(ActionLogEntry::ItemPipeline {
+                    title,
+                    summary,
+                    steps,
+                    details,
+                    ..
+                }) = entries.get(sel)
+                {
+                    show_item_detail(
+                        ui,
+                        action_id,
+                        image_cache,
+                        sel,
                         title,
                         summary,
-                        steps,
                         details,
-                        ..
-                    }) = entries.get(sel)
-                    {
-                        show_item_detail(
+                        steps,
+                    );
+                    return;
+                }
+            }
+
+            let avail_w = ui.available_width().max(120.0);
+            let mut pending_items: Vec<(usize, &ActionLogEntry)> = Vec::new();
+
+            for (i, entry) in entries.iter().enumerate() {
+                match entry {
+                    ActionLogEntry::Text(line) => {
+                        ui.monospace(line);
+                    }
+                    ActionLogEntry::Image(img) => {
+                        show_labeled_image(
                             ui,
                             action_id,
                             image_cache,
-                            sel,
-                            title,
-                            summary,
-                            details,
-                            steps,
+                            TexKey::Entry(i),
+                            img,
+                            avail_w,
                         );
-                        return;
+                    }
+                    ActionLogEntry::ItemPipeline { .. } => {
+                        pending_items.push((i, entry));
                     }
                 }
-
-                let avail_w = ui.available_width().max(120.0);
-                let mut pending_items: Vec<(usize, &ActionLogEntry)> = Vec::new();
-
-                for (i, entry) in entries.iter().enumerate() {
-                    match entry {
-                        ActionLogEntry::Text(line) => {
-                            ui.monospace(line);
-                        }
-                        ActionLogEntry::Image(img) => {
-                            show_labeled_image(
-                                ui,
-                                action_id,
-                                image_cache,
-                                TexKey::Entry(i),
-                                img,
-                                avail_w,
-                            );
-                        }
-                        ActionLogEntry::ItemPipeline { .. } => {
-                            pending_items.push((i, entry));
-                        }
-                    }
-                }
-                flush_item_gallery(ui, action_id, image_cache, &mut pending_items);
-            });
+            }
+            flush_item_gallery(ui, action_id, image_cache, &mut pending_items);
+        });
     });
 
     if !open || close_clicked {
@@ -300,7 +301,7 @@ fn show_item_card(
 ) {
     let selected = image_cache.selected_item == Some(entry_index);
     let frame = egui::Frame::group(ui.style()).stroke(if selected {
-        egui::Stroke::new(2.0, egui::Color32::from_rgb(70, 140, 220))
+        selection_stroke()
     } else {
         ui.visuals().widgets.noninteractive.bg_stroke
     });
@@ -412,7 +413,7 @@ fn show_labeled_image(
             let size = fit_width(tw as f32, th as f32, avail_w - 16.0);
             ui.add(egui::Image::new((tex.id(), size)));
         } else {
-            ui.colored_label(egui::Color32::from_rgb(200, 80, 80), "(image unavailable)");
+            ui.colored_label(error_fg(), "(image unavailable)");
         }
     });
 }

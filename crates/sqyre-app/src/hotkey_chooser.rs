@@ -20,6 +20,8 @@ pub(crate) struct HotkeyChooserState {
     pub anchor: Pos2,
     /// True when the native X11 host owns the menu (no egui viewport).
     pub native: bool,
+    /// Keyboard highlight index.
+    pub selected: usize,
 }
 
 /// Macros sharing one chord: `(normalized chord, trigger, macro names)`.
@@ -195,6 +197,7 @@ impl SqyreApp {
             chord_label,
             anchor,
             native,
+            selected: 0,
         });
         ctx.request_repaint();
     }
@@ -265,19 +268,27 @@ impl SqyreApp {
 
         let names = state.names.clone();
         let chord_label = state.chord_label.clone();
+        let mut selected = state.selected;
         let mut picked = None;
         let mut dismiss = false;
         ctx.show_viewport_immediate(id, builder, |ctx, _class| {
             egui::CentralPanel::default()
                 .frame(egui::Frame::popup(ctx.style()).inner_margin(PAD))
                 .show(ctx, |ui| {
-                    paint_chooser_body(ui, &chord_label, &names, &mut picked, &mut dismiss);
+                    paint_chooser_body(
+                        ui,
+                        &chord_label,
+                        &names,
+                        &mut selected,
+                        &mut picked,
+                        &mut dismiss,
+                    );
                 });
-            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
-                dismiss = true;
-            }
         });
 
+        if let Some(chooser) = self.hotkey_chooser.as_mut() {
+            chooser.selected = selected;
+        }
         if picked.is_some() || dismiss {
             self.hotkey_chooser = None;
         } else {
@@ -301,9 +312,24 @@ fn paint_chooser_body(
     ui: &mut egui::Ui,
     chord_label: &str,
     names: &[String],
+    selected: &mut usize,
     picked: &mut Option<String>,
     dismiss: &mut bool,
 ) {
+    use crate::pickers::{apply_list_nav, poll_list_nav, ListNavAction};
+
+    let nav = poll_list_nav(ui);
+    if nav == ListNavAction::Cancel {
+        *dismiss = true;
+        return;
+    }
+    if apply_list_nav(selected, names.len(), nav) {
+        if let Some(name) = names.get(*selected) {
+            *picked = Some(name.clone());
+            return;
+        }
+    }
+
     ui.label(
         egui::RichText::new(if chord_label.is_empty() {
             "Choose macro".to_string()
@@ -314,15 +340,18 @@ fn paint_chooser_body(
         .weak(),
     );
     ui.add_space(4.0);
-    for name in names {
-        if ui
-            .add_sized(
-                [ui.available_width(), ROW_H],
-                egui::Button::new(name.as_str()).wrap_mode(egui::TextWrapMode::Truncate),
-            )
-            .clicked()
-        {
+    for (i, name) in names.iter().enumerate() {
+        let is_sel = i == *selected;
+        let resp = ui.add_sized(
+            [ui.available_width(), ROW_H],
+            egui::Button::new(name.as_str())
+                .selected(is_sel)
+                .wrap_mode(egui::TextWrapMode::Truncate),
+        );
+        if resp.clicked() {
             *picked = Some(name.clone());
+        } else if resp.hovered() {
+            *selected = i;
         }
     }
     ui.add_space(2.0);

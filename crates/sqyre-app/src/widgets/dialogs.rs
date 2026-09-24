@@ -84,10 +84,7 @@ fn apply_pending_viewport_scale<'a>(
     }
     let size = scaled.size();
     // min == max clamps Resize::desired_size this frame; next frame normal bounds restore.
-    window
-        .current_pos(scaled.min)
-        .min_size(size)
-        .max_size(size)
+    window.current_pos(scaled.min).min_size(size).max_size(size)
 }
 
 /// [`egui::Context::content_rect`] inset by [`DIALOG_EDGE_MARGIN_FRAC`] on each side.
@@ -244,25 +241,53 @@ pub enum SaveCancel {
     Cancel,
 }
 
-/// Right-aligned Cancel then Save (Save on the right in LTR via right_to_left).
+/// Esc → cancel; Enter → save when enabled and no text field wants keys.
+fn poll_save_keys(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
+    if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+        SaveCancel::Cancel
+    } else if save_enabled
+        && !ui.ctx().egui_wants_keyboard_input()
+        && !ui.ctx().text_edit_focused()
+        && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter))
+    {
+        SaveCancel::Save
+    } else {
+        SaveCancel::None
+    }
+}
+
+/// Right-aligned footer: **Cancel left, Save right** (tip edit header).
 ///
-/// Save glows while `save_enabled` (dirty pending work).
+/// Drawn with `right_to_left` so Save is allocated first (rightmost). Prefer this
+/// for action tips and similar chrome. For the opposite visual order (Save left,
+/// Cancel right), use [`save_cancel_row_ltr`] — do not mass-migrate call sites.
+///
+/// Save glows while `save_enabled` (dirty pending work). `Esc` cancels; `Enter`
+/// saves only when `save_enabled` and egui is not routing keys to a text field.
 pub fn save_cancel_row(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
     let mut out = SaveCancel::None;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        if ui.button("Cancel").clicked() {
-            out = SaveCancel::Cancel;
-        }
+        // First in RTL = rightmost → Save on the right.
         if crate::theme::dirty_action_button(ui, "Save", save_enabled).clicked() {
             out = SaveCancel::Save;
         }
+        if ui.button("Cancel").clicked() {
+            out = SaveCancel::Cancel;
+        }
     });
+    if out == SaveCancel::None {
+        out = poll_save_keys(ui, save_enabled);
+    }
     out
 }
 
-/// Left-to-right Cancel + Save (variables / forms that prefer that order).
+/// Left-to-right footer: **Save left, Cancel right** (variables panel / forms).
 ///
-/// Save glows while `save_enabled` (dirty pending work).
+/// Opposite button order from [`save_cancel_row`]. Keep both; pick the helper that
+/// matches the surrounding panel rather than migrating for consistency alone.
+///
+/// Save glows while `save_enabled` (dirty pending work). Same `Esc` / `Enter`
+/// rules as [`save_cancel_row`].
 pub fn save_cancel_row_ltr(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
     let mut out = SaveCancel::None;
     ui.horizontal(|ui| {
@@ -273,6 +298,9 @@ pub fn save_cancel_row_ltr(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel 
             out = SaveCancel::Cancel;
         }
     });
+    if out == SaveCancel::None {
+        out = poll_save_keys(ui, save_enabled);
+    }
     out
 }
 

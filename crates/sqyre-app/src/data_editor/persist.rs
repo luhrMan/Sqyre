@@ -352,11 +352,11 @@ impl DataEditor {
                 }
             }
             EditorTab::ScreenCap => {
-                self.set_err("Use Save on the ScreenCap tab to write the preview screenshot.");
+                self.set_err("Use Save on the Screen capture tab to write the preview screenshot.");
                 return;
             }
             EditorTab::PixelCheck => {
-                self.set_err("PixelCheck is read-only — select an item to probe.");
+                self.set_err("Match probe is read-only — select an item to probe.");
                 return;
             }
             EditorTab::Overlay => {

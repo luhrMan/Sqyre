@@ -353,7 +353,7 @@ pub fn searchable_combo_with(
                 }
 
                 if !any {
-                    ui.weak("No matches");
+                    ui.weak("No matching options.");
                 }
             });
 

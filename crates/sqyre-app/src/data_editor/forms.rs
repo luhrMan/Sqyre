@@ -327,9 +327,9 @@ impl DataEditor {
             ..
         } = ctx;
         #[cfg(feature = "native-runtime")]
-        help::heading(ui, "PixelCheck", help::DE_PIXELCHECK_INTRO);
+        help::heading(ui, "Match probe", help::DE_PIXELCHECK_INTRO);
         #[cfg(not(feature = "native-runtime"))]
-        ui.heading("PixelCheck");
+        ui.heading("Match probe");
         #[cfg(not(feature = "native-runtime"))]
         {
             let _ = (
@@ -343,7 +343,7 @@ impl DataEditor {
             );
             ui.colored_label(
                 crate::theme::error_fg(),
-                "PixelCheck requires the desktop app.",
+                "Match probe requires the desktop app.",
             );
             return;
         }
@@ -424,8 +424,11 @@ impl DataEditor {
                 &mut self.pixel_check.tolerance,
                 &mut self.pixel_check.blur,
                 &mut self.pixel_check.match_method,
-                true,
+                false,
             );
+            ui.collapsing("Advanced", |ui| {
+                match_settings::paint_match_method(ui, &mut self.pixel_check.match_method);
+            });
             help::label(ui, "Bounds", help::DE_PIXELCHECK_BOUNDS);
             self.paint_monitor_slot(ui);
             let (lx, ty, rx, by) = form_desktop_area(

@@ -333,7 +333,7 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        help::heading(ui, "ScreenCap", help::DE_SCREENCAP_INTRO);
+        help::heading(ui, "Screen capture", help::DE_SCREENCAP_INTRO);
         ui.add_space(4.0);
         self.program_selector(ui, catalog, icons, settings);
         self.paint_name_record_row(
