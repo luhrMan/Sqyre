@@ -1,0 +1,12 @@
+[package]
+name = "sqyre-ui-theme"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Shared Sqyre brand and semantic color tokens for app and overlay"
+
+[lints]
+workspace = true
+
+[dependencies]
+egui = { workspace = true }

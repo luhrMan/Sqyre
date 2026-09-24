@@ -543,13 +543,13 @@ pub fn paint_entry_validation_icon(ui: &mut egui::Ui, v: &EntryValidation) {
     let (glyph, color, tip) = if !v.error.is_empty() {
         (
             egui_phosphor::regular::X_CIRCLE,
-            Color32::from_rgb(220, 70, 70),
+            crate::theme::error_fg(),
             v.error.as_str(),
         )
     } else if !v.warning.is_empty() {
         (
             egui_phosphor::regular::WARNING,
-            Color32::from_rgb(220, 170, 40),
+            crate::theme::warn_fg(),
             v.warning.as_str(),
         )
     } else {
@@ -562,9 +562,9 @@ pub fn paint_entry_validation_icon(ui: &mut egui::Ui, v: &EntryValidation) {
 /// Stroke color for compact validated chips (error > warning > none).
 pub fn entry_validation_stroke(v: &EntryValidation) -> Option<Stroke> {
     if !v.error.is_empty() {
-        Some(Stroke::new(1.5, Color32::from_rgb(220, 70, 70)))
+        Some(Stroke::new(1.5, crate::theme::error_fg()))
     } else if !v.warning.is_empty() {
-        Some(Stroke::new(1.5, Color32::from_rgb(220, 170, 40)))
+        Some(Stroke::new(1.5, crate::theme::warn_fg()))
     } else {
         None
     }
