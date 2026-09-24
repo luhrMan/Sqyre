@@ -18,7 +18,7 @@ fn picker_display_row(ui: &mut egui::Ui, label: &str, help_text: &str, display: 
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
         ui.label(if display.is_empty() {
-            "(unset)"
+            sqyre_domain::EMPTY_UNSET
         } else {
             display
         });
@@ -102,7 +102,7 @@ fn coord_picker_row(
         ..
     } = paint;
     let display = if coord.is_empty() {
-        "(unset)"
+        sqyre_domain::EMPTY_UNSET
     } else {
         coord.as_str()
     };
