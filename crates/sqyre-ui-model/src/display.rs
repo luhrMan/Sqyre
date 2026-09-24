@@ -2,7 +2,7 @@
 
 use sqyre_domain::{
     action_type_label, Action, ActionKind, ConditionClause, ConditionOperator, CoordinateRef,
-    LoopJumpMode, MatchMode, RepeatMode, ScalarValue, WaitTilFoundConfig,
+    LoopJumpMode, MatchMode, RepeatMode, ScalarValue, WaitTilFoundConfig, EMPTY_NOT_SET,
 };
 
 /// One display parameter.
