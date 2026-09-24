@@ -36,7 +36,7 @@ fn targets_editor(
         }
     });
     if targets.is_empty() {
-        ui.label("(none)");
+        ui.label(sqyre_domain::EMPTY_NONE);
         return;
     }
     let mut remove: Option<usize> = None;
