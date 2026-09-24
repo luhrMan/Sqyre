@@ -664,7 +664,9 @@ fn collect_runtime_suggestions(macros: &[Macro], catalog: &ProgramCatalog) -> Ve
 
 fn yaml_quote_if_needed(s: &str) -> String {
     if s.is_empty()
-        || s.contains([':', '#', '{', '}', '[', ']', ',', '&', '*', '!', '|', '>', '\'', '"', '%', '@', '`'])
+        || s.contains([
+            ':', '#', '{', '}', '[', ']', ',', '&', '*', '!', '|', '>', '\'', '"', '%', '@', '`',
+        ])
         || s.starts_with([' ', '\t'])
         || s.ends_with([' ', '\t'])
     {
@@ -678,7 +680,10 @@ fn find_yaml_context(text: &str, cursor: usize) -> Option<YamlContext> {
     let cursor = cursor.min(text.len());
     let line_start = text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
     let line = &text[line_start..cursor];
-    let indent: String = line.chars().take_while(|c| *c == ' ' || *c == '\t').collect();
+    let indent: String = line
+        .chars()
+        .take_while(|c| *c == ' ' || *c == '\t')
+        .collect();
     let trimmed = line.trim_start();
 
     if let Some(rest) = trimmed.strip_prefix("type:") {
@@ -973,10 +978,7 @@ fn yaml_text_edit(
             )
         })
         .unwrap_or(output.response.rect);
-    if let Some(to_global) = ui
-        .ctx()
-        .layer_transform_to_global(output.response.layer_id)
-    {
+    if let Some(to_global) = ui.ctx().layer_transform_to_global(output.response.layer_id) {
         anchor_rect = to_global * anchor_rect;
     }
 
@@ -1005,8 +1007,7 @@ fn yaml_text_edit(
             for (i, s) in filtered.iter().enumerate() {
                 let selected = i == nav.selected;
                 let label = format!("{}  —  {}", s.label, s.hint);
-                let resp =
-                    ui.selectable_label(selected, egui::RichText::new(label).monospace());
+                let resp = ui.selectable_label(selected, egui::RichText::new(label).monospace());
                 if selected && selection_moved && needs_scroll {
                     resp.scroll_to_me(None);
                 }
@@ -1053,8 +1054,7 @@ fn yaml_text_edit(
             .data_mut(|d| d.insert_temp(ac_id.with("open"), false));
     }
 
-    ui.ctx()
-        .data_mut(|d| d.insert_temp(ac_id.with("nav"), nav));
+    ui.ctx().data_mut(|d| d.insert_temp(ac_id.with("nav"), nav));
 }
 
 fn take_ac_keys(ui: &mut egui::Ui, ac_open: bool) -> (bool, bool, bool, bool) {
@@ -1072,9 +1072,7 @@ fn take_ac_keys(ui: &mut egui::Ui, ac_open: bool) -> (bool, bool, bool, bool) {
         if i.consume_key(Modifiers::NONE, Key::ArrowUp) {
             up = true;
         }
-        if i.consume_key(Modifiers::NONE, Key::Tab)
-            || i.consume_key(Modifiers::NONE, Key::Enter)
-        {
+        if i.consume_key(Modifiers::NONE, Key::Tab) || i.consume_key(Modifiers::NONE, Key::Enter) {
             accept = true;
         }
         if i.consume_key(Modifiers::NONE, Key::Escape) {

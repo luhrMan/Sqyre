@@ -43,9 +43,7 @@ pub struct YamlValidateReport {
 
 impl YamlValidateReport {
     pub fn ok() -> Self {
-        Self {
-            errors: Vec::new(),
-        }
+        Self { errors: Vec::new() }
     }
 
     pub fn is_ok(&self) -> bool {
@@ -94,17 +92,13 @@ fn yaml_to_json_value(value: &YamlValue) -> JsonValue {
             } else if let Some(u) = n.as_u64() {
                 JsonValue::Number(u.into())
             } else if let Some(f) = n.as_f64() {
-                JsonValue::Number(
-                    serde_json::Number::from_f64(f).unwrap_or_else(|| 0.into()),
-                )
+                JsonValue::Number(serde_json::Number::from_f64(f).unwrap_or_else(|| 0.into()))
             } else {
                 JsonValue::Null
             }
         }
         YamlValue::String(s) => JsonValue::String(s.clone()),
-        YamlValue::Sequence(seq) => {
-            JsonValue::Array(seq.iter().map(yaml_to_json_value).collect())
-        }
+        YamlValue::Sequence(seq) => JsonValue::Array(seq.iter().map(yaml_to_json_value).collect()),
         YamlValue::Mapping(map) => {
             let mut obj = serde_json::Map::new();
             for (k, v) in map {
@@ -181,8 +175,7 @@ pub fn validate_macro_yaml(yaml: &str) -> Result<sqyre_domain::Macro> {
     }
     let macro_ = decode_macro_from_yaml(trimmed)
         .map_err(|e| ValidateError::Message(format!("decode: {e}")))?;
-    crate::validate_macro(&macro_)
-        .map_err(|e| ValidateError::Message(format!("semantic: {e}")))?;
+    crate::validate_macro(&macro_).map_err(|e| ValidateError::Message(format!("semantic: {e}")))?;
     Ok(macro_)
 }
 
@@ -259,10 +252,7 @@ pub fn prepare_macro_yaml(raw: &str) -> Result<sqyre_domain::Macro> {
 }
 
 /// Like [`prepare_macro_yaml`] but uniquifies `name` against `existing`.
-pub fn prepare_import_macro_yaml(
-    raw: &str,
-    existing: &[String],
-) -> Result<sqyre_domain::Macro> {
+pub fn prepare_import_macro_yaml(raw: &str, existing: &[String]) -> Result<sqyre_domain::Macro> {
     let mut macro_ = prepare_macro_yaml(raw)?;
     macro_.name = unique_macro_name(&macro_.name, existing);
     Ok(macro_)

@@ -35,8 +35,8 @@ mod key_record;
 mod linux_focused_keys;
 mod log;
 mod macro_meta;
-mod macro_yaml_builder;
 mod macro_record;
+mod macro_yaml_builder;
 #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
 mod mem_diag;
 /// Phosphor overlay icon catalog + paint helpers (lives in `sqyre-overlay`).
@@ -105,8 +105,8 @@ use hotkey_record::HotkeyRecordUi;
 use icon_cache::IconCache;
 use key_record::KeyRecordUi;
 use macro_meta::MacroMetaUi;
-use macro_yaml_builder::MacroYamlBuilderUi;
 use macro_record::MacroRecordUi;
+use macro_yaml_builder::MacroYamlBuilderUi;
 use parking_lot::Mutex;
 use preview_tooltip::PreviewTooltipCache;
 use run_session::RunSession;

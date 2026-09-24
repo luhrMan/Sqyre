@@ -495,8 +495,7 @@ impl SqyreApp {
             .min(self.workspace.macros.len() - 1);
         let selected = self.tree.selected_actions.clone();
         let name = self.workspace.macros[idx].name.clone();
-        let Ok(snap) = TreeHistory::take_snapshot(&self.workspace.macros[idx], selected)
-        else {
+        let Ok(snap) = TreeHistory::take_snapshot(&self.workspace.macros[idx], selected) else {
             return;
         };
         self.tree

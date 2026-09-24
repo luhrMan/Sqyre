@@ -11,8 +11,8 @@ pub use tree::{InsertSlot, TreeError, TreeNodeRef};
 pub use wire_keys::WIRE_TYPE_KEYS;
 pub use wire_schema::{
     action_wire_desc, assert_enum_tables_match_domain, enum_values_for_field,
-    macro_document_json_schema, macro_wire_fields, variable_type_values, ActionWireDesc,
-    WireField, WireFieldKind, ACTION_WIRE_DESCS,
+    macro_document_json_schema, macro_wire_fields, variable_type_values, ActionWireDesc, WireField,
+    WireFieldKind, ACTION_WIRE_DESCS,
 };
 
 pub use crate::match_method::MatchMethod;
