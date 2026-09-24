@@ -33,7 +33,7 @@ fn paint_fs_name_hint(ui: &mut egui::Ui, name: &str) {
         return;
     }
     if let Err(e) = validate_entity_name(name) {
-        ui.colored_label(ui.visuals().error_fg_color, e.to_string());
+        ui.colored_label(crate::theme::error_fg(), e.to_string());
     }
 }
 
