@@ -329,6 +329,33 @@ mod tests {
         assert_eq!(n, vec!["foo"]);
     }
 
+    /// Strip braces and trailing `$` so a generated prefix cannot form an escape
+    /// (`$${name}`) or flip bare `{name}` into `${name}` when concatenated.
+    fn sanitize_prop_prefix(prefix: &str) -> String {
+        let mut prefix = prefix.replace(['{', '}'], "");
+        while prefix.ends_with('$') {
+            prefix.pop();
+        }
+        prefix
+    }
+
+    #[test]
+    fn segments_join_rejects_dollar_dollar_bare_escape() {
+        // Regression: Windows CI shrink of `segments_join_to_original` —
+        // prefix="$$", name="A", suffix="", dollar=false → raw text `$${A}`
+        // is the literal-escape form, not an inserted bare ref.
+        assert!(!contains("$${A}"));
+        assert!(!references("$${A}", "A"));
+
+        let prefix = sanitize_prop_prefix("$$");
+        let text = format!("{prefix}{{A}}");
+        assert_eq!(text, "{A}");
+        assert!(contains(&text));
+        assert!(references(&text, "A"));
+        let joined: String = segments(&text).into_iter().map(|s| s.text).collect();
+        assert_eq!(joined, text);
+    }
+
     /// Identifier-ish names: start with a letter, then alnum/underscore.
     fn arb_var_name() -> impl Strategy<Value = String> {
         prop::string::string_regex("[a-zA-Z][a-zA-Z0-9_]{0,16}")
@@ -346,14 +373,8 @@ mod tests {
             suffix in ".*",
             dollar in any::<bool>(),
         ) {
-            // Avoid accidental new refs in prefix/suffix by stripping braces.
-            // Also strip trailing `$` so prefix=`$` + `${name}` does not become `$${name}` escape.
-            let mut prefix = prefix.replace(['{', '}'], "");
-            if dollar {
-                while prefix.ends_with('$') {
-                    prefix.pop();
-                }
-            }
+            // Avoid accidental new refs / escapes in prefix/suffix.
+            let prefix = sanitize_prop_prefix(&prefix);
             let suffix = suffix.replace(['{', '}'], "");
             let text = if dollar {
                 format!("{prefix}${{{name}}}{suffix}")
