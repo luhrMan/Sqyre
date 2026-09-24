@@ -367,7 +367,7 @@ impl VariablesPanelUi {
             ui.colored_label(crate::theme::error_fg(), err);
         }
 
-        match crate::widgets::save_cancel_row_ltr(ui, edit.save_enabled()) {
+        match crate::widgets::save_cancel_row(ui, edit.save_enabled()) {
             crate::widgets::SaveCancel::Cancel => {
                 self.editing = None;
                 return false;
