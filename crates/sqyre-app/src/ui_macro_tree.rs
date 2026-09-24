@@ -456,11 +456,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 };
                 if let Some(action) = action {
                     ui.separator();
-                    ui.label(format!(
-                        "Selected: {} ({})",
-                        action.display_name(),
-                        action.type_key()
-                    ));
+                    // display_name already uses taxonomy labels (never wire keys).
+                    ui.label(format!("Selected: {}", action.display_name()));
                 }
             }
         }

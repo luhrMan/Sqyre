@@ -96,6 +96,25 @@ mod tests {
     }
 
     #[test]
+    fn type_param_uses_taxonomy_label_not_wire_key() {
+        use sqyre_domain::{action_type_label, blank_action};
+
+        for key in ["imagesearch", "findpixel", "setvariable", "move", "ocr"] {
+            let a = blank_action(key).unwrap_or_else(|| panic!("blank_action({key})"));
+            let typ = a
+                .display_params()
+                .into_iter()
+                .find(|p| p.label.eq_ignore_ascii_case("Type"))
+                .unwrap_or_else(|| panic!("Type param missing for {key}"));
+            assert_eq!(typ.value, action_type_label(key), "Type for {key}");
+            assert_ne!(
+                typ.value, key,
+                "Type must not expose wire key {key:?} when taxonomy has a label"
+            );
+        }
+    }
+
+    #[test]
     fn pastel_wait_differs_from_mouse() {
         clear_all_custom_action_colors();
         let wait = action_pastel_color("wait", false);
