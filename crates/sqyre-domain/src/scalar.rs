@@ -154,8 +154,8 @@ impl<'de> Deserialize<'de> for CoordinateRef {
 }
 
 impl CoordinateRef {
-    /// Tree / editor label when no catalog ref is set.
-    pub const UNSET_LABEL: &'static str = "(unset)";
+    /// Tree / editor label when no catalog ref is set ([`crate::EMPTY_UNSET`]).
+    pub const UNSET_LABEL: &'static str = crate::EMPTY_UNSET;
 
     pub fn is_empty(&self) -> bool {
         self.0.trim().is_empty()

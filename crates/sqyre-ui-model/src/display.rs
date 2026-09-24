@@ -408,12 +408,12 @@ impl ActionKindDisplay for ActionKind {
                 window_title,
             } => {
                 let title = if window_title.is_empty() {
-                    "not set"
+                    EMPTY_NOT_SET
                 } else {
                     window_title.as_str()
                 };
                 let path = if process_path.is_empty() {
-                    "not set"
+                    EMPTY_NOT_SET
                 } else {
                     process_path.as_str()
                 };
@@ -422,7 +422,7 @@ impl ActionKindDisplay for ActionKind {
             }
             Self::RunMacro { macro_name } => {
                 let target = if macro_name.is_empty() {
-                    "not set"
+                    EMPTY_NOT_SET
                 } else {
                     macro_name.as_str()
                 };
@@ -434,7 +434,7 @@ impl ActionKindDisplay for ActionKind {
                 ..
             } => {
                 let key = if continue_key.is_empty() {
-                    "not set".into()
+                    EMPTY_NOT_SET.into()
                 } else {
                     continue_key.join("+")
                 };
@@ -453,7 +453,7 @@ impl ActionKindDisplay for ActionKind {
             }
             Self::NavigateKey { chord, exit, .. } => {
                 let key = if chord.is_empty() {
-                    "not set".into()
+                    EMPTY_NOT_SET.into()
                 } else {
                     chord.join("+")
                 };
