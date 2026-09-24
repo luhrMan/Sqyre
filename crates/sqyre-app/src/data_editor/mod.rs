@@ -330,7 +330,7 @@ impl DataEditor {
 
     /// Live Overlay-tab form as an on-screen button preview (position, size, icon, style).
     ///
-    /// Shown while a button is selected for editing, even before Update is clicked.
+    /// Shown while a button is selected for editing, even before Save is clicked.
     /// Called from `sync_macro_overlay` when `overlay-buttons` is enabled.
     #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
     pub fn overlay_edit_preview(&self) -> Option<OverlayButtonConfig> {
@@ -805,9 +805,9 @@ impl DataEditor {
                     }
                     let dirty = self.is_dirty(env.catalog, env.settings);
                     let valid = self.form_valid(env.macros.get(selected_macro));
-                    let can_update =
+                    let can_save =
                         !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-                    if crate::theme::dirty_action_button(ui, "Update", can_update && dirty && valid)
+                    if crate::theme::dirty_action_button(ui, "Save", can_save && dirty && valid)
                         .clicked()
                     {
                         self.on_update(env, previews);
@@ -870,13 +870,17 @@ impl DataEditor {
         let Some(confirm) = self.confirm.clone() else {
             return;
         };
-        let title = match &confirm {
-            PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => {
-                "Confirm Delete"
-            }
-            PendingConfirm::Overwrite { .. } | PendingConfirm::OverwriteVariant { .. } => {
-                "Confirm Overwrite"
-            }
+        let (title, confirm_label, kind) = match &confirm {
+            PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => (
+                "Delete",
+                "Delete",
+                crate::widgets::ConfirmKind::Destructive,
+            ),
+            PendingConfirm::Overwrite { .. } | PendingConfirm::OverwriteVariant { .. } => (
+                "Overwrite",
+                "Overwrite",
+                crate::widgets::ConfirmKind::Primary,
+            ),
         };
         let ctx = env.ctx;
         let open = crate::widgets::confirm_window(ctx, title, |ui| {
@@ -907,7 +911,7 @@ impl DataEditor {
                     ));
                 }
             }
-            match crate::widgets::confirm_cancel_row(ui) {
+            match crate::widgets::confirm_cancel_row(ui, confirm_label, kind) {
                 crate::widgets::ConfirmCancel::Cancel => {
                     self.confirm = None;
                 }
@@ -952,18 +956,11 @@ impl DataEditor {
         let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", |ui| {
             ui.label("Variant name");
             ui.add(egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(220.0));
-            ui.horizontal(|ui| {
-                if ui.button("Cancel").clicked() {
-                    cancel = true;
-                }
-                if ui
-                    .button(egui::RichText::new("Add").color(crate::theme::MACRO_START))
-                    .clicked()
-                {
-                    submit = true;
-                }
-            });
-            match crate::widgets::poll_confirm_keys(ui) {
+            match crate::widgets::confirm_cancel_row(
+                ui,
+                "Add",
+                crate::widgets::ConfirmKind::Primary,
+            ) {
                 crate::widgets::ConfirmCancel::Cancel => cancel = true,
                 crate::widgets::ConfirmCancel::Confirm => submit = true,
                 crate::widgets::ConfirmCancel::None => {}

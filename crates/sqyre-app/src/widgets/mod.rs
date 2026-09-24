@@ -7,9 +7,9 @@ pub mod match_settings;
 pub mod tags;
 
 pub use dialogs::{
-    confirm_cancel_row, confirm_window, dialog_constrain_rect, fill_resize_body, fit_dialog_popup,
-    fit_dialog_window, poll_confirm_keys, save_cancel_row, save_cancel_row_ltr, visible_height,
-    visible_width, ConfirmCancel, SaveCancel,
+    confirm_cancel_row, confirm_choice_row, confirm_window, dialog_constrain_rect, fill_resize_body,
+    fit_dialog_popup, fit_dialog_window, save_cancel_row, visible_height, visible_width,
+    ConfirmCancel, ConfirmChoice, ConfirmKind, SaveCancel,
 };
 pub use fields::{
     combo_condition_operator, combo_enum, combo_str, combo_str_labeled, drag_field,
