@@ -234,7 +234,10 @@ trait ActionKindDisplay {
 impl ActionKindDisplay for ActionKind {
     fn display_params(&self) -> Vec<DisplayParam> {
         // User-visible Type always uses taxonomy labels; wire keys stay serde-only.
-        let mut params = vec![DisplayParam::new("Type", action_type_label(self.type_key()))];
+        let mut params = vec![DisplayParam::new(
+            "Type",
+            action_type_label(self.type_key()),
+        )];
         match self {
             Self::Wait { time } => {
                 params.push(DisplayParam::new("Time", format_wait_time(time)));
