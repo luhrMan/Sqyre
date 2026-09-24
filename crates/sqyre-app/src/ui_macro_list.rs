@@ -291,14 +291,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
     // Local copy: `show_collapsible` borrows `&mut bool` for the whole call,
     // and the content closure also needs `&mut app`.
     let mut open = app.macro_list_open;
-    let list_w = app
-        .settings_ui
-        .settings()
-        .macro_list_width
-        .clamp(
-            sqyre_persist::MIN_MACRO_LIST_WIDTH,
-            sqyre_persist::MAX_MACRO_LIST_WIDTH,
-        );
+    let list_w = app.settings_ui.settings().macro_list_width.clamp(
+        sqyre_persist::MIN_MACRO_LIST_WIDTH,
+        sqyre_persist::MAX_MACRO_LIST_WIDTH,
+    );
     egui::Panel::left("macro_list_tags")
         .default_size(list_w)
         .size_range(sqyre_persist::MIN_MACRO_LIST_WIDTH..=sqyre_persist::MAX_MACRO_LIST_WIDTH)
@@ -409,6 +405,14 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 let (tree, untagged) = build_tag_tree(&app.workspace.macros, &filter);
                 let mut clicked_macro: Option<usize> = None;
                 let mut clicked_tag: Option<String> = None;
+                let has_visible = !tree.children.is_empty() || !untagged.is_empty();
+                if !has_visible {
+                    if app.workspace.macros.is_empty() {
+                        ui.weak("No macros yet — click + to create one.");
+                    } else {
+                        ui.weak("No matching macros.");
+                    }
+                }
                 {
                     let mut ctx = PaintTagCtx {
                         app,
@@ -453,13 +457,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
     let panel_id = egui::Id::new("macro_list_tags");
     if !ui.ctx().input(|i| i.pointer.any_down()) {
         if let Some(state) = egui::containers::panel::PanelState::load(ui.ctx(), panel_id) {
-            let w = state
-                .size()
-                .x
-                .clamp(
-                    sqyre_persist::MIN_MACRO_LIST_WIDTH,
-                    sqyre_persist::MAX_MACRO_LIST_WIDTH,
-                );
+            let w = state.size().x.clamp(
+                sqyre_persist::MIN_MACRO_LIST_WIDTH,
+                sqyre_persist::MAX_MACRO_LIST_WIDTH,
+            );
             let cur = app.settings_ui.settings().macro_list_width;
             if (w - cur).abs() > 0.5 {
                 app.settings_ui.settings_mut().macro_list_width = w;
@@ -470,38 +471,20 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
 
     if let Some(name) = app.pending_delete_macro.clone() {
         let pending = app.pending_viewport_scale;
-        let open = crate::widgets::confirm_window(
-            ui.ctx(),
-            "Delete Macro",
-            pending.as_ref(),
-            |ui| {
-            ui.label(format!("Delete macro \"{name}\"?"));
-            let mut outcome = crate::widgets::ConfirmCancel::None;
-            ui.horizontal(|ui| {
-                if ui.button("Cancel").clicked() {
-                    outcome = crate::widgets::ConfirmCancel::Cancel;
-                }
-                if ui
-                    .button(egui::RichText::new("Delete").color(crate::theme::MACRO_STOP))
-                    .clicked()
-                {
-                    outcome = crate::widgets::ConfirmCancel::Confirm;
+        let open =
+            crate::widgets::confirm_window(ui.ctx(), "Delete Macro", pending.as_ref(), |ui| {
+                ui.label(format!("Delete macro \"{name}\"?"));
+                match crate::widgets::confirm_cancel_row(ui) {
+                    crate::widgets::ConfirmCancel::Cancel => {
+                        app.pending_delete_macro = None;
+                    }
+                    crate::widgets::ConfirmCancel::Confirm => {
+                        app.pending_delete_macro = None;
+                        app.delete_macro_named(&name);
+                    }
+                    crate::widgets::ConfirmCancel::None => {}
                 }
             });
-            if outcome == crate::widgets::ConfirmCancel::None {
-                outcome = crate::widgets::poll_confirm_keys(ui);
-            }
-            match outcome {
-                crate::widgets::ConfirmCancel::Cancel => {
-                    app.pending_delete_macro = None;
-                }
-                crate::widgets::ConfirmCancel::Confirm => {
-                    app.pending_delete_macro = None;
-                    app.delete_macro_named(&name);
-                }
-                crate::widgets::ConfirmCancel::None => {}
-            }
-        });
         if !open {
             app.pending_delete_macro = None;
         }

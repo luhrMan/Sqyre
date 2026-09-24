@@ -3,6 +3,9 @@ use super::types::{
 };
 use crate::icon_cache::IconCache;
 use crate::image_view;
+use crate::theme::{
+    picker_drop_stroke, picker_remove_hover, picker_selected_fill, picker_selected_stroke,
+};
 use eframe::egui::{self, Color32, Sense, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
@@ -223,7 +226,7 @@ fn paint_remove_badge(ui: &mut egui::Ui, body: egui::Rect, target: &str) -> egui
     let btn_id = ui.id().with(("icon_rm", target));
     let btn_resp = ui.interact(btn_rect, btn_id, Sense::click_and_drag());
     let btn_fill = if btn_resp.hovered() {
-        Color32::from_rgb(180, 60, 60)
+        picker_remove_hover()
     } else {
         Color32::from_gray(100)
     };
@@ -265,7 +268,7 @@ fn icon_grid_cell_ex(
     let (rect, resp) = ui.allocate_exact_size(desired, Sense::click_and_drag());
 
     let fill = if selected {
-        Color32::from_rgba_unmultiplied(80, 160, 100, 60)
+        picker_selected_fill()
     } else if resp.hovered() {
         Color32::from_black_alpha(25)
     } else {
@@ -277,7 +280,7 @@ fn icon_grid_cell_ex(
         ui.painter().rect_stroke(
             body,
             rounding,
-            egui::Stroke::new(2.0, Color32::from_rgb(60, 140, 80)),
+            egui::Stroke::new(2.0, picker_selected_stroke()),
             egui::StrokeKind::Outside,
         );
     }
@@ -297,6 +300,9 @@ fn icon_grid_cell_ex(
 ///
 /// When `on_reorder` is provided, dragging a cell onto another reorders the list
 /// (`from_index`, `to_index` in the displayed `targets` slice).
+///
+/// `is_removable` further gates the × badge when [`IconGridKind::Targets`] has
+/// `removable: true` (e.g. hide × on tag-filter-only Image Search matches).
 #[allow(clippy::too_many_arguments)] // even grid: selection, kind, and click/remove/reorder callbacks
 pub fn paint_even_icon_grid(
     ui: &mut egui::Ui,
@@ -308,6 +314,7 @@ pub fn paint_even_icon_grid(
     mut on_cell: impl FnMut(usize, &str),
     mut on_remove: impl FnMut(usize),
     mut on_reorder: Option<&mut dyn FnMut(usize, usize)>,
+    is_removable: impl Fn(&str) -> bool,
 ) {
     if targets.is_empty() {
         return;
@@ -336,6 +343,7 @@ pub fn paint_even_icon_grid(
                 let end = (i + cols).min(targets.len());
                 for (k, target) in targets.iter().enumerate().take(end).skip(i) {
                     let sel = is_selected(target);
+                    let cell_removable = style.show_remove && is_removable(target);
                     let cell_id = ui.id().with(("icon_dnd", k, target));
                     if reorderable {
                         // Paint × after `dnd_drag_source`: that API registers
@@ -349,7 +357,7 @@ pub fn paint_even_icon_grid(
                             }
                             cell
                         });
-                        if style.show_remove
+                        if cell_removable
                             && !ui.ctx().is_being_dragged(cell_id)
                             && paint_remove_badge(ui, drag.inner.rect, target).clicked()
                         {
@@ -364,13 +372,17 @@ pub fn paint_even_icon_grid(
                             ui.painter().rect_stroke(
                                 drag.response.rect,
                                 3.0,
-                                egui::Stroke::new(2.0, Color32::from_rgb(80, 140, 200)),
+                                egui::Stroke::new(2.0, picker_drop_stroke()),
                                 egui::StrokeKind::Outside,
                             );
                         }
                     } else {
+                        let cell_style = IconCellStyle {
+                            show_remove: cell_removable,
+                            ..style
+                        };
                         let (clicked, remove, _) =
-                            icon_grid_cell_ex(ui, catalog, icons, target, sel, style, true);
+                            icon_grid_cell_ex(ui, catalog, icons, target, sel, cell_style, true);
                         if clicked {
                             on_cell(k, target);
                         }

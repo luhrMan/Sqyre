@@ -146,12 +146,9 @@ impl DataEditor {
             ui.weak(format!("Position from point → ({rx:.0}, {ry:.0})"));
         }
         ui.add_space(8.0);
-        ui.collapsing("Visibility gate (image search)", |ui| {
+        ui.collapsing("Show only when image found", |ui| {
             ui.horizontal(|ui| {
-                ui.checkbox(
-                    &mut self.form_overlay_gate_enabled,
-                    "Show only when image found",
-                );
+                ui.checkbox(&mut self.form_overlay_gate_enabled, "Enabled");
                 help::icon(ui, help::DE_OVERLAY_GATE);
             });
             ui.add_enabled_ui(self.form_overlay_gate_enabled, |ui| {
@@ -211,6 +208,7 @@ impl DataEditor {
                         self.window_picker = pickers::ActivePicker::Items {
                             search: String::new(),
                             staged: self.form_overlay_gate_targets.clone(),
+                            staged_tags: None,
                         };
                     }
                 });
@@ -231,6 +229,7 @@ impl DataEditor {
                             remove = Some(i);
                         },
                         None,
+                        |_| true,
                     );
                     if let Some(i) = remove {
                         self.form_overlay_gate_targets.remove(i);
@@ -242,8 +241,14 @@ impl DataEditor {
                     &mut self.form_overlay_gate_tolerance,
                     &mut self.form_overlay_gate_blur,
                     &mut self.form_overlay_gate_match_method,
-                    true,
+                    false,
                 );
+                ui.collapsing("Advanced", |ui| {
+                    match_settings::paint_match_method(
+                        ui,
+                        &mut self.form_overlay_gate_match_method,
+                    );
+                });
                 ui.horizontal(|ui| {
                     help::label(ui, "Interval", help::DE_OVERLAY_GATE_INTERVAL);
                     help::tip(

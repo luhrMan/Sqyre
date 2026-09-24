@@ -137,7 +137,7 @@ pub(crate) fn paint_preview_coord_chip(
         (None, group, None)
     };
 
-    let fill = egui::Color32::from_rgba_unmultiplied(16, 16, 16, 170);
+    let fill = theme::preview_scrim();
     let radius = 4.0;
     ui.painter().rect_filled(edit_rect, radius, fill);
     let border = var_pills::entry_validation_stroke(validation)
@@ -396,7 +396,7 @@ fn paint_preview_size_badge(ui: &egui::Ui, viewport: egui::Rect, lines: &[String
     let painter = ui.painter();
     let mut y = viewport.top() + 6.0;
     let x = viewport.left() + 6.0;
-    let fill = egui::Color32::from_rgba_unmultiplied(16, 16, 16, 180);
+    let fill = theme::preview_scrim();
     for line in lines {
         let galley = painter.layout_no_wrap(line.clone(), font.clone(), egui::Color32::WHITE);
         let pad = egui::vec2(4.0, 2.0);
@@ -625,7 +625,7 @@ pub(crate) fn paint_grid_overlay_painter(
 ) {
     let rows = rows.max(1) as f32;
     let cols = cols.max(1) as f32;
-    let stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(255, 80, 80));
+    let stroke = egui::Stroke::new(1.0, theme::preview_grid_stroke());
     for i in 1..rows as i32 {
         let y = rect.top() + rect.height() * (i as f32) / rows;
         painter.hline(rect.x_range(), y, stroke);
@@ -785,7 +785,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
 
     if !unresolved.is_empty() {
         ui.colored_label(
-            egui::Color32::from_rgb(220, 160, 60),
+            theme::preview_warn_stroke(),
             format!("Unresolved: {}", unresolved.join(", ")),
         );
     }
@@ -855,16 +855,12 @@ pub(crate) fn paint_zoomable_atlas_preview(
             let galley = painter.layout_no_wrap(label, small.clone(), label_color);
             let chip =
                 egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(10.0, 4.0));
-            painter.rect_filled(
-                chip,
-                3.0,
-                egui::Color32::from_rgba_unmultiplied(0, 0, 0, 140),
-            );
+            painter.rect_filled(chip, 3.0, theme::preview_label_dim());
             painter.galley(chip.min + egui::vec2(5.0, 2.0), galley, label_color);
         }
 
-        let fill = egui::Color32::from_rgba_unmultiplied(60, 100, 160, 60);
-        let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(120, 180, 255));
+        let fill = theme::preview_selection_fill();
+        let stroke = egui::Stroke::new(1.5, theme::preview_selection_stroke());
         let arrow = egui::Stroke::new(2.0, theme::PRIMARY);
 
         for (i, node) in layout.nodes().iter().enumerate() {
@@ -892,11 +888,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
                 egui::Color32::WHITE,
             );
             let chip = egui::Rect::from_min_size(label_pos, galley.size() + egui::vec2(6.0, 2.0));
-            painter.rect_filled(
-                chip,
-                2.0,
-                egui::Color32::from_rgba_unmultiplied(0, 0, 0, 160),
-            );
+            painter.rect_filled(chip, 2.0, theme::preview_label_dim());
             painter.galley(
                 label_pos + egui::vec2(3.0, 1.0),
                 galley,

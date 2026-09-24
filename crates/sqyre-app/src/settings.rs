@@ -25,6 +25,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn settings_window_id() -> egui::Id {
+    egui::Id::new("User Settings")
+}
+
 #[derive(Debug, Clone)]
 enum PendingConfirm {
     /// Move current data to `new_dir` (Yes) or start fresh (No).
@@ -137,6 +141,12 @@ impl SettingsUi {
         self.open = true;
         self.active_section = SettingsSection::Appearance;
         self.search.clear();
+    }
+
+    /// Open the settings window (re-arms search focus).
+    pub fn request_open(&mut self, ctx: &egui::Context) {
+        self.open = true;
+        crate::pickers::reset_focus_search(ctx, settings_window_id());
     }
 
     pub fn settings(&self) -> &UserSettings {
@@ -269,7 +279,7 @@ impl SettingsUi {
                 .min_size([520.0, 360.0])
                 .resizable(true),
             ctx,
-            egui::Id::new("User Settings"),
+            settings_window_id(),
             pending_scale,
         )
         .show(ctx, |ui| {
@@ -280,7 +290,11 @@ impl SettingsUi {
                 self.ui(ui, ctx, db, macros, catalog);
             });
         });
-        self.open = open;
+        // `ui` may clear `self.open` (Esc); Window `.open` may clear `open` (titlebar).
+        self.open = open && self.open;
+        if !self.open {
+            crate::pickers::reset_focus_search(ctx, settings_window_id());
+        }
         if self.dirty {
             self.persist();
             Self::apply_appearance(ctx, &self.settings);
@@ -301,32 +315,42 @@ impl SettingsUi {
             return;
         }
 
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(
-                egui_phosphor::regular::MAGNIFYING_GLASS,
-            ))
-            .on_hover_text("Search");
-            // Infinity fill — fixed desired_width(available) ratchets the window.
-            if ui
-                .add(
+        // Esc: clear search first, then close (window already has titlebar close).
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            if !self.search.is_empty() {
+                self.search.clear();
+            } else {
+                self.open = false;
+            }
+        }
+
+        let search_focused = ui
+            .horizontal(|ui| {
+                ui.label(egui::RichText::new(
+                    egui_phosphor::regular::MAGNIFYING_GLASS,
+                ))
+                .on_hover_text("Search");
+                // Infinity fill — fixed desired_width(available) ratchets the window.
+                let search_resp = ui.add(
                     egui::TextEdit::singleline(&mut self.search)
                         .hint_text("Search settings…")
                         .desired_width(f32::INFINITY),
-                )
-                .changed()
-                && !self.search.trim().is_empty()
-            {
-                let q = self.search.trim().to_ascii_lowercase();
-                if !self.active_section.visible(&q) {
-                    if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
-                        self.active_section = section;
+                );
+                crate::pickers::focus_search_once(ui, settings_window_id(), &search_resp);
+                if search_resp.changed() && !self.search.trim().is_empty() {
+                    let q = self.search.trim().to_ascii_lowercase();
+                    if !self.active_section.visible(&q) {
+                        if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
+                            self.active_section = section;
+                        }
                     }
                 }
-            }
-            if !self.search.is_empty() && ui.small_button("Clear").clicked() {
-                self.search.clear();
-            }
-        });
+                if !self.search.is_empty() && ui.small_button("Clear").clicked() {
+                    self.search.clear();
+                }
+                search_resp.has_focus()
+            })
+            .inner;
         ui.separator();
 
         let footer = if self.status_banner.status.is_some() {
@@ -346,6 +370,26 @@ impl SettingsUi {
             SettingsSection::all().filter(|s| s.visible(&q)).collect();
         if !visible_sections.is_empty() && !visible_sections.contains(&self.active_section) {
             self.active_section = visible_sections[0];
+        }
+
+        // ↑↓ move the sidebar selection (like the command palette). Prefer when
+        // search is focused; otherwise only if nothing else wants arrow keys.
+        let allow_section_keys = search_focused
+            || (!ui.ctx().egui_wants_keyboard_input() && !ui.ctx().text_edit_focused());
+        if allow_section_keys && !visible_sections.is_empty() {
+            let mut idx = visible_sections
+                .iter()
+                .position(|s| *s == self.active_section)
+                .unwrap_or(0);
+            let down = ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown));
+            let up = ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp));
+            if down {
+                idx = (idx + 1).min(visible_sections.len() - 1);
+                self.active_section = visible_sections[idx];
+            } else if up {
+                idx = idx.saturating_sub(1);
+                self.active_section = visible_sections[idx];
+            }
         }
 
         const SIDEBAR_W: f32 = 132.0;
@@ -372,6 +416,7 @@ impl SettingsUi {
             for section in visible_sections.iter().copied() {
                 if left_ui
                     .selectable_label(self.active_section == section, section.label())
+                    .on_hover_text("↑↓ to switch sections")
                     .clicked()
                 {
                     self.active_section = section;
@@ -524,71 +569,91 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
-        if setting_visible(q, section_hit, SETTING_WHILE_BUDGET) {
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label("While safety budget (iterations):");
-                let mut v = self.settings.while_max_iterations;
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut v)
-                            .range(
-                                sqyre_persist::MIN_WHILE_MAX_ITERATIONS
-                                    ..=sqyre_persist::MAX_WHILE_MAX_ITERATIONS,
-                            )
-                            .speed(1000),
-                    )
-                    .on_hover_text(
-                        "Used when a While action has max_iterations ≤ 0. Prevents runaway loops.",
-                    )
-                    .changed()
-                {
-                    self.settings.while_max_iterations = v;
-                    self.mark_dirty();
-                }
-            });
-        }
+        let show_while = setting_visible(q, section_hit, SETTING_WHILE_BUDGET);
+        let show_depth = setting_visible(q, section_hit, SETTING_RUN_MACRO_DEPTH);
+        let show_distance = setting_visible(q, section_hit, SETTING_IMAGE_SEARCH_DISTANCE);
+        if show_while || show_depth || show_distance {
+            // Expand when the query specifically hits an Advanced knob (not bare section browse).
+            let hit_advanced = query_matches(q, SETTING_WHILE_BUDGET)
+                || query_matches(q, SETTING_RUN_MACRO_DEPTH)
+                || query_matches(q, SETTING_IMAGE_SEARCH_DISTANCE);
+            let open = hit_advanced.then_some(true);
+            egui::CollapsingHeader::new("Advanced")
+                .default_open(false)
+                .open(open)
+                .id_salt("settings_general_advanced")
+                .show(ui, |ui| {
+                    if show_while {
+                        ui.horizontal(|ui| {
+                            ui.label("Stop endless loops after:");
+                            let mut v = self.settings.while_max_iterations;
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut v)
+                                        .range(
+                                            sqyre_persist::MIN_WHILE_MAX_ITERATIONS
+                                                ..=sqyre_persist::MAX_WHILE_MAX_ITERATIONS,
+                                        )
+                                        .speed(1000)
+                                        .suffix(" iterations"),
+                                )
+                                .on_hover_text(
+                                    "While safety budget: used when a While action has max_iterations ≤ 0. Prevents runaway loops.",
+                                )
+                                .changed()
+                            {
+                                self.settings.while_max_iterations = v;
+                                self.mark_dirty();
+                            }
+                        });
+                    }
 
-        if setting_visible(q, section_hit, SETTING_RUN_MACRO_DEPTH) {
-            ui.horizontal(|ui| {
-                ui.label("Run Macro max nesting depth:");
-                let mut v = self.settings.run_macro_max_depth;
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut v)
-                            .range(
-                                sqyre_persist::MIN_RUN_MACRO_MAX_DEPTH
-                                    ..=sqyre_persist::MAX_RUN_MACRO_MAX_DEPTH,
-                            )
-                            .speed(1),
-                    )
-                    .on_hover_text(
-                        "Maximum nested Run Macro calls (including the top-level macro). Cycles are always rejected.",
-                    )
-                    .changed()
-                {
-                    self.settings.run_macro_max_depth = v;
-                    self.mark_dirty();
-                }
-            });
-        }
+                    if show_depth {
+                        ui.horizontal(|ui| {
+                            ui.label("Limit nested Run Macro calls:");
+                            let mut v = self.settings.run_macro_max_depth;
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut v)
+                                        .range(
+                                            sqyre_persist::MIN_RUN_MACRO_MAX_DEPTH
+                                                ..=sqyre_persist::MAX_RUN_MACRO_MAX_DEPTH,
+                                        )
+                                        .speed(1),
+                                )
+                                .on_hover_text(
+                                    "Maximum nested Run Macro calls (including the top-level macro). Cycles are always rejected.",
+                                )
+                                .changed()
+                            {
+                                self.settings.run_macro_max_depth = v;
+                                self.mark_dirty();
+                            }
+                        });
+                    }
 
-        if setting_visible(q, section_hit, SETTING_IMAGE_SEARCH_DISTANCE) {
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label("Image search close-match distance (px):");
-                let mut v = self.settings.image_search_close_matches_distance;
-                if ui
-                    .add(egui::DragValue::new(&mut v).range(0..=100).speed(1))
-                    .on_hover_text(
-                        "Image search: ignore duplicate matches within this many pixels.",
-                    )
-                    .changed()
-                {
-                    self.settings.image_search_close_matches_distance = v;
-                    self.mark_dirty();
-                }
-            });
+                    if show_distance {
+                        ui.horizontal(|ui| {
+                            ui.label("Ignore nearby duplicate image matches:");
+                            let mut v = self.settings.image_search_close_matches_distance;
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut v)
+                                        .range(0..=100)
+                                        .speed(1)
+                                        .suffix(" px"),
+                                )
+                                .on_hover_text(
+                                    "Image search close-match distance: ignore duplicate matches within this many pixels.",
+                                )
+                                .changed()
+                            {
+                                self.settings.image_search_close_matches_distance = v;
+                                self.mark_dirty();
+                            }
+                        });
+                    }
+                });
         }
 
         if setting_visible(q, section_hit, SETTING_VARIANT_EXIT_EARLY)
@@ -1080,6 +1145,13 @@ impl SettingsUi {
                         self.apply_sqyre_location(old, new, true, db, macros, catalog);
                     }
                 });
+                // Ternary: Esc cancels only (Enter is ambiguous between Yes/No).
+                if matches!(
+                    crate::widgets::poll_confirm_keys(ui),
+                    crate::widgets::ConfirmCancel::Cancel
+                ) {
+                    self.confirm = None;
+                }
             }
             PendingConfirm::RestoreBackup { path } => {
                 ui.label("Import backup?");
@@ -1102,6 +1174,13 @@ impl SettingsUi {
                         self.apply_restore_backup(path, ImportMode::Merge, db, macros, catalog);
                     }
                 });
+                // Ternary: Esc cancels only (Enter is ambiguous between Overwrite/Merge).
+                if matches!(
+                    crate::widgets::poll_confirm_keys(ui),
+                    crate::widgets::ConfirmCancel::Cancel
+                ) {
+                    self.confirm = None;
+                }
             }
         }
     }
@@ -1139,7 +1218,7 @@ impl SettingsUi {
                 let mut cat = Arc::unwrap_or_clone(loaded.program_catalog().unwrap_or_default());
                 let _ = crate::catalog::prepare_catalog(&mut cat, &mut loaded);
                 let mut list: Vec<_> = loaded.macros.values().cloned().collect();
-                list.sort_by(|a, b| a.name.cmp(&b.name));
+                list.sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
                 *db = loaded;
                 *macros = list;
                 *catalog = cat;
@@ -1218,7 +1297,7 @@ impl SettingsUi {
                 let mut cat = Arc::unwrap_or_clone(loaded.program_catalog().unwrap_or_default());
                 let _ = crate::catalog::prepare_catalog(&mut cat, &mut loaded);
                 let mut list: Vec<_> = loaded.macros.values().cloned().collect();
-                list.sort_by(|a, b| a.name.cmp(&b.name));
+                list.sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
                 *db = loaded;
                 *macros = list;
                 *catalog = cat;
@@ -1455,14 +1534,26 @@ const SETTING_WHILE_BUDGET: &[&str] = &[
     "iterations",
     "loop",
     "max_iterations",
+    "endless",
+    "stop endless",
+    "advanced",
 ];
-const SETTING_RUN_MACRO_DEPTH: &[&str] = &["run macro", "nesting", "depth", "recursion"];
+const SETTING_RUN_MACRO_DEPTH: &[&str] = &[
+    "run macro",
+    "nesting",
+    "depth",
+    "recursion",
+    "nested",
+    "advanced",
+];
 const SETTING_IMAGE_SEARCH_DISTANCE: &[&str] = &[
     "image search",
     "close-match",
     "close match",
     "distance",
     "duplicate",
+    "nearby",
+    "advanced",
 ];
 const SETTING_VARIANT_EXIT_EARLY: &[&str] = &[
     "variant",

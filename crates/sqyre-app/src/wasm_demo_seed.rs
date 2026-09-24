@@ -584,7 +584,7 @@ pub fn ensure_demo_if_empty(
     let (seeded_macros, seeded_catalog) = seed_demo_data();
     *catalog = seeded_catalog;
     *macros = seeded_macros;
-    macros.sort_by(|a, b| a.name.cmp(&b.name));
+    macros.sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
     db.replace_macros(macros.iter().cloned());
     db.set_programs_from_catalog(catalog);
     true

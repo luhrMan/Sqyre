@@ -201,6 +201,7 @@ pub fn paint_items_icon_grid(
                     },
                     |_| {},
                     None,
+                    |_| true,
                 );
                 if let Some(target) = clicked {
                     let is_sel = selected.iter().any(|t| t == &target);

@@ -429,6 +429,14 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
             if !status.is_empty() {
                 ui.colored_label(egui::Color32::LIGHT_GREEN, status.as_str());
             }
+            // Esc closes when no text field is capturing keys.
+            if !close
+                && !ui.ctx().text_edit_focused()
+                && !ui.ctx().egui_wants_keyboard_input()
+                && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+            {
+                close = true;
+            }
         });
 
     #[cfg(feature = "native-runtime")]

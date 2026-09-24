@@ -310,7 +310,7 @@ impl DataEditor {
         let (lx, ty, rx, by) = match catalog.resolve_search_area(&coord, &macro_) {
             Ok(bounds) => bounds,
             Err(e) => {
-                self.set_err(format!("ScreenCap: {e}"));
+                self.set_err(format!("Screen capture: {e}"));
                 return false;
             }
         };
@@ -351,9 +351,9 @@ impl DataEditor {
     fn screen_cap_name(&self) -> Result<String, String> {
         let name = self.form_name.trim().to_string();
         if name.is_empty() {
-            return Err("ScreenCap: enter a name.".into());
+            return Err("Screen capture: enter a name.".into());
         }
-        validate_entity_name(&name).map_err(|e| format!("ScreenCap: {e}"))?;
+        validate_entity_name(&name).map_err(|e| format!("Screen capture: {e}"))?;
         Ok(name)
     }
 
@@ -371,16 +371,16 @@ impl DataEditor {
             &self.form_right,
             &self.form_bottom,
         ) else {
-            return Err("ScreenCap: invalid capture dimensions.".into());
+            return Err("Screen capture: invalid capture dimensions.".into());
         };
         let (norm_lx, norm_rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
         let (norm_ty, norm_by) = if ty <= by { (ty, by) } else { (by, ty) };
         if norm_rx - norm_lx <= 0 || norm_by - norm_ty <= 0 {
-            return Err("ScreenCap: invalid capture dimensions.".into());
+            return Err("Screen capture: invalid capture dimensions.".into());
         }
         previews
             .screen_cap_image(lx, ty, rx, by)
-            .ok_or_else(|| "ScreenCap: wait for the preview screenshot to finish.".into())
+            .ok_or_else(|| "Screen capture: wait for the preview screenshot to finish.".into())
     }
 
     pub(crate) fn save_screen_cap(
@@ -391,13 +391,13 @@ impl DataEditor {
         #[cfg(not(feature = "native-runtime"))]
         {
             let _ = (catalog, previews);
-            self.set_err("ScreenCap requires the desktop app.");
+            self.set_err("Screen capture requires the desktop app.");
             return;
         }
         #[cfg(feature = "native-runtime")]
         {
             if self.screen_cap_pending.is_some() {
-                self.set_ok("ScreenCap: saving…");
+                self.set_ok("Screen capture: saving…");
                 return;
             }
             let name = match self.screen_cap_name() {
@@ -421,7 +421,7 @@ impl DataEditor {
                 let result = (|| -> Result<String, String> {
                     let dir = screen_cap_path();
                     std::fs::create_dir_all(&dir)
-                        .map_err(|e| format!("ScreenCap: create dir: {e}"))?;
+                        .map_err(|e| format!("Screen capture: create dir: {e}"))?;
                     let stamp = {
                         use web_time::{SystemTime, UNIX_EPOCH};
                         let dur = SystemTime::now()
@@ -450,13 +450,13 @@ impl DataEditor {
                     let filename = format!("{stamp}_{area_name}.png");
                     let full = dir.join(&filename);
                     img.save(&full)
-                        .map_err(|e| format!("ScreenCap: save {}: {e}", full.display()))?;
-                    Ok(format!("ScreenCap: saved {}", full.display()))
+                        .map_err(|e| format!("Screen capture: save {}: {e}", full.display()))?;
+                    Ok(format!("Screen capture: saved {}", full.display()))
                 })();
                 let _ = tx.send(result);
             });
             self.screen_cap_pending = Some(result_rx);
-            self.set_ok("ScreenCap: saving…");
+            self.set_ok("Screen capture: saving…");
         }
     }
 
@@ -468,7 +468,7 @@ impl DataEditor {
         #[cfg(not(feature = "native-runtime"))]
         {
             let _ = (env, previews);
-            self.set_err("ScreenCap requires the desktop app.");
+            self.set_err("Screen capture requires the desktop app.");
             return;
         }
         #[cfg(feature = "native-runtime")]
@@ -482,7 +482,7 @@ impl DataEditor {
                 ..
             } = env;
             let Some(prog) = self.selected_program.clone() else {
-                self.set_err("ScreenCap: select a program for the new item.");
+                self.set_err("Screen capture: select a program for the new item.");
                 return;
             };
             let requested = match self.screen_cap_name() {
@@ -495,7 +495,7 @@ impl DataEditor {
             if let Err(e) =
                 validate_item_grid_fields(&self.form_cols, &self.form_rows, &self.form_stack_max)
             {
-                self.set_err(format!("ScreenCap: {e}"));
+                self.set_err(format!("Screen capture: {e}"));
                 return;
             }
             let img = match self.screen_cap_preview_image(catalog, previews) {
@@ -530,12 +530,12 @@ impl DataEditor {
                         #[cfg(target_arch = "wasm32")]
                         let _ = settings;
                         self.set_ok(format!(
-                            "ScreenCap: created item “{name}” with Original from capture."
+                            "Screen capture: created item “{name}” with Original from capture."
                         ));
                         self.form_name = name;
                     }
                 }
-                Err(e) => self.set_err(format!("ScreenCap: {e}")),
+                Err(e) => self.set_err(format!("Screen capture: {e}")),
             }
         }
     }
@@ -558,7 +558,7 @@ impl DataEditor {
             }
             Err(TryRecvError::Disconnected) => {
                 self.screen_cap_pending = None;
-                self.set_err("ScreenCap: capture failed");
+                self.set_err("Screen capture: capture failed");
             }
         }
     }

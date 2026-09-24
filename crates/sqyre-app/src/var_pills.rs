@@ -10,7 +10,7 @@ use sqyre_ui_model::{action_pastel_color, nested_var_ref_color, SummaryPill};
 use sqyre_validate::EntryValidation;
 
 use crate::paint_ctx::VarTheme;
-use crate::theme::{contrast_fg, paint_galley_centered};
+use crate::theme::{contrast_fg, error_fg, paint_galley_centered, warn_fg};
 use crate::tree_chrome::rgba_pub;
 
 const VAR_AC_LIMIT: usize = 12;
@@ -567,13 +567,13 @@ pub fn paint_entry_validation_icon(ui: &mut egui::Ui, v: &EntryValidation) {
     let (glyph, color, tip) = if !v.error.is_empty() {
         (
             egui_phosphor::regular::X_CIRCLE,
-            Color32::from_rgb(220, 70, 70),
+            error_fg(),
             v.error.as_str(),
         )
     } else if !v.warning.is_empty() {
         (
             egui_phosphor::regular::WARNING,
-            Color32::from_rgb(220, 170, 40),
+            warn_fg(),
             v.warning.as_str(),
         )
     } else {
@@ -586,9 +586,9 @@ pub fn paint_entry_validation_icon(ui: &mut egui::Ui, v: &EntryValidation) {
 /// Stroke color for compact validated chips (error > warning > none).
 pub fn entry_validation_stroke(v: &EntryValidation) -> Option<Stroke> {
     if !v.error.is_empty() {
-        Some(Stroke::new(1.5, Color32::from_rgb(220, 70, 70)))
+        Some(Stroke::new(1.5, error_fg()))
     } else if !v.warning.is_empty() {
-        Some(Stroke::new(1.5, Color32::from_rgb(220, 170, 40)))
+        Some(Stroke::new(1.5, warn_fg()))
     } else {
         None
     }

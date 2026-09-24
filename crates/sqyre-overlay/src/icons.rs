@@ -336,6 +336,10 @@ pub fn show_icon_picker_grid(
     };
 
     ui.weak(format!("{} icons", icons.len()));
+    if icons.is_empty() && !query.is_empty() {
+        ui.weak("No matching icons.");
+        return None;
+    }
     ui.add_space(4.0);
 
     let mut picked = None;

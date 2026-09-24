@@ -6,6 +6,7 @@ mod inner {
     use crate::data_editor_preview::variant_display_label;
     use crate::icon_variants::variant_path;
     use crate::image_view::{self, ImageViewTransform};
+    use crate::theme::{match_fail_fg, match_pass_fg, match_within_fg};
     use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions};
     use image::RgbaImage;
     use sqyre_capture::shared_capturer;
@@ -751,7 +752,7 @@ mod inner {
                 image_size,
             );
             let rect = egui::Rect::from_min_size(top_left, box_size);
-            let color = Color32::from_rgb(255, 200, 60);
+            let color = match_fail_fg();
             painter.rect_stroke(
                 rect,
                 0.0,
@@ -770,9 +771,9 @@ mod inner {
                 image_to_content(egui::pos2(m.x as f32, m.y as f32), content, image_size);
             let rect = egui::Rect::from_min_size(top_left, box_size);
             let color = if is_best {
-                Color32::from_rgb(80, 255, 120)
+                match_pass_fg()
             } else {
-                Color32::from_rgb(120, 230, 180)
+                match_within_fg()
             };
             painter.rect_stroke(
                 rect,
@@ -880,9 +881,9 @@ mod inner {
         );
 
         let pct_color = if h.passes {
-            Color32::from_rgb(100, 230, 130)
+            match_pass_fg()
         } else {
-            Color32::from_rgb(255, 200, 80)
+            match_fail_fg()
         };
         let status = if h.passes { "pass" } else { "below tolerance" };
 
@@ -993,11 +994,11 @@ mod inner {
                 ui.weak(format!("template {tmpl_w}×{tmpl_h}"));
             }
             if summary.best_passes {
-                ui.colored_label(Color32::from_rgb(80, 220, 80), "■ best match");
+                ui.colored_label(match_pass_fg(), "■ best match");
             } else if summary.best_score.is_finite() {
-                ui.colored_label(Color32::from_rgb(255, 200, 60), "■ best (below tolerance)");
+                ui.colored_label(match_fail_fg(), "■ best (below tolerance)");
             }
-            ui.colored_label(Color32::from_rgb(120, 230, 180), "□ within tolerance");
+            ui.colored_label(match_within_fg(), "□ within tolerance");
         });
     }
 

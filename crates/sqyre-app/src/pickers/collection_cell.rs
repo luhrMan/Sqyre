@@ -2,6 +2,7 @@ use super::types::CollectionCellPick;
 use crate::data_editor_preview::paint_grid_overlay_painter;
 use crate::icon_cache::IconCache;
 use crate::image_view::{self};
+use crate::theme::{cell_selection_fill, cell_selection_stroke};
 use eframe::egui::{self, Color32, Pos2, Sense, Vec2};
 use sqyre_persist::ProgramCatalog;
 
@@ -146,15 +147,11 @@ fn paint_cell_selection_painter(
         ),
         egui::pos2(rect.left() + c2 as f32 * cw, rect.top() + r2 as f32 * ch),
     );
-    painter.rect_filled(
-        sel_rect,
-        0.0,
-        Color32::from_rgba_unmultiplied(60, 160, 255, 70),
-    );
+    painter.rect_filled(sel_rect, 0.0, cell_selection_fill());
     painter.rect_stroke(
         sel_rect,
         0.0,
-        egui::Stroke::new(2.0, Color32::from_rgb(40, 140, 255)),
+        egui::Stroke::new(2.0, cell_selection_stroke()),
         egui::StrokeKind::Outside,
     );
 }
