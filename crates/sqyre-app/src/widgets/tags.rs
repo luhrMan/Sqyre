@@ -66,6 +66,80 @@ pub fn remove_tag(tags: &mut Vec<String>, tag: &str) -> bool {
     tags.len() != before
 }
 
+/// Try to append a signed Image Search tag filter (`+tag` / `-tag`).
+///
+/// Bare input defaults to include (`+`). If the same tag name already exists with
+/// either polarity, the polarity is updated (or left unchanged) and returns whether
+/// the list changed.
+pub fn try_add_signed_tag_filter(tags: &mut Vec<String>, raw: &str) -> bool {
+    let (include, name) = match sqyre_domain::parse_tag_filter(raw) {
+        Some((inc, name)) => (inc, normalize_tag_path(&name)),
+        None => {
+            let name = normalize_tag_path(raw.trim().trim_start_matches(['+', '-']));
+            (true, name)
+        }
+    };
+    if name.is_empty() {
+        return false;
+    }
+    let formatted = sqyre_domain::format_tag_filter(include, &name);
+    if let Some(existing) = tags
+        .iter_mut()
+        .find(|t| sqyre_domain::tag_filter_name(t).as_deref() == Some(name.as_str()))
+    {
+        if *existing == formatted {
+            return false;
+        }
+        *existing = formatted;
+        return true;
+    }
+    tags.push(formatted);
+    true
+}
+
+/// Toggle include/exclude polarity of a stored signed filter chip.
+pub fn toggle_signed_tag_filter(tags: &mut [String], index: usize) -> bool {
+    let Some(entry) = tags.get_mut(index) else {
+        return false;
+    };
+    let Some((include, name)) = sqyre_domain::parse_tag_filter(entry) else {
+        return false;
+    };
+    *entry = sqyre_domain::format_tag_filter(!include, &name);
+    true
+}
+
+/// Filter `all_tags` by substring match, excluding tag names already present
+/// (ignoring `+`/`-` polarity on `already`).
+pub fn tag_completion_options_signed(
+    search: &str,
+    already: &[String],
+    all_tags: &[String],
+    limit: usize,
+) -> Vec<String> {
+    let search_l = search.trim().to_lowercase();
+    if search_l.is_empty() {
+        return Vec::new();
+    }
+    let already_names: Vec<String> = already
+        .iter()
+        .filter_map(|t| tag_filter_bare_name(t))
+        .collect();
+    all_tags
+        .iter()
+        .filter(|t| !already_names.iter().any(|c| c == *t))
+        .filter(|t| t.to_lowercase().contains(&search_l))
+        .take(limit)
+        .cloned()
+        .collect()
+}
+
+fn tag_filter_bare_name(raw: &str) -> Option<String> {
+    sqyre_domain::tag_filter_name(raw)
+        .map(|n| normalize_tag_path(&n))
+        .filter(|n| !n.is_empty())
+}
+
 /// Result of one [`tag_chip_editor`] frame.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TagChipEdit {
@@ -198,13 +272,27 @@ pub fn tag_chip_editor(
         ui.horizontal_wrapped(|ui| {
             let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
             crate::action_tooltip::help::label(ui, "Tags:", opts.draft_hover.unwrap_or(""));
-            paint_tag_chips(ui, tags, opts.enabled, opts.reorderable, &mut edit.changed);
+            paint_tag_chips(
+                ui,
+                tags,
+                opts.enabled,
+                opts.reorderable,
+                opts.signed_filters,
+                &mut edit.changed,
+            );
             resp
         })
         .inner
     } else {
         ui.horizontal_wrapped(|ui| {
-            paint_tag_chips(ui, tags, opts.enabled, opts.reorderable, &mut edit.changed);
+            paint_tag_chips(
+                ui,
+                tags,
+                opts.enabled,
+                opts.reorderable,
+                opts.signed_filters,
+                &mut edit.changed,
+            );
         });
         ui.horizontal(|ui| paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags))
             .inner
@@ -214,7 +302,13 @@ pub fn tag_chip_editor(
     }
 
     let suggestions = if opts.enabled && !draft.trim().is_empty() {
-        tag_completion_options(draft, tags, all_suggestions, opts.suggestion_limit)
+        if opts.signed_filters {
+            // Suggestions are bare names; strip a leading +/− from the draft for match.
+            let q = draft.trim().trim_start_matches(['+', '-']).trim();
+            tag_completion_options_signed(q, tags, all_suggestions, opts.suggestion_limit)
+        } else {
+            tag_completion_options(draft, tags, all_suggestions, opts.suggestion_limit)
+        }
     } else {
         Vec::new()
     };
@@ -286,7 +380,12 @@ pub fn tag_chip_editor(
 
     let had_pending = pending.is_some();
     if let Some(raw) = pending {
-        if try_add_tag(tags, &raw) {
+        let added = if opts.signed_filters {
+            try_add_signed_tag_filter(tags, &raw)
+        } else {
+            try_add_tag(tags, &raw)
+        };
+        if added {
             edit.changed = true;
             edit.submitted = true;
         }
@@ -313,15 +412,72 @@ pub fn tag_chip_editor(
     edit
 }
 
+/// Layout-only × slot; sized to Small text so it does not grow the pill.
+/// Interact + paint happen in [`finish_chip_remove`].
+fn allocate_chip_remove_slot(ui: &mut egui::Ui) -> egui::Rect {
+    let side = ui.text_style_height(&egui::TextStyle::Small);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+    rect
+}
+
+/// Paint and interact the chip × over `rect`.
+///
+/// When `win_over_dnd` is true (reorderable chips), uses [`egui::Sense::click_and_drag`]
+/// registered *after* [`Ui::dnd_drag_source`] so the × wins over the parent drag sense —
+/// same pattern as icon-grid remove badges.
+///
+/// Hit testing matches the layout slot so clicks outside the pill (or on the
+/// label) cannot remove the tag by accident.
+fn finish_chip_remove(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    id: egui::Id,
+    enabled: bool,
+    win_over_dnd: bool,
+) -> egui::Response {
+    let sense = if !enabled {
+        egui::Sense::hover()
+    } else if win_over_dnd {
+        egui::Sense::click_and_drag()
+    } else {
+        egui::Sense::click()
+    };
+    let response = ui.interact(rect, id, sense);
+    let hovered = enabled && response.hovered();
+    let side = rect.width();
+    let fill = if hovered {
+        crate::theme::picker_remove_hover()
+    } else if enabled {
+        egui::Color32::from_black_alpha(55)
+    } else {
+        egui::Color32::from_black_alpha(28)
+    };
+    // Circle stays inside the layout slot (pill padding is the remaining margin).
+    ui.painter().circle_filled(rect.center(), side * 0.36, fill);
+    let fg = if hovered {
+        egui::Color32::WHITE
+    } else {
+        crate::theme::MACRO_STOP
+    };
+    crate::theme::paint_text_centered(ui, rect, "×", egui::FontId::proportional(side * 0.7), fg);
+    if enabled {
+        response.on_hover_text("Remove tag")
+    } else {
+        response
+    }
+}
+
 fn paint_tag_chips(
     ui: &mut egui::Ui,
     tags: &mut Vec<String>,
     enabled: bool,
     reorderable: bool,
+    signed_filters: bool,
     changed: &mut bool,
 ) {
     let mut remove: Option<String> = None;
     let mut pending_reorder: Option<(usize, usize)> = None;
+    let mut toggle: Option<usize> = None;
     let small_h = ui.text_style_height(&egui::TextStyle::Small);
     let fill = if enabled {
         crate::theme::PRIMARY
@@ -336,35 +492,47 @@ fn paint_tag_chips(
         .inner_margin(egui::Margin::same(2));
 
     for (i, tag) in tags.iter().enumerate() {
-        let mut paint_chip = |ui: &mut egui::Ui| {
-            // Pill wraps label + × so `horizontal_wrapped` treats each chip as one unit.
+        let (polarity, label) = if signed_filters {
+            match sqyre_domain::parse_tag_filter(tag) {
+                Some((true, name)) => ("+", name),
+                Some((false, name)) => ("−", name),
+                None => ("+", tag.clone()),
+            }
+        } else {
+            ("", tag.clone())
+        };
+        let mut paint_chip = |ui: &mut egui::Ui| -> egui::Rect {
+            // Pill wraps label + × slot so `horizontal_wrapped` treats each chip as one unit.
             chip.show(ui, |ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.spacing_mut().button_padding = egui::vec2(0.0, 0.0);
                 ui.spacing_mut().interact_size.y = small_h;
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new(tag.as_str()).small().color(fg));
-                    if ui
-                        .add_enabled(
-                            enabled,
-                            egui::Button::new(
-                                egui::RichText::new("×")
-                                    .small()
-                                    .color(crate::theme::MACRO_STOP),
+                    if signed_filters
+                        && ui
+                            .add_enabled(
+                                enabled,
+                                egui::Button::new(
+                                    egui::RichText::new(polarity).small().color(fg).strong(),
+                                )
+                                .frame(false)
+                                .min_size(egui::vec2(small_h, small_h)),
                             )
-                            .frame(false)
-                            .min_size(egui::vec2(small_h, small_h)),
-                        )
-                        .on_hover_text("Remove tag")
-                        .clicked()
+                            .on_hover_text("Toggle include (+) / exclude (−)")
+                            .clicked()
                     {
-                        remove = Some(tag.clone());
+                        toggle = Some(i);
                     }
-                });
-            });
+                    ui.label(egui::RichText::new(label.as_str()).small().color(fg));
+                    ui.add_space(2.0);
+                    allocate_chip_remove_slot(ui)
+                })
+                .inner
+            })
+            .inner
         };
 
-        if reorderable && enabled {
+        let (remove_rect, win_over_dnd) = if reorderable && enabled {
             let id = ui.id().with(("tag_dnd", i, tag.as_str()));
             let drag = ui.dnd_drag_source(id, i, paint_chip);
             if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
@@ -380,8 +548,25 @@ fn paint_tag_chips(
                     egui::StrokeKind::Outside,
                 );
             }
+            (drag.inner, true)
         } else {
-            paint_chip(ui);
+            (paint_chip(ui), false)
+        };
+        if finish_chip_remove(
+            ui,
+            remove_rect,
+            ui.id().with(("tag_rm", i, tag.as_str())),
+            enabled,
+            win_over_dnd,
+        )
+        .clicked()
+        {
+            remove = Some(tag.clone());
+        }
+    }
+    if let Some(i) = toggle {
+        if toggle_signed_tag_filter(tags, i) {
+            *changed = true;
         }
     }
     if let Some((from, to)) = pending_reorder {
@@ -409,10 +594,15 @@ fn paint_tag_draft(
     edit: &mut TagChipEdit,
     tags: &mut Vec<String>,
 ) -> egui::Response {
+    let hint = if opts.signed_filters {
+        "Add +tag or -tag…"
+    } else {
+        "Add tag…"
+    };
     let tag_te = egui::TextEdit::singleline(draft)
         .id(draft_id)
         .desired_width(140.0)
-        .hint_text("Add tag…");
+        .hint_text(hint);
     let mut tag_resp = ui.add_enabled(opts.enabled, tag_te);
     if let Some(tip) = opts.draft_hover {
         tag_resp = tag_resp.on_hover_text(tip);
@@ -425,7 +615,12 @@ fn paint_tag_draft(
             )
             .clicked();
     if opts.enabled && add_clicked {
-        if try_add_tag(tags, draft) {
+        let added = if opts.signed_filters {
+            try_add_signed_tag_filter(tags, draft)
+        } else {
+            try_add_tag(tags, draft)
+        };
+        if added {
             edit.changed = true;
         }
         // Mark submitted so the entrybox is refocused even when the add was a no-op.
@@ -446,6 +641,8 @@ pub struct TagChipOptions<'a> {
     pub draft_first: bool,
     /// When true, chips can be drag-reordered (tag priority lists).
     pub reorderable: bool,
+    /// When true, chips are Image Search `+`/`−` filters with a polarity toggle.
+    pub signed_filters: bool,
 }
 
 impl Default for TagChipOptions<'_> {
@@ -458,6 +655,7 @@ impl Default for TagChipOptions<'_> {
             draft_hover: None,
             draft_first: false,
             reorderable: false,
+            signed_filters: false,
         }
     }
 }
@@ -487,6 +685,20 @@ mod tests {
         assert_eq!(tags, vec!["alpha", "beta"]);
         assert!(remove_tag(&mut tags, "alpha"));
         assert_eq!(tags, vec!["beta"]);
+    }
+
+    #[test]
+    fn signed_filter_add_and_toggle() {
+        let mut tags = Vec::new();
+        assert!(try_add_signed_tag_filter(&mut tags, "weapon"));
+        assert_eq!(tags, vec!["+weapon"]);
+        assert!(try_add_signed_tag_filter(&mut tags, "-holy"));
+        assert_eq!(tags, vec!["+weapon", "-holy"]);
+        // Same name updates polarity.
+        assert!(try_add_signed_tag_filter(&mut tags, "-weapon"));
+        assert_eq!(tags, vec!["-weapon", "-holy"]);
+        assert!(toggle_signed_tag_filter(&mut tags, 0));
+        assert_eq!(tags, vec!["+weapon", "-holy"]);
     }
 
     #[test]

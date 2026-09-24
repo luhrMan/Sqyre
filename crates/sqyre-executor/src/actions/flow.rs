@@ -5,11 +5,11 @@ use crate::error::{ExecError, FlowSignal, Result};
 use crate::path_confine::resolve_under_dir;
 use crate::run::{eval_clauses, resolve_int, resolve_text, run_children, Executor};
 use sqyre_domain::{
-    grid_cell_rect, Action, ActionId, ConditionClause, CoordinateRef, ListColumn, Macro,
-    MatchMode, ScalarValue, FOREACH_CELL_BUILTIN_BOTTOM, FOREACH_CELL_BUILTIN_COL,
-    FOREACH_CELL_BUILTIN_COUNT, FOREACH_CELL_BUILTIN_LEFT, FOREACH_CELL_BUILTIN_RIGHT,
-    FOREACH_CELL_BUILTIN_ROW, FOREACH_CELL_BUILTIN_TOP, FOREACH_CELL_BUILTIN_X,
-    FOREACH_CELL_BUILTIN_Y, FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
+    grid_cell_rect, Action, ActionId, ConditionClause, CoordinateRef, ListColumn, Macro, MatchMode,
+    ScalarValue, FOREACH_CELL_BUILTIN_BOTTOM, FOREACH_CELL_BUILTIN_COL, FOREACH_CELL_BUILTIN_COUNT,
+    FOREACH_CELL_BUILTIN_LEFT, FOREACH_CELL_BUILTIN_RIGHT, FOREACH_CELL_BUILTIN_ROW,
+    FOREACH_CELL_BUILTIN_TOP, FOREACH_CELL_BUILTIN_X, FOREACH_CELL_BUILTIN_Y,
+    FOREACH_ROW_BUILTIN_ROW, FOREACH_ROW_BUILTIN_ROW_COUNT,
 };
 use sqyre_ports::{highlight_clear, highlight_fill};
 use std::fs;
@@ -183,9 +183,9 @@ pub(crate) fn execute_for_each_cell(
             "for each cell {name:?}: coordinate resolver is not available"
         ))
     })?;
-    let area = resolver.collection_area(cells, macro_).map_err(|e| {
-        ExecError::Message(format!("for each cell {name:?}: {e}"))
-    })?;
+    let area = resolver
+        .collection_area(cells, macro_)
+        .map_err(|e| ExecError::Message(format!("for each cell {name:?}: {e}")))?;
 
     let (sel_r1, sel_r2) = if sel_r1 <= sel_r2 {
         (sel_r1, sel_r2)
@@ -200,10 +200,7 @@ pub(crate) fn execute_for_each_cell(
 
     let cell_count = ((sel_r2 - sel_r1 + 1) * (sel_c2 - sel_c1 + 1)) as i64;
     if cell_count <= 0 {
-        exec.log(
-            action_id,
-            format!("ForEachCell: {name} no cells in range"),
-        );
+        exec.log(action_id, format!("ForEachCell: {name} no cells in range"));
         return Ok(());
     }
 
@@ -219,21 +216,14 @@ pub(crate) fn execute_for_each_cell(
                 (index - 1) as f64 / cell_count as f64,
             );
 
-            let (left, top, right, bottom) = grid_cell_rect(
-                area.bounds(),
-                area.rows,
-                area.cols,
-                row,
-                col,
-                row,
-                col,
-            )
-            .ok_or_else(|| {
-                ExecError::Message(format!(
-                    "for each cell {name:?}: cell {row},{col} out of bounds for {}x{} grid",
-                    area.rows, area.cols
-                ))
-            })?;
+            let (left, top, right, bottom) =
+                grid_cell_rect(area.bounds(), area.rows, area.cols, row, col, row, col)
+                    .ok_or_else(|| {
+                        ExecError::Message(format!(
+                            "for each cell {name:?}: cell {row},{col} out of bounds for {}x{} grid",
+                            area.rows, area.cols
+                        ))
+                    })?;
             let cx = (left + right) / 2;
             let cy = (top + bottom) / 2;
 

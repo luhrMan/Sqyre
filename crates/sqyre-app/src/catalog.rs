@@ -163,6 +163,25 @@ impl IconStore for CatalogIcons<'_> {
     fn item_meta(&self, target: &str) -> Option<ItemMeta> {
         self.0.item_meta(target)
     }
+
+    fn catalog_item_refs(&self) -> Vec<(String, ItemMeta)> {
+        use sqyre_domain::PROGRAM_DELIMITER;
+        let mut out = Vec::new();
+        for prog in self.0.program_names() {
+            let Some(pdata) = self.0.get(prog) else {
+                continue;
+            };
+            for name in pdata.items.keys() {
+                let target = format!("{prog}{PROGRAM_DELIMITER}{name}");
+                let meta = self.0.item_meta(&target).unwrap_or_else(|| ItemMeta {
+                    name: name.clone(),
+                    ..Default::default()
+                });
+                out.push((target, meta));
+            }
+        }
+        out
+    }
 }
 
 /// Snapshot of macros available to RunMacro during a run.

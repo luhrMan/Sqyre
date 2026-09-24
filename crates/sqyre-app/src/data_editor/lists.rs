@@ -132,18 +132,32 @@ impl DataEditor {
                     ),
                     draft_first: false,
                     reorderable: true,
+                    signed_filters: false,
                 },
             );
         };
         opts.below_search = Some(&mut below_search);
 
-        let search_changed =
-            pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| match self.tab {
+        let search_changed = pickers::picker_searchable_scroll(ui, &mut search, opts, |ui, q| {
+            let mut visible = 0usize;
+            let entity = match self.tab {
+                EditorTab::Programs => "programs",
+                EditorTab::Items | EditorTab::PixelCheck => "items",
+                EditorTab::Overlay => "overlay buttons",
+                EditorTab::Points => "points",
+                EditorTab::SearchAreas => "search areas",
+                EditorTab::Masks => "masks",
+                EditorTab::Collections => "collections",
+                EditorTab::Atlases => "atlases",
+                EditorTab::ScreenCap => "captures",
+            };
+            match self.tab {
                 EditorTab::Programs => {
                     for name in editor_program_names(catalog) {
                         if !q.is_empty() && !pickers::fuzzy_match_fold(q, name) {
                             continue;
                         }
+                        visible += 1;
                         let selected = self.selected_program.as_deref() == Some(name.as_str());
                         let resp = crate::icon_cache::paint_program_label(
                             ui,
@@ -178,6 +192,25 @@ impl DataEditor {
                         *items_list_sort.borrow(),
                         &items_tag_priority.borrow(),
                     );
+                    visible = catalog
+                        .program_names()
+                        .filter_map(|prog| {
+                            let pdata = catalog.get(prog)?;
+                            Some(
+                                pdata
+                                    .items
+                                    .iter()
+                                    .filter(|(name, item)| {
+                                        q.is_empty()
+                                            || pickers::fuzzy_match_fold(q, prog)
+                                            || pickers::query_matches_name_or_tags(
+                                                q, name, &item.tags,
+                                            )
+                                    })
+                                    .count(),
+                            )
+                        })
+                        .sum();
                 }
                 EditorTab::Points
                 | EditorTab::SearchAreas
@@ -201,6 +234,7 @@ impl DataEditor {
                         if !prog_match && !any_entity {
                             continue;
                         }
+                        visible += 1;
                         let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
                         let id = data_editor_list_collapse_id(self.tab, prog);
                         let mut state =
@@ -285,6 +319,7 @@ impl DataEditor {
                         if !prog_match && !any_sa && !any_col {
                             continue;
                         }
+                        visible += 1;
                         let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
                         let child_count = search_areas.len() + collections.len();
                         let id = data_editor_list_collapse_id(self.tab, prog);
@@ -395,12 +430,16 @@ impl DataEditor {
                 EditorTab::Overlay => {
                     let live_preview = self.overlay_edit_preview();
                     for prog in editor_program_names(catalog) {
-                        let buttons: Vec<_> = settings
+                        let mut buttons: Vec<_> = settings
                             .overlay_buttons
                             .iter()
                             .filter(|b| b.program == *prog)
                             .cloned()
                             .collect();
+                        buttons.sort_by(|a, b| {
+                            crate::macro_meta::cmp_display_name(a.display_name(), b.display_name())
+                                .then_with(|| a.id.cmp(&b.id))
+                        });
                         let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
                         let any_btn = buttons.iter().any(|b| {
                             q.is_empty()
@@ -410,6 +449,7 @@ impl DataEditor {
                         if !prog_match && !any_btn {
                             continue;
                         }
+                        visible += 1;
                         let prog_selected = self.selected_program.as_deref() == Some(prog.as_str());
                         let child_count = buttons.len();
                         let id = data_editor_list_collapse_id(EditorTab::Overlay, prog);
@@ -484,7 +524,9 @@ impl DataEditor {
                             });
                     }
                 }
-            });
+            }
+            pickers::paint_list_vacancy(ui, q, visible, entity);
+        });
         self.search = search;
         self.items_list_sort = items_list_sort.into_inner();
         self.items_tag_priority = items_tag_priority.into_inner();

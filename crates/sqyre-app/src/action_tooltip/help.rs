@@ -171,6 +171,8 @@ pub const ELSE_BRANCH: &str =
 // --- Image search ---
 
 pub const IS_ITEMS: &str = "Template images to find (from the Data Editor).";
+pub const IS_TARGET_TAGS: &str =
+    "Include (+) or exclude (−) catalog item tags. An item must match every + tag and none of the − tags (exact names, all programs). Click +/− on a chip to toggle.";
 pub const IS_SEARCH_SORTING: &str =
     "Primary order for searching and displaying Items. Dragging an item switches Sort by to Manual.";
 pub const IS_SORT_THEN: &str =
@@ -178,13 +180,13 @@ pub const IS_SORT_THEN: &str =
 pub const IS_TAG_PRIORITY: &str =
     "When Sort by is Tags: drag chips to set priority. Unmatched items keep Then-order at the end.";
 pub const IS_TOLERANCE: &str =
-    "Score threshold for a hit. For CCOEFF/CCORR (and normed): higher is better; for SQDIFF*: lower is better. Normed methods are typically 0–1.";
+    "How close a match must be to count as a hit. Higher scores are better; values are usually between 0 and 1.";
 pub const IS_TOLERANCE_SQDIFF: &str =
-    "Maximum score to accept (lower = better). For SQDIFF_NORMED, 0 = perfect match.";
+    "How different the screen can be from the template and still count as a hit. Lower scores are better; 0 is a perfect match.";
 pub const IS_TOLERANCE_UNNORMED: &str =
-    "Raw score threshold (not 0–1). Higher is better for CCORR/CCOEFF; lower is better for SQDIFF.";
+    "Score threshold with raw (unscaled) scores. For Default/Correlation, higher is better; for Difference, lower is better.";
 pub const IS_METHOD: &str =
-    "OpenCV template-match method. Default CCOEFF_NORMED. SQDIFF* treat lower scores as better.";
+    "How Sqyre scores a match. Default (recommended) works for most cases. Difference methods treat lower scores as better.";
 pub const IS_BLUR: &str = "Blur radius applied before matching (reduces noise).";
 
 // --- OCR ---
@@ -193,11 +195,13 @@ pub const OCR_TARGET: &str =
     "Text that must appear for the branch to run. Empty = always read once at search center. Multiple occurrences each run the branch.";
 pub const OCR_OUTPUT: &str = "Variable that receives the recognized text.";
 pub const OCR_BLUR: &str = "Blur radius before OCR.";
-pub const OCR_MIN_THRESHOLD: &str = "Minimum pixel intensity kept before OCR (0–255).";
+pub const OCR_MIN_THRESHOLD: &str =
+    "Darkest pixels to keep before reading text (0–255). Raise to drop dim noise.";
 pub const OCR_RESIZE: &str = "Scale factor applied to the region before OCR.";
 pub const OCR_GRAYSCALE: &str = "Convert the region to grayscale before OCR.";
-pub const OCR_OTSU: &str = "Apply Otsu thresholding before OCR.";
-pub const OCR_INVERT: &str = "Invert light/dark after thresholding.";
+pub const OCR_OTSU: &str = "Auto-pick a black/white cutoff so text stands out before reading.";
+pub const OCR_INVERT: &str =
+    "Swap light and dark after the cutoff (for light text on dark backgrounds).";
 
 // --- Find pixel ---
 
@@ -313,7 +317,7 @@ pub const DE_OVERLAY_ICON: &str =
 pub const DE_OVERLAY_ICON_PICKER: &str = "Search Phosphor icons by name, then click to select.";
 pub const DE_OVERLAY_ICON_HOVER: &str = "Icon color when the pointer is over the button.";
 pub const DE_OVERLAY_GATE: &str =
-    "When enabled, the button only appears while an Image Search match is found in the search area (polled in the background).";
+    "When enabled, the button only appears while a matching image is found in the search area (checked in the background).";
 pub const DE_OVERLAY_GATE_AREA: &str =
     "Catalog search area to capture each poll (program~name). Resolved with live monitor slots.";
 pub const DE_OVERLAY_GATE_ITEMS: &str =

@@ -105,6 +105,124 @@ fn cmp_then(
     }
 }
 
+/// Catalog entry used when expanding Image Search tag targets.
+#[derive(Debug, Clone)]
+pub struct CatalogItemRef {
+    /// `program~item` target string.
+    pub target: String,
+    pub tags: Vec<String>,
+}
+
+/// Parse a stored Image Search tag filter into `(include, tag)`.
+///
+/// Leading `+` / `-` set polarity; a bare tag is an include. Empty / whitespace-only
+/// entries (and a lone `+` / `-`) are ignored.
+pub fn parse_tag_filter(raw: &str) -> Option<(bool, String)> {
+    let t = raw.trim();
+    if t.is_empty() {
+        return None;
+    }
+    let (include, rest) = if let Some(r) = t.strip_prefix('+') {
+        (true, r.trim())
+    } else if let Some(r) = t.strip_prefix('-') {
+        (false, r.trim())
+    } else {
+        (true, t)
+    };
+    if rest.is_empty() {
+        return None;
+    }
+    Some((include, rest.to_string()))
+}
+
+/// Wire / chip form for a tag filter (`+tag` or `-tag`).
+pub fn format_tag_filter(include: bool, tag: &str) -> String {
+    let tag = tag.trim();
+    if include {
+        format!("+{tag}")
+    } else {
+        format!("-{tag}")
+    }
+}
+
+/// Bare tag name from a stored filter (`"+weapon"` → `"weapon"`).
+pub fn tag_filter_name(raw: &str) -> Option<String> {
+    parse_tag_filter(raw).map(|(_, tag)| tag)
+}
+
+/// True when the item's tags satisfy every include and none of the excludes.
+///
+/// Requires at least one include filter; exclude-only lists never match.
+pub fn item_matches_tag_filters(item_tags: &[String], filters: &[String]) -> bool {
+    let mut includes: Vec<String> = Vec::new();
+    let mut excludes: Vec<String> = Vec::new();
+    for f in filters {
+        let Some((include, tag)) = parse_tag_filter(f) else {
+            continue;
+        };
+        if include {
+            if !includes.iter().any(|t| t == &tag) {
+                includes.push(tag);
+            }
+        } else if !excludes.iter().any(|t| t == &tag) {
+            excludes.push(tag);
+        }
+    }
+    if includes.is_empty() {
+        return false;
+    }
+    let has = |want: &str| item_tags.iter().any(|t| t.trim() == want);
+    includes.iter().all(|t| has(t)) && excludes.iter().all(|t| !has(t))
+}
+
+/// Union explicit Image Search targets with catalog items matching `target_tags`.
+///
+/// Tag filters use exact string equality with `+` / `-` polarity:
+/// an item must have **every** include tag and **none** of the exclude tags.
+/// Explicit targets keep their stored order first; matching catalog items are
+/// appended in enumeration order (deduped).
+pub fn expand_image_search_targets(
+    explicit: &[String],
+    target_tags: &[String],
+    catalog: &[CatalogItemRef],
+) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::<String>::new();
+
+    for target in explicit {
+        let t = target.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if seen.insert(t.to_string()) {
+            out.push(t.to_string());
+        }
+    }
+
+    let has_include = target_tags.iter().any(|f| {
+        parse_tag_filter(f)
+            .map(|(include, _)| include)
+            .unwrap_or(false)
+    });
+    if !has_include {
+        return out;
+    }
+
+    for item in catalog {
+        if !item_matches_tag_filters(&item.tags, target_tags) {
+            continue;
+        }
+        let t = item.target.trim();
+        if t.is_empty() {
+            continue;
+        }
+        if seen.insert(t.to_string()) {
+            out.push(t.to_string());
+        }
+    }
+    out
+}
+
 /// Return targets ordered for search and UI display.
 ///
 /// `items` must be in the stored `targets` list order (Manual / list-order ties).
@@ -354,5 +472,114 @@ mod tests {
         ));
         assert_eq!(sort_by, ItemSortBy::Manual);
         assert_eq!(targets, vec!["P~b", "P~a"]);
+    }
+
+    fn catalog(target: &str, tags: &[&str]) -> CatalogItemRef {
+        CatalogItemRef {
+            target: target.into(),
+            tags: tags.iter().map(|t| (*t).to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn expand_tags_exact_across_programs() {
+        let catalog = vec![
+            catalog("Game~Sword", &["weapon", "melee"]),
+            catalog("Game~Potion", &["heal"]),
+            catalog("Other~Axe", &["weapon"]),
+            catalog("Game~Shield", &["armor"]),
+        ];
+        assert_eq!(
+            expand_image_search_targets(&[], &["+weapon".into()], &catalog),
+            vec!["Game~Sword", "Other~Axe"]
+        );
+    }
+
+    #[test]
+    fn expand_tags_include_and_exclude() {
+        let catalog = vec![
+            catalog("P~a", &["construction material", "holy"]),
+            catalog("P~b", &["construction material"]),
+            catalog("P~c", &["construction material", "legendary"]),
+            catalog("P~d", &["other"]),
+        ];
+        assert_eq!(
+            expand_image_search_targets(
+                &[],
+                &[
+                    "+construction material".into(),
+                    "-holy".into(),
+                    "-legendary".into()
+                ],
+                &catalog
+            ),
+            vec!["P~b"]
+        );
+    }
+
+    #[test]
+    fn expand_tags_requires_all_includes() {
+        let catalog = vec![
+            catalog("P~a", &["weapon", "melee"]),
+            catalog("P~b", &["weapon"]),
+        ];
+        assert_eq!(
+            expand_image_search_targets(&[], &["+weapon".into(), "+melee".into()], &catalog),
+            vec!["P~a"]
+        );
+    }
+
+    #[test]
+    fn expand_tags_union_dedupes_explicit() {
+        let catalog = vec![
+            catalog("P~a", &["rare", "heal"]),
+            catalog("P~b", &["heal"]),
+            catalog("P~c", &["other"]),
+        ];
+        let explicit = vec!["P~b".into(), "P~extra".into()];
+        // Single include: only items with heal (AND semantics for multiple includes).
+        assert_eq!(
+            expand_image_search_targets(&explicit, &["+heal".into()], &catalog),
+            vec!["P~b", "P~extra", "P~a"]
+        );
+    }
+
+    #[test]
+    fn expand_tags_ignores_hierarchical_prefix() {
+        let catalog = vec![catalog("P~a", &["combat/pve"]), catalog("P~b", &["combat"])];
+        assert_eq!(
+            expand_image_search_targets(&[], &["+combat".into()], &catalog),
+            vec!["P~b"]
+        );
+    }
+
+    #[test]
+    fn expand_exclude_only_does_not_match_catalog() {
+        let catalog = vec![catalog("P~a", &["holy"]), catalog("P~b", &["other"])];
+        assert!(expand_image_search_targets(&[], &["-holy".into()], &catalog).is_empty());
+    }
+
+    #[test]
+    fn bare_tag_filter_is_include() {
+        assert_eq!(parse_tag_filter("weapon"), Some((true, "weapon".into())));
+        assert_eq!(parse_tag_filter("+weapon"), Some((true, "weapon".into())));
+        assert_eq!(parse_tag_filter("-holy"), Some((false, "holy".into())));
+    }
+
+    #[test]
+    fn expand_then_sort_by_name() {
+        let catalog = vec![catalog("P~z", &["t"]), catalog("P~a", &["t"])];
+        let expanded = expand_image_search_targets(&["P~m".into()], &["+t".into()], &catalog);
+        let infos: Vec<_> = expanded
+            .iter()
+            .map(|t| {
+                let name = t.rsplit_once('~').map(|(_, n)| n).unwrap_or(t);
+                info(t, name, 1, 1, &[])
+            })
+            .collect();
+        assert_eq!(
+            ordered_item_targets(&infos, ItemSortBy::Name, ItemSortThen::NameAsc, &[]),
+            vec!["P~a", "P~m", "P~z"]
+        );
     }
 }

@@ -1,5 +1,83 @@
-use eframe::egui;
+use eframe::egui::{self, Key, Modifiers};
 use egui::containers::scroll_area::{DragScroll, ScrollSource};
+
+/// Default search hint for popup pickers.
+pub const HINT_LIST: &str = "Search…";
+/// Default search hint for fixed left panes (data editor).
+pub const HINT_PANE: &str = "Search programs or names…";
+
+/// Local list/dialog keys (consumed so they do not leak under the surface).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListNavAction {
+    None,
+    Up,
+    Down,
+    Activate,
+    Cancel,
+}
+
+/// ↑↓ / Enter / Esc for an open list or picker. Prefer over ad-hoc `key_pressed`.
+pub fn poll_list_nav(ui: &mut egui::Ui) -> ListNavAction {
+    if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+        ListNavAction::Cancel
+    } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowDown)) {
+        ListNavAction::Down
+    } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowUp)) {
+        ListNavAction::Up
+    } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter)) {
+        ListNavAction::Activate
+    } else {
+        ListNavAction::None
+    }
+}
+
+/// Move `selected` within `0..len` for ↑↓. Returns whether Enter should activate.
+pub fn apply_list_nav(selected: &mut usize, len: usize, action: ListNavAction) -> bool {
+    if len == 0 {
+        *selected = 0;
+        return false;
+    }
+    *selected = (*selected).min(len - 1);
+    match action {
+        ListNavAction::Down => {
+            *selected = (*selected + 1).min(len - 1);
+            false
+        }
+        ListNavAction::Up => {
+            *selected = selected.saturating_sub(1);
+            false
+        }
+        ListNavAction::Activate => true,
+        ListNavAction::None | ListNavAction::Cancel => false,
+    }
+}
+
+/// Weak empty / no-match copy inside a filtered list body.
+pub fn paint_list_vacancy(ui: &mut egui::Ui, query: &str, visible: usize, entity_plural: &str) {
+    if visible > 0 {
+        return;
+    }
+    if query.trim().is_empty() {
+        ui.weak(format!("No {entity_plural} yet."));
+    } else {
+        ui.weak(format!("No matching {entity_plural}."));
+    }
+}
+
+/// Focus the search field once when a picker/dialog opens (`id` should be stable per window).
+pub fn focus_search_once(ui: &mut egui::Ui, id: egui::Id, resp: &egui::Response) {
+    let key = id.with("focus_search_once");
+    let needs = ui.ctx().data_mut(|d| *d.get_temp_mut_or(key, true));
+    if needs {
+        resp.request_focus();
+        ui.ctx().data_mut(|d| d.insert_temp(key, false));
+    }
+}
+
+/// Clear one-shot focus so the next open focuses again.
+pub fn reset_focus_search(ctx: &egui::Context, id: egui::Id) {
+    ctx.data_mut(|d| d.insert_temp(id.with("focus_search_once"), true));
+}
 
 /// Wheel + scrollbar + click-drag. egui's default drag is touch-only (`OnTouch`).
 pub(crate) const SCROLL_SOURCE: ScrollSource = ScrollSource::ALL;
@@ -61,7 +139,7 @@ impl PickerScrollOpts<'_> {
             trailing: None,
             below_search: None,
             id_salt: None,
-            hint_text: None,
+            hint_text: Some(HINT_LIST),
         }
     }
 
@@ -72,8 +150,14 @@ impl PickerScrollOpts<'_> {
             trailing: None,
             below_search: None,
             id_salt: None,
-            hint_text: None,
+            hint_text: Some(HINT_PANE),
         }
+    }
+
+    /// Override search placeholder (or `None` to hide).
+    pub fn with_hint(mut self, hint: Option<&'static str>) -> Self {
+        self.hint_text = hint;
+        self
     }
 }
 
@@ -85,7 +169,18 @@ impl PickerScrollOpts<'_> {
 pub fn picker_searchable_scroll(
     ui: &mut egui::Ui,
     search: &mut String,
+    opts: PickerScrollOpts<'_>,
+    body: impl FnMut(&mut egui::Ui, &str),
+) -> bool {
+    picker_searchable_scroll_ex(ui, search, opts, None, body)
+}
+
+/// Like [`picker_searchable_scroll`], with optional one-shot search focus (`focus_id`).
+pub fn picker_searchable_scroll_ex(
+    ui: &mut egui::Ui,
+    search: &mut String,
     mut opts: PickerScrollOpts<'_>,
+    focus_id: Option<egui::Id>,
     mut body: impl FnMut(&mut egui::Ui, &str),
 ) -> bool {
     let mut search_changed = false;
@@ -105,7 +200,11 @@ pub fn picker_searchable_scroll(
             if let Some(hint) = opts.hint_text {
                 edit = edit.hint_text(hint);
             }
-            if ui.add(edit).changed() {
+            let resp = ui.add(edit);
+            if let Some(fid) = focus_id {
+                focus_search_once(ui, fid, &resp);
+            }
+            if resp.changed() {
                 search_changed = true;
             }
             if let Some(trailing) = trailing.as_mut() {

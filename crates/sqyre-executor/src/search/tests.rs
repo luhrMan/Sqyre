@@ -241,6 +241,13 @@ impl IconStore for MapIcons {
     fn item_meta(&self, target: &str) -> Option<ItemMeta> {
         self.meta.get(target).cloned()
     }
+    fn catalog_item_refs(&self) -> Vec<(String, ItemMeta)> {
+        let mut keys: Vec<_> = self.meta.keys().cloned().collect();
+        keys.sort();
+        keys.into_iter()
+            .filter_map(|k| self.meta.get(&k).cloned().map(|m| (k, m)))
+            .collect()
+    }
 }
 
 fn named(name: &str, x: i32, y: i32, ox: i32, oy: i32) -> DetectionHit {
@@ -322,6 +329,105 @@ fn ocr_empty_target_always_matches() {
 }
 
 #[test]
+fn image_search_expands_target_tags_at_runtime() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let sword_path = dir.path().join("sword.png");
+        let potion_path = dir.path().join("potion.png");
+        let sword = patterned_rgba(10, 10, 40);
+        let potion = patterned_rgba(10, 10, 200);
+        sword.save(&sword_path).unwrap();
+        potion.save(&potion_path).unwrap();
+
+        let mut search = RgbaImage::from_pixel(50, 50, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut search, &sword, 12, 14);
+
+        let icons = MapIcons {
+            paths: HashMap::from([
+                ("Game~Sword".into(), vec![sword_path]),
+                ("Game~Potion".into(), vec![potion_path]),
+            ]),
+            masks: HashMap::new(),
+            meta: HashMap::from([
+                (
+                    "Game~Sword".into(),
+                    ItemMeta {
+                        name: "Sword".into(),
+                        stack_max: 1,
+                        cols: 1,
+                        rows: 1,
+                        tags: vec!["weapon".into()],
+                    },
+                ),
+                (
+                    "Game~Potion".into(),
+                    ItemMeta {
+                        name: "Potion".into(),
+                        stack_max: 20,
+                        cols: 1,
+                        rows: 1,
+                        tags: vec!["heal".into()],
+                    },
+                ),
+            ]),
+        };
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(search),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let resolver = SEARCH_FIXED_AREA;
+        let close_matches = 8;
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "by-tag".into(),
+                targets: vec![],
+                target_tags: vec!["+weapon".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: sqyre_domain::DetectionBranch {
+                    subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                        time: ScalarValue::Int(3),
+                    })],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
+        )
+        .unwrap();
+
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:3"),
+            "expected tag-expanded Sword match: {:?}",
+            backend.log
+        );
+        assert_eq!(
+            macro_.variables.get("ItemName").map(|v| v.as_display()),
+            Some("Sword".into())
+        );
+    });
+}
+
+#[test]
 fn image_search_caches_blurred_templates() {
     sqyre_vision::with_search_cache_test_lock(|| {
         sqyre_vision::reset_search_cache_for_testing();
@@ -353,6 +459,7 @@ fn image_search_caches_blurred_templates() {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.99,
                 blur: 5,
@@ -660,6 +767,7 @@ fn image_search_no_find_runs_branch() {
         kind: ActionKind::ImageSearch {
             name: "find".into(),
             targets: vec!["Prog~Item".into()],
+            target_tags: Vec::new(),
             search_area: CoordinateRef("Prog~Box".into()),
             tolerance: 0.99,
             blur: 0,
@@ -1405,6 +1513,7 @@ fn image_search_wait_until_found_retries_then_succeeds() {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
@@ -1536,6 +1645,7 @@ fn image_search_wait_until_found_stops_when_flag_set() {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
@@ -1610,6 +1720,7 @@ fn nested_image_search_after_click_captures_fresh_screen() {
             kind: ActionKind::ImageSearch {
                 name: "parent".into(),
                 targets: vec!["Prog~Parent".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
@@ -1631,6 +1742,7 @@ fn nested_image_search_after_click_captures_fresh_screen() {
                             kind: ActionKind::ImageSearch {
                                 name: "nested".into(),
                                 targets: vec!["Prog~Nested".into()],
+                                target_tags: Vec::new(),
                                 search_area: CoordinateRef("Prog~Box".into()),
                                 tolerance: 0.7,
                                 blur: 0,
@@ -1722,6 +1834,7 @@ fn nested_image_search_without_input_reuses_cache() {
             kind: ActionKind::ImageSearch {
                 name: "parent".into(),
                 targets: vec!["Prog~Parent".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
@@ -1735,6 +1848,7 @@ fn nested_image_search_without_input_reuses_cache() {
                         kind: ActionKind::ImageSearch {
                             name: "nested".into(),
                             targets: vec!["Prog~Nested".into()],
+                            target_tags: Vec::new(),
                             search_area: CoordinateRef("Prog~Box".into()),
                             tolerance: 0.7,
                             blur: 0,
@@ -1827,6 +1941,7 @@ fn image_search_wait_until_found_runs_final_search_on_timeout() {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
@@ -1912,6 +2027,7 @@ fn image_search_repeat_while_found_then_stops() {
             kind: ActionKind::ImageSearch {
                 name: "loop".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
@@ -2000,6 +2116,7 @@ fn image_search_multi_variant_matches_either_template() {
             kind: ActionKind::ImageSearch {
                 name: "multi".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
@@ -2095,6 +2212,7 @@ fn image_search_uses_mask_path_when_present() {
             kind: ActionKind::ImageSearch {
                 name: "masked".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
@@ -2389,6 +2507,7 @@ fn image_search_collection_matches_inside_cell_not_across() {
             kind: ActionKind::ImageSearch {
                 name: "bag".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: search_area.clone(),
                 tolerance: 0.7,
                 blur: 0,
@@ -2459,6 +2578,7 @@ fn image_search_collection_matches_inside_cell_not_across() {
             kind: ActionKind::ImageSearch {
                 name: "bag".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area,
                 tolerance: 0.7,
                 blur: 0,
@@ -2533,6 +2653,7 @@ fn image_search_collection_uses_item_grid_footprint() {
             kind: ActionKind::ImageSearch {
                 name: "bag".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef::collection("Demo", "bag", 1, 1, 2, 2),
                 tolerance: 0.7,
                 blur: 0,
@@ -2648,6 +2769,7 @@ fn image_search_collection_prunes_occupied_cells() {
             kind: ActionKind::ImageSearch {
                 name: "bag".into(),
                 targets: vec!["Prog~ItemA".into(), "Prog~ItemB".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef::collection("Demo", "bag", 1, 1, 2, 2),
                 tolerance: 0.7,
                 blur: 0,
@@ -2749,6 +2871,7 @@ fn image_search_collection_respects_manual_search_order() {
                 name: "bag".into(),
                 // Manual order: B before A (NameAsc would be A then B).
                 targets: vec!["Prog~ItemB".into(), "Prog~ItemA".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef::collection("Demo", "bag", 1, 1, 2, 2),
                 tolerance: 0.7,
                 blur: 0,
@@ -2836,6 +2959,7 @@ fn image_search_collection_variant_early_exit_is_per_placement() {
             kind: ActionKind::ImageSearch {
                 name: "bag".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef::collection("Demo", "bag", 1, 1, 2, 2),
                 tolerance: 0.7,
                 blur: 0,
@@ -2921,6 +3045,7 @@ fn image_search_variant_early_exit_skips_later_variants_after_hit() {
             kind: ActionKind::ImageSearch {
                 name: "multi".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
@@ -3009,6 +3134,7 @@ fn image_search_variant_exit_early_disabled_tries_all_variants() {
             kind: ActionKind::ImageSearch {
                 name: "multi".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,

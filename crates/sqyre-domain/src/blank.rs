@@ -126,6 +126,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
         "imagesearch" => ActionKind::ImageSearch {
             name: String::new(),
             targets: Vec::new(),
+            target_tags: Vec::new(),
             search_area: CoordinateRef::default(),
             tolerance: 0.95,
             blur: 5,

@@ -61,6 +61,13 @@ pub trait IconStore {
     /// Optional mask PNG for the item (resized by caller).
     fn mask_path(&self, target: &str) -> Option<std::path::PathBuf>;
     fn item_meta(&self, target: &str) -> Option<ItemMeta>;
+    /// All catalog `program~item` refs with metadata (for Image Search tag expansion).
+    ///
+    /// Default is empty (no catalog). Implementations backed by a program catalog
+    /// should return every item in stable program/item order.
+    fn catalog_item_refs(&self) -> Vec<(String, ItemMeta)> {
+        Vec::new()
+    }
 }
 
 /// Look up another macro by name.

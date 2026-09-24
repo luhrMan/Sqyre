@@ -61,6 +61,7 @@ fn match_method_editor(ui: &mut egui::Ui, match_method: &mut MatchMethod) {
 pub(super) struct ImageSearchFields<'a> {
     pub name: &'a mut String,
     pub targets: &'a mut Vec<String>,
+    pub target_tags: &'a mut Vec<String>,
     pub search_area: &'a mut CoordinateRef,
     pub tolerance: &'a mut f64,
     pub blur: &'a mut i32,
@@ -109,6 +110,7 @@ pub(super) fn paint_image_search_fields(
     let ImageSearchFields {
         name,
         targets,
+        target_tags,
         search_area,
         tolerance,
         blur,
@@ -126,6 +128,7 @@ pub(super) fn paint_image_search_fields(
             paint.icons,
             super::TargetsSortEdit {
                 targets,
+                target_tags,
                 sort_by,
                 sort_then,
                 tag_priority,
@@ -206,9 +209,12 @@ pub(super) fn paint_ocr_fields(
                 d.speed(0.01).range(MIN_OCR_RESIZE..=MAX_OCR_RESIZE)
             });
             h::tip(ui.checkbox(grayscale, "Grayscale"), h::OCR_GRAYSCALE);
-            h::tip(ui.checkbox(threshold_otsu, "Threshold Otsu"), h::OCR_OTSU);
             h::tip(
-                ui.checkbox(threshold_invert, "Threshold invert"),
+                ui.checkbox(threshold_otsu, "Auto black/white cutoff"),
+                h::OCR_OTSU,
+            );
+            h::tip(
+                ui.checkbox(threshold_invert, "Invert light/dark"),
                 h::OCR_INVERT,
             );
         });

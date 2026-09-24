@@ -294,6 +294,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: "find sword".into(),
                 targets: vec!["Game~Sword".into(), "Game~Shield".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Game~Arena".into()),
                 tolerance: 0.87,
                 blur: 3,
@@ -354,6 +355,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: "x".into(),
                 targets: vec!["t".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef::default(),
                 tolerance: 0.0,
                 blur: 5,
@@ -459,6 +461,60 @@ tagpriority: [rare, heal]
                 assert_eq!(sort_by, sqyre_domain::ItemSortBy::Tags);
                 assert_eq!(sort_then, sqyre_domain::ItemSortThen::NameAsc);
                 assert_eq!(tag_priority, vec!["rare".to_string(), "heal".to_string()]);
+            }
+            other => panic!("expected ImageSearch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn image_search_target_tags_roundtrip() {
+        let yaml = r#"
+type: imagesearch
+name: find
+targettags: ["+weapon", "-holy", heal]
+searcharea: Game~Arena
+"#;
+        let value: Value = serde_yaml::from_str(yaml).unwrap();
+        let map = value.as_mapping().unwrap();
+        let action = action_from_map(map).unwrap();
+        match &action.kind {
+            ActionKind::ImageSearch {
+                targets,
+                target_tags,
+                ..
+            } => {
+                assert!(targets.is_empty());
+                assert_eq!(
+                    target_tags,
+                    &vec![
+                        "+weapon".to_string(),
+                        "-holy".to_string(),
+                        "heal".to_string()
+                    ]
+                );
+            }
+            other => panic!("expected ImageSearch, got {other:?}"),
+        }
+        let map = action_to_map(&action).unwrap();
+        let tags = map
+            .get(Value::String("targettags".into()))
+            .and_then(|v| v.as_sequence())
+            .expect("targettags serialized");
+        assert_eq!(
+            tags.iter().filter_map(|v| v.as_str()).collect::<Vec<_>>(),
+            vec!["+weapon", "-holy", "heal"]
+        );
+        let restored = action_from_map(&map).unwrap();
+        match restored.kind {
+            ActionKind::ImageSearch { target_tags, .. } => {
+                assert_eq!(
+                    target_tags,
+                    vec![
+                        "+weapon".to_string(),
+                        "-holy".to_string(),
+                        "heal".to_string()
+                    ]
+                );
             }
             other => panic!("expected ImageSearch, got {other:?}"),
         }

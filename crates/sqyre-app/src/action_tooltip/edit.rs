@@ -10,6 +10,7 @@ use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use crate::pickers::{self, options, ActivePicker, CoordKind};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
+use crate::tree_chrome;
 use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{
     combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
@@ -412,6 +413,7 @@ pub fn paint_edit_fields(
         ActionKind::ImageSearch {
             name,
             targets,
+            target_tags,
             search_area,
             tolerance,
             blur,
@@ -436,6 +438,7 @@ pub fn paint_edit_fields(
                 edit_detect::ImageSearchFields {
                     name,
                     targets,
+                    target_tags,
                     search_area,
                     tolerance,
                     blur,
@@ -709,6 +712,7 @@ fn targets_editor(
 ) {
     let TargetsSortEdit {
         targets,
+        target_tags,
         sort_by,
         sort_then,
         tag_priority,
@@ -716,6 +720,14 @@ fn targets_editor(
     ui.horizontal_wrapped(|ui| {
         help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
         ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
+        if !target_tags.is_empty() {
+            help::tip(
+                ui.label(
+                    egui::RichText::new(format!("· {} tag filters", target_tags.len())).weak(),
+                ),
+                h::IS_TARGET_TAGS,
+            );
+        }
         if ui
             .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
             .on_hover_text(h::IS_ITEMS)
@@ -724,6 +736,7 @@ fn targets_editor(
             *picker = ActivePicker::Items {
                 search: String::new(),
                 staged: targets.clone(),
+                staged_tags: Some(target_tags.clone()),
             };
         }
         combo_enum(
@@ -746,7 +759,7 @@ fn targets_editor(
         }
     });
     if *sort_by == ItemSortBy::Tags {
-        let suggestions = item_tag_suggestions(catalog, targets);
+        let suggestions = item_tag_suggestions(catalog, targets, target_tags);
         let draft_id = ui.id().with("image_search_tag_priority_draft");
         let mut draft = ui
             .ctx()
@@ -769,22 +782,37 @@ fn targets_editor(
                 draft_hover: Some(h::IS_TAG_PRIORITY),
                 draft_first: false,
                 reorderable: true,
+                signed_filters: false,
             },
         );
         let _ = edit;
         ui.ctx().data_mut(|d| d.insert_temp(draft_id, draft));
     }
-    if targets.is_empty() {
+    let display = tree_chrome::sorted_image_search_targets(
+        catalog,
+        targets,
+        target_tags,
+        *sort_by,
+        *sort_then,
+        tag_priority,
+    );
+    if display.is_empty() && targets.is_empty() && target_tags.is_empty() {
         ui.label("(none)");
         return;
     }
-    let infos = target_sort_infos(catalog, targets);
-    let display = sqyre_domain::ordered_item_targets(&infos, *sort_by, *sort_then, tag_priority);
+    if display.is_empty() {
+        ui.label(egui::RichText::new("(no items match these tag filters yet)").weak());
+        return;
+    }
+    let infos = target_sort_infos(catalog, &display);
     let mut remove: Option<usize> = None;
     let mut reorder: Option<(usize, usize)> = None;
     let mut on_reorder = |from: usize, to: usize| {
         reorder = Some((from, to));
     };
+    // Drag-reorder only when the grid is exactly the explicit target list
+    // (tag expansion would make display indices disagree with stored order).
+    let allow_reorder = target_tags.is_empty();
     pickers::paint_even_icon_grid(
         ui,
         catalog,
@@ -796,7 +824,13 @@ fn targets_editor(
         |i| {
             remove = Some(i);
         },
-        Some(&mut on_reorder),
+        if allow_reorder {
+            Some(&mut on_reorder)
+        } else {
+            None
+        },
+        // Tag-filter matches are not stored in `targets`; × would be a no-op.
+        |t| targets.iter().any(|explicit| explicit == t),
     );
     if let Some((from, to)) = reorder {
         let _ = sqyre_domain::apply_display_reorder(
@@ -818,6 +852,7 @@ fn targets_editor(
 
 struct TargetsSortEdit<'a> {
     targets: &'a mut Vec<String>,
+    target_tags: &'a mut Vec<String>,
     sort_by: &'a mut ItemSortBy,
     sort_then: &'a mut ItemSortThen,
     tag_priority: &'a mut Vec<String>,
@@ -840,13 +875,31 @@ fn target_sort_infos(
         .collect()
 }
 
-fn item_tag_suggestions(catalog: &ProgramCatalog, targets: &[String]) -> Vec<String> {
+fn item_tag_suggestions(
+    catalog: &ProgramCatalog,
+    targets: &[String],
+    target_tags: &[String],
+) -> Vec<String> {
     let mut tags = Vec::new();
-    for target in targets {
-        let (_, item_tags) = pickers::item_tooltip_parts(catalog, target);
+    for target in tree_chrome::sorted_image_search_targets(
+        catalog,
+        targets,
+        target_tags,
+        ItemSortBy::Manual,
+        ItemSortThen::ListOrder,
+        &[],
+    ) {
+        let (_, item_tags) = pickers::item_tooltip_parts(catalog, &target);
         for tag in item_tags {
             if !tags.iter().any(|t| t == &tag) {
                 tags.push(tag);
+            }
+        }
+    }
+    for tag in target_tags {
+        if let Some(name) = sqyre_domain::tag_filter_name(tag) {
+            if !tags.iter().any(|t| t == &name) {
+                tags.push(name);
             }
         }
     }

@@ -17,9 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use super::wire_keys::{
     TagClick, TagConditional, TagFindPixel, TagFocusWindow, TagForEachCell, TagForEachRow,
-    TagImageSearch, TagKey,
-    TagLoop, TagLoopJump, TagMove, TagNavigateKey, TagNavigateSelect, TagOcr, TagPause,
-    TagRunMacro, TagSaveVariable, TagSetVariable, TagType, TagWait, TagWhile,
+    TagImageSearch, TagKey, TagLoop, TagLoopJump, TagMove, TagNavigateKey, TagNavigateSelect,
+    TagOcr, TagPause, TagRunMacro, TagSaveVariable, TagSetVariable, TagType, TagWait, TagWhile,
 };
 
 fn is_default_smooth_low(v: &f64) -> bool {
@@ -74,6 +73,8 @@ enum ActionKindWire {
         name: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         targets: Vec<String>,
+        #[serde(rename = "targettags", default, skip_serializing_if = "Vec::is_empty")]
+        target_tags: Vec<String>,
         #[serde(rename = "searcharea", default)]
         search_area: CoordinateRef,
         #[serde(default)]
@@ -377,6 +378,7 @@ impl From<ActionKindWire> for ActionKind {
             ActionKindWire::ImageSearch {
                 name,
                 targets,
+                target_tags,
                 search_area,
                 tolerance,
                 blur,
@@ -389,6 +391,7 @@ impl From<ActionKindWire> for ActionKind {
             } => Self::ImageSearch {
                 name,
                 targets,
+                target_tags,
                 search_area,
                 tolerance,
                 blur,
@@ -605,6 +608,8 @@ enum ActionKindWireRef<'a> {
         name: &'a str,
         #[serde(default, skip_serializing_if = "is_empty_slice")]
         targets: &'a [String],
+        #[serde(rename = "targettags", default, skip_serializing_if = "is_empty_slice")]
+        target_tags: &'a [String],
         #[serde(rename = "searcharea", default)]
         search_area: &'a CoordinateRef,
         #[serde(default)]
@@ -892,6 +897,7 @@ impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
             ActionKind::ImageSearch {
                 name,
                 targets,
+                target_tags,
                 search_area,
                 tolerance,
                 blur,
@@ -904,6 +910,7 @@ impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
                 type_: TagImageSearch::Tag,
                 name,
                 targets,
+                target_tags,
                 search_area,
                 tolerance: *tolerance,
                 blur: *blur,

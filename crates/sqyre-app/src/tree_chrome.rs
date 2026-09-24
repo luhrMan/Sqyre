@@ -3,7 +3,10 @@
 use crate::icon_cache::IconCache;
 use crate::image_view;
 use crate::pickers::attach_item_icon_tooltip;
-use crate::theme::paint_galley_centered;
+use crate::theme::{
+    highlight_cursor_fill, highlight_invalid_fill, highlight_owner_fill, highlight_progress_fill,
+    paint_galley_centered,
+};
 use crate::var_pills;
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use sqyre_domain::{parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames};
@@ -288,6 +291,7 @@ fn paint_image_search_extras(
 ) -> bool {
     let ActionKind::ImageSearch {
         targets,
+        target_tags,
         sort_by,
         sort_then,
         tag_priority,
@@ -296,7 +300,14 @@ fn paint_image_search_extras(
     else {
         return false;
     };
-    let targets = sorted_image_search_targets(catalog, targets, *sort_by, *sort_then, tag_priority);
+    let targets = sorted_image_search_targets(
+        catalog,
+        targets,
+        target_tags,
+        *sort_by,
+        *sort_then,
+        tag_priority,
+    );
     let mut tip_hovered = false;
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
     let prev_gap = ui.spacing().item_spacing.x;
@@ -344,6 +355,7 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
 ) {
     let ActionKind::ImageSearch {
         targets,
+        target_tags,
         sort_by,
         sort_then,
         tag_priority,
@@ -352,10 +364,20 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     else {
         return;
     };
-    if targets.is_empty() {
+    if targets.is_empty() && target_tags.is_empty() {
         return;
     }
-    let display = sorted_image_search_targets(catalog, targets, *sort_by, *sort_then, tag_priority);
+    let display = sorted_image_search_targets(
+        catalog,
+        targets,
+        target_tags,
+        *sort_by,
+        *sort_then,
+        tag_priority,
+    );
+    if display.is_empty() {
+        return;
+    }
     crate::widgets::title_with_count(
         ui,
         egui::RichText::new("Items").small().strong(),
@@ -371,18 +393,36 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         |_, _| {},
         |_| {},
         None,
+        |_| false,
     );
 }
 
-/// Display / search order for Image Search targets.
+/// Display / search order for Image Search targets (explicit + tag expansion).
 pub(crate) fn sorted_image_search_targets(
     catalog: &ProgramCatalog,
     targets: &[String],
+    target_tags: &[String],
     sort_by: sqyre_domain::ItemSortBy,
     sort_then: sqyre_domain::ItemSortThen,
     tag_priority: &[String],
 ) -> Vec<String> {
-    let infos: Vec<_> = targets
+    use sqyre_domain::{expand_image_search_targets, CatalogItemRef, PROGRAM_DELIMITER};
+    let catalog_refs: Vec<CatalogItemRef> = catalog
+        .program_names()
+        .filter_map(|prog| catalog.get(prog).map(|pdata| (prog.clone(), pdata)))
+        .flat_map(|(prog, pdata)| {
+            pdata
+                .items
+                .iter()
+                .map(move |(name, item)| CatalogItemRef {
+                    target: format!("{prog}{PROGRAM_DELIMITER}{name}"),
+                    tags: item.tags.clone(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    let expanded = expand_image_search_targets(targets, target_tags, &catalog_refs);
+    let infos: Vec<_> = expanded
         .iter()
         .map(|target| {
             let (name, tags) = crate::pickers::item_tooltip_parts(catalog, target);
@@ -424,8 +464,7 @@ pub fn paint_action_row(
     // clip rect and anchor logs/delete on the visible right edge — inset further so a
     // floating scrollbar cannot cover the buttons.
     let spacing = ui.spacing().item_spacing.x;
-    let visible_end =
-        ui.clip_rect().right() - crate::widgets::floating_scrollbar_overlay_width(ui);
+    let visible_end = ui.clip_rect().right() - crate::widgets::floating_scrollbar_overlay_width(ui);
     let row_start = ui.cursor().min.x;
     let max_visible_w = (visible_end - row_start).max(0.0);
     let row_w = ui.available_width().min(max_visible_w);
@@ -572,7 +611,7 @@ pub fn paint_action_row(
 
     if validation_error.is_some() {
         ui.painter()
-            .rect_filled(row.response.rect, 0.0, highlight_invalid_color());
+            .rect_filled(row.response.rect, 0.0, highlight_invalid_fill());
     }
     paint_row_highlight(ui, row.response.rect, highlight);
 
@@ -626,39 +665,21 @@ pub fn paint_action_row(
     }
 }
 
-/// Highlight fill colors for simple vs filled execution overlays.
-fn highlight_cursor_color() -> Color32 {
-    Color32::from_rgba_unmultiplied(90, 160, 240, 70)
-}
-fn highlight_fill_color() -> Color32 {
-    Color32::from_rgba_unmultiplied(90, 200, 130, 90)
-}
-/// Soft gold tint for related selection (Else owner/folder, key/click press pair).
-fn highlight_owner_color() -> Color32 {
-    Color32::from_rgba_unmultiplied(0xdc, 0x9d, 0x2e, 0x28)
-}
-
-/// Soft red tint behind rows with validation errors (under execution highlights).
-fn highlight_invalid_color() -> Color32 {
-    Color32::from_rgba_unmultiplied(220, 70, 70, 45)
-}
-
 pub(crate) fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight: RowHighlight) {
     match highlight {
         RowHighlight::None => {}
         RowHighlight::Cursor => {
-            ui.painter()
-                .rect_filled(rect, 0.0, highlight_cursor_color());
+            ui.painter().rect_filled(rect, 0.0, highlight_cursor_fill());
         }
         RowHighlight::Fill(frac) => {
             let frac = frac.clamp(0.0, 1.0);
             let mut fill_rect = rect;
             fill_rect.max.x = fill_rect.min.x + fill_rect.width() * frac;
             ui.painter()
-                .rect_filled(fill_rect, 0.0, highlight_fill_color());
+                .rect_filled(fill_rect, 0.0, highlight_progress_fill());
         }
         RowHighlight::Owner => {
-            ui.painter().rect_filled(rect, 0.0, highlight_owner_color());
+            ui.painter().rect_filled(rect, 0.0, highlight_owner_fill());
         }
     }
 }
@@ -715,6 +736,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec![],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
                 blur: 0,
@@ -732,6 +754,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec!["a~b".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
                 blur: 0,
@@ -870,6 +893,7 @@ mod tests {
                 kind: ActionKind::ImageSearch {
                     name: "find".into(),
                     targets,
+                    target_tags: Vec::new(),
                     search_area: CoordinateRef("P~Box".into()),
                     tolerance: 0.9,
                     blur: 0,
@@ -1000,6 +1024,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets,
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,

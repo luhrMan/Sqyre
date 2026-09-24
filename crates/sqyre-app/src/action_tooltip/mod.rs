@@ -763,9 +763,20 @@ fn show_edit_window(
 pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
     match result {
         PickerResult::None => {}
-        PickerResult::Items(targets) => {
-            if let ActionKind::ImageSearch { targets: t, .. } = &mut draft.kind {
+        PickerResult::Items {
+            targets,
+            target_tags,
+        } => {
+            if let ActionKind::ImageSearch {
+                targets: t,
+                target_tags: tags,
+                ..
+            } = &mut draft.kind
+            {
                 *t = targets;
+                if let Some(next_tags) = target_tags {
+                    *tags = next_tags;
+                }
             }
         }
         PickerResult::Point(coord) => {
@@ -911,6 +922,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec!["Game~Item".into()],
+                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
@@ -1033,6 +1045,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["P~A".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
