@@ -1,7 +1,7 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
+.PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat dev windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
 	clean-sweep release-gate run tessdata appimage flatpak install-desktop docs-media wasm wasm-check help
 
 ROOT := $(abspath .)
@@ -70,7 +70,8 @@ help:
 	@echo "  probe        - cargo build (debug) -> $(BIN)/sqyre-probe$(BIN_EXT)"
 	@echo "  overlay-sandbox - overlay buttons only (fast; no sqyre-app)"
 	@echo "  release      - fmt + check, then cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
-	@echo "  release-bundle - Linux: release + bundled Tesseract -> $(BIN)/sqyre-bundle/ (no check gate)"
+	@echo "  release-bundle - Linux: dist profile + bundled Tesseract -> $(BIN)/sqyre-bundle/ (shipping)"
+	@echo "  dev          - Linux: fast release-bundle prototype -> $(BIN)/sqyre-dev/ (no LTO / no check gate)"
 	@echo "  release-bundle-dhat - same + dhat-heap profiler -> $(BIN)/sqyre-bundle-dhat/ (local leak hunts)"
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
 	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
@@ -138,6 +139,18 @@ release-bundle: $(BIN)
 	fi
 	$(CARGO) build -p sqyre-app --profile dist $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	SQYRE_BUNDLE_SKIP_BUILD=1 SQYRE_CARGO_PROFILE=dist ./scripts/linux/packaging/bundle-release.sh
+
+# Fast prototyping twin of release-bundle: plain --release (no LTO), separate output dir.
+dev: $(BIN)
+	@if [ "$(HOST_OS)" != "linux" ]; then \
+		echo "make dev requires a Linux host (got $(HOST_OS))"; \
+		exit 1; \
+	fi
+	$(CARGO) build -p sqyre-app --release $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
+	SQYRE_BUNDLE_SKIP_BUILD=1 \
+		SQYRE_CARGO_PROFILE=release \
+		SQYRE_BUNDLE_NAME=sqyre-dev \
+		./scripts/linux/packaging/bundle-release.sh
 
 # Same layout as release-bundle, but with dhat-heap (allocation stacks → dhat-heap.json on quit).
 # Uses a separate Cargo target dir so it does not overwrite the normal release binary.
