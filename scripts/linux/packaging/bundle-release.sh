@@ -14,6 +14,7 @@
 #   SQYRE_BUNDLE_SKIP_BUILD=1 — skip cargo; use existing binary
 #
 # Run from repo root: make release-bundle
+# Fast prototype: make dev → bin/sqyre-dev/ (release profile, no LTO)
 # Heap-profile variant: make release-bundle-dhat → bin/sqyre-bundle-dhat/
 set -euo pipefail
 

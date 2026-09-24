@@ -130,6 +130,13 @@ make release-bundle
 ./bin/sqyre-bundle/sqyre
 ```
 
+**Fast prototype** (same layout, plain `--release` / no LTO → `bin/sqyre-dev/`):
+
+```bash
+make dev
+./bin/sqyre-dev/sqyre
+```
+
 **Heap-profile variant** (local leak hunts only — slower allocator, not for shipping):
 
 ```bash
@@ -153,6 +160,7 @@ Requires **patchelf** (installed in the devcontainer). Build on the target glibc
 | Format | Command | Main requirement |
 |--------|---------|------------------|
 | **Bundled dir** | `make release-bundle` | Rust + Tesseract dev libs + patchelf |
+| **Dev bundle** | `make dev` | Same layout as bundled dir; `--release` (no LTO) → `bin/sqyre-dev/` |
 | **Bundled + dhat** | `make release-bundle-dhat` | Same; `dhat-heap` for allocation profiles (not shipping) |
 | **AppImage** | `make appimage` | Rust + Tesseract on host + appimage-builder |
 | **Flatpak** | `make flatpak` | flatpak-builder + Freedesktop 25.08 (+ Docker privileged fallback) |
