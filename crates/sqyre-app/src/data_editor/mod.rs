@@ -871,11 +871,9 @@ impl DataEditor {
             return;
         };
         let (title, confirm_label, kind) = match &confirm {
-            PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => (
-                "Delete",
-                "Delete",
-                crate::widgets::ConfirmKind::Destructive,
-            ),
+            PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => {
+                ("Delete", "Delete", crate::widgets::ConfirmKind::Destructive)
+            }
             PendingConfirm::Overwrite { .. } | PendingConfirm::OverwriteVariant { .. } => (
                 "Overwrite",
                 "Overwrite",
