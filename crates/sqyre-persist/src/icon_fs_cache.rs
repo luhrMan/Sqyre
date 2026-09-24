@@ -117,12 +117,16 @@ mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    /// Serializes tests that clear / assert on the process-global cache.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
     fn touch_png(path: &Path) {
         std::fs::write(path, b"not-a-real-png").unwrap();
     }
 
     #[test]
     fn variant_paths_reuse_dir_scan() {
+        let _guard = TEST_LOCK.lock();
         clear_icon_fs_cache();
         let dir = tempdir().unwrap();
         let icons = dir.path().join("icons");
@@ -140,6 +144,7 @@ mod tests {
 
     #[test]
     fn invalidate_refreshes_after_add() {
+        let _guard = TEST_LOCK.lock();
         clear_icon_fs_cache();
         let dir = tempdir().unwrap();
         let icons = dir.path().join("icons");
@@ -154,6 +159,7 @@ mod tests {
 
     #[test]
     fn mask_presence_cached_until_invalidate() {
+        let _guard = TEST_LOCK.lock();
         clear_icon_fs_cache();
         let dir = tempdir().unwrap();
         let path = dir.path().join("mask.png");
@@ -167,6 +173,7 @@ mod tests {
 
     #[test]
     fn item_prefix_invalidates_parent_dir() {
+        let _guard = TEST_LOCK.lock();
         clear_icon_fs_cache();
         let dir = tempdir().unwrap();
         let icons = dir.path().join("icons").join("Prog");
