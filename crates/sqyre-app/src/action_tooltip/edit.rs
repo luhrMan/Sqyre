@@ -469,8 +469,8 @@ pub fn paint_edit_fields(
                     "nav_program",
                     &mut current,
                     &programs,
-                    "(none)",
-                    Some("(none)"),
+                    sqyre_domain::EMPTY_NONE,
+                    Some(sqyre_domain::EMPTY_NONE),
                     None,
                     None,
                     Some(&mut option_icon),
@@ -488,7 +488,14 @@ pub fn paint_edit_fields(
                         .unwrap_or_default()
                 };
                 let mut current = data.atlas.clone();
-                searchable_combo(ui, "nav_atlas", &mut current, &atlases, "(none)", None);
+                searchable_combo(
+                    ui,
+                    "nav_atlas",
+                    &mut current,
+                    &atlases,
+                    sqyre_domain::EMPTY_NONE,
+                    None,
+                );
                 if current != data.atlas {
                     data.atlas = current;
                 }
@@ -665,7 +672,7 @@ fn targets_editor(
         });
     });
     if targets.is_empty() {
-        ui.label("(none)");
+        ui.label(sqyre_domain::EMPTY_NONE);
         return;
     }
     let mut remove: Option<usize> = None;
@@ -697,7 +704,7 @@ fn picker_display_row(ui: &mut egui::Ui, label: &str, help_text: &str, display: 
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
         ui.label(if display.is_empty() {
-            "(unset)"
+            sqyre_domain::EMPTY_UNSET
         } else {
             display
         });

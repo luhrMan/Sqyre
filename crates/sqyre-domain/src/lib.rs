@@ -9,6 +9,7 @@ mod atlas;
 mod bindings;
 mod blank;
 mod color;
+mod empty;
 mod expr;
 mod expr_error;
 mod keys;
@@ -31,6 +32,7 @@ pub use color::{
     ACTION_COLOR_KEY_MISCELLANEOUS, ACTION_COLOR_KEY_MOUSE_KEYBOARD, ACTION_COLOR_KEY_VARIABLES,
     ACTION_COLOR_KEY_WAIT,
 };
+pub use empty::{EMPTY_NONE, EMPTY_NOT_SET, EMPTY_UNSET};
 pub use expr::{evaluate_expression, numeric_to_scalar};
 pub use expr_error::{ExprError, ResolveError};
 pub use keys::{

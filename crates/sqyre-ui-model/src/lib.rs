@@ -364,6 +364,65 @@ mod tests {
     }
 
     #[test]
+    fn empty_non_catalog_scalars_use_not_set() {
+        use sqyre_domain::EMPTY_NOT_SET;
+
+        let focus = Action {
+            id: ActionId::new(),
+            kind: ActionKind::FocusWindow {
+                process_path: String::new(),
+                window_title: String::new(),
+            },
+        };
+        let params = focus.display_params();
+        assert_eq!(
+            params
+                .iter()
+                .find(|p| p.label == "Title")
+                .map(|p| p.value.as_str()),
+            Some(EMPTY_NOT_SET)
+        );
+        assert_eq!(
+            params
+                .iter()
+                .find(|p| p.label == "App")
+                .map(|p| p.value.as_str()),
+            Some(EMPTY_NOT_SET)
+        );
+
+        let run = Action {
+            id: ActionId::new(),
+            kind: ActionKind::RunMacro {
+                macro_name: String::new(),
+            },
+        };
+        assert_eq!(
+            run.display_params()
+                .iter()
+                .find(|p| p.label == "Macro")
+                .map(|p| p.value.as_str()),
+            Some(EMPTY_NOT_SET)
+        );
+
+        let pause = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Pause {
+                message: String::new(),
+                continue_key: vec![],
+                pass_through: false,
+            },
+        };
+        assert_eq!(
+            pause
+                .display_params()
+                .iter()
+                .find(|p| p.label == "Continue")
+                .map(|p| p.value.as_str()),
+            Some(EMPTY_NOT_SET)
+        );
+    }
+
+    #[test]
     fn set_binding_uses_value_role() {
         let a = Action {
             id: ActionId::new(),
