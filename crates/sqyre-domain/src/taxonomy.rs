@@ -171,8 +171,7 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
     ActionTypeMeta {
         type_key: "foreachcell",
         label: "For each cell",
-        description:
-            "Runs its sub-actions once per cell in a Collection range (no Image Search).",
+        description: "Runs its sub-actions once per cell in a Collection range (no Image Search).",
         color_category: "Control flow",
         color_key: ACTION_COLOR_KEY_CONTROL_FLOW,
         icon: "▦",

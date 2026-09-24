@@ -28,6 +28,17 @@ impl MatchMethod {
         Self::CcoeffNormed,
     ];
 
+    /// Beginner-friendly combo order (recommended first). Wire/`ALL` stay OpenCV order.
+    pub const UI_ORDER: [Self; 6] = [
+        Self::CcoeffNormed,
+        Self::Ccoeff,
+        Self::CcorrNormed,
+        Self::Ccorr,
+        Self::SqdiffNormed,
+        Self::Sqdiff,
+    ];
+
+    /// OpenCV-style name for wire/debug/engine surfaces.
     pub fn label(self) -> &'static str {
         match self {
             Self::Sqdiff => "SQDIFF",
@@ -36,6 +47,34 @@ impl MatchMethod {
             Self::CcorrNormed => "CCORR_NORMED",
             Self::Ccoeff => "CCOEFF",
             Self::CcoeffNormed => "CCOEFF_NORMED",
+        }
+    }
+
+    /// Everyday name for UI combo boxes and beginner-facing labels.
+    pub fn ui_label(self) -> &'static str {
+        match self {
+            Self::CcoeffNormed => "Default (recommended)",
+            Self::Ccoeff => "Default (raw score)",
+            Self::CcorrNormed => "Correlation",
+            Self::Ccorr => "Correlation (raw)",
+            Self::SqdiffNormed => "Difference (lower is better)",
+            Self::Sqdiff => "Difference raw (lower is better)",
+        }
+    }
+
+    /// Short hover hint for the method combo (optional per-option detail).
+    pub fn ui_hint(self) -> &'static str {
+        match self {
+            Self::CcoeffNormed => {
+                "Best starting point. Scores stay near 0–1; higher means a closer match."
+            }
+            Self::Ccoeff => "Same idea as Default, but scores are not scaled to 0–1.",
+            Self::CcorrNormed => "How well the image lines up with the template (0–1 scale).",
+            Self::Ccorr => "Same as Correlation, with raw (unscaled) scores.",
+            Self::SqdiffNormed => {
+                "How different the pixels are (0–1). Lower scores are better; 0 is a perfect match."
+            }
+            Self::Sqdiff => "Same as Difference, with raw (unscaled) scores. Lower is better.",
         }
     }
 
@@ -77,5 +116,33 @@ mod tests {
         assert_eq!(yaml.trim(), "ccoeff_normed");
         let back: MatchMethod = serde_yaml::from_str("sqdiff_normed").unwrap();
         assert_eq!(back, MatchMethod::SqdiffNormed);
+    }
+
+    #[test]
+    fn label_keeps_opencv_names() {
+        assert_eq!(MatchMethod::CcoeffNormed.label(), "CCOEFF_NORMED");
+        assert_eq!(MatchMethod::Sqdiff.label(), "SQDIFF");
+    }
+
+    #[test]
+    fn ui_label_uses_everyday_names() {
+        assert_eq!(
+            MatchMethod::CcoeffNormed.ui_label(),
+            "Default (recommended)"
+        );
+        assert_eq!(MatchMethod::Ccoeff.ui_label(), "Default (raw score)");
+        assert_eq!(MatchMethod::CcorrNormed.ui_label(), "Correlation");
+        assert_eq!(MatchMethod::Ccorr.ui_label(), "Correlation (raw)");
+        assert_eq!(
+            MatchMethod::SqdiffNormed.ui_label(),
+            "Difference (lower is better)"
+        );
+        assert_eq!(
+            MatchMethod::Sqdiff.ui_label(),
+            "Difference raw (lower is better)"
+        );
+        for m in MatchMethod::ALL {
+            assert!(!m.ui_hint().is_empty());
+        }
     }
 }

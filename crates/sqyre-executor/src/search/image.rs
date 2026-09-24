@@ -10,9 +10,9 @@ use crate::log_draw::{crop_match_preview, draw_rect_rgb};
 use crate::run::Executor;
 use rayon::prelude::*;
 use sqyre_domain::{
-    action_type_label, grid_item_placements, ordered_item_targets, variant_name_from_path, Action,
-    ActionKind, GridPlacement, ItemSortBy, ItemSortInfo, ItemSortThen, Macro, MatchMethod,
-    PROGRAM_DELIMITER,
+    action_type_label, expand_image_search_targets, grid_item_placements, ordered_item_targets,
+    variant_name_from_path, Action, ActionKind, CatalogItemRef, GridPlacement, ItemSortBy,
+    ItemSortInfo, ItemSortThen, Macro, MatchMethod, PROGRAM_DELIMITER,
 };
 use sqyre_match::{
     blur_image_owned, cluster_points, find_template_matches_preblurred_with_prepared,
@@ -36,6 +36,7 @@ pub(crate) fn execute_image_search(
 ) -> Result<()> {
     let ActionKind::ImageSearch {
         targets,
+        target_tags,
         search_area,
         tolerance,
         blur,
@@ -52,7 +53,23 @@ pub(crate) fn execute_image_search(
     highlight_fill(exec.deps.highlighter, &macro_.name, action.id, 0.0);
     let action_id = action.id;
     let label = action_type_label(action.type_key());
-    let sorted_targets = ordered_search_targets(exec, targets, *sort_by, *sort_then, tag_priority);
+    let catalog_refs: Vec<CatalogItemRef> = exec
+        .deps
+        .icons
+        .map(|icons| {
+            icons
+                .catalog_item_refs()
+                .into_iter()
+                .map(|(target, meta)| CatalogItemRef {
+                    target,
+                    tags: meta.tags,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let expanded = expand_image_search_targets(targets, target_tags, &catalog_refs);
+    let sorted_targets =
+        ordered_search_targets(exec, &expanded, *sort_by, *sort_then, tag_priority);
     let ctx = DetectionCtx::new(action_id, label, search_area, &sorted_targets, detection);
     let wait = &detection.wait;
     let macro_name = macro_.name.clone();

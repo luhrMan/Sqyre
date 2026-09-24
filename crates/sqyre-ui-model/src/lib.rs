@@ -82,6 +82,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["a".into(), "b".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
@@ -314,6 +315,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["a".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
@@ -345,6 +347,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["a".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef::default(),
                 tolerance: 0.9,
                 blur: 0,
@@ -472,6 +475,7 @@ mod tests {
                 ActionKind::ImageSearch {
                     name: String::new(),
                     targets: vec![],
+                    target_tags: Vec::new(),
                     search_area: CoordinateRef(String::new()),
                     tolerance: 0.0,
                     blur: 0,

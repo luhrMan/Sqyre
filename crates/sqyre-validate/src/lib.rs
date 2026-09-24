@@ -602,6 +602,7 @@ fn validate_action_with(
         }
         ActionKind::ImageSearch {
             targets,
+            target_tags,
             search_area,
             detection,
             ..
@@ -612,8 +613,12 @@ fn validate_action_with(
                 if search_area.is_empty() {
                     issues.push("set a search area");
                 }
-                if targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()) {
-                    issues.push("add at least one target item");
+                let has_targets = targets.iter().any(|t| !t.trim().is_empty());
+                let has_include_tag = target_tags
+                    .iter()
+                    .any(|t| sqyre_domain::parse_tag_filter(t).is_some_and(|(include, _)| include));
+                if !has_targets && !has_include_tag {
+                    issues.push("add at least one target item or include (+ ) tag");
                 }
                 if !issues.is_empty() {
                     return Err(ValidateError::Message(format!(
@@ -1131,6 +1136,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec![],
+                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
@@ -1148,11 +1154,30 @@ mod tests {
         // Persist allows saving without items; tree/run still flag via Complete.
         assert!(validate_action_persist(&empty, None).is_ok());
 
+        let tags_only = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec![],
+                target_tags: vec!["+weapon".into()],
+                search_area: CoordinateRef("Game~Box".into()),
+                tolerance: 0.95,
+                blur: 5,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action(&tags_only, None).is_ok());
+
         let bad_wait = Action {
             id: ActionId::new(),
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec!["Game~Item".into()],
+                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
@@ -1186,6 +1211,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec![],
+                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
@@ -1285,6 +1311,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec!["Game~Item".into()],
+                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,

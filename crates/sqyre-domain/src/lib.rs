@@ -37,8 +37,9 @@ pub use color::{
 pub use expr::{evaluate_expression, numeric_to_scalar};
 pub use expr_error::{ExprError, ResolveError};
 pub use item_sort::{
-    apply_display_reorder, ordered_catalog_items, ordered_item_targets, CatalogItemSort,
-    ItemSortInfo,
+    apply_display_reorder, expand_image_search_targets, format_tag_filter,
+    item_matches_tag_filters, ordered_catalog_items, ordered_item_targets, parse_tag_filter,
+    tag_filter_name, CatalogItemRef, CatalogItemSort, ItemSortInfo,
 };
 pub use keys::{
     failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,

@@ -1452,6 +1452,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec![],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,

@@ -26,6 +26,9 @@ pub enum ActionKind {
     ImageSearch {
         name: String,
         targets: Vec<String>,
+        /// Catalog item tags: every item with any of these tags is searched
+        /// (union with [`targets`](Self::ImageSearch::targets), resolved at run time).
+        target_tags: Vec<String>,
         search_area: CoordinateRef,
         tolerance: f64,
         blur: i32,

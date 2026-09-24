@@ -298,6 +298,7 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: targets.into_iter().map(str::to_string).collect(),
+                target_tags: Vec::new(),
                 search_area: CoordinateRef(area.into()),
                 tolerance: 0.9,
                 blur: 0,

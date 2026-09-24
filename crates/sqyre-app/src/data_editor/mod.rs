@@ -1,4 +1,4 @@
-//! Floating Data Editor: Programs (Overlay) / Items (Masks) / Coordinates / Tools (ScreenCap, PixelCheck).
+//! Floating Data Editor: Programs (Overlay) / Items (Masks) / Coordinates / Tools (Screen capture, Match probe).
 
 const WINDOW_TITLE: &str = "Data Editor";
 
@@ -693,7 +693,10 @@ impl DataEditor {
                     self.apply_screen_cap_reference(env.catalog, coord);
                 }
             }
-            PickerResult::Items(targets) if matches!(self.tab, EditorTab::Overlay) => {
+            PickerResult::Items {
+                targets,
+                target_tags: _,
+            } if matches!(self.tab, EditorTab::Overlay) => {
                 self.form_overlay_gate_targets = targets;
             }
             _ => {}
@@ -817,8 +820,8 @@ impl DataEditor {
                         ui.selectable_value(&mut self.tab, EditorTab::Atlases, "Atlases");
                     }
                     EditorSection::Tools => {
-                        ui.selectable_value(&mut self.tab, EditorTab::ScreenCap, "ScreenCap");
-                        ui.selectable_value(&mut self.tab, EditorTab::PixelCheck, "PixelCheck");
+                        ui.selectable_value(&mut self.tab, EditorTab::ScreenCap, "Screen capture");
+                        ui.selectable_value(&mut self.tab, EditorTab::PixelCheck, "Match probe");
                     }
                 }
                 if self.tab != prev {
@@ -886,8 +889,11 @@ impl DataEditor {
             self.draw_left_list(&mut left_ui, env.catalog, env.icons, previews, env.settings);
         }
 
-        let split_resp =
-            ui.interact(split_rect, ui.id().with("de_split"), egui::Sense::click_and_drag());
+        let split_resp = ui.interact(
+            split_rect,
+            ui.id().with("de_split"),
+            egui::Sense::click_and_drag(),
+        );
         let stroke = if split_resp.hovered() || split_resp.dragged() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             ui.visuals().widgets.active.fg_stroke
@@ -1145,18 +1151,7 @@ impl DataEditor {
         let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", pending_scale, |ui| {
             ui.label("Variant name");
             ui.add(egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(220.0));
-            ui.horizontal(|ui| {
-                if ui.button("Cancel").clicked() {
-                    cancel = true;
-                }
-                if ui
-                    .button(egui::RichText::new("Add").color(crate::theme::MACRO_START))
-                    .clicked()
-                {
-                    submit = true;
-                }
-            });
-            match crate::widgets::poll_confirm_keys(ui) {
+            match crate::widgets::confirm_cancel_row(ui) {
                 crate::widgets::ConfirmCancel::Cancel => cancel = true,
                 crate::widgets::ConfirmCancel::Confirm => submit = true,
                 crate::widgets::ConfirmCancel::None => {}
@@ -1257,7 +1252,7 @@ impl DataEditor {
                 Ok(Err(e)) => {
                     self.pixel_check_pending = None;
                     self.pixel_check.paused = true;
-                    self.set_err(format!("PixelCheck: {e}"));
+                    self.set_err(format!("Match probe: {e}"));
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
                     ctx.request_repaint();
@@ -1265,7 +1260,7 @@ impl DataEditor {
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     self.pixel_check_pending = None;
                     self.pixel_check.paused = true;
-                    self.set_err("PixelCheck: match failed");
+                    self.set_err("Match probe: match failed");
                 }
             }
         }

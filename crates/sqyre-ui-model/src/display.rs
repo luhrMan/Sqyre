@@ -196,7 +196,9 @@ impl ActionDisplay for Action {
         }
         params
             .into_iter()
-            .filter(|p| !p.label.eq_ignore_ascii_case("Items"))
+            .filter(|p| {
+                !p.label.eq_ignore_ascii_case("Items") && !p.label.eq_ignore_ascii_case("Tags")
+            })
             .collect()
     }
 
@@ -313,6 +315,7 @@ impl ActionKindDisplay for ActionKind {
             Self::ImageSearch {
                 name,
                 targets,
+                target_tags,
                 search_area,
                 tolerance,
                 blur,
@@ -322,12 +325,15 @@ impl ActionKindDisplay for ActionKind {
             } => {
                 params.push(DisplayParam::new("Name", name.as_str()));
                 params.push(DisplayParam::new("Items", targets.len().to_string()));
+                if !target_tags.is_empty() {
+                    params.push(DisplayParam::new("Tags", target_tags.len().to_string()));
+                }
                 params.push(search_area_display_param(search_area));
                 params.push(DisplayParam::extra(
                     "Wait",
                     detection.wait.display_wait_mode("instant"),
                 ));
-                params.push(DisplayParam::extra("Method", match_method.label()));
+                params.push(DisplayParam::extra("Method", match_method.ui_label()));
                 params.push(DisplayParam::extra("Tolerance", format_float(*tolerance)));
                 params.push(DisplayParam::extra("Blur", blur.to_string()));
             }
