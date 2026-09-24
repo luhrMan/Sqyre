@@ -18,9 +18,7 @@ pub use backup::{
 pub use fs_name::{confined_join, is_safe_fs_entity_name, validate_fs_entity_name};
 pub use icon_fs_cache::{clear_icon_fs_cache, invalidate_icon_fs_cache_under};
 pub use import::{merge_databases_prefer_imported, ImportMode};
-pub use macro_yaml_draft::{
-    macro_yaml_builder_path, MacroYamlBuilderDrafts, MacroYamlDraftEntry,
-};
+pub use macro_yaml_draft::{macro_yaml_builder_path, MacroYamlBuilderDrafts, MacroYamlDraftEntry};
 pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
     absolute_area_to_relative, absolute_point_to_relative, ensure_general_program,

@@ -812,7 +812,12 @@ impl SqyreApp {
             CommandKind::OpenSettings => self.settings_ui.request_open(ctx),
             CommandKind::OpenVariables => self.variables_panel.open = true,
             CommandKind::OpenYamlMacroBuilder => {
-                if self.run_session.state.running.load(std::sync::atomic::Ordering::SeqCst) {
+                if self
+                    .run_session
+                    .state
+                    .running
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
                     *self.run_session.state.status.lock() =
                         "Cannot open YAML Macro Builder while a macro is running.".into();
                 } else {
