@@ -220,11 +220,9 @@ pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egu
 
 /// Icon-only record control (danger styling).
 pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled_ui(enabled, |ui| {
-        icon_button_colored(ui, "●", Some(MACRO_STOP))
-    })
-    .inner
-    .on_hover_text(tip)
+    ui.add_enabled_ui(enabled, |ui| icon_button_colored(ui, "●", Some(MACRO_STOP)))
+        .inner
+        .on_hover_text(tip)
 }
 
 /// Top-down mouse for Click button selection.
