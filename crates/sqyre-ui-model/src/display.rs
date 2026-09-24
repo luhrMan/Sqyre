@@ -1,8 +1,8 @@
 //! Display params and tree summary pills for actions.
 
 use sqyre_domain::{
-    Action, ActionKind, ConditionClause, ConditionOperator, CoordinateRef, LoopJumpMode, MatchMode,
-    RepeatMode, ScalarValue, WaitTilFoundConfig, EMPTY_NOT_SET,
+    action_type_label, Action, ActionKind, ConditionClause, ConditionOperator, CoordinateRef,
+    LoopJumpMode, MatchMode, RepeatMode, ScalarValue, WaitTilFoundConfig, EMPTY_NOT_SET,
 };
 
 /// One display parameter.
@@ -233,8 +233,11 @@ trait ActionKindDisplay {
 
 impl ActionKindDisplay for ActionKind {
     fn display_params(&self) -> Vec<DisplayParam> {
-        let type_key = self.type_key();
-        let mut params = vec![DisplayParam::new("Type", type_key)];
+        // User-visible Type always uses taxonomy labels; wire keys stay serde-only.
+        let mut params = vec![DisplayParam::new(
+            "Type",
+            action_type_label(self.type_key()),
+        )];
         match self {
             Self::Wait { time } => {
                 params.push(DisplayParam::new("Time", format_wait_time(time)));
