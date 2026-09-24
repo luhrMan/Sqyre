@@ -246,7 +246,7 @@ impl DataEditor {
                 );
                 ui.add_space(4.0);
                 let bound = if self.form_process_path.trim().is_empty() {
-                    "(none)".to_string()
+                    sqyre_domain::EMPTY_NONE.to_string()
                 } else if self.form_window_title.trim().is_empty() {
                     self.form_process_path.clone()
                 } else {
@@ -371,8 +371,8 @@ impl DataEditor {
                         "item_mask",
                         &mut current,
                         &masks,
-                        "(none)",
-                        Some("(none)"),
+                        sqyre_domain::EMPTY_NONE,
+                        Some(sqyre_domain::EMPTY_NONE),
                         None,
                         Some(&mut on_hover),
                         None,
@@ -698,7 +698,7 @@ impl DataEditor {
                         "collection_sa",
                         &mut current,
                         &areas,
-                        "(none)",
+                        sqyre_domain::EMPTY_NONE,
                         None,
                         None,
                         Some(&mut on_hover),
@@ -1069,7 +1069,7 @@ impl DataEditor {
                     &mut selected,
                     &macro_names,
                     "(pick macro)",
-                    Some("(none)"),
+                    Some(sqyre_domain::EMPTY_NONE),
                     Some(220.0),
                 )
                 .on_hover_text(help::DE_OVERLAY_MACRO);

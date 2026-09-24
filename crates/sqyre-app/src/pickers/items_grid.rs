@@ -115,11 +115,11 @@ pub fn paint_items_icon_grid(
             .filter(|t| selected.iter().any(|s| s == *t))
             .count();
         let all_label = if selected_in_group == 0 {
-            "All"
+            "Select all"
         } else if selected_in_group == targets.len() {
-            "None"
+            "Deselect all"
         } else {
-            "All"
+            "Select all"
         };
 
         // Absolute id so expand/collapse-all (outside this ui stack) can target the same state.
