@@ -87,3 +87,4 @@ web-time = "1"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 sha2 = "0.10"
 log = "0.4"
+jsonschema = { version = "0.37", default-features = false }

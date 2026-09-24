@@ -29,7 +29,7 @@ pub(crate) enum CommandKind {
     },
     OpenSettings,
     OpenVariables,
-    OpenAiMacroBuilder,
+    OpenYamlMacroBuilder,
     ShowMacroList,
     NewCatalogEntity {
         tab: EditorTab,
@@ -421,11 +421,11 @@ fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
         ));
     }
     out.push(item(
-        "Open AI Macro Builder",
+        "Open YAML Macro Builder",
         "Go to",
-        ph("magic-wand"),
-        CommandKind::OpenAiMacroBuilder,
-        &["ai", "prompt", "generate", "import", "goto"],
+        ph("code"),
+        CommandKind::OpenYamlMacroBuilder,
+        &["yaml", "import", "schema", "goto"],
     ));
     out.push(item(
         "Show Macro List",
@@ -725,7 +725,7 @@ fn kind_priority(kind: &CommandKind) -> u8 {
         CommandKind::AddAction { .. }
         | CommandKind::OpenSettings
         | CommandKind::OpenVariables
-        | CommandKind::OpenAiMacroBuilder
+        | CommandKind::OpenYamlMacroBuilder
         | CommandKind::ShowMacroList => 4,
         CommandKind::NewMacro | CommandKind::NewCatalogEntity { .. } => 5,
     }
@@ -741,7 +741,7 @@ fn is_static_command(kind: &CommandKind) -> bool {
         | CommandKind::OpenDataEditor
         | CommandKind::OpenSettings
         | CommandKind::OpenVariables
-        | CommandKind::OpenAiMacroBuilder
+        | CommandKind::OpenYamlMacroBuilder
         | CommandKind::ShowMacroList
         | CommandKind::NewCatalogEntity { .. } => true,
         CommandKind::OpenMacro { .. }
@@ -809,9 +809,17 @@ impl SqyreApp {
                     self.settings_ui.settings(),
                 );
             }
-            CommandKind::OpenSettings => self.settings_ui.open = true,
+            CommandKind::OpenSettings => self.settings_ui.request_open(ctx),
             CommandKind::OpenVariables => self.variables_panel.open = true,
-            CommandKind::OpenAiMacroBuilder => self.macro_prompt_builder.open_builder(),
+            CommandKind::OpenYamlMacroBuilder => {
+                if self.run_session.state.running.load(std::sync::atomic::Ordering::SeqCst) {
+                    *self.run_session.state.status.lock() =
+                        "Cannot open YAML Macro Builder while a macro is running.".into();
+                } else {
+                    let selected = self.workspace.macros.get(self.workspace.selected_macro);
+                    self.macro_yaml_builder.open_builder(selected);
+                }
+            }
             CommandKind::ShowMacroList => self.macro_list_open = true,
             CommandKind::NewCatalogEntity { tab } => {
                 let pending = self.pending_viewport_scale;

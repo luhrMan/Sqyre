@@ -35,7 +35,7 @@ mod key_record;
 mod linux_focused_keys;
 mod log;
 mod macro_meta;
-mod macro_prompt_builder;
+mod macro_yaml_builder;
 mod macro_record;
 #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
 mod mem_diag;
@@ -105,7 +105,7 @@ use hotkey_record::HotkeyRecordUi;
 use icon_cache::IconCache;
 use key_record::KeyRecordUi;
 use macro_meta::MacroMetaUi;
-use macro_prompt_builder::MacroPromptBuilderUi;
+use macro_yaml_builder::MacroYamlBuilderUi;
 use macro_record::MacroRecordUi;
 use parking_lot::Mutex;
 use preview_tooltip::PreviewTooltipCache;
@@ -328,7 +328,7 @@ pub struct SqyreApp {
     data_editor: DataEditor,
     settings_ui: SettingsUi,
     variables_panel: variables_panel::VariablesPanelUi,
-    macro_prompt_builder: MacroPromptBuilderUi,
+    macro_yaml_builder: MacroYamlBuilderUi,
     /// Window was hidden because a point/search-area recording is armed.
     hidden_for_recording: bool,
     /// Outline windows for live search-area selection rect.
@@ -458,7 +458,7 @@ impl SqyreApp {
             Ok((mut db, load_warnings)) => {
                 let mut catalog = Arc::unwrap_or_clone(db.program_catalog().unwrap_or_default());
                 let mut macros: Vec<_> = db.macros.values().cloned().collect();
-                macros.sort_by(|a, b| a.name.cmp(&b.name));
+                macros.sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
                 #[cfg(target_arch = "wasm32")]
                 {
                     apply_main_monitor_resolution(&mut catalog);
@@ -564,7 +564,7 @@ impl SqyreApp {
             data_editor: DataEditor::default(),
             settings_ui,
             variables_panel: variables_panel::VariablesPanelUi::default(),
-            macro_prompt_builder: MacroPromptBuilderUi::default(),
+            macro_yaml_builder: MacroYamlBuilderUi::default(),
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: recording_overlay::RecordingOverlay::new(),
@@ -735,8 +735,6 @@ impl eframe::App for SqyreApp {
             return;
         }
         ui_overlays::show_floating_windows(self, ui.ctx());
-        ui_overlays::handle_shortcuts(self, ui);
-        ui_overlays::show_command_palette(self, ui.ctx());
 
         ui_macro_list::show(self, ui);
 
@@ -767,8 +765,16 @@ impl eframe::App for SqyreApp {
             let force_openness = ui_toolbar::action_toolbar(self, ui);
             ui_macro_tree::show(self, ui, force_openness);
         });
+
         // After tips/panels paint so tooltip preview outlines apply this frame.
         self.sync_recording_overlay(ui.ctx());
+
+        // Modal sits above painted Sqyre chrome; skip shortcuts/palette while open.
+        if self.macro_yaml_builder.is_open() {
+            return;
+        }
+        ui_overlays::handle_shortcuts(self, ui);
+        ui_overlays::show_command_palette(self, ui.ctx());
     }
 
     /// Fully transparent clear so deferred overlay viewports (`with_transparent(true)`)

@@ -194,16 +194,20 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             app.persist_macro_at(idx);
         }
     }
-    match app.macro_prompt_builder.show(
+    match app.macro_yaml_builder.show(
         ctx,
         &app.workspace.macros,
         &app.workspace.catalog,
         pending_scale,
+        app.run_session.state.running.load(Ordering::SeqCst),
     ) {
-        crate::macro_prompt_builder::PromptBuilderOutcome::ImportMacro(macro_) => {
-            app.import_macro_from_prompt_builder(*macro_);
+        crate::macro_yaml_builder::YamlBuilderOutcome::ApplyMacro(macro_) => {
+            app.apply_macro_from_yaml_builder(*macro_);
         }
-        crate::macro_prompt_builder::PromptBuilderOutcome::None => {}
+        crate::macro_yaml_builder::YamlBuilderOutcome::ImportMacro(macro_) => {
+            app.import_macro_from_yaml_builder(*macro_);
+        }
+        crate::macro_yaml_builder::YamlBuilderOutcome::None => {}
     }
     if let Some(action) = {
         let catalog = &app.workspace.catalog;
