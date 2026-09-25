@@ -3,7 +3,11 @@
 //! Run: `cargo bench -p sqyre-match` or `make bench`.
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use sqyre_match::{match_template, ImageBuf, MatchMethod};
+use rayon::prelude::*;
+use sqyre_match::{
+    match_template, match_template_with_prepared, prepare_search, prepare_template, ImageBuf,
+    MatchMethod,
+};
 use std::hint::black_box;
 use std::time::Duration;
 
@@ -55,11 +59,40 @@ fn bench_match(c: &mut Criterion) {
     });
 }
 
+/// Nested Rayon (M-1) baseline: N variants share one search / [`SearchPrep`],
+/// matched via outer `par_iter` (inner match serializes rows on pool workers).
+fn bench_multi_variant(c: &mut Criterion) {
+    const N: usize = 8;
+    let search = random_rgb(160, 120, 10);
+    let prep = prepare_search(&search);
+    let variants: Vec<_> = (0..N)
+        .map(|i| {
+            let tmpl = random_rgb(16, 12, 100 + i as u64);
+            let prepared = prepare_template(&tmpl, None, MatchMethod::CcoeffNormed).unwrap();
+            (tmpl, prepared)
+        })
+        .collect();
+
+    c.bench_function("match_8_variants_shared_prep_160x120_t16x12", |b| {
+        b.iter(|| {
+            variants.par_iter().for_each(|(tmpl, prepared)| {
+                let _ = match_template_with_prepared(
+                    black_box(&search),
+                    black_box(tmpl),
+                    black_box(prepared),
+                    Some(black_box(&prep)),
+                )
+                .unwrap();
+            });
+        });
+    });
+}
+
 criterion_group! {
     name = benches;
     config = Criterion::default()
         .warm_up_time(Duration::from_millis(500))
         .measurement_time(Duration::from_secs(1));
-    targets = bench_match
+    targets = bench_match, bench_multi_variant
 }
 criterion_main!(benches);

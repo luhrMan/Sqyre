@@ -38,6 +38,17 @@ pub enum MatchError {
 /// Switch to FFT when direct correlation would touch this many pixel·channel ops.
 const FFT_DIRECT_COST_THRESHOLD: u64 = 4_000_000;
 
+/// True when this thread is already a Rayon pool worker.
+///
+/// Image Search runs an outer `par_iter` over targets/placements; each job then
+/// matches templates. Nested row/channel `par_iter` would oversubscribe the pool,
+/// so hot match paths stay serial when this returns true. Callers that are not
+/// already on the pool (single-variant / unit tests) still get row parallelism.
+#[inline]
+fn on_rayon_worker() -> bool {
+    rayon::current_thread_index().is_some()
+}
+
 /// OpenCV `matchTemplate` with optional binary CV_8U mask.
 ///
 /// Large unmasked searches use DFT cross-correlation (OpenCV `crossCorr` path).
@@ -333,76 +344,80 @@ fn match_direct(
     };
 
     let mut scores = vec![0.0_f32; out_w * out_h];
-    scores
-        .par_chunks_mut(out_w)
-        .enumerate()
-        .for_each(|(oy, row)| {
-            DIRECT_SCRATCH.with(|cell_scratch| {
-                let scratch = &mut *cell_scratch.borrow_mut();
-                scratch.reset(out_w, ch);
-                let DirectScratch {
-                    numer,
-                    sum_sq,
-                    sums,
-                } = scratch;
-                crate::corr_simd::accumulate_corr_row(planar, tmpl, oy, numer);
+    let score_row = |oy: usize, row: &mut [f32]| {
+        DIRECT_SCRATCH.with(|cell_scratch| {
+            let scratch = &mut *cell_scratch.borrow_mut();
+            scratch.reset(out_w, ch);
+            let DirectScratch {
+                numer,
+                sum_sq,
+                sums,
+            } = scratch;
+            crate::corr_simd::accumulate_corr_row(planar, tmpl, oy, numer);
 
-                if let Some(integ) = integ {
-                    let stride = integ.width + 1;
-                    for (ox, cell) in row.iter_mut().enumerate() {
-                        let mut i_sq = 0.0_f64;
-                        let mut i_prime_sq = 0.0_f64;
-                        for c in 0..ch {
-                            let s = rect_sum(&integ.sum[c], stride, ox, oy, tw, th);
-                            let sq = rect_sum(&integ.sumsq[c], stride, ox, oy, tw, th);
-                            i_sq += sq;
-                            i_prime_sq += sq - (s * s) / n;
-                        }
-                        *cell = finish_score(
-                            method,
-                            numer[ox] as f64,
-                            i_sq,
-                            i_prime_sq.max(0.0),
-                            t_energy,
-                        );
+            if let Some(integ) = integ {
+                let stride = integ.width + 1;
+                for (ox, cell) in row.iter_mut().enumerate() {
+                    let mut i_sq = 0.0_f64;
+                    let mut i_prime_sq = 0.0_f64;
+                    for c in 0..ch {
+                        let s = rect_sum(&integ.sum[c], stride, ox, oy, tw, th);
+                        let sq = rect_sum(&integ.sumsq[c], stride, ox, oy, tw, th);
+                        i_sq += sq;
+                        i_prime_sq += sq - (s * s) / n;
                     }
-                } else if ccoeff {
-                    // Masked CCOEFF: ΣT'=0 ⇒ numer = Σ T'·I. Energy: ΣI² − Σ_c (ΣI_c)²/n.
-                    crate::corr_simd::accumulate_sum_sq_row(planar, tmpl, oy, sum_sq);
-                    crate::corr_simd::accumulate_channel_sums_row(planar, tmpl, oy, sums);
-                    for (ox, cell) in row.iter_mut().enumerate() {
-                        let mut i_prime = sum_sq[ox] as f64;
-                        for channel_sum in sums.iter().take(ch) {
-                            let s = channel_sum[ox] as f64;
-                            i_prime -= (s * s) / n;
-                        }
-                        *cell = match method {
-                            MatchMethod::Ccoeff => numer[ox],
-                            MatchMethod::CcoeffNormed => {
-                                let denom = (t_energy * i_prime.max(0.0)).sqrt();
-                                if denom > f64::EPSILON {
-                                    (numer[ox] as f64 / denom) as f32
-                                } else {
-                                    0.0
-                                }
-                            }
-                            _ => unreachable!("ccoeff branch"),
-                        };
-                    }
-                } else {
-                    crate::corr_simd::accumulate_sum_sq_row(planar, tmpl, oy, sum_sq);
-                    for (ox, cell) in row.iter_mut().enumerate() {
-                        *cell = finish_score(
-                            method,
-                            numer[ox] as f64,
-                            sum_sq[ox] as f64,
-                            0.0,
-                            t_energy,
-                        );
-                    }
+                    *cell = finish_score(
+                        method,
+                        numer[ox] as f64,
+                        i_sq,
+                        i_prime_sq.max(0.0),
+                        t_energy,
+                    );
                 }
-            });
+            } else if ccoeff {
+                // Masked CCOEFF: ΣT'=0 ⇒ numer = Σ T'·I. Energy: ΣI² − Σ_c (ΣI_c)²/n.
+                crate::corr_simd::accumulate_sum_sq_row(planar, tmpl, oy, sum_sq);
+                crate::corr_simd::accumulate_channel_sums_row(planar, tmpl, oy, sums);
+                for (ox, cell) in row.iter_mut().enumerate() {
+                    let mut i_prime = sum_sq[ox] as f64;
+                    for channel_sum in sums.iter().take(ch) {
+                        let s = channel_sum[ox] as f64;
+                        i_prime -= (s * s) / n;
+                    }
+                    *cell = match method {
+                        MatchMethod::Ccoeff => numer[ox],
+                        MatchMethod::CcoeffNormed => {
+                            let denom = (t_energy * i_prime.max(0.0)).sqrt();
+                            if denom > f64::EPSILON {
+                                (numer[ox] as f64 / denom) as f32
+                            } else {
+                                0.0
+                            }
+                        }
+                        _ => unreachable!("ccoeff branch"),
+                    };
+                }
+            } else {
+                crate::corr_simd::accumulate_sum_sq_row(planar, tmpl, oy, sum_sq);
+                for (ox, cell) in row.iter_mut().enumerate() {
+                    *cell =
+                        finish_score(method, numer[ox] as f64, sum_sq[ox] as f64, 0.0, t_energy);
+                }
+            }
         });
+    };
+
+    // Outer Image Search `par_iter` already owns the pool; stay serial there.
+    if on_rayon_worker() {
+        for (oy, row) in scores.chunks_mut(out_w).enumerate() {
+            score_row(oy, row);
+        }
+    } else {
+        scores
+            .par_chunks_mut(out_w)
+            .enumerate()
+            .for_each(|(oy, row)| score_row(oy, row));
+    }
 
     Ok(MatchMap {
         width: out_w,
@@ -543,7 +558,8 @@ pub fn clear_match_scratch() {
 ///
 /// When `parallel` is false, channels are transformed on the calling thread so
 /// single-flight builders can run safely while other rayon workers wait on a
-/// gate (nested `par_iter` would otherwise deadlock the pool).
+/// gate (nested `par_iter` would otherwise deadlock the pool), and so outer
+/// Image Search `par_iter` jobs do not nest another channel-level pool.
 fn forward_fft_search(search: &ImageBuf, dft_w: usize, dft_h: usize, parallel: bool) -> SearchFft {
     let ch = search.channels;
     let area = dft_w * dft_h;
@@ -592,61 +608,75 @@ fn match_fft(
     let area = dft_w * dft_h;
     let scale = 1.0_f32 / area as f32;
 
+    // Nested under Image Search's outer `par_iter`: keep channel / row work serial.
+    let parallel_inner = !on_rayon_worker();
+
     let owned_search_fft;
     let search_fft: &[Vec<Complex<f32>>] = if let Some(prep) = search_prep {
         owned_search_fft = prep.fft_for_size(search, dft_w, dft_h);
         owned_search_fft.as_ref()
     } else {
-        owned_search_fft = Arc::new(forward_fft_search(search, dft_w, dft_h, true));
+        owned_search_fft = Arc::new(forward_fft_search(search, dft_w, dft_h, parallel_inner));
         owned_search_fft.as_ref()
     };
 
-    let channel_numers: Vec<Vec<f32>> = (0..ch)
-        .into_par_iter()
-        .map(|c| {
-            FFT_SCRATCH.with(|s| {
-                let FftScratch {
-                    planner,
-                    img,
-                    tmpl,
-                    col,
-                } = &mut *s.borrow_mut();
+    let channel_fft = |c: usize| {
+        FFT_SCRATCH.with(|s| {
+            let FftScratch {
+                planner,
+                img,
+                tmpl,
+                col,
+            } = &mut *s.borrow_mut();
 
-                // Overwritten wholesale, so no need to clear first.
-                img.clear();
-                img.extend_from_slice(&search_fft[c]);
-                // Only sparse positions are written below; the rest must be zero.
-                tmpl.clear();
-                tmpl.resize(area, Complex::new(0.0, 0.0));
-                for i in 0..pack.len() {
-                    let x = pack.xs[i] as usize;
-                    let y = pack.ys[i] as usize;
-                    tmpl[y * dft_w + x] = Complex::new(pack.vals_at(i)[c] as f32, 0.0);
-                }
+            // Overwritten wholesale, so no need to clear first.
+            img.clear();
+            img.extend_from_slice(&search_fft[c]);
+            // Only sparse positions are written below; the rest must be zero.
+            tmpl.clear();
+            tmpl.resize(area, Complex::new(0.0, 0.0));
+            for i in 0..pack.len() {
+                let x = pack.xs[i] as usize;
+                let y = pack.ys[i] as usize;
+                tmpl[y * dft_w + x] = Complex::new(pack.vals_at(i)[c] as f32, 0.0);
+            }
 
-                fft2d_forward(tmpl, dft_w, dft_h, planner, col);
-                crate::corr_simd::complex_mul_conj(img, tmpl);
-                fft2d_inverse(img, dft_w, dft_h, planner, col);
+            fft2d_forward(tmpl, dft_w, dft_h, planner, col);
+            crate::corr_simd::complex_mul_conj(img, tmpl);
+            fft2d_inverse(img, dft_w, dft_h, planner, col);
 
-                let mut out = vec![0.0_f32; out_w * out_h];
-                let arch = pulp::Arch::new();
-                arch.dispatch(|| {
-                    for y in 0..out_h {
-                        for x in 0..out_w {
-                            out[y * out_w + x] = img[y * dft_w + x].re * scale;
-                        }
+            let mut out = vec![0.0_f32; out_w * out_h];
+            let arch = pulp::Arch::new();
+            arch.dispatch(|| {
+                for y in 0..out_h {
+                    for x in 0..out_w {
+                        out[y * out_w + x] = img[y * dft_w + x].re * scale;
                     }
-                });
-                out
-            })
+                }
+            });
+            out
         })
-        .collect();
+    };
+
+    let channel_numers: Vec<Vec<f32>> = if parallel_inner {
+        (0..ch).into_par_iter().map(channel_fft).collect()
+    } else {
+        (0..ch).map(channel_fft).collect()
+    };
 
     let mut corr = vec![0.0_f32; out_w * out_h];
-    for ch_num in channel_numers {
-        corr.par_iter_mut()
-            .zip(ch_num.into_par_iter())
-            .for_each(|(dst, v)| *dst += v);
+    if parallel_inner {
+        for ch_num in channel_numers {
+            corr.par_iter_mut()
+                .zip(ch_num.into_par_iter())
+                .for_each(|(dst, v)| *dst += v);
+        }
+    } else {
+        for ch_num in channel_numers {
+            for (dst, v) in corr.iter_mut().zip(ch_num) {
+                *dst += v;
+            }
+        }
     }
 
     if method == MatchMethod::Ccorr {
@@ -668,23 +698,30 @@ fn match_fft(
     let n = pack.n;
     let t_energy = pack.t_energy;
     let mut scores = vec![0.0_f32; out_w * out_h];
-    scores
-        .par_chunks_mut(out_w)
-        .enumerate()
-        .for_each(|(oy, row)| {
-            for ox in 0..out_w {
-                let mut i_sq = 0.0_f64;
-                let mut i_prime_sq = 0.0_f64;
-                for c in 0..ch {
-                    let s = rect_sum(&integ.sum[c], stride, ox, oy, tw, th);
-                    let sq = rect_sum(&integ.sumsq[c], stride, ox, oy, tw, th);
-                    i_sq += sq;
-                    i_prime_sq += sq - (s * s) / n;
-                }
-                let numer = corr[oy * out_w + ox] as f64;
-                row[ox] = finish_score(method, numer, i_sq, i_prime_sq.max(0.0), t_energy);
+    let finish_row = |oy: usize, row: &mut [f32]| {
+        for ox in 0..out_w {
+            let mut i_sq = 0.0_f64;
+            let mut i_prime_sq = 0.0_f64;
+            for c in 0..ch {
+                let s = rect_sum(&integ.sum[c], stride, ox, oy, tw, th);
+                let sq = rect_sum(&integ.sumsq[c], stride, ox, oy, tw, th);
+                i_sq += sq;
+                i_prime_sq += sq - (s * s) / n;
             }
-        });
+            let numer = corr[oy * out_w + ox] as f64;
+            row[ox] = finish_score(method, numer, i_sq, i_prime_sq.max(0.0), t_energy);
+        }
+    };
+    if parallel_inner {
+        scores
+            .par_chunks_mut(out_w)
+            .enumerate()
+            .for_each(|(oy, row)| finish_row(oy, row));
+    } else {
+        for (oy, row) in scores.chunks_mut(out_w).enumerate() {
+            finish_row(oy, row);
+        }
+    }
 
     Ok(MatchMap {
         width: out_w,
@@ -1262,5 +1299,41 @@ mod tests {
         clear_match_scratch();
         let again = match_template(&search, &tmpl, None, MatchMethod::CcoeffNormed).unwrap();
         assert!(!again.scores.is_empty());
+    }
+
+    /// Nested under `par_iter`, match must stay serial on rows but scores must
+    /// match the off-pool (row-parallel) path.
+    #[test]
+    fn nested_rayon_match_scores_match_off_pool() {
+        let tmpl = patterned(12, 10);
+        let mut search = gray(64, 48, 20);
+        search.stamp(&tmpl, 10, 8);
+        let prep = prepare_search(&search);
+        let prepared = prepare_template(&tmpl, None, MatchMethod::CcoeffNormed).unwrap();
+        let off_pool =
+            match_template_with_prepared(&search, &tmpl, &prepared, Some(&prep)).unwrap();
+
+        let on_pool: Vec<_> = (0..4)
+            .into_par_iter()
+            .map(|_| {
+                assert!(
+                    rayon::current_thread_index().is_some(),
+                    "expected Rayon worker"
+                );
+                match_template_with_prepared(&search, &tmpl, &prepared, Some(&prep)).unwrap()
+            })
+            .collect();
+
+        for map in &on_pool {
+            assert_eq!(map.width, off_pool.width);
+            assert_eq!(map.height, off_pool.height);
+            assert_eq!(map.scores.len(), off_pool.scores.len());
+            for (a, b) in map.scores.iter().zip(off_pool.scores.iter()) {
+                assert!(
+                    (a - b).abs() < 1e-5,
+                    "score drift nested vs off-pool: {a} vs {b}"
+                );
+            }
+        }
     }
 }
