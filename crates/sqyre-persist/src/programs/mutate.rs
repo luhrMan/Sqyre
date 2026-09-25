@@ -1,4 +1,4 @@
-//! Program catalog mutations (CRUD, YAML encode, disk side effects).
+//! Program catalog mutations (YAML encode, disk side effects).
 
 use super::{
     delete_named_entity, delete_resolution_entity, encode_program, rename_keyed_map,
@@ -199,6 +199,10 @@ impl ProgramCatalog {
     }
 
     /// Move `{old}.png` and `{old}~*.png` icon files to the new item name.
+    ///
+    /// Clears any existing dest path first so overwrite-rename (Data Editor
+    /// `delete_item` then `rename_item`) always leaves the source icons under
+    /// the new name, including on platforms where `rename` cannot replace.
     fn rename_item_icon_files(&self, program: &str, old: &str, new: &str) {
         let dir = self.icons_dir(program);
         let prefix = format!("{old}{PROGRAM_DELIMITER}");
@@ -210,7 +214,10 @@ impl ProgramCatalog {
                 format!("{new}{PROGRAM_DELIMITER}{}", &name[prefix.len()..])
             };
             let dest = dir.join(dest_name);
-            let _ = std::fs::rename(path, dest);
+            if dest.exists() {
+                let _ = std::fs::remove_file(&dest);
+            }
+            let _ = std::fs::rename(path, &dest);
         });
         crate::invalidate_icon_fs_cache_under(&dir);
     }
@@ -223,16 +230,23 @@ impl ProgramCatalog {
         Ok(())
     }
 
-    /// Move `{name}.png` and `{name}~*.png` into `images/ScreenCap/trash/{program}/`.
+    /// Clear `{name}.png` and `{name}~*.png` from `icons_dir(program)`.
+    ///
+    /// Prefer moving into `images/ScreenCap/trash/{program}/`; if trash is
+    /// unavailable, remove the files so Image Search cannot keep finding them
+    /// and overwrite-rename can claim the destination names.
     fn trash_item_icon_files(&self, program: &str, name: &str) {
         let dir = self.icons_dir(program);
         let trash = self.screen_cap_trash_dir(program);
-        if std::fs::create_dir_all(&trash).is_err() {
-            return;
-        }
+        let trash_ok = std::fs::create_dir_all(&trash).is_ok();
         visit_item_icon_files(&dir, name, |path, file_name| {
-            let dest = unique_dest(&trash, file_name);
-            let _ = std::fs::rename(path, dest);
+            if trash_ok {
+                let dest = unique_dest(&trash, file_name);
+                if std::fs::rename(&path, &dest).is_ok() {
+                    return;
+                }
+            }
+            let _ = std::fs::remove_file(path);
         });
         crate::invalidate_icon_fs_cache_under(&dir);
     }

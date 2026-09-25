@@ -757,6 +757,154 @@ Game:
     }
 
     #[test]
+    fn delete_item_not_found_returns_err() {
+        let mut cat = ProgramCatalog::default();
+        cat.create_program("Alpha").unwrap();
+        let err = cat.delete_item("Alpha", "Missing").unwrap_err();
+        assert!(
+            err.to_string().contains("not found"),
+            "expected not-found message, got {err}"
+        );
+        let err = cat.delete_item("NoProg", "Potion").unwrap_err();
+        assert!(
+            err.to_string().contains("not found"),
+            "expected program not-found, got {err}"
+        );
+    }
+
+    #[test]
+    fn rename_item_moves_icon_files() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let icons = images.join("icons").join("Alpha");
+        std::fs::create_dir_all(&icons).unwrap();
+        std::fs::write(icons.join("Potion.png"), b"legacy").unwrap();
+        std::fs::write(icons.join("Potion~Original.png"), b"orig").unwrap();
+        std::fs::write(icons.join("Potion~Alt.png"), b"alt").unwrap();
+        std::fs::write(icons.join("Other~Original.png"), b"keep").unwrap();
+
+        cat.rename_item("Alpha", "Potion", "Elixir").unwrap();
+
+        assert!(!cat.get("Alpha").unwrap().items.contains_key("Potion"));
+        assert!(cat.get("Alpha").unwrap().items.contains_key("Elixir"));
+        assert!(!icons.join("Potion.png").exists());
+        assert!(!icons.join("Potion~Original.png").exists());
+        assert!(!icons.join("Potion~Alt.png").exists());
+        assert_eq!(std::fs::read(icons.join("Elixir.png")).unwrap(), b"legacy");
+        assert_eq!(
+            std::fs::read(icons.join("Elixir~Original.png")).unwrap(),
+            b"orig"
+        );
+        assert_eq!(std::fs::read(icons.join("Elixir~Alt.png")).unwrap(), b"alt");
+        assert_eq!(
+            std::fs::read(icons.join("Other~Original.png")).unwrap(),
+            b"keep"
+        );
+    }
+
+    #[test]
+    fn overwrite_rename_item_leaves_only_source_icons() {
+        // Mirrors Data Editor overwrite-rename: delete target, then rename source.
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        for name in ["Source", "Target"] {
+            cat.upsert_item(
+                "Alpha",
+                ProgramItem {
+                    name: name.into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+
+        let icons = images.join("icons").join("Alpha");
+        std::fs::create_dir_all(&icons).unwrap();
+        std::fs::write(icons.join("Source.png"), b"src-legacy").unwrap();
+        std::fs::write(icons.join("Source~Original.png"), b"src-orig").unwrap();
+        std::fs::write(icons.join("Target.png"), b"tgt-legacy").unwrap();
+        std::fs::write(icons.join("Target~Alt.png"), b"tgt-alt").unwrap();
+        std::fs::write(icons.join("Other~Keep.png"), b"keep").unwrap();
+
+        cat.delete_item("Alpha", "Target").unwrap();
+        cat.rename_item("Alpha", "Source", "Target").unwrap();
+
+        assert!(!cat.get("Alpha").unwrap().items.contains_key("Source"));
+        assert!(cat.get("Alpha").unwrap().items.contains_key("Target"));
+        assert_eq!(
+            std::fs::read(icons.join("Target.png")).unwrap(),
+            b"src-legacy"
+        );
+        assert_eq!(
+            std::fs::read(icons.join("Target~Original.png")).unwrap(),
+            b"src-orig"
+        );
+        assert!(!icons.join("Target~Alt.png").exists());
+        assert!(!icons.join("Source.png").exists());
+        assert!(!icons.join("Source~Original.png").exists());
+        assert_eq!(
+            std::fs::read(icons.join("Other~Keep.png")).unwrap(),
+            b"keep"
+        );
+        let trash = images.join("ScreenCap").join("trash").join("Alpha");
+        assert_eq!(
+            std::fs::read(trash.join("Target.png")).unwrap(),
+            b"tgt-legacy"
+        );
+        assert_eq!(
+            std::fs::read(trash.join("Target~Alt.png")).unwrap(),
+            b"tgt-alt"
+        );
+    }
+
+    #[test]
+    fn rename_item_icon_files_replace_existing_dest() {
+        // Dest PNGs without a map entry (or leftover after a failed clear) must
+        // not block rename — overwrite always leaves the source bytes.
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: "Source".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let icons = images.join("icons").join("Alpha");
+        std::fs::create_dir_all(&icons).unwrap();
+        std::fs::write(icons.join("Source~Original.png"), b"from-source").unwrap();
+        std::fs::write(icons.join("Target~Original.png"), b"orphan-dest").unwrap();
+
+        cat.rename_item("Alpha", "Source", "Target").unwrap();
+
+        assert_eq!(
+            std::fs::read(icons.join("Target~Original.png")).unwrap(),
+            b"from-source"
+        );
+        assert!(!icons.join("Source~Original.png").exists());
+    }
+
+    #[test]
     fn clear_points_wipes_all_resolution_buckets() {
         let mut cat = ProgramCatalog::default();
         cat.set_resolution_key("1920x1080");
