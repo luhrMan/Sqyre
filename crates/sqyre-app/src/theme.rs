@@ -3,7 +3,10 @@
 //! Brand/semantic colors live in [`sqyre_ui_theme`]; this module re-exports them
 //! and hosts app-only visuals + widgets.
 
-use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Stroke, Vec2, Visuals};
+use eframe::egui::{
+    self, Color32, CornerRadius, Key, Modifiers, Pos2, Sense, Stroke, Vec2, Visuals, WidgetInfo,
+    WidgetType,
+};
 
 pub use sqyre_ui_theme::{
     accent_dim, chip_fill, contrast_fg, error_fg, frame_fill, inner_stroke, ok_fg,
@@ -324,9 +327,78 @@ pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::
         .on_hover_text(tip)
 }
 
+/// Visual / keyboard order for [`press_state_toggle`] (top → bottom).
+const PRESS_STATE_ORDER: &[sqyre_domain::PressState] = &[
+    sqyre_domain::PressState::Up,
+    sqyre_domain::PressState::Tap,
+    sqyre_domain::PressState::Down,
+];
+
+fn press_state_label(state: sqyre_domain::PressState) -> &'static str {
+    match state {
+        sqyre_domain::PressState::Up => "Up",
+        sqyre_domain::PressState::Tap => "Tap",
+        sqyre_domain::PressState::Down => "Down",
+    }
+}
+
+/// Wrap-step index into `options` by `delta` (−1 / +1).
+fn cycle_index(len: usize, idx: usize, delta: i32) -> usize {
+    debug_assert!(len > 0);
+    ((idx as i32 + delta).rem_euclid(len as i32)) as usize
+}
+
+/// Next value from `options` when focused and an arrow key is pressed.
+///
+/// Right/Down advance; Left/Up retreat. Returns `true` when the value changed.
+fn cycle_focused_option<T: Copy + PartialEq>(
+    ui: &mut egui::Ui,
+    focused: bool,
+    value: &mut T,
+    options: &[T],
+) -> bool {
+    if !focused || options.is_empty() {
+        return false;
+    }
+    let delta = ui.input_mut(|i| {
+        if i.consume_key(Modifiers::NONE, Key::ArrowRight)
+            || i.consume_key(Modifiers::NONE, Key::ArrowDown)
+        {
+            Some(1)
+        } else if i.consume_key(Modifiers::NONE, Key::ArrowLeft)
+            || i.consume_key(Modifiers::NONE, Key::ArrowUp)
+        {
+            Some(-1)
+        } else {
+            None
+        }
+    });
+    let Some(delta) = delta else {
+        return false;
+    };
+    let idx = options.iter().position(|o| *o == *value).unwrap_or(0);
+    let next = options[cycle_index(options.len(), idx, delta)];
+    if next == *value {
+        return false;
+    }
+    *value = next;
+    true
+}
+
+/// AccessKit name + current value (ComboBox role, matching egui's closed combo).
+fn valued_control_info(enabled: bool, name: &str, value: &str) -> WidgetInfo {
+    WidgetInfo {
+        enabled,
+        label: Some(name.to_owned()),
+        current_text_value: Some(value.to_owned()),
+        ..WidgetInfo::new(WidgetType::ComboBox)
+    }
+}
+
 /// Top-down mouse for Click button selection.
 ///
 /// Left / right buttons, center wheel (middle), lower body (scroll).
+/// Arrow keys cycle when focused; AccessKit announces name + current button.
 pub fn mouse_button_picker(
     ui: &mut egui::Ui,
     button: &mut sqyre_domain::MouseButton,
@@ -371,6 +443,9 @@ pub fn mouse_button_picker(
             *button = hit(pos);
             response.mark_changed();
         }
+    }
+    if cycle_focused_option(ui, response.has_focus(), button, MouseButton::ALL) {
+        response.mark_changed();
     }
 
     let hover_btn = response.hover_pos().map(hit).filter(|_| response.hovered());
@@ -482,18 +557,16 @@ pub fn mouse_button_picker(
         );
     }
 
-    let tip = match hover_btn.unwrap_or(*button) {
-        MouseButton::Left => "Left",
-        MouseButton::Right => "Right",
-        MouseButton::Middle => "Middle",
-        MouseButton::Scroll => "Scroll",
-    };
+    let tip = hover_btn.unwrap_or(*button).label();
+    let enabled = ui.is_enabled();
+    let value = button.label();
+    response.widget_info(|| valued_control_info(enabled, "Mouse button", value));
     response.on_hover_text(tip)
 }
 
 /// Vertical up / tap / down switch for Click/Key press state.
 ///
-/// Top = up, middle = tap, bottom = down. Click toggles; click a zone to set.
+/// Top = up, middle = tap, bottom = down. Click a zone to set; arrows cycle when focused.
 pub fn press_state_toggle(
     ui: &mut egui::Ui,
     state: &mut sqyre_domain::PressState,
@@ -527,6 +600,9 @@ pub fn press_state_toggle(
         }
         response.mark_changed();
     }
+    if cycle_focused_option(ui, response.has_focus(), state, PRESS_STATE_ORDER) {
+        response.mark_changed();
+    }
 
     let visuals = ui.style().interact(&response);
     let track_fill = if matches!(*state, PressState::Down) {
@@ -557,20 +633,20 @@ pub fn press_state_toggle(
         visuals.fg_stroke.color,
     );
 
-    response.on_hover_text(match *state {
-        PressState::Up => "Up",
-        PressState::Tap => "Tap",
-        PressState::Down => "Down",
-    })
+    let tip = press_state_label(*state);
+    let enabled = ui.is_enabled();
+    response.widget_info(|| valued_control_info(enabled, "Press state", tip));
+    response.on_hover_text(tip)
 }
 
 /// Vertical up↔down switch for Click/Key button state (`true` = down).
 ///
-/// Top of the track is up; bottom is down. Click toggles; click a half to set.
+/// Top of the track is up; bottom is down. Click a half to set; arrows cycle when focused.
 pub fn up_down_toggle(ui: &mut egui::Ui, down: &mut bool) -> egui::Response {
     const TRACK_W: f32 = 18.0;
     const TRACK_H: f32 = 36.0;
     const PAD: f32 = 2.0;
+    const ORDER: &[bool] = &[false, true];
 
     let desired = Vec2::new(TRACK_W, TRACK_H);
     let (rect, mut response) = ui.allocate_exact_size(desired, Sense::click());
@@ -581,6 +657,9 @@ pub fn up_down_toggle(ui: &mut egui::Ui, down: &mut bool) -> egui::Response {
         } else {
             *down = !*down;
         }
+        response.mark_changed();
+    }
+    if cycle_focused_option(ui, response.has_focus(), down, ORDER) {
         response.mark_changed();
     }
 
@@ -609,12 +688,17 @@ pub fn up_down_toggle(ui: &mut egui::Ui, down: &mut bool) -> egui::Response {
         visuals.fg_stroke.color,
     );
 
-    response.on_hover_text(if *down { "Down" } else { "Up" })
+    let tip = if *down { "Down" } else { "Up" };
+    let enabled = ui.is_enabled();
+    response.widget_info(|| valued_control_info(enabled, "Up/Down", tip));
+    response.on_hover_text(tip)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui::{Event, RawInput};
+    use sqyre_domain::{MouseButton, PressState};
 
     #[test]
     fn primary_is_sqyre_yellow() {
@@ -641,5 +725,105 @@ mod tests {
         assert_eq!(style.visuals.window_stroke.color, PRIMARY);
         assert_eq!(section_frame(&style).stroke.color, accent_dim());
         assert_eq!(inner_stroke().color, accent_dim());
+    }
+
+    #[test]
+    fn cycle_index_wraps() {
+        assert_eq!(cycle_index(4, 0, 1), 1);
+        assert_eq!(cycle_index(4, 3, 1), 0);
+        assert_eq!(cycle_index(4, 0, -1), 3);
+        assert_eq!(cycle_index(3, 1, -1), 0);
+    }
+
+    #[test]
+    fn valued_control_info_exposes_name_and_value() {
+        let info = valued_control_info(true, "Mouse button", "Left");
+        assert_eq!(info.typ, WidgetType::ComboBox);
+        assert_eq!(info.label.as_deref(), Some("Mouse button"));
+        assert_eq!(info.current_text_value.as_deref(), Some("Left"));
+        assert!(info.enabled);
+    }
+
+    fn key_press(key: Key) -> Event {
+        Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        }
+    }
+
+    #[test]
+    fn mouse_button_picker_cycles_with_arrows_when_focused() {
+        let ctx = egui::Context::default();
+        let mut button = MouseButton::Left;
+
+        let _ = ctx.run_ui(RawInput::default(), |ui| {
+            let r = mouse_button_picker(ui, &mut button);
+            r.request_focus();
+        });
+
+        let mut input = RawInput::default();
+        input.events.push(key_press(Key::ArrowRight));
+        let _ = ctx.run_ui(input, |ui| {
+            let r = mouse_button_picker(ui, &mut button);
+            assert!(r.has_focus(), "picker must keep focus for arrow cycling");
+            assert!(r.changed());
+        });
+        assert_eq!(button, MouseButton::Right);
+
+        let mut input = RawInput::default();
+        input.events.push(key_press(Key::ArrowLeft));
+        let _ = ctx.run_ui(input, |ui| {
+            let r = mouse_button_picker(ui, &mut button);
+            assert!(r.changed());
+        });
+        assert_eq!(button, MouseButton::Left);
+    }
+
+    #[test]
+    fn press_state_toggle_cycles_with_arrows_when_focused() {
+        let ctx = egui::Context::default();
+        let mut state = PressState::Up;
+
+        let _ = ctx.run_ui(RawInput::default(), |ui| {
+            press_state_toggle(ui, &mut state).request_focus();
+        });
+
+        let mut input = RawInput::default();
+        input.events.push(key_press(Key::ArrowDown));
+        let _ = ctx.run_ui(input, |ui| {
+            let r = press_state_toggle(ui, &mut state);
+            assert!(r.has_focus());
+            assert!(r.changed());
+        });
+        assert_eq!(state, PressState::Tap);
+
+        let mut input = RawInput::default();
+        input.events.push(key_press(Key::ArrowDown));
+        let _ = ctx.run_ui(input, |ui| {
+            assert!(press_state_toggle(ui, &mut state).changed());
+        });
+        assert_eq!(state, PressState::Down);
+    }
+
+    #[test]
+    fn up_down_toggle_cycles_with_arrows_when_focused() {
+        let ctx = egui::Context::default();
+        let mut down = false;
+
+        let _ = ctx.run_ui(RawInput::default(), |ui| {
+            up_down_toggle(ui, &mut down).request_focus();
+        });
+
+        let mut input = RawInput::default();
+        input.events.push(key_press(Key::ArrowRight));
+        let _ = ctx.run_ui(input, |ui| {
+            let r = up_down_toggle(ui, &mut down);
+            assert!(r.has_focus());
+            assert!(r.changed());
+        });
+        assert!(down);
     }
 }
