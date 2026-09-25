@@ -1021,18 +1021,15 @@ impl SettingsUi {
                     ui.ctx().request_repaint();
                 }
                 match &update.state {
-                    UpdateState::Available { .. } => {
+                    UpdateState::Available { .. }
                         if ui
                             .add_enabled(!busy, egui::Button::new("Download & install"))
-                            .clicked()
-                        {
-                            update.start_download();
-                        }
+                            .clicked() =>
+                    {
+                        update.start_download();
                     }
-                    UpdateState::Ready { .. } => {
-                        if ui.button("Restart to finish").clicked() {
-                            self.restart_requested = true;
-                        }
+                    UpdateState::Ready { .. } if ui.button("Restart to finish").clicked() => {
+                        self.restart_requested = true;
                     }
                     _ => {}
                 }
