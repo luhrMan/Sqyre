@@ -393,5 +393,138 @@ root:
 "#;
         let m = prepare_import_macro_yaml(yaml, &["demo".into()]).unwrap();
         assert_eq!(m.name, "demo 2");
+        let m3 = prepare_import_macro_yaml(yaml, &["demo".into(), "demo 2".into()]).unwrap();
+        assert_eq!(m3.name, "demo 3");
+        let same = prepare_import_macro_yaml(yaml, &[]).unwrap();
+        assert_eq!(same.name, "demo");
+    }
+
+    #[test]
+    fn strip_yaml_fences_variants() {
+        assert_eq!(strip_yaml_fences("```yaml\nname: x\n```"), "name: x");
+        assert_eq!(strip_yaml_fences("```yml\nname: x\n```"), "name: x");
+        assert_eq!(strip_yaml_fences("```\nname: x\n```"), "name: x");
+        assert_eq!(strip_yaml_fences("  name: x  "), "name: x");
+    }
+
+    #[test]
+    fn prepare_rejects_empty_and_db_yaml() {
+        assert!(prepare_macro_yaml("").is_err());
+        assert!(prepare_macro_yaml("```yaml\n```").is_err());
+        let db = r#"
+macros:
+  - name: a
+    root:
+      type: loop
+      name: root
+      count: 1
+      subactions: []
+"#;
+        let err = prepare_macro_yaml(db).unwrap_err().to_string();
+        assert!(err.contains("db.yaml"), "{err}");
+    }
+
+    #[test]
+    fn report_covers_empty_parse_semantic_and_ok() {
+        let empty = report_macro_yaml("   ");
+        assert!(!empty.is_ok());
+        assert_eq!(empty.errors[0].layer, YamlValidateLayer::Schema);
+        assert!(empty.summary().contains("empty"));
+
+        let parse = report_macro_yaml(":\n  - oops");
+        assert!(!parse.is_ok());
+        assert!(parse.summary().contains("YAML parse"));
+
+        let semantic = report_macro_yaml(
+            r#"
+name: ""
+root:
+  type: loop
+  name: root
+  count: 1
+  subactions: []
+"#,
+        );
+        assert!(!semantic.is_ok(), "{semantic:?}");
+        assert_eq!(semantic.errors[0].layer, YamlValidateLayer::Semantic);
+
+        let ok = report_macro_yaml(
+            r#"
+name: ok
+root:
+  type: loop
+  name: root
+  count: 1
+  subactions: []
+"#,
+        );
+        assert!(ok.is_ok());
+        assert_eq!(ok.summary(), "Valid");
+    }
+
+    #[test]
+    fn schema_error_display_and_multi_summary() {
+        let rooted = YamlSchemaError {
+            path: "/".into(),
+            message: "top".into(),
+            layer: YamlValidateLayer::Schema,
+        };
+        assert_eq!(rooted.to_string(), "[Schema] top");
+        let nested = YamlSchemaError {
+            path: "/root/type".into(),
+            message: "bad".into(),
+            layer: YamlValidateLayer::Decode,
+        };
+        assert_eq!(nested.to_string(), "[Decode] /root/type: bad");
+
+        let report = YamlValidateReport {
+            errors: vec![rooted.clone(), nested],
+        };
+        let summary = report.summary();
+        assert!(summary.starts_with("2 errors; first:"), "{summary}");
+        assert!(summary.contains("[Schema] top"), "{summary}");
+    }
+
+    #[test]
+    fn yaml_to_json_covers_scalar_shapes() {
+        let yaml: YamlValue = serde_yaml::from_str(
+            r#"
+null_v: null
+bool_v: true
+int_v: 3
+float_v: 1.5
+str_v: hi
+seq_v: [1, two]
+map_v:
+  nested: 1
+"#,
+        )
+        .unwrap();
+        let json = yaml_to_json(&yaml).unwrap();
+        assert!(json.is_object());
+        // Non-string mapping keys fall back to Debug formatting.
+        let mut map = serde_yaml::Mapping::new();
+        map.insert(YamlValue::Bool(true), YamlValue::String("x".into()));
+        let keyed = yaml_to_json(&YamlValue::Mapping(map)).unwrap();
+        assert!(keyed.as_object().unwrap().contains_key("Bool(true)"));
+    }
+
+    #[test]
+    fn validate_macro_yaml_rejects_empty_and_schema() {
+        assert!(validate_macro_yaml("").is_err());
+        let err = validate_macro_yaml(
+            r#"
+name: bad
+root:
+  type: loop
+  name: root
+  count: 1
+  subactions: []
+extra: 1
+"#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("error") || err.contains("Additional"), "{err}");
     }
 }
