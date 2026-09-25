@@ -480,9 +480,6 @@ pub fn show_active_picker(
                 if in_cell_pick && ui.button("Back").clicked() {
                     back = true;
                 }
-                if ui.button("Cancel").clicked() {
-                    cancel = true;
-                }
                 let save_enabled = if in_cell_pick {
                     cell_has_sel
                 } else if let ActivePicker::Window { process_path, .. } = picker {
@@ -490,12 +487,10 @@ pub fn show_active_picker(
                 } else {
                     true
                 };
-                if ui
-                    .add_enabled(save_enabled, egui::Button::new("Save"))
-                    .on_disabled_hover_text("Select a window with a process identity")
-                    .clicked()
-                {
-                    save = true;
+                match crate::widgets::save_cancel_row(ui, save_enabled) {
+                    crate::widgets::SaveCancel::Cancel => cancel = true,
+                    crate::widgets::SaveCancel::Save => save = true,
+                    crate::widgets::SaveCancel::None => {}
                 }
             });
         });

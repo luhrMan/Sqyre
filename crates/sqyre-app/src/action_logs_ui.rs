@@ -413,7 +413,7 @@ fn show_labeled_image(
             let size = fit_width(tw as f32, th as f32, avail_w - 16.0);
             ui.add(egui::Image::new((tex.id(), size)));
         } else {
-            ui.colored_label(error_fg(), "(image unavailable)");
+            ui.colored_label(crate::theme::error_fg(), "(image unavailable)");
         }
     });
 }

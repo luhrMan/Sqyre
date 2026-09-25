@@ -62,7 +62,7 @@ pub fn combo_str(
     ui.horizontal(|ui| {
         help::label(ui, label, help_text);
         let display = if value.is_empty() {
-            "(unset)".to_string()
+            sqyre_domain::EMPTY_UNSET.to_string()
         } else {
             value.clone()
         };
@@ -74,7 +74,11 @@ pub fn combo_str(
             .selected_text(display)
             .show_ui(ui, |ui| {
                 for opt in options {
-                    let text = if opt.is_empty() { "(unset)" } else { opt };
+                    let text = if opt.is_empty() {
+                        sqyre_domain::EMPTY_UNSET
+                    } else {
+                        opt
+                    };
                     ui.selectable_value(value, (*opt).to_string(), text);
                 }
                 if let Some(c) = custom {

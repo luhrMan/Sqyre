@@ -8,7 +8,6 @@
 #![cfg_attr(not(feature = "runtime"), allow(dead_code))]
 
 pub mod icons;
-pub mod theme;
 
 #[cfg(feature = "runtime")]
 mod macro_overlay;

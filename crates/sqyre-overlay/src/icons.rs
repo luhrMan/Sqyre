@@ -27,10 +27,10 @@ impl OverlayPaintStyle {
                 sqyre_persist::MIN_OVERLAY_BORDER_WIDTH,
                 sqyre_persist::MAX_OVERLAY_BORDER_WIDTH,
             ),
-            border: crate::theme::rgba(btn.border_rgba()),
-            bg: crate::theme::rgba(btn.bg_rgba()),
-            icon: crate::theme::rgba(btn.icon_rgba()),
-            icon_hover: crate::theme::rgba(btn.icon_hover_rgba()),
+            border: sqyre_ui_theme::rgba(btn.border_rgba()),
+            bg: sqyre_ui_theme::rgba(btn.bg_rgba()),
+            icon: sqyre_ui_theme::rgba(btn.icon_rgba()),
+            icon_hover: sqyre_ui_theme::rgba(btn.icon_hover_rgba()),
         }
     }
 }
@@ -175,7 +175,7 @@ pub(crate) fn paint_glyph_contents(
     } else {
         style.icon
     };
-    crate::theme::paint_text_centered(
+    sqyre_ui_theme::paint_text_centered(
         ui,
         icon_rect,
         icon.glyph,
@@ -221,12 +221,12 @@ pub(crate) fn icon_glyph_button(
 ) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::click());
     paint_picker_chrome(ui, rect, selected, response.hovered());
-    crate::theme::paint_text_centered(
+    sqyre_ui_theme::paint_text_centered(
         ui,
         rect,
         icon.glyph,
         glyph_font_id((size * 0.48).round()),
-        crate::theme::PRIMARY,
+        sqyre_ui_theme::PRIMARY,
     );
     response.on_hover_text(icon.label)
 }
@@ -268,16 +268,16 @@ fn paint_overlay_chrome(
 
 fn paint_picker_chrome(ui: &mut egui::Ui, rect: egui::Rect, selected: bool, hovered: bool) {
     let fill = if selected {
-        crate::theme::accent_dim()
+        sqyre_ui_theme::accent_dim()
     } else if hovered {
-        crate::theme::chip_fill()
+        sqyre_ui_theme::chip_fill()
     } else {
-        crate::theme::frame_fill()
+        sqyre_ui_theme::frame_fill()
     };
     let stroke = if selected || hovered {
-        egui::Stroke::new(1.5, crate::theme::PRIMARY)
+        egui::Stroke::new(1.5, sqyre_ui_theme::PRIMARY)
     } else {
-        crate::theme::inner_stroke()
+        sqyre_ui_theme::inner_stroke()
     };
     ui.painter()
         .rect_filled(rect, egui::CornerRadius::same(8), fill);
@@ -406,9 +406,9 @@ mod tests {
         let s = OverlayPaintStyle::from_config(&OverlayButtonConfig::new("style", ""));
         assert!((s.corner_radius - 8.0).abs() < f32::EPSILON);
         assert!((s.border_width - 1.5).abs() < f32::EPSILON);
-        assert_eq!(s.border, crate::theme::PRIMARY);
+        assert_eq!(s.border, sqyre_ui_theme::PRIMARY);
         assert_eq!(s.bg.a(), 0);
         assert_eq!(s.icon, Color32::from_rgb(0xf5, 0xe6, 0xc0));
-        assert_eq!(s.icon_hover, crate::theme::PRIMARY);
+        assert_eq!(s.icon_hover, sqyre_ui_theme::PRIMARY);
     }
 }

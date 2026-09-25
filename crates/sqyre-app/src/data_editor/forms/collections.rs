@@ -73,7 +73,7 @@ impl DataEditor {
                 "collection_sa",
                 &mut current,
                 &areas,
-                "(none)",
+                sqyre_domain::EMPTY_NONE,
                 None,
                 None,
                 Some(&mut on_hover),
