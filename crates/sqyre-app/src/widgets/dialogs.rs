@@ -256,11 +256,9 @@ fn poll_save_keys(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
     }
 }
 
-/// Right-aligned footer: **Cancel left, Save right** (tip edit header).
+/// Right-aligned footer: **Cancel left, Save right**.
 ///
-/// Drawn with `right_to_left` so Save is allocated first (rightmost). Prefer this
-/// for action tips and similar chrome. For the opposite visual order (Save left,
-/// Cancel right), use [`save_cancel_row_ltr`] — do not mass-migrate call sites.
+/// Drawn with `right_to_left` so Save is allocated first (rightmost).
 ///
 /// Save glows while `save_enabled` (dirty pending work). `Esc` cancels; `Enter`
 /// saves only when `save_enabled` and egui is not routing keys to a text field.
@@ -268,29 +266,6 @@ pub fn save_cancel_row(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
     let mut out = SaveCancel::None;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         // First in RTL = rightmost → Save on the right.
-        if crate::theme::dirty_action_button(ui, "Save", save_enabled).clicked() {
-            out = SaveCancel::Save;
-        }
-        if ui.button("Cancel").clicked() {
-            out = SaveCancel::Cancel;
-        }
-    });
-    if out == SaveCancel::None {
-        out = poll_save_keys(ui, save_enabled);
-    }
-    out
-}
-
-/// Left-to-right footer: **Save left, Cancel right** (variables panel / forms).
-///
-/// Opposite button order from [`save_cancel_row`]. Keep both; pick the helper that
-/// matches the surrounding panel rather than migrating for consistency alone.
-///
-/// Save glows while `save_enabled` (dirty pending work). Same `Esc` / `Enter`
-/// rules as [`save_cancel_row`].
-pub fn save_cancel_row_ltr(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
-    let mut out = SaveCancel::None;
-    ui.horizontal(|ui| {
         if crate::theme::dirty_action_button(ui, "Save", save_enabled).clicked() {
             out = SaveCancel::Save;
         }
