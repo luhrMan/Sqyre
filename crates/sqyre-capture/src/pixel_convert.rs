@@ -4,6 +4,15 @@ use image::RgbaImage;
 use pulp::Arch;
 use rayon::prelude::*;
 
+/// Cached `pulp` ISA dispatch — avoid `Arch::new()` on every swizzle row.
+#[inline]
+fn pulp_arch() -> Arch {
+    thread_local! {
+        static ARCH: Arch = Arch::new();
+    }
+    ARCH.with(|a| *a)
+}
+
 /// Convert X11 ZPixmap bytes (typically BGRA on little-endian) into an [`RgbaImage`].
 ///
 /// `bpp` is bytes per pixel from `bits_per_pixel / 8` (must be ≥ 3).
@@ -87,7 +96,7 @@ fn zpixmap_swizzle(
         .into_par_iter()
         .try_for_each(|y| -> Result<(), String> {
             let row = &data[y * row_stride..y * row_stride + w * bpp];
-            let arch = Arch::new();
+            let arch = pulp_arch();
             arch.dispatch(|| {
                 for (x, chunk) in row.chunks_exact(bpp).enumerate() {
                     let di = (y * w + x) * out_bpp;
