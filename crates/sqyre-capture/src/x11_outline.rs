@@ -14,11 +14,12 @@ use x11::xfixes::{
     XFixesSetWindowShapeRegion,
 };
 use x11::xlib::{
-    Button1Mask, CWBackPixel, CWBorderPixel, CWHeight, CWOverrideRedirect, CWWidth, Display,
-    InputOutput, True, Window, XAllocColor, XCloseDisplay, XColor, XConfigureWindow, XCreateWindow,
-    XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen, XDefaultVisual,
-    XDestroyWindow, XEvent, XFlush, XMapRaised, XMapWindow, XNextEvent, XOpenDisplay, XPending,
-    XQueryPointer, XRaiseWindow, XSetWindowAttributes, XWindowChanges, _XDisplay, CWX, CWY,
+    _XDisplay, Button1Mask, CWBackPixel, CWBorderPixel, CWHeight, CWOverrideRedirect, CWWidth,
+    Display, InputOutput, True, Window, XAllocColor, XCloseDisplay, XColor, XConfigureWindow,
+    XCreateWindow, XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen,
+    XDefaultVisual, XDestroyWindow, XEvent, XFlush, XMapRaised, XMapWindow, XNextEvent,
+    XOpenDisplay, XPending, XQueryPointer, XRaiseWindow, XSetWindowAttributes, XWindowChanges, CWX,
+    CWY,
 };
 
 use crate::outline_geometry::{

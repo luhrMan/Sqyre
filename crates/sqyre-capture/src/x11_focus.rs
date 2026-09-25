@@ -9,10 +9,10 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_ulong;
 use std::ptr;
 use x11::xlib::{
-    Atom, CWBackPixel, ClientMessage, Display, False, PropModeReplace, Success, True, Window,
-    XChangeProperty, XChangeWindowAttributes, XClassHint, XDefaultRootWindow, XEvent, XFlush,
-    XFree, XGetClassHint, XGetWMName, XGetWindowProperty, XInternAtom, XOpenDisplay, XSendEvent,
-    XSetWindowAttributes, _XDisplay, XA_ATOM, XA_CARDINAL, XA_WINDOW,
+    _XDisplay, Atom, CWBackPixel, ClientMessage, Display, False, PropModeReplace, Success, True,
+    Window, XChangeProperty, XChangeWindowAttributes, XClassHint, XDefaultRootWindow, XEvent,
+    XFlush, XFree, XGetClassHint, XGetWMName, XGetWindowProperty, XInternAtom, XOpenDisplay,
+    XSendEvent, XSetWindowAttributes, XA_ATOM, XA_CARDINAL, XA_WINDOW,
 };
 
 /// Title used by floating macro-overlay / recording-HUD chrome.

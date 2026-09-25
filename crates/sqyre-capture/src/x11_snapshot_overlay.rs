@@ -20,18 +20,18 @@ use std::ffi::CString;
 use std::os::raw::{c_char, c_int, c_uint, c_ulong};
 use std::ptr;
 use x11::xlib::{
-    AllocNone, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask, CWBackPixel,
-    CWBackingStore, CWBorderPixel, CWColormap, CWEventMask, CWOverrideRedirect, CurrentTime,
-    Display, Expose, ExposureMask, False, InputOutput, KeyPress, KeyPressMask, LSBFirst,
-    MotionNotify, PointerMotionMask, PropModeReplace, RevertToParent, True, TrueColor, WhenMapped,
-    Window, XAllocColor, XChangeProperty, XClearArea, XClearWindow, XCloseDisplay, XColor,
-    XCopyArea, XCreateColormap, XCreateFontCursor, XCreateGC, XCreateImage, XCreatePixmap,
+    _XDisplay, AllocNone, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask,
+    CWBackPixel, CWBackingStore, CWBorderPixel, CWColormap, CWEventMask, CWOverrideRedirect,
+    CurrentTime, Display, Expose, ExposureMask, False, InputOutput, KeyPress, KeyPressMask,
+    LSBFirst, MotionNotify, PointerMotionMask, PropModeReplace, RevertToParent, True, TrueColor,
+    WhenMapped, Window, XAllocColor, XChangeProperty, XClearArea, XClearWindow, XCloseDisplay,
+    XColor, XCopyArea, XCreateColormap, XCreateFontCursor, XCreateGC, XCreateImage, XCreatePixmap,
     XCreateWindow, XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen,
     XDefaultVisual, XDefineCursor, XDestroyImage, XDestroyWindow, XEvent, XFillRectangle, XFlush,
     XFreeColormap, XFreeCursor, XFreeGC, XFreePixmap, XInternAtom, XKeycodeToKeysym, XMapRaised,
     XMatchVisualInfo, XNextEvent, XOpenDisplay, XPending, XPutImage, XSelectInput, XSetForeground,
     XSetInputFocus, XSetWindowAttributes, XSetWindowBackground, XSetWindowBackgroundPixmap,
-    XUnmapWindow, XVisualInfo, ZPixmap, _XDisplay, XA_CARDINAL,
+    XUnmapWindow, XVisualInfo, ZPixmap, XA_CARDINAL,
 };
 
 /// X11 cursorfont crosshair (`X11/cursorfont.h`).

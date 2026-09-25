@@ -11,8 +11,8 @@ use std::os::raw::c_void;
 use std::ptr;
 use x11::xinerama::{XineramaIsActive, XineramaQueryScreens, XineramaScreenInfo};
 use x11::xlib::{
-    XCloseDisplay, XDefaultRootWindow, XDestroyImage, XDisplayHeight, XDisplayWidth, XFree,
-    XGetImage, XOpenDisplay, XQueryPointer, XResourceManagerString, ZPixmap, _XDisplay,
+    _XDisplay, XCloseDisplay, XDefaultRootWindow, XDestroyImage, XDisplayHeight, XDisplayWidth,
+    XFree, XGetImage, XOpenDisplay, XQueryPointer, XResourceManagerString, ZPixmap,
 };
 use x11::xrandr::{
     XRRFreeCrtcInfo, XRRFreeOutputInfo, XRRFreeScreenResources, XRRGetCrtcInfo, XRRGetOutputInfo,

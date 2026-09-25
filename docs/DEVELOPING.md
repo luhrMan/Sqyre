@@ -8,6 +8,8 @@ Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`$
 
 If Cursor reports **“container is not running”** during attach, stale containers are usually the cause — remove them (`docker ps -a` → `docker rm -f <id>`) and **Rebuild Container**. Large `target/` trees are excluded from file watchers (see `.devcontainer/devcontainer.json`). Prefer `make clean-sweep` to keep `target/` (and `target-dhat/` when present) under ~20 GiB; use `cargo clean` only if you need a full cold rebuild.
 
+`shutdownAction` is set to `none` so Cursor does not stop the container when an Agents window closes or a secondary attach ends (a known Cursor Dev Containers bug). Stop it yourself when finished: `docker stop <id>` or Docker Desktop. After pulling this change, **Rebuild Container** once so the setting takes effect.
+
 ### Host permissions / SELinux / git
 
 On Fedora, Bazzite, and other SELinux-enforcing hosts, a plain bind mount of the repo often yields **Permission denied** on files and broken git (“dubious ownership”) inside the container. The devcontainer sets `--security-opt=label=disable`, remaps the `vscode` user to the host UID (`updateRemoteUserUID`), marks `/workspace` as a git `safe.directory`, and re-owns writable caches (`target/`, `.cache/`, cargo home) on each attach. Nested `make windows` / AppImage / Flatpak Docker binds use the `:z` SELinux label.
