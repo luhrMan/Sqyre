@@ -1744,7 +1744,7 @@ dependencies = [
  "bytemuck",
  "ecolor",
  "emath",
- "epaint_default_fonts",
+ "epaint_default_fonts 0.35.0",
  "font-types",
  "harfrust",
  "log",
@@ -1764,6 +1764,12 @@ name = "epaint_default_fonts"
 version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13ee4e1f553a3584c301f3a56ff1a775f1384781396cea301c8d952e9b93f560"
+
+[[package]]
+name = "epaint_default_fonts"
+version = "0.36.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "773fa9c96dd0dbef887e39d0ed6177f141cce4d68e6041df77570aa3702dfa13"
 
 [[package]]
 name = "epoll"
@@ -5168,7 +5174,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui-phosphor",
- "epaint_default_fonts",
+ "epaint_default_fonts 0.36.2",
  "fontdue",
  "libc",
  "parking_lot",
