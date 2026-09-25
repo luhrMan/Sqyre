@@ -928,6 +928,14 @@ impl DataEditor {
                     return;
                 };
                 catalog.delete_program(&name).map(|_| {
+                    if settings.remove_overlay_buttons_for_program(&name) {
+                        if let Some(id) = self.overlay_icon_picker_for.as_deref() {
+                            if !settings.overlay_buttons.iter().any(|b| b.id == id) {
+                                self.overlay_icon_picker_for = None;
+                            }
+                        }
+                        let _ = self.persist_overlay_settings(settings);
+                    }
                     self.selected_program = None;
                     self.form_name.clear();
                 })

@@ -777,6 +777,13 @@ impl UserSettings {
         changed
     }
 
+    /// Remove overlay buttons bound to a deleted program.
+    pub fn remove_overlay_buttons_for_program(&mut self, program: &str) -> bool {
+        let before = self.overlay_buttons.len();
+        self.overlay_buttons.retain(|btn| btn.program != program);
+        self.overlay_buttons.len() != before
+    }
+
     /// Clear overlay button point refs that target a deleted catalog point.
     pub fn clear_overlay_point_refs(&mut self, program: &str, name: &str) -> bool {
         let mut changed = false;
@@ -1102,6 +1109,30 @@ mod tests {
         assert!(!s.rename_overlay_macro("old", "new"));
         assert!(!s.rename_overlay_macro("", "x"));
         assert!(!s.rename_overlay_macro("new", "new"));
+    }
+
+    #[test]
+    fn remove_overlay_buttons_for_program_drops_matching() {
+        let mut s = UserSettings::default();
+        s.overlay_buttons
+            .push(OverlayButtonConfig::new("keep", "Other"));
+        s.overlay_buttons
+            .push(OverlayButtonConfig::new("drop-a", "Gone"));
+        s.overlay_buttons
+            .push(OverlayButtonConfig::new("drop-b", "Gone"));
+        assert!(s.remove_overlay_buttons_for_program("Gone"));
+        assert_eq!(s.overlay_buttons.len(), 1);
+        assert_eq!(s.overlay_buttons[0].id, "keep");
+        assert!(!s.remove_overlay_buttons_for_program("Gone"));
+        assert!(!s.remove_overlay_buttons_for_program("Missing"));
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("settings.yaml");
+        s.save_to_path(&path).unwrap();
+        let loaded = UserSettings::load_from_path(&path).unwrap();
+        assert_eq!(loaded.overlay_buttons.len(), 1);
+        assert_eq!(loaded.overlay_buttons[0].id, "keep");
+        assert_eq!(loaded.overlay_buttons[0].program, "Other");
     }
 
     #[test]
