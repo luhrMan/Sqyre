@@ -91,11 +91,11 @@ impl Macro {
                         changed = true;
                     }
                 }
-                ActionKind::NavigateSelect(data) => {
-                    if data.program == program && data.inputs.collection == old_name {
-                        data.inputs.collection = new_name.to_string();
-                        changed = true;
-                    }
+                ActionKind::NavigateSelect(data)
+                    if data.program == program && data.inputs.collection == old_name =>
+                {
+                    data.inputs.collection = new_name.to_string();
+                    changed = true;
                 }
                 _ => {}
             },
@@ -176,11 +176,9 @@ impl Macro {
                     changed = true;
                 }
             }
-            ActionKind::NavigateSelect(data) => {
-                if data.program == old_program {
-                    data.program = new_program.to_string();
-                    changed = true;
-                }
+            ActionKind::NavigateSelect(data) if data.program == old_program => {
+                data.program = new_program.to_string();
+                changed = true;
             }
             _ => {}
         });

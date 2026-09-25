@@ -1003,12 +1003,12 @@ fn live_record_points(events: &[MacroRecordEvent]) -> Vec<TempPoint> {
     };
     for ev in &compressed {
         match ev {
-            MacroRecordEvent::MouseMove { x, y, .. } => {
+            MacroRecordEvent::MouseMove { x, y, .. }
                 if last_move.is_none_or(|(lx, ly)| {
                     (x - lx).abs() >= MOVE_MIN_DISTANCE || (y - ly).abs() >= MOVE_MIN_DISTANCE
-                }) {
-                    push(&mut out, &mut last_move, *x, *y);
-                }
+                }) =>
+            {
+                push(&mut out, &mut last_move, *x, *y);
             }
             MacroRecordEvent::Button {
                 x,
