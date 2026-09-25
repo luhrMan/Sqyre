@@ -2,7 +2,7 @@
 //! image-search item cards with per-item processing / find steps.
 
 use crate::image_view;
-use crate::theme::{error_fg, selection_stroke};
+use crate::theme::selection_stroke;
 use eframe::egui::{self, ColorImage, TextureHandle, TextureOptions};
 use sqyre_domain::ActionId;
 use sqyre_ports::{lines_for, ActionLogEntry, LogImage, SharedActionLog};

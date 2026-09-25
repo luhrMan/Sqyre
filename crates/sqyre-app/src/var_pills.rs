@@ -10,7 +10,7 @@ use sqyre_ui_model::{action_pastel_color, nested_var_ref_color, SummaryPill};
 use sqyre_validate::EntryValidation;
 
 use crate::paint_ctx::VarTheme;
-use crate::theme::{contrast_fg, error_fg, paint_galley_centered, warn_fg};
+use crate::theme::{contrast_fg, paint_galley_centered};
 use crate::tree_chrome::rgba_pub;
 
 const VAR_AC_LIMIT: usize = 12;

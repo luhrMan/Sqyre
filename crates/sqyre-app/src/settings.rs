@@ -296,7 +296,7 @@ impl SettingsUi {
             crate::pickers::reset_focus_search(ctx, settings_window_id());
         }
         if let Some(confirm) = self.confirm.clone() {
-            self.draw_confirm(ctx, confirm, db, macros, catalog);
+            self.draw_confirm(ctx, confirm, pending_scale, db, macros, catalog);
         }
         if self.dirty {
             self.persist();
@@ -1114,88 +1114,105 @@ impl SettingsUi {
         &mut self,
         ctx: &egui::Context,
         confirm: PendingConfirm,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
         db: &mut Database,
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
     ) {
         match &confirm {
             PendingConfirm::MoveData { old_dir, new_dir } => {
-                let open = crate::widgets::confirm_window(ctx, "Move existing data?", |ui| {
-                    ui.label(format!(
+                let open = crate::widgets::confirm_window(
+                    ctx,
+                    "Move existing data?",
+                    pending_scale,
+                    |ui| {
+                        ui.label(format!(
                         "Move your current data from\n{}\nto\n{}?\n\nChoose No to start fresh at the new location (existing data is left in place).",
                         old_dir.display(),
                         new_dir.display()
                     ));
-                    // Enter → Yes (index 1).
-                    match crate::widgets::confirm_choice_row(
-                        ui,
-                        &[
-                            ("No", crate::widgets::ConfirmKind::Primary),
-                            ("Yes", crate::widgets::ConfirmKind::Primary),
-                        ],
-                        Some(1),
-                    ) {
-                        crate::widgets::ConfirmChoice::Cancel => {
-                            self.confirm = None;
+                        // Enter → Yes (index 1).
+                        match crate::widgets::confirm_choice_row(
+                            ui,
+                            &[
+                                ("No", crate::widgets::ConfirmKind::Primary),
+                                ("Yes", crate::widgets::ConfirmKind::Primary),
+                            ],
+                            Some(1),
+                        ) {
+                            crate::widgets::ConfirmChoice::Cancel => {
+                                self.confirm = None;
+                            }
+                            crate::widgets::ConfirmChoice::Choice(0) => {
+                                let old = old_dir.clone();
+                                let new = new_dir.clone();
+                                self.confirm = None;
+                                self.apply_sqyre_location(old, new, false, db, macros, catalog);
+                            }
+                            crate::widgets::ConfirmChoice::Choice(1) => {
+                                let old = old_dir.clone();
+                                let new = new_dir.clone();
+                                self.confirm = None;
+                                self.apply_sqyre_location(old, new, true, db, macros, catalog);
+                            }
+                            crate::widgets::ConfirmChoice::Choice(_)
+                            | crate::widgets::ConfirmChoice::None => {}
                         }
-                        crate::widgets::ConfirmChoice::Choice(0) => {
-                            let old = old_dir.clone();
-                            let new = new_dir.clone();
-                            self.confirm = None;
-                            self.apply_sqyre_location(old, new, false, db, macros, catalog);
-                        }
-                        crate::widgets::ConfirmChoice::Choice(1) => {
-                            let old = old_dir.clone();
-                            let new = new_dir.clone();
-                            self.confirm = None;
-                            self.apply_sqyre_location(old, new, true, db, macros, catalog);
-                        }
-                        crate::widgets::ConfirmChoice::Choice(_)
-                        | crate::widgets::ConfirmChoice::None => {}
-                    }
-                });
+                    },
+                );
                 if !open {
                     self.confirm = None;
                 }
             }
             PendingConfirm::RestoreBackup { path } => {
-                let open = crate::widgets::confirm_window(ctx, "Import backup?", |ui| {
-                    ui.label(format!(
+                let open = crate::widgets::confirm_window(
+                    ctx,
+                    "Import backup?",
+                    pending_scale,
+                    |ui| {
+                        ui.label(format!(
                         "Archive:\n{}\n\nOverwrite replaces all macros, settings, images, and variables with the archive.\n\nMerge keeps live-only items, prefers the archive on name conflicts, replaces settings, and merges other assets. Automatic backups in the backups folder are not removed.",
                         path.display()
                     ));
-                    // Enter → Overwrite (index 0); both are intentional verbs.
-                    match crate::widgets::confirm_choice_row(
-                        ui,
-                        &[
-                            ("Overwrite", crate::widgets::ConfirmKind::Destructive),
-                            ("Merge", crate::widgets::ConfirmKind::Primary),
-                        ],
-                        Some(0),
-                    ) {
-                        crate::widgets::ConfirmChoice::Cancel => {
-                            self.confirm = None;
+                        // Enter → Overwrite (index 0); both are intentional verbs.
+                        match crate::widgets::confirm_choice_row(
+                            ui,
+                            &[
+                                ("Overwrite", crate::widgets::ConfirmKind::Destructive),
+                                ("Merge", crate::widgets::ConfirmKind::Primary),
+                            ],
+                            Some(0),
+                        ) {
+                            crate::widgets::ConfirmChoice::Cancel => {
+                                self.confirm = None;
+                            }
+                            crate::widgets::ConfirmChoice::Choice(0) => {
+                                let path = path.clone();
+                                self.confirm = None;
+                                self.apply_restore_backup(
+                                    path,
+                                    ImportMode::Overwrite,
+                                    db,
+                                    macros,
+                                    catalog,
+                                );
+                            }
+                            crate::widgets::ConfirmChoice::Choice(1) => {
+                                let path = path.clone();
+                                self.confirm = None;
+                                self.apply_restore_backup(
+                                    path,
+                                    ImportMode::Merge,
+                                    db,
+                                    macros,
+                                    catalog,
+                                );
+                            }
+                            crate::widgets::ConfirmChoice::Choice(_)
+                            | crate::widgets::ConfirmChoice::None => {}
                         }
-                        crate::widgets::ConfirmChoice::Choice(0) => {
-                            let path = path.clone();
-                            self.confirm = None;
-                            self.apply_restore_backup(
-                                path,
-                                ImportMode::Overwrite,
-                                db,
-                                macros,
-                                catalog,
-                            );
-                        }
-                        crate::widgets::ConfirmChoice::Choice(1) => {
-                            let path = path.clone();
-                            self.confirm = None;
-                            self.apply_restore_backup(path, ImportMode::Merge, db, macros, catalog);
-                        }
-                        crate::widgets::ConfirmChoice::Choice(_)
-                        | crate::widgets::ConfirmChoice::None => {}
-                    }
-                });
+                    },
+                );
                 if !open {
                     self.confirm = None;
                 }
