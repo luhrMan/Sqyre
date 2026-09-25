@@ -757,6 +757,271 @@ Game:
     }
 
     #[test]
+    fn mutation_rejects_invalid_entity_names() {
+        fn assert_invalid_name(err: crate::PersistError, context: &str) {
+            let msg = err.to_string();
+            assert!(
+                msg.contains("name")
+                    || msg.contains("empty")
+                    || msg.contains("forbidden")
+                    || msg.contains("reserved"),
+                "{context}: expected invalid-name message, got {msg}"
+            );
+        }
+
+        let mut cat = ProgramCatalog::default();
+        for bad in ["", "../escape", "a/b", "con"] {
+            assert_invalid_name(
+                cat.create_program(bad).unwrap_err(),
+                &format!("create_program({bad:?})"),
+            );
+        }
+        cat.create_program("Alpha").unwrap();
+        assert_invalid_name(
+            cat.upsert_item(
+                "Alpha",
+                ProgramItem {
+                    name: "../bad".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap_err(),
+            "upsert_item",
+        );
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_invalid_name(
+            cat.rename_item("Alpha", "Potion", "../x").unwrap_err(),
+            "rename_item",
+        );
+        cat.upsert_mask(
+            "Alpha",
+            ProgramMask {
+                name: "circle".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_invalid_name(
+            cat.rename_mask("Alpha", "circle", "").unwrap_err(),
+            "rename_mask",
+        );
+        cat.upsert_collection(
+            "Alpha",
+            ProgramCollection {
+                name: "Bag".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_invalid_name(
+            cat.rename_collection("Alpha", "Bag", "a/b").unwrap_err(),
+            "rename_collection",
+        );
+        assert!(cat.get("Alpha").unwrap().items.contains_key("Potion"));
+        assert!(cat.get("Alpha").unwrap().masks.contains_key("circle"));
+        assert!(cat.get("Alpha").unwrap().collections.contains_key("Bag"));
+    }
+
+    #[test]
+    fn create_program_and_rename_item_reject_conflict() {
+        let mut cat = ProgramCatalog::default();
+        cat.create_program("Alpha").unwrap();
+        let err = cat.create_program("Alpha").unwrap_err();
+        assert!(
+            err.to_string().contains("already exists"),
+            "expected conflict, got {err}"
+        );
+        for name in ["Potion", "Elixir"] {
+            cat.upsert_item(
+                "Alpha",
+                ProgramItem {
+                    name: name.into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+        let err = cat.rename_item("Alpha", "Potion", "Elixir").unwrap_err();
+        assert!(
+            err.to_string().contains("already exists"),
+            "expected rename conflict, got {err}"
+        );
+        assert!(cat.get("Alpha").unwrap().items.contains_key("Potion"));
+        assert!(cat.get("Alpha").unwrap().items.contains_key("Elixir"));
+    }
+
+    #[test]
+    fn delete_and_rename_reject_not_found() {
+        let mut cat = ProgramCatalog::default();
+        cat.create_program("Alpha").unwrap();
+        for (label, err) in [
+            (
+                "delete_item",
+                cat.delete_item("Alpha", "Missing").unwrap_err(),
+            ),
+            (
+                "delete_mask",
+                cat.delete_mask("Alpha", "Missing").unwrap_err(),
+            ),
+            (
+                "delete_collection",
+                cat.delete_collection("Alpha", "Missing").unwrap_err(),
+            ),
+            (
+                "rename_item",
+                cat.rename_item("Alpha", "Missing", "X").unwrap_err(),
+            ),
+            (
+                "rename_mask",
+                cat.rename_mask("Alpha", "Missing", "X").unwrap_err(),
+            ),
+            (
+                "rename_collection",
+                cat.rename_collection("Alpha", "Missing", "X").unwrap_err(),
+            ),
+            ("delete_program", cat.delete_program("NoProg").unwrap_err()),
+            (
+                "rename_program",
+                cat.rename_program("NoProg", "X").unwrap_err(),
+            ),
+        ] {
+            assert!(
+                err.to_string().contains("not found"),
+                "{label}: expected not-found, got {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn rename_and_delete_mask_cascade_png_files() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_mask(
+            "Alpha",
+            ProgramMask {
+                name: "circle".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: "Potion".into(),
+                mask: "circle".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        cat.upsert_mask(
+            "Alpha",
+            ProgramMask {
+                name: "keep".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let masks = images.join("masks").join("Alpha");
+        std::fs::create_dir_all(&masks).unwrap();
+        std::fs::write(masks.join("circle.png"), b"mask-bytes").unwrap();
+        std::fs::write(masks.join("keep.png"), b"keep-bytes").unwrap();
+
+        cat.rename_mask("Alpha", "circle", "ring").unwrap();
+        assert!(!masks.join("circle.png").exists());
+        assert_eq!(
+            std::fs::read(masks.join("ring.png")).unwrap(),
+            b"mask-bytes"
+        );
+        assert_eq!(cat.get("Alpha").unwrap().items["Potion"].mask, "ring");
+        assert!(cat.get("Alpha").unwrap().masks.contains_key("ring"));
+        assert!(!cat.get("Alpha").unwrap().masks.contains_key("circle"));
+
+        cat.delete_mask("Alpha", "ring").unwrap();
+        assert!(!masks.join("ring.png").exists());
+        assert_eq!(
+            std::fs::read(masks.join("keep.png")).unwrap(),
+            b"keep-bytes"
+        );
+        assert!(!cat.get("Alpha").unwrap().masks.contains_key("ring"));
+        assert!(cat.get("Alpha").unwrap().items["Potion"].mask.is_empty());
+    }
+
+    #[test]
+    fn rename_and_delete_collection_cascade_png_files() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_collection(
+            "Alpha",
+            ProgramCollection {
+                name: "Bag".into(),
+                search_area: "Zone".into(),
+                rows: 2,
+                cols: 2,
+            },
+        )
+        .unwrap();
+        cat.upsert_collection(
+            "Alpha",
+            ProgramCollection {
+                name: "Keep".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        cat.upsert_atlas(
+            "Alpha",
+            ProgramAtlas {
+                name: "Inv".into(),
+                collections: vec!["Bag".into(), "Keep".into()],
+            },
+        )
+        .unwrap();
+
+        let cols = images.join("Collections").join("Alpha");
+        std::fs::create_dir_all(&cols).unwrap();
+        std::fs::write(cols.join("Bag.png"), b"bag-bytes").unwrap();
+        std::fs::write(cols.join("Keep.png"), b"keep-bytes").unwrap();
+
+        cat.rename_collection("Alpha", "Bag", "Satchel").unwrap();
+        assert!(!cols.join("Bag.png").exists());
+        assert_eq!(
+            std::fs::read(cols.join("Satchel.png")).unwrap(),
+            b"bag-bytes"
+        );
+        assert_eq!(
+            cat.lookup_atlas("Alpha", "Inv").unwrap().collections,
+            vec!["Satchel".to_string(), "Keep".to_string()]
+        );
+
+        cat.delete_collection("Alpha", "Satchel").unwrap();
+        assert!(!cols.join("Satchel.png").exists());
+        assert_eq!(std::fs::read(cols.join("Keep.png")).unwrap(), b"keep-bytes");
+        assert_eq!(
+            cat.lookup_atlas("Alpha", "Inv").unwrap().collections,
+            vec!["Keep".to_string()]
+        );
+        assert!(!cat
+            .get("Alpha")
+            .unwrap()
+            .collections
+            .contains_key("Satchel"));
+    }
+
+    #[test]
     fn clear_points_wipes_all_resolution_buckets() {
         let mut cat = ProgramCatalog::default();
         cat.set_resolution_key("1920x1080");
