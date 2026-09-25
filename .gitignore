@@ -60,3 +60,5 @@ mem.log
 dhat-heap.json
 
 docs/blog
+.cursor/cli.json
+.cursor/rules/no-cursor-attribution.mdc
