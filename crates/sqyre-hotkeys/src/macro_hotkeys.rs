@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// How a macro chord fires once the keys are held.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub enum HotkeyTrigger {
     #[default]
     Press,

@@ -1,6 +1,6 @@
 //! Shared chord-record modal chrome for key and hotkey capture.
 
-use crate::widgets::fit_dialog_popup;
+use crate::widgets::{fit_dialog_popup, ViewportScaleEvent};
 use eframe::egui;
 use sqyre_hotkeys::{chord_fully_released, MacroHotkeyBridge};
 use std::collections::HashSet;
@@ -9,6 +9,7 @@ use std::collections::HashSet;
 pub(crate) fn record_modal(
     ctx: &egui::Context,
     title: &str,
+    pending_scale: Option<&ViewportScaleEvent>,
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
     fit_dialog_popup(
@@ -17,6 +18,8 @@ pub(crate) fn record_modal(
             .resizable(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]),
         ctx,
+        egui::Id::new(("sqyre_record_modal", title)),
+        pending_scale,
     )
     .show(ctx, add_contents);
 }
@@ -30,13 +33,14 @@ pub(crate) fn poll_waiting_release(
     chord: &[String],
     title: &str,
     message: &str,
+    pending_scale: Option<&ViewportScaleEvent>,
 ) -> bool {
     let pressed: HashSet<String> = macro_hotkeys.pressed_keys().into_iter().collect();
     if chord_fully_released(&pressed, chord) {
         macro_hotkeys.resume();
         return true;
     }
-    record_modal(ctx, title, |ui| {
+    record_modal(ctx, title, pending_scale, |ui| {
         ui.label(message);
     });
     ctx.request_repaint();

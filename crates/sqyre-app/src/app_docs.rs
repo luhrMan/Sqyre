@@ -55,6 +55,7 @@ impl SqyreApp {
         let settings_ui = SettingsUi::from_settings(settings);
         let action_log = SharedActionLog::new();
         action_log.set_log_images(settings_ui.settings().save_meta_images);
+        action_log.set_log_verbose(settings_ui.settings().save_meta_images);
         let mut add_action_picker = AddActionPicker::default();
         add_action_picker.load_from_settings(settings_ui.settings());
 
@@ -77,7 +78,7 @@ impl SqyreApp {
                 save_error: None,
                 selected_macro: 0,
                 macro_meta: MacroMetaUi::default(),
-                hotkey_tag_filter: settings_ui.settings().hotkey_tag_filter.clone(),
+                hotkey_tag_filters: settings_ui.settings().hotkey_tag_filters.clone(),
             },
             run_session: RunSession {
                 state: run,
@@ -105,48 +106,38 @@ impl SqyreApp {
             data_editor: DataEditor::default(),
             settings_ui,
             variables_panel: variables_panel::VariablesPanelUi::default(),
+            macro_yaml_builder: crate::macro_yaml_builder::MacroYamlBuilderUi::default(),
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: RecordingOverlay::new(),
             #[cfg(feature = "native-runtime")]
             macro_overlay: MacroOverlay::new(),
+            #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
+            overlay_visibility: crate::overlay_visibility::OverlayVisibilityPoller::new(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
+            hotkey_chooser: None,
+            start_when_idle: None,
             // Match product default so main-window goldens include the Macros sidebar.
             macro_list_open: true,
             macro_list_filter: String::new(),
             tray: tray::SystemTray::default(),
             instance_lock: None,
             pending_delete_macro: None,
+            last_viewport_content: None,
+            pending_viewport_scale: None,
             pending_import: crate::wasm_io::new_pending_import(),
             #[cfg(not(target_arch = "wasm32"))]
-            backup_task: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            pixel_sample_pending: None,
+            tasks: crate::BackgroundTasks::default(),
             #[cfg(not(target_arch = "wasm32"))]
             update: crate::update::UpdateManager::default(),
+            // Screenshots never run the probe; mark it already finished.
             #[cfg(all(
                 not(target_arch = "wasm32"),
                 feature = "native-runtime",
                 target_os = "linux"
             ))]
-            capture_probe_pending: None,
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                feature = "native-runtime",
-                target_os = "linux"
-            ))]
-            capture_probe_finished: true,
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                feature = "native-runtime",
-                target_os = "linux"
-            ))]
-            capture_probe_not_before: None,
-            #[cfg(all(
-                not(target_arch = "wasm32"),
-                feature = "native-runtime",
-                target_os = "linux"
-            ))]
-            hotkeys_deferred: None,
+            portal_probe: crate::PortalProbe::finished(),
         };
         if let Some(m) = app.workspace.macros.first() {
             app.workspace.macro_meta.sync_selection(0, m);
@@ -212,6 +203,7 @@ impl SqyreApp {
 
     /// Open the settings window (integration / screenshot harnesses).
     pub fn open_settings_for_docs(&mut self) {
+        // Docs harness paints without a live ctx here; focus re-arms on next open cycle.
         self.settings_ui.open = true;
     }
 

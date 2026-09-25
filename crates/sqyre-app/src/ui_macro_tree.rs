@@ -9,7 +9,7 @@ use crate::tree_history::{TreeHistory, TreeSnapshot};
 use crate::SqyreApp;
 use eframe::egui;
 use egui_ltreeview::{Action as TreeAction, NodeBuilder, TreeView, TreeViewBuilder, TreeViewState};
-use sqyre_domain::{Action, ActionId, InsertSlot};
+use sqyre_domain::{Action, ActionId, InsertSlot, Macro};
 use std::collections::HashSet;
 use std::sync::atomic::Ordering;
 
@@ -57,6 +57,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         .scope(|ui| {
             ui.spacing_mut().scroll.floating_allocated_width = ui.spacing().scroll.bar_width;
             // Custom drag-scroll below (DnD handle vs content); disable egui drag.
+            // Vertical only: action rows clip to the visible pane width, so an H-bar
+            // would only reflect egui_ltreeview's min_width ratchet (see new_child
+            // below). auto_shrink false keeps the viewport filled when content is short.
             let scroll_out = egui::ScrollArea::vertical()
                 .id_salt("macro_tree_scroll")
                 .scroll_source(crate::pickers::SCROLL_SOURCE_NO_DRAG)
@@ -144,6 +147,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     let icons = &mut app.icon_cache;
                     let root = &app.workspace.macros[idx].root;
                     let root_children = root.children();
+                    if root_children.is_empty() {
+                        ui.weak("No actions yet — Add Action");
+                    }
                     let known_vars = app
                         .tree
                         .known_vars_cached(&app.workspace.macros[idx])
@@ -168,16 +174,34 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         paint_revision,
                         show_logs,
                     };
-                    // egui_ltreeview sizes to max(available, content). Inside ScrollArea
-                    // that fills the viewport and trips a permanent vertical scrollbar
-                    // (content ≈ viewport + rounding). Cap available height so the tree
-                    // sizes to its nodes; allocate_rect still grows content for scrolling.
-                    ui.set_max_height(0.0);
+                    // egui_ltreeview sizes to max(available, content) and ratchets
+                    // `state.min_width` upward only. A vertical ScrollArea with
+                    // auto_shrink(false) would adopt that width and stretch the
+                    // pane (or, with ScrollArea::both, show an extreme H-bar).
+                    // Paint in a new_child so the ratchet cannot advance the
+                    // ScrollArea; claim only the viewport width (rows already
+                    // clip to the visible edge). Cap available height so the
+                    // tree sizes to its nodes (same as the vertical scrollbar
+                    // fix); allocate_rect still grows content for V-scroll.
+                    let viewport_w = ui.available_width().max(1.0);
+                    let tree_origin = ui.cursor().min;
+                    let tree_max = egui::Rect::from_min_size(
+                        tree_origin,
+                        egui::vec2(viewport_w, f32::INFINITY),
+                    );
+                    let mut tree_ui = ui.new_child(
+                        egui::UiBuilder::new()
+                            .max_rect(tree_max)
+                            .layout(egui::Layout::top_down(egui::Align::Min)),
+                    );
+                    tree_ui.set_clip_rect(tree_max.intersect(ui.clip_rect()));
+                    tree_ui.set_max_width(viewport_w);
+                    tree_ui.set_max_height(0.0);
                     // egui_ltreeview Hook indent clamps against an unnormalized clip rect
                     // and panics when that rect is inverted (window resize / collapse).
                     // Upstream #47 added normalize_rect but missed one Hook clamp site.
                     // Skip the frame when invisible rather than panic.
-                    let tree_actions = if ui.clip_rect().is_negative() {
+                    let tree_actions = if tree_ui.clip_rect().is_negative() {
                         Vec::new()
                     } else {
                         let (_, tree_actions) = TreeView::new(id)
@@ -185,7 +209,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                             .allow_multi_selection(true)
                             .default_node_height(Some(tree_chrome::default_row_height(interact_y)))
                             .show_state(
-                                ui,
+                                &mut tree_ui,
                                 &mut state,
                                 |builder: &mut TreeViewBuilder<'_, ActionId>| {
                                     // Invisible flattened root so top-level rows have a parent for DnD
@@ -214,16 +238,20 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                             );
                         tree_actions
                     };
+                    let content_h = tree_ui.min_size().y.max(1.0);
+                    // Claim viewport width only — do not import TreeView's
+                    // ratcheted min_width into ScrollArea content_size.
+                    ui.allocate_exact_size(egui::vec2(viewport_w, content_h), egui::Sense::hover());
                     // Off-clip rows skip label_ui — estimate Y so ScrollArea can still follow.
                     if let Some(target) = scroll_to {
                         if !scrolled_follow {
                             if let Some(row_i) = flattened_visible_index(root, target) {
-                                let row_h =
-                                    tree_chrome::row_height(ui) + ui.spacing().item_spacing.y;
-                                let y = ui.min_rect().top() + row_i as f32 * row_h;
+                                let row_h = tree_chrome::row_height(&tree_ui)
+                                    + tree_ui.spacing().item_spacing.y;
+                                let y = tree_origin.y + row_i as f32 * row_h;
                                 let rect = egui::Rect::from_min_size(
-                                    egui::pos2(ui.min_rect().left(), y),
-                                    egui::vec2(ui.available_width().max(1.0), row_h),
+                                    egui::pos2(tree_origin.x, y),
+                                    egui::vec2(viewport_w, row_h),
                                 );
                                 ui.scroll_to_rect(rect, Some(egui::Align::Center));
                                 scrolled_follow = true;
@@ -335,10 +363,26 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             .collect();
         // Snapshot before tooltip may mutate; record via borrow-split.
         let mut pending_record: Option<TreeSnapshot> = None;
+        let meta_for_snap = {
+            let m = &app.workspace.macros[idx];
+            Macro {
+                name: m.name.clone(),
+                root: sqyre_domain::root_loop(vec![]),
+                global_delay: m.global_delay,
+                keyboard_delay: m.keyboard_delay,
+                mouse_delay: m.mouse_delay,
+                hotkey: m.hotkey.clone(),
+                hotkey_trigger: m.hotkey_trigger.clone(),
+                tags: m.tags.clone(),
+                variable_decls: m.variable_decls.clone(),
+                variables: Default::default(),
+            }
+        };
         let known_vars = app
             .tree
             .known_vars_cached(&app.workspace.macros[idx])
             .clone();
+        let pending = app.pending_viewport_scale;
         let discarded = {
             let macro_ = &mut app.workspace.macros[idx];
             let mut tip_ui = TipUiCtx {
@@ -358,6 +402,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     screen_click: &app.screen_click,
                 },
                 compact_program_headers: app.settings_ui.settings().compact_program_headers,
+                pending_scale: pending.as_ref(),
             };
             action_tooltip::show(
                 &mut app.tree.tooltip,
@@ -367,8 +412,11 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 &mut tip_ui,
                 |root_before| {
                     if pending_record.is_none() {
-                        if let Ok(snap) = TreeHistory::take_snapshot(root_before, selected.clone())
-                        {
+                        if let Ok(snap) = TreeHistory::take_snapshot_parts(
+                            root_before,
+                            &meta_for_snap,
+                            selected.clone(),
+                        ) {
                             pending_record = Some(snap);
                         }
                     }
@@ -430,10 +478,19 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     if let Some((sources, parent, slot)) = pending_move {
         if !sources.is_empty() {
             app.record_tree_mutation();
-            let _ = app.workspace.macros[idx]
+            match app.workspace.macros[idx]
                 .root
-                .move_actions(&sources, parent, slot);
-            app.persist_macro_at(idx);
+                .move_actions(&sources, parent, slot)
+            {
+                Ok(()) => app.persist_macro_at(idx),
+                Err(_) => {
+                    // Undo the optimistic history push; tree was not changed.
+                    if let Some(hist) = app.tree.histories.get_mut(&app.workspace.macros[idx].name)
+                    {
+                        hist.pop_last_undo();
+                    }
+                }
+            }
         }
     }
     // Finish deferred Scroll→Idle now that TreeView Move/Drag are handled.
@@ -624,7 +681,7 @@ fn flattened_visible_index(root: &Action, target: ActionId) -> Option<usize> {
     found
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // tree walk: builder, action, selection outputs, paint ctx, and scroll follow
 fn build_tree(
     builder: &mut TreeViewBuilder<'_, ActionId>,
     action: &Action,
@@ -719,7 +776,7 @@ fn build_tree(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // tree walk: builder, action, selection outputs, paint ctx, and scroll follow
 fn build_else_dir(
     builder: &mut TreeViewBuilder<'_, ActionId>,
     detection: &Action,

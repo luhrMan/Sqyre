@@ -195,14 +195,23 @@ fn run_ocr_once(
     };
     exec.log_timing(action_id, "recognize", recognize_started.elapsed());
 
-    exec.log(
-        action_id,
-        format!(
-            "{label} full text ({} chars): {}",
-            recognized.text.len(),
-            recognized.text
-        ),
-    );
+    // Recognized text is whatever was on screen — passwords, tokens, private
+    // messages. Log the full transcript only when verbose diagnostics are on.
+    if exec.log_verbose_enabled() {
+        exec.log(
+            action_id,
+            format!(
+                "{label} full text ({} chars): {}",
+                recognized.text.len(),
+                recognized.text
+            ),
+        );
+    } else {
+        exec.log(
+            action_id,
+            format!("{label} full text ({} chars)", recognized.text.len()),
+        );
+    }
     exec.log(
         action_id,
         format!("{label} words found: {}", recognized.words.len()),

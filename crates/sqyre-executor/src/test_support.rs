@@ -1,11 +1,11 @@
 //! Shared test doubles for executor unit/integration tests.
 
 use crate::backends::{
-    AutomationBackend, AutomationError, ContinueKeyWaiter, CoordinateResolver, DesktopRect,
-    MacroLookup, MoveOptions, OcrEngine, PortError, ScreenCapturer, WindowFocuser,
+    AutomationBackend, AutomationError, CollectionArea, ContinueKeyWaiter, CoordinateResolver,
+    DesktopRect, MacroLookup, MoveOptions, OcrEngine, PortError, ScreenCapturer, WindowFocuser,
 };
 use image::RgbaImage;
-use sqyre_domain::{CoordinateRef, Macro};
+use sqyre_domain::{grid_cell_rect, CoordinateRef, Macro};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -106,10 +106,21 @@ impl CoordinateResolver for FixedResolver {
         r: &CoordinateRef,
         _macro_: &Macro,
     ) -> Result<(i32, i32, i32, i32), PortError> {
-        if r.cell_range().is_some() {
+        if let Some((r1, c1, r2, c2)) = r.cell_range() {
             if let Some(cols) = &self.collections {
-                if let Some(FixedCollection { bounds, .. }) = cols.get(r.name()) {
-                    return Ok(*bounds);
+                if let Some(FixedCollection {
+                    rows,
+                    cols: cols_n,
+                    bounds,
+                }) = cols.get(r.name())
+                {
+                    return grid_cell_rect(*bounds, *rows, *cols_n, r1, c1, r2, c2).ok_or_else(
+                        || {
+                            PortError::invalid(format!(
+                                "cell range {r1},{c1}-{r2},{c2} out of bounds for {rows}x{cols_n}"
+                            ))
+                        },
+                    );
                 }
             }
         }
@@ -124,6 +135,42 @@ impl CoordinateResolver for FixedResolver {
         }
         self.grid
             .ok_or_else(|| PortError::not_configured("collection grid lookup"))
+    }
+
+    fn collection_area(
+        &self,
+        r: &CoordinateRef,
+        _macro_: &Macro,
+    ) -> Result<CollectionArea, PortError> {
+        if let Some(cols) = &self.collections {
+            if let Some(FixedCollection {
+                rows,
+                cols,
+                bounds: (left, top, right, bottom),
+            }) = cols.get(r.name())
+            {
+                return Ok(CollectionArea {
+                    left: *left,
+                    top: *top,
+                    right: *right,
+                    bottom: *bottom,
+                    rows: *rows,
+                    cols: *cols,
+                });
+            }
+        }
+        if let Some((rows, cols)) = self.grid {
+            let (left, top, right, bottom) = self.area;
+            return Ok(CollectionArea {
+                left,
+                top,
+                right,
+                bottom,
+                rows,
+                cols,
+            });
+        }
+        Err(PortError::not_configured("collection area lookup"))
     }
 
     fn atlas_members(&self, _program: &str, _atlas: &str) -> Result<Vec<String>, PortError> {
@@ -221,8 +268,9 @@ impl AutomationBackend for RecordingBackend {
         self.log.push(format!("keyup:{key}"));
         Ok(())
     }
-    fn type_char(&mut self, ch: char) {
+    fn type_char(&mut self, ch: char) -> Result<(), AutomationError> {
         self.log.push(format!("type:{ch}"));
+        Ok(())
     }
     fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError> {
         self.log.push(format!("clipboard:{s}"));

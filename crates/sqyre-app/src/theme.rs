@@ -76,6 +76,106 @@ fn icon_button_inner(
     response
 }
 
+/// Dark scrim behind preview overlay chips / editors.
+pub fn preview_scrim() -> Color32 {
+    rgba([16, 16, 16, 170])
+}
+
+/// Semi-opaque black behind labels on preview imagery.
+pub fn preview_label_dim() -> Color32 {
+    rgba([0, 0, 0, 150])
+}
+
+/// Red grid / outline stroke on image previews.
+pub fn preview_grid_stroke() -> Color32 {
+    Color32::from_rgb(255, 80, 80)
+}
+
+/// Warn stroke / label on preview atlas (unresolved collections).
+pub fn preview_warn_stroke() -> Color32 {
+    warn_fg()
+}
+
+/// Soft blue fill for collection bounds on atlas preview.
+pub fn preview_selection_fill() -> Color32 {
+    rgba([60, 100, 160, 60])
+}
+
+/// Blue stroke for collection bounds on atlas preview.
+pub fn preview_selection_stroke() -> Color32 {
+    Color32::from_rgb(120, 180, 255)
+}
+
+/// Best / passing match marker (pixel check).
+pub fn match_pass_fg() -> Color32 {
+    Color32::from_rgb(80, 255, 120)
+}
+
+/// Best match below tolerance (pixel check).
+pub fn match_fail_fg() -> Color32 {
+    Color32::from_rgb(255, 200, 60)
+}
+
+/// Secondary match within tolerance (pixel check).
+pub fn match_within_fg() -> Color32 {
+    Color32::from_rgb(120, 230, 180)
+}
+
+/// Selected card / list stroke (Sqyre primary).
+pub fn selection_stroke() -> Stroke {
+    Stroke::new(2.0, PRIMARY)
+}
+
+/// Soft primary tint for related-row owner highlight.
+pub fn highlight_owner_fill() -> Color32 {
+    rgba([0xdc, 0x9d, 0x2e, 0x28])
+}
+
+/// Soft error tint behind invalid tree rows.
+pub fn highlight_invalid_fill() -> Color32 {
+    rgba([220, 70, 70, 45])
+}
+
+/// Soft blue fill for execution cursor row.
+pub fn highlight_cursor_fill() -> Color32 {
+    rgba([90, 160, 240, 70])
+}
+
+/// Soft green fill for execution progress overlay.
+pub fn highlight_progress_fill() -> Color32 {
+    rgba([90, 200, 130, 90])
+}
+
+/// Icon-grid selected cell fill.
+pub fn picker_selected_fill() -> Color32 {
+    rgba([80, 160, 100, 60])
+}
+
+/// Icon-grid selected cell stroke.
+pub fn picker_selected_stroke() -> Color32 {
+    Color32::from_rgb(60, 140, 80)
+}
+
+/// DnD drop-target hover stroke on icon grid.
+pub fn picker_drop_stroke() -> Color32 {
+    Color32::from_rgb(80, 140, 200)
+}
+
+/// Remove-badge hover fill on icon grid.
+pub fn picker_remove_hover() -> Color32 {
+    Color32::from_rgb(180, 60, 60)
+}
+
+/// Collection cell selection fill.
+pub fn cell_selection_fill() -> Color32 {
+    rgba([60, 160, 255, 70])
+}
+
+/// Collection cell selection stroke.
+pub fn cell_selection_stroke() -> Color32 {
+    Color32::from_rgb(40, 140, 255)
+}
+
 /// Selected-text stroke — light cream readable on dim gold fill.
 const SELECTION_FG: Color32 = Color32::from_rgb(0xf5, 0xe6, 0xc0);
 
@@ -124,11 +224,10 @@ pub fn section_frame(style: &egui::Style) -> egui::Frame {
 
 /// Full-width framed card, then vertical `gap` after it.
 pub fn framed_section(ui: &mut egui::Ui, gap: f32, add_contents: impl FnOnce(&mut egui::Ui)) {
-    // `set_width(available)` becomes content min_size and ratchets Windows toward
-    // max_size — cap with visible_width instead (see `fill_resize_body`).
-    let row_w = crate::widgets::visible_width(ui);
+    // Cap width *inside* the frame. Measuring outside and then applying
+    // `set_max_width` ignores inner_margin/stroke, so the right border clips.
     section_frame(ui.style()).show(ui, |ui| {
-        ui.set_max_width(row_w);
+        ui.set_max_width(crate::widgets::visible_width(ui));
         add_contents(ui);
     });
     ui.add_space(gap);

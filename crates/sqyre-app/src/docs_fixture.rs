@@ -28,6 +28,7 @@ pub fn demo_catalog() -> ProgramCatalog {
             DEMO_PROGRAM,
             ProgramPoint {
                 name: "center".into(),
+                monitor: 1,
                 x: ScalarValue::Int(960),
                 y: ScalarValue::Int(540),
             },
@@ -38,6 +39,7 @@ pub fn demo_catalog() -> ProgramCatalog {
             DEMO_PROGRAM,
             ProgramSearchArea {
                 name: "Main area".into(),
+                monitor: 1,
                 left_x: ScalarValue::Int(100),
                 top_y: ScalarValue::Int(100),
                 right_x: ScalarValue::Int(900),

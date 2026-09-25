@@ -476,7 +476,10 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
             Some(enum_overlay_windows_proc),
             LPARAM(&mut hwnds as *mut Vec<HWND> as isize),
         )
-        .map_err(|e| CaptureError::Message(format!("EnumWindows failed: {e}")))?;
+        .map_err(|e| CaptureError::Win32 {
+            api: "EnumWindows",
+            detail: e.to_string(),
+        })?;
     }
 
     let mut hinted = hinted.lock().unwrap_or_else(|e| e.into_inner());
@@ -536,8 +539,10 @@ fn enable_dwm_per_pixel_alpha(hwnd: HWND) -> Result<(), CaptureError> {
             hRgnBlur: region,
             fTransitionOnMaximized: false.into(),
         };
-        let result = DwmEnableBlurBehindWindow(hwnd, &bb)
-            .map_err(|e| CaptureError::Message(format!("DwmEnableBlurBehindWindow failed: {e}")));
+        let result = DwmEnableBlurBehindWindow(hwnd, &bb).map_err(|e| CaptureError::Win32 {
+            api: "DwmEnableBlurBehindWindow",
+            detail: e.to_string(),
+        });
         let _ = DeleteObject(HGDIOBJ::from(region));
         result
     }

@@ -25,6 +25,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+fn settings_window_id() -> egui::Id {
+    egui::Id::new("User Settings")
+}
+
 #[derive(Debug, Clone)]
 enum PendingConfirm {
     /// Move current data to `new_dir` (Yes) or start fresh (No).
@@ -137,6 +141,12 @@ impl SettingsUi {
         self.open = true;
         self.active_section = SettingsSection::Appearance;
         self.search.clear();
+    }
+
+    /// Open the settings window (re-arms search focus).
+    pub fn request_open(&mut self, ctx: &egui::Context) {
+        self.open = true;
+        crate::pickers::reset_focus_search(ctx, settings_window_id());
     }
 
     pub fn settings(&self) -> &UserSettings {
@@ -254,6 +264,7 @@ impl SettingsUi {
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
         #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) {
         if !self.open {
             return;
@@ -268,16 +279,24 @@ impl SettingsUi {
                 .min_size([520.0, 360.0])
                 .resizable(true),
             ctx,
+            settings_window_id(),
+            pending_scale,
         )
         .show(ctx, |ui| {
-            #[cfg(not(target_arch = "wasm32"))]
-            self.ui(ui, ctx, db, macros, catalog, update);
-            #[cfg(target_arch = "wasm32")]
-            self.ui(ui, ctx, db, macros, catalog);
+            crate::widgets::fill_resize_body(ui, |ui| {
+                #[cfg(not(target_arch = "wasm32"))]
+                self.ui(ui, ctx, db, macros, catalog, update);
+                #[cfg(target_arch = "wasm32")]
+                self.ui(ui, ctx, db, macros, catalog);
+            });
         });
-        self.open = open;
+        // `ui` may clear `self.open` (Esc); Window `.open` may clear `open` (titlebar).
+        self.open = open && self.open;
+        if !self.open {
+            crate::pickers::reset_focus_search(ctx, settings_window_id());
+        }
         if let Some(confirm) = self.confirm.clone() {
-            self.draw_confirm(ctx, confirm, db, macros, catalog);
+            self.draw_confirm(ctx, confirm, pending_scale, db, macros, catalog);
         }
         if self.dirty {
             self.persist();
@@ -294,32 +313,42 @@ impl SettingsUi {
         catalog: &mut ProgramCatalog,
         #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
     ) {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(
-                egui_phosphor::regular::MAGNIFYING_GLASS,
-            ))
-            .on_hover_text("Search");
-            let search_w = (ui.available_width() - 60.0).max(120.0);
-            if ui
-                .add(
+        // Esc: clear search first, then close (window already has titlebar close).
+        if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+            if !self.search.is_empty() {
+                self.search.clear();
+            } else {
+                self.open = false;
+            }
+        }
+
+        let search_focused = ui
+            .horizontal(|ui| {
+                ui.label(egui::RichText::new(
+                    egui_phosphor::regular::MAGNIFYING_GLASS,
+                ))
+                .on_hover_text("Search");
+                // Infinity fill — fixed desired_width(available) ratchets the window.
+                let search_resp = ui.add(
                     egui::TextEdit::singleline(&mut self.search)
                         .hint_text("Search settings…")
-                        .desired_width(search_w),
-                )
-                .changed()
-                && !self.search.trim().is_empty()
-            {
-                let q = self.search.trim().to_ascii_lowercase();
-                if !self.active_section.visible(&q) {
-                    if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
-                        self.active_section = section;
+                        .desired_width(f32::INFINITY),
+                );
+                crate::pickers::focus_search_once(ui, settings_window_id(), &search_resp);
+                if search_resp.changed() && !self.search.trim().is_empty() {
+                    let q = self.search.trim().to_ascii_lowercase();
+                    if !self.active_section.visible(&q) {
+                        if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
+                            self.active_section = section;
+                        }
                     }
                 }
-            }
-            if !self.search.is_empty() && ui.small_button("Clear").clicked() {
-                self.search.clear();
-            }
-        });
+                if !self.search.is_empty() && ui.small_button("Clear").clicked() {
+                    self.search.clear();
+                }
+                search_resp.has_focus()
+            })
+            .inner;
         ui.separator();
 
         let footer = if self.status_banner.status.is_some() {
@@ -327,7 +356,13 @@ impl SettingsUi {
         } else {
             0.0
         };
-        let body_h = (ui.available_height() - footer).max(40.0);
+        let rem = ui.available_size();
+        let (outer, _) = ui.allocate_exact_size(rem, egui::Sense::hover());
+        let body_h = (outer.height() - footer).max(40.0);
+        let body_rect = egui::Rect::from_min_size(outer.min, egui::vec2(outer.width(), body_h));
+        let footer_rect =
+            egui::Rect::from_min_max(egui::pos2(outer.min.x, outer.min.y + body_h), outer.max);
+
         let q = self.search.trim().to_ascii_lowercase();
         let visible_sections: Vec<SettingsSection> =
             SettingsSection::all().filter(|s| s.visible(&q)).collect();
@@ -335,124 +370,147 @@ impl SettingsUi {
             self.active_section = visible_sections[0];
         }
 
-        ui.horizontal(|ui| {
-            const SIDEBAR_W: f32 = 132.0;
-            const MIN_CONTENT_W: f32 = 240.0;
-            ui.allocate_ui_with_layout(
-                egui::vec2(SIDEBAR_W, body_h),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    ui.set_max_size(egui::vec2(SIDEBAR_W, body_h));
-                    for section in visible_sections.iter().copied() {
-                        if ui
-                            .selectable_label(self.active_section == section, section.label())
-                            .clicked()
-                        {
-                            self.active_section = section;
+        // ↑↓ move the sidebar selection (like the command palette). Prefer when
+        // search is focused; otherwise only if nothing else wants arrow keys.
+        let allow_section_keys = search_focused
+            || (!ui.ctx().egui_wants_keyboard_input() && !ui.ctx().text_edit_focused());
+        if allow_section_keys && !visible_sections.is_empty() {
+            let mut idx = visible_sections
+                .iter()
+                .position(|s| *s == self.active_section)
+                .unwrap_or(0);
+            let down = ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown));
+            let up = ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp));
+            if down {
+                idx = (idx + 1).min(visible_sections.len() - 1);
+                self.active_section = visible_sections[idx];
+            } else if up {
+                idx = idx.saturating_sub(1);
+                self.active_section = visible_sections[idx];
+            }
+        }
+
+        const SIDEBAR_W: f32 = 132.0;
+        const SPLITTER_W: f32 = 6.0;
+        let left_w = SIDEBAR_W.min((body_rect.width() - SPLITTER_W).max(0.0));
+        let left_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(left_w, body_h));
+        let split_rect = egui::Rect::from_min_size(
+            egui::pos2(left_rect.right(), body_rect.top()),
+            egui::vec2(SPLITTER_W, body_h),
+        );
+        let right_rect = egui::Rect::from_min_max(
+            egui::pos2(split_rect.right(), body_rect.top()),
+            body_rect.max,
+        );
+
+        {
+            let mut left_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(left_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            left_ui.set_clip_rect(left_rect.intersect(ui.clip_rect()));
+            left_ui.set_max_size(left_rect.size());
+            for section in visible_sections.iter().copied() {
+                if left_ui
+                    .selectable_label(self.active_section == section, section.label())
+                    .on_hover_text("↑↓ to switch sections")
+                    .clicked()
+                {
+                    self.active_section = section;
+                }
+            }
+        }
+        ui.painter().vline(
+            split_rect.center().x,
+            split_rect.y_range(),
+            egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+        );
+        {
+            let mut right_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(right_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            right_ui.set_clip_rect(right_rect.intersect(ui.clip_rect()));
+            right_ui.set_max_size(right_rect.size());
+            crate::pickers::dialog_scroll(right_rect.width(), body_h)
+                .id_salt("user_settings_content")
+                .show(&mut right_ui, |ui| {
+                    ui.set_max_width(right_rect.width());
+                    if visible_sections.is_empty() {
+                        ui.label(
+                            egui::RichText::new("No settings match your search.")
+                                .weak()
+                                .italics(),
+                        );
+                        return;
+                    }
+                    let section = self.active_section;
+                    ui.label(egui::RichText::new(section.label()).strong().heading());
+                    ui.label(egui::RichText::new(section.subtitle()).weak());
+                    ui.separator();
+                    let section_hit = match section {
+                        SettingsSection::General => query_matches(&q, SECTION_GENERAL),
+                        SettingsSection::Sound => query_matches(&q, SECTION_SOUND),
+                        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                        SettingsSection::Permissions => query_matches(&q, SECTION_PERMISSIONS),
+                        SettingsSection::Data => query_matches(&q, SECTION_DATA),
+                        #[cfg(not(target_arch = "wasm32"))]
+                        SettingsSection::Updates => query_matches(&q, SECTION_UPDATES),
+                        SettingsSection::Appearance => query_matches(&q, SECTION_APPEARANCE),
+                    };
+                    match section {
+                        SettingsSection::General => self.draw_general(ui, &q, section_hit),
+                        SettingsSection::Sound => self.draw_sound(ui, &q, section_hit),
+                        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                        SettingsSection::Permissions => {
+                            self.draw_permissions(ui, ctx, &q, section_hit)
+                        }
+                        SettingsSection::Data => {
+                            self.draw_data(ui, db, macros, catalog, &q, section_hit);
+                            #[cfg(not(target_arch = "wasm32"))]
+                            if setting_visible(&q, section_hit, DATA_LOCATION)
+                                && setting_visible(&q, section_hit, DATA_BACKUP)
+                            {
+                                ui.add_space(10.0);
+                            }
+                            self.draw_backup(ui, db, macros, catalog, &q, section_hit);
+                        }
+                        #[cfg(not(target_arch = "wasm32"))]
+                        SettingsSection::Updates => self.draw_updates(ui, update, &q, section_hit),
+                        SettingsSection::Appearance => {
+                            self.draw_appearance(ui, ctx, &q, section_hit)
                         }
                     }
-                },
-            );
-            ui.separator();
-            let content_w = ui.available_width().max(MIN_CONTENT_W);
-            ui.allocate_ui_with_layout(
-                egui::vec2(content_w, body_h),
-                egui::Layout::top_down(egui::Align::Min),
-                |ui| {
-                    ui.set_max_size(egui::vec2(content_w, body_h));
-                    crate::pickers::scroll_vertical()
-                        .id_salt("user_settings_content")
-                        .auto_shrink([false, false])
-                        .max_height(body_h)
-                        .show(ui, |ui| {
-                            ui.set_max_width(ui.available_width());
-                            if visible_sections.is_empty() {
-                                ui.label(
-                                    egui::RichText::new("No settings match your search.")
-                                        .weak()
-                                        .italics(),
-                                );
-                                return;
-                            }
-                            let section = self.active_section;
-                            ui.label(egui::RichText::new(section.label()).strong().heading());
-                            ui.label(egui::RichText::new(section.subtitle()).weak());
-                            ui.separator();
-                            let section_hit = match section {
-                                SettingsSection::General => query_matches(&q, SECTION_GENERAL),
-                                SettingsSection::Sound => query_matches(&q, SECTION_SOUND),
-                                #[cfg(all(
-                                    not(target_arch = "wasm32"),
-                                    feature = "native-runtime"
-                                ))]
-                                SettingsSection::Permissions => {
-                                    query_matches(&q, SECTION_PERMISSIONS)
-                                }
-                                SettingsSection::Data => query_matches(&q, SECTION_DATA),
-                                #[cfg(not(target_arch = "wasm32"))]
-                                SettingsSection::Updates => query_matches(&q, SECTION_UPDATES),
-                                SettingsSection::Appearance => {
-                                    query_matches(&q, SECTION_APPEARANCE)
-                                }
-                            };
-                            match section {
-                                SettingsSection::General => self.draw_general(ui, &q, section_hit),
-                                SettingsSection::Sound => self.draw_sound(ui, &q, section_hit),
-                                #[cfg(all(
-                                    not(target_arch = "wasm32"),
-                                    feature = "native-runtime"
-                                ))]
-                                SettingsSection::Permissions => {
-                                    self.draw_permissions(ui, ctx, &q, section_hit)
-                                }
-                                SettingsSection::Data => {
-                                    self.draw_data(ui, db, macros, catalog, &q, section_hit);
-                                    #[cfg(not(target_arch = "wasm32"))]
-                                    if setting_visible(&q, section_hit, DATA_LOCATION)
-                                        && setting_visible(&q, section_hit, DATA_BACKUP)
-                                    {
-                                        ui.add_space(10.0);
-                                    }
-                                    self.draw_backup(ui, db, macros, catalog, &q, section_hit);
-                                }
-                                #[cfg(not(target_arch = "wasm32"))]
-                                SettingsSection::Updates => {
-                                    self.draw_updates(ui, update, &q, section_hit)
-                                }
-                                SettingsSection::Appearance => {
-                                    self.draw_appearance(ui, ctx, &q, section_hit)
-                                }
-                            }
-                        });
-                },
-            );
-        });
+                });
+        }
 
-        if self.status_banner.status.is_some() {
-            ui.separator();
-            self.status_banner.paint(ui);
+        if footer > 0.0 {
+            let mut footer_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(footer_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            footer_ui.set_clip_rect(footer_rect.intersect(ui.clip_rect()));
+            self.status_banner.paint(&mut footer_ui);
         }
     }
 
     fn draw_general(&mut self, ui: &mut egui::Ui, q: &str, section_hit: bool) {
         if setting_visible(q, section_hit, SETTING_LOG_META) {
-            if ui
-                .checkbox(
-                    &mut self.settings.save_meta_images,
-                    "Log Meta Images",
-                )
-                .on_hover_text(
-                    "When enabled, image search / OCR keep debug frames in action logs (in memory). Can be very memory intensive.",
-                )
-                .changed()
-            {
-                self.mark_dirty();
-            }
-            ui.label(
-                egui::RichText::new("Warning: can be very memory intensive.")
-                    .weak()
-                    .small(),
-            );
+            ui.horizontal(|ui| {
+                if ui
+                    .checkbox(&mut self.settings.save_meta_images, "Log Meta Images")
+                    .changed()
+                {
+                    self.mark_dirty();
+                }
+                crate::action_tooltip::help::icon(
+                    ui,
+                    crate::action_tooltip::help::SETTING_LOG_META,
+                );
+            });
         }
 
         if setting_visible(q, section_hit, SETTING_HIGHLIGHT_ACTION)
@@ -495,71 +553,119 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
-        if setting_visible(q, section_hit, SETTING_WHILE_BUDGET) {
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label("While safety budget (iterations):");
-                let mut v = self.settings.while_max_iterations;
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut v)
-                            .range(
-                                sqyre_persist::MIN_WHILE_MAX_ITERATIONS
-                                    ..=sqyre_persist::MAX_WHILE_MAX_ITERATIONS,
-                            )
-                            .speed(1000),
-                    )
-                    .on_hover_text(
-                        "Used when a While action has max_iterations ≤ 0. Prevents runaway loops.",
-                    )
-                    .changed()
-                {
-                    self.settings.while_max_iterations = v;
-                    self.mark_dirty();
-                }
-            });
+        if setting_visible(q, section_hit, SETTING_HOTKEY_TAGS_FOCUSED)
+            && ui
+                .checkbox(
+                    &mut self.settings.hotkey_tags_while_focused,
+                    "Select hotkey tags while a Program is focused",
+                )
+                .on_hover_text(
+                    "When enabled, focusing a Program that has macro tags sets the hotkey tag selection to those tags; otherwise hotkeys turn off. When disabled, tag selection is manual only (macro list headers).",
+                )
+                .changed()
+        {
+            self.mark_dirty();
         }
 
-        if setting_visible(q, section_hit, SETTING_RUN_MACRO_DEPTH) {
-            ui.horizontal(|ui| {
-                ui.label("Run Macro max nesting depth:");
-                let mut v = self.settings.run_macro_max_depth;
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut v)
-                            .range(
-                                sqyre_persist::MIN_RUN_MACRO_MAX_DEPTH
-                                    ..=sqyre_persist::MAX_RUN_MACRO_MAX_DEPTH,
-                            )
-                            .speed(1),
-                    )
-                    .on_hover_text(
-                        "Maximum nested Run Macro calls (including the top-level macro). Cycles are always rejected.",
-                    )
-                    .changed()
-                {
-                    self.settings.run_macro_max_depth = v;
-                    self.mark_dirty();
-                }
-            });
+        let show_while = setting_visible(q, section_hit, SETTING_WHILE_BUDGET);
+        let show_depth = setting_visible(q, section_hit, SETTING_RUN_MACRO_DEPTH);
+        let show_distance = setting_visible(q, section_hit, SETTING_IMAGE_SEARCH_DISTANCE);
+        if show_while || show_depth || show_distance {
+            // Expand when the query specifically hits an Advanced knob (not bare section browse).
+            let hit_advanced = query_matches(q, SETTING_WHILE_BUDGET)
+                || query_matches(q, SETTING_RUN_MACRO_DEPTH)
+                || query_matches(q, SETTING_IMAGE_SEARCH_DISTANCE);
+            let open = hit_advanced.then_some(true);
+            egui::CollapsingHeader::new("Advanced")
+                .default_open(false)
+                .open(open)
+                .id_salt("settings_general_advanced")
+                .show(ui, |ui| {
+                    if show_while {
+                        ui.horizontal(|ui| {
+                            ui.label("Stop endless loops after:");
+                            let mut v = self.settings.while_max_iterations;
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut v)
+                                        .range(
+                                            sqyre_persist::MIN_WHILE_MAX_ITERATIONS
+                                                ..=sqyre_persist::MAX_WHILE_MAX_ITERATIONS,
+                                        )
+                                        .speed(1000)
+                                        .suffix(" iterations"),
+                                )
+                                .on_hover_text(
+                                    "While safety budget: used when a While action has max_iterations ≤ 0. Prevents runaway loops.",
+                                )
+                                .changed()
+                            {
+                                self.settings.while_max_iterations = v;
+                                self.mark_dirty();
+                            }
+                        });
+                    }
+
+                    if show_depth {
+                        ui.horizontal(|ui| {
+                            ui.label("Limit nested Run Macro calls:");
+                            let mut v = self.settings.run_macro_max_depth;
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut v)
+                                        .range(
+                                            sqyre_persist::MIN_RUN_MACRO_MAX_DEPTH
+                                                ..=sqyre_persist::MAX_RUN_MACRO_MAX_DEPTH,
+                                        )
+                                        .speed(1),
+                                )
+                                .on_hover_text(
+                                    "Maximum nested Run Macro calls (including the top-level macro). Cycles are always rejected.",
+                                )
+                                .changed()
+                            {
+                                self.settings.run_macro_max_depth = v;
+                                self.mark_dirty();
+                            }
+                        });
+                    }
+
+                    if show_distance {
+                        ui.horizontal(|ui| {
+                            ui.label("Ignore nearby duplicate image matches:");
+                            let mut v = self.settings.image_search_close_matches_distance;
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut v)
+                                        .range(0..=100)
+                                        .speed(1)
+                                        .suffix(" px"),
+                                )
+                                .on_hover_text(
+                                    "Image search close-match distance: ignore duplicate matches within this many pixels.",
+                                )
+                                .changed()
+                            {
+                                self.settings.image_search_close_matches_distance = v;
+                                self.mark_dirty();
+                            }
+                        });
+                    }
+                });
         }
 
-        if setting_visible(q, section_hit, SETTING_IMAGE_SEARCH_DISTANCE) {
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                ui.label("Image search close-match distance (px):");
-                let mut v = self.settings.image_search_close_matches_distance;
-                if ui
-                    .add(egui::DragValue::new(&mut v).range(0..=100).speed(1))
-                    .on_hover_text(
-                        "Image search: ignore duplicate matches within this many pixels.",
-                    )
-                    .changed()
-                {
-                    self.settings.image_search_close_matches_distance = v;
-                    self.mark_dirty();
-                }
-            });
+        if setting_visible(q, section_hit, SETTING_VARIANT_EXIT_EARLY)
+            && ui
+                .checkbox(
+                    &mut self.settings.image_search_variant_exit_early,
+                    "Image search variant exit early",
+                )
+                .on_hover_text(
+                    "When enabled, stop trying later icon variants after one hits on the same search (or collection cell). Disable to match every variant.",
+                )
+                .changed()
+        {
+            self.mark_dirty();
         }
     }
 
@@ -625,9 +731,9 @@ impl SettingsUi {
     fn draw_data(
         &mut self,
         ui: &mut egui::Ui,
-        _db: &mut Database,
-        _macros: &mut Vec<Macro>,
-        _catalog: &mut ProgramCatalog,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
         q: &str,
         section_hit: bool,
     ) {
@@ -636,6 +742,7 @@ impl SettingsUi {
         }
         #[cfg(target_arch = "wasm32")]
         {
+            let _ = (db, macros, catalog);
             ui.label(
                 "Browser editor: macros live in memory. Use Import / Export on the toolbar for db.yaml. Full backups are not available.",
             );
@@ -650,6 +757,19 @@ impl SettingsUi {
             };
             ui.label(current.display().to_string());
 
+            let flatpak = sqyre_update::is_flatpak_install();
+            if flatpak {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(
+                        "Flatpak keeps a private data copy by default. To share macros \
+                         with AppImage/native, grant access and point at host ~/.sqyre.",
+                    )
+                    .weak()
+                    .small(),
+                );
+            }
+
             ui.horizontal(|ui| {
                 if ui.button("Open .sqyre folder").clicked() {
                     match open_sqyre_dir() {
@@ -659,6 +779,31 @@ impl SettingsUi {
                 }
                 if ui.button("Choose location…").clicked() {
                     self.choose_sqyre_location();
+                }
+                if flatpak {
+                    if ui
+                        .button("Use host ~/.sqyre…")
+                        .on_hover_text(
+                            "Opens a folder picker (portal grant). Select your host \
+                             ~/.sqyre folder, or its parent (Home). For a permanent \
+                             Flatpak permission you can also run:\n\
+                             flatpak override --user --filesystem=~/.sqyre:create com.sqyre.app",
+                        )
+                        .clicked()
+                    {
+                        self.choose_host_sqyre_location();
+                    }
+                    if !self.settings.sqyre_dir.trim().is_empty()
+                        && ui
+                            .button("Use Flatpak sandbox")
+                            .on_hover_text(
+                                "Clear the custom path and return to the private \
+                                 Flatpak data directory (~/.var/app/com.sqyre.app/.sqyre).",
+                            )
+                            .clicked()
+                    {
+                        self.reset_sqyre_to_sandbox(db, macros, catalog);
+                    }
                 }
             });
         }
@@ -833,8 +978,20 @@ impl SettingsUi {
     ) {
         use crate::update::{UpdateState, SQYRE_VERSION};
 
+        let flatpak = sqyre_update::is_flatpak_install();
+
         if setting_visible(q, section_hit, SETTING_UPDATE_VERSION) {
             ui.label(format!("Current version: {SQYRE_VERSION}"));
+        }
+
+        if flatpak {
+            if setting_visible(q, section_hit, SETTING_UPDATE_ACTIONS) {
+                ui.label(
+                    "Flatpak install: updates come from flatpak update or your software center \
+                     (in-app self-replace is not supported).",
+                );
+            }
+            return;
         }
 
         if setting_visible(q, section_hit, SETTING_AUTO_UPDATE)
@@ -907,11 +1064,28 @@ impl SettingsUi {
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(sqyre_dir);
-        let Some(parent) = crate::file_dialogs::pick_folder("Choose .sqyre location", &start)
+        let Some(picked) = crate::file_dialogs::pick_folder("Choose .sqyre location", &start)
         else {
             return;
         };
-        let new_dir = parent.join(".sqyre");
+        self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(picked));
+    }
+
+    /// Flatpak: portal-pick host `~/.sqyre` (or its parent) so the sandbox can use it.
+    fn choose_host_sqyre_location(&mut self) {
+        let start = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(sqyre_dir);
+        let Some(picked) =
+            crate::file_dialogs::pick_folder("Select host ~/.sqyre (or your Home folder)", &start)
+        else {
+            return;
+        };
+        self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(picked));
+    }
+
+    fn confirm_sqyre_location(&mut self, new_dir: PathBuf) {
         let old_dir = sqyre_dir();
         if new_dir == old_dir {
             return;
@@ -919,92 +1093,126 @@ impl SettingsUi {
         self.confirm = Some(PendingConfirm::MoveData { old_dir, new_dir });
     }
 
+    /// Clear a custom data path and reload from the default Flatpak/native location.
+    fn reset_sqyre_to_sandbox(
+        &mut self,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
+    ) {
+        if self.settings.sqyre_dir.trim().is_empty() {
+            return;
+        }
+        self.settings.sqyre_dir.clear();
+        set_sqyre_dir_override(None);
+        self.persist();
+        let path = sqyre_dir();
+        self.reload_data_from_disk(db, macros, catalog, &path, "Using Flatpak sandbox data");
+    }
+
     fn draw_confirm(
         &mut self,
         ctx: &egui::Context,
         confirm: PendingConfirm,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
         db: &mut Database,
         macros: &mut Vec<Macro>,
         catalog: &mut ProgramCatalog,
     ) {
         match &confirm {
             PendingConfirm::MoveData { old_dir, new_dir } => {
-                let open = crate::widgets::confirm_window(ctx, "Move existing data?", |ui| {
-                    ui.label(format!(
+                let open = crate::widgets::confirm_window(
+                    ctx,
+                    "Move existing data?",
+                    pending_scale,
+                    |ui| {
+                        ui.label(format!(
                         "Move your current data from\n{}\nto\n{}?\n\nChoose No to start fresh at the new location (existing data is left in place).",
                         old_dir.display(),
                         new_dir.display()
                     ));
-                    // Enter → Yes (index 1).
-                    match crate::widgets::confirm_choice_row(
-                        ui,
-                        &[
-                            ("No", crate::widgets::ConfirmKind::Primary),
-                            ("Yes", crate::widgets::ConfirmKind::Primary),
-                        ],
-                        Some(1),
-                    ) {
-                        crate::widgets::ConfirmChoice::Cancel => {
-                            self.confirm = None;
+                        // Enter → Yes (index 1).
+                        match crate::widgets::confirm_choice_row(
+                            ui,
+                            &[
+                                ("No", crate::widgets::ConfirmKind::Primary),
+                                ("Yes", crate::widgets::ConfirmKind::Primary),
+                            ],
+                            Some(1),
+                        ) {
+                            crate::widgets::ConfirmChoice::Cancel => {
+                                self.confirm = None;
+                            }
+                            crate::widgets::ConfirmChoice::Choice(0) => {
+                                let old = old_dir.clone();
+                                let new = new_dir.clone();
+                                self.confirm = None;
+                                self.apply_sqyre_location(old, new, false, db, macros, catalog);
+                            }
+                            crate::widgets::ConfirmChoice::Choice(1) => {
+                                let old = old_dir.clone();
+                                let new = new_dir.clone();
+                                self.confirm = None;
+                                self.apply_sqyre_location(old, new, true, db, macros, catalog);
+                            }
+                            crate::widgets::ConfirmChoice::Choice(_)
+                            | crate::widgets::ConfirmChoice::None => {}
                         }
-                        crate::widgets::ConfirmChoice::Choice(0) => {
-                            let old = old_dir.clone();
-                            let new = new_dir.clone();
-                            self.confirm = None;
-                            self.apply_sqyre_location(old, new, false, db, macros, catalog);
-                        }
-                        crate::widgets::ConfirmChoice::Choice(1) => {
-                            let old = old_dir.clone();
-                            let new = new_dir.clone();
-                            self.confirm = None;
-                            self.apply_sqyre_location(old, new, true, db, macros, catalog);
-                        }
-                        crate::widgets::ConfirmChoice::Choice(_)
-                        | crate::widgets::ConfirmChoice::None => {}
-                    }
-                });
+                    },
+                );
                 if !open {
                     self.confirm = None;
                 }
             }
             PendingConfirm::RestoreBackup { path } => {
-                let open = crate::widgets::confirm_window(ctx, "Import backup?", |ui| {
-                    ui.label(format!(
+                let open = crate::widgets::confirm_window(
+                    ctx,
+                    "Import backup?",
+                    pending_scale,
+                    |ui| {
+                        ui.label(format!(
                         "Archive:\n{}\n\nOverwrite replaces all macros, settings, images, and variables with the archive.\n\nMerge keeps live-only items, prefers the archive on name conflicts, replaces settings, and merges other assets. Automatic backups in the backups folder are not removed.",
                         path.display()
                     ));
-                    // Enter → Overwrite (index 0); both are intentional verbs.
-                    match crate::widgets::confirm_choice_row(
-                        ui,
-                        &[
-                            ("Overwrite", crate::widgets::ConfirmKind::Destructive),
-                            ("Merge", crate::widgets::ConfirmKind::Primary),
-                        ],
-                        Some(0),
-                    ) {
-                        crate::widgets::ConfirmChoice::Cancel => {
-                            self.confirm = None;
+                        // Enter → Overwrite (index 0); both are intentional verbs.
+                        match crate::widgets::confirm_choice_row(
+                            ui,
+                            &[
+                                ("Overwrite", crate::widgets::ConfirmKind::Destructive),
+                                ("Merge", crate::widgets::ConfirmKind::Primary),
+                            ],
+                            Some(0),
+                        ) {
+                            crate::widgets::ConfirmChoice::Cancel => {
+                                self.confirm = None;
+                            }
+                            crate::widgets::ConfirmChoice::Choice(0) => {
+                                let path = path.clone();
+                                self.confirm = None;
+                                self.apply_restore_backup(
+                                    path,
+                                    ImportMode::Overwrite,
+                                    db,
+                                    macros,
+                                    catalog,
+                                );
+                            }
+                            crate::widgets::ConfirmChoice::Choice(1) => {
+                                let path = path.clone();
+                                self.confirm = None;
+                                self.apply_restore_backup(
+                                    path,
+                                    ImportMode::Merge,
+                                    db,
+                                    macros,
+                                    catalog,
+                                );
+                            }
+                            crate::widgets::ConfirmChoice::Choice(_)
+                            | crate::widgets::ConfirmChoice::None => {}
                         }
-                        crate::widgets::ConfirmChoice::Choice(0) => {
-                            let path = path.clone();
-                            self.confirm = None;
-                            self.apply_restore_backup(
-                                path,
-                                ImportMode::Overwrite,
-                                db,
-                                macros,
-                                catalog,
-                            );
-                        }
-                        crate::widgets::ConfirmChoice::Choice(1) => {
-                            let path = path.clone();
-                            self.confirm = None;
-                            self.apply_restore_backup(path, ImportMode::Merge, db, macros, catalog);
-                        }
-                        crate::widgets::ConfirmChoice::Choice(_)
-                        | crate::widgets::ConfirmChoice::None => {}
-                    }
-                });
+                    },
+                );
                 if !open {
                     self.confirm = None;
                 }
@@ -1045,7 +1253,7 @@ impl SettingsUi {
                 let mut cat = Arc::unwrap_or_clone(loaded.program_catalog().unwrap_or_default());
                 let _ = crate::catalog::prepare_catalog(&mut cat, &mut loaded);
                 let mut list: Vec<_> = loaded.macros.values().cloned().collect();
-                list.sort_by(|a, b| a.name.cmp(&b.name));
+                list.sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
                 *db = loaded;
                 *macros = list;
                 *catalog = cat;
@@ -1102,21 +1310,36 @@ impl SettingsUi {
         self.settings.sqyre_dir = new_dir.display().to_string();
         set_sqyre_dir_override(Some(new_dir.clone()));
         self.persist();
+        self.reload_data_from_disk(
+            db,
+            macros,
+            catalog,
+            &new_dir,
+            &format!("Data location changed to {}.", new_dir.display()),
+        );
+    }
 
+    fn reload_data_from_disk(
+        &mut self,
+        db: &mut Database,
+        macros: &mut Vec<Macro>,
+        catalog: &mut ProgramCatalog,
+        path: &std::path::Path,
+        ok_msg: &str,
+    ) {
         match Database::load_default() {
             Ok(mut loaded) => {
                 let mut cat = Arc::unwrap_or_clone(loaded.program_catalog().unwrap_or_default());
                 let _ = crate::catalog::prepare_catalog(&mut cat, &mut loaded);
                 let mut list: Vec<_> = loaded.macros.values().cloned().collect();
-                list.sort_by(|a, b| a.name.cmp(&b.name));
+                list.sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
                 *db = loaded;
                 *macros = list;
                 *catalog = cat;
                 self.reload_requested = true;
-                self.set_ok(format!("Data location changed to {}.", new_dir.display()));
+                self.set_ok(ok_msg.to_string());
             }
             Err(e) => {
-                // Still switched dirs; surface load error.
                 *db = Database::default();
                 macros.clear();
                 *catalog = ProgramCatalog::default();
@@ -1125,7 +1348,7 @@ impl SettingsUi {
                 self.reload_requested = true;
                 self.set_err(format!(
                     "Switched to {} but failed to load db.yaml: {e}",
-                    new_dir.display()
+                    path.display()
                 ));
             }
         }
@@ -1331,20 +1554,49 @@ const SETTING_RELEASE_HELD: &[&str] = &[
     "inputs",
     "macro ends",
 ];
+const SETTING_HOTKEY_TAGS_FOCUSED: &[&str] = &[
+    "hotkey",
+    "hotkeys",
+    "tags",
+    "focused",
+    "focus",
+    "program",
+    "while focused",
+];
 const SETTING_WHILE_BUDGET: &[&str] = &[
     "while",
     "safety budget",
     "iterations",
     "loop",
     "max_iterations",
+    "endless",
+    "stop endless",
+    "advanced",
 ];
-const SETTING_RUN_MACRO_DEPTH: &[&str] = &["run macro", "nesting", "depth", "recursion"];
+const SETTING_RUN_MACRO_DEPTH: &[&str] = &[
+    "run macro",
+    "nesting",
+    "depth",
+    "recursion",
+    "nested",
+    "advanced",
+];
 const SETTING_IMAGE_SEARCH_DISTANCE: &[&str] = &[
     "image search",
     "close-match",
     "close match",
     "distance",
     "duplicate",
+    "nearby",
+    "advanced",
+];
+const SETTING_VARIANT_EXIT_EARLY: &[&str] = &[
+    "variant",
+    "variants",
+    "exit early",
+    "early exit",
+    "image search",
+    "icon variants",
 ];
 
 const SETTING_FINISH_SOUND: &[&str] = &["finish sound", "macro finishes", "complete"];
@@ -1375,6 +1627,9 @@ const DATA_LOCATION: &[&str] = &[
     "location",
     "choose location",
     "open folder",
+    "flatpak",
+    "host",
+    "sandbox",
 ];
 const DATA_BACKUP: &[&str] = &[
     "backup",
@@ -1410,6 +1665,7 @@ const GENERAL_SETTINGS: &[&[&str]] = &[
     SETTING_HIGHLIGHT_ACTION,
     SETTING_HIDE_WHILE_RECORDING,
     SETTING_RELEASE_HELD,
+    SETTING_HOTKEY_TAGS_FOCUSED,
     SETTING_WHILE_BUDGET,
     SETTING_RUN_MACRO_DEPTH,
     SETTING_IMAGE_SEARCH_DISTANCE,
@@ -1458,6 +1714,15 @@ fn appearance_section_visible(q: &str) -> bool {
             .any(|&(_, label)| crate::pickers::fuzzy_match_fold(q, label))
 }
 
+/// If the user picked `.sqyre` itself, use it; otherwise treat the pick as its parent.
+fn resolve_sqyre_dir_from_pick(picked: PathBuf) -> PathBuf {
+    if picked.file_name().is_some_and(|n| n == ".sqyre") {
+        picked
+    } else {
+        picked.join(".sqyre")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1467,6 +1732,16 @@ mod tests {
         assert!(section_visible("", SECTION_GENERAL, GENERAL_SETTINGS));
         assert!(section_visible("", SECTION_SOUND, SOUND_SETTINGS));
         assert!(appearance_section_visible(""));
+    }
+
+    #[test]
+    fn resolve_sqyre_dir_accepts_dot_sqyre_or_parent() {
+        let direct = PathBuf::from("/home/me/.sqyre");
+        assert_eq!(resolve_sqyre_dir_from_pick(direct.clone()), direct);
+        assert_eq!(
+            resolve_sqyre_dir_from_pick(PathBuf::from("/home/me")),
+            PathBuf::from("/home/me/.sqyre")
+        );
     }
 
     #[test]

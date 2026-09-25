@@ -1,17 +1,21 @@
 //! Item icon variants, mask images, ScreenCap save.
 
 use super::helpers::copy_image_as_png;
-#[cfg(feature = "native-runtime")]
-use super::helpers::form_coord_i32;
-use super::{DataEditor, PendingConfirm, VariantPrompt};
+#[cfg(any(test, feature = "native-runtime"))]
+use super::helpers::{parse_i32, unique_name};
+use super::{DataEditor, DataEditorCtx, PendingConfirm, VariantPrompt};
 use crate::data_editor_preview::{
-    fit_panel, fit_thumbnail, variant_display_label, variant_name_from_path,
+    fit_panel, fit_thumbnail, pixel_size_text, variant_display_label, variant_name_from_path,
 };
 use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
 use eframe::egui;
 use sqyre_domain::{CoordinateRef, Macro, PROGRAM_DELIMITER};
+#[cfg(any(test, feature = "native-runtime"))]
+use sqyre_persist::ProgramItem;
 use sqyre_persist::{screen_cap_path, ProgramCatalog, UserSettings};
+#[cfg(feature = "native-runtime")]
+use sqyre_validate::{validate_entity_name, validate_item_grid_fields};
 #[cfg(feature = "native-runtime")]
 use sqyre_vision::invalidate_search_masks_under;
 
@@ -73,6 +77,7 @@ impl DataEditor {
             let [tw, th] = fallback.size();
             let size = fit_panel(tw as f32, th as f32);
             ui.add(egui::Image::new((fallback.id(), size)));
+            ui.small(pixel_size_text(tw as i32, th as i32));
             ui.weak("No icon variants on disk.");
             return;
         }
@@ -89,6 +94,7 @@ impl DataEditor {
                             let [tw, th] = tex.size();
                             let size = fit_thumbnail(tw as f32, th as f32);
                             ui.add(egui::Image::new((tex.id(), size)));
+                            ui.small(pixel_size_text(tw as i32, th as i32));
                         }
                         None => {
                             ui.weak("Missing");
@@ -262,6 +268,7 @@ impl DataEditor {
             Ok(()) => {
                 icons.invalidate_path(&dest);
                 invalidate_search_masks_under(&dest);
+                sqyre_persist::invalidate_icon_fs_cache_under(&dest);
                 self.set_ok("Uploaded mask image.");
             }
             Err(e) => self.set_err(e),
@@ -279,11 +286,13 @@ impl DataEditor {
             Ok(()) => {
                 icons.invalidate_path(&path);
                 invalidate_search_masks_under(&path);
+                sqyre_persist::invalidate_icon_fs_cache_under(&path);
                 self.set_ok("Removed mask image.");
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 icons.invalidate_path(&path);
                 invalidate_search_masks_under(&path);
+                sqyre_persist::invalidate_icon_fs_cache_under(&path);
                 self.set_ok("Removed mask image.");
             }
             Err(e) => self.set_err(format!("remove mask image: {e}")),
@@ -301,10 +310,20 @@ impl DataEditor {
         let (lx, ty, rx, by) = match catalog.resolve_search_area(&coord, &macro_) {
             Ok(bounds) => bounds,
             Err(e) => {
-                self.set_err(format!("ScreenCap: {e}"));
+                self.set_err(format!("Screen capture: {e}"));
                 return false;
             }
         };
+        let (monitor, lx, ty, rx, by) = sqyre_persist::absolute_area_to_relative(
+            catalog.monitor_rects(),
+            lx,
+            ty,
+            lx,
+            ty,
+            rx,
+            by,
+        );
+        self.form_monitor = monitor;
         self.form_left = lx.to_string();
         self.form_top = ty.to_string();
         self.form_right = rx.to_string();
@@ -328,46 +347,72 @@ impl DataEditor {
         true
     }
 
+    #[cfg(feature = "native-runtime")]
+    fn screen_cap_name(&self) -> Result<String, String> {
+        let name = self.form_name.trim().to_string();
+        if name.is_empty() {
+            return Err("Screen capture: enter a name.".into());
+        }
+        validate_entity_name(&name).map_err(|e| format!("Screen capture: {e}"))?;
+        Ok(name)
+    }
+
+    #[cfg(feature = "native-runtime")]
+    fn screen_cap_preview_image(
+        &self,
+        catalog: &ProgramCatalog,
+        previews: &crate::preview_tooltip::PreviewTooltipCache,
+    ) -> Result<std::sync::Arc<image::RgbaImage>, String> {
+        let (Some(lx), Some(ty), Some(rx), Some(by)) = super::helpers::form_desktop_area(
+            catalog,
+            self.form_monitor,
+            &self.form_left,
+            &self.form_top,
+            &self.form_right,
+            &self.form_bottom,
+        ) else {
+            return Err("Screen capture: invalid capture dimensions.".into());
+        };
+        let (norm_lx, norm_rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
+        let (norm_ty, norm_by) = if ty <= by { (ty, by) } else { (by, ty) };
+        if norm_rx - norm_lx <= 0 || norm_by - norm_ty <= 0 {
+            return Err("Screen capture: invalid capture dimensions.".into());
+        }
+        previews
+            .screen_cap_image(lx, ty, rx, by)
+            .ok_or_else(|| "Screen capture: wait for the preview screenshot to finish.".into())
+    }
+
     pub(crate) fn save_screen_cap(
         &mut self,
+        catalog: &ProgramCatalog,
         previews: &crate::preview_tooltip::PreviewTooltipCache,
     ) {
         #[cfg(not(feature = "native-runtime"))]
         {
-            let _ = previews;
-            self.set_err("ScreenCap requires the desktop app.");
+            let _ = (catalog, previews);
+            self.set_err("Screen capture requires the desktop app.");
             return;
         }
         #[cfg(feature = "native-runtime")]
         {
             if self.screen_cap_pending.is_some() {
-                self.set_ok("ScreenCap: saving…");
+                self.set_ok("Screen capture: saving…");
                 return;
             }
-            let name = self.form_name.trim().to_string();
-            if name.is_empty() {
-                self.set_err("ScreenCap: enter a name for the saved image.");
-                return;
-            }
-            if let Err(e) = sqyre_validate::validate_entity_name(&name) {
-                self.set_err(format!("ScreenCap: {e}"));
-                return;
-            }
-            let lx = form_coord_i32(&self.form_left);
-            let ty = form_coord_i32(&self.form_top);
-            let rx = form_coord_i32(&self.form_right);
-            let by = form_coord_i32(&self.form_bottom);
-            let (norm_lx, norm_rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
-            let (norm_ty, norm_by) = if ty <= by { (ty, by) } else { (by, ty) };
-            if norm_rx - norm_lx <= 0 || norm_by - norm_ty <= 0 {
-                self.set_err("ScreenCap: invalid capture dimensions.");
-                return;
-            }
-
-            // Prefer the framed preview pixels (same key as paint_search_area_panel).
-            let Some(img) = previews.screen_cap_image(lx, ty, rx, by) else {
-                self.set_err("ScreenCap: wait for the preview screenshot to finish, then Save.");
-                return;
+            let name = match self.screen_cap_name() {
+                Ok(n) => n,
+                Err(e) => {
+                    self.set_err(e);
+                    return;
+                }
+            };
+            let img = match self.screen_cap_preview_image(catalog, previews) {
+                Ok(img) => img,
+                Err(e) => {
+                    self.set_err(e);
+                    return;
+                }
             };
 
             let (tx, result_rx) = mpsc::channel();
@@ -376,7 +421,7 @@ impl DataEditor {
                 let result = (|| -> Result<String, String> {
                     let dir = screen_cap_path();
                     std::fs::create_dir_all(&dir)
-                        .map_err(|e| format!("ScreenCap: create dir: {e}"))?;
+                        .map_err(|e| format!("Screen capture: create dir: {e}"))?;
                     let stamp = {
                         use web_time::{SystemTime, UNIX_EPOCH};
                         let dur = SystemTime::now()
@@ -405,13 +450,93 @@ impl DataEditor {
                     let filename = format!("{stamp}_{area_name}.png");
                     let full = dir.join(&filename);
                     img.save(&full)
-                        .map_err(|e| format!("ScreenCap: save {}: {e}", full.display()))?;
-                    Ok(format!("ScreenCap: saved {}", full.display()))
+                        .map_err(|e| format!("Screen capture: save {}: {e}", full.display()))?;
+                    Ok(format!("Screen capture: saved {}", full.display()))
                 })();
                 let _ = tx.send(result);
             });
             self.screen_cap_pending = Some(result_rx);
-            self.set_ok("ScreenCap: saving…");
+            self.set_ok("Screen capture: saving…");
+        }
+    }
+
+    pub(crate) fn create_item_from_screen_cap(
+        &mut self,
+        env: &mut DataEditorCtx<'_>,
+        previews: &crate::preview_tooltip::PreviewTooltipCache,
+    ) {
+        #[cfg(not(feature = "native-runtime"))]
+        {
+            let _ = (env, previews);
+            self.set_err("Screen capture requires the desktop app.");
+            return;
+        }
+        #[cfg(feature = "native-runtime")]
+        {
+            let DataEditorCtx {
+                db,
+                macros,
+                catalog,
+                icons,
+                settings,
+                ..
+            } = env;
+            let Some(prog) = self.selected_program.clone() else {
+                self.set_err("Screen capture: select a program for the new item.");
+                return;
+            };
+            let requested = match self.screen_cap_name() {
+                Ok(n) => n,
+                Err(e) => {
+                    self.set_err(e);
+                    return;
+                }
+            };
+            if let Err(e) =
+                validate_item_grid_fields(&self.form_cols, &self.form_rows, &self.form_stack_max)
+            {
+                self.set_err(format!("Screen capture: {e}"));
+                return;
+            }
+            let img = match self.screen_cap_preview_image(catalog, previews) {
+                Ok(img) => img,
+                Err(e) => {
+                    self.set_err(e);
+                    return;
+                }
+            };
+            let item = ProgramItem {
+                name: requested,
+                mask: self.form_mask.clone(),
+                stack_max: parse_i32(&self.form_stack_max).unwrap_or(0),
+                grid_cols: parse_i32(&self.form_cols).unwrap_or(1),
+                grid_rows: parse_i32(&self.form_rows).unwrap_or(1),
+                tags: self.form_tags.clone(),
+            };
+            match create_item_with_original(catalog, &prog, item, img.as_ref()) {
+                Ok(name) => {
+                    let target = format!("{prog}{PROGRAM_DELIMITER}{name}");
+                    let path = icon_variants::variant_path(catalog, &prog, &name, "Original");
+                    icons.invalidate_path(&path);
+                    icons.invalidate_target(&target);
+                    if let Err(e) = self.persist(db, macros, catalog) {
+                        self.set_err(e);
+                    } else {
+                        #[cfg(not(target_arch = "wasm32"))]
+                        crate::sound::play_add_sound_if(
+                            settings.play_ui_sounds,
+                            settings.sound_volume,
+                        );
+                        #[cfg(target_arch = "wasm32")]
+                        let _ = settings;
+                        self.set_ok(format!(
+                            "Screen capture: created item “{name}” with Original from capture."
+                        ));
+                        self.form_name = name;
+                    }
+                }
+                Err(e) => self.set_err(format!("Screen capture: {e}")),
+            }
         }
     }
 
@@ -433,7 +558,7 @@ impl DataEditor {
             }
             Err(TryRecvError::Disconnected) => {
                 self.screen_cap_pending = None;
-                self.set_err("ScreenCap: capture failed");
+                self.set_err("Screen capture: capture failed");
             }
         }
     }
@@ -513,5 +638,105 @@ impl DataEditor {
                 self.set_err("Collection: capture failed");
             }
         }
+    }
+}
+
+#[cfg(any(test, feature = "native-runtime"))]
+fn create_item_with_original(
+    catalog: &mut ProgramCatalog,
+    program: &str,
+    mut item: ProgramItem,
+    img: &image::RgbaImage,
+) -> Result<String, String> {
+    let name = unique_name(&item.name, |n| {
+        catalog.get(program).and_then(|p| p.items.get(n)).is_some()
+    });
+    item.name = name.clone();
+    catalog
+        .upsert_item(program, item)
+        .map_err(|e| e.to_string())?;
+    if let Err(e) = icon_variants::add_variant_image(catalog, program, &name, img) {
+        return Err(match catalog.delete_item(program, &name) {
+            Ok(()) => e.to_string(),
+            Err(del) => format!("{e}; also failed to remove item: {del}"),
+        });
+    }
+    Ok(name)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_persist::ProgramCatalog;
+    use tempfile::tempdir;
+
+    fn catalog_with_icons(root: &std::path::Path) -> ProgramCatalog {
+        let mut c = ProgramCatalog::default();
+        c.set_images_root(Some(root.to_path_buf()));
+        c.create_program("Game").unwrap();
+        c
+    }
+
+    fn sample_item(name: &str) -> ProgramItem {
+        ProgramItem {
+            name: name.into(),
+            mask: String::new(),
+            stack_max: 0,
+            grid_cols: 1,
+            grid_rows: 1,
+            tags: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn create_item_with_original_uses_name_and_writes_png() {
+        let dir = tempdir().unwrap();
+        let mut cat = catalog_with_icons(dir.path());
+        let img = image::RgbaImage::from_pixel(3, 2, image::Rgba([1, 2, 3, 255]));
+        let name =
+            create_item_with_original(&mut cat, "Game", sample_item("Potion"), &img).unwrap();
+        assert_eq!(name, "Potion");
+        let item = cat.get("Game").unwrap().items.get("Potion").unwrap();
+        assert_eq!(item.grid_cols, 1);
+        assert_eq!(item.grid_rows, 1);
+        let path = icon_variants::variant_path(&cat, "Game", "Potion", "Original");
+        assert!(path.is_file());
+        assert!(icon_variants::validate_png_file(&path).is_ok());
+    }
+
+    #[test]
+    fn create_item_with_original_applies_item_fields() {
+        let dir = tempdir().unwrap();
+        let mut cat = catalog_with_icons(dir.path());
+        let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([4, 5, 6, 255]));
+        let item = ProgramItem {
+            name: "Elixir".into(),
+            mask: "round".into(),
+            stack_max: 9,
+            grid_cols: 2,
+            grid_rows: 3,
+            tags: vec!["potion".into(), "craft".into()],
+        };
+        let name = create_item_with_original(&mut cat, "Game", item, &img).unwrap();
+        assert_eq!(name, "Elixir");
+        let saved = cat.get("Game").unwrap().items.get("Elixir").unwrap();
+        assert_eq!(saved.mask, "round");
+        assert_eq!(saved.stack_max, 9);
+        assert_eq!(saved.grid_cols, 2);
+        assert_eq!(saved.grid_rows, 3);
+        assert_eq!(saved.tags, ["potion", "craft"]);
+    }
+
+    #[test]
+    fn create_item_with_original_uniques_existing_name() {
+        let dir = tempdir().unwrap();
+        let mut cat = catalog_with_icons(dir.path());
+        let img = image::RgbaImage::from_pixel(1, 1, image::Rgba([9, 9, 9, 255]));
+        create_item_with_original(&mut cat, "Game", sample_item("Potion"), &img).unwrap();
+        let name =
+            create_item_with_original(&mut cat, "Game", sample_item("Potion"), &img).unwrap();
+        assert_eq!(name, "Potion 2");
+        assert!(cat.get("Game").unwrap().items.contains_key("Potion 2"));
+        assert!(icon_variants::variant_path(&cat, "Game", "Potion 2", "Original").is_file());
     }
 }

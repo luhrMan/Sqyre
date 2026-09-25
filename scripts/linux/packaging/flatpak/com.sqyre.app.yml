@@ -1,0 +1,246 @@
+# Flatpak manifest for Sqyre (Rust / egui / PureCV / Tesseract).
+# Build from repo root:
+#   make flatpak
+#   # or: scripts/linux/packaging/flatpak/build-flatpak.sh
+#
+# Prerequisites:
+#   flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+#   flatpak install -y flathub \
+#     org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08 \
+#     org.freedesktop.Sdk.Extension.rust-stable//25.08 \
+#     org.freedesktop.Sdk.Extension.llvm21//25.08
+#
+# Offline crates: keep cargo-sources.json in sync with Cargo.lock via
+#   scripts/linux/packaging/flatpak/generate-cargo-sources.sh
+#
+# Efficiency notes (local rebuilds):
+#   - leptonica / tesseract / cargo-vendor are archive-sourced → flatpak-builder cache
+#   - sqyre uses narrow type:dir sources (not the whole repo; dir sources never cache)
+#   - build-flatpak.sh passes --ccache; Docker fallback persists runtimes under
+#     .flatpak-builder/docker-home
+#
+# Flathub finish-arg rationale (automation / screen capture):
+#   --socket=x11          Overlay buttons / grab remain X11 (XWayland); fallback-x11
+#                         would omit X11 on pure Wayland sessions and break overlays.
+#   --socket=wayland      Session detection + portal path.
+#   --device=input        Wayland global hotkeys read /dev/input (evdev, no grab).
+#                         Portal GlobalShortcuts is probed but not the main path yet.
+#   --device=dri          GPU for egui/wgpu.
+#   --socket=pulseaudio   Cue audio (cpal Pulse; covers PipeWire-pulse).
+#   --filesystem=xdg-config/pulse:ro
+#                         Host Pulse/PipeWire cookie (~/.config/pulse/cookie).
+#                         cpal's pure-Rust Pulse client does not read the X11
+#                         PULSE_COOKIE property the way libpulse does, and
+#                         Flatpak HOME is not the host home — without this,
+#                         AUTH fails on cookie-required servers.
+#   --share=network       Optional tessdata download; no in-app binary self-replace.
+#   --filesystem=xdg-run/at-spi:ro
+#                         GNOME Wayland window list/focus uses AT-SPI (Mutter has no
+#                         foreign-toplevel). Flatpak's default a11y proxy is filtered
+#                         for *exporting* a tree, not browsing other apps — expose the
+#                         host bus so sqyre can connect unfiltered.
+#   --talk-name=org.a11y.Bus
+#                         Session-bus org.a11y.Bus.IsEnabled (toolkit a11y on).
+#   --talk-name=org.kde.StatusNotifierWatcher
+#                         System tray (ksni StatusNotifierItem). Without this,
+#                         RegisterStatusNotifierItem fails with ServiceUnknown.
+#                         Do not add --own-name=org.kde.* — tray.rs uses
+#                         disable_dbus_name(true) under Flatpak (unique bus name).
+#   --persist=.sqyre      Sqyre stores db/settings under $HOME/.sqyre (not XDG).
+#                         Without this, Flatpak puts that path on a tmpfs and
+#                         wipes macros / portal restore tokens every exit.
+#                         Host path: ~/.var/app/com.sqyre.app/.sqyre
+#   No --filesystem=home  Keep host ~/.sqyre separate by default. Users can
+#                         opt in via Settings → Data → Use host ~/.sqyre…
+#                         (portal grant) or: flatpak override --user
+#                         --filesystem=~/.sqyre:create com.sqyre.app
+#   ScreenCast / RemoteDesktop / FileChooser: xdg-desktop-portal (implicit).
+#   Do not bundle a private libpipewire that shadows host/runtime SPA plugins.
+
+app-id: com.sqyre.app
+runtime: org.freedesktop.Platform
+runtime-version: "25.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.llvm21
+command: sqyre
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --filesystem=xdg-config/pulse:ro
+  - --device=dri
+  - --device=input
+  - --filesystem=xdg-run/at-spi:ro
+  - --talk-name=org.a11y.Bus
+  - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --persist=.sqyre
+  - --env=TESSDATA_PREFIX=/app/share/tessdata
+  - --env=SQYRE_TESSDATA=/app/share/tessdata
+
+build-options:
+  # Skip debuginfo split (eu-strip + extension) — large wall-time win for
+  # leptonica/tesseract/Rust; ship stripped-enough release binaries without
+  # a separate .Debug extension.
+  no-debuginfo: true
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm21/bin
+  env:
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+    CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=/usr/lib/sdk/rust-stable/bin/mold
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: clang
+    CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS: -C link-arg=-fuse-ld=/usr/lib/sdk/rust-stable/bin/mold
+
+modules:
+  - name: leptonica
+    buildsystem: autotools
+    config-opts:
+      - --disable-static
+      # Freedesktop ld cache looks under /app/lib (not lib64).
+      - --libdir=${FLATPAK_DEST}/lib
+    sources:
+      - type: archive
+        url: https://github.com/DanBloomberg/leptonica/releases/download/1.84.1/leptonica-1.84.1.tar.gz
+        sha256: 2b3e1254b1cca381e77c819b59ca99774ff43530209b9aeb511e1d46588a64f6
+
+  # Tesseract forbids in-source CMake; explicit out-of-tree build.
+  # buildsystem:simple does not inject CMAKE_INSTALL_LIBDIR — without it,
+  # cmake defaults to lib64 and the binary cannot load libtesseract at runtime.
+  - name: tesseract
+    buildsystem: simple
+    build-options:
+      env:
+        PKG_CONFIG_PATH: /app/lib/pkgconfig:/app/lib64/pkgconfig
+    build-commands:
+      - cmake -S . -B _build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=${FLATPAK_DEST} -DCMAKE_INSTALL_LIBDIR=lib -DBUILD_SHARED_LIBS=ON -DBUILD_TRAINING_TOOLS=OFF
+      # Honor flatpak-builder --jobs (default nproc; build-flatpak.sh uses ~50%).
+      # Use $FLATPAK_BUILDER_N_JOBS (shell), not ${…} — builder owns ${FLATPAK_*}.
+      - ninja -C _build -j$FLATPAK_BUILDER_N_JOBS
+      - ninja -C _build -j$FLATPAK_BUILDER_N_JOBS install
+      - |
+        set -euo pipefail
+        # Belt-and-suspenders: if anything still landed in lib64, move into /app/lib.
+        if [ -d "${FLATPAK_DEST}/lib64" ]; then
+          mkdir -p "${FLATPAK_DEST}/lib"
+          cp -a "${FLATPAK_DEST}/lib64"/. "${FLATPAK_DEST}/lib/" || true
+        fi
+        if ! ls "${FLATPAK_DEST}/lib"/libtesseract.so* >/dev/null 2>&1; then
+          echo "ERROR: libtesseract missing under ${FLATPAK_DEST}/lib after install" >&2
+          find "${FLATPAK_DEST}" -name 'libtesseract*' -o -name 'liblept*' >&2 || true
+          exit 1
+        fi
+    sources:
+      - type: archive
+        url: https://github.com/tesseract-ocr/tesseract/archive/5.5.0.tar.gz
+        sha256: f2fb34ca035b6d087a42875a35a7a5c4155fa9979c6132365b1e5a28ebc3fc11
+
+  # Offline crates only (archive sources) — cacheable across rebuilds.
+  # Dir-sourced app modules always rebuild; keeping vendor separate avoids
+  # re-extracting ~1300 crates every `make flatpak`.
+  - name: cargo-vendor
+    buildsystem: simple
+    build-commands:
+      - |
+        set -euo pipefail
+        install -d "${FLATPAK_DEST}/lib/sqyre-cargo"
+        cp -a --reflink=auto cargo/. "${FLATPAK_DEST}/lib/sqyre-cargo/"
+    cleanup:
+      - /lib/sqyre-cargo
+    sources:
+      - cargo-sources.json
+
+  - name: sqyre
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm21/bin
+      env:
+        CARGO_HOME: /run/build/sqyre/cargo
+        CARGO_NET_OFFLINE: "true"
+        PKG_CONFIG_PATH: /app/lib/pkgconfig:/app/lib64/pkgconfig
+        LIBCLANG_PATH: /usr/lib/sdk/llvm21/lib
+        RELEASE_VERSION: __APP_VERSION__
+    build-commands:
+      - |
+        set -euo pipefail
+        export PKG_CONFIG_PATH="${FLATPAK_DEST}/lib/pkgconfig:${FLATPAK_DEST}/lib64/pkgconfig:${PKG_CONFIG_PATH:-}"
+        # Restore vendored crates from the cacheable cargo-vendor module.
+        if [ ! -d "${FLATPAK_DEST}/lib/sqyre-cargo" ]; then
+          echo "ERROR: missing ${FLATPAK_DEST}/lib/sqyre-cargo (cargo-vendor module)" >&2
+          exit 1
+        fi
+        rm -rf cargo
+        cp -a --reflink=auto "${FLATPAK_DEST}/lib/sqyre-cargo" cargo
+        # One cargo invocation builds both bins (shared deps compile once).
+        # -j: cargo ignores make -j; use flatpak-builder's job budget.
+        cargo --offline build -p sqyre-app -p sqyre-probe --profile dist --features portal-capture \
+          -j"$FLATPAK_BUILDER_N_JOBS"
+      - install -Dm755 target/dist/sqyre ${FLATPAK_DEST}/bin/sqyre
+      - install -Dm755 target/dist/sqyre-probe ${FLATPAK_DEST}/bin/sqyre-probe
+      - |
+        set -euo pipefail
+        # Catch missing sonames at build time (probe may not link OCR; sqyre does).
+        if command -v ldd >/dev/null; then
+          if ldd "${FLATPAK_DEST}/bin/sqyre" | grep -E 'libtesseract|liblept' | grep -q 'not found'; then
+            echo "ERROR: sqyre cannot resolve tesseract/leptonica at link time:" >&2
+            ldd "${FLATPAK_DEST}/bin/sqyre" | grep -E 'libtesseract|liblept|not found' >&2 || true
+            find "${FLATPAK_DEST}" -name 'libtesseract*' -o -name 'liblept*' >&2 || true
+            exit 1
+          fi
+        fi
+      - |
+        set -euo pipefail
+        ICON="crates/sqyre-app/assets/icons/sqyre.png"
+        if [ ! -f "$ICON" ]; then
+          echo "ERROR: missing $ICON (run scripts/linux/packaging/generate-app-icon.sh 256)" >&2
+          exit 1
+        fi
+        install -Dm644 "$ICON" "${FLATPAK_DEST}/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png"
+      - install -Dm644 com.sqyre.app.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - |
+        set -euo pipefail
+        META=com.sqyre.app.metainfo.xml
+        META_OUT="${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml"
+        mkdir -p "$(dirname "$META_OUT")"
+        # Stamp release version into AppStream when building a release Flatpak.
+        sed "s/version=\"0.0.0-dev\"/version=\"${RELEASE_VERSION:-0.0.0-dev}\"/" "$META" > "$META_OUT"
+      - |
+        set -euo pipefail
+        mkdir -p "${FLATPAK_DEST}/share/tessdata"
+        eng=""
+        for d in assets/tessdata /usr/share/tessdata; do
+          if [ -f "$d/eng.traineddata" ]; then eng="$d/eng.traineddata"; break; fi
+        done
+        if [ -z "$eng" ]; then
+          echo "ERROR: eng.traineddata not found; run make tessdata" >&2
+          exit 1
+        fi
+        install -Dm644 "$eng" "${FLATPAK_DEST}/share/tessdata/eng.traineddata"
+      # OSTree refuses group/other write bits on objects.
+      - find "${FLATPAK_DEST}" -type f -exec chmod u=rwX,go=rX {} +
+      - find "${FLATPAK_DEST}" -type d -exec chmod u=rwx,go=rx {} +
+    sources:
+      # Prefer narrow dirs/files — type:dir is never cached and was copying the
+      # whole repo (docs, scripts leftovers, etc.) on every rebuild.
+      - type: dir
+        path: ../../../../crates
+        dest: crates
+      - type: dir
+        path: ../../../../assets
+        dest: assets
+      - type: file
+        path: ../../../../Cargo.toml
+      - type: file
+        path: ../../../../Cargo.lock
+      - type: file
+        path: ../../../../rust-toolchain.toml
+      - type: file
+        path: com.sqyre.app.desktop
+      - type: file
+        path: com.sqyre.app.metainfo.xml
+cleanup-commands:
+  - find /app -type f -exec chmod u=rwX,go=rX {} +
+  - find /app -type d -exec chmod u=rwx,go=rx {} +

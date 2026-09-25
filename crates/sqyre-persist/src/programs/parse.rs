@@ -33,6 +33,12 @@ pub(super) fn parse_program(name: &str, v: &Value) -> Result<ProgramData> {
     {
         data.window_title = t.to_string();
     }
+    if let Some(Value::Sequence(tags)) = map.get(Value::String("tags".into())) {
+        data.tags = tags
+            .iter()
+            .filter_map(|t| t.as_str().map(str::to_string))
+            .collect();
+    }
 
     if let Some(Value::Mapping(items)) = map.get(Value::String("items".into())) {
         for (ik, iv) in items {
@@ -155,6 +161,10 @@ pub(super) fn parse_item(name: &str, v: &Value) -> ProgramItem {
     item
 }
 
+fn parse_monitor_slot(v: Option<&Value>) -> u32 {
+    yaml_i64(v).map(|n| n.max(1) as u32).unwrap_or(1)
+}
+
 pub(super) fn parse_point(name: &str, v: &Value) -> ProgramPoint {
     let mut pt = ProgramPoint {
         name: name.to_string(),
@@ -169,6 +179,7 @@ pub(super) fn parse_point(name: &str, v: &Value) -> ProgramPoint {
     {
         pt.name = n.to_string();
     }
+    pt.monitor = parse_monitor_slot(map.get(Value::String("monitor".into())));
     pt.x = scalar_field(map.get(Value::String("x".into())));
     pt.y = scalar_field(map.get(Value::String("y".into())));
     pt
@@ -188,6 +199,7 @@ pub(super) fn parse_search_area(name: &str, v: &Value) -> ProgramSearchArea {
     {
         sa.name = n.to_string();
     }
+    sa.monitor = parse_monitor_slot(map.get(Value::String("monitor".into())));
     sa.left_x = scalar_field(map.get(Value::String("leftx".into())));
     sa.top_y = scalar_field(map.get(Value::String("topy".into())));
     sa.right_x = scalar_field(map.get(Value::String("rightx".into())));

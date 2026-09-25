@@ -2,6 +2,7 @@
 
 use super::{condition_editor, help as h, list_columns_editor, scalar_field};
 use crate::action_tooltip::sections::{tip_section, tip_wrapped_section};
+use crate::paint_ctx::VarTheme;
 use crate::pickers::options;
 use crate::widgets::{combo_str_labeled, drag_field, text_field};
 use eframe::egui;
@@ -76,17 +77,29 @@ pub(super) fn paint_conditional(
     condition_editor(ui, condition, known_vars, is_dark, active_macro, |_| {});
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Borrowed [`ActionKind::ForEachRow`] fields. Same pattern as detection
+/// painters: the caller matches the variant; this only bundles `&mut`s.
+///
+/// [`ActionKind::ForEachRow`]: sqyre_domain::ActionKind::ForEachRow
+pub(super) struct ForEachRowFields<'a> {
+    pub name: &'a mut String,
+    pub sources: &'a mut Vec<ListColumn>,
+    pub start_row: &'a mut ScalarValue,
+    pub end_row: &'a mut ScalarValue,
+}
+
 pub(super) fn paint_foreach_row(
     ui: &mut egui::Ui,
-    name: &mut String,
-    sources: &mut Vec<ListColumn>,
-    start_row: &mut ScalarValue,
-    end_row: &mut ScalarValue,
-    known_vars: &KnownVariableNames,
-    is_dark: bool,
+    fields: ForEachRowFields<'_>,
+    theme: VarTheme<'_>,
     active_macro: Option<&Macro>,
 ) {
+    let ForEachRowFields {
+        name,
+        sources,
+        start_row,
+        end_row,
+    } = fields;
     tip_wrapped_section(ui, |ui| {
         text_field(ui, "Name", h::NAME, name);
         scalar_field(
@@ -94,8 +107,8 @@ pub(super) fn paint_foreach_row(
             "Start row",
             h::FOREACH_START,
             start_row,
-            known_vars,
-            is_dark,
+            theme.known_vars,
+            theme.is_dark,
             active_macro,
         );
         scalar_field(
@@ -103,12 +116,12 @@ pub(super) fn paint_foreach_row(
             "End row",
             h::FOREACH_END,
             end_row,
-            known_vars,
-            is_dark,
+            theme.known_vars,
+            theme.is_dark,
             active_macro,
         );
     });
     tip_section(ui, |ui| {
-        list_columns_editor(ui, sources, known_vars, is_dark, active_macro);
+        list_columns_editor(ui, sources, theme.known_vars, theme.is_dark, active_macro);
     });
 }

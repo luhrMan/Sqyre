@@ -1,5 +1,6 @@
 use super::icon_grid::{paint_even_icon_grid, IconGridKind};
 use super::query::{fuzzy_match_fold, query_matches_name_or_tags};
+use super::scroll::maybe_scroll_to;
 use crate::icon_cache::IconCache;
 use eframe::egui;
 use sqyre_domain::PROGRAM_DELIMITER;
@@ -57,6 +58,9 @@ pub fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Con
 ///
 /// When `selected_program` / `clicked_program` are used (data editor), program headers
 /// are selectable and write the clicked program name into `clicked_program`.
+///
+/// When `scroll_to_selected_program` is armed, expand the selected program header and
+/// scroll it into view (data editor tab switch).
 #[allow(clippy::too_many_arguments)] // accordion grid: selection mode plus optional program click
 pub fn paint_items_icon_grid(
     ui: &mut egui::Ui,
@@ -68,10 +72,14 @@ pub fn paint_items_icon_grid(
     selected_program: Option<&str>,
     clicked_program: &mut Option<String>,
     compact_program_headers: bool,
+    mut scroll_to_selected_program: Option<&mut bool>,
+    item_sort: sqyre_domain::CatalogItemSort,
+    tag_priority: &[String],
 ) {
     let q = search.trim().to_ascii_lowercase();
     let pane_w = ui.available_width();
     ui.set_max_width(pane_w);
+    let mut did_scroll = false;
     for prog in catalog.program_names() {
         let Some(pdata) = catalog.get(prog) else {
             continue;
@@ -90,12 +98,11 @@ pub fn paint_items_icon_grid(
         if items.is_empty() {
             continue;
         }
-        let mut targets: Vec<(String, String)> = items
+        let infos: Vec<sqyre_domain::ItemSortInfo> = items
             .iter()
             .map(|item_key| {
-                let display = pdata
-                    .items
-                    .get(item_key)
+                let item = pdata.items.get(item_key);
+                let display = item
                     .map(|it| {
                         if it.name.trim().is_empty() {
                             item_key.clone()
@@ -104,11 +111,19 @@ pub fn paint_items_icon_grid(
                         }
                     })
                     .unwrap_or_else(|| item_key.clone());
-                (format!("{prog}{PROGRAM_DELIMITER}{item_key}"), display)
+                let (rows, cols, tags) = item
+                    .map(|it| (it.grid_rows, it.grid_cols, it.tags.clone()))
+                    .unwrap_or((1, 1, Vec::new()));
+                sqyre_domain::ItemSortInfo::from_parts(
+                    format!("{prog}{PROGRAM_DELIMITER}{item_key}"),
+                    display,
+                    rows,
+                    cols,
+                    tags,
+                )
             })
             .collect();
-        sort_by_display_name(&mut targets);
-        let targets: Vec<String> = targets.into_iter().map(|(t, _)| t).collect();
+        let targets = sqyre_domain::ordered_catalog_items(&infos, item_sort, tag_priority);
 
         let selected_in_group = targets
             .iter()
@@ -122,12 +137,19 @@ pub fn paint_items_icon_grid(
             "Select all"
         };
 
+        let prog_selected = selected_program == Some(prog.as_str());
         // Absolute id so expand/collapse-all (outside this ui stack) can target the same state.
         let id = items_icon_grid_collapse_id(prog);
-        egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+        let mut state =
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false);
+        let want_scroll = scroll_to_selected_program.as_ref().is_some_and(|s| **s) && prog_selected;
+        if want_scroll && !state.is_open() {
+            state.set_open(true);
+            state.store(ui.ctx());
+        }
+        state
             .show_header(ui, |ui| {
-                let prog_selected = selected_program == Some(prog.as_str());
-                if crate::icon_cache::paint_program_label(
+                let resp = crate::icon_cache::paint_program_label(
                     ui,
                     catalog,
                     icons,
@@ -137,9 +159,14 @@ pub fn paint_items_icon_grid(
                         child_count: pdata.items.len(),
                     },
                     compact_program_headers,
-                )
-                .clicked()
-                {
+                );
+                if let Some(scroll) = scroll_to_selected_program.as_deref_mut() {
+                    if prog_selected && *scroll && !did_scroll {
+                        maybe_scroll_to(ui, &resp, scroll);
+                        did_scroll = true;
+                    }
+                }
+                if resp.clicked() {
                     *clicked_program = Some(prog.clone());
                 }
             })
@@ -173,6 +200,8 @@ pub fn paint_items_icon_grid(
                         clicked = Some(t.to_string());
                     },
                     |_| {},
+                    None,
+                    |_| true,
                 );
                 if let Some(target) = clicked {
                     let is_sel = selected.iter().any(|t| t == &target);
@@ -187,6 +216,11 @@ pub fn paint_items_icon_grid(
                     }
                 }
             });
+    }
+    if let Some(scroll) = scroll_to_selected_program {
+        if *scroll && !did_scroll {
+            *scroll = false;
+        }
     }
 }
 
@@ -208,6 +242,7 @@ pub(crate) fn toggle_select_all_filtered(selected: &mut Vec<String>, filtered: &
 }
 
 /// Sort `(key, display_name)` rows by display name (case-insensitive), then key.
+#[cfg(test)]
 pub(crate) fn sort_by_display_name(rows: &mut [(String, String)]) {
     rows.sort_by(|a, b| {
         a.1.to_ascii_lowercase()

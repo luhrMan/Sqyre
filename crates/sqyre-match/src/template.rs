@@ -295,7 +295,7 @@ fn build_packed_template(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // match kernel: image geometry, packed template, method, and optional prep
 fn match_direct(
     search: &ImageBuf,
     pack: &PackedTemplate,
@@ -337,61 +337,71 @@ fn match_direct(
         .par_chunks_mut(out_w)
         .enumerate()
         .for_each(|(oy, row)| {
-            let mut numer = vec![0.0_f32; out_w];
-            crate::corr_simd::accumulate_corr_row(planar, tmpl, oy, &mut numer);
+            DIRECT_SCRATCH.with(|cell_scratch| {
+                let scratch = &mut *cell_scratch.borrow_mut();
+                scratch.reset(out_w, ch);
+                let DirectScratch {
+                    numer,
+                    sum_sq,
+                    sums,
+                } = scratch;
+                crate::corr_simd::accumulate_corr_row(planar, tmpl, oy, numer);
 
-            if let Some(integ) = integ {
-                let stride = integ.width + 1;
-                for (ox, cell) in row.iter_mut().enumerate() {
-                    let mut i_sq = 0.0_f64;
-                    let mut i_prime_sq = 0.0_f64;
-                    for c in 0..ch {
-                        let s = rect_sum(&integ.sum[c], stride, ox, oy, tw, th);
-                        let sq = rect_sum(&integ.sumsq[c], stride, ox, oy, tw, th);
-                        i_sq += sq;
-                        i_prime_sq += sq - (s * s) / n;
-                    }
-                    *cell = finish_score(
-                        method,
-                        numer[ox] as f64,
-                        i_sq,
-                        i_prime_sq.max(0.0),
-                        t_energy,
-                    );
-                }
-            } else if ccoeff {
-                // Masked CCOEFF: ΣT'=0 ⇒ numer = Σ T'·I. Energy: ΣI² − Σ_c (ΣI_c)²/n.
-                let mut sum_sq = vec![0.0_f32; out_w];
-                let mut sums: Vec<Vec<f32>> = (0..ch).map(|_| vec![0.0_f32; out_w]).collect();
-                crate::corr_simd::accumulate_sum_sq_row(planar, tmpl, oy, &mut sum_sq);
-                crate::corr_simd::accumulate_channel_sums_row(planar, tmpl, oy, &mut sums);
-                for (ox, cell) in row.iter_mut().enumerate() {
-                    let mut i_prime = sum_sq[ox] as f64;
-                    for channel_sum in sums.iter().take(ch) {
-                        let s = channel_sum[ox] as f64;
-                        i_prime -= (s * s) / n;
-                    }
-                    *cell = match method {
-                        MatchMethod::Ccoeff => numer[ox],
-                        MatchMethod::CcoeffNormed => {
-                            let denom = (t_energy * i_prime.max(0.0)).sqrt();
-                            if denom > f64::EPSILON {
-                                (numer[ox] as f64 / denom) as f32
-                            } else {
-                                0.0
-                            }
+                if let Some(integ) = integ {
+                    let stride = integ.width + 1;
+                    for (ox, cell) in row.iter_mut().enumerate() {
+                        let mut i_sq = 0.0_f64;
+                        let mut i_prime_sq = 0.0_f64;
+                        for c in 0..ch {
+                            let s = rect_sum(&integ.sum[c], stride, ox, oy, tw, th);
+                            let sq = rect_sum(&integ.sumsq[c], stride, ox, oy, tw, th);
+                            i_sq += sq;
+                            i_prime_sq += sq - (s * s) / n;
                         }
-                        _ => unreachable!("ccoeff branch"),
-                    };
+                        *cell = finish_score(
+                            method,
+                            numer[ox] as f64,
+                            i_sq,
+                            i_prime_sq.max(0.0),
+                            t_energy,
+                        );
+                    }
+                } else if ccoeff {
+                    // Masked CCOEFF: ΣT'=0 ⇒ numer = Σ T'·I. Energy: ΣI² − Σ_c (ΣI_c)²/n.
+                    crate::corr_simd::accumulate_sum_sq_row(planar, tmpl, oy, sum_sq);
+                    crate::corr_simd::accumulate_channel_sums_row(planar, tmpl, oy, sums);
+                    for (ox, cell) in row.iter_mut().enumerate() {
+                        let mut i_prime = sum_sq[ox] as f64;
+                        for channel_sum in sums.iter().take(ch) {
+                            let s = channel_sum[ox] as f64;
+                            i_prime -= (s * s) / n;
+                        }
+                        *cell = match method {
+                            MatchMethod::Ccoeff => numer[ox],
+                            MatchMethod::CcoeffNormed => {
+                                let denom = (t_energy * i_prime.max(0.0)).sqrt();
+                                if denom > f64::EPSILON {
+                                    (numer[ox] as f64 / denom) as f32
+                                } else {
+                                    0.0
+                                }
+                            }
+                            _ => unreachable!("ccoeff branch"),
+                        };
+                    }
+                } else {
+                    crate::corr_simd::accumulate_sum_sq_row(planar, tmpl, oy, sum_sq);
+                    for (ox, cell) in row.iter_mut().enumerate() {
+                        *cell = finish_score(
+                            method,
+                            numer[ox] as f64,
+                            sum_sq[ox] as f64,
+                            0.0,
+                            t_energy,
+                        );
+                    }
                 }
-            } else {
-                let mut sum_sq = vec![0.0_f32; out_w];
-                crate::corr_simd::accumulate_sum_sq_row(planar, tmpl, oy, &mut sum_sq);
-                for (ox, cell) in row.iter_mut().enumerate() {
-                    *cell =
-                        finish_score(method, numer[ox] as f64, sum_sq[ox] as f64, 0.0, t_energy);
-                }
-            }
+            });
         });
 
     Ok(MatchMap {
@@ -431,35 +441,141 @@ fn optimal_dft_size(n: usize) -> usize {
     best
 }
 
+/// Per-row accumulators for [`match_direct`], reused across rows on each rayon
+/// worker instead of allocating `out_w`-sized buffers per output row.
+#[derive(Default)]
+struct DirectScratch {
+    numer: Vec<f32>,
+    sum_sq: Vec<f32>,
+    /// One row of per-channel sums; only the masked CCOEFF path fills these.
+    sums: Vec<Vec<f32>>,
+}
+
+impl DirectScratch {
+    /// Zeroed buffers for one output row. `accumulate_*_row` adds into them, so
+    /// they must start at zero.
+    fn reset(&mut self, out_w: usize, ch: usize) {
+        zeroed(&mut self.numer, out_w);
+        zeroed(&mut self.sum_sq, out_w);
+        self.sums.resize_with(ch, Vec::new);
+        for s in &mut self.sums {
+            zeroed(s, out_w);
+        }
+    }
+
+    /// Drop capacity so Rayon worker TLS does not retain peak row widths.
+    fn shrink(&mut self) {
+        self.numer = Vec::new();
+        self.sum_sq = Vec::new();
+        self.sums = Vec::new();
+    }
+}
+
+fn zeroed(buf: &mut Vec<f32>, len: usize) {
+    buf.clear();
+    buf.resize(len, 0.0);
+}
+
+thread_local! {
+    static DIRECT_SCRATCH: std::cell::RefCell<DirectScratch> =
+        std::cell::RefCell::new(DirectScratch::default());
+}
+
+/// Per-thread FFT planner plus correlation scratch.
+///
+/// Both spectrum buffers are sized `dft_w * dft_h`, which for a full-screen
+/// search is several megabytes. Reusing them keeps every variant match on a
+/// rayon worker from allocating and freeing that much per channel — but the
+/// capacity ratchets to the largest DFT seen on that worker for the process
+/// lifetime unless [`clear_match_scratch`] runs (after each macro).
+struct FftScratch {
+    planner: FftPlanner<f32>,
+    /// Mutable copy of the search spectrum (consumed by the inverse transform).
+    img: Vec<Complex<f32>>,
+    /// Zero-padded template spectrum.
+    tmpl: Vec<Complex<f32>>,
+    /// Column gather buffer for [`fft2d_forward`] / [`fft2d_inverse`].
+    col: Vec<Complex<f32>>,
+}
+
+impl FftScratch {
+    fn new() -> Self {
+        Self {
+            planner: FftPlanner::new(),
+            img: Vec::new(),
+            tmpl: Vec::new(),
+            col: Vec::new(),
+        }
+    }
+
+    /// Release peak DFT / planner capacity held in this worker's TLS.
+    fn shrink(&mut self) {
+        self.img = Vec::new();
+        self.tmpl = Vec::new();
+        self.col = Vec::new();
+        // Drop cached FFT plans (can be ~1 MiB+ of tables per worker).
+        self.planner = FftPlanner::new();
+    }
+}
+
+thread_local! {
+    static FFT_SCRATCH: std::cell::RefCell<FftScratch> =
+        std::cell::RefCell::new(FftScratch::new());
+}
+
+fn shrink_local_match_scratch() {
+    DIRECT_SCRATCH.with(|c| c.borrow_mut().shrink());
+    FFT_SCRATCH.with(|c| c.borrow_mut().shrink());
+}
+
+/// Release per-Rayon-worker match scratch (FFT spectra + direct-row buffers).
+///
+/// Call after a macro finishes (wired through [`sqyre_vision::clear_search_cache`])
+/// so full-screen DFT buffers do not keep RSS ratcheted across runs. Safe to call
+/// at any time; the next match reallocates as needed.
+pub fn clear_match_scratch() {
+    shrink_local_match_scratch();
+    // Idle pool workers never hit the calling thread's TLS; broadcast reaches them.
+    rayon::broadcast(|_| shrink_local_match_scratch());
+}
+
 /// Forward-FFT each channel of `search`, zero-padded to `dft_w`×`dft_h`.
-fn forward_fft_search(search: &ImageBuf, dft_w: usize, dft_h: usize) -> SearchFft {
+///
+/// When `parallel` is false, channels are transformed on the calling thread so
+/// single-flight builders can run safely while other rayon workers wait on a
+/// gate (nested `par_iter` would otherwise deadlock the pool).
+fn forward_fft_search(search: &ImageBuf, dft_w: usize, dft_h: usize, parallel: bool) -> SearchFft {
     let ch = search.channels;
     let area = dft_w * dft_h;
-    (0..ch)
-        .into_par_iter()
-        .map(|c| {
-            let mut img = vec![Complex::new(0.0, 0.0); area];
-            for y in 0..search.height {
-                for x in 0..search.width {
-                    let v = search.data[(y * search.width + x) * ch + c] as f32;
-                    img[y * dft_w + x] = Complex::new(v, 0.0);
-                }
+    let build_channel = |c: usize| {
+        let mut img = vec![Complex::new(0.0, 0.0); area];
+        for y in 0..search.height {
+            for x in 0..search.width {
+                let v = search.data[(y * search.width + x) * ch + c] as f32;
+                img[y * dft_w + x] = Complex::new(v, 0.0);
             }
-            thread_local! {
-                static PLANNER: std::cell::RefCell<FftPlanner<f32>> =
-                    std::cell::RefCell::new(FftPlanner::new());
-            }
-            PLANNER.with(|p| {
-                let mut planner = p.borrow_mut();
-                fft2d_forward(&mut img, dft_w, dft_h, &mut planner);
-            });
-            img
-        })
-        .collect()
+        }
+        FFT_SCRATCH.with(|s| {
+            let scratch = &mut *s.borrow_mut();
+            fft2d_forward(
+                &mut img,
+                dft_w,
+                dft_h,
+                &mut scratch.planner,
+                &mut scratch.col,
+            );
+        });
+        img
+    };
+    if parallel {
+        (0..ch).into_par_iter().map(build_channel).collect()
+    } else {
+        (0..ch).map(build_channel).collect()
+    }
 }
 
 /// DFT cross-correlation of packed template vs search, then method-specific finish.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // match kernel: image geometry, packed template, method, and optional prep
 fn match_fft(
     search: &ImageBuf,
     pack: &PackedTemplate,
@@ -481,35 +597,38 @@ fn match_fft(
         owned_search_fft = prep.fft_for_size(search, dft_w, dft_h);
         owned_search_fft.as_ref()
     } else {
-        owned_search_fft = Arc::new(forward_fft_search(search, dft_w, dft_h));
+        owned_search_fft = Arc::new(forward_fft_search(search, dft_w, dft_h, true));
         owned_search_fft.as_ref()
     };
 
     let channel_numers: Vec<Vec<f32>> = (0..ch)
         .into_par_iter()
         .map(|c| {
-            let mut img = search_fft[c].clone();
-            let mut tmpl = vec![Complex::new(0.0, 0.0); area];
-            for i in 0..pack.len() {
-                let x = pack.xs[i] as usize;
-                let y = pack.ys[i] as usize;
-                tmpl[y * dft_w + x] = Complex::new(pack.vals_at(i)[c] as f32, 0.0);
-            }
+            FFT_SCRATCH.with(|s| {
+                let FftScratch {
+                    planner,
+                    img,
+                    tmpl,
+                    col,
+                } = &mut *s.borrow_mut();
 
-            thread_local! {
-                static PLANNER: std::cell::RefCell<FftPlanner<f32>> =
-                    std::cell::RefCell::new(FftPlanner::new());
-            }
-            PLANNER.with(|p| {
-                let mut planner = p.borrow_mut();
-                fft2d_forward(&mut tmpl, dft_w, dft_h, &mut planner);
+                // Overwritten wholesale, so no need to clear first.
+                img.clear();
+                img.extend_from_slice(&search_fft[c]);
+                // Only sparse positions are written below; the rest must be zero.
+                tmpl.clear();
+                tmpl.resize(area, Complex::new(0.0, 0.0));
+                for i in 0..pack.len() {
+                    let x = pack.xs[i] as usize;
+                    let y = pack.ys[i] as usize;
+                    tmpl[y * dft_w + x] = Complex::new(pack.vals_at(i)[c] as f32, 0.0);
+                }
 
-                crate::corr_simd::complex_mul_conj(&mut img, &tmpl);
-                fft2d_inverse(&mut img, dft_w, dft_h, &mut planner);
-            });
+                fft2d_forward(tmpl, dft_w, dft_h, planner, col);
+                crate::corr_simd::complex_mul_conj(img, tmpl);
+                fft2d_inverse(img, dft_w, dft_h, planner, col);
 
-            let mut out = vec![0.0_f32; out_w * out_h];
-            {
+                let mut out = vec![0.0_f32; out_w * out_h];
                 let arch = pulp::Arch::new();
                 arch.dispatch(|| {
                     for y in 0..out_h {
@@ -518,8 +637,8 @@ fn match_fft(
                         }
                     }
                 });
-            }
-            out
+                out
+            })
         })
         .collect();
 
@@ -615,18 +734,20 @@ fn fft2d_forward(
     width: usize,
     height: usize,
     planner: &mut FftPlanner<f32>,
+    col: &mut Vec<Complex<f32>>,
 ) {
     let fft_row = planner.plan_fft_forward(width);
     for row in buf.chunks_exact_mut(width) {
         fft_row.process(row);
     }
     let fft_col = planner.plan_fft_forward(height);
-    let mut col = vec![Complex::default(); height];
+    col.clear();
+    col.resize(height, Complex::default());
     for x in 0..width {
         for y in 0..height {
             col[y] = buf[y * width + x];
         }
-        fft_col.process(&mut col);
+        fft_col.process(col);
         for y in 0..height {
             buf[y * width + x] = col[y];
         }
@@ -638,18 +759,20 @@ fn fft2d_inverse(
     width: usize,
     height: usize,
     planner: &mut FftPlanner<f32>,
+    col: &mut Vec<Complex<f32>>,
 ) {
     let ifft_row = planner.plan_fft_inverse(width);
     for row in buf.chunks_exact_mut(width) {
         ifft_row.process(row);
     }
     let ifft_col = planner.plan_fft_inverse(height);
-    let mut col = vec![Complex::default(); height];
+    col.clear();
+    col.resize(height, Complex::default());
     for x in 0..width {
         for y in 0..height {
             col[y] = buf[y * width + x];
         }
-        ifft_col.process(&mut col);
+        ifft_col.process(col);
         for y in 0..height {
             buf[y * width + x] = col[y];
         }
@@ -672,21 +795,62 @@ pub struct SearchPrep {
     integrals: SearchIntegrals,
     planar: crate::corr_simd::PlanarF32,
     fft_cache: Mutex<HashMap<(usize, usize), Arc<SearchFft>>>,
+    /// Single-flight gates so parallel variant matches do not stampede the same DFT.
+    fft_inflight: FftInflightGates,
 }
 
 /// Forward-FFT'd search image, one plane per channel.
 type SearchFft = Vec<Vec<Complex<f32>>>;
+type FftInflightGates = Mutex<HashMap<(usize, usize), Arc<Mutex<()>>>>;
 
 impl SearchPrep {
     fn fft_for_size(&self, search: &ImageBuf, dft_w: usize, dft_h: usize) -> Arc<SearchFft> {
         if let Some(hit) = self.fft_cache.lock().get(&(dft_w, dft_h)) {
             return Arc::clone(hit);
         }
-        let built = Arc::new(forward_fft_search(search, dft_w, dft_h));
+        let gate = {
+            let mut gates = self.fft_inflight.lock();
+            Arc::clone(
+                gates
+                    .entry((dft_w, dft_h))
+                    .or_insert_with(|| Arc::new(Mutex::new(()))),
+            )
+        };
+        let _busy = gate.lock();
+        if let Some(hit) = self.fft_cache.lock().get(&(dft_w, dft_h)) {
+            self.fft_inflight.lock().remove(&(dft_w, dft_h));
+            return Arc::clone(hit);
+        }
+        // Serial channel FFT: callers may be rayon workers waiting on this gate.
+        let built = Arc::new(forward_fft_search(search, dft_w, dft_h, false));
         self.fft_cache
             .lock()
             .insert((dft_w, dft_h), Arc::clone(&built));
+        self.fft_inflight.lock().remove(&(dft_w, dft_h));
         built
+    }
+
+    /// Precompute the search-frame FFT used for an unmasked template of size `tw`×`th`
+    /// when the match would take the DFT path. Call from the main thread before
+    /// parallel variant matching.
+    pub fn warm_fft_for_template(&self, search: &ImageBuf, tw: usize, th: usize) {
+        if tw == 0 || th == 0 || search.width < tw || search.height < th {
+            return;
+        }
+        let out_w = search.width - tw + 1;
+        let out_h = search.height - th + 1;
+        let ch = search.channels.max(1);
+        let direct_cost = (out_w as u64)
+            .saturating_mul(out_h as u64)
+            .saturating_mul(tw as u64)
+            .saturating_mul(th as u64)
+            .saturating_mul(ch as u64);
+        if direct_cost <= FFT_DIRECT_COST_THRESHOLD {
+            return;
+        }
+        let dft_w = optimal_dft_size(search.width + tw - 1);
+        let dft_h = optimal_dft_size(search.height + th - 1);
+        let _ = self.fft_for_size(search, dft_w, dft_h);
     }
 }
 
@@ -697,6 +861,7 @@ pub fn prepare_search(img: &ImageBuf) -> SearchPrep {
         integrals: build_integrals(img),
         planar: crate::corr_simd::PlanarF32::from_interleaved(img),
         fft_cache: Mutex::new(HashMap::new()),
+        fft_inflight: Mutex::new(HashMap::new()),
     }
 }
 
@@ -1056,5 +1221,46 @@ mod tests {
             matches!(err, MatchError::TemplateTooLarge { .. }),
             "got {err:?}"
         );
+    }
+
+    #[test]
+    fn clear_match_scratch_does_not_break_subsequent_fft() {
+        // Force the FFT path (large search relative to template).
+        let tmpl = patterned(16, 16);
+        let mut search = gray(128, 128, 30);
+        search.stamp(&tmpl, 40, 40);
+        let map = match_template(&search, &tmpl, None, MatchMethod::CcoeffNormed).unwrap();
+        assert!(!map.scores.is_empty());
+        clear_match_scratch();
+        let map2 = match_template(&search, &tmpl, None, MatchMethod::CcoeffNormed).unwrap();
+        let peaks = find_peaks_for_method(
+            &map2,
+            0.9,
+            DEFAULT_CLOSE_MATCHES_DISTANCE,
+            MatchMethod::CcoeffNormed,
+        );
+        assert!(
+            !peaks.is_empty(),
+            "expected a hit after clearing TLS scratch"
+        );
+    }
+
+    /// Post-run contract: clear is idempotent and Rayon workers stay usable.
+    #[test]
+    fn clear_match_scratch_twice_then_parallel_fft_ok() {
+        let tmpl = patterned(16, 16);
+        let mut search = gray(96, 96, 25);
+        search.stamp(&tmpl, 20, 20);
+        let _ = match_template(&search, &tmpl, None, MatchMethod::CcoeffNormed).unwrap();
+        clear_match_scratch();
+        clear_match_scratch();
+        let maps: Vec<_> = (0..4)
+            .into_par_iter()
+            .map(|_| match_template(&search, &tmpl, None, MatchMethod::CcoeffNormed).unwrap())
+            .collect();
+        assert!(maps.iter().all(|m| !m.scores.is_empty()));
+        clear_match_scratch();
+        let again = match_template(&search, &tmpl, None, MatchMethod::CcoeffNormed).unwrap();
+        assert!(!again.scores.is_empty());
     }
 }

@@ -1,6 +1,32 @@
 //! Removable tag chips with draft entry and completion suggestions.
 
-use eframe::egui;
+use eframe::egui::{self, Key, Modifiers};
+
+/// Collapse `/`-separated tag paths: trim, drop empty segments, rejoin.
+/// `" combat/pve/ "` → `"combat/pve"`; `"///"` → `""`.
+pub fn normalize_tag_path(tag: &str) -> String {
+    tag.split('/')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+/// True when `tag` equals `prefix` or is a nested path under it (`prefix/...`).
+pub fn tag_is_under_or_eq(tag: &str, prefix: &str) -> bool {
+    if prefix.is_empty() {
+        return tag.is_empty();
+    }
+    tag == prefix
+        || tag
+            .strip_prefix(prefix)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// True when `filters` contains `path` or an ancestor path that covers it.
+pub fn filters_cover_path(filters: &[String], path: &str) -> bool {
+    filters.iter().any(|f| tag_is_under_or_eq(path, f))
+}
 
 /// Filter `all_tags` by substring match, excluding tags already present.
 pub fn tag_completion_options(
@@ -23,12 +49,13 @@ pub fn tag_completion_options(
 }
 
 /// Try to append a trimmed unique tag. Returns true when the list changed.
+/// Paths are normalized (`a//b/` → `a/b`) so nested tags stay consistent.
 pub fn try_add_tag(tags: &mut Vec<String>, raw: &str) -> bool {
-    let t = raw.trim();
-    if t.is_empty() || tags.iter().any(|x| x == t) {
+    let t = normalize_tag_path(raw);
+    if t.is_empty() || tags.iter().any(|x| normalize_tag_path(x) == t) {
         return false;
     }
-    tags.push(t.to_string());
+    tags.push(t);
     true
 }
 
@@ -39,62 +66,418 @@ pub fn remove_tag(tags: &mut Vec<String>, tag: &str) -> bool {
     tags.len() != before
 }
 
+/// Try to append a signed Image Search tag filter (`+tag` / `-tag`).
+///
+/// Bare input defaults to include (`+`). If the same tag name already exists with
+/// either polarity, the polarity is updated (or left unchanged) and returns whether
+/// the list changed.
+pub fn try_add_signed_tag_filter(tags: &mut Vec<String>, raw: &str) -> bool {
+    let (include, name) = match sqyre_domain::parse_tag_filter(raw) {
+        Some((inc, name)) => (inc, normalize_tag_path(&name)),
+        None => {
+            let name = normalize_tag_path(raw.trim().trim_start_matches(['+', '-']));
+            (true, name)
+        }
+    };
+    if name.is_empty() {
+        return false;
+    }
+    let formatted = sqyre_domain::format_tag_filter(include, &name);
+    if let Some(existing) = tags
+        .iter_mut()
+        .find(|t| sqyre_domain::tag_filter_name(t).as_deref() == Some(name.as_str()))
+    {
+        if *existing == formatted {
+            return false;
+        }
+        *existing = formatted;
+        return true;
+    }
+    tags.push(formatted);
+    true
+}
+
+/// Toggle include/exclude polarity of a stored signed filter chip.
+pub fn toggle_signed_tag_filter(tags: &mut [String], index: usize) -> bool {
+    let Some(entry) = tags.get_mut(index) else {
+        return false;
+    };
+    let Some((include, name)) = sqyre_domain::parse_tag_filter(entry) else {
+        return false;
+    };
+    *entry = sqyre_domain::format_tag_filter(!include, &name);
+    true
+}
+
+/// Filter `all_tags` by substring match, excluding tag names already present
+/// (ignoring `+`/`-` polarity on `already`).
+pub fn tag_completion_options_signed(
+    search: &str,
+    already: &[String],
+    all_tags: &[String],
+    limit: usize,
+) -> Vec<String> {
+    let search_l = search.trim().to_lowercase();
+    if search_l.is_empty() {
+        return Vec::new();
+    }
+    let already_names: Vec<String> = already
+        .iter()
+        .filter_map(|t| tag_filter_bare_name(t))
+        .collect();
+    all_tags
+        .iter()
+        .filter(|t| !already_names.iter().any(|c| c == *t))
+        .filter(|t| t.to_lowercase().contains(&search_l))
+        .take(limit)
+        .cloned()
+        .collect()
+}
+
+fn tag_filter_bare_name(raw: &str) -> Option<String> {
+    sqyre_domain::tag_filter_name(raw)
+        .map(|n| normalize_tag_path(&n))
+        .filter(|n| !n.is_empty())
+}
+
+/// Result of one [`tag_chip_editor`] frame.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TagChipEdit {
+    /// `tags` was mutated (add or remove).
+    pub changed: bool,
+    /// A tag was committed (Enter, Add, or suggestion). Caller should persist/update.
+    pub submitted: bool,
+}
+
+/// `None` = draft field; `Some(i)` = suggestion index.
+/// Down/Right move onto and along suggestions; Up/Left return toward the field.
+fn step_tag_suggest_selection(selected: Option<usize>, len: usize, next: bool) -> Option<usize> {
+    if len == 0 {
+        return None;
+    }
+    if next {
+        Some(selected.map(|i| (i + 1).min(len - 1)).unwrap_or(0))
+    } else {
+        match selected {
+            None | Some(0) => None,
+            Some(i) => Some(i - 1),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+struct TagSuggestNav {
+    /// `None` keeps keyboard focus on the draft field.
+    selected: Option<usize>,
+    query: String,
+}
+
+#[derive(Clone, Copy, Default)]
+struct TagSuggestKeys {
+    next: bool,
+    prev: bool,
+    accept: bool,
+}
+
+/// Capture nav / commit keys for the draft field.
+///
+/// Enter is handled whenever the draft is focused and non-empty — not only while
+/// the suggestion row is open — so free-typed tags commit and parent Enter
+/// handlers (e.g. edit-tip Save) do not steal the key.
+fn take_tag_suggest_keys(
+    ui: &mut egui::Ui,
+    was_open: bool,
+    selected: Option<usize>,
+    draft_has_text: bool,
+    draft_focused: bool,
+) -> TagSuggestKeys {
+    let on_suggest = was_open && selected.is_some();
+    // Commit on Enter when the draft is focused, or while the suggestion row is open
+    // (arrow selection may leave focus on the field; either way Enter should add).
+    let accept =
+        draft_has_text && (draft_focused || was_open) && ui.input(|i| i.key_pressed(Key::Enter));
+    if !was_open {
+        if accept {
+            ui.input_mut(|i| {
+                i.consume_key(Modifiers::NONE, Key::Enter);
+            });
+            return TagSuggestKeys {
+                accept: true,
+                ..TagSuggestKeys::default()
+            };
+        }
+        return TagSuggestKeys::default();
+    }
+    let keys = TagSuggestKeys {
+        next: ui.input(|i| {
+            i.key_pressed(Key::ArrowDown) || (on_suggest && i.key_pressed(Key::ArrowRight))
+        }),
+        prev: ui.input(|i| {
+            i.key_pressed(Key::ArrowUp) || (on_suggest && i.key_pressed(Key::ArrowLeft))
+        }),
+        accept,
+    };
+    ui.input_mut(|i| {
+        i.consume_key(Modifiers::NONE, Key::ArrowDown);
+        i.consume_key(Modifiers::NONE, Key::ArrowUp);
+        if on_suggest {
+            i.consume_key(Modifiers::NONE, Key::ArrowLeft);
+            i.consume_key(Modifiers::NONE, Key::ArrowRight);
+        }
+        if keys.accept {
+            i.consume_key(Modifiers::NONE, Key::Enter);
+        }
+    });
+    keys
+}
+
 /// Paint removable chips + draft field (+ optional Add button) + suggestions.
 ///
-/// Returns `true` when `tags` changed.
+/// Returns whether `tags` changed and whether a tag was committed.
 pub fn tag_chip_editor(
     ui: &mut egui::Ui,
     tags: &mut Vec<String>,
     draft: &mut String,
     all_suggestions: &[String],
     opts: TagChipOptions<'_>,
-) -> bool {
-    let mut changed = false;
+) -> TagChipEdit {
+    let mut edit = TagChipEdit::default();
+    // Stable across chip-count changes so focus survives add/remove + Update/load_form.
+    let draft_id = ui.id().with("tag_draft_edit");
+    let nav_id = ui.id().with("tag_suggest_nav");
+    let open_id = nav_id.with("open");
+    let refocus_id = nav_id.with("refocus");
+    let mut nav = ui
+        .ctx()
+        .data(|d| d.get_temp::<TagSuggestNav>(nav_id))
+        .unwrap_or_default();
+    let was_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(open_id))
+        .unwrap_or(false);
+    let refocus = ui
+        .ctx()
+        .data_mut(|d| d.remove_temp::<bool>(refocus_id))
+        .unwrap_or(false);
+    let draft_focused = ui.ctx().memory(|m| m.has_focus(draft_id));
+    let keys = take_tag_suggest_keys(
+        ui,
+        was_open,
+        nav.selected,
+        !draft.trim().is_empty(),
+        draft_focused,
+    );
 
-    if opts.draft_first {
+    let tag_resp = if opts.draft_first {
         ui.horizontal_wrapped(|ui| {
-            paint_tag_draft(ui, draft, &opts, &mut changed, tags);
-            let label = ui.label("Tags:");
-            if let Some(tip) = opts.draft_hover {
-                label.on_hover_text(tip);
-            }
-            paint_tag_chips(ui, tags, opts.enabled, &mut changed);
-        });
+            let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
+            crate::action_tooltip::help::label(ui, "Tags:", opts.draft_hover.unwrap_or(""));
+            paint_tag_chips(
+                ui,
+                tags,
+                opts.enabled,
+                opts.reorderable,
+                opts.signed_filters,
+                &mut edit.changed,
+            );
+            resp
+        })
+        .inner
     } else {
         ui.horizontal_wrapped(|ui| {
-            paint_tag_chips(ui, tags, opts.enabled, &mut changed);
+            paint_tag_chips(
+                ui,
+                tags,
+                opts.enabled,
+                opts.reorderable,
+                opts.signed_filters,
+                &mut edit.changed,
+            );
         });
+        ui.horizontal(|ui| paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags))
+            .inner
+    };
+    if refocus {
+        tag_resp.request_focus();
+    }
 
-        ui.horizontal(|ui| {
-            paint_tag_draft(ui, draft, &opts, &mut changed, tags);
+    let suggestions = if opts.enabled && !draft.trim().is_empty() {
+        if opts.signed_filters {
+            // Suggestions are bare names; strip a leading +/− from the draft for match.
+            let q = draft.trim().trim_start_matches(['+', '-']).trim();
+            tag_completion_options_signed(q, tags, all_suggestions, opts.suggestion_limit)
+        } else {
+            tag_completion_options(draft, tags, all_suggestions, opts.suggestion_limit)
+        }
+    } else {
+        Vec::new()
+    };
+    if nav.query != *draft {
+        nav.query = draft.clone();
+        nav.selected = None;
+    }
+    if let Some(i) = nav.selected {
+        if i >= suggestions.len() {
+            nav.selected = suggestions.len().checked_sub(1);
+        }
+    }
+    if !suggestions.is_empty() && (was_open || tag_resp.has_focus()) {
+        if keys.next {
+            nav.selected = step_tag_suggest_selection(nav.selected, suggestions.len(), true);
+        }
+        if keys.prev {
+            nav.selected = step_tag_suggest_selection(nav.selected, suggestions.len(), false);
+        }
+        // First frame suggestions appear: Down was not consumed above.
+        if !was_open && nav.selected.is_none() && ui.input(|i| i.key_pressed(Key::ArrowDown)) {
+            nav.selected = step_tag_suggest_selection(None, suggestions.len(), true);
+            ui.input_mut(|i| {
+                i.consume_key(Modifiers::NONE, Key::ArrowDown);
+            });
+        }
+    } else if suggestions.is_empty() {
+        nav.selected = None;
+    }
+
+    let mut pending: Option<String> = None;
+    if keys.accept {
+        pending = nav
+            .selected
+            .and_then(|i| suggestions.get(i).cloned())
+            .or_else(|| {
+                let t = draft.trim();
+                (!t.is_empty()).then(|| t.to_string())
+            });
+    }
+
+    if opts.enabled && !suggestions.is_empty() {
+        if opts.suggestions_with_separator {
+            ui.separator();
+        }
+        ui.horizontal_wrapped(|ui| {
+            for (i, sug) in suggestions.iter().enumerate() {
+                let selected = nav.selected == Some(i);
+                if ui
+                    .add(egui::Button::new(sug).small().selected(selected))
+                    .clicked()
+                {
+                    pending = Some(sug.clone());
+                }
+            }
         });
     }
 
-    if opts.enabled && !draft.trim().is_empty() {
-        let suggestions =
-            tag_completion_options(draft, tags, all_suggestions, opts.suggestion_limit);
-        if !suggestions.is_empty() {
-            if opts.suggestions_with_separator {
-                ui.separator();
-            }
-            ui.horizontal_wrapped(|ui| {
-                for sug in suggestions {
-                    if ui.small_button(&sug).clicked() {
-                        if try_add_tag(tags, &sug) {
-                            changed = true;
-                        }
-                        draft.clear();
-                    }
-                }
-            });
+    if pending.is_none()
+        && opts.enabled
+        && tag_resp.lost_focus()
+        && ui.input(|i| i.key_pressed(Key::Enter))
+    {
+        let t = draft.trim();
+        if !t.is_empty() {
+            pending = Some(t.to_string());
         }
     }
 
-    changed
+    let had_pending = pending.is_some();
+    if let Some(raw) = pending {
+        let added = if opts.signed_filters {
+            try_add_signed_tag_filter(tags, &raw)
+        } else {
+            try_add_tag(tags, &raw)
+        };
+        if added {
+            edit.changed = true;
+            edit.submitted = true;
+        }
+        draft.clear();
+        nav = TagSuggestNav::default();
+    }
+
+    // Keep the entrybox focused so multiple tags can be added without re-clicking.
+    // Next-frame flag covers Enter/button focus steal and Data Editor Update/load_form.
+    if edit.submitted || had_pending {
+        tag_resp.request_focus();
+        ui.ctx().data_mut(|d| d.insert_temp(refocus_id, true));
+    }
+
+    let open = opts.enabled
+        && !draft.trim().is_empty()
+        && !suggestions.is_empty()
+        && (tag_resp.has_focus() || nav.selected.is_some());
+    ui.ctx().data_mut(|d| {
+        d.insert_temp(nav_id, nav);
+        d.insert_temp(open_id, open);
+    });
+
+    edit
 }
 
-fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, changed: &mut bool) {
+/// Layout-only × slot; sized to Small text so it does not grow the pill.
+/// Interact + paint happen in [`finish_chip_remove`].
+fn allocate_chip_remove_slot(ui: &mut egui::Ui) -> egui::Rect {
+    let side = ui.text_style_height(&egui::TextStyle::Small);
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+    rect
+}
+
+/// Paint and interact the chip × over `rect`.
+///
+/// When `win_over_dnd` is true (reorderable chips), uses [`egui::Sense::click_and_drag`]
+/// registered *after* [`Ui::dnd_drag_source`] so the × wins over the parent drag sense —
+/// same pattern as icon-grid remove badges.
+///
+/// Hit testing matches the layout slot so clicks outside the pill (or on the
+/// label) cannot remove the tag by accident.
+fn finish_chip_remove(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    id: egui::Id,
+    enabled: bool,
+    win_over_dnd: bool,
+) -> egui::Response {
+    let sense = if !enabled {
+        egui::Sense::hover()
+    } else if win_over_dnd {
+        egui::Sense::click_and_drag()
+    } else {
+        egui::Sense::click()
+    };
+    let response = ui.interact(rect, id, sense);
+    let hovered = enabled && response.hovered();
+    let side = rect.width();
+    let fill = if hovered {
+        crate::theme::picker_remove_hover()
+    } else if enabled {
+        egui::Color32::from_black_alpha(55)
+    } else {
+        egui::Color32::from_black_alpha(28)
+    };
+    // Circle stays inside the layout slot (pill padding is the remaining margin).
+    ui.painter().circle_filled(rect.center(), side * 0.36, fill);
+    let fg = if hovered {
+        egui::Color32::WHITE
+    } else {
+        crate::theme::MACRO_STOP
+    };
+    crate::theme::paint_text_centered(ui, rect, "×", egui::FontId::proportional(side * 0.7), fg);
+    if enabled {
+        response.on_hover_text("Remove tag")
+    } else {
+        response
+    }
+}
+
+fn paint_tag_chips(
+    ui: &mut egui::Ui,
+    tags: &mut Vec<String>,
+    enabled: bool,
+    reorderable: bool,
+    signed_filters: bool,
+    changed: &mut bool,
+) {
     let mut remove: Option<String> = None;
+    let mut pending_reorder: Option<(usize, usize)> = None;
+    let mut toggle: Option<usize> = None;
     let small_h = ui.text_style_height(&egui::TextStyle::Small);
     let fill = if enabled {
         crate::theme::PRIMARY
@@ -108,32 +491,93 @@ fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, cha
         .corner_radius(egui::CornerRadius::same(6))
         .inner_margin(egui::Margin::same(2));
 
-    for tag in tags.iter() {
-        // Pill wraps label + × so `horizontal_wrapped` treats each chip as one unit.
-        chip.show(ui, |ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            ui.spacing_mut().button_padding = egui::vec2(0.0, 0.0);
-            ui.spacing_mut().interact_size.y = small_h;
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(tag.as_str()).small().color(fg));
-                if ui
-                    .add_enabled(
-                        enabled,
-                        egui::Button::new(
-                            egui::RichText::new("×")
-                                .small()
-                                .color(crate::theme::MACRO_STOP),
-                        )
-                        .frame(false)
-                        .min_size(egui::vec2(small_h, small_h)),
-                    )
-                    .on_hover_text("Remove tag")
-                    .clicked()
-                {
-                    remove = Some(tag.clone());
+    for (i, tag) in tags.iter().enumerate() {
+        let (polarity, label) = if signed_filters {
+            match sqyre_domain::parse_tag_filter(tag) {
+                Some((true, name)) => ("+", name),
+                Some((false, name)) => ("−", name),
+                None => ("+", tag.clone()),
+            }
+        } else {
+            ("", tag.clone())
+        };
+        let mut paint_chip = |ui: &mut egui::Ui| -> egui::Rect {
+            // Pill wraps label + × slot so `horizontal_wrapped` treats each chip as one unit.
+            chip.show(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.spacing_mut().button_padding = egui::vec2(0.0, 0.0);
+                ui.spacing_mut().interact_size.y = small_h;
+                ui.horizontal(|ui| {
+                    if signed_filters
+                        && ui
+                            .add_enabled(
+                                enabled,
+                                egui::Button::new(
+                                    egui::RichText::new(polarity).small().color(fg).strong(),
+                                )
+                                .frame(false)
+                                .min_size(egui::vec2(small_h, small_h)),
+                            )
+                            .on_hover_text("Toggle include (+) / exclude (−)")
+                            .clicked()
+                    {
+                        toggle = Some(i);
+                    }
+                    ui.label(egui::RichText::new(label.as_str()).small().color(fg));
+                    ui.add_space(2.0);
+                    allocate_chip_remove_slot(ui)
+                })
+                .inner
+            })
+            .inner
+        };
+
+        let (remove_rect, win_over_dnd) = if reorderable && enabled {
+            let id = ui.id().with(("tag_dnd", i, tag.as_str()));
+            let drag = ui.dnd_drag_source(id, i, paint_chip);
+            if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
+                let from = *payload;
+                if from != i {
+                    pending_reorder = Some((from, i));
                 }
-            });
-        });
+            } else if drag.response.dnd_hover_payload::<usize>().is_some() {
+                ui.painter().rect_stroke(
+                    drag.response.rect,
+                    6.0,
+                    egui::Stroke::new(1.5, crate::theme::MACRO_START),
+                    egui::StrokeKind::Outside,
+                );
+            }
+            (drag.inner, true)
+        } else {
+            (paint_chip(ui), false)
+        };
+        if finish_chip_remove(
+            ui,
+            remove_rect,
+            ui.id().with(("tag_rm", i, tag.as_str())),
+            enabled,
+            win_over_dnd,
+        )
+        .clicked()
+        {
+            remove = Some(tag.clone());
+        }
+    }
+    if let Some(i) = toggle {
+        if toggle_signed_tag_filter(tags, i) {
+            *changed = true;
+        }
+    }
+    if let Some((from, to)) = pending_reorder {
+        if from < tags.len() && to < tags.len() && from != to {
+            if from < to {
+                tags[from..=to].rotate_left(1);
+            } else {
+                tags[to..=from].rotate_right(1);
+            }
+            *changed = true;
+        }
     }
     if let Some(tag) = remove {
         if remove_tag(tags, &tag) {
@@ -144,20 +588,25 @@ fn paint_tag_chips(ui: &mut egui::Ui, tags: &mut Vec<String>, enabled: bool, cha
 
 fn paint_tag_draft(
     ui: &mut egui::Ui,
+    draft_id: egui::Id,
     draft: &mut String,
     opts: &TagChipOptions<'_>,
-    changed: &mut bool,
+    edit: &mut TagChipEdit,
     tags: &mut Vec<String>,
-) {
+) -> egui::Response {
+    let hint = if opts.signed_filters {
+        "Add +tag or -tag…"
+    } else {
+        "Add tag…"
+    };
     let tag_te = egui::TextEdit::singleline(draft)
+        .id(draft_id)
         .desired_width(140.0)
-        .hint_text("Add tag…");
+        .hint_text(hint);
     let mut tag_resp = ui.add_enabled(opts.enabled, tag_te);
     if let Some(tip) = opts.draft_hover {
         tag_resp = tag_resp.on_hover_text(tip);
     }
-    // Singleline TextEdit loses focus on Enter, so check lost_focus — not has_focus.
-    let add_enter = tag_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
     let add_clicked = opts.show_add_button
         && ui
             .add_enabled(
@@ -165,12 +614,20 @@ fn paint_tag_draft(
                 egui::Button::new(egui::RichText::new("Add tag").color(crate::theme::MACRO_START)),
             )
             .clicked();
-    if opts.enabled && (add_enter || add_clicked) {
-        if try_add_tag(tags, draft) {
-            *changed = true;
+    if opts.enabled && add_clicked {
+        let added = if opts.signed_filters {
+            try_add_signed_tag_filter(tags, draft)
+        } else {
+            try_add_tag(tags, draft)
+        };
+        if added {
+            edit.changed = true;
         }
+        // Mark submitted so the entrybox is refocused even when the add was a no-op.
+        edit.submitted = true;
         draft.clear();
     }
+    tag_resp
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -182,6 +639,10 @@ pub struct TagChipOptions<'a> {
     pub draft_hover: Option<&'a str>,
     /// When true, paint the draft field before the `Tags:` label in the chip row.
     pub draft_first: bool,
+    /// When true, chips can be drag-reordered (tag priority lists).
+    pub reorderable: bool,
+    /// When true, chips are Image Search `+`/`−` filters with a polarity toggle.
+    pub signed_filters: bool,
 }
 
 impl Default for TagChipOptions<'_> {
@@ -193,6 +654,8 @@ impl Default for TagChipOptions<'_> {
             suggestions_with_separator: false,
             draft_hover: None,
             draft_first: false,
+            reorderable: false,
+            signed_filters: false,
         }
     }
 }
@@ -222,5 +685,43 @@ mod tests {
         assert_eq!(tags, vec!["alpha", "beta"]);
         assert!(remove_tag(&mut tags, "alpha"));
         assert_eq!(tags, vec!["beta"]);
+    }
+
+    #[test]
+    fn signed_filter_add_and_toggle() {
+        let mut tags = Vec::new();
+        assert!(try_add_signed_tag_filter(&mut tags, "weapon"));
+        assert_eq!(tags, vec!["+weapon"]);
+        assert!(try_add_signed_tag_filter(&mut tags, "-holy"));
+        assert_eq!(tags, vec!["+weapon", "-holy"]);
+        // Same name updates polarity.
+        assert!(try_add_signed_tag_filter(&mut tags, "-weapon"));
+        assert_eq!(tags, vec!["-weapon", "-holy"]);
+        assert!(toggle_signed_tag_filter(&mut tags, 0));
+        assert_eq!(tags, vec!["+weapon", "-holy"]);
+    }
+
+    #[test]
+    fn suggest_selection_moves_from_field_and_back() {
+        assert_eq!(step_tag_suggest_selection(None, 3, true), Some(0));
+        assert_eq!(step_tag_suggest_selection(Some(0), 3, true), Some(1));
+        assert_eq!(step_tag_suggest_selection(Some(2), 3, true), Some(2));
+        assert_eq!(step_tag_suggest_selection(Some(0), 3, false), None);
+        assert_eq!(step_tag_suggest_selection(Some(2), 3, false), Some(1));
+        assert_eq!(step_tag_suggest_selection(None, 3, false), None);
+        assert_eq!(step_tag_suggest_selection(None, 0, true), None);
+    }
+
+    #[test]
+    fn normalize_and_under_paths() {
+        assert_eq!(normalize_tag_path(" combat/pve/ "), "combat/pve");
+        assert_eq!(normalize_tag_path("a//b"), "a/b");
+        assert_eq!(normalize_tag_path("///"), "");
+        assert!(tag_is_under_or_eq("combat", "combat"));
+        assert!(tag_is_under_or_eq("combat/pve", "combat"));
+        assert!(!tag_is_under_or_eq("combatant", "combat"));
+        assert!(!tag_is_under_or_eq("combat", "combat/pve"));
+        assert!(filters_cover_path(&["combat".into()], "combat/pve"));
+        assert!(!filters_cover_path(&["combat/pve".into()], "combat"));
     }
 }

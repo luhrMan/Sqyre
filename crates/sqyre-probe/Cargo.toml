@@ -26,4 +26,4 @@ web-time = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.11", default-features = false, features = ["async-std"] }
-pollster = "0.4"
+pollster = "1.0"

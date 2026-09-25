@@ -70,6 +70,7 @@ pub(crate) struct MacroRecordShow<'a> {
     pub screen_click: &'a ScreenClickBridge,
     pub macros: &'a [(String, Vec<String>)],
     pub compact_program_headers: bool,
+    pub pending_scale: Option<&'a crate::widgets::ViewportScaleEvent>,
 }
 
 #[derive(Debug, Clone)]
@@ -130,6 +131,7 @@ impl MacroRecordUi {
             screen_click,
             macros,
             compact_program_headers,
+            pending_scale,
         } = ui;
         match self {
             Self::Closed => MacroRecordShowResult {
@@ -196,16 +198,20 @@ impl MacroRecordUi {
             }
             Self::Review(review) => match paint_review(
                 review,
-                ctx,
-                macro_hotkeys,
-                catalog,
-                icons,
-                previews,
-                key_record,
-                hotkey_record,
-                screen_click,
-                macros,
-                compact_program_headers,
+                MacroRecordShow {
+                    ctx,
+                    macro_hotkeys,
+                    bridge,
+                    catalog,
+                    icons,
+                    previews,
+                    key_record,
+                    hotkey_record,
+                    screen_click,
+                    macros,
+                    compact_program_headers,
+                    pending_scale,
+                },
             ) {
                 ReviewFrame::Continue { catalog_changed } => MacroRecordShowResult {
                     copy: None,
@@ -233,20 +239,21 @@ enum ReviewFrame {
     Close,
 }
 
-#[allow(clippy::too_many_arguments)]
-fn paint_review(
-    review: &mut ReviewState,
-    ctx: &egui::Context,
-    macro_hotkeys: &MacroHotkeyBridge,
-    catalog: &mut ProgramCatalog,
-    icons: &mut IconCache,
-    previews: &mut PreviewTooltipCache,
-    key_record: &mut KeyRecordUi,
-    hotkey_record: &mut HotkeyRecordUi,
-    screen_click: &ScreenClickBridge,
-    macros: &[(String, Vec<String>)],
-    compact_program_headers: bool,
-) -> ReviewFrame {
+fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFrame {
+    let MacroRecordShow {
+        ctx,
+        macro_hotkeys,
+        bridge: _,
+        catalog,
+        icons,
+        previews,
+        key_record,
+        hotkey_record,
+        screen_click,
+        macros,
+        compact_program_headers,
+        pending_scale,
+    } = ui;
     let ReviewState {
         draft,
         points,
@@ -284,6 +291,8 @@ fn paint_review(
             .default_pos(default_pos)
             .min_size([400.0, 280.0]),
         ctx,
+        egui::Id::new("sqyre_macro_record_review"),
+        pending_scale,
     )
     .show(ctx, |ui| {
             is_dark = ui.visuals().dark_mode;
@@ -298,11 +307,11 @@ fn paint_review(
                     "Saved into program “{TEMPORARY_PROGRAM}” at the current resolution (replaced each recording). Enabled points are drawn on screen."
                 ));
                 let points_h = (ui.available_height() * 0.28).clamp(96.0, 220.0);
-                crate::pickers::scroll_vertical()
+                let points_w = crate::widgets::visible_width(ui);
+                crate::pickers::dialog_scroll(points_w, points_h)
                     .id_salt("macro_record_points")
-                    .max_height(points_h)
-                    .auto_shrink([false, false])
                     .show(ui, |ui| {
+                        ui.set_max_width(points_w);
                         for (i, pt) in points.iter_mut().enumerate() {
                             let mut row_hovered = false;
                             let mut row_editing = false;
@@ -381,12 +390,11 @@ fn paint_review(
             // Leave room for Copy/Close (+ status) so the list grows with the window.
             let footer_reserve = if status.is_empty() { 40.0 } else { 60.0 };
             let actions_h = (ui.available_height() - footer_reserve).max(80.0);
-            crate::pickers::scroll_vertical()
+            let actions_w = crate::widgets::visible_width(ui);
+            crate::pickers::dialog_scroll(actions_w, actions_h)
                 .id_salt("macro_record_actions")
-                .max_height(actions_h)
-                .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    ui.set_max_width(crate::widgets::visible_width(ui));
+                    ui.set_max_width(actions_w);
                     let actions: Vec<Action> = draft.root.children().to_vec();
                     for action in &actions {
                         let interaction = tree_chrome::paint_action_row(
@@ -420,6 +428,14 @@ fn paint_review(
             });
             if !status.is_empty() {
                 ui.colored_label(egui::Color32::LIGHT_GREEN, status.as_str());
+            }
+            // Esc closes when no text field is capturing keys.
+            if !close
+                && !ui.ctx().text_edit_focused()
+                && !ui.ctx().egui_wants_keyboard_input()
+                && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+            {
+                close = true;
             }
         });
 
@@ -478,6 +494,7 @@ fn paint_review(
                 screen_click,
             },
             compact_program_headers,
+            pending_scale,
         };
         let _ = action_tooltip::show(tooltip, ctx, draft, macros, &mut tip_ui, |_| {});
     }
@@ -551,19 +568,22 @@ fn replace_temporary_points(
     points: &[TempPoint],
 ) -> Result<usize, String> {
     reset_temporary_program(catalog)?;
+    let live = crate::data_editor::helpers::sync_live_monitor_rects(catalog);
     let mut n = 0;
     for pt in points.iter().filter(|p| p.save) {
         let name = pt.name.trim();
         if name.is_empty() {
             return Err("point name cannot be empty".into());
         }
+        let (monitor, rx, ry) = sqyre_persist::absolute_point_to_relative(&live, pt.x, pt.y);
         catalog
             .upsert_point(
                 TEMPORARY_PROGRAM,
                 ProgramPoint {
                     name: name.to_string(),
-                    x: ScalarValue::Int(pt.x as i64),
-                    y: ScalarValue::Int(pt.y as i64),
+                    monitor,
+                    x: ScalarValue::Int(rx as i64),
+                    y: ScalarValue::Int(ry as i64),
                 },
             )
             .map_err(|e| e.to_string())?;

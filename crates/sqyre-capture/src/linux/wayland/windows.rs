@@ -181,20 +181,30 @@ fn same_window(a: &WindowInfo, b: &WindowInfo) -> bool {
     }
     let path_a = a.process_path.trim();
     let path_b = b.process_path.trim();
-    if !path_a.is_empty() && !path_b.is_empty() {
-        return paths_equal(&a.process_path, &b.process_path);
+    if !path_a.is_empty() && !path_b.is_empty() && paths_equal(&a.process_path, &b.process_path) {
+        return true;
     }
     let name_a = a.process_name.trim();
     let name_b = b.process_name.trim();
-    if !name_a.is_empty() && !name_b.is_empty() {
-        return name_a.eq_ignore_ascii_case(name_b);
+    if !name_a.is_empty() && !name_b.is_empty() && name_a.eq_ignore_ascii_case(name_b) {
+        return true;
     }
-    true
+    // One side may be a freedesktop app id while the other has a real exe path.
+    path_a.is_empty() || path_b.is_empty()
 }
 
 fn enrich(dst: &mut WindowInfo, src: &WindowInfo) {
-    if dst.process_path.trim().is_empty() && !src.process_path.trim().is_empty() {
-        dst.process_path = src.process_path.clone();
+    if !src.process_path.trim().is_empty() {
+        let d = dst.process_path.trim();
+        let s = src.process_path.trim();
+        let take = d.is_empty()
+            // Prefer host exe over desktop app-id for AT-SPI/X11 activate matching.
+            || (is_app_id_key(d) && s.contains('/') && !s.starts_with("/app/"))
+            // Prefer Flatpak app id over sandbox-local `/app/…` paths.
+            || (s.contains('.') && !s.contains('/') && d.starts_with("/app/"));
+        if take {
+            dst.process_path = src.process_path.clone();
+        }
     }
     if dst.process_name.trim().is_empty() && !src.process_name.trim().is_empty() {
         dst.process_name = src.process_name.clone();
@@ -202,6 +212,10 @@ fn enrich(dst: &mut WindowInfo, src: &WindowInfo) {
     if dst.icon.is_none() {
         dst.icon = src.icon.clone();
     }
+}
+
+fn is_app_id_key(s: &str) -> bool {
+    s.contains('.') && !s.contains('/')
 }
 
 #[cfg(test)]
@@ -248,5 +262,23 @@ mod tests {
         let merged = merge_window_lists([&a, &b]);
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0].process_path, "/usr/lib/firefox/firefox");
+    }
+
+    #[test]
+    fn merge_prefers_host_exe_over_app_id() {
+        let a = vec![win("Files", "nautilus", "org.gnome.Nautilus")];
+        let b = vec![win("Files", "nautilus", "/usr/bin/nautilus")];
+        let merged = merge_window_lists([&a, &b]);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].process_path, "/usr/bin/nautilus");
+    }
+
+    #[test]
+    fn merge_prefers_flatpak_id_over_app_prefix() {
+        let a = vec![win("Firefox", "firefox", "/app/bin/firefox")];
+        let b = vec![win("Firefox", "firefox", "org.mozilla.firefox")];
+        let merged = merge_window_lists([&a, &b]);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].process_path, "org.mozilla.firefox");
     }
 }

@@ -93,6 +93,26 @@ pub fn collect_hints(
                     .into(),
             );
         }
+
+        if matches!(
+            caps.get("windows.list").map(|c| &c.status),
+            Some(CapStatus::Fail)
+        ) && session.session_type == "wayland"
+        {
+            if std::env::var_os("FLATPAK_ID").is_some() {
+                hints.push(
+                    "Flatpak: GNOME Wayland window list needs host AT-SPI \
+                     (--filesystem=xdg-run/at-spi). Rebuild/reinstall the Sqyre Flatpak."
+                        .into(),
+                );
+            } else {
+                hints.push(
+                    "GNOME Wayland: enable Accessibility (Settings → Accessibility) so AT-SPI \
+                     can list windows (Mutter has no foreign-toplevel)."
+                        .into(),
+                );
+            }
+        }
     }
 
     if matches!(

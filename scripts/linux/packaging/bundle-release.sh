@@ -1,12 +1,21 @@
 #!/usr/bin/env bash
 # Build a portable Linux release directory with Tesseract/Leptonica bundled.
 #
-# Output layout (under bin/sqyre-bundle/):
+# Output layout (under bin/<bundle-name>/):
 #   sqyre          — release binary ($ORIGIN/lib rpath)
 #   lib/           — libtesseract, libleptonica, and transitive .so deps
 #   tessdata/      — eng.traineddata
 #
+# Env overrides:
+#   SQYRE_BUNDLE_NAME     — directory under bin/ (default: sqyre-bundle)
+#   SQYRE_APP_FEATURES    — cargo feature flags (default: --features portal-capture)
+#   CARGO_TARGET_DIR      — where <profile>/sqyre is built
+#   SQYRE_CARGO_PROFILE   — cargo profile (default: dist — LTO shipping opts)
+#   SQYRE_BUNDLE_SKIP_BUILD=1 — skip cargo; use existing binary
+#
 # Run from repo root: make release-bundle
+# Fast prototype: make dev → bin/sqyre-dev/ (release profile, no LTO)
+# Heap-profile variant: make release-bundle-dhat → bin/sqyre-bundle-dhat/
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,10 +38,12 @@ need_cmd readlink
 need_cmd file
 
 TARGET_DIR="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
-BUNDLE_DIR="$REPO_ROOT/bin/sqyre-bundle"
+CARGO_PROFILE="${SQYRE_CARGO_PROFILE:-dist}"
+BUNDLE_NAME="${SQYRE_BUNDLE_NAME:-sqyre-bundle}"
+BUNDLE_DIR="$REPO_ROOT/bin/$BUNDLE_NAME"
 LIB_DIR="$BUNDLE_DIR/lib"
 TESS_DIR="$BUNDLE_DIR/tessdata"
-BINARY_SRC="$TARGET_DIR/release/sqyre"
+BINARY_SRC="$TARGET_DIR/$CARGO_PROFILE/sqyre"
 BINARY_DST="$BUNDLE_DIR/sqyre"
 
 # Prefer workspace-local rustup/cargo when present.
@@ -44,13 +55,15 @@ if [ -z "${RUSTUP_HOME:-}" ] && [ -d "$REPO_ROOT/.rustup-home" ]; then
   export RUSTUP_HOME="$REPO_ROOT/.rustup-home"
 fi
 
-SQYRE_APP_FEATURES="--features portal-capture"
+SQYRE_APP_FEATURES="${SQYRE_APP_FEATURES:---features portal-capture}"
 
 if [ "${SQYRE_BUNDLE_SKIP_BUILD:-}" != "1" ]; then
-  echo "Building release binary…"
+  echo "Building $CARGO_PROFILE binary ($SQYRE_APP_FEATURES)…"
   (
     cd "$REPO_ROOT"
-    cargo build -p sqyre-app --release $SQYRE_APP_FEATURES ${CARGO_FLAGS:-}
+    # Intentionally unquoted: features string is one or more cargo args.
+    # shellcheck disable=SC2086
+    cargo build -p sqyre-app --profile "$CARGO_PROFILE" $SQYRE_APP_FEATURES ${CARGO_FLAGS:-}
   )
 fi
 
@@ -64,6 +77,10 @@ mkdir -p "$LIB_DIR" "$TESS_DIR"
 
 cp -f "$BINARY_SRC" "$BINARY_DST"
 chmod 755 "$BINARY_DST"
+# Strip only the bundled copy — leave cargo target/ symbols for local debugging.
+if have_cmd strip; then
+  strip --strip-unneeded "$BINARY_DST" || true
+fi
 
 # Core glibc / dynamic linker — leave to the host.
 is_system_lib() {
@@ -219,4 +236,13 @@ echo "  sqyre     $(du -h "$BINARY_DST" | cut -f1)"
 echo "  lib/      $(find "$LIB_DIR" -maxdepth 1 -type f -o -type l | wc -l) shared objects"
 echo "  tessdata/ eng.traineddata ($(du -h "$TESS_DIR/eng.traineddata" | cut -f1))"
 echo ""
-echo "Run: $BUNDLE_DIR/sqyre"
+case "$SQYRE_APP_FEATURES" in
+  *dhat-heap*)
+    echo "Heap profile build (dhat-heap): slower allocs; quit cleanly to write dhat-heap.json in cwd."
+    echo "Run:  cd <workdir> && SQYRE_MEM=1 $BUNDLE_DIR/sqyre"
+    echo "View: https://nnethercote.github.io/dh_view/dh_view.html"
+    ;;
+  *)
+    echo "Run: $BUNDLE_DIR/sqyre"
+    ;;
+esac

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Build Sqyre for Windows (x86_64).
 #
-# - On Windows: native `cargo build --release` → bin/sqyre.exe
+# - On Windows: native `cargo build --profile dist` → bin/sqyre.exe
 # - Elsewhere: Docker MinGW cross image → bin/sqyre.exe
+# Override with SQYRE_CARGO_PROFILE=release for faster local iteration.
 #
 # Env:
 #   SQYRE_WINDOWS_IMAGE            image tag (default: sqyre-windows-cross:latest)
@@ -139,24 +140,30 @@ ensure_windows_cross_image() {
 run_native() {
   local target_dir="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
   local cargo_incremental="${CARGO_INCREMENTAL:-1}"
+  local profile="${SQYRE_CARGO_PROFILE:-dist}"
   mkdir -p "$REPO_ROOT/bin"
-  echo "Building Windows release (native, CARGO_INCREMENTAL=$cargo_incremental)…"
+  echo "Building Windows $profile (native, CARGO_INCREMENTAL=$cargo_incremental)…"
   (
     cd "$REPO_ROOT"
     export CARGO_INCREMENTAL="$cargo_incremental"
     # shellcheck disable=SC2086
-    cargo build -p sqyre-app --release ${CARGO_FLAGS:-}
+    cargo build -p sqyre-app --profile "$profile" ${CARGO_FLAGS:-}
   )
   local src
-  if [ -f "$target_dir/release/sqyre.exe" ]; then
-    src="$target_dir/release/sqyre.exe"
-  elif [ -f "$target_dir/x86_64-pc-windows-gnu/release/sqyre.exe" ]; then
-    src="$target_dir/x86_64-pc-windows-gnu/release/sqyre.exe"
+  if [ -f "$target_dir/$profile/sqyre.exe" ]; then
+    src="$target_dir/$profile/sqyre.exe"
+  elif [ -f "$target_dir/x86_64-pc-windows-gnu/$profile/sqyre.exe" ]; then
+    src="$target_dir/x86_64-pc-windows-gnu/$profile/sqyre.exe"
   else
-    echo "Built binary not found under $target_dir" >&2
+    echo "Built binary not found under $target_dir ($profile)" >&2
     exit 1
   fi
   cp -f "$src" "$REPO_ROOT/bin/sqyre.exe"
+  if have_cmd strip; then
+    strip --strip-unneeded "$REPO_ROOT/bin/sqyre.exe" || true
+  elif have_cmd x86_64-w64-mingw32-strip; then
+    x86_64-w64-mingw32-strip --strip-unneeded "$REPO_ROOT/bin/sqyre.exe" || true
+  fi
   echo "Windows binary: $REPO_ROOT/bin/sqyre.exe"
 }
 
@@ -262,7 +269,8 @@ run_docker() {
     exit 1
   fi
 
-  echo "Building Windows release (docker: $image, CARGO_HOME=$cargo_home_in, CARGO_TARGET_DIR=$cargo_target_in, incremental=${cargo_incremental:-off}, sccache=$use_sccache$cache_note)…"
+  local profile="${SQYRE_CARGO_PROFILE:-dist}"
+  echo "Building Windows $profile (docker: $image, CARGO_HOME=$cargo_home_in, CARGO_TARGET_DIR=$cargo_target_in, incremental=${cargo_incremental:-off}, sccache=$use_sccache$cache_note)…"
   docker run --rm \
     -u "$(id -u):$(id -g)" \
     -v "$host_repo:/workspace$(docker_bind_selinux_z)" \
@@ -280,6 +288,7 @@ run_docker() {
     -e "CARGO_FLAGS=${CARGO_FLAGS:-}" \
     -e "RELEASE_VERSION=${RELEASE_VERSION:-}" \
     -e "SQYRE_RUST_CHANNEL=$rust_channel" \
+    -e "SQYRE_CARGO_PROFILE=$profile" \
     "$image" \
     bash -c 'set -euo pipefail
       # Image rustup lives under /usr/local/cargo. The crate-cache CARGO_HOME mount
@@ -304,9 +313,13 @@ run_docker() {
         rustup_img target list --installed
         exit 1
       fi
-      echo "Compiling sqyre-app for x86_64-pc-windows-gnu…"
-      cargo build -p sqyre-app --release --target x86_64-pc-windows-gnu ${CARGO_FLAGS:-}
-      cp -f "${CARGO_TARGET_DIR:-target}/x86_64-pc-windows-gnu/release/sqyre.exe" /workspace/bin/sqyre.exe
+      profile="${SQYRE_CARGO_PROFILE:-dist}"
+      echo "Compiling sqyre-app for x86_64-pc-windows-gnu (profile=$profile)…"
+      # shellcheck disable=SC2086
+      cargo build -p sqyre-app --profile "$profile" --target x86_64-pc-windows-gnu ${CARGO_FLAGS:-}
+      cp -f "${CARGO_TARGET_DIR:-target}/x86_64-pc-windows-gnu/${profile}/sqyre.exe" /workspace/bin/sqyre.exe
+      # Strip only the shipped copy — leave cargo target/ symbols for debugging.
+      x86_64-w64-mingw32-strip --strip-unneeded /workspace/bin/sqyre.exe || true
       if command -v sccache >/dev/null && [ -n "${RUSTC_WRAPPER:-}" ]; then
         sccache --show-stats || true
       fi

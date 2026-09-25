@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="520" viewBox="0 0 1400 520">
+  <rect width="1400" height="520" fill="#ffffff"/>
+  <text x="700" y="48" text-anchor="middle" font-family="DejaVu Sans, Liberation Sans, sans-serif" font-size="34" font-weight="700" fill="#1f2937">From hit to mouse move</text>
+
+  <!-- Step cards -->
+  <g font-family="DejaVu Sans, Liberation Sans, sans-serif">
+    <!-- 1 -->
+    <rect x="40" y="90" width="280" height="300" rx="16" fill="#f3f4f6" stroke="#9ca3af" stroke-width="2"/>
+    <circle cx="72" cy="122" r="16" fill="#0f766e"/>
+    <text x="72" y="128" text-anchor="middle" font-size="16" font-weight="700" fill="#ffffff">1</text>
+    <text x="100" y="128" font-size="18" font-weight="700" fill="#1f2937">Image Search finds Item</text>
+    <rect x="80" y="160" width="200" height="160" rx="10" fill="#ffffff" stroke="#374151" stroke-width="2"/>
+    <rect x="80" y="160" width="200" height="22" fill="#e5e7eb"/>
+    <rect x="120" y="210" width="120" height="80" rx="8" fill="#ccfbf1" stroke="#0f766e" stroke-width="2" stroke-dasharray="8 5"/>
+    <circle cx="180" cy="250" r="10" fill="none" stroke="#0f766e" stroke-width="3"/>
+    <line x1="180" y1="232" x2="180" y2="268" stroke="#0f766e" stroke-width="2"/>
+    <line x1="162" y1="250" x2="198" y2="250" stroke="#0f766e" stroke-width="2"/>
+
+    <!-- arrow -->
+    <path d="M330 240 L370 240" stroke="#0f766e" stroke-width="3" fill="none"/>
+    <polygon points="370,232 390,240 370,248" fill="#0f766e"/>
+
+    <!-- 2 -->
+    <rect x="400" y="90" width="260" height="300" rx="16" fill="#f3f4f6" stroke="#9ca3af" stroke-width="2"/>
+    <circle cx="432" cy="122" r="16" fill="#0f766e"/>
+    <text x="432" y="128" text-anchor="middle" font-size="16" font-weight="700" fill="#ffffff">2</text>
+    <text x="460" y="128" font-size="18" font-weight="700" fill="#1f2937">Write foundX / foundY</text>
+    <rect x="430" y="200" width="200" height="100" rx="10" fill="#ffffff" stroke="#9ca3af" stroke-width="2"/>
+    <text x="450" y="240" font-family="DejaVu Sans Mono, monospace" font-size="18" fill="#1f2937">foundX = hit center</text>
+    <text x="450" y="270" font-family="DejaVu Sans Mono, monospace" font-size="18" fill="#1f2937">foundY = hit center</text>
+
+    <path d="M670 240 L710 240" stroke="#0f766e" stroke-width="3" fill="none"/>
+    <polygon points="710,232 730,240 710,248" fill="#0f766e"/>
+
+    <!-- 3 -->
+    <rect x="740" y="90" width="300" height="300" rx="16" fill="#f3f4f6" stroke="#9ca3af" stroke-width="2"/>
+    <circle cx="772" cy="122" r="16" fill="#0f766e"/>
+    <text x="772" y="128" text-anchor="middle" font-size="16" font-weight="700" fill="#ffffff">3</text>
+    <text x="800" y="128" font-size="16" font-weight="700" fill="#1f2937">Point "Image Search Reference"</text>
+    <rect x="770" y="190" width="240" height="120" rx="10" fill="#ffffff" stroke="#9ca3af" stroke-width="2"/>
+    <text x="790" y="230" font-size="15" font-weight="700" fill="#0f766e">General~Image Search Reference</text>
+    <text x="790" y="265" font-family="DejaVu Sans Mono, monospace" font-size="18" fill="#1f2937">x: ${foundX}</text>
+    <text x="790" y="290" font-family="DejaVu Sans Mono, monospace" font-size="18" fill="#1f2937">y: ${foundY}</text>
+
+    <path d="M1050 240 L1090 240" stroke="#0f766e" stroke-width="3" fill="none"/>
+    <polygon points="1090,232 1110,240 1090,248" fill="#0f766e"/>
+
+    <!-- 4 -->
+    <rect x="1120" y="90" width="240" height="300" rx="16" fill="#f3f4f6" stroke="#9ca3af" stroke-width="2"/>
+    <circle cx="1152" cy="122" r="16" fill="#0f766e"/>
+    <text x="1152" y="128" text-anchor="middle" font-size="16" font-weight="700" fill="#ffffff">4</text>
+    <text x="1180" y="128" font-size="18" font-weight="700" fill="#1f2937">Move mouse</text>
+    <rect x="1160" y="180" width="160" height="140" rx="10" fill="#ffffff" stroke="#374151" stroke-width="2"/>
+    <circle cx="1240" cy="250" r="12" fill="none" stroke="#0f766e" stroke-width="3"/>
+    <line x1="1240" y1="228" x2="1240" y2="272" stroke="#0f766e" stroke-width="2"/>
+    <line x1="1218" y1="250" x2="1262" y2="250" stroke="#0f766e" stroke-width="2"/>
+    <path d="M1185 280 L1230 255 L1195 295 Z" fill="#111827"/>
+  </g>
+
+  <rect x="220" y="430" width="960" height="56" rx="14" fill="#f3f4f6" stroke="#9ca3af" stroke-width="2"/>
+  <text x="700" y="465" text-anchor="middle" font-family="DejaVu Sans, Liberation Sans, sans-serif" font-size="20" font-weight="700" fill="#1f2937">Nested Move uses Image Search Reference so the cursor follows each match.</text>
+</svg>

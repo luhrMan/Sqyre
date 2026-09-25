@@ -8,13 +8,15 @@ pub mod tags;
 
 pub use dialogs::{
     confirm_cancel_row, confirm_choice_row, confirm_window, dialog_constrain_rect,
-    fill_resize_body, fit_dialog_popup, fit_dialog_window, save_cancel_row, visible_height,
-    visible_width, ConfirmCancel, ConfirmChoice, ConfirmKind, SaveCancel,
+    fill_resize_body, fit_dialog_popup, fit_dialog_window, floating_scrollbar_overlay_width,
+    save_cancel_row, sync_viewport_window_scale, visible_content_width, visible_height,
+    visible_size, visible_width, ConfirmCancel, ConfirmChoice, ConfirmKind, SaveCancel,
+    ViewportScaleEvent,
 };
 pub use fields::{
     combo_condition_operator, combo_enum, combo_str, combo_str_labeled, drag_field,
     drag_field_enabled, searchable_combo, searchable_combo_width, searchable_combo_with,
-    text_field, text_field_width, W_MULTILINE, W_TEXT, W_VAR,
+    text_field, text_field_width, W_TEXT, W_VAR,
 };
 pub use headers::{heading_with_count, selectable_title_with_count, title_with_count};
 pub use match_settings::configure_match_blur_drag;

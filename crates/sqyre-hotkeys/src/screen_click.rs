@@ -45,7 +45,10 @@ struct Inner {
     point: Option<(i32, i32)>,
     /// Completed color-sample click (sampled by UI via 1×1 capture).
     color_point: Option<(i32, i32)>,
+    /// Normalized absolute corners of a completed search-area drag.
     search_area: Option<(i32, i32, i32, i32)>,
+    /// First-click (press) of that drag — used for monitor-slot assignment.
+    search_area_press: Option<(i32, i32)>,
     cancelled: bool,
     /// When true, the fullscreen [`SelectionGrab`] owns mouse/Esc — hotkey hooks
     /// must not also deliver those events (would double-count clicks).
@@ -199,13 +202,17 @@ impl ScreenClickBridge {
     ///
     /// Only after the first corner click — before that the rect is cleared so nothing
     /// is drawn while waiting for the first corner.
-    pub fn peek_search_area_selection(&self) -> Option<(i32, i32, i32, i32)> {
+    /// Returns `(press_x, press_y, left, top, right, bottom)`.
+    pub fn peek_search_area_selection(&self) -> Option<(i32, i32, i32, i32, i32, i32)> {
         let g = self.inner.lock();
         let (x, y) = g.last_pos;
         match &g.armed {
             Some(Armed::SearchArea {
-                first: Some((lx, ty)),
-            }) => Some(normalize_rect(*lx, *ty, x, y)),
+                first: Some((px, py)),
+            }) => {
+                let (lx, ty, rx, by) = normalize_rect(*px, *py, x, y);
+                Some((*px, *py, lx, ty, rx, by))
+            }
             _ => None,
         }
     }
@@ -272,8 +279,12 @@ impl ScreenClickBridge {
         self.inner.lock().color_point.take()
     }
 
-    pub fn take_search_area(&self) -> Option<(i32, i32, i32, i32)> {
-        self.inner.lock().search_area.take()
+    /// Completed search area: `(press_x, press_y, left, top, right, bottom)` absolute.
+    pub fn take_search_area(&self) -> Option<(i32, i32, i32, i32, i32, i32)> {
+        let mut g = self.inner.lock();
+        let (lx, ty, rx, by) = g.search_area.take()?;
+        let (px, py) = g.search_area_press.take().unwrap_or((lx, ty));
+        Some((px, py, lx, ty, rx, by))
     }
 
     pub fn take_cancelled(&self) -> bool {
@@ -312,6 +323,7 @@ fn apply_left_click(g: &mut Inner) {
         Some(Armed::SearchArea {
             first: Some((lx, ty)),
         }) => {
+            g.search_area_press = Some((lx, ty));
             g.search_area = Some(normalize_rect(lx, ty, pos.0, pos.1));
             g.armed = None;
             g.search_press_at = None;
@@ -336,6 +348,7 @@ fn apply_left_release(g: &mut Inner) {
     if !held_long_enough {
         return;
     }
+    g.search_area_press = Some((lx, ty));
     g.search_area = Some(normalize_rect(lx, ty, pos.0, pos.1));
     g.armed = None;
     g.search_press_at = None;
@@ -381,7 +394,10 @@ mod tests {
         b.on_left_click();
         b.on_mouse_move(50, 250);
         assert_eq!(b.peek_search_area_draft(), Some((50, 200, 100, 250)));
-        assert_eq!(b.peek_search_area_selection(), Some((50, 200, 100, 250)));
+        assert_eq!(
+            b.peek_search_area_selection(),
+            Some((100, 200, 50, 200, 100, 250))
+        );
     }
 
     #[test]
@@ -392,7 +408,7 @@ mod tests {
         b.on_left_click();
         b.on_mouse_move(30, 40);
         b.on_left_click();
-        assert_eq!(b.take_search_area(), Some((0, 0, 30, 40)));
+        assert_eq!(b.take_search_area(), Some((0, 0, 0, 0, 30, 40)));
         assert!(b.peek_search_area_draft().is_none());
         assert!(b.status_label().is_none());
     }
@@ -413,7 +429,7 @@ mod tests {
         b.inner.lock().search_press_at =
             Some(Instant::now() - SEARCH_DRAG_HOLD - Duration::from_millis(50));
         b.on_left_release();
-        assert_eq!(b.take_search_area(), Some((10, 20, 80, 90)));
+        assert_eq!(b.take_search_area(), Some((10, 20, 10, 20, 80, 90)));
         assert!(!b.is_armed());
     }
 
@@ -426,7 +442,7 @@ mod tests {
         b.on_left_release(); // short hold — still armed
         b.on_mouse_move(80, 90);
         b.on_left_click();
-        assert_eq!(b.take_search_area(), Some((10, 20, 80, 90)));
+        assert_eq!(b.take_search_area(), Some((10, 20, 10, 20, 80, 90)));
     }
 
     #[test]

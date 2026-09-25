@@ -9,6 +9,7 @@ use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::Duration;
 
 const FALLBACK_KEY: &str = "__sqyre_fallback__";
@@ -21,15 +22,24 @@ fn icon_texture_options() -> TextureOptions {
     TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear))
 }
 
+enum PendingDecode {
+    Ready(ColorImage),
+    Failed,
+}
+
 #[derive(Default)]
 pub struct IconCache {
     textures: HashMap<PathBuf, TextureHandle>,
+    /// Background PNG decodes (native); uploaded on the UI thread when ready.
+    pending: HashMap<PathBuf, Receiver<PendingDecode>>,
     /// Remember targets that failed so we do not spam disk/read errors.
     missing: HashMap<String, ()>,
     fallback: Option<TextureHandle>,
     /// OS process icons keyed by process path.
     process: HashMap<String, TextureHandle>,
     process_missing: HashMap<String, ()>,
+    /// RGBA retained when an icon is seeded / fetched (for persisting on program save).
+    process_rgba: HashMap<String, ProcessIcon>,
 }
 
 impl IconCache {
@@ -53,7 +63,14 @@ impl IconCache {
         match self.for_target_random_variant(ctx, catalog, target) {
             Some(t) => Some(t),
             None => {
-                self.missing.insert(target.to_string(), ());
+                // Do not sticky-miss while a decode is still in flight.
+                let paths = demo_icons::merged_variant_paths(catalog, target);
+                let waiting = paths.iter().any(|p| self.pending.contains_key(p.as_path()));
+                if !waiting {
+                    self.missing.insert(target.to_string(), ());
+                } else {
+                    ctx.request_repaint();
+                }
                 None
             }
         }
@@ -108,10 +125,10 @@ impl IconCache {
     /// Load an arbitrary image path into a retained texture.
     /// Also resolves in-memory [`demo_icons`] when the path is not on disk.
     pub fn for_path(&mut self, ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
-        if path.is_file() || demo_icons::contains(path) {
-            return self.get_or_load(ctx, path);
+        if let Some(t) = self.textures.get(path) {
+            return Some(t.clone());
         }
-        None
+        self.get_or_load(ctx, path)
     }
 
     /// OS process icon for a bound executable path (and optional window title).
@@ -157,17 +174,26 @@ impl IconCache {
     }
 
     /// OS process icon for a catalog program (via its bound `process_path`).
+    ///
+    /// Prefers a live OS / seeded icon; falls back to the PNG under
+    /// [`ProgramCatalog::process_icon_path`] so the icon still shows when the
+    /// bound app is not running.
     pub fn for_program(
         &mut self,
         ctx: &egui::Context,
         catalog: &ProgramCatalog,
         program: &str,
     ) -> Option<TextureHandle> {
-        let prog = catalog.get(program.trim())?;
+        let program = program.trim();
+        let prog = catalog.get(program)?;
         if prog.process_path.trim().is_empty() {
             return None;
         }
-        self.for_process(ctx, &prog.process_path, &prog.window_title)
+        if let Some(tex) = self.for_process(ctx, &prog.process_path, &prog.window_title) {
+            return Some(tex);
+        }
+        let path = catalog.process_icon_path(program);
+        self.for_path(ctx, &path)
     }
 
     /// Seed / refresh the process-icon cache from a listed window's icon bytes.
@@ -175,9 +201,11 @@ impl IconCache {
         &mut self,
         ctx: &egui::Context,
         process_path: &str,
+        window_title: &str,
+        process_name: &str,
         icon: &ProcessIcon,
     ) -> Option<TextureHandle> {
-        let key = process_cache_key(process_path);
+        let key = process_seed_key(process_path, window_title, process_name);
         if key.is_empty() {
             return None;
         }
@@ -185,9 +213,34 @@ impl IconCache {
         Some(self.insert_process_icon(ctx, &key, icon))
     }
 
-    /// Cached process icon only (no OS fetch).
-    pub fn cached_process(&self, process_path: &str) -> Option<TextureHandle> {
+    /// RGBA retained for `process_path` (from picker seed or live OS fetch).
+    pub fn process_icon_bytes(&self, process_path: &str) -> Option<&ProcessIcon> {
         let key = process_cache_key(process_path);
+        if key.is_empty() {
+            return None;
+        }
+        self.process_rgba.get(&key)
+    }
+
+    /// Drop sticky miss + texture for a process path so the next lookup re-fetches.
+    pub fn invalidate_process(&mut self, process_path: &str) {
+        let key = process_cache_key(process_path);
+        if key.is_empty() {
+            return;
+        }
+        self.process.remove(&key);
+        self.process_missing.remove(&key);
+        self.process_rgba.remove(&key);
+    }
+
+    /// Cached process icon only (no OS fetch). Uses title/name when path is empty.
+    pub fn cached_process_for(
+        &self,
+        process_path: &str,
+        window_title: &str,
+        process_name: &str,
+    ) -> Option<TextureHandle> {
+        let key = process_seed_key(process_path, window_title, process_name);
         if key.is_empty() {
             return None;
         }
@@ -197,6 +250,7 @@ impl IconCache {
     /// Drop a cached texture so the next load re-reads from disk / demo store.
     pub fn invalidate_path(&mut self, path: &Path) {
         self.textures.remove(path);
+        self.pending.remove(path);
     }
 
     /// Forget a sticky miss for `program~item` so listings recheck disk.
@@ -219,6 +273,7 @@ impl IconCache {
         let name = format!("process_icon:{key}");
         let tex = ctx.load_texture(name, color, icon_texture_options());
         self.process.insert(key.to_string(), tex.clone());
+        self.process_rgba.insert(key.to_string(), icon.clone());
         tex
     }
 
@@ -226,9 +281,64 @@ impl IconCache {
         if let Some(t) = self.textures.get(path) {
             return Some(t.clone());
         }
-        let tex = load_texture(ctx, path)?;
-        self.textures.insert(path.to_path_buf(), tex.clone());
-        Some(tex)
+        if let Some(rx) = self.pending.get(path) {
+            match rx.try_recv() {
+                Ok(PendingDecode::Ready(color)) => {
+                    self.pending.remove(path);
+                    let tex =
+                        ctx.load_texture(path.to_string_lossy(), color, icon_texture_options());
+                    self.textures.insert(path.to_path_buf(), tex.clone());
+                    return Some(tex);
+                }
+                Ok(PendingDecode::Failed) => {
+                    self.pending.remove(path);
+                    return None;
+                }
+                Err(TryRecvError::Empty) => {
+                    ctx.request_repaint();
+                    return None;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.pending.remove(path);
+                    return None;
+                }
+            }
+        }
+
+        // Demo assets and WASM: decode on the UI thread (tiny / no background threads).
+        #[cfg(target_arch = "wasm32")]
+        {
+            let tex = load_texture(ctx, path)?;
+            self.textures.insert(path.to_path_buf(), tex.clone());
+            return Some(tex);
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if demo_icons::contains(path) {
+                let tex = load_texture(ctx, path)?;
+                self.textures.insert(path.to_path_buf(), tex.clone());
+                return Some(tex);
+            }
+            let path_buf = path.to_path_buf();
+            if !path_buf.is_file() {
+                return None;
+            }
+            let (tx, rx) = mpsc::channel();
+            self.pending.insert(path_buf.clone(), rx);
+            std::thread::spawn(move || {
+                let result = match std::fs::read(&path_buf)
+                    .ok()
+                    .and_then(|bytes| decode_png_color(&bytes))
+                {
+                    Some(color) => PendingDecode::Ready(color),
+                    None => PendingDecode::Failed,
+                };
+                let _ = tx.send(result);
+            });
+            ctx.request_repaint();
+            None
+        }
     }
 }
 
@@ -453,6 +563,20 @@ fn process_cache_key(process_path: &str) -> String {
     }
 }
 
+/// Cache key that stays usable when the OS path is empty (title + name).
+fn process_seed_key(process_path: &str, window_title: &str, process_name: &str) -> String {
+    let key = process_cache_key(process_path);
+    if !key.is_empty() {
+        return key;
+    }
+    let title = window_title.trim();
+    let name = process_name.trim();
+    if title.is_empty() && name.is_empty() {
+        return String::new();
+    }
+    format!("untitled:{name}:{title}")
+}
+
 fn load_texture(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
     if let Ok(bytes) = std::fs::read(path) {
         return load_png_bytes(ctx, &path.to_string_lossy(), &bytes);
@@ -463,10 +587,14 @@ fn load_texture(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
     Some(ctx.load_texture(path.to_string_lossy(), color, icon_texture_options()))
 }
 
-fn load_png_bytes(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<TextureHandle> {
+fn decode_png_color(bytes: &[u8]) -> Option<ColorImage> {
     let img = image::load_from_memory(bytes).ok()?.into_rgba8();
     let size = [img.width() as usize, img.height() as usize];
-    let color = ColorImage::from_rgba_unmultiplied(size, img.as_raw());
+    Some(ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
+}
+
+fn load_png_bytes(ctx: &egui::Context, name: &str, bytes: &[u8]) -> Option<TextureHandle> {
+    let color = decode_png_color(bytes)?;
     Some(ctx.load_texture(name.to_owned(), color, icon_texture_options()))
 }
 

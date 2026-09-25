@@ -133,9 +133,6 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 app.export_db_yaml();
             }
         }
-        if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
-            app.data_editor.request_open(ui.ctx());
-        }
 
         let status = app.run_session.state.status.lock().clone();
         let right_w = ui.available_width();
@@ -144,7 +141,10 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             egui::Layout::right_to_left(egui::Align::Center),
             |ui| {
                 if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
-                    app.settings_ui.open = true;
+                    app.settings_ui.request_open(ui.ctx());
+                }
+                if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
+                    app.data_editor.request_open(ui.ctx());
                 }
                 if !status.is_empty() {
                     ui.label(status);
@@ -205,17 +205,24 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         app.persist_macro_at(idx);
     }
     {
+        let pending = app.pending_viewport_scale;
         let m = &mut app.workspace.macros[idx];
-        let delay_out = app
-            .workspace
-            .macro_meta
-            .paint_delay_popup(ui, m, meta_enabled);
+        let delay_out =
+            app.workspace
+                .macro_meta
+                .paint_delay_popup(ui, m, meta_enabled, pending.as_ref());
         if delay_out.persist {
             app.persist_macro_at(idx);
         }
     }
     if let Err(e) = sqyre_validate::validate_macro(&app.workspace.macros[idx]) {
-        ui.colored_label(crate::theme::error_fg(), format!("Validation: {e}"));
+        // Truncate to the pane — keep the status on one line and avoid raising
+        // CentralPanel min_size when the message is long.
+        let msg = format!("Validation: {e}");
+        ui.add(
+            egui::Label::new(egui::RichText::new(&msg).color(crate::theme::error_fg())).truncate(),
+        )
+        .on_hover_text(&msg);
     }
     // Selection / length may have changed after rename.
     let idx = app
@@ -317,6 +324,16 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         let vars_color = theme::rgba(action_pastel_color("setvariable", false));
         if toolbar_icon_colored(ui, "x", "Variables", true, Some(vars_color)).clicked() {
             app.variables_panel.open = true;
+        }
+        if toolbar_icon(ui, "{}", "YAML Macro Builder", true).clicked() {
+            let running = app.run_session.state.running.load(Ordering::SeqCst);
+            if running {
+                *app.run_session.state.status.lock() =
+                    "Cannot open YAML Macro Builder while a macro is running.".into();
+            } else {
+                let selected = app.workspace.macros.get(app.workspace.selected_macro);
+                app.macro_yaml_builder.open_builder(selected);
+            }
         }
         ui.separator();
         if toolbar_icon(ui, "📄", "Copy (Ctrl+C)", can_copy && !running).clicked() {

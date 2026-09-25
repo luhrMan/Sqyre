@@ -4,6 +4,7 @@ mod continue_wait;
 mod error;
 mod macro_hotkeys;
 mod macro_record;
+mod pointer_buttons;
 mod screen_click;
 
 #[cfg(all(feature = "hooks", target_os = "windows"))]
@@ -14,6 +15,7 @@ pub use macro_hotkeys::{
     MacroHotkeyBinding, MacroHotkeyBridge,
 };
 pub use macro_record::{MacroRecordBridge, MacroRecordEvent, RecordMouseButton};
+pub use pointer_buttons::left_button_down;
 pub use screen_click::ScreenClickBridge;
 pub use sqyre_domain::{
     failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,

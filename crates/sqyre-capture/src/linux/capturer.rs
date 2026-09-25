@@ -67,6 +67,21 @@ impl OsCapturer {
         }
     }
 
+    /// Latest cache after a short no-kick wait for a newer portal frame.
+    ///
+    /// Overlay visibility polls must not pulse the compositor kick (it steals
+    /// game focus). X11 is already a live grab.
+    pub fn capture_rect_rgb_quiet_ref(
+        &self,
+        rect: DesktopRect,
+    ) -> Result<(RgbCapture, bool), CaptureError> {
+        match &self.0 {
+            Inner::X11(c) => c.capture_rect_rgb_ref(rect).map(|rgb| (rgb, true)),
+            #[cfg(feature = "portal-capture")]
+            Inner::Portal(c) => c.capture_rect_rgb_quiet_ref(rect),
+        }
+    }
+
     /// Wait for a newer portal frame (wait/repeat retries and manual refresh).
     pub fn capture_rect_rgb_fresh_ref(
         &self,
@@ -100,6 +115,24 @@ impl OsCapturer {
             Inner::X11(c) => c.monitor_sizes_ref(),
             #[cfg(feature = "portal-capture")]
             Inner::Portal(c) => c.monitor_sizes_ref(),
+        }
+    }
+
+    /// Drop portal CPU frame mirror (no-op for X11). See [`PortalCapturer::release_cpu_frame_cache`].
+    pub fn release_cpu_frame_cache(&self) {
+        match &self.0 {
+            Inner::X11(_) => {}
+            #[cfg(feature = "portal-capture")]
+            Inner::Portal(c) => c.release_cpu_frame_cache(),
+        }
+    }
+
+    /// Bytes in the portal CPU frame cache (0 on X11 / when released).
+    pub fn cpu_frame_cache_bytes(&self) -> usize {
+        match &self.0 {
+            Inner::X11(_) => 0,
+            #[cfg(feature = "portal-capture")]
+            Inner::Portal(c) => c.cpu_frame_cache_bytes(),
         }
     }
 }

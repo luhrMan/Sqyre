@@ -3,7 +3,8 @@ use crate::image_view::{self, ImageViewTransform};
 use crate::theme;
 use crate::var_pills;
 use eframe::egui;
-use sqyre_domain::KnownVariableNames;
+use sqyre_domain::{KnownVariableNames, ScalarValue};
+use sqyre_persist::{ProgramCatalog, ProgramSearchArea};
 use sqyre_validate::EntryValidation;
 
 pub(crate) fn paint_preview_toolbar(
@@ -16,6 +17,9 @@ pub(crate) fn paint_preview_toolbar(
     let show_zoom_hint = view.is_some();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Preview").strong());
+        if show_zoom_hint {
+            crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
+        }
         if crate::theme::icon_button(ui, "↻")
             .on_hover_text("Refresh")
             .clicked()
@@ -37,9 +41,6 @@ pub(crate) fn paint_preview_toolbar(
             });
         }
     });
-    if show_zoom_hint {
-        ui.weak("Scroll to zoom; drag to pan when zoomed.");
-    }
     force
 }
 
@@ -136,7 +137,7 @@ pub(crate) fn paint_preview_coord_chip(
         (None, group, None)
     };
 
-    let fill = egui::Color32::from_rgba_unmultiplied(16, 16, 16, 170);
+    let fill = theme::preview_scrim();
     let radius = 4.0;
     ui.painter().rect_filled(edit_rect, radius, fill);
     let border = var_pills::entry_validation_stroke(validation)
@@ -257,6 +258,158 @@ pub(crate) fn fit_thumbnail(w: f32, h: f32) -> egui::Vec2 {
     image_view::fit_in_box_no_upscale(w, h, MAX, MAX)
 }
 
+/// Exclusive `[lx, rx) × [ty, by)` size in pixels.
+pub(crate) fn exclusive_pixel_size(lx: i32, ty: i32, rx: i32, by: i32) -> Option<(i32, i32)> {
+    let (lx, rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
+    let (ty, by) = if ty <= by { (ty, by) } else { (by, ty) };
+    let w = rx - lx;
+    let h = by - ty;
+    (w > 0 && h > 0).then_some((w, h))
+}
+
+pub(crate) fn pixel_size_text(w: i32, h: i32) -> String {
+    format!("{w}×{h} px")
+}
+
+fn literal_i32(v: &ScalarValue) -> Option<i32> {
+    let s = v.as_display();
+    let t = s.trim();
+    if t.is_empty() || sqyre_varref::contains(t) {
+        return None;
+    }
+    t.parse()
+        .ok()
+        .or_else(|| t.parse::<f64>().ok().map(|f| f as i32))
+}
+
+pub(crate) fn search_area_pixel_size(sa: &ProgramSearchArea) -> Option<(i32, i32)> {
+    exclusive_pixel_size(
+        literal_i32(&sa.left_x)?,
+        literal_i32(&sa.top_y)?,
+        literal_i32(&sa.right_x)?,
+        literal_i32(&sa.bottom_y)?,
+    )
+}
+
+pub(crate) fn catalog_search_area_pixel_size(
+    catalog: &ProgramCatalog,
+    program: &str,
+    name: &str,
+) -> Option<(i32, i32)> {
+    let pdata = catalog.get(program)?;
+    let res = catalog.resolution_key();
+    let sa = pdata
+        .search_areas
+        .get(res)
+        .or_else(|| pdata.search_areas.values().next())
+        .and_then(|m| m.get(name))?;
+    search_area_pixel_size(sa)
+}
+
+/// First-cell exclusive size for a `rows`×`cols` split of `area_w`×`area_h`.
+pub(crate) fn collection_cell_pixel_size(
+    area_w: i32,
+    area_h: i32,
+    rows: i32,
+    cols: i32,
+) -> Option<(i32, i32)> {
+    let (lx, ty, rx, by) =
+        sqyre_domain::grid_cell_rect((0, 0, area_w, area_h), rows.max(1), cols.max(1), 1, 1, 1, 1)?;
+    exclusive_pixel_size(lx, ty, rx, by)
+}
+
+pub(crate) fn collection_size_label(area: (i32, i32), rows: i32, cols: i32) -> String {
+    let (aw, ah) = area;
+    match collection_cell_pixel_size(aw, ah, rows, cols) {
+        Some((cw, ch)) => format!(
+            "total {} · cell {}",
+            pixel_size_text(aw, ah),
+            pixel_size_text(cw, ch)
+        ),
+        None => pixel_size_text(aw, ah),
+    }
+}
+
+pub(crate) fn area_size_from_opts(
+    left: Option<i32>,
+    top: Option<i32>,
+    right: Option<i32>,
+    bottom: Option<i32>,
+) -> Option<(i32, i32)> {
+    exclusive_pixel_size(left?, top?, right?, bottom?)
+}
+
+pub(crate) fn paint_search_area_preview_sizes(
+    ui: &egui::Ui,
+    viewport: egui::Rect,
+    left: Option<i32>,
+    top: Option<i32>,
+    right: Option<i32>,
+    bottom: Option<i32>,
+    image_size: egui::Vec2,
+) {
+    let mut lines = Vec::new();
+    if let Some((w, h)) = area_size_from_opts(left, top, right, bottom) {
+        lines.push(format!("Area {}", pixel_size_text(w, h)));
+    }
+    if image_size.x > 0.0 && image_size.y > 0.0 {
+        lines.push(format!(
+            "Image {}",
+            pixel_size_text(image_size.x as i32, image_size.y as i32)
+        ));
+    }
+    paint_preview_size_badge(ui, viewport, &lines);
+}
+
+pub(crate) fn paint_collection_preview_sizes(
+    ui: &egui::Ui,
+    viewport: egui::Rect,
+    area: Option<(i32, i32)>,
+    rows: i32,
+    cols: i32,
+    image_size: Option<egui::Vec2>,
+) {
+    let mut lines = Vec::new();
+    if let Some((w, h)) = area {
+        lines.push(format!("Total {}", pixel_size_text(w, h)));
+        if let Some((cw, ch)) = collection_cell_pixel_size(w, h, rows, cols) {
+            lines.push(format!("Cell {}", pixel_size_text(cw, ch)));
+        }
+    }
+    if let Some(image_size) = image_size {
+        if image_size.x > 0.0 && image_size.y > 0.0 {
+            lines.push(format!(
+                "Image {}",
+                pixel_size_text(image_size.x as i32, image_size.y as i32)
+            ));
+        }
+    }
+    paint_preview_size_badge(ui, viewport, &lines);
+}
+
+/// Top-left size labels on a framed preview (avoids coord chips on the edges).
+fn paint_preview_size_badge(ui: &egui::Ui, viewport: egui::Rect, lines: &[String]) {
+    if lines.is_empty() || viewport.width() <= 0.0 || viewport.height() <= 0.0 {
+        return;
+    }
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let painter = ui.painter();
+    let mut y = viewport.top() + 6.0;
+    let x = viewport.left() + 6.0;
+    let fill = theme::preview_scrim();
+    for line in lines {
+        let galley = painter.layout_no_wrap(line.clone(), font.clone(), egui::Color32::WHITE);
+        let pad = egui::vec2(4.0, 2.0);
+        let rect = egui::Rect::from_min_size(egui::pos2(x, y), galley.size() + pad * 2.0);
+        if !viewport.intersects(rect) {
+            continue;
+        }
+        painter.rect_filled(rect, 3.0, fill);
+        painter.galley(rect.min + pad, galley, egui::Color32::WHITE);
+        y += rect.height() + 2.0;
+    }
+}
+
 /// 1px dim gold border around a Data Editor image preview.
 pub(crate) fn paint_preview_frame(painter: &egui::Painter, rect: egui::Rect) {
     painter.rect_stroke(rect, 0.0, theme::inner_stroke(), egui::StrokeKind::Inside);
@@ -312,13 +465,14 @@ pub(crate) fn paint_disk_preview(
 }
 
 /// Collection-tab preview with wheel zoom / drag pan.
-#[allow(clippy::too_many_arguments)] // zoomable preview: path, grid, view, and replace state
+#[allow(clippy::too_many_arguments)] // zoomable preview: path, grid, view, replace, and size
 pub(crate) fn paint_zoomable_collection_preview(
     ui: &mut egui::Ui,
     icons: &mut IconCache,
     path: &std::path::Path,
     rows: i32,
     cols: i32,
+    area_size: Option<(i32, i32)>,
     view: &mut ImageViewTransform,
     replace_clicked: &mut bool,
     capturing: bool,
@@ -327,6 +481,7 @@ pub(crate) fn paint_zoomable_collection_preview(
     ui.separator();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Collection image").strong());
+        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
         if crate::theme::icon_button(ui, "↻")
             .on_hover_text("Refresh")
             .clicked()
@@ -359,7 +514,6 @@ pub(crate) fn paint_zoomable_collection_preview(
             }
         });
     });
-    ui.weak("Scroll to zoom; drag to pan when zoomed.");
 
     let tex = icons.for_path(ui.ctx(), path);
     let avail_w = ui.available_width();
@@ -414,6 +568,11 @@ pub(crate) fn paint_zoomable_collection_preview(
         paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
+    let tex_size = tex.as_ref().map(|t| {
+        let [tw, th] = t.size();
+        egui::vec2(tw as f32, th as f32)
+    });
+    paint_collection_preview_sizes(ui, viewport, area_size, rows, cols, tex_size);
 
     if path.is_file() {
         ui.weak(path.display().to_string());
@@ -466,7 +625,7 @@ pub(crate) fn paint_grid_overlay_painter(
 ) {
     let rows = rows.max(1) as f32;
     let cols = cols.max(1) as f32;
-    let stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(255, 80, 80));
+    let stroke = egui::Stroke::new(1.0, theme::preview_grid_stroke());
     for i in 1..rows as i32 {
         let y = rect.top() + rect.height() * (i as f32) / rows;
         painter.hline(rect.x_range(), y, stroke);
@@ -479,8 +638,12 @@ pub(crate) fn paint_grid_overlay_painter(
 }
 
 /// Per-monitor `(x, y, w, h)` in virtual-desktop coordinates for the atlas plane.
-/// Prefers real positions from the capturer; falls back to L→R layout from sizes.
+/// Catalog layout first so monitor boxes match [`sqyre_persist::ProgramCatalog::resolve_search_area`].
 fn atlas_monitor_rects(catalog: &sqyre_persist::ProgramCatalog) -> Vec<(i32, i32, i32, i32)> {
+    let cached = catalog.monitor_rects();
+    if !cached.is_empty() {
+        return cached.to_vec();
+    }
     #[cfg(feature = "native-runtime")]
     {
         let preferred: Vec<_> = sqyre_capture::preferred_monitor_rects()
@@ -577,6 +740,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
     ui.separator();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Atlas plane").strong());
+        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_ATLAS_PLANE);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .add_enabled(view.needs_reset_button(), egui::Button::new("Reset view"))
@@ -590,7 +754,6 @@ pub(crate) fn paint_zoomable_atlas_preview(
             }
         });
     });
-    ui.weak("Monitors behind Collections; neighbors from search-area positions.");
 
     let empty_macro = Macro::new("", 0, vec![]);
     let mut nodes = Vec::new();
@@ -692,16 +855,12 @@ pub(crate) fn paint_zoomable_atlas_preview(
             let galley = painter.layout_no_wrap(label, small.clone(), label_color);
             let chip =
                 egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(10.0, 4.0));
-            painter.rect_filled(
-                chip,
-                3.0,
-                egui::Color32::from_rgba_unmultiplied(0, 0, 0, 140),
-            );
+            painter.rect_filled(chip, 3.0, theme::preview_label_dim());
             painter.galley(chip.min + egui::vec2(5.0, 2.0), galley, label_color);
         }
 
-        let fill = egui::Color32::from_rgba_unmultiplied(60, 100, 160, 60);
-        let stroke = egui::Stroke::new(1.5, egui::Color32::from_rgb(120, 180, 255));
+        let fill = theme::preview_selection_fill();
+        let stroke = egui::Stroke::new(1.5, theme::preview_selection_stroke());
         let arrow = egui::Stroke::new(2.0, theme::PRIMARY);
 
         for (i, node) in layout.nodes().iter().enumerate() {
@@ -729,11 +888,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
                 egui::Color32::WHITE,
             );
             let chip = egui::Rect::from_min_size(label_pos, galley.size() + egui::vec2(6.0, 2.0));
-            painter.rect_filled(
-                chip,
-                2.0,
-                egui::Color32::from_rgba_unmultiplied(0, 0, 0, 160),
-            );
+            painter.rect_filled(chip, 2.0, theme::preview_label_dim());
             painter.galley(
                 label_pos + egui::vec2(3.0, 1.0),
                 galley,
@@ -767,4 +922,48 @@ pub(crate) fn paint_zoomable_atlas_preview(
         paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_domain::ScalarValue;
+
+    #[test]
+    fn exclusive_pixel_size_normalizes_corners() {
+        assert_eq!(exclusive_pixel_size(10, 20, 110, 80), Some((100, 60)));
+        assert_eq!(exclusive_pixel_size(110, 80, 10, 20), Some((100, 60)));
+        assert_eq!(exclusive_pixel_size(10, 20, 10, 80), None);
+        assert_eq!(exclusive_pixel_size(10, 20, 110, 20), None);
+    }
+
+    #[test]
+    fn search_area_pixel_size_skips_variables() {
+        let mut sa = ProgramSearchArea {
+            name: "Box".into(),
+            monitor: 1,
+            left_x: ScalarValue::Int(10),
+            top_y: ScalarValue::Int(20),
+            right_x: ScalarValue::Int(110),
+            bottom_y: ScalarValue::Int(80),
+        };
+        assert_eq!(search_area_pixel_size(&sa), Some((100, 60)));
+        sa.right_x = ScalarValue::String("${w}".into());
+        assert_eq!(search_area_pixel_size(&sa), None);
+    }
+
+    #[test]
+    fn pixel_size_text_format() {
+        assert_eq!(pixel_size_text(96, 32), "96×32 px");
+    }
+
+    #[test]
+    fn collection_cell_splits_area() {
+        assert_eq!(collection_cell_pixel_size(100, 60, 2, 2), Some((50, 30)));
+        assert_eq!(
+            collection_size_label((100, 60), 2, 2),
+            "total 100×60 px · cell 50×30 px"
+        );
+        assert_eq!(collection_cell_pixel_size(100, 60, 3, 2), Some((50, 20)));
+    }
 }

@@ -26,7 +26,8 @@ impl SqyreApp {
                             Arc::unwrap_or_clone(db.program_catalog().unwrap_or_default());
                         let _ = crate::catalog::prepare_catalog(&mut catalog, &mut db);
                         let mut macros: Vec<_> = db.macros.values().cloned().collect();
-                        macros.sort_by(|a, b| a.name.cmp(&b.name));
+                        macros
+                            .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
                         self.workspace.db = db;
                         self.workspace.catalog = catalog;
                         self.workspace.macros = macros;

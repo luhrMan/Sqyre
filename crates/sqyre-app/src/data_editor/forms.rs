@@ -1,31 +1,61 @@
 //! Form buffers: load, draw, dirty, valid.
+//!
+//! [`DataEditor::draw_form`] dispatches on the active tab; each tab's body
+//! lives in a submodule here.
+
+mod collections;
+mod coords;
+mod overlay_form;
+mod programs;
 
 use super::form_state;
-use super::helpers::{collect_program_item_tags, form_coord_literal, parse_i32};
+use super::helpers::{
+    collect_program_item_tags, form_absolute_xy, form_coord_literal, form_desktop_area, parse_i32,
+};
 use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::{
-    paint_disk_preview, paint_preview_coord_chip, paint_preview_toolbar,
-    paint_zoomable_atlas_preview, paint_zoomable_collection_preview, show_file_hover, CardinalEdge,
+    area_size_from_opts, catalog_search_area_pixel_size, collection_size_label, paint_disk_preview,
+    paint_preview_coord_chip, paint_preview_toolbar, paint_search_area_preview_sizes,
+    paint_zoomable_atlas_preview, paint_zoomable_collection_preview, pixel_size_text,
+    show_file_hover, CardinalEdge,
 };
 use crate::overlay_icons;
 use crate::paint_ctx::CatalogPaint;
+use crate::paint_ctx::VarTheme;
 use crate::pickers;
 use crate::preview_tooltip::PreviewKind;
 use crate::theme;
-use crate::var_pills;
-use crate::widgets::{searchable_combo_width, searchable_combo_with};
+use crate::var_pills::{self, VarFieldOpts};
+use crate::widgets::{match_settings, searchable_combo_width, searchable_combo_with};
 use eframe::egui;
-use sqyre_domain::{collect_known_variable_names, KnownVariableNames, Macro, PROGRAM_DELIMITER};
+use sqyre_domain::{
+    collect_known_variable_names, CoordinateRef, KnownVariableNames, Macro, PROGRAM_DELIMITER,
+};
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
     default_overlay_position, screen_cap_path, OverlayButtonConfig, ProgramCatalog,
     ProgramCollection, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
     DEFAULT_OVERLAY_FALLBACK_SCREEN_H, DEFAULT_OVERLAY_FALLBACK_SCREEN_W, MAX_OVERLAY_BORDER_WIDTH,
-    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MIN_OVERLAY_BORDER_WIDTH,
-    MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
+    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_GATE_INTERVAL_MS,
+    MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
+    MIN_OVERLAY_GATE_INTERVAL_MS,
 };
 use sqyre_validate::{validate_entity_name, validate_numeric_expression};
+
+/// Read-only inputs every data-editor form shares.
+///
+/// Bundled so each `draw_*_form` takes a handful of arguments instead of
+/// re-threading the same five through every tab.
+#[derive(Clone, Copy)]
+pub(super) struct FormCtx<'a> {
+    pub screen_click: &'a ScreenClickBridge,
+    pub macros: &'a [Macro],
+    pub active_macro: Option<&'a Macro>,
+    pub known: &'a KnownVariableNames,
+    /// `ui.visuals().dark_mode`, sampled once per frame.
+    pub is_dark: bool,
+}
 
 fn paint_fs_name_hint(ui: &mut egui::Ui, name: &str) {
     let name = name.trim();
@@ -100,8 +130,7 @@ impl DataEditor {
             help::label(ui, "Name", help::DE_NAME);
             help::tip(
                 ui.add(
-                    egui::TextEdit::singleline(&mut self.form_name)
-                        .desired_width(ui.available_width() - 48.0),
+                    egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
                 ),
                 help::DE_NAME,
             );
@@ -117,6 +146,17 @@ impl DataEditor {
             }
         });
         paint_fs_name_hint(ui, &self.form_name);
+    }
+
+    fn paint_monitor_slot(&mut self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            ui.label("Monitor");
+            ui.add(
+                egui::DragValue::new(&mut self.form_monitor)
+                    .speed(1)
+                    .range(1..=8),
+            );
+        });
     }
 
     pub(crate) fn load_form(&mut self, catalog: &ProgramCatalog, settings: &UserSettings) {
@@ -149,6 +189,7 @@ impl DataEditor {
             DEFAULT_OVERLAY_BUTTON_SIZE
         };
         self.load_overlay_style_from_config(btn);
+        self.load_overlay_gate_from_config(&btn.visibility_gate);
     }
 
     pub(crate) fn reset_overlay_form(&mut self) {
@@ -168,15 +209,22 @@ impl DataEditor {
         self.form_overlay_icon = overlay_icons::DEFAULT_ICON_ID.into();
         self.form_overlay_size = DEFAULT_OVERLAY_BUTTON_SIZE;
         self.reset_overlay_style_form();
+        self.reset_overlay_gate_form();
     }
 
     pub(crate) fn reset_item_form(&mut self) {
         self.form_name.clear();
+        self.reset_item_param_fields();
+    }
+
+    /// Tags / grid / mask buffers used by Items and ScreenCap New Item (keeps Name).
+    pub(crate) fn reset_item_param_fields(&mut self) {
         self.form_cols = "1".into();
         self.form_rows = "1".into();
         self.form_stack_max = "0".into();
         self.form_mask.clear();
         self.form_tags.clear();
+        self.tag_draft.clear();
     }
 
     pub(crate) fn reset_mask_form(&mut self) {
@@ -203,6 +251,7 @@ impl DataEditor {
         self.form_atlas_add.clear();
     }
 
+    /// Returns true when a tag was committed this frame (auto-Update).
     pub(crate) fn draw_form(
         &mut self,
         ui: &mut egui::Ui,
@@ -211,6 +260,58 @@ impl DataEditor {
         macros: &[Macro],
         active_macro: Option<&Macro>,
         settings: &mut UserSettings,
+    ) -> bool {
+        let known = active_macro
+            .map(collect_known_variable_names)
+            .unwrap_or_default();
+        let ctx = FormCtx {
+            screen_click,
+            macros,
+            active_macro,
+            known: &known,
+            is_dark: ui.visuals().dark_mode,
+        };
+        match self.tab {
+            EditorTab::Programs => self.draw_programs_form(ui, paint, ctx),
+            EditorTab::Items => self.draw_items_form(ui, paint, settings),
+            EditorTab::Points => {
+                self.draw_points_form(ui, paint, ctx, settings);
+                false
+            }
+            EditorTab::SearchAreas => {
+                self.draw_search_areas_form(ui, paint, ctx, settings);
+                false
+            }
+            EditorTab::Masks => {
+                self.draw_masks_form(ui, paint, ctx, settings);
+                false
+            }
+            EditorTab::Collections => {
+                self.draw_collections_form(ui, paint, settings);
+                false
+            }
+            EditorTab::Atlases => {
+                self.draw_atlases_form(ui, paint, settings);
+                false
+            }
+            EditorTab::ScreenCap => {
+                self.draw_screen_cap_form(ui, paint, ctx, settings);
+                false
+            }
+            EditorTab::PixelCheck => {
+                self.paint_pixel_check_form(ui, paint, ctx, settings);
+                false
+            }
+            EditorTab::Overlay => self.draw_overlay_form(ui, paint, ctx, settings),
+        }
+    }
+
+    pub(super) fn paint_pixel_check_form(
+        &mut self,
+        ui: &mut egui::Ui,
+        paint: &mut CatalogPaint<'_>,
+        ctx: FormCtx<'_>,
+        settings: &UserSettings,
     ) {
         let CatalogPaint {
             catalog,
@@ -218,1017 +319,17 @@ impl DataEditor {
             previews,
             ..
         } = paint;
-        let known = active_macro
-            .map(collect_known_variable_names)
-            .unwrap_or_default();
-        let is_dark = ui.visuals().dark_mode;
-        match self.tab {
-            EditorTab::Programs => {
-                ui.horizontal(|ui| {
-                    if let Some(name) = self.selected_program.as_deref() {
-                        crate::icon_cache::paint_program_icon(ui, catalog, icons, name);
-                    }
-                    ui.heading("Program");
-                });
-                help::label(ui, "Name", help::DE_NAME);
-                help::tip(
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name)
-                            .desired_width(f32::INFINITY),
-                    ),
-                    help::DE_NAME,
-                );
-                paint_fs_name_hint(ui, &self.form_name);
-                ui.add_space(8.0);
-                help::label(ui, "Running program", help::DE_RUNNING_PROGRAM);
-                ui.weak(
-                    "Overlay buttons for this program show when this process and window title own focus.",
-                );
-                ui.add_space(4.0);
-                let bound = if self.form_process_path.trim().is_empty() {
-                    sqyre_domain::EMPTY_NONE.to_string()
-                } else if self.form_window_title.trim().is_empty() {
-                    self.form_process_path.clone()
-                } else {
-                    format!(
-                        "{}  —  {}",
-                        self.form_window_title.trim(),
-                        self.form_process_path.trim()
-                    )
-                };
-                ui.horizontal(|ui| {
-                    if !self.form_process_path.trim().is_empty() {
-                        if let Some(tex) = icons.for_process(
-                            ui.ctx(),
-                            &self.form_process_path,
-                            &self.form_window_title,
-                        ) {
-                            crate::icon_cache::paint_process_icon(
-                                ui,
-                                &tex,
-                                crate::icon_cache::PROCESS_ICON_SIDE * 1.25,
-                            );
-                        }
-                    }
-                    ui.label(egui::RichText::new(bound).monospace());
-                });
-                ui.horizontal(|ui| {
-                    if ui.button("Select…").clicked() {
-                        self.window_picker = pickers::open_window_picker(
-                            &self.form_process_path,
-                            &self.form_window_title,
-                        );
-                    }
-                    if ui
-                        .add_enabled(
-                            !self.form_process_path.is_empty()
-                                || !self.form_window_title.is_empty(),
-                            egui::Button::new("Clear"),
-                        )
-                        .clicked()
-                    {
-                        self.form_process_path.clear();
-                        self.form_window_title.clear();
-                    }
-                });
-            }
-            EditorTab::Items => {
-                ui.heading("Item");
-                self.program_selector(ui, catalog, icons, settings);
-                ui.add_space(4.0);
-                help::label(ui, "Name", help::DE_NAME);
-                help::tip(
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name)
-                            .desired_width(f32::INFINITY),
-                    ),
-                    help::DE_NAME,
-                );
-                paint_fs_name_hint(ui, &self.form_name);
-                ui.add_space(4.0);
-                help::label(ui, "Tags", help::DE_TAGS);
-                let program_tags = self
-                    .selected_program
-                    .as_deref()
-                    .map(|prog| collect_program_item_tags(catalog, prog))
-                    .unwrap_or_default();
-                crate::widgets::tag_chip_editor(
-                    ui,
-                    &mut self.form_tags,
-                    &mut self.tag_draft,
-                    &program_tags,
-                    crate::widgets::TagChipOptions::default(),
-                );
-                ui.add_space(4.0);
-                ui.horizontal(|ui| {
-                    help::label(ui, "Cols", help::DE_COLS);
-                    help::tip(
-                        ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0)),
-                        help::DE_COLS,
-                    );
-                    help::label(ui, "Rows", help::DE_ROWS);
-                    help::tip(
-                        ui.add(egui::TextEdit::singleline(&mut self.form_rows).desired_width(80.0)),
-                        help::DE_ROWS,
-                    );
-                    help::label(ui, "Stack max", help::DE_STACK_MAX);
-                    help::tip(
-                        ui.add(
-                            egui::TextEdit::singleline(&mut self.form_stack_max)
-                                .desired_width(80.0),
-                        ),
-                        help::DE_STACK_MAX,
-                    );
-                });
-                ui.add_space(4.0);
-                help::label(ui, "Mask", help::DE_MASK);
-                {
-                    let masks: Vec<String> = self
-                        .selected_program
-                        .as_deref()
-                        .and_then(|p| catalog.get(p))
-                        .map(|p| p.masks.keys().cloned().collect())
-                        .unwrap_or_default();
-                    let mut current = self.form_mask.clone();
-                    let prog = self.selected_program.clone();
-                    let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
-                        if name.is_empty() {
-                            return;
-                        }
-                        let Some(prog) = prog.as_deref() else {
-                            return;
-                        };
-                        show_file_hover(
-                            ui,
-                            resp,
-                            icons,
-                            &catalog.mask_image_path(prog, name),
-                            &format!("{prog}~{name}"),
-                        );
-                    };
-                    searchable_combo_with(
-                        ui,
-                        "item_mask",
-                        &mut current,
-                        &masks,
-                        sqyre_domain::EMPTY_NONE,
-                        Some(sqyre_domain::EMPTY_NONE),
-                        None,
-                        Some(&mut on_hover),
-                        None,
-                    );
-                    if current != self.form_mask {
-                        self.form_mask = current;
-                    }
-                    if let (Some(prog), mask) =
-                        (self.selected_program.as_deref(), self.form_mask.as_str())
-                    {
-                        if !mask.is_empty() {
-                            if let Some(m) = catalog.get(prog).and_then(|p| p.masks.get(mask)) {
-                                let detail = if catalog.mask_image_path(prog, mask).is_file() {
-                                    "Image mask on disk".to_string()
-                                } else if m.shape == sqyre_domain::MaskShape::Circle {
-                                    format!(
-                                        "Circle @ ({}, {}) r={}",
-                                        m.center_x, m.center_y, m.radius
-                                    )
-                                } else {
-                                    format!(
-                                        "Rectangle @ ({}, {}) {}×{}",
-                                        m.center_x, m.center_y, m.base, m.height
-                                    )
-                                };
-                                ui.weak(detail);
-                            }
-                        }
-                    }
-                }
-                if let (Some(prog), Some(item)) =
-                    (self.selected_program.clone(), self.selected_entity.clone())
-                {
-                    let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
-                    self.paint_item_variants_ui(ui, icons, catalog, settings, &target, &item);
-                }
-            }
-            EditorTab::Points => {
-                ui.heading("Point");
-                self.program_selector(ui, catalog, icons, settings);
-                ui.add_space(4.0);
-                self.paint_name_record_row(
-                    ui,
-                    screen_click,
-                    "Click on screen to capture X/Y",
-                    "Recording… left-click to capture.",
-                    ScreenClickBridge::arm_point,
-                );
-                ui.weak("X/Y overlay the preview; integers or ${var}.");
-                let x = form_coord_literal(&self.form_x);
-                let y = form_coord_literal(&self.form_y);
-                self.sync_coord_preview_view();
-                let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
-                let rect = previews.paint_point_panel(ui, x, y, force, &mut self.coord_preview);
-                paint_coord_chips(
-                    ui,
-                    rect,
-                    &known,
-                    is_dark,
-                    active_macro,
-                    &mut [
-                        (&mut self.form_x, CardinalEdge::Left, "X", help::DE_POINT_X),
-                        (
-                            &mut self.form_y,
-                            CardinalEdge::Bottom,
-                            "Y",
-                            help::DE_POINT_Y,
-                        ),
-                    ],
-                );
-            }
-            EditorTab::SearchAreas => {
-                ui.heading("Search Area");
-                self.program_selector(ui, catalog, icons, settings);
-                ui.add_space(4.0);
-                self.paint_name_record_row(
-                    ui,
-                    screen_click,
-                    "Two clicks: opposite corners of the area",
-                    "Recording… click two corners.",
-                    ScreenClickBridge::arm_search_area,
-                );
-                ui.weak("Bounds overlay the preview edges; integers or ${var}.");
-                let lx = form_coord_literal(&self.form_left);
-                let ty = form_coord_literal(&self.form_top);
-                let rx = form_coord_literal(&self.form_right);
-                let by = form_coord_literal(&self.form_bottom);
-                self.sync_coord_preview_view();
-                let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
-                let (rect, _) = previews.paint_search_area_panel(
-                    ui,
-                    lx,
-                    ty,
-                    rx,
-                    by,
-                    force,
-                    &mut self.coord_preview,
-                );
-                paint_coord_chips(
-                    ui,
-                    rect,
-                    &known,
-                    is_dark,
-                    active_macro,
-                    &mut [
-                        (
-                            &mut self.form_top,
-                            CardinalEdge::Top,
-                            "TopY",
-                            help::DE_AREA_TOP,
-                        ),
-                        (
-                            &mut self.form_bottom,
-                            CardinalEdge::Bottom,
-                            "BottomY",
-                            help::DE_AREA_BOTTOM,
-                        ),
-                        (
-                            &mut self.form_left,
-                            CardinalEdge::Left,
-                            "LeftX",
-                            help::DE_AREA_LEFT,
-                        ),
-                        (
-                            &mut self.form_right,
-                            CardinalEdge::Right,
-                            "RightX",
-                            help::DE_AREA_RIGHT,
-                        ),
-                    ],
-                );
-            }
-            EditorTab::Masks => {
-                ui.heading("Mask");
-                self.program_selector(ui, catalog, icons, settings);
-                ui.add_space(4.0);
-                ui.label("Name").on_hover_text(help::DE_NAME);
-                help::tip(
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name)
-                            .desired_width(f32::INFINITY),
-                    ),
-                    help::DE_NAME,
-                );
-                paint_fs_name_hint(ui, &self.form_name);
-                let has_image = self
-                    .selected_program
-                    .as_deref()
-                    .zip(self.selected_entity.as_deref())
-                    .map(|(p, m)| catalog.mask_image_path(p, m).is_file())
-                    .unwrap_or(false);
-                ui.horizontal(|ui| {
-                    if ui
-                        .add_enabled(
-                            self.selected_program.is_some() && self.selected_entity.is_some(),
-                            egui::Button::new("Upload Image"),
-                        )
-                        .on_hover_text("Replace this mask with a PNG from disk.")
-                        .clicked()
-                    {
-                        self.upload_mask_image(catalog, icons);
-                    }
-                    if ui
-                        .add_enabled(
-                            has_image,
-                            egui::Button::new(
-                                egui::RichText::new("Remove Image").color(crate::theme::MACRO_STOP),
-                            ),
-                        )
-                        .on_hover_text("Delete the PNG and use shape geometry instead.")
-                        .clicked()
-                    {
-                        self.remove_mask_image(catalog, icons);
-                    }
-                });
-                if has_image {
-                    ui.weak("Image mask mode — shape fields hidden while a PNG is on disk.");
-                } else {
-                    ui.add_space(4.0);
-                    help::label(ui, "Shape", help::DE_MASK_SHAPE);
-                    ui.horizontal(|ui| {
-                        ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle")
-                            .on_hover_text(help::DE_MASK_SHAPE);
-                        ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle")
-                            .on_hover_text(help::DE_MASK_SHAPE);
-                    });
-                    ui.checkbox(
-                        &mut self.form_inverse,
-                        "Inverse (shape included, rest excluded)",
-                    )
-                    .on_hover_text(
-                        "When on, only the shape region is kept; the rest is masked out.",
-                    );
-                    ui.add_space(4.0);
-                    let cx = validate_numeric_expression(&self.form_center_x, active_macro);
-                    var_pills::validated_var_ref_edit(
-                        ui,
-                        "Center X %",
-                        &mut self.form_center_x,
-                        &known,
-                        is_dark,
-                        f32::INFINITY,
-                        &cx,
-                        "Horizontal center of the shape (0–100%).",
-                    );
-                    let cy = validate_numeric_expression(&self.form_center_y, active_macro);
-                    var_pills::validated_var_ref_edit(
-                        ui,
-                        "Center Y %",
-                        &mut self.form_center_y,
-                        &known,
-                        is_dark,
-                        f32::INFINITY,
-                        &cy,
-                        "Vertical center of the shape (0–100%).",
-                    );
-                    if self.form_shape == "circle" {
-                        let radius = validate_numeric_expression(&self.form_radius, active_macro);
-                        var_pills::validated_var_ref_edit(
-                            ui,
-                            "Radius",
-                            &mut self.form_radius,
-                            &known,
-                            is_dark,
-                            f32::INFINITY,
-                            &radius,
-                            "Circle radius as a percent of the search area.",
-                        );
-                    } else {
-                        let base = validate_numeric_expression(&self.form_base, active_macro);
-                        var_pills::validated_var_ref_edit(
-                            ui,
-                            "Base",
-                            &mut self.form_base,
-                            &known,
-                            is_dark,
-                            f32::INFINITY,
-                            &base,
-                            "Rectangle width as a percent of the search area.",
-                        );
-                        let height = validate_numeric_expression(&self.form_height, active_macro);
-                        var_pills::validated_var_ref_edit(
-                            ui,
-                            "Height",
-                            &mut self.form_height,
-                            &known,
-                            is_dark,
-                            f32::INFINITY,
-                            &height,
-                            "Rectangle height as a percent of the search area.",
-                        );
-                    }
-                    ui.weak("Numeric fields accept literals or ${var} expressions.");
-                }
-                if let (Some(prog), Some(mask)) = (
-                    self.selected_program.as_deref(),
-                    self.selected_entity.as_deref(),
-                ) {
-                    let path = catalog.mask_image_path(prog, mask);
-                    paint_disk_preview(
-                        ui,
-                        icons,
-                        Some(path.as_path()),
-                        None,
-                        "Mask image",
-                        None,
-                        None,
-                    );
-                }
-            }
-            EditorTab::Collections => {
-                ui.heading("Collection");
-                self.program_selector(ui, catalog, icons, settings);
-                ui.add_space(4.0);
-                ui.label("Name").on_hover_text(help::DE_NAME);
-                help::tip(
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name)
-                            .desired_width(f32::INFINITY),
-                    ),
-                    help::DE_NAME,
-                );
-                paint_fs_name_hint(ui, &self.form_name);
-                ui.add_space(4.0);
-                help::label(ui, "Search area", help::DE_COLLECTION_AREA);
-                {
-                    let areas: Vec<String> = self
-                        .selected_program
-                        .as_deref()
-                        .map(|p| {
-                            let res = catalog.resolution_key();
-                            catalog
-                                .get(p)
-                                .and_then(|prog| {
-                                    prog.search_areas
-                                        .get(res)
-                                        .or_else(|| prog.search_areas.values().next())
-                                })
-                                .map(|m| m.keys().cloned().collect())
-                                .unwrap_or_default()
-                        })
-                        .unwrap_or_default();
-                    let mut current = self.form_search_area.clone();
-                    let prog = self.selected_program.clone();
-                    let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
-                        if name.is_empty() {
-                            return;
-                        }
-                        let Some(prog) = prog.as_deref() else {
-                            return;
-                        };
-                        previews.show_for_entity(
-                            ui,
-                            resp,
-                            catalog,
-                            prog,
-                            name,
-                            PreviewKind::SearchArea,
-                        );
-                    };
-                    searchable_combo_with(
-                        ui,
-                        "collection_sa",
-                        &mut current,
-                        &areas,
-                        sqyre_domain::EMPTY_NONE,
-                        None,
-                        None,
-                        Some(&mut on_hover),
-                        None,
-                    );
-                    if current != self.form_search_area {
-                        self.form_search_area = current;
-                    }
-                }
-                help::label(ui, "Rows", help::DE_COLLECTION_ROWS);
-                help::tip(
-                    ui.add(egui::TextEdit::singleline(&mut self.form_rows).desired_width(80.0)),
-                    help::DE_COLLECTION_ROWS,
-                );
-                help::label(ui, "Cols", help::DE_COLLECTION_COLS);
-                help::tip(
-                    ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0)),
-                    help::DE_COLLECTION_COLS,
-                );
-                if let (Some(prog), Some(col_name)) =
-                    (self.selected_program.clone(), self.selected_entity.clone())
-                {
-                    let path = catalog.collection_image_path(&prog, &col_name);
-                    let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
-                    let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
-                    let key = (prog.clone(), col_name.clone());
-                    if self.collection_preview_key.as_ref() != Some(&key) {
-                        self.collection_preview.reset();
-                        self.collection_preview_key = Some(key);
-                    }
-                    let mut replace = false;
-                    let capturing = self.collection_capture_pending.is_some();
-                    paint_zoomable_collection_preview(
-                        ui,
-                        icons,
-                        path.as_path(),
-                        rows,
-                        cols,
-                        &mut self.collection_preview,
-                        &mut replace,
-                        capturing,
-                    );
-                    if replace && !capturing {
-                        let col = ProgramCollection {
-                            name: col_name.clone(),
-                            search_area: self.form_search_area.trim().to_string(),
-                            rows,
-                            cols,
-                        };
-                        if let Err(e) = self.start_collection_capture(catalog, &prog, &col, None) {
-                            self.set_err(e);
-                        }
-                    }
-                }
-            }
-            EditorTab::Atlases => {
-                ui.heading("Atlas");
-                self.program_selector(ui, catalog, icons, settings);
-                ui.add_space(4.0);
-                ui.label("Name").on_hover_text(help::DE_NAME);
-                help::tip(
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name)
-                            .desired_width(f32::INFINITY),
-                    ),
-                    help::DE_NAME,
-                );
-                paint_fs_name_hint(ui, &self.form_name);
-                ui.add_space(4.0);
-                help::label(ui, "Collections", help::DE_ATLAS_MEMBERS);
-                let available: Vec<String> = self
-                    .selected_program
-                    .as_deref()
-                    .and_then(|p| catalog.get(p))
-                    .map(|prog| {
-                        prog.collections
-                            .keys()
-                            .filter(|k| !self.form_atlas_members.iter().any(|m| m == *k))
-                            .cloned()
-                            .collect()
-                    })
-                    .unwrap_or_default();
-                ui.horizontal(|ui| {
-                    let prog = self.selected_program.clone();
-                    let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
-                        if name.is_empty() {
-                            return;
-                        }
-                        let Some(prog) = prog.as_deref() else {
-                            return;
-                        };
-                        previews.show_for_entity(
-                            ui,
-                            resp,
-                            catalog,
-                            prog,
-                            name,
-                            PreviewKind::Collection,
-                        );
-                    };
-                    searchable_combo_with(
-                        ui,
-                        "atlas_add_member",
-                        &mut self.form_atlas_add,
-                        &available,
-                        "(add collection)",
-                        None,
-                        None,
-                        Some(&mut on_hover),
-                        None,
-                    );
-                    if ui
-                        .add_enabled(
-                            !self.form_atlas_add.trim().is_empty(),
-                            egui::Button::new("Add"),
-                        )
-                        .clicked()
-                    {
-                        let name = self.form_atlas_add.trim().to_string();
-                        if !name.is_empty() && !self.form_atlas_members.iter().any(|m| m == &name) {
-                            self.form_atlas_members.push(name);
-                        }
-                        self.form_atlas_add.clear();
-                    }
-                });
-                let mut remove_at: Option<usize> = None;
-                for (i, member) in self.form_atlas_members.iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        let label = ui.label(format!("• {member}"));
-                        if let Some(prog) = self.selected_program.as_deref() {
-                            previews.show_for_entity(
-                                ui,
-                                &label,
-                                catalog,
-                                prog,
-                                member,
-                                PreviewKind::Collection,
-                            );
-                        }
-                        if theme::icon_button_colored(ui, "×", Some(theme::MACRO_STOP))
-                            .on_hover_text("Remove")
-                            .clicked()
-                        {
-                            remove_at = Some(i);
-                        }
-                    });
-                }
-                if let Some(i) = remove_at {
-                    self.form_atlas_members.remove(i);
-                }
-                if let (Some(prog), Some(atlas_name)) =
-                    (self.selected_program.clone(), self.selected_entity.clone())
-                {
-                    let key = (prog.clone(), atlas_name.clone());
-                    if self.atlas_preview_key.as_ref() != Some(&key) {
-                        self.atlas_preview.reset();
-                        self.atlas_preview_key = Some(key);
-                    }
-                    paint_zoomable_atlas_preview(
-                        ui,
-                        icons,
-                        catalog,
-                        &prog,
-                        &self.form_atlas_members,
-                        &mut self.atlas_preview,
-                    );
-                } else if !self.form_atlas_members.is_empty() {
-                    if let Some(prog) = self.selected_program.clone() {
-                        paint_zoomable_atlas_preview(
-                            ui,
-                            icons,
-                            catalog,
-                            &prog,
-                            &self.form_atlas_members,
-                            &mut self.atlas_preview,
-                        );
-                    }
-                }
-            }
-            EditorTab::ScreenCap => {
-                ui.heading("ScreenCap");
-                ui.weak(
-                    "Set LeftX/TopY/RightX/BottomY (type, screen-record, or optional reference), name the file, then Save writes the framed preview screenshot to images/ScreenCap.",
-                );
-                ui.add_space(4.0);
-                self.paint_name_record_row(
-                    ui,
-                    screen_click,
-                    "Two clicks: opposite corners of the capture region",
-                    "Recording… click two corners.",
-                    ScreenClickBridge::arm_search_area,
-                );
-                {
-                    use crate::pickers::{ActivePicker, CoordKind};
-                    use sqyre_domain::CoordinateRef;
-                    let reference = CoordinateRef(self.form_search_area.clone());
-                    let display = if reference.is_empty() {
-                        "(optional — seed coords from a search area or cell)"
-                    } else {
-                        reference.as_str()
-                    };
-                    ui.horizontal(|ui| {
-                        help::label(ui, "Reference", help::DE_SCREENCAP_REF);
-                        if let Some(prog) = reference.program() {
-                            crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
-                        }
-                        let resp = ui.monospace(display);
-                        if !reference.is_empty() {
-                            let kind = if reference.is_collection() {
-                                PreviewKind::Collection
-                            } else {
-                                PreviewKind::SearchArea
-                            };
-                            previews.show_for_coordinate_ref(ui, &resp, catalog, &reference, kind);
-                        }
-                        if crate::theme::icon_button(ui, "☰")
-                            .on_hover_text("Pick search area or collection cell…")
-                            .clicked()
-                        {
-                            self.window_picker = ActivePicker::Coord {
-                                kind: CoordKind::SearchArea,
-                                search: String::new(),
-                                value: self.form_search_area.clone(),
-                                cell_pick: None,
-                                scroll_to_selection: true,
-                            };
-                        }
-                    });
-                }
-                ui.weak("Bounds overlay the preview edges; edit them to crop the capture.");
-                let lx = form_coord_literal(&self.form_left);
-                let ty = form_coord_literal(&self.form_top);
-                let rx = form_coord_literal(&self.form_right);
-                let by = form_coord_literal(&self.form_bottom);
-                self.sync_coord_preview_view();
-                let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
-                // Keep Save + path hint below the preview (panel fills remaining height).
-                let path_hint = format!("Saves to {}", screen_cap_path().display());
-                let spacing = ui.spacing().item_spacing.y;
-                let path_font = egui::TextStyle::Body.resolve(ui.style());
-                let wrap_w = ui.available_width();
-                let path_h = ui.fonts_mut(|f| {
-                    f.layout(path_hint.clone(), path_font, egui::Color32::WHITE, wrap_w)
-                        .size()
-                        .y
-                });
-                // spacing + 8px gap + spacing + button + spacing + path (+ 1px slack).
-                let footer_h = spacing * 3.0 + 8.0 + ui.spacing().interact_size.y + path_h + 1.0;
-                let preview_h = (ui.available_height() - footer_h).max(120.0);
-                ui.allocate_ui_with_layout(
-                    egui::vec2(ui.available_width(), preview_h),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        let (rect, _) = previews.paint_search_area_panel(
-                            ui,
-                            lx,
-                            ty,
-                            rx,
-                            by,
-                            force,
-                            &mut self.coord_preview,
-                        );
-                        paint_coord_chips(
-                            ui,
-                            rect,
-                            &known,
-                            is_dark,
-                            active_macro,
-                            &mut [
-                                (
-                                    &mut self.form_top,
-                                    CardinalEdge::Top,
-                                    "TopY",
-                                    help::DE_AREA_TOP,
-                                ),
-                                (
-                                    &mut self.form_bottom,
-                                    CardinalEdge::Bottom,
-                                    "BottomY",
-                                    help::DE_AREA_BOTTOM,
-                                ),
-                                (
-                                    &mut self.form_left,
-                                    CardinalEdge::Left,
-                                    "LeftX",
-                                    help::DE_AREA_LEFT,
-                                ),
-                                (
-                                    &mut self.form_right,
-                                    CardinalEdge::Right,
-                                    "RightX",
-                                    help::DE_AREA_RIGHT,
-                                ),
-                            ],
-                        );
-                    },
-                );
-                ui.add_space(8.0);
-                let saving = self.screen_cap_pending.is_some();
-                if ui
-                    .add_enabled(
-                        !saving,
-                        egui::Button::new(if saving { "Saving…" } else { "Save" }),
-                    )
-                    .clicked()
-                {
-                    self.save_screen_cap(previews);
-                    ui.ctx().request_repaint();
-                }
-                ui.weak(path_hint);
-            }
-            EditorTab::PixelCheck => {
-                self.paint_pixel_check_form(
-                    ui,
-                    catalog,
-                    icons,
-                    previews,
-                    screen_click,
-                    active_macro,
-                    &known,
-                    is_dark,
-                    settings,
-                );
-            }
-            EditorTab::Overlay => {
-                ui.heading("Overlay Button");
-                ui.weak(
-                    "General buttons stay on screen when enabled. Other programs show only while their bound process and window title own focus (bind a window on the Programs tab).",
-                );
-                ui.weak("The selected button is previewed on screen while you edit.");
-                ui.add_space(6.0);
-                self.program_selector(ui, catalog, icons, settings);
-                if self.selected_program.is_none() {
-                    ui.weak("Select a program, then New to add a button.");
-                    return;
-                }
-                if self.selected_entity.is_none() {
-                    ui.weak("Select a button from the list, or click New.");
-                    return;
-                }
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
-                    let icon = overlay_icons::resolve(&self.form_overlay_icon);
-                    let mut preview_cfg = OverlayButtonConfig::new("preview", "");
-                    self.apply_overlay_style_to_config(&mut preview_cfg);
-                    let style = overlay_icons::OverlayPaintStyle::from_config(&preview_cfg);
-                    let preview = overlay_icons::style_preview_button(ui, icon, 48.0, &style)
-                        .on_hover_text(help::DE_OVERLAY_ICON);
-                    if preview.clicked() {
-                        if let Some(id) = self.selected_entity.clone() {
-                            self.overlay_icon_search.clear();
-                            self.overlay_icon_picker_for = Some(id);
-                        }
-                    }
-                    ui.vertical(|ui| {
-                        ui.label(icon.label).on_hover_text(help::DE_OVERLAY_ICON);
-                        ui.weak("Click icon to choose from Phosphor library");
-                    });
-                });
-                ui.add_space(6.0);
-                help::label(ui, "Macro", help::DE_OVERLAY_MACRO);
-                let mut selected = self.form_overlay_macro.clone();
-                let before = selected.clone();
-                let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
-                searchable_combo_width(
-                    ui,
-                    "overlay_form_macro",
-                    &mut selected,
-                    &macro_names,
-                    "(pick macro)",
-                    Some(sqyre_domain::EMPTY_NONE),
-                    Some(220.0),
-                )
-                .on_hover_text(help::DE_OVERLAY_MACRO);
-                if selected != before {
-                    self.form_overlay_macro = selected;
-                }
-                ui.add_space(4.0);
-                {
-                    use crate::pickers::{ActivePicker, CoordKind};
-                    use sqyre_domain::CoordinateRef;
-                    let point = CoordinateRef(self.form_overlay_point.clone());
-                    let display = if point.is_empty() {
-                        "(unset — use X/Y below)"
-                    } else {
-                        point.as_str()
-                    };
-                    ui.horizontal(|ui| {
-                        help::label(ui, "Point", help::DE_OVERLAY_POINT);
-                        if let Some(prog) = point.program() {
-                            crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
-                        }
-                        let resp = ui.monospace(display);
-                        if !point.is_empty() {
-                            previews.show_for_coordinate_ref(
-                                ui,
-                                &resp,
-                                catalog,
-                                &point,
-                                PreviewKind::Point,
-                            );
-                        }
-                        if crate::theme::icon_button(ui, "☰")
-                            .on_hover_text("Pick point…")
-                            .clicked()
-                        {
-                            self.window_picker = ActivePicker::Coord {
-                                kind: CoordKind::Point,
-                                search: String::new(),
-                                value: self.form_overlay_point.clone(),
-                                cell_pick: None,
-                                scroll_to_selection: true,
-                            };
-                        }
-                        if !self.form_overlay_point.is_empty()
-                            && ui
-                                .small_button("Clear")
-                                .on_hover_text("Use manual X/Y instead of a catalog point")
-                                .clicked()
-                        {
-                            self.form_overlay_point.clear();
-                        }
-                    });
-                }
-                ui.add_space(4.0);
-                let point_set = !self.form_overlay_point.trim().is_empty();
-                ui.add_enabled_ui(!point_set, |ui| {
-                    ui.horizontal(|ui| {
-                        help::label(ui, "X", help::DE_OVERLAY_X);
-                        help::tip(
-                            ui.add(
-                                egui::DragValue::new(&mut self.form_overlay_x)
-                                    .speed(1.0)
-                                    .suffix(" px"),
-                            ),
-                            help::DE_OVERLAY_X,
-                        );
-                        help::label(ui, "Y", help::DE_OVERLAY_Y);
-                        help::tip(
-                            ui.add(
-                                egui::DragValue::new(&mut self.form_overlay_y)
-                                    .speed(1.0)
-                                    .suffix(" px"),
-                            ),
-                            help::DE_OVERLAY_Y,
-                        );
-                    });
-                });
-                if point_set {
-                    let mut loc = OverlayButtonConfig::new("preview", "");
-                    loc.point = self.form_overlay_point.clone();
-                    loc.x = self.form_overlay_x;
-                    loc.y = self.form_overlay_y;
-                    let (rx, ry) = loc.resolved_position(catalog);
-                    ui.weak(format!("Position from point → ({rx:.0}, {ry:.0})"));
-                }
-                ui.add_space(8.0);
-                ui.collapsing("Appearance", |ui| {
-                    ui.horizontal(|ui| {
-                        help::label(ui, "Size", help::DE_OVERLAY_SIZE);
-                        help::tip(
-                            ui.add(
-                                egui::DragValue::new(&mut self.form_overlay_size)
-                                    .speed(1)
-                                    .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE),
-                            ),
-                            help::DE_OVERLAY_SIZE,
-                        );
-                    });
-                    ui.horizontal(|ui| {
-                        help::label(ui, "Corner radius", help::DE_OVERLAY_RADIUS);
-                        help::tip(
-                            ui.add(
-                                egui::DragValue::new(&mut self.form_overlay_corner_radius)
-                                    .speed(0.5)
-                                    .range(MIN_OVERLAY_CORNER_RADIUS..=MAX_OVERLAY_CORNER_RADIUS)
-                                    .suffix(" px"),
-                            ),
-                            help::DE_OVERLAY_RADIUS,
-                        );
-                        help::label(ui, "Border width", help::DE_OVERLAY_BORDER);
-                        help::tip(
-                            ui.add(
-                                egui::DragValue::new(&mut self.form_overlay_border_width)
-                                    .speed(0.1)
-                                    .range(MIN_OVERLAY_BORDER_WIDTH..=MAX_OVERLAY_BORDER_WIDTH)
-                                    .suffix(" px"),
-                            ),
-                            help::DE_OVERLAY_BORDER,
-                        );
-                    });
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        color_alpha_drag(ui, "Border", &mut self.form_overlay_border);
-                    });
-                    ui.horizontal(|ui| {
-                        color_alpha_drag(ui, "Background", &mut self.form_overlay_bg);
-                        ui.weak("(α 0 = none)");
-                    });
-                    ui.horizontal(|ui| {
-                        color_alpha_drag(ui, "Icon", &mut self.form_overlay_icon_color);
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label("Icon hover")
-                            .on_hover_text("Icon color when the pointer is over the button.");
-                        ui.color_edit_button_srgba(&mut self.form_overlay_icon_hover);
-                    });
-                    ui.add_space(4.0);
-                    if ui.button("Reset appearance to defaults").clicked() {
-                        self.reset_overlay_style_form();
-                    }
-                });
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn paint_pixel_check_form(
-        &mut self,
-        ui: &mut egui::Ui,
-        catalog: &ProgramCatalog,
-        _icons: &mut crate::icon_cache::IconCache,
-        previews: &mut crate::preview_tooltip::PreviewTooltipCache,
-        screen_click: &ScreenClickBridge,
-        active_macro: Option<&Macro>,
-        known: &KnownVariableNames,
-        is_dark: bool,
-        settings: &UserSettings,
-    ) {
-        ui.heading("PixelCheck");
+        let FormCtx {
+            screen_click,
+            active_macro,
+            known,
+            is_dark,
+            ..
+        } = ctx;
+        #[cfg(feature = "native-runtime")]
+        help::heading(ui, "Match probe", help::DE_PIXELCHECK_INTRO);
+        #[cfg(not(feature = "native-runtime"))]
+        ui.heading("Match probe");
         #[cfg(not(feature = "native-runtime"))]
         {
             let _ = (
@@ -1242,7 +343,7 @@ impl DataEditor {
             );
             ui.colored_label(
                 crate::theme::error_fg(),
-                "PixelCheck requires the desktop app.",
+                "Match probe requires the desktop app.",
             );
             return;
         }
@@ -1253,9 +354,6 @@ impl DataEditor {
             use crate::widgets::match_settings;
             use sqyre_domain::CoordinateRef;
 
-            ui.weak(
-                "Select an item, set a search area (reference or inline coords), tune match settings, then inspect the similarity heatmap.",
-            );
             ui.add_space(4.0);
             if self.selected_entity.is_none() {
                 self.stop_pixel_check_compute();
@@ -1278,7 +376,7 @@ impl DataEditor {
             ui.horizontal(|ui| {
                 help::label(ui, "Reference", help::DE_SCREENCAP_REF);
                 if let Some(prog) = reference.program() {
-                    crate::icon_cache::paint_program_icon(ui, catalog, _icons, prog);
+                    crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
                 let resp = ui.monospace(display);
                 if !reference.is_empty() {
@@ -1326,13 +424,24 @@ impl DataEditor {
                 &mut self.pixel_check.tolerance,
                 &mut self.pixel_check.blur,
                 &mut self.pixel_check.match_method,
-                true,
+                false,
             );
-            ui.weak("Bounds overlay the preview edges; integers or ${var}.");
-            let lx = form_coord_literal(&self.form_left);
-            let ty = form_coord_literal(&self.form_top);
-            let rx = form_coord_literal(&self.form_right);
-            let by = form_coord_literal(&self.form_bottom);
+            ui.collapsing("Advanced", |ui| {
+                match_settings::paint_match_method(ui, &mut self.pixel_check.match_method);
+            });
+            help::label(ui, "Bounds", help::DE_PIXELCHECK_BOUNDS);
+            self.paint_monitor_slot(ui);
+            let (lx, ty, rx, by) = form_desktop_area(
+                catalog,
+                self.form_monitor,
+                &self.form_left,
+                &self.form_top,
+                &self.form_right,
+                &self.form_bottom,
+            );
+            if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
+                ui.weak(pixel_size_text(w, h));
+            }
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
@@ -1364,11 +473,13 @@ impl DataEditor {
             }
             let preview_h = ui.available_height().max(120.0);
             let mut hover: Option<super::pixel_check::PixelCheckHover> = None;
+            let preview_w = crate::widgets::visible_width(ui);
             ui.allocate_ui_with_layout(
-                egui::vec2(ui.available_width(), preview_h),
+                egui::vec2(preview_w, preview_h),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
-                    let (rect, _preview_image_size) = previews.paint_search_area_panel(
+                    ui.set_max_width(preview_w);
+                    let (rect, preview_image_size) = previews.paint_search_area_panel(
                         ui,
                         lx,
                         ty,
@@ -1412,6 +523,7 @@ impl DataEditor {
                             );
                         }
                     }
+                    paint_search_area_preview_sizes(ui, rect, lx, ty, rx, by, preview_image_size);
                     paint_coord_chips(
                         ui,
                         rect,

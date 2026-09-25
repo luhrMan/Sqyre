@@ -1,19 +1,18 @@
 //! Linux X11 window list + activate.
 
-use crate::window_match::{paths_equal, pick_matching_icon, titles_equal};
+use crate::window_match::{pick_matching_icon, titles_equal};
 use crate::{CaptureError, ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
 use parking_lot::Mutex;
 use sqyre_ports::AutomationError;
 use std::collections::HashSet;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_ulong;
-use std::path::{Path, PathBuf};
 use std::ptr;
 use x11::xlib::{
     Atom, CWBackPixel, ClientMessage, Display, False, PropModeReplace, Success, True, Window,
-    XChangeProperty, XChangeWindowAttributes, XDefaultRootWindow, XEvent, XFlush, XFree,
-    XGetWMName, XGetWindowProperty, XInternAtom, XOpenDisplay, XSendEvent, XSetWindowAttributes,
-    _XDisplay, XA_ATOM, XA_CARDINAL, XA_WINDOW,
+    XChangeProperty, XChangeWindowAttributes, XClassHint, XDefaultRootWindow, XEvent, XFlush,
+    XFree, XGetClassHint, XGetWMName, XGetWindowProperty, XInternAtom, XOpenDisplay, XSendEvent,
+    XSetWindowAttributes, _XDisplay, XA_ATOM, XA_CARDINAL, XA_WINDOW,
 };
 
 /// Title used by floating macro-overlay / recording-HUD chrome.
@@ -243,21 +242,80 @@ unsafe fn window_info_of(display: *mut Display, win: Window) -> Option<WindowInf
     if title.trim().is_empty() {
         return None;
     }
-    let pid = window_pid(display, win)?;
-    let path = process_exe_path(pid).unwrap_or_default();
-    let name = process_comm(pid).unwrap_or_else(|| {
-        Path::new(&path)
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_default()
+    // PID is best-effort: some Wine/games windows omit `_NET_WM_PID`, and Flatpak
+    // often cannot read another sandbox's `/proc/<pid>/exe`. Fall back to WM_CLASS.
+    let pid = window_pid(display, win).unwrap_or(0);
+    let (mut name, mut path) = if pid != 0 {
+        crate::linux::wayland::process_identity(pid)
+    } else {
+        (String::new(), String::new())
+    };
+    if let Some((instance, class)) = window_class(display, win) {
+        if name.is_empty() {
+            name = if !class.is_empty() {
+                class.clone()
+            } else {
+                instance.clone()
+            };
+        }
+        if path.is_empty() {
+            // Prefer class (stable) over instance for Focus bindings.
+            path = if !class.is_empty() { class } else { instance };
+        }
+    }
+    if path.is_empty() {
+        path = title.clone();
+    }
+    if name.is_empty() {
+        name = path.clone();
+    }
+    let icon = window_icon(display, win).or_else(|| {
+        if pid != 0 {
+            crate::linux::wayland::desktop_icon_for_pid(pid, &path)
+        } else {
+            crate::linux::wayland::desktop_icon_for_app_id(&path)
+        }
     });
-    let icon = window_icon(display, win);
     Some(WindowInfo {
         title,
         process_name: name,
         process_path: path,
         icon,
     })
+}
+
+/// `(instance, class)` from ICCCM `WM_CLASS`, if set.
+// SAFETY: callers must pass a live, non-null Xlib `display` and valid `win`;
+// `XGetClassHint` allocates `res_name`/`res_class` which we free with `XFree`.
+unsafe fn window_class(display: *mut Display, win: Window) -> Option<(String, String)> {
+    let mut hint = XClassHint {
+        res_name: std::ptr::null_mut(),
+        res_class: std::ptr::null_mut(),
+    };
+    if XGetClassHint(display, win, &mut hint) == 0 {
+        return None;
+    }
+    let instance = if hint.res_name.is_null() {
+        String::new()
+    } else {
+        let s = CStr::from_ptr(hint.res_name).to_string_lossy().into_owned();
+        XFree(hint.res_name as *mut _);
+        s
+    };
+    let class = if hint.res_class.is_null() {
+        String::new()
+    } else {
+        let s = CStr::from_ptr(hint.res_class)
+            .to_string_lossy()
+            .into_owned();
+        XFree(hint.res_class as *mut _);
+        s
+    };
+    if instance.is_empty() && class.is_empty() {
+        None
+    } else {
+        Some((instance, class))
+    }
 }
 
 /// Read `_NET_WM_ICON` and pick the size closest to [`PROCESS_ICON_TARGET_PX`].
@@ -364,19 +422,13 @@ unsafe fn activate_on_display(
     let root = XDefaultRootWindow(display);
     let clients = client_list(display, root)?;
     for win in clients {
-        let Some(wtitle) = window_title_of(display, win) else {
+        let Some(info) = window_info_of(display, win) else {
             continue;
         };
-        if !titles_equal(&wtitle, window_title) {
+        if !titles_equal(&info.title, window_title) {
             continue;
         }
-        let Some(pid) = window_pid(display, win) else {
-            continue;
-        };
-        let Some(exe) = process_exe_path(pid) else {
-            continue;
-        };
-        if !paths_equal(&exe, process_path) {
+        if !crate::window_matches_process(&info, process_path) {
             continue;
         }
         return set_active_window(display, root, win).map(|()| true);
@@ -519,23 +571,6 @@ unsafe fn window_pid(display: *mut Display, win: Window) -> Option<u32> {
         None
     } else {
         Some(pid)
-    }
-}
-
-fn process_exe_path(pid: u32) -> Option<String> {
-    let link = PathBuf::from(format!("/proc/{pid}/exe"));
-    std::fs::read_link(link)
-        .ok()
-        .map(|p| p.to_string_lossy().into_owned())
-}
-
-fn process_comm(pid: u32) -> Option<String> {
-    let raw = std::fs::read_to_string(format!("/proc/{pid}/comm")).ok()?;
-    let name = raw.trim().to_string();
-    if name.is_empty() {
-        None
-    } else {
-        Some(name)
     }
 }
 
@@ -741,10 +776,16 @@ unsafe fn send_net_wm_state_add(
 // SAFETY: callers must pass a live, non-null Xlib `display` connection; the
 // `CString` outlives the `XInternAtom` call that reads its pointer.
 unsafe fn intern(display: *mut Display, name: &str) -> Result<Atom, CaptureError> {
-    let c = CString::new(name).map_err(|e| CaptureError::Message(e.to_string()))?;
+    let c = CString::new(name).map_err(|e| CaptureError::X11 {
+        op: "XInternAtom",
+        detail: format!("{name}: {e}"),
+    })?;
     let atom = XInternAtom(display, c.as_ptr(), False);
     if atom == 0 {
-        Err(CaptureError::Message(format!("XInternAtom {name} failed")))
+        Err(CaptureError::X11 {
+            op: "XInternAtom",
+            detail: format!("{name} failed"),
+        })
     } else {
         Ok(atom)
     }

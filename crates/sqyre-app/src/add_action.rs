@@ -6,21 +6,14 @@
 use crate::action_tooltip::{
     apply_picker_result, paint_action_edit_header, paint_edit_fields, show_action_view_tip,
 };
-use crate::hotkey_record::HotkeyRecordUi;
-use crate::icon_cache::IconCache;
-use crate::key_record::KeyRecordUi;
-use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
+use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, TipUiCtx};
 use crate::pickers::{self, ActivePicker};
-use crate::preview_tooltip::PreviewTooltipCache;
 use crate::tree_chrome;
 use crate::widgets::SaveCancel;
 use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2, WidgetInfo, WidgetType};
 use sqyre_domain::{
     action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
-    KnownVariableNames,
 };
-use sqyre_hotkeys::{MacroHotkeyBridge, ScreenClickBridge};
-use sqyre_persist::ProgramCatalog;
 use sqyre_persist::UserSettings;
 use sqyre_serialize::{action_from_map, action_to_map};
 use sqyre_ui_model::{
@@ -43,6 +36,10 @@ pub struct AddActionPicker {
     tip: Option<DefaultsTip>,
     /// Tile currently under the pointer, waiting for [`DEFAULTS_HOVER_DELAY`].
     hover_pending: Option<HoverPending>,
+    /// Filter over action labels / types.
+    filter: String,
+    /// Index into the filtered flat tile list for ↑↓ / Enter.
+    selected: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +83,10 @@ impl DefaultsTip {
 impl AddActionPicker {
     pub fn open(&mut self) {
         self.open = true;
+        self.filter.clear();
+        self.selected = 0;
+        // Re-arm search focus for this open.
+        // (consumed in `show` via pickers::focus_search_once)
     }
 
     pub fn load_from_settings(&mut self, settings: &UserSettings) {
@@ -184,20 +185,11 @@ impl AddActionPicker {
 
     /// Draw the picker when open. Returns a freshly constructed blank [`Action`] when
     /// the user picks a tile (caller inserts it into the tree).
-    #[allow(clippy::too_many_arguments)]
     pub fn show(
         &mut self,
         ctx: &egui::Context,
-        catalog: &ProgramCatalog,
-        icons: &mut IconCache,
-        previews: &mut PreviewTooltipCache,
+        tip: &mut TipUiCtx<'_>,
         macros: &[(String, Vec<String>)],
-        known_vars: &KnownVariableNames,
-        key_record: &mut KeyRecordUi,
-        hotkey_record: &mut HotkeyRecordUi,
-        macro_hotkeys: &MacroHotkeyBridge,
-        screen_click: &ScreenClickBridge,
-        compact_program_headers: bool,
         mut on_defaults_saved: impl FnMut(&AddActionPicker),
     ) -> Option<Action> {
         if !self.open {
@@ -208,6 +200,7 @@ impl AddActionPicker {
         let mut picked: Option<Action> = None;
         let mut hover_type: Option<(String, egui::Pos2)> = None;
         let mut edit_request: Option<(String, egui::Pos2)> = None;
+        let mut dismiss = false;
         let editing = self.tip.as_ref().is_some_and(|t| t.is_editing());
 
         crate::widgets::fit_dialog_window(
@@ -218,57 +211,119 @@ impl AddActionPicker {
                 .default_size([900.0, 420.0])
                 .min_size([100.0, 100.0]),
             ctx,
+            egui::Id::new("Add Action"),
+            tip.pending_scale,
         )
         .show(ctx, |ui| {
+            let focus_id = egui::Id::new("Add Action");
+            let nav = if !editing {
+                pickers::poll_list_nav(ui)
+            } else {
+                pickers::ListNavAction::None
+            };
+            if nav == pickers::ListNavAction::Cancel {
+                dismiss = true;
+                return;
+            }
+
             let is_dark = ui.visuals().dark_mode;
             let templates = action_templates();
+            let q = self.filter.trim().to_ascii_lowercase();
+            let filtered: Vec<&ActionTemplate> = templates
+                .iter()
+                .filter(|t| {
+                    if q.is_empty() {
+                        return true;
+                    }
+                    let label = action_type_label(t.action_type).to_ascii_lowercase();
+                    pickers::fuzzy_match_fold(&q, t.action_type)
+                        || pickers::fuzzy_match_fold(&q, &label)
+                })
+                .collect();
+            if pickers::apply_list_nav(&mut self.selected, filtered.len(), nav) {
+                if let Some(t) = filtered.get(self.selected) {
+                    picked = self.create_action(t.action_type);
+                }
+            }
+
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(
+                    egui_phosphor::regular::MAGNIFYING_GLASS,
+                ));
+                let edit = egui::TextEdit::singleline(&mut self.filter)
+                    .hint_text("Search actions…")
+                    .desired_width(f32::INFINITY);
+                let resp = ui.add(edit);
+                pickers::focus_search_once(ui, focus_id, &resp);
+                if resp.changed() {
+                    self.selected = 0;
+                }
+            });
+            ui.label("Pick an action type — hover ~1s to preview defaults, right-click to edit");
+            ui.separator();
+
             let list_h = pickers::popup_scroll_max_height(ui, 0.0);
+            let list_w = crate::widgets::visible_width(ui);
             // Content-sized columns (not equal-split) so shrinking the window
             // yields horizontal scroll instead of squashing tiles.
-            pickers::scroll_both()
-                .auto_shrink([false, false])
-                .max_height(list_h)
-                .show(ui, |ui| {
-                    // Horizontal layout assigns leftover viewport width to later
-                    // columns; without Extend they wrap letter-by-letter when shrunk.
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                    ui.label(
-                        "Pick an action type — hover ~1s to preview defaults, right-click to edit",
-                    );
-                    ui.add_space(6.0);
-                    ui.horizontal_top(|ui| {
-                        for category in ACTION_PICKER_CATEGORIES {
-                            ui.vertical(|ui| {
-                                ui.strong(*category);
-                                ui.add_space(4.0);
-                                for tmpl in templates
-                                    .iter()
-                                    .filter(|t| action_picker_category(t.action_type) == *category)
-                                {
-                                    let sample = self
-                                        .prototype_for(tmpl.action_type)
-                                        .unwrap_or_else(|| tmpl.create());
-                                    let resp = picker_tile(ui, tmpl, &sample, is_dark);
-                                    if resp.secondary_clicked() {
-                                        edit_request = Some((
-                                            tmpl.action_type.to_string(),
-                                            resp.rect.right_top(),
-                                        ));
-                                    } else if resp.clicked() {
-                                        picked = self.create_action(tmpl.action_type);
-                                    } else if resp.hovered() {
-                                        hover_type = Some((
-                                            tmpl.action_type.to_string(),
-                                            resp.rect.right_top(),
-                                        ));
-                                    }
-                                }
-                            });
+            pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+                ui.set_max_width(list_w.max(900.0)); // keep tile columns readable; H-scroll when narrow
+                                                     // Horizontal layout assigns leftover viewport width to later
+                                                     // columns; without Extend they wrap letter-by-letter when shrunk.
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                if filtered.is_empty() {
+                    pickers::paint_list_vacancy(ui, &q, 0, "actions");
+                    return;
+                }
+                ui.add_space(6.0);
+                let mut flat_i = 0usize;
+                ui.horizontal_top(|ui| {
+                    for category in ACTION_PICKER_CATEGORIES {
+                        let cat_tmpls: Vec<&&ActionTemplate> = filtered
+                            .iter()
+                            .filter(|t| action_picker_category(t.action_type) == *category)
+                            .collect();
+                        if cat_tmpls.is_empty() {
+                            continue;
                         }
-                    });
+                        ui.vertical(|ui| {
+                            ui.strong(*category);
+                            ui.add_space(4.0);
+                            for tmpl in cat_tmpls {
+                                let selected = flat_i == self.selected;
+                                flat_i += 1;
+                                let sample = self
+                                    .prototype_for(tmpl.action_type)
+                                    .unwrap_or_else(|| tmpl.create());
+                                let resp = picker_tile(ui, tmpl, &sample, is_dark);
+                                if selected {
+                                    ui.painter().rect_stroke(
+                                        resp.rect.expand(2.0),
+                                        4.0,
+                                        egui::Stroke::new(1.5, crate::theme::PRIMARY),
+                                        egui::StrokeKind::Outside,
+                                    );
+                                }
+                                if resp.secondary_clicked() {
+                                    edit_request =
+                                        Some((tmpl.action_type.to_string(), resp.rect.right_top()));
+                                } else if resp.clicked() {
+                                    picked = self.create_action(tmpl.action_type);
+                                } else if resp.hovered() {
+                                    hover_type =
+                                        Some((tmpl.action_type.to_string(), resp.rect.right_top()));
+                                }
+                            }
+                        });
+                    }
                 });
+            });
         });
 
+        if !open || dismiss {
+            pickers::reset_focus_search(ctx, egui::Id::new("Add Action"));
+            open = false;
+        }
         if let Some((ty, anchor)) = edit_request {
             self.open_edit(ty, anchor);
         } else if editing {
@@ -316,25 +371,13 @@ impl AddActionPicker {
             }
         }
 
-        let is_dark = ctx.global_style().visuals.dark_mode;
+        tip.theme.is_dark = ctx.global_style().visuals.dark_mode;
         let defaults_saved = match &self.tip {
             Some(DefaultsTip::View { .. }) => {
-                self.show_defaults_view(ctx, catalog, icons, previews, known_vars, is_dark);
+                self.show_defaults_view(ctx, tip);
                 false
             }
-            Some(DefaultsTip::Edit { .. }) => self.show_defaults_edit(
-                ctx,
-                catalog,
-                icons,
-                previews,
-                macros,
-                known_vars,
-                key_record,
-                hotkey_record,
-                macro_hotkeys,
-                screen_click,
-                compact_program_headers,
-            ),
+            Some(DefaultsTip::Edit { .. }) => self.show_defaults_edit(ctx, tip, macros),
             None => false,
         };
         if defaults_saved {
@@ -354,15 +397,7 @@ impl AddActionPicker {
         picked
     }
 
-    fn show_defaults_view(
-        &self,
-        ctx: &egui::Context,
-        catalog: &ProgramCatalog,
-        icons: &mut IconCache,
-        previews: &mut PreviewTooltipCache,
-        known_vars: &KnownVariableNames,
-        is_dark: bool,
-    ) {
+    fn show_defaults_view(&self, ctx: &egui::Context, tip: &mut TipUiCtx<'_>) {
         let Some(DefaultsTip::View {
             action_type,
             action,
@@ -374,43 +409,35 @@ impl AddActionPicker {
             ctx,
             egui::Id::new(("action_default_view", action_type.as_str())),
             action,
-            &mut CatalogPaint {
-                catalog,
-                icons,
-                previews,
-            },
-            VarTheme {
-                known_vars,
-                is_dark,
-            },
+            &mut tip.paint,
+            tip.theme,
         );
     }
 
     /// Returns true when defaults were saved this frame.
-    #[allow(clippy::too_many_arguments)]
     fn show_defaults_edit(
         &mut self,
         ctx: &egui::Context,
-        catalog: &ProgramCatalog,
-        icons: &mut IconCache,
-        previews: &mut PreviewTooltipCache,
+        tip: &mut TipUiCtx<'_>,
         macros: &[(String, Vec<String>)],
-        known_vars: &KnownVariableNames,
-        key_record: &mut KeyRecordUi,
-        hotkey_record: &mut HotkeyRecordUi,
-        macro_hotkeys: &MacroHotkeyBridge,
-        screen_click: &ScreenClickBridge,
-        compact_program_headers: bool,
     ) -> bool {
         if !matches!(&self.tip, Some(DefaultsTip::Edit { .. })) {
             return false;
         }
 
+        let TipUiCtx {
+            paint,
+            theme,
+            bridges,
+            compact_program_headers,
+            pending_scale,
+        } = tip;
+
         // Escape: close nested pickers first, then the edit tip.
         // Skip while key / chord / screen recording.
-        if !key_record.is_open()
-            && !hotkey_record.is_open()
-            && !screen_click.is_armed()
+        if !bridges.key_record.is_open()
+            && !bridges.hotkey_record.is_open()
+            && !bridges.screen_click.is_armed()
             && ctx.input(|i| i.key_pressed(Key::Escape))
         {
             if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
@@ -434,20 +461,17 @@ impl AddActionPicker {
             _ => return false,
         };
         let label = action_type_label(&type_key);
-        let is_dark = ctx.global_style().visuals.dark_mode;
+        let is_dark = theme.is_dark;
         let pastel = tree_chrome::rgba_pub(action_pastel_color(&type_key, is_dark));
 
         if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
             let result = pickers::show_active_picker(
                 ctx,
                 &mut edit.picker,
-                &mut CatalogPaint {
-                    catalog,
-                    icons,
-                    previews,
-                },
+                paint,
                 macros,
-                compact_program_headers,
+                *compact_program_headers,
+                *pending_scale,
             );
             apply_picker_result(&mut edit.draft, result);
         }
@@ -462,9 +486,9 @@ impl AddActionPicker {
         let save_enabled =
             matches!(&self.tip, Some(DefaultsTip::Edit(edit)) if edit.save_enabled());
 
+        let edit_id = egui::Id::new(("action_default_edit", type_key.as_str()));
         crate::widgets::fit_dialog_window(
             egui::Window::new(format!("Default: {label}"))
-                .id(egui::Id::new(("action_default_edit", type_key.as_str())))
                 .open(&mut open)
                 .title_bar(true)
                 .collapsible(false)
@@ -473,6 +497,8 @@ impl AddActionPicker {
                 .default_size([340.0, 360.0])
                 .min_size([220.0, 120.0]),
             ctx,
+            edit_id,
+            *pending_scale,
         )
         .show(ctx, |ui| {
             match paint_action_edit_header(
@@ -488,33 +514,29 @@ impl AddActionPicker {
                 SaveCancel::None => {}
             }
             let list_h = pickers::popup_scroll_max_height(ui, 0.0);
-            pickers::scroll_vertical()
-                .auto_shrink([false, false])
-                .max_height(list_h)
-                .show(ui, |ui| {
-                    if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
-                        let mut fields = EditFieldsCtx {
-                            paint: CatalogPaint {
-                                catalog,
-                                icons,
-                                previews,
-                            },
-                            bridges: RecordBridges {
-                                key_record,
-                                hotkey_record,
-                                macro_hotkeys,
-                                screen_click,
-                            },
-                            theme: VarTheme {
-                                known_vars,
-                                is_dark,
-                            },
-                            macros,
-                            active_macro: None,
-                        };
-                        paint_edit_fields(ui, &mut edit.draft, &mut edit.picker, &mut fields);
-                    }
-                });
+            let list_w = crate::widgets::visible_width(ui);
+            pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+                ui.set_max_width(list_w);
+                if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
+                    let mut fields = EditFieldsCtx {
+                        paint: CatalogPaint {
+                            catalog: paint.catalog,
+                            icons: paint.icons,
+                            previews: paint.previews,
+                        },
+                        bridges: RecordBridges {
+                            key_record: bridges.key_record,
+                            hotkey_record: bridges.hotkey_record,
+                            macro_hotkeys: bridges.macro_hotkeys,
+                            screen_click: bridges.screen_click,
+                        },
+                        theme: *theme,
+                        macros,
+                        active_macro: None,
+                    };
+                    paint_edit_fields(ui, &mut edit.draft, &mut edit.picker, &mut fields);
+                }
+            });
         });
 
         if !open || cancel {

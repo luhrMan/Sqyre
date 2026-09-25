@@ -2,7 +2,9 @@ use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionCtx, Det
 use super::ocr::ocr_target_matched;
 use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
-use crate::test_support::{RecordingBackend, RecordingCapturer, SEARCH_FIXED_AREA};
+use crate::test_support::{
+    FixedCollection, FixedResolver, RecordingBackend, RecordingCapturer, SEARCH_FIXED_AREA,
+};
 use crate::{lines_for, SharedActionLog};
 use image::{Rgba, RgbaImage};
 use sqyre_domain::{
@@ -239,6 +241,13 @@ impl IconStore for MapIcons {
     fn item_meta(&self, target: &str) -> Option<ItemMeta> {
         self.meta.get(target).cloned()
     }
+    fn catalog_item_refs(&self) -> Vec<(String, ItemMeta)> {
+        let mut keys: Vec<_> = self.meta.keys().cloned().collect();
+        keys.sort();
+        keys.into_iter()
+            .filter_map(|k| self.meta.get(&k).cloned().map(|m| (k, m)))
+            .collect()
+    }
 }
 
 fn named(name: &str, x: i32, y: i32, ox: i32, oy: i32) -> DetectionHit {
@@ -320,6 +329,105 @@ fn ocr_empty_target_always_matches() {
 }
 
 #[test]
+fn image_search_expands_target_tags_at_runtime() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let sword_path = dir.path().join("sword.png");
+        let potion_path = dir.path().join("potion.png");
+        let sword = patterned_rgba(10, 10, 40);
+        let potion = patterned_rgba(10, 10, 200);
+        sword.save(&sword_path).unwrap();
+        potion.save(&potion_path).unwrap();
+
+        let mut search = RgbaImage::from_pixel(50, 50, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut search, &sword, 12, 14);
+
+        let icons = MapIcons {
+            paths: HashMap::from([
+                ("Game~Sword".into(), vec![sword_path]),
+                ("Game~Potion".into(), vec![potion_path]),
+            ]),
+            masks: HashMap::new(),
+            meta: HashMap::from([
+                (
+                    "Game~Sword".into(),
+                    ItemMeta {
+                        name: "Sword".into(),
+                        stack_max: 1,
+                        cols: 1,
+                        rows: 1,
+                        tags: vec!["weapon".into()],
+                    },
+                ),
+                (
+                    "Game~Potion".into(),
+                    ItemMeta {
+                        name: "Potion".into(),
+                        stack_max: 20,
+                        cols: 1,
+                        rows: 1,
+                        tags: vec!["heal".into()],
+                    },
+                ),
+            ]),
+        };
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(search),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let resolver = SEARCH_FIXED_AREA;
+        let close_matches = 8;
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.keyboard_delay = 0;
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "by-tag".into(),
+                targets: vec![],
+                target_tags: vec!["+weapon".into()],
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: sqyre_domain::DetectionBranch {
+                    subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                        time: ScalarValue::Int(3),
+                    })],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(close_matches),
+        )
+        .unwrap();
+
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:3"),
+            "expected tag-expanded Sword match: {:?}",
+            backend.log
+        );
+        assert_eq!(
+            macro_.variables.get("ItemName").map(|v| v.as_display()),
+            Some("Sword".into())
+        );
+    });
+}
+
+#[test]
 fn image_search_caches_blurred_templates() {
     sqyre_vision::with_search_cache_test_lock(|| {
         sqyre_vision::reset_search_cache_for_testing();
@@ -351,10 +459,14 @@ fn image_search_caches_blurred_templates() {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.99,
                 blur: 5,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: Default::default(),
             },
         }]);
@@ -637,6 +749,7 @@ fn image_search_no_find_runs_branch() {
                 stack_max: 99,
                 cols: 2,
                 rows: 2,
+                tags: Vec::new(),
             },
         )]),
     };
@@ -654,10 +767,14 @@ fn image_search_no_find_runs_branch() {
         kind: ActionKind::ImageSearch {
             name: "find".into(),
             targets: vec!["Prog~Item".into()],
+            target_tags: Vec::new(),
             search_area: CoordinateRef("Prog~Box".into()),
             tolerance: 0.99,
             blur: 0,
             match_method: Default::default(),
+            sort_by: Default::default(),
+            sort_then: Default::default(),
+            tag_priority: Vec::new(),
             detection: sqyre_domain::DetectionBranch {
                 else_actions: vec![sqyre_domain::test_action(ActionKind::Wait {
                     time: ScalarValue::Int(13),
@@ -1175,8 +1292,8 @@ fn find_pixel_wait_until_found_stops_when_flag_set() {
         fn key_up(&mut self, key: &str) -> Result<(), crate::backends::AutomationError> {
             self.inner.key_up(key)
         }
-        fn type_char(&mut self, ch: char) {
-            self.inner.type_char(ch);
+        fn type_char(&mut self, ch: char) -> Result<(), crate::backends::AutomationError> {
+            self.inner.type_char(ch)
         }
         fn write_clipboard(&mut self, s: &str) -> Result<(), crate::backends::AutomationError> {
             self.inner.write_clipboard(s)
@@ -1396,10 +1513,14 @@ fn image_search_wait_until_found_retries_then_succeeds() {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: wait_until_found(5, 1),
                     coords: CoordinateOutputs {
@@ -1449,6 +1570,120 @@ fn image_search_wait_until_found_retries_then_succeeds() {
 }
 
 #[test]
+fn image_search_wait_until_found_stops_when_flag_set() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
+
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("tmpl.png");
+        patterned_rgba(10, 10, 11).save(&tmpl_path).unwrap();
+        let miss = RgbaImage::from_pixel(50, 50, Rgba([0, 255, 0, 255]));
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::new(),
+        };
+        let stop = Arc::new(AtomicBool::new(false));
+        let stop_for_backend = Arc::clone(&stop);
+
+        struct StopOnSleep {
+            inner: RecordingBackend,
+            stop: Arc<AtomicBool>,
+            sleeps: usize,
+        }
+        impl crate::backends::AutomationBackend for StopOnSleep {
+            fn milli_sleep(&mut self, ms: i32) {
+                self.inner.milli_sleep(ms);
+                self.sleeps += 1;
+                if self.sleeps >= 1 {
+                    self.stop.store(true, Ordering::SeqCst);
+                }
+            }
+            fn move_to(&mut self, x: i32, y: i32, opts: crate::backends::MoveOptions) {
+                self.inner.move_to(x, y, opts);
+            }
+            fn click(
+                &mut self,
+                button: &str,
+                down: bool,
+            ) -> Result<(), crate::backends::AutomationError> {
+                self.inner.click(button, down)
+            }
+            fn scroll(&mut self, up: bool) -> Result<(), crate::backends::AutomationError> {
+                self.inner.scroll(up)
+            }
+            fn key_down(&mut self, key: &str) -> Result<(), crate::backends::AutomationError> {
+                self.inner.key_down(key)
+            }
+            fn key_up(&mut self, key: &str) -> Result<(), crate::backends::AutomationError> {
+                self.inner.key_up(key)
+            }
+            fn type_char(&mut self, ch: char) -> Result<(), crate::backends::AutomationError> {
+                self.inner.type_char(ch)
+            }
+            fn write_clipboard(&mut self, s: &str) -> Result<(), crate::backends::AutomationError> {
+                self.inner.write_clipboard(s)
+            }
+        }
+
+        let mut backend = StopOnSleep {
+            inner: RecordingBackend::default(),
+            stop: stop_for_backend,
+            sleeps: 0,
+        };
+        let mut capturer = RecordingCapturer {
+            next: Some(miss),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let resolver = SEARCH_FIXED_AREA;
+        let mut macro_ = quiet_macro(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "find".into(),
+                targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: sqyre_domain::DetectionBranch {
+                    wait: wait_until_found(30, 50),
+                    subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
+                        time: ScalarValue::Int(3),
+                    })],
+                    ..Default::default()
+                },
+            },
+        }]);
+
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .stop_flag(stop.as_ref()),
+        )
+        .unwrap();
+
+        assert!(stop.load(Ordering::SeqCst));
+        assert!(backend.sleeps >= 1);
+        assert!(
+            !backend.inner.log.iter().any(|e| e == "sleep:3"),
+            "stop should abort before running find children: {:?}",
+            backend.inner.log
+        );
+    });
+}
+
+#[test]
 fn nested_image_search_after_click_captures_fresh_screen() {
     sqyre_vision::with_search_cache_test_lock(|| {
         sqyre_vision::reset_search_cache_for_testing();
@@ -1485,10 +1720,14 @@ fn nested_image_search_after_click_captures_fresh_screen() {
             kind: ActionKind::ImageSearch {
                 name: "parent".into(),
                 targets: vec!["Prog~Parent".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     subactions: vec![
                         Action {
@@ -1503,10 +1742,14 @@ fn nested_image_search_after_click_captures_fresh_screen() {
                             kind: ActionKind::ImageSearch {
                                 name: "nested".into(),
                                 targets: vec!["Prog~Nested".into()],
+                                target_tags: Vec::new(),
                                 search_area: CoordinateRef("Prog~Box".into()),
                                 tolerance: 0.7,
                                 blur: 0,
                                 match_method: Default::default(),
+                                sort_by: Default::default(),
+                                sort_then: Default::default(),
+                                tag_priority: Vec::new(),
                                 detection: sqyre_domain::DetectionBranch {
                                     coords: CoordinateOutputs {
                                         output_x_variable: "nestedX".into(),
@@ -1591,20 +1834,28 @@ fn nested_image_search_without_input_reuses_cache() {
             kind: ActionKind::ImageSearch {
                 name: "parent".into(),
                 targets: vec!["Prog~Parent".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     subactions: vec![Action {
                         id: ActionId::new(),
                         kind: ActionKind::ImageSearch {
                             name: "nested".into(),
                             targets: vec!["Prog~Nested".into()],
+                            target_tags: Vec::new(),
                             search_area: CoordinateRef("Prog~Box".into()),
                             tolerance: 0.7,
                             blur: 0,
                             match_method: Default::default(),
+                            sort_by: Default::default(),
+                            sort_then: Default::default(),
+                            tag_priority: Vec::new(),
                             detection: sqyre_domain::DetectionBranch {
                                 coords: CoordinateOutputs {
                                     output_x_variable: "nestedX".into(),
@@ -1690,10 +1941,14 @@ fn image_search_wait_until_found_runs_final_search_on_timeout() {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: wait_until_found(0.15, 30),
                     coords: CoordinateOutputs {
@@ -1772,10 +2027,14 @@ fn image_search_repeat_while_found_then_stops() {
             kind: ActionKind::ImageSearch {
                 name: "loop".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: while_found(1, 5),
                     subactions: vec![sqyre_domain::test_action(ActionKind::Wait {
@@ -1835,6 +2094,7 @@ fn image_search_multi_variant_matches_either_template() {
                     stack_max: 3,
                     cols: 1,
                     rows: 1,
+                    tags: Vec::new(),
                 },
             )]),
         };
@@ -1856,10 +2116,14 @@ fn image_search_multi_variant_matches_either_template() {
             kind: ActionKind::ImageSearch {
                 name: "multi".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     coords: CoordinateOutputs {
                         output_x_variable: "foundX".into(),
@@ -1948,10 +2212,14 @@ fn image_search_uses_mask_path_when_present() {
             kind: ActionKind::ImageSearch {
                 name: "masked".into(),
                 targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.7,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     coords: CoordinateOutputs {
                         output_x_variable: "foundX".into(),
@@ -2179,4 +2447,739 @@ fn run_matches_clears_coords_on_miss() {
     run_matches(&mut exec, &ctx, &[], &mut macro_).unwrap();
     assert!(macro_.variables.get("foundX").is_none());
     assert!(macro_.variables.get("foundY").is_none());
+}
+
+fn bag_2x2_resolver() -> FixedResolver {
+    FixedResolver {
+        point: (0, 0),
+        area: (0, 0, 40, 40),
+        grid: None,
+        collections: Some(HashMap::from([(
+            "bag".into(),
+            FixedCollection {
+                rows: 2,
+                cols: 2,
+                bounds: (0, 0, 40, 40),
+            },
+        )])),
+        atlas_members: None,
+    }
+}
+
+#[test]
+fn image_search_collection_matches_inside_cell_not_across() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("Item.png");
+        let tmpl = patterned_rgba(12, 12, 21);
+        tmpl.save(&tmpl_path).unwrap();
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::from([(
+                "Prog~Item".into(),
+                ItemMeta {
+                    name: "Item".into(),
+                    stack_max: 1,
+                    cols: 1,
+                    rows: 1,
+                    tags: Vec::new(),
+                },
+            )]),
+        };
+        let resolver = bag_2x2_resolver();
+        let search_area = CoordinateRef::collection("Demo", "bag", 1, 1, 2, 2);
+
+        let mut in_cell = RgbaImage::from_pixel(40, 40, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut in_cell, &tmpl, 4, 4);
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(in_cell),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let logger = SharedActionLog::new();
+        let search_id = ActionId::new();
+        let mut macro_ = quiet_macro(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "bag".into(),
+                targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
+                search_area: search_area.clone(),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![wait_child(4)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .logger(&logger)
+                .close_matches_distance(8),
+        )
+        .unwrap();
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:4"),
+            "in-cell 1x1 item should match: {:?}",
+            backend.log
+        );
+        let Some(ScalarValue::Int(fx)) = macro_.variables.get("foundX").cloned() else {
+            panic!(
+                "expected foundX int, got {:?}",
+                macro_.variables.get("foundX")
+            );
+        };
+        let Some(ScalarValue::Int(fy)) = macro_.variables.get("foundY").cloned() else {
+            panic!(
+                "expected foundY int, got {:?}",
+                macro_.variables.get("foundY")
+            );
+        };
+        assert!(
+            (0..20).contains(&fx) && (0..20).contains(&fy),
+            "expected hit in cell 1,1, got ({fx},{fy})"
+        );
+        let lines = lines_for(&logger.entries_for(search_id));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("footprint 1x1 → 4 placement(s)")),
+            "{lines:?}"
+        );
+
+        sqyre_vision::reset_search_cache_for_testing();
+        let mut straddle = RgbaImage::from_pixel(40, 40, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut straddle, &tmpl, 14, 4);
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(straddle),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let mut macro_ = quiet_macro(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "bag".into(),
+                targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
+                search_area,
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![wait_child(4)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .close_matches_distance(8),
+        )
+        .unwrap();
+        assert!(
+            macro_.variables.get("foundX").is_none(),
+            "straddling template should not match a 1x1 cell search"
+        );
+        assert_did_not_sleep(&backend, 4);
+    });
+}
+
+#[test]
+fn image_search_collection_uses_item_grid_footprint() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let tmpl_path = dir.path().join("Item.png");
+        // Larger than one 20×20 cell; fits the 2×2 (40×40) footprint.
+        let tmpl = patterned_rgba(28, 28, 33);
+        tmpl.save(&tmpl_path).unwrap();
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![tmpl_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::from([(
+                "Prog~Item".into(),
+                ItemMeta {
+                    name: "Item".into(),
+                    stack_max: 1,
+                    cols: 2,
+                    rows: 2,
+                    tags: Vec::new(),
+                },
+            )]),
+        };
+        let mut screen = RgbaImage::from_pixel(40, 40, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut screen, &tmpl, 6, 6);
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(screen),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let resolver = bag_2x2_resolver();
+        let logger = SharedActionLog::new();
+        let search_id = ActionId::new();
+        let mut macro_ = quiet_macro(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "bag".into(),
+                targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
+                search_area: CoordinateRef::collection("Demo", "bag", 1, 1, 2, 2),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![wait_child(6)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .logger(&logger)
+                .close_matches_distance(8),
+        )
+        .unwrap();
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:6"),
+            "2x2 item should match its 2x2 footprint: {:?}",
+            backend.log
+        );
+        let lines = lines_for(&logger.entries_for(search_id));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("footprint 2x2 → 1 placement(s)")),
+            "{lines:?}"
+        );
+        let Some(ScalarValue::Int(fx)) = macro_.variables.get("foundX").cloned() else {
+            panic!(
+                "expected foundX int, got {:?}",
+                macro_.variables.get("foundX")
+            );
+        };
+        let Some(ScalarValue::Int(fy)) = macro_.variables.get("foundY").cloned() else {
+            panic!(
+                "expected foundY int, got {:?}",
+                macro_.variables.get("foundY")
+            );
+        };
+        assert!(
+            (0..40).contains(&fx) && (0..40).contains(&fy),
+            "expected hit in 2x2 footprint, got ({fx},{fy})"
+        );
+    });
+}
+
+#[test]
+fn image_search_collection_prunes_occupied_cells() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let path_a = dir.path().join("ItemA.png");
+        let path_b = dir.path().join("ItemB.png");
+        // Identical templates: without pruning both would claim the same cell.
+        let tmpl = patterned_rgba(12, 12, 44);
+        tmpl.save(&path_a).unwrap();
+        tmpl.save(&path_b).unwrap();
+
+        let icons = MapIcons {
+            paths: HashMap::from([
+                ("Prog~ItemA".into(), vec![path_a]),
+                ("Prog~ItemB".into(), vec![path_b]),
+            ]),
+            masks: HashMap::new(),
+            meta: HashMap::from([
+                (
+                    "Prog~ItemA".into(),
+                    ItemMeta {
+                        name: "ItemA".into(),
+                        stack_max: 1,
+                        cols: 1,
+                        rows: 1,
+                        tags: Vec::new(),
+                    },
+                ),
+                (
+                    "Prog~ItemB".into(),
+                    ItemMeta {
+                        name: "ItemB".into(),
+                        stack_max: 1,
+                        cols: 1,
+                        rows: 1,
+                        tags: Vec::new(),
+                    },
+                ),
+            ]),
+        };
+        let mut screen = RgbaImage::from_pixel(40, 40, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut screen, &tmpl, 4, 4); // cell 1,1
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(screen),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let resolver = bag_2x2_resolver();
+        let logger = SharedActionLog::new();
+        let search_id = ActionId::new();
+        let mut macro_ = quiet_macro(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "bag".into(),
+                targets: vec!["Prog~ItemA".into(), "Prog~ItemB".into()],
+                target_tags: Vec::new(),
+                search_area: CoordinateRef::collection("Demo", "bag", 1, 1, 2, 2),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![wait_child(3)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .logger(&logger)
+                .close_matches_distance(8),
+        )
+        .unwrap();
+        // Only one occupant: first target claims the cell; second is pruned.
+        assert_eq!(
+            count_sleeps(&backend, 3),
+            1,
+            "expected a single hit after cell claim: {:?}",
+            backend.log
+        );
+        let lines = lines_for(&logger.entries_for(search_id));
+        assert!(
+            lines.iter().any(|l| l.contains("Prog~ItemB")
+                && l.contains("skipped")
+                && l.contains("occupied")),
+            "expected occupied-cell prune log for ItemB: {lines:?}"
+        );
+    });
+}
+
+#[test]
+fn image_search_collection_respects_manual_search_order() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let path_a = dir.path().join("ItemA.png");
+        let path_b = dir.path().join("ItemB.png");
+        let tmpl = patterned_rgba(12, 12, 44);
+        tmpl.save(&path_a).unwrap();
+        tmpl.save(&path_b).unwrap();
+
+        let icons = MapIcons {
+            paths: HashMap::from([
+                ("Prog~ItemA".into(), vec![path_a]),
+                ("Prog~ItemB".into(), vec![path_b]),
+            ]),
+            masks: HashMap::new(),
+            meta: HashMap::from([
+                (
+                    "Prog~ItemA".into(),
+                    ItemMeta {
+                        name: "ItemA".into(),
+                        stack_max: 1,
+                        cols: 1,
+                        rows: 1,
+                        tags: Vec::new(),
+                    },
+                ),
+                (
+                    "Prog~ItemB".into(),
+                    ItemMeta {
+                        name: "ItemB".into(),
+                        stack_max: 1,
+                        cols: 1,
+                        rows: 1,
+                        tags: Vec::new(),
+                    },
+                ),
+            ]),
+        };
+        let mut screen = RgbaImage::from_pixel(40, 40, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut screen, &tmpl, 4, 4);
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(screen),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let resolver = bag_2x2_resolver();
+        let logger = SharedActionLog::new();
+        let search_id = ActionId::new();
+        let mut macro_ = quiet_macro(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "bag".into(),
+                // Manual order: B before A (NameAsc would be A then B).
+                targets: vec!["Prog~ItemB".into(), "Prog~ItemA".into()],
+                target_tags: Vec::new(),
+                search_area: CoordinateRef::collection("Demo", "bag", 1, 1, 2, 2),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: sqyre_domain::ItemSortBy::Manual,
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![wait_child(3)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .logger(&logger)
+                .close_matches_distance(8),
+        )
+        .unwrap();
+        assert_eq!(count_sleeps(&backend, 3), 1, "{:?}", backend.log);
+        let lines = lines_for(&logger.entries_for(search_id));
+        assert!(
+            lines.iter().any(|l| l.contains("Prog~ItemA")
+                && l.contains("skipped")
+                && l.contains("occupied")),
+            "Manual order should let ItemB claim first: {lines:?}"
+        );
+    });
+}
+
+#[test]
+fn image_search_collection_variant_early_exit_is_per_placement() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let default_path = dir.path().join("Item.png");
+        let alt_path = dir.path().join("Item~Alt.png");
+        let default_tmpl = patterned_rgba(12, 12, 11);
+        let alt_tmpl = patterned_rgba(12, 12, 77);
+        default_tmpl.save(&default_path).unwrap();
+        alt_tmpl.save(&alt_path).unwrap();
+
+        let icons = MapIcons {
+            // Default tried first; Alt only needed when Default misses.
+            paths: HashMap::from([(
+                "Prog~Item".into(),
+                vec![default_path.clone(), alt_path.clone()],
+            )]),
+            masks: HashMap::new(),
+            meta: HashMap::from([(
+                "Prog~Item".into(),
+                ItemMeta {
+                    name: "Item".into(),
+                    stack_max: 1,
+                    cols: 1,
+                    rows: 1,
+                    tags: Vec::new(),
+                },
+            )]),
+        };
+        // Cell 1,1 = Default; cell 2,2 = Alt. Early-exit must not be global:
+        // finding Default in one cell must still allow Alt in another.
+        let mut screen = RgbaImage::from_pixel(40, 40, Rgba([20, 20, 20, 255]));
+        stamp_rgba(&mut screen, &default_tmpl, 4, 4);
+        stamp_rgba(&mut screen, &alt_tmpl, 24, 24);
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(screen),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let resolver = bag_2x2_resolver();
+        let logger = SharedActionLog::new();
+        let search_id = ActionId::new();
+        let mut macro_ = quiet_macro(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "bag".into(),
+                targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
+                search_area: CoordinateRef::collection("Demo", "bag", 1, 1, 2, 2),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![wait_child(5)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&resolver)
+                .icons(&icons)
+                .logger(&logger)
+                .close_matches_distance(8),
+        )
+        .unwrap();
+        assert_eq!(
+            count_sleeps(&backend, 5),
+            2,
+            "expected Default and Alt hits in separate cells: {:?}",
+            backend.log
+        );
+        let lines = lines_for(&logger.entries_for(search_id));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("Prog~Item~Alt") && l.contains("match")),
+            "Alt must still be searched on other cells: {lines:?}"
+        );
+    });
+}
+
+#[test]
+fn image_search_variant_early_exit_skips_later_variants_after_hit() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let default_path = dir.path().join("Item.png");
+        let alt_path = dir.path().join("Item~Alt.png");
+        let default_tmpl = patterned_rgba(10, 10, 11);
+        let alt_tmpl = patterned_rgba(10, 10, 90);
+        default_tmpl.save(&default_path).unwrap();
+        alt_tmpl.save(&alt_path).unwrap();
+
+        let mut search = RgbaImage::from_pixel(50, 50, Rgba([40, 40, 40, 255]));
+        stamp_rgba(&mut search, &default_tmpl, 15, 18);
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![default_path, alt_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::from([(
+                "Prog~Item".into(),
+                ItemMeta {
+                    name: "Item".into(),
+                    stack_max: 1,
+                    cols: 1,
+                    rows: 1,
+                    tags: Vec::new(),
+                },
+            )]),
+        };
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(search),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let logger = SharedActionLog::new();
+        let search_id = ActionId::new();
+        let mut macro_ = quiet_macro(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "multi".into(),
+                targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![wait_child(2)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&SEARCH_FIXED_AREA)
+                .icons(&icons)
+                .logger(&logger)
+                .close_matches_distance(8),
+        )
+        .unwrap();
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:2"),
+            "Default variant should match: {:?}",
+            backend.log
+        );
+        let lines = lines_for(&logger.entries_for(search_id));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("Prog~Item") && l.contains("match")),
+            "{lines:?}"
+        );
+        assert!(
+            lines.iter().all(|l| !l.contains("Prog~Item~Alt")),
+            "Alt must not run after Default hits: {lines:?}"
+        );
+    });
+}
+
+#[test]
+fn image_search_variant_exit_early_disabled_tries_all_variants() {
+    sqyre_vision::with_search_cache_test_lock(|| {
+        sqyre_vision::reset_search_cache_for_testing();
+        let dir = tempfile::tempdir().unwrap();
+        let default_path = dir.path().join("Item.png");
+        let alt_path = dir.path().join("Item~Alt.png");
+        let default_tmpl = patterned_rgba(10, 10, 11);
+        let alt_tmpl = patterned_rgba(10, 10, 90);
+        default_tmpl.save(&default_path).unwrap();
+        alt_tmpl.save(&alt_path).unwrap();
+
+        let mut search = RgbaImage::from_pixel(50, 50, Rgba([40, 40, 40, 255]));
+        stamp_rgba(&mut search, &default_tmpl, 15, 18);
+
+        let icons = MapIcons {
+            paths: HashMap::from([("Prog~Item".into(), vec![default_path, alt_path])]),
+            masks: HashMap::new(),
+            meta: HashMap::from([(
+                "Prog~Item".into(),
+                ItemMeta {
+                    name: "Item".into(),
+                    stack_max: 1,
+                    cols: 1,
+                    rows: 1,
+                    tags: Vec::new(),
+                },
+            )]),
+        };
+        let mut backend = RecordingBackend::default();
+        let mut capturer = RecordingCapturer {
+            next: Some(search),
+            bounds: full_desktop(),
+            ..Default::default()
+        };
+        let logger = SharedActionLog::new();
+        let search_id = ActionId::new();
+        let mut macro_ = quiet_macro(vec![Action {
+            id: search_id,
+            kind: ActionKind::ImageSearch {
+                name: "multi".into(),
+                targets: vec!["Prog~Item".into()],
+                target_tags: Vec::new(),
+                search_area: CoordinateRef("Prog~Box".into()),
+                tolerance: 0.7,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: sqyre_domain::DetectionBranch {
+                    coords: CoordinateOutputs {
+                        output_x_variable: "foundX".into(),
+                        output_y_variable: "foundY".into(),
+                    },
+                    subactions: vec![wait_child(2)],
+                    ..Default::default()
+                },
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps::new(&mut backend)
+                .capturer(&mut capturer)
+                .resolver(&SEARCH_FIXED_AREA)
+                .icons(&icons)
+                .logger(&logger)
+                .close_matches_distance(8)
+                .variant_exit_early(false),
+        )
+        .unwrap();
+        assert!(
+            backend.log.iter().any(|e| e == "sleep:2"),
+            "Default variant should match: {:?}",
+            backend.log
+        );
+        let lines = lines_for(&logger.entries_for(search_id));
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("Prog~Item") && l.contains("match")),
+            "{lines:?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|l| l.contains("Prog~Item~Alt") && l.contains("matching")),
+            "Alt must still be tried when exit-early is off: {lines:?}"
+        );
+    });
 }

@@ -9,12 +9,14 @@ mod types;
 mod util;
 
 pub use seed_general::{
-    ensure_general_program, MonitorRect, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE, TEMPORARY_PROGRAM,
+    ensure_general_program, CELL_BOUNDS, CELL_COORDINATES, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
+    TEMPORARY_PROGRAM,
 };
 pub use types::{
-    ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem, ProgramMask,
-    ProgramPoint, ProgramSearchArea,
+    MonitorRect, ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem,
+    ProgramMask, ProgramPoint, ProgramSearchArea,
 };
+pub use util::{absolute_area_to_relative, absolute_point_to_relative, monitor_slot_for_point};
 
 use crate::fs_name::{confined_join_or_invalid, is_safe_fs_entity_name};
 use crate::{images_path, PersistError, Result};
@@ -82,6 +84,16 @@ impl ProgramCatalog {
         }
     }
 
+    /// Live layout used to turn slot-relative coords into absolute desktop pixels.
+    pub fn set_monitor_rects(&mut self, rects: Vec<MonitorRect>) {
+        self.monitor_rects = rects;
+        self.bump_generation();
+    }
+
+    pub fn monitor_rects(&self) -> &[MonitorRect] {
+        &self.monitor_rects
+    }
+
     /// Monotonic counter bumped when programs/entities change (or resolution key).
     pub fn generation(&self) -> u64 {
         self.generation
@@ -111,6 +123,32 @@ impl ProgramCatalog {
 
     pub fn icons_dir(&self, program: &str) -> PathBuf {
         confined_join_or_invalid(&self.images_root().join("icons"), program)
+    }
+
+    /// Directory for saved Running-program (OS process) icons.
+    pub fn process_icons_dir(&self) -> PathBuf {
+        self.images_root().join("process")
+    }
+
+    /// PNG path for a catalog program's persisted process icon (`images/process/{program}.png`).
+    ///
+    /// Written when a Running program is bound so the icon still shows when that app is closed.
+    pub fn process_icon_path(&self, program: &str) -> PathBuf {
+        let dir = self.process_icons_dir();
+        if is_safe_fs_entity_name(program) {
+            dir.join(format!("{program}.png"))
+        } else {
+            dir.join("__invalid__.png")
+        }
+    }
+
+    fn screen_cap_dir(&self) -> PathBuf {
+        self.images_root().join("ScreenCap")
+    }
+
+    /// `images/ScreenCap/trash/{program}` — deleted item icons land here.
+    fn screen_cap_trash_dir(&self, program: &str) -> PathBuf {
+        confined_join_or_invalid(&self.screen_cap_dir().join("trash"), program)
     }
 
     pub fn masks_dir(&self, program: &str) -> PathBuf {
@@ -258,6 +296,7 @@ Game:
             "Game",
             ProgramPoint {
                 name: "Spawn".into(),
+                monitor: 1,
                 x: ScalarValue::Int(10),
                 y: ScalarValue::Int(20),
             },
@@ -438,12 +477,12 @@ Game:
         let (x, y) = cat
             .resolve_point(&CoordinateRef("Game~Spot".into()), &m)
             .unwrap();
-        // 192 * 2560/1920 = 256, 108 * 1440/1080 = 144
-        assert_eq!((x, y), (256, 144));
+        // Monitor-relative: no primary WxH remap — only DPI (scale 1.0 → unchanged).
+        assert_eq!((x, y), (192, 108));
         let sa = cat
             .resolve_search_area(&CoordinateRef("Game~Box".into()), &m)
             .unwrap();
-        assert_eq!(sa, (0, 0, 256, 144));
+        assert_eq!(sa, (0, 0, 192, 108));
     }
 
     #[test]
@@ -521,8 +560,8 @@ Game:
         let (x, y) = cat
             .resolve_point(&CoordinateRef("Game~Spot".into()), &m)
             .unwrap();
-        // 100 * (2560/1920) * 1.5 = 200, 50 * (1440/1080) * 1.5 = 100
-        assert_eq!((x, y), (200, 100));
+        // Monitor-relative: DPI only — 100 * 1.5 = 150 (no WxH term).
+        assert_eq!((x, y), (150, 75));
     }
 
     #[test]
@@ -560,6 +599,7 @@ Game:
             "Demo",
             ProgramPoint {
                 name: "A".into(),
+                monitor: 1,
                 x: ScalarValue::Int(1),
                 y: ScalarValue::Int(2),
             },
@@ -640,6 +680,83 @@ Game:
     }
 
     #[test]
+    fn delete_item_moves_icons_to_screencap_trash() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let icons = images.join("icons").join("Alpha");
+        std::fs::create_dir_all(&icons).unwrap();
+        std::fs::write(icons.join("Potion.png"), b"legacy").unwrap();
+        std::fs::write(icons.join("Potion~Original.png"), b"orig").unwrap();
+        std::fs::write(icons.join("Potion~Alt.png"), b"alt").unwrap();
+        std::fs::write(icons.join("Other~Original.png"), b"keep").unwrap();
+
+        cat.delete_item("Alpha", "Potion").unwrap();
+
+        assert!(!cat.get("Alpha").unwrap().items.contains_key("Potion"));
+        assert!(!icons.join("Potion.png").exists());
+        assert!(!icons.join("Potion~Original.png").exists());
+        assert!(!icons.join("Potion~Alt.png").exists());
+        assert_eq!(
+            std::fs::read(icons.join("Other~Original.png")).unwrap(),
+            b"keep"
+        );
+        let trash = images.join("ScreenCap").join("trash").join("Alpha");
+        assert_eq!(std::fs::read(trash.join("Potion.png")).unwrap(), b"legacy");
+        assert_eq!(
+            std::fs::read(trash.join("Potion~Original.png")).unwrap(),
+            b"orig"
+        );
+        assert_eq!(std::fs::read(trash.join("Potion~Alt.png")).unwrap(), b"alt");
+    }
+
+    #[test]
+    fn delete_item_trashed_icons_do_not_overwrite() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let icons = images.join("icons").join("Alpha");
+        let trash = images.join("ScreenCap").join("trash").join("Alpha");
+        std::fs::create_dir_all(&icons).unwrap();
+        std::fs::create_dir_all(&trash).unwrap();
+        std::fs::write(icons.join("Potion~Original.png"), b"new").unwrap();
+        std::fs::write(trash.join("Potion~Original.png"), b"old").unwrap();
+
+        cat.delete_item("Alpha", "Potion").unwrap();
+
+        assert_eq!(
+            std::fs::read(trash.join("Potion~Original.png")).unwrap(),
+            b"old"
+        );
+        assert_eq!(
+            std::fs::read(trash.join("Potion~Original_2.png")).unwrap(),
+            b"new"
+        );
+    }
+
+    #[test]
     fn clear_points_wipes_all_resolution_buckets() {
         let mut cat = ProgramCatalog::default();
         cat.set_resolution_key("1920x1080");
@@ -648,6 +765,7 @@ Game:
             TEMPORARY_PROGRAM,
             ProgramPoint {
                 name: "A".into(),
+                monitor: 1,
                 x: ScalarValue::Int(1),
                 y: ScalarValue::Int(2),
             },
@@ -658,6 +776,7 @@ Game:
             TEMPORARY_PROGRAM,
             ProgramPoint {
                 name: "B".into(),
+                monitor: 1,
                 x: ScalarValue::Int(3),
                 y: ScalarValue::Int(4),
             },
@@ -675,6 +794,7 @@ Demo:
   name: Demo
   processpath: /opt/demo/bin/DemoGame
   windowtitle: Demo Game
+  tags: [combat, loot]
   items: {}
   coordinates: {}
   masks: {}
@@ -685,13 +805,42 @@ Demo:
         let p = cat.get("Demo").unwrap();
         assert_eq!(p.process_path, "/opt/demo/bin/DemoGame");
         assert_eq!(p.window_title, "Demo Game");
+        assert_eq!(p.tags, vec!["combat".to_string(), "loot".to_string()]);
         cat.set_process_binding("Demo", "/usr/bin/other", "Other")
             .unwrap();
+        cat.set_program_tags("Demo", vec!["raid".into()]).unwrap();
         let encoded = cat.to_yaml_value(&Value::Null);
         let cat2 = ProgramCatalog::from_yaml_value(&encoded).unwrap();
         let p2 = cat2.get("Demo").unwrap();
         assert_eq!(p2.process_path, "/usr/bin/other");
         assert_eq!(p2.window_title, "Other");
+        assert_eq!(p2.tags, vec!["raid".to_string()]);
+    }
+
+    #[test]
+    fn process_icon_file_follows_rename_delete_and_clear() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(dir.path().to_path_buf()));
+        cat.create_program("Demo").unwrap();
+        cat.set_process_binding("Demo", "/usr/bin/demo", "Demo")
+            .unwrap();
+
+        let path = cat.process_icon_path("Demo");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"png").unwrap();
+        assert!(path.is_file());
+
+        cat.rename_program("Demo", "Renamed").unwrap();
+        assert!(!cat.process_icon_path("Demo").exists());
+        assert!(cat.process_icon_path("Renamed").is_file());
+
+        cat.set_process_binding("Renamed", "", "").unwrap();
+        assert!(!cat.process_icon_path("Renamed").exists());
+
+        std::fs::write(cat.process_icon_path("Renamed"), b"png").unwrap();
+        cat.delete_program("Renamed").unwrap();
+        assert!(!cat.process_icon_path("Renamed").exists());
     }
 
     #[test]
@@ -719,6 +868,7 @@ Demo:
                 "Demo",
                 ProgramPoint {
                     name: "A".into(),
+                    monitor: 1,
                     x: ScalarValue::Int(5),
                     y: ScalarValue::Int(6),
                 },
@@ -728,6 +878,7 @@ Demo:
                 "Demo",
                 ProgramSearchArea {
                     name: "Zone".into(),
+                    monitor: 1,
                     left_x: ScalarValue::Int(0),
                     top_y: ScalarValue::Int(0),
                     right_x: ScalarValue::Int(50),

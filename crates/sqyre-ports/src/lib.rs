@@ -14,8 +14,10 @@ pub use action_log::{
     lines_for, ActionLogEntry, ActionLogger, LogImage, SharedActionLog, MAX_ENTRIES_PER_ACTION,
 };
 pub use automation_error::AutomationError;
-pub use capture_error::CaptureError;
-pub use domain_ports::{ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup};
+pub use capture_error::{CaptureError, NotReady};
+pub use domain_ports::{
+    CollectionArea, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup,
+};
 pub use highlight::{
     clear_highlights, highlight_clear, highlight_cursor, highlight_fill, ActionHighlighter,
     HighlightEvent, HighlightKind, HighlightSnapshot, SharedHighlighter,
@@ -44,6 +46,13 @@ pub struct DesktopRect {
     pub y: i32,
     pub w: i32,
     pub h: i32,
+}
+
+/// One display in sorted slot order (`index` is 1-based).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MonitorSlot {
+    pub index: u32,
+    pub rect: DesktopRect,
 }
 
 impl DesktopRect {
@@ -132,7 +141,9 @@ pub trait AutomationBackend {
     fn scroll(&mut self, up: bool) -> Result<(), AutomationError>;
     fn key_down(&mut self, key: &str) -> Result<(), AutomationError>;
     fn key_up(&mut self, key: &str) -> Result<(), AutomationError>;
-    fn type_char(&mut self, ch: char);
+    /// Type one character. Returns `Err` like the other key methods so a failed
+    /// keystroke surfaces instead of silently dropping out of typed text.
+    fn type_char(&mut self, ch: char) -> Result<(), AutomationError>;
     fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError>;
 }
 
@@ -205,11 +216,12 @@ pub trait WindowFocuser: Send + Sync {
     fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError>;
 }
 
-/// Catalog item metadata (name, stack size, grid dimensions) for icon lookups.
+/// Catalog item metadata (name, stack size, grid dimensions, tags) for icon lookups.
 #[derive(Debug, Clone, Default)]
 pub struct ItemMeta {
     pub name: String,
     pub stack_max: i32,
     pub cols: i32,
     pub rows: i32,
+    pub tags: Vec<String>,
 }

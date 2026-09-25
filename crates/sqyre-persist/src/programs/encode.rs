@@ -22,6 +22,10 @@ pub(super) fn encode_program(data: &ProgramData, previous: &Mapping) -> Value {
             Value::String(data.window_title.clone()),
         );
     }
+    if !data.tags.is_empty() {
+        let tags: Vec<Value> = data.tags.iter().map(|t| Value::String(t.clone())).collect();
+        map.insert(Value::String("tags".into()), Value::Sequence(tags));
+    }
 
     let mut items = Mapping::new();
     for (k, item) in &data.items {
@@ -133,6 +137,10 @@ pub(super) fn encode_item(item: &ProgramItem) -> Value {
 pub(super) fn encode_point(pt: &ProgramPoint) -> Value {
     let mut map = Mapping::new();
     map.insert(Value::String("name".into()), Value::String(pt.name.clone()));
+    map.insert(
+        Value::String("monitor".into()),
+        Value::Number(pt.monitor.max(1).into()),
+    );
     map.insert(Value::String("x".into()), pt.x.to_yaml_value());
     map.insert(Value::String("y".into()), pt.y.to_yaml_value());
     Value::Mapping(map)
@@ -141,6 +149,10 @@ pub(super) fn encode_point(pt: &ProgramPoint) -> Value {
 pub(super) fn encode_search_area(sa: &ProgramSearchArea) -> Value {
     let mut map = Mapping::new();
     map.insert(Value::String("name".into()), Value::String(sa.name.clone()));
+    map.insert(
+        Value::String("monitor".into()),
+        Value::Number(sa.monitor.max(1).into()),
+    );
     map.insert(Value::String("leftx".into()), sa.left_x.to_yaml_value());
     map.insert(Value::String("topy".into()), sa.top_y.to_yaml_value());
     map.insert(Value::String("rightx".into()), sa.right_x.to_yaml_value());

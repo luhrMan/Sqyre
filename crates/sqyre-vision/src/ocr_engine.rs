@@ -10,8 +10,19 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 
 /// Official English traineddata used when system / env / workspace data is absent.
+///
+/// Pinned to an immutable tag, not `main`: the download is verified against
+/// [`ENG_TRAINEDDATA_SHA256`], so a moving ref would break OCR the moment
+/// upstream republished the file. Keep this in sync with
+/// `scripts/download-tessdata.sh`.
 const ENG_TRAINEDDATA_URL: &str =
-    "https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata";
+    "https://github.com/tesseract-ocr/tessdata/raw/4.1.0/eng.traineddata";
+/// SHA-256 of `eng.traineddata` at tag 4.1.0. Tesseract loads this as a model,
+/// so an unverified file is arbitrary input to the OCR engine.
+const ENG_TRAINEDDATA_SHA256: &str =
+    "daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047";
+/// Exact size at that tag; lets a truncated transfer fail before hashing.
+const ENG_TRAINEDDATA_BYTES: u64 = 23_466_654;
 /// `eng.traineddata` is ~23 MiB; reject absurd responses.
 const MAX_TESSDATA_BYTES: u64 = 40 * 1024 * 1024;
 const TESSDATA_USER_AGENT: &str = "sqyre";
@@ -182,6 +193,26 @@ fn writable_tessdata_dir() -> PathBuf {
     }
 }
 
+/// Streaming SHA-256 of `path` as lowercase hex.
+fn sha256_hex_file(path: &Path) -> Result<String, PortError> {
+    use sha2::{Digest, Sha256};
+
+    let mut file = File::open(path)
+        .map_err(|e| PortError::Message(format!("OCR: open {}: {e}", path.display())))?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file
+            .read(&mut buf)
+            .map_err(|e| PortError::Message(format!("OCR: read {}: {e}", path.display())))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
 fn download_english_tessdata(dest_dir: &Path) -> Result<(), PortError> {
     fs::create_dir_all(dest_dir)
         .map_err(|e| PortError::Message(format!("OCR: create {}: {e}", dest_dir.display())))?;
@@ -232,11 +263,21 @@ fn download_english_tessdata(dest_dir: &Path) -> Result<(), PortError> {
         .map_err(|e| PortError::Message(format!("OCR: flush {}: {e}", partial.display())))?;
     drop(file);
 
-    if total == 0 {
+    if total != ENG_TRAINEDDATA_BYTES {
         let _ = fs::remove_file(&partial);
-        return Err(PortError::Message(
-            "OCR: eng.traineddata download was empty".into(),
-        ));
+        return Err(PortError::Message(format!(
+            "OCR: eng.traineddata size mismatch: expected {ENG_TRAINEDDATA_BYTES} bytes, got {total}"
+        )));
+    }
+
+    // Verify before install: Tesseract loads this file as a model, so a
+    // tampered CDN / MITM would otherwise feed arbitrary data to the engine.
+    let actual = sha256_hex_file(&partial)?;
+    if actual != ENG_TRAINEDDATA_SHA256 {
+        let _ = fs::remove_file(&partial);
+        return Err(PortError::Message(format!(
+            "OCR: eng.traineddata SHA-256 mismatch: expected {ENG_TRAINEDDATA_SHA256}, got {actual}"
+        )));
     }
 
     if let Err(e) = fs::rename(&partial, &dest) {

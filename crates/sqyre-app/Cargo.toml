@@ -19,11 +19,15 @@ path = "src/main.rs"
 default = ["native-runtime", "hooks", "overlay-buttons"]
 # Wayland portal ScreenCast + PipeWire (needs libpipewire ≥ 1.0 dev headers).
 portal-capture = ["sqyre-capture/portal-capture", "sqyre-probe/portal-capture"]
-native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-match", "dep:sqyre-capture", "dep:sqyre-probe", "sqyre-overlay/runtime"]
+native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-match", "dep:sqyre-capture", "dep:sqyre-probe", "dep:rayon", "sqyre-overlay/runtime"]
 # OS global hotkeys (rdev). Disabled for wasm builds (`--no-default-features`).
 hooks = ["sqyre-hotkeys/hooks"]
 # Floating macro overlay OS windows (Linux: native X11 host thread).
 overlay-buttons = []
+# Heap allocation profiler (dhat). Writes `dhat-heap.json` on clean exit.
+# Build: `cargo run -p sqyre-app --features dhat-heap`
+# Pair with `SQYRE_MEM=1` for live RSS / search-cache samples in `~/.sqyre/mem.log`.
+dhat-heap = ["dep:dhat"]
 
 [lints]
 workspace = true
@@ -55,11 +59,13 @@ sqyre-hotkeys = { path = "../sqyre-hotkeys" }
 sqyre-overlay = { path = "../sqyre-overlay", default-features = false }
 sqyre-vision = { path = "../sqyre-vision", optional = true }
 sqyre-match = { path = "../sqyre-match", optional = true }
+rayon = { workspace = true, optional = true }
 serde_yaml = { workspace = true }
 rfd = { workspace = true }
 parking_lot = { workspace = true }
 thiserror = { workspace = true }
 web-time = { workspace = true }
+dhat = { version = "0.3", optional = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 fs2 = "0.4"

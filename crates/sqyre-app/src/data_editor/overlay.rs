@@ -53,6 +53,13 @@ impl DataEditor {
         }
     }
 
+    /// Keep the open overlay form in sync when a referenced macro is renamed.
+    pub(crate) fn rename_overlay_form_macro(&mut self, old_name: &str, new_name: &str) {
+        if self.form_overlay_macro == old_name {
+            self.form_overlay_macro = new_name.to_string();
+        }
+    }
+
     pub(crate) fn apply_overlay_update(&mut self, settings: &mut UserSettings) {
         let Some(id) = self.selected_entity.clone() else {
             self.set_err("Select an overlay button first.");
@@ -78,6 +85,7 @@ impl DataEditor {
         btn.x = self.form_overlay_x;
         btn.y = self.form_overlay_y;
         btn.size = self.form_overlay_size;
+        btn.visibility_gate = self.overlay_gate_from_form();
         self.apply_overlay_style_to_config(btn);
         if self.persist_overlay_settings(settings) {
             self.set_ok("Saved overlay button.");
@@ -88,6 +96,7 @@ impl DataEditor {
         &mut self,
         ctx: &egui::Context,
         settings: &mut UserSettings,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) {
         let Some(button_id) = self.overlay_icon_picker_for.clone() else {
             return;
@@ -103,9 +112,11 @@ impl DataEditor {
         // Resize region so fill widgets cannot ratchet/lock the window size.
         // Salt bump drops huge sizes persisted from earlier ratchets.
         let constrain = crate::widgets::dialog_constrain_rect(ctx).size();
-        crate::widgets::fit_dialog_popup(
+        let picker_id = egui::Id::new(("overlay_icon_picker", "resize_v4"));
+        // When viewport-scaling, skip the tighter max override so the one-frame
+        // min==max clamp from fit_dialog_popup is not widened/undone.
+        let window = crate::widgets::fit_dialog_popup(
             egui::Window::new("Choose overlay icon")
-                .id(egui::Id::new(("overlay_icon_picker", "resize_v4")))
                 .open(&mut open)
                 .collapsible(false)
                 .resizable(true)
@@ -113,13 +124,22 @@ impl DataEditor {
                 .min_size([320.0, 280.0])
                 .default_pos(egui::pos2(120.0, 80.0)),
             ctx,
-        )
-        // Override fit_dialog_popup's screen-sized max so a layout bug cannot
-        // stretch this picker to the full monitor; user can still resize up to this.
-        .max_size(egui::vec2(constrain.x.min(720.0), constrain.y.min(900.0)))
-        .show(ctx, |ui| {
+            picker_id,
+            pending_scale,
+        );
+        let window = if pending_scale.is_some() {
+            window
+        } else {
+            // Cap below full screen so a layout bug cannot fill the monitor.
+            window.max_size(egui::vec2(constrain.x.min(720.0), constrain.y.min(900.0)))
+        };
+        window.show(ctx, |ui| {
             crate::widgets::fill_resize_body(ui, |ui| {
-                ui.weak("Phosphor Icons — search by name, then click to select.");
+                crate::action_tooltip::help::label(
+                    ui,
+                    "Icons",
+                    crate::action_tooltip::help::DE_OVERLAY_ICON_PICKER,
+                );
                 ui.add_space(4.0);
                 if let Some(id) = overlay_icons::show_icon_picker_grid(
                     ui,

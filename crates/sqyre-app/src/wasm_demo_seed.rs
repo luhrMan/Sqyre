@@ -584,7 +584,7 @@ pub fn ensure_demo_if_empty(
     let (seeded_macros, seeded_catalog) = seed_demo_data();
     *catalog = seeded_catalog;
     *macros = seeded_macros;
-    macros.sort_by(|a, b| a.name.cmp(&b.name));
+    macros.sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
     db.replace_macros(macros.iter().cloned());
     db.set_programs_from_catalog(catalog);
     true
@@ -605,6 +605,7 @@ fn seed_program_from_theme(
             theme.name,
             ProgramPoint {
                 name: "Match center".into(),
+                monitor: 1,
                 x: ScalarValue::String("${foundX}".into()),
                 y: ScalarValue::String("${foundY}".into()),
             },
@@ -662,6 +663,7 @@ fn seed_program_from_theme(
                 theme.name,
                 ProgramPoint {
                     name: theme.points[i].into(),
+                    monitor: 1,
                     x: ScalarValue::Int((100 + (i + 1) * 80 + program_idx * 10) as i64),
                     y: ScalarValue::Int((200 + (i + 1) * 60) as i64),
                 },
@@ -676,6 +678,7 @@ fn seed_program_from_theme(
                 theme.name,
                 ProgramSearchArea {
                     name: theme.search_areas[i].into(),
+                    monitor: 1,
                     left_x: ScalarValue::Int(10 + j * 5),
                     top_y: ScalarValue::Int(20 + j * 5),
                     right_x: ScalarValue::Int(800 - j * 10),

@@ -12,6 +12,7 @@ mod color;
 mod empty;
 mod expr;
 mod expr_error;
+mod item_sort;
 mod keys;
 mod macro_model;
 mod match_method;
@@ -23,7 +24,9 @@ mod variables;
 
 pub use action::WIRE_TYPE_KEYS;
 pub use action::*;
-pub use atlas::{AtlasLayout, AtlasNode, AtlasPos, NavDir};
+pub use atlas::{
+    grid_cell_rect, grid_item_placements, AtlasLayout, AtlasNode, AtlasPos, GridPlacement, NavDir,
+};
 pub use bindings::{BindingRole, VariableBinding};
 pub use blank::{action_templates, blank_action, test_action, ActionTemplate};
 pub use color::{
@@ -35,6 +38,11 @@ pub use color::{
 pub use empty::{EMPTY_NONE, EMPTY_NOT_SET, EMPTY_UNSET};
 pub use expr::{evaluate_expression, numeric_to_scalar};
 pub use expr_error::{ExprError, ResolveError};
+pub use item_sort::{
+    apply_display_reorder, expand_image_search_targets, format_tag_filter,
+    item_matches_tag_filters, ordered_catalog_items, ordered_item_targets, parse_tag_filter,
+    tag_filter_name, CatalogItemRef, CatalogItemSort, ItemSortInfo,
+};
 pub use keys::{
     failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
     validate_continue_key, validate_not_failsafe, KeyError, FAILSAFE_KEYS, FAILSAFE_LABEL,

@@ -3,7 +3,9 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod backup;
 mod fs_name;
+mod icon_fs_cache;
 mod import;
+mod macro_yaml_draft;
 mod migrate;
 mod programs;
 mod settings;
@@ -14,28 +16,36 @@ pub use backup::{
     BackupError,
 };
 pub use fs_name::{confined_join, is_safe_fs_entity_name, validate_fs_entity_name};
+pub use icon_fs_cache::{clear_icon_fs_cache, invalidate_icon_fs_cache_under};
 pub use import::{merge_databases_prefer_imported, ImportMode};
+pub use macro_yaml_draft::{macro_yaml_builder_path, MacroYamlBuilderDrafts, MacroYamlDraftEntry};
 pub use migrate::{migrate_db_yaml, migrate_db_yaml_value, LegacyCatalog};
 pub use programs::{
-    ensure_general_program, MonitorRect, ProgramAtlas, ProgramCatalog, ProgramCollection,
-    ProgramData, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea, GENERAL_PROGRAM,
-    IMAGE_SEARCH_REFERENCE, TEMPORARY_PROGRAM,
+    absolute_area_to_relative, absolute_point_to_relative, ensure_general_program,
+    monitor_slot_for_point, MonitorRect, ProgramAtlas, ProgramCatalog, ProgramCollection,
+    ProgramData, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea, CELL_BOUNDS,
+    CELL_COORDINATES, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE, TEMPORARY_PROGRAM,
 };
 pub use settings::{
     default_overlay_position, move_dir, open_path_in_file_manager, open_sqyre_dir, settings_path,
-    ActionColorPrefs, OverlayButtonConfig, UserSettings, DEFAULT_AUTO_UPDATE_CHECK,
-    DEFAULT_BACKUP_INTERVAL_HOURS, DEFAULT_BACKUP_MAX_KEEP, DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
+    ActionColorPrefs, OverlayButtonConfig, OverlayVisibilityGate, OverlayVisibilityMode,
+    UserSettings, DEFAULT_AUTO_UPDATE_CHECK, DEFAULT_BACKUP_INTERVAL_HOURS,
+    DEFAULT_BACKUP_MAX_KEEP, DEFAULT_DATA_EDITOR_LEFT_FRAC, DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
     DEFAULT_HIDE_APP_DURING_RECORDING, DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE,
-    DEFAULT_OVERLAY_ACCENT_HEX, DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE,
-    DEFAULT_OVERLAY_CORNER_RADIUS, DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
-    DEFAULT_OVERLAY_FALLBACK_SCREEN_W, DEFAULT_OVERLAY_ICON_HEX, DEFAULT_PLAY_FINISH_SOUND,
-    DEFAULT_PLAY_UI_SOUNDS, DEFAULT_RELEASE_HELD_INPUTS_ON_END, DEFAULT_RUN_MACRO_MAX_DEPTH,
-    DEFAULT_SOUND_VOLUME, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE, DEFAULT_WHILE_MAX_ITERATIONS,
-    MAX_BACKUP_INTERVAL_HOURS, MAX_BACKUP_MAX_KEEP, MAX_OVERLAY_BORDER_WIDTH,
-    MAX_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_CORNER_RADIUS, MAX_RUN_MACRO_MAX_DEPTH,
+    DEFAULT_IMAGE_SEARCH_VARIANT_EXIT_EARLY, DEFAULT_MACRO_LIST_WIDTH, DEFAULT_OVERLAY_ACCENT_HEX,
+    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS,
+    DEFAULT_OVERLAY_FALLBACK_SCREEN_H, DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
+    DEFAULT_OVERLAY_GATE_BLUR, DEFAULT_OVERLAY_GATE_INTERVAL_MS, DEFAULT_OVERLAY_GATE_TOLERANCE,
+    DEFAULT_OVERLAY_ICON_HEX, DEFAULT_PLAY_FINISH_SOUND, DEFAULT_PLAY_UI_SOUNDS,
+    DEFAULT_RELEASE_HELD_INPUTS_ON_END, DEFAULT_RUN_MACRO_MAX_DEPTH, DEFAULT_SOUND_VOLUME,
+    DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE, DEFAULT_WHILE_MAX_ITERATIONS,
+    MAX_BACKUP_INTERVAL_HOURS, MAX_BACKUP_MAX_KEEP, MAX_DATA_EDITOR_LEFT_FRAC,
+    MAX_MACRO_LIST_WIDTH, MAX_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BUTTON_SIZE,
+    MAX_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_GATE_INTERVAL_MS, MAX_RUN_MACRO_MAX_DEPTH,
     MAX_WHILE_MAX_ITERATIONS, MIN_BACKUP_INTERVAL_HOURS, MIN_BACKUP_MAX_KEEP,
-    MIN_DRAG_PREVIEW_DEBOUNCE_MS, MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE,
-    MIN_OVERLAY_CORNER_RADIUS, MIN_RUN_MACRO_MAX_DEPTH, MIN_WHILE_MAX_ITERATIONS,
+    MIN_DATA_EDITOR_LEFT_FRAC, MIN_DRAG_PREVIEW_DEBOUNCE_MS, MIN_MACRO_LIST_WIDTH,
+    MIN_OVERLAY_BORDER_WIDTH, MIN_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_CORNER_RADIUS,
+    MIN_OVERLAY_GATE_INTERVAL_MS, MIN_RUN_MACRO_MAX_DEPTH, MIN_WHILE_MAX_ITERATIONS,
 };
 pub use sqyre_domain::resolve_scalar_int;
 pub use sqyre_serialize::{check_yaml_nesting_depth, MAX_YAML_NESTING_DEPTH};
@@ -164,6 +174,10 @@ pub fn screen_cap_path() -> PathBuf {
     images_path().join("ScreenCap")
 }
 
+pub fn screen_cap_trash_path() -> PathBuf {
+    screen_cap_path().join("trash")
+}
+
 pub fn initialize_directories() -> Result<()> {
     #[cfg(target_arch = "wasm32")]
     {
@@ -173,7 +187,9 @@ pub fn initialize_directories() -> Result<()> {
     {
         for p in [
             sqyre_dir().join("images/icons"),
+            sqyre_dir().join("images/process"),
             sqyre_dir().join("images/ScreenCap"),
+            screen_cap_trash_path(),
             sqyre_dir().join("images/Collections"),
             sqyre_dir().join("images/masks"),
             variables_path(),

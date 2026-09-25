@@ -35,6 +35,7 @@ impl KeyRecordUi {
         &mut self,
         ctx: &egui::Context,
         macro_hotkeys: &MacroHotkeyBridge,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) -> Option<String> {
         match self {
             Self::Closed => None,
@@ -46,6 +47,7 @@ impl KeyRecordUi {
                     &chord,
                     "Record key",
                     "Release the key to finish…",
+                    pending_scale,
                 ) {
                     *self = Self::Closed;
                 }
@@ -56,7 +58,7 @@ impl KeyRecordUi {
                 let captured = pressed.first().cloned();
 
                 let mut cancel = false;
-                record_modal(ctx, "Record key", |ui| {
+                record_modal(ctx, "Record key", pending_scale, |ui| {
                     ui.label(
                         "Press the key you want to use.\nThe first key you press is saved.\nUse Cancel to dismiss without saving.",
                     );

@@ -128,7 +128,26 @@ impl RecordingOverlay {
             // main window can stay Visible(false) under the frozen snapshot cover.
             ctx.request_repaint();
         }
-        let selection = screen_click.peek_search_area_selection();
+        let selection =
+            screen_click
+                .peek_search_area_selection()
+                .map(|(px, py, ax, ay, bx, by)| {
+                    if self.monitor_rects.is_empty() {
+                        self.monitor_rects = sqyre_capture::preferred_monitor_rects();
+                    }
+                    let rects: Vec<(i32, i32, i32, i32)> = self
+                        .monitor_rects
+                        .iter()
+                        .map(|r| (r.x, r.y, r.w, r.h))
+                        .collect();
+                    let (slot, lx, ty, rx, by) =
+                        sqyre_persist::absolute_area_to_relative(&rects, px, py, ax, ay, bx, by);
+                    let (ox, oy, _, _) = rects
+                        .get(slot as usize - 1)
+                        .copied()
+                        .unwrap_or((0, 0, 1920, 1080));
+                    (ox + lx, oy + ty, ox + rx, oy + by)
+                });
         let rect = selection.or(preview_outline);
 
         #[cfg(target_os = "linux")]
@@ -161,9 +180,10 @@ impl RecordingOverlay {
                 self.close_snapshot();
                 self.snapshot_failed = false;
             }
-            // SelectionOutline::Drop destroys without XFlush (avoids stalls under
-            // fullscreen XWayland games). Without a flushed clear first, gold
-            // edges stay mapped permanently on GNOME/XWayland after recording.
+            // Park the outline (flushed clear) but keep the X11 Display(s).
+            // Dropping here used to leak client slots (Drop deferred XCloseDisplay)
+            // and reopen on the next arm — enough cycles hit the X server's
+            // max-clients limit and overlay runs panic in rustautogui.
             if preview_outline.is_none() {
                 if let Some(outline) = self.outline.as_mut() {
                     if outline.is_active() {
@@ -171,7 +191,6 @@ impl RecordingOverlay {
                         outline.clear();
                     }
                 }
-                self.outline = None;
             } else {
                 self.apply_outline(preview_outline);
             }
@@ -332,7 +351,11 @@ impl RecordingOverlay {
             let _ = screen_click.on_escape();
         }
         if self.monitor_rects.is_empty() {
-            if let Some(snapshot) = self.snapshot.as_ref() {
+            // Prefer shared layout (portal/X11) so rubber-band clamp matches save-time slots.
+            let preferred = sqyre_capture::preferred_monitor_rects();
+            if !preferred.is_empty() {
+                self.monitor_rects = preferred;
+            } else if let Some(snapshot) = self.snapshot.as_ref() {
                 self.monitor_rects = snapshot.virtual_rects();
             }
         }
@@ -655,8 +678,8 @@ impl Drop for RecordingOverlay {
         if let Some(mut grab) = self.grab.take() {
             grab.disarm();
         }
-        // Do not outline.clear() here — that XFlushs under the game. Drop alone
-        // destroys windows without waiting on the X11 server.
+        // Do not outline.clear() here — that XFlushs under the game. Drop destroys
+        // windows without flush and closes Displays on helper threads.
         drop(self.outline.take());
         mark_site("recording_overlay:drop:after_outline");
         #[cfg(target_os = "linux")]

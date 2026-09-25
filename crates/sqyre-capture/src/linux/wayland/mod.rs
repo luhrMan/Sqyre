@@ -35,6 +35,10 @@ pub use layer_shell::{layer_shell_available, prefers_layer_shell_overlay_session
 pub use windows::OsWindowFocuser;
 pub(crate) use windows::{get_active_window, list_open_windows};
 
+pub(crate) use app_resolve::{
+    desktop_icon_for_app_id, desktop_icon_for_pid, process_from_pid as process_identity,
+};
+
 use sqyre_ports::CaptureError;
 
 /// Whether a Wayland portal capture backend is wired into Sqyre.
@@ -47,8 +51,8 @@ pub fn portal_capture_available() -> Result<(), CaptureError> {
     if portal_capture_implemented() {
         Ok(())
     } else {
-        Err(CaptureError::Message(
-            "portal capture not enabled in this build (missing portal-capture feature)".into(),
+        Err(CaptureError::Portal(
+            "not enabled in this build (missing portal-capture feature)".into(),
         ))
     }
 }

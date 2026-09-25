@@ -12,6 +12,7 @@ use serde_yaml::{Mapping, Value};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_ports::PortError;
 use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 impl ProgramCatalog {
     pub fn programs_mut(&mut self) -> &mut BTreeMap<String, ProgramData> {
@@ -103,6 +104,21 @@ impl ProgramCatalog {
             }
             let _ = std::fs::rename(&src, &dst);
         }
+        let src_icon = self.process_icon_path(old);
+        if src_icon.is_file() {
+            let dst_icon = self.process_icon_path(new);
+            if let Some(parent) = dst_icon.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if dst_icon.exists() {
+                let _ = std::fs::remove_file(&dst_icon);
+            }
+            let _ = std::fs::rename(&src_icon, &dst_icon);
+        }
+        crate::invalidate_icon_fs_cache_under(&self.icons_dir(old));
+        crate::invalidate_icon_fs_cache_under(&self.icons_dir(new));
+        crate::invalidate_icon_fs_cache_under(&self.masks_dir(old));
+        crate::invalidate_icon_fs_cache_under(&self.masks_dir(new));
     }
 
     pub fn delete_program(&mut self, name: &str) -> Result<()> {
@@ -114,24 +130,53 @@ impl ProgramCatalog {
             let icons = self.icons_dir(name);
             let masks = self.masks_dir(name);
             let collections = self.collections_dir(name);
-            let _ = std::fs::remove_dir_all(icons);
-            let _ = std::fs::remove_dir_all(masks);
+            crate::invalidate_icon_fs_cache_under(&icons);
+            crate::invalidate_icon_fs_cache_under(&masks);
+            let _ = std::fs::remove_dir_all(&icons);
+            let _ = std::fs::remove_dir_all(&masks);
             let _ = std::fs::remove_dir_all(collections);
+            let _ = std::fs::remove_file(self.process_icon_path(name));
         }
         self.bump_generation();
         Ok(())
     }
 
     /// Bind a catalog program to a running OS window (`process_path` + `window_title`).
+    ///
+    /// Clearing the path (empty `process_path`) also removes any saved process icon PNG.
     pub fn set_process_binding(
         &mut self,
         program: &str,
         process_path: impl Into<String>,
         window_title: impl Into<String>,
     ) -> Result<()> {
+        let process_path = process_path.into();
+        let window_title = window_title.into();
+        let clear_icon = process_path.trim().is_empty();
+        {
+            let p = self.program_mut(program)?;
+            p.process_path = process_path;
+            p.window_title = window_title;
+        }
+        if clear_icon {
+            self.clear_process_icon(program);
+        }
+        Ok(())
+    }
+
+    /// Remove the persisted Running-program icon for `program` (best-effort).
+    pub fn clear_process_icon(&self, program: &str) {
+        if !is_safe_fs_entity_name(program) {
+            return;
+        }
+        let path = self.process_icon_path(program);
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Set macro tags used for while-focused hotkey selection.
+    pub fn set_program_tags(&mut self, program: &str, tags: Vec<String>) -> Result<()> {
         let p = self.program_mut(program)?;
-        p.process_path = process_path.into();
-        p.window_title = window_title.into();
+        p.tags = tags;
         Ok(())
     }
 
@@ -156,28 +201,40 @@ impl ProgramCatalog {
     /// Move `{old}.png` and `{old}~*.png` icon files to the new item name.
     fn rename_item_icon_files(&self, program: &str, old: &str, new: &str) {
         let dir = self.icons_dir(program);
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            return;
-        };
         let prefix = format!("{old}{PROGRAM_DELIMITER}");
         let legacy = format!("{old}.png");
-        for entry in rd.flatten() {
-            let name = entry.file_name();
-            let name = name.to_string_lossy();
-            let dest_name = if name.as_ref() == legacy {
+        visit_item_icon_files(&dir, old, |path, name| {
+            let dest_name = if name == legacy {
                 format!("{new}.png")
-            } else if name.starts_with(&prefix) && name.ends_with(".png") {
-                format!("{new}{PROGRAM_DELIMITER}{}", &name[prefix.len()..])
             } else {
-                continue;
+                format!("{new}{PROGRAM_DELIMITER}{}", &name[prefix.len()..])
             };
             let dest = dir.join(dest_name);
-            let _ = std::fs::rename(entry.path(), dest);
-        }
+            let _ = std::fs::rename(path, dest);
+        });
+        crate::invalidate_icon_fs_cache_under(&dir);
     }
 
     pub fn delete_item(&mut self, program: &str, name: &str) -> Result<()> {
-        delete_named_entity(self, program, name, "item", |p| &mut p.items)
+        delete_named_entity(self, program, name, "item", |p| &mut p.items)?;
+        if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
+            self.trash_item_icon_files(program, name);
+        }
+        Ok(())
+    }
+
+    /// Move `{name}.png` and `{name}~*.png` into `images/ScreenCap/trash/{program}/`.
+    fn trash_item_icon_files(&self, program: &str, name: &str) {
+        let dir = self.icons_dir(program);
+        let trash = self.screen_cap_trash_dir(program);
+        if std::fs::create_dir_all(&trash).is_err() {
+            return;
+        }
+        visit_item_icon_files(&dir, name, |path, file_name| {
+            let dest = unique_dest(&trash, file_name);
+            let _ = std::fs::rename(path, dest);
+        });
+        crate::invalidate_icon_fs_cache_under(&dir);
     }
 
     pub fn upsert_point(&mut self, program: &str, point: ProgramPoint) -> Result<()> {
@@ -275,6 +332,8 @@ impl ProgramCatalog {
                 let _ = std::fs::create_dir_all(parent);
             }
             let _ = std::fs::rename(&old_path, &new_path);
+            crate::invalidate_icon_fs_cache_under(&old_path);
+            crate::invalidate_icon_fs_cache_under(&new_path);
         }
         Ok(())
     }
@@ -289,6 +348,7 @@ impl ProgramCatalog {
             }
         }
         if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
+            crate::invalidate_icon_fs_cache_under(&path);
             let _ = std::fs::remove_file(path);
         }
         Ok(())
@@ -381,11 +441,16 @@ impl ProgramCatalog {
     }
 
     pub(crate) fn program_mut(&mut self, name: &str) -> Result<&mut ProgramData> {
+        // Presence is checked up front so the generation is only bumped for a
+        // lookup that will succeed; `get_mut` then borrows `self.programs` for
+        // the returned reference, which rules out calling `&mut self` methods.
         if !self.programs.contains_key(name) {
             return Err(PersistError::Message(format!("program {name:?} not found")));
         }
         self.bump_generation();
-        Ok(self.programs.get_mut(name).expect("program exists"))
+        self.programs
+            .get_mut(name)
+            .ok_or_else(|| PersistError::Message(format!("program {name:?} not found")))
     }
 
     pub(crate) fn default_resolution_key(&self) -> String {
@@ -403,6 +468,7 @@ impl ProgramCatalog {
             images_root: self.images_root.clone(),
             resolution_key: self.resolution_key.clone(),
             runtime_scale: self.runtime_scale,
+            monitor_rects: self.monitor_rects.clone(),
             ..Default::default()
         };
         for (name, data) in &self.programs {
@@ -418,6 +484,46 @@ impl ProgramCatalog {
         }
         out.bump_generation();
         out
+    }
+}
+
+fn visit_item_icon_files(dir: &Path, item: &str, mut visit: impl FnMut(PathBuf, &str)) {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    let prefix = format!("{item}{PROGRAM_DELIMITER}");
+    let legacy = format!("{item}.png");
+    for entry in rd.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        if name == legacy || (name.starts_with(&prefix) && name.ends_with(".png")) {
+            visit(entry.path(), name);
+        }
+    }
+}
+
+fn unique_dest(dir: &Path, file_name: &str) -> PathBuf {
+    let dest = dir.join(file_name);
+    if !dest.exists() {
+        return dest;
+    }
+    let stem = dest
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(file_name);
+    let ext = dest.extension().and_then(|s| s.to_str()).unwrap_or("png");
+    let mut n = 2u32;
+    loop {
+        let candidate = dir.join(format!("{stem}_{n}.{ext}"));
+        if !candidate.exists() {
+            return candidate;
+        }
+        if n == u32::MAX {
+            return candidate;
+        }
+        n += 1;
     }
 }
 
@@ -443,6 +549,7 @@ fn merge_nested_maps_prefer_imported<V: Clone>(
 fn merge_program_data_prefer_imported(live: &mut ProgramData, imported: &ProgramData) {
     live.process_path = imported.process_path.clone();
     live.window_title = imported.window_title.clone();
+    live.tags = imported.tags.clone();
     merge_nested_maps_prefer_imported(&mut live.points, &imported.points);
     merge_nested_maps_prefer_imported(&mut live.search_areas, &imported.search_areas);
     merge_map_prefer_imported(&mut live.coord_scales, &imported.coord_scales);

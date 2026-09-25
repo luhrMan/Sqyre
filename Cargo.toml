@@ -38,9 +38,20 @@ unused = "warn"
 [workspace.lints.clippy]
 all = "warn"
 
+# Day-to-day `cargo build --release` / `make release`: fast incremental rebuilds.
+# Strip is cheap and keeps local release binaries smaller.
+[profile.release]
+strip = "symbols"
+
+# Shipping artifacts only (AppImage, Flatpak, Windows, WASM, release-bundle).
+# Thin LTO + single codegen unit shrink binaries but make repeat links/compiles slow.
+[profile.dist]
+inherits = "release"
+lto = "thin"
+codegen-units = 1
 
 [workspace.dependencies]
-purecv = { version = "0.6.1", default-features = false, features = ["std", "parallel", "simd"] }
+purecv = { version = "0.8.0", default-features = false, features = ["std", "parallel", "simd"] }
 eframe = "0.35"
 egui = "0.35"
 egui-phosphor = "0.13"
@@ -56,12 +67,12 @@ dirs = "6"
 tempfile = "3"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 proptest = "1"
-criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support"] }
+criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
 resvg = { version = "0.47", default-features = false }
 rustautogui = { version = "2.5", default-features = false, features = ["lite"] }
 arboard = { version = "3", default-features = false }
-x11 = { version = "2", features = ["xlib", "xinerama", "xfixes"] }
+x11 = { version = "2", features = ["xlib", "xinerama", "xfixes", "xrandr"] }
 rdev = { version = "0.5", features = ["unstable_grab"] }
 parking_lot = "0.12"
 # async-io (not default tokio): avoid forcing zbus/tokio, which panics accesskit's async-io thread.
@@ -77,3 +88,4 @@ web-time = "1"
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 sha2 = "0.10"
 log = "0.4"
+jsonschema = { version = "0.37", default-features = false }

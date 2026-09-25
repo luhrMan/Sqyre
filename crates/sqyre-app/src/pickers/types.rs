@@ -15,7 +15,7 @@ pub(crate) const GRID_GAP: f32 = 6.0;
 pub(crate) const EDIT_CELL: f32 = 40.0;
 pub(crate) const EDIT_THUMB: f32 = 36.0;
 pub(crate) const EDIT_CELL_MAX: f32 = 112.0;
-pub(crate) const EDIT_GAP: f32 = 4.0;
+pub(crate) const EDIT_GAP: f32 = 6.0;
 pub(crate) const REMOVE_BTN: f32 = 12.0;
 /// In-progress collection cell selection (1-based inclusive).
 #[derive(Debug, Clone)]
@@ -77,7 +77,13 @@ pub enum ActivePicker {
     #[default]
     None,
     /// Multi-select item targets (`program~item`).
-    Items { search: String, staged: Vec<String> },
+    ///
+    /// When `staged_tags` is `Some`, the picker also edits Image Search tag filters.
+    Items {
+        search: String,
+        staged: Vec<String>,
+        staged_tags: Option<Vec<String>>,
+    },
     /// Point or search-area coordinate picker (`kind` selects catalog + result).
     Coord {
         kind: CoordKind,
@@ -111,9 +117,14 @@ impl Clone for ActivePicker {
     fn clone(&self) -> Self {
         match self {
             ActivePicker::None => ActivePicker::None,
-            ActivePicker::Items { search, staged } => ActivePicker::Items {
+            ActivePicker::Items {
+                search,
+                staged,
+                staged_tags,
+            } => ActivePicker::Items {
                 search: search.clone(),
                 staged: staged.clone(),
+                staged_tags: staged_tags.clone(),
             },
             ActivePicker::Coord {
                 kind,
@@ -168,7 +179,12 @@ pub enum CoordKind {
 #[derive(Debug, Clone)]
 pub enum PickerResult {
     None,
-    Items(Vec<String>),
+    /// Explicit item targets; `target_tags` is set when the Image Search filter
+    /// editor was shown in the picker.
+    Items {
+        targets: Vec<String>,
+        target_tags: Option<Vec<String>>,
+    },
     Point(CoordinateRef),
     SearchArea(CoordinateRef),
     MacroName(String),

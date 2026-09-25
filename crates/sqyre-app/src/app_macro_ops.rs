@@ -2,19 +2,28 @@
 
 use crate::tree_clipboard;
 use crate::tree_history::TreeHistory;
+use crate::widgets::tags::{normalize_tag_path, tag_is_under_or_eq};
 use crate::SqyreApp;
 use eframe::egui;
 use sqyre_domain::{Action, ActionId, InsertSlot, Macro};
 use sqyre_hotkeys::{HotkeyTrigger, MacroHotkeyBinding};
 
-/// Whether `m` should receive hotkeys under `filter`.
-/// `None` = none (no tag header selected); `Some("")` = untagged only; otherwise macros that include the tag.
-pub(crate) fn macro_matches_hotkey_tag(m: &Macro, filter: Option<&str>) -> bool {
-    match filter {
-        None => false,
-        Some("") => m.tags.is_empty(),
-        Some(tag) => m.tags.iter().any(|t| t == tag),
+/// Whether `m` should receive hotkeys under `filters`.
+/// Empty = none (no tag headers selected); `""` entry = untagged; otherwise a macro
+/// matches when any of its tags equals a filter or is nested under one (`filter/...`).
+pub(crate) fn macro_matches_hotkey_tag(m: &Macro, filters: &[String]) -> bool {
+    if filters.is_empty() {
+        return false;
     }
+    filters.iter().any(|filter| {
+        if filter.is_empty() {
+            m.tags.is_empty()
+        } else {
+            m.tags
+                .iter()
+                .any(|t| tag_is_under_or_eq(&normalize_tag_path(t), filter))
+        }
+    })
 }
 
 impl SqyreApp {
@@ -61,45 +70,93 @@ impl SqyreApp {
         self.tree.selected_actions.retain(|&a| a != id);
     }
 
-    /// Clear a stale tag filter when no macro still carries that tag.
-    /// Returns `true` when the filter was cleared.
+    /// Drop stale filter entries when no macro still carries that tag (or a nested path under it).
+    /// Returns `true` when the filter set changed.
     pub(crate) fn sanitize_hotkey_tag_filter(&mut self) -> bool {
-        let Some(tag) = self.workspace.hotkey_tag_filter.as_deref() else {
-            return false;
-        };
-        let still_valid = if tag.is_empty() {
-            self.workspace.macros.iter().any(|m| m.tags.is_empty())
-        } else {
-            self.workspace
-                .macros
-                .iter()
-                .any(|m| m.tags.iter().any(|t| t == tag))
-        };
-        if !still_valid {
-            self.workspace.hotkey_tag_filter = None;
-            return true;
-        }
-        false
+        let before = self.workspace.hotkey_tag_filters.len();
+        self.workspace.hotkey_tag_filters.retain(|tag| {
+            if tag.is_empty() {
+                self.workspace.macros.iter().any(|m| m.tags.is_empty())
+            } else {
+                self.workspace.macros.iter().any(|m| {
+                    m.tags
+                        .iter()
+                        .any(|t| tag_is_under_or_eq(&normalize_tag_path(t), tag))
+                })
+            }
+        });
+        self.workspace.hotkey_tag_filters.len() != before
     }
 
-    /// Write [`Workspace::hotkey_tag_filter`] into settings when it drifted.
+    /// Write [`Workspace::hotkey_tag_filters`] into settings when it drifted.
     pub(crate) fn persist_hotkey_tag_filter(&mut self) {
-        let filter = self.workspace.hotkey_tag_filter.clone();
-        if self.settings_ui.settings().hotkey_tag_filter == filter {
+        let filter = self.workspace.hotkey_tag_filters.clone();
+        if self.settings_ui.settings().hotkey_tag_filters == filter {
             return;
         }
-        self.settings_ui.settings_mut().hotkey_tag_filter = filter;
+        self.settings_ui.settings_mut().hotkey_tag_filters = filter;
         if let Err(e) = self.settings_ui.save_settings() {
             crate::log::warn(format!("failed to save hotkey tag filter: {e}"));
         }
     }
 
-    /// Toggle which tag's macros receive hotkeys. Clicking the active tag clears the filter (no hotkeys).
+    /// Set the hotkey tag selection (sorted, deduped). Persists and refreshes bindings.
+    pub(crate) fn set_hotkey_tag_filters(&mut self, tags: Vec<String>) {
+        let mut tags: Vec<String> = tags
+            .into_iter()
+            .map(|t| {
+                if t.is_empty() {
+                    t
+                } else {
+                    normalize_tag_path(&t)
+                }
+            })
+            .collect();
+        tags.sort();
+        tags.dedup();
+        if self.workspace.hotkey_tag_filters == tags {
+            return;
+        }
+        self.workspace.hotkey_tag_filters = tags;
+        self.persist_hotkey_tag_filter();
+        self.refresh_macro_hotkey_bindings();
+    }
+
+    /// Toggle membership of a tag in the multiselect filter.
+    /// Selecting a parent covers descendants for matching; redundant child entries are dropped.
+    /// If an ancestor is already selected, the click is a no-op (deselect the parent to pick leaves).
     pub(crate) fn toggle_hotkey_tag_filter(&mut self, tag: String) {
-        if self.workspace.hotkey_tag_filter.as_ref() == Some(&tag) {
-            self.workspace.hotkey_tag_filter = None;
+        let tag = if tag.is_empty() {
+            tag
         } else {
-            self.workspace.hotkey_tag_filter = Some(tag);
+            normalize_tag_path(&tag)
+        };
+        if let Some(i) = self
+            .workspace
+            .hotkey_tag_filters
+            .iter()
+            .position(|t| t == &tag)
+        {
+            self.workspace.hotkey_tag_filters.remove(i);
+        } else if !tag.is_empty()
+            && self
+                .workspace
+                .hotkey_tag_filters
+                .iter()
+                .any(|f| !f.is_empty() && tag_is_under_or_eq(&tag, f) && f != &tag)
+        {
+            // Covered by an ancestor selection — pick leaves only after clearing the parent.
+            return;
+        } else {
+            // Drop filters nested under the newly selected path (now redundant).
+            if !tag.is_empty() {
+                self.workspace
+                    .hotkey_tag_filters
+                    .retain(|t| t.is_empty() || !tag_is_under_or_eq(t, &tag));
+            }
+            self.workspace.hotkey_tag_filters.push(tag);
+            self.workspace.hotkey_tag_filters.sort();
+            self.workspace.hotkey_tag_filters.dedup();
         }
         self.persist_hotkey_tag_filter();
         self.refresh_macro_hotkey_bindings();
@@ -109,13 +166,13 @@ impl SqyreApp {
         if self.sanitize_hotkey_tag_filter() {
             self.persist_hotkey_tag_filter();
         }
-        let filter = self.workspace.hotkey_tag_filter.as_deref();
+        let filters = self.workspace.hotkey_tag_filters.as_slice();
         let bindings = self
             .workspace
             .macros
             .iter()
             .filter(|m| !m.hotkey.is_empty())
-            .filter(|m| macro_matches_hotkey_tag(m, filter))
+            .filter(|m| macro_matches_hotkey_tag(m, filters))
             .filter(|m| sqyre_validate::validate_macro(m).is_ok())
             .map(|m| {
                 MacroHotkeyBinding::new(
@@ -166,7 +223,9 @@ impl SqyreApp {
         let name = self.unique_macro_name("new macro");
         let m = Macro::new(name.clone(), 0, vec![]);
         self.workspace.macros.push(m);
-        self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        self.workspace
+            .macros
+            .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         if let Err(e) = self.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             crate::log::warn(format_args!("create macro: {e}"));
@@ -175,6 +234,123 @@ impl SqyreApp {
         self.refresh_macro_hotkey_bindings();
         self.select_macro_by_name(&name);
         self.play_ui_add_sound();
+    }
+
+    /// Replace the selected macro from the YAML Macro Builder (transactional).
+    pub(crate) fn apply_macro_from_yaml_builder(&mut self, mut incoming: Macro) {
+        if self.workspace.macros.is_empty() {
+            return;
+        }
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let old_name = self.workspace.macros[idx].name.clone();
+        let new_name = incoming.name.trim().to_string();
+        if new_name.is_empty() {
+            *self.run_session.state.status.lock() = "Apply failed: macro name is empty.".into();
+            return;
+        }
+        // Reject collisions with other macros.
+        if self
+            .workspace
+            .macros
+            .iter()
+            .enumerate()
+            .any(|(i, m)| i != idx && m.name == new_name)
+        {
+            *self.run_session.state.status.lock() =
+                format!("Apply failed: a macro named \"{new_name}\" already exists.");
+            self.macro_yaml_builder.set_status_message(
+                format!("Name \"{new_name}\" is already used — rename in YAML first."),
+                true,
+            );
+            return;
+        }
+
+        // Snapshot for undo before mutate.
+        self.record_tree_mutation();
+
+        let old = self.workspace.macros[idx].clone();
+        crate::macro_yaml_builder::reconcile_action_uids(&old.root, &mut incoming.root);
+        // Keep root id stable.
+        incoming.root.id = sqyre_domain::ActionId::root();
+        incoming.init_runtime_variables();
+
+        let backup = old;
+        self.workspace.macros[idx] = incoming;
+
+        if new_name != old_name {
+            if let Some(h) = self.tree.histories.remove(&old_name) {
+                self.tree.histories.insert(new_name.clone(), h);
+            }
+            self.macro_yaml_builder
+                .on_macro_renamed(&old_name, &new_name);
+            self.workspace
+                .macros
+                .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
+        }
+
+        if let Err(e) = self.persist_database() {
+            // Roll back.
+            if let Some(i) = self
+                .workspace
+                .macros
+                .iter()
+                .position(|m| m.name == new_name || m.name == old_name)
+            {
+                self.workspace.macros[i] = backup;
+            }
+            if new_name != old_name {
+                if let Some(h) = self.tree.histories.remove(&new_name) {
+                    self.tree.histories.insert(old_name.clone(), h);
+                }
+            }
+            // Drop the undo entry we just pushed for the failed apply.
+            if let Some(h) = self.tree.histories.get_mut(&old_name) {
+                h.pop_last_undo();
+            }
+            crate::log::warn(format_args!("apply YAML macro: {e}"));
+            *self.run_session.state.status.lock() = format!("Apply failed: {e}");
+            return;
+        }
+
+        self.refresh_macro_hotkey_bindings();
+        self.select_macro_by_name(&new_name);
+        self.tree.tooltip.cancel();
+        self.tree.invalidate_paint_cache();
+        // Filter selection to surviving ids.
+        let root = &self.workspace.macros[self.workspace.selected_macro].root;
+        self.tree
+            .selected_actions
+            .retain(|id| root.find_by_id(*id).is_some() || root.id == *id);
+        if let Some(m) = self.workspace.macros.get(self.workspace.selected_macro) {
+            self.macro_yaml_builder.on_applied(m);
+        }
+        *self.run_session.state.status.lock() = format!("Applied YAML to \"{new_name}\".");
+    }
+
+    /// Insert a decoded macro from the YAML Macro Builder (name already uniquified).
+    pub(crate) fn import_macro_from_yaml_builder(&mut self, macro_: Macro) {
+        let name = macro_.name.clone();
+        let name = self.unique_macro_name(&name);
+        let mut macro_ = macro_;
+        macro_.name = name.clone();
+        self.workspace.macros.push(macro_);
+        self.workspace
+            .macros
+            .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
+        if let Err(e) = self.persist_database() {
+            self.workspace.macros.retain(|m| m.name != name);
+            crate::log::warn(format_args!("import YAML macro: {e}"));
+            *self.run_session.state.status.lock() = format!("Import failed: {e}");
+            return;
+        }
+        self.refresh_macro_hotkey_bindings();
+        self.select_macro_by_name(&name);
+        self.play_ui_add_sound();
+        *self.run_session.state.status.lock() = format!("Imported macro \"{name}\".");
+        self.macro_yaml_builder.on_imported(&name);
     }
 
     pub(crate) fn duplicate_selected_macro(&mut self) {
@@ -192,7 +368,9 @@ impl SqyreApp {
         dup.hotkey.clear();
         let name = dup.name.clone();
         self.workspace.macros.push(dup);
-        self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        self.workspace
+            .macros
+            .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         if let Err(e) = self.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
             crate::log::warn(format_args!("duplicate macro: {e}"));
@@ -205,6 +383,7 @@ impl SqyreApp {
 
     pub(crate) fn delete_macro_named(&mut self, name: &str) {
         self.tree.histories.remove(name);
+        self.macro_yaml_builder.on_macro_deleted(name);
         self.workspace.macros.retain(|m| m.name != name);
         if let Err(e) = self.persist_database() {
             crate::log::warn(format_args!("delete macro: {e}"));
@@ -229,7 +408,7 @@ impl SqyreApp {
         );
     }
 
-    /// Rename the selected macro and rewrite Run Macro refs.
+    /// Rename the selected macro and rewrite Run Macro / overlay button refs.
     pub(crate) fn rename_selected_macro(&mut self, new_name: String) {
         if self.workspace.macros.is_empty() {
             return;
@@ -247,15 +426,30 @@ impl SqyreApp {
         for m in &mut self.workspace.macros {
             m.rename_macro_reference(&old_name, &new_name);
         }
+        if self
+            .settings_ui
+            .settings_mut()
+            .rename_overlay_macro(&old_name, &new_name)
+        {
+            self.data_editor
+                .rename_overlay_form_macro(&old_name, &new_name);
+            if let Err(e) = self.settings_ui.save_settings() {
+                crate::log::warn(format_args!("rename macro overlay refs: {e}"));
+            }
+        }
         if let Some(hist) = self.tree.histories.remove(&old_name) {
             self.tree.histories.insert(new_name.clone(), hist);
         }
+        self.macro_yaml_builder
+            .on_macro_renamed(&old_name, &new_name);
         if let Err(e) = self.persist_database() {
             crate::log::warn(format_args!("rename macro: {e}"));
         }
         self.refresh_macro_hotkey_bindings();
 
-        self.workspace.macros.sort_by(|a, b| a.name.cmp(&b.name));
+        self.workspace
+            .macros
+            .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         if let Some(i) = self
             .workspace
             .macros
@@ -301,8 +495,7 @@ impl SqyreApp {
             .min(self.workspace.macros.len() - 1);
         let selected = self.tree.selected_actions.clone();
         let name = self.workspace.macros[idx].name.clone();
-        let Ok(snap) = TreeHistory::take_snapshot(&self.workspace.macros[idx].root, selected)
-        else {
+        let Ok(snap) = TreeHistory::take_snapshot(&self.workspace.macros[idx], selected) else {
             return;
         };
         self.tree
@@ -324,13 +517,28 @@ impl SqyreApp {
         let name = self.workspace.macros[idx].name.clone();
         let mut selected = self.tree.selected_actions.clone();
         let mut history = self.tree.histories.remove(&name).unwrap_or_default();
-        let result = history.undo(&mut self.workspace.macros[idx].root, &mut selected);
-        self.tree.histories.insert(name, history);
+        let result = history.undo(&mut self.workspace.macros[idx], &mut selected);
+        self.tree.histories.insert(name.clone(), history);
         match result {
             Ok(()) => {
+                // History may have restored a rename — remount history key.
+                let new_name = self.workspace.macros[idx].name.clone();
+                if new_name != name {
+                    if let Some(h) = self.tree.histories.remove(&name) {
+                        self.tree.histories.insert(new_name.clone(), h);
+                    }
+                    self.workspace
+                        .macros
+                        .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
+                    self.select_macro_by_name(&new_name);
+                }
                 self.set_selected_actions(selected);
                 self.tree.tooltip.cancel();
                 self.tree.invalidate_paint_cache();
+                let idx = self
+                    .workspace
+                    .selected_macro
+                    .min(self.workspace.macros.len().saturating_sub(1));
                 self.persist_macro_at(idx);
             }
             Err(e) => {
@@ -351,13 +559,27 @@ impl SqyreApp {
         let name = self.workspace.macros[idx].name.clone();
         let mut selected = self.tree.selected_actions.clone();
         let mut history = self.tree.histories.remove(&name).unwrap_or_default();
-        let result = history.redo(&mut self.workspace.macros[idx].root, &mut selected);
-        self.tree.histories.insert(name, history);
+        let result = history.redo(&mut self.workspace.macros[idx], &mut selected);
+        self.tree.histories.insert(name.clone(), history);
         match result {
             Ok(()) => {
+                let new_name = self.workspace.macros[idx].name.clone();
+                if new_name != name {
+                    if let Some(h) = self.tree.histories.remove(&name) {
+                        self.tree.histories.insert(new_name.clone(), h);
+                    }
+                    self.workspace
+                        .macros
+                        .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
+                    self.select_macro_by_name(&new_name);
+                }
                 self.set_selected_actions(selected);
                 self.tree.tooltip.cancel();
                 self.tree.invalidate_paint_cache();
+                let idx = self
+                    .workspace
+                    .selected_macro
+                    .min(self.workspace.macros.len().saturating_sub(1));
                 self.persist_macro_at(idx);
             }
             Err(e) => {
@@ -689,12 +911,36 @@ mod tests {
     fn hotkey_tag_filter_matches() {
         let tagged = m(&["combat", "farm"]);
         let bare = m(&[]);
-        assert!(!macro_matches_hotkey_tag(&tagged, None));
-        assert!(!macro_matches_hotkey_tag(&bare, None));
-        assert!(macro_matches_hotkey_tag(&tagged, Some("combat")));
-        assert!(!macro_matches_hotkey_tag(&tagged, Some("other")));
-        assert!(!macro_matches_hotkey_tag(&bare, Some("combat")));
-        assert!(macro_matches_hotkey_tag(&bare, Some("")));
-        assert!(!macro_matches_hotkey_tag(&tagged, Some("")));
+        assert!(!macro_matches_hotkey_tag(&tagged, &[]));
+        assert!(!macro_matches_hotkey_tag(&bare, &[]));
+        assert!(macro_matches_hotkey_tag(&tagged, &["combat".into()]));
+        assert!(!macro_matches_hotkey_tag(&tagged, &["other".into()]));
+        assert!(!macro_matches_hotkey_tag(&bare, &["combat".into()]));
+        assert!(macro_matches_hotkey_tag(&bare, &["".into()]));
+        assert!(!macro_matches_hotkey_tag(&tagged, &["".into()]));
+        assert!(macro_matches_hotkey_tag(
+            &tagged,
+            &["other".into(), "farm".into()]
+        ));
+        assert!(macro_matches_hotkey_tag(
+            &bare,
+            &["combat".into(), "".into()]
+        ));
+    }
+
+    #[test]
+    fn hotkey_tag_filter_includes_nested_descendants() {
+        let nested = m(&["combat/pve"]);
+        assert!(macro_matches_hotkey_tag(&nested, &["combat".into()]));
+        assert!(macro_matches_hotkey_tag(&nested, &["combat/pve".into()]));
+        assert!(!macro_matches_hotkey_tag(&nested, &["combat/pvp".into()]));
+        assert!(!macro_matches_hotkey_tag(
+            &m(&["combatant"]),
+            &["combat".into()]
+        ));
+        assert!(!macro_matches_hotkey_tag(
+            &m(&["combat"]),
+            &["combat/pve".into()]
+        ));
     }
 }

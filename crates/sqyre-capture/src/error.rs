@@ -1,6 +1,6 @@
 //! Linux session advisory for X11 capture (typed capture errors live in `sqyre-ports`).
 
-pub use sqyre_ports::CaptureError;
+pub use sqyre_ports::{CaptureError, NotReady};
 
 /// Human-readable warning when the Linux session cannot support capture yet.
 ///

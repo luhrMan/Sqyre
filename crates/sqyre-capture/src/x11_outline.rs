@@ -312,11 +312,14 @@ impl Drop for SelectionOutline {
     fn drop(&mut self) {
         crate::mark_site("outline:drop:start");
         let t0 = std::time::Instant::now();
-        // SAFETY: edges were created on `self.display`. We destroy windows but do
-        // **not** XFlush / XCloseDisplay — both block for seconds under a busy
-        // fullscreen XWayland client (Proton games). The kernel reclaims the
-        // connection fds when the process exits; mid-session we leak at most two
-        // Display connections per outline lifetime.
+        // Destroy windows without XFlush (avoids multi-second stalls under a busy
+        // fullscreen XWayland client). Close each Display on a helper thread —
+        // XCloseDisplay can block the same way, but we must free the X client
+        // slots: leaking them every open/drop cycle hits "Maximum number of
+        // clients reached" and then rustautogui panics on overlay run.
+        // SAFETY: edges were created on `self.display`; pointers are taken and
+        // nullled before the close threads run so this Drop never uses them again.
+        let mut to_close: [*mut Display; 2] = [ptr::null_mut(); 2];
         unsafe {
             if !self.display.is_null() {
                 for &w in &self.edges {
@@ -324,18 +327,25 @@ impl Drop for SelectionOutline {
                         XDestroyWindow(self.display, w);
                     }
                 }
-                crate::x11_secondary::unregister(self.display);
+                to_close[0] = self.display;
                 self.display = ptr::null_mut();
             }
             if !self.ptr_display.is_null() {
-                crate::x11_secondary::unregister(self.ptr_display);
+                to_close[1] = self.ptr_display;
                 self.ptr_display = ptr::null_mut();
             }
+        }
+        for dpy in to_close {
+            schedule_x_close(dpy);
         }
         crate::cap_log(
             "OUTLINE",
             "drop",
-            &format!("ms={}", t0.elapsed().as_millis()),
+            &format!(
+                "ms={} secondary={}",
+                t0.elapsed().as_millis(),
+                crate::x11_secondary::count()
+            ),
         );
         crate::mark_site("outline:drop:done");
     }
@@ -364,8 +374,12 @@ fn open_x_display() -> Result<*mut Display, CaptureError> {
     unsafe {
         let display = XOpenDisplay(ptr::null());
         if display.is_null() {
+            crate::diag::note(&format!(
+                "outline: XOpenDisplay failed secondary={}",
+                crate::x11_secondary::count()
+            ));
             return Err(CaptureError::Message(
-                "XOpenDisplay failed (need X11)".into(),
+                "XOpenDisplay failed (need X11; check max clients / DISPLAY)".into(),
             ));
         }
         crate::x11_secondary::register(display);
@@ -382,6 +396,19 @@ fn close_x_display(display: *mut Display) {
         crate::x11_secondary::unregister(display);
         XCloseDisplay(display);
     }
+}
+
+/// `XCloseDisplay` off the caller thread so Drop / UI stay responsive under load.
+fn schedule_x_close(display: *mut Display) {
+    if display.is_null() {
+        return;
+    }
+    let key = display as usize;
+    let _ = std::thread::Builder::new()
+        .name("sqyre-xclose".into())
+        .spawn(move || {
+            close_x_display(key as *mut Display);
+        });
 }
 
 /// Root pointer on `display`. Round-trip — do not call while `ConfigureWindow` is pending
