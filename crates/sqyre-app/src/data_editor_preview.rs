@@ -622,7 +622,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
 
     if !unresolved.is_empty() {
         ui.colored_label(
-            egui::Color32::from_rgb(220, 160, 60),
+            theme::warn_fg(),
             format!("Unresolved: {}", unresolved.join(", ")),
         );
     }

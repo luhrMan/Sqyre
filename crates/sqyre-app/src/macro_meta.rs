@@ -76,7 +76,7 @@ impl MacroMetaUi {
             }
         }
         if let Some(err) = &self.name_error {
-            ui.colored_label(ui.visuals().error_fg_color, err);
+            ui.colored_label(crate::theme::error_fg(), err);
         }
 
         ui.separator();

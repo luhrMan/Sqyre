@@ -1,70 +1,15 @@
 //! Sqyre brand theme (dark + Sqyre yellow accents).
+//!
+//! Brand/semantic colors live in [`sqyre_ui_theme`]; this module re-exports them
+//! and hosts app-only visuals + widgets.
 
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Stroke, Vec2, Visuals};
 
-/// Sqyre gold/yellow primary (`#dc9d2e`).
-pub const PRIMARY: Color32 = Color32::from_rgb(0xdc, 0x9d, 0x2e);
-
-/// Start macro / add controls (`#36a258`).
-pub const MACRO_START: Color32 = Color32::from_rgb(0x36, 0xa2, 0x58);
-
-/// Stop macro / remove controls (`#e44134`).
-pub const MACRO_STOP: Color32 = Color32::from_rgb(0xe4, 0x41, 0x34);
-
-/// Convert `[r,g,b,a]` to egui [`Color32`] (unmultiplied).
-pub fn rgba(c: [u8; 4]) -> Color32 {
-    Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])
-}
-
-/// Dim floating panel fill used by macro / recording overlays.
-pub fn overlay_panel_fill() -> Color32 {
-    rgba([20, 18, 14, 230])
-}
-
-/// Dimmed primary for selection / hover (alpha `0x40`).
-pub fn accent_dim() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 0x40])
-}
-
-/// Foreground that contrasts with a pastel/solid fill (Rec.601 luminance).
-pub fn contrast_fg(bg: Color32) -> Color32 {
-    let lum = 0.299 * bg.r() as f32 + 0.587 * bg.g() as f32 + 0.114 * bg.b() as f32;
-    if lum > 140.0 {
-        Color32::from_rgb(30, 30, 30)
-    } else {
-        Color32::from_rgb(240, 240, 240)
-    }
-}
-
-/// Place galley so its ink (mesh bounds) is centered in `rect`.
-pub fn paint_galley_centered(
-    ui: &mut egui::Ui,
-    rect: egui::Rect,
-    galley: std::sync::Arc<egui::Galley>,
-    fallback: Color32,
-) {
-    let pos = if galley.mesh_bounds.is_positive() {
-        // Optical center: baseline metrics make the layout box look top-heavy.
-        rect.center() - galley.mesh_bounds.center().to_vec2()
-    } else {
-        egui::Align2::CENTER_CENTER
-            .anchor_size(rect.center(), galley.size())
-            .min
-    };
-    ui.painter().galley(pos, galley, fallback);
-}
-
-/// Layout and paint a single-line glyph/text optically centered in `rect`.
-pub fn paint_text_centered(
-    ui: &mut egui::Ui,
-    rect: egui::Rect,
-    text: impl Into<String>,
-    font_id: egui::FontId,
-    color: Color32,
-) {
-    let galley = ui.painter().layout_no_wrap(text.into(), font_id, color);
-    paint_galley_centered(ui, rect, galley, color);
-}
+pub use sqyre_ui_theme::{
+    accent_dim, chip_fill, contrast_fg, error_fg, frame_fill, inner_stroke, ok_fg,
+    overlay_panel_fill, paint_galley_centered, paint_text_centered, rgba, warn_fg, MACRO_START,
+    MACRO_STOP, PRIMARY,
+};
 
 /// Minimum square hit target for icon-only buttons (framed and bare).
 /// Side grows with Button text so glyphs track the Font size setting.
@@ -131,31 +76,6 @@ fn icon_button_inner(
     response
 }
 
-/// Soft error / failure text (Find Pixel dropper, status banners).
-pub fn error_fg() -> Color32 {
-    Color32::from_rgb(220, 80, 80)
-}
-
-/// Soft warning text (platform/session advisories).
-pub fn warn_fg() -> Color32 {
-    Color32::from_rgb(220, 160, 60)
-}
-
-/// Soft success text for status banners.
-pub fn ok_fg() -> Color32 {
-    Color32::from_rgb(80, 160, 80)
-}
-
-/// Soft tag-chip fill (~11% opacity).
-pub fn chip_fill() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 28])
-}
-
-/// Subtle frame fill (~5% opacity).
-pub fn frame_fill() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 13])
-}
-
 /// Selected-text stroke — light cream readable on dim gold fill.
 const SELECTION_FG: Color32 = Color32::from_rgb(0xf5, 0xe6, 0xc0);
 
@@ -191,11 +111,6 @@ pub fn dark_visuals() -> Visuals {
 pub fn apply(ctx: &egui::Context) {
     ctx.set_theme(egui::ThemePreference::Dark);
     ctx.set_visuals_of(egui::Theme::Dark, dark_visuals());
-}
-
-/// Dim gold stroke for inner cards and previews (weaker than window chrome).
-pub fn inner_stroke() -> Stroke {
-    Stroke::new(1.0, accent_dim())
 }
 
 /// Rounded group frame with a faint Sqyre fill + dim gold stroke.
@@ -305,11 +220,9 @@ pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egu
 
 /// Icon-only record control (danger styling).
 pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled_ui(enabled, |ui| {
-        icon_button_colored(ui, "●", Some(Color32::RED))
-    })
-    .inner
-    .on_hover_text(tip)
+    ui.add_enabled_ui(enabled, |ui| icon_button_colored(ui, "●", Some(MACRO_STOP)))
+        .inner
+        .on_hover_text(tip)
 }
 
 /// Top-down mouse for Click button selection.
