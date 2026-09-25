@@ -4810,6 +4810,7 @@ dependencies = [
  "sqyre-probe",
  "sqyre-serialize",
  "sqyre-ui-model",
+ "sqyre-ui-theme",
  "sqyre-update",
  "sqyre-validate",
  "sqyre-varref",
@@ -4927,6 +4928,7 @@ dependencies = [
  "parking_lot",
  "sqyre-capture",
  "sqyre-persist",
+ "sqyre-ui-theme",
  "web-time",
  "x11",
 ]
@@ -4993,6 +4995,13 @@ dependencies = [
  "parking_lot",
  "sqyre-domain",
  "sqyre-varref",
+]
+
+[[package]]
+name = "sqyre-ui-theme"
+version = "0.1.0"
+dependencies = [
+ "egui",
 ]
 
 [[package]]
