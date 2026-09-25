@@ -154,6 +154,6 @@ impl DataEditor {
         if !open || close {
             self.overlay_icon_picker_for = None;
         }
-        let _ = settings; // form-edited; persist via Update
+        let _ = settings; // form-edited; persist via Save
     }
 }

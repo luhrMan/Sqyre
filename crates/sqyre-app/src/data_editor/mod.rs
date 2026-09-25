@@ -363,7 +363,7 @@ impl DataEditor {
 
     /// Live Overlay-tab form as an on-screen button preview (position, size, icon, style).
     ///
-    /// Shown while a button is selected for editing, even before Update is clicked.
+    /// Shown while a button is selected for editing, even before Save is clicked.
     /// Called from `sync_macro_overlay` when `overlay-buttons` is enabled.
     #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
     pub fn overlay_edit_preview(&self) -> Option<OverlayButtonConfig> {
@@ -984,17 +984,17 @@ impl DataEditor {
                     }
                     let dirty = self.is_dirty(env.catalog, env.settings);
                     let valid = self.form_valid(env.macros.get(selected_macro));
-                    let can_update =
+                    let can_save =
                         !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-                    let update_enabled = can_update && dirty && valid;
-                    let update_clicked =
-                        crate::theme::dirty_action_button(ui, "Update", update_enabled).clicked();
-                    // Enter submits when Update is able: this window is in front,
+                    let save_enabled = can_save && dirty && valid;
+                    let save_clicked =
+                        crate::theme::dirty_action_button(ui, "Save", save_enabled).clicked();
+                    // Enter submits when Save is able: this window is in front,
                     // and no confirm / picker / combo is using the key.
-                    let update_enter = update_enabled
+                    let save_enter = save_enabled
                         && self.enter_commits_update(ui)
                         && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
-                    if update_clicked || update_enter || (tag_submit && update_enabled) {
+                    if save_clicked || save_enter || (tag_submit && save_enabled) {
                         self.on_update(env, previews);
                     }
                     let can_delete = match self.tab {
@@ -1068,13 +1068,15 @@ impl DataEditor {
         let Some(confirm) = self.confirm.clone() else {
             return;
         };
-        let title = match &confirm {
+        let (title, confirm_label, kind) = match &confirm {
             PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => {
-                "Confirm Delete"
+                ("Delete", "Delete", crate::widgets::ConfirmKind::Destructive)
             }
-            PendingConfirm::Overwrite { .. } | PendingConfirm::OverwriteVariant { .. } => {
-                "Confirm Overwrite"
-            }
+            PendingConfirm::Overwrite { .. } | PendingConfirm::OverwriteVariant { .. } => (
+                "Overwrite",
+                "Overwrite",
+                crate::widgets::ConfirmKind::Primary,
+            ),
         };
         let ctx = env.ctx;
         let open = crate::widgets::confirm_window(ctx, title, env.pending_scale, |ui| {
@@ -1105,7 +1107,7 @@ impl DataEditor {
                     ));
                 }
             }
-            match crate::widgets::confirm_cancel_row(ui) {
+            match crate::widgets::confirm_cancel_row(ui, confirm_label, kind) {
                 crate::widgets::ConfirmCancel::Cancel => {
                     self.confirm = None;
                 }
@@ -1151,7 +1153,11 @@ impl DataEditor {
         let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", pending_scale, |ui| {
             ui.label("Variant name");
             ui.add(egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(220.0));
-            match crate::widgets::confirm_cancel_row(ui) {
+            match crate::widgets::confirm_cancel_row(
+                ui,
+                "Add",
+                crate::widgets::ConfirmKind::Primary,
+            ) {
                 crate::widgets::ConfirmCancel::Cancel => cancel = true,
                 crate::widgets::ConfirmCancel::Confirm => submit = true,
                 crate::widgets::ConfirmCancel::None => {}

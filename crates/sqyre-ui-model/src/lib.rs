@@ -100,6 +100,25 @@ mod tests {
     }
 
     #[test]
+    fn type_param_uses_taxonomy_label_not_wire_key() {
+        use sqyre_domain::{action_type_label, blank_action};
+
+        for key in ["imagesearch", "findpixel", "setvariable", "move", "ocr"] {
+            let a = blank_action(key).unwrap_or_else(|| panic!("blank_action({key})"));
+            let typ = a
+                .display_params()
+                .into_iter()
+                .find(|p| p.label.eq_ignore_ascii_case("Type"))
+                .unwrap_or_else(|| panic!("Type param missing for {key}"));
+            assert_eq!(typ.value, action_type_label(key), "Type for {key}");
+            assert_ne!(
+                typ.value, key,
+                "Type must not expose wire key {key:?} when taxonomy has a label"
+            );
+        }
+    }
+
+    #[test]
     fn pastel_wait_differs_from_mouse() {
         clear_all_custom_action_colors();
         let wait = action_pastel_color("wait", false);
@@ -373,6 +392,65 @@ mod tests {
         };
         let pills = mv.tree_summary_pills();
         assert!(pills.iter().any(|p| p.text == CoordinateRef::UNSET_LABEL));
+    }
+
+    #[test]
+    fn empty_non_catalog_scalars_use_not_set() {
+        use sqyre_domain::EMPTY_NOT_SET;
+
+        let focus = Action {
+            id: ActionId::new(),
+            kind: ActionKind::FocusWindow {
+                process_path: String::new(),
+                window_title: String::new(),
+            },
+        };
+        let params = focus.display_params();
+        assert_eq!(
+            params
+                .iter()
+                .find(|p| p.label == "Title")
+                .map(|p| p.value.as_str()),
+            Some(EMPTY_NOT_SET)
+        );
+        assert_eq!(
+            params
+                .iter()
+                .find(|p| p.label == "App")
+                .map(|p| p.value.as_str()),
+            Some(EMPTY_NOT_SET)
+        );
+
+        let run = Action {
+            id: ActionId::new(),
+            kind: ActionKind::RunMacro {
+                macro_name: String::new(),
+            },
+        };
+        assert_eq!(
+            run.display_params()
+                .iter()
+                .find(|p| p.label == "Macro")
+                .map(|p| p.value.as_str()),
+            Some(EMPTY_NOT_SET)
+        );
+
+        let pause = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Pause {
+                message: String::new(),
+                continue_key: vec![],
+                pass_through: false,
+            },
+        };
+        assert_eq!(
+            pause
+                .display_params()
+                .iter()
+                .find(|p| p.label == "Continue")
+                .map(|p| p.value.as_str()),
+            Some(EMPTY_NOT_SET)
+        );
     }
 
     #[test]

@@ -311,6 +311,24 @@ pub enum ConfirmCancel {
     Cancel,
 }
 
+/// Visual role for a confirm / choice primary button.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmKind {
+    /// Neutral primary (Overwrite, Yes, Add, …).
+    Primary,
+    /// Destructive primary styled with [`crate::theme::MACRO_STOP`] (Delete, …).
+    Destructive,
+}
+
+fn confirm_button(ui: &mut egui::Ui, label: &str, kind: ConfirmKind) -> egui::Response {
+    match kind {
+        ConfirmKind::Primary => ui.button(label),
+        ConfirmKind::Destructive => {
+            ui.button(egui::RichText::new(label).color(crate::theme::MACRO_STOP))
+        }
+    }
+}
+
 /// Esc → cancel, Enter → submit for top-level confirm popups.
 ///
 /// Keys are consumed so they do not leak to the UI under the dialog.
@@ -324,21 +342,68 @@ pub fn poll_confirm_keys(ui: &mut egui::Ui) -> ConfirmCancel {
     }
 }
 
-/// Cancel + Confirm for destructive / overwrite prompts.
+/// Cancel left + labeled primary right for destructive / overwrite prompts.
 ///
-/// `Enter` confirms and `Esc` cancels.
-pub fn confirm_cancel_row(ui: &mut egui::Ui) -> ConfirmCancel {
+/// `confirm_label` is the action verb (**Delete**, **Overwrite**, …) — never
+/// generic "Confirm". `Enter` confirms and `Esc` cancels.
+pub fn confirm_cancel_row(
+    ui: &mut egui::Ui,
+    confirm_label: &str,
+    kind: ConfirmKind,
+) -> ConfirmCancel {
     let mut out = ConfirmCancel::None;
     ui.horizontal(|ui| {
         if ui.button("Cancel").clicked() {
             out = ConfirmCancel::Cancel;
         }
-        if ui.button("Confirm").clicked() {
+        if confirm_button(ui, confirm_label, kind).clicked() {
             out = ConfirmCancel::Confirm;
         }
     });
     if out == ConfirmCancel::None {
         out = poll_confirm_keys(ui);
+    }
+    out
+}
+
+/// Outcome of [`confirm_choice_row`] (Cancel + multiple labeled choices).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfirmChoice {
+    None,
+    Cancel,
+    /// Index into the `choices` slice passed to [`confirm_choice_row`].
+    Choice(usize),
+}
+
+/// Cancel left + one or more labeled choice buttons.
+///
+/// `Esc` → Cancel. `Enter` → `enter_choice` when `Some`.
+pub fn confirm_choice_row(
+    ui: &mut egui::Ui,
+    choices: &[(&str, ConfirmKind)],
+    enter_choice: Option<usize>,
+) -> ConfirmChoice {
+    let mut out = ConfirmChoice::None;
+    ui.horizontal(|ui| {
+        if ui.button("Cancel").clicked() {
+            out = ConfirmChoice::Cancel;
+        }
+        for (i, (label, kind)) in choices.iter().enumerate() {
+            if confirm_button(ui, label, *kind).clicked() {
+                out = ConfirmChoice::Choice(i);
+            }
+        }
+    });
+    if out == ConfirmChoice::None {
+        match poll_confirm_keys(ui) {
+            ConfirmCancel::Cancel => out = ConfirmChoice::Cancel,
+            ConfirmCancel::Confirm => {
+                if let Some(i) = enter_choice.filter(|i| *i < choices.len()) {
+                    out = ConfirmChoice::Choice(i);
+                }
+            }
+            ConfirmCancel::None => {}
+        }
     }
     out
 }

@@ -60,7 +60,7 @@ impl DataEditor {
             &mut selected,
             &macro_names,
             "(pick macro)",
-            Some("(none)"),
+            Some(sqyre_domain::EMPTY_NONE),
             Some(220.0),
         );
         if selected != before {
@@ -213,7 +213,7 @@ impl DataEditor {
                     }
                 });
                 if self.form_overlay_gate_targets.is_empty() {
-                    ui.label("(none)");
+                    ui.label(sqyre_domain::EMPTY_NONE);
                 } else {
                     let mut remove: Option<usize> = None;
                     let snapshot = self.form_overlay_gate_targets.clone();

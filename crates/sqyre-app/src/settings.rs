@@ -295,6 +295,9 @@ impl SettingsUi {
         if !self.open {
             crate::pickers::reset_focus_search(ctx, settings_window_id());
         }
+        if let Some(confirm) = self.confirm.clone() {
+            self.draw_confirm(ctx, confirm, db, macros, catalog);
+        }
         if self.dirty {
             self.persist();
             Self::apply_appearance(ctx, &self.settings);
@@ -310,11 +313,6 @@ impl SettingsUi {
         catalog: &mut ProgramCatalog,
         #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
     ) {
-        if let Some(confirm) = self.confirm.clone() {
-            self.draw_confirm(ui, confirm, db, macros, catalog);
-            return;
-        }
-
         // Esc: clear search first, then close (window already has titlebar close).
         if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
             if !self.search.is_empty() {
@@ -1114,7 +1112,7 @@ impl SettingsUi {
 
     fn draw_confirm(
         &mut self,
-        ui: &mut egui::Ui,
+        ctx: &egui::Context,
         confirm: PendingConfirm,
         db: &mut Database,
         macros: &mut Vec<Macro>,
@@ -1122,63 +1120,83 @@ impl SettingsUi {
     ) {
         match &confirm {
             PendingConfirm::MoveData { old_dir, new_dir } => {
-                ui.label("Move existing data?");
-                ui.label(format!(
-                    "Move your current data from\n{}\nto\n{}?\n\nChoose No to start fresh at the new location (existing data is left in place).",
-                    old_dir.display(),
-                    new_dir.display()
-                ));
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.confirm = None;
-                    }
-                    if ui.button("No").clicked() {
-                        let old = old_dir.clone();
-                        let new = new_dir.clone();
-                        self.confirm = None;
-                        self.apply_sqyre_location(old, new, false, db, macros, catalog);
-                    }
-                    if ui.button("Yes").clicked() {
-                        let old = old_dir.clone();
-                        let new = new_dir.clone();
-                        self.confirm = None;
-                        self.apply_sqyre_location(old, new, true, db, macros, catalog);
+                let open = crate::widgets::confirm_window(ctx, "Move existing data?", |ui| {
+                    ui.label(format!(
+                        "Move your current data from\n{}\nto\n{}?\n\nChoose No to start fresh at the new location (existing data is left in place).",
+                        old_dir.display(),
+                        new_dir.display()
+                    ));
+                    // Enter → Yes (index 1).
+                    match crate::widgets::confirm_choice_row(
+                        ui,
+                        &[
+                            ("No", crate::widgets::ConfirmKind::Primary),
+                            ("Yes", crate::widgets::ConfirmKind::Primary),
+                        ],
+                        Some(1),
+                    ) {
+                        crate::widgets::ConfirmChoice::Cancel => {
+                            self.confirm = None;
+                        }
+                        crate::widgets::ConfirmChoice::Choice(0) => {
+                            let old = old_dir.clone();
+                            let new = new_dir.clone();
+                            self.confirm = None;
+                            self.apply_sqyre_location(old, new, false, db, macros, catalog);
+                        }
+                        crate::widgets::ConfirmChoice::Choice(1) => {
+                            let old = old_dir.clone();
+                            let new = new_dir.clone();
+                            self.confirm = None;
+                            self.apply_sqyre_location(old, new, true, db, macros, catalog);
+                        }
+                        crate::widgets::ConfirmChoice::Choice(_)
+                        | crate::widgets::ConfirmChoice::None => {}
                     }
                 });
-                // Ternary: Esc cancels only (Enter is ambiguous between Yes/No).
-                if matches!(
-                    crate::widgets::poll_confirm_keys(ui),
-                    crate::widgets::ConfirmCancel::Cancel
-                ) {
+                if !open {
                     self.confirm = None;
                 }
             }
             PendingConfirm::RestoreBackup { path } => {
-                ui.label("Import backup?");
-                ui.label(format!(
-                    "Archive:\n{}\n\nOverwrite replaces all macros, settings, images, and variables with the archive.\n\nMerge keeps live-only items, prefers the archive on name conflicts, replaces settings, and merges other assets. Automatic backups in the backups folder are not removed.",
-                    path.display()
-                ));
-                ui.horizontal(|ui| {
-                    if ui.button("Cancel").clicked() {
-                        self.confirm = None;
-                    }
-                    if ui.button("Overwrite").clicked() {
-                        let path = path.clone();
-                        self.confirm = None;
-                        self.apply_restore_backup(path, ImportMode::Overwrite, db, macros, catalog);
-                    }
-                    if ui.button("Merge").clicked() {
-                        let path = path.clone();
-                        self.confirm = None;
-                        self.apply_restore_backup(path, ImportMode::Merge, db, macros, catalog);
+                let open = crate::widgets::confirm_window(ctx, "Import backup?", |ui| {
+                    ui.label(format!(
+                        "Archive:\n{}\n\nOverwrite replaces all macros, settings, images, and variables with the archive.\n\nMerge keeps live-only items, prefers the archive on name conflicts, replaces settings, and merges other assets. Automatic backups in the backups folder are not removed.",
+                        path.display()
+                    ));
+                    // Enter → Overwrite (index 0); both are intentional verbs.
+                    match crate::widgets::confirm_choice_row(
+                        ui,
+                        &[
+                            ("Overwrite", crate::widgets::ConfirmKind::Destructive),
+                            ("Merge", crate::widgets::ConfirmKind::Primary),
+                        ],
+                        Some(0),
+                    ) {
+                        crate::widgets::ConfirmChoice::Cancel => {
+                            self.confirm = None;
+                        }
+                        crate::widgets::ConfirmChoice::Choice(0) => {
+                            let path = path.clone();
+                            self.confirm = None;
+                            self.apply_restore_backup(
+                                path,
+                                ImportMode::Overwrite,
+                                db,
+                                macros,
+                                catalog,
+                            );
+                        }
+                        crate::widgets::ConfirmChoice::Choice(1) => {
+                            let path = path.clone();
+                            self.confirm = None;
+                            self.apply_restore_backup(path, ImportMode::Merge, db, macros, catalog);
+                        }
+                        crate::widgets::ConfirmChoice::Choice(_)
+                        | crate::widgets::ConfirmChoice::None => {}
                     }
                 });
-                // Ternary: Esc cancels only (Enter is ambiguous between Overwrite/Merge).
-                if matches!(
-                    crate::widgets::poll_confirm_keys(ui),
-                    crate::widgets::ConfirmCancel::Cancel
-                ) {
+                if !open {
                     self.confirm = None;
                 }
             }

@@ -27,7 +27,7 @@ impl DataEditor {
         help::label(ui, "Running program", help::DE_RUNNING_PROGRAM);
         ui.add_space(4.0);
         let bound = if self.form_process_path.trim().is_empty() {
-            "(none)".to_string()
+            sqyre_domain::EMPTY_NONE.to_string()
         } else if self.form_window_title.trim().is_empty() {
             self.form_process_path.clone()
         } else {
@@ -172,8 +172,8 @@ impl DataEditor {
             "item_mask",
             &mut current,
             &masks,
-            "(none)",
-            Some("(none)"),
+            sqyre_domain::EMPTY_NONE,
+            Some(sqyre_domain::EMPTY_NONE),
             None,
             Some(&mut on_hover),
             None,

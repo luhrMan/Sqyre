@@ -666,7 +666,7 @@ impl DataEditor {
                 "data_editor_program",
                 &mut current,
                 &names,
-                "(none)",
+                sqyre_domain::EMPTY_NONE,
                 None,
                 None,
                 None,

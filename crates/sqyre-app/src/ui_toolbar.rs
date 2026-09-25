@@ -243,7 +243,7 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
     let hk_label = {
         let m = &app.workspace.macros[idx];
         if m.hotkey.is_empty() {
-            "—".to_string()
+            sqyre_domain::EMPTY_NOT_SET.to_string()
         } else {
             format_hotkey(&m.hotkey)
         }
