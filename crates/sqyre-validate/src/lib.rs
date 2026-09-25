@@ -1280,6 +1280,45 @@ mod tests {
     }
 
     #[test]
+    fn validate_for_each_cell_requires_collection_range() {
+        let empty = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ForEachCell {
+                name: String::new(),
+                cells: CoordinateRef(String::new()),
+                subactions: vec![],
+            },
+        };
+        assert!(validate_action(&empty, None)
+            .unwrap_err()
+            .to_string()
+            .contains("Collection cell range"));
+
+        let desktop = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ForEachCell {
+                name: String::new(),
+                cells: CoordinateRef("Game~Box".into()),
+                subactions: vec![],
+            },
+        };
+        assert!(validate_action(&desktop, None)
+            .unwrap_err()
+            .to_string()
+            .contains("Collection range"));
+
+        let ok = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ForEachCell {
+                name: String::new(),
+                cells: CoordinateRef::collection("Game", "Grid", 1, 1, 2, 2),
+                subactions: vec![],
+            },
+        };
+        assert!(validate_action(&ok, None).is_ok());
+    }
+
+    #[test]
     fn validate_move_requires_point() {
         let a = Action {
             id: ActionId::new(),
