@@ -185,14 +185,29 @@ impl SqyreApp {
         self.run_session.macro_hotkeys.set_bindings(bindings);
     }
 
-    pub(crate) fn persist_macro_at(&mut self, idx: usize) {
+    /// Surface a failed `persist_database` to the toolbar status line.
+    ///
+    /// [`Self::persist_database`] already sets [`Workspace::save_error`] (macro-list banner);
+    /// this also pushes the same failure into the always-visible run status.
+    pub(crate) fn report_persist_failure(&mut self, action: &str, err: &str) {
+        crate::log::warn(format_args!("{action}: {err}"));
+        *self.run_session.state.status.lock() = format!("{action} failed: {err}");
+    }
+
+    pub(crate) fn persist_macro_at(&mut self, idx: usize) -> bool {
         if idx >= self.workspace.macros.len() {
-            return;
+            return false;
         }
-        if let Err(e) = self.persist_database() {
-            crate::log::warn(format_args!("persist macro: {e}"));
+        match self.persist_database() {
+            Ok(()) => {
+                self.refresh_macro_hotkey_bindings();
+                true
+            }
+            Err(e) => {
+                self.report_persist_failure("Save macro", &e);
+                false
+            }
         }
-        self.refresh_macro_hotkey_bindings();
     }
 
     pub(crate) fn unique_macro_name(&self, base: &str) -> String {
@@ -228,7 +243,7 @@ impl SqyreApp {
             .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         if let Err(e) = self.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
-            crate::log::warn(format_args!("create macro: {e}"));
+            self.report_persist_failure("Create macro", &e);
             return;
         }
         self.refresh_macro_hotkey_bindings();
@@ -310,8 +325,7 @@ impl SqyreApp {
             if let Some(h) = self.tree.histories.get_mut(&old_name) {
                 h.pop_last_undo();
             }
-            crate::log::warn(format_args!("apply YAML macro: {e}"));
-            *self.run_session.state.status.lock() = format!("Apply failed: {e}");
+            self.report_persist_failure("Apply YAML macro", &e);
             return;
         }
 
@@ -342,8 +356,7 @@ impl SqyreApp {
             .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         if let Err(e) = self.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
-            crate::log::warn(format_args!("import YAML macro: {e}"));
-            *self.run_session.state.status.lock() = format!("Import failed: {e}");
+            self.report_persist_failure("Import YAML macro", &e);
             return;
         }
         self.refresh_macro_hotkey_bindings();
@@ -373,7 +386,7 @@ impl SqyreApp {
             .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
         if let Err(e) = self.persist_database() {
             self.workspace.macros.retain(|m| m.name != name);
-            crate::log::warn(format_args!("duplicate macro: {e}"));
+            self.report_persist_failure("Duplicate macro", &e);
             return;
         }
         self.refresh_macro_hotkey_bindings();
@@ -382,12 +395,18 @@ impl SqyreApp {
     }
 
     pub(crate) fn delete_macro_named(&mut self, name: &str) {
+        let Some(pos) = self.workspace.macros.iter().position(|m| m.name == name) else {
+            return;
+        };
+        // Persist first; only drop history / YAML drafts after disk agrees.
+        let removed = self.workspace.macros.remove(pos);
+        if let Err(e) = self.persist_database() {
+            self.workspace.macros.insert(pos, removed);
+            self.report_persist_failure("Delete macro", &e);
+            return;
+        }
         self.tree.histories.remove(name);
         self.macro_yaml_builder.on_macro_deleted(name);
-        self.workspace.macros.retain(|m| m.name != name);
-        if let Err(e) = self.persist_database() {
-            crate::log::warn(format_args!("delete macro: {e}"));
-        }
         self.refresh_macro_hotkey_bindings();
         self.play_ui_delete_sound();
         if self.workspace.macros.is_empty() {
@@ -426,15 +445,17 @@ impl SqyreApp {
         for m in &mut self.workspace.macros {
             m.rename_macro_reference(&old_name, &new_name);
         }
-        if self
+        let overlay_changed = self
             .settings_ui
             .settings_mut()
-            .rename_overlay_macro(&old_name, &new_name)
-        {
+            .rename_overlay_macro(&old_name, &new_name);
+        if overlay_changed {
             self.data_editor
                 .rename_overlay_form_macro(&old_name, &new_name);
             if let Err(e) = self.settings_ui.save_settings() {
                 crate::log::warn(format_args!("rename macro overlay refs: {e}"));
+                *self.run_session.state.status.lock() =
+                    format!("Rename macro: overlay settings save failed: {e}");
             }
         }
         if let Some(hist) = self.tree.histories.remove(&old_name) {
@@ -443,7 +464,35 @@ impl SqyreApp {
         self.macro_yaml_builder
             .on_macro_renamed(&old_name, &new_name);
         if let Err(e) = self.persist_database() {
-            crate::log::warn(format_args!("rename macro: {e}"));
+            // Roll memory (+ overlay / history / YAML drafts) back to the old name.
+            if let Some(i) = self
+                .workspace
+                .macros
+                .iter()
+                .position(|m| m.name == new_name)
+            {
+                self.workspace.macros[i].name = old_name.clone();
+            }
+            for m in &mut self.workspace.macros {
+                m.rename_macro_reference(&new_name, &old_name);
+            }
+            if overlay_changed {
+                self.settings_ui
+                    .settings_mut()
+                    .rename_overlay_macro(&new_name, &old_name);
+                self.data_editor
+                    .rename_overlay_form_macro(&new_name, &old_name);
+                if let Err(se) = self.settings_ui.save_settings() {
+                    crate::log::warn(format_args!("rename macro rollback overlay refs: {se}"));
+                }
+            }
+            if let Some(hist) = self.tree.histories.remove(&new_name) {
+                self.tree.histories.insert(old_name.clone(), hist);
+            }
+            self.macro_yaml_builder
+                .on_macro_renamed(&new_name, &old_name);
+            self.report_persist_failure("Rename macro", &e);
+            return;
         }
         self.refresh_macro_hotkey_bindings();
 
@@ -535,11 +584,13 @@ impl SqyreApp {
                 self.set_selected_actions(selected);
                 self.tree.tooltip.cancel();
                 self.tree.invalidate_paint_cache();
-                let idx = self
-                    .workspace
-                    .selected_macro
-                    .min(self.workspace.macros.len().saturating_sub(1));
-                self.persist_macro_at(idx);
+                if let Err(e) = self.persist_database() {
+                    // Persist failed after undo — reverse so memory matches disk.
+                    self.reverse_last_undo_redo(/*was_undo=*/ true);
+                    self.report_persist_failure("Undo", &e);
+                    return;
+                }
+                self.refresh_macro_hotkey_bindings();
             }
             Err(e) => {
                 crate::log::warn(format_args!("undo: {e}"));
@@ -576,17 +627,57 @@ impl SqyreApp {
                 self.set_selected_actions(selected);
                 self.tree.tooltip.cancel();
                 self.tree.invalidate_paint_cache();
-                let idx = self
-                    .workspace
-                    .selected_macro
-                    .min(self.workspace.macros.len().saturating_sub(1));
-                self.persist_macro_at(idx);
+                if let Err(e) = self.persist_database() {
+                    // Persist failed after redo — reverse so memory matches disk.
+                    self.reverse_last_undo_redo(/*was_undo=*/ false);
+                    self.report_persist_failure("Redo", &e);
+                    return;
+                }
+                self.refresh_macro_hotkey_bindings();
             }
             Err(e) => {
                 crate::log::warn(format_args!("redo: {e}"));
                 *self.run_session.state.status.lock() = format!("Redo failed: {e}");
             }
         }
+    }
+
+    /// Undo the in-memory effect of a successful undo/redo whose persist failed.
+    ///
+    /// Does not call `persist_database` — disk already holds the pre-op state.
+    fn reverse_last_undo_redo(&mut self, was_undo: bool) {
+        if self.workspace.macros.is_empty() {
+            return;
+        }
+        let idx = self
+            .workspace
+            .selected_macro
+            .min(self.workspace.macros.len() - 1);
+        let name = self.workspace.macros[idx].name.clone();
+        let mut selected = self.tree.selected_actions.clone();
+        let mut history = self.tree.histories.remove(&name).unwrap_or_default();
+        let result = if was_undo {
+            history.redo(&mut self.workspace.macros[idx], &mut selected)
+        } else {
+            history.undo(&mut self.workspace.macros[idx], &mut selected)
+        };
+        self.tree.histories.insert(name.clone(), history);
+        if result.is_err() {
+            return;
+        }
+        let restored = self.workspace.macros[idx].name.clone();
+        if restored != name {
+            if let Some(h) = self.tree.histories.remove(&name) {
+                self.tree.histories.insert(restored.clone(), h);
+            }
+            self.workspace
+                .macros
+                .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
+            self.select_macro_by_name(&restored);
+        }
+        self.set_selected_actions(selected);
+        self.tree.tooltip.cancel();
+        self.tree.invalidate_paint_cache();
     }
 
     pub(crate) fn can_undo(&self) -> bool {
@@ -899,12 +990,50 @@ impl SqyreApp {
 #[cfg(test)]
 mod tests {
     use super::macro_matches_hotkey_tag;
+    use crate::SqyreApp;
     use sqyre_domain::Macro;
+    #[cfg(unix)]
+    use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     fn m(tags: &[&str]) -> Macro {
         let mut macro_ = Macro::new("m", 0, Vec::new());
         macro_.tags = tags.iter().map(|s| (*s).to_string()).collect();
         macro_
+    }
+
+    /// Make `path` unwritable so subsequent `db.yaml` atomic writes fail.
+    #[cfg(unix)]
+    fn make_unwritable(path: &std::path::Path) {
+        let mut perms = fs::metadata(path).unwrap().permissions();
+        perms.set_mode(0o555);
+        fs::set_permissions(path, perms).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn make_writable(path: &std::path::Path) {
+        let mut perms = fs::metadata(path).unwrap().permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(path, perms).unwrap();
+    }
+
+    #[cfg(unix)]
+    fn with_unwritable_db_dir(f: impl FnOnce(&mut SqyreApp)) {
+        let dir = tempfile::tempdir().unwrap();
+        sqyre_persist::with_sqyre_dir_override(dir.path().to_path_buf(), || {
+            sqyre_persist::initialize_directories().unwrap();
+            let mut app = SqyreApp::for_docs();
+            app.persist_database().expect("initial save");
+            make_unwritable(dir.path());
+            f(&mut app);
+            make_writable(dir.path());
+        });
+    }
+
+    #[cfg(unix)]
+    fn status_text(app: &SqyreApp) -> String {
+        app.run_session.state.status.lock().clone()
     }
 
     #[test]
@@ -942,5 +1071,94 @@ mod tests {
             &m(&["combat"]),
             &["combat/pve".into()]
         ));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn create_macro_rolls_back_and_surfaces_persist_failure() {
+        with_unwritable_db_dir(|app| {
+            let before = app.workspace.macros.len();
+            let names_before: Vec<_> = app
+                .workspace
+                .macros
+                .iter()
+                .map(|m| m.name.clone())
+                .collect();
+            app.create_macro();
+            assert_eq!(app.workspace.macros.len(), before);
+            assert_eq!(
+                app.workspace
+                    .macros
+                    .iter()
+                    .map(|m| m.name.clone())
+                    .collect::<Vec<_>>(),
+                names_before
+            );
+            assert!(app.workspace.save_error.is_some());
+            assert!(
+                status_text(app).starts_with("Create macro failed:"),
+                "status={}",
+                status_text(app)
+            );
+        });
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn duplicate_macro_rolls_back_and_surfaces_persist_failure() {
+        with_unwritable_db_dir(|app| {
+            let before = app.workspace.macros.len();
+            assert!(before > 0);
+            app.workspace.selected_macro = 0;
+            let names_before: Vec<_> = app
+                .workspace
+                .macros
+                .iter()
+                .map(|m| m.name.clone())
+                .collect();
+            app.duplicate_selected_macro();
+            assert_eq!(app.workspace.macros.len(), before);
+            assert_eq!(
+                app.workspace
+                    .macros
+                    .iter()
+                    .map(|m| m.name.clone())
+                    .collect::<Vec<_>>(),
+                names_before
+            );
+            assert!(app.workspace.save_error.is_some());
+            assert!(status_text(app).starts_with("Duplicate macro failed:"));
+        });
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn delete_macro_rolls_back_and_surfaces_persist_failure() {
+        with_unwritable_db_dir(|app| {
+            let before = app.workspace.macros.len();
+            assert!(before > 0);
+            let name = app.workspace.macros[0].name.clone();
+            app.delete_macro_named(&name);
+            assert_eq!(app.workspace.macros.len(), before);
+            assert!(app.workspace.macros.iter().any(|m| m.name == name));
+            assert!(app.workspace.save_error.is_some());
+            assert!(status_text(app).starts_with("Delete macro failed:"));
+        });
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rename_macro_rolls_back_and_surfaces_persist_failure() {
+        with_unwritable_db_dir(|app| {
+            assert!(!app.workspace.macros.is_empty());
+            app.workspace.selected_macro = 0;
+            let old = app.workspace.macros[0].name.clone();
+            let new_name = format!("{old} renamed-ws3");
+            app.rename_selected_macro(new_name.clone());
+            assert!(app.workspace.macros.iter().any(|m| m.name == old));
+            assert!(!app.workspace.macros.iter().any(|m| m.name == new_name));
+            assert!(app.workspace.save_error.is_some());
+            assert!(status_text(app).starts_with("Rename macro failed:"));
+        });
     }
 }

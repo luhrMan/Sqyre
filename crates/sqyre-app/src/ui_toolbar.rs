@@ -317,7 +317,7 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
             )
         {
             if let Err(e) = app.persist_database() {
-                crate::log::warn(format!("persist after temporary program reset: {e}"));
+                app.report_persist_failure("Save after record prep", &e);
             }
         }
         // Light-theme variables pastel reads better as a glyph on dark chrome.
