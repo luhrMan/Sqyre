@@ -754,19 +754,25 @@ mod tests {
         }
     }
 
+    /// Headless tests discard paint output; clear texture deltas so Drop does not panic (egui 0.36+).
+    fn run_ui(ctx: &egui::Context, input: RawInput, add_contents: impl FnMut(&mut egui::Ui)) {
+        ctx.run_ui(input, add_contents)
+            .drop_without_applying_deltas();
+    }
+
     #[test]
     fn mouse_button_picker_cycles_with_arrows_when_focused() {
         let ctx = egui::Context::default();
         let mut button = MouseButton::Left;
 
-        let _ = ctx.run_ui(RawInput::default(), |ui| {
+        run_ui(&ctx, RawInput::default(), |ui| {
             let r = mouse_button_picker(ui, &mut button);
             r.request_focus();
         });
 
         let mut input = RawInput::default();
         input.events.push(key_press(Key::ArrowRight));
-        let _ = ctx.run_ui(input, |ui| {
+        run_ui(&ctx, input, |ui| {
             let r = mouse_button_picker(ui, &mut button);
             assert!(r.has_focus(), "picker must keep focus for arrow cycling");
             assert!(r.changed());
@@ -775,7 +781,7 @@ mod tests {
 
         let mut input = RawInput::default();
         input.events.push(key_press(Key::ArrowLeft));
-        let _ = ctx.run_ui(input, |ui| {
+        run_ui(&ctx, input, |ui| {
             let r = mouse_button_picker(ui, &mut button);
             assert!(r.changed());
         });
@@ -787,13 +793,13 @@ mod tests {
         let ctx = egui::Context::default();
         let mut state = PressState::Up;
 
-        let _ = ctx.run_ui(RawInput::default(), |ui| {
+        run_ui(&ctx, RawInput::default(), |ui| {
             press_state_toggle(ui, &mut state).request_focus();
         });
 
         let mut input = RawInput::default();
         input.events.push(key_press(Key::ArrowDown));
-        let _ = ctx.run_ui(input, |ui| {
+        run_ui(&ctx, input, |ui| {
             let r = press_state_toggle(ui, &mut state);
             assert!(r.has_focus());
             assert!(r.changed());
@@ -802,7 +808,7 @@ mod tests {
 
         let mut input = RawInput::default();
         input.events.push(key_press(Key::ArrowDown));
-        let _ = ctx.run_ui(input, |ui| {
+        run_ui(&ctx, input, |ui| {
             assert!(press_state_toggle(ui, &mut state).changed());
         });
         assert_eq!(state, PressState::Down);
@@ -813,13 +819,13 @@ mod tests {
         let ctx = egui::Context::default();
         let mut down = false;
 
-        let _ = ctx.run_ui(RawInput::default(), |ui| {
+        run_ui(&ctx, RawInput::default(), |ui| {
             up_down_toggle(ui, &mut down).request_focus();
         });
 
         let mut input = RawInput::default();
         input.events.push(key_press(Key::ArrowRight));
-        let _ = ctx.run_ui(input, |ui| {
+        run_ui(&ctx, input, |ui| {
             let r = up_down_toggle(ui, &mut down);
             assert!(r.has_focus());
             assert!(r.changed());
