@@ -716,7 +716,7 @@ mod tests {
     #[test]
     fn resolve_edit_width_clamps_infinity_to_available() {
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
             ui.set_max_width(200.0);
             let finite = resolve_edit_width(ui, 160.0, 0.0);
             assert_eq!(finite, 160.0);
@@ -724,7 +724,8 @@ mod tests {
             assert!(fill.is_finite(), "fill width must be finite");
             assert!(fill <= ui.available_width());
             assert!(fill >= 40.0);
-        });
+        })
+        .drop_without_applying_deltas();
     }
 
     #[test]
@@ -775,7 +776,7 @@ mod tests {
     fn paint_smoke_with_nested_refs() {
         let ctx = egui::Context::default();
         let known = known_variable_set(["count"]);
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
             paint_value_pill(ui, "1+${count}", "setvariable", &known, false);
             paint_variable_name_pill(ui, "Variable", "count", "setvariable", &known, false);
             paint_nested_var_chip(ui, "missing", &known, false);
@@ -784,14 +785,15 @@ mod tests {
                 prefix: None,
             };
             paint_summary_pill(ui, "setvariable", &pill, &known, true);
-        });
+        })
+        .drop_without_applying_deltas();
     }
 
     #[test]
     fn plain_value_and_name_pills_share_row_height() {
         let ctx = egui::Context::default();
         let known = known_variable_set(["foundY"]);
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+        ctx.run_ui(egui::RawInput::default(), |ui| {
             ui.horizontal(|ui| {
                 let name =
                     paint_variable_name_pill(ui, "Variable", "foundY", "setvariable", &known, true);
@@ -812,6 +814,7 @@ mod tests {
                     );
                 }
             });
-        });
+        })
+        .drop_without_applying_deltas();
     }
 }

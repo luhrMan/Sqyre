@@ -693,7 +693,8 @@ mod tests {
 
     fn with_ui(mut f: impl FnMut(&mut egui::Ui)) {
         let ctx = egui::Context::default();
-        let _ = ctx.run_ui(egui::RawInput::default(), |ui| f(ui));
+        ctx.run_ui(egui::RawInput::default(), |ui| f(ui))
+            .drop_without_applying_deltas();
     }
 
     #[test]
