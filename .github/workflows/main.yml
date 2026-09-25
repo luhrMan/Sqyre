@@ -115,7 +115,7 @@ jobs:
 
       - name: Install Rust toolchain
         if: steps.reg.outputs.cache-hit != 'true'
-        uses: dtolnay/rust-toolchain@1.94.0
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Fetch crate sources
         if: steps.reg.outputs.cache-hit != 'true'
@@ -279,7 +279,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.94.0
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Cache Cargo
         uses: actions/cache@v6
@@ -704,7 +704,7 @@ jobs:
           ref: ${{ needs.version.outputs.sha }}
 
       - name: Install Rust toolchain (sign checksums)
-        uses: dtolnay/rust-toolchain@1.94.0
+        uses: dtolnay/rust-toolchain@1.95.0
 
       - name: Verify update public key is configured
         working-directory: src

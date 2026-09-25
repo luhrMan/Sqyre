@@ -9,7 +9,7 @@
 FROM ubuntu:24.04
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG RUST_VERSION=1.94.0
+ARG RUST_VERSION=1.95.0
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates git \

@@ -4,7 +4,7 @@
 FROM debian:trixie-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG RUST_VERSION=1.94.0
+ARG RUST_VERSION=1.95.0
 ARG MINGW_PREFIX=/usr/local/mingw64-static
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
