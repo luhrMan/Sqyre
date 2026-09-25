@@ -547,6 +547,7 @@ fn show_edit_window(
         theme,
         bridges,
         compact_program_headers,
+        pending_scale,
     } = ui;
     let VarTheme { is_dark, .. } = *theme;
     let (action_id, anchor, type_key, has_coord_preview) = match state {
@@ -575,6 +576,7 @@ fn show_edit_window(
             paint,
             macros,
             *compact_program_headers,
+            *pending_scale,
         );
         apply_picker_result(&mut edit.draft, result);
     }
@@ -590,17 +592,15 @@ fn show_edit_window(
     let mut open = true;
 
     // Stable Area id (also keys egui's resize state as `area_id.with("resize")`).
-    // Bump salt when changing default/min sizing so persisted fat/tiny sizes are discarded
-    // (grow_v7 could ratchet width without a max_width cap).
-    let area_id = egui::Id::new(("action_edit_tip", "grow_v8", action_id));
+    // Bump salt when changing default/min/max sizing so persisted locked sizes are discarded.
+    let area_id = egui::Id::new(("action_edit_tip", "grow_v12", action_id));
     let (fitting, fit_fields_h) = match state {
         TooltipState::Edit(edit) => (edit.auto_fit, edit.fields_height),
         _ => (false, 0.0),
     };
     // While fitting, raise min height to the last measured fields column so
-    // egui's sticky Resize `desired_size` grows. Always keep a ScrollArea +
-    // max_width — painting uncapped content lets `framed_section`'s
-    // `set_width(available)` ratchet the window past the screen edge.
+    // egui's sticky Resize `desired_size` grows. Content is pinned with
+    // `fill_resize_body` so sections cannot lock/ratchet horizontal size.
     let fit_min_h = if fitting && fit_fields_h > 0.0 {
         (EDIT_CHROME + fit_fields_h.min(max_scroll_h)).clamp(48.0, screen.height())
     } else {
@@ -608,12 +608,11 @@ fn show_edit_window(
     };
 
     // Popup chrome (no title bar). Height is driven by `fit_min_h` while
-    // `auto_fit` is set. `fit_dialog_popup` applies `max_size(screen)` — call
-    // `.max_width(max_w)` *after* that so the tip width cap is not overwritten
-    // (without it, `framed_section` + Resize ratchets the window off-screen).
+    // `auto_fit` is set. Default width matches the view tip; user can drag
+    // wider (up to the dialog edge margin) or narrower (down to min_size).
+    // `fit_dialog_popup` already caps max_size to `dialog_constrain_rect`.
     crate::widgets::fit_dialog_popup(
         egui::Window::new(label)
-            .id(area_id)
             .open(&mut open)
             .title_bar(false)
             .collapsible(false)
@@ -626,11 +625,11 @@ fn show_edit_window(
                     .inner_margin(egui::Margin::symmetric(10, 8)),
             ),
         ctx,
+        area_id,
+        *pending_scale,
     )
-    .max_width(max_w)
     .show(ctx, |ui| {
-            // Cap content width even when Resize desired_size is briefly larger.
-            ui.set_max_width(max_w);
+        crate::widgets::fill_resize_body(ui, |ui| {
             let (err, save_enabled) = match state {
                 TooltipState::Edit(edit) => (edit.error.as_deref(), edit.save_enabled()),
                 _ => (None, false),
@@ -657,15 +656,15 @@ fn show_edit_window(
                     macros,
                     active_macro: Some(&*macro_),
                 };
-                // Always scroll: avoids the uncapped layout path that ratchets
-                // width via `framed_section`. Grow height through `fit_min_h`
-                // while `auto_fit` is set (open + Advanced toggle).
+                // Scroll remaining height; shrink width to content so the user
+                // can drag the window narrower than the longest section.
+                let scroll_h = ui.available_height().max(40.0).min(max_scroll_h);
                 let measured = crate::pickers::scroll_vertical()
                     .id_salt("edit_fields")
-                    .auto_shrink([false, false])
-                    .max_height(max_scroll_h)
+                    .auto_shrink([true, false])
+                    .max_width(ui.available_width())
+                    .max_height(scroll_h)
                     .show(ui, |ui| {
-                        ui.set_max_width(max_w);
                         edit::paint_edit_fields(
                             ui,
                             &mut edit.draft,
@@ -722,14 +721,16 @@ fn show_edit_window(
             if ui.input(|i| i.key_pressed(Key::Enter))
                 && !ui.input(|i| i.modifiers.shift)
             {
-                // Don't steal Enter while a picker is open.
+                // Don't steal Enter while a picker is open or a text field has focus.
                 if matches!(state, TooltipState::Edit(edit) if matches!(edit.picker, ActivePicker::None))
                     && !ui.ctx().egui_wants_keyboard_input()
+                    && !ui.ctx().text_edit_focused()
                 {
                     save = true;
                 }
             }
         });
+    });
 
     if edit_window_user_resized(ctx, area_id) {
         if let TooltipState::Edit(edit) = state {
@@ -762,9 +763,20 @@ fn show_edit_window(
 pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
     match result {
         PickerResult::None => {}
-        PickerResult::Items(targets) => {
-            if let ActionKind::ImageSearch { targets: t, .. } = &mut draft.kind {
+        PickerResult::Items {
+            targets,
+            target_tags,
+        } => {
+            if let ActionKind::ImageSearch {
+                targets: t,
+                target_tags: tags,
+                ..
+            } = &mut draft.kind
+            {
                 *t = targets;
+                if let Some(next_tags) = target_tags {
+                    *tags = next_tags;
+                }
             }
         }
         PickerResult::Point(coord) => {
@@ -776,6 +788,7 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
             ActionKind::ImageSearch { search_area, .. }
             | ActionKind::Ocr { search_area, .. }
             | ActionKind::FindPixel { search_area, .. } => *search_area = coord,
+            ActionKind::ForEachCell { cells, .. } => *cells = coord,
             _ => {}
         },
         PickerResult::MacroName(name) => {
@@ -909,10 +922,14 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec!["Game~Item".into()],
+                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: DetectionBranch::default(),
             },
         };
@@ -1028,10 +1045,14 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: "find".into(),
                 targets: vec!["P~A".into()],
+                target_tags: Vec::new(),
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: DetectionBranch::default(),
             },
         }]);

@@ -1,5 +1,5 @@
 # CI on push/PR to main. Daily release at 23:00 UTC when main has changed.
-# Releases: Linux binary + AppImage, Windows .exe (MinGW cross), WASM editor zip.
+# Releases: Linux binary + AppImage + Flatpak, Windows .exe (MinGW cross), WASM editor zip.
 # Release tag / artifact names: vYYYY.MM.DD (e.g. v2026.03.03); HHMM suffix if that tag exists.
 #
 # Caching (share what can be shared):
@@ -44,7 +44,7 @@ env:
 jobs:
   version:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       should_release: ${{ steps.check.outputs.should_release }}
       version: ${{ steps.check.outputs.version }}
@@ -97,7 +97,7 @@ jobs:
         (needs.version.result == 'success' && needs.version.outputs.should_release == 'true')
       )
     needs: [version]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
         with:
@@ -131,7 +131,7 @@ jobs:
         (needs.version.result == 'success' && needs.version.outputs.should_release == 'true')
       )
     needs: [version]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -155,7 +155,7 @@ jobs:
       needs.version.result == 'success' &&
       needs.version.outputs.should_release == 'true'
     needs: [version]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
@@ -180,7 +180,7 @@ jobs:
       needs.cargo-registry.result == 'success' &&
       needs.linux-image.result == 'success'
     needs: [cargo-registry, linux-image]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -304,7 +304,7 @@ jobs:
       needs.cargo-registry.result == 'success' &&
       needs.linux-image.result == 'success'
     needs: [version, cargo-registry, linux-image]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -401,7 +401,8 @@ jobs:
       - name: Zip Linux AppImage
         run: |
           VERSION="${{ needs.version.outputs.version }}"
-          zip -9 "Sqyre-v${VERSION}-x86_64.AppImage.zip" \
+          # Store only: AppImage is already zstd squashfs + runtime.
+          zip -0 "Sqyre-v${VERSION}-x86_64.AppImage.zip" \
             "Sqyre-v${VERSION}-x86_64.AppImage"
 
       - name: Upload Linux binary artifact (zipped)
@@ -416,6 +417,69 @@ jobs:
           name: linux-appimage-zip
           path: Sqyre-v${{ needs.version.outputs.version }}-x86_64.AppImage.zip
 
+  build-flatpak:
+    if: |
+      always() && !cancelled() &&
+      needs.version.result == 'success' &&
+      needs.version.outputs.should_release == 'true' &&
+      needs.cargo-registry.result == 'success'
+    needs: [version, cargo-registry]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08
+      options: --privileged
+    outputs:
+      version: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Write VERSION
+        run: echo "${{ needs.version.outputs.version }}" > VERSION
+
+      - name: Cache tessdata
+        id: tessdata-flatpak
+        uses: actions/cache@v6
+        with:
+          path: assets/tessdata
+          key: tessdata-eng-v2
+
+      - name: Download tessdata
+        if: steps.tessdata-flatpak.outputs.cache-hit != 'true'
+        run: ./scripts/download-tessdata.sh
+
+      - name: Ensure app icon PNG
+        run: |
+          if [ ! -f crates/sqyre-app/assets/icons/sqyre.png ]; then
+            scripts/linux/packaging/generate-app-icon.sh 256
+          fi
+
+      - name: Ensure cargo-sources.json
+        run: |
+          if [ ! -f scripts/linux/packaging/flatpak/cargo-sources.json ]; then
+            scripts/linux/packaging/flatpak/generate-cargo-sources.sh
+          fi
+
+      - name: Build Flatpak bundle
+        env:
+          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          SQYRE_FLATPAK_FORCE_NATIVE: "1"
+        run: scripts/linux/packaging/flatpak/build-flatpak.sh
+
+      - name: Rename Flatpak bundle
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          mv "bin/com.sqyre.app.flatpak" "Sqyre-v${VERSION}-x86_64.flatpak"
+
+      - name: Upload Flatpak artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-flatpak
+          path: Sqyre-v${{ needs.version.outputs.version }}-x86_64.flatpak
+
   build-windows:
     if: |
       always() && !cancelled() &&
@@ -424,7 +488,7 @@ jobs:
       needs.cargo-registry.result == 'success' &&
       needs.windows-image.result == 'success'
     needs: [version, cargo-registry, windows-image]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -493,7 +557,7 @@ jobs:
         run: |
           VERSION="${{ needs.version.outputs.version }}"
           cp -f bin/sqyre.exe "sqyre-v${VERSION}-windows-amd64.exe"
-          zip -9 "sqyre-v${VERSION}-windows-amd64.zip" \
+          zip -0 "sqyre-v${VERSION}-windows-amd64.zip" \
             "sqyre-v${VERSION}-windows-amd64.exe"
 
       - name: Upload Windows binary artifact (zipped)
@@ -510,7 +574,7 @@ jobs:
       needs.cargo-registry.result == 'success' &&
       needs.linux-image.result == 'success'
     needs: [version, cargo-registry, linux-image]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: read
@@ -602,10 +666,11 @@ jobs:
       needs.version.result == 'success' &&
       needs.version.outputs.should_release == 'true' &&
       needs.build-linux.result == 'success' &&
+      needs.build-flatpak.result == 'success' &&
       needs.build-windows.result == 'success' &&
       needs.build-wasm.result == 'success'
-    needs: [version, build-linux, build-windows, build-wasm]
-    runs-on: ubuntu-22.04
+    needs: [version, build-linux, build-flatpak, build-windows, build-wasm]
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
@@ -615,15 +680,22 @@ jobs:
           pattern: "*-zip"
           path: artifacts
 
+      - name: Download Flatpak artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-flatpak
+          path: artifacts/linux-flatpak
+
       - name: Assemble release files and SHA256SUMS
         run: |
           set -euo pipefail
           mkdir -p release
           cp artifacts/linux-binary-zip/*.zip release/
           cp artifacts/linux-appimage-zip/*.zip release/
+          cp artifacts/linux-flatpak/*.flatpak release/
           cp artifacts/windows-binary-zip/*.zip release/
           cp artifacts/wasm-editor-zip/*.zip release/
-          (cd release && sha256sum *.zip > SHA256SUMS)
+          (cd release && sha256sum * > SHA256SUMS)
           cat release/SHA256SUMS
 
       - uses: actions/checkout@v6

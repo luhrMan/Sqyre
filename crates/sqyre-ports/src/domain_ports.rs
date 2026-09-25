@@ -5,6 +5,23 @@ use sqyre_domain::{CoordinateRef, Macro};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+/// Full collection search-area rect and grid. Cell-range suffixes on the ref are ignored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CollectionArea {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+    pub rows: i32,
+    pub cols: i32,
+}
+
+impl CollectionArea {
+    pub fn bounds(self) -> (i32, i32, i32, i32) {
+        (self.left, self.top, self.right, self.bottom)
+    }
+}
+
 /// Resolve `program~point` / search-area refs using the loaded program catalog.
 pub trait CoordinateResolver {
     fn resolve_point(&self, r: &CoordinateRef, macro_: &Macro) -> Result<(i32, i32), PortError>;
@@ -18,6 +35,16 @@ pub trait CoordinateResolver {
     fn collection_grid(&self, program: &str, collection: &str) -> Result<(i32, i32), PortError> {
         let _ = (program, collection);
         Err(PortError::not_configured("collection grid lookup"))
+    }
+
+    /// Full collection search-area bounds and grid. Ignores any `@cell` suffix on `r`.
+    fn collection_area(
+        &self,
+        r: &CoordinateRef,
+        macro_: &Macro,
+    ) -> Result<CollectionArea, PortError> {
+        let _ = (r, macro_);
+        Err(PortError::not_configured("collection area lookup"))
     }
 
     /// Member Collection names for `program` + atlas name.
@@ -34,6 +61,13 @@ pub trait IconStore {
     /// Optional mask PNG for the item (resized by caller).
     fn mask_path(&self, target: &str) -> Option<std::path::PathBuf>;
     fn item_meta(&self, target: &str) -> Option<ItemMeta>;
+    /// All catalog `program~item` refs with metadata (for Image Search tag expansion).
+    ///
+    /// Default is empty (no catalog). Implementations backed by a program catalog
+    /// should return every item in stable program/item order.
+    fn catalog_item_refs(&self) -> Vec<(String, ItemMeta)> {
+        Vec::new()
+    }
 }
 
 /// Look up another macro by name.

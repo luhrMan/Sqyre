@@ -16,7 +16,7 @@ required-features = ["sandbox"]
 [features]
 default = ["runtime"]
 # Focus / X11 geometry / skip-taskbar for live overlay windows.
-runtime = ["dep:sqyre-capture"]
+runtime = ["dep:sqyre-capture", "dep:sqyre-hotkeys"]
 # Tiny eframe harness to iterate overlays without building sqyre-app.
 sandbox = ["runtime", "dep:eframe"]
 
@@ -25,11 +25,13 @@ egui = { workspace = true }
 egui-phosphor = { workspace = true }
 parking_lot = { workspace = true }
 sqyre-ui-theme = { path = "../sqyre-ui-theme" }
+thiserror = { workspace = true }
 sqyre-persist = { path = "../sqyre-persist" }
 web-time = { workspace = true }
 fontdue = "0.9"
 epaint_default_fonts = "0.35"
 sqyre-capture = { path = "../sqyre-capture", optional = true }
+sqyre-hotkeys = { path = "../sqyre-hotkeys", optional = true }
 eframe = { workspace = true, optional = true, features = ["glow"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

@@ -629,7 +629,7 @@ fn probe_input(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityRe
             Err(_) => {
                 cap_log("INPUT", "fail", "reason=backend_panicked");
                 CapabilityResult::fail(
-                    "input backend panicked (no X display / headless environment?)",
+                    "input backend panicked (X11 unavailable, max clients, or missing tools)",
                 )
             }
         }),

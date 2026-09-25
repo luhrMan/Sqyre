@@ -1,5 +1,13 @@
 //! Validation helpers for macro entries and actions.
 
+mod yaml_schema;
+
+pub use yaml_schema::{
+    prepare_import_macro_yaml, prepare_macro_yaml, report_macro_yaml, strip_yaml_fences,
+    unique_macro_name, validate_macro_yaml, validate_macro_yaml_schema, YamlSchemaError,
+    YamlValidateLayer, YamlValidateReport,
+};
+
 use sqyre_domain::{
     collect_known_variable_names, evaluate_expression, parse_hex_color, Action, ActionKind,
     ConditionBlock, ConditionClause, CoordinateRef, Macro, NavChords, ScalarValue, VariableStore,
@@ -602,6 +610,7 @@ fn validate_action_with(
         }
         ActionKind::ImageSearch {
             targets,
+            target_tags,
             search_area,
             detection,
             ..
@@ -612,8 +621,12 @@ fn validate_action_with(
                 if search_area.is_empty() {
                     issues.push("set a search area");
                 }
-                if targets.is_empty() || targets.iter().all(|t| t.trim().is_empty()) {
-                    issues.push("add at least one target item");
+                let has_targets = targets.iter().any(|t| !t.trim().is_empty());
+                let has_include_tag = target_tags
+                    .iter()
+                    .any(|t| sqyre_domain::parse_tag_filter(t).is_some_and(|(include, _)| include));
+                if !has_targets && !has_include_tag {
+                    issues.push("add at least one target item or include (+ ) tag");
                 }
                 if !issues.is_empty() {
                     return Err(ValidateError::Message(format!(
@@ -676,6 +689,22 @@ fn validate_action_with(
             }
             validate_scalar_field("for each row start row", start_row, macro_)?;
             validate_scalar_field("for each row end row", end_row, macro_)?;
+        }
+        ActionKind::ForEachCell { cells, .. } => {
+            if mode == ActionValidationMode::Complete {
+                if cells.is_empty() {
+                    return Err(ValidateError::Message(
+                        "for each cell: select a Collection cell range".into(),
+                    ));
+                }
+                if !cells.is_collection() {
+                    return Err(ValidateError::Message(
+                        "for each cell: cells must be a Collection range (not a desktop search area)"
+                            .into(),
+                    ));
+                }
+            }
+            validate_coordinate_ref("for each cell", "cells", cells)?;
         }
         ActionKind::Wait { time } => {
             validate_scalar_field("wait time", time, macro_)?;
@@ -883,6 +912,8 @@ mod tests {
     fn variable_name_rejects_reserved_builtins() {
         assert!(validate_variable_name("StackMax").is_err());
         assert!(validate_variable_name("Row").is_err());
+        assert!(validate_variable_name("CellX").is_err());
+        assert!(validate_variable_name("CellCount").is_err());
         assert!(validate_variable_name("monitor1Width").is_err());
         assert!(validate_variable_name("Monitor12Height").is_err());
         assert!(validate_variable_name("myStackMax").is_ok());
@@ -1113,10 +1144,14 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec![],
+                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: Default::default(),
             },
         };
@@ -1127,15 +1162,37 @@ mod tests {
         // Persist allows saving without items; tree/run still flag via Complete.
         assert!(validate_action_persist(&empty, None).is_ok());
 
+        let tags_only = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: String::new(),
+                targets: vec![],
+                target_tags: vec!["+weapon".into()],
+                search_area: CoordinateRef("Game~Box".into()),
+                tolerance: 0.95,
+                blur: 5,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: Default::default(),
+            },
+        };
+        assert!(validate_action(&tags_only, None).is_ok());
+
         let bad_wait = Action {
             id: ActionId::new(),
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec!["Game~Item".into()],
+                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
@@ -1162,10 +1219,14 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec![],
+                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: sqyre_domain::DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
@@ -1219,6 +1280,45 @@ mod tests {
     }
 
     #[test]
+    fn validate_for_each_cell_requires_collection_range() {
+        let empty = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ForEachCell {
+                name: String::new(),
+                cells: CoordinateRef(String::new()),
+                subactions: vec![],
+            },
+        };
+        assert!(validate_action(&empty, None)
+            .unwrap_err()
+            .to_string()
+            .contains("Collection cell range"));
+
+        let desktop = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ForEachCell {
+                name: String::new(),
+                cells: CoordinateRef("Game~Box".into()),
+                subactions: vec![],
+            },
+        };
+        assert!(validate_action(&desktop, None)
+            .unwrap_err()
+            .to_string()
+            .contains("Collection range"));
+
+        let ok = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ForEachCell {
+                name: String::new(),
+                cells: CoordinateRef::collection("Game", "Grid", 1, 1, 2, 2),
+                subactions: vec![],
+            },
+        };
+        assert!(validate_action(&ok, None).is_ok());
+    }
+
+    #[test]
     fn validate_move_requires_point() {
         let a = Action {
             id: ActionId::new(),
@@ -1258,10 +1358,14 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: vec!["Game~Item".into()],
+                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: Default::default(),
             },
         };

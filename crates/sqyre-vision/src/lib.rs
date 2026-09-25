@@ -8,7 +8,7 @@ mod ocr_engine;
 mod ocr_preprocess;
 mod search_cache;
 
-pub use find_pixel::{find_pixel, find_pixels};
+pub use find_pixel::{find_pixel, find_pixels, find_pixels_clustered};
 pub use image_util::{
     gray_to_rgb, load_rgb_image, mask_as_u8, resize_mask, resize_nearest, rgb_capture_to_image_buf,
     rgb_to_grayscale, rgba_to_rgb_buf,
@@ -25,5 +25,6 @@ pub use ocr_preprocess::{
 pub use search_cache::{
     clear_search_cache, get_cached_blurred_template, get_cached_image_mask,
     get_cached_prepared_template, invalidate_search_masks_under, invalidate_search_templates_under,
-    reset_search_cache_for_testing, with_search_cache_test_lock,
+    reset_search_cache_for_testing, search_cache_stats, with_search_cache_test_lock,
+    SearchCacheStats,
 };

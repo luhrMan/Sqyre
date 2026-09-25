@@ -1,4 +1,4 @@
-//! Floating Data Editor: Programs / Items (Masks, ScreenCap, PixelCheck) / Coordinates / Overlay.
+//! Floating Data Editor: Programs (Overlay) / Items (Masks) / Coordinates / Tools (Screen capture, Match probe).
 
 const WINDOW_TITLE: &str = "Data Editor";
 
@@ -25,9 +25,11 @@ use helpers::{editor_program_names, is_editor_listed_program, overlay_hex_or_emp
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
-    default_overlay_position, Database, OverlayButtonConfig, ProgramCatalog, UserSettings,
-    DEFAULT_OVERLAY_BORDER_WIDTH, DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS,
-    DEFAULT_OVERLAY_FALLBACK_SCREEN_H, DEFAULT_OVERLAY_FALLBACK_SCREEN_W,
+    default_overlay_position, Database, OverlayButtonConfig, OverlayVisibilityGate,
+    OverlayVisibilityMode, ProgramCatalog, UserSettings, DEFAULT_OVERLAY_BORDER_WIDTH,
+    DEFAULT_OVERLAY_BUTTON_SIZE, DEFAULT_OVERLAY_CORNER_RADIUS, DEFAULT_OVERLAY_FALLBACK_SCREEN_H,
+    DEFAULT_OVERLAY_FALLBACK_SCREEN_W, DEFAULT_OVERLAY_GATE_BLUR, DEFAULT_OVERLAY_GATE_INTERVAL_MS,
+    DEFAULT_OVERLAY_GATE_TOLERANCE, MAX_DATA_EDITOR_LEFT_FRAC, MIN_DATA_EDITOR_LEFT_FRAC,
 };
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -41,6 +43,7 @@ pub struct DataEditorCtx<'a> {
     pub icons: &'a mut IconCache,
     pub screen_click: &'a ScreenClickBridge,
     pub settings: &'a mut UserSettings,
+    pub pending_scale: Option<&'a crate::widgets::ViewportScaleEvent>,
 }
 
 /// Top-level Data Editor section (tab bar).
@@ -49,21 +52,19 @@ pub(crate) enum EditorSection {
     Programs,
     Items,
     Coordinates,
-    Overlay,
+    Tools,
 }
 
 impl EditorSection {
     fn of(tab: EditorTab) -> Self {
         match tab {
-            EditorTab::Programs => Self::Programs,
-            EditorTab::Items | EditorTab::Masks | EditorTab::ScreenCap | EditorTab::PixelCheck => {
-                Self::Items
-            }
+            EditorTab::Programs | EditorTab::Overlay => Self::Programs,
+            EditorTab::Items | EditorTab::Masks => Self::Items,
             EditorTab::Points
             | EditorTab::SearchAreas
             | EditorTab::Collections
             | EditorTab::Atlases => Self::Coordinates,
-            EditorTab::Overlay => Self::Overlay,
+            EditorTab::ScreenCap | EditorTab::PixelCheck => Self::Tools,
         }
     }
 
@@ -72,7 +73,7 @@ impl EditorSection {
             Self::Programs => EditorTab::Programs,
             Self::Items => EditorTab::Items,
             Self::Coordinates => EditorTab::Points,
-            Self::Overlay => EditorTab::Overlay,
+            Self::Tools => EditorTab::ScreenCap,
         }
     }
 }
@@ -120,14 +121,23 @@ pub struct DataEditor {
     pub open: bool,
     tab: EditorTab,
     search: String,
+    /// Sort for Items / Pixel Check left-list icon grids (UI-only).
+    items_list_sort: sqyre_domain::CatalogItemSort,
+    /// Tag priority when [`Self::items_list_sort`] is Tags.
+    items_tag_priority: Vec<String>,
+    items_tag_priority_draft: String,
     /// Width of the left list pane (drag-adjustable).
     left_width: f32,
     /// Selected program name (all tabs).
     selected_program: Option<String>,
     /// Selected entity within program (items / points / search areas).
     selected_entity: Option<String>,
+    /// Expand + scroll the left list to [`Self::selected_program`] (armed on tab switch).
+    scroll_left_list_to_selection: bool,
     // Form buffers
     form_name: String,
+    /// 1-based monitor slot for Points / Search Areas (relative coords in form_*).
+    form_monitor: u32,
     form_x: String,
     form_y: String,
     form_left: String,
@@ -178,6 +188,14 @@ pub struct DataEditor {
     form_overlay_icon_color: egui::Color32,
     /// Overlay button form: hover icon color (alpha follows icon color on save).
     form_overlay_icon_hover: egui::Color32,
+    /// Overlay visibility gate: show button only when image search finds a match.
+    form_overlay_gate_enabled: bool,
+    form_overlay_gate_targets: Vec<String>,
+    form_overlay_gate_search_area: String,
+    form_overlay_gate_tolerance: f64,
+    form_overlay_gate_blur: i32,
+    form_overlay_gate_match_method: sqyre_domain::MatchMethod,
+    form_overlay_gate_interval_ms: u64,
     /// Bound OS process path for the selected Program.
     form_process_path: String,
     /// Bound window title for the selected Program.
@@ -208,6 +226,8 @@ pub struct DataEditor {
     window_picker: ActivePicker,
     /// Background ScreenCap capture+save; polled each frame.
     screen_cap_pending: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    /// Create a catalog item from the current ScreenCap preview (processed after paint).
+    screen_cap_new_item: bool,
     /// Background collection image capture+save; polled each frame.
     collection_capture_pending: Option<CollectionCapturePending>,
     /// Cached program/entity name lists keyed by catalog generation.
@@ -245,10 +265,15 @@ impl Default for DataEditor {
             open: false,
             tab: EditorTab::Programs,
             search: String::new(),
-            left_width: 280.0,
+            items_list_sort: sqyre_domain::CatalogItemSort::default(),
+            items_tag_priority: Vec::new(),
+            items_tag_priority_draft: String::new(),
+            left_width: 0.0,
             selected_program: None,
             selected_entity: None,
+            scroll_left_list_to_selection: false,
             form_name: String::new(),
+            form_monitor: 1,
             form_x: String::new(),
             form_y: String::new(),
             form_left: String::new(),
@@ -284,6 +309,13 @@ impl Default for DataEditor {
             form_overlay_bg: rgba_color([0, 0, 0, 0]),
             form_overlay_icon_color: rgba_color([0xf5, 0xe6, 0xc0, 255]),
             form_overlay_icon_hover: rgba_color([0xdc, 0x9d, 0x2e, 255]),
+            form_overlay_gate_enabled: false,
+            form_overlay_gate_targets: Vec::new(),
+            form_overlay_gate_search_area: String::new(),
+            form_overlay_gate_tolerance: DEFAULT_OVERLAY_GATE_TOLERANCE,
+            form_overlay_gate_blur: DEFAULT_OVERLAY_GATE_BLUR,
+            form_overlay_gate_match_method: sqyre_domain::MatchMethod::CcoeffNormed,
+            form_overlay_gate_interval_ms: DEFAULT_OVERLAY_GATE_INTERVAL_MS,
             form_process_path: String::new(),
             form_window_title: String::new(),
             variant_name_draft: String::new(),
@@ -301,6 +333,7 @@ impl Default for DataEditor {
             overlay_icon_search: String::new(),
             window_picker: ActivePicker::None,
             screen_cap_pending: None,
+            screen_cap_new_item: false,
             collection_capture_pending: None,
             list_cache: ListCache::default(),
             #[cfg(feature = "native-runtime")]
@@ -349,14 +382,60 @@ impl DataEditor {
         btn.x = self.form_overlay_x;
         btn.y = self.form_overlay_y;
         btn.size = self.form_overlay_size;
+        btn.visibility_gate = self.overlay_gate_from_form();
         self.apply_overlay_style_to_config(&mut btn);
         Some(btn)
+    }
+
+    pub(crate) fn overlay_gate_from_form(&self) -> OverlayVisibilityGate {
+        let mut gate = OverlayVisibilityGate {
+            mode: if self.form_overlay_gate_enabled {
+                OverlayVisibilityMode::ShowWhenFound
+            } else {
+                OverlayVisibilityMode::Off
+            },
+            targets: self.form_overlay_gate_targets.clone(),
+            search_area: self.form_overlay_gate_search_area.trim().to_string(),
+            tolerance: self.form_overlay_gate_tolerance,
+            blur: self.form_overlay_gate_blur,
+            match_method: self.form_overlay_gate_match_method,
+            interval_ms: self.form_overlay_gate_interval_ms,
+        };
+        gate.clamp();
+        gate
+    }
+
+    pub(crate) fn load_overlay_gate_from_config(&mut self, gate: &OverlayVisibilityGate) {
+        self.form_overlay_gate_enabled = gate.is_active();
+        self.form_overlay_gate_targets = gate.targets.clone();
+        self.form_overlay_gate_search_area = gate.search_area.clone();
+        self.form_overlay_gate_tolerance = gate.tolerance;
+        self.form_overlay_gate_blur = gate.blur;
+        self.form_overlay_gate_match_method = gate.match_method;
+        self.form_overlay_gate_interval_ms = gate.interval_ms;
+    }
+
+    pub(crate) fn reset_overlay_gate_form(&mut self) {
+        self.load_overlay_gate_from_config(&OverlayVisibilityGate::default());
     }
 
     /// True while the Data Editor Overlay tab is open (drag-to-relocate mode).
     #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
     pub fn overlay_relocate_mode(&self) -> bool {
         self.open && matches!(self.tab, EditorTab::Overlay)
+    }
+
+    /// Program whose overlay buttons are shown while relocate mode is active.
+    ///
+    /// `None` when the Overlay tab is closed, or open with no program selected
+    /// (then no settings-backed buttons are hosted for drag).
+    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
+    pub fn overlay_relocate_program(&self) -> Option<&str> {
+        if self.overlay_relocate_mode() {
+            self.selected_program.as_deref()
+        } else {
+            None
+        }
     }
 
     /// Apply desktop positions from overlay drag-relocate; clears catalog point refs.
@@ -438,6 +517,10 @@ impl DataEditor {
         if self.tab != tab {
             self.tab = tab;
             self.clear_entity_selection();
+            self.scroll_left_list_to_selection = self.selected_program.is_some();
+            if tab == EditorTab::ScreenCap {
+                self.reset_item_param_fields();
+            }
         }
         self.load_form(catalog, settings);
     }
@@ -523,16 +606,22 @@ impl DataEditor {
                 // No huge max_size — egui auto-expands toward max when content min_size ratchets.
                 .resizable(true),
             ctx,
+            egui::Id::new(WINDOW_TITLE),
+            env.pending_scale,
         )
         .show(ctx, |ui| {
             self.ui(ui, env, selected_macro, previews);
         });
         self.open = open;
-        self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings);
+        self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings, env.pending_scale);
         self.draw_confirm(env, previews);
-        self.draw_overlay_icon_picker(ctx, env.settings);
+        self.draw_overlay_icon_picker(ctx, env.settings, env.pending_scale);
         self.poll_form_picker(env, previews);
         self.poll_screen_cap(ctx);
+        if self.screen_cap_new_item {
+            self.screen_cap_new_item = false;
+            self.create_item_from_screen_cap(env, previews);
+        }
         self.poll_collection_capture(ctx, env.catalog, env.icons);
         #[cfg(feature = "native-runtime")]
         self.poll_pixel_check(ctx, env.catalog, previews);
@@ -561,6 +650,7 @@ impl DataEditor {
             },
             &macro_opts,
             env.settings.compact_program_headers,
+            env.pending_scale,
         ) {
             PickerResult::Window {
                 process_path,
@@ -592,9 +682,22 @@ impl DataEditor {
                 }
             }
             PickerResult::SearchArea(coord)
-                if matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck) =>
+                if matches!(
+                    self.tab,
+                    EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay
+                ) =>
             {
-                self.apply_screen_cap_reference(env.catalog, coord);
+                if matches!(self.tab, EditorTab::Overlay) {
+                    self.form_overlay_gate_search_area = coord.0;
+                } else {
+                    self.apply_screen_cap_reference(env.catalog, coord);
+                }
+            }
+            PickerResult::Items {
+                targets,
+                target_tags: _,
+            } if matches!(self.tab, EditorTab::Overlay) => {
+                self.form_overlay_gate_targets = targets;
             }
             _ => {}
         }
@@ -607,19 +710,28 @@ impl DataEditor {
     ) {
         let mut captured = false;
         if let Some((x, y)) = env.screen_click.take_point() {
-            self.form_x = x.to_string();
-            self.form_y = y.to_string();
+            let live = helpers::sync_live_monitor_rects(env.catalog);
+            let (monitor, rx, ry) = sqyre_persist::absolute_point_to_relative(&live, x, y);
+            self.form_monitor = monitor;
+            self.form_x = rx.to_string();
+            self.form_y = ry.to_string();
             previews.invalidate_entity(self.form_name.trim());
-            self.set_ok(format!("Recorded point ({x}, {y})."));
+            self.set_ok(format!("Recorded point monitor {monitor} ({rx}, {ry})."));
             captured = true;
         }
-        if let Some((lx, ty, rx, by)) = env.screen_click.take_search_area() {
+        if let Some((px, py, ax, ay, bx, by)) = env.screen_click.take_search_area() {
+            let live = helpers::sync_live_monitor_rects(env.catalog);
+            let (monitor, lx, ty, rx, by) =
+                sqyre_persist::absolute_area_to_relative(&live, px, py, ax, ay, bx, by);
+            self.form_monitor = monitor;
             self.form_left = lx.to_string();
             self.form_top = ty.to_string();
             self.form_right = rx.to_string();
             self.form_bottom = by.to_string();
             previews.invalidate_entity(self.form_name.trim());
-            self.set_ok(format!("Recorded search area ({lx},{ty})–({rx},{by})."));
+            self.set_ok(format!(
+                "Recorded search area monitor {monitor} ({lx},{ty})–({rx},{by})."
+            ));
             captured = true;
         }
         if env.screen_click.take_cancelled() {
@@ -634,7 +746,9 @@ impl DataEditor {
             }
         }
     }
+}
 
+impl DataEditor {
     fn ui(
         &mut self,
         ui: &mut egui::Ui,
@@ -642,13 +756,35 @@ impl DataEditor {
         selected_macro: usize,
         previews: &mut PreviewTooltipCache,
     ) {
-        ui.horizontal(|ui| {
+        // Claim exactly the painted window size, then draw in a child that does
+        // *not* advance the parent by content min_rect (scope_builder would —
+        // that's what pushed the right edge off-screen when the left pane was wide).
+        let size = crate::widgets::visible_size(ui).max(egui::vec2(1.0, 1.0));
+        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+        let mut body = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(rect)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        body.set_clip_rect(rect.intersect(ui.clip_rect()));
+        body.set_max_size(rect.size());
+        self.ui_body(&mut body, env, selected_macro, previews);
+    }
+
+    fn ui_body(
+        &mut self,
+        ui: &mut egui::Ui,
+        env: &mut DataEditorCtx<'_>,
+        selected_macro: usize,
+        previews: &mut PreviewTooltipCache,
+    ) {
+        ui.horizontal_wrapped(|ui| {
             let section = EditorSection::of(self.tab);
             for (sec, label) in [
                 (EditorSection::Programs, "Programs"),
                 (EditorSection::Items, "Items"),
                 (EditorSection::Coordinates, "Coordinates"),
-                (EditorSection::Overlay, "Overlay"),
+                (EditorSection::Tools, "Tools"),
             ] {
                 if ui.selectable_label(section == sec, label).clicked() && section != sec {
                     self.switch_tab(sec.default_tab(), env.catalog, env.settings);
@@ -656,15 +792,23 @@ impl DataEditor {
             }
         });
         let section = EditorSection::of(self.tab);
-        if matches!(section, EditorSection::Items | EditorSection::Coordinates) {
-            ui.horizontal(|ui| {
+        if matches!(
+            section,
+            EditorSection::Programs
+                | EditorSection::Items
+                | EditorSection::Coordinates
+                | EditorSection::Tools
+        ) {
+            ui.horizontal_wrapped(|ui| {
                 let prev = self.tab;
                 match section {
+                    EditorSection::Programs => {
+                        ui.selectable_value(&mut self.tab, EditorTab::Programs, "Programs");
+                        ui.selectable_value(&mut self.tab, EditorTab::Overlay, "Overlay");
+                    }
                     EditorSection::Items => {
                         ui.selectable_value(&mut self.tab, EditorTab::Items, "Items");
                         ui.selectable_value(&mut self.tab, EditorTab::Masks, "Masks");
-                        ui.selectable_value(&mut self.tab, EditorTab::ScreenCap, "ScreenCap");
-                        ui.selectable_value(&mut self.tab, EditorTab::PixelCheck, "PixelCheck");
                     }
                     EditorSection::Coordinates => {
                         ui.label(egui::RichText::new("Basic").weak().small());
@@ -675,10 +819,17 @@ impl DataEditor {
                         ui.selectable_value(&mut self.tab, EditorTab::Collections, "Collections");
                         ui.selectable_value(&mut self.tab, EditorTab::Atlases, "Atlases");
                     }
-                    _ => {}
+                    EditorSection::Tools => {
+                        ui.selectable_value(&mut self.tab, EditorTab::ScreenCap, "Screen capture");
+                        ui.selectable_value(&mut self.tab, EditorTab::PixelCheck, "Match probe");
+                    }
                 }
                 if self.tab != prev {
                     self.clear_entity_selection();
+                    self.scroll_left_list_to_selection = self.selected_program.is_some();
+                    if self.tab == EditorTab::ScreenCap {
+                        self.reset_item_param_fields();
+                    }
                     self.load_form(env.catalog, env.settings);
                 }
             });
@@ -692,9 +843,7 @@ impl DataEditor {
 
         self.status_banner.paint(ui);
 
-        // Claim exactly the remaining window area once (body + footer).
-        // Allocating body then drawing footer separately made min_size > window size,
-        // so egui's Resize auto-expand ratcheted toward max every frame.
+        // Leftover inside the pinned Resize body (not room toward max_size).
         let rem = ui.available_size();
         let (outer, _) = ui.allocate_exact_size(rem, egui::Sense::hover());
 
@@ -705,92 +854,122 @@ impl DataEditor {
         let footer_rect =
             egui::Rect::from_min_max(egui::pos2(outer.min.x, outer.min.y + body_h), outer.max);
 
-        let item_gap = ui.spacing().item_spacing.x;
         const SPLITTER_W: f32 = 6.0;
-        const MIN_LEFT: f32 = 140.0;
-        const MIN_RIGHT: f32 = 200.0;
         let avail_w = body_rect.width();
-        let max_left = (avail_w - SPLITTER_W - MIN_RIGHT - item_gap * 2.0).max(MIN_LEFT);
-        self.left_width = self.left_width.clamp(MIN_LEFT, max_left);
-        let body_left = body_rect.left();
+        let min_left = avail_w * MIN_DATA_EDITOR_LEFT_FRAC;
+        let max_left = avail_w * MAX_DATA_EDITOR_LEFT_FRAC;
+        let frac = env
+            .settings
+            .data_editor_left_split
+            .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
+        self.left_width = (avail_w * frac).clamp(min_left, max_left);
+        // Keep splitter + right inside body_rect — never allocate past the frame.
+        let left_w = self.left_width.min((avail_w - SPLITTER_W).max(0.0));
+        let left_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(left_w, body_h));
+        let split_rect = egui::Rect::from_min_size(
+            egui::pos2(left_rect.right(), body_rect.top()),
+            egui::vec2(SPLITTER_W, body_h),
+        );
+        let right_rect = egui::Rect::from_min_max(
+            egui::pos2(split_rect.right(), body_rect.top()),
+            body_rect.max,
+        );
 
-        ui.scope_builder(egui::UiBuilder::new().max_rect(body_rect), |ui| {
-            ui.set_clip_rect(body_rect);
-            ui.with_layout(egui::Layout::left_to_right(egui::Align::Min), |ui| {
-                ui.allocate_ui_with_layout(
-                    egui::vec2(self.left_width, body_h),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        ui.set_max_size(egui::vec2(self.left_width, body_h));
-                        self.draw_left_list(ui, env.catalog, env.icons, previews, env.settings);
-                    },
-                );
+        let mut tag_submit = false;
 
-                let (split_rect, split_resp) = ui.allocate_exact_size(
-                    egui::vec2(SPLITTER_W, body_h),
-                    egui::Sense::click_and_drag(),
-                );
-                let stroke = if split_resp.hovered() || split_resp.dragged() {
-                    ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
-                    ui.visuals().widgets.active.fg_stroke
-                } else {
-                    ui.visuals().widgets.noninteractive.bg_stroke
-                };
-                ui.painter().vline(
-                    split_rect.center().x,
-                    split_rect.y_range(),
-                    egui::Stroke::new(1.0, stroke.color),
-                );
-                if split_resp.dragged() {
-                    if let Some(pos) = split_resp.interact_pointer_pos() {
-                        self.left_width = (pos.x - body_left - item_gap).clamp(MIN_LEFT, max_left);
-                    }
+        // `new_child` (not scope_builder): do not advance parent by form min_size.
+        {
+            let mut left_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(left_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            left_ui.set_clip_rect(left_rect.intersect(ui.clip_rect()));
+            left_ui.set_max_size(left_rect.size());
+            self.draw_left_list(&mut left_ui, env.catalog, env.icons, previews, env.settings);
+        }
+
+        let split_resp = ui.interact(
+            split_rect,
+            ui.id().with("de_split"),
+            egui::Sense::click_and_drag(),
+        );
+        let stroke = if split_resp.hovered() || split_resp.dragged() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+            ui.visuals().widgets.active.fg_stroke
+        } else {
+            ui.visuals().widgets.noninteractive.bg_stroke
+        };
+        ui.painter().vline(
+            split_rect.center().x,
+            split_rect.y_range(),
+            egui::Stroke::new(1.0, stroke.color),
+        );
+        if split_resp.dragged() {
+            if let Some(pos) = split_resp.interact_pointer_pos() {
+                self.left_width = (pos.x - body_rect.left()).clamp(min_left, max_left);
+                if avail_w > 1.0 {
+                    env.settings.data_editor_left_split = (self.left_width / avail_w)
+                        .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
                 }
+            }
+        }
+        if split_resp.drag_stopped() {
+            env.settings.clamp();
+            if let Err(e) = env.settings.save_default() {
+                self.set_err(format!("Failed to save data editor layout: {e}"));
+            }
+        }
 
-                let right_w = ui.available_width().max(MIN_RIGHT);
-                ui.allocate_ui_with_layout(
-                    egui::vec2(right_w, body_h),
-                    egui::Layout::top_down(egui::Align::Min),
-                    |ui| {
-                        ui.set_max_size(egui::vec2(right_w, body_h));
-                        let fill_tab =
-                            matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-                        let mut paint_form = |ui: &mut egui::Ui| {
-                            ui.set_max_width(ui.available_width());
-                            let macros: &[Macro] = env.macros;
-                            self.draw_form(
-                                ui,
-                                &mut CatalogPaint {
-                                    catalog: env.catalog,
-                                    icons: env.icons,
-                                    previews,
-                                },
-                                env.screen_click,
-                                macros,
-                                macros.get(selected_macro),
-                                env.settings,
-                            );
-                        };
-                        // ScreenCap fills remaining height; a ScrollArea would always overflow.
-                        if fill_tab {
-                            paint_form(ui);
-                        } else {
-                            pickers::scroll_vertical()
-                                .id_salt("data_editor_form")
-                                .auto_shrink([false, false])
-                                .max_height(body_h)
-                                .show(ui, paint_form);
-                        }
+        {
+            let mut right_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(right_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            right_ui.set_clip_rect(right_rect.intersect(ui.clip_rect()));
+            right_ui.set_max_size(right_rect.size());
+            let fill_tab = matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
+            let mut paint_form = |ui: &mut egui::Ui| {
+                // Cap content width so a vertical-only ScrollArea cannot report a
+                // wider content_size (that expands the pane / window).
+                ui.set_max_width(right_rect.width());
+                let macros: &[Macro] = env.macros;
+                tag_submit = self.draw_form(
+                    ui,
+                    &mut CatalogPaint {
+                        catalog: env.catalog,
+                        icons: env.icons,
+                        previews,
                     },
+                    env.screen_click,
+                    macros,
+                    macros.get(selected_macro),
+                    env.settings,
                 );
-            });
-        });
+            };
+            if fill_tab {
+                paint_form(&mut right_ui);
+            } else {
+                // Enable horizontal scroll so width stays at the viewport
+                // (`auto_shrink` false + vertical-only expands to content width).
+                pickers::dialog_scroll(right_rect.width(), body_h)
+                    .id_salt("data_editor_form")
+                    .show(&mut right_ui, paint_form);
+            }
+        }
 
-        ui.scope_builder(egui::UiBuilder::new().max_rect(footer_rect), |ui| {
-            ui.set_clip_rect(footer_rect);
-            ui.vertical(|ui| {
+        {
+            let mut footer_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(footer_rect)
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            footer_ui.set_clip_rect(footer_rect.intersect(ui.clip_rect()));
+            footer_ui.set_max_size(footer_rect.size());
+            footer_ui.vertical(|ui| {
                 ui.separator();
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let can_new = !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
                     if ui
                         .add_enabled(
@@ -807,9 +986,15 @@ impl DataEditor {
                     let valid = self.form_valid(env.macros.get(selected_macro));
                     let can_save =
                         !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-                    if crate::theme::dirty_action_button(ui, "Save", can_save && dirty && valid)
-                        .clicked()
-                    {
+                    let save_enabled = can_save && dirty && valid;
+                    let save_clicked =
+                        crate::theme::dirty_action_button(ui, "Save", save_enabled).clicked();
+                    // Enter submits when Save is able: this window is in front,
+                    // and no confirm / picker / combo is using the key.
+                    let save_enter = save_enabled
+                        && self.enter_commits_update(ui)
+                        && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+                    if save_clicked || save_enter || (tag_submit && save_enabled) {
                         self.on_update(env, previews);
                     }
                     let can_delete = match self.tab {
@@ -863,7 +1048,20 @@ impl DataEditor {
                     }
                 });
             });
-        });
+        }
+    }
+
+    /// Enter → Update only when this window is in front and no overlay owns the key.
+    fn enter_commits_update(&self, ui: &egui::Ui) -> bool {
+        self.confirm.is_none()
+            && self.variant_prompt.is_none()
+            && !self.window_picker.is_open()
+            && self.overlay_icon_picker_for.is_none()
+            && !ui.ctx().any_popup_open()
+            && ui.ctx().top_layer_id() == Some(ui.layer_id())
+            && ui
+                .ctx()
+                .memory(|m| m.areas().top_layer_id(egui::Order::Foreground).is_none())
     }
 
     fn draw_confirm(&mut self, env: &mut DataEditorCtx<'_>, previews: &mut PreviewTooltipCache) {
@@ -881,7 +1079,7 @@ impl DataEditor {
             ),
         };
         let ctx = env.ctx;
-        let open = crate::widgets::confirm_window(ctx, title, |ui| {
+        let open = crate::widgets::confirm_window(ctx, title, env.pending_scale, |ui| {
             match &confirm {
                 PendingConfirm::Delete { label } => {
                     ui.horizontal(|ui| {
@@ -945,13 +1143,14 @@ impl DataEditor {
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
         settings: &UserSettings,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) {
         let Some(VariantPrompt::Name { source }) = self.variant_prompt.clone() else {
             return;
         };
         let mut submit = false;
         let mut cancel = false;
-        let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", |ui| {
+        let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", pending_scale, |ui| {
             ui.label("Variant name");
             ui.add(egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(220.0));
             match crate::widgets::confirm_cancel_row(
@@ -1017,7 +1216,15 @@ impl DataEditor {
             }
             return;
         }
-        use helpers::form_coord_literal;
+        use helpers::form_desktop_area;
+        let (lx, ty, rx, by) = form_desktop_area(
+            catalog,
+            self.form_monitor,
+            &self.form_left,
+            &self.form_top,
+            &self.form_right,
+            &self.form_bottom,
+        );
         let coords_ok = match (
             self.selected_program.as_deref(),
             self.selected_entity.as_deref(),
@@ -1027,10 +1234,10 @@ impl DataEditor {
                 prog,
                 item,
                 &self.pixel_check.variant,
-                form_coord_literal(&self.form_left),
-                form_coord_literal(&self.form_top),
-                form_coord_literal(&self.form_right),
-                form_coord_literal(&self.form_bottom),
+                lx,
+                ty,
+                rx,
+                by,
             ),
             _ => false,
         };
@@ -1051,7 +1258,7 @@ impl DataEditor {
                 Ok(Err(e)) => {
                     self.pixel_check_pending = None;
                     self.pixel_check.paused = true;
-                    self.set_err(format!("PixelCheck: {e}"));
+                    self.set_err(format!("Match probe: {e}"));
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
                     ctx.request_repaint();
@@ -1059,7 +1266,7 @@ impl DataEditor {
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     self.pixel_check_pending = None;
                     self.pixel_check.paused = true;
-                    self.set_err("PixelCheck: match failed");
+                    self.set_err("Match probe: match failed");
                 }
             }
         }

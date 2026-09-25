@@ -112,8 +112,11 @@ impl MacroMetaUi {
                 suggestions_with_separator: true,
                 draft_hover: Some(help::META_TAGS),
                 draft_first: true,
+                reorderable: false,
+                signed_filters: false,
             },
         )
+        .changed
     }
 
     pub fn paint_delay_popup(
@@ -121,6 +124,7 @@ impl MacroMetaUi {
         ui: &mut egui::Ui,
         m: &mut Macro,
         enabled: bool,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) -> MetaMutations {
         let mut out = MetaMutations::default();
         if !self.delay_open {
@@ -128,13 +132,16 @@ impl MacroMetaUi {
         }
 
         let mut close = false;
+        // Avoid `.auto_sized()`: egui paints the title Frame at title+close width
+        // without allocating it, so the header stroke outruns the body.
         crate::widgets::fit_dialog_popup(
             egui::Window::new("Delay between actions")
                 .collapsible(false)
                 .resizable(false)
-                .auto_sized()
                 .open(&mut self.delay_open),
             ui.ctx(),
+            egui::Id::new("Delay between actions"),
+            pending_scale,
         )
         .show(ui.ctx(), |ui| {
             ui.add_enabled_ui(enabled, |ui| {
@@ -207,13 +214,20 @@ fn validate_rename(
     Ok(())
 }
 
+/// Case-insensitive display-name ordering; original-string tie-break for stability.
+pub(crate) fn cmp_display_name(a: &str, b: &str) -> std::cmp::Ordering {
+    a.to_ascii_lowercase()
+        .cmp(&b.to_ascii_lowercase())
+        .then_with(|| a.cmp(b))
+}
+
 /// Sorted unique tags across macros (for completion).
 pub fn collect_all_macro_tags(macros: &[Macro]) -> Vec<String> {
     unique_sorted(macros.iter().flat_map(|m| m.tags.iter().cloned()).collect())
 }
 
 pub(crate) fn unique_sorted(mut items: Vec<String>) -> Vec<String> {
-    items.sort();
+    items.sort_by(|a, b| cmp_display_name(a, b));
     items.dedup();
     items
 }

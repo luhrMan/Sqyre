@@ -1,6 +1,6 @@
 use crate::actions::{
-    execute_focus_window, execute_for_each_row, execute_pause, execute_run_macro,
-    execute_save_variable, execute_set_variable, execute_while, FlowLoopCtx,
+    execute_focus_window, execute_for_each_cell, execute_for_each_row, execute_pause,
+    execute_run_macro, execute_save_variable, execute_set_variable, execute_while, FlowLoopCtx,
 };
 use crate::backends::{
     AutomationBackend, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup, MoveOptions,
@@ -193,6 +193,25 @@ impl<'a> Executor<'a> {
             .unwrap_or(false)
     }
 
+    pub fn log_verbose_enabled(&self) -> bool {
+        self.deps
+            .logger
+            .map(|l| l.log_verbose_enabled())
+            .unwrap_or(false)
+    }
+
+    /// Log a line whose *value* is expensive to produce. `f` runs only when
+    /// verbose diagnostics are on.
+    pub fn log_verbose(&self, action_id: ActionId, f: impl FnOnce() -> String) {
+        let Some(logger) = self.deps.logger else {
+            return;
+        };
+        if !logger.log_verbose_enabled() {
+            return;
+        }
+        logger.log(action_id, f());
+    }
+
     pub fn log_image(
         &self,
         action_id: ActionId,
@@ -271,6 +290,8 @@ pub struct ExecDeps<'a> {
     pub capturer: Option<&'a mut dyn ScreenCapturer>,
     /// Spatial dedup distance for image-search peaks; `0` uses the library default.
     pub close_matches_distance: i32,
+    /// When true, stop trying later icon variants after one hits on the same search.
+    pub variant_exit_early: bool,
     /// Release keys/buttons still held when the macro ends (success, stop, or error).
     pub release_held_inputs: bool,
     /// Safety budget for While actions with `max_iterations` ≤ 0.
@@ -297,6 +318,7 @@ impl<'a> ExecDeps<'a> {
             automation,
             capturer: None,
             close_matches_distance: 0,
+            variant_exit_early: true,
             release_held_inputs: true,
             while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
             run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -366,6 +388,11 @@ impl<'a> ExecDeps<'a> {
 
     pub fn close_matches_distance(mut self, d: i32) -> Self {
         self.close_matches_distance = d;
+        self
+    }
+
+    pub fn variant_exit_early(mut self, enabled: bool) -> Self {
+        self.variant_exit_early = enabled;
         self
     }
 }
@@ -556,7 +583,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             for ch in resolved.chars() {
                 exec.check_stopped()?;
                 exec.mark_capture_dirty();
-                exec.deps.automation.type_char(ch);
+                exec.deps.automation.type_char(ch)?;
                 if *delay_ms > 0 {
                     exec.interruptible_sleep(*delay_ms)?;
                 }
@@ -651,6 +678,20 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             sources,
             start_row,
             end_row,
+            macro_,
+        ),
+        ActionKind::ForEachCell {
+            name,
+            cells,
+            subactions,
+        } => execute_for_each_cell(
+            exec,
+            &FlowLoopCtx {
+                action_id: action.id,
+                name,
+                subactions,
+            },
+            cells,
             macro_,
         ),
         ActionKind::Pause {
@@ -897,6 +938,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: Some(&mut capturer),
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -944,6 +986,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -991,6 +1034,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -1131,6 +1175,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: false,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -1191,6 +1236,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -1279,6 +1325,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
@@ -1616,6 +1663,7 @@ mod tests {
                 automation: &mut backend,
                 capturer: None,
                 close_matches_distance: 0,
+                variant_exit_early: true,
                 release_held_inputs: true,
                 while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
                 run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,

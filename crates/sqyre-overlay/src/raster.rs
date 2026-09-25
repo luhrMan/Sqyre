@@ -20,6 +20,12 @@ pub const TIP_BG_RGB: [u8; 3] = [0x1c, 0x19, 0x14];
 const TIP_BORDER: [u8; 4] = [0xdc, 0x9d, 0x2e, 0xa0];
 /// Cream text `#f5e6c0`.
 const TIP_FG: [u8; 4] = [0xf5, 0xe6, 0xc0, 0xff];
+const MENU_ROW_H: f32 = 28.0;
+const MENU_PAD_X: f32 = 12.0;
+const MENU_PAD_Y: f32 = 8.0;
+const MENU_TITLE_H: f32 = 22.0;
+const MENU_MAX_W: f32 = 360.0;
+const MENU_MIN_W: f32 = 180.0;
 
 const UI_FONT_CANDIDATES: &[&str] = &[
     "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
@@ -28,6 +34,30 @@ const UI_FONT_CANDIDATES: &[&str] = &[
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
 ];
+
+/// Mutable RGBA8 destination: `rgba` is row-major with length `w * h * 4`.
+///
+/// Bundles the `(buffer, width, height)` triple every drawing helper needs so
+/// they take a canvas plus their own geometry instead of re-threading all three.
+struct Canvas<'a> {
+    rgba: &'a mut [u8],
+    w: u32,
+    h: u32,
+}
+
+impl Canvas<'_> {
+    /// Byte offset of pixel `(x, y)`, or `None` when outside the buffer.
+    fn index(&self, x: i32, y: i32) -> Option<usize> {
+        if x < 0 || y < 0 || x >= self.w as i32 || y >= self.h as i32 {
+            return None;
+        }
+        Some(((y as u32 * self.w + x as u32) * 4) as usize)
+    }
+}
+
+/// One selectable chooser row: `(name, x, y, w, h)` in window coordinates.
+/// An empty `name` marks the Cancel row.
+pub type ChooserRow = (String, i32, i32, u32, u32);
 
 /// Style + content needed to paint one button face.
 ///
@@ -128,7 +158,12 @@ pub fn rasterize_tip(text: &str) -> (u32, u32, Vec<u8>) {
     let hi_w = (text_w + pad_x * 2.0).ceil().max(1.0) as u32;
     let hi_h = (text_h + pad_y * 2.0).ceil().max(1.0) as u32;
     let mut hi = vec![0u8; (hi_w * hi_h * 4) as usize];
-    fill_rounded_panel(&mut hi, hi_w, hi_h, corner, border_w);
+    let mut canvas = Canvas {
+        rgba: &mut hi,
+        w: hi_w,
+        h: hi_h,
+    };
+    fill_rounded_panel(&mut canvas, corner, border_w);
 
     let ox = pad_x - ink_min_x;
     let oy = pad_y - ink_min_y;
@@ -138,14 +173,14 @@ pub fn rasterize_tip(text: &str) -> (u32, u32, Vec<u8>) {
             continue;
         }
         blit_coverage(
-            &mut hi,
-            hi_w,
-            hi_h,
-            &bitmap,
-            metrics.width,
-            metrics.height,
-            (ox + g.x).round() as i32,
-            (oy + g.y).round() as i32,
+            &mut canvas,
+            Coverage {
+                bitmap: &bitmap,
+                bw: metrics.width,
+                bh: metrics.height,
+                ox: (ox + g.x).round() as i32,
+                oy: (oy + g.y).round() as i32,
+            },
             TIP_FG,
         );
     }
@@ -156,52 +191,249 @@ pub fn rasterize_tip(text: &str) -> (u32, u32, Vec<u8>) {
     downsample_box(&hi, hi_w, hi_h, TIP_SSAA)
 }
 
-fn fill_rounded_panel(rgba: &mut [u8], w: u32, h: u32, corner: f32, border_w: f32) {
-    let r = corner.min((w.min(h) as f32) * 0.5);
-    for y in 0..h as i32 {
-        for x in 0..w as i32 {
-            let d = sd_rounded_rect(x as f32 + 0.5, y as f32 + 0.5, w as f32, h as f32, r);
-            let i = ((y as u32 * w + x as u32) * 4) as usize;
-            // Always fill the window rect with panel RGB so shape misses are not black flecks.
-            rgba[i] = TIP_BG_RGB[0];
-            rgba[i + 1] = TIP_BG_RGB[1];
-            rgba[i + 2] = TIP_BG_RGB[2];
-            rgba[i + 3] = 255;
-            if d <= 0.0 && border_w > 0.0 && d >= -border_w {
-                let edge = ((border_w + d) / border_w).clamp(0.0, 1.0);
-                let a = (TIP_BORDER[3] as f32 / 255.0) * edge;
-                blend(&mut rgba[i..i + 4], TIP_BORDER, a);
+/// Opaque hotkey-conflict menu: `(w, h, rgba, row_hits)` in physical pixels.
+/// `hover` / `pressed` are optional row indices (including Cancel).
+pub fn rasterize_chooser(
+    title: &str,
+    names: &[String],
+    hover: Option<usize>,
+    pressed: Option<usize>,
+) -> (u32, u32, Vec<u8>, Vec<ChooserRow>) {
+    if names.is_empty() {
+        return (0, 0, Vec::new(), Vec::new());
+    }
+    let font = ui_font();
+    let title = title.trim();
+    let mut max_text = title.len().max(12) as f32 * 7.5;
+    for n in names {
+        max_text = max_text.max(n.len() as f32 * 7.5);
+    }
+    max_text = max_text.max(6.0 * 7.5); // "Cancel"
+    let content_w = max_text.clamp(MENU_MIN_W - MENU_PAD_X * 2.0, MENU_MAX_W - MENU_PAD_X * 2.0);
+    let w = (content_w + MENU_PAD_X * 2.0)
+        .ceil()
+        .clamp(MENU_MIN_W, MENU_MAX_W) as u32;
+    let title_h = if title.is_empty() { 0.0 } else { MENU_TITLE_H };
+    // title + macro rows + gap + Cancel
+    let h = (MENU_PAD_Y * 2.0 + title_h + names.len() as f32 * MENU_ROW_H + 6.0 + MENU_ROW_H + 4.0)
+        .ceil() as u32;
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+    let mut canvas = Canvas {
+        rgba: &mut rgba,
+        w,
+        h,
+    };
+    fill_rounded_panel(&mut canvas, TIP_CORNER_PX, TIP_BORDER_W);
+
+    let mut y = MENU_PAD_Y;
+    if !title.is_empty() {
+        draw_line_text(
+            &mut canvas,
+            font,
+            title,
+            (MENU_PAD_X, y + 2.0, TIP_FONT_PX * 0.9),
+            [0xb8, 0xa8, 0x88, 0xff],
+        );
+        y += title_h;
+    }
+
+    let mut hits = Vec::with_capacity(names.len() + 1);
+    let row_x = 6i32;
+    let row_w = w.saturating_sub(12);
+    for (i, name) in names.iter().enumerate() {
+        let row_y = y.round() as i32;
+        let row_h = MENU_ROW_H.round() as u32;
+        let state = row_chip_state(i, hover, pressed);
+        fill_row_chip(&mut canvas, (row_x, row_y, row_w, row_h), false, state);
+        hits.push((name.clone(), row_x, row_y, row_w, row_h));
+        let fg = match state {
+            ChipState::Pressed => [0xff, 0xf0, 0xc8, 0xff],
+            ChipState::Hover => [0xff, 0xf6, 0xd8, 0xff],
+            ChipState::Idle => TIP_FG,
+        };
+        draw_line_text(
+            &mut canvas,
+            font,
+            name,
+            (MENU_PAD_X, y + 6.0, TIP_FONT_PX),
+            fg,
+        );
+        y += MENU_ROW_H;
+    }
+
+    y += 6.0;
+    let cancel_i = names.len();
+    let row_y = y.round() as i32;
+    let row_h = MENU_ROW_H.round() as u32;
+    let state = row_chip_state(cancel_i, hover, pressed);
+    fill_row_chip(&mut canvas, (row_x, row_y, row_w, row_h), true, state);
+    hits.push((String::new(), row_x, row_y, row_w, row_h));
+    let fg = match state {
+        ChipState::Pressed => [0xe8, 0xd8, 0xb8, 0xff],
+        ChipState::Hover => [0xd8, 0xc8, 0xa8, 0xff],
+        ChipState::Idle => [0xc8, 0xb8, 0x98, 0xff],
+    };
+    draw_line_text(
+        &mut canvas,
+        font,
+        "Cancel",
+        (MENU_PAD_X, y + 6.0, TIP_FONT_PX),
+        fg,
+    );
+
+    (w, h, rgba, hits)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ChipState {
+    Idle,
+    Hover,
+    Pressed,
+}
+
+fn row_chip_state(i: usize, hover: Option<usize>, pressed: Option<usize>) -> ChipState {
+    if pressed == Some(i) {
+        ChipState::Pressed
+    } else if hover == Some(i) {
+        ChipState::Hover
+    } else {
+        ChipState::Idle
+    }
+}
+
+fn fill_row_chip(
+    canvas: &mut Canvas<'_>,
+    (x, y, rw, rh): (i32, i32, u32, u32),
+    muted: bool,
+    state: ChipState,
+) {
+    let (bg, border) = match (muted, state) {
+        (false, ChipState::Idle) => ([0x32, 0x2c, 0x24, 0xff], [0x9a, 0x78, 0x38, 0xff]),
+        (false, ChipState::Hover) => ([0x4a, 0x3e, 0x2a, 0xff], [0xef, 0xc0, 0x4a, 0xff]),
+        (false, ChipState::Pressed) => ([0x24, 0x1e, 0x16, 0xff], [0xdc, 0x9d, 0x2e, 0xff]),
+        (true, ChipState::Idle) => ([0x2a, 0x26, 0x20, 0xff], [0x6a, 0x5c, 0x44, 0xff]),
+        (true, ChipState::Hover) => ([0x3a, 0x34, 0x2c, 0xff], [0x9a, 0x88, 0x68, 0xff]),
+        (true, ChipState::Pressed) => ([0x1e, 0x1a, 0x16, 0xff], [0x8a, 0x78, 0x58, 0xff]),
+    };
+    let radius = 5.0_f32;
+    let border_w = if state == ChipState::Idle { 1.2 } else { 2.0 };
+    for py in y..(y + rh as i32) {
+        for px in x..(x + rw as i32) {
+            let Some(i) = canvas.index(px, py) else {
+                continue;
+            };
+            let lx = px - x;
+            let ly = py - y;
+            let d = sd_rounded_rect(
+                lx as f32 + 0.5,
+                ly as f32 + 0.5,
+                rw as f32,
+                rh as f32,
+                radius,
+            );
+            if d > 0.0 {
+                continue;
+            }
+            canvas.rgba[i] = bg[0];
+            canvas.rgba[i + 1] = bg[1];
+            canvas.rgba[i + 2] = bg[2];
+            canvas.rgba[i + 3] = 255;
+            if d >= -border_w {
+                canvas.rgba[i] = border[0];
+                canvas.rgba[i + 1] = border[1];
+                canvas.rgba[i + 2] = border[2];
             }
         }
     }
 }
 
-#[allow(clippy::too_many_arguments)] // dest buffer + glyph coverage rectangle in one blit
-fn blit_coverage(
-    rgba: &mut [u8],
-    w: u32,
-    h: u32,
-    bitmap: &[u8],
+fn draw_line_text(
+    canvas: &mut Canvas<'_>,
+    font: &Font,
+    text: &str,
+    (x, y, px): (f32, f32, f32),
+    color: [u8; 4],
+) {
+    let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
+    layout.reset(&LayoutSettings {
+        x: 0.0,
+        y: 0.0,
+        max_width: Some((canvas.w as f32 - x - MENU_PAD_X).max(8.0)),
+        ..LayoutSettings::default()
+    });
+    layout.append(&[font], &TextStyle::new(text, px, 0));
+    let glyphs = layout.glyphs();
+    if glyphs.is_empty() {
+        return;
+    }
+    let mut ink_min_y = f32::INFINITY;
+    for g in glyphs {
+        ink_min_y = ink_min_y.min(g.y);
+    }
+    let oy = y - ink_min_y;
+    for g in glyphs {
+        let (metrics, bitmap) = font.rasterize_config(g.key);
+        if metrics.width == 0 || metrics.height == 0 || bitmap.is_empty() {
+            continue;
+        }
+        blit_coverage(
+            canvas,
+            Coverage {
+                bitmap: &bitmap,
+                bw: metrics.width,
+                bh: metrics.height,
+                ox: (x + g.x).round() as i32,
+                oy: (oy + g.y).round() as i32,
+            },
+            color,
+        );
+    }
+}
+
+fn fill_rounded_panel(canvas: &mut Canvas<'_>, corner: f32, border_w: f32) {
+    let (w, h) = (canvas.w, canvas.h);
+    let r = corner.min((w.min(h) as f32) * 0.5);
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
+            let d = sd_rounded_rect(x as f32 + 0.5, y as f32 + 0.5, w as f32, h as f32, r);
+            let Some(i) = canvas.index(x, y) else {
+                continue;
+            };
+            // Always fill the window rect with panel RGB so shape misses are not black flecks.
+            canvas.rgba[i] = TIP_BG_RGB[0];
+            canvas.rgba[i + 1] = TIP_BG_RGB[1];
+            canvas.rgba[i + 2] = TIP_BG_RGB[2];
+            canvas.rgba[i + 3] = 255;
+            if d <= 0.0 && border_w > 0.0 && d >= -border_w {
+                let edge = ((border_w + d) / border_w).clamp(0.0, 1.0);
+                let a = (TIP_BORDER[3] as f32 / 255.0) * edge;
+                blend(&mut canvas.rgba[i..i + 4], TIP_BORDER, a);
+            }
+        }
+    }
+}
+
+/// Glyph coverage bitmap (`bw` × `bh`, 8-bit alpha) blitted at `(ox, oy)`.
+struct Coverage<'a> {
+    bitmap: &'a [u8],
     bw: usize,
     bh: usize,
     ox: i32,
     oy: i32,
-    color: [u8; 4],
-) {
+}
+
+fn blit_coverage(canvas: &mut Canvas<'_>, cov: Coverage<'_>, color: [u8; 4]) {
     let a_scale = color[3] as f32 / 255.0;
-    for gy in 0..bh {
-        for gx in 0..bw {
-            let cover = bitmap[gy * bw + gx] as f32 / 255.0;
+    for gy in 0..cov.bh {
+        for gx in 0..cov.bw {
+            let cover = cov.bitmap[gy * cov.bw + gx] as f32 / 255.0;
             if cover < 0.01 {
                 continue;
             }
-            let x = ox + gx as i32;
-            let y = oy + gy as i32;
-            if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+            let Some(i) = canvas.index(cov.ox + gx as i32, cov.oy + gy as i32) else {
                 continue;
-            }
-            let i = ((y as u32 * w + x as u32) * 4) as usize;
-            blend(&mut rgba[i..i + 4], color, cover * a_scale);
+            };
+            blend(&mut canvas.rgba[i..i + 4], color, cover * a_scale);
         }
     }
 }
@@ -295,11 +527,14 @@ pub fn rasterize(paint: &ButtonPaint) -> Vec<u8> {
     } else {
         paint.icon
     };
+    let mut canvas = Canvas {
+        rgba: &mut rgba,
+        w: w as u32,
+        h: h as u32,
+    };
     if paint.icon_glyph != '\0' && icon_c[3] > 0 {
         blit_glyph(
-            &mut rgba,
-            w as u32,
-            h as u32,
+            &mut canvas,
             paint.icon_glyph,
             (w.min(h) as f32 * 0.55).max(8.0),
             icon_c,
@@ -308,14 +543,7 @@ pub fn rasterize(paint: &ButtonPaint) -> Vec<u8> {
     }
 
     if paint.busy {
-        draw_spinner(
-            &mut rgba,
-            w as u32,
-            h as u32,
-            paint.busy_phase,
-            paint.icon_hover,
-            fill_bg,
-        );
+        draw_spinner(&mut canvas, paint.busy_phase, paint.icon_hover, fill_bg);
     }
 
     rgba
@@ -385,14 +613,14 @@ fn stamp_ink(dst: &mut [u8], src: [u8; 4], a: f32) {
     dst[3] = dst[3].max((a * 255.0).round().clamp(0.0, 255.0) as u8);
 }
 
-fn blit_glyph(rgba: &mut [u8], w: u32, h: u32, ch: char, px: f32, color: [u8; 4], fill_bg: bool) {
+fn blit_glyph(canvas: &mut Canvas<'_>, ch: char, px: f32, color: [u8; 4], fill_bg: bool) {
     let font = phosphor_font();
     let (metrics, bitmap) = font.rasterize(ch, px);
     if metrics.width == 0 || metrics.height == 0 || bitmap.is_empty() {
         return;
     }
-    let ox = (w as i32 - metrics.width as i32) / 2;
-    let oy = (h as i32 - metrics.height as i32) / 2;
+    let ox = (canvas.w as i32 - metrics.width as i32) / 2;
+    let oy = (canvas.h as i32 - metrics.height as i32) / 2;
     let a_scale = color[3] as f32 / 255.0;
     for gy in 0..metrics.height {
         for gx in 0..metrics.width {
@@ -400,23 +628,21 @@ fn blit_glyph(rgba: &mut [u8], w: u32, h: u32, ch: char, px: f32, color: [u8; 4]
             if cover < 0.01 {
                 continue;
             }
-            let x = ox + gx as i32;
-            let y = oy + gy as i32;
-            if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+            let Some(i) = canvas.index(ox + gx as i32, oy + gy as i32) else {
                 continue;
-            }
-            let i = ((y as u32 * w + x as u32) * 4) as usize;
+            };
             let a = cover * a_scale;
             if fill_bg {
-                blend(&mut rgba[i..i + 4], color, a);
+                blend(&mut canvas.rgba[i..i + 4], color, a);
             } else {
-                stamp_ink(&mut rgba[i..i + 4], color, a);
+                stamp_ink(&mut canvas.rgba[i..i + 4], color, a);
             }
         }
     }
 }
 
-fn draw_spinner(rgba: &mut [u8], w: u32, h: u32, phase: f32, color: [u8; 4], fill_bg: bool) {
+fn draw_spinner(canvas: &mut Canvas<'_>, phase: f32, color: [u8; 4], fill_bg: bool) {
+    let (w, h) = (canvas.w, canvas.h);
     let cx = w as f32 * 0.5;
     let cy = h as f32 * 0.5;
     let r = (w.min(h) as f32) * 0.32;
@@ -436,19 +662,13 @@ fn draw_spinner(rgba: &mut [u8], w: u32, h: u32, phase: f32, color: [u8; 4], fil
         let y0 = cy + dy * (r * 0.45);
         let x1 = cx + dx * r;
         let y1 = cy + dy * r;
-        draw_line(rgba, w, h, x0, y0, x1, y1, stroke, c, fill_bg);
+        draw_line(canvas, (x0, y0, x1, y1), stroke, c, fill_bg);
     }
 }
 
-#[allow(clippy::too_many_arguments)] // buffer + segment geometry + stroke style in one pass
 fn draw_line(
-    rgba: &mut [u8],
-    w: u32,
-    h: u32,
-    x0: f32,
-    y0: f32,
-    x1: f32,
-    y1: f32,
+    canvas: &mut Canvas<'_>,
+    (x0, y0, x1, y1): (f32, f32, f32, f32),
     stroke: f32,
     color: [u8; 4],
     fill_bg: bool,
@@ -466,16 +686,13 @@ fn draw_line(
                 if (ox * ox + oy * oy) as f32 > half * half {
                     continue;
                 }
-                let x = (px as i32) + ox;
-                let y = (py as i32) + oy;
-                if x < 0 || y < 0 || x >= w as i32 || y >= h as i32 {
+                let Some(i) = canvas.index((px as i32) + ox, (py as i32) + oy) else {
                     continue;
-                }
-                let i = ((y as u32 * w + x as u32) * 4) as usize;
+                };
                 if fill_bg {
-                    blend(&mut rgba[i..i + 4], color, a_scale);
+                    blend(&mut canvas.rgba[i..i + 4], color, a_scale);
                 } else {
-                    stamp_ink(&mut rgba[i..i + 4], color, a_scale);
+                    stamp_ink(&mut canvas.rgba[i..i + 4], color, a_scale);
                 }
             }
         }
@@ -537,6 +754,36 @@ mod tip_tests {
         // Monospace "Remove all Gems" is much wider; proportional should be compact.
         let (w, _, _) = rasterize_tip("Remove all Gems");
         assert!(w < 160, "expected proportional tip width, got {w}");
+    }
+
+    #[test]
+    fn chooser_draws_row_chips_and_cancel_hit() {
+        let names = vec!["Macro A".into(), "Macro B".into()];
+        let (w, h, rgba, hits) = rasterize_chooser("Hotkey: f1", &names, None, None);
+        assert!(w >= 180 && h > 80, "w={w} h={h}");
+        assert_eq!(hits.len(), 3); // 2 macros + Cancel
+        assert_eq!(hits[0].0, "Macro A");
+        assert_eq!(hits[1].0, "Macro B");
+        assert!(hits[2].0.is_empty(), "cancel sentinel");
+        assert_eq!(rgba.len(), (w * h * 4) as usize);
+        let bright = rgba
+            .chunks(4)
+            .filter(|p| p[0] > 40 || p[1] > 40 || p[2] > 40)
+            .count();
+        assert!(
+            bright > 100,
+            "expected row chip / text ink, bright={bright}"
+        );
+        let (w2, _, rgba2, _) = rasterize_chooser("Hotkey: f1", &names, Some(0), None);
+        assert_eq!(w, w2);
+        let hover_gold = rgba2
+            .chunks(4)
+            .filter(|p| p[0] > 0xE0 && p[1] > 0xA0 && p[2] < 0x80)
+            .count();
+        assert!(
+            hover_gold > 20,
+            "expected brighter hover border pixels, hover_gold={hover_gold}"
+        );
     }
 
     #[test]

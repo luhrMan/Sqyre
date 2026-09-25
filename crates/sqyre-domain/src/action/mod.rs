@@ -4,10 +4,16 @@ mod action_serde;
 mod kind;
 mod tree;
 mod wire_keys;
+mod wire_schema;
 
 pub use kind::ActionKind;
 pub use tree::{InsertSlot, TreeError, TreeNodeRef};
 pub use wire_keys::WIRE_TYPE_KEYS;
+pub use wire_schema::{
+    action_wire_desc, assert_enum_tables_match_domain, enum_values_for_field,
+    macro_document_json_schema, macro_wire_fields, variable_type_values, ActionWireDesc, WireField,
+    WireFieldKind, ACTION_WIRE_DESCS,
+};
 
 pub use crate::match_method::MatchMethod;
 use crate::{CoordinateRef, ScalarValue};
@@ -396,6 +402,56 @@ string_enum! {
         Column = "column",
         /// No banding: vertical then horizontal.
         None = "none",
+    }
+}
+
+string_enum! {
+    /// Primary key for Image Search item order (search + Items grid).
+    pub enum ItemSortBy {
+        /// Display name (direction from [`ItemSortThen`] name variants).
+        #[default]
+        Name = "name",
+        /// Grid footprint `rows × cols` (direction from footprint then-variants).
+        Footprint = "footprint",
+        /// [`ActionKind::ImageSearch`] tag priority list.
+        Tags = "tags",
+        /// Stored `targets` list order (drag-reorderable).
+        Manual = "manual",
+    }
+}
+
+impl ItemSortBy {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Name => "Name",
+            Self::Footprint => "Footprint",
+            Self::Tags => "Tags",
+            Self::Manual => "Manual",
+        }
+    }
+}
+
+string_enum! {
+    /// Within-group / secondary order after [`ItemSortBy`].
+    pub enum ItemSortThen {
+        #[default]
+        NameAsc = "name_asc",
+        NameDesc = "name_desc",
+        FootprintLarge = "footprint_large",
+        FootprintSmall = "footprint_small",
+        ListOrder = "list_order",
+    }
+}
+
+impl ItemSortThen {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::NameAsc => "Name A→Z",
+            Self::NameDesc => "Name Z→A",
+            Self::FootprintLarge => "Larger footprint",
+            Self::FootprintSmall => "Smaller footprint",
+            Self::ListOrder => "List order",
+        }
     }
 }
 
@@ -791,6 +847,14 @@ fn is_default_match_grouping(v: &MatchGrouping) -> bool {
     *v == MatchGrouping::Row
 }
 
+pub(crate) fn is_default_item_sort_by(v: &ItemSortBy) -> bool {
+    *v == ItemSortBy::Name
+}
+
+pub(crate) fn is_default_item_sort_then(v: &ItemSortThen) -> bool {
+    *v == ItemSortThen::NameAsc
+}
+
 fn is_default_nav_select_device(v: &NavSelectDevice) -> bool {
     *v == NavSelectDevice::Mouse
 }
@@ -1082,6 +1146,38 @@ impl Default for NavigateSelectData {
 pub const FOREACH_ROW_BUILTIN_ROW: &str = "Row";
 /// Total line count of the driving (first) ForEachRow source.
 pub const FOREACH_ROW_BUILTIN_ROW_COUNT: &str = "RowCount";
+
+/// Cell center X (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_X: &str = "CellX";
+/// Cell center Y (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_Y: &str = "CellY";
+/// Current 1-based row index within the Collection (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_ROW: &str = "CellRow";
+/// Current 1-based column index within the Collection (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_COL: &str = "CellCol";
+/// Total cells in the selected range (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_COUNT: &str = "CellCount";
+/// Current cell left edge in screen pixels (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_LEFT: &str = "CellLeft";
+/// Current cell top edge in screen pixels (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_TOP: &str = "CellTop";
+/// Current cell right edge in screen pixels (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_RIGHT: &str = "CellRight";
+/// Current cell bottom edge in screen pixels (ForEachCell).
+pub const FOREACH_CELL_BUILTIN_BOTTOM: &str = "CellBottom";
+
+/// All ForEachCell runtime builtins (catalog / reserved-name checks).
+pub const FOREACH_CELL_BUILTIN_VARS: &[&str] = &[
+    FOREACH_CELL_BUILTIN_X,
+    FOREACH_CELL_BUILTIN_Y,
+    FOREACH_CELL_BUILTIN_ROW,
+    FOREACH_CELL_BUILTIN_COL,
+    FOREACH_CELL_BUILTIN_COUNT,
+    FOREACH_CELL_BUILTIN_LEFT,
+    FOREACH_CELL_BUILTIN_TOP,
+    FOREACH_CELL_BUILTIN_RIGHT,
+    FOREACH_CELL_BUILTIN_BOTTOM,
+];
 
 /// One node in a macro action tree.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

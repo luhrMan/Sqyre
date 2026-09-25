@@ -82,6 +82,13 @@ pub trait ActionLogger: Send + Sync {
         false
     }
 
+    /// When false, callers must skip diagnostics whose *cost is in producing the
+    /// value*, not in logging it — frame checksums, full OCR text, variable
+    /// values. Guard the computation, not just the [`Self::log`] call.
+    fn log_verbose_enabled(&self) -> bool {
+        false
+    }
+
     fn log_image(&self, action_id: ActionId, image: &LogImage) {
         let _ = (action_id, image);
     }
@@ -107,15 +114,18 @@ pub trait ActionLogger: Send + Sync {
 pub struct SharedActionLog {
     inner: Arc<Mutex<HashMap<ActionId, Vec<ActionLogEntry>>>>,
     log_images: Arc<AtomicBool>,
+    log_verbose: Arc<AtomicBool>,
 }
 
 impl Default for SharedActionLog {
     fn default() -> Self {
-        // Enabled by default so unit tests that assert images need no setup;
-        // the app sets this from `UserSettings::save_meta_images` (default off).
+        // Both enabled by default so unit tests that assert images / diagnostic
+        // lines need no setup; the app sets them from
+        // `UserSettings::save_meta_images` (default off).
         Self {
             inner: Arc::new(Mutex::new(HashMap::new())),
             log_images: Arc::new(AtomicBool::new(true)),
+            log_verbose: Arc::new(AtomicBool::new(true)),
         }
     }
 }
@@ -133,8 +143,24 @@ impl SharedActionLog {
         self.log_images.load(Ordering::SeqCst)
     }
 
+    pub fn set_log_verbose(&self, enabled: bool) {
+        self.log_verbose.store(enabled, Ordering::SeqCst);
+    }
+
+    pub fn log_verbose_enabled(&self) -> bool {
+        self.log_verbose.load(Ordering::SeqCst)
+    }
+
     pub fn clear(&self) {
         self.inner.lock().clear();
+    }
+
+    /// Total RGBA bytes retained in log images (for `SQYRE_MEM` samples).
+    pub fn image_bytes(&self) -> usize {
+        let map = self.inner.lock();
+        map.values()
+            .map(|entries| entries_image_bytes(entries))
+            .sum()
     }
 
     /// Snapshot of the entries logged for `action_id`.
@@ -144,6 +170,20 @@ impl SharedActionLog {
             .get(&action_id)
             .cloned()
             .unwrap_or_default()
+    }
+}
+
+fn entries_image_bytes(entries: &[ActionLogEntry]) -> usize {
+    entries.iter().map(entry_image_bytes).sum()
+}
+
+fn entry_image_bytes(entry: &ActionLogEntry) -> usize {
+    match entry {
+        ActionLogEntry::Text(_) => 0,
+        ActionLogEntry::Image(img) => img.pixels.len(),
+        ActionLogEntry::ItemPipeline {
+            thumbnail, steps, ..
+        } => thumbnail.pixels.len() + steps.iter().map(|s| s.pixels.len()).sum::<usize>(),
     }
 }
 
@@ -175,6 +215,10 @@ impl ActionLogger for SharedActionLog {
 
     fn log_images_enabled(&self) -> bool {
         SharedActionLog::log_images_enabled(self)
+    }
+
+    fn log_verbose_enabled(&self) -> bool {
+        SharedActionLog::log_verbose_enabled(self)
     }
 
     fn log_image(&self, action_id: ActionId, image: &LogImage) {
@@ -302,6 +346,41 @@ mod tests {
         log.log_image(id, &solid("capture", 128));
         let entries = log.entries_for(id);
         assert_eq!(entries.len(), 1);
+        assert_eq!(
+            log.image_bytes(),
+            0,
+            "disabled images must not retain pixels"
+        );
+    }
+
+    #[test]
+    fn image_bytes_tracks_retained_pixels_and_clear() {
+        let log = SharedActionLog::new();
+        log.set_log_images(true);
+        let id = ActionId::new();
+        log.log(id, "text-only".into());
+        assert_eq!(log.image_bytes(), 0);
+
+        let img = solid("shot", 64);
+        let expected = img.pixels.len();
+        log.log_image(id, &img);
+        assert_eq!(log.image_bytes(), expected);
+
+        let thumb = solid("thumb", 1);
+        let step = solid("step", 2);
+        let pipeline_bytes = thumb.pixels.len() + step.pixels.len();
+        log.log_item_pipeline(
+            id,
+            "item".into(),
+            "sum".into(),
+            &thumb,
+            &[step],
+            vec!["d".into()],
+        );
+        assert_eq!(log.image_bytes(), expected + pipeline_bytes);
+
+        log.clear();
+        assert_eq!(log.image_bytes(), 0);
     }
 
     #[test]

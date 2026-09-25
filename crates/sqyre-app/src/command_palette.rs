@@ -12,6 +12,7 @@ use sqyre_ui_model::action_picker_category;
 
 const WINDOW_ID: &str = "sqyre_command_palette";
 const ROW_H: f32 = 28.0;
+const CREATE_SCORE_PENALTY: u32 = 40;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CommandKind {
@@ -28,6 +29,7 @@ pub(crate) enum CommandKind {
     },
     OpenSettings,
     OpenVariables,
+    OpenYamlMacroBuilder,
     ShowMacroList,
     NewCatalogEntity {
         tab: EditorTab,
@@ -92,10 +94,15 @@ impl CommandPaletteUi {
         }
     }
 
+    pub(crate) fn is_open(&self) -> bool {
+        self.open
+    }
+
     pub(crate) fn show(
         &mut self,
         ctx: &egui::Context,
         commands: &[CommandItem],
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) -> Option<CommandKind> {
         if !self.open {
             return None;
@@ -121,7 +128,6 @@ impl CommandPaletteUi {
         let mut open = self.open;
         crate::widgets::fit_dialog_window(
             egui::Window::new("Command palette")
-                .id(egui::Id::new(WINDOW_ID))
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
@@ -131,6 +137,8 @@ impl CommandPaletteUi {
                 .order(egui::Order::Foreground)
                 .open(&mut open),
             ctx,
+            egui::Id::new(WINDOW_ID),
+            pending_scale,
         )
         .show(ctx, |ui| {
             let (esc, enter, down, up) = ui.input_mut(|i| {
@@ -185,21 +193,21 @@ impl CommandPaletteUi {
                 return;
             }
 
-            crate::pickers::scroll_vertical()
-                .auto_shrink([false, false])
-                .max_height(ROW_H * 10.0 + 8.0)
-                .show(ui, |ui| {
-                    for (i, item) in filtered.iter().enumerate() {
-                        let resp = command_row(ui, item, i == self.selected);
-                        if resp.clicked() {
-                            run = Some(item.kind.clone());
-                        }
-                        if i == self.selected && self.scroll_selected {
-                            ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));
-                            self.scroll_selected = false;
-                        }
+            let list_h = ROW_H * 10.0 + 8.0;
+            let list_w = crate::widgets::visible_width(ui);
+            crate::pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+                ui.set_max_width(list_w);
+                for (i, item) in filtered.iter().enumerate() {
+                    let resp = command_row(ui, item, i == self.selected);
+                    if resp.clicked() {
+                        run = Some(item.kind.clone());
                     }
-                });
+                    if i == self.selected && self.scroll_selected {
+                        ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));
+                        self.scroll_selected = false;
+                    }
+                }
+            });
         });
         if close || run.is_some() {
             self.close();
@@ -289,32 +297,113 @@ pub(crate) fn collect_commands(src: CommandSources<'_>) -> Vec<CommandItem> {
     out
 }
 
+struct CatalogKind {
+    tab: EditorTab,
+    open_title: &'static str,
+    new_title: Option<&'static str>,
+    icon: &'static str,
+    open_keys: &'static [&'static str],
+}
+
+fn catalog_kinds() -> &'static [CatalogKind] {
+    &[
+        CatalogKind {
+            tab: EditorTab::Programs,
+            open_title: "Open Programs",
+            new_title: Some("New Program"),
+            icon: "app-window",
+            open_keys: &["program", "model", "goto"],
+        },
+        CatalogKind {
+            tab: EditorTab::Items,
+            open_title: "Open Items",
+            new_title: Some("New Item"),
+            icon: "image",
+            open_keys: &["item", "model", "goto"],
+        },
+        CatalogKind {
+            tab: EditorTab::Masks,
+            open_title: "Open Masks",
+            new_title: Some("New Mask"),
+            icon: "circle-dashed",
+            open_keys: &["mask", "model", "goto"],
+        },
+        CatalogKind {
+            tab: EditorTab::ScreenCap,
+            open_title: "Open ScreenCap",
+            new_title: None,
+            icon: "camera",
+            open_keys: &[
+                "screencap",
+                "screen",
+                "capture",
+                "screenshot",
+                "tools",
+                "goto",
+            ],
+        },
+        CatalogKind {
+            tab: EditorTab::PixelCheck,
+            open_title: "Open PixelCheck",
+            new_title: None,
+            icon: "crosshair",
+            open_keys: &["pixelcheck", "pixel", "match", "heatmap", "tools", "goto"],
+        },
+        CatalogKind {
+            tab: EditorTab::Points,
+            open_title: "Open Points",
+            new_title: Some("New Point"),
+            icon: "map-pin",
+            open_keys: &["point", "coordinate", "model", "goto"],
+        },
+        CatalogKind {
+            tab: EditorTab::SearchAreas,
+            open_title: "Open Search Areas",
+            new_title: Some("New Search Area"),
+            icon: "selection",
+            open_keys: &["search", "area", "model", "goto"],
+        },
+        CatalogKind {
+            tab: EditorTab::Collections,
+            open_title: "Open Collections",
+            new_title: Some("New Collection"),
+            icon: "grid-four",
+            open_keys: &["collection", "model", "goto"],
+        },
+        CatalogKind {
+            tab: EditorTab::Atlases,
+            open_title: "Open Atlases",
+            new_title: Some("New Atlas"),
+            icon: "stack",
+            open_keys: &["atlas", "model", "goto"],
+        },
+        CatalogKind {
+            tab: EditorTab::Overlay,
+            open_title: "Open Overlay",
+            new_title: Some("New Overlay Button"),
+            icon: "square",
+            open_keys: &["overlay", "button", "model", "tools", "goto"],
+        },
+    ]
+}
+
 fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
     out.push(item(
         "Open Data Editor",
         "Go to",
         ph("folder"),
         CommandKind::OpenDataEditor,
-        &["data", "editor", "catalog", "goto"],
+        &["data", "editor", "catalog", "goto", "model"],
     ));
-    out.push(item(
-        "Open ScreenCap",
-        "Go to",
-        ph("camera"),
-        CommandKind::OpenEditorTab {
-            tab: EditorTab::ScreenCap,
-        },
-        &["screencap", "screen", "capture", "screenshot", "goto"],
-    ));
-    out.push(item(
-        "Open PixelCheck",
-        "Go to",
-        ph("crosshair"),
-        CommandKind::OpenEditorTab {
-            tab: EditorTab::PixelCheck,
-        },
-        &["pixelcheck", "pixel", "match", "heatmap", "goto"],
-    ));
+    for kind in catalog_kinds() {
+        out.push(item(
+            kind.open_title,
+            "Go to",
+            ph(kind.icon),
+            CommandKind::OpenEditorTab { tab: kind.tab },
+            kind.open_keys,
+        ));
+    }
     out.push(item(
         "Open Settings",
         "Go to",
@@ -332,6 +421,13 @@ fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
         ));
     }
     out.push(item(
+        "Open YAML Macro Builder",
+        "Go to",
+        ph("code"),
+        CommandKind::OpenYamlMacroBuilder,
+        &["yaml", "import", "schema", "goto"],
+    ));
+    out.push(item(
         "Show Macro List",
         "Go to",
         ph("list"),
@@ -341,31 +437,24 @@ fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
 }
 
 fn push_new_entities(out: &mut Vec<CommandItem>) {
-    for (tab, title, extra) in [
-        (EditorTab::Programs, "New Program", "program model"),
-        (EditorTab::Items, "New Item", "item model"),
-        (EditorTab::Points, "New Point", "coordinate model"),
-        (
-            EditorTab::SearchAreas,
-            "New Search Area",
-            "search area model",
-        ),
-        (EditorTab::Masks, "New Mask", "mask model"),
-        (EditorTab::Collections, "New Collection", "collection model"),
-        (EditorTab::Atlases, "New Atlas", "atlas model"),
-        (
-            EditorTab::Overlay,
-            "New Overlay Button",
-            "overlay button model",
-        ),
-    ] {
-        out.push(item(
-            title,
-            "Data Editor",
-            ph("plus"),
-            CommandKind::NewCatalogEntity { tab },
-            &["create", "add", "new", extra],
-        ));
+    for kind in catalog_kinds() {
+        let Some(title) = kind.new_title else {
+            continue;
+        };
+        let mut keys = vec!["create".into(), "add".into(), "new".into()];
+        keys.extend(
+            kind.open_keys
+                .iter()
+                .filter(|s| **s != "goto")
+                .map(|s| (*s).to_string()),
+        );
+        out.push(CommandItem {
+            title: title.into(),
+            hint: "Data Editor".into(),
+            icon: ph("plus"),
+            kind: CommandKind::NewCatalogEntity { tab: kind.tab },
+            keywords: keys,
+        });
     }
 }
 
@@ -579,6 +668,7 @@ fn action_phosphor(type_key: &str) -> &'static str {
         "loop" | "while" => "arrows-clockwise",
         "loopjump" => "stop",
         "foreachrow" => "list-bullets",
+        "foreachcell" => "grid-four",
         "conditional" => "question",
         "wait" => "timer",
         "pause" => "pause",
@@ -602,31 +692,62 @@ pub(crate) fn filter_ranked<'a>(query: &str, items: &'a [CommandItem]) -> Vec<&'
     let mut ranked: Vec<(u32, &CommandItem)> = items
         .iter()
         .filter_map(|item| {
-            best_score(q, &item.title, &item.hint, &item.keywords).map(|s| (s, item))
+            best_score(q, &item.title, &item.hint, &item.keywords)
+                .map(|s| (s.saturating_add(create_score_penalty(&item.kind)), item))
         })
         .collect();
     ranked.sort_by(|(sa, a), (sb, b)| {
-        sa.cmp(sb).then_with(|| {
-            a.title
-                .to_ascii_lowercase()
-                .cmp(&b.title.to_ascii_lowercase())
-        })
+        sa.cmp(sb)
+            .then_with(|| kind_priority(&a.kind).cmp(&kind_priority(&b.kind)))
+            .then_with(|| {
+                a.title
+                    .to_ascii_lowercase()
+                    .cmp(&b.title.to_ascii_lowercase())
+            })
     });
     ranked.into_iter().map(|(_, item)| item).collect()
 }
 
-fn is_static_command(kind: &CommandKind) -> bool {
-    matches!(
-        kind,
+/// Create commands lose to equally-scored open/goto commands.
+fn create_score_penalty(kind: &CommandKind) -> u32 {
+    match kind {
+        CommandKind::NewMacro | CommandKind::NewCatalogEntity { .. } => CREATE_SCORE_PENALTY,
+        _ => 0,
+    }
+}
+
+fn kind_priority(kind: &CommandKind) -> u8 {
+    match kind {
+        CommandKind::OpenDataEditor => 0,
+        CommandKind::OpenEditorTab { .. } => 1,
+        CommandKind::OpenProgram { .. } | CommandKind::OpenCatalogEntity { .. } => 2,
+        CommandKind::OpenMacro { .. } => 3,
         CommandKind::AddAction { .. }
-            | CommandKind::NewMacro
-            | CommandKind::OpenDataEditor
-            | CommandKind::OpenEditorTab { .. }
-            | CommandKind::OpenSettings
-            | CommandKind::OpenVariables
-            | CommandKind::ShowMacroList
-            | CommandKind::NewCatalogEntity { .. }
-    )
+        | CommandKind::OpenSettings
+        | CommandKind::OpenVariables
+        | CommandKind::OpenYamlMacroBuilder
+        | CommandKind::ShowMacroList => 4,
+        CommandKind::NewMacro | CommandKind::NewCatalogEntity { .. } => 5,
+    }
+}
+
+fn is_static_command(kind: &CommandKind) -> bool {
+    match kind {
+        CommandKind::OpenEditorTab { tab } => {
+            matches!(tab, EditorTab::ScreenCap | EditorTab::PixelCheck)
+        }
+        CommandKind::AddAction { .. }
+        | CommandKind::NewMacro
+        | CommandKind::OpenDataEditor
+        | CommandKind::OpenSettings
+        | CommandKind::OpenVariables
+        | CommandKind::OpenYamlMacroBuilder
+        | CommandKind::ShowMacroList
+        | CommandKind::NewCatalogEntity { .. } => true,
+        CommandKind::OpenMacro { .. }
+        | CommandKind::OpenProgram { .. }
+        | CommandKind::OpenCatalogEntity { .. } => false,
+    }
 }
 
 fn best_score(query: &str, title: &str, hint: &str, keywords: &[String]) -> Option<u32> {
@@ -688,10 +809,25 @@ impl SqyreApp {
                     self.settings_ui.settings(),
                 );
             }
-            CommandKind::OpenSettings => self.settings_ui.open = true,
+            CommandKind::OpenSettings => self.settings_ui.request_open(ctx),
             CommandKind::OpenVariables => self.variables_panel.open = true,
+            CommandKind::OpenYamlMacroBuilder => {
+                if self
+                    .run_session
+                    .state
+                    .running
+                    .load(std::sync::atomic::Ordering::SeqCst)
+                {
+                    *self.run_session.state.status.lock() =
+                        "Cannot open YAML Macro Builder while a macro is running.".into();
+                } else {
+                    let selected = self.workspace.macros.get(self.workspace.selected_macro);
+                    self.macro_yaml_builder.open_builder(selected);
+                }
+            }
             CommandKind::ShowMacroList => self.macro_list_open = true,
             CommandKind::NewCatalogEntity { tab } => {
+                let pending = self.pending_viewport_scale;
                 self.data_editor.open_new(
                     tab,
                     &mut DataEditorCtx {
@@ -702,6 +838,7 @@ impl SqyreApp {
                         icons: &mut self.icon_cache,
                         screen_click: &self.screen_click,
                         settings: self.settings_ui.settings_mut(),
+                        pending_scale: pending.as_ref(),
                     },
                 );
             }
@@ -783,6 +920,7 @@ mod tests {
         assert!(shown.iter().any(|t| t == "Open Data Editor"));
         assert!(shown.iter().any(|t| t == "Open ScreenCap"));
         assert!(shown.iter().any(|t| t == "Open PixelCheck"));
+        assert!(!shown.iter().any(|t| t == "Open Items"));
         assert!(!shown.iter().any(|t| t == "Farm gold"));
         assert!(!shown.iter().any(|t| t == "Health Flask"));
         assert!(!shown.iter().any(|t| t == "Game"));
@@ -814,7 +952,65 @@ mod tests {
         let catalog = ProgramCatalog::default();
         let items = collect_commands(sources(&[], &catalog, &[], false));
         let shown = titles("new itm", &items);
-        assert!(shown.iter().any(|t| t == "New Item"));
+        assert_eq!(shown.first().map(String::as_str), Some("New Item"));
+    }
+
+    #[test]
+    fn typing_model_kind_opens_editor_before_create() {
+        let mut catalog = ProgramCatalog::default();
+        catalog.programs_mut().insert(
+            "Game".into(),
+            ProgramData {
+                name: "Game".into(),
+                items: BTreeMap::from([(
+                    "Flask".into(),
+                    ProgramItem {
+                        name: "Health Flask".into(),
+                        ..Default::default()
+                    },
+                )]),
+                ..Default::default()
+            },
+        );
+        let items = collect_commands(sources(&[], &catalog, &[], false));
+        let shown = titles("item", &items);
+        assert_eq!(shown.first().map(String::as_str), Some("Open Items"));
+        let new_at = shown.iter().position(|t| t == "New Item");
+        let flask_at = shown.iter().position(|t| t == "Health Flask");
+        assert!(new_at.is_some() && flask_at.is_some());
+        assert!(flask_at < new_at);
+    }
+
+    #[test]
+    fn typing_model_name_opens_entity_before_create() {
+        let mut catalog = ProgramCatalog::default();
+        catalog.programs_mut().insert(
+            "Game".into(),
+            ProgramData {
+                name: "Game".into(),
+                items: BTreeMap::from([(
+                    "Flask".into(),
+                    ProgramItem {
+                        name: "Health Flask".into(),
+                        ..Default::default()
+                    },
+                )]),
+                ..Default::default()
+            },
+        );
+        let items = collect_commands(sources(&[], &catalog, &[], false));
+        let shown = titles("heal", &items);
+        assert_eq!(shown.first().map(String::as_str), Some("Health Flask"));
+    }
+
+    #[test]
+    fn typing_model_opens_data_editor_before_create() {
+        let catalog = ProgramCatalog::default();
+        let items = collect_commands(sources(&[], &catalog, &[], false));
+        let shown = titles("model", &items);
+        assert_eq!(shown.first().map(String::as_str), Some("Open Data Editor"));
+        let first_new = shown.iter().position(|t| t.starts_with("New "));
+        assert!(first_new.is_some_and(|i| i > 0));
     }
 
     #[test]

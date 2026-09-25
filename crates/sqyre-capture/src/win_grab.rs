@@ -53,8 +53,10 @@ impl SelectionGrab {
         let bounds = virtual_screen()?;
         // SAFETY: class registered; creates an unowned popup HWND for this grab.
         let hwnd = unsafe {
-            let module =
-                GetModuleHandleW(None).map_err(|e| CaptureError::Message(e.to_string()))?;
+            let module = GetModuleHandleW(None).map_err(|e| CaptureError::Win32 {
+                api: "GetModuleHandleW",
+                detail: e.to_string(),
+            })?;
             CreateWindowExW(
                 WS_EX_TOPMOST | WS_EX_TOOLWINDOW | WS_EX_LAYERED,
                 CLASS_NAME,
@@ -69,7 +71,10 @@ impl SelectionGrab {
                 Some(module.into()),
                 None,
             )
-            .map_err(|e| CaptureError::Message(format!("CreateWindowExW failed: {e}")))?
+            .map_err(|e| CaptureError::Win32 {
+                api: "CreateWindowExW",
+                detail: e.to_string(),
+            })?
         };
         if hwnd.is_invalid() {
             return Err(CaptureError::Message(
@@ -185,8 +190,10 @@ fn ensure_class() -> Result<(), CaptureError> {
         .get_or_init(|| {
             // SAFETY: RegisterClassW with a process-local class.
             unsafe {
-                let module = GetModuleHandleW(None)
-                    .map_err(|e| CaptureError::Message(format!("GetModuleHandleW failed: {e}")))?;
+                let module = GetModuleHandleW(None).map_err(|e| CaptureError::Win32 {
+                    api: "GetModuleHandleW",
+                    detail: e.to_string(),
+                })?;
                 let wc = WNDCLASSW {
                     style: CS_HREDRAW | CS_VREDRAW,
                     lpfnWndProc: Some(grab_wnd_proc),
@@ -201,9 +208,10 @@ fn ensure_class() -> Result<(), CaptureError> {
                     if err == ERROR_CLASS_ALREADY_EXISTS {
                         return Ok(());
                     }
-                    return Err(CaptureError::Message(format!(
-                        "RegisterClassW failed: {err:?}"
-                    )));
+                    return Err(CaptureError::Win32 {
+                        api: "RegisterClassW",
+                        detail: format!("{err:?}"),
+                    });
                 }
             }
             Ok(())

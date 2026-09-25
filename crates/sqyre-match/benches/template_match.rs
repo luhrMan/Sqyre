@@ -2,8 +2,9 @@
 //!
 //! Run: `cargo bench -p sqyre-match` or `make bench`.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use sqyre_match::{match_template, ImageBuf, MatchMethod};
+use std::hint::black_box;
 use std::time::Duration;
 
 fn xorshift(seed: &mut u64) -> u8 {

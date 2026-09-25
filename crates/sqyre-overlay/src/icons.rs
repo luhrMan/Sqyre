@@ -304,27 +304,24 @@ pub fn show_icon_picker_grid(
 
     // Search row: `desired_width(INFINITY)` fills leftover space without an
     // absolute min_width (absolute widths + item_spacing ratchet the parent).
+    // Always use the same widget tree (Clear + TextEdit) so the field keeps
+    // focus when the query goes empty ↔ non-empty.
     ui.horizontal(|ui| {
         ui.label(egui_phosphor::regular::MAGNIFYING_GLASS)
             .on_hover_text("Search");
-        if search.is_empty() {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui
+                .add_enabled(!search.is_empty(), egui::Button::new("Clear").small())
+                .clicked()
+            {
+                search.clear();
+            }
             ui.add(
                 egui::TextEdit::singleline(search)
                     .desired_width(f32::INFINITY)
                     .hint_text("e.g. play, lightning, mouse"),
             );
-        } else {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.small_button("Clear").clicked() {
-                    search.clear();
-                }
-                ui.add(
-                    egui::TextEdit::singleline(search)
-                        .desired_width(f32::INFINITY)
-                        .hint_text("e.g. play, lightning, mouse"),
-                );
-            });
-        }
+        });
     });
     ui.add_space(4.0);
 
@@ -339,6 +336,10 @@ pub fn show_icon_picker_grid(
     };
 
     ui.weak(format!("{} icons", icons.len()));
+    if icons.is_empty() && !query.is_empty() {
+        ui.weak("No matching icons.");
+        return None;
+    }
     ui.add_space(4.0);
 
     let mut picked = None;

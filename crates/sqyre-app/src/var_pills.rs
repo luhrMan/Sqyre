@@ -9,6 +9,7 @@ use sqyre_domain::{is_known_variable, KnownVariableNames};
 use sqyre_ui_model::{action_pastel_color, nested_var_ref_color, SummaryPill};
 use sqyre_validate::EntryValidation;
 
+use crate::paint_ctx::VarTheme;
 use crate::theme::{contrast_fg, paint_galley_centered};
 use crate::tree_chrome::rgba_pub;
 
@@ -52,12 +53,16 @@ fn paint_text_chip(
     ui.interact(rect, ui.id().with(id_salt), Sense::hover())
 }
 
-/// Plain text segment (no chrome): sized to the galley and ink-centered so it
-/// aligns with nested chips under parent `Align::Center`.
+/// Plain text segment (no chrome): same content-band height as a nested var chip
+/// so `Variable:` / ` -10` share tops and bottoms with adjacent chips.
 fn paint_plain_segment(ui: &mut egui::Ui, text: &str, color: Color32) {
     let font = egui::TextStyle::Small.resolve(ui.style());
     let galley = ui.painter().layout_no_wrap(text.to_owned(), font, color);
-    let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
+    let size = Vec2::new(
+        galley.size().x,
+        galley.size().y + NESTED_MARGIN_Y as f32 * 2.0,
+    );
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     paint_galley_centered(ui, rect, galley, color);
 }
 
@@ -165,21 +170,24 @@ pub fn paint_value_pill(
     } else {
         rgba_pub(action_pastel_color(action_type, is_dark))
     };
-    // Plain text: single centered chip (avoids Label top-bias inside a composite frame).
-    if !sqyre_varref::contains(text) {
-        return paint_text_chip(
-            ui,
-            text,
-            fill,
-            OUTER_RADIUS,
-            OUTER_MARGIN_X,
-            OUTER_MARGIN_Y,
-            ("value_pill", text),
-        );
-    }
     let plain_fg = contrast_fg(fill);
+    // Paint segments directly into outer_frame's LTR layout so name pills and
+    // value pills share the same nesting (no extra `ui.horizontal` wrapper).
     outer_frame(ui, fill, |ui| {
-        paint_var_ref_content(ui, text, known, is_dark, plain_fg);
+        let prev_spacing = ui.spacing().item_spacing;
+        ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
+        if sqyre_varref::contains(text) {
+            for seg in sqyre_varref::segments(text) {
+                if seg.is_ref {
+                    paint_nested_var_chip(ui, &seg.name, known, is_dark);
+                } else if !seg.text.is_empty() {
+                    paint_plain_segment(ui, &seg.text, plain_fg);
+                }
+            }
+        } else {
+            paint_plain_segment(ui, text, plain_fg);
+        }
+        ui.spacing_mut().item_spacing = prev_spacing;
     })
 }
 
@@ -195,16 +203,17 @@ pub fn paint_variable_name_pill(
     let fill = rgba_pub(action_pastel_color(action_type, is_dark));
     let name = var_name.trim();
     let fg = contrast_fg(fill);
+    // Paint directly into outer_frame's LTR Center layout (no nested horizontal).
     outer_frame(ui, fill, |ui| {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
-            if !label.is_empty() {
-                paint_plain_segment(ui, &format!("{label}: "), fg);
-            }
-            if !name.is_empty() {
-                paint_nested_var_chip(ui, name, known, is_dark);
-            }
-        });
+        let prev_spacing = ui.spacing().item_spacing;
+        ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
+        if !label.is_empty() {
+            paint_plain_segment(ui, &format!("{label}: "), fg);
+        }
+        if !name.is_empty() {
+            paint_nested_var_chip(ui, name, known, is_dark);
+        }
+        ui.spacing_mut().item_spacing = prev_spacing;
     })
 }
 
@@ -322,12 +331,14 @@ fn take_var_ac_keys(ui: &mut egui::Ui, was_open: bool) -> (bool, bool, bool, boo
 ///
 /// Callers may pass [`f32::INFINITY`] to mean "fill remaining row space".
 /// Non-finite widths must never reach `Rect::expand2` — that reports an
-/// infinite min size and ratchets parent windows forever.
+/// infinite min size and ratchets parent windows forever. Use
+/// [`crate::widgets::visible_width`] (not `available_width`) so fill does not
+/// claim leftover room toward Window `max_size`.
 fn resolve_edit_width(ui: &egui::Ui, desired_width: f32, reserve_trailing: f32) -> f32 {
     if desired_width.is_finite() {
         desired_width.max(0.0)
     } else {
-        (ui.available_width() - reserve_trailing).max(40.0)
+        (crate::widgets::visible_width(ui) - reserve_trailing).max(40.0)
     }
 }
 
@@ -376,14 +387,26 @@ fn var_ref_text_edit(
         value,
         cursor_char,
         known,
-        down,
-        up,
-        accept,
-        dismiss,
+        AutocompleteKeys {
+            down,
+            up,
+            accept,
+            dismiss,
+        },
     );
 }
 
-#[allow(clippy::too_many_arguments)]
+/// Keys consumed by the autocomplete popup this frame.
+///
+/// Grouped because four adjacent bools are trivially transposed at the call.
+#[derive(Clone, Copy, Default)]
+struct AutocompleteKeys {
+    down: bool,
+    up: bool,
+    accept: bool,
+    dismiss: bool,
+}
+
 fn show_var_ref_autocomplete(
     ui: &mut egui::Ui,
     edit_id: egui::Id,
@@ -391,11 +414,14 @@ fn show_var_ref_autocomplete(
     value: &mut String,
     cursor_char: Option<usize>,
     known: &KnownVariableNames,
-    down: bool,
-    up: bool,
-    accept: bool,
-    dismiss: bool,
+    keys: AutocompleteKeys,
 ) {
+    let AutocompleteKeys {
+        down,
+        up,
+        accept,
+        dismiss,
+    } = keys;
     let ac_id = edit_id.with("var_ac");
     let Some(cursor_char) = cursor_char else {
         ui.ctx()
@@ -462,7 +488,8 @@ fn show_var_ref_autocomplete(
         .show(|ui| {
             ui.set_min_width(popup_width);
             ui.set_max_height(180.0);
-            crate::pickers::scroll_vertical().show(ui, |ui| {
+            crate::pickers::dialog_scroll(popup_width, 180.0).show(ui, |ui| {
+                ui.set_max_width(popup_width);
                 for (i, name) in suggestions.iter().enumerate() {
                     let selected = i == nav.selected;
                     let label = format!("${{{name}}}");
@@ -507,10 +534,7 @@ pub fn var_name_text_edit(
     help: &str,
 ) {
     ui.horizontal(|ui| {
-        let lab = ui.label(label);
-        if !help.is_empty() {
-            lab.on_hover_text(help);
-        }
+        crate::action_tooltip::help::label(ui, label, help);
         let width = resolve_edit_width(ui, desired_width, 0.0);
         let id = ui.id().with(("var_name_edit", label));
         let focused = ui.memory(|m| m.has_focus(id));
@@ -583,24 +607,36 @@ pub fn entry_validation_tip(v: &EntryValidation) -> Option<&str> {
 
 /// Labeled var-ref field with live validation icon.
 ///
+/// Presentation of one var-ref field, separate from its value and theme.
+#[derive(Clone, Copy)]
+pub struct VarFieldOpts<'a> {
+    /// Finite width, or [`f32::INFINITY`] to fill the remaining row.
+    pub desired_width: f32,
+    pub validation: &'a EntryValidation,
+    /// Hover text on the label; empty for none.
+    pub help: &'a str,
+}
+
 /// Pass a finite width, or [`f32::INFINITY`] to fill the remaining row
 /// (after the label, leaving room for a validation icon when present).
-#[allow(clippy::too_many_arguments)]
 pub fn validated_var_ref_edit(
     ui: &mut egui::Ui,
     label: &str,
     value: &mut String,
-    known: &KnownVariableNames,
-    is_dark: bool,
-    desired_width: f32,
-    validation: &EntryValidation,
-    help: &str,
+    theme: VarTheme<'_>,
+    opts: VarFieldOpts<'_>,
 ) {
+    let VarTheme {
+        known_vars: known,
+        is_dark,
+    } = theme;
+    let VarFieldOpts {
+        desired_width,
+        validation,
+        help,
+    } = opts;
     ui.horizontal(|ui| {
-        let lab = ui.label(label);
-        if !help.is_empty() {
-            lab.on_hover_text(help);
-        }
+        crate::action_tooltip::help::label(ui, label, help);
         let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
         let id = ui.id().with(("validated_var_ref", label));
         let focused = ui.memory(|m| m.has_focus(id));
@@ -628,23 +664,25 @@ pub fn validated_var_ref_edit(
 /// Multiline var-ref field with live validation icon.
 ///
 /// Pass a finite width, or [`f32::INFINITY`] to fill available width.
-#[allow(clippy::too_many_arguments)]
 pub fn validated_var_ref_multiline_edit(
     ui: &mut egui::Ui,
     label: &str,
     value: &mut String,
-    known: &KnownVariableNames,
-    is_dark: bool,
-    desired_width: f32,
+    theme: VarTheme<'_>,
     rows: usize,
-    validation: &EntryValidation,
-    help: &str,
+    opts: VarFieldOpts<'_>,
 ) {
+    let VarTheme {
+        known_vars: known,
+        is_dark,
+    } = theme;
+    let VarFieldOpts {
+        desired_width,
+        validation,
+        help,
+    } = opts;
     ui.horizontal(|ui| {
-        let lab = ui.label(label);
-        if !help.is_empty() {
-            lab.on_hover_text(help);
-        }
+        crate::action_tooltip::help::label(ui, label, help);
         paint_entry_validation_icon(ui, validation);
     });
     let width = resolve_edit_width(ui, desired_width, 0.0);
@@ -746,6 +784,34 @@ mod tests {
                 prefix: None,
             };
             paint_summary_pill(ui, "setvariable", &pill, &known, true);
+        });
+    }
+
+    #[test]
+    fn plain_value_and_name_pills_share_row_height() {
+        let ctx = egui::Context::default();
+        let known = known_variable_set(["foundY"]);
+        let _ = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.horizontal(|ui| {
+                let name =
+                    paint_variable_name_pill(ui, "Variable", "foundY", "setvariable", &known, true);
+                let plain = paint_value_pill(ui, "foundY -10", "setvariable", &known, true);
+                let with_ref = paint_value_pill(ui, "${foundY} -10", "setvariable", &known, true);
+                for (label, value) in [("plain", plain), ("ref", with_ref)] {
+                    assert!(
+                        (name.rect.height() - value.rect.height()).abs() < 0.5,
+                        "{label}: name {:.1} vs value {:.1}",
+                        name.rect.height(),
+                        value.rect.height()
+                    );
+                    assert!(
+                        (name.rect.min.y - value.rect.min.y).abs() < 0.5,
+                        "{label}: tops diverge name {:.1} vs value {:.1}",
+                        name.rect.min.y,
+                        value.rect.min.y
+                    );
+                }
+            });
         });
     }
 }

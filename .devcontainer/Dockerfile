@@ -1,7 +1,9 @@
-# Rust Sqyre workspace (egui / PureCV / Tesseract) + AppImage packaging tools.
+# Rust Sqyre workspace (egui / PureCV / Tesseract) + AppImage / Flatpak packaging tools.
 # Also used as the Linux AppImage Docker build image (make appimage fallback / CI).
 # Docker CLI comes from the docker-outside-of-docker feature (host daemon via socket)
-# so `make windows` and nested AppImage builds work inside the container.
+# so `make windows`, nested AppImage builds, and Flatpak Docker fallbacks work inside
+# the container. Flatpak builds need user namespaces / bwrap (host Docker privileged
+# image when the container itself cannot run flatpak-builder natively).
 # Trunk + wasm32-unknown-unknown support `make wasm` (GUI-only browser editor).
 # Build and test in-container; run the GUI binary on the host (needs X11).
 FROM ubuntu:24.04
@@ -31,8 +33,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-setuptools \
     squashfs-tools patchelf zsync file desktop-file-utils \
     libgtk-3-bin librsvg2-bin \
+    # Flatpak packaging (native builds need bwrap/user namespaces on the host)
+    flatpak flatpak-builder ostree \
     sudo \
     && pip3 install --no-cache-dir --break-system-packages 'appimage-builder==1.1.0' \
+        'aiohttp>=3.9.5,<4' 'tomlkit>=0.13.3,<1' \
     && rm -rf /var/lib/apt/lists/*
 
 ENV RUSTUP_HOME=/usr/local/rustup \

@@ -87,7 +87,7 @@ impl Action {
             return Some(self);
         }
         let path = self.find_child_path(id)?;
-        Some(Self::follow_child_path_mut(self, &path))
+        Self::follow_child_path_mut(self, &path)
     }
 
     /// Path of `(in_else_list, index)` steps from this node to a descendant.
@@ -115,17 +115,23 @@ impl Action {
         None
     }
 
-    fn follow_child_path_mut<'a>(node: &'a mut Action, path: &[(bool, usize)]) -> &'a mut Action {
+    /// Walk `path` from `node`. Returns `None` if a step does not exist, so a
+    /// stale path (undo, clipboard, a tree edited since the path was built)
+    /// misses instead of panicking.
+    fn follow_child_path_mut<'a>(
+        node: &'a mut Action,
+        path: &[(bool, usize)],
+    ) -> Option<&'a mut Action> {
         let mut cur = node;
         for &(in_else, index) in path {
             let list = if in_else {
-                cur.else_children_mut().expect("else path")
+                cur.else_children_mut()?
             } else {
-                cur.children_mut().expect("then path")
+                cur.children_mut()?
             };
-            cur = &mut list[index];
+            cur = list.get_mut(index)?;
         }
-        cur
+        Some(cur)
     }
 
     /// Remove a descendant by id (not self). Returns the detached node.
@@ -136,14 +142,14 @@ impl Action {
 
     fn remove_at_path(node: &mut Action, path: &[(bool, usize)]) -> Option<Action> {
         let [(in_else, index)] = path else {
-            let (in_else, index) = path[0];
+            let &(in_else, index) = path.first()?;
             let child = {
                 let list = if in_else {
                     node.else_children_mut()?
                 } else {
                     node.children_mut()?
                 };
-                &mut list[index]
+                list.get_mut(index)?
             };
             return Self::remove_at_path(child, &path[1..]);
         };
@@ -152,7 +158,7 @@ impl Action {
         } else {
             node.children_mut()?
         };
-        Some(list.remove(*index))
+        (*index < list.len()).then(|| list.remove(*index))
     }
 
     /// True if `id` is this node or any descendant (then or else).
@@ -212,15 +218,90 @@ impl Action {
         }
     }
 
+    /// Map TreeView Before/After an Else folder sentinel onto a real insert target.
+    ///
+    /// Else rows are painted after then-children but are not in that list, so
+    /// egui_ltreeview emits `Before(else)` / `After(else)` with the owner as
+    /// parent. Without this rewrite, insert fails after detach and the node is lost.
+    fn normalize_insert_target(
+        &self,
+        parent_id: ActionId,
+        slot: InsertSlot,
+    ) -> Result<(ActionId, InsertSlot), TreeError> {
+        let sib = match slot {
+            InsertSlot::Before(id) | InsertSlot::After(id) => id,
+            other => return Ok((parent_id, other)),
+        };
+        match self.resolve_tree_id(sib) {
+            Some(TreeNodeRef::ElseFolder { parent_id: owner }) => {
+                if matches!(slot, InsertSlot::Before(_)) {
+                    // Just above Else in the UI → last among then-children.
+                    Ok((owner, InsertSlot::Last))
+                } else {
+                    // Just below Else → after the owning branch among its siblings.
+                    let grandparent = self
+                        .find_parent_id(owner)
+                        .ok_or(TreeError::ParentNotFound(owner))?;
+                    Ok((grandparent, InsertSlot::After(owner)))
+                }
+            }
+            Some(TreeNodeRef::Action(_)) | None => Ok((parent_id, slot)),
+        }
+    }
+
+    /// Read-only check that `insert_at` would find its parent list and sibling.
+    fn can_insert_at(&self, parent_id: ActionId, slot: InsertSlot) -> Result<(), TreeError> {
+        let (parent_id, slot) = self.normalize_insert_target(parent_id, slot)?;
+        let list = match self.resolve_tree_id(parent_id) {
+            Some(TreeNodeRef::ElseFolder { parent_id: owner }) => {
+                let parent = if owner == self.id {
+                    self
+                } else {
+                    self.find_by_id(owner)
+                        .ok_or(TreeError::ParentNotFound(owner))?
+                };
+                parent.else_children().ok_or(TreeError::NoElseBranch)?
+            }
+            Some(TreeNodeRef::Action(aid)) => {
+                let parent = if aid == self.id {
+                    self
+                } else {
+                    self.find_by_id(aid).ok_or(TreeError::ParentNotFound(aid))?
+                };
+                if !parent.is_branch() {
+                    return Err(TreeError::NotABranch);
+                }
+                parent.children()
+            }
+            None => return Err(TreeError::ParentNotFound(parent_id)),
+        };
+        match slot {
+            InsertSlot::First | InsertSlot::Last => Ok(()),
+            InsertSlot::Before(sib) => list
+                .iter()
+                .any(|c| c.id == sib)
+                .then_some(())
+                .ok_or(TreeError::BeforeSiblingNotFound),
+            InsertSlot::After(sib) => list
+                .iter()
+                .any(|c| c.id == sib)
+                .then_some(())
+                .ok_or(TreeError::AfterSiblingNotFound),
+        }
+    }
+
     /// Insert `child` into the children of `parent_id` at `slot`.
     ///
     /// `parent_id` may be an Else folder sentinel ([`ActionId::else_folder`]).
+    /// Before/After an Else folder sentinel is rewritten (see
+    /// [`Self::normalize_insert_target`]).
     pub fn insert_at(
         &mut self,
         parent_id: ActionId,
         slot: InsertSlot,
         child: Action,
     ) -> Result<(), TreeError> {
+        let (parent_id, slot) = self.normalize_insert_target(parent_id, slot)?;
         let children = self.child_list_mut_for_insert(parent_id)?;
         match slot {
             InsertSlot::First => children.insert(0, child),
@@ -282,6 +363,9 @@ impl Action {
             return Ok(());
         }
 
+        // Else-folder sentinels are not real siblings — rewrite before resolve/remove.
+        let (parent_id, slot) = self.normalize_insert_target(parent_id, slot)?;
+
         let parent_for_check = match self.resolve_tree_id(parent_id) {
             Some(TreeNodeRef::ElseFolder { parent_id }) => parent_id,
             _ => parent_id,
@@ -309,6 +393,15 @@ impl Action {
             other => other,
         };
 
+        // Validate insert before detaching — a failed insert after remove would
+        // drop the nodes (and the UI used to ignore that Err).
+        self.can_insert_at(parent_id, slot)?;
+        for &source_id in &sources {
+            if self.find_by_id(source_id).is_none() {
+                return Err(TreeError::SourceNotFound(source_id));
+            }
+        }
+
         let mut nodes = Vec::with_capacity(sources.len());
         for source_id in sources {
             let node = self
@@ -317,35 +410,45 @@ impl Action {
             nodes.push(node);
         }
 
-        match slot {
-            InsertSlot::First => {
-                for node in nodes.into_iter().rev() {
-                    self.insert_at(parent_id, InsertSlot::First, node)?;
+        // Pre-validated above; insert should not fail. If it does, remaining
+        // `nodes` are reattached under root so actions are never dropped.
+        let result = (|| {
+            match slot {
+                InsertSlot::First => {
+                    for node in nodes.drain(..).rev() {
+                        self.insert_at(parent_id, InsertSlot::First, node)?;
+                    }
+                }
+                InsertSlot::Last => {
+                    for node in nodes.drain(..) {
+                        self.insert_at(parent_id, InsertSlot::Last, node)?;
+                    }
+                }
+                InsertSlot::Before(sib) => {
+                    let mut anchor = InsertSlot::Before(sib);
+                    for node in nodes.drain(..) {
+                        let id = node.id;
+                        self.insert_at(parent_id, anchor, node)?;
+                        anchor = InsertSlot::After(id);
+                    }
+                }
+                InsertSlot::After(sib) => {
+                    let mut anchor = InsertSlot::After(sib);
+                    for node in nodes.drain(..) {
+                        let id = node.id;
+                        self.insert_at(parent_id, anchor, node)?;
+                        anchor = InsertSlot::After(id);
+                    }
                 }
             }
-            InsertSlot::Last => {
-                for node in nodes {
-                    self.insert_at(parent_id, InsertSlot::Last, node)?;
-                }
-            }
-            InsertSlot::Before(sib) => {
-                let mut anchor = InsertSlot::Before(sib);
-                for node in nodes {
-                    let id = node.id;
-                    self.insert_at(parent_id, anchor, node)?;
-                    anchor = InsertSlot::After(id);
-                }
-            }
-            InsertSlot::After(sib) => {
-                let mut anchor = InsertSlot::After(sib);
-                for node in nodes {
-                    let id = node.id;
-                    self.insert_at(parent_id, anchor, node)?;
-                    anchor = InsertSlot::After(id);
-                }
+            Ok(())
+        })();
+        if result.is_err() {
+            for node in nodes {
+                let _ = self.insert_at(self.id, InsertSlot::Last, node);
             }
         }
-        Ok(())
+        result
     }
 
     /// Parent id to pass to [`move_actions`] and the ordered sibling ids of `id`.
@@ -748,6 +851,87 @@ mod tests {
             .collect();
         assert_eq!(else_ids, vec![else_b, else_a]);
         assert_eq!(root.children()[0].children()[0].id, then_id);
+    }
+
+    #[test]
+    fn move_before_else_folder_lands_as_last_then_child() {
+        let detection_id = ActionId::new();
+        let then_id = ActionId::new();
+        let mover = ActionId::new();
+        let else_id = ActionId::else_folder(detection_id);
+        let mut root = root_loop(vec![
+            wait(mover),
+            Action {
+                id: detection_id,
+                kind: ActionKind::FindPixel {
+                    name: String::new(),
+                    search_area: Default::default(),
+                    target_color: "#fff".into(),
+                    color_tolerance: 0,
+                    detection: DetectionBranch {
+                        subactions: vec![wait(then_id)],
+                        ..Default::default()
+                    },
+                },
+            },
+        ]);
+        // Mimic egui_ltreeview: drop Before(Else) with the detection as parent.
+        root.move_action(mover, detection_id, InsertSlot::Before(else_id))
+            .unwrap();
+        assert!(
+            root.find_by_id(mover).is_some(),
+            "mover must not disappear on Else-adjacent drop"
+        );
+        let ids: Vec<_> = root.children().iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec![detection_id]);
+        let then_ids: Vec<_> = root.children()[0].children().iter().map(|c| c.id).collect();
+        assert_eq!(then_ids, vec![then_id, mover]);
+    }
+
+    #[test]
+    fn move_after_else_folder_lands_after_owner() {
+        let detection_id = ActionId::new();
+        let then_id = ActionId::new();
+        let mover = ActionId::new();
+        let after = ActionId::new();
+        let else_id = ActionId::else_folder(detection_id);
+        let mut root = root_loop(vec![
+            wait(mover),
+            Action {
+                id: detection_id,
+                kind: ActionKind::FindPixel {
+                    name: String::new(),
+                    search_area: Default::default(),
+                    target_color: "#fff".into(),
+                    color_tolerance: 0,
+                    detection: DetectionBranch {
+                        subactions: vec![wait(then_id)],
+                        ..Default::default()
+                    },
+                },
+            },
+            wait(after),
+        ]);
+        // Mimic egui_ltreeview: drop After(Else) with the detection as parent.
+        root.move_action(mover, detection_id, InsertSlot::After(else_id))
+            .unwrap();
+        assert!(root.find_by_id(mover).is_some());
+        let ids: Vec<_> = root.children().iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec![detection_id, mover, after]);
+    }
+
+    #[test]
+    fn move_with_missing_sibling_does_not_lose_source() {
+        let a = ActionId::new();
+        let b = ActionId::new();
+        let ghost = ActionId::new();
+        let mut root = root_loop(vec![wait(a), wait(b)]);
+        let err = root
+            .move_action(a, ActionId::root(), InsertSlot::Before(ghost))
+            .unwrap_err();
+        assert_eq!(err, TreeError::BeforeSiblingNotFound);
+        let ids: Vec<_> = root.children().iter().map(|c| c.id).collect();
+        assert_eq!(ids, vec![a, b], "failed move must leave the tree intact");
     }
 
     #[test]

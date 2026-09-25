@@ -17,18 +17,57 @@ impl SqyreApp {
     }
 
     pub(crate) fn drain_pending_hotkey_macros(&mut self, ctx: &egui::Context) {
+        // Don't take while a chooser is open — overlay clicks share this queue
+        // and used to be discarded here.
+        if self.hotkey_chooser.is_some() {
+            return;
+        }
         let pending: Vec<String> = std::mem::take(&mut *self.pending_hotkey_macros.lock());
-        for name in pending {
+        if pending.is_empty() {
+            return;
+        }
+
+        let (groups, direct) =
+            crate::hotkey_chooser::partition_pending(&pending, &self.workspace.macros);
+        for name in direct {
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            sqyre_capture::event_log(
+                "SQYRE_OVERLAY",
+                &[("fire", "direct"), ("name", name.as_str())],
+            );
+            self.start_macro_by_name(&name, ctx);
+        }
+        for (chord_key, _trigger, names) in groups {
+            if names.len() <= 1 {
+                if let Some(name) = names.into_iter().next() {
+                    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+                    sqyre_capture::event_log(
+                        "SQYRE_HOTKEY",
+                        &[("fire", "start"), ("name", name.as_str())],
+                    );
+                    self.start_macro_by_name(&name, ctx);
+                }
+                continue;
+            }
+            let chord_label = chord_key.replace('+', " + ");
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             sqyre_capture::event_log(
                 "SQYRE_HOTKEY",
-                &[("fire", "start"), ("name", name.as_str())],
+                &[
+                    ("fire", "choose"),
+                    ("chord", chord_label.as_str()),
+                    ("count", &names.len().to_string()),
+                ],
             );
-            self.start_macro_by_name(&name, ctx);
+            self.open_hotkey_chooser(names, chord_label, ctx);
+            // One chooser at a time; remaining groups wait for a later fire.
+            break;
         }
     }
 
     pub(crate) fn request_stop(&mut self) {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        sqyre_capture::mark_site("run:stop:requested");
         self.run_session.state.stop.request_stop();
         *self.run_session.state.status.lock() = "Stop requested…".into();
     }
@@ -141,6 +180,9 @@ mod native_run {
                         ("name", name),
                     ],
                 );
+                *self.run_session.state.status.lock() =
+                    format!("Already running — stop first to run \"{name}\".");
+                ctx.request_repaint();
                 return;
             }
             let Some(idx) = self
@@ -168,6 +210,7 @@ mod native_run {
                 sqyre_capture::note(&format!(
                     "overlay: start skipped invalid-macro name={name} err={e}"
                 ));
+                ctx.request_repaint();
                 return;
             }
             // Show the running macro's tree so highlight overlays have matching rows.
@@ -194,6 +237,7 @@ mod native_run {
                 .settings_ui
                 .settings()
                 .image_search_close_matches_distance;
+            let variant_exit_early = self.settings_ui.settings().image_search_variant_exit_early;
             let release_held_inputs = self.settings_ui.settings().release_held_inputs_on_end;
             let while_max_iterations = self.settings_ui.settings().while_max_iterations;
             let run_macro_max_depth =
@@ -254,6 +298,7 @@ mod native_run {
                             automation: &mut watched,
                             capturer: Some(&mut capturer),
                             close_matches_distance: close_matches,
+                            variant_exit_early,
                             release_held_inputs,
                             while_max_iterations,
                             run_macro_max_depth,
@@ -273,8 +318,11 @@ mod native_run {
                     .map_err(|e| e.to_string())
                 }));
 
+                crate::mem_diag::sample("pre_clear");
                 sqyre_vision::clear_search_cache();
+                sqyre_capture::release_capture_frame_cache();
                 trim_process_heap();
+                crate::mem_diag::sample_with_action_log("post_run", &action_log);
 
                 let msg = match result {
                     Ok(Ok(())) if stop_flag.is_stopped() => "Stopped.".into(),

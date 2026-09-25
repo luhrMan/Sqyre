@@ -363,27 +363,38 @@ unsafe fn open_overlay(
     }
 }
 
-fn input_cover_bounds() -> Result<DesktopRect, CaptureError> {
-    if let Ok(cap) = crate::shared_capturer_nonblocking() {
-        if let Ok(b) = cap.virtual_bounds_ref() {
-            if b.w > 0 && b.h > 0 {
-                return Ok(b);
-            }
-        }
-    }
-    let rects = crate::preferred_monitor_rects();
-    let mut iter = rects.into_iter();
-    let Some(first) = iter.next() else {
-        return Err(CaptureError::Message(
-            "no monitor rects for selection cover".into(),
-        ));
-    };
-    Ok(iter.fold(first, |acc, r| DesktopRect {
+fn union_desktop_rects(rects: &[DesktopRect]) -> Option<DesktopRect> {
+    let mut iter = rects.iter().copied().filter(|r| r.w > 0 && r.h > 0);
+    let first = iter.next()?;
+    Some(iter.fold(first, |acc, r| DesktopRect {
         x: acc.x.min(r.x),
         y: acc.y.min(r.y),
         w: (acc.x + acc.w).max(r.x + r.w) - acc.x.min(r.x),
         h: (acc.y + acc.h).max(r.y + r.h) - acc.y.min(r.y),
     }))
+}
+
+/// Full virtual-desktop bounds for the selection cover.
+///
+/// Prefer [`crate::preferred_monitor_rects`] (X11-enriched) over portal
+/// `virtual_bounds`: a partial ScreenCast share must not shrink the cover to one
+/// output — that blocks search-area / point picks on unshared monitors.
+fn input_cover_bounds() -> Result<DesktopRect, CaptureError> {
+    let preferred = crate::preferred_monitor_rects();
+    let preferred_u = union_desktop_rects(&preferred);
+    let portal_b = crate::shared_capturer_nonblocking()
+        .ok()
+        .and_then(|c| c.virtual_bounds_ref().ok())
+        .filter(|b| b.w > 0 && b.h > 0);
+    if let Some(b) = preferred_u {
+        return Ok(b);
+    }
+    if let Some(b) = portal_b {
+        return Ok(b);
+    }
+    Err(CaptureError::Message(
+        "no monitor rects for selection cover".into(),
+    ))
 }
 
 /// Low opacity used only when a 32-bit ARGB visual is unavailable.
@@ -887,15 +898,7 @@ pub(crate) fn sample_hex(image: &RgbaImage, bounds: DesktopRect, x: i32, y: i32)
 
 /// True when capture is not ready yet (retry next UI frame; do not stall).
 pub(crate) fn snapshot_capture_retryable(err: &CaptureError) -> bool {
-    match err {
-        CaptureError::Message(m) => {
-            m.contains("no frame yet")
-                || m.contains("waiting for portal")
-                || m.contains("waiting for the first frame")
-                || m.contains("still waiting")
-        }
-        _ => false,
-    }
+    err.is_retryable()
 }
 
 #[cfg(test)]
@@ -927,10 +930,17 @@ mod tests {
 
     #[test]
     fn retryable_portal_not_ready() {
-        assert!(snapshot_capture_retryable(&CaptureError::Message(
+        assert!(snapshot_capture_retryable(
+            &sqyre_ports::NotReady::NoFrameYet.into()
+        ));
+        assert!(snapshot_capture_retryable(
+            &sqyre_ports::NotReady::AwaitingPortalPermission.into()
+        ));
+        assert!(!snapshot_capture_retryable(&CaptureError::EmptyRect));
+        // Message text no longer drives the retry decision.
+        assert!(!snapshot_capture_retryable(&CaptureError::Message(
             "portal capture: no frame yet from PipeWire".into(),
         )));
-        assert!(!snapshot_capture_retryable(&CaptureError::EmptyRect));
     }
 
     #[test]

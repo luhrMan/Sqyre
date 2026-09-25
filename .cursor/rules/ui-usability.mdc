@@ -1,0 +1,72 @@
+---
+description: Keep Sqyre UI sortable, searchable, keyboard-navigable, beginner-friendly, and visually consistent
+globs: crates/sqyre-app/**/*.rs, crates/sqyre-overlay/**/*.rs
+alwaysApply: false
+---
+
+# UI usability (sort / search / navigate / understand / look alike)
+
+Apply when **adding, changing, or reviewing** any user-visible UI in `sqyre-app` or `sqyre-overlay` (desktop, wasm editor, overlays, trays, dialogs, pickers, tooltips). Prefer existing helpers over one-off widgets.
+
+**Agent behavior:** if a change or existing panel violates these principles, **warn and suggest** a concrete fix — do not refuse the work or invent large refactors unless asked. When touching a list/panel, briefly audit neighbors in the same surface.
+
+Audience: **casual automation beginners first**. Power-user / technical controls go behind a collapsed **Advanced** (or equivalent) section when possible — prefer [`tip_advanced`](crates/sqyre-app/src/action_tooltip/sections.rs).
+
+## Principles
+
+### Sortable
+- Named lists (macros, items, programs, coords, tags, …) present a **stable, predictable order** (usually display-name, case-insensitive).
+- If order matters to the user, expose an obvious control (column header, sort menu, or existing domain sort) — do not rely on insertion order alone.
+- Reuse helpers like `sort_by_display_name` / existing `sort_by` patterns rather than ad-hoc sorts that disagree across panels.
+
+### Searchable
+- Any list that can grow beyond ~a screenful needs a **filter field** with `hint_text` (what to type) and case-insensitive match on the labels users see.
+- Prefer shared widgets: `searchable_combo` / `searchable_combo_with` for growing dropdowns; pane filters like `macro_list_filter` / command-palette query for free lists.
+- Empty filter results: show a short plain message (“No matching …”), never a blank void.
+
+### Navigable (local first)
+- Prefer **in-panel** keyboard behavior over new global chords. Do not steal keys while recording macros/hotkeys/chords.
+- Default local list/dialog keys (when focus is in that surface):
+  - **↑ / ↓** — move selection
+  - **Enter** — activate / confirm primary action
+  - **Esc** — cancel / close / clear selection as appropriate
+  - **type-to-filter** when a search field exists (focus it on open when that is the main job, e.g. command palette)
+- Keep mouse/click paths complete; keyboard is additive accessibility, not the only way.
+- Mirror proven patterns: command palette (`consume_key` for Esc/Enter/arrows), dialogs (`widgets/dialogs`), var-pill suggest (`var_pills`).
+
+### Usable
+- Primary actions are visible buttons/menus — not gesture- or hotkey-only.
+- Destructive actions need a clear confirm (existing pending-delete / dialog patterns).
+- One obvious next step on empty states (“No macros yet — create one”).
+- Avoid requiring the user to know IDs, paths, or enum variant names to complete common tasks.
+
+### Understandable
+- Labels and hints use everyday words (macro, item, click, wait) — not crate/type jargon in the UI string.
+- Every non-obvious control gets hover help or a one-line hint.
+- Errors and status text say what happened and what to try next in plain language.
+- Progressive disclosure: show the common path first; tuck thresholds, preprocess flags, gate formulas, etc. under Advanced.
+
+### Consistent rendering (look alike / refactorable)
+Keep surfaces **visually interchangeable**: same control kinds should look and lay out the same so refactors stay safe and screenshots/docs stay reliable.
+
+- **Compose shared primitives** — `theme::*` (colors, `icon_button`, `framed_section`, overlays), `widgets::*` (fields, dialogs, headers, tags), `pickers::*`, `tip_section` / `tip_wrapped_section` / `tip_advanced`. Do not copy-paste one-off spacing, strokes, or button chrome.
+- **No local palettes** — use `theme::PRIMARY`, `MACRO_START`, `MACRO_STOP`, `accent_dim`, `overlay_panel_fill`, `contrast_fg`, and egui `TextStyle` / `ui.visuals()`. Avoid hard-coded `Color32::from_rgb(…)` in panel code unless extending `theme.rs`.
+- **Stable geometry** — prefer shared widths (`W_TEXT`, `W_VAR`), `fit_dialog_window` / `fit_dialog_popup` / `fill_resize_body`, and `dialog_scroll`. Obey [egui-window-size-ratchet](egui-window-size-ratchet.mdc); do not invent per-panel size math that drifts.
+- **Match the nearest sibling** — new rows, toolbars, lists, and confirm footers should mirror an adjacent panel of the same kind (same icon size, gap, weak-count suffix, Save/Cancel row). Visual novelty needs an explicit product ask.
+- **Extract on repeat** — if the same layout appears twice, lift it into `widgets` / `theme` / `tip_*` instead of diverging copies (easier refactors, fewer look bugs).
+- **Predictable density** — reuse existing section gaps and `horizontal_wrapped` patterns from tip sections; do not mix dense custom grids next to standard framed sections without cause.
+
+## Checklist (new or touched UI)
+
+- [ ] List/combo: sorted predictably; filter or searchable combo if the set can grow
+- [ ] Empty / no-match states have plain copy
+- [ ] Local ↑↓ / Enter / Esc (or documented why not) without breaking record modes
+- [ ] Beginner path visible; advanced options collapsed by default
+- [ ] Labels, hints, and errors readable by a non-technical user
+- [ ] Reused `theme::*`, `widgets::*`, `pickers::*`, `tip_*` / `tip_advanced` (no one-off chrome/colors)
+- [ ] Layout matches a sibling of the same kind; dialogs use shared fit/scroll helpers
+
+## Out of scope unless asked
+
+- New **global** application hotkey schemes (local panel keys first)
+- Brand / theme redesigns (changing the look system itself) — consistency with the *current* system is in scope

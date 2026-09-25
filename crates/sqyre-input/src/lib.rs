@@ -106,7 +106,7 @@ pub fn release_held_inputs() {
             return;
         }
     }
-    let Ok(gui) = RustAutoGui::new(false) else {
+    let Ok(gui) = open_rustautogui() else {
         return;
     };
     for key in keys {
@@ -468,12 +468,55 @@ pub struct OsAutomation {
     portal: Option<Arc<dyn PortalRemoteInput>>,
 }
 
+/// rustautogui Linux `Keyboard::new` runs `setxkbmap -query` with `.expect`.
+/// Missing binary (common in Flatpak) panics before we can use XTest.
+#[cfg(target_os = "linux")]
+fn linux_setxkbmap_preflight() -> Result<(), AutomationError> {
+    use std::io::ErrorKind;
+    use std::process::{Command, Stdio};
+    use std::sync::OnceLock;
+    static CHECK: OnceLock<Result<(), String>> = OnceLock::new();
+    match CHECK.get_or_init(|| {
+        match Command::new("setxkbmap")
+            .arg("-query")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+        {
+            Ok(_) => Ok(()),
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                Err("setxkbmap not found (required by rustautogui keyboard init)".into())
+            }
+            Err(e) => Err(format!("cannot run setxkbmap: {e}")),
+        }
+    }) {
+        Ok(()) => Ok(()),
+        Err(msg) => Err(AutomationError::Backend(msg.clone())),
+    }
+}
+
+/// Open rustautogui without letting Linux init abort the process.
+///
+/// On Linux, rustautogui panics on missing `setxkbmap` and on `XOpenDisplay`
+/// failure (including "Maximum number of clients reached") instead of `Err`.
+fn open_rustautogui() -> Result<RustAutoGui, AutomationError> {
+    #[cfg(target_os = "linux")]
+    linux_setxkbmap_preflight()?;
+    match std::panic::catch_unwind(|| RustAutoGui::new(false)) {
+        Ok(Ok(gui)) => Ok(gui),
+        Ok(Err(e)) => Err(AutomationError::Backend(format!("rustautogui: {e}"))),
+        Err(_) => Err(AutomationError::Backend(
+            "rustautogui panicked during init (X11 unavailable, max clients, or missing tools)"
+                .into(),
+        )),
+    }
+}
+
 impl OsAutomation {
     #[cfg(not(target_os = "linux"))]
     pub fn new() -> Result<Self, AutomationError> {
         let clipboard = Clipboard::new().ok();
-        let gui = RustAutoGui::new(false)
-            .map_err(|e| AutomationError::Backend(format!("rustautogui: {e}")))?;
+        let gui = open_rustautogui()?;
         Ok(Self {
             gui: Some(gui),
             clipboard,
@@ -492,14 +535,20 @@ impl OsAutomation {
         let clipboard = Clipboard::new().ok();
         if let Some(ref p) = portal {
             install_process_portal(Arc::clone(p));
+            let gui = match open_rustautogui() {
+                Ok(gui) => Some(gui),
+                Err(e) => {
+                    p.note(&format!("input: rustautogui skipped: {e}"));
+                    None
+                }
+            };
             return Ok(Self {
-                gui: RustAutoGui::new(false).ok(),
+                gui,
                 clipboard,
                 portal,
             });
         }
-        let gui = RustAutoGui::new(false)
-            .map_err(|e| AutomationError::Backend(format!("rustautogui: {e}")))?;
+        let gui = open_rustautogui()?;
         Ok(Self {
             gui: Some(gui),
             clipboard,
@@ -936,7 +985,10 @@ impl AutomationBackend for OsAutomation {
         if let Some(portal) = self.portal.as_ref() {
             let evdev = evdev_for_name(key)
                 .ok_or_else(|| AutomationError::InvalidArg(format!("unknown key: {key}")))?;
-            let _ = portal.key(evdev, false);
+            // A dropped release leaves the key stuck down for the user.
+            portal
+                .key(evdev, false)
+                .map_err(|e| AutomationError::Backend(format!("key up {key}: {e}")))?;
             note_key_up(key);
             return Ok(());
         }
@@ -948,22 +1000,24 @@ impl AutomationBackend for OsAutomation {
         Ok(())
     }
 
-    fn type_char(&mut self, ch: char) {
+    fn type_char(&mut self, ch: char) -> Result<(), AutomationError> {
         #[cfg(target_os = "linux")]
         if let Some(portal) = self.portal.as_ref() {
             if portal.ensure().is_ok() {
                 if let Some(evdev) = evdev_for_name(&ch.to_ascii_lowercase().to_string()) {
-                    let _ = portal.key(evdev, true);
-                    let _ = portal.key(evdev, false);
-                    return;
+                    portal
+                        .key(evdev, true)
+                        .and_then(|()| portal.key(evdev, false))
+                        .map_err(|e| AutomationError::Backend(format!("type {ch:?}: {e}")))?;
+                    return Ok(());
                 }
             }
         }
         let mut buf = [0u8; 4];
         let s = ch.encode_utf8(&mut buf);
-        if let Ok(gui) = self.gui() {
-            let _ = gui.keyboard_input(s);
-        }
+        self.gui()?
+            .keyboard_input(s)
+            .map_err(|e| AutomationError::Backend(format!("type {ch:?}: {e}")))
     }
 
     fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError> {
@@ -1094,5 +1148,33 @@ mod tests {
         assert_eq!(canonical_button("middle"), "middle");
         assert_eq!(canonical_button("center"), "middle");
         assert_eq!(canonical_button("other"), "left");
+    }
+
+    /// When `setxkbmap` is absent, rustautogui must not be opened (it would panic).
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn setxkbmap_preflight_avoids_missing_binary_panic() {
+        use std::io::ErrorKind;
+        use std::process::{Command, Stdio};
+        let missing = matches!(
+            Command::new("setxkbmap")
+                .arg("-query")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status(),
+            Err(e) if e.kind() == ErrorKind::NotFound
+        );
+        if !missing {
+            return;
+        }
+        let err = linux_setxkbmap_preflight().expect_err("preflight should fail");
+        assert!(
+            err.to_string().contains("setxkbmap"),
+            "unexpected error: {err}"
+        );
+        match open_rustautogui() {
+            Ok(_) => panic!("open should not succeed without setxkbmap"),
+            Err(e) => assert!(e.to_string().contains("setxkbmap"), "unexpected error: {e}"),
+        }
     }
 }

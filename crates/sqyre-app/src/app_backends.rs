@@ -128,10 +128,11 @@ mod native {
         fn key_up(&mut self, key: &str) -> Result<(), AutomationError> {
             self.inner.key_up(key)
         }
-        fn type_char(&mut self, ch: char) {
-            if !self.stop.is_stopped() {
-                self.inner.type_char(ch);
+        fn type_char(&mut self, ch: char) -> Result<(), AutomationError> {
+            if self.stop.is_stopped() {
+                return Ok(());
             }
+            self.inner.type_char(ch)
         }
         fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError> {
             if self.stop.is_stopped() {
@@ -141,11 +142,35 @@ mod native {
         }
     }
 
-    /// Ask glibc to return freed pages after large image/OCR allocations.
+    /// Cap glibc arenas early so Rayon FFT scratch free-lists cannot multiply
+    /// across dozens of thread arenas (main cause of post-run RSS ratchet after
+    /// `clear_match_scratch`). Safe no-op on non-glibc.
+    pub(crate) fn tune_process_heap() {
+        #[cfg(target_os = "linux")]
+        {
+            // SAFETY: `mallopt` only tunes this process's glibc allocator; values
+            // are within documented ranges. Must run before the Rayon pool grows.
+            unsafe {
+                extern "C" {
+                    fn mallopt(param: i32, value: i32) -> i32;
+                }
+                // From malloc.h — keep local so we do not need the C header.
+                const M_TRIM_THRESHOLD: i32 = -1;
+                const M_ARENA_MAX: i32 = -8;
+                // Enough arenas for parallel match without ~8×cores free-list hoarding.
+                let _ = mallopt(M_ARENA_MAX, 4);
+                // Pin trim threshold (glibc may raise it dynamically otherwise).
+                let _ = mallopt(M_TRIM_THRESHOLD, 128 * 1024);
+            }
+        }
+    }
+
+    /// Ask glibc to return freed pages after large image/OCR / FFT scratch drops.
     pub(crate) fn trim_process_heap() {
         #[cfg(target_os = "linux")]
         {
             // SAFETY: glibc `malloc_trim` only inspects this process's allocator; pad=0 is always valid.
+            // Modern glibc walks every arena (including Rayon worker arenas) from any caller.
             unsafe {
                 extern "C" {
                     fn malloc_trim(pad: usize) -> i32;
@@ -157,4 +182,4 @@ mod native {
 }
 
 #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
-pub(crate) use native::{os_automation, trim_process_heap, StopWatchAutomation};
+pub(crate) use native::{os_automation, trim_process_heap, tune_process_heap, StopWatchAutomation};

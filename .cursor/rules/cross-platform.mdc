@@ -36,7 +36,7 @@ Platform-specific imports belong inside the `#[cfg]` block or module that uses t
 - **`sqyre-capture`**: Linux `x11_*`, Windows `win_*`, macOS/other stubs; public API is `OsCapturer`, `shared_capturer`, `SharedRunCapturer`, `OsWindowFocuser`.
 - **Cargo**: use `[target.'cfg(...)'.dependencies]` for OS crates (`x11`, `windows`, `tray-icon`, etc.).
 - Do not add dual codecs or compatibility shims for format changes.
-- Do not expand packaging (MSI/DMG) unless asked — Linux AppImage only for now.
+- Do not expand packaging (MSI/DMG) unless asked — Linux ships AppImage + Flatpak.
 
 ## Checklist
 

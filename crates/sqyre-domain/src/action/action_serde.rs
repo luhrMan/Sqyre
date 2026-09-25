@@ -6,18 +6,19 @@
 use super::{
     default_assignments, default_image_blur, default_loop_count, default_ocr_blur,
     default_ocr_text, default_resize, default_target_color, default_true, default_wait_time,
-    is_default_image_blur, is_default_match_method, is_default_ocr_blur, is_default_ocr_text,
-    is_default_resize, is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind,
-    ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, MatchMethod,
-    MouseButton, NavigateSelectData, PressState, ScalarValue, VariableAssignment,
+    is_default_image_blur, is_default_item_sort_by, is_default_item_sort_then,
+    is_default_match_method, is_default_ocr_blur, is_default_ocr_text, is_default_resize,
+    is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind, ConditionBlock,
+    CoordinateRef, DetectionBranch, ItemSortBy, ItemSortThen, ListColumn, LoopJumpMode,
+    MatchMethod, MouseButton, NavigateSelectData, PressState, ScalarValue, VariableAssignment,
     DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 use serde::{Deserialize, Serialize};
 
 use super::wire_keys::{
-    TagClick, TagConditional, TagFindPixel, TagFocusWindow, TagForEachRow, TagImageSearch, TagKey,
-    TagLoop, TagLoopJump, TagMove, TagNavigateKey, TagNavigateSelect, TagOcr, TagPause,
-    TagRunMacro, TagSaveVariable, TagSetVariable, TagType, TagWait, TagWhile,
+    TagClick, TagConditional, TagFindPixel, TagFocusWindow, TagForEachCell, TagForEachRow,
+    TagImageSearch, TagKey, TagLoop, TagLoopJump, TagMove, TagNavigateKey, TagNavigateSelect,
+    TagOcr, TagPause, TagRunMacro, TagSaveVariable, TagSetVariable, TagType, TagWait, TagWhile,
 };
 
 fn is_default_smooth_low(v: &f64) -> bool {
@@ -72,6 +73,8 @@ enum ActionKindWire {
         name: String,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         targets: Vec<String>,
+        #[serde(rename = "targettags", default, skip_serializing_if = "Vec::is_empty")]
+        target_tags: Vec<String>,
         #[serde(rename = "searcharea", default)]
         search_area: CoordinateRef,
         #[serde(default)]
@@ -87,6 +90,20 @@ enum ActionKindWire {
             skip_serializing_if = "is_default_match_method"
         )]
         match_method: MatchMethod,
+        #[serde(
+            rename = "sortby",
+            default,
+            skip_serializing_if = "is_default_item_sort_by"
+        )]
+        sort_by: ItemSortBy,
+        #[serde(
+            rename = "sortthen",
+            default,
+            skip_serializing_if = "is_default_item_sort_then"
+        )]
+        sort_then: ItemSortThen,
+        #[serde(rename = "tagpriority", default, skip_serializing_if = "Vec::is_empty")]
+        tag_priority: Vec<String>,
         #[serde(flatten)]
         detection: DetectionBranch,
     },
@@ -164,6 +181,16 @@ enum ActionKindWire {
             skip_serializing_if = "ScalarValue::is_null"
         )]
         end_row: ScalarValue,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        subactions: Vec<Action>,
+    },
+    ForEachCell {
+        #[serde(rename = "type")]
+        type_: TagForEachCell,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        name: String,
+        #[serde(default)]
+        cells: CoordinateRef,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         subactions: Vec<Action>,
     },
@@ -351,19 +378,27 @@ impl From<ActionKindWire> for ActionKind {
             ActionKindWire::ImageSearch {
                 name,
                 targets,
+                target_tags,
                 search_area,
                 tolerance,
                 blur,
                 match_method,
+                sort_by,
+                sort_then,
+                tag_priority,
                 detection,
                 ..
             } => Self::ImageSearch {
                 name,
                 targets,
+                target_tags,
                 search_area,
                 tolerance,
                 blur,
                 match_method,
+                sort_by,
+                sort_then,
+                tag_priority,
                 detection,
             },
             ActionKindWire::Ocr {
@@ -428,6 +463,16 @@ impl From<ActionKindWire> for ActionKind {
                 sources,
                 start_row,
                 end_row,
+                subactions,
+            },
+            ActionKindWire::ForEachCell {
+                name,
+                cells,
+                subactions,
+                ..
+            } => Self::ForEachCell {
+                name,
+                cells,
                 subactions,
             },
             ActionKindWire::Wait { time, .. } => Self::Wait { time },
@@ -563,6 +608,8 @@ enum ActionKindWireRef<'a> {
         name: &'a str,
         #[serde(default, skip_serializing_if = "is_empty_slice")]
         targets: &'a [String],
+        #[serde(rename = "targettags", default, skip_serializing_if = "is_empty_slice")]
+        target_tags: &'a [String],
         #[serde(rename = "searcharea", default)]
         search_area: &'a CoordinateRef,
         #[serde(default)]
@@ -578,6 +625,24 @@ enum ActionKindWireRef<'a> {
             skip_serializing_if = "is_default_match_method"
         )]
         match_method: MatchMethod,
+        #[serde(
+            rename = "sortby",
+            default,
+            skip_serializing_if = "is_default_item_sort_by"
+        )]
+        sort_by: ItemSortBy,
+        #[serde(
+            rename = "sortthen",
+            default,
+            skip_serializing_if = "is_default_item_sort_then"
+        )]
+        sort_then: ItemSortThen,
+        #[serde(
+            rename = "tagpriority",
+            default,
+            skip_serializing_if = "is_empty_slice"
+        )]
+        tag_priority: &'a [String],
         #[serde(flatten)]
         detection: &'a DetectionBranch,
     },
@@ -655,6 +720,16 @@ enum ActionKindWireRef<'a> {
             skip_serializing_if = "ScalarValue::is_null"
         )]
         end_row: &'a ScalarValue,
+        #[serde(default, skip_serializing_if = "is_empty_slice")]
+        subactions: &'a [Action],
+    },
+    ForEachCell {
+        #[serde(rename = "type")]
+        type_: TagForEachCell,
+        #[serde(default, skip_serializing_if = "str::is_empty")]
+        name: &'a str,
+        #[serde(default)]
+        cells: &'a CoordinateRef,
         #[serde(default, skip_serializing_if = "is_empty_slice")]
         subactions: &'a [Action],
     },
@@ -822,19 +897,27 @@ impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
             ActionKind::ImageSearch {
                 name,
                 targets,
+                target_tags,
                 search_area,
                 tolerance,
                 blur,
                 match_method,
+                sort_by,
+                sort_then,
+                tag_priority,
                 detection,
             } => Self::ImageSearch {
                 type_: TagImageSearch::Tag,
                 name,
                 targets,
+                target_tags,
                 search_area,
                 tolerance: *tolerance,
                 blur: *blur,
                 match_method: *match_method,
+                sort_by: *sort_by,
+                sort_then: *sort_then,
+                tag_priority,
                 detection,
             },
             ActionKind::Ocr {
@@ -889,6 +972,16 @@ impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
                 sources,
                 start_row,
                 end_row,
+                subactions,
+            },
+            ActionKind::ForEachCell {
+                name,
+                cells,
+                subactions,
+            } => Self::ForEachCell {
+                type_: TagForEachCell::Tag,
+                name,
+                cells,
                 subactions,
             },
             ActionKind::Wait { time } => Self::Wait {

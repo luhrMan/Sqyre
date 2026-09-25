@@ -1,12 +1,13 @@
 # Packaging Sqyre for Linux
 
-Local and CI builds use **Rust** (`make` → `./bin/sqyre`; `make appimage` for AppImage).
+Local and CI builds use **Rust** (`make` → `./bin/sqyre`; `make appimage` / `make flatpak`).
 
 | Path | Contents |
 |------|----------|
 | `scripts/linux/packaging/appimage/` | AppImage recipe, build script, desktop file |
+| `scripts/linux/packaging/flatpak/` | Flatpak manifest, AppStream metainfo, cargo-sources, build script |
 
-App entrypoint: `sqyre-app` → binary name `sqyre`.
+App entrypoint: `sqyre-app` → binary name `sqyre`. App ID: `com.sqyre.app`.
 
 ---
 
@@ -34,9 +35,89 @@ Version resolution order: `RELEASE_VERSION` env → `VERSION` file → `crates/s
 
 Output: **`bin/*.AppImage`**. `sqyre.AppDir` and build artifacts stay under `scripts/linux/packaging/appimage/`.
 
+After `appimage-builder` finishes the AppDir (`--skip-appimage`, so no intermediate xz pack), `build-appimage.sh` **repacks** with [type2-runtime](https://github.com/AppImage/type2-runtime) (embedded FUSE3; no system `libfuse.so.2`) and **zstd** squashfs. That avoids the multi-second cold start from appimage-builder’s default **xz** payload + old AppImageKit runtime (especially when FUSE is missing and extract-and-run unpacks every launch). The type2 runtime is cached under `scripts/linux/packaging/appimage/.runtime-cache/` and verified by SHA256 (override with `SQYRE_APPIMAGE_RUNTIME_URL` / `SQYRE_APPIMAGE_RUNTIME_SHA256`). Absolute `APPDIR_PATH_MAPPINGS` from the build host are scrubbed before packing.
+
+Cargo uses workspace **`[profile.dist]`** (thin LTO) for AppImage/Flatpak/Windows/WASM/bundle shipping; everyday `make release` stays on plain `[profile.release]` for fast incremental rebuilds.
+
+On hosts without `/dev/fuse`, use `APPIMAGE_EXTRACT_AND_RUN=1` (zstd extract is ~sub-second; xz was multi-second). The AppDir binary is stripped (`strip --strip-unneeded`) before packing.
+
 ### Tesseract data
 
 The recipe copies `eng.traineddata` from `assets/tessdata/` or host `/usr/share/tessdata/` when present, and sets `TESSDATA_PREFIX` / `SQYRE_TESSDATA` at runtime.
+
+---
+
+## Flatpak (Flathub-ready)
+
+Manifest: [`flatpak/com.sqyre.app.yml`](flatpak/com.sqyre.app.yml) — Freedesktop **25.08**, Rust SDK extension, leptonica + tesseract modules, `portal-capture` build. AppStream: [`com.sqyre.app.metainfo.xml`](flatpak/com.sqyre.app.metainfo.xml).
+
+### Prerequisites
+
+- `flatpak`, `flatpak-builder`, `ostree` (installed in the **devcontainer**)
+- User namespaces / `bwrap` on the host (required by flatpak-builder)
+- Flathub remote + runtimes (script installs them):
+  - `org.freedesktop.Platform//25.08`, `Sdk//25.08`
+  - `org.freedesktop.Sdk.Extension.rust-stable//25.08`
+  - `org.freedesktop.Sdk.Extension.llvm21//25.08`
+
+If native tools work but bubblewrap cannot create user namespaces (common in
+Devcontainers), or tools are missing, `build-flatpak.sh` falls back to Docker
+(`ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08`, `--privileged`,
+host UID). Builds pass `--disable-rofiles-fuse` so they work without `/dev/fuse`,
+and `--ccache` for leptonica/tesseract. Parallelism defaults to **~50% of
+`nproc`** (`flatpak-builder --jobs`, plus ninja/cargo `-j` via
+`FLATPAK_BUILDER_N_JOBS`); override with `SQYRE_FLATPAK_JOBS=N`. Docker builds
+persist Flatpak user data under
+`scripts/linux/packaging/flatpak/.flatpak-builder/docker-home/` so
+Platform/Sdk/extensions are not reinstalled every run. If a prior Docker build
+left root-owned files under `.flatpak-builder/`, the script reclaims them with
+`sudo chown` before a native rebuild (otherwise flatpak-builder fails writing
+`ccache.conf`).
+
+### Build
+
+```bash
+make flatpak
+# or: RELEASE_VERSION=1.2.3 scripts/linux/packaging/flatpak/build-flatpak.sh
+```
+
+Output: **`bin/com.sqyre.app.flatpak`**.
+
+Rebuilds reuse `.flatpak-builder` module cache for leptonica, tesseract, and
+the offline `cargo-vendor` tree; only the `sqyre` module (local dir sources)
+always recompiles. Keep that state dir around for faster iteration.
+
+```bash
+flatpak install --user bin/com.sqyre.app.flatpak
+flatpak run com.sqyre.app
+# Capability probe inside the sandbox:
+flatpak run --command=sqyre-probe com.sqyre.app --json
+```
+
+### Offline crates (`cargo-sources.json`)
+
+Flathub builds are offline. Keep [`cargo-sources.json`](flatpak/cargo-sources.json) in sync with `Cargo.lock`:
+
+```bash
+scripts/linux/packaging/flatpak/generate-cargo-sources.sh
+```
+
+The script pins `flatpak-cargo-generator.py` to a commit + SHA256 (not `master`). Override with `SQYRE_CARGO_GENERATOR_COMMIT` / `SQYRE_CARGO_GENERATOR_SHA256`, or force refresh with `SQYRE_REFRESH_CARGO_GENERATOR=1`.
+
+Regenerate and commit whenever `Cargo.lock` changes.
+
+### Sandbox / data / updates
+
+- **No `--filesystem=home`** — Flatpak data is separate from AppImage/native `~/.sqyre`.
+- **`--persist=.sqyre`** — required because Sqyre writes `$HOME/.sqyre` (not XDG). Maps to host `~/.var/app/com.sqyre.app/.sqyre`; without it Flatpak uses a tmpfs and every quit resets macros/settings/portal tokens.
+- **Finish-args** (see comments in the YAML): X11 + Wayland, Pulse (`--socket=pulseaudio` + read-only `xdg-config/pulse` for the host cookie — cpal’s pure-Rust Pulse client needs it), DRI, `--device=input` (Wayland hotkeys), Notifications, StatusNotifierWatcher (tray), host AT-SPI (`xdg-run/at-spi` + `org.a11y.Bus` for GNOME Wayland window list); ScreenCast/RemoteDesktop via portals. Cue audio falls back to runtime ALSA→libpulse inside Flatpak if Pulse host open fails. Tray uses `ksni` with `disable_dbus_name` under Flatpak (no `--own-name=org.kde.*`).
+- **Tesseract/Leptonica** install into `/app/lib` (`CMAKE_INSTALL_LIBDIR=lib` / `--libdir`) — `/app/lib64` is not on Flatpak’s runtime linker path.
+- **Do not** ship a private `libpipewire` that shadows SPA plugins (same rule as AppImage).
+- **In-app auto-update** is disabled under Flatpak (`FLATPAK_ID`); use `flatpak update`.
+
+### Parity check
+
+Treat launch as insufficient. After install on a graphical session, run `sqyre-probe` inside the Flatpak and confirm required caps (`capture.*`, `windows.list`, `input.open`, `hotkeys.start`, `outline.open`, `grab.open`) per [linux-desktop-parity](../../../.cursor/skills/linux-desktop-parity/SKILL.md). On GNOME Wayland, `windows.list` needs the host AT-SPI finish-args above.
 
 ---
 
@@ -49,7 +130,24 @@ make release-bundle
 ./bin/sqyre-bundle/sqyre
 ```
 
-Requires **patchelf** (installed in the devcontainer). Build on the target glibc family you intend to ship against (same constraint as AppImage). Does **not** run `make check` (unlike `make appimage`); run `make check` yourself before shipping.
+**Fast prototype** (same layout, plain `--release` / no LTO → `bin/sqyre-dev/`):
+
+```bash
+make dev
+./bin/sqyre-dev/sqyre
+```
+
+**Heap-profile variant** (local leak hunts only — slower allocator, not for shipping):
+
+```bash
+make release-bundle-dhat
+cd /tmp && SQYRE_MEM=1 /path/to/bin/sqyre-bundle-dhat/sqyre
+# quit cleanly → dhat-heap.json in cwd; view at https://nnethercote.github.io/dh_view/dh_view.html
+```
+
+Uses a separate Cargo target dir (`target-dhat/`) so it does not overwrite `target/release/sqyre`.
+
+Requires **patchelf** (installed in the devcontainer). Build on the target glibc family you intend to ship against (same constraint as AppImage). Does **not** run `make check` (unlike `make appimage` / `make flatpak`); run `make check` yourself before shipping.
 
 **Wayland portal capture:** `libpipewire` / `libspa-*` are **not** bundled — the host PipeWire stack (GNOME/KDE already ship it) must provide SPA plugins. Bundling breaks with `can't make support.system handle`.
 
@@ -62,4 +160,7 @@ Requires **patchelf** (installed in the devcontainer). Build on the target glibc
 | Format | Command | Main requirement |
 |--------|---------|------------------|
 | **Bundled dir** | `make release-bundle` | Rust + Tesseract dev libs + patchelf |
+| **Dev bundle** | `make dev` | Same layout as bundled dir; `--release` (no LTO) → `bin/sqyre-dev/` |
+| **Bundled + dhat** | `make release-bundle-dhat` | Same; `dhat-heap` for allocation profiles (not shipping) |
 | **AppImage** | `make appimage` | Rust + Tesseract on host + appimage-builder |
+| **Flatpak** | `make flatpak` | flatpak-builder + Freedesktop 25.08 (+ Docker privileged fallback) |

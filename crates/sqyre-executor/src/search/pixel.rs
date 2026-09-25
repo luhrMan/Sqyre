@@ -7,8 +7,7 @@ use super::common::{
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
 use sqyre_domain::{action_type_label, Action, ActionKind, Macro};
-use sqyre_match::cluster_points;
-use sqyre_vision::find_pixels;
+use sqyre_vision::find_pixels_clustered;
 use std::time::Instant;
 
 pub(crate) fn execute_find_pixel(
@@ -86,8 +85,12 @@ fn try_find_pixels(
         return Vec::new();
     };
     let scan_started = Instant::now();
-    let locals = find_pixels(&buf, target_color, color_tolerance);
-    let clustered = cluster_points(&locals, close_matches_distance(exec));
+    let clustered = find_pixels_clustered(
+        &buf,
+        target_color,
+        color_tolerance,
+        close_matches_distance(exec),
+    );
     exec.log_timing(action_id, "scan", scan_started.elapsed());
     let mut hits: Vec<DetectionHit> = clustered
         .into_iter()

@@ -1,6 +1,7 @@
 //! Pure atlas layout: Collections placed by screen bounds, neighbors by geometry.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 /// One Collection member of an atlas, with resolved pixel bounds and grid size.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,6 +41,122 @@ pub enum NavDir {
 /// Allowed perpendicular overlap slack when judging edge clearance (pixels).
 const EDGE_SLACK: i32 = 4;
 
+/// Axis-aligned union of cells in a grid over `bounds` (left, top, right, bottom).
+/// Cells are 1-based inclusive `(r1,c1)-(r2,c2)`. `rows`/`cols` are the full grid.
+pub fn grid_cell_rect(
+    bounds: (i32, i32, i32, i32),
+    rows: i32,
+    cols: i32,
+    r1: i32,
+    c1: i32,
+    r2: i32,
+    c2: i32,
+) -> Option<(i32, i32, i32, i32)> {
+    if rows < 1 || cols < 1 {
+        return None;
+    }
+    let (r1, r2) = if r1 <= r2 { (r1, r2) } else { (r2, r1) };
+    let (c1, c2) = if c1 <= c2 { (c1, c2) } else { (c2, c1) };
+    if r1 < 1 || c1 < 1 || r2 > rows || c2 > cols {
+        return None;
+    }
+    let (left_x, top_y, right_x, bottom_y) = bounds;
+    let width = right_x - left_x;
+    let height = bottom_y - top_y;
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    Some((
+        left_x + (c1 - 1) * width / cols,
+        top_y + (r1 - 1) * height / rows,
+        left_x + c2 * width / cols,
+        top_y + r2 * height / rows,
+    ))
+}
+
+/// One sliding footprint placement inside a collection grid selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct GridPlacement {
+    /// Pixel union of the covered cells `(left, top, right, bottom)`.
+    pub rect: (i32, i32, i32, i32),
+    /// Inclusive 1-based cell range covered by this footprint.
+    pub r1: i32,
+    pub c1: i32,
+    pub r2: i32,
+    pub c2: i32,
+}
+
+impl GridPlacement {
+    /// Every cell `(row, col)` covered by this footprint.
+    pub fn cells(self) -> impl Iterator<Item = (i32, i32)> {
+        let r1 = self.r1;
+        let r2 = self.r2;
+        let c1 = self.c1;
+        let c2 = self.c2;
+        (r1..=r2).flat_map(move |r| (c1..=c2).map(move |c| (r, c)))
+    }
+
+    /// True when any covered cell is already claimed.
+    pub fn overlaps_occupied(self, occupied: &HashSet<(i32, i32)>) -> bool {
+        self.cells().any(|cell| occupied.contains(&cell))
+    }
+
+    /// Mark every covered cell as claimed.
+    pub fn claim_into(self, occupied: &mut HashSet<(i32, i32)>) {
+        occupied.extend(self.cells());
+    }
+}
+
+/// Slide an `item` rows×cols footprint through a selected cell range.
+///
+/// Each placement is the pixel union of that many cells. Origins step by one
+/// cell. `item` below 1 is treated as 1. Empty when the footprint does not fit
+/// in `selection` `(r1, c1, r2, c2)`. `grid` is `(rows, cols)`.
+pub fn grid_item_placements(
+    bounds: (i32, i32, i32, i32),
+    grid: (i32, i32),
+    selection: (i32, i32, i32, i32),
+    item: (i32, i32),
+) -> Vec<GridPlacement> {
+    let (grid_rows, grid_cols) = grid;
+    let (sel_r1, sel_c1, sel_r2, sel_c2) = selection;
+    let (item_rows, item_cols) = item;
+    let item_rows = item_rows.max(1);
+    let item_cols = item_cols.max(1);
+    let (sel_r1, sel_r2) = if sel_r1 <= sel_r2 {
+        (sel_r1, sel_r2)
+    } else {
+        (sel_r2, sel_r1)
+    };
+    let (sel_c1, sel_c2) = if sel_c1 <= sel_c2 {
+        (sel_c1, sel_c2)
+    } else {
+        (sel_c2, sel_c1)
+    };
+    let max_r = sel_r2 - item_rows + 1;
+    let max_c = sel_c2 - item_cols + 1;
+    if max_r < sel_r1 || max_c < sel_c1 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for r in sel_r1..=max_r {
+        for c in sel_c1..=max_c {
+            let r2 = r + item_rows - 1;
+            let c2 = c + item_cols - 1;
+            if let Some(rect) = grid_cell_rect(bounds, grid_rows, grid_cols, r, c, r2, c2) {
+                out.push(GridPlacement {
+                    rect,
+                    r1: r,
+                    c1: c,
+                    r2,
+                    c2,
+                });
+            }
+        }
+    }
+    out
+}
+
 impl AtlasLayout {
     pub fn new(nodes: Vec<AtlasNode>) -> Self {
         Self { nodes }
@@ -65,23 +182,15 @@ impl AtlasLayout {
     /// Pixel rect of a single cell (1-based). Returns `None` when out of range.
     pub fn cell_rect(&self, pos: AtlasPos) -> Option<(i32, i32, i32, i32)> {
         let node = self.nodes.get(pos.node)?;
-        if node.rows < 1 || node.cols < 1 {
-            return None;
-        }
-        if pos.row < 1 || pos.col < 1 || pos.row > node.rows || pos.col > node.cols {
-            return None;
-        }
-        let (lx, ty, rx, by) = node.bounds;
-        let width = rx - lx;
-        let height = by - ty;
-        if width <= 0 || height <= 0 {
-            return None;
-        }
-        let cell_left = lx + (pos.col - 1) * width / node.cols;
-        let cell_right = lx + pos.col * width / node.cols;
-        let cell_top = ty + (pos.row - 1) * height / node.rows;
-        let cell_bottom = ty + pos.row * height / node.rows;
-        Some((cell_left, cell_top, cell_right, cell_bottom))
+        grid_cell_rect(
+            node.bounds,
+            node.rows,
+            node.cols,
+            pos.row,
+            pos.col,
+            pos.row,
+            pos.col,
+        )
     }
 
     /// Center of a cell, or `None` when out of range.
@@ -309,6 +418,72 @@ mod tests {
             rows,
             cols,
         }
+    }
+
+    #[test]
+    fn grid_cell_rect_2x2() {
+        assert_eq!(
+            grid_cell_rect((0, 0, 100, 100), 2, 2, 1, 1, 1, 1),
+            Some((0, 0, 50, 50))
+        );
+        assert_eq!(
+            grid_cell_rect((0, 0, 100, 100), 2, 2, 1, 2, 2, 2),
+            Some((50, 0, 100, 100))
+        );
+        assert_eq!(
+            grid_cell_rect((0, 0, 100, 100), 2, 2, 1, 1, 2, 2),
+            Some((0, 0, 100, 100))
+        );
+        assert!(grid_cell_rect((0, 0, 100, 100), 2, 2, 1, 1, 3, 1).is_none());
+    }
+
+    #[test]
+    fn grid_item_placements_slide_by_cell() {
+        let bounds = (0, 0, 40, 40);
+        assert_eq!(
+            grid_item_placements(bounds, (2, 2), (1, 1, 2, 2), (1, 1)).len(),
+            4
+        );
+        assert_eq!(
+            grid_item_placements(bounds, (2, 2), (1, 1, 2, 2), (2, 2)),
+            vec![GridPlacement {
+                rect: (0, 0, 40, 40),
+                r1: 1,
+                c1: 1,
+                r2: 2,
+                c2: 2,
+            }]
+        );
+        assert_eq!(
+            grid_item_placements(bounds, (2, 2), (1, 1, 2, 2), (2, 1)),
+            vec![
+                GridPlacement {
+                    rect: (0, 0, 20, 40),
+                    r1: 1,
+                    c1: 1,
+                    r2: 2,
+                    c2: 1,
+                },
+                GridPlacement {
+                    rect: (20, 0, 40, 40),
+                    r1: 1,
+                    c1: 2,
+                    r2: 2,
+                    c2: 2,
+                },
+            ]
+        );
+        assert!(grid_item_placements(bounds, (2, 2), (1, 1, 2, 2), (3, 1)).is_empty());
+        assert_eq!(
+            grid_item_placements(bounds, (2, 2), (1, 1, 2, 2), (0, 0)).len(),
+            4
+        );
+        let one = grid_item_placements(bounds, (2, 2), (1, 1, 2, 2), (1, 1))[0];
+        assert_eq!(one.cells().collect::<Vec<_>>(), vec![(1, 1)]);
+        let mut occupied = HashSet::from([(1, 1)]);
+        assert!(one.overlaps_occupied(&occupied));
+        one.claim_into(&mut occupied);
+        assert_eq!(occupied.len(), 1);
     }
 
     #[test]

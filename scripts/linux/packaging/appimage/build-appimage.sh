@@ -35,6 +35,105 @@ need_native_tools() {
   have_cmd appimage-builder && have_cmd mksquashfs && have_cmd patchelf && have_cmd cargo
 }
 
+# appimage-builder hardcodes squashfs -comp xz and the old AppImageKit runtime
+# (needs system libfuse.so.2). That makes cold start multi-second when FUSE is
+# missing (extract-and-run) and slower even with FUSE (xz random reads).
+# We --skip-appimage and repack the AppDir with type2-runtime + zstd instead.
+#
+# type2-runtime continuous build (commit 75849dc). Override URL/SHA via env when bumping.
+TYPE2_RUNTIME_URL="${SQYRE_APPIMAGE_RUNTIME_URL:-https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64}"
+TYPE2_RUNTIME_SHA256="${SQYRE_APPIMAGE_RUNTIME_SHA256:-1cc49bcf1e2ccd593c379adb17c9f85a36d619088296504de95b1d06215aebbf}"
+
+sha256_file() {
+  if have_cmd sha256sum; then
+    sha256sum "$1" | awk '{print $1}'
+  elif have_cmd shasum; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  else
+    echo "Need sha256sum or shasum to verify type2-runtime" >&2
+    exit 1
+  fi
+}
+
+ensure_type2_runtime() {
+  local cache_dir="$SCRIPT_DIR/.runtime-cache"
+  local runtime="$cache_dir/runtime-x86_64"
+  local got
+  mkdir -p "$cache_dir"
+  if [ -x "$runtime" ] && [ -s "$runtime" ]; then
+    got="$(sha256_file "$runtime")"
+    if [ "$got" = "$TYPE2_RUNTIME_SHA256" ]; then
+      printf '%s\n' "$runtime"
+      return 0
+    fi
+    echo "Cached type2-runtime SHA256 mismatch (got $got, want $TYPE2_RUNTIME_SHA256); re-downloading…" >&2
+    rm -f "$runtime"
+  fi
+  echo "Downloading AppImage type2-runtime…" >&2
+  if have_cmd curl; then
+    curl -fsSL -o "$runtime.partial" "$TYPE2_RUNTIME_URL"
+  elif have_cmd wget; then
+    wget -q -O "$runtime.partial" "$TYPE2_RUNTIME_URL"
+  else
+    echo "Need curl or wget to download type2-runtime from $TYPE2_RUNTIME_URL" >&2
+    exit 1
+  fi
+  got="$(sha256_file "$runtime.partial")"
+  if [ "$got" != "$TYPE2_RUNTIME_SHA256" ]; then
+    rm -f "$runtime.partial"
+    echo "type2-runtime SHA256 mismatch (got $got, want $TYPE2_RUNTIME_SHA256)" >&2
+    echo "Update TYPE2_RUNTIME_SHA256 / SQYRE_APPIMAGE_RUNTIME_SHA256 when bumping the runtime." >&2
+    exit 1
+  fi
+  chmod +x "$runtime.partial"
+  mv -f "$runtime.partial" "$runtime"
+  printf '%s\n' "$runtime"
+}
+
+# AppRun v2 bakes the absolute build AppDir into APPDIR_PATH_MAPPINGS; strip it so
+# the shipped image does not redirect through a CI/dev path if that path exists.
+scrub_appdir_path_mappings() {
+  local env_file="$1/AppRun.env"
+  [ -f "$env_file" ] || return 0
+  if grep -q '^APPDIR_PATH_MAPPINGS=' "$env_file"; then
+    # Keep the key (AppRun may expect it) but clear absolute build-host mappings.
+    sed -i 's|^APPDIR_PATH_MAPPINGS=.*|APPDIR_PATH_MAPPINGS=|' "$env_file"
+  fi
+}
+
+# Replace the xz AppImage from appimage-builder with a fast-start payload.
+repack_fast_appimage() {
+  local appdir="$1"
+  local out_path="$2"
+  local runtime payload tmp_out
+  if [ ! -x "$appdir/AppRun" ] && [ ! -x "$appdir/usr/bin/sqyre" ]; then
+    echo "AppDir incomplete (missing AppRun / usr/bin/sqyre): $appdir" >&2
+    exit 1
+  fi
+  scrub_appdir_path_mappings "$appdir"
+  runtime="$(ensure_type2_runtime)"
+  payload="$(mktemp "${TMPDIR:-/tmp}/sqyre-appimage-payload.XXXXXX.squashfs")"
+  tmp_out="$(mktemp "${TMPDIR:-/tmp}/sqyre-appimage-out.XXXXXX")"
+
+  echo "Repacking AppImage (zstd + type2-runtime)…"
+  if ! mksquashfs "$appdir" "$payload" \
+    -root-owned \
+    -noappend \
+    -no-xattrs \
+    -comp zstd \
+    -Xcompression-level 3 \
+    >/dev/null
+  then
+    rm -f "$payload" "$tmp_out"
+    echo "mksquashfs failed while repacking AppImage" >&2
+    exit 1
+  fi
+  cat "$runtime" "$payload" >"$tmp_out"
+  chmod 755 "$tmp_out"
+  mv -f "$tmp_out" "$out_path"
+  rm -f "$payload"
+}
+
 run_native() {
   # Recipe must live under this directory: appimage-builder sets SOURCE_DIR to the
   # recipe file's parent.
@@ -72,20 +171,21 @@ run_native() {
          "$SCRIPT_DIR/appimage-build"
 
   echo "Building AppImage v${APP_VERSION} (native)…"
+  # Skip appimage-builder's xz + AppImageKit prime; we repack from AppDir below.
   appimage-builder \
     --recipe "$RECIPE_TMP" \
     --appdir "$SCRIPT_DIR/sqyre.AppDir" \
-    --build-dir "$SCRIPT_DIR/appimage-build"
+    --build-dir "$SCRIPT_DIR/appimage-build" \
+    --skip-appimage
 
   OUT_DIR="$REPO_ROOT/bin"
   mkdir -p "$OUT_DIR"
   APP_IMAGE_NAME="Sqyre-${APP_VERSION}-x86_64.AppImage"
-  if [ ! -f "$SCRIPT_DIR/$APP_IMAGE_NAME" ]; then
-    echo "Expected AppImage not found: $SCRIPT_DIR/$APP_IMAGE_NAME" >&2
-    ls -la "$SCRIPT_DIR"/*.AppImage 2>/dev/null || true
+  if [ ! -d "$SCRIPT_DIR/sqyre.AppDir" ]; then
+    echo "Expected AppDir not found: $SCRIPT_DIR/sqyre.AppDir" >&2
     exit 1
   fi
-  mv -f "$SCRIPT_DIR/$APP_IMAGE_NAME" "$OUT_DIR/$APP_IMAGE_NAME"
+  repack_fast_appimage "$SCRIPT_DIR/sqyre.AppDir" "$OUT_DIR/$APP_IMAGE_NAME"
 
   echo "AppDir: $SCRIPT_DIR/sqyre.AppDir"
   echo "AppImage: $OUT_DIR/$APP_IMAGE_NAME"

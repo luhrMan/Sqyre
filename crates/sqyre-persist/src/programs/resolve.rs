@@ -1,12 +1,13 @@
 //! Coordinate / entity resolution against the program catalog.
 
 use super::{
-    bucket_scale, cell_rect, collection_from, parse_resolution_key, point_from, remap_coord,
-    search_area_from, split_target, ProgramCatalog, ProgramCollection, ProgramData, ProgramPoint,
-    ProgramSearchArea,
+    bucket_scale, collection_from, point_from, search_area_from, split_target, ProgramCatalog,
+    ProgramCollection, ProgramData, ProgramPoint, ProgramSearchArea,
 };
-use sqyre_domain::{resolve_scalar_int, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
-use sqyre_ports::PortError;
+use sqyre_domain::{
+    grid_cell_rect, resolve_scalar_int, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER,
+};
+use sqyre_ports::{CollectionArea, PortError};
 use std::path::PathBuf;
 
 /// Runtime screen coords (e.g. `${foundX}`) must not be remapped by catalog DPI/resolution.
@@ -46,9 +47,8 @@ impl ProgramCatalog {
                 .ok_or_else(|| PortError::not_found(format!("program {prog:?} not found")))?;
             return Ok((pt, src, data));
         }
-        for prog in self.programs.keys() {
+        for (prog, data) in &self.programs {
             if let Ok((pt, src)) = point_from(self, prog, name, resolution_key) {
-                let data = self.programs.get(prog).expect("program exists");
                 return Ok((pt, src, data));
             }
         }
@@ -85,9 +85,8 @@ impl ProgramCatalog {
                 .ok_or_else(|| PortError::not_found(format!("program {prog:?} not found")))?;
             return Ok((sa, src, data));
         }
-        for prog in self.programs.keys() {
+        for (prog, data) in &self.programs {
             if let Ok((sa, src)) = search_area_from(self, prog, name, resolution_key) {
-                let data = self.programs.get(prog).expect("program exists");
                 return Ok((sa, src, data));
             }
         }
@@ -137,7 +136,9 @@ impl ProgramCatalog {
         if scalar_has_runtime_ref(&pt.x) || scalar_has_runtime_ref(&pt.y) {
             return Ok((x, y));
         }
-        self.remap_xy(x, y, src_key, data)
+        let (x, y) = self.remap_monitor_relative(x, y, src_key, data)?;
+        let abs = self.apply_monitor_origin(pt.monitor, x, y)?;
+        Ok(abs)
     }
 
     pub fn resolve_search_area(
@@ -164,29 +165,63 @@ impl ProgramCatalog {
         {
             return Ok((lx, ty, rx, by));
         }
-        let (lx, ty) = self.remap_xy(lx, ty, src_key, data)?;
-        let (rx, by) = self.remap_xy(rx, by, src_key, data)?;
+        let (lx, ty) = self.remap_monitor_relative(lx, ty, src_key, data)?;
+        let (rx, by) = self.remap_monitor_relative(rx, by, src_key, data)?;
+        let (lx, ty) = self.apply_monitor_origin(sa.monitor, lx, ty)?;
+        let (rx, by) = self.apply_monitor_origin(sa.monitor, rx, by)?;
         Ok((lx, ty, rx, by))
     }
 
-    pub(super) fn remap_xy(
+    /// Map a 1-based slot to its live origin. Missing slot → error (no silent clamp).
+    fn monitor_origin(&self, monitor: u32) -> std::result::Result<(i32, i32), PortError> {
+        let slot = monitor.max(1) as usize;
+        let fallback = [(0, 0, 1920, 1080)];
+        let rects = if self.monitor_rects.is_empty() {
+            fallback.as_slice()
+        } else {
+            self.monitor_rects.as_slice()
+        };
+        let Some(&(ox, oy, _, _)) = rects.get(slot - 1) else {
+            return Err(PortError::invalid(format!(
+                "monitor slot {slot} not available ({} live monitor{})",
+                rects.len(),
+                if rects.len() == 1 { "" } else { "s" }
+            )));
+        };
+        Ok((ox, oy))
+    }
+
+    fn apply_monitor_origin(
+        &self,
+        monitor: u32,
+        x: i32,
+        y: i32,
+    ) -> std::result::Result<(i32, i32), PortError> {
+        let (ox, oy) = self.monitor_origin(monitor)?;
+        Ok((ox + x, oy + y))
+    }
+
+    /// Remap monitor-relative pixels: DPI scale only (not primary WxH).
+    /// WxH remapping was for virtual-desktop absolutes and warps per-monitor relatives
+    /// when the runtime resolution key is the leftmost monitor's size.
+    fn remap_monitor_relative(
         &self,
         x: i32,
         y: i32,
         src_key: &str,
         data: &ProgramData,
     ) -> std::result::Result<(i32, i32), PortError> {
-        let rt_key = self.resolution_key();
-        if rt_key.is_empty() {
-            return Ok((x, y));
-        }
-        let (src_w, src_h) = parse_resolution_key(src_key)?;
-        let (rt_w, rt_h) = parse_resolution_key(rt_key)?;
         let src_scale = bucket_scale(data, src_key);
         let rt_scale = self.runtime_scale();
+        let src_scale = if src_scale > 0.0 { src_scale } else { 1.0 };
+        let rt_scale = if rt_scale > 0.0 { rt_scale } else { 1.0 };
+        if (src_scale - rt_scale).abs() < f32::EPSILON {
+            return Ok((x, y));
+        }
+        let factor = rt_scale as f64 / src_scale as f64;
         Ok((
-            remap_coord(x, src_w, rt_w, src_scale, rt_scale),
-            remap_coord(y, src_h, rt_h, src_scale, rt_scale),
+            (x as f64 * factor).round() as i32,
+            (y as f64 * factor).round() as i32,
         ))
     }
 
@@ -199,6 +234,21 @@ impl ProgramCatalog {
         r2: i32,
         c2: i32,
     ) -> std::result::Result<(i32, i32, i32, i32), PortError> {
+        let area = self.resolve_collection_area(r, macro_)?;
+        grid_cell_rect(area.bounds(), area.rows, area.cols, r1, c1, r2, c2).ok_or_else(|| {
+            PortError::invalid(format!(
+                "cell range {r1},{c1}-{r2},{c2} out of bounds for {}x{} grid",
+                area.rows, area.cols
+            ))
+        })
+    }
+
+    /// Full collection search-area rect and grid. Ignores any `@cell` suffix on `r`.
+    pub fn resolve_collection_area(
+        &self,
+        r: &CoordinateRef,
+        macro_: &Macro,
+    ) -> std::result::Result<CollectionArea, PortError> {
         let col = self.lookup_collection(r)?;
         if col.search_area.is_empty() {
             return Err(PortError::invalid(format!(
@@ -210,32 +260,26 @@ impl ProgramCatalog {
             Some(prog) => CoordinateRef(format!("{prog}{PROGRAM_DELIMITER}{}", col.search_area)),
             None => CoordinateRef(col.search_area.clone()),
         };
-        let (left_x, top_y, right_x, bottom_y) = self.resolve_search_area(&sa_ref, macro_)?;
-        cell_rect(
-            left_x, top_y, right_x, bottom_y, col.rows, col.cols, r1, c1, r2, c2,
-        )
+        let (left, top, right, bottom) = self.resolve_search_area(&sa_ref, macro_)?;
+        Ok(CollectionArea {
+            left,
+            top,
+            right,
+            bottom,
+            rows: col.rows,
+            cols: col.cols,
+        })
     }
 
     /// `program~item` → icon PNG paths (variants + legacy).
+    ///
+    /// Directory listings are cached process-wide (keyed by dir mtime); call
+    /// [`crate::invalidate_icon_fs_cache_under`] after adding/removing icons.
     pub fn variant_paths(&self, target: &str) -> Vec<PathBuf> {
         let Some((program, item)) = split_target(target) else {
             return Vec::new();
         };
-        let dir = self.icons_dir(program);
-        let mut paths = Vec::new();
-        if let Ok(rd) = std::fs::read_dir(&dir) {
-            let prefix = format!("{item}{PROGRAM_DELIMITER}");
-            let legacy = format!("{item}.png");
-            for entry in rd.flatten() {
-                let name = entry.file_name();
-                let name = name.to_string_lossy();
-                if name == legacy || (name.starts_with(&prefix) && name.ends_with(".png")) {
-                    paths.push(entry.path());
-                }
-            }
-        }
-        paths.sort();
-        paths
+        crate::icon_fs_cache::cached_variant_paths(&self.icons_dir(program), item)
     }
 
     pub fn mask_path(&self, target: &str) -> Option<PathBuf> {
@@ -245,11 +289,7 @@ impl ProgramCatalog {
             return None;
         }
         let path = self.mask_image_path(program, &item.mask);
-        if path.is_file() {
-            Some(path)
-        } else {
-            None
-        }
+        crate::icon_fs_cache::cached_mask_if_exists(path)
     }
 
     pub fn item_meta(&self, target: &str) -> Option<sqyre_ports::ItemMeta> {
@@ -260,6 +300,7 @@ impl ProgramCatalog {
             stack_max: item.stack_max,
             cols: item.grid_cols,
             rows: item.grid_rows,
+            tags: item.tags.clone(),
         })
     }
 }

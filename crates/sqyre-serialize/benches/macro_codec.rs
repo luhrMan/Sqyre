@@ -2,9 +2,10 @@
 //!
 //! Run: `cargo bench -p sqyre-serialize` or `make bench`.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use sqyre_domain::{Action, ActionId, ActionKind, Macro, MouseButton, PressState, ScalarValue};
 use sqyre_serialize::{decode_macro_from_yaml, encode_macro_to_yaml};
+use std::hint::black_box;
 use std::time::Duration;
 
 fn sample_macro() -> Macro {

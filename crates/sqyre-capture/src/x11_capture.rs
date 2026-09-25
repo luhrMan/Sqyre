@@ -14,6 +14,10 @@ use x11::xlib::{
     XCloseDisplay, XDefaultRootWindow, XDestroyImage, XDisplayHeight, XDisplayWidth, XFree,
     XGetImage, XOpenDisplay, XQueryPointer, XResourceManagerString, ZPixmap, _XDisplay,
 };
+use x11::xrandr::{
+    XRRFreeCrtcInfo, XRRFreeOutputInfo, XRRFreeScreenResources, XRRGetCrtcInfo, XRRGetOutputInfo,
+    XRRGetOutputPrimary, XRRGetScreenResourcesCurrent,
+};
 
 const ALLPLANES: u64 = !0;
 
@@ -272,6 +276,60 @@ impl Drop for X11State {
                 self.display = ptr::null_mut();
             }
         }
+    }
+}
+
+/// Geometry of the RandR primary output, if any.
+pub(crate) fn query_x11_primary_rect() -> Option<DesktopRect> {
+    // SAFETY: display null-checked; all XRR pointers freed before close.
+    unsafe {
+        let display = XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return None;
+        }
+        let root = XDefaultRootWindow(display);
+        let primary = XRRGetOutputPrimary(display, root);
+        if primary == 0 {
+            XCloseDisplay(display);
+            return None;
+        }
+        let resources = XRRGetScreenResourcesCurrent(display, root);
+        if resources.is_null() {
+            XCloseDisplay(display);
+            return None;
+        }
+        let info = XRRGetOutputInfo(display, resources, primary);
+        if info.is_null() {
+            XRRFreeScreenResources(resources);
+            XCloseDisplay(display);
+            return None;
+        }
+        let crtc = (*info).crtc;
+        let rect = if crtc != 0 {
+            let ci = XRRGetCrtcInfo(display, resources, crtc);
+            if ci.is_null() {
+                None
+            } else {
+                let r = DesktopRect {
+                    x: (*ci).x,
+                    y: (*ci).y,
+                    w: (*ci).width as i32,
+                    h: (*ci).height as i32,
+                };
+                XRRFreeCrtcInfo(ci);
+                if r.w > 1 && r.h > 1 {
+                    Some(r)
+                } else {
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        XRRFreeOutputInfo(info);
+        XRRFreeScreenResources(resources);
+        XCloseDisplay(display);
+        rect
     }
 }
 

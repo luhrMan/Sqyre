@@ -11,21 +11,34 @@ use crate::{
 pub struct ActionTemplate {
     pub label: &'static str,
     pub action_type: &'static str,
+    /// Prototype resolved when the list is built, so [`Self::create`] cannot
+    /// fail on a taxonomy row that has no matching [`ActionKind`].
+    kind: ActionKind,
 }
 
 impl ActionTemplate {
     pub fn create(&self) -> Action {
-        blank_action(self.action_type).expect("known template type")
+        Action {
+            id: ActionId::new(),
+            kind: self.kind.clone(),
+        }
     }
 }
 
 /// All addable action kinds for the picker ([`ACTION_KIND_COUNT`]; Calculate folded into Set).
+///
+/// A taxonomy row whose type key has no [`ActionKind`] is skipped rather than
+/// panicking later in the picker; `templates_cover_all_kinds` fails loudly if
+/// the table and [`ActionKind::from_type_key`] ever drift apart.
 pub fn action_templates() -> Vec<ActionTemplate> {
     action_type_table()
         .iter()
-        .map(|m| ActionTemplate {
-            label: m.label,
-            action_type: m.type_key,
+        .filter_map(|m| {
+            Some(ActionTemplate {
+                label: m.label,
+                action_type: m.type_key,
+                kind: ActionKind::from_type_key(m.type_key)?,
+            })
         })
         .collect()
 }
@@ -113,10 +126,14 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
         "imagesearch" => ActionKind::ImageSearch {
             name: String::new(),
             targets: Vec::new(),
+            target_tags: Vec::new(),
             search_area: CoordinateRef::default(),
             tolerance: 0.95,
             blur: 5,
             match_method: MatchMethod::CcoeffNormed,
+            sort_by: Default::default(),
+            sort_then: Default::default(),
+            tag_priority: Vec::new(),
             detection: DetectionBranch::default(),
         },
         "ocr" => ActionKind::Ocr {
@@ -147,6 +164,11 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
             sources: vec![ListColumn::default()],
             start_row: ScalarValue::Int(1),
             end_row: ScalarValue::Null,
+            subactions: Vec::new(),
+        },
+        "foreachcell" => ActionKind::ForEachCell {
+            name: String::new(),
+            cells: CoordinateRef::default(),
             subactions: Vec::new(),
         },
         "savevariable" => ActionKind::SaveVariable {

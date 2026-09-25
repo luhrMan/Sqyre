@@ -10,18 +10,20 @@ use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, VarTheme};
 use crate::pickers::{self, options, ActivePicker, CoordKind};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
 use crate::theme;
-use crate::var_pills;
+use crate::tree_chrome;
+use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{
     combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
-    searchable_combo, searchable_combo_with, text_field, W_MULTILINE, W_TEXT, W_VAR,
+    searchable_combo, searchable_combo_with, text_field, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
     Action, ActionKind, ConditionBlock, ConditionClause, CoordinateOutputs, CoordinateRef,
-    DetectionBranch, KnownVariableNames, ListColumn, Macro, MatchGrouping, MatchMode, MatchOrder,
-    MouseButton, NavPressMode, NavSelectDevice, RepeatMode, ScalarValue, VariableAssignment,
-    WaitTilFoundConfig, MAX_DETECTION_INTERVAL_MS, MAX_SMOOTH_DELAY_MS, MAX_TYPE_DELAY_MS,
-    MIN_DETECTION_INTERVAL_MS, MIN_SMOOTH_DELAY_MS, MIN_TYPE_DELAY_MS,
+    DetectionBranch, ItemSortBy, ItemSortThen, KnownVariableNames, ListColumn, Macro,
+    MatchGrouping, MatchMode, MatchOrder, MouseButton, NavPressMode, NavSelectDevice, RepeatMode,
+    ScalarValue, VariableAssignment, WaitTilFoundConfig, MAX_DETECTION_INTERVAL_MS,
+    MAX_SMOOTH_DELAY_MS, MAX_TYPE_DELAY_MS, MIN_DETECTION_INTERVAL_MS, MIN_SMOOTH_DELAY_MS,
+    MIN_TYPE_DELAY_MS,
 };
 use sqyre_persist::{ProgramCatalog, MAX_WHILE_MAX_ITERATIONS};
 use sqyre_validate::{
@@ -99,7 +101,10 @@ pub fn paint_edit_fields(
         }
         ActionKind::Click { button, state } => {
             tip_section(ui, |ui| {
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                // `ui.horizontal` starts at interact_size.y and grows to the
+                // mouse/slider — not `with_layout(… Align::Center)`, which fills
+                // ScrollArea's unbounded height and ratchets the tip to the screen.
+                ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
                     help::tip(theme::mouse_button_picker(ui, button), h::CLICK_BUTTON);
                     ui.vertical(|ui| {
@@ -119,10 +124,12 @@ pub fn paint_edit_fields(
                     var_ref_field(
                         ui,
                         "Key",
-                        h::KEY,
                         key,
-                        known_vars,
-                        is_dark,
+                        VarTheme {
+                            known_vars,
+                            is_dark,
+                        },
+                        h::KEY,
                         W_VAR,
                         active_macro,
                     );
@@ -147,10 +154,12 @@ pub fn paint_edit_fields(
                 var_ref_field(
                     ui,
                     "Text",
-                    h::TYPE_TEXT,
                     text,
-                    known_vars,
-                    is_dark,
+                    VarTheme {
+                        known_vars,
+                        is_dark,
+                    },
+                    h::TYPE_TEXT,
                     W_VAR,
                     active_macro,
                 );
@@ -209,10 +218,12 @@ pub fn paint_edit_fields(
                 var_ref_field(
                     ui,
                     "Message",
-                    h::PAUSE_MESSAGE,
                     message,
-                    known_vars,
-                    is_dark,
+                    VarTheme {
+                        known_vars,
+                        is_dark,
+                    },
+                    h::PAUSE_MESSAGE,
                     W_TEXT,
                     active_macro,
                 );
@@ -243,8 +254,15 @@ pub fn paint_edit_fields(
             process_path,
             window_title,
         } => {
-            tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Window title", h::FOCUS_TITLE, window_title);
+            // Stack vertically; path wraps so long executables stay inside the tip.
+            tip_section(ui, |ui| {
+                crate::widgets::text_field_width(
+                    ui,
+                    "Window title",
+                    h::FOCUS_TITLE,
+                    window_title,
+                    f32::INFINITY,
+                );
                 let mut pick = false;
                 ui.horizontal(|ui| {
                     help::label(ui, "Process path", h::FOCUS_PROCESS);
@@ -254,18 +272,26 @@ pub fn paint_edit_fields(
                         process_path,
                         window_title,
                     );
-                    help::tip(
-                        ui.add(
-                            egui::TextEdit::singleline(process_path)
-                                .desired_width(W_TEXT)
-                                .hint_text("/path/to/app"),
-                        ),
-                        h::FOCUS_PROCESS,
-                    );
                     if pick_icon_btn(ui).clicked() {
                         pick = true;
                     }
                 });
+                // Paths never contain newlines; disable Return so Enter doesn't
+                // insert one. Multiline still wraps soft-breaks for display.
+                if process_path.contains(['\n', '\r']) {
+                    process_path.retain(|c| c != '\n' && c != '\r');
+                }
+                let path_rows = path_wrap_rows(crate::widgets::visible_width(ui), process_path);
+                help::tip(
+                    ui.add(
+                        egui::TextEdit::multiline(process_path)
+                            .desired_width(f32::INFINITY)
+                            .desired_rows(path_rows)
+                            .return_key(None)
+                            .hint_text("/path/to/app"),
+                    ),
+                    h::FOCUS_PROCESS,
+                );
                 if pick {
                     *picker = pickers::open_window_picker(process_path, window_title);
                 }
@@ -306,10 +332,12 @@ pub fn paint_edit_fields(
                 var_ref_field(
                     ui,
                     "Destination",
-                    h::SAVE_DEST,
                     destination,
-                    known_vars,
-                    is_dark,
+                    VarTheme {
+                        known_vars,
+                        is_dark,
+                    },
+                    h::SAVE_DEST,
                     W_VAR,
                     active_macro,
                 );
@@ -351,22 +379,48 @@ pub fn paint_edit_fields(
         } => {
             edit_control_flow::paint_foreach_row(
                 ui,
-                name,
-                sources,
-                start_row,
-                end_row,
-                known_vars,
-                is_dark,
+                edit_control_flow::ForEachRowFields {
+                    name,
+                    sources,
+                    start_row,
+                    end_row,
+                },
+                VarTheme {
+                    known_vars,
+                    is_dark,
+                },
                 active_macro,
             );
+        }
+        ActionKind::ForEachCell { name, cells, .. } => {
+            tip_wrapped_section(ui, |ui| {
+                text_field(ui, "Name", h::NAME, name);
+            });
+            tip_section(ui, |ui| {
+                cells_picker_row(
+                    ui,
+                    &mut CatalogPaint {
+                        catalog,
+                        icons,
+                        previews,
+                    },
+                    cells,
+                    picker,
+                );
+                paint_coord_preview(ui, catalog, previews, cells, PreviewKind::SearchArea);
+            });
         }
         ActionKind::ImageSearch {
             name,
             targets,
+            target_tags,
             search_area,
             tolerance,
             blur,
             match_method,
+            sort_by,
+            sort_then,
+            tag_priority,
             detection,
         } => {
             edit_detect::paint_image_search_fields(
@@ -381,13 +435,19 @@ pub fn paint_edit_fields(
                     known_vars,
                     is_dark,
                 },
-                name,
-                targets,
-                search_area,
-                tolerance,
-                blur,
-                match_method,
-                detection,
+                edit_detect::ImageSearchFields {
+                    name,
+                    targets,
+                    target_tags,
+                    search_area,
+                    tolerance,
+                    blur,
+                    match_method,
+                    sort_by,
+                    sort_then,
+                    tag_priority,
+                    detection,
+                },
             );
         }
         ActionKind::Ocr {
@@ -416,17 +476,19 @@ pub fn paint_edit_fields(
                     is_dark,
                 },
                 active_macro,
-                name,
-                target,
-                search_area,
-                output_variable,
-                blur,
-                min_threshold,
-                resize,
-                grayscale,
-                threshold_otsu,
-                threshold_invert,
-                detection,
+                edit_detect::OcrFields {
+                    name,
+                    target,
+                    search_area,
+                    output_variable,
+                    blur,
+                    min_threshold,
+                    resize,
+                    grayscale,
+                    threshold_otsu,
+                    threshold_invert,
+                    detection,
+                },
             );
         }
         ActionKind::FindPixel {
@@ -450,11 +512,13 @@ pub fn paint_edit_fields(
                 },
                 active_macro,
                 screen_click,
-                name,
-                search_area,
-                target_color,
-                color_tolerance,
-                detection,
+                edit_detect::FindPixelFields {
+                    name,
+                    search_area,
+                    target_color,
+                    color_tolerance,
+                    detection,
+                },
             );
         }
         ActionKind::NavigateSelect(data) => {
@@ -650,52 +714,217 @@ fn targets_editor(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
-    targets: &mut Vec<String>,
+    edit: TargetsSortEdit<'_>,
     picker: &mut ActivePicker,
 ) {
-    ui.horizontal(|ui| {
-        let width = ui.available_width();
-        ui.set_min_width(width);
+    let TargetsSortEdit {
+        targets,
+        target_tags,
+        sort_by,
+        sort_then,
+        tag_priority,
+    } = edit;
+    ui.horizontal_wrapped(|ui| {
         help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
-                .on_hover_text(h::IS_ITEMS)
-                .clicked()
-            {
-                *picker = ActivePicker::Items {
-                    search: String::new(),
-                    staged: targets.clone(),
-                };
-            }
-            ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
-        });
+        ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
+        if !target_tags.is_empty() {
+            help::tip(
+                ui.label(
+                    egui::RichText::new(format!("· {} tag filters", target_tags.len())).weak(),
+                ),
+                h::IS_TARGET_TAGS,
+            );
+        }
+        if ui
+            .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
+            .on_hover_text(h::IS_ITEMS)
+            .clicked()
+        {
+            *picker = ActivePicker::Items {
+                search: String::new(),
+                staged: targets.clone(),
+                staged_tags: Some(target_tags.clone()),
+            };
+        }
+        combo_enum(
+            ui,
+            "Sort by",
+            h::IS_SEARCH_SORTING,
+            sort_by,
+            ItemSortBy::ALL,
+            ItemSortBy::label,
+        );
+        if *sort_by != ItemSortBy::Manual {
+            combo_enum(
+                ui,
+                "Then",
+                h::IS_SORT_THEN,
+                sort_then,
+                ItemSortThen::ALL,
+                ItemSortThen::label,
+            );
+        }
     });
-    if targets.is_empty() {
+    if *sort_by == ItemSortBy::Tags {
+        let suggestions = item_tag_suggestions(catalog, targets, target_tags);
+        let draft_id = ui.id().with("image_search_tag_priority_draft");
+        let mut draft = ui
+            .ctx()
+            .data(|d| d.get_temp::<String>(draft_id))
+            .unwrap_or_default();
+        help::tip(
+            ui.label(egui::RichText::new("Tag priority").strong()),
+            h::IS_TAG_PRIORITY,
+        );
+        let edit = crate::widgets::tag_chip_editor(
+            ui,
+            tag_priority,
+            &mut draft,
+            &suggestions,
+            crate::widgets::TagChipOptions {
+                enabled: true,
+                show_add_button: true,
+                suggestion_limit: 12,
+                suggestions_with_separator: false,
+                draft_hover: Some(h::IS_TAG_PRIORITY),
+                draft_first: false,
+                reorderable: true,
+                signed_filters: false,
+            },
+        );
+        let _ = edit;
+        ui.ctx().data_mut(|d| d.insert_temp(draft_id, draft));
+    }
+    let display = tree_chrome::sorted_image_search_targets(
+        catalog,
+        targets,
+        target_tags,
+        *sort_by,
+        *sort_then,
+        tag_priority,
+    );
+    if display.is_empty() && targets.is_empty() && target_tags.is_empty() {
         ui.label(sqyre_domain::EMPTY_NONE);
         return;
     }
+    if display.is_empty() {
+        ui.label(egui::RichText::new("(no items match these tag filters yet)").weak());
+        return;
+    }
+    let infos = target_sort_infos(catalog, &display);
     let mut remove: Option<usize> = None;
-    let snapshot = targets.clone();
+    let mut reorder: Option<(usize, usize)> = None;
+    let mut on_reorder = |from: usize, to: usize| {
+        reorder = Some((from, to));
+    };
+    // Drag-reorder only when the grid is exactly the explicit target list
+    // (tag expansion would make display indices disagree with stored order).
+    let allow_reorder = target_tags.is_empty();
     pickers::paint_even_icon_grid(
         ui,
         catalog,
         icons,
-        &snapshot,
-        |_| true,
+        &display,
+        |_| false,
         pickers::IconGridKind::Targets { removable: true },
         |_, _| {},
         |i| {
             remove = Some(i);
         },
+        if allow_reorder {
+            Some(&mut on_reorder)
+        } else {
+            None
+        },
+        // Tag-filter matches are not stored in `targets`; × would be a no-op.
+        |t| targets.iter().any(|explicit| explicit == t),
     );
-    if let Some(i) = remove {
-        targets.remove(i);
+    if let Some((from, to)) = reorder {
+        let _ = sqyre_domain::apply_display_reorder(
+            targets,
+            sort_by,
+            *sort_then,
+            tag_priority,
+            &infos,
+            from,
+            to,
+        );
     }
+    if let Some(i) = remove {
+        if let Some(target) = display.get(i) {
+            targets.retain(|t| t != target);
+        }
+    }
+}
+
+struct TargetsSortEdit<'a> {
+    targets: &'a mut Vec<String>,
+    target_tags: &'a mut Vec<String>,
+    sort_by: &'a mut ItemSortBy,
+    sort_then: &'a mut ItemSortThen,
+    tag_priority: &'a mut Vec<String>,
+}
+
+fn target_sort_infos(
+    catalog: &ProgramCatalog,
+    targets: &[String],
+) -> Vec<sqyre_domain::ItemSortInfo> {
+    targets
+        .iter()
+        .map(|target| {
+            let (name, tags) = pickers::item_tooltip_parts(catalog, target);
+            let (rows, cols) = catalog
+                .item_meta(target)
+                .map(|m| (m.rows, m.cols))
+                .unwrap_or((1, 1));
+            sqyre_domain::ItemSortInfo::from_parts(target.clone(), name, rows, cols, tags)
+        })
+        .collect()
+}
+
+fn item_tag_suggestions(
+    catalog: &ProgramCatalog,
+    targets: &[String],
+    target_tags: &[String],
+) -> Vec<String> {
+    let mut tags = Vec::new();
+    for target in tree_chrome::sorted_image_search_targets(
+        catalog,
+        targets,
+        target_tags,
+        ItemSortBy::Manual,
+        ItemSortThen::ListOrder,
+        &[],
+    ) {
+        let (_, item_tags) = pickers::item_tooltip_parts(catalog, &target);
+        for tag in item_tags {
+            if !tags.iter().any(|t| t == &tag) {
+                tags.push(tag);
+            }
+        }
+    }
+    for tag in target_tags {
+        if let Some(name) = sqyre_domain::tag_filter_name(tag) {
+            if !tags.iter().any(|t| t == &name) {
+                tags.push(name);
+            }
+        }
+    }
+    tags.sort_by_key(|t| t.to_ascii_lowercase());
+    tags
 }
 
 fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {
     crate::theme::icon_button(ui, "☰").on_hover_text("Pick…")
+}
+
+/// Soft-wrap row count for a process path in the Focus Window tip.
+fn path_wrap_rows(available_width: f32, path: &str) -> usize {
+    // ~7px per monospace-ish char at default tip font size; clamp so the tip
+    // stays compact for short paths and readable for Steam/Proton-length ones.
+    let chars_per_line = (available_width / 7.0).floor().max(24.0) as usize;
+    let len = path.chars().count().max(1);
+    len.div_ceil(chars_per_line).clamp(1, 4)
 }
 
 /// Label + read-only value + pick button. Returns true when pick was clicked.
@@ -767,6 +996,23 @@ fn search_area_picker_row(
         h::SEARCH_AREA,
         paint,
         area,
+        CoordKind::SearchArea,
+        picker,
+    );
+}
+
+fn cells_picker_row(
+    ui: &mut egui::Ui,
+    paint: &mut CatalogPaint<'_>,
+    cells: &mut CoordinateRef,
+    picker: &mut ActivePicker,
+) {
+    coord_picker_row(
+        ui,
+        "Cells",
+        h::FOREACH_CELLS,
+        paint,
+        cells,
         CoordKind::SearchArea,
         picker,
     );
@@ -870,11 +1116,15 @@ pub(super) fn scalar_field(
         ui,
         label,
         &mut text,
-        known_vars,
-        is_dark,
-        W_VAR,
-        &validation,
-        help_text,
+        VarTheme {
+            known_vars,
+            is_dark,
+        },
+        VarFieldOpts {
+            desired_width: W_VAR,
+            validation: &validation,
+            help: help_text,
+        },
     );
     if text != before {
         *value = ScalarValue::parse_edit(&text);
@@ -899,25 +1149,27 @@ fn condition_operand_field(
         ui,
         label,
         &mut text,
-        known_vars,
-        is_dark,
-        W_VAR,
-        &validation,
-        help_text,
+        VarTheme {
+            known_vars,
+            is_dark,
+        },
+        VarFieldOpts {
+            desired_width: W_VAR,
+            validation: &validation,
+            help: help_text,
+        },
     );
     if text != before {
         *value = ScalarValue::String(text);
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn var_ref_field(
+pub(super) fn var_ref_field(
     ui: &mut egui::Ui,
     label: &str,
-    help_text: &str,
     value: &mut String,
-    known_vars: &KnownVariableNames,
-    is_dark: bool,
+    theme: VarTheme<'_>,
+    help_text: &str,
     desired_width: f32,
     active_macro: Option<&Macro>,
 ) {
@@ -926,11 +1178,12 @@ fn var_ref_field(
         ui,
         label,
         value,
-        known_vars,
-        is_dark,
-        desired_width,
-        &validation,
-        help_text,
+        theme,
+        VarFieldOpts {
+            desired_width,
+            validation: &validation,
+            help: help_text,
+        },
     );
 }
 
@@ -942,7 +1195,8 @@ fn string_list_field(ui: &mut egui::Ui, label: &str, values: &mut Vec<String>, h
     if help::tip(
         ui.add(
             egui::TextEdit::multiline(&mut text)
-                .desired_width(W_MULTILINE)
+                // Fill the tip section; a fixed width locks horizontal resize.
+                .desired_width(f32::INFINITY)
                 .desired_rows(3),
         ),
         help_text,
@@ -1010,12 +1264,16 @@ fn yaml_value_field(
         ui,
         label,
         &mut text,
-        known_vars,
-        is_dark,
-        W_MULTILINE,
+        VarTheme {
+            known_vars,
+            is_dark,
+        },
         2,
-        &validation,
-        h::SET_VALUE,
+        VarFieldOpts {
+            desired_width: f32::INFINITY,
+            validation: &validation,
+            help: h::SET_VALUE,
+        },
     );
 
     // Live preview.
@@ -1246,20 +1504,18 @@ fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
 /// Header row for repeatable list editors. Returns true when `+` was clicked.
 fn list_header(ui: &mut egui::Ui, title: &str, count: usize, add_help: &str) -> bool {
     let mut add = false;
-    let width = ui.available_width();
+    // Content-sized row (no `set_min_width(available)`) so the edit tip can
+    // shrink horizontally — see egui-window-size-ratchet.
     ui.horizontal(|ui| {
-        ui.set_min_width(width);
         ui.label(title);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .add(egui::Button::new(egui::RichText::new("+").color(theme::MACRO_START)).small())
-                .on_hover_text(add_help)
-                .clicked()
-            {
-                add = true;
-            }
-            ui.label(egui::RichText::new(format!("({count})")).weak());
-        });
+        ui.label(egui::RichText::new(format!("({count})")).weak());
+        if ui
+            .add(egui::Button::new(egui::RichText::new("+").color(theme::MACRO_START)).small())
+            .on_hover_text(add_help)
+            .clicked()
+        {
+            add = true;
+        }
     });
     add
 }
@@ -1336,10 +1592,12 @@ pub(super) fn list_columns_editor(
                 var_ref_field(
                     ui,
                     "Source",
-                    h::FOREACH_SOURCE,
                     &mut col.source,
-                    known_vars,
-                    is_dark,
+                    VarTheme {
+                        known_vars,
+                        is_dark,
+                    },
+                    h::FOREACH_SOURCE,
                     W_TEXT,
                     active_macro,
                 );

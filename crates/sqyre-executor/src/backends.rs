@@ -2,9 +2,9 @@
 
 pub use sqyre_match::ImageBuf;
 pub use sqyre_ports::{
-    clamp_search_rect, AutomationBackend, AutomationError, CaptureError, ContinueKeyWaiter,
-    CoordinateResolver, DesktopRect, IconStore, ItemMeta, MacroLookup, MoveOptions, PortError,
-    RgbCapture, ScreenCapturer, WindowFocuser,
+    clamp_search_rect, AutomationBackend, AutomationError, CaptureError, CollectionArea,
+    ContinueKeyWaiter, CoordinateResolver, DesktopRect, IconStore, ItemMeta, MacroLookup,
+    MoveOptions, PortError, RgbCapture, ScreenCapturer, WindowFocuser,
 };
 
 /// Run OCR on a preprocessed image buffer.

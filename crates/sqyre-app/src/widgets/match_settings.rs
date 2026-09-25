@@ -57,15 +57,15 @@ pub fn paint_match_settings(
     }
 }
 
-/// Match method combo only.
+/// Match method combo only (everyday [`MatchMethod::ui_label`] names).
 pub fn paint_match_method(ui: &mut egui::Ui, match_method: &mut MatchMethod) {
-    let mut method_label = match_method.label().to_string();
-    let method_opts: Vec<&str> = MatchMethod::ALL.iter().map(|m| m.label()).collect();
+    let mut method_label = match_method.ui_label().to_string();
+    let method_opts: Vec<&str> = MatchMethod::UI_ORDER.iter().map(|m| m.ui_label()).collect();
     combo_str(ui, "Method", h::IS_METHOD, &mut method_label, &method_opts);
-    if let Some(m) = MatchMethod::ALL
+    if let Some(m) = MatchMethod::UI_ORDER
         .iter()
         .copied()
-        .find(|m| m.label() == method_label)
+        .find(|m| m.ui_label() == method_label)
     {
         *match_method = m;
     }

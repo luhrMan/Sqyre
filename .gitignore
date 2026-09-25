@@ -21,15 +21,22 @@ notes.md
 /AppDir/
 /VERSION
 /target/
+/target-dhat/
 **/*.rs.bk
 
 # Linux packaging build artifacts
 /appimage-build/
 *.AppImage
+*.flatpak
 scripts/linux/packaging/appimage/sqyre.AppDir/
 scripts/linux/packaging/appimage/appimage-build/
+scripts/linux/packaging/appimage/.runtime-cache/
 # mktemp recipe from build-appimage.sh (e.g. .AppImageBuilder.XXXXXX.yml)
 scripts/linux/packaging/appimage/.AppImageBuilder.*.yml
+scripts/linux/packaging/flatpak/build-dir/
+scripts/linux/packaging/flatpak/repo/
+scripts/linux/packaging/flatpak/.flatpak-builder/
+scripts/linux/packaging/flatpak/.com.sqyre.app.*.yml
 
 # CI / local caches when using workspace paths
 .cache/
@@ -49,3 +56,9 @@ db.migrated.yaml
 # Local update-signing private key (never commit)
 .secrets/
 .cursor/rules/clean-git-messages.mdc
+mem.log
+dhat-heap.json
+
+docs/blog
+.cursor/cli.json
+.cursor/rules/no-cursor-attribution.mdc

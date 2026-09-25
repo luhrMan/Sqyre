@@ -2,8 +2,10 @@
 
 use super::helpers::{is_editor_listed_program, new_overlay_button_id, parse_i32, unique_name};
 use super::{DataEditor, DataEditorCtx, EditorTab, PendingConfirm};
+use crate::icon_cache::IconCache;
 use crate::overlay_icons;
 use crate::preview_tooltip::PreviewTooltipCache;
+use crate::window_types::ProcessIcon;
 use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue};
 use sqyre_persist::{
     Database, OverlayButtonConfig, ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramItem,
@@ -23,6 +25,100 @@ fn play_ui_delete_sound(settings: &UserSettings) {
     crate::sound::play_delete_sound_if(settings.play_ui_sounds, settings.sound_volume);
     #[cfg(target_arch = "wasm32")]
     let _ = settings;
+}
+
+fn set_program_identity(
+    catalog: &mut ProgramCatalog,
+    icons: &mut IconCache,
+    program: &str,
+    process_path: String,
+    window_title: String,
+    tags: Vec<String>,
+) -> Result<(), sqyre_persist::PersistError> {
+    let prev_path = catalog
+        .get(program)
+        .map(|p| p.process_path.clone())
+        .unwrap_or_default();
+    catalog.set_process_binding(program, process_path.clone(), window_title.clone())?;
+    catalog.set_program_tags(program, tags)?;
+    persist_running_program_icon(
+        catalog,
+        icons,
+        program,
+        &prev_path,
+        &process_path,
+        &window_title,
+    );
+    Ok(())
+}
+
+/// Save the Running-program OS icon under `images/process/{program}.png`.
+///
+/// Uses picker/OS-retained RGBA first; otherwise asks the OS again while the
+/// window may still be open. Empty binding is cleared by [`set_process_binding`].
+/// When the process path changes and no fresh icon is available, drop any stale PNG.
+fn persist_running_program_icon(
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    program: &str,
+    prev_process_path: &str,
+    process_path: &str,
+    window_title: &str,
+) {
+    let path = process_path.trim();
+    if path.is_empty() {
+        return;
+    }
+    let path_changed = prev_process_path.trim() != path;
+    let icon = icons
+        .process_icon_bytes(path)
+        .cloned()
+        .or_else(|| fetch_process_icon(path, window_title));
+    let Some(icon) = icon else {
+        if path_changed {
+            catalog.clear_process_icon(program);
+            icons.invalidate_path(&catalog.process_icon_path(program));
+        }
+        return;
+    };
+    if let Err(e) = save_process_icon_png(catalog, program, icon) {
+        crate::log::warn(format!("save process icon for {program:?}: {e}"));
+        return;
+    }
+    // Prefer the freshly saved file next time live OS lookup misses.
+    icons.invalidate_process(path);
+    icons.invalidate_path(&catalog.process_icon_path(program));
+}
+
+fn fetch_process_icon(process_path: &str, window_title: &str) -> Option<ProcessIcon> {
+    #[cfg(feature = "native-runtime")]
+    {
+        sqyre_capture::process_icon(process_path, window_title).map(|i| ProcessIcon {
+            width: i.width,
+            height: i.height,
+            rgba: i.rgba,
+        })
+    }
+    #[cfg(not(feature = "native-runtime"))]
+    {
+        let _ = (process_path, window_title);
+        None
+    }
+}
+
+fn save_process_icon_png(
+    catalog: &ProgramCatalog,
+    program: &str,
+    icon: ProcessIcon,
+) -> Result<(), String> {
+    let dest = catalog.process_icon_path(program);
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create process icons dir: {e}"))?;
+    }
+    let img = image::RgbaImage::from_raw(icon.width, icon.height, icon.rgba)
+        .ok_or_else(|| "process icon rgba does not match width×height".to_string())?;
+    img.save(&dest)
+        .map_err(|e| format!("save {}: {e}", dest.display()))
 }
 
 fn new_entity_name(form_name: &str, default_base: &str, exists: impl Fn(&str) -> bool) -> String {
@@ -60,6 +156,8 @@ impl DataEditor {
                             self.form_name = name;
                             self.form_process_path.clear();
                             self.form_window_title.clear();
+                            self.form_tags.clear();
+                            self.tag_draft.clear();
                             Ok("Created program.")
                         }
                         Err(e) => Err(e.to_string()),
@@ -106,6 +204,7 @@ impl DataEditor {
                 });
                 let pt = ProgramPoint {
                     name: name.clone(),
+                    monitor: 1,
                     x: ScalarValue::Int(0),
                     y: ScalarValue::Int(0),
                 };
@@ -133,6 +232,7 @@ impl DataEditor {
                 });
                 let sa = ProgramSearchArea {
                     name: name.clone(),
+                    monitor: 1,
                     left_x: ScalarValue::Int(0),
                     top_y: ScalarValue::Int(0),
                     right_x: ScalarValue::Int(100),
@@ -252,11 +352,11 @@ impl DataEditor {
                 }
             }
             EditorTab::ScreenCap => {
-                self.set_err("Use Save on the ScreenCap tab to write the preview screenshot.");
+                self.set_err("Use Save on the Screen capture tab to write the preview screenshot.");
                 return;
             }
             EditorTab::PixelCheck => {
-                self.set_err("PixelCheck is read-only — select an item to probe.");
+                self.set_err("Match probe is read-only — select an item to probe.");
                 return;
             }
             EditorTab::Overlay => {
@@ -417,6 +517,7 @@ impl DataEditor {
             macros,
             catalog,
             settings,
+            icons,
             ..
         } = env;
         self.clear_status();
@@ -436,23 +537,27 @@ impl DataEditor {
             EditorTab::Programs => {
                 if let Some(old) = self.selected_program.clone() {
                     if old == new_name {
-                        catalog
-                            .set_process_binding(
-                                &old,
-                                self.form_process_path.clone(),
-                                self.form_window_title.clone(),
-                            )
-                            .map(|_| ())
+                        set_program_identity(
+                            catalog,
+                            icons,
+                            &old,
+                            self.form_process_path.clone(),
+                            self.form_window_title.clone(),
+                            self.form_tags.clone(),
+                        )
                     } else {
                         if overwrite {
                             let _ = catalog.delete_program(&new_name);
                         }
-                        catalog.rename_program(&old, &new_name).map(|_| {
-                            let _ = catalog.set_process_binding(
+                        catalog.rename_program(&old, &new_name).and_then(|_| {
+                            set_program_identity(
+                                catalog,
+                                icons,
                                 &new_name,
                                 self.form_process_path.clone(),
                                 self.form_window_title.clone(),
-                            );
+                                self.form_tags.clone(),
+                            )?;
                             for m in macros.iter_mut() {
                                 m.rename_program(&old, &new_name);
                             }
@@ -464,16 +569,21 @@ impl DataEditor {
                             let _ = settings.rename_overlay_point_program(&old, &new_name);
                             overlay_settings_dirty = true;
                             self.selected_program = Some(new_name.clone());
+                            Ok(())
                         })
                     }
                 } else {
-                    catalog.create_program(&new_name).map(|_| {
-                        let _ = catalog.set_process_binding(
+                    catalog.create_program(&new_name).and_then(|_| {
+                        set_program_identity(
+                            catalog,
+                            icons,
                             &new_name,
                             self.form_process_path.clone(),
                             self.form_window_title.clone(),
-                        );
+                            self.form_tags.clone(),
+                        )?;
                         self.selected_program = Some(new_name.clone());
+                        Ok(())
                     })
                 }
             }
@@ -486,9 +596,14 @@ impl DataEditor {
                 &new_name,
                 overwrite,
             ),
-            EditorTab::SearchAreas => {
-                self.update_search_area(catalog, macros, &new_name, overwrite)
-            }
+            EditorTab::SearchAreas => self.update_search_area(
+                catalog,
+                macros,
+                settings,
+                &mut overlay_settings_dirty,
+                &new_name,
+                overwrite,
+            ),
             EditorTab::Masks => self.update_mask(catalog, &new_name, overwrite),
             EditorTab::Collections => self.update_collection(catalog, macros, &new_name, overwrite),
             EditorTab::Atlases => self.update_atlas(catalog, macros, &new_name, overwrite),
@@ -574,6 +689,7 @@ impl DataEditor {
             .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
         let pt = ProgramPoint {
             name: new_name.to_string(),
+            monitor: self.form_monitor.max(1),
             x: ScalarValue::parse_edit(&self.form_x),
             y: ScalarValue::parse_edit(&self.form_y),
         };
@@ -603,6 +719,8 @@ impl DataEditor {
         &mut self,
         catalog: &mut ProgramCatalog,
         macros: &mut [Macro],
+        settings: &mut UserSettings,
+        overlay_settings_dirty: &mut bool,
         new_name: &str,
         overwrite: bool,
     ) -> Result<(), sqyre_persist::PersistError> {
@@ -612,6 +730,7 @@ impl DataEditor {
             .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
         let sa = ProgramSearchArea {
             name: new_name.to_string(),
+            monitor: self.form_monitor.max(1),
             left_x: ScalarValue::parse_edit(&self.form_left),
             top_y: ScalarValue::parse_edit(&self.form_top),
             right_x: ScalarValue::parse_edit(&self.form_right),
@@ -625,6 +744,9 @@ impl DataEditor {
                 catalog.rename_search_area(&prog, &old, new_name)?;
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::SearchArea, &prog, &old, new_name);
+                }
+                if settings.rename_overlay_search_area_entity(&prog, &old, new_name) {
+                    *overlay_settings_dirty = true;
                 }
                 self.selected_entity = Some(new_name.to_string());
             }
@@ -842,6 +964,9 @@ impl DataEditor {
                     return;
                 };
                 catalog.delete_search_area(&prog, &name).map(|_| {
+                    if settings.clear_overlay_search_area_refs(&prog, &name) {
+                        let _ = self.persist_overlay_settings(settings);
+                    }
                     self.selected_entity = None;
                     self.form_name.clear();
                 })

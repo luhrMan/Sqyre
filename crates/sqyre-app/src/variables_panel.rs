@@ -24,6 +24,8 @@ pub struct VariablesPanelUi {
     bottom_tab: BottomTab,
     /// Cached display count for the Built-ins tab (avoids opening X11 every frame).
     cached_monitor_count: Option<usize>,
+    declared_filter: String,
+    runtime_filter: String,
 }
 
 #[derive(Debug, Clone)]
@@ -60,6 +62,8 @@ impl VariablesPanelUi {
         self.editing = None;
         self.status = None;
         self.status_error = false;
+        self.declared_filter.clear();
+        self.runtime_filter.clear();
     }
 
     /// Cached display count for the Built-ins tab (queries capture once).
@@ -84,6 +88,7 @@ impl VariablesPanelUi {
         enabled: bool,
         runtime_vars: &SharedRuntimeVars,
         running: bool,
+        pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) -> bool {
         if !self.open {
             return false;
@@ -100,6 +105,8 @@ impl VariablesPanelUi {
                 .default_height(480.0)
                 .min_size([360.0, 320.0]),
             ctx,
+            egui::Id::new("sqyre_variables_panel"),
+            pending_scale,
         )
         .show(ctx, |ui| {
             // Split remaining height between declared list (top) and Runtime/Built-ins.
@@ -132,13 +139,14 @@ impl VariablesPanelUi {
     }
 
     fn show_runtime(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         runtime_vars: &SharedRuntimeVars,
         running: bool,
         max_h: f32,
     ) {
-        let snap = runtime_vars.snapshot();
+        let mut snap = runtime_vars.snapshot();
+        snap.sort_by(|(a, _), (b, _)| crate::macro_meta::cmp_display_name(a, b));
         crate::widgets::heading_with_count(
             ui,
             if running {
@@ -156,19 +164,36 @@ impl VariablesPanelUi {
             });
             return;
         }
-        let list_h = (max_h - 28.0).max(60.0);
-        crate::pickers::scroll_vertical()
-            .auto_shrink([false, false])
-            .max_height(list_h)
-            .show(ui, |ui| {
-                for (name, value) in snap {
-                    ui.horizontal(|ui| {
-                        ui.monospace(name);
-                        ui.label("=");
-                        ui.weak(value);
-                    });
-                }
-            });
+        ui.add(
+            egui::TextEdit::singleline(&mut self.runtime_filter)
+                .desired_width(f32::INFINITY)
+                .hint_text("Filter runtime variables…"),
+        );
+        let q = self.runtime_filter.trim().to_ascii_lowercase();
+        let filtered: Vec<_> = snap
+            .into_iter()
+            .filter(|(name, value)| {
+                q.is_empty()
+                    || name.to_ascii_lowercase().contains(&q)
+                    || value.to_ascii_lowercase().contains(&q)
+            })
+            .collect();
+        let list_h = (max_h - 52.0).max(60.0);
+        let list_w = crate::widgets::visible_width(ui);
+        crate::pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+            ui.set_max_width(list_w);
+            if filtered.is_empty() {
+                ui.weak("No matching variables.");
+                return;
+            }
+            for (name, value) in filtered {
+                ui.horizontal(|ui| {
+                    ui.monospace(name);
+                    ui.label("=");
+                    ui.weak(value);
+                });
+            }
+        });
     }
 
     fn show_builtins(&self, ui: &mut egui::Ui, num_monitors: usize, max_h: f32) {
@@ -181,17 +206,16 @@ impl VariablesPanelUi {
         ui.add_space(4.0);
         let catalog = builtin_variable_catalog(num_monitors);
         let list_h = (max_h - 28.0).max(60.0);
-        crate::pickers::scroll_vertical()
-            .auto_shrink([false, false])
-            .max_height(list_h)
-            .show(ui, |ui| {
-                for info in &catalog {
-                    ui.horizontal(|ui| {
-                        ui.monospace(&info.name);
-                        ui.weak(info.description);
-                    });
-                }
-            });
+        let list_w = crate::widgets::visible_width(ui);
+        crate::pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+            ui.set_max_width(list_w);
+            for info in &catalog {
+                ui.horizontal(|ui| {
+                    ui.monospace(&info.name);
+                    ui.weak(info.description);
+                });
+            }
+        });
     }
 
     fn body(&mut self, ui: &mut egui::Ui, macro_: &mut Macro, max_h: f32) -> bool {
@@ -229,6 +253,11 @@ impl VariablesPanelUi {
         ui.label(
             "Initial values seed the runtime store at macro start. Action outputs appear in Live runtime while running.",
         );
+        ui.add(
+            egui::TextEdit::singleline(&mut self.declared_filter)
+                .desired_width(f32::INFINITY)
+                .hint_text("Filter declared variables…"),
+        );
         ui.separator();
 
         let mut remove_idx: Option<usize> = None;
@@ -237,46 +266,56 @@ impl VariablesPanelUi {
         // Reserve space for optional edit form / status below the list.
         let edit_reserve = if self.editing.is_some() { 168.0 } else { 0.0 };
         let status_reserve = if self.status.is_some() { 24.0 } else { 0.0 };
-        let list_h = (max_h - 56.0 - edit_reserve - status_reserve).max(80.0);
+        let list_h = (max_h - 80.0 - edit_reserve - status_reserve).max(80.0);
+        let list_w = crate::widgets::visible_width(ui);
+        let declared_q = self.declared_filter.trim().to_ascii_lowercase();
 
-        crate::pickers::scroll_vertical()
-            .auto_shrink([false, false])
-            .max_height(list_h)
-            .show(ui, |ui| {
-                if macro_.variable_decls.is_empty() {
-                    ui.weak("No declared variables yet.");
-                    return;
+        crate::pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+            ui.set_max_width(list_w);
+            if macro_.variable_decls.is_empty() {
+                ui.weak("No declared variables yet — click + Add.");
+                return;
+            }
+            let mut any = false;
+            for (i, d) in macro_.variable_decls.iter().enumerate() {
+                if !declared_q.is_empty()
+                    && !d.name.to_ascii_lowercase().contains(&declared_q)
+                    && !d.description.to_ascii_lowercase().contains(&declared_q)
+                {
+                    continue;
                 }
-                for (i, d) in macro_.variable_decls.iter().enumerate() {
-                    ui.horizontal(|ui| {
-                        ui.monospace(&d.name);
-                        ui.label(d.type_.as_str());
-                        if !d.initial_value.trim().is_empty() {
-                            ui.weak(format!("= {}", d.initial_value));
-                        }
-                        if !d.description.trim().is_empty() {
-                            ui.weak(&d.description);
-                        }
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui
-                                .add(
-                                    egui::Button::new(
-                                        egui::RichText::new("Remove")
-                                            .color(crate::theme::MACRO_STOP),
-                                    )
-                                    .small(),
+                any = true;
+                ui.horizontal(|ui| {
+                    ui.monospace(&d.name);
+                    ui.label(d.type_.as_str());
+                    if !d.initial_value.trim().is_empty() {
+                        ui.weak(format!("= {}", d.initial_value));
+                    }
+                    if !d.description.trim().is_empty() {
+                        ui.weak(&d.description);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("Remove").color(crate::theme::MACRO_STOP),
                                 )
-                                .clicked()
-                            {
-                                remove_idx = Some(i);
-                            }
-                            if ui.small_button("Edit").clicked() {
-                                start_edit = Some(i);
-                            }
-                        });
+                                .small(),
+                            )
+                            .clicked()
+                        {
+                            remove_idx = Some(i);
+                        }
+                        if ui.small_button("Edit").clicked() {
+                            start_edit = Some(i);
+                        }
                     });
-                }
-            });
+                });
+            }
+            if !any {
+                ui.weak("No matching variables.");
+            }
+        });
 
         if let Some(i) = start_edit {
             if let Some(d) = macro_.variable_decls.get(i).cloned() {

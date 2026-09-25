@@ -87,19 +87,17 @@ pub enum AddVariantError {
     Other(String),
 }
 
-pub fn add_variant(
+fn prepare_new_variant(
     catalog: &ProgramCatalog,
     program: &str,
     item: &str,
     variant_name: &str,
-    source: &Path,
-) -> Result<String, AddVariantError> {
+) -> Result<(String, PathBuf), AddVariantError> {
     if program.is_empty() || item.is_empty() {
         return Err(AddVariantError::Other(
             "program name and item name cannot be empty".into(),
         ));
     }
-    validate_png_file(source).map_err(AddVariantError::Other)?;
     let existing = variant_names(catalog, program, item);
     let name = if existing.is_empty() {
         "Original".to_string()
@@ -126,7 +124,33 @@ pub fn add_variant(
     std::fs::create_dir_all(&dest_dir)
         .map_err(|e| AddVariantError::Other(format!("create icons dir: {e}")))?;
     let dest = variant_path(catalog, program, item, &name);
+    Ok((name, dest))
+}
+
+pub fn add_variant(
+    catalog: &ProgramCatalog,
+    program: &str,
+    item: &str,
+    variant_name: &str,
+    source: &Path,
+) -> Result<String, AddVariantError> {
+    validate_png_file(source).map_err(AddVariantError::Other)?;
+    let (name, dest) = prepare_new_variant(catalog, program, item, variant_name)?;
     std::fs::copy(source, &dest).map_err(|e| AddVariantError::Other(format!("copy file: {e}")))?;
+    invalidate_item_templates(catalog, program, item);
+    Ok(name)
+}
+
+/// Write `img` as a new variant PNG. The first variant is always named `Original`.
+pub fn add_variant_image(
+    catalog: &ProgramCatalog,
+    program: &str,
+    item: &str,
+    img: &image::RgbaImage,
+) -> Result<String, AddVariantError> {
+    let (name, dest) = prepare_new_variant(catalog, program, item, "Original")?;
+    img.save(&dest)
+        .map_err(|e| AddVariantError::Other(format!("save png: {e}")))?;
     invalidate_item_templates(catalog, program, item);
     Ok(name)
 }
@@ -178,9 +202,10 @@ pub fn delete_variant(
 }
 
 fn invalidate_item_templates(catalog: &ProgramCatalog, program: &str, item: &str) {
-    let _prefix = catalog.icons_dir(program).join(item);
+    let prefix = catalog.icons_dir(program).join(item);
+    sqyre_persist::invalidate_icon_fs_cache_under(&prefix);
     #[cfg(feature = "native-runtime")]
-    invalidate_search_templates_under(&_prefix);
+    invalidate_search_templates_under(&prefix);
 }
 
 #[cfg(test)]
@@ -207,5 +232,17 @@ mod tests {
         let name = add_variant(&cat, "Prog", "Sword", "ignored", &src).unwrap();
         assert_eq!(name, "Original");
         assert!(variant_path(&cat, "Prog", "Sword", "Original").is_file());
+    }
+
+    #[test]
+    fn add_variant_image_writes_original() {
+        let dir = tempdir().unwrap();
+        let cat = catalog_with_icons(dir.path());
+        let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([10, 20, 30, 255]));
+        let name = add_variant_image(&cat, "Prog", "Potion", &img).unwrap();
+        assert_eq!(name, "Original");
+        let path = variant_path(&cat, "Prog", "Potion", "Original");
+        assert!(path.is_file());
+        assert!(validate_png_file(&path).is_ok());
     }
 }

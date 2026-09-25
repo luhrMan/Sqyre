@@ -81,6 +81,16 @@ impl Macro {
                         changed = true;
                     }
                 }
+                ActionKind::ForEachCell { cells, .. } => {
+                    if !cells.is_collection() {
+                        return;
+                    }
+                    let next = rename_coordinate_entity(cells, program, old_name, new_name);
+                    if next != *cells {
+                        *cells = next;
+                        changed = true;
+                    }
+                }
                 ActionKind::NavigateSelect(data) => {
                     if data.program == program && data.inputs.collection == old_name {
                         data.inputs.collection = new_name.to_string();
@@ -156,6 +166,13 @@ impl Macro {
                 let next = rename_coordinate_program(search_area, old_program, new_program);
                 if next != *search_area {
                     *search_area = next;
+                    changed = true;
+                }
+            }
+            ActionKind::ForEachCell { cells, .. } => {
+                let next = rename_coordinate_program(cells, old_program, new_program);
+                if next != *cells {
+                    *cells = next;
                     changed = true;
                 }
             }
@@ -281,10 +298,14 @@ mod tests {
             kind: ActionKind::ImageSearch {
                 name: String::new(),
                 targets: targets.into_iter().map(str::to_string).collect(),
+                target_tags: Vec::new(),
                 search_area: CoordinateRef(area.into()),
                 tolerance: 0.9,
                 blur: 0,
                 match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
                 detection: DetectionBranch::default(),
             },
         }

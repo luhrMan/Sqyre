@@ -53,6 +53,7 @@ pub struct TipUiCtx<'a> {
     pub theme: VarTheme<'a>,
     pub bridges: RecordBridges<'a>,
     pub compact_program_headers: bool,
+    pub pending_scale: Option<&'a crate::widgets::ViewportScaleEvent>,
 }
 
 /// Bundled args for [`crate::action_tooltip::edit::paint_edit_fields`].

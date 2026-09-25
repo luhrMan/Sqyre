@@ -43,3 +43,8 @@ pub fn owns(display: *mut c_void) -> bool {
     let key = display as usize;
     SECONDARY.lock().contains(&key)
 }
+
+/// How many Sqyre-owned secondary `Display*`s are currently registered.
+pub fn count() -> usize {
+    SECONDARY.lock().len()
+}

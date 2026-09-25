@@ -4,23 +4,51 @@ use sqyre_domain::{MaskShape, ScalarValue};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ProgramPoint {
     pub name: String,
+    /// 1-based logical monitor slot; coords are relative to that monitor's origin.
+    pub monitor: u32,
     pub x: ScalarValue,
     pub y: ScalarValue,
 }
 
-#[derive(Debug, Clone, Default)]
+impl Default for ProgramPoint {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            monitor: 1,
+            x: ScalarValue::default(),
+            y: ScalarValue::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ProgramSearchArea {
     pub name: String,
+    /// 1-based logical monitor slot; corners are relative to that monitor's origin.
+    pub monitor: u32,
     pub left_x: ScalarValue,
     pub top_y: ScalarValue,
     pub right_x: ScalarValue,
     pub bottom_y: ScalarValue,
 }
 
-#[derive(Debug, Clone, Default)]
+impl Default for ProgramSearchArea {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            monitor: 1,
+            left_x: ScalarValue::default(),
+            top_y: ScalarValue::default(),
+            right_x: ScalarValue::default(),
+            bottom_y: ScalarValue::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct ProgramItem {
     pub name: String,
     pub mask: String,
@@ -28,6 +56,19 @@ pub struct ProgramItem {
     pub grid_cols: i32,
     pub grid_rows: i32,
     pub tags: Vec<String>,
+}
+
+impl Default for ProgramItem {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            mask: String::new(),
+            stack_max: 0,
+            grid_cols: 1,
+            grid_rows: 1,
+            tags: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -85,6 +126,9 @@ pub struct ProgramData {
     /// Window title captured with the process pick.
     /// With `process_path`, overlay + Focus Window require both (disambiguates shared exes).
     pub window_title: String,
+    /// Macro tags auto-selected for hotkeys when this program owns focus
+    /// (same string space as [`sqyre_domain::Macro::tags`]).
+    pub tags: Vec<String>,
     /// resolution key → points
     pub points: BTreeMap<String, BTreeMap<String, ProgramPoint>>,
     pub search_areas: BTreeMap<String, BTreeMap<String, ProgramSearchArea>>,
@@ -96,6 +140,9 @@ pub struct ProgramData {
     pub atlases: BTreeMap<String, ProgramAtlas>,
 }
 
+/// One display in virtual-desktop coordinates (`x`, `y`, `w`, `h`), sorted slot order.
+pub type MonitorRect = (i32, i32, i32, i32);
+
 #[derive(Debug, Clone)]
 pub struct ProgramCatalog {
     pub(super) programs: BTreeMap<String, ProgramData>,
@@ -105,6 +152,9 @@ pub struct ProgramCatalog {
     pub(super) resolution_key: String,
     /// Live primary-monitor DPI scale (`dpi/96`). Used when remapping stored coords.
     pub(super) runtime_scale: f32,
+    /// Live monitor layout for resolving slot-relative coords to absolute desktop pixels.
+    /// Empty → treat as a single `(0,0,1920,1080)` slot for headless / unset layouts.
+    pub(super) monitor_rects: Vec<MonitorRect>,
     /// Bumped on structural mutations; UI caches key off this.
     pub(super) generation: u64,
 }
@@ -116,6 +166,7 @@ impl Default for ProgramCatalog {
             images_root: None,
             resolution_key: String::new(),
             runtime_scale: 1.0,
+            monitor_rects: Vec::new(),
             generation: 0,
         }
     }

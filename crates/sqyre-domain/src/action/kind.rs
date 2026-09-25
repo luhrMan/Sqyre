@@ -1,8 +1,9 @@
 //! Action kind enum and tree-shape helpers.
 
 use super::{
-    Action, ConditionBlock, CoordinateRef, DetectionBranch, ListColumn, LoopJumpMode, MatchMethod,
-    MouseButton, NavigateSelectData, PressState, ScalarValue, VariableAssignment,
+    Action, ConditionBlock, CoordinateRef, DetectionBranch, ItemSortBy, ItemSortThen, ListColumn,
+    LoopJumpMode, MatchMethod, MouseButton, NavigateSelectData, PressState, ScalarValue,
+    VariableAssignment,
 };
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,10 +26,19 @@ pub enum ActionKind {
     ImageSearch {
         name: String,
         targets: Vec<String>,
+        /// Catalog item tags: every item with any of these tags is searched
+        /// (union with [`targets`](Self::ImageSearch::targets), resolved at run time).
+        target_tags: Vec<String>,
         search_area: CoordinateRef,
         tolerance: f64,
         blur: i32,
         match_method: MatchMethod,
+        /// Primary order for matching items and for the Items grid display.
+        sort_by: ItemSortBy,
+        /// Within-group order after [`sort_by`](Self::ImageSearch::sort_by).
+        sort_then: ItemSortThen,
+        /// Tag priority when sort_by is Tags.
+        tag_priority: Vec<String>,
         detection: DetectionBranch,
     },
     Ocr {
@@ -56,6 +66,13 @@ pub enum ActionKind {
         sources: Vec<ListColumn>,
         start_row: ScalarValue,
         end_row: ScalarValue,
+        subactions: Vec<Action>,
+    },
+    /// Runs nested actions once per 1×1 cell in a Collection range.
+    ForEachCell {
+        name: String,
+        /// Must be a Collection cell range (`Program~Name@r1,c1-r2,c2`).
+        cells: CoordinateRef,
         subactions: Vec<Action>,
     },
     Wait {
@@ -135,6 +152,7 @@ impl ActionKind {
                 | Self::Ocr { .. }
                 | Self::FindPixel { .. }
                 | Self::ForEachRow { .. }
+                | Self::ForEachCell { .. }
                 | Self::NavigateSelect(_)
                 | Self::NavigateKey { .. }
         )
@@ -201,6 +219,7 @@ impl ActionKind {
             | Self::While { subactions, .. }
             | Self::Conditional { subactions, .. }
             | Self::ForEachRow { subactions, .. }
+            | Self::ForEachCell { subactions, .. }
             | Self::NavigateKey { subactions, .. } => subactions,
             Self::ImageSearch { detection, .. }
             | Self::Ocr { detection, .. }
@@ -216,6 +235,7 @@ impl ActionKind {
             | Self::While { subactions, .. }
             | Self::Conditional { subactions, .. }
             | Self::ForEachRow { subactions, .. }
+            | Self::ForEachCell { subactions, .. }
             | Self::NavigateKey { subactions, .. } => Some(subactions),
             Self::ImageSearch { detection, .. }
             | Self::Ocr { detection, .. }
@@ -233,7 +253,8 @@ impl ActionKind {
             | Self::ImageSearch { name, .. }
             | Self::Ocr { name, .. }
             | Self::FindPixel { name, .. }
-            | Self::ForEachRow { name, .. } => named_branch_label(label, name),
+            | Self::ForEachRow { name, .. }
+            | Self::ForEachCell { name, .. } => named_branch_label(label, name),
             Self::While { condition, .. } | Self::Conditional { condition, .. } => {
                 named_branch_label(label, &condition.name)
             }

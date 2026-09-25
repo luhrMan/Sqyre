@@ -1,5 +1,5 @@
 use image::{Rgba, RgbaImage};
-use sqyre_ports::{CaptureError, DesktopRect, ScreenCapturer};
+use sqyre_ports::{CaptureError, DesktopRect, RgbCapture, ScreenCapturer};
 
 /// Capturer that always fails — for headless CI / tests without display.
 #[derive(Debug, Default)]
@@ -11,6 +11,14 @@ impl NullCapturer {
     }
 
     pub fn capture_rect_ref(&self, _rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        Err(CaptureError::Message("NullCapturer: no display".into()))
+    }
+
+    /// Overlay visibility polls use this on every `OsCapturer`; stubs never capture.
+    pub fn capture_rect_rgb_quiet_ref(
+        &self,
+        _rect: DesktopRect,
+    ) -> Result<(RgbCapture, bool), CaptureError> {
         Err(CaptureError::Message("NullCapturer: no display".into()))
     }
 

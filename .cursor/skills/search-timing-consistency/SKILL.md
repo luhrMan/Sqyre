@@ -50,6 +50,7 @@ Every wait/repeat poll is a full attempt. Minimize work **per attempt** and **ac
 | Match with `*_with_prepared` / preblurred APIs | Call raw `match_template` in the executor hot path |
 | Parallelize independent variant jobs (`rayon`) when already the pattern | Serialize variant matches without a measured reason |
 | `clear_search_cache()` when a macro run finishes (`app_run`) | Grow unbounded process cache across runs |
+| Rely on `clear_search_cache` → `clear_match_scratch` for Rayon FFT TLS | Leave full-screen DFT buffers in worker TLS across runs |
 | Keep pipeline image clones behind `log_images_enabled()` | Clone full frames for logs on every attempt |
 | Prefer smaller search areas / early exits on stop | Full-desktop search + ignore `stop_flag` mid-parallel |
 

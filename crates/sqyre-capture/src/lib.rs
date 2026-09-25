@@ -40,11 +40,11 @@ mod x11_secondary;
 mod x11_snapshot_overlay;
 
 pub use diag::{
-    cap_log, disk_logging_enabled, event_log, mark_site, note, process_exiting, read_last_site,
-    set_disk_logging, set_log_dir, set_process_exiting, CRASH_LOG_FILE, DIAG_LOG_FILE,
-    LAST_SITE_FILE,
+    cap_log, disk_logging_enabled, event_log, log_dir, mark_site, note, process_exiting,
+    read_last_site, set_disk_logging, set_log_dir, set_process_exiting, CRASH_LOG_FILE,
+    DIAG_LOG_FILE, LAST_SITE_FILE,
 };
-pub use error::{linux_session_capture_warning, CaptureError};
+pub use error::{linux_session_capture_warning, CaptureError, NotReady};
 #[cfg(target_os = "linux")]
 pub use linux::{
     reset_shared_capturer, shared_capturer, shared_capturer_if_ready, shared_capturer_is_opening,
@@ -218,11 +218,20 @@ pub const PROCESS_ICON_TARGET_PX: u32 = 48;
 
 /// Best-effort icon for a bound process (`process_path` + optional `window_title`).
 ///
-/// Linux: `_NET_WM_ICON` from a matching open window. Windows: icon resource from the
-/// executable (works even when the app is not running). Other platforms: always `None`.
+/// Linux: `_NET_WM_ICON` from a matching open window, then freedesktop theme icons.
+/// Windows: icon resource from the executable (works even when the app is not running).
+/// Other platforms: always `None`.
 #[cfg(target_os = "linux")]
 pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIcon> {
-    x11_focus::process_icon(process_path, window_title)
+    if let Some(icon) = x11_focus::process_icon(process_path, window_title) {
+        return Some(icon);
+    }
+    let path = process_path.trim();
+    if path.is_empty() {
+        return None;
+    }
+    linux::wayland::desktop_icon_for_app_id(path)
+        .or_else(|| linux::wayland::desktop_icon_for_pid(0, path))
 }
 
 #[cfg(target_os = "windows")]
@@ -265,11 +274,57 @@ fn usable_desktop_rects(
         rects.into_iter().filter(|r| r.w > 1 && r.h > 1).collect();
     usable.sort_by_key(|r| (r.x, r.y, r.w, r.h));
     usable.dedup();
-    usable
+    // OS primary display becomes Monitor 1 (GNOME / Windows Settings numbering).
+    with_primary_monitor_first(usable, query_os_primary_rect())
 }
 
-/// Live ScreenCast/X11 capturer rects, preferring Linux Xinerama when it reports
-/// more outputs than the portal currently has (e.g. one stream failed to connect).
+/// Move `primary` to index 0; remaining monitors keep their relative order.
+/// Used so Sqyre slot 1 matches the OS "primary" / Monitor 1 display.
+pub(crate) fn with_primary_monitor_first(
+    mut rects: Vec<sqyre_ports::DesktopRect>,
+    primary: Option<sqyre_ports::DesktopRect>,
+) -> Vec<sqyre_ports::DesktopRect> {
+    if rects.len() < 2 {
+        return rects;
+    }
+    let Some(primary) = primary else {
+        return rects;
+    };
+    let idx = rects.iter().position(|r| *r == primary).or_else(|| {
+        rects
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.w == primary.w && r.h == primary.h)
+            .min_by_key(|(_, r)| r.x.abs_diff(primary.x) as u64 + r.y.abs_diff(primary.y) as u64)
+            .map(|(i, _)| i)
+    });
+    if let Some(i) = idx {
+        if i != 0 {
+            let p = rects.remove(i);
+            rects.insert(0, p);
+        }
+    }
+    rects
+}
+
+fn query_os_primary_rect() -> Option<sqyre_ports::DesktopRect> {
+    #[cfg(target_os = "linux")]
+    {
+        crate::x11_capture::query_x11_primary_rect()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        crate::win_capture::query_windows_primary_rect()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+/// Live ScreenCast/X11 capturer rects. On Linux, prefer Xinerama/RandR when it
+/// reports **more** outputs than the portal (partial ScreenCast streams must not
+/// shrink the logical slot map and reseed General).
 pub fn preferred_monitor_rects() -> Vec<sqyre_ports::DesktopRect> {
     let capture = shared_capturer_nonblocking()
         .ok()
@@ -280,25 +335,45 @@ pub fn preferred_monitor_rects() -> Vec<sqyre_ports::DesktopRect> {
     let x11 = usable_desktop_rects(physical_monitor_rects());
     #[cfg(not(target_os = "linux"))]
     let x11: Vec<sqyre_ports::DesktopRect> = Vec::new();
-    if x11.len() > capture.len() {
+    // Prefer the richer layout. Incomplete portal (1 of N streams) must not win.
+    let use_x11 = x11.len() > capture.len();
+    if use_x11 {
         x11
-    } else {
+    } else if !capture.is_empty() {
         capture
+    } else {
+        x11
     }
 }
 
-/// Leftmost live monitor resolution key (`"{w}x{h}"`).
-/// Uses capturer monitor rects sorted by position (shared outputs on portal),
-/// not whichever screen the Sqyre window is on.
+/// Sorted 1-based monitor slots from [`preferred_monitor_rects`].
+pub fn monitor_slots() -> Vec<sqyre_ports::MonitorSlot> {
+    preferred_monitor_rects()
+        .into_iter()
+        .enumerate()
+        .map(|(i, rect)| sqyre_ports::MonitorSlot {
+            index: (i + 1) as u32,
+            rect,
+        })
+        .collect()
+}
+
+/// Slot-1 live monitor resolution key (`"{w}x{h}"`).
+/// Uses [`preferred_monitor_rects`] so the key matches logical Monitor 1
+/// (OS primary-first on Linux/Windows).
 /// Returns `None` when no display is available (headless / CI).
 ///
 /// Does not block on a portal ScreenCast picker: if opening may block and the
 /// capturer is not ready yet, returns `None`.
 pub fn main_monitor_resolution_key() -> Option<String> {
-    let capturer = shared_capturer_nonblocking().ok()?;
-    let mut rects = capturer.monitor_rects_ref().ok()?;
-    rects.retain(|r| r.w > 0 && r.h > 0);
-    rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
+    let mut rects = preferred_monitor_rects();
+    if rects.is_empty() {
+        let capturer = shared_capturer_nonblocking().ok()?;
+        rects = capturer.monitor_rects_ref().ok()?;
+        rects.retain(|r| r.w > 0 && r.h > 0);
+        rects.sort_by_key(|r| (r.x, r.y, r.w, r.h));
+        rects = with_primary_monitor_first(rects, query_os_primary_rect());
+    }
     let r = rects.first()?;
     Some(format!("{}x{}", r.w, r.h))
 }
@@ -362,6 +437,32 @@ pub fn portal_cursor_position() -> Option<(i32, i32)> {
     None
 }
 
+/// Absolute desktop cursor in physical pixels (portal → X11 capturer → Win32).
+pub fn desktop_cursor_position() -> Option<(i32, i32)> {
+    if let Some(pos) = portal_cursor_position() {
+        return Some(pos);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(Ok(cap)) = shared_capturer_if_ready() {
+            if let Ok(pos) = cap.pointer_position() {
+                return Some(pos);
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::Foundation::POINT;
+        use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+        let mut pt = POINT::default();
+        // SAFETY: `pt` is a valid out-param for GetCursorPos.
+        if unsafe { GetCursorPos(&mut pt) }.is_ok() {
+            return Some((pt.x, pt.y));
+        }
+    }
+    None
+}
+
 /// Show the portal ScreenCast picker again (Wayland). No-op on other targets.
 pub fn request_portal_screencast_picker() {
     #[cfg(all(target_os = "linux", feature = "portal-capture"))]
@@ -397,6 +498,35 @@ pub fn nudge_portal_capture_after_ui_hide() {
 #[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
 pub fn nudge_portal_capture_after_ui_hide() {}
 
+/// Release the portal PipeWire CPU frame mirror after a macro (no-op if unused / X11).
+///
+/// Stops further frame copies until the next capture wait so the full-desktop RGBA
+/// buffer does not keep RSS elevated while idle. Streams stay connected.
+pub fn release_capture_frame_cache() {
+    #[cfg(target_os = "linux")]
+    {
+        let Some(Ok(cap)) = shared_capturer_if_ready() else {
+            return;
+        };
+        cap.release_cpu_frame_cache();
+    }
+}
+
+/// Current portal CPU frame-cache size in bytes (0 if unused / released / non-portal).
+pub fn capture_frame_cache_bytes() -> usize {
+    #[cfg(target_os = "linux")]
+    {
+        match shared_capturer_if_ready() {
+            Some(Ok(cap)) => cap.cpu_frame_cache_bytes(),
+            _ => 0,
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        0
+    }
+}
+
 /// [`shared_capturer`] unless that would wait on a portal picker from this thread.
 ///
 /// Use from the UI thread. The deferred Linux probe (or a worker) should call
@@ -406,13 +536,9 @@ pub fn shared_capturer_nonblocking() -> Result<std::sync::Arc<OsCapturer>, Captu
         match shared_capturer_if_ready() {
             Some(r) => r,
             None if shared_capturer_is_opening() || portal_screencast_granted() => {
-                Err(CaptureError::Message(
-                    "screen capture is starting (waiting for the first frame)".into(),
-                ))
+                Err(NotReady::AwaitingFirstFrame.into())
             }
-            None => Err(CaptureError::Message(
-                "screen capture is still waiting for portal permission".into(),
-            )),
+            None => Err(NotReady::AwaitingPortalPermission.into()),
         }
     } else {
         shared_capturer()
@@ -654,10 +780,16 @@ pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
     let got = win.process_path.trim();
     if got.is_empty() {
         let name = win.process_name.trim();
-        return !name.is_empty()
+        if !name.is_empty()
             && (name.eq_ignore_ascii_case(want)
                 || name.eq_ignore_ascii_case(&want_base)
-                || wine_preloader_names_equivalent(name, &want_base));
+                || wine_preloader_names_equivalent(name, &want_base))
+        {
+            return true;
+        }
+        // Flatpak often cannot resolve `/proc` for other sandboxes; the picker may
+        // have stored the window title or WM_CLASS as the process key.
+        return win.title.trim().eq_ignore_ascii_case(want);
     }
     if got.eq_ignore_ascii_case(want) {
         return true;
@@ -671,7 +803,11 @@ pub fn window_matches_process(win: &WindowInfo, process_path: &str) -> bool {
     }
     // Proton/Wine: active window may report `wine-preloader` while the catalog was
     // bound against `wine64-preloader` (or the reverse) under the same tree.
-    wine_preloader_names_equivalent(&want_base, &got_base)
+    if wine_preloader_names_equivalent(&want_base, &got_base) {
+        return true;
+    }
+    // Binding may be a window title used when OS path was unavailable.
+    win.title.trim().eq_ignore_ascii_case(want)
 }
 
 /// `wine-preloader` and `wine64-preloader` are interchangeable for focus matching.
@@ -723,6 +859,77 @@ impl sqyre_ports::WindowFocuser for OsWindowFocuser {
 #[cfg(test)]
 mod tests {
     use super::WindowInfo;
+    use sqyre_ports::DesktopRect;
+
+    #[test]
+    fn release_capture_frame_cache_is_noop_without_shared_capturer() {
+        // No portal session in unit tests — public post-run hooks must stay safe.
+        crate::release_capture_frame_cache();
+        assert_eq!(crate::capture_frame_cache_bytes(), 0);
+    }
+
+    #[test]
+    fn with_primary_monitor_first_moves_primary_to_slot_one() {
+        let left = DesktopRect {
+            x: 0,
+            y: 128,
+            w: 1920,
+            h: 1080,
+        };
+        let primary = DesktopRect {
+            x: 1920,
+            y: 0,
+            w: 2560,
+            h: 1440,
+        };
+        // L→R sorted input (left first), primary is the right display.
+        let ordered = super::with_primary_monitor_first(vec![left, primary], Some(primary));
+        assert_eq!(ordered, vec![primary, left]);
+    }
+
+    #[test]
+    fn with_primary_monitor_first_noop_without_primary() {
+        let a = DesktopRect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        };
+        let b = DesktopRect {
+            x: 1920,
+            y: 0,
+            w: 2560,
+            h: 1440,
+        };
+        let ordered = super::with_primary_monitor_first(vec![a, b], None);
+        assert_eq!(ordered, vec![a, b]);
+    }
+
+    #[test]
+    fn with_primary_monitor_first_matches_by_size_near_origin() {
+        let left = DesktopRect {
+            x: 0,
+            y: 0,
+            w: 1920,
+            h: 1080,
+        };
+        let right = DesktopRect {
+            x: 1920,
+            y: 0,
+            w: 2560,
+            h: 1440,
+        };
+        // Primary rect slightly off (timing/hotplug) but same size as right.
+        let primary_approx = DesktopRect {
+            x: 1921,
+            y: 1,
+            w: 2560,
+            h: 1440,
+        };
+        let ordered = super::with_primary_monitor_first(vec![left, right], Some(primary_approx));
+        assert_eq!(ordered[0], right);
+        assert_eq!(ordered[1], left);
+    }
 
     #[test]
     fn window_info_label() {
@@ -785,6 +992,15 @@ mod tests {
         assert!(super::window_matches_process(&unnamed, "/usr/bin/firefox"));
         assert!(super::window_matches_process(&unnamed, "firefox"));
         assert!(!super::window_matches_process(&unnamed, "chrome"));
+        // Title used as Flatpak fallback key when /proc identity is unavailable.
+        assert!(super::window_matches_process(&unnamed, "Firefox"));
+        let title_key = WindowInfo {
+            title: "Mistfall Hunter".into(),
+            process_name: "mistfall".into(),
+            process_path: "Mistfall Hunter".into(),
+            icon: None,
+        };
+        assert!(super::window_matches_process(&title_key, "Mistfall Hunter"));
     }
 
     #[test]
