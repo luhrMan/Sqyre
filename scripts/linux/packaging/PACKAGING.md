@@ -37,7 +37,7 @@ Output: **`bin/*.AppImage`**. `sqyre.AppDir` and build artifacts stay under `scr
 
 After `appimage-builder` finishes the AppDir (`--skip-appimage`, so no intermediate xz pack), `build-appimage.sh` **repacks** with [type2-runtime](https://github.com/AppImage/type2-runtime) (embedded FUSE3; no system `libfuse.so.2`) and **zstd** squashfs. That avoids the multi-second cold start from appimage-builder’s default **xz** payload + old AppImageKit runtime (especially when FUSE is missing and extract-and-run unpacks every launch). The type2 runtime is cached under `scripts/linux/packaging/appimage/.runtime-cache/` and verified by SHA256 (override with `SQYRE_APPIMAGE_RUNTIME_URL` / `SQYRE_APPIMAGE_RUNTIME_SHA256`). Absolute `APPDIR_PATH_MAPPINGS` from the build host are scrubbed before packing.
 
-Cargo uses workspace **`[profile.dist]`** (thin LTO) for AppImage/Flatpak/Windows/WASM/bundle shipping; everyday `make release` stays on plain `[profile.release]` for fast incremental rebuilds.
+Cargo uses workspace **`[profile.dist]`** (`codegen-units = 1` on top of thin LTO from `[profile.release]`) for AppImage/Flatpak/Windows/WASM/bundle shipping; everyday `make release` uses thin LTO with default codegen-units.
 
 On hosts without `/dev/fuse`, use `APPIMAGE_EXTRACT_AND_RUN=1` (zstd extract is ~sub-second; xz was multi-second). The AppDir binary is stripped (`strip --strip-unneeded`) before packing.
 

@@ -69,9 +69,9 @@ help:
 	@echo "  all / sqyre  - cargo build (debug) -> $(BIN)/sqyre$(BIN_EXT)  [default]"
 	@echo "  probe        - cargo build (debug) -> $(BIN)/sqyre-probe$(BIN_EXT)"
 	@echo "  overlay-sandbox - overlay buttons only (fast; no sqyre-app)"
-	@echo "  release      - fmt + check, then cargo build --release -> $(BIN)/sqyre$(BIN_EXT)"
+	@echo "  release      - fmt + check, then cargo build --release (thin LTO) -> $(BIN)/sqyre$(BIN_EXT)"
 	@echo "  release-bundle - Linux: dist profile + bundled Tesseract -> $(BIN)/sqyre-bundle/ (shipping)"
-	@echo "  dev          - Linux: fast release-bundle prototype -> $(BIN)/sqyre-dev/ (no LTO / no check gate)"
+	@echo "  dev          - Linux: fast release-bundle prototype -> $(BIN)/sqyre-dev/ (release profile / no check gate)"
 	@echo "  release-bundle-dhat - same + dhat-heap profiler -> $(BIN)/sqyre-bundle-dhat/ (local leak hunts)"
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
 	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
@@ -140,7 +140,7 @@ release-bundle: $(BIN)
 	$(CARGO) build -p sqyre-app --profile dist $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	SQYRE_BUNDLE_SKIP_BUILD=1 SQYRE_CARGO_PROFILE=dist ./scripts/linux/packaging/bundle-release.sh
 
-# Fast prototyping twin of release-bundle: plain --release (no LTO), separate output dir.
+# Fast prototyping twin of release-bundle: --release (thin LTO, default codegen-units), separate output dir.
 dev: $(BIN)
 	@if [ "$(HOST_OS)" != "linux" ]; then \
 		echo "make dev requires a Linux host (got $(HOST_OS))"; \
@@ -154,7 +154,7 @@ dev: $(BIN)
 
 # Same layout as release-bundle, but with dhat-heap (allocation stacks → dhat-heap.json on quit).
 # Uses a separate Cargo target dir so it does not overwrite the normal release binary.
-# Local leak hunts use --release (fast rebuilds); not a shipping profile.
+# Local leak hunts use --release (thin LTO, faster than dist); not a shipping profile.
 release-bundle-dhat: $(BIN)
 	@if [ "$(HOST_OS)" != "linux" ]; then \
 		echo "make release-bundle-dhat requires a Linux host (got $(HOST_OS))"; \
