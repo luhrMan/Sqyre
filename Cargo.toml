@@ -52,10 +52,10 @@ codegen-units = 1
 
 [workspace.dependencies]
 purecv = { version = "0.8.0", default-features = false, features = ["std", "parallel", "simd"] }
-eframe = "0.35"
-egui = "0.35"
-egui-phosphor = "0.13"
-egui_ltreeview = "0.8"
+eframe = "0.36"
+egui = "0.36"
+egui-phosphor = "0.14"
+egui_ltreeview = "0.9"
 pulp = "0.22"
 rayon = "1.12"
 thiserror = "2"
@@ -63,7 +63,7 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 uuid = { version = "1", features = ["v4", "js"] }
 regex = "1"
-dirs = "6"
+dirs = "7"
 tempfile = "3"
 zip = { version = "8", default-features = false, features = ["deflate"] }
 proptest = "1"
@@ -77,7 +77,7 @@ rdev = { version = "0.5", features = ["unstable_grab"] }
 parking_lot = "0.12"
 # async-io (not default tokio): avoid forcing zbus/tokio, which panics accesskit's async-io thread.
 ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
-tray-icon = { version = "0.24", default-features = false }
+tray-icon = { version = "0.25", default-features = false }
 rfd = "0.17"
 rustfft = "6.4"
 windows = "0.62"
