@@ -53,7 +53,7 @@ codegen-units = 1
 [workspace.dependencies]
 purecv = { version = "0.8.0", default-features = false, features = ["std", "parallel", "simd"] }
 eframe = "0.35"
-egui = "0.35"
+egui = "0.36"
 egui-phosphor = "0.13"
 egui_ltreeview = "0.8"
 pulp = "0.22"
