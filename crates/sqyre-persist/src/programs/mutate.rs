@@ -14,6 +14,36 @@ use sqyre_ports::PortError;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
+/// Successful map mutation; `Some` means an expected `images/` side effect failed
+/// (best-effort — memory still updated).
+pub type FsWarn = Option<String>;
+
+fn push_fs_err(warnings: &mut Vec<String>, what: &str, err: impl std::fmt::Display) {
+    warnings.push(format!("{what}: {err}"));
+}
+
+fn take_fs_warning(warnings: Vec<String>) -> FsWarn {
+    if warnings.is_empty() {
+        None
+    } else {
+        Some(warnings.join("; "))
+    }
+}
+
+/// Merge a non-fatal filesystem warning into an accumulated slot.
+pub fn merge_fs_warning(dst: &mut FsWarn, warn: FsWarn) {
+    let Some(w) = warn else {
+        return;
+    };
+    match dst {
+        None => *dst = Some(w),
+        Some(existing) => {
+            existing.push_str("; ");
+            existing.push_str(&w);
+        }
+    }
+}
+
 impl ProgramCatalog {
     pub fn programs_mut(&mut self) -> &mut BTreeMap<String, ProgramData> {
         self.bump_generation();
@@ -64,11 +94,11 @@ impl ProgramCatalog {
         Ok(())
     }
 
-    pub fn rename_program(&mut self, old: &str, new: &str) -> Result<()> {
+    pub fn rename_program(&mut self, old: &str, new: &str) -> Result<FsWarn> {
         let new = new.trim();
         validate_fs_entity_name(new)?;
         if old == new {
-            return Ok(());
+            return Ok(None);
         }
         if self.programs.contains_key(new) {
             return Err(PersistError::Message(format!(
@@ -82,63 +112,111 @@ impl ProgramCatalog {
         data.name = new.to_string();
         self.programs.insert(new.to_string(), data);
         // Move item icons / masks / collections with the program so nested assets stay reachable.
-        if is_safe_fs_entity_name(old) {
-            self.rename_program_asset_dirs(old, new);
-        }
+        let fs_warn = if is_safe_fs_entity_name(old) {
+            self.rename_program_asset_dirs(old, new)
+        } else {
+            None
+        };
         self.bump_generation();
-        Ok(())
+        Ok(fs_warn)
     }
 
     /// Rename `images/{icons|masks|Collections}/{old}` → `{new}` (best-effort).
-    fn rename_program_asset_dirs(&self, old: &str, new: &str) {
-        for (src, dst) in [
-            (self.icons_dir(old), self.icons_dir(new)),
-            (self.masks_dir(old), self.masks_dir(new)),
-            (self.collections_dir(old), self.collections_dir(new)),
+    fn rename_program_asset_dirs(&self, old: &str, new: &str) -> FsWarn {
+        let mut warnings = Vec::new();
+        for (label, src, dst) in [
+            ("icons", self.icons_dir(old), self.icons_dir(new)),
+            ("masks", self.masks_dir(old), self.masks_dir(new)),
+            (
+                "collections",
+                self.collections_dir(old),
+                self.collections_dir(new),
+            ),
         ] {
             if !src.is_dir() {
                 continue;
             }
             if dst.exists() {
-                let _ = std::fs::remove_dir_all(&dst);
+                if let Err(e) = std::fs::remove_dir_all(&dst) {
+                    push_fs_err(
+                        &mut warnings,
+                        &format!("could not clear destination {label} dir"),
+                        e,
+                    );
+                }
             }
-            let _ = std::fs::rename(&src, &dst);
+            if let Err(e) = std::fs::rename(&src, &dst) {
+                push_fs_err(
+                    &mut warnings,
+                    &format!("could not rename program {label} dir"),
+                    e,
+                );
+            }
         }
         let src_icon = self.process_icon_path(old);
         if src_icon.is_file() {
             let dst_icon = self.process_icon_path(new);
             if let Some(parent) = dst_icon.parent() {
-                let _ = std::fs::create_dir_all(parent);
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    push_fs_err(&mut warnings, "could not create process-icon dir", e);
+                }
             }
             if dst_icon.exists() {
-                let _ = std::fs::remove_file(&dst_icon);
+                if let Err(e) = std::fs::remove_file(&dst_icon) {
+                    push_fs_err(&mut warnings, "could not clear destination process icon", e);
+                }
             }
-            let _ = std::fs::rename(&src_icon, &dst_icon);
+            if let Err(e) = std::fs::rename(&src_icon, &dst_icon) {
+                push_fs_err(&mut warnings, "could not rename process icon", e);
+            }
         }
         crate::invalidate_icon_fs_cache_under(&self.icons_dir(old));
         crate::invalidate_icon_fs_cache_under(&self.icons_dir(new));
         crate::invalidate_icon_fs_cache_under(&self.masks_dir(old));
         crate::invalidate_icon_fs_cache_under(&self.masks_dir(new));
+        take_fs_warning(warnings)
     }
 
-    pub fn delete_program(&mut self, name: &str) -> Result<()> {
+    pub fn delete_program(&mut self, name: &str) -> Result<FsWarn> {
         if self.programs.remove(name).is_none() {
             return Err(PersistError::Message(format!("program {name:?} not found")));
         }
         // Only touch the filesystem when the name cannot escape the images root.
-        if is_safe_fs_entity_name(name) {
+        let fs_warn = if is_safe_fs_entity_name(name) {
+            let mut warnings = Vec::new();
             let icons = self.icons_dir(name);
             let masks = self.masks_dir(name);
             let collections = self.collections_dir(name);
             crate::invalidate_icon_fs_cache_under(&icons);
             crate::invalidate_icon_fs_cache_under(&masks);
-            let _ = std::fs::remove_dir_all(&icons);
-            let _ = std::fs::remove_dir_all(&masks);
-            let _ = std::fs::remove_dir_all(collections);
-            let _ = std::fs::remove_file(self.process_icon_path(name));
-        }
+            for (label, path) in [
+                ("icons", icons),
+                ("masks", masks),
+                ("collections", collections),
+            ] {
+                if !path.exists() {
+                    continue;
+                }
+                if let Err(e) = std::fs::remove_dir_all(&path) {
+                    push_fs_err(
+                        &mut warnings,
+                        &format!("could not remove program {label} dir"),
+                        e,
+                    );
+                }
+            }
+            let process_icon = self.process_icon_path(name);
+            if process_icon.is_file() {
+                if let Err(e) = std::fs::remove_file(&process_icon) {
+                    push_fs_err(&mut warnings, "could not remove process icon", e);
+                }
+            }
+            take_fs_warning(warnings)
+        } else {
+            None
+        };
         self.bump_generation();
-        Ok(())
+        Ok(fs_warn)
     }
 
     /// Bind a catalog program to a running OS window (`process_path` + `window_title`).
@@ -185,17 +263,20 @@ impl ProgramCatalog {
         upsert_named_entity(self, program, key, item, |p| &mut p.items)
     }
 
-    pub fn rename_item(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
+    pub fn rename_item(&mut self, program: &str, old: &str, new: &str) -> Result<FsWarn> {
         let new = new.trim();
         validate_fs_entity_name(new)?;
         {
             let p = self.program_mut(program)?;
             rename_keyed_map(&mut p.items, old, new, "item", |item, n| item.name = n)?;
         }
-        if old != new && is_safe_fs_entity_name(program) && is_safe_fs_entity_name(old) {
-            self.rename_item_icon_files(program, old, new);
-        }
-        Ok(())
+        let fs_warn = if old != new && is_safe_fs_entity_name(program) && is_safe_fs_entity_name(old)
+        {
+            self.rename_item_icon_files(program, old, new)
+        } else {
+            None
+        };
+        Ok(fs_warn)
     }
 
     /// Move `{old}.png` and `{old}~*.png` icon files to the new item name.
@@ -203,10 +284,11 @@ impl ProgramCatalog {
     /// Clears any existing dest path first so overwrite-rename (Data Editor
     /// `delete_item` then `rename_item`) always leaves the source icons under
     /// the new name, including on platforms where `rename` cannot replace.
-    fn rename_item_icon_files(&self, program: &str, old: &str, new: &str) {
+    fn rename_item_icon_files(&self, program: &str, old: &str, new: &str) -> FsWarn {
         let dir = self.icons_dir(program);
         let prefix = format!("{old}{PROGRAM_DELIMITER}");
         let legacy = format!("{old}.png");
+        let mut warnings = Vec::new();
         visit_item_icon_files(&dir, old, |path, name| {
             let dest_name = if name == legacy {
                 format!("{new}.png")
@@ -217,28 +299,40 @@ impl ProgramCatalog {
             if dest.exists() {
                 let _ = std::fs::remove_file(&dest);
             }
-            let _ = std::fs::rename(path, &dest);
+            if let Err(e) = std::fs::rename(&path, &dest) {
+                push_fs_err(&mut warnings, "could not rename item icon", e);
+            }
         });
         crate::invalidate_icon_fs_cache_under(&dir);
+        take_fs_warning(warnings)
     }
 
-    pub fn delete_item(&mut self, program: &str, name: &str) -> Result<()> {
+    pub fn delete_item(&mut self, program: &str, name: &str) -> Result<FsWarn> {
         delete_named_entity(self, program, name, "item", |p| &mut p.items)?;
-        if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
-            self.trash_item_icon_files(program, name);
-        }
-        Ok(())
+        let fs_warn = if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
+            self.trash_item_icon_files(program, name)
+        } else {
+            None
+        };
+        Ok(fs_warn)
     }
 
     /// Clear `{name}.png` and `{name}~*.png` from `icons_dir(program)`.
     ///
     /// Prefer moving into `images/ScreenCap/trash/{program}/`; if trash is
-    /// unavailable, remove the files so Image Search cannot keep finding them
-    /// and overwrite-rename can claim the destination names.
-    fn trash_item_icon_files(&self, program: &str, name: &str) {
+    /// unavailable or the move fails, remove the files so Image Search cannot
+    /// keep finding them and overwrite-rename can claim the destination names.
+    fn trash_item_icon_files(&self, program: &str, name: &str) -> FsWarn {
         let dir = self.icons_dir(program);
         let trash = self.screen_cap_trash_dir(program);
-        let trash_ok = std::fs::create_dir_all(&trash).is_ok();
+        let mut warnings = Vec::new();
+        let trash_ok = match std::fs::create_dir_all(&trash) {
+            Ok(()) => true,
+            Err(e) => {
+                push_fs_err(&mut warnings, "could not create icon trash dir", e);
+                false
+            }
+        };
         visit_item_icon_files(&dir, name, |path, file_name| {
             if trash_ok {
                 let dest = unique_dest(&trash, file_name);
@@ -246,9 +340,12 @@ impl ProgramCatalog {
                     return;
                 }
             }
-            let _ = std::fs::remove_file(path);
+            if let Err(e) = std::fs::remove_file(&path) {
+                push_fs_err(&mut warnings, "could not clear item icon", e);
+            }
         });
         crate::invalidate_icon_fs_cache_under(&dir);
+        take_fs_warning(warnings)
     }
 
     pub fn upsert_point(&mut self, program: &str, point: ProgramPoint) -> Result<()> {
@@ -324,7 +421,7 @@ impl ProgramCatalog {
         upsert_named_entity(self, program, key, mask, |p| &mut p.masks)
     }
 
-    pub fn rename_mask(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
+    pub fn rename_mask(&mut self, program: &str, old: &str, new: &str) -> Result<FsWarn> {
         let new = new.trim();
         validate_fs_entity_name(new)?;
         let old_path = self.mask_image_path(program, old);
@@ -337,22 +434,30 @@ impl ProgramCatalog {
                 item.mask = new.to_string();
             }
         }
-        if old != new
+        let fs_warn = if old != new
             && is_safe_fs_entity_name(program)
             && is_safe_fs_entity_name(old)
             && old_path.is_file()
         {
+            let mut warnings = Vec::new();
             if let Some(parent) = new_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    push_fs_err(&mut warnings, "could not create masks dir", e);
+                }
             }
-            let _ = std::fs::rename(&old_path, &new_path);
+            if let Err(e) = std::fs::rename(&old_path, &new_path) {
+                push_fs_err(&mut warnings, "could not rename mask image", e);
+            }
             crate::invalidate_icon_fs_cache_under(&old_path);
             crate::invalidate_icon_fs_cache_under(&new_path);
-        }
-        Ok(())
+            take_fs_warning(warnings)
+        } else {
+            None
+        };
+        Ok(fs_warn)
     }
 
-    pub fn delete_mask(&mut self, program: &str, name: &str) -> Result<()> {
+    pub fn delete_mask(&mut self, program: &str, name: &str) -> Result<FsWarn> {
         let path = self.mask_image_path(program, name);
         delete_named_entity(self, program, name, "mask", |p| &mut p.masks)?;
         let p = self.program_mut(program)?;
@@ -361,11 +466,20 @@ impl ProgramCatalog {
                 item.mask.clear();
             }
         }
-        if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
+        let fs_warn = if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
             crate::invalidate_icon_fs_cache_under(&path);
-            let _ = std::fs::remove_file(path);
-        }
-        Ok(())
+            if path.is_file() {
+                match std::fs::remove_file(&path) {
+                    Ok(()) => None,
+                    Err(e) => Some(format!("could not remove mask image: {e}")),
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        Ok(fs_warn)
     }
 
     pub fn upsert_collection(
@@ -377,7 +491,7 @@ impl ProgramCatalog {
         upsert_named_entity(self, program, key, collection, |p| &mut p.collections)
     }
 
-    pub fn rename_collection(&mut self, program: &str, old: &str, new: &str) -> Result<()> {
+    pub fn rename_collection(&mut self, program: &str, old: &str, new: &str) -> Result<FsWarn> {
         let new = new.trim();
         validate_fs_entity_name(new)?;
         let old_path = self.collection_image_path(program, old);
@@ -398,30 +512,47 @@ impl ProgramCatalog {
                 }
             }
         }
-        if old != new
+        let fs_warn = if old != new
             && is_safe_fs_entity_name(program)
             && is_safe_fs_entity_name(old)
             && old_path.is_file()
         {
+            let mut warnings = Vec::new();
             if let Some(parent) = new_path.parent() {
-                let _ = std::fs::create_dir_all(parent);
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    push_fs_err(&mut warnings, "could not create collections dir", e);
+                }
             }
-            let _ = std::fs::rename(&old_path, &new_path);
-        }
-        Ok(())
+            if let Err(e) = std::fs::rename(&old_path, &new_path) {
+                push_fs_err(&mut warnings, "could not rename collection image", e);
+            }
+            take_fs_warning(warnings)
+        } else {
+            None
+        };
+        Ok(fs_warn)
     }
 
-    pub fn delete_collection(&mut self, program: &str, name: &str) -> Result<()> {
+    pub fn delete_collection(&mut self, program: &str, name: &str) -> Result<FsWarn> {
         let path = self.collection_image_path(program, name);
         delete_named_entity(self, program, name, "collection", |p| &mut p.collections)?;
         let p = self.program_mut(program)?;
         for atlas in p.atlases.values_mut() {
             atlas.collections.retain(|c| c != name);
         }
-        if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
-            let _ = std::fs::remove_file(path);
-        }
-        Ok(())
+        let fs_warn = if is_safe_fs_entity_name(program) && is_safe_fs_entity_name(name) {
+            if path.is_file() {
+                match std::fs::remove_file(&path) {
+                    Ok(()) => None,
+                    Err(e) => Some(format!("could not remove collection image: {e}")),
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        Ok(fs_warn)
     }
 
     pub fn upsert_atlas(&mut self, program: &str, atlas: ProgramAtlas) -> Result<()> {
