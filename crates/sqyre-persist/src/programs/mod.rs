@@ -1256,10 +1256,17 @@ Game:
         std::fs::write(&path, b"mask").unwrap();
         // Force remove_file to fail:
         // - Unix: unlink needs write on the parent directory.
-        // - Windows: std::fs::remove_file ignores FILE_ATTRIBUTE_READONLY, so hold
-        //   an open handle (default share mode omits FILE_SHARE_DELETE).
+        // - Windows: Rust 1.95+ File::open shares DELETE (and remove_file ignores
+        //   readonly), so open exclusively (share_mode 0) to force a sharing violation.
         #[cfg(windows)]
-        let _open = std::fs::File::open(&path).unwrap();
+        let _open = {
+            use std::os::windows::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(&path)
+                .unwrap()
+        };
         #[cfg(not(windows))]
         let original_perms = {
             let original = std::fs::metadata(&masks).unwrap().permissions();
