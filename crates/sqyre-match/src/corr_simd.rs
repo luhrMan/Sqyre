@@ -416,10 +416,7 @@ mod tests {
     fn assert_f32_close(got: &[f32], expect: &[f32], tol: f32) {
         assert_eq!(got.len(), expect.len());
         for (i, (a, b)) in got.iter().zip(expect.iter()).enumerate() {
-            assert!(
-                (a - b).abs() < tol,
-                "index {i}: {a} vs {b} (tol {tol})"
-            );
+            assert!((a - b).abs() < tol, "index {i}: {a} vs {b} (tol {tol})");
         }
     }
 

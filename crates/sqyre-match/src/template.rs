@@ -1389,8 +1389,7 @@ mod tests {
         );
 
         let prepared_n = prepare_template(&tmpl, None, MatchMethod::CcoeffNormed).unwrap();
-        let map_n =
-            match_template_with_prepared(&search, &tmpl, &prepared_n, Some(&prep)).unwrap();
+        let map_n = match_template_with_prepared(&search, &tmpl, &prepared_n, Some(&prep)).unwrap();
         assert!(
             prep.integrals_ready(),
             "CCOEFF_NORMED must build integrals on first use"
