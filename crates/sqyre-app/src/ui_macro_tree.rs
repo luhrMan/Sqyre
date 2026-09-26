@@ -482,7 +482,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 .root
                 .move_actions(&sources, parent, slot)
             {
-                Ok(()) => app.persist_macro_at(idx),
+                Ok(()) => {
+                    let _ = app.persist_macro_at(idx);
+                }
                 Err(_) => {
                     // Undo the optimistic history push; tree was not changed.
                     if let Some(hist) = app.tree.histories.get_mut(&app.workspace.macros[idx].name)
