@@ -329,15 +329,16 @@ fn match_direct(
     };
     let n = pack.n;
     let t_energy = pack.t_energy;
-    let ccoeff = method.is_ccoeff_family();
 
-    let owned;
-    let integ = if full_mask {
+    let owned_integ;
+    let prep_integ;
+    let integ = if full_mask && method_needs_search_integrals(method) {
         Some(if let Some(prep) = search_prep {
-            &prep.integrals
+            prep_integ = prep.integrals(search);
+            prep_integ.as_ref()
         } else {
-            owned = build_integrals(search);
-            &owned
+            owned_integ = build_integrals(search);
+            &owned_integ
         })
     } else {
         None
@@ -374,8 +375,14 @@ fn match_direct(
                         t_energy,
                     );
                 }
-            } else if ccoeff {
-                // Masked CCOEFF: ΣT'=0 ⇒ numer = Σ T'·I. Energy: ΣI² − Σ_c (ΣI_c)²/n.
+            } else if matches!(method, MatchMethod::Ccorr | MatchMethod::Ccoeff) {
+                // Correlation alone — no window integrals / sum-sq.
+                for (ox, cell) in row.iter_mut().enumerate() {
+                    *cell = numer[ox];
+                }
+            } else if method == MatchMethod::CcoeffNormed {
+                // Masked CCOEFF_NORMED: ΣT'=0 ⇒ numer = Σ T'·I.
+                // Energy: ΣI² − Σ_c (ΣI_c)²/n.
                 crate::corr_simd::accumulate_sum_sq_row(planar, tmpl, oy, sum_sq);
                 crate::corr_simd::accumulate_channel_sums_row(planar, tmpl, oy, sums);
                 for (ox, cell) in row.iter_mut().enumerate() {
@@ -384,17 +391,11 @@ fn match_direct(
                         let s = channel_sum[ox] as f64;
                         i_prime -= (s * s) / n;
                     }
-                    *cell = match method {
-                        MatchMethod::Ccoeff => numer[ox],
-                        MatchMethod::CcoeffNormed => {
-                            let denom = (t_energy * i_prime.max(0.0)).sqrt();
-                            if denom > f64::EPSILON {
-                                (numer[ox] as f64 / denom) as f32
-                            } else {
-                                0.0
-                            }
-                        }
-                        _ => unreachable!("ccoeff branch"),
+                    let denom = (t_energy * i_prime.max(0.0)).sqrt();
+                    *cell = if denom > f64::EPSILON {
+                        (numer[ox] as f64 / denom) as f32
+                    } else {
+                        0.0
                     };
                 }
             } else {
@@ -679,7 +680,7 @@ fn match_fft(
         }
     }
 
-    if method == MatchMethod::Ccorr {
+    if matches!(method, MatchMethod::Ccorr | MatchMethod::Ccoeff) {
         return Ok(MatchMap {
             width: out_w,
             height: out_h,
@@ -687,12 +688,14 @@ fn match_fft(
         });
     }
 
-    let owned;
+    let owned_integ;
+    let prep_integ;
     let integ = if let Some(prep) = search_prep {
-        &prep.integrals
+        prep_integ = prep.integrals(search);
+        prep_integ.as_ref()
     } else {
-        owned = build_integrals(search);
-        &owned
+        owned_integ = build_integrals(search);
+        &owned_integ
     };
     let stride = integ.width + 1;
     let n = pack.n;
@@ -824,12 +827,12 @@ struct SearchIntegrals {
 }
 
 /// Per-capture search-frame prep, built once and shared across every template variant
-/// matched against the same buffer: integral images (for CCOEFF*/normed finish) and
-/// planar `f32` (for the direct SIMD correlator). FFT cross-correlations of the search
-/// frame are cached lazily per padded DFT size, since different template sizes need
-/// different padding.
+/// matched against the same buffer: planar `f32` (eager, for the direct correlator).
+/// Integral images (for normed / SQDIFF finish) and FFT cross-correlations are built
+/// lazily on first need — integrals once per prep, FFTs per padded DFT size.
 pub struct SearchPrep {
-    integrals: SearchIntegrals,
+    /// Built on first method that needs window sums (`CCOEFF_NORMED`, `*_NORMED`, `SQDIFF*`).
+    integrals: Mutex<Option<Arc<SearchIntegrals>>>,
     planar: crate::corr_simd::PlanarF32,
     fft_cache: Mutex<HashMap<(usize, usize), Arc<SearchFft>>>,
     /// Single-flight gates so parallel variant matches do not stampede the same DFT.
@@ -840,7 +843,31 @@ pub struct SearchPrep {
 type SearchFft = Vec<Vec<Complex<f32>>>;
 type FftInflightGates = Mutex<HashMap<(usize, usize), Arc<Mutex<()>>>>;
 
+/// Raw `CCORR` / `CCOEFF` scores are correlation alone; other methods need window
+/// ΣI / ΣI² from integral images (full mask) or sparse sum-sq (masked).
+#[inline]
+fn method_needs_search_integrals(method: MatchMethod) -> bool {
+    !matches!(method, MatchMethod::Ccorr | MatchMethod::Ccoeff)
+}
+
 impl SearchPrep {
+    /// Integral images for normed / SQDIFF finish. Built once under the mutex so
+    /// parallel variant matches do not stampede; subsequent calls clone the `Arc`.
+    fn integrals(&self, search: &ImageBuf) -> Arc<SearchIntegrals> {
+        let mut slot = self.integrals.lock();
+        if let Some(hit) = slot.as_ref() {
+            return Arc::clone(hit);
+        }
+        let built = Arc::new(build_integrals(search));
+        *slot = Some(Arc::clone(&built));
+        built
+    }
+
+    #[cfg(test)]
+    fn integrals_ready(&self) -> bool {
+        self.integrals.lock().is_some()
+    }
+
     fn fft_for_size(&self, search: &ImageBuf, dft_w: usize, dft_h: usize) -> Arc<SearchFft> {
         if let Some(hit) = self.fft_cache.lock().get(&(dft_w, dft_h)) {
             return Arc::clone(hit);
@@ -893,9 +920,12 @@ impl SearchPrep {
 
 /// Build the shared search-frame prep once per blurred capture, for reuse across
 /// every template variant matched against it.
+///
+/// Only planar `f32` is eager; integrals and FFTs are deferred until a match
+/// method needs them (see [`SearchPrep`]).
 pub fn prepare_search(img: &ImageBuf) -> SearchPrep {
     SearchPrep {
-        integrals: build_integrals(img),
+        integrals: Mutex::new(None),
         planar: crate::corr_simd::PlanarF32::from_interleaved(img),
         fft_cache: Mutex::new(HashMap::new()),
         fft_inflight: Mutex::new(HashMap::new()),
@@ -907,29 +937,31 @@ fn build_integrals(img: &ImageBuf) -> SearchIntegrals {
     let h = img.height;
     let ch = img.channels;
     let stride = w + 1;
-    // Independent per channel — parallelize across channels.
-    let mut planes: Vec<(Vec<f64>, Vec<f64>)> = (0..ch)
-        .into_par_iter()
-        .map(|c| {
-            let mut sum = vec![0.0_f64; stride * (h + 1)];
-            let mut sumsq = vec![0.0_f64; stride * (h + 1)];
-            for y in 0..h {
-                for x in 0..w {
-                    let v = img.data[img.pixel_offset(x, y) + c] as f64;
-                    let above = sum[y * stride + (x + 1)];
-                    let left = sum[(y + 1) * stride + x];
-                    let corner = sum[y * stride + x];
-                    sum[(y + 1) * stride + (x + 1)] = above + left - corner + v;
+    let build_channel = |c: usize| {
+        let mut sum = vec![0.0_f64; stride * (h + 1)];
+        let mut sumsq = vec![0.0_f64; stride * (h + 1)];
+        for y in 0..h {
+            for x in 0..w {
+                let v = img.data[img.pixel_offset(x, y) + c] as f64;
+                let above = sum[y * stride + (x + 1)];
+                let left = sum[(y + 1) * stride + x];
+                let corner = sum[y * stride + x];
+                sum[(y + 1) * stride + (x + 1)] = above + left - corner + v;
 
-                    let above_sq = sumsq[y * stride + (x + 1)];
-                    let left_sq = sumsq[(y + 1) * stride + x];
-                    let corner_sq = sumsq[y * stride + x];
-                    sumsq[(y + 1) * stride + (x + 1)] = above_sq + left_sq - corner_sq + v * v;
-                }
+                let above_sq = sumsq[y * stride + (x + 1)];
+                let left_sq = sumsq[(y + 1) * stride + x];
+                let corner_sq = sumsq[y * stride + x];
+                sumsq[(y + 1) * stride + (x + 1)] = above_sq + left_sq - corner_sq + v * v;
             }
-            (sum, sumsq)
-        })
-        .collect();
+        }
+        (sum, sumsq)
+    };
+    // Serial when already on a Rayon worker (lazy build from variant match).
+    let mut planes: Vec<(Vec<f64>, Vec<f64>)> = if rayon::current_thread_index().is_some() {
+        (0..ch).map(build_channel).collect()
+    } else {
+        (0..ch).into_par_iter().map(build_channel).collect()
+    };
     let mut sum = Vec::with_capacity(ch);
     let mut sumsq = Vec::with_capacity(ch);
     for (s, sq) in planes.drain(..) {
@@ -1335,5 +1367,67 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn prepare_search_defers_integrals_until_needed() {
+        let tmpl = patterned(8, 8);
+        let mut search = gray(40, 40, 30);
+        search.stamp(&tmpl, 12, 7);
+        let prep = prepare_search(&search);
+        assert!(
+            !prep.integrals_ready(),
+            "planar-only prep must not build integrals eagerly"
+        );
+
+        let prepared = prepare_template(&tmpl, None, MatchMethod::Ccorr).unwrap();
+        let map = match_template_with_prepared(&search, &tmpl, &prepared, Some(&prep)).unwrap();
+        assert!(!map.scores.is_empty());
+        assert!(
+            !prep.integrals_ready(),
+            "CCORR must not force integral images"
+        );
+
+        let prepared_n = prepare_template(&tmpl, None, MatchMethod::CcoeffNormed).unwrap();
+        let map_n =
+            match_template_with_prepared(&search, &tmpl, &prepared_n, Some(&prep)).unwrap();
+        assert!(
+            prep.integrals_ready(),
+            "CCOEFF_NORMED must build integrals on first use"
+        );
+        let idx = 7 * map_n.width + 12;
+        assert!(
+            map_n.scores[idx] >= 0.99,
+            "lazy integrals must still score a perfect stamp, got {}",
+            map_n.scores[idx]
+        );
+    }
+
+    #[test]
+    fn shared_prep_integrals_match_without_prep() {
+        let tmpl = patterned(8, 8);
+        let mut search = gray(40, 40, 30);
+        search.stamp(&tmpl, 5, 5);
+        let prep = prepare_search(&search);
+        for method in MatchMethod::ALL {
+            let prepared = prepare_template(&tmpl, None, method).unwrap();
+            let with =
+                match_template_with_prepared(&search, &tmpl, &prepared, Some(&prep)).unwrap();
+            let without = match_template(&search, &tmpl, None, method).unwrap();
+            assert_eq!(with.width, without.width);
+            assert_eq!(with.height, without.height);
+            assert_eq!(
+                with.scores.len(),
+                without.scores.len(),
+                "{method:?} score buffer size"
+            );
+            for (i, (a, b)) in with.scores.iter().zip(without.scores.iter()).enumerate() {
+                assert!(
+                    (a - b).abs() <= 1e-5,
+                    "{method:?} score[{i}]: prep={a} vs plain={b}"
+                );
+            }
+        }
+        assert!(prep.integrals_ready());
     }
 }
