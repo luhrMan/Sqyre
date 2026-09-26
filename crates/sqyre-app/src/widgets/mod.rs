@@ -9,15 +9,15 @@ pub mod match_settings;
 pub mod tags;
 
 pub use controls::{
-    dirty_action_button, icon_button, icon_button_bare_colored, icon_button_colored,
+    dirty_action_button, icon_button, icon_button_bare_colored, icon_button_colored, icon_toggle,
     mouse_button_picker, press_state_toggle, record_icon_button, ICON_BTN_SIDE,
+    PHOSPHOR_FILL_FAMILY,
 };
 pub use dialogs::{
     confirm_cancel_row, confirm_choice_row, confirm_window, dialog_constrain_rect, dismiss_row,
     fill_resize_body, fit_dialog_popup, fit_dialog_window, floating_scrollbar_overlay_width,
     save_cancel_row, sync_viewport_window_scale, visible_content_width, visible_height,
-    visible_size, visible_width, ConfirmCancel, ConfirmChoice, ConfirmKind, SaveCancel,
-    ViewportScaleEvent,
+    visible_width, ConfirmCancel, ConfirmChoice, ConfirmKind, SaveCancel, ViewportScaleEvent,
 };
 pub use empty_state::{empty_state, list_vacancy, EmptyStateAction};
 pub use fields::{

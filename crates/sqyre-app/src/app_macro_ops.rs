@@ -9,7 +9,7 @@ use sqyre_domain::{Action, ActionId, InsertSlot, Macro};
 use sqyre_hotkeys::{HotkeyTrigger, MacroHotkeyBinding};
 
 /// Whether `m` should receive hotkeys under `filters`.
-/// Empty = none (no Hotkeys checkboxes on); `""` entry = untagged; otherwise a macro
+/// Empty = none (no Hotkeys key icons on); `""` entry = untagged; otherwise a macro
 /// matches when any of its tags equals a filter or is nested under one (`filter/...`).
 pub(crate) fn macro_matches_hotkey_tag(m: &Macro, filters: &[String]) -> bool {
     if filters.is_empty() {

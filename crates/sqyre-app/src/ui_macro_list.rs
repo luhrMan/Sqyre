@@ -224,27 +224,31 @@ fn paint_tag_node(
     let covered = filters_cover_path(filters, path);
     let parent_covered = covered && !exact_selected;
     // body_unindented: show_body_indented calls expand_to_include_x which widens the panel.
-    // Chevron expands/collapses only; Hotkeys checkbox is a separate labeled control.
+    // Chevron expands/collapses only; Hotkeys is a key icon toggle (outline/fill).
     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
         .show_header(ui, |ui| {
             let hover = if exact_selected {
-                "Hotkeys enabled for this tag (multiselect). Uncheck to remove."
+                "Hotkeys enabled for this tag (multiselect). Click again to remove."
             } else if parent_covered {
                 "Hotkeys covered by a parent tag. Deselect the parent to pick this tag alone."
             } else {
-                "Enable hotkeys for this tag (multiselect). Parents include nested tags."
+                "Include this tag in the hotkey filter (multiselect). Parents include nested tags."
             };
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let mut hotkeys_on = covered;
                 let hotkey_resp = ui
                     .add_enabled_ui(!parent_covered, |ui| {
-                        ui.checkbox(&mut hotkeys_on, "Hotkeys")
+                        crate::widgets::icon_toggle(
+                            ui,
+                            &mut hotkeys_on,
+                            "Hotkeys",
+                            egui_phosphor::regular::KEY,
+                            egui_phosphor::fill::KEY,
+                        )
                     })
                     .inner
-                    .on_hover_text(hover);
-                hotkey_resp.widget_info(|| {
-                    egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, covered, "Hotkeys")
-                });
+                    .on_hover_text(hover)
+                    .on_disabled_hover_text(hover);
                 if hotkey_resp.changed() {
                     *ctx.clicked_tag = Some(path.to_string());
                 }

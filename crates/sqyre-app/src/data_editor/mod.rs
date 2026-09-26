@@ -654,7 +654,9 @@ impl DataEditor {
             env.pending_scale,
         )
         .show(ctx, |ui| {
-            self.ui(ui, env, selected_macro, previews);
+            crate::widgets::fill_resize_body(ui, |ui| {
+                self.ui_body(ui, env, selected_macro, previews);
+            });
         });
         self.open = open;
         self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings, env.pending_scale);
@@ -793,28 +795,6 @@ impl DataEditor {
 }
 
 impl DataEditor {
-    fn ui(
-        &mut self,
-        ui: &mut egui::Ui,
-        env: &mut DataEditorCtx<'_>,
-        selected_macro: usize,
-        previews: &mut PreviewTooltipCache,
-    ) {
-        // Claim exactly the painted window size, then draw in a child that does
-        // *not* advance the parent by content min_rect (scope_builder would —
-        // that's what pushed the right edge off-screen when the left pane was wide).
-        let size = crate::widgets::visible_size(ui).max(egui::vec2(1.0, 1.0));
-        let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-        let mut body = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect)
-                .layout(egui::Layout::top_down(egui::Align::Min)),
-        );
-        body.set_clip_rect(rect.intersect(ui.clip_rect()));
-        body.set_max_size(rect.size());
-        self.ui_body(&mut body, env, selected_macro, previews);
-    }
-
     fn ui_body(
         &mut self,
         ui: &mut egui::Ui,
@@ -979,7 +959,7 @@ impl DataEditor {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             ui.visuals().widgets.active.fg_stroke
         } else {
-            ui.visuals().widgets.noninteractive.bg_stroke
+            crate::theme::panel_split_stroke()
         };
         ui.painter().vline(
             split_rect.center().x,
