@@ -1,4 +1,8 @@
 //! PixelCheck: live template-match heatmap over a search-area preview.
+//!
+//! Legend / marker colors use app theme viz tokens (`match_pass_fg`,
+//! `match_fail_fg`, `match_within_fg`) — not status `error_fg` / `warn_fg` /
+//! `ok_fg`, which are reserved for chrome and banners.
 
 #[cfg(feature = "native-runtime")]
 #[allow(clippy::too_many_arguments)] // pixel-check helpers share LTRB, match settings, and cache payloads
