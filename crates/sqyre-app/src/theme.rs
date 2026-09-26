@@ -89,16 +89,6 @@ pub fn preview_label_dim() -> Color32 {
     rgba([0, 0, 0, 150])
 }
 
-/// Red grid / outline stroke on image previews.
-pub fn preview_grid_stroke() -> Color32 {
-    Color32::from_rgb(255, 80, 80)
-}
-
-/// Warn stroke / label on preview atlas (unresolved collections).
-pub fn preview_warn_stroke() -> Color32 {
-    warn_fg()
-}
-
 /// Soft blue fill for collection bounds on atlas preview.
 pub fn preview_selection_fill() -> Color32 {
     rgba([60, 100, 160, 60])
@@ -109,17 +99,32 @@ pub fn preview_selection_stroke() -> Color32 {
     Color32::from_rgb(120, 180, 255)
 }
 
-/// Best / passing match marker (pixel check).
+// --- Preview / PixelCheck visualization tokens (not status chrome) ---
+// Analysis overlays keep distinct hues so pass/fail/within remain readable on
+// heatmaps. Status text and destructive accents must use `error_fg` / `warn_fg`
+// / `ok_fg` / `MACRO_*` instead of copying these RGB values.
+
+/// Red grid / outline stroke on image previews (viz; aliases [`error_fg`]).
+pub fn preview_grid_stroke() -> Color32 {
+    error_fg()
+}
+
+/// Warn stroke / label on preview atlas (unresolved collections).
+pub fn preview_warn_stroke() -> Color32 {
+    warn_fg()
+}
+
+/// Best / passing match marker (PixelCheck viz).
 pub fn match_pass_fg() -> Color32 {
     Color32::from_rgb(80, 255, 120)
 }
 
-/// Best match below tolerance (pixel check).
+/// Best match below tolerance (PixelCheck viz).
 pub fn match_fail_fg() -> Color32 {
     Color32::from_rgb(255, 200, 60)
 }
 
-/// Secondary match within tolerance (pixel check).
+/// Secondary match within tolerance (PixelCheck viz).
 pub fn match_within_fg() -> Color32 {
     Color32::from_rgb(120, 230, 180)
 }
@@ -134,9 +139,10 @@ pub fn highlight_owner_fill() -> Color32 {
     rgba([0xdc, 0x9d, 0x2e, 0x28])
 }
 
-/// Soft error tint behind invalid tree rows.
+/// Soft error tint behind invalid tree rows (from [`error_fg`]).
 pub fn highlight_invalid_fill() -> Color32 {
-    rgba([220, 70, 70, 45])
+    let c = error_fg();
+    Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 45)
 }
 
 /// Soft blue fill for execution cursor row.
@@ -164,9 +170,9 @@ pub fn picker_drop_stroke() -> Color32 {
     Color32::from_rgb(80, 140, 200)
 }
 
-/// Remove-badge hover fill on icon grid.
+/// Remove-badge hover fill on icon grid (destructive [`MACRO_STOP`]).
 pub fn picker_remove_hover() -> Color32 {
-    Color32::from_rgb(180, 60, 60)
+    MACRO_STOP
 }
 
 /// Collection cell selection fill.
@@ -188,6 +194,8 @@ pub fn dark_visuals() -> Visuals {
     let dim = accent_dim();
 
     v.hyperlink_color = PRIMARY;
+    v.error_fg_color = error_fg();
+    // warn_fg_color stays PRIMARY until P2-16 aligns it with warn_fg().
     v.warn_fg_color = PRIMARY;
     v.selection.bg_fill = dim;
     v.selection.stroke = Stroke::new(1.0, SELECTION_FG);
@@ -711,9 +719,26 @@ mod tests {
         let v = dark_visuals();
         assert!(v.dark_mode);
         assert_eq!(v.hyperlink_color, PRIMARY);
+        assert_eq!(v.error_fg_color, error_fg());
         assert_eq!(v.selection.bg_fill, accent_dim());
         assert_eq!(v.widgets.hovered.bg_stroke.color, PRIMARY);
         assert_eq!(v.window_stroke.color, PRIMARY);
+    }
+
+    #[test]
+    fn status_and_destructive_accents_share_semantic_helpers() {
+        assert_eq!(preview_grid_stroke(), error_fg());
+        assert_eq!(preview_warn_stroke(), warn_fg());
+        assert_eq!(picker_remove_hover(), MACRO_STOP);
+        let err = error_fg();
+        assert_eq!(
+            highlight_invalid_fill(),
+            Color32::from_rgba_unmultiplied(err.r(), err.g(), err.b(), 45)
+        );
+        // PixelCheck viz tokens stay distinct from status chrome.
+        assert_ne!(match_pass_fg(), ok_fg());
+        assert_ne!(match_fail_fg(), warn_fg());
+        assert_ne!(match_fail_fg(), error_fg());
     }
 
     #[test]

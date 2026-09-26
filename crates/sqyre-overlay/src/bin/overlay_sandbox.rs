@@ -60,7 +60,7 @@ impl eframe::App for SandboxApp {
                 ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
             }
             if let Some(name) = &self.last_click {
-                ui.colored_label(egui::Color32::LIGHT_GREEN, format!("last click → {name}"));
+                ui.colored_label(sqyre_ui_theme::ok_fg(), format!("last click → {name}"));
             }
         });
 
