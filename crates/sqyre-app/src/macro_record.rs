@@ -427,7 +427,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                 }
             });
             if !status.is_empty() {
-                ui.colored_label(egui::Color32::LIGHT_GREEN, status.as_str());
+                ui.colored_label(crate::theme::ok_fg(), status.as_str());
             }
             // Esc closes when no text field is capturing keys.
             if !close
