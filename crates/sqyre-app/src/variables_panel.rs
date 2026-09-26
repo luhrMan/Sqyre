@@ -101,7 +101,7 @@ impl VariablesPanelUi {
                 .resizable(true)
                 .default_width(520.0)
                 .default_height(480.0)
-                .min_size([360.0, 320.0]),
+                .min_size(crate::widgets::FLOATER_MIN_PANEL),
             ctx,
             egui::Id::new("sqyre_variables_panel"),
             pending_scale,
@@ -178,7 +178,7 @@ impl VariablesPanelUi {
                     || value.to_ascii_lowercase().contains(&q)
             })
             .collect();
-        let list_h = (max_h - 52.0).max(60.0);
+        let list_h = (max_h - crate::widgets::FOOTER_RESERVE_SAVE_CANCEL).max(60.0);
         let list_w = crate::widgets::visible_width(ui);
         crate::pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
             ui.set_max_width(list_w);
@@ -203,7 +203,7 @@ impl VariablesPanelUi {
             )
             .weak(),
         );
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         let catalog = builtin_variable_catalog(num_monitors);
         let list_h = (max_h - 28.0).max(60.0);
         let list_w = crate::widgets::visible_width(ui);

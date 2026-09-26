@@ -9,6 +9,21 @@ pub const DIALOG_EDGE_MARGIN_FRAC: f32 = 0.025;
 /// Minimum content-rect size delta (points) before treating the OS window as resized.
 const VIEWPORT_SIZE_EPSILON: f32 = 1.0;
 
+/// Compact floater floor (defaults editor, tip-adjacent popups).
+pub const FLOATER_MIN_COMPACT: [f32; 2] = [220.0, 120.0];
+/// Small modal floor (overlay icon picker).
+pub const FLOATER_MIN_MODAL: [f32; 2] = [320.0, 280.0];
+/// Medium panel floor (Variables).
+pub const FLOATER_MIN_PANEL: [f32; 2] = [360.0, 320.0];
+/// Large editor / settings floor (Data Editor left+right, Settings width).
+pub const FLOATER_MIN_EDITOR: [f32; 2] = [520.0, 280.0];
+/// Searchable picker floor (items / coords / macros / windows).
+pub const FLOATER_MIN_PICKER: [f32; 2] = [400.0, 280.0];
+/// Command palette floor.
+pub const FLOATER_MIN_PALETTE: [f32; 2] = [400.0, 200.0];
+/// Space reserved below a picker scroll for Save/Cancel (see [`PickerScrollOpts::list`]).
+pub const FOOTER_RESERVE_SAVE_CANCEL: f32 = 52.0;
+
 /// Old/new [`egui::Context::content_rect`] for one frame after an OS window resize.
 ///
 /// Floating dialogs apply this via [`fit_dialog_popup`] / [`fit_dialog_window`] so
@@ -505,5 +520,16 @@ mod tests {
             assert_eq!(save_cancel_row(ui, false), SaveCancel::None);
         })
         .drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn floater_min_sizes_are_ordered() {
+        assert_eq!(FLOATER_MIN_COMPACT, [220.0, 120.0]);
+        assert_eq!(FLOATER_MIN_MODAL, [320.0, 280.0]);
+        assert_eq!(FLOATER_MIN_PANEL, [360.0, 320.0]);
+        assert_eq!(FLOATER_MIN_PICKER, [400.0, 280.0]);
+        assert_eq!(FLOATER_MIN_PALETTE, [400.0, 200.0]);
+        assert_eq!(FLOATER_MIN_EDITOR, [520.0, 280.0]);
+        assert_eq!(FOOTER_RESERVE_SAVE_CANCEL, 52.0);
     }
 }
