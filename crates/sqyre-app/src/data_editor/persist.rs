@@ -8,8 +8,9 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use crate::window_types::ProcessIcon;
 use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue};
 use sqyre_persist::{
-    Database, OverlayButtonConfig, ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramItem,
-    ProgramMask, ProgramPoint, ProgramSearchArea, UserSettings, DEFAULT_OVERLAY_BUTTON_SIZE,
+    merge_fs_warning, Database, FsWarn, OverlayButtonConfig, ProgramAtlas, ProgramCatalog,
+    ProgramCollection, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea, UserSettings,
+    DEFAULT_OVERLAY_BUTTON_SIZE,
 };
 use sqyre_validate::validate_entity_name;
 
@@ -25,6 +26,14 @@ fn play_ui_delete_sound(settings: &UserSettings) {
     crate::sound::play_delete_sound_if(settings.play_ui_sounds, settings.sound_volume);
     #[cfg(target_arch = "wasm32")]
     let _ = settings;
+}
+
+/// Status after a successful save/delete when filesystem cascades may have failed.
+fn status_with_fs_warn(ok_msg: &str, fs_warn: FsWarn) -> (String, bool) {
+    match fs_warn {
+        Some(w) => (format!("{ok_msg} Warning: {w}"), true),
+        None => (ok_msg.to_string(), false),
+    }
 }
 
 fn set_program_identity(
@@ -533,7 +542,7 @@ impl DataEditor {
 
         let old_entity = self.selected_entity.clone();
         let mut overlay_settings_dirty = false;
-        let result = match self.tab {
+        let result: Result<FsWarn, sqyre_persist::PersistError> = match self.tab {
             EditorTab::Programs => {
                 if let Some(old) = self.selected_program.clone() {
                     if old == new_name {
@@ -545,11 +554,12 @@ impl DataEditor {
                             self.form_window_title.clone(),
                             self.form_tags.clone(),
                         )
+                        .map(|()| None)
                     } else {
                         if overwrite {
                             let _ = catalog.delete_program(&new_name);
                         }
-                        catalog.rename_program(&old, &new_name).and_then(|_| {
+                        catalog.rename_program(&old, &new_name).and_then(|fs_warn| {
                             set_program_identity(
                                 catalog,
                                 icons,
@@ -569,11 +579,11 @@ impl DataEditor {
                             let _ = settings.rename_overlay_point_program(&old, &new_name);
                             overlay_settings_dirty = true;
                             self.selected_program = Some(new_name.clone());
-                            Ok(())
+                            Ok(fs_warn)
                         })
                     }
                 } else {
-                    catalog.create_program(&new_name).and_then(|_| {
+                    catalog.create_program(&new_name).and_then(|()| {
                         set_program_identity(
                             catalog,
                             icons,
@@ -583,7 +593,7 @@ impl DataEditor {
                             self.form_tags.clone(),
                         )?;
                         self.selected_program = Some(new_name.clone());
-                        Ok(())
+                        Ok(None)
                     })
                 }
             }
@@ -607,11 +617,11 @@ impl DataEditor {
             EditorTab::Masks => self.update_mask(catalog, &new_name, overwrite),
             EditorTab::Collections => self.update_collection(catalog, macros, &new_name, overwrite),
             EditorTab::Atlases => self.update_atlas(catalog, macros, &new_name, overwrite),
-            EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay => Ok(()),
+            EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay => Ok(None),
         };
 
         match result {
-            Ok(()) => {
+            Ok(fs_warn) => {
                 if matches!(self.tab, EditorTab::Points | EditorTab::SearchAreas) {
                     if let Some(old) = old_entity.as_deref() {
                         previews.invalidate_entity(old);
@@ -625,7 +635,12 @@ impl DataEditor {
                         !overlay_settings_dirty || self.persist_overlay_settings(settings);
                     self.load_form(catalog, settings);
                     if overlay_ok {
-                        self.set_ok("Saved.");
+                        let (msg, is_err) = status_with_fs_warn("Saved.", fs_warn);
+                        if is_err {
+                            self.set_err(msg);
+                        } else {
+                            self.set_ok(msg);
+                        }
                     }
                 }
             }
@@ -639,7 +654,7 @@ impl DataEditor {
         macros: &mut [Macro],
         new_name: &str,
         overwrite: bool,
-    ) -> Result<(), sqyre_persist::PersistError> {
+    ) -> Result<FsWarn, sqyre_persist::PersistError> {
         let prog = self
             .selected_program
             .clone()
@@ -655,12 +670,15 @@ impl DataEditor {
             grid_rows: rows,
             tags: self.form_tags.clone(),
         };
+        let mut fs_warn = None;
         if let Some(old) = self.selected_entity.clone() {
             if old != new_name {
                 if overwrite {
-                    let _ = catalog.delete_item(&prog, new_name);
+                    if let Ok(w) = catalog.delete_item(&prog, new_name) {
+                        merge_fs_warning(&mut fs_warn, w);
+                    }
                 }
-                catalog.rename_item(&prog, &old, new_name)?;
+                merge_fs_warning(&mut fs_warn, catalog.rename_item(&prog, &old, new_name)?);
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::Item, &prog, &old, new_name);
                 }
@@ -671,7 +689,7 @@ impl DataEditor {
             catalog.upsert_item(&prog, item)?;
             self.selected_entity = Some(new_name.to_string());
         }
-        Ok(())
+        Ok(fs_warn)
     }
 
     pub(crate) fn update_point(
@@ -682,7 +700,7 @@ impl DataEditor {
         overlay_settings_dirty: &mut bool,
         new_name: &str,
         overwrite: bool,
-    ) -> Result<(), sqyre_persist::PersistError> {
+    ) -> Result<FsWarn, sqyre_persist::PersistError> {
         let prog = self
             .selected_program
             .clone()
@@ -712,7 +730,7 @@ impl DataEditor {
             catalog.upsert_point(&prog, pt)?;
             self.selected_entity = Some(new_name.to_string());
         }
-        Ok(())
+        Ok(None)
     }
 
     pub(crate) fn update_search_area(
@@ -723,7 +741,7 @@ impl DataEditor {
         overlay_settings_dirty: &mut bool,
         new_name: &str,
         overwrite: bool,
-    ) -> Result<(), sqyre_persist::PersistError> {
+    ) -> Result<FsWarn, sqyre_persist::PersistError> {
         let prog = self
             .selected_program
             .clone()
@@ -755,7 +773,7 @@ impl DataEditor {
             catalog.upsert_search_area(&prog, sa)?;
             self.selected_entity = Some(new_name.to_string());
         }
-        Ok(())
+        Ok(None)
     }
 
     pub(crate) fn update_mask(
@@ -763,7 +781,7 @@ impl DataEditor {
         catalog: &mut ProgramCatalog,
         new_name: &str,
         overwrite: bool,
-    ) -> Result<(), sqyre_persist::PersistError> {
+    ) -> Result<FsWarn, sqyre_persist::PersistError> {
         let prog = self
             .selected_program
             .clone()
@@ -783,12 +801,15 @@ impl DataEditor {
             radius: self.form_radius.trim().to_string(),
             inverse: self.form_inverse,
         };
+        let mut fs_warn = None;
         if let Some(old) = self.selected_entity.clone() {
             if old != new_name {
                 if overwrite {
-                    let _ = catalog.delete_mask(&prog, new_name);
+                    if let Ok(w) = catalog.delete_mask(&prog, new_name) {
+                        merge_fs_warning(&mut fs_warn, w);
+                    }
                 }
-                catalog.rename_mask(&prog, &old, new_name)?;
+                merge_fs_warning(&mut fs_warn, catalog.rename_mask(&prog, &old, new_name)?);
                 self.selected_entity = Some(new_name.to_string());
             }
             catalog.upsert_mask(&prog, mask)?;
@@ -796,7 +817,7 @@ impl DataEditor {
             catalog.upsert_mask(&prog, mask)?;
             self.selected_entity = Some(new_name.to_string());
         }
-        Ok(())
+        Ok(fs_warn)
     }
 
     pub(crate) fn update_collection(
@@ -805,7 +826,7 @@ impl DataEditor {
         macros: &mut [Macro],
         new_name: &str,
         overwrite: bool,
-    ) -> Result<(), sqyre_persist::PersistError> {
+    ) -> Result<FsWarn, sqyre_persist::PersistError> {
         let prog = self
             .selected_program
             .clone()
@@ -818,12 +839,18 @@ impl DataEditor {
             rows,
             cols,
         };
+        let mut fs_warn = None;
         if let Some(old) = self.selected_entity.clone() {
             if old != new_name {
                 if overwrite {
-                    let _ = catalog.delete_collection(&prog, new_name);
+                    if let Ok(w) = catalog.delete_collection(&prog, new_name) {
+                        merge_fs_warning(&mut fs_warn, w);
+                    }
                 }
-                catalog.rename_collection(&prog, &old, new_name)?;
+                merge_fs_warning(
+                    &mut fs_warn,
+                    catalog.rename_collection(&prog, &old, new_name)?,
+                );
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::Collection, &prog, &old, new_name);
                 }
@@ -834,7 +861,7 @@ impl DataEditor {
             catalog.upsert_collection(&prog, col)?;
             self.selected_entity = Some(new_name.to_string());
         }
-        Ok(())
+        Ok(fs_warn)
     }
 
     pub(crate) fn update_atlas(
@@ -843,7 +870,7 @@ impl DataEditor {
         macros: &mut [Macro],
         new_name: &str,
         overwrite: bool,
-    ) -> Result<(), sqyre_persist::PersistError> {
+    ) -> Result<FsWarn, sqyre_persist::PersistError> {
         let prog = self
             .selected_program
             .clone()
@@ -889,7 +916,7 @@ impl DataEditor {
             catalog.upsert_atlas(&prog, atlas)?;
             self.selected_entity = Some(new_name.to_string());
         }
-        Ok(())
+        Ok(None)
     }
 
     pub(crate) fn on_delete(
@@ -922,12 +949,12 @@ impl DataEditor {
             return;
         }
         let deleted_name = self.selected_entity.clone();
-        let result = match self.tab {
+        let result: Result<FsWarn, sqyre_persist::PersistError> = match self.tab {
             EditorTab::Programs => {
                 let Some(name) = self.selected_program.clone() else {
                     return;
                 };
-                catalog.delete_program(&name).map(|_| {
+                catalog.delete_program(&name).inspect(|_| {
                     if settings.remove_overlay_buttons_for_program(&name) {
                         if let Some(id) = self.overlay_icon_picker_for.as_deref() {
                             if !settings.overlay_buttons.iter().any(|b| b.id == id) {
@@ -946,7 +973,7 @@ impl DataEditor {
                 else {
                     return;
                 };
-                catalog.delete_item(&prog, &name).map(|_| {
+                catalog.delete_item(&prog, &name).inspect(|_| {
                     self.selected_entity = None;
                     self.reset_item_form();
                 })
@@ -957,12 +984,13 @@ impl DataEditor {
                 else {
                     return;
                 };
-                catalog.delete_point(&prog, &name).map(|_| {
+                catalog.delete_point(&prog, &name).map(|()| {
                     if settings.clear_overlay_point_refs(&prog, &name) {
                         let _ = self.persist_overlay_settings(settings);
                     }
                     self.selected_entity = None;
                     self.form_name.clear();
+                    None
                 })
             }
             EditorTab::SearchAreas => {
@@ -971,12 +999,13 @@ impl DataEditor {
                 else {
                     return;
                 };
-                catalog.delete_search_area(&prog, &name).map(|_| {
+                catalog.delete_search_area(&prog, &name).map(|()| {
                     if settings.clear_overlay_search_area_refs(&prog, &name) {
                         let _ = self.persist_overlay_settings(settings);
                     }
                     self.selected_entity = None;
                     self.form_name.clear();
+                    None
                 })
             }
             EditorTab::Masks => {
@@ -985,7 +1014,7 @@ impl DataEditor {
                 else {
                     return;
                 };
-                catalog.delete_mask(&prog, &name).map(|_| {
+                catalog.delete_mask(&prog, &name).inspect(|_| {
                     self.selected_entity = None;
                     self.reset_mask_form();
                 })
@@ -996,7 +1025,7 @@ impl DataEditor {
                 else {
                     return;
                 };
-                catalog.delete_collection(&prog, &name).map(|_| {
+                catalog.delete_collection(&prog, &name).inspect(|_| {
                     self.selected_entity = None;
                     self.reset_collection_form();
                 })
@@ -1007,15 +1036,16 @@ impl DataEditor {
                 else {
                     return;
                 };
-                catalog.delete_atlas(&prog, &name).map(|_| {
+                catalog.delete_atlas(&prog, &name).map(|()| {
                     self.selected_entity = None;
                     self.reset_atlas_form();
+                    None
                 })
             }
             EditorTab::ScreenCap | EditorTab::PixelCheck | EditorTab::Overlay => return,
         };
         match result {
-            Ok(()) => {
+            Ok(fs_warn) => {
                 if matches!(self.tab, EditorTab::Points | EditorTab::SearchAreas) {
                     if let Some(name) = deleted_name.as_deref() {
                         previews.invalidate_entity(name);
@@ -1025,7 +1055,12 @@ impl DataEditor {
                     self.set_err(e);
                 } else {
                     play_ui_delete_sound(settings);
-                    self.set_ok("Deleted.");
+                    let (msg, is_err) = status_with_fs_warn("Deleted.", fs_warn);
+                    if is_err {
+                        self.set_err(msg);
+                    } else {
+                        self.set_ok(msg);
+                    }
                 }
             }
             Err(e) => self.set_err(e.to_string()),
