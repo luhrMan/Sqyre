@@ -54,7 +54,7 @@ codegen-units = 1
 purecv = { version = "0.8.0", default-features = false, features = ["std", "parallel", "simd"] }
 eframe = "0.36"
 egui = "0.36"
-egui-phosphor = "0.14"
+egui-phosphor = { version = "0.14", default-features = false, features = ["regular", "fill"] }
 egui_ltreeview = "0.9"
 pulp = "0.22"
 rayon = "1.12"

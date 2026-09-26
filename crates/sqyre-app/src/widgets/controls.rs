@@ -74,6 +74,54 @@ fn icon_button_inner(
     response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
 
+/// Named font family for Phosphor Fill (outline Regular stays on Proportional).
+pub const PHOSPHOR_FILL_FAMILY: &str = "phosphor-fill";
+
+/// Icon-only on/off toggle: outline glyph when off, filled glyph when on.
+///
+/// `tip` is the AccessKit name and hover text. Returns a response whose
+/// `changed()` is true when the user toggled `selected`.
+pub fn icon_toggle(
+    ui: &mut egui::Ui,
+    selected: &mut bool,
+    tip: &str,
+    outline_glyph: &str,
+    filled_glyph: &str,
+) -> egui::Response {
+    let enabled = ui.is_enabled();
+    let desired = Vec2::splat(icon_btn_side(ui));
+    let (rect, mut response) = ui.allocate_exact_size(desired, Sense::click());
+    if enabled && response.clicked() {
+        *selected = !*selected;
+        response.mark_changed();
+    }
+    let visuals = ui.style().interact(&response);
+    let glyph = if *selected {
+        filled_glyph
+    } else {
+        outline_glyph
+    };
+    let font_id = if *selected {
+        egui::FontId::new(
+            icon_btn_font(ui).size,
+            egui::FontFamily::Name(PHOSPHOR_FILL_FAMILY.into()),
+        )
+    } else {
+        icon_btn_font(ui)
+    };
+    let fg = if *selected {
+        PRIMARY
+    } else if enabled {
+        visuals.text_color()
+    } else {
+        visuals.text_color().gamma_multiply(0.55)
+    };
+    paint_text_centered(ui, rect, glyph, font_id, fg);
+    let selected_now = *selected;
+    response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, enabled, selected_now, tip));
+    response.on_hover_text(tip).on_disabled_hover_text(tip)
+}
+
 /// Persist / commit button that pulses a Sqyre-yellow glow while enabled (dirty + valid).
 ///
 /// Disabled state matches a normal `add_enabled(false, …)` button. While glowing,
