@@ -8,6 +8,16 @@ use crate::image::ImageBuf;
 use pulp::Arch;
 use rayon::prelude::*;
 
+/// Cached `pulp` ISA dispatch — `Arch::new()` is process-stable; avoid re-detecting
+/// on every hot row / accumulate call.
+#[inline]
+pub(crate) fn pulp_arch() -> Arch {
+    thread_local! {
+        static ARCH: Arch = Arch::new();
+    }
+    ARCH.with(|a| *a)
+}
+
 /// Planar `f32` search image: channel `c` occupies `[c * plane .. (c+1) * plane)`
 /// with `plane = width * height`, row-major within each plane.
 #[derive(Clone, Debug)]
@@ -34,7 +44,7 @@ impl PlanarF32 {
         let data_addr = data.as_mut_ptr() as usize;
         let src = img.data.as_slice();
         (0..h).into_par_iter().for_each(|y| {
-            let arch = Arch::new();
+            let arch = pulp_arch();
             arch.dispatch(|| {
                 for x in 0..w {
                     let pi = (y * w + x) * ch;
@@ -101,7 +111,7 @@ pub fn accumulate_corr_row(
     debug_assert_eq!(tmpl.channels, ch);
 
     numer.fill(0.0);
-    let arch = Arch::new();
+    let arch = pulp_arch();
     arch.dispatch(|| {
         for i in 0..tmpl.len() {
             let tx = tmpl.xs[i] as usize;
@@ -133,7 +143,7 @@ pub fn accumulate_sum_sq_row(
     let plane = planar.plane_len();
 
     sum_sq.fill(0.0);
-    let arch = Arch::new();
+    let arch = pulp_arch();
     arch.dispatch(|| {
         for i in 0..tmpl.len() {
             let tx = tmpl.xs[i] as usize;
@@ -166,7 +176,7 @@ pub fn accumulate_channel_sums_row(
     for s in sums.iter_mut() {
         s.fill(0.0);
     }
-    let arch = Arch::new();
+    let arch = pulp_arch();
     arch.dispatch(|| {
         for i in 0..tmpl.len() {
             let tx = tmpl.xs[i] as usize;
@@ -189,7 +199,7 @@ pub fn complex_mul_conj(
     tmpl: &[rustfft::num_complex::Complex<f32>],
 ) {
     debug_assert_eq!(img.len(), tmpl.len());
-    let arch = Arch::new();
+    let arch = pulp_arch();
     arch.dispatch(|| {
         for (a, b) in img.iter_mut().zip(tmpl.iter()) {
             *a *= b.conj();
@@ -200,7 +210,7 @@ pub fn complex_mul_conj(
 /// Rec.601 RGB→gray under pulp dispatch.
 pub fn map_rgb_to_gray_u8(rgb: &[u8], gray: &mut [u8]) {
     debug_assert_eq!(rgb.len(), gray.len() * 3);
-    let arch = Arch::new();
+    let arch = pulp_arch();
     arch.dispatch(|| {
         for (dst, chunk) in gray.iter_mut().zip(rgb.chunks_exact(3)) {
             let r = chunk[0] as f32;
@@ -213,7 +223,7 @@ pub fn map_rgb_to_gray_u8(rgb: &[u8], gray: &mut [u8]) {
 
 /// Threshold a gray buffer in place under pulp dispatch.
 pub fn threshold_gray_in_place(data: &mut [u8], thresh: u8, invert: bool) {
-    let arch = Arch::new();
+    let arch = pulp_arch();
     arch.dispatch(|| {
         for p in data.iter_mut() {
             let above = *p >= thresh;

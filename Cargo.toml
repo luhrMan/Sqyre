@@ -38,16 +38,19 @@ unused = "warn"
 [workspace.lints.clippy]
 all = "warn"
 
-# Day-to-day `cargo build --release` / `make release`: fast incremental rebuilds.
+# Day-to-day `cargo build --release` / `make release`: thin LTO for better
+# match/FFT/pulp codegen. Leave `codegen-units` at the Cargo default so incremental
+# and CI link times stay tolerable (shipping uses `[profile.dist]` below).
 # Strip is cheap and keeps local release binaries smaller.
+# Optional local-only: `RUSTFLAGS='-C target-cpu=native'` — never for AppImage/Windows.
 [profile.release]
 strip = "symbols"
+lto = "thin"
 
 # Shipping artifacts only (AppImage, Flatpak, Windows, WASM, release-bundle).
-# Thin LTO + single codegen unit shrink binaries but make repeat links/compiles slow.
+# Single codegen unit on top of thin LTO shrinks binaries further but slows links.
 [profile.dist]
 inherits = "release"
-lto = "thin"
 codegen-units = 1
 
 [workspace.dependencies]
