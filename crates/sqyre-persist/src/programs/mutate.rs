@@ -137,12 +137,16 @@ impl ProgramCatalog {
                 continue;
             }
             if dst.exists() {
+                // Do not fall through to rename when clear fails: on Windows,
+                // MoveFileEx(REPLACE) can replace a blocking *file* with the
+                // source directory, which would drop the source path.
                 if let Err(e) = std::fs::remove_dir_all(&dst) {
                     push_fs_err(
                         &mut warnings,
                         &format!("could not clear destination {label} dir"),
                         e,
                     );
+                    continue;
                 }
             }
             if let Err(e) = std::fs::rename(&src, &dst) {
@@ -161,13 +165,18 @@ impl ProgramCatalog {
                     push_fs_err(&mut warnings, "could not create process-icon dir", e);
                 }
             }
-            if dst_icon.exists() {
-                if let Err(e) = std::fs::remove_file(&dst_icon) {
-                    push_fs_err(&mut warnings, "could not clear destination process icon", e);
+            let dest_ready = if !dst_icon.exists() {
+                true
+            } else if let Err(e) = std::fs::remove_file(&dst_icon) {
+                push_fs_err(&mut warnings, "could not clear destination process icon", e);
+                false
+            } else {
+                true
+            };
+            if dest_ready {
+                if let Err(e) = std::fs::rename(&src_icon, &dst_icon) {
+                    push_fs_err(&mut warnings, "could not rename process icon", e);
                 }
-            }
-            if let Err(e) = std::fs::rename(&src_icon, &dst_icon) {
-                push_fs_err(&mut warnings, "could not rename process icon", e);
             }
         }
         crate::invalidate_icon_fs_cache_under(&self.icons_dir(old));

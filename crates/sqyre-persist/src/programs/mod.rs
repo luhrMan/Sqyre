@@ -917,7 +917,9 @@ Game:
         let icons_old = images.join("icons").join("Alpha");
         std::fs::create_dir_all(&icons_old).unwrap();
         std::fs::write(icons_old.join("keep.png"), b"icon").unwrap();
-        // A file where the destination dir should be blocks rename.
+        // A file where the destination dir should be blocks clear via remove_dir_all;
+        // rename is skipped when clear fails (needed on Windows, where MoveFileEx
+        // REPLACE can otherwise replace that file with the source directory).
         std::fs::create_dir_all(images.join("icons")).unwrap();
         std::fs::write(images.join("icons").join("Beta"), b"not-a-dir").unwrap();
 
@@ -987,10 +989,16 @@ Game:
         std::fs::create_dir_all(&masks).unwrap();
         let path = masks.join("circle.png");
         std::fs::write(&path, b"mask").unwrap();
-        // Removing a file needs write on the parent dir.
-        let mut perms = std::fs::metadata(&masks).unwrap().permissions();
-        perms.set_readonly(true);
-        std::fs::set_permissions(&masks, perms).unwrap();
+        // Make remove_file fail: Unix needs write on the parent; Windows ignores
+        // directory readonly and instead honors the file's readonly attribute.
+        #[cfg(windows)]
+        let readonly_target = path.clone();
+        #[cfg(not(windows))]
+        let readonly_target = masks.clone();
+        let original_perms = std::fs::metadata(&readonly_target).unwrap().permissions();
+        let mut blocked = original_perms.clone();
+        blocked.set_readonly(true);
+        std::fs::set_permissions(&readonly_target, blocked).unwrap();
 
         let warn = cat.delete_mask("Alpha", "circle").unwrap();
         assert!(!cat.get("Alpha").unwrap().masks.contains_key("circle"));
@@ -1001,9 +1009,7 @@ Game:
         );
         assert!(path.exists());
 
-        let mut perms = std::fs::metadata(&masks).unwrap().permissions();
-        perms.set_readonly(false);
-        std::fs::set_permissions(&masks, perms).unwrap();
+        std::fs::set_permissions(&readonly_target, original_perms).unwrap();
     }
 
     #[test]
