@@ -83,7 +83,8 @@ fn bench_match(c: &mut Criterion) {
 }
 
 /// Baseline for nested Rayon (M-1): N template variants share one search frame /
-/// [`sqyre_match::SearchPrep`], matched via outer `par_iter`.
+/// [`sqyre_match::SearchPrep`], matched via outer `par_iter` (inner match stays
+/// serial on Rayon workers).
 fn bench_multi_variant(c: &mut Criterion) {
     const N: usize = 8;
     let search = random_rgb(160, 120, 10);
