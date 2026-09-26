@@ -4,6 +4,15 @@ use rayon::prelude::*;
 use sqyre_match::{map_rgb_to_gray_u8, ImageBuf};
 use sqyre_ports::{PortError, RgbCapture};
 
+/// Cached `pulp` ISA dispatch — avoid `Arch::new()` on every gray→RGB expand.
+#[inline]
+fn pulp_arch() -> Arch {
+    thread_local! {
+        static ARCH: Arch = Arch::new();
+    }
+    ARCH.with(|a| *a)
+}
+
 /// Wrap a packed RGB capture as an `ImageBuf` (reuses the pixel buffer).
 pub fn rgb_capture_to_image_buf(capture: RgbCapture) -> ImageBuf {
     ImageBuf::from_raw(
@@ -50,7 +59,7 @@ pub fn gray_to_rgb(img: &ImageBuf) -> ImageBuf {
         return img.clone();
     }
     let mut data = vec![0u8; img.width * img.height * 3];
-    let arch = Arch::new();
+    let arch = pulp_arch();
     arch.dispatch(|| {
         for (i, &v) in img.data.iter().enumerate() {
             let o = i * 3;

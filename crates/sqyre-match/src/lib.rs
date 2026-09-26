@@ -11,7 +11,9 @@ mod peaks;
 mod template;
 
 pub use blur::{blur_image, blur_image_owned, search_blur_kernel};
-pub use corr_simd::{map_rgb_to_gray_u8, threshold_gray_in_place};
+pub use corr_simd::{
+    accumulate_corr_row, map_rgb_to_gray_u8, threshold_gray_in_place, PlanarF32, SparseTemplate,
+};
 pub use image::{ImageBuf, Point};
 pub use peaks::{
     cluster_points, cluster_points_from, find_peaks, find_peaks_for_method, PointClusterer,

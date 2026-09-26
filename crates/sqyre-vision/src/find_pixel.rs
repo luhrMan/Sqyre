@@ -4,22 +4,6 @@ use sqyre_match::{ImageBuf, Point, PointClusterer};
 /// Half-open run of consecutive matching pixels in one row: `[start, end)`.
 type Run = (usize, usize);
 
-/// Find first pixel matching `#rrggbb` within `tolerance` (row-major order).
-pub fn find_pixel(img: &ImageBuf, hex: &str, tolerance: i32) -> Option<Point> {
-    let scan = Scan::new(img, hex, tolerance)?;
-    // `find_first` is index-ordered, so this is the row-major first match and
-    // later rows stop as soon as an earlier one wins.
-    (0..img.height)
-        .into_par_iter()
-        .filter_map(|y| {
-            scan.first_in_row(y).map(|x| Point {
-                x: x as i32,
-                y: y as i32,
-            })
-        })
-        .find_first(|_| true)
-}
-
 /// Find all pixels matching `#rrggbb` within `tolerance` (row-major order).
 pub fn find_pixels(img: &ImageBuf, hex: &str, tolerance: i32) -> Vec<Point> {
     let Some(scan) = Scan::new(img, hex, tolerance) else {
@@ -118,10 +102,6 @@ impl<'a> Scan<'a> {
             && (self.data[o + 2] as i32 - tb).abs() <= self.tol
     }
 
-    fn first_in_row(&self, y: usize) -> Option<usize> {
-        (0..self.width).find(|&x| self.matches(y, x))
-    }
-
     /// Matching spans per row. Runs keep a solid region to a couple of entries
     /// per row instead of one `Point` per pixel.
     fn runs_by_row(&self, height: usize) -> Vec<Vec<Run>> {
@@ -162,8 +142,8 @@ mod tests {
         img.data[o] = 255;
         img.data[o + 1] = 0;
         img.data[o + 2] = 0;
-        let p = find_pixel(&img, "#ff0000", 0).unwrap();
-        assert_eq!((p.x, p.y), (2, 1));
+        let pts = find_pixels(&img, "#ff0000", 0);
+        assert_eq!(pts, vec![Point { x: 2, y: 1 }]);
     }
 
     #[test]
@@ -208,7 +188,7 @@ mod tests {
     }
 
     #[test]
-    fn find_pixel_returns_row_major_first() {
+    fn find_pixels_row_major_order() {
         let mut img = ImageBuf::new(16, 16, 3, 0);
         for &(x, y) in &[(9, 2), (1, 2), (15, 0), (4, 11)] {
             let o = img.pixel_offset(x, y);
@@ -216,11 +196,15 @@ mod tests {
             img.data[o + 1] = 0;
             img.data[o + 2] = 0;
         }
-        let p = find_pixel(&img, "#ff0000", 0).unwrap();
-        assert_eq!((p.x, p.y), (15, 0));
+        let pts = find_pixels(&img, "#ff0000", 0);
         assert_eq!(
-            find_pixels(&img, "#ff0000", 0).first().copied(),
-            Some(Point { x: 15, y: 0 })
+            pts,
+            vec![
+                Point { x: 15, y: 0 },
+                Point { x: 1, y: 2 },
+                Point { x: 9, y: 2 },
+                Point { x: 4, y: 11 },
+            ]
         );
     }
 
@@ -242,9 +226,8 @@ mod tests {
         img.data[o] = 200;
         img.data[o + 1] = 10;
         img.data[o + 2] = 10;
-        assert!(find_pixel(&img, "#c80000", 0).is_none());
-        let p = find_pixel(&img, "#c80000", 15).unwrap();
-        assert_eq!((p.x, p.y), (4, 5));
-        assert_eq!(find_pixels(&img, "#c80000", 15).len(), 1);
+        assert!(find_pixels(&img, "#c80000", 0).is_empty());
+        let pts = find_pixels(&img, "#c80000", 15);
+        assert_eq!(pts, vec![Point { x: 4, y: 5 }]);
     }
 }
