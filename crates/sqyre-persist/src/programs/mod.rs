@@ -989,16 +989,20 @@ Game:
         std::fs::create_dir_all(&masks).unwrap();
         let path = masks.join("circle.png");
         std::fs::write(&path, b"mask").unwrap();
-        // Make remove_file fail: Unix needs write on the parent; Windows ignores
-        // directory readonly and instead honors the file's readonly attribute.
+        // Force remove_file to fail:
+        // - Unix: unlink needs write on the parent directory.
+        // - Windows: std::fs::remove_file ignores FILE_ATTRIBUTE_READONLY, so hold
+        //   an open handle (default share mode omits FILE_SHARE_DELETE).
         #[cfg(windows)]
-        let readonly_target = path.clone();
+        let _open = std::fs::File::open(&path).unwrap();
         #[cfg(not(windows))]
-        let readonly_target = masks.clone();
-        let original_perms = std::fs::metadata(&readonly_target).unwrap().permissions();
-        let mut blocked = original_perms.clone();
-        blocked.set_readonly(true);
-        std::fs::set_permissions(&readonly_target, blocked).unwrap();
+        let original_perms = {
+            let original = std::fs::metadata(&masks).unwrap().permissions();
+            let mut blocked = original.clone();
+            blocked.set_readonly(true);
+            std::fs::set_permissions(&masks, blocked).unwrap();
+            original
+        };
 
         let warn = cat.delete_mask("Alpha", "circle").unwrap();
         assert!(!cat.get("Alpha").unwrap().masks.contains_key("circle"));
@@ -1009,7 +1013,8 @@ Game:
         );
         assert!(path.exists());
 
-        std::fs::set_permissions(&readonly_target, original_perms).unwrap();
+        #[cfg(not(windows))]
+        std::fs::set_permissions(&masks, original_perms).unwrap();
     }
 
     #[test]
