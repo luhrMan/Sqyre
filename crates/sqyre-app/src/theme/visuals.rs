@@ -3,7 +3,8 @@
 use eframe::egui::{self, Color32, CornerRadius, Stroke, Visuals};
 
 use super::tokens::{
-    accent_dim, chip_fill, error_fg, frame_fill, inner_stroke, rgba, warn_fg, PRIMARY,
+    accent_dim, chip_fill, error_fg, frame_fill, inner_stroke, panel_split_stroke, rgba, warn_fg,
+    PRIMARY,
 };
 
 /// Selected-text stroke — light cream readable on dim gold fill.
@@ -20,8 +21,8 @@ pub fn dark_visuals() -> Visuals {
     v.selection.bg_fill = dim;
     v.selection.stroke = Stroke::new(1.0, SELECTION_FG);
 
-    // Separators / inner group outlines — dim primary.
-    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, dim);
+    // Separators + panel split lines — opaque structural stroke (not dim inner cards).
+    v.widgets.noninteractive.bg_stroke = panel_split_stroke();
 
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, PRIMARY);
     v.widgets.hovered.weak_bg_fill = chip_fill();
@@ -85,7 +86,7 @@ pub fn titled_section(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::theme::tokens::{accent_dim, inner_stroke, PRIMARY};
+    use crate::theme::tokens::{accent_dim, inner_stroke, panel_split_stroke, PRIMARY};
 
     #[test]
     fn dark_visuals_use_sqyre_accents() {
@@ -97,6 +98,8 @@ mod tests {
         assert_eq!(v.selection.bg_fill, accent_dim());
         assert_eq!(v.widgets.hovered.bg_stroke.color, PRIMARY);
         assert_eq!(v.window_stroke.color, PRIMARY);
+        assert_eq!(v.widgets.noninteractive.bg_stroke, panel_split_stroke());
+        assert_eq!(v.widgets.noninteractive.bg_stroke.color.a(), 255);
     }
 
     #[test]
@@ -108,5 +111,6 @@ mod tests {
         assert_eq!(style.visuals.window_stroke.color, PRIMARY);
         assert_eq!(section_frame(&style).stroke.color, accent_dim());
         assert_eq!(inner_stroke().color, accent_dim());
+        assert_eq!(panel_split_stroke().color, PRIMARY);
     }
 }
