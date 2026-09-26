@@ -39,7 +39,9 @@ fn find_peaks_polarity(
     }
     let w = map.width;
     let scores = &map.scores;
-    // Parallel per-row scan; flatten in row order so clustering stays stable.
+    // Parallel per-row scan; keep row order so clustering stays stable.
+    // Stream straight into the clusterer (no intermediate flat Vec), and skip
+    // along a row once a cluster opens — same idea as find_pixels_clustered.
     let row_hits: Vec<Vec<Point>> = (0..map.height)
         .into_par_iter()
         .map(|y| {
@@ -65,11 +67,27 @@ fn find_peaks_polarity(
             hits
         })
         .collect();
-    let mut matches = Vec::new();
-    for row in row_hits {
-        matches.extend(row);
+    let mut clusterer = PointClusterer::new(close_matches_distance);
+    let skip = clusterer.distance();
+    let mut out = Vec::new();
+    for hits in row_hits {
+        let mut i = 0;
+        while i < hits.len() {
+            let point = hits[i];
+            if clusterer.add_if_far(point) {
+                out.push(point);
+                // Same row ⇒ |dy| = 0; later x within `skip` are in-cluster.
+                let limit_x = point.x + skip;
+                i += 1;
+                while i < hits.len() && hits[i].x <= limit_x {
+                    i += 1;
+                }
+            } else {
+                i += 1;
+            }
+        }
     }
-    cluster_points(&matches, close_matches_distance)
+    out
 }
 
 /// Keep the first point of each spatial cluster (scan order), dropping neighbors
@@ -184,5 +202,36 @@ mod tests {
         };
         let matches = find_peaks_for_method(&map, 0.1, 10, MatchMethod::SqdiffNormed);
         assert_eq!(matches, vec![Point { x: 7, y: 5 }]);
+    }
+
+    #[test]
+    fn dense_peaks_match_scan_then_cluster() {
+        // Low threshold ⇒ nearly every cell is a hit; skip-while-clustering must
+        // match materialize-then-cluster_points.
+        let mut scores = vec![0.5_f32; 40 * 30];
+        scores[2 * 40 + 3] = 0.99;
+        scores[27 * 40 + 37] = 0.99;
+        let map = MatchMap {
+            width: 40,
+            height: 30,
+            scores,
+        };
+        for distance in [0, 1, 5, 12, 50] {
+            let mut all = Vec::new();
+            for y in 0..30 {
+                for x in 0..40 {
+                    let c = map.scores[y * 40 + x];
+                    if c.is_finite() && c >= 0.4 {
+                        all.push(Point {
+                            x: x as i32,
+                            y: y as i32,
+                        });
+                    }
+                }
+            }
+            let want = cluster_points(&all, distance);
+            let got = find_peaks(&map, 0.4, distance);
+            assert_eq!(got, want, "distance={distance}");
+        }
     }
 }
