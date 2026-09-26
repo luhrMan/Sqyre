@@ -2,7 +2,7 @@
 //!
 //! Split out of `draw_form`; see `forms.rs` for the tab dispatch.
 
-use super::super::DataEditor;
+use super::super::{DataEditor, EditorTab};
 use super::*;
 
 impl DataEditor {
@@ -333,7 +333,7 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        help::heading(ui, "Screen capture", help::DE_SCREENCAP_INTRO);
+        help::heading(ui, EditorTab::ScreenCap.label(), help::DE_SCREENCAP_INTRO);
         ui.add_space(4.0);
         self.program_selector(ui, catalog, icons, settings);
         self.paint_name_record_row(

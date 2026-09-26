@@ -52,18 +52,6 @@ pub fn apply_list_nav(selected: &mut usize, len: usize, action: ListNavAction) -
     }
 }
 
-/// Weak empty / no-match copy inside a filtered list body.
-pub fn paint_list_vacancy(ui: &mut egui::Ui, query: &str, visible: usize, entity_plural: &str) {
-    if visible > 0 {
-        return;
-    }
-    if query.trim().is_empty() {
-        ui.weak(format!("No {entity_plural} yet."));
-    } else {
-        ui.weak(format!("No matching {entity_plural}."));
-    }
-}
-
 /// Focus the search field once when a picker/dialog opens (`id` should be stable per window).
 pub fn focus_search_once(ui: &mut egui::Ui, id: egui::Id, resp: &egui::Response) {
     let key = id.with("focus_search_once");

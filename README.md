@@ -49,7 +49,8 @@ Macros, images, masks, and data tables live under **`~/.sqyre/`** (user home on 
 | **Detection** | Image search (PureCV; multi-variant icons), OCR (Tesseract), find pixel — optional wait-until-found |
 | **Variables** | Set (values + expressions), save to file or clipboard |
 | **Control flow** | Loop, while, break/continue, for each row, if |
-| **Miscellaneous** | Wait, pause, focus window, run macro, navigate select/key |
+| **Wait** | Wait, Pause |
+| **Miscellaneous** | Focus window, run macro, navigate select/key |
 
 ### Also in the app
 

@@ -43,16 +43,6 @@ pub fn title_with_count(
     )
 }
 
-/// Selectable title on the left, `(count)` right-aligned. Returns the title response.
-pub fn selectable_title_with_count(
-    ui: &mut egui::Ui,
-    selected: bool,
-    title: impl Into<egui::WidgetText>,
-    count: usize,
-) -> egui::Response {
-    count_row(ui, |ui| ui.selectable_label(selected, title), count)
-}
-
 /// Heading on the left, `(count)` right-aligned.
 pub fn heading_with_count(ui: &mut egui::Ui, title: &str, count: usize) -> egui::Response {
     title_with_count(ui, egui::RichText::new(title).heading(), count)

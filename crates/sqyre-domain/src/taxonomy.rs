@@ -1,9 +1,11 @@
 //! Single source of truth for action type metadata (label, description, categories,
 //! icon, color key, delay class).
 //!
-//! Labels are used by the executor (action logs) as well as the UI. Picker column
-//! order lives in `sqyre-ui-model` ([`sqyre_ui_model::ACTION_PICKER_CATEGORIES`]);
-//! keep wire `type_key` values stable.
+//! Labels are used by the executor (action logs) as well as the UI. Category
+//! labels (`color_category`) drive both the Add Action picker and Appearance
+//! color buckets; column order lives in `sqyre-ui-model`
+//! ([`sqyre_ui_model::ACTION_PICKER_CATEGORIES`]). Keep wire `type_key` values
+//! stable.
 //!
 //! # Adding a kind
 //!
@@ -39,7 +41,8 @@ pub struct ActionTypeMeta {
     pub type_key: &'static str,
     pub label: &'static str,
     pub description: &'static str,
-    /// Pastel color bucket label (may differ from picker for loop/nav types).
+    /// Picker column and Appearance color-bucket label (same IA as
+    /// `ACTION_PICKER_CATEGORIES` / [`ACTION_COLOR_CATEGORIES`](crate::color::ACTION_COLOR_CATEGORIES)).
     pub color_category: &'static str,
     /// Settings pastel override key ([`ACTION_COLOR_KEY_*`](crate::color)).
     pub color_key: &'static str,
@@ -190,7 +193,7 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "wait",
         label: "Wait",
         description: "Pauses for a fixed number of milliseconds, then continues.",
-        color_category: "Miscellaneous",
+        color_category: "Wait",
         color_key: ACTION_COLOR_KEY_WAIT,
         icon: "⏱",
         delay_class: DelayClass::None,
@@ -199,7 +202,7 @@ const ACTION_TYPE_TABLE: &[ActionTypeMeta] = &[
         type_key: "pause",
         label: "Pause",
         description: "Halts the macro until you press the continue key.",
-        color_category: "Miscellaneous",
+        color_category: "Wait",
         color_key: ACTION_COLOR_KEY_WAIT,
         icon: "⏸",
         delay_class: DelayClass::None,
@@ -391,7 +394,9 @@ mod tests {
     }
 
     #[test]
-    fn wait_pause_use_wait_color_key() {
+    fn wait_pause_use_wait_bucket() {
+        assert_eq!(action_color_category("wait"), "Wait");
+        assert_eq!(action_color_category("pause"), "Wait");
         assert_eq!(action_color_key("wait"), ACTION_COLOR_KEY_WAIT);
         assert_eq!(action_color_key("pause"), ACTION_COLOR_KEY_WAIT);
     }

@@ -1,18 +1,10 @@
-//! Sqyre brand theme (dark + Sqyre yellow accents).
-//!
-//! Brand/semantic colors live in [`sqyre_ui_theme`]; this module re-exports them
-//! and hosts app-only visuals + widgets.
+//! Shared painted / icon controls used across panels.
 
 use eframe::egui::{
-    self, Color32, CornerRadius, Key, Modifiers, Pos2, Sense, Stroke, Vec2, Visuals, WidgetInfo,
-    WidgetType,
+    self, Color32, CornerRadius, Key, Modifiers, Pos2, Sense, Stroke, Vec2, WidgetInfo, WidgetType,
 };
 
-pub use sqyre_ui_theme::{
-    accent_dim, chip_fill, contrast_fg, error_fg, frame_fill, inner_stroke, ok_fg,
-    overlay_panel_fill, paint_galley_centered, paint_text_centered, rgba, warn_fg, MACRO_START,
-    MACRO_STOP, PRIMARY,
-};
+use crate::theme::{accent_dim, paint_galley_centered, paint_text_centered, MACRO_STOP, PRIMARY};
 
 /// Minimum square hit target for icon-only buttons (framed and bare).
 /// Side grows with Button text so glyphs track the Font size setting.
@@ -28,39 +20,41 @@ fn icon_btn_side(ui: &egui::Ui) -> f32 {
 }
 
 /// Framed icon-only button with optically centered glyph.
-pub fn icon_button(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
-    icon_button_inner(ui, glyph, true, None)
+///
+/// `tip` is the AccessKit name and hover text (required for actionable icons).
+pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
+    icon_button_inner(ui, glyph, tip, true, None)
 }
 
 /// Frameless icon control (optically centered); used in dense tree chrome.
-pub fn icon_button_bare(ui: &mut egui::Ui, glyph: &str) -> egui::Response {
-    icon_button_inner(ui, glyph, false, None)
-}
-
-/// Like [`icon_button_bare`], with an optional fixed glyph color.
+/// Pass `None` for the default interact text color.
 pub fn icon_button_bare_colored(
     ui: &mut egui::Ui,
     glyph: &str,
+    tip: &str,
     color: Option<Color32>,
 ) -> egui::Response {
-    icon_button_inner(ui, glyph, false, color)
+    icon_button_inner(ui, glyph, tip, false, color)
 }
 
 /// Like [`icon_button`], with an optional fixed glyph color (e.g. record ●).
 pub fn icon_button_colored(
     ui: &mut egui::Ui,
     glyph: &str,
+    tip: &str,
     color: Option<Color32>,
 ) -> egui::Response {
-    icon_button_inner(ui, glyph, true, color)
+    icon_button_inner(ui, glyph, tip, true, color)
 }
 
 fn icon_button_inner(
     ui: &mut egui::Ui,
     glyph: &str,
+    tip: &str,
     framed: bool,
     color: Option<Color32>,
 ) -> egui::Response {
+    let enabled = ui.is_enabled();
     let font_id = icon_btn_font(ui);
     let desired = Vec2::splat(icon_btn_side(ui));
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
@@ -76,190 +70,8 @@ fn icon_button_inner(
     }
     let fg = color.unwrap_or_else(|| visuals.text_color());
     paint_text_centered(ui, rect, glyph, font_id, fg);
-    response
-}
-
-/// Dark scrim behind preview overlay chips / editors.
-pub fn preview_scrim() -> Color32 {
-    rgba([16, 16, 16, 170])
-}
-
-/// Semi-opaque black behind labels on preview imagery.
-pub fn preview_label_dim() -> Color32 {
-    rgba([0, 0, 0, 150])
-}
-
-/// Soft blue fill for collection bounds on atlas preview.
-pub fn preview_selection_fill() -> Color32 {
-    rgba([60, 100, 160, 60])
-}
-
-/// Blue stroke for collection bounds on atlas preview.
-pub fn preview_selection_stroke() -> Color32 {
-    Color32::from_rgb(120, 180, 255)
-}
-
-// --- Preview / PixelCheck visualization tokens (not status chrome) ---
-// Analysis overlays keep distinct hues so pass/fail/within remain readable on
-// heatmaps. Status text and destructive accents must use `error_fg` / `warn_fg`
-// / `ok_fg` / `MACRO_*` instead of copying these RGB values.
-
-/// Red grid / outline stroke on image previews (viz; aliases [`error_fg`]).
-pub fn preview_grid_stroke() -> Color32 {
-    error_fg()
-}
-
-/// Warn stroke / label on preview atlas (unresolved collections).
-pub fn preview_warn_stroke() -> Color32 {
-    warn_fg()
-}
-
-/// Best / passing match marker (PixelCheck viz).
-pub fn match_pass_fg() -> Color32 {
-    Color32::from_rgb(80, 255, 120)
-}
-
-/// Best match below tolerance (PixelCheck viz).
-pub fn match_fail_fg() -> Color32 {
-    Color32::from_rgb(255, 200, 60)
-}
-
-/// Secondary match within tolerance (PixelCheck viz).
-pub fn match_within_fg() -> Color32 {
-    Color32::from_rgb(120, 230, 180)
-}
-
-/// Selected card / list stroke (Sqyre primary).
-pub fn selection_stroke() -> Stroke {
-    Stroke::new(2.0, PRIMARY)
-}
-
-/// Soft primary tint for related-row owner highlight.
-pub fn highlight_owner_fill() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 0x28])
-}
-
-/// Soft error tint behind invalid tree rows (from [`error_fg`]).
-pub fn highlight_invalid_fill() -> Color32 {
-    let c = error_fg();
-    Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 45)
-}
-
-/// Soft blue fill for execution cursor row.
-pub fn highlight_cursor_fill() -> Color32 {
-    rgba([90, 160, 240, 70])
-}
-
-/// Soft green fill for execution progress overlay.
-pub fn highlight_progress_fill() -> Color32 {
-    rgba([90, 200, 130, 90])
-}
-
-/// Icon-grid selected cell fill.
-pub fn picker_selected_fill() -> Color32 {
-    rgba([80, 160, 100, 60])
-}
-
-/// Icon-grid selected cell stroke.
-pub fn picker_selected_stroke() -> Color32 {
-    Color32::from_rgb(60, 140, 80)
-}
-
-/// DnD drop-target hover stroke on icon grid.
-pub fn picker_drop_stroke() -> Color32 {
-    Color32::from_rgb(80, 140, 200)
-}
-
-/// Remove-badge hover fill on icon grid (destructive [`MACRO_STOP`]).
-pub fn picker_remove_hover() -> Color32 {
-    MACRO_STOP
-}
-
-/// Collection cell selection fill.
-pub fn cell_selection_fill() -> Color32 {
-    rgba([60, 160, 255, 70])
-}
-
-/// Collection cell selection stroke.
-pub fn cell_selection_stroke() -> Color32 {
-    Color32::from_rgb(40, 140, 255)
-}
-
-/// Selected-text stroke — light cream readable on dim gold fill.
-const SELECTION_FG: Color32 = Color32::from_rgb(0xf5, 0xe6, 0xc0);
-
-/// Dark visuals with Sqyre yellow for primary accents (selection, hover, links).
-pub fn dark_visuals() -> Visuals {
-    let mut v = Visuals::dark();
-    let dim = accent_dim();
-
-    v.hyperlink_color = PRIMARY;
-    v.error_fg_color = error_fg();
-    // warn_fg_color stays PRIMARY until P2-16 aligns it with warn_fg().
-    v.warn_fg_color = PRIMARY;
-    v.selection.bg_fill = dim;
-    v.selection.stroke = Stroke::new(1.0, SELECTION_FG);
-
-    // Separators / inner group outlines — dim primary.
-    v.widgets.noninteractive.bg_stroke = Stroke::new(1.0, dim);
-
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, PRIMARY);
-    v.widgets.hovered.weak_bg_fill = chip_fill();
-    v.widgets.hovered.bg_fill = rgba([0xdc, 0x9d, 0x2e, 0x35]);
-
-    v.widgets.active.bg_stroke = Stroke::new(1.0, PRIMARY);
-    v.widgets.active.weak_bg_fill = rgba([0xdc, 0x9d, 0x2e, 0x50]);
-
-    v.widgets.open.bg_stroke = Stroke::new(1.0, rgba([0xdc, 0x9d, 0x2e, 0x80]));
-
-    v.window_stroke = Stroke::new(1.0, PRIMARY);
-    v.text_cursor.stroke = Stroke::new(2.0, PRIMARY);
-
-    v
-}
-
-/// Lock dark mode and install Sqyre visuals.
-pub fn apply(ctx: &egui::Context) {
-    ctx.set_theme(egui::ThemePreference::Dark);
-    ctx.set_visuals_of(egui::Theme::Dark, dark_visuals());
-}
-
-/// Rounded group frame with a faint Sqyre fill + dim gold stroke.
-pub fn section_frame(style: &egui::Style) -> egui::Frame {
-    egui::Frame::group(style)
-        .fill(frame_fill())
-        .stroke(inner_stroke())
-        .corner_radius(CornerRadius::same(4))
-        .inner_margin(egui::Margin::same(8))
-}
-
-/// Full-width framed card, then vertical `gap` after it.
-pub fn framed_section(ui: &mut egui::Ui, gap: f32, add_contents: impl FnOnce(&mut egui::Ui)) {
-    // Cap width *inside* the frame. Measuring outside and then applying
-    // `set_max_width` ignores inner_margin/stroke, so the right border clips.
-    section_frame(ui.style()).show(ui, |ui| {
-        ui.set_max_width(crate::widgets::visible_width(ui));
-        add_contents(ui);
-    });
-    ui.add_space(gap);
-}
-
-/// [`framed_section`] with a strong title, optional weak subtitle, and separator.
-pub fn titled_section(
-    ui: &mut egui::Ui,
-    title: &str,
-    subtitle: &str,
-    gap: f32,
-    add_contents: impl FnOnce(&mut egui::Ui),
-) {
-    framed_section(ui, gap, |ui| {
-        ui.label(egui::RichText::new(title).strong().heading());
-        if !subtitle.is_empty() {
-            ui.label(egui::RichText::new(subtitle).weak());
-        }
-        ui.separator();
-        add_contents(ui);
-    });
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tip));
+    response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
 
 /// Persist / commit button that pulses a Sqyre-yellow glow while enabled (dirty + valid).
@@ -330,9 +142,11 @@ pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egu
 
 /// Icon-only record control (danger styling).
 pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled_ui(enabled, |ui| icon_button_colored(ui, "●", Some(MACRO_STOP)))
-        .inner
-        .on_hover_text(tip)
+    ui.add_enabled_ui(enabled, |ui| {
+        icon_button_colored(ui, "●", tip, Some(MACRO_STOP))
+    })
+    .inner
+    .on_hover_text(tip)
 }
 
 /// Visual / keyboard order for [`press_state_toggle`] (top → bottom).
@@ -650,7 +464,14 @@ pub fn press_state_toggle(
 /// Vertical up↔down switch for Click/Key button state (`true` = down).
 ///
 /// Top of the track is up; bottom is down. Click a half to set; arrows cycle when focused.
-pub fn up_down_toggle(ui: &mut egui::Ui, down: &mut bool) -> egui::Response {
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "shared painted control; unit-tested, reserved for Key/Click chrome"
+    )
+)]
+pub(crate) fn up_down_toggle(ui: &mut egui::Ui, down: &mut bool) -> egui::Response {
     const TRACK_W: f32 = 18.0;
     const TRACK_H: f32 = 36.0;
     const PAD: f32 = 2.0;
@@ -707,50 +528,6 @@ mod tests {
     use super::*;
     use egui::{Event, RawInput};
     use sqyre_domain::{MouseButton, PressState};
-
-    #[test]
-    fn primary_is_sqyre_yellow() {
-        assert_eq!(PRIMARY, Color32::from_rgb(220, 157, 46));
-        assert_eq!(PRIMARY.to_array(), [0xdc, 0x9d, 0x2e, 0xff]);
-    }
-
-    #[test]
-    fn dark_visuals_use_sqyre_accents() {
-        let v = dark_visuals();
-        assert!(v.dark_mode);
-        assert_eq!(v.hyperlink_color, PRIMARY);
-        assert_eq!(v.error_fg_color, error_fg());
-        assert_eq!(v.selection.bg_fill, accent_dim());
-        assert_eq!(v.widgets.hovered.bg_stroke.color, PRIMARY);
-        assert_eq!(v.window_stroke.color, PRIMARY);
-    }
-
-    #[test]
-    fn status_and_destructive_accents_share_semantic_helpers() {
-        assert_eq!(preview_grid_stroke(), error_fg());
-        assert_eq!(preview_warn_stroke(), warn_fg());
-        assert_eq!(picker_remove_hover(), MACRO_STOP);
-        let err = error_fg();
-        assert_eq!(
-            highlight_invalid_fill(),
-            Color32::from_rgba_unmultiplied(err.r(), err.g(), err.b(), 45)
-        );
-        // PixelCheck viz tokens stay distinct from status chrome.
-        assert_ne!(match_pass_fg(), ok_fg());
-        assert_ne!(match_fail_fg(), warn_fg());
-        assert_ne!(match_fail_fg(), error_fg());
-    }
-
-    #[test]
-    fn window_chrome_is_strong_outer_weak_inner() {
-        let style = egui::Style {
-            visuals: dark_visuals(),
-            ..Default::default()
-        };
-        assert_eq!(style.visuals.window_stroke.color, PRIMARY);
-        assert_eq!(section_frame(&style).stroke.color, accent_dim());
-        assert_eq!(inner_stroke().color, accent_dim());
-    }
 
     #[test]
     fn cycle_index_wraps() {

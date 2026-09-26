@@ -3,7 +3,7 @@
 use super::helpers::copy_image_as_png;
 #[cfg(any(test, feature = "native-runtime"))]
 use super::helpers::{parse_i32, unique_name};
-use super::{DataEditor, DataEditorCtx, PendingConfirm, VariantPrompt};
+use super::{DataEditor, DataEditorCtx, EditorTab, PendingConfirm, VariantPrompt};
 use crate::data_editor_preview::{
     fit_panel, fit_thumbnail, pixel_size_text, variant_display_label, variant_name_from_path,
 };
@@ -59,10 +59,7 @@ impl DataEditor {
                     {
                         self.pick_and_add_variant(catalog, icons, settings);
                     }
-                    if crate::theme::icon_button(ui, "↻")
-                        .on_hover_text("Refresh")
-                        .clicked()
-                    {
+                    if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
                         icons.invalidate_target(target);
                         for path in &paths {
                             icons.invalidate_path(path);
@@ -310,7 +307,7 @@ impl DataEditor {
         let (lx, ty, rx, by) = match catalog.resolve_search_area(&coord, &macro_) {
             Ok(bounds) => bounds,
             Err(e) => {
-                self.set_err(format!("Screen capture: {e}"));
+                self.set_err(format!("{}: {e}", EditorTab::ScreenCap.label()));
                 return false;
             }
         };
@@ -351,9 +348,10 @@ impl DataEditor {
     fn screen_cap_name(&self) -> Result<String, String> {
         let name = self.form_name.trim().to_string();
         if name.is_empty() {
-            return Err("Screen capture: enter a name.".into());
+            return Err(format!("{}: enter a name.", EditorTab::ScreenCap.label()));
         }
-        validate_entity_name(&name).map_err(|e| format!("Screen capture: {e}"))?;
+        validate_entity_name(&name)
+            .map_err(|e| format!("{}: {e}", EditorTab::ScreenCap.label()))?;
         Ok(name)
     }
 
@@ -371,16 +369,25 @@ impl DataEditor {
             &self.form_right,
             &self.form_bottom,
         ) else {
-            return Err("Screen capture: invalid capture dimensions.".into());
+            return Err(format!(
+                "{}: invalid capture dimensions.",
+                EditorTab::ScreenCap.label()
+            ));
         };
         let (norm_lx, norm_rx) = if lx <= rx { (lx, rx) } else { (rx, lx) };
         let (norm_ty, norm_by) = if ty <= by { (ty, by) } else { (by, ty) };
         if norm_rx - norm_lx <= 0 || norm_by - norm_ty <= 0 {
-            return Err("Screen capture: invalid capture dimensions.".into());
+            return Err(format!(
+                "{}: invalid capture dimensions.",
+                EditorTab::ScreenCap.label()
+            ));
         }
-        previews
-            .screen_cap_image(lx, ty, rx, by)
-            .ok_or_else(|| "Screen capture: wait for the preview screenshot to finish.".into())
+        previews.screen_cap_image(lx, ty, rx, by).ok_or_else(|| {
+            format!(
+                "{}: wait for the preview screenshot to finish.",
+                EditorTab::ScreenCap.label()
+            )
+        })
     }
 
     pub(crate) fn save_screen_cap(
@@ -391,13 +398,16 @@ impl DataEditor {
         #[cfg(not(feature = "native-runtime"))]
         {
             let _ = (catalog, previews);
-            self.set_err("Screen capture requires the desktop app.");
+            self.set_err(format!(
+                "{} requires the desktop app.",
+                EditorTab::ScreenCap.label()
+            ));
             return;
         }
         #[cfg(feature = "native-runtime")]
         {
             if self.screen_cap_pending.is_some() {
-                self.set_ok("Screen capture: saving…");
+                self.set_ok(format!("{}: saving…", EditorTab::ScreenCap.label()));
                 return;
             }
             let name = match self.screen_cap_name() {
@@ -420,8 +430,9 @@ impl DataEditor {
             thread::spawn(move || {
                 let result = (|| -> Result<String, String> {
                     let dir = screen_cap_path();
-                    std::fs::create_dir_all(&dir)
-                        .map_err(|e| format!("Screen capture: create dir: {e}"))?;
+                    std::fs::create_dir_all(&dir).map_err(|e| {
+                        format!("{}: create dir: {e}", EditorTab::ScreenCap.label())
+                    })?;
                     let stamp = {
                         use web_time::{SystemTime, UNIX_EPOCH};
                         let dur = SystemTime::now()
@@ -449,14 +460,23 @@ impl DataEditor {
                     };
                     let filename = format!("{stamp}_{area_name}.png");
                     let full = dir.join(&filename);
-                    img.save(&full)
-                        .map_err(|e| format!("Screen capture: save {}: {e}", full.display()))?;
-                    Ok(format!("Screen capture: saved {}", full.display()))
+                    img.save(&full).map_err(|e| {
+                        format!(
+                            "{}: save {}: {e}",
+                            EditorTab::ScreenCap.label(),
+                            full.display()
+                        )
+                    })?;
+                    Ok(format!(
+                        "{}: saved {}",
+                        EditorTab::ScreenCap.label(),
+                        full.display()
+                    ))
                 })();
                 let _ = tx.send(result);
             });
             self.screen_cap_pending = Some(result_rx);
-            self.set_ok("Screen capture: saving…");
+            self.set_ok(format!("{}: saving…", EditorTab::ScreenCap.label()));
         }
     }
 
@@ -468,7 +488,10 @@ impl DataEditor {
         #[cfg(not(feature = "native-runtime"))]
         {
             let _ = (env, previews);
-            self.set_err("Screen capture requires the desktop app.");
+            self.set_err(format!(
+                "{} requires the desktop app.",
+                EditorTab::ScreenCap.label()
+            ));
             return;
         }
         #[cfg(feature = "native-runtime")]
@@ -482,7 +505,10 @@ impl DataEditor {
                 ..
             } = env;
             let Some(prog) = self.selected_program.clone() else {
-                self.set_err("Screen capture: select a program for the new item.");
+                self.set_err(format!(
+                    "{}: select a program for the new item.",
+                    EditorTab::ScreenCap.label()
+                ));
                 return;
             };
             let requested = match self.screen_cap_name() {
@@ -495,7 +521,7 @@ impl DataEditor {
             if let Err(e) =
                 validate_item_grid_fields(&self.form_cols, &self.form_rows, &self.form_stack_max)
             {
-                self.set_err(format!("Screen capture: {e}"));
+                self.set_err(format!("{}: {e}", EditorTab::ScreenCap.label()));
                 return;
             }
             let img = match self.screen_cap_preview_image(catalog, previews) {
@@ -530,12 +556,13 @@ impl DataEditor {
                         #[cfg(target_arch = "wasm32")]
                         let _ = settings;
                         self.set_ok(format!(
-                            "Screen capture: created item “{name}” with Original from capture."
+                            "{}: created item “{name}” with Original from capture.",
+                            EditorTab::ScreenCap.label()
                         ));
                         self.form_name = name;
                     }
                 }
-                Err(e) => self.set_err(format!("Screen capture: {e}")),
+                Err(e) => self.set_err(format!("{}: {e}", EditorTab::ScreenCap.label())),
             }
         }
     }
@@ -558,7 +585,7 @@ impl DataEditor {
             }
             Err(TryRecvError::Disconnected) => {
                 self.screen_cap_pending = None;
-                self.set_err("Screen capture: capture failed");
+                self.set_err(format!("{}: capture failed", EditorTab::ScreenCap.label()));
             }
         }
     }
