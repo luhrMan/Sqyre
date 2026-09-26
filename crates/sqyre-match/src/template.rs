@@ -629,7 +629,7 @@ fn match_fft(
                 fft2d_inverse(img, dft_w, dft_h, planner, col);
 
                 let mut out = vec![0.0_f32; out_w * out_h];
-                let arch = pulp::Arch::new();
+                let arch = crate::corr_simd::pulp_arch();
                 arch.dispatch(|| {
                     for y in 0..out_h {
                         for x in 0..out_w {

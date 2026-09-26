@@ -38,11 +38,11 @@ make macos      # fmt + check, then bin/sqyre (macOS host)
 make wasm       # fmt + check, then bin/wasm/ GUI-only browser editor (Trunk)
 make tessdata   # download eng.traineddata into assets/tessdata/
 make release-bundle  # portable bin/sqyre-bundle/ (dist/LTO shipping; no check gate — see scripts/linux/packaging/PACKAGING.md)
-make dev            # fast prototype of release-bundle → bin/sqyre-dev/ (--release, no LTO)
+make dev            # fast prototype of release-bundle → bin/sqyre-dev/ (--release thin LTO)
 make release-bundle-dhat  # same + dhat-heap → bin/sqyre-bundle-dhat/ (leak hunts; not for shipping)
 ```
 
-Release builds (`make release`, `make release-bundle`, `make release-bundle-dhat`, `make dev`) need **≥4 GiB** container RAM on a cold `target/`; if rustc is SIGKILL'd, raise Docker memory or set `CARGO_BUILD_JOBS=1`. With a warm `target/` cache, `make release-bundle` / `make dev` are much faster and lighter than before (they no longer run clippy/deny first). Prefer `make dev` for day-to-day bundled iteration; `release-bundle` uses `[profile.dist]` (thin LTO). `release-bundle-dhat` uses a separate `target-dhat/` so it does not overwrite the normal release binary.
+Release builds (`make release`, `make release-bundle`, `make release-bundle-dhat`, `make dev`) need **≥4 GiB** container RAM on a cold `target/`; if rustc is SIGKILL'd, raise Docker memory or set `CARGO_BUILD_JOBS=1`. With a warm `target/` cache, `make release-bundle` / `make dev` are much faster and lighter than before (they no longer run clippy/deny first). Prefer `make dev` for day-to-day bundled iteration; `[profile.release]` uses thin LTO (default codegen-units), while `release-bundle` uses `[profile.dist]` (`codegen-units = 1`). Do not set `RUSTFLAGS='-C target-cpu=native'` for AppImage/Windows shipping artifacts. `release-bundle-dhat` uses a separate `target-dhat/` so it does not overwrite the normal release binary.
 
 Run `make help` for the full target list. Workspace layout: [RUST.md](./RUST.md).
 
