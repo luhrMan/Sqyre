@@ -289,7 +289,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
             .resizable(true)
             .default_size([default_w, default_h])
             .default_pos(default_pos)
-            .min_size([400.0, 280.0]),
+            .min_size(crate::widgets::FLOATER_MIN_PICKER),
         ctx,
         egui::Id::new("sqyre_macro_record_review"),
         pending_scale,

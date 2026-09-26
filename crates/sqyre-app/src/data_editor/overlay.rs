@@ -121,7 +121,7 @@ impl DataEditor {
                 .collapsible(false)
                 .resizable(true)
                 .default_size([420.0, 480.0])
-                .min_size([320.0, 280.0])
+                .min_size(crate::widgets::FLOATER_MIN_MODAL)
                 .default_pos(egui::pos2(120.0, 80.0)),
             ctx,
             picker_id,
@@ -140,7 +140,7 @@ impl DataEditor {
                     "Icons",
                     crate::action_tooltip::help::DE_OVERLAY_ICON_PICKER,
                 );
-                ui.add_space(4.0);
+                ui.add_space(crate::theme::SPACE_4);
                 if let Some(id) = overlay_icons::show_icon_picker_grid(
                     ui,
                     &current,

@@ -105,7 +105,8 @@ pub fn paint_edit_fields(
                 // mouse/slider — not `with_layout(… Align::Center)`, which fills
                 // ScrollArea's unbounded height and ratchets the tip to the screen.
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                    ui.spacing_mut().item_spacing =
+                        egui::vec2(crate::theme::SPACE_8, crate::theme::SPACE_8);
                     help::tip(
                         crate::widgets::mouse_button_picker(ui, button),
                         h::CLICK_BUTTON,
@@ -1233,7 +1234,7 @@ fn yaml_value_field(
     // Expression builder toolbar.
     let mut insert: Option<String> = None;
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
         ui.menu_button("f(x)", |ui| {
             for f in EXPRESSION_FUNCTIONS {
                 if ui.button(format!("{f}( )")).clicked() {

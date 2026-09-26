@@ -133,7 +133,7 @@ impl CommandPaletteUi {
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_TOP, [0.0, 72.0])
                 .default_size([520.0, 380.0])
-                .min_size([400.0, 200.0])
+                .min_size(crate::widgets::FLOATER_MIN_PALETTE)
                 .order(egui::Order::Foreground)
                 .open(&mut open),
             ctx,

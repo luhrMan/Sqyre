@@ -15,6 +15,11 @@ pub const SPACE_8: f32 = 8.0;
 /// Nest indent and CTA separation.
 pub const SPACE_12: f32 = 12.0;
 
+/// Hit width for structural panel splitters (Data Editor, Settings).
+///
+/// Not part of the spacing scale — kept fixed so drag targets stay usable.
+pub const PANEL_SPLITTER_W: f32 = 6.0;
+
 /// Sqyre gold/yellow primary (`#dc9d2e`).
 pub const PRIMARY: Color32 = Color32::from_rgb(0xdc, 0x9d, 0x2e);
 
@@ -153,5 +158,10 @@ mod tests {
         assert_eq!(SPACE_4, 4.0);
         assert_eq!(SPACE_8, 8.0);
         assert_eq!(SPACE_12, 12.0);
+    }
+
+    #[test]
+    fn panel_splitter_width_is_fixed() {
+        assert_eq!(PANEL_SPLITTER_W, 6.0);
     }
 }

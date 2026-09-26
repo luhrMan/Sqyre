@@ -357,7 +357,7 @@ impl DataEditor {
             use crate::widgets::match_settings;
             use sqyre_domain::CoordinateRef;
 
-            ui.add_space(4.0);
+            ui.add_space(crate::theme::SPACE_4);
             if self.selected_entity.is_none() {
                 self.stop_pixel_check_compute();
                 ui.weak("Select an item from the list.");
@@ -402,7 +402,7 @@ impl DataEditor {
                     };
                 }
             });
-            ui.add_space(4.0);
+            ui.add_space(crate::theme::SPACE_4);
             if let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
@@ -420,7 +420,7 @@ impl DataEditor {
                     }
                 }
             }
-            ui.add_space(4.0);
+            ui.add_space(crate::theme::SPACE_4);
             match_settings::paint_match_settings(
                 ui,
                 &mut self.pixel_check.tolerance,

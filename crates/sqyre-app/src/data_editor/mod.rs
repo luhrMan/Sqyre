@@ -646,7 +646,7 @@ impl DataEditor {
             egui::Window::new(WINDOW_TITLE)
                 .open(&mut open)
                 .default_size([880.0, 560.0])
-                .min_size([520.0, 280.0])
+                .min_size(crate::widgets::FLOATER_MIN_EDITOR)
                 // No huge max_size — egui auto-expands toward max when content min_size ratchets.
                 .resizable(true),
             ctx,
@@ -859,7 +859,7 @@ impl DataEditor {
                             EditorTab::SearchAreas,
                             EditorTab::SearchAreas.label(),
                         );
-                        ui.add_space(12.0);
+                        ui.add_space(crate::theme::SPACE_12);
                         ui.label(egui::RichText::new("Advanced").weak().small());
                         ui.selectable_value(
                             &mut self.tab,
@@ -908,14 +908,16 @@ impl DataEditor {
         let rem = ui.available_size();
         let (outer, _) = ui.allocate_exact_size(rem, egui::Sense::hover());
 
-        let footer_h = (ui.spacing().interact_size.y + ui.spacing().item_spacing.y * 3.0 + 8.0)
+        let footer_h = (ui.spacing().interact_size.y
+            + ui.spacing().item_spacing.y * 3.0
+            + crate::theme::SPACE_8)
             .min(rem.y * 0.4);
         let body_h = (rem.y - footer_h).max(40.0);
         let body_rect = egui::Rect::from_min_size(outer.min, egui::vec2(rem.x, body_h));
         let footer_rect =
             egui::Rect::from_min_max(egui::pos2(outer.min.x, outer.min.y + body_h), outer.max);
 
-        const SPLITTER_W: f32 = 6.0;
+        let splitter_w = crate::theme::PANEL_SPLITTER_W;
         let avail_w = body_rect.width();
         let min_left = avail_w * MIN_DATA_EDITOR_LEFT_FRAC;
         let max_left = avail_w * MAX_DATA_EDITOR_LEFT_FRAC;
@@ -925,11 +927,11 @@ impl DataEditor {
             .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
         self.left_width = (avail_w * frac).clamp(min_left, max_left);
         // Keep splitter + right inside body_rect — never allocate past the frame.
-        let left_w = self.left_width.min((avail_w - SPLITTER_W).max(0.0));
+        let left_w = self.left_width.min((avail_w - splitter_w).max(0.0));
         let left_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(left_w, body_h));
         let split_rect = egui::Rect::from_min_size(
             egui::pos2(left_rect.right(), body_rect.top()),
-            egui::vec2(SPLITTER_W, body_h),
+            egui::vec2(splitter_w, body_h),
         );
         let right_rect = egui::Rect::from_min_max(
             egui::pos2(split_rect.right(), body_rect.top()),

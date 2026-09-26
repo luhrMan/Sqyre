@@ -6,9 +6,9 @@ use sqyre_hotkeys::{HotkeyTrigger, MacroHotkeyBinding};
 use std::collections::{BTreeMap, HashSet};
 
 const CHOOSER_ID: &str = "sqyre_hotkey_chooser";
-const MENU_OFFSET: Vec2 = Vec2::new(12.0, 12.0);
+const MENU_OFFSET: Vec2 = Vec2::new(crate::theme::SPACE_12, crate::theme::SPACE_12);
 const ROW_H: f32 = 28.0;
-const PAD: f32 = 8.0;
+const PAD: f32 = crate::theme::SPACE_8;
 const MIN_W: f32 = 180.0;
 const MAX_W: f32 = 360.0;
 
@@ -339,7 +339,7 @@ fn paint_chooser_body(
         .small()
         .weak(),
     );
-    ui.add_space(4.0);
+    ui.add_space(crate::theme::SPACE_4);
     for (i, name) in names.iter().enumerate() {
         let is_sel = i == *selected;
         let resp = ui.add_sized(
@@ -354,7 +354,7 @@ fn paint_chooser_body(
             *selected = i;
         }
     }
-    ui.add_space(2.0);
+    ui.add_space(crate::theme::SPACE_2);
     if ui.small_button("Cancel").clicked() {
         *dismiss = true;
     }

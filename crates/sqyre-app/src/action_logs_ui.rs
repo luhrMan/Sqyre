@@ -199,7 +199,7 @@ pub fn show_logs_window(
 
 const CARD_MIN: f32 = 112.0;
 const CARD_MAX: f32 = 180.0;
-const CARD_GAP: f32 = 8.0;
+const CARD_GAP: f32 = crate::theme::SPACE_8;
 /// Frame padding so the thumb stays inside the card width.
 const CARD_THUMB_INSET: f32 = 28.0;
 
@@ -234,7 +234,7 @@ fn flush_item_gallery(
     if pending.is_empty() {
         return;
     }
-    ui.add_space(10.0);
+    ui.add_space(crate::theme::SPACE_12);
     crate::widgets::title_with_count(
         ui,
         egui::RichText::new("Items — click an image to inspect processing & finds")
@@ -242,7 +242,7 @@ fn flush_item_gallery(
             .small(),
         pending.len(),
     );
-    ui.add_space(4.0);
+    ui.add_space(crate::theme::SPACE_4);
 
     let avail = crate::widgets::visible_content_width(ui);
     let (card_w, cols) = item_gallery_metrics(pending.len(), avail);
@@ -285,7 +285,7 @@ fn flush_item_gallery(
         ui.spacing_mut().item_spacing = old_spacing;
     });
     pending.clear();
-    ui.add_space(8.0);
+    ui.add_space(crate::theme::SPACE_8);
 }
 
 #[allow(clippy::too_many_arguments)] // log card/detail: cache, entry identity, captions, and image payloads
@@ -367,7 +367,7 @@ fn show_item_detail(
         for line in details {
             ui.monospace(line);
         }
-        ui.add_space(8.0);
+        ui.add_space(crate::theme::SPACE_8);
     }
 
     ui.label(
@@ -375,7 +375,7 @@ fn show_item_detail(
             .strong()
             .small(),
     );
-    ui.add_space(4.0);
+    ui.add_space(crate::theme::SPACE_4);
     let avail_w = ui.available_width().max(120.0);
     for (si, step) in steps.iter().enumerate() {
         show_labeled_image(
@@ -400,7 +400,7 @@ fn show_labeled_image(
     image: &LogImage,
     avail_w: f32,
 ) {
-    ui.add_space(8.0);
+    ui.add_space(crate::theme::SPACE_8);
     ui.group(|ui| {
         ui.label(egui::RichText::new(&image.label).strong().small());
         ui.label(

@@ -21,7 +21,7 @@ impl DataEditor {
         } = paint;
         let FormCtx { macros, .. } = ctx;
         help::heading(ui, "Overlay Button", help::DE_OVERLAY_INTRO);
-        ui.add_space(6.0);
+        ui.add_space(crate::theme::SPACE_8);
         self.program_selector(ui, catalog, icons, settings);
         if self.selected_program.is_none() {
             ui.weak("Select a program, then New to add a button.");
@@ -31,7 +31,7 @@ impl DataEditor {
             ui.weak("Select a button from the list, or click New.");
             return false;
         }
-        ui.add_space(6.0);
+        ui.add_space(crate::theme::SPACE_8);
         ui.horizontal(|ui| {
             let icon = overlay_icons::resolve(&self.form_overlay_icon);
             let mut preview_cfg = OverlayButtonConfig::new("preview", "");
@@ -49,7 +49,7 @@ impl DataEditor {
                 help::label(ui, icon.label, help::DE_OVERLAY_ICON);
             });
         });
-        ui.add_space(6.0);
+        ui.add_space(crate::theme::SPACE_8);
         help::label(ui, "Macro", help::DE_OVERLAY_MACRO);
         let mut selected = self.form_overlay_macro.clone();
         let before = selected.clone();
@@ -66,7 +66,7 @@ impl DataEditor {
         if selected != before {
             self.form_overlay_macro = selected;
         }
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         {
             use crate::pickers::{ActivePicker, CoordKind};
             use sqyre_domain::CoordinateRef;
@@ -110,7 +110,7 @@ impl DataEditor {
                 }
             });
         }
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         let point_set = !self.form_overlay_point.trim().is_empty();
         ui.add_enabled_ui(!point_set, |ui| {
             ui.horizontal(|ui| {
@@ -142,7 +142,7 @@ impl DataEditor {
             let (rx, ry) = loc.resolved_position(catalog);
             ui.weak(format!("Position from point → ({rx:.0}, {ry:.0})"));
         }
-        ui.add_space(8.0);
+        ui.add_space(crate::theme::SPACE_8);
         ui.collapsing("Show only when image found", |ui| {
             ui.horizontal(|ui| {
                 ui.checkbox(&mut self.form_overlay_gate_enabled, "Enabled");
@@ -188,7 +188,7 @@ impl DataEditor {
                         }
                     });
                 }
-                ui.add_space(4.0);
+                ui.add_space(crate::theme::SPACE_4);
                 ui.horizontal(|ui| {
                     help::label(ui, "Items", help::DE_OVERLAY_GATE_ITEMS);
                     ui.label(
@@ -229,7 +229,7 @@ impl DataEditor {
                         self.form_overlay_gate_targets.remove(i);
                     }
                 }
-                ui.add_space(4.0);
+                ui.add_space(crate::theme::SPACE_4);
                 match_settings::paint_match_settings(
                     ui,
                     &mut self.form_overlay_gate_tolerance,
@@ -257,7 +257,7 @@ impl DataEditor {
                 });
             });
         });
-        ui.add_space(8.0);
+        ui.add_space(crate::theme::SPACE_8);
         ui.collapsing("Appearance", |ui| {
             ui.horizontal(|ui| {
                 help::label(ui, "Size", help::DE_OVERLAY_SIZE);
@@ -292,7 +292,7 @@ impl DataEditor {
                     help::DE_OVERLAY_BORDER,
                 );
             });
-            ui.add_space(4.0);
+            ui.add_space(crate::theme::SPACE_4);
             ui.horizontal(|ui| {
                 color_alpha_drag(ui, "Border", &mut self.form_overlay_border);
             });
@@ -307,7 +307,7 @@ impl DataEditor {
                 help::label(ui, "Icon hover", help::DE_OVERLAY_ICON_HOVER);
                 ui.color_edit_button_srgba(&mut self.form_overlay_icon_hover);
             });
-            ui.add_space(4.0);
+            ui.add_space(crate::theme::SPACE_4);
             if ui.button("Reset appearance to defaults").clicked() {
                 self.reset_overlay_style_form();
             }

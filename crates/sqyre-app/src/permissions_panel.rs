@@ -160,11 +160,11 @@ impl PermissionsPanel {
             .weak()
             .small(),
         );
-        ui.add_space(8.0);
+        ui.add_space(crate::theme::SPACE_8);
 
         if let Some(err) = &self.error {
             ui.colored_label(crate::theme::error_fg(), err);
-            ui.add_space(6.0);
+            ui.add_space(crate::theme::SPACE_8);
         }
 
         if (self.running || self.refresh_when_capture_ready) && self.items.is_empty() {
@@ -197,7 +197,7 @@ impl PermissionsPanel {
                 }
                 PermissionRowAction::None => {}
             }
-            ui.add_space(10.0);
+            ui.add_space(crate::theme::SPACE_12);
         }
     }
 }
@@ -290,14 +290,14 @@ fn paint_permission_row(
             });
             ui.label(RichText::new(item.summary).weak().small());
             if let Some(detail) = &item.detail {
-                ui.add_space(4.0);
+                ui.add_space(crate::theme::SPACE_4);
                 ui.label(RichText::new(detail).small().color(crate::theme::warn_fg()));
             }
             for step in &item.setup_steps {
                 ui.label(RichText::new(format!("• {step}")).small());
             }
             if let Some(cmd) = &item.copy_command {
-                ui.add_space(4.0);
+                ui.add_space(crate::theme::SPACE_4);
                 ui.horizontal(|ui| {
                     ui.monospace(cmd);
                     if ui.button("Copy").clicked() {
@@ -308,7 +308,7 @@ fn paint_permission_row(
             let share_screen = item.id == "screen_recording" && portal_session;
             let revoke = item.portal_grant_revocable() && portal_session;
             if share_screen || revoke {
-                ui.add_space(6.0);
+                ui.add_space(crate::theme::SPACE_8);
                 ui.horizontal(|ui| {
                     if share_screen {
                         let label = if item.eligibility == PermissionEligibility::Granted {

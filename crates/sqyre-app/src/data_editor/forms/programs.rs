@@ -23,9 +23,9 @@ impl DataEditor {
         help::label(ui, "Name", help::DE_NAME);
         ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
         paint_fs_name_hint(ui, &self.form_name);
-        ui.add_space(8.0);
+        ui.add_space(crate::theme::SPACE_8);
         help::label(ui, "Running program", help::DE_RUNNING_PROGRAM);
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         let bound = if self.form_process_path.trim().is_empty() {
             sqyre_domain::EMPTY_NONE.to_string()
         } else if self.form_window_title.trim().is_empty() {
@@ -75,7 +75,7 @@ impl DataEditor {
                 self.form_window_title.clear();
             }
         });
-        ui.add_space(8.0);
+        ui.add_space(crate::theme::SPACE_8);
         help::label(ui, "Macro tags", help::DE_PROGRAM_MACRO_TAGS);
         let macro_tag_completions = crate::macro_meta::collect_all_macro_tags(macros);
         crate::widgets::tag_chip_editor(
@@ -97,11 +97,11 @@ impl DataEditor {
         let CatalogPaint { catalog, icons, .. } = paint;
         ui.heading("Item");
         self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         help::label(ui, "Name", help::DE_NAME);
         ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
         paint_fs_name_hint(ui, &self.form_name);
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         let tag_submit = self.paint_item_param_fields(ui, catalog, icons);
         if let (Some(prog), Some(item)) =
             (self.selected_program.clone(), self.selected_entity.clone())
@@ -133,7 +133,7 @@ impl DataEditor {
             crate::widgets::TagChipOptions::default(),
         )
         .submitted;
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         ui.horizontal(|ui| {
             help::label(ui, "Cols", help::DE_COLS);
             ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0));
@@ -142,7 +142,7 @@ impl DataEditor {
             help::label(ui, "Stack max", help::DE_STACK_MAX);
             ui.add(egui::TextEdit::singleline(&mut self.form_stack_max).desired_width(80.0));
         });
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         help::label(ui, "Mask", help::DE_MASK);
         let masks: Vec<String> = self
             .selected_program

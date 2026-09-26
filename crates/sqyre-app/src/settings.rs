@@ -283,7 +283,7 @@ impl SettingsUi {
             egui::Window::new("User Settings")
                 .open(&mut open)
                 .default_size([680.0, 640.0])
-                .min_size([520.0, 360.0])
+                .min_size([crate::widgets::FLOATER_MIN_EDITOR[0], 360.0])
                 .resizable(true),
             ctx,
             settings_window_id(),
@@ -398,12 +398,12 @@ impl SettingsUi {
         }
 
         const SIDEBAR_W: f32 = 132.0;
-        const SPLITTER_W: f32 = 6.0;
-        let left_w = SIDEBAR_W.min((body_rect.width() - SPLITTER_W).max(0.0));
+        let splitter_w = crate::theme::PANEL_SPLITTER_W;
+        let left_w = SIDEBAR_W.min((body_rect.width() - splitter_w).max(0.0));
         let left_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(left_w, body_h));
         let split_rect = egui::Rect::from_min_size(
             egui::pos2(left_rect.right(), body_rect.top()),
-            egui::vec2(SPLITTER_W, body_h),
+            egui::vec2(splitter_w, body_h),
         );
         let right_rect = egui::Rect::from_min_max(
             egui::pos2(split_rect.right(), body_rect.top()),
@@ -431,7 +431,7 @@ impl SettingsUi {
         ui.painter().vline(
             split_rect.center().x,
             split_rect.y_range(),
-            egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+            crate::theme::panel_split_stroke(),
         );
         {
             let mut right_ui = ui.new_child(
@@ -446,11 +446,7 @@ impl SettingsUi {
                 .show(&mut right_ui, |ui| {
                     ui.set_max_width(right_rect.width());
                     if visible_sections.is_empty() {
-                        ui.label(
-                            egui::RichText::new("No settings match your search.")
-                                .weak()
-                                .italics(),
-                        );
+                        crate::widgets::list_vacancy(ui, &q, 0, "settings");
                         return;
                     }
                     let section = self.active_section;
@@ -480,7 +476,7 @@ impl SettingsUi {
                             if setting_visible(&q, section_hit, DATA_LOCATION)
                                 && setting_visible(&q, section_hit, DATA_BACKUP)
                             {
-                                ui.add_space(10.0);
+                                ui.add_space(crate::theme::SPACE_12);
                             }
                             self.draw_backup(ui, db, macros, catalog, &q, section_hit);
                         }
@@ -766,7 +762,7 @@ impl SettingsUi {
 
             let flatpak = sqyre_update::is_flatpak_install();
             if flatpak {
-                ui.add_space(4.0);
+                ui.add_space(crate::theme::SPACE_4);
                 ui.label(
                     egui::RichText::new(
                         "Flatpak keeps a private data copy by default. To share macros \
@@ -893,7 +889,7 @@ impl SettingsUi {
                 }
             });
 
-            ui.add_space(6.0);
+            ui.add_space(crate::theme::SPACE_8);
             ui.label(
                 egui::RichText::new(format!("Backups folder: {}", backups_dir().display()))
                     .weak()
@@ -916,7 +912,7 @@ impl SettingsUi {
                 }
             }
 
-            ui.add_space(6.0);
+            ui.add_space(crate::theme::SPACE_8);
             ui.horizontal(|ui| {
                 if ui.button("Back up now").clicked() {
                     self.run_manual_backup();
@@ -1016,7 +1012,7 @@ impl SettingsUi {
         }
 
         if setting_visible(q, section_hit, SETTING_UPDATE_ACTIONS) {
-            ui.add_space(6.0);
+            ui.add_space(crate::theme::SPACE_8);
             ui.horizontal(|ui| {
                 let busy = update.is_busy();
                 if ui
@@ -1042,7 +1038,7 @@ impl SettingsUi {
                 }
             });
 
-            ui.add_space(4.0);
+            ui.add_space(crate::theme::SPACE_4);
             let status = match &update.state {
                 UpdateState::Idle => "Update status: idle".to_string(),
                 UpdateState::Unavailable { reason } => reason.clone(),
@@ -1380,7 +1376,7 @@ impl SettingsUi {
         }
 
         if setting_visible(q, section_hit, SETTING_FONT_SIZE) {
-            ui.add_space(6.0);
+            ui.add_space(crate::theme::SPACE_8);
             ui.horizontal(|ui| {
                 ui.label("Font size:");
                 let mut v = self.settings.ui_font_size;
@@ -1434,7 +1430,7 @@ impl SettingsUi {
                 .iter()
                 .any(|&(_, label)| setting_visible(q, false, &[label]));
         if show_colors {
-            ui.add_space(8.0);
+            ui.add_space(crate::theme::SPACE_8);
             ui.label(egui::RichText::new("Macro tree action colors").strong());
 
             let is_dark = ui.visuals().dark_mode;
