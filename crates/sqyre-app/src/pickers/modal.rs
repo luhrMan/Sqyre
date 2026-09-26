@@ -3,15 +3,15 @@ use super::coord_list::paint_coord_ref_list;
 use super::items_grid::paint_items_icon_grid;
 use super::query::{query_matches_name_or_tags, query_matches_window};
 use super::scroll::{
-    apply_list_nav, focus_search_once, maybe_scroll_to, paint_list_vacancy,
-    picker_searchable_scroll_ex, poll_list_nav, reset_focus_search, ListNavAction,
-    PickerScrollOpts, HINT_LIST,
+    apply_list_nav, focus_search_once, maybe_scroll_to, picker_searchable_scroll_ex, poll_list_nav,
+    reset_focus_search, ListNavAction, PickerScrollOpts, HINT_LIST,
 };
 use super::types::{ActivePicker, CoordKind, PickerResult};
 #[cfg(feature = "native-runtime")]
 use super::window::fetch_open_windows;
 use super::window::poll_window_picker_load;
 use crate::paint_ctx::CatalogPaint;
+use crate::widgets::list_vacancy;
 use eframe::egui;
 use sqyre_domain::CoordinateRef;
 use std::sync::mpsc;
@@ -151,7 +151,7 @@ pub fn show_active_picker(
                                 )
                             })
                             .sum();
-                        paint_list_vacancy(ui, q, visible, "items");
+                        list_vacancy(ui, q, visible, "items");
                     });
                     ui.separator();
                     if let Some(tags) = staged_tags.as_mut() {
@@ -321,7 +321,7 @@ pub fn show_active_picker(
                                     *value = name.clone();
                                 }
                             }
-                            paint_list_vacancy(ui, q, visible, "macros");
+                            list_vacancy(ui, q, visible, "macros");
                         },
                     );
                     if search_changed {
@@ -378,10 +378,12 @@ pub fn show_active_picker(
                     }
                     let mut opts = PickerScrollOpts::list(ui).with_hint(Some("Search windows…"));
                     let mut trailing = |ui: &mut egui::Ui| {
+                        let tip = if loading { "Refreshing…" } else { "Refresh" };
                         refresh_clicked = ui
-                            .add_enabled_ui(!loading, |ui| crate::theme::icon_button(ui, "↻"))
+                            .add_enabled_ui(!loading, |ui| {
+                                crate::widgets::icon_button(ui, "↻", tip)
+                            })
                             .inner
-                            .on_hover_text(if loading { "Refreshing…" } else { "Refresh" })
                             .clicked();
                     };
                     opts.trailing = Some(&mut trailing);
@@ -444,7 +446,7 @@ pub fn show_active_picker(
                                 }
                             }
                             if !loading {
-                                paint_list_vacancy(ui, q, visible, "windows");
+                                list_vacancy(ui, q, visible, "windows");
                             }
                         });
                     if refresh_clicked && pending.is_none() {

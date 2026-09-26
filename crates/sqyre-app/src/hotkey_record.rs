@@ -1,6 +1,7 @@
 //! Macro hotkey record dialog.
 
 use crate::chord_record::{poll_waiting_release, record_modal};
+use crate::widgets::dismiss_row;
 use eframe::egui;
 use sqyre_hotkeys::{format_hotkey, MacroHotkeyBridge};
 use web_time::{Duration, Instant};
@@ -82,10 +83,12 @@ impl HotkeyRecordUi {
                     .map(|s| s.elapsed() >= STABLE_FOR && !last_chord.is_empty())
                     .unwrap_or(false);
 
+                // Esc dismisses only while no keys are held (Esc may join the chord).
+                let esc_dismisses = last_chord.is_empty();
                 let mut cancel = false;
                 record_modal(ctx, "Record hotkey", pending_scale, |ui| {
                     ui.label(
-                        "Hold your hotkey. When it stays unchanged for 1 second, it will be saved.\nPress Esc to cancel.",
+                        "Hold your hotkey. When it stays unchanged for 1 second, it will be saved.\nUse Cancel to dismiss (Esc when no keys are held).",
                     );
                     ui.separator();
                     let display = if last_chord.is_empty() {
@@ -99,14 +102,8 @@ impl HotkeyRecordUi {
                             .desired_width(280.0)
                             .show_percentage(),
                     );
-                    if ui.button("Cancel").clicked() {
-                        cancel = true;
-                    }
+                    cancel = dismiss_row(ui, esc_dismisses);
                 });
-
-                if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && last_chord.is_empty() {
-                    cancel = true;
-                }
 
                 if cancel {
                     macro_hotkeys.resume();

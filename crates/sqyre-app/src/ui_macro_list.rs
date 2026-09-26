@@ -1,6 +1,8 @@
 //! Left macro list panel and delete confirmation.
 
 use crate::pickers;
+use crate::status_banner::{StatusBanner, PREFIX_LOAD_ERROR, PREFIX_SAVE_ERROR};
+use crate::theme::{SPACE_12, SPACE_4, SPACE_8};
 use crate::widgets::tags::{filters_cover_path, normalize_tag_path};
 use crate::SqyreApp;
 use eframe::egui;
@@ -210,9 +212,9 @@ fn paint_tag_node(
     is_first_root: bool,
 ) {
     if !is_first_root {
-        ui.add_space(8.0);
+        ui.add_space(SPACE_8);
         ui.separator();
-        ui.add_space(4.0);
+        ui.add_space(SPACE_4);
     }
 
     let id = ui.make_persistent_id(("macro_list_tag", path));
@@ -220,36 +222,53 @@ fn paint_tag_node(
     let filters = ctx.app.workspace.hotkey_tag_filters.as_slice();
     let exact_selected = filters.iter().any(|t| t == path);
     let covered = filters_cover_path(filters, path);
+    let parent_covered = covered && !exact_selected;
     // body_unindented: show_body_indented calls expand_to_include_x which widens the panel.
+    // Chevron expands/collapses only; Hotkeys checkbox is a separate labeled control.
     egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
         .show_header(ui, |ui| {
-            let header_budget = (ui.available_width() - ui.spacing().button_padding.x).max(0.0);
-            let font = egui::FontSelection::Default.resolve(ui.style());
-            let count_text = format!("({count})");
-            let count_w = ui
-                .painter()
-                .layout_no_wrap(count_text, font.clone(), egui::Color32::WHITE)
-                .size()
-                .x;
-            let name_budget = (header_budget - count_w - ui.spacing().item_spacing.x).max(0.0);
-            let header_text = elide_to_width(ui, label, name_budget, font);
             let hover = if exact_selected {
-                "Hotkeys enabled for this tag (multiselect). Click again to remove."
-            } else if covered {
+                "Hotkeys enabled for this tag (multiselect). Uncheck to remove."
+            } else if parent_covered {
                 "Hotkeys covered by a parent tag. Deselect the parent to pick this tag alone."
             } else {
-                "Add this tag to the hotkey selection (multiselect). Parents include nested tags."
+                "Enable hotkeys for this tag (multiselect). Parents include nested tags."
             };
-            let resp = crate::widgets::selectable_title_with_count(
-                ui,
-                covered,
-                egui::RichText::new(header_text).strong(),
-                count,
-            )
-            .on_hover_text(hover);
-            if resp.clicked() {
-                *ctx.clicked_tag = Some(path.to_string());
-            }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let mut hotkeys_on = covered;
+                let hotkey_resp = ui
+                    .add_enabled_ui(!parent_covered, |ui| {
+                        ui.checkbox(&mut hotkeys_on, "Hotkeys")
+                    })
+                    .inner
+                    .on_hover_text(hover);
+                hotkey_resp.widget_info(|| {
+                    egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, covered, "Hotkeys")
+                });
+                if hotkey_resp.changed() {
+                    *ctx.clicked_tag = Some(path.to_string());
+                }
+
+                // Remaining width: non-selectable title + count (expand via chevron only).
+                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                    ui.set_max_width(ui.available_width());
+                    let font = egui::FontSelection::Default.resolve(ui.style());
+                    let count_text = format!("({count})");
+                    let count_w = ui
+                        .painter()
+                        .layout_no_wrap(count_text.clone(), font.clone(), egui::Color32::WHITE)
+                        .size()
+                        .x;
+                    let name_budget =
+                        (ui.available_width() - count_w - ui.spacing().item_spacing.x).max(0.0);
+                    let header_text = elide_to_width(ui, label, name_budget, font);
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(header_text).strong())
+                            .selectable(false),
+                    );
+                    ui.label(egui::RichText::new(count_text).weak());
+                });
+            });
         })
         .body_unindented(|ui| {
             ui.set_max_width(ctx.list_w);
@@ -261,11 +280,11 @@ fn paint_tag_node(
                     format!("{path}/{seg}")
                 };
                 // Nested headers: no root separators; slight indent without expand_to_include_x.
-                ui.add_space(4.0);
+                ui.add_space(SPACE_4);
                 ui.horizontal(|ui| {
-                    ui.add_space(12.0);
+                    ui.add_space(SPACE_12);
                     ui.vertical(|ui| {
-                        let nested_w = (ctx.list_w - 12.0).max(0.0);
+                        let nested_w = (ctx.list_w - SPACE_12).max(0.0);
                         ui.set_max_width(nested_w);
                         let mut nested = PaintTagCtx {
                             app: ctx.app,
@@ -318,43 +337,48 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             });
             // True load failures only (corrupt db / undecodable macros). Per-macro
             // validation issues are shown on the macro rows and action tree.
+            // List-scoped: same color/prefix rules as StatusBanner panel footers.
             if let Some(err) = &app.workspace.load_error {
-                ui.colored_label(crate::theme::error_fg(), format!("Load error: {err}"));
+                StatusBanner::paint_prefixed_error(ui, PREFIX_LOAD_ERROR, err);
             }
             if let Some(warn) = &app.workspace.platform_warning {
-                ui.colored_label(crate::theme::warn_fg(), warn);
+                StatusBanner::paint_warn(ui, warn);
             }
             if let Some(err) = &app.workspace.save_error {
-                ui.colored_label(crate::theme::error_fg(), format!("Save error: {err}"));
+                StatusBanner::paint_prefixed_error(ui, PREFIX_SAVE_ERROR, err);
             }
             ui.horizontal(|ui| {
                 // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
                 // (＋, ⧉) render as tofu in egui's default font stack.
-                let new_resp =
-                    crate::theme::icon_button_colored(ui, "+", Some(crate::theme::MACRO_START));
-                new_resp.clone().on_hover_text("New macro");
-                // AccessKit label for interaction tests (default label is just "+").
-                new_resp.widget_info(|| {
-                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, "New macro")
-                });
+                let new_resp = crate::widgets::icon_button_colored(
+                    ui,
+                    "+",
+                    "New macro",
+                    Some(crate::theme::MACRO_START),
+                );
                 if new_resp.clicked() {
                     app.create_macro();
                 }
                 let has_sel = !app.workspace.macros.is_empty();
                 if ui
-                    .add_enabled_ui(has_sel, |ui| crate::theme::icon_button(ui, "📄"))
+                    .add_enabled_ui(has_sel, |ui| {
+                        crate::widgets::icon_button(ui, "📄", "Duplicate selected macro")
+                    })
                     .inner
-                    .on_hover_text("Duplicate selected macro")
                     .clicked()
                 {
                     app.duplicate_selected_macro();
                 }
                 if ui
                     .add_enabled_ui(has_sel, |ui| {
-                        crate::theme::icon_button_colored(ui, "🗑", Some(crate::theme::MACRO_STOP))
+                        crate::widgets::icon_button_colored(
+                            ui,
+                            "🗑",
+                            "Delete selected macro",
+                            Some(crate::theme::MACRO_STOP),
+                        )
                     })
                     .inner
-                    .on_hover_text("Delete selected macro")
                     .clicked()
                 {
                     let idx = app
@@ -408,9 +432,18 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 let has_visible = !tree.children.is_empty() || !untagged.is_empty();
                 if !has_visible {
                     if app.workspace.macros.is_empty() {
-                        ui.weak("No macros yet — click + to create one.");
+                        let clicked = crate::widgets::empty_state(
+                            ui,
+                            "No macros yet",
+                            Some("Create a macro to get started."),
+                            Some("New macro"),
+                            None,
+                        );
+                        if clicked == crate::widgets::EmptyStateAction::Primary {
+                            app.create_macro();
+                        }
                     } else {
-                        ui.weak("No matching macros.");
+                        crate::widgets::list_vacancy(ui, &filter, 0, "macros");
                     }
                 }
                 {

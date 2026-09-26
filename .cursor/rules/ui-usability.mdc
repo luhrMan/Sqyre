@@ -49,8 +49,8 @@ Audience: **casual automation beginners first**. Power-user / technical controls
 ### Consistent rendering (look alike / refactorable)
 Keep surfaces **visually interchangeable**: same control kinds should look and lay out the same so refactors stay safe and screenshots/docs stay reliable.
 
-- **Compose shared primitives** — `theme::*` (colors, `icon_button`, `framed_section`, overlays), `widgets::*` (fields, dialogs, headers, tags), `pickers::*`, `tip_section` / `tip_wrapped_section` / `tip_advanced`. Do not copy-paste one-off spacing, strokes, or button chrome.
-- **No local palettes** — use `theme::PRIMARY`, `MACRO_START`, `MACRO_STOP`, `accent_dim`, `overlay_panel_fill`, `contrast_fg`, and egui `TextStyle` / `ui.visuals()`. Avoid hard-coded `Color32::from_rgb(…)` in panel code unless extending `theme.rs`.
+- **Compose shared primitives** — `theme::*` (colors, framed sections, overlays), `widgets::*` (icon/controls, fields, dialogs, headers, tags), `pickers::*`, `tip_section` / `tip_wrapped_section` / `tip_advanced`. Do not copy-paste one-off spacing, strokes, or button chrome.
+- **No local palettes** — use `theme::PRIMARY`, `MACRO_START`, `MACRO_STOP`, `accent_dim`, `overlay_panel_fill`, `contrast_fg`, and egui `TextStyle` / `ui.visuals()`. Avoid hard-coded `Color32::from_rgb(…)` in panel code unless extending `theme/` tokens.
 - **Stable geometry** — prefer shared widths (`W_TEXT`, `W_VAR`), `fit_dialog_window` / `fit_dialog_popup` / `fill_resize_body`, and `dialog_scroll`. Obey [egui-window-size-ratchet](egui-window-size-ratchet.mdc); do not invent per-panel size math that drifts.
 - **Match the nearest sibling** — new rows, toolbars, lists, and confirm footers should mirror an adjacent panel of the same kind (same icon size, gap, weak-count suffix, Save/Cancel row). Visual novelty needs an explicit product ask.
 - **Extract on repeat** — if the same layout appears twice, lift it into `widgets` / `theme` / `tip_*` instead of diverging copies (easier refactors, fewer look bugs).
@@ -63,7 +63,7 @@ Keep surfaces **visually interchangeable**: same control kinds should look and l
 - [ ] Local ↑↓ / Enter / Esc (or documented why not) without breaking record modes
 - [ ] Beginner path visible; advanced options collapsed by default
 - [ ] Labels, hints, and errors readable by a non-technical user
-- [ ] Reused `theme::*`, `widgets::*`, `pickers::*`, `tip_*` / `tip_advanced` (no one-off chrome/colors)
+- [ ] Reused `theme::*` tokens/visuals, `widgets::*` (incl. controls), `pickers::*`, `tip_*` / `tip_advanced` (no one-off chrome/colors)
 - [ ] Layout matches a sibling of the same kind; dialogs use shared fit/scroll helpers
 
 ## Out of scope unless asked

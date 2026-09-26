@@ -91,10 +91,7 @@ impl DataEditor {
                         PreviewKind::Point,
                     );
                 }
-                if crate::theme::icon_button(ui, "☰")
-                    .on_hover_text("Pick point…")
-                    .clicked()
-                {
+                if crate::widgets::icon_button(ui, "☰", "Pick point…").clicked() {
                     self.window_picker = ActivePicker::Coord {
                         kind: CoordKind::Point,
                         search: String::new(),
@@ -175,10 +172,7 @@ impl DataEditor {
                                 PreviewKind::SearchArea,
                             );
                         }
-                        if crate::theme::icon_button(ui, "☰")
-                            .on_hover_text("Pick search area…")
-                            .clicked()
-                        {
+                        if crate::widgets::icon_button(ui, "☰", "Pick search area…").clicked() {
                             self.window_picker = ActivePicker::Coord {
                                 kind: CoordKind::SearchArea,
                                 search: String::new(),

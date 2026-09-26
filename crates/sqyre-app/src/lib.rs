@@ -742,21 +742,23 @@ impl eframe::App for SqyreApp {
             ui_toolbar::brand_header(self, ui);
             ui_toolbar::main_toolbar(self, ui);
             if self.workspace.macros.is_empty() {
-                ui.horizontal(|ui| {
-                    ui.label("Please");
-                    if ui.button("create a new macro").clicked() {
-                        self.create_macro();
-                    }
-                    ui.label("or");
-                    #[cfg(not(target_arch = "wasm32"))]
-                    if ui.button("import a backup").clicked() {
+                let clicked = crate::widgets::empty_state(
+                    ui,
+                    "No macros yet",
+                    Some("Create a macro or import a backup to get started."),
+                    Some("New macro"),
+                    Some("Import backup"),
+                );
+                match clicked {
+                    crate::widgets::EmptyStateAction::Primary => self.create_macro(),
+                    crate::widgets::EmptyStateAction::Secondary => {
+                        #[cfg(not(target_arch = "wasm32"))]
                         self.settings_ui.request_restore_backup();
-                    }
-                    #[cfg(target_arch = "wasm32")]
-                    if ui.button("import a backup").clicked() {
+                        #[cfg(target_arch = "wasm32")]
                         self.request_db_import();
                     }
-                });
+                    crate::widgets::EmptyStateAction::None => {}
+                }
                 return;
             }
             if !ui_toolbar::show_meta_and_hotkey(self, ui) {
