@@ -31,6 +31,10 @@ pub fn accent_dim() -> Color32 {
 }
 
 /// Soft error / failure text (Find Pixel dropper, status banners).
+///
+/// App status chrome and egui `Visuals::error_fg_color` must use this — not
+/// ad-hoc RGB or `Color32::RED`. PixelCheck heatmap markers are separate viz
+/// tokens in `sqyre-app::theme` (`match_*_fg`).
 pub fn error_fg() -> Color32 {
     Color32::from_rgb(220, 80, 80)
 }
