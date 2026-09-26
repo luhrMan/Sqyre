@@ -107,27 +107,29 @@ impl VariablesPanelUi {
             pending_scale,
         )
         .show(ctx, |ui| {
-            // Split remaining height between declared list (top) and Runtime/Built-ins.
-            const TAB_CHROME: f32 = 48.0;
-            let avail = ui.available_height();
-            let bottom_h = ((avail - TAB_CHROME) * 0.38).max(100.0);
-            let top_h = (avail - TAB_CHROME - bottom_h).max(120.0);
+            crate::widgets::fill_resize_body(ui, |ui| {
+                // Split remaining height between declared list (top) and Runtime/Built-ins.
+                const TAB_CHROME: f32 = 48.0;
+                let avail = ui.available_height();
+                let bottom_h = ((avail - TAB_CHROME) * 0.38).max(100.0);
+                let top_h = (avail - TAB_CHROME - bottom_h).max(120.0);
 
-            ui.add_enabled_ui(enabled, |ui| {
-                persist |= self.body(ui, macro_, top_h);
+                ui.add_enabled_ui(enabled, |ui| {
+                    persist |= self.body(ui, macro_, top_h);
+                });
+                ui.separator();
+                ui.horizontal_wrapped(|ui| {
+                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Runtime, "Runtime")
+                        .on_hover_text(help::VAR_TAB_RUNTIME);
+                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Builtins, "Built-ins")
+                        .on_hover_text(help::VAR_TAB_BUILTINS);
+                });
+                ui.separator();
+                match self.bottom_tab {
+                    BottomTab::Runtime => self.show_runtime(ui, runtime_vars, running, bottom_h),
+                    BottomTab::Builtins => self.show_builtins(ui, num_monitors, bottom_h),
+                }
             });
-            ui.separator();
-            ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.bottom_tab, BottomTab::Runtime, "Runtime")
-                    .on_hover_text(help::VAR_TAB_RUNTIME);
-                ui.selectable_value(&mut self.bottom_tab, BottomTab::Builtins, "Built-ins")
-                    .on_hover_text(help::VAR_TAB_BUILTINS);
-            });
-            ui.separator();
-            match self.bottom_tab {
-                BottomTab::Runtime => self.show_runtime(ui, runtime_vars, running, bottom_h),
-                BottomTab::Builtins => self.show_builtins(ui, num_monitors, bottom_h),
-            }
         });
         self.open = open;
         if running {
@@ -363,7 +365,7 @@ impl VariablesPanelUi {
         let mut persist = false;
 
         crate::widgets::text_field_width(ui, "Name", help::VAR_NAME, &mut edit.name, 160.0);
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             help::label(ui, "Type", help::VAR_TYPE);
             for (label, ty) in [
                 ("auto", VariableType::Auto),

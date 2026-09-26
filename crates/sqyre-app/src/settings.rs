@@ -167,6 +167,13 @@ impl SettingsUi {
     pub fn install_fonts(ctx: &egui::Context) {
         let mut fonts = egui::FontDefinitions::default();
         egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
+        // Fill variant as a named family so outline vs filled icons can coexist
+        // (same codepoints; Proportional keeps Regular).
+        egui_phosphor::add_font_bytes_as_family(
+            &mut fonts,
+            crate::widgets::PHOSPHOR_FILL_FAMILY,
+            egui_phosphor::Variant::Fill.font_bytes(),
+        );
         crate::overlay_icons::register_phosphor_family(&mut fonts);
         if let Some(prop) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
             if !prop.iter().any(|n| n == "Hack") {
@@ -770,7 +777,7 @@ impl SettingsUi {
                 );
             }
 
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if ui.button("Open .sqyre folder").clicked() {
                     match open_sqyre_dir() {
                         Ok(()) => self.set_ok("Opened data folder."),
@@ -1437,7 +1444,7 @@ impl SettingsUi {
                 {
                     continue;
                 }
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(label);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Reset").clicked() {

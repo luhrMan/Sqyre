@@ -83,7 +83,7 @@ fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
 pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
     #[cfg(not(target_arch = "wasm32"))]
     let running = app.run_session.state.running.load(Ordering::SeqCst);
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         // Tight gap between toolbar icon buttons (scale SPACE_4).
         ui.spacing_mut().item_spacing.x = theme::SPACE_4;
         let (list_glyph, list_tip) = if app.macro_list_open {
@@ -179,7 +179,7 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         .collect();
     let all_tags = collect_all_macro_tags(&app.workspace.macros);
     let meta = ui
-        .horizontal(|ui| {
+        .horizontal_wrapped(|ui| {
             let row = {
                 let m = &mut app.workspace.macros[idx];
                 app.workspace
@@ -290,7 +290,7 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
 pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     let mut force_openness: Option<bool> = None;
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         // Tight gap between toolbar icon buttons (scale SPACE_4).
         ui.spacing_mut().item_spacing.x = theme::SPACE_4;
         let can_copy = app.can_copy_selection();
