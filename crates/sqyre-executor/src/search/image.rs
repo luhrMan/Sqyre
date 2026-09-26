@@ -372,6 +372,9 @@ fn capture_and_match(
             let free_rects: Vec<(i32, i32, i32, i32)> = free.iter().map(|p| p.rect).collect();
             let crop_preps = prepare_crops(&search_blurred, origin, &free_rects);
 
+            // Outer placement `par_iter` only: match_direct / match_fft stay
+            // serial on rows when already on a Rayon worker (avoids nested pool
+            // oversubscription). Single-variant callers off-pool still parallelize.
             let wave: Vec<Vec<VariantMatchOutcome>> = free
                 .par_iter()
                 .map(|placement| {
@@ -414,6 +417,7 @@ fn capture_and_match(
     } else {
         // Non-collection: independent targets in parallel; variants may early-exit
         // within each target (one full-frame search) when variant_exit_early is on.
+        // Match kernels detect Rayon workers and skip inner row/channel par_iter.
         let wave: Vec<Vec<VariantMatchOutcome>> = targets_search
             .par_iter()
             .map(|target| {
