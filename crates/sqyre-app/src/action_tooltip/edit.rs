@@ -106,11 +106,17 @@ pub fn paint_edit_fields(
                 // ScrollArea's unbounded height and ratchets the tip to the screen.
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
-                    help::tip(theme::mouse_button_picker(ui, button), h::CLICK_BUTTON);
+                    help::tip(
+                        crate::widgets::mouse_button_picker(ui, button),
+                        h::CLICK_BUTTON,
+                    );
                     ui.vertical(|ui| {
                         help::tip(ui.small("Up"), h::CLICK_STATE);
                         ui.horizontal(|ui| {
-                            help::tip(theme::press_state_toggle(ui, state), h::CLICK_STATE);
+                            help::tip(
+                                crate::widgets::press_state_toggle(ui, state),
+                                h::CLICK_STATE,
+                            );
                             help::tip(ui.small("Tap"), h::CLICK_STATE);
                         });
                         help::tip(ui.small("Down"), h::CLICK_STATE);
@@ -133,7 +139,7 @@ pub fn paint_edit_fields(
                         W_VAR,
                         active_macro,
                     );
-                    if theme::record_icon_button(ui, "Record a key", !key_record.is_open())
+                    if crate::widgets::record_icon_button(ui, "Record a key", !key_record.is_open())
                         .clicked()
                     {
                         key_record.open(macro_hotkeys);
@@ -142,7 +148,7 @@ pub fn paint_edit_fields(
                 ui.vertical(|ui| {
                     help::tip(ui.small("Up"), h::KEY_STATE);
                     ui.horizontal(|ui| {
-                        help::tip(theme::press_state_toggle(ui, state), h::KEY_STATE);
+                        help::tip(crate::widgets::press_state_toggle(ui, state), h::KEY_STATE);
                         help::tip(ui.small("Tap"), h::KEY_STATE);
                     });
                     help::tip(ui.small("Down"), h::KEY_STATE);
@@ -231,7 +237,7 @@ pub fn paint_edit_fields(
             tip_section(ui, |ui| {
                 ui.horizontal(|ui| {
                     help::label(ui, "Continue keys (one per line)", h::PAUSE_CONTINUE);
-                    if theme::record_icon_button(
+                    if crate::widgets::record_icon_button(
                         ui,
                         "Record continue chord",
                         !hotkey_record.is_open() && !key_record.is_open(),
@@ -915,7 +921,7 @@ fn item_tag_suggestions(
 }
 
 fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {
-    crate::theme::icon_button(ui, "☰").on_hover_text("Pick…")
+    crate::widgets::icon_button(ui, "☰", "Pick…")
 }
 
 /// Soft-wrap row count for a process path in the Focus Window tip.
@@ -957,10 +963,7 @@ fn paint_coord_preview(
     let mut force = false;
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Preview").strong());
-        if crate::theme::icon_button(ui, "↻")
-            .on_hover_text("Refresh")
-            .clicked()
-        {
+        if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
             force = true;
         }
     });

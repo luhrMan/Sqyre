@@ -9,7 +9,6 @@ use crate::action_tooltip::help as h;
 use crate::action_tooltip::sections::{tip_advanced, tip_section, tip_wrapped_section};
 use crate::paint_ctx::{CatalogPaint, VarTheme};
 use crate::pickers::ActivePicker;
-use crate::theme;
 use crate::tree_chrome;
 use crate::var_pills;
 use crate::widgets::{configure_match_blur_drag, drag_field, match_settings, text_field, W_VAR};
@@ -260,7 +259,7 @@ pub(super) fn paint_find_pixel_fields(
                     egui::StrokeKind::Outside,
                 );
             }
-            if theme::record_icon_button(
+            if crate::widgets::record_icon_button(
                 ui,
                 "Click on screen to sample pixel color",
                 !screen_click.is_armed(),

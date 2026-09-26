@@ -1,4 +1,4 @@
-//! Shared dialog chrome: Save/Cancel and Confirm/Cancel rows.
+//! Shared dialog chrome: Save/Cancel, Confirm/Cancel, and dismiss-only rows.
 
 use eframe::egui::{self, Key, Modifiers};
 use egui::containers::scroll_area::{DragScroll, ScrollBarVisibility};
@@ -258,25 +258,43 @@ fn poll_save_keys(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
 
 /// Right-aligned footer: **Cancel left, Save right**.
 ///
-/// Drawn with `right_to_left` so Save is allocated first (rightmost).
+/// Sole Save/Cancel footer (audit D1 / P1-9). Uses `right_to_left` and allocates
+/// **Save first** so it sits on the right; Cancel is allocated next (to Save's
+/// left). Do not add a second helper (`save_cancel_row_ltr` or similar) or reverse
+/// the allocation order — that flips the visual order.
 ///
 /// Save glows while `save_enabled` (dirty pending work). `Esc` cancels; `Enter`
 /// saves only when `save_enabled` and egui is not routing keys to a text field.
 pub fn save_cancel_row(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
+    paint_save_cancel_row(ui, save_enabled).0
+}
+
+/// Shared paint path for [`save_cancel_row`]; also returns Cancel/Save rects for tests.
+fn paint_save_cancel_row(
+    ui: &mut egui::Ui,
+    save_enabled: bool,
+) -> (SaveCancel, egui::Rect, egui::Rect) {
     let mut out = SaveCancel::None;
+    let mut cancel_rect = egui::Rect::NOTHING;
+    let mut save_rect = egui::Rect::NOTHING;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        // First in RTL = rightmost → Save on the right.
-        if crate::theme::dirty_action_button(ui, "Save", save_enabled).clicked() {
+        // First in RTL = rightmost → Save on the right, Cancel on its left.
+        let save = crate::widgets::dirty_action_button(ui, "Save", save_enabled);
+        let cancel = ui.button("Cancel");
+        save_rect = save.rect;
+        cancel_rect = cancel.rect;
+        // Prefer Cancel if both somehow click in one frame (matches prior).
+        if save.clicked() {
             out = SaveCancel::Save;
         }
-        if ui.button("Cancel").clicked() {
+        if cancel.clicked() {
             out = SaveCancel::Cancel;
         }
     });
     if out == SaveCancel::None {
         out = poll_save_keys(ui, save_enabled);
     }
-    out
+    (out, cancel_rect, save_rect)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -315,6 +333,24 @@ pub fn poll_confirm_keys(ui: &mut egui::Ui) -> ConfirmCancel {
     } else {
         ConfirmCancel::None
     }
+}
+
+/// Cancel-only footer for record / dismiss-only dialogs.
+///
+/// Button order matches [`confirm_cancel_row`] (Cancel on the left). When
+/// `esc_dismisses`, Esc is consumed as Cancel (same path as confirms). Pass
+/// `false` when Escape is a recordable key (single-key record modal).
+pub fn dismiss_row(ui: &mut egui::Ui, esc_dismisses: bool) -> bool {
+    let mut cancel = false;
+    ui.horizontal(|ui| {
+        if ui.button("Cancel").clicked() {
+            cancel = true;
+        }
+    });
+    if !cancel && esc_dismisses && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+        cancel = true;
+    }
+    cancel
 }
 
 /// Cancel left + labeled primary right for destructive / overwrite prompts.
@@ -409,4 +445,65 @@ pub fn confirm_window(
     )
     .show(ctx, body);
     open
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::{Event, Key, Modifiers, RawInput};
+
+    #[test]
+    fn save_cancel_row_places_cancel_left_of_save() {
+        let ctx = egui::Context::default();
+        let mut cancel_min_x = f32::NAN;
+        let mut save_min_x = f32::NAN;
+        ctx.run_ui(RawInput::default(), |ui| {
+            ui.set_width(320.0);
+            let (outcome, cancel_rect, save_rect) = paint_save_cancel_row(ui, true);
+            assert_eq!(outcome, SaveCancel::None);
+            cancel_min_x = cancel_rect.min.x;
+            save_min_x = save_rect.min.x;
+        })
+        .drop_without_applying_deltas();
+        assert!(
+            cancel_min_x < save_min_x,
+            "Cancel ({cancel_min_x}) must be left of Save ({save_min_x})"
+        );
+    }
+
+    #[test]
+    fn save_cancel_row_esc_cancels_enter_saves_when_enabled() {
+        let ctx = egui::Context::default();
+        ctx.run_ui(RawInput::default(), |ui| {
+            assert_eq!(save_cancel_row(ui, false), SaveCancel::None);
+        })
+        .drop_without_applying_deltas();
+
+        let mut esc = RawInput::default();
+        esc.events.push(Event::Key {
+            key: Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        ctx.run_ui(esc, |ui| {
+            assert_eq!(save_cancel_row(ui, true), SaveCancel::Cancel);
+        })
+        .drop_without_applying_deltas();
+
+        let mut enter = RawInput::default();
+        enter.events.push(Event::Key {
+            key: Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        ctx.run_ui(enter, |ui| {
+            assert_eq!(save_cancel_row(ui, true), SaveCancel::Save);
+            assert_eq!(save_cancel_row(ui, false), SaveCancel::None);
+        })
+        .drop_without_applying_deltas();
+    }
 }

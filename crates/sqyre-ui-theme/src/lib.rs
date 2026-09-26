@@ -1,10 +1,19 @@
 //! Shared Sqyre brand and semantic color tokens.
 //!
 //! Single source of truth for `sqyre-app` and `sqyre-overlay`. Widgets stay in
-//! the app; this crate holds colors, strokes, and minimal paint helpers both
-//! surfaces need.
+//! the app; this crate holds colors, strokes, spacing, and minimal paint helpers
+//! both surfaces need.
 
 use egui::{self, Color32, Stroke};
+
+/// Dense chrome gap (pill segments, chip remove inset, tree thumb gaps).
+pub const SPACE_2: f32 = 2.0;
+/// Compact control gap (toolbar icons, help affix, nested list rhythm).
+pub const SPACE_4: f32 = 4.0;
+/// Default section / separator breathing room.
+pub const SPACE_8: f32 = 8.0;
+/// Nest indent and CTA separation.
+pub const SPACE_12: f32 = 12.0;
 
 /// Sqyre gold/yellow primary (`#dc9d2e`).
 pub const PRIMARY: Color32 = Color32::from_rgb(0xdc, 0x9d, 0x2e);
@@ -127,5 +136,13 @@ mod tests {
         assert_eq!(chip_fill(), rgba([0xdc, 0x9d, 0x2e, 28]));
         assert_eq!(frame_fill(), rgba([0xdc, 0x9d, 0x2e, 13]));
         assert_eq!(inner_stroke().color, accent_dim());
+    }
+
+    #[test]
+    fn spacing_scale_is_2_4_8_12() {
+        assert_eq!(SPACE_2, 2.0);
+        assert_eq!(SPACE_4, 4.0);
+        assert_eq!(SPACE_8, 8.0);
+        assert_eq!(SPACE_12, 12.0);
     }
 }

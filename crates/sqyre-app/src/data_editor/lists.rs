@@ -525,7 +525,7 @@ impl DataEditor {
                     }
                 }
             }
-            pickers::paint_list_vacancy(ui, q, visible, entity);
+            crate::widgets::list_vacancy(ui, q, visible, entity);
         });
         self.search = search;
         self.items_list_sort = items_list_sort.into_inner();

@@ -489,7 +489,7 @@ fn paint_tag_chips(
         .fill(fill)
         .stroke(egui::Stroke::NONE)
         .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::same(2));
+        .inner_margin(egui::Margin::same(crate::theme::SPACE_2 as i8));
 
     for (i, tag) in tags.iter().enumerate() {
         let (polarity, label) = if signed_filters {
@@ -503,6 +503,7 @@ fn paint_tag_chips(
         };
         let mut paint_chip = |ui: &mut egui::Ui| -> egui::Rect {
             // Pill wraps label + × slot so `horizontal_wrapped` treats each chip as one unit.
+            // Zero item_spacing / button_padding keeps label+remove as one compact chip.
             chip.show(ui, |ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 ui.spacing_mut().button_padding = egui::vec2(0.0, 0.0);
@@ -524,7 +525,7 @@ fn paint_tag_chips(
                         toggle = Some(i);
                     }
                     ui.label(egui::RichText::new(label.as_str()).small().color(fg));
-                    ui.add_space(2.0);
+                    ui.add_space(crate::theme::SPACE_2);
                     allocate_chip_remove_slot(ui)
                 })
                 .inner

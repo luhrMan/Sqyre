@@ -211,8 +211,7 @@ impl DataEditor {
                         PreviewKind::Collection,
                     );
                 }
-                if theme::icon_button_colored(ui, "×", Some(theme::MACRO_STOP))
-                    .on_hover_text("Remove")
+                if crate::widgets::icon_button_colored(ui, "×", "Remove", Some(theme::MACRO_STOP))
                     .clicked()
                 {
                     remove_at = Some(i);

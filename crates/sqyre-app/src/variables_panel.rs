@@ -1,6 +1,7 @@
 //! Macro variable declarations panel.
 
 use crate::action_tooltip::help;
+use crate::status_banner::StatusBanner;
 use eframe::egui;
 use sqyre_domain::{builtin_variable_catalog, Macro, VariableDecl, VariableType};
 use sqyre_ports::SharedRuntimeVars;
@@ -18,8 +19,7 @@ pub struct VariablesPanelUi {
     pub open: bool,
     /// Index into `macro_.variable_decls` being edited, or `None` for add-new.
     editing: Option<EditState>,
-    status: Option<String>,
-    status_error: bool,
+    status_banner: StatusBanner,
     synced_macro: String,
     bottom_tab: BottomTab,
     /// Cached display count for the Built-ins tab (avoids opening X11 every frame).
@@ -36,7 +36,6 @@ struct EditState {
     type_: VariableType,
     initial_value: String,
     description: String,
-    error: Option<String>,
     /// Snapshot at open for dirty Save enablement.
     baseline_name: String,
     baseline_type: VariableType,
@@ -60,8 +59,7 @@ impl VariablesPanelUi {
         }
         self.synced_macro = macro_name.to_string();
         self.editing = None;
-        self.status = None;
-        self.status_error = false;
+        self.status_banner.clear();
         self.declared_filter.clear();
         self.runtime_filter.clear();
     }
@@ -236,13 +234,12 @@ impl VariablesPanelUi {
                             type_: VariableType::Auto,
                             initial_value: String::new(),
                             description: String::new(),
-                            error: None,
                             baseline_name: String::new(),
                             baseline_type: VariableType::Auto,
                             baseline_initial: String::new(),
                             baseline_description: String::new(),
                         });
-                        self.status = None;
+                        self.status_banner.clear();
                     }
                     ui.label(
                         egui::RichText::new(format!("({})", macro_.variable_decls.len())).weak(),
@@ -265,7 +262,11 @@ impl VariablesPanelUi {
 
         // Reserve space for optional edit form / status below the list.
         let edit_reserve = if self.editing.is_some() { 168.0 } else { 0.0 };
-        let status_reserve = if self.status.is_some() { 24.0 } else { 0.0 };
+        let status_reserve = if self.status_banner.is_set() {
+            24.0
+        } else {
+            0.0
+        };
         let list_h = (max_h - 80.0 - edit_reserve - status_reserve).max(80.0);
         let list_w = crate::widgets::visible_width(ui);
         let declared_q = self.declared_filter.trim().to_ascii_lowercase();
@@ -325,13 +326,12 @@ impl VariablesPanelUi {
                     type_: d.type_,
                     initial_value: d.initial_value.clone(),
                     description: d.description.clone(),
-                    error: None,
                     baseline_name: d.name,
                     baseline_type: d.type_,
                     baseline_initial: d.initial_value,
                     baseline_description: d.description,
                 });
-                self.status = None;
+                self.status_banner.clear();
             }
         }
         if let Some(i) = remove_idx {
@@ -339,8 +339,7 @@ impl VariablesPanelUi {
                 let name = macro_.variable_decls[i].name.clone();
                 macro_.remove_variable_decl(&name);
                 self.editing = None;
-                self.status = Some(format!("Removed {name}"));
-                self.status_error = false;
+                self.status_banner.set_ok(format!("Removed {name}"));
                 persist = true;
             }
         }
@@ -355,14 +354,7 @@ impl VariablesPanelUi {
             persist |= self.edit_form(ui, macro_, edit);
         }
 
-        if let Some(msg) = &self.status {
-            let color = if self.status_error {
-                crate::theme::error_fg()
-            } else {
-                crate::theme::ok_fg()
-            };
-            ui.colored_label(color, msg);
-        }
+        self.status_banner.paint(ui);
 
         persist
     }
@@ -402,13 +394,10 @@ impl VariablesPanelUi {
             280.0,
         );
 
-        if let Some(err) = &edit.error {
-            ui.colored_label(crate::theme::error_fg(), err);
-        }
-
         match crate::widgets::save_cancel_row(ui, edit.save_enabled()) {
             crate::widgets::SaveCancel::Cancel => {
                 self.editing = None;
+                self.status_banner.clear();
                 return false;
             }
             crate::widgets::SaveCancel::None => {
@@ -426,7 +415,8 @@ impl VariablesPanelUi {
                         && edit.index.map(|ei| ei != i).unwrap_or(true)
                 });
                 if collision {
-                    edit.error = Some(format!("variable {trimmed:?} already exists"));
+                    self.status_banner
+                        .set_err(format!("variable {trimmed:?} already exists"));
                     self.editing = Some(edit);
                 } else {
                     if let Some(i) = edit.index {
@@ -443,13 +433,12 @@ impl VariablesPanelUi {
                         description: edit.description.clone(),
                     });
                     self.editing = None;
-                    self.status = Some(format!("Saved {trimmed}"));
-                    self.status_error = false;
+                    self.status_banner.set_ok(format!("Saved {trimmed}"));
                     persist = true;
                 }
             }
             Err(e) => {
-                edit.error = Some(e.to_string());
+                self.status_banner.set_err(e.to_string());
                 self.editing = Some(edit);
             }
         }

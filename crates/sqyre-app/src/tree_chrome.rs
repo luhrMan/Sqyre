@@ -9,7 +9,9 @@ use crate::theme::{
 };
 use crate::var_pills;
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
-use sqyre_domain::{parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames};
+use sqyre_domain::{
+    action_type_label, parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames,
+};
 use sqyre_persist::ProgramCatalog;
 use sqyre_ui_model::{action_icon_glyph, action_pastel_color, ActionDisplay, SummaryPill};
 use std::collections::HashMap;
@@ -38,7 +40,7 @@ pub fn default_row_height(interact_y: f32) -> f32 {
 pub fn row_height(ui: &egui::Ui) -> f32 {
     let btn_h = ui
         .text_style_height(&egui::TextStyle::Button)
-        .max(crate::theme::ICON_BTN_SIDE);
+        .max(crate::widgets::ICON_BTN_SIDE);
     default_row_height(ui.spacing().interact_size.y)
         .max(type_badge_side(ui))
         .max(btn_h)
@@ -178,14 +180,14 @@ fn row_action_btn(
     tip: &str,
     color: Option<Color32>,
 ) -> egui::Response {
-    let response = crate::theme::icon_button_bare_colored(ui, glyph, color);
-    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip));
-    response.on_hover_text(tip)
+    crate::widgets::icon_button_bare_colored(ui, glyph, tip, color)
 }
 
 /// Paint the pastel type badge with a glyph.
 pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> egui::Response {
-    let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
+    let type_key = action.type_key();
+    let label = action_type_label(type_key);
+    let pastel = rgba(action_pastel_color(type_key, is_dark));
     let font = egui::TextStyle::Small.resolve(ui.style());
     let size = Vec2::splat(type_badge_side(ui));
     let (rect, resp) = ui.allocate_exact_size(size, Sense::hover());
@@ -198,7 +200,8 @@ pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> e
     );
     let glyph = action_icon_glyph(action);
     crate::theme::paint_text_centered(ui, rect, glyph, font, contrast_fg(pastel));
-    resp
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, label));
+    resp.on_hover_text(label)
 }
 
 pub(crate) fn paint_pill_pub(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
