@@ -8,6 +8,8 @@ mod seed_general;
 mod types;
 mod util;
 
+pub use mutate::{merge_fs_warning, FsWarn};
+
 pub use seed_general::{
     ensure_general_program, CELL_BOUNDS, CELL_COORDINATES, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
     TEMPORARY_PROGRAM,
@@ -1167,6 +1169,135 @@ Game:
             .unwrap()
             .collections
             .contains_key("Satchel"));
+    }
+
+    #[test]
+    fn rename_program_reports_fs_warning_when_asset_dir_blocked() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+
+        let icons_old = images.join("icons").join("Alpha");
+        std::fs::create_dir_all(&icons_old).unwrap();
+        std::fs::write(icons_old.join("keep.png"), b"icon").unwrap();
+        // A file where the destination dir should be blocks clear via remove_dir_all;
+        // rename is skipped when clear fails (needed on Windows, where MoveFileEx
+        // REPLACE can otherwise replace that file with the source directory).
+        std::fs::create_dir_all(images.join("icons")).unwrap();
+        std::fs::write(images.join("icons").join("Beta"), b"not-a-dir").unwrap();
+
+        let warn = cat.rename_program("Alpha", "Beta").unwrap();
+        assert!(cat.get("Beta").is_some(), "map rename still succeeds");
+        assert!(cat.get("Alpha").is_none());
+        let warn = warn.expect("expected filesystem warning");
+        assert!(
+            warn.contains("could not rename program icons dir")
+                || warn.contains("could not clear destination icons dir"),
+            "unexpected warning: {warn}"
+        );
+        assert!(icons_old.exists(), "source icons remain when rename fails");
+    }
+
+    #[test]
+    fn rename_item_reports_fs_warning_when_icon_rename_fails() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_item(
+            "Alpha",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let icons = images.join("icons").join("Alpha");
+        std::fs::create_dir_all(&icons).unwrap();
+        let src = icons.join("Potion.png");
+        std::fs::write(&src, b"icon").unwrap();
+        // Destination path exists as a directory so rename(file→dir path) fails.
+        std::fs::create_dir_all(icons.join("Elixir.png")).unwrap();
+
+        let warn = cat.rename_item("Alpha", "Potion", "Elixir").unwrap();
+        assert!(cat.get("Alpha").unwrap().items.contains_key("Elixir"));
+        assert!(!cat.get("Alpha").unwrap().items.contains_key("Potion"));
+        let warn = warn.expect("expected filesystem warning");
+        assert!(
+            warn.contains("could not rename item icon"),
+            "unexpected warning: {warn}"
+        );
+        assert!(src.exists());
+    }
+
+    #[test]
+    fn delete_mask_reports_fs_warning_when_remove_fails() {
+        let root = tempfile::tempdir().unwrap();
+        let images = root.path().join("images");
+        let mut cat = ProgramCatalog::default();
+        cat.set_images_root(Some(images.clone()));
+        cat.create_program("Alpha").unwrap();
+        cat.upsert_mask(
+            "Alpha",
+            ProgramMask {
+                name: "circle".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let masks = images.join("masks").join("Alpha");
+        std::fs::create_dir_all(&masks).unwrap();
+        let path = masks.join("circle.png");
+        std::fs::write(&path, b"mask").unwrap();
+        // Force remove_file to fail:
+        // - Unix: unlink needs write on the parent directory.
+        // - Windows: Rust 1.95+ File::open shares DELETE (and remove_file ignores
+        //   readonly), so open exclusively (share_mode 0) to force a sharing violation.
+        #[cfg(windows)]
+        let _open = {
+            use std::os::windows::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(&path)
+                .unwrap()
+        };
+        #[cfg(not(windows))]
+        let original_perms = {
+            let original = std::fs::metadata(&masks).unwrap().permissions();
+            let mut blocked = original.clone();
+            blocked.set_readonly(true);
+            std::fs::set_permissions(&masks, blocked).unwrap();
+            original
+        };
+
+        let warn = cat.delete_mask("Alpha", "circle").unwrap();
+        assert!(!cat.get("Alpha").unwrap().masks.contains_key("circle"));
+        let warn = warn.expect("expected filesystem warning");
+        assert!(
+            warn.contains("could not remove mask image"),
+            "unexpected warning: {warn}"
+        );
+        assert!(path.exists());
+
+        #[cfg(not(windows))]
+        std::fs::set_permissions(&masks, original_perms).unwrap();
+    }
+
+    #[test]
+    fn merge_fs_warning_accumulates() {
+        let mut slot = None;
+        crate::merge_fs_warning(&mut slot, None);
+        assert!(slot.is_none());
+        crate::merge_fs_warning(&mut slot, Some("a".into()));
+        assert_eq!(slot.as_deref(), Some("a"));
+        crate::merge_fs_warning(&mut slot, Some("b".into()));
+        assert_eq!(slot.as_deref(), Some("a; b"));
     }
 
     #[test]

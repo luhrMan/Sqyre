@@ -657,7 +657,7 @@ fn create_item_with_original(
         .map_err(|e| e.to_string())?;
     if let Err(e) = icon_variants::add_variant_image(catalog, program, &name, img) {
         return Err(match catalog.delete_item(program, &name) {
-            Ok(()) => e.to_string(),
+            Ok(_) => e.to_string(),
             Err(del) => format!("{e}; also failed to remove item: {del}"),
         });
     }
