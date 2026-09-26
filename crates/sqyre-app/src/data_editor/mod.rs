@@ -1,4 +1,4 @@
-//! Floating Data Editor: Programs (Overlay) / Items (Masks) / Coordinates / Tools (Screen capture, Match probe).
+//! Floating Data Editor: Programs (Overlay) / Items (Masks) / Coordinates / Tools (Screen Cap, Pixel Check).
 
 const WINDOW_TITLE: &str = "Data Editor";
 
@@ -76,6 +76,19 @@ impl EditorSection {
             Self::Tools => EditorTab::ScreenCap,
         }
     }
+
+    /// Tools (Screen Cap / Pixel Check) are desktop-only — omitted on WASM.
+    fn is_available(self) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            !matches!(self, Self::Tools)
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = self;
+            true
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -91,6 +104,31 @@ pub(crate) enum EditorTab {
     Collections,
     Atlases,
     Overlay,
+}
+
+impl EditorTab {
+    /// User-visible tab title (never camelCase enum / wire names).
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Programs => "Programs",
+            Self::Items => "Items",
+            Self::Masks => "Masks",
+            Self::ScreenCap => "Screen Cap",
+            Self::PixelCheck => "Pixel Check",
+            Self::Points => "Points",
+            Self::SearchAreas => "Search Areas",
+            Self::Collections => "Collections",
+            Self::Atlases => "Atlases",
+            Self::Overlay => "Overlay",
+        }
+    }
+
+    /// Capture / match tools unavailable in the WASM GUI editor.
+    /// Called from `switch_tab` under `cfg(target_arch = "wasm32")`.
+    #[allow(dead_code)]
+    pub(crate) fn is_desktop_only(self) -> bool {
+        matches!(self, Self::ScreenCap | Self::PixelCheck)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -514,6 +552,12 @@ impl DataEditor {
     }
 
     fn switch_tab(&mut self, tab: EditorTab, catalog: &ProgramCatalog, settings: &UserSettings) {
+        #[cfg(target_arch = "wasm32")]
+        let tab = if tab.is_desktop_only() {
+            EditorTab::Programs
+        } else {
+            tab
+        };
         if self.tab != tab {
             self.tab = tab;
             self.clear_entity_selection();
@@ -786,42 +830,79 @@ impl DataEditor {
                 (EditorSection::Coordinates, "Coordinates"),
                 (EditorSection::Tools, "Tools"),
             ] {
+                if !sec.is_available() {
+                    continue;
+                }
                 if ui.selectable_label(section == sec, label).clicked() && section != sec {
                     self.switch_tab(sec.default_tab(), env.catalog, env.settings);
                 }
             }
         });
         let section = EditorSection::of(self.tab);
-        if matches!(
-            section,
-            EditorSection::Programs
-                | EditorSection::Items
-                | EditorSection::Coordinates
-                | EditorSection::Tools
-        ) {
+        if section.is_available() {
             ui.horizontal_wrapped(|ui| {
                 let prev = self.tab;
                 match section {
                     EditorSection::Programs => {
-                        ui.selectable_value(&mut self.tab, EditorTab::Programs, "Programs");
-                        ui.selectable_value(&mut self.tab, EditorTab::Overlay, "Overlay");
+                        ui.selectable_value(
+                            &mut self.tab,
+                            EditorTab::Programs,
+                            EditorTab::Programs.label(),
+                        );
+                        ui.selectable_value(
+                            &mut self.tab,
+                            EditorTab::Overlay,
+                            EditorTab::Overlay.label(),
+                        );
                     }
                     EditorSection::Items => {
-                        ui.selectable_value(&mut self.tab, EditorTab::Items, "Items");
-                        ui.selectable_value(&mut self.tab, EditorTab::Masks, "Masks");
+                        ui.selectable_value(
+                            &mut self.tab,
+                            EditorTab::Items,
+                            EditorTab::Items.label(),
+                        );
+                        ui.selectable_value(
+                            &mut self.tab,
+                            EditorTab::Masks,
+                            EditorTab::Masks.label(),
+                        );
                     }
                     EditorSection::Coordinates => {
                         ui.label(egui::RichText::new("Basic").weak().small());
-                        ui.selectable_value(&mut self.tab, EditorTab::Points, "Points");
-                        ui.selectable_value(&mut self.tab, EditorTab::SearchAreas, "Search Areas");
+                        ui.selectable_value(
+                            &mut self.tab,
+                            EditorTab::Points,
+                            EditorTab::Points.label(),
+                        );
+                        ui.selectable_value(
+                            &mut self.tab,
+                            EditorTab::SearchAreas,
+                            EditorTab::SearchAreas.label(),
+                        );
                         ui.add_space(12.0);
                         ui.label(egui::RichText::new("Advanced").weak().small());
-                        ui.selectable_value(&mut self.tab, EditorTab::Collections, "Collections");
-                        ui.selectable_value(&mut self.tab, EditorTab::Atlases, "Atlases");
+                        ui.selectable_value(
+                            &mut self.tab,
+                            EditorTab::Collections,
+                            EditorTab::Collections.label(),
+                        );
+                        ui.selectable_value(
+                            &mut self.tab,
+                            EditorTab::Atlases,
+                            EditorTab::Atlases.label(),
+                        );
                     }
                     EditorSection::Tools => {
-                        ui.selectable_value(&mut self.tab, EditorTab::ScreenCap, "Screen capture");
-                        ui.selectable_value(&mut self.tab, EditorTab::PixelCheck, "Match probe");
+                        ui.selectable_value(
+                            &mut self.tab,
+                            EditorTab::ScreenCap,
+                            EditorTab::ScreenCap.label(),
+                        );
+                        ui.selectable_value(
+                            &mut self.tab,
+                            EditorTab::PixelCheck,
+                            EditorTab::PixelCheck.label(),
+                        );
                     }
                 }
                 if self.tab != prev {
@@ -988,7 +1069,7 @@ impl DataEditor {
                         !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
                     let save_enabled = can_save && dirty && valid;
                     let save_clicked =
-                        crate::theme::dirty_action_button(ui, "Save", save_enabled).clicked();
+                        crate::widgets::dirty_action_button(ui, "Save", save_enabled).clicked();
                     // Enter submits when Save is able: this window is in front,
                     // and no confirm / picker / combo is using the key.
                     let save_enter = save_enabled
@@ -1258,7 +1339,7 @@ impl DataEditor {
                 Ok(Err(e)) => {
                     self.pixel_check_pending = None;
                     self.pixel_check.paused = true;
-                    self.set_err(format!("Match probe: {e}"));
+                    self.set_err(format!("{}: {e}", EditorTab::PixelCheck.label()));
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
                     ctx.request_repaint();
@@ -1266,11 +1347,32 @@ impl DataEditor {
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     self.pixel_check_pending = None;
                     self.pixel_check.paused = true;
-                    self.set_err("Match probe: match failed");
+                    self.set_err(format!("{}: match failed", EditorTab::PixelCheck.label()));
                 }
             }
         }
         let _ = previews;
         let _ = catalog;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::EditorTab;
+
+    #[test]
+    fn editor_tab_labels_are_human_titles() {
+        assert_eq!(EditorTab::ScreenCap.label(), "Screen Cap");
+        assert_eq!(EditorTab::PixelCheck.label(), "Pixel Check");
+        assert_eq!(EditorTab::SearchAreas.label(), "Search Areas");
+        assert_eq!(EditorTab::Programs.label(), "Programs");
+    }
+
+    #[test]
+    fn screen_cap_and_pixel_check_are_desktop_only() {
+        assert!(EditorTab::ScreenCap.is_desktop_only());
+        assert!(EditorTab::PixelCheck.is_desktop_only());
+        assert!(!EditorTab::Items.is_desktop_only());
+        assert!(!EditorTab::Overlay.is_desktop_only());
     }
 }

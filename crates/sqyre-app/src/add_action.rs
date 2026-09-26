@@ -26,6 +26,10 @@ use web_time::{Duration, Instant};
 /// How long a tile must be hovered before the defaults **view** tip opens.
 const DEFAULTS_HOVER_DELAY: Duration = Duration::from_secs(1);
 
+/// Picker chrome hint — discoverability for the delayed defaults preview.
+/// Keep in sync with [`DEFAULTS_HOVER_DELAY`] (asserted in tests).
+const HOVER_DELAY_HINT: &str = "Hover ~1s to preview defaults · Right-click to edit";
+
 /// Modal state for the categorized blank-action picker.
 #[derive(Debug, Default)]
 pub struct AddActionPicker {
@@ -259,7 +263,7 @@ impl AddActionPicker {
                     self.selected = 0;
                 }
             });
-            ui.label("Pick an action type — hover ~1s to preview defaults, right-click to edit");
+            ui.weak(HOVER_DELAY_HINT);
             ui.separator();
 
             let list_h = pickers::popup_scroll_max_height(ui, 0.0);
@@ -272,7 +276,7 @@ impl AddActionPicker {
                                                      // columns; without Extend they wrap letter-by-letter when shrunk.
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 if filtered.is_empty() {
-                    pickers::paint_list_vacancy(ui, &q, 0, "actions");
+                    crate::widgets::list_vacancy(ui, &q, 0, "actions");
                     return;
                 }
                 ui.add_space(6.0);
@@ -629,6 +633,25 @@ fn picker_tile(
 mod tests {
     use super::*;
     use sqyre_domain::action_templates;
+
+    #[test]
+    fn hover_delay_hint_documents_delay_and_edit() {
+        assert_eq!(
+            DEFAULTS_HOVER_DELAY.as_secs(),
+            1,
+            "update HOVER_DELAY_HINT if DEFAULTS_HOVER_DELAY changes"
+        );
+        let hint = HOVER_DELAY_HINT.to_ascii_lowercase();
+        assert!(hint.contains("~1s"), "hint must name the hover delay");
+        assert!(
+            hint.contains("preview"),
+            "hint must mention defaults preview"
+        );
+        assert!(
+            hint.contains("right-click"),
+            "hint must mention right-click edit"
+        );
+    }
 
     #[test]
     fn every_template_has_a_description_or_label() {

@@ -299,7 +299,6 @@ pub(crate) fn collect_commands(src: CommandSources<'_>) -> Vec<CommandItem> {
 
 struct CatalogKind {
     tab: EditorTab,
-    open_title: &'static str,
     new_title: Option<&'static str>,
     icon: &'static str,
     open_keys: &'static [&'static str],
@@ -309,28 +308,24 @@ fn catalog_kinds() -> &'static [CatalogKind] {
     &[
         CatalogKind {
             tab: EditorTab::Programs,
-            open_title: "Open Programs",
             new_title: Some("New Program"),
             icon: "app-window",
             open_keys: &["program", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Items,
-            open_title: "Open Items",
             new_title: Some("New Item"),
             icon: "image",
             open_keys: &["item", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Masks,
-            open_title: "Open Masks",
             new_title: Some("New Mask"),
             icon: "circle-dashed",
             open_keys: &["mask", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::ScreenCap,
-            open_title: "Open ScreenCap",
             new_title: None,
             icon: "camera",
             open_keys: &[
@@ -344,47 +339,55 @@ fn catalog_kinds() -> &'static [CatalogKind] {
         },
         CatalogKind {
             tab: EditorTab::PixelCheck,
-            open_title: "Open PixelCheck",
             new_title: None,
             icon: "crosshair",
             open_keys: &["pixelcheck", "pixel", "match", "heatmap", "tools", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Points,
-            open_title: "Open Points",
             new_title: Some("New Point"),
             icon: "map-pin",
             open_keys: &["point", "coordinate", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::SearchAreas,
-            open_title: "Open Search Areas",
             new_title: Some("New Search Area"),
             icon: "selection",
             open_keys: &["search", "area", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Collections,
-            open_title: "Open Collections",
             new_title: Some("New Collection"),
             icon: "grid-four",
             open_keys: &["collection", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Atlases,
-            open_title: "Open Atlases",
             new_title: Some("New Atlas"),
             icon: "stack",
             open_keys: &["atlas", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Overlay,
-            open_title: "Open Overlay",
             new_title: Some("New Overlay Button"),
             icon: "square",
             open_keys: &["overlay", "button", "model", "tools", "goto"],
         },
     ]
+}
+
+fn catalog_kinds_visible() -> impl Iterator<Item = &'static CatalogKind> {
+    catalog_kinds().iter().filter(|kind| {
+        #[cfg(target_arch = "wasm32")]
+        {
+            !kind.tab.is_desktop_only()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = kind;
+            true
+        }
+    })
 }
 
 fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
@@ -395,9 +398,9 @@ fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
         CommandKind::OpenDataEditor,
         &["data", "editor", "catalog", "goto", "model"],
     ));
-    for kind in catalog_kinds() {
+    for kind in catalog_kinds_visible() {
         out.push(item(
-            kind.open_title,
+            &format!("Open {}", kind.tab.label()),
             "Go to",
             ph(kind.icon),
             CommandKind::OpenEditorTab { tab: kind.tab },
@@ -437,7 +440,7 @@ fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
 }
 
 fn push_new_entities(out: &mut Vec<CommandItem>) {
-    for kind in catalog_kinds() {
+    for kind in catalog_kinds_visible() {
         let Some(title) = kind.new_title else {
             continue;
         };
@@ -918,8 +921,8 @@ mod tests {
         assert!(shown.iter().any(|t| t == "Add Click"));
         assert!(shown.iter().any(|t| t == "New Item"));
         assert!(shown.iter().any(|t| t == "Open Data Editor"));
-        assert!(shown.iter().any(|t| t == "Open ScreenCap"));
-        assert!(shown.iter().any(|t| t == "Open PixelCheck"));
+        assert!(shown.iter().any(|t| t == "Open Screen Cap"));
+        assert!(shown.iter().any(|t| t == "Open Pixel Check"));
         assert!(!shown.iter().any(|t| t == "Open Items"));
         assert!(!shown.iter().any(|t| t == "Farm gold"));
         assert!(!shown.iter().any(|t| t == "Health Flask"));
@@ -932,10 +935,24 @@ mod tests {
         let items = collect_commands(sources(&[], &catalog, &[], false));
         assert!(titles("screencap", &items)
             .iter()
-            .any(|t| t == "Open ScreenCap"));
+            .any(|t| t == "Open Screen Cap"));
         assert!(titles("pixelcheck", &items)
             .iter()
-            .any(|t| t == "Open PixelCheck"));
+            .any(|t| t == "Open Pixel Check"));
+    }
+
+    #[test]
+    fn desktop_tool_open_titles_use_tab_labels() {
+        assert_eq!(
+            format!("Open {}", EditorTab::ScreenCap.label()),
+            "Open Screen Cap"
+        );
+        assert_eq!(
+            format!("Open {}", EditorTab::PixelCheck.label()),
+            "Open Pixel Check"
+        );
+        assert!(EditorTab::ScreenCap.is_desktop_only());
+        assert!(EditorTab::PixelCheck.is_desktop_only());
     }
 
     #[test]

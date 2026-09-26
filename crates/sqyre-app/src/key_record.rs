@@ -1,6 +1,7 @@
 //! Single-key record dialog.
 
 use crate::chord_record::{poll_waiting_release, record_modal};
+use crate::widgets::dismiss_row;
 use eframe::egui;
 use sqyre_hotkeys::MacroHotkeyBridge;
 use std::time::Duration;
@@ -64,9 +65,8 @@ impl KeyRecordUi {
                     );
                     ui.separator();
                     ui.monospace("(no key)");
-                    if ui.button("Cancel").clicked() {
-                        cancel = true;
-                    }
+                    // Escape is recordable — button only (no Esc dismiss).
+                    cancel = dismiss_row(ui, false);
                 });
 
                 if cancel {

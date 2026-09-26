@@ -135,7 +135,7 @@ impl DataEditor {
                 help::DE_NAME,
             );
             let armed = screen_click.is_armed();
-            if theme::record_icon_button(ui, record_tip, !armed).clicked() {
+            if crate::widgets::record_icon_button(ui, record_tip, !armed).clicked() {
                 self.save_after_record = false;
                 arm(screen_click);
                 self.set_ok(recording_msg);
@@ -327,9 +327,9 @@ impl DataEditor {
             ..
         } = ctx;
         #[cfg(feature = "native-runtime")]
-        help::heading(ui, "Match probe", help::DE_PIXELCHECK_INTRO);
+        help::heading(ui, EditorTab::PixelCheck.label(), help::DE_PIXELCHECK_INTRO);
         #[cfg(not(feature = "native-runtime"))]
-        ui.heading("Match probe");
+        ui.heading(EditorTab::PixelCheck.label());
         #[cfg(not(feature = "native-runtime"))]
         {
             let _ = (
@@ -343,7 +343,10 @@ impl DataEditor {
             );
             ui.colored_label(
                 crate::theme::error_fg(),
-                "Match probe requires the desktop app.",
+                format!(
+                    "{} requires the desktop app.",
+                    EditorTab::PixelCheck.label()
+                ),
             );
             return;
         }
@@ -387,8 +390,7 @@ impl DataEditor {
                     };
                     previews.show_for_coordinate_ref(ui, &resp, catalog, &reference, kind);
                 }
-                if crate::theme::icon_button(ui, "☰")
-                    .on_hover_text("Pick search area or collection cell…")
+                if crate::widgets::icon_button(ui, "☰", "Pick search area or collection cell…")
                     .clicked()
                 {
                     self.window_picker = ActivePicker::Coord {

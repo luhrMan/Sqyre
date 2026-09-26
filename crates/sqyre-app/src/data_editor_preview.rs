@@ -20,10 +20,7 @@ pub(crate) fn paint_preview_toolbar(
         if show_zoom_hint {
             crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
         }
-        if crate::theme::icon_button(ui, "↻")
-            .on_hover_text("Refresh")
-            .clicked()
-        {
+        if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
             force = true;
         }
         if let Some(view) = view {
@@ -429,10 +426,7 @@ pub(crate) fn paint_disk_preview(
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).strong());
         if let Some(path) = path {
-            if crate::theme::icon_button(ui, "↻")
-                .on_hover_text("Refresh")
-                .clicked()
-            {
+            if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
                 icons.invalidate_path(path);
             }
         }
@@ -482,10 +476,7 @@ pub(crate) fn paint_zoomable_collection_preview(
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Collection image").strong());
         crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
-        if crate::theme::icon_button(ui, "↻")
-            .on_hover_text("Refresh")
-            .clicked()
-        {
+        if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
             icons.invalidate_path(path);
         }
         if ui

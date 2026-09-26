@@ -10,7 +10,7 @@ use sqyre_ui_model::{action_pastel_color, nested_var_ref_color, SummaryPill};
 use sqyre_validate::EntryValidation;
 
 use crate::paint_ctx::VarTheme;
-use crate::theme::{contrast_fg, paint_galley_centered};
+use crate::theme::{contrast_fg, paint_galley_centered, SPACE_2};
 use crate::tree_chrome::rgba_pub;
 
 const VAR_AC_LIMIT: usize = 12;
@@ -98,7 +98,7 @@ pub fn paint_var_ref_content(
     plain_fg: Color32,
 ) {
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
+        ui.spacing_mut().item_spacing = Vec2::new(SPACE_2, 0.0);
         for seg in sqyre_varref::segments(text) {
             if seg.is_ref {
                 paint_nested_var_chip(ui, &seg.name, known, is_dark);
@@ -175,7 +175,7 @@ pub fn paint_value_pill(
     // value pills share the same nesting (no extra `ui.horizontal` wrapper).
     outer_frame(ui, fill, |ui| {
         let prev_spacing = ui.spacing().item_spacing;
-        ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
+        ui.spacing_mut().item_spacing = Vec2::new(SPACE_2, 0.0);
         if sqyre_varref::contains(text) {
             for seg in sqyre_varref::segments(text) {
                 if seg.is_ref {
@@ -206,7 +206,7 @@ pub fn paint_variable_name_pill(
     // Paint directly into outer_frame's LTR Center layout (no nested horizontal).
     outer_frame(ui, fill, |ui| {
         let prev_spacing = ui.spacing().item_spacing;
-        ui.spacing_mut().item_spacing = Vec2::new(2.0, 0.0);
+        ui.spacing_mut().item_spacing = Vec2::new(SPACE_2, 0.0);
         if !label.is_empty() {
             paint_plain_segment(ui, &format!("{label}: "), fg);
         }

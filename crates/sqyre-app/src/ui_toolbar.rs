@@ -3,7 +3,7 @@
 use crate::macro_meta::collect_all_macro_tags;
 use crate::theme;
 use crate::SqyreApp;
-use eframe::egui::{self, Color32, Vec2, WidgetInfo, WidgetType};
+use eframe::egui::{self, Color32, Vec2};
 use sqyre_hotkeys::{format_hotkey, HotkeyTrigger};
 use sqyre_ui_model::action_pastel_color;
 use std::sync::atomic::Ordering;
@@ -21,11 +21,10 @@ fn toolbar_icon_colored(
     enabled: bool,
     color: Option<Color32>,
 ) -> egui::Response {
-    let response = ui
-        .add_enabled_ui(enabled, |ui| theme::icon_button_colored(ui, glyph, color))
-        .inner;
-    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tip));
-    response.on_hover_text(tip).on_disabled_hover_text(tip)
+    ui.add_enabled_ui(enabled, |ui| {
+        crate::widgets::icon_button_colored(ui, glyph, tip, color)
+    })
+    .inner
 }
 
 pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
@@ -85,8 +84,8 @@ pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
     #[cfg(not(target_arch = "wasm32"))]
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     ui.horizontal(|ui| {
-        // Half the default gap between toolbar icon buttons.
-        ui.spacing_mut().item_spacing.x *= 0.5;
+        // Tight gap between toolbar icon buttons (scale SPACE_4).
+        ui.spacing_mut().item_spacing.x = theme::SPACE_4;
         let (list_glyph, list_tip) = if app.macro_list_open {
             ("◁", "Hide macro list")
         } else {
@@ -249,7 +248,7 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
         }
     };
     ui.monospace(&hk_label);
-    if theme::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
+    if crate::widgets::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
         app.hotkey_record.open(&app.run_session.macro_hotkeys);
     }
     if toolbar_icon(
@@ -292,8 +291,8 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     let mut force_openness: Option<bool> = None;
     ui.horizontal(|ui| {
-        // Half the default gap between toolbar icon buttons.
-        ui.spacing_mut().item_spacing.x *= 0.5;
+        // Tight gap between toolbar icon buttons (scale SPACE_4).
+        ui.spacing_mut().item_spacing.x = theme::SPACE_4;
         let can_copy = app.can_copy_selection();
         let can_paste = app.can_paste_clipboard();
         let can_undo = app.can_undo();
@@ -309,7 +308,8 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         {
             app.add_action_picker.open();
         }
-        if theme::record_icon_button(ui, "Record actions (Esc to finish)", !running).clicked()
+        if crate::widgets::record_icon_button(ui, "Record actions (Esc to finish)", !running)
+            .clicked()
             && app.macro_record.open(
                 &app.run_session.macro_hotkeys,
                 &app.macro_record_bridge,
@@ -372,6 +372,6 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
             force_openness = Some(false);
         }
     });
-    ui.add_space(4.0);
+    ui.add_space(theme::SPACE_4);
     force_openness
 }
