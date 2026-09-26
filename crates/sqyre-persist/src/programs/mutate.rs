@@ -279,12 +279,12 @@ impl ProgramCatalog {
             let p = self.program_mut(program)?;
             rename_keyed_map(&mut p.items, old, new, "item", |item, n| item.name = n)?;
         }
-        let fs_warn = if old != new && is_safe_fs_entity_name(program) && is_safe_fs_entity_name(old)
-        {
-            self.rename_item_icon_files(program, old, new)
-        } else {
-            None
-        };
+        let fs_warn =
+            if old != new && is_safe_fs_entity_name(program) && is_safe_fs_entity_name(old) {
+                self.rename_item_icon_files(program, old, new)
+            } else {
+                None
+            };
         Ok(fs_warn)
     }
 
