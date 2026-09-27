@@ -56,6 +56,7 @@ make check           # fmt --check + clippy (-D warnings) + cargo deny
 make test            # cargo nextest (falls back to cargo test)
 make smoke           # debug bin/sqyre --version
 make bench           # criterion (match / vision / serialize; not CI)
+make bench-compare   # Rust+Go comparative CPU/RSS/I/O harness (local; see scripts/bench-compare/)
 make wasm-check      # cargo check wasm32 sqyre-app --no-default-features
 make coverage        # llvm-cov nextest → HTML + lcov + summary.json under target/coverage/
 make run             # cargo run -p sqyre-app; loads ~/.sqyre/db.yaml

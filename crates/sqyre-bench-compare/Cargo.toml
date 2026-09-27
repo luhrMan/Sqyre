@@ -1,0 +1,26 @@
+[package]
+name = "sqyre-bench-compare"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+description = "Comparative / regression harness for hot-path CPU, RSS, and I/O metrics"
+publish = false
+
+[[bin]]
+name = "sqyre-bench-compare"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqyre-capture = { path = "../sqyre-capture" }
+sqyre-domain = { path = "../sqyre-domain" }
+sqyre-match = { path = "../sqyre-match" }
+sqyre-persist = { path = "../sqyre-persist" }
+sqyre-serialize = { path = "../sqyre-serialize" }
+sqyre-vision = { path = "../sqyre-vision" }
+
+[lints]
+workspace = true

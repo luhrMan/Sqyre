@@ -1,7 +1,9 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat dev windows macos test smoke bench coverage coverage-floors check check-fmt fmt clippy deny machete \
+.PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat dev windows macos test smoke bench \
+	bench-compare bench-compare-rust bench-compare-go bench-baseline-save bench-baseline-diff \
+	coverage coverage-floors check check-fmt fmt clippy deny machete \
 	clean-sweep release-gate run tessdata appimage flatpak install-desktop docs-media wasm wasm-check help
 
 ROOT := $(abspath .)
@@ -79,6 +81,9 @@ help:
 	@echo "  test         - cargo nextest (fallback: cargo test)"
 	@echo "  smoke        - debug build then ./bin/sqyre --version"
 	@echo "  bench        - criterion benches (match, vision, serialize; not run in CI)"
+	@echo "  bench-compare - Rust+Go comparative harness + side-by-side summary (local)"
+	@echo "  bench-compare-rust / bench-compare-go - one side only"
+	@echo "  bench-baseline-save / bench-baseline-diff - Rust before/after (BENCH_BASELINE=name)"
 	@echo "  wasm-check   - cargo check sqyre-app for wasm32 (no Trunk / no full wasm build)"
 	@echo "  check-fmt    - cargo fmt --check"
 	@echo "  fmt          - cargo fmt --all (write)"
@@ -208,6 +213,25 @@ bench:
 	$(CARGO) bench -p sqyre-match --bench template_match $(CARGO_FLAGS)
 	$(CARGO) bench -p sqyre-vision --bench vision_hot_paths $(CARGO_FLAGS)
 	$(CARGO) bench -p sqyre-serialize --bench macro_codec $(CARGO_FLAGS)
+
+# Comparative / regression harness (CPU wall+user, peak RSS, /proc I/O).
+# Not CI. See scripts/bench-compare/ and docs/DEVELOPING.md (`make bench-compare`).
+# Outputs under target/bench-compare/. Optional: BENCH_ITERATIONS=40 BENCH_ISOLATE=1
+# BENCH_BASELINE=name GO_SQYRE_ROOT=… GO_BIN=…
+bench-compare:
+	@bash scripts/bench-compare/run-all.sh
+
+bench-compare-rust:
+	@bash scripts/bench-compare/run-rust.sh
+
+bench-compare-go:
+	@bash scripts/bench-compare/run-go.sh
+
+bench-baseline-save:
+	@bash scripts/bench-compare/save-baseline.sh "$(BENCH_BASELINE)"
+
+bench-baseline-diff:
+	@bash scripts/bench-compare/diff-baseline.sh "$(BENCH_BASELINE)"
 
 # Compile-only WASM editor (no Trunk). CI Linux test job runs this.
 # Skip `rustup target add` when the target is already installed (read-only RUSTUP_HOME in CI).

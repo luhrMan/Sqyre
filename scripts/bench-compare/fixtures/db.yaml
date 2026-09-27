@@ -1,0 +1,367 @@
+macros:
+  Catalog demo:
+    name: Catalog demo
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: &id001 []
+    variables: &id002 []
+    root: &id003
+      type: loop
+      name: root
+      count: 1
+      subactions:
+      - type: wait
+        time: 10
+      - type: loop
+        name: inner
+        count: 2
+        subactions:
+        - type: click
+          button: left
+          state: tap
+      - type: conditional
+        name: always
+        match: all
+        clauses:
+        - left: '1'
+          operator: ==
+          right: '1'
+        subactions:
+        - type: type
+          text: hi
+          delayms: 0
+  Catalog demo 2:
+    name: Catalog demo 2
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 3:
+    name: Catalog demo 3
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 4:
+    name: Catalog demo 4
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 5:
+    name: Catalog demo 5
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 6:
+    name: Catalog demo 6
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 7:
+    name: Catalog demo 7
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 8:
+    name: Catalog demo 8
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 9:
+    name: Catalog demo 9
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 10:
+    name: Catalog demo 10
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 11:
+    name: Catalog demo 11
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 12:
+    name: Catalog demo 12
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 13:
+    name: Catalog demo 13
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 14:
+    name: Catalog demo 14
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 15:
+    name: Catalog demo 15
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 16:
+    name: Catalog demo 16
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 17:
+    name: Catalog demo 17
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 18:
+    name: Catalog demo 18
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 19:
+    name: Catalog demo 19
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 20:
+    name: Catalog demo 20
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 21:
+    name: Catalog demo 21
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 22:
+    name: Catalog demo 22
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 23:
+    name: Catalog demo 23
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 24:
+    name: Catalog demo 24
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 25:
+    name: Catalog demo 25
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 26:
+    name: Catalog demo 26
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 27:
+    name: Catalog demo 27
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 28:
+    name: Catalog demo 28
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 29:
+    name: Catalog demo 29
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 30:
+    name: Catalog demo 30
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 31:
+    name: Catalog demo 31
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 32:
+    name: Catalog demo 32
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 33:
+    name: Catalog demo 33
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 34:
+    name: Catalog demo 34
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 35:
+    name: Catalog demo 35
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 36:
+    name: Catalog demo 36
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 37:
+    name: Catalog demo 37
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 38:
+    name: Catalog demo 38
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+  Catalog demo 39:
+    name: Catalog demo 39
+    globaldelay: 0
+    keyboarddelay: 0
+    mousedelay: 0
+    hotkey: *id001
+    variables: *id002
+    root: *id003
+programs:
+  Demo:
+    name: Demo
+    items:
+      Gem:
+        name: Gem
+        mask: ''
+        stackmax: 0
+        gridsize:
+        - 0
+        - 0
+        tags: []
+    coordinates:
+      1920x1080:
+        scale: 1.0
+        points:
+          Center:
+            name: Center
+            x: 500
+            y: 300
+        searchareas:
+          Main:
+            name: Main
+            leftx: 0
+            topy: 0
+            rightx: 100
+            bottomy: 100
+    masks: {}
+    collections: {}
+    atlases: {}
