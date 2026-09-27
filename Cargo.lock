@@ -5081,6 +5081,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sqyre-bench-compare"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sqyre-capture",
+ "sqyre-domain",
+ "sqyre-match",
+ "sqyre-persist",
+ "sqyre-serialize",
+ "sqyre-vision",
+]
+
+[[package]]
 name = "sqyre-capture"
 version = "0.1.0"
 dependencies = [
