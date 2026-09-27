@@ -425,12 +425,12 @@ pub(crate) fn show_action_view_tip(
                 .show(ui, |ui| {
                     ui.set_max_width(max_w);
                     tree_chrome::paint_pill_pub(ui, label, pastel);
-                    ui.add_space(4.0);
+                    ui.add_space(crate::theme::SPACE_4);
                     ui.label(egui::RichText::new(description).small().weak());
                     if !summary_pills.is_empty() {
-                        ui.add_space(4.0);
+                        ui.add_space(crate::theme::SPACE_4);
                         sections::tip_wrapped_section(ui, |ui| {
-                            ui.spacing_mut().item_spacing = Vec2::splat(3.0);
+                            ui.spacing_mut().item_spacing = Vec2::splat(crate::theme::SPACE_2);
                             for pill in &summary_pills {
                                 ui.horizontal(|ui| {
                                     if let ActionKind::FocusWindow {
@@ -617,12 +617,15 @@ fn show_edit_window(
             .title_bar(false)
             .collapsible(false)
             .resizable(true)
-            .default_pos(anchor + Vec2::new(12.0, 12.0))
+            .default_pos(anchor + Vec2::new(crate::theme::SPACE_12, crate::theme::SPACE_12))
             .default_size([max_w, 1.0])
-            .min_size([220.0, fit_min_h])
+            .min_size([crate::widgets::FLOATER_MIN_COMPACT[0], fit_min_h])
             .frame(
                 egui::Frame::popup(ctx.global_style().as_ref())
-                    .inner_margin(egui::Margin::symmetric(10, 8)),
+                    .inner_margin(egui::Margin::symmetric(
+                        crate::theme::SPACE_12 as i8,
+                        crate::theme::SPACE_8 as i8,
+                    )),
             ),
         ctx,
         area_id,
