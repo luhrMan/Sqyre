@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
 # Build and run the Go comparative harness against the historical Go tree.
+#
+# Vision/match sections need gocv v0.43 + OpenCV 4.13. System apt OpenCV is 4.6
+# and cannot compile gocv 0.43. We provision a minimal OpenCV 4.13 under
+# .cache/opencv-4.13.0 (see ensure-opencv.sh) and build with
+# gocv_specific_modules so only core/imgproc/imgcodecs wrappers are linked.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 OUT_DIR="${BENCH_COMPARE_OUT:-$ROOT/target/bench-compare}"
 GO_ROOT="${GO_SQYRE_ROOT:-$ROOT/.cache/go-sqyre}"
 GO_BIN="${GO_BIN:-}"
 ITER="${BENCH_ITERATIONS:-40}"
+OPENCV_VERSION="${OPENCV_VERSION:-4.13.0}"
+OPENCV_PREFIX="${OPENCV_PREFIX:-$ROOT/.cache/opencv-$OPENCV_VERSION}"
 mkdir -p "$OUT_DIR"
 
 if [[ -z "$GO_BIN" ]]; then
@@ -46,41 +53,50 @@ func FindPixelInRGBAForBench(rgba *image.RGBA, tr, tg, tb uint8, tolerance int) 
 }
 EOF
 
+# OpenCV 4.13 InRange no longer broadcasts 1×1 bound Mats (zero hits). Overlay
+# find_pixel.go to use InRangeWithScalar — real Go find-pixel path, 4.13-correct.
+cp -f "$ROOT/scripts/bench-compare/go/overlays/find_pixel.go" \
+  "$GO_ROOT/internal/services/find_pixel.go"
+
+# Drop any previous stub replace so we link real gocv.
+if grep -q 'gocvstub' "$GO_ROOT/go.mod" 2>/dev/null; then
+  grep -v 'gocvstub\|replace gocv.io/x/gocv' "$GO_ROOT/go.mod" > "$GO_ROOT/go.mod.tmp"
+  mv "$GO_ROOT/go.mod.tmp" "$GO_ROOT/go.mod"
+fi
+rm -rf "$GO_ROOT/third_party/gocvstub"
+
 export GOTOOLCHAIN=local
 BIN_OUT="$OUT_DIR/go-benchcompare"
 
-use_gocv_stub() {
-  # Historical models.Program only needs *gocv.Mat; real gocv 0.43 needs newer OpenCV
-  # than Ubuntu 4.6. Stub lets yaml/codec sections build; vision sections stay skipped.
-  echo "Using gocv stub (yaml/codec sections only; match/OCR skipped)." >&2
-  rm -rf "$GO_ROOT/third_party/gocvstub"
-  mkdir -p "$GO_ROOT/third_party"
-  cp -a "$ROOT/scripts/bench-compare/go/gocvstub" "$GO_ROOT/third_party/gocvstub"
-  if ! grep -q 'gocvstub' "$GO_ROOT/go.mod"; then
-    printf '\nreplace gocv.io/x/gocv => ./third_party/gocvstub\n' >> "$GO_ROOT/go.mod"
-  fi
-}
+# Provision OpenCV matching gocv 0.43.
+bash "$ROOT/scripts/bench-compare/ensure-opencv.sh" >/dev/null
+export PKG_CONFIG_PATH="$OPENCV_PREFIX/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+export LD_LIBRARY_PATH="$OPENCV_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+export CGO_ENABLED=1
 
-echo "Building Go benchcompare…"
-built=0
-if pkg-config --exists opencv4 2>/dev/null || pkg-config --exists opencv 2>/dev/null; then
-  echo "OpenCV detected — attempting real gocv build…"
-  if (cd "$GO_ROOT" && "$GO_BIN" build -tags gocv -o "$BIN_OUT" ./cmd/benchcompare); then
-    built=1
-  else
-    echo "Real gocv build failed (OpenCV/gocv mismatch is common)." >&2
-  fi
+# Prefer cached OpenCV over system 4.6.
+if ! PKG_CONFIG_PATH="$OPENCV_PREFIX/lib/pkgconfig" pkg-config --exists opencv4; then
+  echo "OpenCV $OPENCV_VERSION pkg-config not found under $OPENCV_PREFIX" >&2
+  exit 1
 fi
+echo "Using OpenCV $(PKG_CONFIG_PATH="$OPENCV_PREFIX/lib/pkgconfig" pkg-config --modversion opencv4) from $OPENCV_PREFIX"
+echo "Building Go benchcompare with real gocv (gocv_specific_modules)…"
 
-if [[ "$built" -ne 1 ]]; then
-  use_gocv_stub
-  (cd "$GO_ROOT" && "$GO_BIN" build -o "$BIN_OUT" ./cmd/benchcompare)
-fi
+# gocv_specific_modules excludes dnn/objdetect/video/… wrappers that need full OpenCV.
+# Core+imgproc+imgcodecs (always compiled) cover MatchTemplate / InRange / preprocess.
+GOCV_TAGS="gocv,gocv_specific_modules"
+(
+  cd "$GO_ROOT"
+  # Ensure module still on gocv 0.43 (historical go.mod).
+  "$GO_BIN" get gocv.io/x/gocv@v0.43.0 >/dev/null
+  "$GO_BIN" build -tags "$GOCV_TAGS" -o "$BIN_OUT" ./cmd/benchcompare
+)
 
 FIXTURE="$ROOT/scripts/bench-compare/fixtures/db.yaml"
 # Run from the Go worktree so git_rev in the report matches the historical tree.
 (
   cd "$GO_ROOT"
+  export LD_LIBRARY_PATH="$OPENCV_PREFIX/lib:${LD_LIBRARY_PATH:-}"
   "$BIN_OUT" -json -iterations "$ITER" -fixture-db "$FIXTURE" \
     | tee "$OUT_DIR/go-latest.json" >/dev/null
   "$BIN_OUT" -iterations "$ITER" -fixture-db "$FIXTURE" \
