@@ -213,7 +213,7 @@ impl AddActionPicker {
                 .collapsible(false)
                 .resizable(true)
                 .default_size([900.0, 420.0])
-                .min_size([100.0, 100.0]),
+                .min_size(crate::widgets::FLOATER_MIN_PICKER),
             ctx,
             egui::Id::new("Add Action"),
             tip.pending_scale,
@@ -623,10 +623,10 @@ fn picker_tile(
     );
     ui.painter().galley(text_pos, galley, Color32::PLACEHOLDER);
 
-    response.widget_info(|| {
-        WidgetInfo::labeled(WidgetType::Button, true, format!("Add {}", tmpl.label))
-    });
-    response
+    crate::widgets::paint_keyboard_focus_ring(ui, rect, &response);
+    let tip = format!("Add {}", tmpl.label);
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tip.clone()));
+    response.on_hover_text(tip)
 }
 
 #[cfg(test)]
