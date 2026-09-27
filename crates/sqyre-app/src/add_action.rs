@@ -623,7 +623,7 @@ fn picker_tile(
     );
     ui.painter().galley(text_pos, galley, Color32::PLACEHOLDER);
 
-    crate::widgets::paint_keyboard_focus_ring(ui, rect, &response);
+    crate::widgets::controls::paint_keyboard_focus_ring(ui, rect, &response);
     let tip = format!("Add {}", tmpl.label);
     response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tip.clone()));
     response.on_hover_text(tip)
