@@ -647,14 +647,7 @@ fn match_fft(
             fft2d_inverse(img, dft_w, dft_h, planner, col);
 
             let mut out = vec![0.0_f32; out_w * out_h];
-            let arch = crate::corr_simd::pulp_arch();
-            arch.dispatch(|| {
-                for y in 0..out_h {
-                    for x in 0..out_w {
-                        out[y * out_w + x] = img[y * dft_w + x].re * scale;
-                    }
-                }
-            });
+            crate::corr_simd::extract_scaled_re(img, dft_w, out_w, out_h, scale, &mut out);
             out
         })
     };

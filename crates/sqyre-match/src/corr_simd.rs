@@ -291,46 +291,202 @@ pub fn accumulate_channel_sums_row(
     });
 }
 
-/// Pointwise `img[i] *= tmpl[i].conj()` under architecture dispatch (FFT path).
+/// Pointwise `img[i] *= tmpl[i].conj()` (FFT correlator).
 pub fn complex_mul_conj(
     img: &mut [rustfft::num_complex::Complex<f32>],
     tmpl: &[rustfft::num_complex::Complex<f32>],
 ) {
     debug_assert_eq!(img.len(), tmpl.len());
-    let arch = pulp_arch();
-    arch.dispatch(|| {
-        for (a, b) in img.iter_mut().zip(tmpl.iter()) {
-            *a *= b.conj();
+    pulp_arch().dispatch(ComplexMulConj { img, tmpl });
+}
+
+struct ComplexMulConj<'a> {
+    img: &'a mut [rustfft::num_complex::Complex<f32>],
+    tmpl: &'a [rustfft::num_complex::Complex<f32>],
+}
+
+impl WithSimd for ComplexMulConj<'_> {
+    type Output = ();
+
+    #[inline(always)]
+    fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
+        // pulp::c32 == num_complex::Complex<f32> (same crate instance as rustfft).
+        let img: &mut [pulp::c32] = self.img;
+        let tmpl: &[pulp::c32] = self.tmpl;
+        let (img_head, img_tail) = S::as_mut_simd_c32s(img);
+        let (tmpl_head, tmpl_tail) = S::as_simd_c32s(tmpl);
+        for (a, b) in img_head.iter_mut().zip(tmpl_head.iter()) {
+            // a * conj(b)
+            *a = simd.mul_c32s(*a, simd.conj_c32s(*b));
         }
+        for (a, b) in img_tail.iter_mut().zip(tmpl_tail.iter()) {
+            let ar = a.re;
+            let ai = a.im;
+            a.re = ar * b.re + ai * b.im;
+            a.im = ai * b.re - ar * b.im;
+        }
+    }
+}
+
+/// Write `out[y * out_w + x] = img[y * dft_w + x].re * scale` for the top-left
+/// `out_w × out_h` window of a DFT buffer (FFT correlator finish).
+pub fn extract_scaled_re(
+    img: &[rustfft::num_complex::Complex<f32>],
+    dft_w: usize,
+    out_w: usize,
+    out_h: usize,
+    scale: f32,
+    out: &mut [f32],
+) {
+    debug_assert_eq!(out.len(), out_w * out_h);
+    debug_assert!(dft_w >= out_w);
+    pulp_arch().dispatch(ExtractScaledRe {
+        img,
+        dft_w,
+        out_w,
+        out_h,
+        scale,
+        out,
     });
+}
+
+struct ExtractScaledRe<'a> {
+    img: &'a [rustfft::num_complex::Complex<f32>],
+    dft_w: usize,
+    out_w: usize,
+    out_h: usize,
+    scale: f32,
+    out: &'a mut [f32],
+}
+
+impl WithSimd for ExtractScaledRe<'_> {
+    type Output = ();
+
+    #[inline(always)]
+    fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
+        let scale_v = simd.splat_f32s(self.scale);
+        let lanes = S::F32_LANES;
+        // AVX-512 = 16 f32 lanes; keep a stack buffer for gather+store.
+        debug_assert!(lanes <= 16);
+        for y in 0..self.out_h {
+            let row = &self.img[y * self.dft_w..y * self.dft_w + self.out_w];
+            let dst = &mut self.out[y * self.out_w..(y + 1) * self.out_w];
+            let mut x = 0;
+            while x + lanes <= self.out_w {
+                let mut re = [0.0_f32; 16];
+                for lane in 0..lanes {
+                    re[lane] = row[x + lane].re;
+                }
+                let (re_head, _) = S::as_simd_f32s(&re[..lanes]);
+                let mut scaled = [0.0_f32; 16];
+                {
+                    let (sh, _) = S::as_mut_simd_f32s(&mut scaled[..lanes]);
+                    sh[0] = simd.mul_f32s(scale_v, re_head[0]);
+                }
+                dst[x..x + lanes].copy_from_slice(&scaled[..lanes]);
+                x += lanes;
+            }
+            for (d, c) in dst[x..].iter_mut().zip(row[x..].iter()) {
+                *d = c.re * self.scale;
+            }
+        }
+    }
 }
 
 /// Rec.601 RGB→gray under pulp dispatch.
 pub fn map_rgb_to_gray_u8(rgb: &[u8], gray: &mut [u8]) {
     debug_assert_eq!(rgb.len(), gray.len() * 3);
-    let arch = pulp_arch();
-    arch.dispatch(|| {
-        for (dst, chunk) in gray.iter_mut().zip(rgb.chunks_exact(3)) {
+    pulp_arch().dispatch(MapRgbToGray { rgb, gray });
+}
+
+struct MapRgbToGray<'a> {
+    rgb: &'a [u8],
+    gray: &'a mut [u8],
+}
+
+impl WithSimd for MapRgbToGray<'_> {
+    type Output = ();
+
+    #[inline(always)]
+    fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
+        let wr = simd.splat_f32s(0.299);
+        let wg = simd.splat_f32s(0.587);
+        let wb = simd.splat_f32s(0.114);
+        let lanes = S::F32_LANES;
+        debug_assert!(lanes <= 16);
+        let n = self.gray.len();
+        let mut i = 0;
+        while i + lanes <= n {
+            let mut r = [0.0_f32; 16];
+            let mut g = [0.0_f32; 16];
+            let mut b = [0.0_f32; 16];
+            for lane in 0..lanes {
+                let o = (i + lane) * 3;
+                r[lane] = self.rgb[o] as f32;
+                g[lane] = self.rgb[o + 1] as f32;
+                b[lane] = self.rgb[o + 2] as f32;
+            }
+            let (rh, _) = S::as_simd_f32s(&r[..lanes]);
+            let (gh, _) = S::as_simd_f32s(&g[..lanes]);
+            let (bh, _) = S::as_simd_f32s(&b[..lanes]);
+            let y = simd.mul_add_f32s(
+                wr,
+                rh[0],
+                simd.mul_add_f32s(wg, gh[0], simd.mul_f32s(wb, bh[0])),
+            );
+            let mut yf = [0.0_f32; 16];
+            {
+                let (yh, _) = S::as_mut_simd_f32s(&mut yf[..lanes]);
+                yh[0] = y;
+            }
+            for lane in 0..lanes {
+                self.gray[i + lane] = yf[lane].round() as u8;
+            }
+            i += lanes;
+        }
+        for (dst, chunk) in self.gray[i..]
+            .iter_mut()
+            .zip(self.rgb[i * 3..].chunks_exact(3))
+        {
             let r = chunk[0] as f32;
             let g = chunk[1] as f32;
             let b = chunk[2] as f32;
             *dst = (0.299 * r + 0.587 * g + 0.114 * b).round() as u8;
         }
-    });
+    }
 }
 
 /// Threshold a gray buffer in place under pulp dispatch.
 pub fn threshold_gray_in_place(data: &mut [u8], thresh: u8, invert: bool) {
-    let arch = pulp_arch();
-    arch.dispatch(|| {
-        for p in data.iter_mut() {
+    pulp_arch().dispatch(ThresholdGray {
+        data,
+        thresh,
+        invert,
+    });
+}
+
+struct ThresholdGray<'a> {
+    data: &'a mut [u8],
+    thresh: u8,
+    invert: bool,
+}
+
+impl WithSimd for ThresholdGray<'_> {
+    type Output = ();
+
+    #[inline(always)]
+    fn with_simd<S: Simd>(self, _simd: S) -> Self::Output {
+        // Exact truth table; tight loop under WithSimd for ISA-targeted auto-vec.
+        let thresh = self.thresh;
+        let invert = self.invert;
+        for p in self.data.iter_mut() {
             let above = *p >= thresh;
             *p = match (above, invert) {
                 (true, false) | (false, true) => 255,
                 (false, false) | (true, true) => 0,
             };
         }
-    });
+    }
 }
 
 #[cfg(test)]
@@ -515,5 +671,88 @@ mod tests {
         assert!(gray[0] > 50);
         threshold_gray_in_place(&mut gray, 128, false);
         assert!(gray.iter().all(|&p| p == 0 || p == 255));
+    }
+
+    #[test]
+    fn rgb_to_gray_matches_scalar_rec601() {
+        let mut rgb = Vec::with_capacity(64 * 3);
+        for i in 0..64 {
+            rgb.push((i * 3) as u8);
+            rgb.push((i * 5) as u8);
+            rgb.push((i * 7) as u8);
+        }
+        let mut expect = vec![0u8; 64];
+        for (dst, chunk) in expect.iter_mut().zip(rgb.chunks_exact(3)) {
+            let r = chunk[0] as f32;
+            let g = chunk[1] as f32;
+            let b = chunk[2] as f32;
+            *dst = (0.299 * r + 0.587 * g + 0.114 * b).round() as u8;
+        }
+        let mut got = vec![0u8; 64];
+        map_rgb_to_gray_u8(&rgb, &mut got);
+        assert_eq!(got, expect);
+    }
+
+    #[test]
+    fn threshold_matches_truth_table() {
+        let mut data = (0u8..=255).collect::<Vec<_>>();
+        let mut expect = data.clone();
+        for p in &mut expect {
+            *p = if *p >= 128 { 255 } else { 0 };
+        }
+        threshold_gray_in_place(&mut data, 128, false);
+        assert_eq!(data, expect);
+
+        let mut data = (0u8..=255).collect::<Vec<_>>();
+        let mut expect = data.clone();
+        for p in &mut expect {
+            *p = if *p >= 64 { 0 } else { 255 };
+        }
+        threshold_gray_in_place(&mut data, 64, true);
+        assert_eq!(data, expect);
+    }
+
+    #[test]
+    fn complex_mul_conj_matches_scalar() {
+        use rustfft::num_complex::Complex;
+        let mut img: Vec<Complex<f32>> = (0..257)
+            .map(|i| Complex::new(i as f32 * 0.1, (i as f32 * 0.07) - 3.0))
+            .collect();
+        let tmpl: Vec<Complex<f32>> = (0..257)
+            .map(|i| Complex::new((i as f32 * 0.03) + 1.0, i as f32 * -0.05))
+            .collect();
+        let mut expect = img.clone();
+        for (a, b) in expect.iter_mut().zip(tmpl.iter()) {
+            *a *= b.conj();
+        }
+        complex_mul_conj(&mut img, &tmpl);
+        for (i, (a, b)) in img.iter().zip(expect.iter()).enumerate() {
+            assert!(
+                (a.re - b.re).abs() < 1e-4 && (a.im - b.im).abs() < 1e-4,
+                "index {i}: {a:?} vs {b:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn extract_scaled_re_matches_scalar() {
+        use rustfft::num_complex::Complex;
+        let dft_w = 40;
+        let dft_h = 24;
+        let out_w = 33;
+        let out_h = 17;
+        let scale = 1.0 / (dft_w * dft_h) as f32;
+        let img: Vec<Complex<f32>> = (0..dft_w * dft_h)
+            .map(|i| Complex::new((i % 97) as f32 * 0.25, (i % 53) as f32 * -0.1))
+            .collect();
+        let mut expect = vec![0.0_f32; out_w * out_h];
+        for y in 0..out_h {
+            for x in 0..out_w {
+                expect[y * out_w + x] = img[y * dft_w + x].re * scale;
+            }
+        }
+        let mut got = vec![0.0_f32; out_w * out_h];
+        extract_scaled_re(&img, dft_w, out_w, out_h, scale, &mut got);
+        assert_f32_close(&got, &expect, 1e-5);
     }
 }
