@@ -1,0 +1,37 @@
+---
+description: Run make fmt/check/clippy/test after writing or changing code
+alwaysApply: true
+---
+
+# Verify Newly Written Code
+
+After writing or materially changing code in this repo, run the Makefile quality gate before considering the work done. Do not skip this for “small” edits that touch Rust, build, or packaging.
+
+## Required sequence
+
+Run in this order from the workspace root:
+
+1. `make fmt` — apply rustfmt
+2. `make check` — `check-fmt` + clippy (`-D warnings`) + `cargo deny`
+3. `make clippy` — clippy again explicitly (`-D warnings`)
+4. `make test` — workspace tests (nextest when available)
+
+Fix failures before finishing. Do not silence Clippy with broad `#[allow]` or weaken workspace lint policy to land the change.
+
+## When to run
+
+- After implementing a feature, fix, or refactor
+- After resolving review or CI feedback that changed code
+- Before saying the task is complete or opening a PR
+
+## When you may skip
+
+- Pure docs/markdown/rule edits with no code or build-file changes
+- Read-only investigation with no writes
+- The user explicitly asked not to run checks
+
+## Notes
+
+- Prefer these Makefile targets over ad-hoc `cargo fmt` / `cargo clippy` / `cargo test` so flags match CI.
+- `make check` already includes clippy; still run `make clippy` as listed so the full gate is explicit and failures are obvious.
+- If a target fails, fix the cause and re-run from `make fmt` through the failing step (then continue the rest).
