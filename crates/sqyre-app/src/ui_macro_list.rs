@@ -1,14 +1,16 @@
 //! Left macro list panel and delete confirmation.
 
+use crate::icon_cache::{IconCache, PROCESS_ICON_SIDE};
 use crate::pickers;
 use crate::status_banner::{StatusBanner, PREFIX_LOAD_ERROR, PREFIX_SAVE_ERROR};
 use crate::theme::{SPACE_12, SPACE_4, SPACE_8};
 use crate::widgets::tags::{filters_cover_path, normalize_tag_path};
 use crate::SqyreApp;
-use eframe::egui;
+use eframe::egui::{self, TextureHandle};
 use sqyre_domain::Macro;
 use sqyre_hotkeys::format_hotkey;
-use std::collections::BTreeMap;
+use sqyre_persist::ProgramCatalog;
+use std::collections::{BTreeMap, HashMap};
 
 /// Empty-string group key for macros with no tags.
 const UNTAGGED_KEY: &str = "";
@@ -141,6 +143,34 @@ fn tag_header_label(tag: &str) -> &str {
     }
 }
 
+/// Normalized tag path → process icons of every Program whose Macro tags include it.
+/// Programs without a process icon are skipped.
+fn program_tag_icons(
+    ctx: &egui::Context,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+) -> HashMap<String, Vec<TextureHandle>> {
+    let mut out: HashMap<String, Vec<TextureHandle>> = HashMap::new();
+    for prog in catalog.program_names() {
+        let Some(pdata) = catalog.get(prog) else {
+            continue;
+        };
+        if pdata.tags.is_empty() {
+            continue;
+        }
+        let Some(tex) = icons.for_program(ctx, catalog, prog) else {
+            continue;
+        };
+        for tag in &pdata.tags {
+            let path = normalize_tag_path(tag);
+            if !path.is_empty() {
+                out.entry(path).or_default().push(tex.clone());
+            }
+        }
+    }
+    out
+}
+
 /// Build a nested tag tree from filtered macros. Untagged macros are a separate root entry.
 fn build_tag_tree(macros: &[Macro], filter: &str) -> (TagTreeNode, Vec<usize>) {
     let mut root = TagTreeNode::default();
@@ -201,6 +231,10 @@ struct PaintTagCtx<'a> {
     list_w: f32,
     clicked_macro: &'a mut Option<usize>,
     clicked_tag: &'a mut Option<String>,
+    /// Program icons per tag path (see [`program_tag_icons`]).
+    tag_icons: &'a HashMap<String, Vec<TextureHandle>>,
+    /// Appearance → compact program headers: icon-only when a tag has program icons.
+    compact: bool,
 }
 
 fn paint_tag_node(
@@ -253,23 +287,40 @@ fn paint_tag_node(
                     *ctx.clicked_tag = Some(path.to_string());
                 }
 
-                // Remaining width: non-selectable title + count (expand via chevron only).
+                // Remaining width: [program icons] + non-selectable title + count
+                // (expand via chevron only).
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
                     ui.set_max_width(ui.available_width());
+                    let prog_icons = ctx.tag_icons.get(path).map_or(&[][..], Vec::as_slice);
+                    // Same rule as program headers: hide the name only when an icon shows.
+                    let hide_name = ctx.compact && !prog_icons.is_empty();
+                    for tex in prog_icons {
+                        let icon = ui.add(
+                            egui::Image::new((tex.id(), egui::Vec2::splat(PROCESS_ICON_SIDE)))
+                                .fit_to_exact_size(egui::Vec2::splat(PROCESS_ICON_SIDE))
+                                .maintain_aspect_ratio(true)
+                                .sense(egui::Sense::hover()),
+                        );
+                        if hide_name {
+                            icon.on_hover_text(label);
+                        }
+                    }
                     let font = egui::FontSelection::Default.resolve(ui.style());
                     let count_text = format!("({count})");
-                    let count_w = ui
-                        .painter()
-                        .layout_no_wrap(count_text.clone(), font.clone(), egui::Color32::WHITE)
-                        .size()
-                        .x;
-                    let name_budget =
-                        (ui.available_width() - count_w - ui.spacing().item_spacing.x).max(0.0);
-                    let header_text = elide_to_width(ui, label, name_budget, font);
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(header_text).strong())
-                            .selectable(false),
-                    );
+                    if !hide_name {
+                        let count_w = ui
+                            .painter()
+                            .layout_no_wrap(count_text.clone(), font.clone(), egui::Color32::WHITE)
+                            .size()
+                            .x;
+                        let name_budget =
+                            (ui.available_width() - count_w - ui.spacing().item_spacing.x).max(0.0);
+                        let header_text = elide_to_width(ui, label, name_budget, font);
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(header_text).strong())
+                                .selectable(false),
+                        );
+                    }
                     ui.label(egui::RichText::new(count_text).weak());
                 });
             });
@@ -295,6 +346,8 @@ fn paint_tag_node(
                             list_w: nested_w,
                             clicked_macro: ctx.clicked_macro,
                             clicked_tag: ctx.clicked_tag,
+                            tag_icons: ctx.tag_icons,
+                            compact: ctx.compact,
                         };
                         paint_tag_node(
                             ui,
@@ -431,6 +484,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 ui.set_max_width(list_w);
                 let filter = app.macro_list_filter.trim().to_string();
                 let (tree, untagged) = build_tag_tree(&app.workspace.macros, &filter);
+                let tag_icons =
+                    program_tag_icons(ui.ctx(), &app.workspace.catalog, &mut app.icon_cache);
+                let compact = app.settings_ui.settings().compact_program_headers;
                 let mut clicked_macro: Option<usize> = None;
                 let mut clicked_tag: Option<String> = None;
                 let has_visible = !tree.children.is_empty() || !untagged.is_empty();
@@ -456,6 +512,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         list_w,
                         clicked_macro: &mut clicked_macro,
                         clicked_tag: &mut clicked_tag,
+                        tag_icons: &tag_icons,
+                        compact,
                     };
                     let mut first = true;
                     for (seg, child) in &tree.children {
