@@ -446,8 +446,8 @@ impl WithSimd for MapRgbToGray<'_> {
                 let (yh, _) = S::as_mut_simd_f32s(&mut yf[..lanes]);
                 yh[0] = y;
             }
-            for lane in 0..lanes {
-                self.gray[i + lane] = yf[lane].round() as u8;
+            for (dst, &yv) in self.gray[i..i + lanes].iter_mut().zip(yf[..lanes].iter()) {
+                *dst = yv.round() as u8;
             }
             i += lanes;
         }

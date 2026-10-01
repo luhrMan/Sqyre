@@ -211,6 +211,7 @@ smoke: sqyre
 # (libtest rejects Criterion CLI flags). Short times are set in the bench sources.
 bench:
 	$(CARGO) bench -p sqyre-match --bench template_match $(CARGO_FLAGS)
+	$(CARGO) bench -p sqyre-capture --bench pixel_swizzle $(CARGO_FLAGS)
 	$(CARGO) bench -p sqyre-vision --bench vision_hot_paths $(CARGO_FLAGS)
 	$(CARGO) bench -p sqyre-serialize --bench macro_codec $(CARGO_FLAGS)
 
