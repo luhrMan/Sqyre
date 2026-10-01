@@ -1,6 +1,9 @@
 //! Removable tag chips with draft entry and completion suggestions.
 
-use eframe::egui::{self, Key, Modifiers};
+use eframe::egui::{self, Key, Modifiers, PopupCloseBehavior, RectAlign};
+
+/// Max height of the tag suggestion dropdown popup.
+const TAG_SUGGEST_POPUP_HEIGHT: f32 = 180.0;
 
 /// Collapse `/`-separated tag paths: trim, drop empty segments, rejoin.
 /// `" combat/pve/ "` → `"combat/pve"`; `"///"` → `""`.
@@ -29,21 +32,18 @@ pub fn filters_cover_path(filters: &[String], path: &str) -> bool {
 }
 
 /// Filter `all_tags` by substring match, excluding tags already present.
+///
+/// Empty `search` returns every unused tag (full dropdown on focus).
 pub fn tag_completion_options(
     search: &str,
     already: &[String],
     all_tags: &[String],
-    limit: usize,
 ) -> Vec<String> {
     let search_l = search.trim().to_lowercase();
-    if search_l.is_empty() {
-        return Vec::new();
-    }
     all_tags
         .iter()
         .filter(|t| !already.iter().any(|c| c == *t))
-        .filter(|t| t.to_lowercase().contains(&search_l))
-        .take(limit)
+        .filter(|t| search_l.is_empty() || t.to_lowercase().contains(&search_l))
         .cloned()
         .collect()
 }
@@ -111,16 +111,14 @@ pub fn toggle_signed_tag_filter(tags: &mut [String], index: usize) -> bool {
 
 /// Filter `all_tags` by substring match, excluding tag names already present
 /// (ignoring `+`/`-` polarity on `already`).
+///
+/// Empty `search` returns every unused tag (full dropdown on focus).
 pub fn tag_completion_options_signed(
     search: &str,
     already: &[String],
     all_tags: &[String],
-    limit: usize,
 ) -> Vec<String> {
     let search_l = search.trim().to_lowercase();
-    if search_l.is_empty() {
-        return Vec::new();
-    }
     let already_names: Vec<String> = already
         .iter()
         .filter_map(|t| tag_filter_bare_name(t))
@@ -128,8 +126,7 @@ pub fn tag_completion_options_signed(
     all_tags
         .iter()
         .filter(|t| !already_names.iter().any(|c| c == *t))
-        .filter(|t| t.to_lowercase().contains(&search_l))
-        .take(limit)
+        .filter(|t| search_l.is_empty() || t.to_lowercase().contains(&search_l))
         .cloned()
         .collect()
 }
@@ -181,9 +178,9 @@ struct TagSuggestKeys {
 
 /// Capture nav / commit keys for the draft field.
 ///
-/// Enter is handled whenever the draft is focused and non-empty — not only while
-/// the suggestion row is open — so free-typed tags commit and parent Enter
-/// handlers (e.g. edit-tip Save) do not steal the key.
+/// Enter commits when the draft has text, or when a suggestion is highlighted —
+/// so free-typed tags and dropdown picks both work, and parent Enter handlers
+/// (e.g. edit-tip Save) do not steal the key.
 fn take_tag_suggest_keys(
     ui: &mut egui::Ui,
     was_open: bool,
@@ -192,10 +189,9 @@ fn take_tag_suggest_keys(
     draft_focused: bool,
 ) -> TagSuggestKeys {
     let on_suggest = was_open && selected.is_some();
-    // Commit on Enter when the draft is focused, or while the suggestion row is open
-    // (arrow selection may leave focus on the field; either way Enter should add).
+    let can_accept = draft_has_text || on_suggest;
     let accept =
-        draft_has_text && (draft_focused || was_open) && ui.input(|i| i.key_pressed(Key::Enter));
+        can_accept && (draft_focused || was_open) && ui.input(|i| i.key_pressed(Key::Enter));
     if !was_open {
         if accept {
             ui.input_mut(|i| {
@@ -231,7 +227,19 @@ fn take_tag_suggest_keys(
     keys
 }
 
-/// Paint removable chips + draft field (+ optional Add button) + suggestions.
+/// Apply draft polarity (`+`/`-`) to a bare suggestion name for signed filters.
+fn signed_suggestion_raw(draft: &str, name: &str) -> String {
+    let t = draft.trim();
+    if t.starts_with('-') {
+        format!("-{name}")
+    } else if t.starts_with('+') {
+        format!("+{name}")
+    } else {
+        name.to_string()
+    }
+}
+
+/// Paint removable chips + draft field (+ optional Add button) + suggestion dropdown.
 ///
 /// Returns whether `tags` changed and whether a tag was committed.
 pub fn tag_chip_editor(
@@ -301,13 +309,13 @@ pub fn tag_chip_editor(
         tag_resp.request_focus();
     }
 
-    let suggestions = if opts.enabled && !draft.trim().is_empty() {
+    // Focused empty field → full unused-tag list; typing filters it.
+    let suggestions = if opts.enabled && (draft_focused || was_open || !draft.trim().is_empty()) {
         if opts.signed_filters {
-            // Suggestions are bare names; strip a leading +/− from the draft for match.
             let q = draft.trim().trim_start_matches(['+', '-']).trim();
-            tag_completion_options_signed(q, tags, all_suggestions, opts.suggestion_limit)
+            tag_completion_options_signed(q, tags, all_suggestions)
         } else {
-            tag_completion_options(draft, tags, all_suggestions, opts.suggestion_limit)
+            tag_completion_options(draft, tags, all_suggestions)
         }
     } else {
         Vec::new()
@@ -344,27 +352,55 @@ pub fn tag_chip_editor(
         pending = nav
             .selected
             .and_then(|i| suggestions.get(i).cloned())
+            .map(|name| {
+                if opts.signed_filters {
+                    signed_suggestion_raw(draft, &name)
+                } else {
+                    name
+                }
+            })
             .or_else(|| {
                 let t = draft.trim();
                 (!t.is_empty()).then(|| t.to_string())
             });
     }
 
-    if opts.enabled && !suggestions.is_empty() {
-        if opts.suggestions_with_separator {
-            ui.separator();
-        }
-        ui.horizontal_wrapped(|ui| {
-            for (i, sug) in suggestions.iter().enumerate() {
-                let selected = nav.selected == Some(i);
-                if ui
-                    .add(egui::Button::new(sug).small().selected(selected))
-                    .clicked()
-                {
-                    pending = Some(sug.clone());
-                }
-            }
-        });
+    let show_popup = opts.enabled
+        && pending.is_none()
+        && !suggestions.is_empty()
+        && (tag_resp.has_focus() || nav.selected.is_some());
+    if show_popup {
+        let popup_width = tag_resp.rect.width().max(140.0);
+        egui::Popup::from_response(&tag_resp)
+            .id(nav_id.with("popup"))
+            .open(true)
+            .align(RectAlign::BOTTOM_START)
+            .close_behavior(PopupCloseBehavior::CloseOnClickOutside)
+            .width(popup_width)
+            .show(|ui| {
+                ui.set_min_width(popup_width);
+                ui.set_max_height(TAG_SUGGEST_POPUP_HEIGHT);
+                crate::pickers::dialog_scroll(popup_width, TAG_SUGGEST_POPUP_HEIGHT).show(
+                    ui,
+                    |ui| {
+                        ui.set_max_width(popup_width);
+                        for (i, sug) in suggestions.iter().enumerate() {
+                            let selected = nav.selected == Some(i);
+                            let resp = ui.selectable_label(selected, sug.as_str());
+                            if resp.clicked() {
+                                pending = Some(if opts.signed_filters {
+                                    signed_suggestion_raw(draft, sug)
+                                } else {
+                                    sug.clone()
+                                });
+                            }
+                            if selected {
+                                resp.scroll_to_me(None);
+                            }
+                        }
+                    },
+                );
+            });
     }
 
     if pending.is_none()
@@ -400,8 +436,9 @@ pub fn tag_chip_editor(
         ui.ctx().data_mut(|d| d.insert_temp(refocus_id, true));
     }
 
+    // After a commit, reopen next frame once refocused (empty draft → full list).
     let open = opts.enabled
-        && !draft.trim().is_empty()
+        && !had_pending
         && !suggestions.is_empty()
         && (tag_resp.has_focus() || nav.selected.is_some());
     ui.ctx().data_mut(|d| {
@@ -635,8 +672,6 @@ fn paint_tag_draft(
 pub struct TagChipOptions<'a> {
     pub enabled: bool,
     pub show_add_button: bool,
-    pub suggestion_limit: usize,
-    pub suggestions_with_separator: bool,
     pub draft_hover: Option<&'a str>,
     /// When true, paint the draft field before the `Tags:` label in the chip row.
     pub draft_first: bool,
@@ -651,8 +686,6 @@ impl Default for TagChipOptions<'_> {
         Self {
             enabled: true,
             show_add_button: true,
-            suggestion_limit: 8,
-            suggestions_with_separator: false,
             draft_hover: None,
             draft_first: false,
             reorderable: false,
@@ -673,8 +706,15 @@ mod tests {
             "herb".into(),
             "other".into(),
         ];
-        let opts = tag_completion_options("hel", &["healing".into()], &all, 10);
+        let opts = tag_completion_options("hel", &["healing".into()], &all);
         assert_eq!(opts, vec!["helm".to_string()]);
+    }
+
+    #[test]
+    fn completion_empty_search_lists_unused() {
+        let all = vec!["alpha".into(), "beta".into(), "gamma".into()];
+        let opts = tag_completion_options("", &["beta".into()], &all);
+        assert_eq!(opts, vec!["alpha".to_string(), "gamma".to_string()]);
     }
 
     #[test]

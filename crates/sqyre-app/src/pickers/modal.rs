@@ -174,8 +174,6 @@ pub fn show_active_picker(
                             crate::widgets::TagChipOptions {
                                 enabled: true,
                                 show_add_button: true,
-                                suggestion_limit: 12,
-                                suggestions_with_separator: false,
                                 draft_hover: Some(crate::action_tooltip::help::IS_TARGET_TAGS),
                                 draft_first: false,
                                 reorderable: false,
