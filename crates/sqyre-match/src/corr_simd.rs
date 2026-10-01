@@ -81,13 +81,14 @@ pub struct SparseTemplate {
 }
 
 impl SparseTemplate {
-    pub fn from_packed(vals_f64: &[f64], xs: &[u16], ys: &[u16], ch: usize) -> Self {
+    /// Build from owned packed coords + f32 values (no dual coord/buffer copy).
+    pub fn from_packed(vals: Vec<f32>, xs: Vec<u16>, ys: Vec<u16>, ch: usize) -> Self {
         debug_assert_eq!(xs.len(), ys.len());
-        debug_assert_eq!(vals_f64.len(), xs.len() * ch);
+        debug_assert_eq!(vals.len(), xs.len() * ch);
         Self {
-            xs: xs.to_vec(),
-            ys: ys.to_vec(),
-            vals: vals_f64.iter().map(|&v| v as f32).collect(),
+            xs,
+            ys,
+            vals,
             channels: ch,
         }
     }
@@ -100,6 +101,12 @@ impl SparseTemplate {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.xs.is_empty()
+    }
+
+    #[inline]
+    pub fn vals_at(&self, i: usize) -> &[f32] {
+        let base = i * self.channels;
+        &self.vals[base..base + self.channels]
     }
 }
 
