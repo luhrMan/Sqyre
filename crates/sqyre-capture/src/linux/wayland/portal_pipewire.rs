@@ -1398,41 +1398,62 @@ fn cache_crop_geom(cache: &FrameCache, rect: DesktopRect) -> Result<CacheCrop, C
 }
 
 fn copy_cache_rgba(cache: &FrameCache, crop: CacheCrop) -> Result<RgbaImage, CaptureError> {
-    let mut out = vec![0u8; crop.out_w as usize * crop.out_h as usize * 4];
+    let out_w = crop.out_w as usize;
+    let out_h = crop.out_h as usize;
+    let mut out = vec![0u8; out_w * out_h * 4];
     let src_stride = cache.stride;
-    for row in 0..crop.out_h {
-        let dst_off = row as usize * crop.out_w as usize * 4;
-        let src_off = (crop.src_y + row) as usize * src_stride + crop.src_x as usize * 4;
-        let end = src_off + crop.out_w as usize * 4;
-        if end > cache.pixels.len() {
+    let pixels = cache.pixels.as_slice();
+    for row in 0..out_h {
+        let dst_off = row * out_w * 4;
+        let src_off = (crop.src_y as usize + row) * src_stride + crop.src_x as usize * 4;
+        let end = src_off + out_w * 4;
+        if end > pixels.len() {
             return Err(CaptureError::Message(
                 "portal capture: frame buffer shorter than expected".into(),
             ));
         }
-        out[dst_off..dst_off + crop.out_w as usize * 4]
-            .copy_from_slice(&cache.pixels[src_off..end]);
+        out[dst_off..dst_off + out_w * 4].copy_from_slice(&pixels[src_off..end]);
     }
     RgbaImage::from_raw(crop.out_w, crop.out_h, out)
         .ok_or_else(|| CaptureError::Message("portal capture: RGBA size mismatch".into()))
 }
 
 fn copy_cache_rgb(cache: &FrameCache, crop: CacheCrop) -> Result<RgbCapture, CaptureError> {
+    use crate::pixel_convert::{strip_rgba_row_to_rgb, PARALLEL_ROW_GATE};
+    use rayon::prelude::*;
+
     let out_w = crop.out_w as usize;
-    let mut out = vec![0u8; out_w * crop.out_h as usize * 3];
+    let out_h = crop.out_h as usize;
+    let mut out = vec![0u8; out_w * out_h * 3];
     let src_stride = cache.stride;
-    for row in 0..crop.out_h {
-        let src_off = (crop.src_y + row) as usize * src_stride + crop.src_x as usize * 4;
-        let end = src_off + out_w * 4;
-        if end > cache.pixels.len() {
+    let pixels = cache.pixels.as_slice();
+
+    // Validate all rows before parallel strip (and fail fast on short buffers).
+    for row in 0..out_h {
+        let src_off = (crop.src_y as usize + row) * src_stride + crop.src_x as usize * 4;
+        if src_off + out_w * 4 > pixels.len() {
             return Err(CaptureError::Message(
                 "portal capture: frame buffer shorter than expected".into(),
             ));
         }
-        let dst_off = row as usize * out_w * 3;
-        let src = &cache.pixels[src_off..end];
-        let dst = &mut out[dst_off..dst_off + out_w * 3];
-        for (d, s) in dst.chunks_exact_mut(3).zip(src.chunks_exact(4)) {
-            d.copy_from_slice(&s[..3]);
+    }
+
+    let out_addr = out.as_mut_ptr() as usize;
+    let strip_row = |row: usize| {
+        let src_off = (crop.src_y as usize + row) * src_stride + crop.src_x as usize * 4;
+        let src = &pixels[src_off..src_off + out_w * 4];
+        let dst_off = row * out_w * 3;
+        // SAFETY: each crop row writes a disjoint `out` span.
+        let dst =
+            unsafe { std::slice::from_raw_parts_mut((out_addr as *mut u8).add(dst_off), out_w * 3) };
+        strip_rgba_row_to_rgb(src, out_w, dst);
+    };
+
+    if out_h >= PARALLEL_ROW_GATE {
+        (0..out_h).into_par_iter().for_each(strip_row);
+    } else {
+        for row in 0..out_h {
+            strip_row(row);
         }
     }
     Ok(RgbCapture {
