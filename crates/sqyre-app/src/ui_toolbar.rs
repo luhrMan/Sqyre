@@ -325,6 +325,9 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         if toolbar_icon_colored(ui, "x", "Variables", true, Some(vars_color)).clicked() {
             app.variables_panel.open = true;
         }
+        if toolbar_icon(ui, "✦", "AI Macro Builder", true).clicked() {
+            app.macro_prompt_builder.open_builder();
+        }
         if toolbar_icon(ui, "{}", "YAML Macro Builder", true).clicked() {
             let running = app.run_session.state.running.load(Ordering::SeqCst);
             if running {
