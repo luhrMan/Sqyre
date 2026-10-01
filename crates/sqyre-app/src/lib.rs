@@ -734,6 +734,7 @@ impl eframe::App for SqyreApp {
         if self.tray.application_hidden() {
             return;
         }
+        action_tooltip::claim_view_tip_scroll(ui.ctx());
         ui_overlays::show_floating_windows(self, ui.ctx());
 
         ui_macro_list::show(self, ui);
