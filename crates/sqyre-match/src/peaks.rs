@@ -28,6 +28,49 @@ pub fn find_peaks_for_method(
     )
 }
 
+/// True when this thread is already a Rayon pool worker.
+///
+/// Image Search outer `par_iter` over targets/placements already owns the pool;
+/// nested row `par_iter` here would oversubscribe. Off-pool callers keep row
+/// parallelism.
+#[inline]
+fn on_rayon_worker() -> bool {
+    rayon::current_thread_index().is_some()
+}
+
+/// Half-open run of consecutive accepted score cells in one row: `[start, end)`.
+type Run = (usize, usize);
+
+fn row_peak_runs(
+    scores: &[f32],
+    w: usize,
+    y: usize,
+    threshold: f32,
+    higher_is_better: bool,
+) -> Vec<Run> {
+    let row = y * w;
+    let mut runs: Vec<Run> = Vec::new();
+    let mut start: Option<usize> = None;
+    for x in 0..w {
+        let confidence = scores[row + x];
+        let ok = confidence.is_finite()
+            && if higher_is_better {
+                confidence >= threshold
+            } else {
+                confidence <= threshold
+            };
+        if ok {
+            start.get_or_insert(x);
+        } else if let Some(s) = start.take() {
+            runs.push((s, x));
+        }
+    }
+    if let Some(s) = start {
+        runs.push((s, w));
+    }
+    runs
+}
+
 fn find_peaks_polarity(
     map: &MatchMap,
     threshold: f32,
@@ -39,51 +82,37 @@ fn find_peaks_polarity(
     }
     let w = map.width;
     let scores = &map.scores;
-    // Parallel per-row scan; keep row order so clustering stays stable.
-    // Stream straight into the clusterer (no intermediate flat Vec), and skip
-    // along a row once a cluster opens — same idea as find_pixels_clustered.
-    let row_hits: Vec<Vec<Point>> = (0..map.height)
-        .into_par_iter()
-        .map(|y| {
-            let row = y * w;
-            let mut hits = Vec::new();
-            for x in 0..w {
-                let confidence = scores[row + x];
-                if !confidence.is_finite() {
-                    continue;
-                }
-                let ok = if higher_is_better {
-                    confidence >= threshold
-                } else {
-                    confidence <= threshold
-                };
-                if ok {
-                    hits.push(Point {
-                        x: x as i32,
-                        y: y as i32,
-                    });
-                }
-            }
-            hits
-        })
-        .collect();
+    // Parallel per-row scan off-pool; serial when already on a Rayon worker.
+    // Runs stream into the clusterer (no per-hit Point alloc), and skip along a
+    // row once a cluster opens — same idea as find_pixels_clustered.
+    let row_runs: Vec<Vec<Run>> = if on_rayon_worker() {
+        (0..map.height)
+            .map(|y| row_peak_runs(scores, w, y, threshold, higher_is_better))
+            .collect()
+    } else {
+        (0..map.height)
+            .into_par_iter()
+            .map(|y| row_peak_runs(scores, w, y, threshold, higher_is_better))
+            .collect()
+    };
     let mut clusterer = PointClusterer::new(close_matches_distance);
     let skip = clusterer.distance();
     let mut out = Vec::new();
-    for hits in row_hits {
-        let mut i = 0;
-        while i < hits.len() {
-            let point = hits[i];
-            if clusterer.add_if_far(point) {
-                out.push(point);
-                // Same row ⇒ |dy| = 0; later x within `skip` are in-cluster.
-                let limit_x = point.x + skip;
-                i += 1;
-                while i < hits.len() && hits[i].x <= limit_x {
-                    i += 1;
+    for (y, runs) in row_runs.into_iter().enumerate() {
+        for (start, end) in runs {
+            let mut x = start;
+            while x < end {
+                let point = Point {
+                    x: x as i32,
+                    y: y as i32,
+                };
+                if clusterer.add_if_far(point) {
+                    out.push(point);
+                    // Same row ⇒ |dy| = 0; later x within `skip` are in-cluster.
+                    x += skip as usize + 1;
+                } else {
+                    x += 1;
                 }
-            } else {
-                i += 1;
             }
         }
     }
@@ -232,6 +261,33 @@ mod tests {
             let want = cluster_points(&all, distance);
             let got = find_peaks(&map, 0.4, distance);
             assert_eq!(got, want, "distance={distance}");
+        }
+    }
+
+    #[test]
+    fn nested_rayon_peaks_match_off_pool() {
+        let mut scores = vec![0.0_f32; 64 * 48];
+        scores[10 * 64 + 12] = 0.97;
+        scores[22 * 64 + 40] = 0.93;
+        scores[40 * 64 + 5] = 0.91;
+        let map = MatchMap {
+            width: 64,
+            height: 48,
+            scores,
+        };
+        let off_pool = find_peaks(&map, 0.9, 8);
+        let on_pool: Vec<_> = (0..4)
+            .into_par_iter()
+            .map(|_| {
+                assert!(
+                    rayon::current_thread_index().is_some(),
+                    "expected Rayon worker"
+                );
+                find_peaks(&map, 0.9, 8)
+            })
+            .collect();
+        for peaks in &on_pool {
+            assert_eq!(peaks, &off_pool);
         }
     }
 }
