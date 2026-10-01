@@ -370,31 +370,15 @@ impl WithSimd for ExtractScaledRe<'_> {
     type Output = ();
 
     #[inline(always)]
-    fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-        let scale_v = simd.splat_f32s(self.scale);
-        let lanes = S::F32_LANES;
-        // AVX-512 = 16 f32 lanes; keep a stack buffer for gather+store.
-        debug_assert!(lanes <= 16);
+    fn with_simd<S: Simd>(self, _simd: S) -> Self::Output {
+        // Contiguous `.re` values are strided in the Complex buffer; a gather+mul
+        // lane path was not a win vs a tight row loop under WithSimd (ISA context).
+        let scale = self.scale;
         for y in 0..self.out_h {
             let row = &self.img[y * self.dft_w..y * self.dft_w + self.out_w];
             let dst = &mut self.out[y * self.out_w..(y + 1) * self.out_w];
-            let mut x = 0;
-            while x + lanes <= self.out_w {
-                let mut re = [0.0_f32; 16];
-                for lane in 0..lanes {
-                    re[lane] = row[x + lane].re;
-                }
-                let (re_head, _) = S::as_simd_f32s(&re[..lanes]);
-                let mut scaled = [0.0_f32; 16];
-                {
-                    let (sh, _) = S::as_mut_simd_f32s(&mut scaled[..lanes]);
-                    sh[0] = simd.mul_f32s(scale_v, re_head[0]);
-                }
-                dst[x..x + lanes].copy_from_slice(&scaled[..lanes]);
-                x += lanes;
-            }
-            for (d, c) in dst[x..].iter_mut().zip(row[x..].iter()) {
-                *d = c.re * self.scale;
+            for (d, c) in dst.iter_mut().zip(row.iter()) {
+                *d = c.re * scale;
             }
         }
     }
@@ -415,46 +399,11 @@ impl WithSimd for MapRgbToGray<'_> {
     type Output = ();
 
     #[inline(always)]
-    fn with_simd<S: Simd>(self, simd: S) -> Self::Output {
-        let wr = simd.splat_f32s(0.299);
-        let wg = simd.splat_f32s(0.587);
-        let wb = simd.splat_f32s(0.114);
-        let lanes = S::F32_LANES;
-        debug_assert!(lanes <= 16);
-        let n = self.gray.len();
-        let mut i = 0;
-        while i + lanes <= n {
-            let mut r = [0.0_f32; 16];
-            let mut g = [0.0_f32; 16];
-            let mut b = [0.0_f32; 16];
-            for lane in 0..lanes {
-                let o = (i + lane) * 3;
-                r[lane] = self.rgb[o] as f32;
-                g[lane] = self.rgb[o + 1] as f32;
-                b[lane] = self.rgb[o + 2] as f32;
-            }
-            let (rh, _) = S::as_simd_f32s(&r[..lanes]);
-            let (gh, _) = S::as_simd_f32s(&g[..lanes]);
-            let (bh, _) = S::as_simd_f32s(&b[..lanes]);
-            let y = simd.mul_add_f32s(
-                wr,
-                rh[0],
-                simd.mul_add_f32s(wg, gh[0], simd.mul_f32s(wb, bh[0])),
-            );
-            let mut yf = [0.0_f32; 16];
-            {
-                let (yh, _) = S::as_mut_simd_f32s(&mut yf[..lanes]);
-                yh[0] = y;
-            }
-            for (dst, &yv) in self.gray[i..i + lanes].iter_mut().zip(yf[..lanes].iter()) {
-                *dst = yv.round() as u8;
-            }
-            i += lanes;
-        }
-        for (dst, chunk) in self.gray[i..]
-            .iter_mut()
-            .zip(self.rgb[i * 3..].chunks_exact(3))
-        {
+    fn with_simd<S: Simd>(self, _simd: S) -> Self::Output {
+        // Tight scalar under WithSimd: Rec.601 interleaved RGB does not map cleanly
+        // to contiguous f32 lanes without a gather that loses to auto-vec on small
+        // OCR crops. Preserve exact coeffs + `.round() as u8`.
+        for (dst, chunk) in self.gray.iter_mut().zip(self.rgb.chunks_exact(3)) {
             let r = chunk[0] as f32;
             let g = chunk[1] as f32;
             let b = chunk[2] as f32;

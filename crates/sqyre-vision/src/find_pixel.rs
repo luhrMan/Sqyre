@@ -108,26 +108,44 @@ impl<'a> Scan<'a> {
     /// Serial when already on a Rayon worker (Image Search nests find-pixel under
     /// an outer `par_iter`); off-pool callers keep row parallelism.
     fn runs_by_row(&self, height: usize) -> Vec<Vec<Run>> {
-        let scan_row = |y| {
-            let mut runs: Vec<Run> = Vec::new();
-            let mut start: Option<usize> = None;
-            for x in 0..self.width {
-                if self.matches(y, x) {
-                    start.get_or_insert(x);
-                } else if let Some(s) = start.take() {
-                    runs.push((s, x));
-                }
-            }
-            if let Some(s) = start {
-                runs.push((s, self.width));
-            }
-            runs
-        };
-        if rayon::current_thread_index().is_some() {
-            (0..height).map(scan_row).collect()
-        } else {
-            (0..height).into_par_iter().map(scan_row).collect()
+        // Off-pool: keep the pre-R1 `into_par_iter` body shape for dense flat scans.
+        if rayon::current_thread_index().is_none() {
+            return (0..height)
+                .into_par_iter()
+                .map(|y| {
+                    let mut runs: Vec<Run> = Vec::new();
+                    let mut start: Option<usize> = None;
+                    for x in 0..self.width {
+                        if self.matches(y, x) {
+                            start.get_or_insert(x);
+                        } else if let Some(s) = start.take() {
+                            runs.push((s, x));
+                        }
+                    }
+                    if let Some(s) = start {
+                        runs.push((s, self.width));
+                    }
+                    runs
+                })
+                .collect();
         }
+        (0..height)
+            .map(|y| {
+                let mut runs: Vec<Run> = Vec::new();
+                let mut start: Option<usize> = None;
+                for x in 0..self.width {
+                    if self.matches(y, x) {
+                        start.get_or_insert(x);
+                    } else if let Some(s) = start.take() {
+                        runs.push((s, x));
+                    }
+                }
+                if let Some(s) = start {
+                    runs.push((s, self.width));
+                }
+                runs
+            })
+            .collect()
     }
 }
 
