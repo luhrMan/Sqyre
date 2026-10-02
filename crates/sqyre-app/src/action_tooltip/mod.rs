@@ -469,30 +469,41 @@ pub(crate) fn show_action_view_tip(
                 .inner_margin(egui::Margin::symmetric(10, 8))
                 .show(ui, |ui| {
                     ui.set_max_width(max_w);
-                    tree_chrome::paint_pill_pub(ui, label, pastel);
-                    ui.add_space(crate::theme::SPACE_4);
-                    ui.label(egui::RichText::new(description).small().weak());
-                    if !summary_pills.is_empty() {
-                        ui.add_space(crate::theme::SPACE_4);
-                        sections::tip_wrapped_section(ui, |ui| {
-                            ui.spacing_mut().item_spacing = Vec2::splat(crate::theme::SPACE_2);
-                            for pill in &summary_pills {
-                                ui.horizontal(|ui| {
-                                    if let ActionKind::FocusWindow {
-                                        process_path,
-                                        window_title,
-                                    } = &action.kind
-                                    {
-                                        crate::icon_cache::paint_leading_process_icon(
-                                            ui,
-                                            icons,
-                                            process_path,
-                                            window_title,
-                                        );
-                                    } else {
-                                        crate::icon_cache::paint_leading_program_icon(
-                                            ui, catalog, icons, &pill.text,
-                                        );
+                    let out = crate::pickers::scroll_vertical()
+                        .id_salt("view_tip_body")
+                        .max_height(max_body_h)
+                        .vertical_scroll_offset(offset)
+                        .show(ui, |ui| {
+                            tree_chrome::paint_pill_pub(ui, label, pastel);
+                            ui.add_space(crate::theme::SPACE_4);
+                            ui.label(egui::RichText::new(description).small().weak());
+                            if !summary_pills.is_empty() {
+                                ui.add_space(crate::theme::SPACE_4);
+                                sections::tip_wrapped_section(ui, |ui| {
+                                    ui.spacing_mut().item_spacing =
+                                        Vec2::splat(crate::theme::SPACE_2);
+                                    for pill in &summary_pills {
+                                        ui.horizontal(|ui| {
+                                            if let ActionKind::FocusWindow {
+                                                process_path,
+                                                window_title,
+                                            } = &action.kind
+                                            {
+                                                crate::icon_cache::paint_leading_process_icon(
+                                                    ui,
+                                                    icons,
+                                                    process_path,
+                                                    window_title,
+                                                );
+                                            } else {
+                                                crate::icon_cache::paint_leading_program_icon(
+                                                    ui, catalog, icons, &pill.text,
+                                                );
+                                            }
+                                            let _ = var_pills::paint_summary_pill(
+                                                ui, type_key, pill, known_vars, is_dark,
+                                            );
+                                        });
                                     }
                                 });
                             }
