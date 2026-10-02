@@ -104,9 +104,32 @@ impl<'a> Scan<'a> {
 
     /// Matching spans per row. Runs keep a solid region to a couple of entries
     /// per row instead of one `Point` per pixel.
+    ///
+    /// Serial when already on a Rayon worker (Image Search nests find-pixel under
+    /// an outer `par_iter`); off-pool callers keep row parallelism.
     fn runs_by_row(&self, height: usize) -> Vec<Vec<Run>> {
+        // Off-pool: keep the pre-R1 `into_par_iter` body shape for dense flat scans.
+        if rayon::current_thread_index().is_none() {
+            return (0..height)
+                .into_par_iter()
+                .map(|y| {
+                    let mut runs: Vec<Run> = Vec::new();
+                    let mut start: Option<usize> = None;
+                    for x in 0..self.width {
+                        if self.matches(y, x) {
+                            start.get_or_insert(x);
+                        } else if let Some(s) = start.take() {
+                            runs.push((s, x));
+                        }
+                    }
+                    if let Some(s) = start {
+                        runs.push((s, self.width));
+                    }
+                    runs
+                })
+                .collect();
+        }
         (0..height)
-            .into_par_iter()
             .map(|y| {
                 let mut runs: Vec<Run> = Vec::new();
                 let mut start: Option<usize> = None;
@@ -229,5 +252,30 @@ mod tests {
         assert!(find_pixels(&img, "#c80000", 0).is_empty());
         let pts = find_pixels(&img, "#c80000", 15);
         assert_eq!(pts, vec![Point { x: 4, y: 5 }]);
+    }
+
+    #[test]
+    fn nested_rayon_find_pixels_match_off_pool() {
+        let mut img = ImageBuf::new(32, 24, 3, 0);
+        for &(x, y) in &[(2, 3), (20, 10), (15, 20)] {
+            let o = img.pixel_offset(x, y);
+            img.data[o] = 255;
+            img.data[o + 1] = 0;
+            img.data[o + 2] = 0;
+        }
+        let off_pool = find_pixels(&img, "#ff0000", 0);
+        let on_pool: Vec<_> = (0..4)
+            .into_par_iter()
+            .map(|_| {
+                assert!(
+                    rayon::current_thread_index().is_some(),
+                    "expected Rayon worker"
+                );
+                find_pixels(&img, "#ff0000", 0)
+            })
+            .collect();
+        for pts in &on_pool {
+            assert_eq!(pts, &off_pool);
+        }
     }
 }

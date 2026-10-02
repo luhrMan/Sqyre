@@ -52,7 +52,10 @@ pub use linux::{
     OsCapturer, SharedRunCapturer,
 };
 pub use outline_rect::OutlineRect;
-pub use pixel_convert::{zpixmap_to_rgb, zpixmap_to_rgba};
+pub use pixel_convert::{
+    strip_rgba_row_to_rgb, swizzle_row_to_rgba, zpixmap_to_rgb, zpixmap_to_rgba, RgbaSrcFormat,
+    PARALLEL_ROW_GATE,
+};
 pub use selection_grab::GrabPoll;
 pub use stub::{NullCapturer, SolidCapturer};
 

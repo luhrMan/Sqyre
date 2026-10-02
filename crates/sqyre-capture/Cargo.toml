@@ -48,3 +48,8 @@ windows = { workspace = true, features = [
 ] }
 
 [dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "pixel_swizzle"
+harness = false

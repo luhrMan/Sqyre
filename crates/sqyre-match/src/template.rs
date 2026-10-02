@@ -67,9 +67,15 @@ pub fn match_template(
 /// Template packing (masked/mean-subtracted pixels + sparse SIMD samples), built once
 /// per (template, mask, method) and reused across repeated match attempts — see
 /// [`prepare_template`].
+/// Prepared template: sparse f32 samples + scalar energy metadata.
+///
+/// Coords and values live once in [`SparseTemplate`] (no dual f64 pack + f32 copy).
 pub struct PreparedTemplate {
-    pack: PackedTemplate,
     sparse: crate::corr_simd::SparseTemplate,
+    /// Masked pixel count (as f64 for finish math).
+    n: f64,
+    /// Σvals² (primed energy for CCOEFF*, ΣT² for SQDIFF/CCORR).
+    t_energy: f64,
     method: MatchMethod,
     full_mask: bool,
 }
@@ -77,9 +83,7 @@ pub struct PreparedTemplate {
 impl PreparedTemplate {
     /// Approximate heap bytes retained, for cache accounting.
     pub fn approx_bytes(&self) -> usize {
-        let pack_bytes = self.pack.xs.len() * (2 + 2) + self.pack.vals.len() * 8;
-        let sparse_bytes = self.sparse.xs.len() * (2 + 2) + self.sparse.vals.len() * 4;
-        pack_bytes + sparse_bytes
+        self.sparse.xs.len() * (2 + 2) + self.sparse.vals.len() * 4
     }
 }
 
@@ -89,12 +93,12 @@ fn prepare_template_from_mask_bits(
     method: MatchMethod,
 ) -> PreparedTemplate {
     let ch = template.channels;
-    let pack = build_packed_template(template, mask_bits, ch, method);
-    let sparse = crate::corr_simd::SparseTemplate::from_packed(&pack.vals, &pack.xs, &pack.ys, ch);
+    let (sparse, n, t_energy) = build_sparse_template(template, mask_bits, ch, method);
     let full_mask = mask_bits.iter().all(|&b| b);
     PreparedTemplate {
-        pack,
         sparse,
+        n,
+        t_energy,
         method,
         full_mask,
     }
@@ -153,10 +157,12 @@ fn run_match(
     let th = template.height;
     let out_w = search.width - tw + 1;
     let out_h = search.height - th + 1;
-    let pack = &prepared.pack;
+    let sparse = &prepared.sparse;
+    let n = prepared.n;
+    let t_energy = prepared.t_energy;
     let method = prepared.method;
 
-    if pack.n <= 0.0 {
+    if n <= 0.0 {
         return Ok(MatchMap {
             width: out_w,
             height: out_h,
@@ -165,7 +171,7 @@ fn run_match(
     }
 
     // OpenCV: constant / empty-energy templates for some normed methods → all ones.
-    if pack.t_energy <= f64::EPSILON
+    if t_energy <= f64::EPSILON
         && matches!(
             method,
             MatchMethod::CcoeffNormed | MatchMethod::SqdiffNormed
@@ -186,12 +192,25 @@ fn run_match(
         .saturating_mul(ch as u64);
 
     if full_mask && direct_cost > FFT_DIRECT_COST_THRESHOLD {
-        match_fft(search, pack, tw, th, out_w, out_h, ch, method, search_prep)
+        match_fft(
+            search,
+            sparse,
+            n,
+            t_energy,
+            tw,
+            th,
+            out_w,
+            out_h,
+            ch,
+            method,
+            search_prep,
+        )
     } else {
         match_direct(
             search,
-            pack,
-            &prepared.sparse,
+            sparse,
+            n,
+            t_energy,
             tw,
             th,
             out_w,
@@ -204,38 +223,15 @@ fn run_match(
     }
 }
 
-/// Packed masked template pixels for correlation.
+/// Build mean-subtracted (CCOEFF*) or raw sparse f32 samples + f64 energy.
 ///
-/// `vals` are mean-subtracted for `CCOEFF*`, raw otherwise. `t_energy` is Σvals²
-/// (primed energy for CCOEFF*, ΣT² for SQDIFF/CCORR).
-struct PackedTemplate {
-    xs: Vec<u16>,
-    ys: Vec<u16>,
-    vals: Vec<f64>,
-    ch: usize,
-    n: f64,
-    t_energy: f64,
-}
-
-impl PackedTemplate {
-    #[inline]
-    fn len(&self) -> usize {
-        self.xs.len()
-    }
-
-    #[inline]
-    fn vals_at(&self, i: usize) -> &[f64] {
-        let base = i * self.ch;
-        &self.vals[base..base + self.ch]
-    }
-}
-
-fn build_packed_template(
+/// `n` / `t_energy` stay f64 sums once; sample values are f32 (OpenCV float path).
+fn build_sparse_template(
     template: &ImageBuf,
     mask_bits: &[bool],
     ch: usize,
     method: MatchMethod,
-) -> PackedTemplate {
+) -> (crate::corr_simd::SparseTemplate, f64, f64) {
     let tw = template.width;
     let th = template.height;
     let mut sum_w = 0.0_f64;
@@ -254,14 +250,11 @@ fn build_packed_template(
         }
     }
     if sum_w <= 0.0 {
-        return PackedTemplate {
-            xs: Vec::new(),
-            ys: Vec::new(),
-            vals: Vec::new(),
-            ch,
-            n: 0.0,
-            t_energy: 0.0,
-        };
+        return (
+            crate::corr_simd::SparseTemplate::from_packed(Vec::new(), Vec::new(), Vec::new(), ch),
+            0.0,
+            0.0,
+        );
     }
 
     let mean_subtract = method.is_ccoeff_family();
@@ -286,31 +279,29 @@ fn build_packed_template(
             xs.push(x as u16);
             ys.push(y as u16);
             for (c, mean) in t_mean.iter().enumerate() {
-                let v = if mean_subtract {
+                let v_f64 = if mean_subtract {
                     template.data[ti + c] as f64 - mean
                 } else {
                     template.data[ti + c] as f64
                 };
-                vals.push(v);
-                t_energy += v * v;
+                t_energy += v_f64 * v_f64;
+                vals.push(v_f64 as f32);
             }
         }
     }
-    PackedTemplate {
-        xs,
-        ys,
-        vals,
-        ch,
-        n: sum_w,
+    (
+        crate::corr_simd::SparseTemplate::from_packed(vals, xs, ys, ch),
+        sum_w,
         t_energy,
-    }
+    )
 }
 
 #[allow(clippy::too_many_arguments)] // match kernel: image geometry, packed template, method, and optional prep
 fn match_direct(
     search: &ImageBuf,
-    pack: &PackedTemplate,
     tmpl: &crate::corr_simd::SparseTemplate,
+    n: f64,
+    t_energy: f64,
     tw: usize,
     th: usize,
     out_w: usize,
@@ -327,8 +318,6 @@ fn match_direct(
         owned_planar = crate::corr_simd::PlanarF32::from_interleaved(search);
         &owned_planar
     };
-    let n = pack.n;
-    let t_energy = pack.t_energy;
 
     let owned_integ;
     let prep_integ;
@@ -591,11 +580,13 @@ fn forward_fft_search(search: &ImageBuf, dft_w: usize, dft_h: usize, parallel: b
     }
 }
 
-/// DFT cross-correlation of packed template vs search, then method-specific finish.
-#[allow(clippy::too_many_arguments)] // match kernel: image geometry, packed template, method, and optional prep
+/// DFT cross-correlation of sparse template vs search, then method-specific finish.
+#[allow(clippy::too_many_arguments)] // match kernel: image geometry, sparse template, method, and optional prep
 fn match_fft(
     search: &ImageBuf,
-    pack: &PackedTemplate,
+    pack: &crate::corr_simd::SparseTemplate,
+    n: f64,
+    t_energy: f64,
     tw: usize,
     th: usize,
     out_w: usize,
@@ -639,7 +630,7 @@ fn match_fft(
             for i in 0..pack.len() {
                 let x = pack.xs[i] as usize;
                 let y = pack.ys[i] as usize;
-                tmpl[y * dft_w + x] = Complex::new(pack.vals_at(i)[c] as f32, 0.0);
+                tmpl[y * dft_w + x] = Complex::new(pack.vals_at(i)[c], 0.0);
             }
 
             fft2d_forward(tmpl, dft_w, dft_h, planner, col);
@@ -647,14 +638,7 @@ fn match_fft(
             fft2d_inverse(img, dft_w, dft_h, planner, col);
 
             let mut out = vec![0.0_f32; out_w * out_h];
-            let arch = crate::corr_simd::pulp_arch();
-            arch.dispatch(|| {
-                for y in 0..out_h {
-                    for x in 0..out_w {
-                        out[y * out_w + x] = img[y * dft_w + x].re * scale;
-                    }
-                }
-            });
+            crate::corr_simd::extract_scaled_re(img, dft_w, out_w, out_h, scale, &mut out);
             out
         })
     };
@@ -698,8 +682,6 @@ fn match_fft(
         &owned_integ
     };
     let stride = integ.width + 1;
-    let n = pack.n;
-    let t_energy = pack.t_energy;
     let mut scores = vec![0.0_f32; out_w * out_h];
     let finish_row = |oy: usize, row: &mut [f32]| {
         for ox in 0..out_w {
@@ -1223,13 +1205,13 @@ mod tests {
         let mut search = gray(120, 100, 30);
         search.stamp(&tmpl, 40, 30);
         let mask_bits = vec![true; 24 * 24];
-        let pack = build_packed_template(&tmpl, &mask_bits, 3, MatchMethod::CcoeffNormed);
-        let sparse =
-            crate::corr_simd::SparseTemplate::from_packed(&pack.vals, &pack.xs, &pack.ys, 3);
+        let (sparse, n, t_energy) =
+            build_sparse_template(&tmpl, &mask_bits, 3, MatchMethod::CcoeffNormed);
         let direct = match_direct(
             &search,
-            &pack,
             &sparse,
+            n,
+            t_energy,
             24,
             24,
             97,
@@ -1242,7 +1224,9 @@ mod tests {
         .unwrap();
         let fft = match_fft(
             &search,
-            &pack,
+            &sparse,
+            n,
+            t_energy,
             24,
             24,
             97,

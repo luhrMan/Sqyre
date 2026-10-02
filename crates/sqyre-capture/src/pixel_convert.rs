@@ -1,16 +1,107 @@
-//! Offline-testable X11 ZPixmap → RGBA / RGB conversion.
+//! Offline-testable pixel swizzle / strip kernels (X11 ZPixmap + Portal share).
 
 use image::RgbaImage;
 use pulp::Arch;
 use rayon::prelude::*;
 
+/// Minimum row count before portal / crop helpers use Rayon (avoid pool spam).
+pub const PARALLEL_ROW_GATE: usize = 32;
+
 /// Cached `pulp` ISA dispatch — avoid `Arch::new()` on every swizzle row.
 #[inline]
-fn pulp_arch() -> Arch {
+pub(crate) fn pulp_arch() -> Arch {
     thread_local! {
         static ARCH: Arch = Arch::new();
     }
     ARCH.with(|a| *a)
+}
+
+/// Interleaved source layout for row→RGBA kernels (Portal + tests).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RgbaSrcFormat {
+    Rgba,
+    Bgra,
+    Rgbx,
+    Bgrx,
+    Rgb,
+    Bgr,
+}
+
+impl RgbaSrcFormat {
+    #[inline]
+    pub fn bytes_per_pixel(self) -> usize {
+        match self {
+            Self::Rgb | Self::Bgr => 3,
+            Self::Rgba | Self::Bgra | Self::Rgbx | Self::Bgrx => 4,
+        }
+    }
+}
+
+/// Swizzle one tightly-packed source row into RGBA (`dst` length `width * 4`).
+#[inline]
+pub fn swizzle_row_to_rgba(row: &[u8], width: usize, format: RgbaSrcFormat, dst: &mut [u8]) {
+    debug_assert!(dst.len() >= width * 4);
+    let bpp = format.bytes_per_pixel();
+    let arch = pulp_arch();
+    arch.dispatch(|| match format {
+        RgbaSrcFormat::Rgba => {
+            let n = (width * 4).min(row.len()).min(dst.len());
+            dst[..n].copy_from_slice(&row[..n]);
+        }
+        RgbaSrcFormat::Bgra => {
+            for x in 0..width {
+                let s = x * 4;
+                let d = x * 4;
+                if s + 4 > row.len() || d + 4 > dst.len() {
+                    break;
+                }
+                dst[d] = row[s + 2];
+                dst[d + 1] = row[s + 1];
+                dst[d + 2] = row[s];
+                dst[d + 3] = row[s + 3];
+            }
+        }
+        RgbaSrcFormat::Rgbx | RgbaSrcFormat::Rgb => {
+            for x in 0..width {
+                let s = x * bpp;
+                let d = x * 4;
+                if s + bpp > row.len() || d + 4 > dst.len() {
+                    break;
+                }
+                dst[d..d + 3].copy_from_slice(&row[s..s + 3]);
+                dst[d + 3] = 255;
+            }
+        }
+        RgbaSrcFormat::Bgrx | RgbaSrcFormat::Bgr => {
+            for x in 0..width {
+                let s = x * bpp;
+                let d = x * 4;
+                if s + bpp > row.len() || d + 4 > dst.len() {
+                    break;
+                }
+                dst[d] = row[s + 2];
+                dst[d + 1] = row[s + 1];
+                dst[d + 2] = row[s];
+                dst[d + 3] = 255;
+            }
+        }
+    });
+}
+
+/// Drop alpha from a tightly packed RGBA row into RGB (`dst` length `width * 3`).
+#[inline]
+pub fn strip_rgba_row_to_rgb(src: &[u8], width: usize, dst: &mut [u8]) {
+    debug_assert!(src.len() >= width * 4);
+    debug_assert!(dst.len() >= width * 3);
+    let arch = pulp_arch();
+    arch.dispatch(|| {
+        for (d, s) in dst[..width * 3]
+            .chunks_exact_mut(3)
+            .zip(src[..width * 4].chunks_exact(4))
+        {
+            d.copy_from_slice(&s[..3]);
+        }
+    });
 }
 
 /// Convert X11 ZPixmap bytes (typically BGRA on little-endian) into an [`RgbaImage`].
@@ -199,5 +290,36 @@ mod tests {
             err.contains("shorter than"),
             "expected stride error, got {err}"
         );
+    }
+
+    #[test]
+    fn shared_row_kernels_bgrx_bgra_rgbx() {
+        let mut out = [0u8; 8];
+        swizzle_row_to_rgba(
+            &[0, 1, 2, 0, 10, 11, 12, 0],
+            2,
+            RgbaSrcFormat::Bgrx,
+            &mut out,
+        );
+        assert_eq!(out, [2, 1, 0, 255, 12, 11, 10, 255]);
+
+        swizzle_row_to_rgba(
+            &[0, 1, 2, 9, 10, 11, 12, 8],
+            2,
+            RgbaSrcFormat::Bgra,
+            &mut out,
+        );
+        assert_eq!(out, [2, 1, 0, 9, 12, 11, 10, 8]);
+
+        swizzle_row_to_rgba(&[1, 2, 3, 0, 4, 5, 6, 0], 2, RgbaSrcFormat::Rgbx, &mut out);
+        assert_eq!(out, [1, 2, 3, 255, 4, 5, 6, 255]);
+    }
+
+    #[test]
+    fn strip_rgba_row_drops_alpha() {
+        let src = [1u8, 2, 3, 255, 4, 5, 6, 128];
+        let mut dst = [0u8; 6];
+        strip_rgba_row_to_rgb(&src, 2, &mut dst);
+        assert_eq!(dst, [1, 2, 3, 4, 5, 6]);
     }
 }

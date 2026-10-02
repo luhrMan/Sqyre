@@ -5101,6 +5101,7 @@ name = "sqyre-capture"
 version = "0.1.0"
 dependencies = [
  "ashpd",
+ "criterion",
  "enumflags2",
  "image",
  "libc",

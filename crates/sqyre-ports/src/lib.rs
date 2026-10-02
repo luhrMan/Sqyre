@@ -160,7 +160,20 @@ pub trait ScreenCapturer {
         Ok(vec![(vb.w, vb.h)])
     }
 
-    /// Capture RGB (no alpha). Default: RGBA capture then strip alpha.
+    /// Capture RGB (no alpha) for a desktop rect.
+    ///
+    /// **Override this on every shipping backend.** The default allocates a full
+    /// RGBA frame via [`Self::capture_rect`] then strips alpha (`RgbCapture::from_rgba`),
+    /// doubling pixel traffic versus a direct RGB path. X11, Windows GDI, and Portal
+    /// already override; stubs and future adapters must do the same — do not rely on
+    /// the default in production capture code.
+    ///
+    /// Checklist for a new `ScreenCapturer` impl:
+    /// 1. Implement `capture_rect_rgb` (and preferably `capture_rect_rgb_fresh`) with a
+    ///    native RGB or strip-in-place path — no RGBA round-trip for search crops.
+    /// 2. Keep Win UI/preview BGRA→RGBA sequential (no Rayon on the glow/UI thread).
+    /// 3. Prefer shared row kernels in `sqyre-capture::pixel_convert` when the layout
+    ///    matches X11/Portal formats.
     fn capture_rect_rgb(&mut self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
         Ok(RgbCapture::from_rgba(&self.capture_rect(rect)?))
     }

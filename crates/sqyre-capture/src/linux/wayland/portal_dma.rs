@@ -1,9 +1,11 @@
 //! dma-buf / memfd mapping and PipeWire frame blit into the RGBA cache.
 
 use crate::error::CaptureError;
+use crate::pixel_convert::{swizzle_row_to_rgba, RgbaSrcFormat, PARALLEL_ROW_GATE};
 use pipewire as pw;
 use pw::spa::buffer::DataType;
 use pw::spa::param::video::VideoFormat;
+use rayon::prelude::*;
 
 /// linux/dma-buf.h `DMA_BUF_IOCTL_SYNC` (`_IOW('b', 0, struct dma_buf_sync)`).
 const DMA_BUF_IOCTL_SYNC: libc::c_ulong = 0x4008_6200;
@@ -120,6 +122,20 @@ pub(super) fn with_spa_chunk_bytes<T>(
     Some(f(&map.as_slice()[range]))
 }
 
+fn video_format_to_src(format: VideoFormat) -> Result<RgbaSrcFormat, CaptureError> {
+    match format {
+        VideoFormat::RGBA => Ok(RgbaSrcFormat::Rgba),
+        VideoFormat::BGRA => Ok(RgbaSrcFormat::Bgra),
+        VideoFormat::RGBx => Ok(RgbaSrcFormat::Rgbx),
+        VideoFormat::BGRx => Ok(RgbaSrcFormat::Bgrx),
+        VideoFormat::RGB => Ok(RgbaSrcFormat::Rgb),
+        VideoFormat::BGR => Ok(RgbaSrcFormat::Bgr),
+        other => Err(CaptureError::Message(format!(
+            "portal capture: unsupported PipeWire format {other:?}"
+        ))),
+    }
+}
+
 #[allow(clippy::too_many_arguments)] // src frame + dest rect in one blit
 pub(super) fn copy_pw_frame_into_rect(
     src: &[u8],
@@ -189,77 +205,45 @@ fn copy_pw_frame_to_rgba_at(
 ) -> Result<(), CaptureError> {
     let w = width as usize;
     let h = height as usize;
+    let fmt = video_format_to_src(format)?;
+    let src_cap = size.min(src.len());
+
+    // Validate all rows first so Rayon workers only do pixel work.
     for y in 0..h {
         let src_off = y * src_stride;
-        if src_off >= size.min(src.len()) {
+        if src_off >= src_cap {
             break;
         }
-        let row_len = src_stride.min(src.len().saturating_sub(src_off));
-        let row = &src[src_off..src_off + row_len];
         let dst_row_off = (dst_y + y) * dst_stride + dst_x * 4;
         if dst_row_off + w * 4 > dst.len() {
             return Err(CaptureError::Message(
                 "portal capture: RGBA buffer too small".into(),
             ));
         }
-        let dst_row = &mut dst[dst_row_off..dst_row_off + w * 4];
-        swizzle_row_to_rgba(row, w, format, dst_row)?;
     }
-    Ok(())
-}
 
-fn swizzle_row_to_rgba(
-    row: &[u8],
-    width: usize,
-    format: VideoFormat,
-    dst: &mut [u8],
-) -> Result<(), CaptureError> {
-    let bpp = match format {
-        VideoFormat::RGB | VideoFormat::BGR => 3,
-        VideoFormat::RGBA | VideoFormat::BGRA | VideoFormat::RGBx | VideoFormat::BGRx => 4,
-        other => {
-            return Err(CaptureError::Message(format!(
-                "portal capture: unsupported PipeWire format {other:?}"
-            )));
+    let dst_addr = dst.as_mut_ptr() as usize;
+    let swizzle_row = |y: usize| {
+        let src_off = y * src_stride;
+        if src_off >= src_cap {
+            return;
         }
+        let row_len = src_stride.min(src_cap.saturating_sub(src_off));
+        let row = &src[src_off..src_off + row_len];
+        let dst_row_off = (dst_y + y) * dst_stride + dst_x * 4;
+        // SAFETY: each row `y` writes a disjoint `dst` span (validated above).
+        let dst_row = unsafe {
+            std::slice::from_raw_parts_mut((dst_addr as *mut u8).add(dst_row_off), w * 4)
+        };
+        swizzle_row_to_rgba(row, w, fmt, dst_row);
     };
-    for x in 0..width {
-        let src_off = x * bpp;
-        let dst_off = x * 4;
-        if src_off + bpp > row.len() || dst_off + 4 > dst.len() {
-            break;
-        }
-        match format {
-            VideoFormat::RGBA => {
-                dst[dst_off..dst_off + 4].copy_from_slice(&row[src_off..src_off + 4])
-            }
-            VideoFormat::BGRA => {
-                dst[dst_off] = row[src_off + 2];
-                dst[dst_off + 1] = row[src_off + 1];
-                dst[dst_off + 2] = row[src_off];
-                dst[dst_off + 3] = row[src_off + 3];
-            }
-            VideoFormat::RGBx => {
-                dst[dst_off..dst_off + 3].copy_from_slice(&row[src_off..src_off + 3]);
-                dst[dst_off + 3] = 255;
-            }
-            VideoFormat::BGRx => {
-                dst[dst_off] = row[src_off + 2];
-                dst[dst_off + 1] = row[src_off + 1];
-                dst[dst_off + 2] = row[src_off];
-                dst[dst_off + 3] = 255;
-            }
-            VideoFormat::RGB => {
-                dst[dst_off..dst_off + 3].copy_from_slice(&row[src_off..src_off + 3]);
-                dst[dst_off + 3] = 255;
-            }
-            VideoFormat::BGR => {
-                dst[dst_off] = row[src_off + 2];
-                dst[dst_off + 1] = row[src_off + 1];
-                dst[dst_off + 2] = row[src_off];
-                dst[dst_off + 3] = 255;
-            }
-            _ => {}
+
+    // PipeWire callback thread — not the egui UI thread. Gate Rayon on height.
+    if h >= PARALLEL_ROW_GATE {
+        (0..h).into_par_iter().for_each(swizzle_row);
+    } else {
+        for y in 0..h {
+            swizzle_row(y);
         }
     }
     Ok(())
@@ -273,8 +257,22 @@ mod tests {
     fn bgrx_row_to_rgba() {
         let row = [0u8, 1, 2, 0, 10, 11, 12, 0];
         let mut out = [0u8; 8];
-        swizzle_row_to_rgba(&row, 2, VideoFormat::BGRx, &mut out).unwrap();
+        swizzle_row_to_rgba(&row, 2, RgbaSrcFormat::Bgrx, &mut out);
         assert_eq!(out, [2, 1, 0, 255, 12, 11, 10, 255]);
+    }
+
+    #[test]
+    fn bgra_and_rgba_rows() {
+        let mut out = [0u8; 8];
+        swizzle_row_to_rgba(
+            &[0, 1, 2, 9, 10, 11, 12, 8],
+            2,
+            RgbaSrcFormat::Bgra,
+            &mut out,
+        );
+        assert_eq!(out, [2, 1, 0, 9, 12, 11, 10, 8]);
+        swizzle_row_to_rgba(&[1, 2, 3, 4, 5, 6, 7, 8], 2, RgbaSrcFormat::Rgba, &mut out);
+        assert_eq!(out, [1, 2, 3, 4, 5, 6, 7, 8]);
     }
 
     #[test]
@@ -328,5 +326,41 @@ mod tests {
         )
         .unwrap();
         assert_eq!(&dst, &[10, 20, 30, 255]);
+    }
+
+    #[test]
+    fn parallel_tall_bgrx_frame() {
+        let h = PARALLEL_ROW_GATE + 4;
+        let w = 8usize;
+        let mut src = vec![0u8; h * w * 4];
+        for y in 0..h {
+            for x in 0..w {
+                let o = (y * w + x) * 4;
+                src[o] = x as u8;
+                src[o + 1] = y as u8;
+                src[o + 2] = 3;
+                src[o + 3] = 0;
+            }
+        }
+        let mut dst = vec![0u8; h * w * 4];
+        copy_pw_frame_to_rgba_at(
+            &src,
+            src.len(),
+            w * 4,
+            w as u32,
+            h as u32,
+            VideoFormat::BGRx,
+            &mut dst,
+            w * 4,
+            0,
+            0,
+        )
+        .unwrap();
+        assert_eq!(&dst[0..4], &[3, 0, 0, 255]);
+        let last = ((h - 1) * w + (w - 1)) * 4;
+        assert_eq!(
+            &dst[last..last + 4],
+            &[3, (h - 1) as u8, (w - 1) as u8, 255]
+        );
     }
 }
