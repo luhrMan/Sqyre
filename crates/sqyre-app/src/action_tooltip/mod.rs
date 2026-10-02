@@ -372,6 +372,44 @@ fn edit_window_user_resized(ctx: &egui::Context, area_id: egui::Id) -> bool {
     dragged(area_id.with("resize").with("__resize_corner"))
 }
 
+/// Vertical popup chrome around the view tip body (inner margin + stroke).
+const VIEW_TIP_CHROME_H: f32 = 20.0;
+
+/// Scroll position of the pointer-following view tip, kept across frames.
+#[derive(Debug, Clone, Copy)]
+struct ViewTipScroll {
+    tip_id: egui::Id,
+    offset: f32,
+    max_offset: f32,
+    pass: u64,
+}
+
+fn view_tip_scroll_key() -> egui::Id {
+    egui::Id::new("action_view_tip_scroll")
+}
+
+/// Route the mouse wheel to a view tip that was cut off last frame.
+///
+/// The tip follows the pointer and is not interactable, so its own
+/// `ScrollArea` never sees wheel input. Must run before any other
+/// `ScrollArea` this frame so the tree underneath does not scroll too.
+pub(crate) fn claim_view_tip_scroll(ctx: &egui::Context) {
+    let key = view_tip_scroll_key();
+    let Some(mut scroll) = ctx.data(|d| d.get_temp::<ViewTipScroll>(key)) else {
+        return;
+    };
+    if scroll.max_offset <= 0.0 || scroll.pass + 1 != ctx.cumulative_pass_nr() {
+        return;
+    }
+    let dy = ctx.input(|i| i.smooth_scroll_delta.y);
+    if dy == 0.0 {
+        return;
+    }
+    scroll.offset = (scroll.offset - dy).clamp(0.0, scroll.max_offset);
+    ctx.input_mut(|i| i.smooth_scroll_delta.y = 0.0);
+    ctx.data_mut(|d| d.insert_temp(key, scroll));
+}
+
 /// Paint a read-only hover tip for an action (tree rows + Add Action defaults preview).
 pub(crate) fn show_action_view_tip(
     ctx: &egui::Context,
@@ -411,6 +449,13 @@ pub(crate) fn show_action_view_tip(
     } else {
         (egui::Align2::LEFT_TOP, pointer + Vec2::new(14.0, 14.0))
     };
+    let scroll_key = view_tip_scroll_key();
+    let pass = ctx.cumulative_pass_nr();
+    let offset = ctx
+        .data(|d| d.get_temp::<ViewTipScroll>(scroll_key))
+        .filter(|s| s.tip_id == tip_id && s.pass + 1 >= pass)
+        .map_or(0.0, |s| s.offset);
+    let max_body_h = (screen.height() - VIEW_TIP_CHROME_H).max(40.0);
     // interactable(false): clicks pass through to the control underneath.
     egui::Area::new(tip_id)
         .order(Order::Tooltip)
@@ -424,97 +469,117 @@ pub(crate) fn show_action_view_tip(
                 .inner_margin(egui::Margin::symmetric(10, 8))
                 .show(ui, |ui| {
                     ui.set_max_width(max_w);
-                    tree_chrome::paint_pill_pub(ui, label, pastel);
-                    ui.add_space(4.0);
-                    ui.label(egui::RichText::new(description).small().weak());
-                    if !summary_pills.is_empty() {
-                        ui.add_space(4.0);
-                        sections::tip_wrapped_section(ui, |ui| {
-                            ui.spacing_mut().item_spacing = Vec2::splat(3.0);
-                            for pill in &summary_pills {
-                                ui.horizontal(|ui| {
-                                    if let ActionKind::FocusWindow {
-                                        process_path,
-                                        window_title,
-                                    } = &action.kind
-                                    {
-                                        crate::icon_cache::paint_leading_process_icon(
-                                            ui,
-                                            icons,
-                                            process_path,
-                                            window_title,
-                                        );
-                                    } else {
-                                        crate::icon_cache::paint_leading_program_icon(
-                                            ui, catalog, icons, &pill.text,
-                                        );
-                                    }
-                                    let _ = var_pills::paint_summary_pill(
-                                        ui, type_key, pill, known_vars, is_dark,
-                                    );
-                                });
-                            }
-                        });
-                    }
-                    if let Some((coord_ref, kind)) = coord_preview {
-                        sections::tip_section(ui, |ui| {
-                            previews.paint_for_coordinate_ref(ui, catalog, &coord_ref, kind, false);
-                        });
-                    }
-                    if let ActionKind::ImageSearch { targets, .. } = &action.kind {
-                        if !targets.is_empty() {
-                            sections::tip_section(ui, |ui| {
-                                tree_chrome::paint_image_search_tooltip_thumbs_pub(
-                                    ui, action, catalog, icons,
-                                );
-                            });
-                        }
-                    }
-                    if !extra.is_empty() {
-                        sections::tip_section(ui, |ui| {
-                            for p in &extra {
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(format!("{}:", p.label))
-                                            .small()
-                                            .strong(),
-                                    );
-                                    if p.label.eq_ignore_ascii_case("Program") {
-                                        crate::icon_cache::paint_program_icon(
-                                            ui,
-                                            catalog,
-                                            icons,
-                                            p.minimal(),
-                                        );
-                                    } else if p.label.eq_ignore_ascii_case("App") {
-                                        if let ActionKind::FocusWindow {
-                                            process_path,
-                                            window_title,
-                                        } = &action.kind
-                                        {
-                                            crate::icon_cache::paint_leading_process_icon(
-                                                ui,
-                                                icons,
+                    let out = crate::pickers::scroll_vertical()
+                        .id_salt("view_tip_body")
+                        .max_height(max_body_h)
+                        .vertical_scroll_offset(offset)
+                        .show(ui, |ui| {
+                            tree_chrome::paint_pill_pub(ui, label, pastel);
+                            ui.add_space(4.0);
+                            ui.label(egui::RichText::new(description).small().weak());
+                            if !summary_pills.is_empty() {
+                                ui.add_space(4.0);
+                                sections::tip_wrapped_section(ui, |ui| {
+                                    ui.spacing_mut().item_spacing = Vec2::splat(3.0);
+                                    for pill in &summary_pills {
+                                        ui.horizontal(|ui| {
+                                            if let ActionKind::FocusWindow {
                                                 process_path,
                                                 window_title,
+                                            } = &action.kind
+                                            {
+                                                crate::icon_cache::paint_leading_process_icon(
+                                                    ui,
+                                                    icons,
+                                                    process_path,
+                                                    window_title,
+                                                );
+                                            } else {
+                                                crate::icon_cache::paint_leading_program_icon(
+                                                    ui, catalog, icons, &pill.text,
+                                                );
+                                            }
+                                            let _ = var_pills::paint_summary_pill(
+                                                ui, type_key, pill, known_vars, is_dark,
                                             );
-                                        }
+                                        });
                                     }
-                                    var_pills::paint_var_ref_content(
-                                        ui,
-                                        p.minimal(),
-                                        known_vars,
-                                        is_dark,
-                                        if p.minimal() == CoordinateRef::UNSET_LABEL {
-                                            crate::theme::warn_fg()
-                                        } else {
-                                            ui.visuals().text_color()
-                                        },
+                                });
+                            }
+                            if let Some((coord_ref, kind)) = coord_preview {
+                                sections::tip_section(ui, |ui| {
+                                    previews.paint_for_coordinate_ref(
+                                        ui, catalog, &coord_ref, kind, false,
                                     );
                                 });
                             }
+                            if let ActionKind::ImageSearch { targets, .. } = &action.kind {
+                                if !targets.is_empty() {
+                                    sections::tip_section(ui, |ui| {
+                                        tree_chrome::paint_image_search_tooltip_thumbs_pub(
+                                            ui, action, catalog, icons,
+                                        );
+                                    });
+                                }
+                            }
+                            if !extra.is_empty() {
+                                sections::tip_section(ui, |ui| {
+                                    for p in &extra {
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                egui::RichText::new(format!("{}:", p.label))
+                                                    .small()
+                                                    .strong(),
+                                            );
+                                            if p.label.eq_ignore_ascii_case("Program") {
+                                                crate::icon_cache::paint_program_icon(
+                                                    ui,
+                                                    catalog,
+                                                    icons,
+                                                    p.minimal(),
+                                                );
+                                            } else if p.label.eq_ignore_ascii_case("App") {
+                                                if let ActionKind::FocusWindow {
+                                                    process_path,
+                                                    window_title,
+                                                } = &action.kind
+                                                {
+                                                    crate::icon_cache::paint_leading_process_icon(
+                                                        ui,
+                                                        icons,
+                                                        process_path,
+                                                        window_title,
+                                                    );
+                                                }
+                                            }
+                                            var_pills::paint_var_ref_content(
+                                                ui,
+                                                p.minimal(),
+                                                known_vars,
+                                                is_dark,
+                                                if p.minimal() == CoordinateRef::UNSET_LABEL {
+                                                    crate::theme::warn_fg()
+                                                } else {
+                                                    ui.visuals().text_color()
+                                                },
+                                            );
+                                        });
+                                    }
+                                });
+                            }
                         });
-                    }
+                    let max_offset = (out.content_size.y - out.inner_rect.height()).max(0.0);
+                    ui.ctx().data_mut(|d| {
+                        d.insert_temp(
+                            scroll_key,
+                            ViewTipScroll {
+                                tip_id,
+                                offset: out.state.offset.y.min(max_offset),
+                                max_offset,
+                                pass,
+                            },
+                        )
+                    });
                 });
         });
 }

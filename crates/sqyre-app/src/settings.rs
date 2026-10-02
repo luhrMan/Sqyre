@@ -1372,7 +1372,7 @@ impl SettingsUi {
                     "Compact program headers with icons",
                 )
                 .on_hover_text(
-                    "When a program has a process icon, list headers show only the icon with the child count on the right (name on hover).",
+                    "When a program has a process icon, list headers show only the icon with the child count on the right (name on hover). Macro list tag headers attached to a program's Macro tags do the same.",
                 )
                 .changed()
         {

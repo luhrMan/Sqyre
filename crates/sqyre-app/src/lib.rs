@@ -35,6 +35,7 @@ mod key_record;
 mod linux_focused_keys;
 mod log;
 mod macro_meta;
+mod macro_prompt_builder;
 mod macro_record;
 mod macro_yaml_builder;
 #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
@@ -105,6 +106,7 @@ use hotkey_record::HotkeyRecordUi;
 use icon_cache::IconCache;
 use key_record::KeyRecordUi;
 use macro_meta::MacroMetaUi;
+use macro_prompt_builder::MacroPromptBuilderUi;
 use macro_record::MacroRecordUi;
 use macro_yaml_builder::MacroYamlBuilderUi;
 use parking_lot::Mutex;
@@ -328,6 +330,7 @@ pub struct SqyreApp {
     data_editor: DataEditor,
     settings_ui: SettingsUi,
     variables_panel: variables_panel::VariablesPanelUi,
+    macro_prompt_builder: MacroPromptBuilderUi,
     macro_yaml_builder: MacroYamlBuilderUi,
     /// Window was hidden because a point/search-area recording is armed.
     hidden_for_recording: bool,
@@ -564,6 +567,7 @@ impl SqyreApp {
             data_editor: DataEditor::default(),
             settings_ui,
             variables_panel: variables_panel::VariablesPanelUi::default(),
+            macro_prompt_builder: MacroPromptBuilderUi::default(),
             macro_yaml_builder: MacroYamlBuilderUi::default(),
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
@@ -734,6 +738,7 @@ impl eframe::App for SqyreApp {
         if self.tray.application_hidden() {
             return;
         }
+        action_tooltip::claim_view_tip_scroll(ui.ctx());
         ui_overlays::show_floating_windows(self, ui.ctx());
 
         ui_macro_list::show(self, ui);
@@ -772,7 +777,7 @@ impl eframe::App for SqyreApp {
         self.sync_recording_overlay(ui.ctx());
 
         // Modal sits above painted Sqyre chrome; skip shortcuts/palette while open.
-        if self.macro_yaml_builder.is_open() {
+        if self.macro_yaml_builder.is_open() || self.macro_prompt_builder.is_open() {
             return;
         }
         ui_overlays::handle_shortcuts(self, ui);
