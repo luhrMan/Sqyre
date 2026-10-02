@@ -26,6 +26,7 @@ make check      # fmt --check + clippy (-D warnings) + cargo deny
 make machete    # unused crate deps
 make test       # cargo nextest (falls back to cargo test)
 make bench      # criterion: match, vision (no Tesseract), serialize (not in CI)
+make bench-compare  # Rust+Go hot-path CPU/RSS/I/O compare + baseline diffs (local)
 make wasm-check # cargo check -p sqyre-app --target wasm32-unknown-unknown --no-default-features
 make coverage   # llvm-cov HTML + lcov under target/coverage/
 make coverage-floors  # line-% gates for pure crates (needs cargo-llvm-cov)
@@ -78,6 +79,9 @@ Build caches (all gitignored):
 | `test` | `cargo nextest run --workspace` (falls back to `cargo test`) |
 | `smoke` | Debug `bin/sqyre --version` (no display) |
 | `bench` | Criterion benches for `sqyre-match`, `sqyre-vision`, `sqyre-serialize` (local only; not CI) |
+| `bench-compare` | Comparative harness: Rust + historical Go, side-by-side CPU/RSS/I/O (`scripts/bench-compare/`) |
+| `bench-compare-rust` / `bench-compare-go` | One side of the comparative harness |
+| `bench-baseline-save` / `bench-baseline-diff` | Save/diff Rust JSON baselines (`BENCH_BASELINE=name`) |
 | `wasm-check` | `cargo check` of the GUI-only WASM editor (no Trunk) |
 | `coverage` | llvm-cov nextest → HTML + `lcov.info` + `summary.json` under `target/coverage/` (no % gate) |
 | `coverage-floors` | Line-coverage floors for pure crates (`sqyre-domain`, `sqyre-varref`, `path_confine`, `migrate`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`, `sqyre-executor`; see `scripts/coverage-floors.json`) |
@@ -131,7 +135,7 @@ Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make rel
 
 ### CI and GitHub Releases
 
-Push/PR to `main` runs Linux quality checks, an instrumented coverage/test pass (`make coverage` + floors), `make smoke` / `sqyre --version`, and `make wasm-check`, plus a Windows job that tests OS-agnostic crates (`sqyre-domain`, `sqyre-varref`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`) — **not** a GitHub Release. Capture, hotkeys, and GPU UI tests stay Linux-only. Criterion benches (`make bench`) are local-only.
+Push/PR to `main` runs Linux quality checks, an instrumented coverage/test pass (`make coverage` + floors), `make smoke` / `sqyre --version`, and `make wasm-check`, plus a Windows job that tests OS-agnostic crates (`sqyre-domain`, `sqyre-varref`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`) — **not** a GitHub Release. Capture, hotkeys, and GPU UI tests stay Linux-only. Criterion benches (`make bench`) and the comparative harness (`make bench-compare`, baseline save/diff) are local-only.
 
 Releases come from [`.github/workflows/main.yml`](../.github/workflows/main.yml) on **schedule** or **manual dispatch** only:
 
