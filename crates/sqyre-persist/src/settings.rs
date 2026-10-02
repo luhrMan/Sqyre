@@ -54,6 +54,23 @@ pub const DEFAULT_RUN_MACRO_MAX_DEPTH: i32 = 32;
 pub const MIN_RUN_MACRO_MAX_DEPTH: i32 = 1;
 pub const MAX_RUN_MACRO_MAX_DEPTH: i32 = 256;
 
+/// Soft cap for Rayon / search worker threads (used when the machine has more cores).
+pub const DEFAULT_WORKER_THREADS_CAP: i32 = 16;
+pub const MIN_WORKER_THREADS: i32 = 1;
+
+/// Logical CPU count available to this process (`1` if unknown).
+pub fn available_worker_threads() -> i32 {
+    std::thread::available_parallelism()
+        .map(|n| n.get() as i32)
+        .unwrap_or(1)
+        .max(MIN_WORKER_THREADS)
+}
+
+/// Default worker-thread count: `min(16, available CPUs)`.
+pub fn default_worker_threads() -> i32 {
+    available_worker_threads().min(DEFAULT_WORKER_THREADS_CAP)
+}
+
 /// Absolute path to the settings file (`{sqyre_dir}/settings.yaml`).
 pub fn settings_path() -> PathBuf {
     crate::sqyre_dir().join("settings.yaml")
@@ -549,6 +566,10 @@ pub struct UserSettings {
     /// Macro list side panel width in points.
     #[serde(default = "default_macro_list_width")]
     pub macro_list_width: f32,
+    /// Rayon worker threads for image search, find-pixel, and capture conversion.
+    /// Applied at process start (`build_global`); changing it needs a restart.
+    #[serde(default = "default_worker_threads")]
+    pub worker_threads: i32,
 }
 
 fn default_hide_recording() -> bool {
@@ -641,6 +662,7 @@ impl Default for UserSettings {
             hotkey_tags_while_focused: false,
             data_editor_left_split: DEFAULT_DATA_EDITOR_LEFT_FRAC,
             macro_list_width: DEFAULT_MACRO_LIST_WIDTH,
+            worker_threads: default_worker_threads(),
         }
     }
 }
@@ -855,6 +877,12 @@ impl UserSettings {
         self.run_macro_max_depth = self
             .run_macro_max_depth
             .clamp(MIN_RUN_MACRO_MAX_DEPTH, MAX_RUN_MACRO_MAX_DEPTH);
+        if self.worker_threads <= 0 {
+            self.worker_threads = default_worker_threads();
+        }
+        self.worker_threads = self
+            .worker_threads
+            .clamp(MIN_WORKER_THREADS, available_worker_threads());
         for btn in &mut self.overlay_buttons {
             if btn.size <= 0.0 {
                 btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;
@@ -1092,6 +1120,22 @@ mod tests {
         s.data_editor_left_split = 0.9;
         s.clamp();
         assert!((s.data_editor_left_split - MAX_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn default_worker_threads_caps_at_sixteen() {
+        let d = default_worker_threads();
+        assert!(d >= MIN_WORKER_THREADS);
+        assert!(d <= DEFAULT_WORKER_THREADS_CAP);
+        assert!(d <= available_worker_threads());
+        let mut s = UserSettings::default();
+        assert_eq!(s.worker_threads, d);
+        s.worker_threads = 0;
+        s.clamp();
+        assert_eq!(s.worker_threads, d);
+        s.worker_threads = available_worker_threads().saturating_add(100);
+        s.clamp();
+        assert_eq!(s.worker_threads, available_worker_threads());
     }
 
     #[test]
