@@ -1250,4 +1250,166 @@ mod tests {
             paint_action_icon(ui, &action, false);
         });
     }
+
+    /// Evidence PNGs for enlarged Image Search view tips (Tags + Items).
+    ///
+    /// `SQYRE_VIEW_TIP_SHOT=1 cargo test -p sqyre-app --lib capture_image_search_view_tip_shot -- --nocapture`
+    #[test]
+    fn capture_image_search_view_tip_shot() {
+        if std::env::var_os("SQYRE_VIEW_TIP_SHOT").is_none() {
+            return;
+        }
+        use egui::os::OperatingSystem;
+        use egui_kittest::Harness;
+        use image::ImageFormat;
+        use sqyre_persist::{ProgramData, ProgramItem};
+        use std::collections::BTreeMap;
+        use std::io::Cursor;
+
+        let mut catalog = ProgramCatalog::default();
+        catalog.programs_mut().insert(
+            "Demo".into(),
+            ProgramData {
+                name: "Demo".into(),
+                items: BTreeMap::from([
+                    (
+                        "Ok".into(),
+                        ProgramItem {
+                            name: "OK button".into(),
+                            tags: vec!["button".into(), "ui".into()],
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Cancel".into(),
+                        ProgramItem {
+                            name: "Cancel button".into(),
+                            tags: vec!["button".into()],
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Trash".into(),
+                        ProgramItem {
+                            name: "Trash".into(),
+                            tags: vec!["button".into(), "junk".into()],
+                            ..Default::default()
+                        },
+                    ),
+                ]),
+                ..Default::default()
+            },
+        );
+
+        let action = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "Find buttons".into(),
+                targets: vec!["Demo~Ok".into()],
+                target_tags: vec!["+button".into(), "-junk".into()],
+                search_area: CoordinateRef(String::new()),
+                tolerance: 0.95,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: DetectionBranch::default(),
+            },
+        };
+
+        let mut icons = IconCache::new();
+        let mut harness = Harness::builder()
+            .with_size([1200.0, 720.0])
+            .with_os(OperatingSystem::Nix)
+            .wgpu()
+            .build_ui(|ui| {
+                // Match `tip_max_width` preferred fraction against the harness size,
+                // not the slightly smaller first-frame ui max_rect.
+                let tip_w = 1200.0 * 0.50;
+                ui.label(
+                    egui::RichText::new("View tip size evidence (~50% of viewport)").heading(),
+                );
+                ui.add_space(crate::theme::SPACE_8);
+                egui::Frame::popup(ui.style())
+                    .inner_margin(egui::Margin::symmetric(10, 8))
+                    .show(ui, |ui| {
+                        ui.set_width(tip_w);
+                        paint_pill_pub(ui, "Image Search", Color32::from_rgb(180, 140, 90));
+                        ui.add_space(crate::theme::SPACE_4);
+                        ui.label(
+                            egui::RichText::new(
+                                "Search the screen for catalog Images (optional tag filters).",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                        ui.add_space(crate::theme::SPACE_8);
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "tip width ≈ {tip_w:.0}pt (was fixed 340pt)"
+                            ))
+                            .small()
+                            .strong(),
+                        );
+                        ui.add_space(crate::theme::SPACE_8);
+                        paint_image_search_tooltip_thumbs_pub(ui, &action, &catalog, &mut icons);
+                    });
+            });
+
+        let _ = harness.run_ok();
+        harness.run_steps(2);
+        let img = harness.render().expect("wgpu render tip shot");
+
+        let mut encoded = Vec::new();
+        img.write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png)
+            .expect("encode png");
+        let dirs = [
+            "/cursor/stores/bc-95124ca5-2159-4d32-ad9d-061cdb60b9a6/media/view-tip-size-image-search-tags",
+            "/opt/cursor/artifacts/view-tip-screenshots",
+        ];
+        for dir in dirs {
+            std::fs::create_dir_all(dir).expect("mkdir");
+            let path = format!("{dir}/01-image-search-tip-tags-items.png");
+            std::fs::write(&path, &encoded).expect("write tip shot");
+            eprintln!("wrote {path} ({} bytes)", encoded.len());
+        }
+
+        // Size comparison panel: old 340 vs new 600.
+        let mut harness2 = Harness::builder()
+            .with_size([1200.0, 720.0])
+            .with_os(OperatingSystem::Nix)
+            .wgpu()
+            .build_ui(|ui| {
+                ui.label(egui::RichText::new("View tip width: before vs after").heading());
+                ui.add_space(crate::theme::SPACE_12);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = crate::theme::SPACE_12;
+                    for (label, w) in [("old fixed max", 340.0_f32), ("new 50% viewport", 600.0)] {
+                        egui::Frame::popup(ui.style())
+                            .inner_margin(egui::Margin::symmetric(10, 8))
+                            .show(ui, |ui| {
+                                ui.set_width(w);
+                                ui.label(egui::RichText::new(label).strong());
+                                ui.label(egui::RichText::new(format!("{w:.0}pt wide")).small());
+                                ui.add_space(crate::theme::SPACE_8);
+                                ui.label(
+                                    "Tags and Items stay readable when the tip can grow with the window.",
+                                );
+                            });
+                    }
+                });
+            });
+        let _ = harness2.run_ok();
+        harness2.run_steps(2);
+        let img2 = harness2.render().expect("wgpu render size compare");
+        let mut encoded2 = Vec::new();
+        img2.write_to(&mut Cursor::new(&mut encoded2), ImageFormat::Png)
+            .expect("encode compare png");
+        for dir in dirs {
+            let path = format!("{dir}/02-view-tip-larger-size.png");
+            std::fs::write(&path, &encoded2).expect("write size compare");
+            eprintln!("wrote {path} ({} bytes)", encoded2.len());
+        }
+    }
 }
