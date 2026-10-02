@@ -19,6 +19,8 @@ pub(crate) enum CommandKind {
     AddAction {
         type_key: String,
     },
+    /// Open the Add Action picker (browse / filter all types).
+    OpenAddActionPicker,
     OpenMacro {
         name: String,
     },
@@ -134,7 +136,7 @@ impl CommandPaletteUi {
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_TOP, [0.0, 72.0])
                 .default_size([520.0, 380.0])
-                .min_size([400.0, 200.0])
+                .min_size(crate::widgets::FLOATER_MIN_PALETTE)
                 .order(egui::Order::Foreground)
                 .open(&mut open),
             ctx,
@@ -278,6 +280,13 @@ pub(crate) fn collect_commands(src: CommandSources<'_>) -> Vec<CommandItem> {
         ));
         push_new_entities(&mut out);
         if has_macros {
+            out.push(item(
+                "Add Action",
+                "Browse",
+                ph("plus"),
+                CommandKind::OpenAddActionPicker,
+                &["add", "action", "picker", "browse", "insert", "ctrl+a"],
+            ));
             push_actions(&mut out);
         }
     }
@@ -413,7 +422,7 @@ fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
         "Go to",
         ph("gear"),
         CommandKind::OpenSettings,
-        &["preferences", "options", "goto"],
+        &["settings", "preferences", "options", "goto"],
     ));
     if has_macros {
         out.push(item(
@@ -421,7 +430,7 @@ fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
             "Go to",
             ph("equals"),
             CommandKind::OpenVariables,
-            &["vars", "goto"],
+            &["variables", "vars", "goto"],
         ));
     }
     out.push(item(
@@ -733,13 +742,15 @@ fn kind_priority(kind: &CommandKind) -> u8 {
         CommandKind::OpenEditorTab { .. } => 1,
         CommandKind::OpenProgram { .. } | CommandKind::OpenCatalogEntity { .. } => 2,
         CommandKind::OpenMacro { .. } => 3,
-        CommandKind::AddAction { .. }
+        // Browse picker / Go-to panels beat individual "Add …" type commands on ties.
+        CommandKind::OpenAddActionPicker
         | CommandKind::OpenSettings
         | CommandKind::OpenVariables
         | CommandKind::OpenAiMacroBuilder
         | CommandKind::OpenYamlMacroBuilder
         | CommandKind::ShowMacroList => 4,
-        CommandKind::NewMacro | CommandKind::NewCatalogEntity { .. } => 5,
+        CommandKind::AddAction { .. } => 5,
+        CommandKind::NewMacro | CommandKind::NewCatalogEntity { .. } => 6,
     }
 }
 
@@ -749,6 +760,7 @@ fn is_static_command(kind: &CommandKind) -> bool {
             matches!(tab, EditorTab::ScreenCap | EditorTab::PixelCheck)
         }
         CommandKind::AddAction { .. }
+        | CommandKind::OpenAddActionPicker
         | CommandKind::NewMacro
         | CommandKind::OpenDataEditor
         | CommandKind::OpenSettings
@@ -807,6 +819,9 @@ impl SqyreApp {
                     .pointer_interact_pos()
                     .unwrap_or_else(|| ctx.content_rect().center());
                 self.insert_blank_action(action, anchor);
+            }
+            CommandKind::OpenAddActionPicker => {
+                self.add_action_picker.open();
             }
             CommandKind::OpenMacro { name } => {
                 self.macro_list_open = true;
@@ -1084,6 +1099,9 @@ mod tests {
             .any(|i| matches!(i.kind, CommandKind::AddAction { .. })));
         assert!(!items
             .iter()
+            .any(|i| matches!(i.kind, CommandKind::OpenAddActionPicker)));
+        assert!(!items
+            .iter()
             .any(|i| matches!(i.kind, CommandKind::NewMacro)));
         assert!(!items
             .iter()
@@ -1091,6 +1109,39 @@ mod tests {
         assert!(items
             .iter()
             .any(|i| matches!(i.kind, CommandKind::OpenDataEditor)));
+    }
+
+    #[test]
+    fn typing_add_action_opens_browse_picker_first() {
+        let macros = vec![Macro::new("demo", 0, vec![])];
+        let catalog = ProgramCatalog::default();
+        let items = collect_commands(sources(&macros, &catalog, &[], false));
+        let shown = titles("add action", &items);
+        assert_eq!(shown.first().map(String::as_str), Some("Add Action"));
+        assert!(matches!(
+            items
+                .iter()
+                .find(|i| i.title == "Add Action")
+                .map(|i| &i.kind),
+            Some(CommandKind::OpenAddActionPicker)
+        ));
+    }
+
+    #[test]
+    fn typing_settings_ranks_open_settings() {
+        let catalog = ProgramCatalog::default();
+        let items = collect_commands(sources(&[], &catalog, &[], false));
+        let shown = titles("settings", &items);
+        assert_eq!(shown.first().map(String::as_str), Some("Open Settings"));
+    }
+
+    #[test]
+    fn typing_variables_ranks_open_variables() {
+        let macros = vec![Macro::new("demo", 0, vec![])];
+        let catalog = ProgramCatalog::default();
+        let items = collect_commands(sources(&macros, &catalog, &[], false));
+        let shown = titles("variables", &items);
+        assert_eq!(shown.first().map(String::as_str), Some("Open Variables"));
     }
 
     #[test]

@@ -213,7 +213,7 @@ impl AddActionPicker {
                 .collapsible(false)
                 .resizable(true)
                 .default_size([900.0, 420.0])
-                .min_size([100.0, 100.0]),
+                .min_size(crate::widgets::FLOATER_MIN_PICKER),
             ctx,
             egui::Id::new("Add Action"),
             tip.pending_scale,
@@ -279,7 +279,7 @@ impl AddActionPicker {
                     crate::widgets::list_vacancy(ui, &q, 0, "actions");
                     return;
                 }
-                ui.add_space(6.0);
+                ui.add_space(crate::theme::SPACE_8);
                 let mut flat_i = 0usize;
                 ui.horizontal_top(|ui| {
                     for category in ACTION_PICKER_CATEGORIES {
@@ -292,7 +292,7 @@ impl AddActionPicker {
                         }
                         ui.vertical(|ui| {
                             ui.strong(*category);
-                            ui.add_space(4.0);
+                            ui.add_space(crate::theme::SPACE_4);
                             for tmpl in cat_tmpls {
                                 let selected = flat_i == self.selected;
                                 flat_i += 1;
@@ -497,9 +497,9 @@ impl AddActionPicker {
                 .title_bar(true)
                 .collapsible(false)
                 .resizable(true)
-                .default_pos(anchor + Vec2::new(8.0, 0.0))
+                .default_pos(anchor + Vec2::new(crate::theme::SPACE_8, 0.0))
                 .default_size([340.0, 360.0])
-                .min_size([220.0, 120.0]),
+                .min_size(crate::widgets::FLOATER_MIN_COMPACT),
             ctx,
             edit_id,
             *pending_scale,
@@ -623,10 +623,10 @@ fn picker_tile(
     );
     ui.painter().galley(text_pos, galley, Color32::PLACEHOLDER);
 
-    response.widget_info(|| {
-        WidgetInfo::labeled(WidgetType::Button, true, format!("Add {}", tmpl.label))
-    });
-    response
+    crate::widgets::controls::paint_keyboard_focus_ring(ui, rect, &response);
+    let tip = format!("Add {}", tmpl.label);
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tip.clone()));
+    response.on_hover_text(tip)
 }
 
 #[cfg(test)]

@@ -56,7 +56,7 @@ pub fn paint_coord_ref_list(
     };
     let current_ref = CoordinateRef(current.clone());
     let mut did_scroll = false;
-    let list_h = popup_scroll_max_height(ui, 52.0);
+    let list_h = popup_scroll_max_height(ui, crate::widgets::FOOTER_RESERVE_SAVE_CANCEL);
     let list_w = crate::widgets::visible_width(ui);
     dialog_scroll(list_w, list_h).show(ui, |ui| {
         ui.set_max_width(list_w);
@@ -252,7 +252,7 @@ pub fn paint_coord_ref_list(
                         }
                     }
                 });
-            ui.add_space(6.0);
+            ui.add_space(crate::theme::SPACE_8);
         }
     });
     if *scroll_to_selection && !did_scroll {

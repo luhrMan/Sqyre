@@ -73,7 +73,7 @@ pub fn show_active_picker(
             .collapsible(false)
             .resizable(true)
             .default_size([560.0, 460.0])
-            .min_size([400.0, 280.0])
+            .min_size(crate::widgets::FLOATER_MIN_PICKER)
             .order(egui::Order::Foreground)
             .open(&mut open),
         ctx,

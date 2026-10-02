@@ -39,7 +39,7 @@ pub fn label(ui: &mut egui::Ui, text: &str, help: &str) -> egui::Response {
         return ui.label(text);
     }
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 2.0;
+        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_2;
         let resp = ui.label(text);
         icon(ui, help);
         resp
@@ -50,7 +50,7 @@ pub fn label(ui: &mut egui::Ui, text: &str, help: &str) -> egui::Response {
 /// Heading with an adjacent `?` help icon when `help` is non-empty.
 pub fn heading(ui: &mut egui::Ui, text: &str, help: &str) {
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
+        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
         ui.heading(text);
         icon(ui, help);
     });

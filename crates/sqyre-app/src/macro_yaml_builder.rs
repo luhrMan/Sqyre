@@ -285,7 +285,7 @@ impl MacroYamlBuilderUi {
                 .order(egui::Order::Foreground)
                 .default_width(720.0)
                 .default_height(640.0)
-                .min_size([480.0, 420.0]),
+                .min_size(crate::widgets::FLOATER_MIN_EDITOR),
             ctx,
             egui::Id::new(WINDOW_ID),
             pending_scale,
