@@ -370,6 +370,40 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     if targets.is_empty() && target_tags.is_empty() {
         return;
     }
+
+    if !target_tags.is_empty() {
+        crate::widgets::title_with_count(
+            ui,
+            egui::RichText::new("Tags").small().strong(),
+            target_tags.len(),
+        );
+        let groups = image_search_tip_tag_groups(catalog, target_tags);
+        if groups.is_empty() {
+            ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
+        } else {
+            for group in &groups {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
+                    ui.label(egui::RichText::new(group.polarity_label()).small().strong());
+                    ui.label(egui::RichText::new(group.name.as_str()).small());
+                });
+                if group.include {
+                    if group.members.is_empty() {
+                        ui.horizontal(|ui| {
+                            ui.add_space(crate::theme::SPACE_12);
+                            ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
+                        });
+                    } else {
+                        ui.indent(egui::Id::new(("is_tip_tag", group.name.as_str())), |ui| {
+                            paint_tip_item_name_list(ui, catalog, icons, &group.members);
+                        });
+                    }
+                }
+            }
+        }
+        ui.add_space(crate::theme::SPACE_4);
+    }
+
     let display = sorted_image_search_targets(
         catalog,
         targets,
@@ -378,14 +412,15 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         *sort_then,
         tag_priority,
     );
-    if display.is_empty() {
-        return;
-    }
     crate::widgets::title_with_count(
         ui,
         egui::RichText::new("Items").small().strong(),
         display.len(),
     );
+    if display.is_empty() {
+        ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
+        return;
+    }
     crate::pickers::paint_even_icon_grid(
         ui,
         catalog,
@@ -400,6 +435,89 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     );
 }
 
+/// One Image Search tag filter for the view tip: polarity, display name, members.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ImageSearchTipTagGroup {
+    pub include: bool,
+    pub name: String,
+    pub members: Vec<String>,
+}
+
+impl ImageSearchTipTagGroup {
+    /// User-facing polarity glyph (`+` include / `−` exclude). Never a wire key.
+    pub fn polarity_label(&self) -> &'static str {
+        if self.include {
+            "+"
+        } else {
+            "−"
+        }
+    }
+}
+
+/// Resolve searched tag filters → display names and catalog member targets.
+///
+/// Include tags expand to items that match the **full** filter set (every `+`
+/// and none of the `−`). Exclude tags are listed without members.
+pub(crate) fn image_search_tip_tag_groups(
+    catalog: &ProgramCatalog,
+    target_tags: &[String],
+) -> Vec<ImageSearchTipTagGroup> {
+    use sqyre_domain::{item_matches_tag_filters, parse_tag_filter};
+
+    let catalog_refs = catalog_item_refs(catalog);
+
+    let mut groups = Vec::new();
+    for filter in target_tags {
+        let Some((include, name)) = parse_tag_filter(filter) else {
+            continue;
+        };
+        let members = if include {
+            let mut matched: Vec<(String, String)> = catalog_refs
+                .iter()
+                .filter(|item| {
+                    item.tags.iter().any(|t| t.trim() == name)
+                        && item_matches_tag_filters(&item.tags, target_tags)
+                })
+                .map(|item| {
+                    let (display, _) = crate::pickers::item_tooltip_parts(catalog, &item.target);
+                    (display, item.target.clone())
+                })
+                .collect();
+            matched.sort_by(|a, b| {
+                a.0.to_ascii_lowercase()
+                    .cmp(&b.0.to_ascii_lowercase())
+                    .then_with(|| a.1.cmp(&b.1))
+            });
+            matched.into_iter().map(|(_, target)| target).collect()
+        } else {
+            Vec::new()
+        };
+        groups.push(ImageSearchTipTagGroup {
+            include,
+            name,
+            members,
+        });
+    }
+    groups
+}
+
+fn paint_tip_item_name_list(
+    ui: &mut egui::Ui,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    targets: &[String],
+) {
+    ui.spacing_mut().item_spacing.y = crate::theme::SPACE_2;
+    for target in targets {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
+            let _ = paint_target_thumb(ui, catalog, icons, target);
+            let (name, _) = crate::pickers::item_tooltip_parts(catalog, target);
+            ui.label(egui::RichText::new(name).small());
+        });
+    }
+}
+
 /// Display / search order for Image Search targets (explicit + tag expansion).
 pub(crate) fn sorted_image_search_targets(
     catalog: &ProgramCatalog,
@@ -409,21 +527,8 @@ pub(crate) fn sorted_image_search_targets(
     sort_then: sqyre_domain::ItemSortThen,
     tag_priority: &[String],
 ) -> Vec<String> {
-    use sqyre_domain::{expand_image_search_targets, CatalogItemRef, PROGRAM_DELIMITER};
-    let catalog_refs: Vec<CatalogItemRef> = catalog
-        .program_names()
-        .filter_map(|prog| catalog.get(prog).map(|pdata| (prog.clone(), pdata)))
-        .flat_map(|(prog, pdata)| {
-            pdata
-                .items
-                .iter()
-                .map(move |(name, item)| CatalogItemRef {
-                    target: format!("{prog}{PROGRAM_DELIMITER}{name}"),
-                    tags: item.tags.clone(),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
+    use sqyre_domain::expand_image_search_targets;
+    let catalog_refs = catalog_item_refs(catalog);
     let expanded = expand_image_search_targets(targets, target_tags, &catalog_refs);
     let infos: Vec<_> = expanded
         .iter()
@@ -437,6 +542,24 @@ pub(crate) fn sorted_image_search_targets(
         })
         .collect();
     sqyre_domain::ordered_item_targets(&infos, sort_by, sort_then, tag_priority)
+}
+
+fn catalog_item_refs(catalog: &ProgramCatalog) -> Vec<sqyre_domain::CatalogItemRef> {
+    use sqyre_domain::{CatalogItemRef, PROGRAM_DELIMITER};
+    catalog
+        .program_names()
+        .filter_map(|prog| catalog.get(prog).map(|pdata| (prog.clone(), pdata)))
+        .flat_map(|(prog, pdata)| {
+            pdata
+                .items
+                .iter()
+                .map(move |(name, item)| CatalogItemRef {
+                    target: format!("{prog}{PROGRAM_DELIMITER}{name}"),
+                    tags: item.tags.clone(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// Full tree-row label content. Tooltip show/hide is handled by `action_tooltip`.
@@ -698,6 +821,61 @@ mod tests {
         let ctx = egui::Context::default();
         ctx.run_ui(egui::RawInput::default(), |ui| f(ui))
             .drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn image_search_tip_tag_groups_lists_names_and_members() {
+        use sqyre_persist::{ProgramData, ProgramItem};
+        use std::collections::BTreeMap;
+
+        let mut cat = ProgramCatalog::default();
+        cat.programs_mut().insert(
+            "Game".into(),
+            ProgramData {
+                name: "Game".into(),
+                items: BTreeMap::from([
+                    (
+                        "Flask".into(),
+                        ProgramItem {
+                            name: "Health Flask".into(),
+                            tags: vec!["healing".into(), "consumable".into()],
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Mana".into(),
+                        ProgramItem {
+                            name: "Mana Flask".into(),
+                            tags: vec!["mana".into(), "consumable".into()],
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Junk".into(),
+                        ProgramItem {
+                            name: "Scrap".into(),
+                            tags: vec!["consumable".into(), "junk".into()],
+                            ..Default::default()
+                        },
+                    ),
+                ]),
+                ..Default::default()
+            },
+        );
+
+        let groups = image_search_tip_tag_groups(&cat, &["+consumable".into(), "-junk".into()]);
+        assert_eq!(groups.len(), 2);
+        assert!(groups[0].include);
+        assert_eq!(groups[0].name, "consumable");
+        assert_eq!(
+            groups[0].members,
+            vec!["Game~Flask".to_string(), "Game~Mana".to_string()]
+        );
+        assert!(!groups[1].include);
+        assert_eq!(groups[1].name, "junk");
+        assert!(groups[1].members.is_empty());
+        assert_eq!(groups[0].polarity_label(), "+");
+        assert_eq!(groups[1].polarity_label(), "−");
     }
 
     #[test]
