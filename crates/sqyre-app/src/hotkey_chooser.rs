@@ -354,8 +354,9 @@ fn paint_chooser_body(
             *selected = i;
         }
     }
-    ui.add_space(crate::theme::SPACE_2);
-    if ui.small_button("Cancel").clicked() {
+    ui.add_space(crate::theme::SPACE_8);
+    // Esc already handled by `poll_list_nav` above; button-only footer.
+    if crate::widgets::dismiss_row(ui, false) {
         *dismiss = true;
     }
 }
