@@ -64,6 +64,12 @@ ifneq ($(wildcard $(CARGO_HOME)/bin/cargo),)
   CARGO := $(CARGO_HOME)/bin/cargo
 endif
 
+# 16 jobs on hosts with ≥16 CPUs, else 4 (keeps release/LTO peak RAM sane). Env/CLI override wins.
+ifeq ($(origin CARGO_BUILD_JOBS),undefined)
+  HOST_CPUS := $(shell nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo $(NUMBER_OF_PROCESSORS))
+  export CARGO_BUILD_JOBS := $(shell [ "$(HOST_CPUS)" -ge 16 ] 2>/dev/null && echo 16 || echo 4)
+endif
+
 all: sqyre
 
 help:
@@ -73,7 +79,7 @@ help:
 	@echo "  overlay-sandbox - overlay buttons only (fast; no sqyre-app)"
 	@echo "  release      - fmt + check, then cargo build --release (thin LTO) -> $(BIN)/sqyre$(BIN_EXT)"
 	@echo "  release-bundle - Linux: dist profile + bundled Tesseract -> $(BIN)/sqyre-bundle/ (shipping)"
-	@echo "  dev          - Linux: fast release-bundle prototype -> $(BIN)/sqyre-dev/ (release profile / no check gate)"
+	@echo "  dev          - Linux: fast release-bundle prototype -> $(BIN)/sqyre-dev/ (no LTO / no check gate)"
 	@echo "  release-bundle-dhat - same + dhat-heap profiler -> $(BIN)/sqyre-bundle-dhat/ (local leak hunts)"
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
 	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
@@ -145,15 +151,15 @@ release-bundle: $(BIN)
 	$(CARGO) build -p sqyre-app --profile dist $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	SQYRE_BUNDLE_SKIP_BUILD=1 SQYRE_CARGO_PROFILE=dist ./scripts/linux/packaging/bundle-release.sh
 
-# Fast prototyping twin of release-bundle: --release (thin LTO, default codegen-units), separate output dir.
+# Fast prototyping twin of release-bundle: proto profile (release without LTO), separate output dir.
 dev: $(BIN)
 	@if [ "$(HOST_OS)" != "linux" ]; then \
 		echo "make dev requires a Linux host (got $(HOST_OS))"; \
 		exit 1; \
 	fi
-	$(CARGO) build -p sqyre-app --release $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
+	$(CARGO) build -p sqyre-app --profile proto $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	SQYRE_BUNDLE_SKIP_BUILD=1 \
-		SQYRE_CARGO_PROFILE=release \
+		SQYRE_CARGO_PROFILE=proto \
 		SQYRE_BUNDLE_NAME=sqyre-dev \
 		./scripts/linux/packaging/bundle-release.sh
 
