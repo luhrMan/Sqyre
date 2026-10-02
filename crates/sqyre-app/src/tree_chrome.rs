@@ -198,8 +198,13 @@ pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> e
         Stroke::new(1.0, pastel.gamma_multiply(0.7)),
         egui::StrokeKind::Outside,
     );
-    let glyph = action_icon_glyph(action);
-    crate::theme::paint_text_centered(ui, rect, glyph, font, contrast_fg(pastel));
+    let fg = contrast_fg(pastel);
+    if let Some(paint) = crate::widgets::vector_action_icon(type_key) {
+        let icon_rect = egui::Rect::from_center_size(rect.center(), Vec2::splat(font.size * 1.1));
+        paint(ui.painter(), icon_rect, fg);
+    } else {
+        crate::theme::paint_text_centered(ui, rect, action_icon_glyph(action), font, fg);
+    }
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, label));
     resp.on_hover_text(label)
 }

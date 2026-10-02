@@ -591,16 +591,22 @@ fn picker_tile(
     sample: &Action,
     is_dark: bool,
 ) -> egui::Response {
-    let glyph = action_icon_glyph(sample);
     let pastel = action_pastel_color(tmpl.action_type, is_dark);
     let fill = Color32::from_rgba_unmultiplied(pastel[0], pastel[1], pastel[2], pastel[3]);
     let fg = crate::theme::contrast_fg(fill);
-    let text = format!("{glyph}  {}", tmpl.label);
-    let galley = ui
-        .painter()
-        .layout_no_wrap(text, egui::TextStyle::Small.resolve(ui.style()), fg);
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let vector_icon = crate::widgets::vector_action_icon(tmpl.action_type);
+    let text = match vector_icon {
+        Some(_) => tmpl.label.to_string(),
+        None => format!("{}  {}", action_icon_glyph(sample), tmpl.label),
+    };
+    let icon_side = font.size * 1.1;
+    // Icon plus a gap matching the glyph path's "  " separator.
+    let lead = vector_icon.map_or(0.0, |_| icon_side + font.size * 0.5);
+    let galley = ui.painter().layout_no_wrap(text, font, fg);
     // Hug the label: content + pad is both the size and the floor.
-    let desired = galley.size() + Vec2::new(PICKER_TILE_PAD_X * 2.0, PICKER_TILE_PAD_Y * 2.0);
+    let desired =
+        galley.size() + Vec2::new(lead + PICKER_TILE_PAD_X * 2.0, PICKER_TILE_PAD_Y * 2.0);
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
 
     let visuals = ui.style().interact(&response);
@@ -617,8 +623,18 @@ fn picker_tile(
         egui::StrokeKind::Inside,
     );
 
+    if let Some(paint) = vector_icon {
+        let icon_rect = egui::Rect::from_center_size(
+            egui::pos2(
+                rect.left() + PICKER_TILE_PAD_X + icon_side * 0.5,
+                rect.center().y,
+            ),
+            Vec2::splat(icon_side),
+        );
+        paint(ui.painter(), icon_rect, fg);
+    }
     let text_pos = egui::pos2(
-        rect.left() + PICKER_TILE_PAD_X,
+        rect.left() + PICKER_TILE_PAD_X + lead,
         rect.center().y - galley.size().y * 0.5,
     );
     ui.painter().galley(text_pos, galley, Color32::PLACEHOLDER);

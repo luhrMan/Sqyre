@@ -1,5 +1,6 @@
 //! Shared egui widgets used across panels.
 
+mod action_icons;
 pub(crate) mod controls;
 pub mod dialogs;
 pub mod empty_state;
@@ -9,6 +10,7 @@ pub mod match_settings;
 pub mod scroll;
 pub mod tags;
 
+pub(crate) use action_icons::{vector_action_icon, VectorIcon};
 pub use controls::{
     dirty_action_button, icon_button, icon_button_bare_colored, icon_button_colored, icon_toggle,
     mouse_button_picker, press_state_toggle, record_icon_button, ICON_BTN_SIDE,

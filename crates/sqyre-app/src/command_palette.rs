@@ -4,6 +4,7 @@ use crate::data_editor::helpers::is_editor_listed_program;
 use crate::data_editor::{DataEditorCtx, EditorTab};
 use crate::overlay_icons;
 use crate::pickers::fuzzy_match_fold;
+use crate::widgets::{vector_action_icon, VectorIcon};
 use crate::SqyreApp;
 use eframe::egui::{self, Color32, CornerRadius, Key, Modifiers, Sense};
 use sqyre_domain::{action_type_table, Macro};
@@ -47,11 +48,17 @@ pub(crate) enum CommandKind {
     },
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum CommandIcon {
+    Glyph(&'static str),
+    Vector(VectorIcon),
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CommandItem {
     pub title: String,
     pub hint: String,
-    pub icon: &'static str,
+    pub icon: CommandIcon,
     pub kind: CommandKind,
     pub keywords: Vec<String>,
 }
@@ -231,32 +238,38 @@ fn command_row(ui: &mut egui::Ui, item: &CommandItem, selected: bool) -> egui::R
     let small = egui::TextStyle::Small.resolve(ui.style());
     let text_color = ui.visuals().text_color();
     let weak = ui.visuals().weak_text_color();
-    let icon_font = overlay_icons::glyph_font_id(font.size);
-    let icon_galley = ui
-        .painter()
-        .layout_no_wrap(item.icon.to_owned(), icon_font, text_color);
+    let icon_side = font.size;
+    let icon_galley = match item.icon {
+        CommandIcon::Glyph(glyph) => Some(ui.painter().layout_no_wrap(
+            glyph.to_owned(),
+            overlay_icons::glyph_font_id(font.size),
+            text_color,
+        )),
+        CommandIcon::Vector(_) => None,
+    };
+    let icon_w = icon_galley.as_ref().map_or(icon_side, |g| g.size().x);
     let title_galley = ui
         .painter()
         .layout_no_wrap(item.title.clone(), font, text_color);
     let hint_galley = ui.painter().layout_no_wrap(item.hint.clone(), small, weak);
     // Claim intrinsic row width so a narrow palette H-scrolls instead of clipping.
-    let content_w = 8.0
-        + icon_galley.size().x.max(22.0)
-        + 8.0
-        + title_galley.size().x
-        + 16.0
-        + hint_galley.size().x
-        + 10.0;
+    let content_w =
+        8.0 + icon_w.max(22.0) + 8.0 + title_galley.size().x + 16.0 + hint_galley.size().x + 10.0;
     let row_w = ui.available_width().max(content_w);
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(row_w, ROW_H), Sense::click());
     ui.painter().rect_filled(rect, CornerRadius::same(4), fill);
     let y = rect.center().y;
     let mut x = rect.left() + 8.0;
-    ui.painter().galley(
-        egui::pos2(x, y - icon_galley.size().y * 0.5),
-        icon_galley,
-        ui.visuals().text_color(),
-    );
+    if let Some(galley) = icon_galley {
+        ui.painter()
+            .galley(egui::pos2(x, y - galley.size().y * 0.5), galley, text_color);
+    } else if let CommandIcon::Vector(paint) = item.icon {
+        let icon_rect = egui::Rect::from_min_size(
+            egui::pos2(x, y - icon_side * 0.5),
+            egui::Vec2::splat(icon_side),
+        );
+        paint(ui.painter(), icon_rect, text_color);
+    }
     x += 22.0;
     ui.painter().galley(
         egui::pos2(x, y - title_galley.size().y * 0.5),
@@ -492,7 +505,7 @@ fn push_actions(out: &mut Vec<CommandItem>) {
         out.push(CommandItem {
             title: format!("Add {}", meta.label),
             hint: "Action".into(),
-            icon: action_phosphor(meta.type_key),
+            icon: action_icon(meta.type_key),
             kind: CommandKind::AddAction {
                 type_key: meta.type_key.to_string(),
             },
@@ -629,7 +642,7 @@ fn push_named_map(
     program: &str,
     tab: EditorTab,
     kind_label: &'static str,
-    icon: &'static str,
+    icon: CommandIcon,
     rows: impl Iterator<Item = (String, String, Vec<String>)>,
 ) {
     for (key, display, tags) in rows {
@@ -665,7 +678,7 @@ fn nonempty_or<'a>(name: &'a str, key: &'a str) -> String {
 fn item(
     title: &str,
     hint: &str,
-    icon: &'static str,
+    icon: CommandIcon,
     kind: CommandKind,
     keywords: &[&str],
 ) -> CommandItem {
@@ -678,13 +691,15 @@ fn item(
     }
 }
 
-fn ph(id: &str) -> &'static str {
-    overlay_icons::resolve(id).glyph
+fn ph(id: &str) -> CommandIcon {
+    CommandIcon::Glyph(overlay_icons::resolve(id).glyph)
 }
 
-fn action_phosphor(type_key: &str) -> &'static str {
+fn action_icon(type_key: &str) -> CommandIcon {
+    if let Some(paint) = vector_action_icon(type_key) {
+        return CommandIcon::Vector(paint);
+    }
     ph(match type_key {
-        "move" => "arrow-right",
         "click" => "mouse",
         "key" => "key",
         "type" => "keyboard",
@@ -1090,8 +1105,20 @@ mod tests {
     #[test]
     fn prefix_beats_subsequence() {
         let items = vec![
-            item("Acyclic", "Other", "?", CommandKind::ShowMacroList, &[]),
-            item("Click", "Action", "?", CommandKind::ShowMacroList, &[]),
+            item(
+                "Acyclic",
+                "Other",
+                ph("question"),
+                CommandKind::ShowMacroList,
+                &[],
+            ),
+            item(
+                "Click",
+                "Action",
+                ph("question"),
+                CommandKind::ShowMacroList,
+                &[],
+            ),
         ];
         let shown = titles("cli", &items);
         assert_eq!(shown.first().map(String::as_str), Some("Click"));
@@ -1194,7 +1221,6 @@ mod tests {
             "grid-four",
             "stack",
             "square",
-            "arrow-right",
             "mouse",
             "key",
             "keyboard",
