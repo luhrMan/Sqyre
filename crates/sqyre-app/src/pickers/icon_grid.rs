@@ -68,7 +68,7 @@ fn paint_item_icon_tooltip(
                     .unwrap_or(rest)
             })
             .unwrap_or(target);
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         for path in &paths {
             let Some(tex) = icons.for_path(ui.ctx(), path) else {
                 continue;
@@ -107,7 +107,7 @@ fn paint_item_icon_tooltip(
     if tags.is_empty() {
         return;
     }
-    ui.add_space(4.0);
+    ui.add_space(crate::theme::SPACE_4);
     let color = ui.visuals().hyperlink_color;
     for tag in tags {
         ui.label(egui::RichText::new(tag).small().italics().color(color));

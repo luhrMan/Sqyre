@@ -123,7 +123,7 @@ impl PickerScrollOpts<'_> {
     /// Popup list with Save/Cancel (or similar) below the scroll.
     pub fn list(_ui: &egui::Ui) -> Self {
         Self {
-            footer_reserve: 52.0,
+            footer_reserve: crate::widgets::FOOTER_RESERVE_SAVE_CANCEL,
             trailing: None,
             below_search: None,
             id_salt: None,
