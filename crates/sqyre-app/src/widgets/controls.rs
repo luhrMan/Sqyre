@@ -19,6 +19,23 @@ fn icon_btn_side(ui: &egui::Ui) -> f32 {
         .max(ICON_BTN_SIDE)
 }
 
+/// High-contrast focus ring for custom painted controls (Tab / AccessKit focus).
+pub(crate) fn paint_keyboard_focus_ring(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    response: &egui::Response,
+) {
+    if !response.has_focus() {
+        return;
+    }
+    ui.painter().rect_stroke(
+        rect.expand(1.5),
+        CornerRadius::same(4),
+        Stroke::new(2.0, PRIMARY),
+        egui::StrokeKind::Outside,
+    );
+}
+
 /// Framed icon-only button with optically centered glyph.
 ///
 /// `tip` is the AccessKit name and hover text (required for actionable icons).
@@ -70,6 +87,7 @@ fn icon_button_inner(
     }
     let fg = color.unwrap_or_else(|| visuals.text_color());
     paint_text_centered(ui, rect, glyph, font_id, fg);
+    paint_keyboard_focus_ring(ui, rect, &response);
     response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tip));
     response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
@@ -117,6 +135,7 @@ pub fn icon_toggle(
         visuals.text_color().gamma_multiply(0.55)
     };
     paint_text_centered(ui, rect, glyph, font_id, fg);
+    paint_keyboard_focus_ring(ui, rect, &response);
     let selected_now = *selected;
     response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, enabled, selected_now, tip));
     response.on_hover_text(tip).on_disabled_hover_text(tip)
@@ -427,6 +446,7 @@ pub fn mouse_button_picker(
         );
     }
 
+    paint_keyboard_focus_ring(ui, rect, &response);
     let tip = hover_btn.unwrap_or(*button).label();
     let enabled = ui.is_enabled();
     let value = button.label();
@@ -503,6 +523,7 @@ pub fn press_state_toggle(
         visuals.fg_stroke.color,
     );
 
+    paint_keyboard_focus_ring(ui, rect, &response);
     let tip = press_state_label(*state);
     let enabled = ui.is_enabled();
     response.widget_info(|| valued_control_info(enabled, "Press state", tip));
@@ -565,6 +586,7 @@ pub(crate) fn up_down_toggle(ui: &mut egui::Ui, down: &mut bool) -> egui::Respon
         visuals.fg_stroke.color,
     );
 
+    paint_keyboard_focus_ring(ui, rect, &response);
     let tip = if *down { "Down" } else { "Up" };
     let enabled = ui.is_enabled();
     response.widget_info(|| valued_control_info(enabled, "Up/Down", tip));

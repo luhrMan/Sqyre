@@ -251,6 +251,30 @@ impl SqyreApp {
         self.play_ui_add_sound();
     }
 
+    /// Insert a decoded macro from the AI Macro Builder (name already uniquified).
+    pub(crate) fn import_macro_from_prompt_builder(&mut self, macro_: Macro) {
+        let name = macro_.name.clone();
+        // Defensive: re-uniquify in case the library changed since validate.
+        let name = self.unique_macro_name(&name);
+        let mut macro_ = macro_;
+        macro_.name = name.clone();
+        self.workspace.macros.push(macro_);
+        self.workspace
+            .macros
+            .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
+        if let Err(e) = self.persist_database() {
+            self.workspace.macros.retain(|m| m.name != name);
+            self.report_persist_failure("Import AI macro", &e);
+            return;
+        }
+        self.refresh_macro_hotkey_bindings();
+        self.select_macro_by_name(&name);
+        self.play_ui_add_sound();
+        *self.run_session.state.status.lock() = format!("Imported macro \"{name}\".");
+        self.macro_prompt_builder
+            .set_status_after_import(format!("Imported \"{name}\"."));
+    }
+
     /// Replace the selected macro from the YAML Macro Builder (transactional).
     pub(crate) fn apply_macro_from_yaml_builder(&mut self, mut incoming: Macro) {
         if self.workspace.macros.is_empty() {

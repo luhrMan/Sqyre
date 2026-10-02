@@ -11,7 +11,7 @@ pub(crate) fn paint_preview_toolbar(
     ui: &mut egui::Ui,
     view: Option<&mut ImageViewTransform>,
 ) -> bool {
-    ui.add_space(8.0);
+    ui.add_space(crate::theme::SPACE_8);
     ui.separator();
     let mut force = false;
     let show_zoom_hint = view.is_some();
@@ -421,7 +421,7 @@ pub(crate) fn paint_disk_preview(
     grid: Option<(i32, i32)>,
     replace_clicked: Option<&mut bool>,
 ) {
-    ui.add_space(8.0);
+    ui.add_space(crate::theme::SPACE_8);
     ui.separator();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).strong());
@@ -471,7 +471,7 @@ pub(crate) fn paint_zoomable_collection_preview(
     replace_clicked: &mut bool,
     capturing: bool,
 ) {
-    ui.add_space(8.0);
+    ui.add_space(crate::theme::SPACE_8);
     ui.separator();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Collection image").strong());
@@ -727,7 +727,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
 ) {
     use sqyre_domain::{AtlasLayout, AtlasNode, CoordinateRef, Macro, NavDir};
 
-    ui.add_space(8.0);
+    ui.add_space(crate::theme::SPACE_8);
     ui.separator();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Atlas plane").strong());

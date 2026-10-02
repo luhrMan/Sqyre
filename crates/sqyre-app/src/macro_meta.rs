@@ -108,8 +108,6 @@ impl MacroMetaUi {
             crate::widgets::TagChipOptions {
                 enabled,
                 show_add_button: false,
-                suggestion_limit: 8,
-                suggestions_with_separator: true,
                 draft_hover: Some(help::META_TAGS),
                 draft_first: true,
                 reorderable: false,
@@ -266,7 +264,7 @@ mod tests {
 
         let all_tags =
             collect_all_macro_tags(&[m("x", &["beta"]), m("y", &["beta", "gamma", "gator"])]);
-        let opts = tag_completion_options("ga", &["beta".into()], &all_tags, 10);
+        let opts = tag_completion_options("ga", &["beta".into()], &all_tags);
         assert_eq!(opts, vec!["gamma", "gator"]);
     }
 

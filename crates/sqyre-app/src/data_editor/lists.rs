@@ -125,8 +125,6 @@ impl DataEditor {
                 crate::widgets::TagChipOptions {
                     enabled: true,
                     show_add_button: true,
-                    suggestion_limit: 12,
-                    suggestions_with_separator: false,
                     draft_hover: Some(
                         "Drag chips to set priority. Unmatched items sort by name after.",
                     ),
