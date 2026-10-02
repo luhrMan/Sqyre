@@ -8,7 +8,8 @@ use eframe::egui::{Color32, Stroke};
 pub use sqyre_ui_theme::{
     accent_dim, chip_fill, contrast_fg, error_fg, frame_fill, inner_stroke, ok_fg,
     overlay_panel_fill, paint_galley_centered, paint_text_centered, panel_split_stroke, rgba,
-    warn_fg, MACRO_START, MACRO_STOP, PRIMARY, SPACE_12, SPACE_2, SPACE_4, SPACE_8,
+    warn_fg, MACRO_START, MACRO_STOP, PANEL_SPLITTER_W, PRIMARY, SPACE_12, SPACE_2, SPACE_4,
+    SPACE_8,
 };
 
 /// Dark scrim behind preview overlay chips / editors.

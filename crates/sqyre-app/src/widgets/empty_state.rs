@@ -2,14 +2,8 @@
 //!
 //! Layout: strong title, optional weak sentence, optional primary then secondary CTA.
 
+use crate::theme::{SPACE_12, SPACE_4, SPACE_8};
 use eframe::egui;
-
-/// Gap above the title when painting an empty state.
-const PAD_TOP: f32 = 8.0;
-/// Gap between title and body sentence.
-const GAP_TITLE_BODY: f32 = 4.0;
-/// Gap between copy and the CTA row.
-const GAP_BEFORE_CTA: f32 = 12.0;
 
 /// Which optional action button was clicked, if any.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -53,15 +47,15 @@ pub fn empty_state(
     primary: Option<&str>,
     secondary: Option<&str>,
 ) -> EmptyStateAction {
-    ui.add_space(PAD_TOP);
+    ui.add_space(SPACE_8);
     ui.label(egui::RichText::new(title).strong());
     if let Some(body) = body {
-        ui.add_space(GAP_TITLE_BODY);
+        ui.add_space(SPACE_4);
         ui.label(egui::RichText::new(body).weak());
     }
     let mut clicked = EmptyStateAction::None;
     if primary.is_some() || secondary.is_some() {
-        ui.add_space(GAP_BEFORE_CTA);
+        ui.add_space(SPACE_12);
         ui.horizontal(|ui| {
             if let Some(label) = primary {
                 if ui.button(label).clicked() {

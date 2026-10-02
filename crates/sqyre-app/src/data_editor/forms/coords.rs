@@ -28,7 +28,7 @@ impl DataEditor {
         } = ctx;
         help::heading(ui, "Point", help::DE_POINT_COORDS);
         self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         self.paint_name_record_row(
             ui,
             screen_click,
@@ -100,7 +100,7 @@ impl DataEditor {
             }
         });
         self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         self.paint_name_record_row(
             ui,
             screen_click,
@@ -165,7 +165,7 @@ impl DataEditor {
         } = ctx;
         ui.heading("Mask");
         self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         help::label(ui, "Name", help::DE_NAME);
         ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
         paint_fs_name_hint(ui, &self.form_name);
@@ -203,7 +203,7 @@ impl DataEditor {
             }
         });
         if !has_image {
-            ui.add_space(4.0);
+            ui.add_space(crate::theme::SPACE_4);
             help::label(ui, "Shape", help::DE_MASK_SHAPE);
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle");
@@ -216,7 +216,7 @@ impl DataEditor {
                 );
                 help::icon(ui, help::DE_MASK_INVERSE);
             });
-            ui.add_space(4.0);
+            ui.add_space(crate::theme::SPACE_4);
             let cx = validate_numeric_expression(&self.form_center_x, active_macro);
             var_pills::validated_var_ref_edit(
                 ui,
@@ -334,7 +334,7 @@ impl DataEditor {
             ..
         } = ctx;
         help::heading(ui, EditorTab::ScreenCap.label(), help::DE_SCREENCAP_INTRO);
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         self.program_selector(ui, catalog, icons, settings);
         self.paint_name_record_row(
             ui,
@@ -343,9 +343,9 @@ impl DataEditor {
             "Recording… click two corners.",
             ScreenClickBridge::arm_search_area,
         );
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         self.paint_item_param_fields(ui, catalog, icons);
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::SPACE_4);
         help::label(ui, "Bounds", help::DE_BOUNDS_PREVIEW);
         self.paint_monitor_slot(ui);
         let (lx, ty, rx, by) = form_desktop_area(
@@ -424,7 +424,7 @@ impl DataEditor {
                 );
             },
         );
-        ui.add_space(8.0);
+        ui.add_space(crate::theme::SPACE_8);
         let saving = self.screen_cap_pending.is_some();
         ui.horizontal(|ui| {
             if ui

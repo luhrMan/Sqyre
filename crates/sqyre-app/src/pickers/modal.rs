@@ -73,7 +73,7 @@ pub fn show_active_picker(
             .collapsible(false)
             .resizable(true)
             .default_size([560.0, 460.0])
-            .min_size([400.0, 280.0])
+            .min_size(crate::widgets::FLOATER_MIN_PICKER)
             .order(egui::Order::Foreground)
             .open(&mut open),
         ctx,
@@ -174,8 +174,6 @@ pub fn show_active_picker(
                             crate::widgets::TagChipOptions {
                                 enabled: true,
                                 show_add_button: true,
-                                suggestion_limit: 12,
-                                suggestions_with_separator: false,
                                 draft_hover: Some(crate::action_tooltip::help::IS_TARGET_TAGS),
                                 draft_first: false,
                                 reorderable: false,
