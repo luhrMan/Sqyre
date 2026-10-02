@@ -62,7 +62,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             // below). auto_shrink false keeps the viewport filled when content is short.
             let scroll_out = egui::ScrollArea::vertical()
                 .id_salt("macro_tree_scroll")
-                .scroll_source(crate::pickers::SCROLL_SOURCE_NO_DRAG)
+                .scroll_source(crate::widgets::SCROLL_SOURCE_NO_DRAG)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     // Decide reorder vs drag-scroll before TreeView so

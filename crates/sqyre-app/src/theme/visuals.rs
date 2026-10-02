@@ -45,6 +45,20 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_visuals_of(egui::Theme::Dark, dark_visuals());
 }
 
+/// Opaque-enough floating scrollbars so H/V overflow is obvious without hover.
+///
+/// Based on egui's floating style (no always-allocated bar width — avoids a
+/// 1px H-bar feedback loop when a vertical bar appears) with higher active
+/// handle opacity so bars stay readable while scrolling.
+pub fn scroll_style() -> egui::style::ScrollStyle {
+    let mut s = egui::style::ScrollStyle::floating();
+    s.active_handle_opacity = 1.0;
+    s.interact_handle_opacity = 1.0;
+    s.active_background_opacity = 0.5;
+    s.interact_background_opacity = 0.8;
+    s
+}
+
 /// Rounded group frame with a faint Sqyre fill + dim gold stroke.
 pub fn section_frame(style: &egui::Style) -> egui::Frame {
     egui::Frame::group(style)

@@ -1,5 +1,7 @@
 use eframe::egui::{self, Key, Modifiers};
-use egui::containers::scroll_area::{DragScroll, ScrollSource};
+
+// Shared ScrollArea builders live in `widgets::scroll` (SSOT).
+pub use crate::widgets::dialog_scroll;
 
 /// Default search hint for popup pickers.
 pub const HINT_LIST: &str = "Search…";
@@ -65,38 +67,6 @@ pub fn focus_search_once(ui: &mut egui::Ui, id: egui::Id, resp: &egui::Response)
 /// Clear one-shot focus so the next open focuses again.
 pub fn reset_focus_search(ctx: &egui::Context, id: egui::Id) {
     ctx.data_mut(|d| d.insert_temp(id.with("focus_search_once"), true));
-}
-
-/// Wheel + scrollbar + click-drag. egui's default drag is touch-only (`OnTouch`).
-pub(crate) const SCROLL_SOURCE: ScrollSource = ScrollSource::ALL;
-
-/// Scroll source for areas that implement their own drag-scroll (e.g. macro tree).
-pub(crate) const SCROLL_SOURCE_NO_DRAG: ScrollSource = ScrollSource {
-    scroll_bar: true,
-    drag: DragScroll::Never,
-    mouse_wheel: true,
-};
-
-/// Vertical [`ScrollArea`] with click-drag scrolling enabled.
-pub(crate) fn scroll_vertical() -> egui::ScrollArea {
-    egui::ScrollArea::vertical().scroll_source(SCROLL_SOURCE)
-}
-
-/// Bidirectional [`ScrollArea`] with click-drag scrolling enabled.
-pub(crate) fn scroll_both() -> egui::ScrollArea {
-    egui::ScrollArea::both().scroll_source(SCROLL_SOURCE)
-}
-
-/// Bidirectional scroll that fills a capped viewport without expanding the parent.
-///
-/// Vertical-only `ScrollArea` + `auto_shrink([false, false])` expands to content
-/// width and ratchets windows off-screen; enabling both axes keeps width at the
-/// viewport (`(true, false) => inner_size` in egui).
-pub(crate) fn dialog_scroll(max_w: f32, max_h: f32) -> egui::ScrollArea {
-    scroll_both()
-        .auto_shrink([false, false])
-        .max_width(max_w.max(1.0))
-        .max_height(max_h.max(1.0))
 }
 
 pub(crate) fn maybe_scroll_to(ui: &mut egui::Ui, resp: &egui::Response, scroll: &mut bool) {
@@ -215,11 +185,12 @@ pub fn picker_searchable_scroll_ex(
     // Bidirectional: vertical-only + auto_shrink(false) expands to content width
     // and can push dialog edges off-screen when the pane is narrow.
     let max_w = ui.available_width().max(1.0);
-    let mut scroll = dialog_scroll(max_w, max_h);
+    let mut scroll = crate::widgets::dialog_scroll(max_w, max_h);
     if let Some(salt) = opts.id_salt {
         scroll = scroll.id_salt(salt);
     }
     scroll.show(ui, |ui| {
+        // Cap soft wrap to the viewport; hard min-widths still H-scroll via both axes.
         ui.set_max_width(max_w);
         body(ui, &q);
     });

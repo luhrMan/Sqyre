@@ -270,7 +270,7 @@ impl AddActionPicker {
             let list_w = crate::widgets::visible_width(ui);
             // Content-sized columns (not equal-split) so shrinking the window
             // yields horizontal scroll instead of squashing tiles.
-            pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+            crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
                 ui.set_max_width(list_w.max(900.0)); // keep tile columns readable; H-scroll when narrow
                                                      // Horizontal layout assigns leftover viewport width to later
                                                      // columns; without Extend they wrap letter-by-letter when shrunk.

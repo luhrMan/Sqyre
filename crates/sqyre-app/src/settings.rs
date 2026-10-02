@@ -220,6 +220,9 @@ impl SettingsUi {
         style
             .text_styles
             .insert(TextStyle::Monospace, egui::FontId::monospace(base));
+        // Thin opaque floating bars: always visible when content overflows
+        // (including horizontal), instead of fully dormant until hover.
+        style.spacing.scroll = crate::theme::scroll_style();
         ctx.set_global_style(style);
     }
 
@@ -444,6 +447,7 @@ impl SettingsUi {
             crate::pickers::dialog_scroll(right_rect.width(), body_h)
                 .id_salt("user_settings_content")
                 .show(&mut right_ui, |ui| {
+                    // Soft-wrap to pane width; both-axis scroll covers hard min overflows.
                     ui.set_max_width(right_rect.width());
                     if visible_sections.is_empty() {
                         crate::widgets::list_vacancy(ui, &q, 0, "settings");

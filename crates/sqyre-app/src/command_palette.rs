@@ -198,8 +198,8 @@ impl CommandPaletteUi {
 
             let list_h = ROW_H * 10.0 + 8.0;
             let list_w = crate::widgets::visible_width(ui);
-            crate::pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
-                ui.set_max_width(list_w);
+            crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
+                crate::widgets::enable_dense_row_extend(ui);
                 for (i, item) in filtered.iter().enumerate() {
                     let resp = command_row(ui, item, i == self.selected);
                     if resp.clicked() {
@@ -227,9 +227,6 @@ fn command_row(ui: &mut egui::Ui, item: &CommandItem, selected: bool) -> egui::R
     } else {
         Color32::TRANSPARENT
     };
-    let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), ROW_H), Sense::click());
-    ui.painter().rect_filled(rect, CornerRadius::same(4), fill);
     let font = egui::TextStyle::Body.resolve(ui.style());
     let small = egui::TextStyle::Small.resolve(ui.style());
     let text_color = ui.visuals().text_color();
@@ -242,6 +239,17 @@ fn command_row(ui: &mut egui::Ui, item: &CommandItem, selected: bool) -> egui::R
         .painter()
         .layout_no_wrap(item.title.clone(), font, text_color);
     let hint_galley = ui.painter().layout_no_wrap(item.hint.clone(), small, weak);
+    // Claim intrinsic row width so a narrow palette H-scrolls instead of clipping.
+    let content_w = 8.0
+        + icon_galley.size().x.max(22.0)
+        + 8.0
+        + title_galley.size().x
+        + 16.0
+        + hint_galley.size().x
+        + 10.0;
+    let row_w = ui.available_width().max(content_w);
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(row_w, ROW_H), Sense::click());
+    ui.painter().rect_filled(rect, CornerRadius::same(4), fill);
     let y = rect.center().y;
     let mut x = rect.left() + 8.0;
     ui.painter().galley(
