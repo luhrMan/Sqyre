@@ -1027,13 +1027,11 @@ fn yaml_text_edit(
             }
         };
         if needs_scroll {
-            egui::ScrollArea::vertical()
-                .max_height(AC_POPUP_MAX_H)
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.set_width(popup_w);
-                    paint_rows(ui);
-                });
+            let popup_h = AC_POPUP_MAX_H;
+            crate::widgets::dialog_scroll(popup_w, popup_h).show(ui, |ui| {
+                crate::widgets::enable_dense_row_extend(ui);
+                paint_rows(ui);
+            });
         } else {
             paint_rows(ui);
         }

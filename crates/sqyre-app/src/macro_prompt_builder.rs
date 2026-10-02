@@ -132,9 +132,8 @@ impl MacroPromptBuilderUi {
         );
         ui.small("Type @ for actions, macros, and catalog entities (Program~Name).");
         let nl_h = (third - 36.0).max(80.0);
-        egui::ScrollArea::vertical()
+        crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), nl_h)
             .id_salt("nl_scroll")
-            .max_height(nl_h)
             .show(ui, |ui| {
                 at_ref_text_edit(
                     ui,
@@ -173,9 +172,8 @@ impl MacroPromptBuilderUi {
         ui.separator();
         ui.label(egui::RichText::new("Generated prompt").strong());
         let prompt_h = (third - 28.0).max(80.0);
-        egui::ScrollArea::vertical()
+        crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), prompt_h)
             .id_salt("prompt_scroll")
-            .max_height(prompt_h)
             .show(ui, |ui| {
                 let mut prompt = self.generated_prompt.clone();
                 ui.add(
@@ -192,9 +190,8 @@ impl MacroPromptBuilderUi {
         ui.label(egui::RichText::new("Import AI response").strong());
         ui.small("Paste the YAML macro returned by the AI (no markdown fences).");
         let yaml_h = (third - 56.0).max(80.0);
-        egui::ScrollArea::vertical()
+        crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), yaml_h)
             .id_salt("yaml_scroll")
-            .max_height(yaml_h)
             .show(ui, |ui| {
                 ui.add(
                     egui::TextEdit::multiline(&mut self.import_yaml)

@@ -994,8 +994,8 @@ impl DataEditor {
             right_ui.set_max_size(right_rect.size());
             let fill_tab = matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
             let mut paint_form = |ui: &mut egui::Ui| {
-                // Cap content width so a vertical-only ScrollArea cannot report a
-                // wider content_size (that expands the pane / window).
+                // Cap soft-wrap to the pane; dialog_scroll (both axes) still H-scrolls
+                // when a hard min-width (preview row, fixed fields) exceeds the viewport.
                 ui.set_max_width(right_rect.width());
                 let macros: &[Macro] = env.macros;
                 tag_submit = self.draw_form(
@@ -1014,8 +1014,6 @@ impl DataEditor {
             if fill_tab {
                 paint_form(&mut right_ui);
             } else {
-                // Enable horizontal scroll so width stays at the viewport
-                // (`auto_shrink` false + vertical-only expands to content width).
                 pickers::dialog_scroll(right_rect.width(), body_h)
                     .id_salt("data_editor_form")
                     .show(&mut right_ui, paint_form);

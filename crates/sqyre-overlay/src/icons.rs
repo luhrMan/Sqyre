@@ -346,7 +346,7 @@ pub fn show_icon_picker_grid(
     let rem = ui.available_size();
     // Explicit max viewport: ScrollArea's outer min_size stays at the viewport
     // (not the full icon catalog). auto_shrink x=true keeps width ≤ parent so
-    // Resize can shrink the window.
+    // Resize can shrink the window. Vertical-only: icons wrap (no H-scroll).
     egui::ScrollArea::vertical()
         .max_width(rem.x)
         .max_height(rem.y.max(120.0))

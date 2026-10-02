@@ -469,7 +469,7 @@ pub(crate) fn show_action_view_tip(
                 .inner_margin(egui::Margin::symmetric(10, 8))
                 .show(ui, |ui| {
                     ui.set_max_width(max_w);
-                    let out = crate::pickers::scroll_vertical()
+                    let out = crate::widgets::scroll_vertical()
                         .id_salt("view_tip_body")
                         .max_height(max_body_h)
                         .vertical_scroll_offset(offset)
@@ -725,10 +725,8 @@ fn show_edit_window(
                     macros,
                     active_macro: Some(&*macro_),
                 };
-                // Scroll remaining height; shrink width to content so the user
-                // can drag the window narrower than the longest section.
                 let scroll_h = ui.available_height().max(40.0).min(max_scroll_h);
-                let measured = crate::pickers::scroll_vertical()
+                let measured = crate::widgets::scroll_both()
                     .id_salt("edit_fields")
                     .auto_shrink([true, false])
                     .max_width(ui.available_width())

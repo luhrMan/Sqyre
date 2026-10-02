@@ -22,8 +22,7 @@
     "CARGO_HOME": "/home/vscode/.cargo",
     "RUSTUP_HOME": "/usr/local/rustup",
     "CARGO_TARGET_DIR": "/workspace/target",
-    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
-    "CARGO_BUILD_JOBS": "4"
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
   },
   "customizations": {
     "vscode": {

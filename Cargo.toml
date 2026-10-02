@@ -48,6 +48,11 @@ all = "warn"
 strip = "symbols"
 lto = "thin"
 
+# `make dev`: release opts without LTO so warm rebuilds only recompile touched crates.
+[profile.proto]
+inherits = "release"
+lto = false
+
 # Shipping artifacts only (AppImage, Flatpak, Windows, WASM, release-bundle).
 # Single codegen unit on top of thin LTO shrinks binaries further but slows links.
 [profile.dist]
