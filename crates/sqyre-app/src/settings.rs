@@ -574,6 +574,36 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        if setting_visible(q, section_hit, SETTING_WORKER_THREADS) {
+            ui.horizontal(|ui| {
+                ui.label("CPU threads for image work:");
+                let max = sqyre_persist::available_worker_threads();
+                let mut v = self.settings.worker_threads;
+                if ui
+                    .add(
+                        egui::DragValue::new(&mut v)
+                            .range(sqyre_persist::MIN_WORKER_THREADS..=max)
+                            .speed(1),
+                    )
+                    .on_hover_text(format!(
+                        "How many CPU threads Sqyre may use for image search, find pixel, and capture conversion (1–{max} on this machine). Default is {} (16 or fewer). Restart Sqyre after changing.",
+                        sqyre_persist::default_worker_threads()
+                    ))
+                    .changed()
+                {
+                    self.settings.worker_threads = v;
+                    self.mark_dirty();
+                }
+                ui.label(format!("of {max}"));
+            });
+            ui.label(
+                egui::RichText::new("Restart Sqyre for a new thread count to take effect.")
+                    .small()
+                    .weak(),
+            );
+        }
+
         let show_while = setting_visible(q, section_hit, SETTING_WHILE_BUDGET);
         let show_depth = setting_visible(q, section_hit, SETTING_RUN_MACRO_DEPTH);
         let show_distance = setting_visible(q, section_hit, SETTING_IMAGE_SEARCH_DISTANCE);
@@ -1567,6 +1597,18 @@ const SETTING_HOTKEY_TAGS_FOCUSED: &[&str] = &[
     "program",
     "while focused",
 ];
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+const SETTING_WORKER_THREADS: &[&str] = &[
+    "cpu",
+    "cpus",
+    "threads",
+    "worker",
+    "workers",
+    "rayon",
+    "parallel",
+    "cores",
+    "image work",
+];
 const SETTING_WHILE_BUDGET: &[&str] = &[
     "while",
     "safety budget",
@@ -1670,6 +1712,8 @@ const GENERAL_SETTINGS: &[&[&str]] = &[
     SETTING_HIDE_WHILE_RECORDING,
     SETTING_RELEASE_HELD,
     SETTING_HOTKEY_TAGS_FOCUSED,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    SETTING_WORKER_THREADS,
     SETTING_WHILE_BUDGET,
     SETTING_RUN_MACRO_DEPTH,
     SETTING_IMAGE_SEARCH_DISTANCE,

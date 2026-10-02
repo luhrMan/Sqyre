@@ -123,6 +123,22 @@ use tree_state::TreeState;
 use wasm_io::PendingImport;
 use workspace::Workspace;
 
+/// Install the global Rayon pool from user settings (once per process).
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+fn apply_worker_thread_pool(worker_threads: i32) {
+    let n = worker_threads.clamp(
+        sqyre_persist::MIN_WORKER_THREADS,
+        sqyre_persist::available_worker_threads(),
+    ) as usize;
+    match rayon::ThreadPoolBuilder::new()
+        .num_threads(n)
+        .build_global()
+    {
+        Ok(()) => {}
+        Err(e) => crate::log::warn(format!("worker thread pool already set: {e}")),
+    }
+}
+
 /// Launch the desktop shell (single-instance lock, tray, fonts).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run() -> eframe::Result<()> {
@@ -389,6 +405,8 @@ impl SqyreApp {
         });
         settings.apply_sqyre_dir_override();
         SettingsUi::apply_action_colors(&settings);
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        apply_worker_thread_pool(settings.worker_threads);
 
         let (mut hotkeys, continue_wait, screen_click, macro_record_bridge, macro_hotkeys) =
             default_hotkeys();
