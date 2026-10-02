@@ -45,15 +45,17 @@ pub fn apply(ctx: &egui::Context) {
     ctx.set_visuals_of(egui::Theme::Dark, dark_visuals());
 }
 
-/// Opaque-enough floating scrollbars so H/V overflow is obvious without hover.
+/// Floating scrollbars that stay readable when content overflows.
 ///
-/// Based on egui's floating style (no always-allocated bar width — avoids a
-/// 1px H-bar feedback loop when a vertical bar appears) with higher active
-/// handle opacity so bars stay readable while scrolling.
+/// Keeps `floating_allocated_width = 0` (avoids a 1px H-bar feedback loop when a
+/// vertical bar appears) but raises dormant handle opacity so H/V bars are visible
+/// without requiring hover — otherwise narrow panels look clipped.
 pub fn scroll_style() -> egui::style::ScrollStyle {
     let mut s = egui::style::ScrollStyle::floating();
+    s.dormant_handle_opacity = 0.55;
     s.active_handle_opacity = 1.0;
     s.interact_handle_opacity = 1.0;
+    s.dormant_background_opacity = 0.25;
     s.active_background_opacity = 0.5;
     s.interact_background_opacity = 0.8;
     s
