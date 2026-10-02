@@ -1444,8 +1444,9 @@ fn copy_cache_rgb(cache: &FrameCache, crop: CacheCrop) -> Result<RgbCapture, Cap
         let src = &pixels[src_off..src_off + out_w * 4];
         let dst_off = row * out_w * 3;
         // SAFETY: each crop row writes a disjoint `out` span.
-        let dst =
-            unsafe { std::slice::from_raw_parts_mut((out_addr as *mut u8).add(dst_off), out_w * 3) };
+        let dst = unsafe {
+            std::slice::from_raw_parts_mut((out_addr as *mut u8).add(dst_off), out_w * 3)
+        };
         strip_rgba_row_to_rgb(src, out_w, dst);
     };
 

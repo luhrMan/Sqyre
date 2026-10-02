@@ -295,10 +295,20 @@ mod tests {
     #[test]
     fn shared_row_kernels_bgrx_bgra_rgbx() {
         let mut out = [0u8; 8];
-        swizzle_row_to_rgba(&[0, 1, 2, 0, 10, 11, 12, 0], 2, RgbaSrcFormat::Bgrx, &mut out);
+        swizzle_row_to_rgba(
+            &[0, 1, 2, 0, 10, 11, 12, 0],
+            2,
+            RgbaSrcFormat::Bgrx,
+            &mut out,
+        );
         assert_eq!(out, [2, 1, 0, 255, 12, 11, 10, 255]);
 
-        swizzle_row_to_rgba(&[0, 1, 2, 9, 10, 11, 12, 8], 2, RgbaSrcFormat::Bgra, &mut out);
+        swizzle_row_to_rgba(
+            &[0, 1, 2, 9, 10, 11, 12, 8],
+            2,
+            RgbaSrcFormat::Bgra,
+            &mut out,
+        );
         assert_eq!(out, [2, 1, 0, 9, 12, 11, 10, 8]);
 
         swizzle_row_to_rgba(&[1, 2, 3, 0, 4, 5, 6, 0], 2, RgbaSrcFormat::Rgbx, &mut out);

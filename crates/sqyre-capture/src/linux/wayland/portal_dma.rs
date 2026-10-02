@@ -232,8 +232,9 @@ fn copy_pw_frame_to_rgba_at(
         let row = &src[src_off..src_off + row_len];
         let dst_row_off = (dst_y + y) * dst_stride + dst_x * 4;
         // SAFETY: each row `y` writes a disjoint `dst` span (validated above).
-        let dst_row =
-            unsafe { std::slice::from_raw_parts_mut((dst_addr as *mut u8).add(dst_row_off), w * 4) };
+        let dst_row = unsafe {
+            std::slice::from_raw_parts_mut((dst_addr as *mut u8).add(dst_row_off), w * 4)
+        };
         swizzle_row_to_rgba(row, w, fmt, dst_row);
     };
 
