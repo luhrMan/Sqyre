@@ -275,7 +275,6 @@ mod tests {
                 "herb".into(),
                 "other".into(),
             ],
-            10,
         );
         assert_eq!(opts, vec!["helm".to_string()]);
     }
