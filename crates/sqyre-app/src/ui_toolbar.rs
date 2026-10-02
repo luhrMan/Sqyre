@@ -1,4 +1,4 @@
-//! Central-panel toolbars: brand header, run/stop strip, hotkey row, action chrome.
+//! Central-panel toolbars: brand header chrome, separator strip, hotkey row, action chrome.
 
 use crate::macro_meta::collect_all_macro_tags;
 use crate::theme;
@@ -28,7 +28,23 @@ fn toolbar_icon_colored(
 }
 
 pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    #[cfg(not(target_arch = "wasm32"))]
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
     ui.horizontal(|ui| {
+        // Tight gap between chrome controls flanking the brand/CP affordance.
+        ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+
+        // 1. Macro-list toggle — left of the Sqyre command-palette button.
+        let (list_glyph, list_tip) = if app.macro_list_open {
+            ("◁", "Hide macro list")
+        } else {
+            ("☰", "Show macro list")
+        };
+        if toolbar_icon(ui, list_glyph, list_tip, true).clicked() {
+            app.macro_list_open = !app.macro_list_open;
+        }
+
+        // 2. Brand / command palette (primary affordance).
         let tex = app.icon_cache.sqyre_fallback(ui.ctx());
         let size = egui::vec2(28.0, 28.0);
         let image = egui::Image::new((tex.id(), size))
@@ -44,8 +60,76 @@ pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.command_palette.open_palette();
         }
 
+        // 3. Compact 2-row cluster to the right of CP:
+        //    row1 Data Editor / Settings
+        //    row2 play/stop (desktop) or import/export (wasm)
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
+                    app.data_editor.request_open(ui.ctx());
+                }
+                if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
+                    app.settings_ui.request_open(ui.ctx());
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    if toolbar_icon_colored(
+                        ui,
+                        "▶",
+                        "Run",
+                        !running && !app.workspace.macros.is_empty(),
+                        Some(theme::MACRO_START),
+                    )
+                    .clicked()
+                    {
+                        app.start_macro(ui.ctx());
+                    }
+                    if toolbar_icon_colored(
+                        ui,
+                        "⏹",
+                        &format!(
+                            "Esc stops the running macro; {} exits Sqyre (failsafe).",
+                            sqyre_hotkeys::FAILSAFE_LABEL
+                        ),
+                        running,
+                        Some(theme::MACRO_STOP),
+                    )
+                    .clicked()
+                    {
+                        app.request_stop();
+                    }
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    if toolbar_icon(ui, "⬇", "Import db.yaml", true).clicked() {
+                        app.request_db_import();
+                    }
+                    if toolbar_icon(ui, "⬆", "Export db.yaml", true).clicked() {
+                        app.export_db_yaml();
+                    }
+                }
+            });
+        });
+
         #[cfg(not(target_arch = "wasm32"))]
         show_update_banner(app, ui);
+
+        let status = app.run_session.state.status.lock().clone();
+        if !status.is_empty() {
+            let right_w = ui.available_width();
+            ui.allocate_ui_with_layout(
+                Vec2::new(right_w, ui.spacing().interact_size.y),
+                egui::Layout::right_to_left(egui::Align::Center),
+                |ui| {
+                    ui.label(status);
+                },
+            );
+        }
     });
 }
 
@@ -80,77 +164,9 @@ fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
     });
 }
 
-pub fn main_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) {
-    #[cfg(not(target_arch = "wasm32"))]
-    let running = app.run_session.state.running.load(Ordering::SeqCst);
-    ui.horizontal_wrapped(|ui| {
-        // Tight gap between toolbar icon buttons (scale SPACE_4).
-        ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-        let (list_glyph, list_tip) = if app.macro_list_open {
-            ("◁", "Hide macro list")
-        } else {
-            ("☰", "Show macro list")
-        };
-        if toolbar_icon(ui, list_glyph, list_tip, true).clicked() {
-            app.macro_list_open = !app.macro_list_open;
-        }
-        ui.separator();
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            if toolbar_icon_colored(
-                ui,
-                "▶",
-                "Run",
-                !running && !app.workspace.macros.is_empty(),
-                Some(theme::MACRO_START),
-            )
-            .clicked()
-            {
-                app.start_macro(ui.ctx());
-            }
-            if toolbar_icon_colored(
-                ui,
-                "⏹",
-                &format!(
-                    "Esc stops the running macro; {} exits Sqyre (failsafe).",
-                    sqyre_hotkeys::FAILSAFE_LABEL
-                ),
-                running,
-                Some(theme::MACRO_STOP),
-            )
-            .clicked()
-            {
-                app.request_stop();
-            }
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            if toolbar_icon(ui, "⬇", "Import db.yaml", true).clicked() {
-                app.request_db_import();
-            }
-            if toolbar_icon(ui, "⬆", "Export db.yaml", true).clicked() {
-                app.export_db_yaml();
-            }
-        }
-
-        let status = app.run_session.state.status.lock().clone();
-        let right_w = ui.available_width();
-        ui.allocate_ui_with_layout(
-            Vec2::new(right_w, ui.spacing().interact_size.y),
-            egui::Layout::right_to_left(egui::Align::Center),
-            |ui| {
-                if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
-                    app.settings_ui.request_open(ui.ctx());
-                }
-                if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
-                    app.data_editor.request_open(ui.ctx());
-                }
-                if !status.is_empty() {
-                    ui.label(status);
-                }
-            },
-        );
-    });
+/// Strip below the brand header: wasm editor note + separator.
+/// Chrome controls (list toggle, run/stop, Data Editor, Settings) live in [`brand_header`].
+pub fn main_toolbar(ui: &mut egui::Ui) {
     #[cfg(target_arch = "wasm32")]
     ui.small(
         "Browser editor: import/export db.yaml. Run, capture, and global hotkeys are desktop-only.",
