@@ -763,7 +763,7 @@ impl eframe::App for SqyreApp {
 
         egui::CentralPanel::default().show(ui, |ui| {
             ui_toolbar::brand_header(self, ui);
-            ui_toolbar::main_toolbar(self, ui);
+            ui_toolbar::main_toolbar(ui);
             if self.workspace.macros.is_empty() {
                 let clicked = crate::widgets::empty_state(
                     ui,
