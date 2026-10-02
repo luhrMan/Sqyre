@@ -186,7 +186,7 @@ impl CommandPaletteUi {
                 self.scroll_selected = true;
             }
             if filtered.is_empty() {
-                ui.weak("No matching commands.");
+                crate::widgets::list_vacancy(ui, &self.query, 0, "commands");
                 return;
             }
             if down {

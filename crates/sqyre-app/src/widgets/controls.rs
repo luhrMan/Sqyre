@@ -202,6 +202,8 @@ pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egu
     let stroke = Stroke::new(1.0, PRIMARY);
     painter.rect(rect, rounding, fill, stroke, egui::StrokeKind::Inside);
     paint_galley_centered(ui, rect, galley, PRIMARY);
+    paint_keyboard_focus_ring(ui, rect, &response);
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
 
     ui.ctx().request_repaint();
     response

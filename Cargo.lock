@@ -5199,6 +5199,7 @@ dependencies = [
  "libc",
  "parking_lot",
  "sqyre-capture",
+ "sqyre-domain",
  "sqyre-hotkeys",
  "sqyre-persist",
  "sqyre-ui-theme",

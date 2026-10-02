@@ -148,7 +148,13 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     let root = &app.workspace.macros[idx].root;
                     let root_children = root.children();
                     if root_children.is_empty() {
-                        ui.weak("No actions yet — Add Action");
+                        let _ = crate::widgets::empty_state(
+                            ui,
+                            "No actions yet",
+                            Some("Use Add Action to build this macro."),
+                            None,
+                            None,
+                        );
                     }
                     let known_vars = app
                         .tree

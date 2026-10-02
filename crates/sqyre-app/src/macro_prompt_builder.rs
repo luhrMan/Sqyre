@@ -711,7 +711,8 @@ pub fn build_prompt(user_nl: &str, macros: &[Macro], catalog: &ProgramCatalog) -
 
     out.push_str("\n## Existing macros (do not redefine; reference with @macro:Name / runmacro)\n");
     if macros.is_empty() {
-        out.push_str("(none)\n");
+        out.push_str(sqyre_domain::EMPTY_NONE);
+        out.push('\n');
     } else {
         for m in macros {
             out.push_str(&format!("- {}\n", m.name));

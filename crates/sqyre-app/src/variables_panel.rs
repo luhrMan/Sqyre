@@ -157,11 +157,15 @@ impl VariablesPanelUi {
             snap.len(),
         );
         if snap.is_empty() {
-            ui.weak(if running {
-                "Waiting for variables…"
+            let (title, body) = if running {
+                ("Waiting for variables…", None)
             } else {
-                "No runtime snapshot yet — run a macro."
-            });
+                (
+                    "No runtime snapshot yet",
+                    Some("Run a macro to capture live values."),
+                )
+            };
+            let _ = crate::widgets::empty_state(ui, title, body, None, None);
             return;
         }
         ui.add(
@@ -184,7 +188,7 @@ impl VariablesPanelUi {
         crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
             crate::widgets::enable_dense_row_extend(ui);
             if filtered.is_empty() {
-                ui.weak("No matching variables.");
+                crate::widgets::list_vacancy(ui, &q, 0, "variables");
                 return;
             }
             for (name, value) in filtered {
@@ -277,7 +281,7 @@ impl VariablesPanelUi {
         crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
             crate::widgets::enable_dense_row_extend(ui);
             if macro_.variable_decls.is_empty() {
-                ui.weak("No declared variables yet — click + Add.");
+                crate::widgets::list_vacancy(ui, "", 0, "declared variables");
                 return;
             }
             let mut any = false;
@@ -317,7 +321,7 @@ impl VariablesPanelUi {
                 });
             }
             if !any {
-                ui.weak("No matching variables.");
+                crate::widgets::list_vacancy(ui, &declared_q, 0, "variables");
             }
         });
 

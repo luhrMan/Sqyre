@@ -357,7 +357,9 @@ pub fn searchable_combo_with(
                 }
 
                 if !any {
-                    ui.weak("No matching options.");
+                    // Combo-inline: title only (full list_vacancy chrome is too tall in popups).
+                    let copy = crate::widgets::list_vacancy_copy(&q, "options");
+                    ui.weak(copy.title);
                 }
             });
 

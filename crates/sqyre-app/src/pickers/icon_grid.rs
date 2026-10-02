@@ -6,7 +6,7 @@ use crate::image_view;
 use crate::theme::{
     picker_drop_stroke, picker_remove_hover, picker_selected_fill, picker_selected_stroke,
 };
-use eframe::egui::{self, Color32, Sense, Vec2};
+use eframe::egui::{self, Color32, Sense, Vec2, WidgetInfo, WidgetType};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 
@@ -225,6 +225,7 @@ fn paint_remove_badge(ui: &mut egui::Ui, body: egui::Rect, target: &str) -> egui
     let btn_rect = remove_badge_rect(body);
     let btn_id = ui.id().with(("icon_rm", target));
     let btn_resp = ui.interact(btn_rect, btn_id, Sense::click_and_drag());
+    let tip = format!("Remove {target}");
     let btn_fill = if btn_resp.hovered() {
         picker_remove_hover()
     } else {
@@ -239,7 +240,10 @@ fn paint_remove_badge(ui: &mut egui::Ui, body: egui::Rect, target: &str) -> egui
         egui::FontId::proportional(REMOVE_BTN * 0.75),
         Color32::WHITE,
     );
-    btn_resp
+    crate::widgets::controls::paint_keyboard_focus_ring(ui, btn_rect, &btn_resp);
+    let enabled = ui.is_enabled();
+    btn_resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tip.as_str()));
+    btn_resp.on_hover_text(tip)
 }
 
 /// Paint a selectable icon cell (fixed square, no under-icon label).

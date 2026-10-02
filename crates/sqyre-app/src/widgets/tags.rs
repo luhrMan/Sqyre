@@ -1,6 +1,6 @@
 //! Removable tag chips with draft entry and completion suggestions.
 
-use eframe::egui::{self, Key, Modifiers, PopupCloseBehavior, RectAlign};
+use eframe::egui::{self, Key, Modifiers, PopupCloseBehavior, RectAlign, WidgetInfo, WidgetType};
 
 /// Max height of the tag suggestion dropdown popup.
 const TAG_SUGGEST_POPUP_HEIGHT: f32 = 180.0;
@@ -497,8 +497,11 @@ fn finish_chip_remove(
         crate::theme::MACRO_STOP
     };
     crate::theme::paint_text_centered(ui, rect, "×", egui::FontId::proportional(side * 0.7), fg);
+    const TIP: &str = "Remove tag";
     if enabled {
-        response.on_hover_text("Remove tag")
+        crate::widgets::controls::paint_keyboard_focus_ring(ui, rect, &response);
+        response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, TIP));
+        response.on_hover_text(TIP)
     } else {
         response
     }
