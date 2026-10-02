@@ -40,18 +40,7 @@ pub(crate) fn paint_keyboard_focus_ring(
 ///
 /// `tip` is the AccessKit name and hover text (required for actionable icons).
 pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
-    icon_button_inner(ui, glyph, tip, true, None)
-}
-
-/// Frameless icon control (optically centered); used in dense tree chrome.
-/// Pass `None` for the default interact text color.
-pub fn icon_button_bare_colored(
-    ui: &mut egui::Ui,
-    glyph: &str,
-    tip: &str,
-    color: Option<Color32>,
-) -> egui::Response {
-    icon_button_inner(ui, glyph, tip, false, color)
+    icon_button_inner(ui, glyph, tip, None)
 }
 
 /// Like [`icon_button`], with an optional fixed glyph color (e.g. record ●).
@@ -61,14 +50,13 @@ pub fn icon_button_colored(
     tip: &str,
     color: Option<Color32>,
 ) -> egui::Response {
-    icon_button_inner(ui, glyph, tip, true, color)
+    icon_button_inner(ui, glyph, tip, color)
 }
 
 fn icon_button_inner(
     ui: &mut egui::Ui,
     glyph: &str,
     tip: &str,
-    framed: bool,
     color: Option<Color32>,
 ) -> egui::Response {
     let enabled = ui.is_enabled();
@@ -76,15 +64,13 @@ fn icon_button_inner(
     let desired = Vec2::splat(icon_btn_side(ui));
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
     let visuals = ui.style().interact(&response);
-    if framed {
-        ui.painter().rect(
-            rect,
-            visuals.corner_radius,
-            visuals.weak_bg_fill,
-            visuals.bg_stroke,
-            egui::StrokeKind::Inside,
-        );
-    }
+    ui.painter().rect(
+        rect,
+        visuals.corner_radius,
+        visuals.weak_bg_fill,
+        visuals.bg_stroke,
+        egui::StrokeKind::Inside,
+    );
     let fg = color.unwrap_or_else(|| visuals.text_color());
     paint_text_centered(ui, rect, glyph, font_id, fg);
     paint_keyboard_focus_ring(ui, rect, &response);

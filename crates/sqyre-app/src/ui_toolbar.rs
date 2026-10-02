@@ -28,8 +28,6 @@ fn toolbar_icon_colored(
 }
 
 pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
-    #[cfg(not(target_arch = "wasm32"))]
-    let running = app.run_session.state.running.load(Ordering::SeqCst);
     ui.horizontal(|ui| {
         // Tight gap between chrome controls flanking the brand/CP affordance.
         ui.spacing_mut().item_spacing.x = theme::SPACE_4;
@@ -60,9 +58,9 @@ pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.command_palette.open_palette();
         }
 
-        // 3. Compact 2-row cluster to the right of CP:
+        // 3. Compact cluster to the right of CP:
         //    row1 Data Editor / Settings
-        //    row2 play/stop (desktop) or import/export (wasm)
+        //    row2 import/export (wasm only)
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme::SPACE_2;
             ui.horizontal(|ui| {
@@ -74,44 +72,14 @@ pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     app.settings_ui.request_open(ui.ctx());
                 }
             });
+            #[cfg(target_arch = "wasm32")]
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    if toolbar_icon_colored(
-                        ui,
-                        "▶",
-                        "Run",
-                        !running && !app.workspace.macros.is_empty(),
-                        Some(theme::MACRO_START),
-                    )
-                    .clicked()
-                    {
-                        app.start_macro(ui.ctx());
-                    }
-                    if toolbar_icon_colored(
-                        ui,
-                        "⏹",
-                        &format!(
-                            "Esc stops the running macro; {} exits Sqyre (failsafe).",
-                            sqyre_hotkeys::FAILSAFE_LABEL
-                        ),
-                        running,
-                        Some(theme::MACRO_STOP),
-                    )
-                    .clicked()
-                    {
-                        app.request_stop();
-                    }
+                if toolbar_icon(ui, "⬇", "Import db.yaml", true).clicked() {
+                    app.request_db_import();
                 }
-                #[cfg(target_arch = "wasm32")]
-                {
-                    if toolbar_icon(ui, "⬇", "Import db.yaml", true).clicked() {
-                        app.request_db_import();
-                    }
-                    if toolbar_icon(ui, "⬆", "Export db.yaml", true).clicked() {
-                        app.export_db_yaml();
-                    }
+                if toolbar_icon(ui, "⬆", "Export db.yaml", true).clicked() {
+                    app.export_db_yaml();
                 }
             });
         });
@@ -119,16 +87,57 @@ pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
         #[cfg(not(target_arch = "wasm32"))]
         show_update_banner(app, ui);
 
-        let status = app.run_session.state.status.lock().clone();
+        // With no macros the meta section (and its run row) is not drawn.
+        if app.workspace.macros.is_empty() {
+            let status = app.run_session.state.status.lock().clone();
+            if !status.is_empty() {
+                let right_w = ui.available_width();
+                ui.allocate_ui_with_layout(
+                    Vec2::new(right_w, ui.spacing().interact_size.y),
+                    egui::Layout::right_to_left(egui::Align::Center),
+                    |ui| {
+                        ui.label(status);
+                    },
+                );
+            }
+        }
+    });
+}
+
+/// Run/stop controls (desktop) and the run status line, above the macro name row.
+fn paint_run_row(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    let status = app.run_session.state.status.lock().clone();
+    #[cfg(target_arch = "wasm32")]
+    if status.is_empty() {
+        return;
+    }
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let running = app.run_session.state.running.load(Ordering::SeqCst);
+            if toolbar_icon_colored(ui, "▶", "Run", !running, Some(theme::MACRO_START)).clicked()
+            {
+                app.start_macro(ui.ctx());
+            }
+            if toolbar_icon_colored(
+                ui,
+                "⏹",
+                &format!(
+                    "Esc stops the running macro; {} exits Sqyre (failsafe).",
+                    sqyre_hotkeys::FAILSAFE_LABEL
+                ),
+                running,
+                Some(theme::MACRO_STOP),
+            )
+            .clicked()
+            {
+                app.request_stop();
+            }
+        }
         if !status.is_empty() {
-            let right_w = ui.available_width();
-            ui.allocate_ui_with_layout(
-                Vec2::new(right_w, ui.spacing().interact_size.y),
-                egui::Layout::right_to_left(egui::Align::Center),
-                |ui| {
-                    ui.label(status);
-                },
-            );
+            ui.add(egui::Label::new(&status).truncate())
+                .on_hover_text(&status);
         }
     });
 }
@@ -165,7 +174,8 @@ fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
 }
 
 /// Strip below the brand header: wasm editor note + separator.
-/// Chrome controls (list toggle, run/stop, Data Editor, Settings) live in [`brand_header`].
+/// Chrome controls (list toggle, Data Editor, Settings) live in [`brand_header`];
+/// run/stop sits above the macro name row in [`show_meta_and_hotkey`].
 pub fn main_toolbar(ui: &mut egui::Ui) {
     #[cfg(target_arch = "wasm32")]
     ui.small(
@@ -194,6 +204,7 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         .map(|m| m.name.clone())
         .collect();
     let all_tags = collect_all_macro_tags(&app.workspace.macros);
+    paint_run_row(app, ui);
     let meta = ui
         .horizontal_wrapped(|ui| {
             let row = {

@@ -332,8 +332,14 @@ impl SettingsUi {
             }
         }
 
-        let search_focused = ui
-            .horizontal(|ui| {
+        let has_search = !self.search.is_empty();
+        let mut clear_search = false;
+        let search_focused = crate::widgets::fill_row(
+            ui,
+            |ui| {
+                clear_search = has_search && ui.small_button("Clear").clicked();
+            },
+            |ui| {
                 ui.label(egui::RichText::new(
                     egui_phosphor::regular::MAGNIFYING_GLASS,
                 ))
@@ -353,12 +359,12 @@ impl SettingsUi {
                         }
                     }
                 }
-                if !self.search.is_empty() && ui.small_button("Clear").clicked() {
-                    self.search.clear();
-                }
                 search_resp.has_focus()
-            })
-            .inner;
+            },
+        );
+        if clear_search {
+            self.search.clear();
+        }
         ui.separator();
 
         let footer = if self.status_banner.status.is_some() {

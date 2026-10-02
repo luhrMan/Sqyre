@@ -1,6 +1,6 @@
 //! Removable tag chips with draft entry and completion suggestions.
 
-use eframe::egui::{self, Key, Modifiers, PopupCloseBehavior, RectAlign, WidgetInfo, WidgetType};
+use eframe::egui::{self, Key, Modifiers, PopupCloseBehavior, RectAlign};
 
 /// Max height of the tag suggestion dropdown popup.
 const TAG_SUGGEST_POPUP_HEIGHT: f32 = 180.0;
@@ -449,64 +449,6 @@ pub fn tag_chip_editor(
     edit
 }
 
-/// Layout-only × slot; sized to Small text so it does not grow the pill.
-/// Interact + paint happen in [`finish_chip_remove`].
-fn allocate_chip_remove_slot(ui: &mut egui::Ui) -> egui::Rect {
-    let side = ui.text_style_height(&egui::TextStyle::Small);
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
-    rect
-}
-
-/// Paint and interact the chip × over `rect`.
-///
-/// When `win_over_dnd` is true (reorderable chips), uses [`egui::Sense::click_and_drag`]
-/// registered *after* [`Ui::dnd_drag_source`] so the × wins over the parent drag sense —
-/// same pattern as icon-grid remove badges.
-///
-/// Hit testing matches the layout slot so clicks outside the pill (or on the
-/// label) cannot remove the tag by accident.
-fn finish_chip_remove(
-    ui: &mut egui::Ui,
-    rect: egui::Rect,
-    id: egui::Id,
-    enabled: bool,
-    win_over_dnd: bool,
-) -> egui::Response {
-    let sense = if !enabled {
-        egui::Sense::hover()
-    } else if win_over_dnd {
-        egui::Sense::click_and_drag()
-    } else {
-        egui::Sense::click()
-    };
-    let response = ui.interact(rect, id, sense);
-    let hovered = enabled && response.hovered();
-    let side = rect.width();
-    let fill = if hovered {
-        crate::theme::picker_remove_hover()
-    } else if enabled {
-        egui::Color32::from_black_alpha(55)
-    } else {
-        egui::Color32::from_black_alpha(28)
-    };
-    // Circle stays inside the layout slot (pill padding is the remaining margin).
-    ui.painter().circle_filled(rect.center(), side * 0.36, fill);
-    let fg = if hovered {
-        egui::Color32::WHITE
-    } else {
-        crate::theme::MACRO_STOP
-    };
-    crate::theme::paint_text_centered(ui, rect, "×", egui::FontId::proportional(side * 0.7), fg);
-    const TIP: &str = "Remove tag";
-    if enabled {
-        crate::widgets::controls::paint_keyboard_focus_ring(ui, rect, &response);
-        response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, TIP));
-        response.on_hover_text(TIP)
-    } else {
-        response
-    }
-}
-
 fn paint_tag_chips(
     ui: &mut egui::Ui,
     tags: &mut Vec<String>,
@@ -541,39 +483,28 @@ fn paint_tag_chips(
         } else {
             ("", tag.clone())
         };
-        let mut paint_chip = |ui: &mut egui::Ui| -> egui::Rect {
-            // Pill wraps label + × slot so `horizontal_wrapped` treats each chip as one unit.
-            // Zero item_spacing / button_padding keeps label+remove as one compact chip.
-            chip.show(ui, |ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                ui.spacing_mut().button_padding = egui::vec2(0.0, 0.0);
-                ui.spacing_mut().interact_size.y = small_h;
-                ui.horizontal(|ui| {
-                    if signed_filters
-                        && ui
-                            .add_enabled(
-                                enabled,
-                                egui::Button::new(
-                                    egui::RichText::new(polarity).small().color(fg).strong(),
-                                )
-                                .frame(false)
-                                .min_size(egui::vec2(small_h, small_h)),
-                            )
-                            .on_hover_text("Toggle include (+) / exclude (−)")
-                            .clicked()
-                    {
-                        toggle = Some(i);
-                    }
-                    ui.label(egui::RichText::new(label.as_str()).small().color(fg));
-                    ui.add_space(crate::theme::SPACE_2);
-                    allocate_chip_remove_slot(ui)
+        let paint_chip = |ui: &mut egui::Ui| -> egui::Rect {
+            // Zero item_spacing keeps polarity + label as one compact pill.
+            let resp = chip
+                .show(ui, |ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    ui.spacing_mut().interact_size.y = small_h;
+                    ui.horizontal(|ui| {
+                        if signed_filters {
+                            ui.label(egui::RichText::new(polarity).small().color(fg).strong());
+                        }
+                        ui.label(egui::RichText::new(label.as_str()).small().color(fg));
+                    });
                 })
-                .inner
-            })
-            .inner
+                .response;
+            if enabled {
+                resp.on_hover_text("Right-click to remove.").rect
+            } else {
+                resp.rect
+            }
         };
 
-        let (remove_rect, win_over_dnd) = if reorderable && enabled {
+        let chip_rect = if reorderable && enabled {
             let id = ui.id().with(("tag_dnd", i, tag.as_str()));
             let drag = ui.dnd_drag_source(id, i, paint_chip);
             if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
@@ -589,20 +520,27 @@ fn paint_tag_chips(
                     egui::StrokeKind::Outside,
                 );
             }
-            (drag.inner, true)
+            drag.inner
         } else {
-            (paint_chip(ui), false)
+            paint_chip(ui)
         };
-        if finish_chip_remove(
-            ui,
-            remove_rect,
-            ui.id().with(("tag_rm", i, tag.as_str())),
-            enabled,
-            win_over_dnd,
-        )
-        .clicked()
-        {
-            remove = Some(tag.clone());
+        if enabled {
+            let menu_id = ui.id().with(("tag_chip_menu", i, tag.as_str()));
+            crate::widgets::rect_context_menu(ui, menu_id, chip_rect, |ui| {
+                if signed_filters {
+                    let flip = if polarity == "+" {
+                        "Exclude (−)"
+                    } else {
+                        "Include (+)"
+                    };
+                    if crate::widgets::menu_item(ui, flip, true) {
+                        toggle = Some(i);
+                    }
+                }
+                if crate::widgets::menu_item_danger(ui, "Remove", true) {
+                    remove = Some(tag.clone());
+                }
+            });
         }
     }
     if let Some(i) = toggle {

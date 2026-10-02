@@ -297,7 +297,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
     .show(ctx, |ui| {
             is_dark = ui.visuals().dark_mode;
             ui.label(
-                "Hover for view tip, right-click or double-click to edit. Copy and paste into a macro.",
+                "Hover for view tip, double-click to edit, right-click for Edit / Delete. Copy and paste into a macro.",
             );
             ui.separator();
 

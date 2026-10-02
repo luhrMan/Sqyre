@@ -262,11 +262,13 @@ pub fn ingest_row(
     interaction: RowInteraction,
     pointer: Option<egui::Pos2>,
 ) {
-    if interaction.action != tree_chrome::RowAction::None {
-        return;
-    }
+    let open_edit = match interaction.action {
+        tree_chrome::RowAction::Edit => true,
+        tree_chrome::RowAction::None => interaction.double_clicked,
+        tree_chrome::RowAction::Logs | tree_chrome::RowAction::Delete => return,
+    };
 
-    if interaction.secondary_clicked || interaction.double_clicked {
+    if open_edit {
         let anchor = pointer.unwrap_or(egui::pos2(40.0, 40.0));
         state.open_edit(action, anchor);
         return;

@@ -57,6 +57,8 @@ impl DataEditor {
         let mut clicked_program: Option<String> = None;
         let mut clicked_overlay: Option<(String, String)> = None;
         let mut overlay_enabled_updates: Vec<(String, bool)> = Vec::new();
+        // (program, entity) picked from a row's right-click Delete; `None` entity = program.
+        let mut delete_target: Option<(String, Option<String>)> = None;
 
         // Take search / sort / scroll out so trailing + body can share locals.
         let mut search = std::mem::take(&mut self.search);
@@ -172,10 +174,29 @@ impl DataEditor {
                         if resp.clicked() {
                             self.select_program(name, catalog, settings);
                         }
+                        if crate::widgets::response_danger_menu(ui, &resp, "Delete") {
+                            delete_target = Some((name.clone(), None));
+                        }
                     }
                 }
                 EditorTab::Items | EditorTab::PixelCheck => {
                     ui.set_max_width(ui.available_width());
+                    let mut item_menu = |ui: &mut egui::Ui, target: &str| {
+                        if crate::widgets::menu_item_danger(ui, "Delete", true) {
+                            if let Some((prog, item)) =
+                                target.split_once(sqyre_domain::PROGRAM_DELIMITER)
+                            {
+                                delete_target = Some((prog.to_string(), Some(item.to_string())));
+                            }
+                        }
+                    };
+                    // Pixel Check reuses the items grid read-only.
+                    let menu: Option<&mut pickers::IconCellMenu<'_>> =
+                        if matches!(self.tab, EditorTab::Items) {
+                            Some(&mut item_menu)
+                        } else {
+                            None
+                        };
                     pickers::paint_items_icon_grid(
                         ui,
                         catalog,
@@ -189,6 +210,7 @@ impl DataEditor {
                         Some(&mut scroll_to),
                         *items_list_sort.borrow(),
                         &items_tag_priority.borrow(),
+                        menu,
                     );
                     visible = catalog
                         .program_names()
@@ -293,6 +315,9 @@ impl DataEditor {
                                     }
                                     if resp.clicked() {
                                         self.select_entity(prog, &ent, catalog, settings);
+                                    }
+                                    if crate::widgets::response_danger_menu(ui, &resp, "Delete") {
+                                        delete_target = Some((prog.clone(), Some(ent.clone())));
                                     }
                                 }
                             });
@@ -496,28 +521,47 @@ impl DataEditor {
                                     let selected = self.selected_program.as_deref()
                                         == Some(prog.as_str())
                                         && self.selected_entity.as_deref() == Some(btn.id.as_str());
-                                    ui.horizontal(|ui| {
-                                        let mut enabled = btn.enabled;
-                                        if ui
-                                            .checkbox(&mut enabled, "")
-                                            .on_hover_text(help::DE_OVERLAY_ENABLED)
-                                            .changed()
-                                        {
-                                            overlay_enabled_updates.push((btn.id.clone(), enabled));
-                                        }
+                                    let row = ui.horizontal(|ui| {
                                         let paint = live_preview
                                             .as_ref()
                                             .filter(|p| p.id == btn.id)
                                             .unwrap_or(btn);
                                         let thumb = paint_overlay_list_thumb(ui, paint);
-                                        if thumb.clicked()
-                                            || ui
-                                                .selectable_label(selected, paint.display_name())
-                                                .clicked()
-                                        {
+                                        let mut name = egui::RichText::new(paint.display_name());
+                                        if !btn.enabled {
+                                            name = name.weak();
+                                        }
+                                        let mut label = ui.selectable_label(selected, name);
+                                        if !btn.enabled {
+                                            label = label
+                                                .on_hover_text("Disabled — right-click to enable.");
+                                        }
+                                        if thumb.clicked() || label.clicked() {
                                             clicked_overlay = Some((prog.clone(), btn.id.clone()));
                                         }
                                     });
+                                    let menu_id = egui::Id::new(("overlay_row_menu", &btn.id));
+                                    crate::widgets::rect_context_menu(
+                                        ui,
+                                        menu_id,
+                                        row.response.rect,
+                                        |ui| {
+                                            let mut enabled = btn.enabled;
+                                            if ui
+                                                .checkbox(&mut enabled, "Enabled")
+                                                .on_hover_text(help::DE_OVERLAY_ENABLED)
+                                                .changed()
+                                            {
+                                                overlay_enabled_updates
+                                                    .push((btn.id.clone(), enabled));
+                                            }
+                                            if crate::widgets::menu_item_danger(ui, "Delete", true)
+                                            {
+                                                delete_target =
+                                                    Some((prog.clone(), Some(btn.id.clone())));
+                                            }
+                                        },
+                                    );
                                 }
                             });
                     }
@@ -544,7 +588,13 @@ impl DataEditor {
             self.persist_overlay_settings(settings);
         }
 
-        if let Some(prog) = clicked_program {
+        if let Some((prog, entity)) = delete_target {
+            match entity {
+                Some(entity) => self.select_entity(&prog, &entity, catalog, settings),
+                None => self.select_program(&prog, catalog, settings),
+            }
+            self.request_delete_selected();
+        } else if let Some(prog) = clicked_program {
             self.select_program(&prog, catalog, settings);
         } else if let Some((prog, id)) = clicked_overlay {
             self.select_entity(&prog, &id, catalog, settings);

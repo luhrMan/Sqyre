@@ -88,23 +88,37 @@ fn new_macro_button_adds_macro() {
     );
 }
 
+fn open_first_wait_row_menu(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>) {
+    harness
+        .query_all_by_label("Wait")
+        .next()
+        .expect("demo macro should contain a Wait row")
+        .click_secondary();
+    harness.run();
+}
+
 #[test]
-fn tree_log_buttons_follow_log_meta_images_setting() {
+fn tree_row_menu_logs_entry_follows_log_meta_images_setting() {
     let mut harness = build_docs_harness([1000.0, 500.0], |_| {});
     harness.run();
     assert!(
         harness.query_all_by_label("Logs").next().is_none(),
-        "log buttons should be hidden when Log Meta Images is off"
+        "no inline log buttons on tree rows"
+    );
+    open_first_wait_row_menu(&mut harness);
+    harness.get_by_label("Edit");
+    harness.get_by_label("Delete");
+    assert!(
+        harness.query_all_by_label("Logs").next().is_none(),
+        "Logs menu entry should be hidden when Log Meta Images is off"
     );
 
     let mut harness = build_docs_harness([1000.0, 500.0], |app| {
         app.docs_settings_mut().save_meta_images = true;
     });
     harness.run();
-    assert!(
-        harness.query_all_by_label("Logs").next().is_some(),
-        "log buttons should show when Log Meta Images is on"
-    );
+    open_first_wait_row_menu(&mut harness);
+    harness.get_by_label("Logs");
 }
 
 #[test]

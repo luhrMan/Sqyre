@@ -13,6 +13,7 @@ use sqyre_ui_model::action_picker_category;
 
 const WINDOW_ID: &str = "sqyre_command_palette";
 const ROW_H: f32 = 28.0;
+const MAX_VISIBLE_ROWS: usize = 10;
 const CREATE_SCORE_PENALTY: u32 = 40;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -136,14 +137,14 @@ impl CommandPaletteUi {
             });
 
         let mut open = self.open;
-        crate::widgets::fit_dialog_window(
+        crate::widgets::fit_dialog_popup(
             egui::Window::new("Command palette")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_TOP, [0.0, 72.0])
-                .default_size([520.0, 380.0])
-                .min_size(crate::widgets::FLOATER_MIN_PALETTE)
+                .default_width(520.0)
+                .min_width(crate::widgets::FLOATER_MIN_PALETTE[0])
                 .order(egui::Order::Foreground)
                 .open(&mut open),
             ctx,
@@ -203,7 +204,12 @@ impl CommandPaletteUi {
                 return;
             }
 
-            let list_h = ROW_H * 10.0 + 8.0;
+            let row_pitch = ROW_H + ui.spacing().item_spacing.y;
+            let rows = filtered.len().min(MAX_VISIBLE_ROWS) as f32;
+            let screen_room = crate::widgets::dialog_constrain_rect(ui.ctx()).bottom()
+                - ui.cursor().top()
+                - ui.spacing().window_margin.bottomf();
+            let list_h = (rows * row_pitch).min(screen_room.max(row_pitch));
             let list_w = crate::widgets::visible_width(ui);
             crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
                 crate::widgets::enable_dense_row_extend(ui);

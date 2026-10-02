@@ -18,8 +18,6 @@ use std::collections::HashMap;
 
 /// Icon badge edge length.
 const ICON_SIZE: f32 = 18.0;
-/// Gap between logs and delete.
-const ROW_ACTION_BTN_GAP: f32 = 2.0;
 /// Pill inner padding (4×2).
 const PILL_MARGIN_X: i8 = 4;
 const PILL_MARGIN_Y: i8 = 2;
@@ -55,11 +53,12 @@ pub fn action_row_height(_action: &Action, interact_y: f32) -> f32 {
     default_row_height(interact_y)
 }
 
-/// Clickable chrome on a tree row.
+/// Entry picked from a tree row's right-click menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RowAction {
     #[default]
     None,
+    Edit,
     Logs,
     Delete,
 }
@@ -84,7 +83,6 @@ pub struct RowInteraction {
     /// Pointer over the row, treating non-interactable tooltip layers as transparent
     /// (view tip clickthrough) but not other windows covering the tree.
     pub pointer_in_row: bool,
-    pub secondary_clicked: bool,
     pub double_clicked: bool,
     pub primary_clicked: bool,
     /// Label content rect (for execution highlight follow / scroll).
@@ -101,7 +99,6 @@ impl Default for RowInteraction {
             action: RowAction::None,
             hovered: false,
             pointer_in_row: false,
-            secondary_clicked: false,
             double_clicked: false,
             primary_clicked: false,
             row_rect: egui::Rect::NOTHING,
@@ -172,15 +169,6 @@ fn target_thumb_size(
             image_view::fit_icon_thumb(tw as f32, th as f32, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H)
         })
         .unwrap_or(Vec2::splat(TARGET_THUMB_MAX_H))
-}
-
-fn row_action_btn(
-    ui: &mut egui::Ui,
-    glyph: &str,
-    tip: &str,
-    color: Option<Color32>,
-) -> egui::Response {
-    crate::widgets::icon_button_bare_colored(ui, glyph, tip, color)
 }
 
 /// Paint the pastel type badge with a glyph.
@@ -433,10 +421,8 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         &display,
         |_| false,
         crate::pickers::IconGridKind::Targets { removable: false },
-        |_, _| {},
-        |_| {},
+        crate::pickers::IconGridOps::default(),
         None,
-        |_| false,
     );
 }
 
@@ -582,8 +568,6 @@ pub fn paint_action_row(
     validation_error: Option<&str>,
     show_logs: bool,
 ) -> RowInteraction {
-    let mut action_click = RowAction::None;
-    let mut chrome_hovered = false;
     let mut tip_hovered = false;
     // Match TreeView node height.
     let interact_y = row_height(ui);
@@ -592,44 +576,18 @@ pub fn paint_action_row(
 
     // egui_ltreeview remembers a content-based min width, so `available_width` can stay
     // wider than the visible panel after the user shrinks the window. Cap the row to the
-    // clip rect and anchor logs/delete on the visible right edge — inset further so a
-    // floating scrollbar cannot cover the buttons.
+    // clip rect, inset so a floating scrollbar cannot cover trailing pills.
     let spacing = ui.spacing().item_spacing.x;
     let visible_end = ui.clip_rect().right() - crate::widgets::floating_scrollbar_overlay_width(ui);
     let row_start = ui.cursor().min.x;
     let max_visible_w = (visible_end - row_start).max(0.0);
     let row_w = ui.available_width().min(max_visible_w);
 
-    let mut chrome_rect = egui::Rect::NOTHING;
     let mut drag_handle_rect = egui::Rect::NOTHING;
     let row = ui.allocate_ui_with_layout(
         Vec2::new(row_w, row_h),
-        egui::Layout::right_to_left(egui::Align::Center),
+        egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
-            ui.spacing_mut().item_spacing.x = ROW_ACTION_BTN_GAP;
-
-            let del = row_action_btn(ui, "🗑", "Delete", Some(crate::theme::MACRO_STOP));
-            if del.contains_pointer() {
-                chrome_hovered = true;
-            }
-            if del.clicked() {
-                action_click = RowAction::Delete;
-            }
-            chrome_rect = del.rect;
-
-            if show_logs {
-                let logs = row_action_btn(ui, "📋", "Logs", None);
-                // contains_pointer: the full-row sense below steals `.hovered()` over these buttons.
-                if logs.contains_pointer() {
-                    chrome_hovered = true;
-                }
-                if logs.clicked() {
-                    action_click = RowAction::Logs;
-                }
-                chrome_rect = logs.rect.union(del.rect);
-            }
-            ui.spacing_mut().item_spacing.x = spacing;
-
             let content_w = ui.available_width().max(0.0);
             let (content_rect, _) =
                 ui.allocate_exact_size(Vec2::new(content_w, row_h), Sense::hover());
@@ -746,11 +704,7 @@ pub fn paint_action_row(
     }
     paint_row_highlight(ui, row.response.rect, highlight);
 
-    // Keep row click/hover sense off the logs/delete chrome so they win interaction.
-    let mut sense_rect = row.response.rect;
-    if chrome_rect.width() > 0.0 {
-        sense_rect.max.x = sense_rect.max.x.min(chrome_rect.min.x);
-    }
+    let sense_rect = row.response.rect;
 
     // Hover-only: a Sense::click overlay would steal TreeView selection clicks.
     // Primary/secondary/double are read geometrically (with layer_id_at) so they
@@ -766,29 +720,38 @@ pub fn paint_action_row(
     // when edge-constrain slides the tip over the row. Still blocked when
     // another Window/Area covers the tree (Settings, Data Editor, etc.).
     let our_layer = ui.layer_id();
-    let pointer_in_row = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
-        sense_rect.contains(p)
-            && !chrome_rect.contains(p)
-            && ui.ctx().layer_id_at(p) == Some(our_layer)
-    });
+    let pointer_in_row = ui
+        .input(|i| i.pointer.hover_pos())
+        .is_some_and(|p| sense_rect.contains(p) && ui.ctx().layer_id_at(p) == Some(our_layer));
+
+    let menu_id = egui::Id::new(("action_row_menu", our_layer, action.id));
+    let action_click = crate::widgets::rect_context_menu(ui, menu_id, sense_rect, |ui| {
+        if crate::widgets::menu_item(ui, "Edit", true) {
+            return RowAction::Edit;
+        }
+        if show_logs && crate::widgets::menu_item(ui, "Logs", true) {
+            return RowAction::Logs;
+        }
+        if crate::widgets::menu_item_danger(ui, "Delete", true) {
+            return RowAction::Delete;
+        }
+        RowAction::None
+    })
+    .unwrap_or_default();
 
     let over_row = pointer_in_row && action_click == RowAction::None;
     let primary_clicked = over_row && ui.input(|i| i.pointer.primary_clicked());
-    let secondary_clicked =
-        over_row && ui.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary));
     let double_clicked = over_row
         && ui.input(|i| {
             i.pointer
                 .button_double_clicked(egui::PointerButton::Primary)
         });
 
-    let hovered = (row.response.hovered() || tip_hovered || sense.hovered() || pointer_in_row)
-        && !chrome_hovered;
+    let hovered = row.response.hovered() || tip_hovered || sense.hovered() || pointer_in_row;
     RowInteraction {
         action: action_click,
         hovered: hovered && action_click == RowAction::None,
         pointer_in_row: over_row,
-        secondary_clicked,
         double_clicked,
         primary_clicked,
         row_rect: row.response.rect,

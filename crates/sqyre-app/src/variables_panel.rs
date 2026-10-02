@@ -293,31 +293,27 @@ impl VariablesPanelUi {
                     continue;
                 }
                 any = true;
-                ui.horizontal(|ui| {
-                    ui.monospace(&d.name);
-                    ui.label(d.type_.as_str());
-                    if !d.initial_value.trim().is_empty() {
-                        ui.weak(format!("= {}", d.initial_value));
-                    }
-                    if !d.description.trim().is_empty() {
-                        ui.weak(&d.description);
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new("Remove").color(crate::theme::MACRO_STOP),
-                                )
-                                .small(),
-                            )
-                            .clicked()
-                        {
-                            remove_idx = Some(i);
+                let row = ui
+                    .horizontal(|ui| {
+                        ui.monospace(&d.name);
+                        ui.label(d.type_.as_str());
+                        if !d.initial_value.trim().is_empty() {
+                            ui.weak(format!("= {}", d.initial_value));
                         }
-                        if ui.small_button("Edit").clicked() {
-                            start_edit = Some(i);
+                        if !d.description.trim().is_empty() {
+                            ui.weak(&d.description);
                         }
-                    });
+                    })
+                    .response
+                    .on_hover_text("Right-click to edit or remove.");
+                let menu_id = egui::Id::new(("declared_var_menu", &d.name));
+                crate::widgets::row_context_menu(ui, menu_id, row.rect, |ui| {
+                    if crate::widgets::menu_item(ui, "Edit", true) {
+                        start_edit = Some(i);
+                    }
+                    if crate::widgets::menu_item_danger(ui, "Remove", true) {
+                        remove_idx = Some(i);
+                    }
                 });
             }
             if !any {

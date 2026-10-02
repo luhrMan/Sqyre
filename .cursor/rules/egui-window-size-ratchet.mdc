@@ -39,6 +39,16 @@ crate::widgets::fill_resize_body(ui, |ui| { /* … */ });
 // ✅ Fill leftover width without an absolute min_width
 ui.add(egui::TextEdit::singleline(s).desired_width(f32::INFINITY));
 
+// ✅ Fill field + trailing buttons on one row: trailing first (right-to-left)
+crate::widgets::fill_row(
+    ui,
+    |ui| { ui.button("Refresh"); },       // first added = rightmost
+    |ui| { ui.add(egui::TextEdit::singleline(s).desired_width(f32::INFINITY)); },
+);
+// ❌ ui.horizontal(|ui| { fill TextEdit; ui.button("Refresh"); })
+//    → button pushed past the pane; parent region widens, so right-aligned
+//      footers (Save/Cancel) and later full-width content stay off-screen.
+
 // ✅ Both-axis scroll, viewport-capped (vertical-only + auto_shrink false expands width)
 crate::pickers::dialog_scroll(ui.available_width(), max_h)
     .show(ui, |ui| {
@@ -54,6 +64,7 @@ Prefer `fill_resize_body`, `dialog_scroll`, `new_child` for absolute panes, and 
 | Helper | Use |
 |--------|-----|
 | `fill_resize_body` | Window body that must fill but stay resizable |
+| `fill_row` | Fill-width field with trailing buttons on the same row |
 | `visible_width` / `visible_height` / `visible_size` | Layout budget from clip ∩ max_rect |
 | `popup_scroll_max_height` | Scroll pane height that will not ratchet |
 
@@ -68,13 +79,3 @@ Prefer `fill_resize_body`, `dialog_scroll`, `new_child` for absolute panes, and 
 5. Once content min_size equals the current window size, **Resize cannot shrink** — it feels “stuck”.
 
 When changing dialog layout, prefer `fill_resize_body` + `set_max_*` over `set_min_width(available)` / `set_width(available)`.
-
-
-## Why it feels like “forever”
-
-1. Child min_size ≥ available (fill widgets, grid columns, TextEdit + siblings).
-2. Window expands to that min_size (Resize never auto-shrinks).
-3. Next frame available is larger → repeat until `max_size` (almost full screen).
-4. A vertical scrollbar that appears after layout also steals width; a grid sized *before* the scrollbar then overflows and grows again.
-
-When changing dialog layout, prefer `set_max_*` + justified layouts over `set_min_width(available)` / `set_width(available)`.

@@ -126,25 +126,35 @@ impl DataEditor {
         recording_msg: &str,
         arm: impl FnOnce(&ScreenClickBridge),
     ) {
-        ui.horizontal(|ui| {
-            help::label(ui, "Name", help::DE_NAME);
-            help::tip(
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY),
-                ),
-                help::DE_NAME,
-            );
-            let armed = screen_click.is_armed();
-            if crate::widgets::record_icon_button(ui, record_tip, !armed).clicked() {
-                self.save_after_record = false;
-                arm(screen_click);
-                self.set_ok(recording_msg);
-            }
-            if armed && ui.button("Cancel").clicked() {
-                self.save_after_record = false;
-                screen_click.disarm();
-            }
-        });
+        let armed = screen_click.is_armed();
+        let mut record = false;
+        let mut cancel = false;
+        crate::widgets::fill_row(
+            ui,
+            |ui| {
+                cancel = armed && ui.button("Cancel").clicked();
+                record = crate::widgets::record_icon_button(ui, record_tip, !armed).clicked();
+            },
+            |ui| {
+                help::label(ui, "Name", help::DE_NAME);
+                help::tip(
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.form_name)
+                            .desired_width(f32::INFINITY),
+                    ),
+                    help::DE_NAME,
+                );
+            },
+        );
+        if cancel {
+            self.save_after_record = false;
+            screen_click.disarm();
+        }
+        if record {
+            self.save_after_record = false;
+            arm(screen_click);
+            self.set_ok(recording_msg);
+        }
         paint_fs_name_hint(ui, &self.form_name);
     }
 

@@ -110,8 +110,8 @@ pub const SET_VAR: &str = "Variable name to assign.";
 pub const SET_VALUE: &str =
     "Plain text, ${ref}, or a math expression. Use f(x) to insert functions.";
 pub const SET_FX: &str = "Insert a math function, constant, or operator.";
-pub const SET_ADD_ASSIGNMENT: &str = "Add another variable assignment.";
-pub const SET_REMOVE_ASSIGNMENT: &str = "Remove this assignment.";
+pub const SET_ADD_ASSIGNMENT: &str =
+    "Add another variable assignment. Right-click an assignment to remove it.";
 
 // --- Save variable ---
 
@@ -135,8 +135,7 @@ pub const CLAUSE_LEFT: &str =
 pub const CLAUSE_OP: &str = "Comparison operator.";
 pub const CLAUSE_RIGHT: &str =
     "Right side of the comparison (text, ${var}, or expression). Spaces are allowed in text.";
-pub const CLAUSE_ADD: &str = "Add another condition clause.";
-pub const CLAUSE_REMOVE: &str = "Remove this clause.";
+pub const CLAUSE_ADD: &str = "Add another condition clause. Right-click a clause to remove it.";
 
 // --- For each row ---
 
@@ -146,8 +145,8 @@ pub const FOREACH_SOURCE: &str = "List text, ${var}, or a file path when Is file
 pub const FOREACH_OUTPUT: &str = "Variable that receives the current cell each row.";
 pub const FOREACH_IS_FILE: &str = "Treat Source as a path and read lines from that file.";
 pub const FOREACH_SKIP_BLANK: &str = "Skip empty lines in the source.";
-pub const FOREACH_ADD_SOURCE: &str = "Add another column source.";
-pub const FOREACH_REMOVE_SOURCE: &str = "Remove this source.";
+pub const FOREACH_ADD_SOURCE: &str =
+    "Add another column source. Right-click a source to remove it.";
 pub const FOREACH_CELLS: &str =
     "Collection cell range to visit (1×1 cells, row-major). Sets CellX/CellY and Cell Bounds vars.";
 

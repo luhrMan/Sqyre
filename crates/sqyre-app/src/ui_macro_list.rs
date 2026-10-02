@@ -195,12 +195,20 @@ fn build_tag_tree(macros: &[Macro], filter: &str) -> (TagTreeNode, Vec<usize>) {
     (root, untagged)
 }
 
+/// What a macro row asked for this frame (click or right-click menu entry).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MacroRowAction {
+    Select(usize),
+    Duplicate(usize),
+    Delete(usize),
+}
+
 fn paint_macro_rows(
     ui: &mut egui::Ui,
     app: &SqyreApp,
     list_w: f32,
     indices: &[usize],
-    clicked_macro: &mut Option<usize>,
+    row_action: &mut Option<MacroRowAction>,
 ) {
     for &i in indices {
         let Some(m) = app.workspace.macros.get(i) else {
@@ -221,7 +229,21 @@ fn paint_macro_rows(
             resp = resp.on_hover_text(format!("Validation: {err}"));
         }
         if resp.clicked() {
-            *clicked_macro = Some(i);
+            *row_action = Some(MacroRowAction::Select(i));
+        }
+        // Multi-tag macros paint once per tag; the row id keeps each copy's menu separate.
+        if let Some(action) = crate::widgets::response_context_menu(ui, &resp, |ui| {
+            if crate::widgets::menu_item(ui, "Duplicate", true) {
+                return Some(MacroRowAction::Duplicate(i));
+            }
+            if crate::widgets::menu_item_danger(ui, "Delete", true) {
+                return Some(MacroRowAction::Delete(i));
+            }
+            None
+        })
+        .flatten()
+        {
+            *row_action = Some(action);
         }
     }
 }
@@ -229,7 +251,7 @@ fn paint_macro_rows(
 struct PaintTagCtx<'a> {
     app: &'a SqyreApp,
     list_w: f32,
-    clicked_macro: &'a mut Option<usize>,
+    row_action: &'a mut Option<MacroRowAction>,
     clicked_tag: &'a mut Option<String>,
     /// Program icons per tag path (see [`program_tag_icons`]).
     tag_icons: &'a HashMap<String, Vec<TextureHandle>>,
@@ -327,7 +349,7 @@ fn paint_tag_node(
         })
         .body_unindented(|ui| {
             ui.set_max_width(ctx.list_w);
-            paint_macro_rows(ui, ctx.app, ctx.list_w, &node.macros, ctx.clicked_macro);
+            paint_macro_rows(ui, ctx.app, ctx.list_w, &node.macros, ctx.row_action);
             for (seg, child) in &node.children {
                 let child_path = if path.is_empty() {
                     seg.clone()
@@ -344,7 +366,7 @@ fn paint_tag_node(
                         let mut nested = PaintTagCtx {
                             app: ctx.app,
                             list_w: nested_w,
-                            clicked_macro: ctx.clicked_macro,
+                            row_action: ctx.row_action,
                             clicked_tag: ctx.clicked_tag,
                             tag_icons: ctx.tag_icons,
                             compact: ctx.compact,
@@ -361,6 +383,12 @@ fn paint_tag_node(
                 });
             }
         });
+}
+
+fn select_macro_row(app: &mut SqyreApp, i: usize) {
+    app.workspace.selected_macro = i;
+    app.tree.selected_actions.clear();
+    app.tree.tooltip.cancel();
 }
 
 pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
@@ -416,34 +444,6 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 if new_resp.clicked() {
                     app.create_macro();
                 }
-                let has_sel = !app.workspace.macros.is_empty();
-                if ui
-                    .add_enabled_ui(has_sel, |ui| {
-                        crate::widgets::icon_button(ui, "📄", "Duplicate selected macro")
-                    })
-                    .inner
-                    .clicked()
-                {
-                    app.duplicate_selected_macro();
-                }
-                if ui
-                    .add_enabled_ui(has_sel, |ui| {
-                        crate::widgets::icon_button_colored(
-                            ui,
-                            "🗑",
-                            "Delete selected macro",
-                            Some(crate::theme::MACRO_STOP),
-                        )
-                    })
-                    .inner
-                    .clicked()
-                {
-                    let idx = app
-                        .workspace
-                        .selected_macro
-                        .min(app.workspace.macros.len() - 1);
-                    app.pending_delete_macro = Some(app.workspace.macros[idx].name.clone());
-                }
             });
             ui.add(
                 egui::TextEdit::singleline(&mut app.macro_list_filter)
@@ -487,7 +487,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 let tag_icons =
                     program_tag_icons(ui.ctx(), &app.workspace.catalog, &mut app.icon_cache);
                 let compact = app.settings_ui.settings().compact_program_headers;
-                let mut clicked_macro: Option<usize> = None;
+                let mut row_action: Option<MacroRowAction> = None;
                 let mut clicked_tag: Option<String> = None;
                 let has_visible = !tree.children.is_empty() || !untagged.is_empty();
                 if !has_visible {
@@ -510,7 +510,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     let mut ctx = PaintTagCtx {
                         app,
                         list_w,
-                        clicked_macro: &mut clicked_macro,
+                        row_action: &mut row_action,
                         clicked_tag: &mut clicked_tag,
                         tag_icons: &tag_icons,
                         compact,
@@ -539,10 +539,18 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 if let Some(tag) = clicked_tag {
                     app.toggle_hotkey_tag_filter(tag);
                 }
-                if let Some(i) = clicked_macro {
-                    app.workspace.selected_macro = i;
-                    app.tree.selected_actions.clear();
-                    app.tree.tooltip.cancel();
+                match row_action {
+                    Some(MacroRowAction::Select(i)) => select_macro_row(app, i),
+                    Some(MacroRowAction::Duplicate(i)) => {
+                        select_macro_row(app, i);
+                        app.duplicate_selected_macro();
+                    }
+                    Some(MacroRowAction::Delete(i)) => {
+                        if let Some(m) = app.workspace.macros.get(i) {
+                            app.pending_delete_macro = Some(m.name.clone());
+                        }
+                    }
+                    None => {}
                 }
             });
         });

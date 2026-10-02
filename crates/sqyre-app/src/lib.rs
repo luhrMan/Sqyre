@@ -21,6 +21,7 @@ mod diag;
 pub mod docs_fixture;
 mod egui_keys;
 mod file_dialogs;
+mod focus_nav;
 mod hotkey_chooser;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod hotkey_focus_tags;
@@ -735,6 +736,7 @@ impl eframe::App for SqyreApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        focus_nav::lock_to_window(ui.ctx());
         self.take_pending_db_import();
         // Poll background tasks before floating windows so Settings sees fresh update state.
         ui_overlays::sync_frame_state(self, ui.ctx());

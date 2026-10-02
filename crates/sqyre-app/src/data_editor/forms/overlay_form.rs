@@ -211,6 +211,9 @@ impl DataEditor {
                 } else {
                     let mut remove: Option<usize> = None;
                     let snapshot = self.form_overlay_gate_targets.clone();
+                    let mut on_remove = |i| {
+                        remove = Some(i);
+                    };
                     pickers::paint_even_icon_grid(
                         ui,
                         catalog,
@@ -218,12 +221,11 @@ impl DataEditor {
                         &snapshot,
                         |_| true,
                         pickers::IconGridKind::Targets { removable: true },
-                        |_, _| {},
-                        |i| {
-                            remove = Some(i);
+                        pickers::IconGridOps {
+                            on_remove: Some(&mut on_remove),
+                            ..Default::default()
                         },
                         None,
-                        |_| true,
                     );
                     if let Some(i) = remove {
                         self.form_overlay_gate_targets.remove(i);

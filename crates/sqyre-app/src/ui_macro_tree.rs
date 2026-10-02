@@ -734,7 +734,7 @@ fn build_tree(
         match interaction.action {
             RowAction::Logs => *open_logs = Some(action_id),
             RowAction::Delete => *delete_action = Some(action_id),
-            RowAction::None => {}
+            RowAction::Edit | RowAction::None => {}
         }
         row_events.push((action_id, interaction));
     };
@@ -834,7 +834,6 @@ fn build_else_dir(
                         action: RowAction::None,
                         hovered: resp.hovered(),
                         pointer_in_row: resp.hovered(),
-                        secondary_clicked: false,
                         double_clicked: false,
                         primary_clicked: resp.clicked(),
                         row_rect,

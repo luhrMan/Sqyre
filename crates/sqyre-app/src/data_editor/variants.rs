@@ -84,7 +84,8 @@ impl DataEditor {
             for path in &paths {
                 let variant = variant_name_from_path(path, item);
                 let is_demo = !path.is_file() && crate::demo_icons::contains(path);
-                ui.vertical(|ui| {
+                let deny = is_demo || !can_delete || variant.is_empty() || variant == "Original";
+                let cell = ui.vertical(|ui| {
                     ui.set_max_width(112.0);
                     match icons.for_path(ui.ctx(), path) {
                         Some(tex) => {
@@ -101,23 +102,19 @@ impl DataEditor {
                     if is_demo {
                         ui.weak("demo");
                     }
-                    let deny =
-                        is_demo || !can_delete || variant.is_empty() || variant == "Original";
-                    if ui
-                        .add_enabled(
-                            !deny,
-                            egui::Button::new(
-                                egui::RichText::new("Delete").color(crate::theme::MACRO_STOP),
-                            )
-                            .small(),
-                        )
-                        .clicked()
-                    {
-                        self.confirm = Some(PendingConfirm::DeleteVariant {
-                            variant: variant.clone(),
-                        });
-                    }
                 });
+                let menu_id = egui::Id::new(("icon_variant_menu", item, &variant));
+                if crate::widgets::rect_danger_menu(
+                    ui,
+                    menu_id,
+                    cell.response.rect,
+                    "Delete",
+                    !deny,
+                ) {
+                    self.confirm = Some(PendingConfirm::DeleteVariant {
+                        variant: variant.clone(),
+                    });
+                }
                 ui.add_space(crate::theme::SPACE_8);
             }
         });

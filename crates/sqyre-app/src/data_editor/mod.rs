@@ -129,6 +129,21 @@ impl EditorTab {
     pub(crate) fn is_desktop_only(self) -> bool {
         matches!(self, Self::ScreenCap | Self::PixelCheck)
     }
+
+    /// Noun in the delete confirmation (`item “foo”`). `None` when the tab cannot delete.
+    fn delete_subject(self) -> Option<&'static str> {
+        match self {
+            Self::Programs => Some("program"),
+            Self::Items => Some("item"),
+            Self::Points => Some("point"),
+            Self::SearchAreas => Some("search area"),
+            Self::Masks => Some("mask"),
+            Self::Collections => Some("collection"),
+            Self::Atlases => Some("atlas"),
+            Self::Overlay => Some("overlay button"),
+            Self::ScreenCap | Self::PixelCheck => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1058,58 +1073,29 @@ impl DataEditor {
                     if save_clicked || save_enter || (tag_submit && save_enabled) {
                         self.on_update(env, previews);
                     }
-                    let can_delete = match self.tab {
-                        EditorTab::Programs => self.selected_program.is_some(),
-                        EditorTab::ScreenCap | EditorTab::PixelCheck => false,
-                        _ => self.selected_program.is_some() && self.selected_entity.is_some(),
-                    };
-                    if ui
-                        .add_enabled(
-                            can_delete,
-                            egui::Button::new(
-                                egui::RichText::new("Delete").color(crate::theme::MACRO_STOP),
-                            ),
-                        )
-                        .clicked()
-                    {
-                        let label = match self.tab {
-                            EditorTab::Programs => format!(
-                                "program “{}”",
-                                self.selected_program.as_deref().unwrap_or("")
-                            ),
-                            EditorTab::Items => {
-                                format!("item “{}”", self.selected_entity.as_deref().unwrap_or(""))
-                            }
-                            EditorTab::Points => {
-                                format!("point “{}”", self.selected_entity.as_deref().unwrap_or(""))
-                            }
-                            EditorTab::SearchAreas => format!(
-                                "search area “{}”",
-                                self.selected_entity.as_deref().unwrap_or("")
-                            ),
-                            EditorTab::Masks => {
-                                format!("mask “{}”", self.selected_entity.as_deref().unwrap_or(""))
-                            }
-                            EditorTab::Collections => format!(
-                                "collection “{}”",
-                                self.selected_entity.as_deref().unwrap_or("")
-                            ),
-                            EditorTab::Atlases => {
-                                format!("atlas “{}”", self.selected_entity.as_deref().unwrap_or(""))
-                            }
-                            EditorTab::Overlay => format!(
-                                "overlay button “{}”",
-                                self.selected_entity.as_deref().unwrap_or("")
-                            ),
-                            EditorTab::ScreenCap | EditorTab::PixelCheck => String::new(),
-                        };
-                        if !label.is_empty() {
-                            self.confirm = Some(PendingConfirm::Delete { label });
-                        }
-                    }
                 });
             });
         }
+    }
+
+    /// Ask to delete the selected program / entity (list row right-click → Delete).
+    pub(crate) fn request_delete_selected(&mut self) {
+        let Some(subject) = self.tab.delete_subject() else {
+            return;
+        };
+        let name = if self.tab == EditorTab::Programs {
+            self.selected_program.as_deref().unwrap_or("")
+        } else if self.selected_program.as_deref().is_none_or(str::is_empty) {
+            ""
+        } else {
+            self.selected_entity.as_deref().unwrap_or("")
+        };
+        if name.is_empty() {
+            return;
+        }
+        self.confirm = Some(PendingConfirm::Delete {
+            label: format!("{subject} “{name}”"),
+        });
     }
 
     /// Enter → Update only when this window is in front and no overlay owns the key.

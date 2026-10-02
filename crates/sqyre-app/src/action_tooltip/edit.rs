@@ -819,12 +819,17 @@ fn targets_editor(
     let infos = target_sort_infos(catalog, &display);
     let mut remove: Option<usize> = None;
     let mut reorder: Option<(usize, usize)> = None;
+    let mut on_remove = |i| {
+        remove = Some(i);
+    };
     let mut on_reorder = |from: usize, to: usize| {
         reorder = Some((from, to));
     };
     // Drag-reorder only when the grid is exactly the explicit target list
     // (tag expansion would make display indices disagree with stored order).
     let allow_reorder = target_tags.is_empty();
+    // Tag-filter matches are not stored in `targets`; Remove would be a no-op.
+    let is_removable = |t: &str| targets.iter().any(|explicit| explicit == t);
     pickers::paint_even_icon_grid(
         ui,
         catalog,
@@ -832,17 +837,13 @@ fn targets_editor(
         &display,
         |_| false,
         pickers::IconGridKind::Targets { removable: true },
-        |_, _| {},
-        |i| {
-            remove = Some(i);
+        pickers::IconGridOps {
+            on_remove: Some(&mut on_remove),
+            on_reorder: allow_reorder.then_some(&mut on_reorder),
+            is_removable: Some(&is_removable),
+            ..Default::default()
         },
-        if allow_reorder {
-            Some(&mut on_reorder)
-        } else {
-            None
-        },
-        // Tag-filter matches are not stored in `targets`; × would be a no-op.
-        |t| targets.iter().any(|explicit| explicit == t),
+        None,
     );
     if let Some((from, to)) = reorder {
         let _ = sqyre_domain::apply_display_reorder(
@@ -1522,6 +1523,11 @@ fn list_header(ui: &mut egui::Ui, title: &str, count: usize, add_help: &str) -> 
     add
 }
 
+/// Right-click Remove menu for one repeatable list row; true when picked.
+fn remove_row_menu(ui: &egui::Ui, rect: egui::Rect) -> bool {
+    crate::widgets::rect_danger_menu(ui, ui.id().with("remove_row_menu"), rect, "Remove", true)
+}
+
 fn clauses_editor(
     ui: &mut egui::Ui,
     clauses: &mut Vec<ConditionClause>,
@@ -1536,7 +1542,7 @@ fn clauses_editor(
     for (i, clause) in clauses.iter_mut().enumerate() {
         // Unique id so each clause's "op" ComboBox is distinct (same label salt).
         ui.push_id(i, |ui| {
-            ui.horizontal(|ui| {
+            let row = ui.horizontal(|ui| {
                 condition_operand_field(
                     ui,
                     "L",
@@ -1556,17 +1562,10 @@ fn clauses_editor(
                     is_dark,
                     active_macro,
                 );
-                if ui
-                    .add(
-                        egui::Button::new(egui::RichText::new("−").color(theme::MACRO_STOP))
-                            .small(),
-                    )
-                    .on_hover_text(h::CLAUSE_REMOVE)
-                    .clicked()
-                {
-                    remove = Some(i);
-                }
             });
+            if remove_row_menu(ui, row.response.rect) {
+                remove = Some(i);
+            }
         });
     }
     if let Some(i) = remove {
@@ -1590,7 +1589,7 @@ pub(super) fn list_columns_editor(
             if i > 0 {
                 ui.separator();
             }
-            theme::section_frame(ui.style()).show(ui, |ui| {
+            let frame = theme::section_frame(ui.style()).show(ui, |ui| {
                 var_ref_field(
                     ui,
                     "Source",
@@ -1617,17 +1616,10 @@ pub(super) fn list_columns_editor(
                     ui.checkbox(&mut col.skip_blank_lines, "Skip blank lines"),
                     h::FOREACH_SKIP_BLANK,
                 );
-                if ui
-                    .add(
-                        egui::Button::new(egui::RichText::new("Remove").color(theme::MACRO_STOP))
-                            .small(),
-                    )
-                    .on_hover_text(h::FOREACH_REMOVE_SOURCE)
-                    .clicked()
-                {
-                    remove = Some(i);
-                }
             });
+            if remove_row_menu(ui, frame.response.rect) {
+                remove = Some(i);
+            }
         });
     }
     if let Some(i) = remove {
@@ -1652,7 +1644,7 @@ fn assignments_editor(
             if i > 0 {
                 ui.separator();
             }
-            theme::section_frame(ui.style()).show(ui, |ui| {
+            let frame = theme::section_frame(ui.style()).show(ui, |ui| {
                 var_pills::var_name_text_edit(
                     ui,
                     "Variable",
@@ -1670,20 +1662,10 @@ fn assignments_editor(
                     is_dark,
                     active_macro,
                 );
-                if can_remove
-                    && ui
-                        .add(
-                            egui::Button::new(
-                                egui::RichText::new("Remove").color(theme::MACRO_STOP),
-                            )
-                            .small(),
-                        )
-                        .on_hover_text(h::SET_REMOVE_ASSIGNMENT)
-                        .clicked()
-                {
-                    remove = Some(i);
-                }
             });
+            if can_remove && remove_row_menu(ui, frame.response.rect) {
+                remove = Some(i);
+            }
         });
     }
     if let Some(i) = remove {

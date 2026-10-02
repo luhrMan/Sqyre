@@ -1,4 +1,4 @@
-use super::icon_grid::{paint_even_icon_grid, IconGridKind};
+use super::icon_grid::{paint_even_icon_grid, IconCellMenu, IconGridKind, IconGridOps};
 use super::query::{fuzzy_match_fold, query_matches_name_or_tags};
 use super::scroll::maybe_scroll_to;
 use crate::icon_cache::IconCache;
@@ -38,11 +38,21 @@ pub fn set_collapsing_openness(
 }
 
 /// Expand-all / collapse-all icon pair for program-header lists.
+/// Keeps Expand left of Collapse in both left-to-right and right-to-left rows.
 pub fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Context, bool)) {
-    let expand =
-        crate::widgets::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_DOWN, "Expand all");
-    let collapse =
-        crate::widgets::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_UP, "Collapse all");
+    let expand_btn = |ui: &mut egui::Ui| {
+        crate::widgets::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_DOWN, "Expand all")
+    };
+    let collapse_btn = |ui: &mut egui::Ui| {
+        crate::widgets::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_UP, "Collapse all")
+    };
+    let (expand, collapse) = if ui.layout().prefer_right_to_left() {
+        let collapse = collapse_btn(ui);
+        (expand_btn(ui), collapse)
+    } else {
+        let expand = expand_btn(ui);
+        (expand, collapse_btn(ui))
+    };
     if expand.clicked() {
         on_set(ui.ctx(), true);
     }
@@ -61,7 +71,9 @@ pub fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Con
 ///
 /// When `scroll_to_selected_program` is armed, expand the selected program header and
 /// scroll it into view (data editor tab switch).
-#[allow(clippy::too_many_arguments)] // accordion grid: selection mode plus optional program click
+///
+/// `item_menu` fills the right-click menu of each item cell.
+#[allow(clippy::too_many_arguments)] // accordion grid: selection mode plus optional program click / item menu
 pub fn paint_items_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -75,6 +87,7 @@ pub fn paint_items_icon_grid(
     mut scroll_to_selected_program: Option<&mut bool>,
     item_sort: sqyre_domain::CatalogItemSort,
     tag_priority: &[String],
+    mut item_menu: Option<&mut IconCellMenu<'_>>,
 ) {
     let q = search.trim().to_ascii_lowercase();
     let pane_w = ui.available_width();
@@ -189,6 +202,9 @@ pub fn paint_items_icon_grid(
                     });
                 }
                 let mut clicked: Option<String> = None;
+                let mut on_cell = |_i, t: &str| {
+                    clicked = Some(t.to_string());
+                };
                 paint_even_icon_grid(
                     ui,
                     catalog,
@@ -196,12 +212,11 @@ pub fn paint_items_icon_grid(
                     &targets,
                     |t| selected.iter().any(|s| s == t),
                     IconGridKind::Picker,
-                    |_i, t| {
-                        clicked = Some(t.to_string());
+                    IconGridOps {
+                        on_cell: Some(&mut on_cell),
+                        ..Default::default()
                     },
-                    |_| {},
-                    None,
-                    |_| true,
+                    item_menu.as_deref_mut(),
                 );
                 if let Some(target) = clicked {
                     let is_sel = selected.iter().any(|t| t == &target);

@@ -103,11 +103,6 @@ pub fn picker_drop_stroke() -> Color32 {
     Color32::from_rgb(80, 140, 200)
 }
 
-/// Remove-badge hover fill on icon grid (destructive [`MACRO_STOP`]).
-pub fn picker_remove_hover() -> Color32 {
-    MACRO_STOP
-}
-
 /// Collection cell selection fill.
 pub fn cell_selection_fill() -> Color32 {
     rgba([60, 160, 255, 70])
@@ -132,7 +127,6 @@ mod tests {
     fn status_and_destructive_accents_share_semantic_helpers() {
         assert_eq!(preview_grid_stroke(), error_fg());
         assert_eq!(preview_warn_stroke(), warn_fg());
-        assert_eq!(picker_remove_hover(), MACRO_STOP);
         let err = error_fg();
         assert_eq!(
             highlight_invalid_fill(),
