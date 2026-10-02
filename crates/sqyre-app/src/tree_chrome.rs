@@ -375,6 +375,40 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     if targets.is_empty() && target_tags.is_empty() {
         return;
     }
+
+    if !target_tags.is_empty() {
+        crate::widgets::title_with_count(
+            ui,
+            egui::RichText::new("Tags").small().strong(),
+            target_tags.len(),
+        );
+        let groups = image_search_tip_tag_groups(catalog, target_tags);
+        if groups.is_empty() {
+            ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
+        } else {
+            for group in &groups {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
+                    ui.label(egui::RichText::new(group.polarity_label()).small().strong());
+                    ui.label(egui::RichText::new(group.name.as_str()).small());
+                });
+                if group.include {
+                    if group.members.is_empty() {
+                        ui.horizontal(|ui| {
+                            ui.add_space(crate::theme::SPACE_12);
+                            ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
+                        });
+                    } else {
+                        ui.indent(egui::Id::new(("is_tip_tag", group.name.as_str())), |ui| {
+                            paint_tip_item_name_list(ui, catalog, icons, &group.members);
+                        });
+                    }
+                }
+            }
+        }
+        ui.add_space(crate::theme::SPACE_4);
+    }
+
     let display = sorted_image_search_targets(
         catalog,
         targets,
@@ -383,14 +417,15 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         *sort_then,
         tag_priority,
     );
-    if display.is_empty() {
-        return;
-    }
     crate::widgets::title_with_count(
         ui,
         egui::RichText::new("Items").small().strong(),
         display.len(),
     );
+    if display.is_empty() {
+        ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
+        return;
+    }
     crate::pickers::paint_even_icon_grid(
         ui,
         catalog,
@@ -405,6 +440,89 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     );
 }
 
+/// One Image Search tag filter for the view tip: polarity, display name, members.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ImageSearchTipTagGroup {
+    pub include: bool,
+    pub name: String,
+    pub members: Vec<String>,
+}
+
+impl ImageSearchTipTagGroup {
+    /// User-facing polarity glyph (`+` include / `−` exclude). Never a wire key.
+    pub fn polarity_label(&self) -> &'static str {
+        if self.include {
+            "+"
+        } else {
+            "−"
+        }
+    }
+}
+
+/// Resolve searched tag filters → display names and catalog member targets.
+///
+/// Include tags expand to items that match the **full** filter set (every `+`
+/// and none of the `−`). Exclude tags are listed without members.
+pub(crate) fn image_search_tip_tag_groups(
+    catalog: &ProgramCatalog,
+    target_tags: &[String],
+) -> Vec<ImageSearchTipTagGroup> {
+    use sqyre_domain::{item_matches_tag_filters, parse_tag_filter};
+
+    let catalog_refs = catalog_item_refs(catalog);
+
+    let mut groups = Vec::new();
+    for filter in target_tags {
+        let Some((include, name)) = parse_tag_filter(filter) else {
+            continue;
+        };
+        let members = if include {
+            let mut matched: Vec<(String, String)> = catalog_refs
+                .iter()
+                .filter(|item| {
+                    item.tags.iter().any(|t| t.trim() == name)
+                        && item_matches_tag_filters(&item.tags, target_tags)
+                })
+                .map(|item| {
+                    let (display, _) = crate::pickers::item_tooltip_parts(catalog, &item.target);
+                    (display, item.target.clone())
+                })
+                .collect();
+            matched.sort_by(|a, b| {
+                a.0.to_ascii_lowercase()
+                    .cmp(&b.0.to_ascii_lowercase())
+                    .then_with(|| a.1.cmp(&b.1))
+            });
+            matched.into_iter().map(|(_, target)| target).collect()
+        } else {
+            Vec::new()
+        };
+        groups.push(ImageSearchTipTagGroup {
+            include,
+            name,
+            members,
+        });
+    }
+    groups
+}
+
+fn paint_tip_item_name_list(
+    ui: &mut egui::Ui,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    targets: &[String],
+) {
+    ui.spacing_mut().item_spacing.y = crate::theme::SPACE_2;
+    for target in targets {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
+            let _ = paint_target_thumb(ui, catalog, icons, target);
+            let (name, _) = crate::pickers::item_tooltip_parts(catalog, target);
+            ui.label(egui::RichText::new(name).small());
+        });
+    }
+}
+
 /// Display / search order for Image Search targets (explicit + tag expansion).
 pub(crate) fn sorted_image_search_targets(
     catalog: &ProgramCatalog,
@@ -414,21 +532,8 @@ pub(crate) fn sorted_image_search_targets(
     sort_then: sqyre_domain::ItemSortThen,
     tag_priority: &[String],
 ) -> Vec<String> {
-    use sqyre_domain::{expand_image_search_targets, CatalogItemRef, PROGRAM_DELIMITER};
-    let catalog_refs: Vec<CatalogItemRef> = catalog
-        .program_names()
-        .filter_map(|prog| catalog.get(prog).map(|pdata| (prog.clone(), pdata)))
-        .flat_map(|(prog, pdata)| {
-            pdata
-                .items
-                .iter()
-                .map(move |(name, item)| CatalogItemRef {
-                    target: format!("{prog}{PROGRAM_DELIMITER}{name}"),
-                    tags: item.tags.clone(),
-                })
-                .collect::<Vec<_>>()
-        })
-        .collect();
+    use sqyre_domain::expand_image_search_targets;
+    let catalog_refs = catalog_item_refs(catalog);
     let expanded = expand_image_search_targets(targets, target_tags, &catalog_refs);
     let infos: Vec<_> = expanded
         .iter()
@@ -442,6 +547,24 @@ pub(crate) fn sorted_image_search_targets(
         })
         .collect();
     sqyre_domain::ordered_item_targets(&infos, sort_by, sort_then, tag_priority)
+}
+
+fn catalog_item_refs(catalog: &ProgramCatalog) -> Vec<sqyre_domain::CatalogItemRef> {
+    use sqyre_domain::{CatalogItemRef, PROGRAM_DELIMITER};
+    catalog
+        .program_names()
+        .filter_map(|prog| catalog.get(prog).map(|pdata| (prog.clone(), pdata)))
+        .flat_map(|(prog, pdata)| {
+            pdata
+                .items
+                .iter()
+                .map(move |(name, item)| CatalogItemRef {
+                    target: format!("{prog}{PROGRAM_DELIMITER}{name}"),
+                    tags: item.tags.clone(),
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// Full tree-row label content. Tooltip show/hide is handled by `action_tooltip`.
@@ -703,6 +826,61 @@ mod tests {
         let ctx = egui::Context::default();
         ctx.run_ui(egui::RawInput::default(), |ui| f(ui))
             .drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn image_search_tip_tag_groups_lists_names_and_members() {
+        use sqyre_persist::{ProgramData, ProgramItem};
+        use std::collections::BTreeMap;
+
+        let mut cat = ProgramCatalog::default();
+        cat.programs_mut().insert(
+            "Game".into(),
+            ProgramData {
+                name: "Game".into(),
+                items: BTreeMap::from([
+                    (
+                        "Flask".into(),
+                        ProgramItem {
+                            name: "Health Flask".into(),
+                            tags: vec!["healing".into(), "consumable".into()],
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Mana".into(),
+                        ProgramItem {
+                            name: "Mana Flask".into(),
+                            tags: vec!["mana".into(), "consumable".into()],
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Junk".into(),
+                        ProgramItem {
+                            name: "Scrap".into(),
+                            tags: vec!["consumable".into(), "junk".into()],
+                            ..Default::default()
+                        },
+                    ),
+                ]),
+                ..Default::default()
+            },
+        );
+
+        let groups = image_search_tip_tag_groups(&cat, &["+consumable".into(), "-junk".into()]);
+        assert_eq!(groups.len(), 2);
+        assert!(groups[0].include);
+        assert_eq!(groups[0].name, "consumable");
+        assert_eq!(
+            groups[0].members,
+            vec!["Game~Flask".to_string(), "Game~Mana".to_string()]
+        );
+        assert!(!groups[1].include);
+        assert_eq!(groups[1].name, "junk");
+        assert!(groups[1].members.is_empty());
+        assert_eq!(groups[0].polarity_label(), "+");
+        assert_eq!(groups[1].polarity_label(), "−");
     }
 
     #[test]
@@ -1071,5 +1249,167 @@ mod tests {
             };
             paint_action_icon(ui, &action, false);
         });
+    }
+
+    /// Evidence PNGs for enlarged Image Search view tips (Tags + Items).
+    ///
+    /// `SQYRE_VIEW_TIP_SHOT=1 cargo test -p sqyre-app --lib capture_image_search_view_tip_shot -- --nocapture`
+    #[test]
+    fn capture_image_search_view_tip_shot() {
+        if std::env::var_os("SQYRE_VIEW_TIP_SHOT").is_none() {
+            return;
+        }
+        use egui::os::OperatingSystem;
+        use egui_kittest::Harness;
+        use image::ImageFormat;
+        use sqyre_persist::{ProgramData, ProgramItem};
+        use std::collections::BTreeMap;
+        use std::io::Cursor;
+
+        let mut catalog = ProgramCatalog::default();
+        catalog.programs_mut().insert(
+            "Demo".into(),
+            ProgramData {
+                name: "Demo".into(),
+                items: BTreeMap::from([
+                    (
+                        "Ok".into(),
+                        ProgramItem {
+                            name: "OK button".into(),
+                            tags: vec!["button".into(), "ui".into()],
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Cancel".into(),
+                        ProgramItem {
+                            name: "Cancel button".into(),
+                            tags: vec!["button".into()],
+                            ..Default::default()
+                        },
+                    ),
+                    (
+                        "Trash".into(),
+                        ProgramItem {
+                            name: "Trash".into(),
+                            tags: vec!["button".into(), "junk".into()],
+                            ..Default::default()
+                        },
+                    ),
+                ]),
+                ..Default::default()
+            },
+        );
+
+        let action = Action {
+            id: ActionId::new(),
+            kind: ActionKind::ImageSearch {
+                name: "Find buttons".into(),
+                targets: vec!["Demo~Ok".into()],
+                target_tags: vec!["+button".into(), "-junk".into()],
+                search_area: CoordinateRef(String::new()),
+                tolerance: 0.95,
+                blur: 0,
+                match_method: Default::default(),
+                sort_by: Default::default(),
+                sort_then: Default::default(),
+                tag_priority: Vec::new(),
+                detection: DetectionBranch::default(),
+            },
+        };
+
+        let mut icons = IconCache::new();
+        let mut harness = Harness::builder()
+            .with_size([1200.0, 720.0])
+            .with_os(OperatingSystem::Nix)
+            .wgpu()
+            .build_ui(|ui| {
+                // Match `tip_max_width` preferred fraction against the harness size,
+                // not the slightly smaller first-frame ui max_rect.
+                let tip_w = 1200.0 * 0.50;
+                ui.label(
+                    egui::RichText::new("View tip size evidence (~50% of viewport)").heading(),
+                );
+                ui.add_space(crate::theme::SPACE_8);
+                egui::Frame::popup(ui.style())
+                    .inner_margin(egui::Margin::symmetric(10, 8))
+                    .show(ui, |ui| {
+                        ui.set_width(tip_w);
+                        paint_pill_pub(ui, "Image Search", Color32::from_rgb(180, 140, 90));
+                        ui.add_space(crate::theme::SPACE_4);
+                        ui.label(
+                            egui::RichText::new(
+                                "Search the screen for catalog Images (optional tag filters).",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                        ui.add_space(crate::theme::SPACE_8);
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "tip width ≈ {tip_w:.0}pt (was fixed 340pt)"
+                            ))
+                            .small()
+                            .strong(),
+                        );
+                        ui.add_space(crate::theme::SPACE_8);
+                        paint_image_search_tooltip_thumbs_pub(ui, &action, &catalog, &mut icons);
+                    });
+            });
+
+        let _ = harness.run_ok();
+        harness.run_steps(2);
+        let img = harness.render().expect("wgpu render tip shot");
+
+        let mut encoded = Vec::new();
+        img.write_to(&mut Cursor::new(&mut encoded), ImageFormat::Png)
+            .expect("encode png");
+        let dirs = [
+            "/cursor/stores/bc-95124ca5-2159-4d32-ad9d-061cdb60b9a6/media/view-tip-size-image-search-tags",
+            "/opt/cursor/artifacts/view-tip-screenshots",
+        ];
+        for dir in dirs {
+            std::fs::create_dir_all(dir).expect("mkdir");
+            let path = format!("{dir}/01-image-search-tip-tags-items.png");
+            std::fs::write(&path, &encoded).expect("write tip shot");
+            eprintln!("wrote {path} ({} bytes)", encoded.len());
+        }
+
+        // Size comparison panel: old 340 vs new 600.
+        let mut harness2 = Harness::builder()
+            .with_size([1200.0, 720.0])
+            .with_os(OperatingSystem::Nix)
+            .wgpu()
+            .build_ui(|ui| {
+                ui.label(egui::RichText::new("View tip width: before vs after").heading());
+                ui.add_space(crate::theme::SPACE_12);
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = crate::theme::SPACE_12;
+                    for (label, w) in [("old fixed max", 340.0_f32), ("new 50% viewport", 600.0)] {
+                        egui::Frame::popup(ui.style())
+                            .inner_margin(egui::Margin::symmetric(10, 8))
+                            .show(ui, |ui| {
+                                ui.set_width(w);
+                                ui.label(egui::RichText::new(label).strong());
+                                ui.label(egui::RichText::new(format!("{w:.0}pt wide")).small());
+                                ui.add_space(crate::theme::SPACE_8);
+                                ui.label(
+                                    "Tags and Items stay readable when the tip can grow with the window.",
+                                );
+                            });
+                    }
+                });
+            });
+        let _ = harness2.run_ok();
+        harness2.run_steps(2);
+        let img2 = harness2.render().expect("wgpu render size compare");
+        let mut encoded2 = Vec::new();
+        img2.write_to(&mut Cursor::new(&mut encoded2), ImageFormat::Png)
+            .expect("encode compare png");
+        for dir in dirs {
+            let path = format!("{dir}/02-view-tip-larger-size.png");
+            std::fs::write(&path, &encoded2).expect("write size compare");
+            eprintln!("wrote {path} ({} bytes)", encoded2.len());
+        }
     }
 }

@@ -339,13 +339,29 @@ pub fn show(
     }
 }
 
+/// Fraction of the constrain rect used as the preferred tip width.
+const TIP_WIDTH_FRACTION: f32 = 0.50;
+/// Slightly narrower preferred fraction when a coordinate preview is present.
+const TIP_WIDTH_FRACTION_PREVIEW: f32 = 0.40;
+/// Hard ceiling so ultra-wide monitors don't grow tips unboundedly.
+const TIP_WIDTH_MAX_FRACTION: f32 = 0.70;
+/// Fraction of constrain height available to the view-tip scroll body.
+const VIEW_TIP_HEIGHT_FRACTION: f32 = 0.85;
+
 /// Shared width budget for view and edit tips so mode switches don't jump size.
-fn tip_max_width(has_coord_preview: bool) -> f32 {
-    if has_coord_preview {
-        280.0
+///
+/// Prefer a large fraction of the available egui constrain rect (window/viewport)
+/// instead of a tiny fixed max, with `FLOATER_MIN_COMPACT` as the floor.
+fn tip_max_width(screen_w: f32, has_coord_preview: bool) -> f32 {
+    let floor = crate::widgets::FLOATER_MIN_COMPACT[0];
+    let frac = if has_coord_preview {
+        TIP_WIDTH_FRACTION_PREVIEW
     } else {
-        340.0
-    }
+        TIP_WIDTH_FRACTION
+    };
+    let desired = (screen_w * frac).max(floor);
+    let ceiling = (screen_w * TIP_WIDTH_MAX_FRACTION).max(floor);
+    desired.min(ceiling)
 }
 
 /// True when the user is dragging any window edge/corner resize handle.
@@ -442,7 +458,7 @@ pub(crate) fn show_action_view_tip(
     // Prefer growing left when near the right edge so constrain() is less likely
     // to slide the tip over the hovered row (which would steal hover).
     let screen = crate::widgets::dialog_constrain_rect(ctx);
-    let max_w = tip_max_width(coord_preview.is_some());
+    let max_w = tip_max_width(screen.width(), coord_preview.is_some());
     let near_right = pointer.x + 14.0 + max_w > screen.right();
     let (pivot, pos) = if near_right {
         (egui::Align2::RIGHT_TOP, pointer + Vec2::new(-8.0, 14.0))
@@ -455,7 +471,7 @@ pub(crate) fn show_action_view_tip(
         .data(|d| d.get_temp::<ViewTipScroll>(scroll_key))
         .filter(|s| s.tip_id == tip_id && s.pass + 1 >= pass)
         .map_or(0.0, |s| s.offset);
-    let max_body_h = (screen.height() - VIEW_TIP_CHROME_H).max(40.0);
+    let max_body_h = (screen.height() * VIEW_TIP_HEIGHT_FRACTION - VIEW_TIP_CHROME_H).max(40.0);
     // interactable(false): clicks pass through to the control underneath.
     egui::Area::new(tip_id)
         .order(Order::Tooltip)
@@ -469,6 +485,8 @@ pub(crate) fn show_action_view_tip(
                 .inner_margin(egui::Margin::symmetric(10, 8))
                 .show(ui, |ui| {
                     ui.set_max_width(max_w);
+                    // V-only: tip body wraps prose and icon grids to `max_w`.
+                    // Wheel claiming in `claim_view_tip_scroll` tracks Y offset.
                     let out = crate::widgets::scroll_vertical()
                         .id_salt("view_tip_body")
                         .max_height(max_body_h)
@@ -514,8 +532,13 @@ pub(crate) fn show_action_view_tip(
                                     );
                                 });
                             }
-                            if let ActionKind::ImageSearch { targets, .. } = &action.kind {
-                                if !targets.is_empty() {
+                            if let ActionKind::ImageSearch {
+                                targets,
+                                target_tags,
+                                ..
+                            } = &action.kind
+                            {
+                                if !targets.is_empty() || !target_tags.is_empty() {
                                     sections::tip_section(ui, |ui| {
                                         tree_chrome::paint_image_search_tooltip_thumbs_pub(
                                             ui, action, catalog, icons,
@@ -628,8 +651,8 @@ fn show_edit_window(
 
     let label = action_type_label(type_key);
     let pastel = tree_chrome::rgba_pub(action_pastel_color(type_key, is_dark));
-    let max_w = tip_max_width(has_coord_preview);
     let screen = crate::widgets::dialog_constrain_rect(ctx);
+    let max_w = tip_max_width(screen.width(), has_coord_preview);
     // Grow with content from a modest default; ScrollArea caps at the window height.
     const EDIT_CHROME: f32 = 72.0; // type pill + Save/Cancel + separator + margins
     let max_scroll_h = (screen.height() - EDIT_CHROME).max(100.0);
@@ -1157,6 +1180,24 @@ mod tests {
         state.open_edit_new(&draft, egui::pos2(0.0, 0.0), Vec::new());
         assert_eq!(state.handle_escape(), (true, vec![id]));
         assert!(matches!(state, TooltipState::Hidden));
+    }
+
+    #[test]
+    fn tip_max_width_scales_with_viewport() {
+        let floor = crate::widgets::FLOATER_MIN_COMPACT[0];
+        // Narrow viewport: still at least the floater floor.
+        assert_eq!(tip_max_width(300.0, false), floor);
+        // Typical desktop: ~half the constrain width.
+        let mid = tip_max_width(1200.0, false);
+        assert!((mid - 600.0).abs() < 0.5, "got {mid}");
+        // Preview tips prefer a slightly narrower fraction.
+        let preview = tip_max_width(1200.0, true);
+        assert!((preview - 480.0).abs() < 0.5, "got {preview}");
+        assert!(preview < mid);
+        // Ceiling clamps only when preferred fraction exceeds max fraction.
+        let wide = tip_max_width(4000.0, false);
+        assert!((wide - 2000.0).abs() < 0.5, "got {wide}");
+        assert!(wide <= 4000.0 * TIP_WIDTH_MAX_FRACTION);
     }
 
     #[test]

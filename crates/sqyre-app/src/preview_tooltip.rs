@@ -226,8 +226,8 @@ impl PreviewTooltipCache {
             Err(err) => Err(err),
         };
         match preview {
-            // Tip/edit surface is capped around tip_max_width (~280); use the smaller
-            // display fit so preview doesn't force the tooltip wider than view mode.
+            // Tip/edit surface is viewport-relative (see action_tooltip::tip_max_width);
+            // keep the smaller display fit so preview doesn't force the tip wider.
             Ok((tex, cap)) => paint_preview(
                 ui,
                 &tex,
