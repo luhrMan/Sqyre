@@ -61,10 +61,19 @@ pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
         }
 
         // 3. Compact 2-row cluster to the right of CP:
-        //    row1 play/stop (desktop) or import/export (wasm)
-        //    row2 Data Editor / Settings
+        //    row1 Data Editor / Settings
+        //    row2 play/stop (desktop) or import/export (wasm)
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = theme::SPACE_2;
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
+                    app.data_editor.request_open(ui.ctx());
+                }
+                if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
+                    app.settings_ui.request_open(ui.ctx());
+                }
+            });
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = theme::SPACE_4;
                 #[cfg(not(target_arch = "wasm32"))]
@@ -103,15 +112,6 @@ pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     if toolbar_icon(ui, "⬆", "Export db.yaml", true).clicked() {
                         app.export_db_yaml();
                     }
-                }
-            });
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-                if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
-                    app.data_editor.request_open(ui.ctx());
-                }
-                if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
-                    app.settings_ui.request_open(ui.ctx());
                 }
             });
         });
