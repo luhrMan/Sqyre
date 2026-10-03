@@ -4,7 +4,7 @@ use crate::data_editor::helpers::is_editor_listed_program;
 use crate::data_editor::{DataEditorCtx, EditorTab};
 use crate::overlay_icons;
 use crate::pickers::fuzzy_match_fold;
-use crate::widgets::{vector_action_icon, VectorIcon};
+use crate::widgets::VectorIcon;
 use crate::SqyreApp;
 use eframe::egui::{self, Color32, CornerRadius, Key, Modifiers, Sense};
 use sqyre_domain::{action_type_table, Macro};
@@ -56,7 +56,7 @@ pub(crate) enum CommandKind {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) enum CommandIcon {
     Glyph(&'static str),
     Vector(VectorIcon),
@@ -259,9 +259,9 @@ fn command_row(ui: &mut egui::Ui, item: &CommandItem, selected: bool) -> egui::R
     let text_color = ui.visuals().text_color();
     let weak = ui.visuals().weak_text_color();
     let icon_side = font.size;
-    let icon_galley = match item.icon {
+    let icon_galley = match &item.icon {
         CommandIcon::Glyph(glyph) => Some(ui.painter().layout_no_wrap(
-            glyph.to_owned(),
+            (*glyph).to_owned(),
             overlay_icons::glyph_font_id(font.size),
             text_color,
         )),
@@ -301,12 +301,12 @@ fn command_row(ui: &mut egui::Ui, item: &CommandItem, selected: bool) -> egui::R
     if let Some(galley) = icon_galley {
         ui.painter()
             .galley(egui::pos2(x, y - galley.size().y * 0.5), galley, text_color);
-    } else if let CommandIcon::Vector(paint) = item.icon {
+    } else if let CommandIcon::Vector(icon) = &item.icon {
         let icon_rect = egui::Rect::from_min_size(
             egui::pos2(x, y - icon_side * 0.5),
             egui::Vec2::splat(icon_side),
         );
-        paint(ui.painter(), icon_rect, text_color);
+        icon.paint(ui.painter(), icon_rect, text_color);
     }
     x += 22.0;
     ui.painter().galley(
@@ -694,7 +694,7 @@ fn push_named_map(
         out.push(CommandItem {
             title: display,
             hint: format!("{kind_label} · {program}"),
-            icon,
+            icon: icon.clone(),
             kind: CommandKind::OpenCatalogEntity {
                 tab,
                 program: program.to_string(),
@@ -734,8 +734,8 @@ fn ph(id: &str) -> CommandIcon {
 }
 
 fn action_icon(type_key: &str) -> CommandIcon {
-    if let Some(paint) = vector_action_icon(type_key) {
-        return CommandIcon::Vector(paint);
+    if let Some(icon) = VectorIcon::for_type(type_key) {
+        return CommandIcon::Vector(icon);
     }
     ph(match type_key {
         "click" => "mouse",
@@ -748,7 +748,6 @@ fn action_icon(type_key: &str) -> CommandIcon {
         "loop" | "while" => "arrows-clockwise",
         "loopjump" => "stop",
         "foreachrow" => "list-bullets",
-        "foreachcell" => "grid-four",
         "conditional" => "question",
         "wait" => "timer",
         "pause" => "pause",

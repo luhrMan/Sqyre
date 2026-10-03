@@ -12,7 +12,7 @@ pub mod scroll;
 pub mod sections;
 pub mod tags;
 
-pub(crate) use action_icons::{vector_action_icon, VectorIcon};
+pub(crate) use action_icons::{action_glyph_font, action_icon_side, VectorIcon};
 pub use context_menu::{
     menu_item, menu_item_danger, rect_context_menu, rect_danger_menu, response_context_menu,
     response_danger_menu, row_context_menu, row_danger_menu,

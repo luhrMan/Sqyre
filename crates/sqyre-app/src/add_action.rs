@@ -612,18 +612,15 @@ fn picker_tile(
     let fill = Color32::from_rgba_unmultiplied(pastel[0], pastel[1], pastel[2], pastel[3]);
     let fg = crate::theme::contrast_fg(fill);
     let font = egui::TextStyle::Small.resolve(ui.style());
-    let vector_icon = crate::widgets::vector_action_icon(tmpl.action_type);
-    let text = match vector_icon {
-        Some(_) => tmpl.label.to_string(),
-        None => format!("{}  {}", action_icon_glyph(sample), tmpl.label),
-    };
-    let icon_side = font.size * 1.1;
-    // Icon plus a gap matching the glyph path's "  " separator.
-    let lead = vector_icon.map_or(0.0, |_| icon_side + font.size * 0.5);
-    let galley = ui.painter().layout_no_wrap(text, font, fg);
+    let icon_side = crate::widgets::action_icon_side(font.size);
+    let lead = icon_side + font.size * 0.5;
+    let glyph_font = crate::widgets::action_glyph_font(icon_side, font.family.clone());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(tmpl.label.to_string(), font, fg);
     // Hug the label: content + pad is both the size and the floor.
-    let desired =
-        galley.size() + Vec2::new(lead + PICKER_TILE_PAD_X * 2.0, PICKER_TILE_PAD_Y * 2.0);
+    let content = Vec2::new(galley.size().x, galley.size().y.max(icon_side));
+    let desired = content + Vec2::new(lead + PICKER_TILE_PAD_X * 2.0, PICKER_TILE_PAD_Y * 2.0);
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
 
     let visuals = ui.style().interact(&response);
@@ -640,15 +637,22 @@ fn picker_tile(
         egui::StrokeKind::Inside,
     );
 
-    if let Some(paint) = vector_icon {
-        let icon_rect = egui::Rect::from_center_size(
-            egui::pos2(
-                rect.left() + PICKER_TILE_PAD_X + icon_side * 0.5,
-                rect.center().y,
-            ),
-            Vec2::splat(icon_side),
-        );
-        paint(ui.painter(), icon_rect, fg);
+    let icon_rect = egui::Rect::from_center_size(
+        egui::pos2(
+            rect.left() + PICKER_TILE_PAD_X + icon_side * 0.5,
+            rect.center().y,
+        ),
+        Vec2::splat(icon_side),
+    );
+    match crate::widgets::VectorIcon::for_action(sample) {
+        Some(icon) => icon.paint(ui.painter(), icon_rect, fg),
+        None => crate::theme::paint_text_centered(
+            ui,
+            icon_rect,
+            action_icon_glyph(sample),
+            glyph_font,
+            fg,
+        ),
     }
     let text_pos = egui::pos2(
         rect.left() + PICKER_TILE_PAD_X + lead,
