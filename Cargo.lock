@@ -5052,6 +5052,7 @@ dependencies = [
  "rfd",
  "rodio",
  "serde_yaml",
+ "skrifa",
  "sqyre-capture",
  "sqyre-domain",
  "sqyre-executor",
