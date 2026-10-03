@@ -324,7 +324,7 @@ impl SettingsUi {
         #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
     ) {
         // Esc: clear search first, then close (window already has titlebar close).
-        if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+        if crate::widgets::consume_escape(ui) {
             if !self.search.is_empty() {
                 self.search.clear();
             } else {
@@ -332,8 +332,14 @@ impl SettingsUi {
             }
         }
 
-        let search_focused = ui
-            .horizontal(|ui| {
+        let has_search = !self.search.is_empty();
+        let mut clear_search = false;
+        let search_focused = crate::widgets::fill_row(
+            ui,
+            |ui| {
+                clear_search = has_search && ui.small_button("Clear").clicked();
+            },
+            |ui| {
                 ui.label(egui::RichText::new(
                     egui_phosphor::regular::MAGNIFYING_GLASS,
                 ))
@@ -353,13 +359,13 @@ impl SettingsUi {
                         }
                     }
                 }
-                if !self.search.is_empty() && ui.small_button("Clear").clicked() {
-                    self.search.clear();
-                }
                 search_resp.has_focus()
-            })
-            .inner;
-        ui.separator();
+            },
+        );
+        if clear_search {
+            self.search.clear();
+        }
+        crate::widgets::section_separator(ui);
 
         let footer = if self.status_banner.status.is_some() {
             40.0
@@ -401,54 +407,33 @@ impl SettingsUi {
         }
 
         const SIDEBAR_W: f32 = 132.0;
-        let splitter_w = crate::theme::PANEL_SPLITTER_W;
-        let left_w = SIDEBAR_W.min((body_rect.width() - splitter_w).max(0.0));
-        let left_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(left_w, body_h));
-        let split_rect = egui::Rect::from_min_size(
-            egui::pos2(left_rect.right(), body_rect.top()),
-            egui::vec2(splitter_w, body_h),
-        );
-        let right_rect = egui::Rect::from_min_max(
-            egui::pos2(split_rect.right(), body_rect.top()),
-            body_rect.max,
-        );
+        let crate::widgets::SplitView {
+            left: mut left_ui,
+            right: mut right_ui,
+            splitter,
+        } = crate::widgets::split_view(ui, body_rect, SIDEBAR_W);
 
-        {
-            let mut left_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(left_rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            left_ui.set_clip_rect(left_rect.intersect(ui.clip_rect()));
-            left_ui.set_max_size(left_rect.size());
-            for section in visible_sections.iter().copied() {
-                if left_ui
-                    .selectable_label(self.active_section == section, section.label())
-                    .on_hover_text("↑↓ to switch sections")
-                    .clicked()
-                {
-                    self.active_section = section;
-                }
+        for section in visible_sections.iter().copied() {
+            if left_ui
+                .selectable_label(self.active_section == section, section.label())
+                .on_hover_text("↑↓ to switch sections")
+                .clicked()
+            {
+                self.active_section = section;
             }
         }
         ui.painter().vline(
-            split_rect.center().x,
-            split_rect.y_range(),
+            splitter.center().x,
+            splitter.y_range(),
             crate::theme::panel_split_stroke(),
         );
         {
-            let mut right_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(right_rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            right_ui.set_clip_rect(right_rect.intersect(ui.clip_rect()));
-            right_ui.set_max_size(right_rect.size());
-            crate::pickers::dialog_scroll(right_rect.width(), body_h)
+            let content_w = right_ui.max_rect().width();
+            crate::pickers::dialog_scroll(content_w, body_h)
                 .id_salt("user_settings_content")
                 .show(&mut right_ui, |ui| {
                     // Soft-wrap to pane width; both-axis scroll covers hard min overflows.
-                    ui.set_max_width(right_rect.width());
+                    ui.set_max_width(content_w);
                     if visible_sections.is_empty() {
                         crate::widgets::list_vacancy(ui, &q, 0, "settings");
                         return;
@@ -456,7 +441,7 @@ impl SettingsUi {
                     let section = self.active_section;
                     ui.label(egui::RichText::new(section.label()).strong().heading());
                     ui.label(egui::RichText::new(section.subtitle()).weak());
-                    ui.separator();
+                    crate::widgets::section_separator(ui);
                     let section_hit = match section {
                         SettingsSection::General => query_matches(&q, SECTION_GENERAL),
                         SettingsSection::Sound => query_matches(&q, SECTION_SOUND),
@@ -1409,6 +1394,26 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        if setting_visible(q, section_hit, SETTING_WINDOW_BORDER)
+            && ui
+                .checkbox(&mut self.settings.window_border, "Window border")
+                .on_hover_text("Show a thin gold outline around the edge of the main window.")
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if setting_visible(q, section_hit, SETTING_RUN_GLOW)
+            && ui
+                .checkbox(&mut self.settings.run_button_glow, "Glowing Run button")
+                .on_hover_text(
+                    "Softly pulse a green glow around the Run button when a macro is ready to run.",
+                )
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
         if setting_visible(q, section_hit, SETTING_FONT_SIZE) {
             ui.add_space(crate::theme::SPACE_8);
             ui.horizontal(|ui| {
@@ -1701,6 +1706,8 @@ const SETTING_UPDATE_ACTIONS: &[&str] = &[
 ];
 
 const SETTING_COMPACT_HEADERS: &[&str] = &["compact", "program headers", "icons", "headers"];
+const SETTING_WINDOW_BORDER: &[&str] = &["window border", "border", "outline"];
+const SETTING_RUN_GLOW: &[&str] = &["run button", "glow", "pulse", "animation"];
 const SETTING_FONT_SIZE: &[&str] = &["font size", "font", "text size"];
 const SETTING_UI_SCALE: &[&str] = &["ui scale", "scale", "padding"];
 const SETTING_ACTION_COLORS: &[&str] =
@@ -1734,6 +1741,8 @@ const UPDATES_SETTINGS: &[&[&str]] = &[
 ];
 const APPEARANCE_SETTINGS: &[&[&str]] = &[
     SETTING_COMPACT_HEADERS,
+    SETTING_WINDOW_BORDER,
+    SETTING_RUN_GLOW,
     SETTING_FONT_SIZE,
     SETTING_UI_SCALE,
     SETTING_ACTION_COLORS,

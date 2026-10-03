@@ -7,7 +7,7 @@ mod sections;
 
 use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::tree_chrome::{self, RowInteraction};
-use eframe::egui::{self, Key, Order, Vec2};
+use eframe::egui::{self, Key, Modifiers, Order, Vec2};
 use sqyre_domain::{
     action_type_description, action_type_label, Action, ActionId, ActionKind, CoordinateRef, Macro,
 };
@@ -262,11 +262,13 @@ pub fn ingest_row(
     interaction: RowInteraction,
     pointer: Option<egui::Pos2>,
 ) {
-    if interaction.action != tree_chrome::RowAction::None {
-        return;
-    }
+    let open_edit = match interaction.action {
+        tree_chrome::RowAction::Edit => true,
+        tree_chrome::RowAction::None => interaction.double_clicked,
+        tree_chrome::RowAction::Logs | tree_chrome::RowAction::Delete => return,
+    };
 
-    if interaction.secondary_clicked || interaction.double_clicked {
+    if open_edit {
         let anchor = pointer.unwrap_or(egui::pos2(40.0, 40.0));
         state.open_edit(action, anchor);
         return;
@@ -295,6 +297,26 @@ pub fn end_hover_pass(state: &mut TooltipState, any_view_hover: bool) {
 
 /// Paint view or edit tooltip for the current frame.
 ///
+fn edit_tip_area_id(action_id: ActionId) -> egui::Id {
+    // Bump salt when changing default/min/max sizing so persisted locked sizes are discarded.
+    egui::Id::new(("action_edit_tip", "grow_v12", action_id))
+}
+
+/// View tips float at tooltip order; the edit window (or its picker) must be on top.
+fn tip_owns_escape(state: &TooltipState, ctx: &egui::Context) -> bool {
+    match state {
+        TooltipState::Hidden => false,
+        TooltipState::View { .. } => true,
+        TooltipState::Edit(edit) => {
+            !matches!(edit.picker, ActivePicker::None)
+                || crate::focus_nav::is_top_layer(
+                    ctx,
+                    egui::LayerId::new(Order::Middle, edit_tip_area_id(edit.action_id)),
+                )
+        }
+    }
+}
+
 /// Returns action ids that should be removed when a provisional new-action
 /// edit was cancelled without saving.
 pub fn show(
@@ -314,7 +336,8 @@ pub fn show(
     if !bridges.key_record.is_open()
         && !bridges.hotkey_record.is_open()
         && !bridges.screen_click.is_armed()
-        && ctx.input(|i| i.key_pressed(Key::Escape))
+        && tip_owns_escape(state, ctx)
+        && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
     {
         let (consumed, discard) = state.handle_escape();
         if consumed {
@@ -339,29 +362,16 @@ pub fn show(
     }
 }
 
-/// Fraction of the constrain rect used as the preferred tip width.
-const TIP_WIDTH_FRACTION: f32 = 0.50;
-/// Slightly narrower preferred fraction when a coordinate preview is present.
-const TIP_WIDTH_FRACTION_PREVIEW: f32 = 0.40;
-/// Hard ceiling so ultra-wide monitors don't grow tips unboundedly.
-const TIP_WIDTH_MAX_FRACTION: f32 = 0.70;
-/// Fraction of constrain height available to the view-tip scroll body.
-const VIEW_TIP_HEIGHT_FRACTION: f32 = 0.85;
+/// Largest fraction of the constrain width a tip may cover.
+/// Tips shrink to their content below this cap.
+const TIP_MAX_WIDTH_FRACTION: f32 = 0.50;
 
-/// Shared width budget for view and edit tips so mode switches don't jump size.
+/// Shared width cap for view and edit tips so mode switches don't jump size.
 ///
-/// Prefer a large fraction of the available egui constrain rect (window/viewport)
-/// instead of a tiny fixed max, with `FLOATER_MIN_COMPACT` as the floor.
-fn tip_max_width(screen_w: f32, has_coord_preview: bool) -> f32 {
-    let floor = crate::widgets::FLOATER_MIN_COMPACT[0];
-    let frac = if has_coord_preview {
-        TIP_WIDTH_FRACTION_PREVIEW
-    } else {
-        TIP_WIDTH_FRACTION
-    };
-    let desired = (screen_w * frac).max(floor);
-    let ceiling = (screen_w * TIP_WIDTH_MAX_FRACTION).max(floor);
-    desired.min(ceiling)
+/// Half the egui constrain rect (window/viewport), with `FLOATER_MIN_COMPACT`
+/// as the floor on narrow windows.
+fn tip_max_width(screen_w: f32) -> f32 {
+    (screen_w * TIP_MAX_WIDTH_FRACTION).max(crate::widgets::FLOATER_MIN_COMPACT[0])
 }
 
 /// True when the user is dragging any window edge/corner resize handle.
@@ -458,7 +468,7 @@ pub(crate) fn show_action_view_tip(
     // Prefer growing left when near the right edge so constrain() is less likely
     // to slide the tip over the hovered row (which would steal hover).
     let screen = crate::widgets::dialog_constrain_rect(ctx);
-    let max_w = tip_max_width(screen.width(), coord_preview.is_some());
+    let max_w = tip_max_width(screen.width());
     let near_right = pointer.x + 14.0 + max_w > screen.right();
     let (pivot, pos) = if near_right {
         (egui::Align2::RIGHT_TOP, pointer + Vec2::new(-8.0, 14.0))
@@ -471,7 +481,7 @@ pub(crate) fn show_action_view_tip(
         .data(|d| d.get_temp::<ViewTipScroll>(scroll_key))
         .filter(|s| s.tip_id == tip_id && s.pass + 1 >= pass)
         .map_or(0.0, |s| s.offset);
-    let max_body_h = (screen.height() * VIEW_TIP_HEIGHT_FRACTION - VIEW_TIP_CHROME_H).max(40.0);
+    let max_body_h = (screen.height() - VIEW_TIP_CHROME_H).max(40.0);
     // interactable(false): clicks pass through to the control underneath.
     egui::Area::new(tip_id)
         .order(Order::Tooltip)
@@ -484,7 +494,10 @@ pub(crate) fn show_action_view_tip(
             egui::Frame::popup(ui.style())
                 .inner_margin(egui::Margin::symmetric(10, 8))
                 .show(ui, |ui| {
+                    // Area content is capped at last frame's size; lift both axes so
+                    // the tip can grow up to the constrain rect before scrolling.
                     ui.set_max_width(max_w);
+                    ui.set_max_height(max_body_h);
                     // V-only: tip body wraps prose and icon grids to `max_w`.
                     // Wheel claiming in `claim_view_tip_scroll` tracks Y offset.
                     let out = crate::widgets::scroll_vertical()
@@ -639,20 +652,15 @@ fn show_edit_window(
         pending_scale,
     } = ui;
     let VarTheme { is_dark, .. } = *theme;
-    let (action_id, anchor, type_key, has_coord_preview) = match state {
-        TooltipState::Edit(edit) => (
-            edit.action_id,
-            edit.anchor,
-            edit.draft.type_key(),
-            crate::preview_tooltip::coordinate_ref_for_preview(&edit.draft).is_some(),
-        ),
+    let (action_id, anchor, type_key) = match state {
+        TooltipState::Edit(edit) => (edit.action_id, edit.anchor, edit.draft.type_key()),
         _ => return Vec::new(),
     };
 
     let label = action_type_label(type_key);
     let pastel = tree_chrome::rgba_pub(action_pastel_color(type_key, is_dark));
     let screen = crate::widgets::dialog_constrain_rect(ctx);
-    let max_w = tip_max_width(screen.width(), has_coord_preview);
+    let max_w = tip_max_width(screen.width());
     // Grow with content from a modest default; ScrollArea caps at the window height.
     const EDIT_CHROME: f32 = 72.0; // type pill + Save/Cancel + separator + margins
     let max_scroll_h = (screen.height() - EDIT_CHROME).max(100.0);
@@ -681,8 +689,7 @@ fn show_edit_window(
     let mut open = true;
 
     // Stable Area id (also keys egui's resize state as `area_id.with("resize")`).
-    // Bump salt when changing default/min/max sizing so persisted locked sizes are discarded.
-    let area_id = egui::Id::new(("action_edit_tip", "grow_v12", action_id));
+    let area_id = edit_tip_area_id(action_id);
     let (fitting, fit_fields_h) = match state {
         TooltipState::Edit(edit) => (edit.auto_fit, edit.fields_height),
         _ => (false, 0.0),
@@ -1186,18 +1193,10 @@ mod tests {
     fn tip_max_width_scales_with_viewport() {
         let floor = crate::widgets::FLOATER_MIN_COMPACT[0];
         // Narrow viewport: still at least the floater floor.
-        assert_eq!(tip_max_width(300.0, false), floor);
-        // Typical desktop: ~half the constrain width.
-        let mid = tip_max_width(1200.0, false);
-        assert!((mid - 600.0).abs() < 0.5, "got {mid}");
-        // Preview tips prefer a slightly narrower fraction.
-        let preview = tip_max_width(1200.0, true);
-        assert!((preview - 480.0).abs() < 0.5, "got {preview}");
-        assert!(preview < mid);
-        // Ceiling clamps only when preferred fraction exceeds max fraction.
-        let wide = tip_max_width(4000.0, false);
-        assert!((wide - 2000.0).abs() < 0.5, "got {wide}");
-        assert!(wide <= 4000.0 * TIP_WIDTH_MAX_FRACTION);
+        assert_eq!(tip_max_width(300.0), floor);
+        // Otherwise half the constrain width.
+        assert!((tip_max_width(1200.0) - 600.0).abs() < 0.5);
+        assert!((tip_max_width(4000.0) - 2000.0).abs() < 0.5);
     }
 
     #[test]

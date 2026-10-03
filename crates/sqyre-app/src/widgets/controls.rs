@@ -6,7 +6,7 @@ use eframe::egui::{
 
 use crate::theme::{accent_dim, paint_galley_centered, paint_text_centered, MACRO_STOP, PRIMARY};
 
-/// Minimum square hit target for icon-only buttons (framed and bare).
+/// Minimum square hit target for icon-only buttons.
 /// Side grows with Button text so glyphs track the Font size setting.
 pub const ICON_BTN_SIDE: f32 = 18.0;
 
@@ -36,22 +36,11 @@ pub(crate) fn paint_keyboard_focus_ring(
     );
 }
 
-/// Framed icon-only button with optically centered glyph.
+/// Frameless icon-only button with optically centered glyph.
 ///
 /// `tip` is the AccessKit name and hover text (required for actionable icons).
 pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
-    icon_button_inner(ui, glyph, tip, true, None)
-}
-
-/// Frameless icon control (optically centered); used in dense tree chrome.
-/// Pass `None` for the default interact text color.
-pub fn icon_button_bare_colored(
-    ui: &mut egui::Ui,
-    glyph: &str,
-    tip: &str,
-    color: Option<Color32>,
-) -> egui::Response {
-    icon_button_inner(ui, glyph, tip, false, color)
+    icon_button_inner(ui, glyph, tip, None)
 }
 
 /// Like [`icon_button`], with an optional fixed glyph color (e.g. record ●).
@@ -61,31 +50,20 @@ pub fn icon_button_colored(
     tip: &str,
     color: Option<Color32>,
 ) -> egui::Response {
-    icon_button_inner(ui, glyph, tip, true, color)
+    icon_button_inner(ui, glyph, tip, color)
 }
 
 fn icon_button_inner(
     ui: &mut egui::Ui,
     glyph: &str,
     tip: &str,
-    framed: bool,
     color: Option<Color32>,
 ) -> egui::Response {
     let enabled = ui.is_enabled();
     let font_id = icon_btn_font(ui);
     let desired = Vec2::splat(icon_btn_side(ui));
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
-    let visuals = ui.style().interact(&response);
-    if framed {
-        ui.painter().rect(
-            rect,
-            visuals.corner_radius,
-            visuals.weak_bg_fill,
-            visuals.bg_stroke,
-            egui::StrokeKind::Inside,
-        );
-    }
-    let fg = color.unwrap_or_else(|| visuals.text_color());
+    let fg = color.unwrap_or_else(|| ui.style().interact(&response).text_color());
     paint_text_centered(ui, rect, glyph, font_id, fg);
     paint_keyboard_focus_ring(ui, rect, &response);
     response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tip));
@@ -141,21 +119,69 @@ pub fn icon_toggle(
     response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
 
+/// Repaint interval for pulsing glows (~20 fps; the pulse is slow enough to stay smooth).
+const GLOW_FRAME: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// Soft 0..1 glow phase (~0.4 Hz) shared by pulsing controls.
+///
+/// Schedules the next frame only while the viewport is focused and not minimized;
+/// otherwise the glow freezes until something else repaints.
+pub fn glow_pulse(ui: &egui::Ui) -> f32 {
+    let (t, visible) = ui.input(|i| {
+        let vp = i.viewport();
+        (
+            i.time as f32,
+            vp.focused != Some(false) && vp.minimized != Some(true),
+        )
+    });
+    if visible {
+        ui.ctx().request_repaint_after(GLOW_FRAME);
+    }
+    (t * std::f32::consts::TAU * 0.4).sin().mul_add(0.5, 0.5)
+}
+
+/// Stacked filled halos around `rect`; paint *under* an opaque body.
+///
+/// Filled (not concentric `rect_stroke`s) so epaint stroke tessellation cannot
+/// leave a midline seam.
+pub fn glow_halo_shapes(
+    rect: egui::Rect,
+    rounding: CornerRadius,
+    color: Color32,
+    pulse: f32,
+) -> Vec<egui::Shape> {
+    (1..=5u8)
+        .rev()
+        .map(|i| {
+            let i = f32::from(i);
+            let expand = i * (1.1 + pulse * 1.6);
+            let alpha = ((22.0 / i) * (0.35 + 0.65 * pulse)).round() as u8;
+            let expand_u8 = expand.round().clamp(0.0, 255.0) as u8;
+            let glow_round = CornerRadius {
+                nw: rounding.nw.saturating_add(expand_u8),
+                ne: rounding.ne.saturating_add(expand_u8),
+                sw: rounding.sw.saturating_add(expand_u8),
+                se: rounding.se.saturating_add(expand_u8),
+            };
+            egui::Shape::rect_filled(
+                rect.expand(expand),
+                glow_round,
+                Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha),
+            )
+        })
+        .collect()
+}
+
 /// Persist / commit button that pulses a Sqyre-yellow glow while enabled (dirty + valid).
 ///
-/// Disabled state matches a normal `add_enabled(false, …)` button. While glowing,
-/// requests continuous repaint so the loop stays smooth.
-///
-/// Glow is soft filled halos painted *under* an opaque button body (not concentric
-/// `rect_stroke`s) so epaint stroke tessellation cannot leave a midline seam.
+/// Disabled state matches a normal `add_enabled(false, …)` button. Animation
+/// cadence follows [`glow_pulse`].
 pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
     if !enabled {
         return ui.add_enabled(false, egui::Button::new(label));
     }
 
-    let t = ui.input(|i| i.time) as f32;
-    // ~0.4 Hz full cycle; soft ease so it reads as a glow, not a blink.
-    let pulse = (t * std::f32::consts::TAU * 0.4).sin().mul_add(0.5, 0.5);
+    let pulse = glow_pulse(ui);
 
     let visuals = ui.style().visuals.widgets.inactive;
     let rounding = visuals.corner_radius;
@@ -173,23 +199,7 @@ pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egu
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let painter = ui.painter();
 
-    // Soft bloom under the button — stacked fills, no stroked rings.
-    for i in (1..=5).rev() {
-        let expand = i as f32 * (1.1 + pulse * 1.6);
-        let alpha = ((22.0 / i as f32) * (0.35 + 0.65 * pulse)).round() as u8;
-        let expand_u8 = expand.round().clamp(0.0, 255.0) as u8;
-        let glow_round = CornerRadius {
-            nw: rounding.nw.saturating_add(expand_u8),
-            ne: rounding.ne.saturating_add(expand_u8),
-            sw: rounding.sw.saturating_add(expand_u8),
-            se: rounding.se.saturating_add(expand_u8),
-        };
-        painter.rect_filled(
-            rect.expand(expand),
-            glow_round,
-            Color32::from_rgba_unmultiplied(PRIMARY.r(), PRIMARY.g(), PRIMARY.b(), alpha),
-        );
-    }
+    painter.extend(glow_halo_shapes(rect, rounding, PRIMARY, pulse));
 
     // Opaque body covers the halo center so nothing shows through the label.
     let tint = 0.12 + pulse * 0.22;
@@ -202,8 +212,8 @@ pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egu
     let stroke = Stroke::new(1.0, PRIMARY);
     painter.rect(rect, rounding, fill, stroke, egui::StrokeKind::Inside);
     paint_galley_centered(ui, rect, galley, PRIMARY);
-
-    ui.ctx().request_repaint();
+    paint_keyboard_focus_ring(ui, rect, &response);
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
     response
 }
 
@@ -213,7 +223,6 @@ pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::
         icon_button_colored(ui, "●", tip, Some(MACRO_STOP))
     })
     .inner
-    .on_hover_text(tip)
 }
 
 /// Visual / keyboard order for [`press_state_toggle`] (top → bottom).

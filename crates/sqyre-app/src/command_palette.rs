@@ -4,7 +4,7 @@ use crate::data_editor::helpers::is_editor_listed_program;
 use crate::data_editor::{DataEditorCtx, EditorTab};
 use crate::overlay_icons;
 use crate::pickers::fuzzy_match_fold;
-use crate::widgets::{vector_action_icon, VectorIcon};
+use crate::widgets::VectorIcon;
 use crate::SqyreApp;
 use eframe::egui::{self, Color32, CornerRadius, Key, Modifiers, Sense};
 use sqyre_domain::{action_type_table, Macro};
@@ -13,6 +13,14 @@ use sqyre_ui_model::action_picker_category;
 
 const WINDOW_ID: &str = "sqyre_command_palette";
 const ROW_H: f32 = 28.0;
+const MAX_VISIBLE_ROWS: usize = 8;
+/// Spotlight-like: about half the window wide, capped so wide monitors stay compact.
+const WIDTH_FRACTION: f32 = 0.5;
+const MAX_WIDTH: f32 = 600.0;
+/// Sits in the upper fifth of the window rather than hugging the top edge.
+const TOP_FRACTION: f32 = 0.18;
+const MIN_TOP: f32 = 48.0;
+const MAX_TOP: f32 = 180.0;
 const CREATE_SCORE_PENALTY: u32 = 40;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,7 +56,7 @@ pub(crate) enum CommandKind {
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) enum CommandIcon {
     Glyph(&'static str),
     Vector(VectorIcon),
@@ -123,8 +131,15 @@ impl CommandPaletteUi {
         let mut query_changed = false;
 
         // Full-screen hit target under the window: click outside dismisses.
-        // Drawn first so the palette window stays on top in Foreground order.
-        egui::Area::new(egui::Id::new(format!("{WINDOW_ID}_dismiss")))
+        // `move_to_top` does not order layers that both want the top, so clicking
+        // this target once would leave it above the window on every later open.
+        // As a sublayer the window is always placed directly above it.
+        let dismiss_id = egui::Id::new(format!("{WINDOW_ID}_dismiss"));
+        ctx.set_sublayer(
+            egui::LayerId::new(egui::Order::Foreground, dismiss_id),
+            egui::LayerId::new(egui::Order::Foreground, egui::Id::new(WINDOW_ID)),
+        );
+        egui::Area::new(dismiss_id)
             .order(egui::Order::Foreground)
             .fixed_pos(ctx.content_rect().min)
             .interactable(true)
@@ -135,25 +150,30 @@ impl CommandPaletteUi {
                 }
             });
 
+        let constrain = crate::widgets::dialog_constrain_rect(ctx);
+        let width = (constrain.width() * WIDTH_FRACTION)
+            .clamp(crate::widgets::FLOATER_MIN_PALETTE[0], MAX_WIDTH)
+            .min(constrain.width());
+        let top = (constrain.height() * TOP_FRACTION).clamp(MIN_TOP, MAX_TOP);
         let mut open = self.open;
-        crate::widgets::fit_dialog_window(
+        crate::widgets::fit_dialog_popup(
             egui::Window::new("Command palette")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
-                .anchor(egui::Align2::CENTER_TOP, [0.0, 72.0])
-                .default_size([520.0, 380.0])
-                .min_size(crate::widgets::FLOATER_MIN_PALETTE)
+                .anchor(egui::Align2::CENTER_TOP, [0.0, top])
                 .order(egui::Order::Foreground)
                 .open(&mut open),
             ctx,
             egui::Id::new(WINDOW_ID),
             pending_scale,
         )
+        .min_width(width)
+        .max_width(width)
         .show(ctx, |ui| {
-            let (esc, enter, down, up) = ui.input_mut(|i| {
+            let esc = crate::widgets::consume_escape(ui);
+            let (enter, down, up) = ui.input_mut(|i| {
                 (
-                    i.consume_key(Modifiers::NONE, Key::Escape),
                     i.consume_key(Modifiers::NONE, Key::Enter),
                     i.consume_key(Modifiers::NONE, Key::ArrowDown),
                     i.consume_key(Modifiers::NONE, Key::ArrowUp),
@@ -178,7 +198,7 @@ impl CommandPaletteUi {
                 }
                 query_changed = resp.changed();
             });
-            ui.separator();
+            crate::widgets::section_separator(ui);
 
             let filtered = filter_ranked(&self.query, commands);
             if query_changed {
@@ -186,7 +206,7 @@ impl CommandPaletteUi {
                 self.scroll_selected = true;
             }
             if filtered.is_empty() {
-                ui.weak("No matching commands.");
+                crate::widgets::list_vacancy(ui, &self.query, 0, "commands");
                 return;
             }
             if down {
@@ -203,7 +223,12 @@ impl CommandPaletteUi {
                 return;
             }
 
-            let list_h = ROW_H * 10.0 + 8.0;
+            let row_pitch = ROW_H + ui.spacing().item_spacing.y;
+            let rows = filtered.len().min(MAX_VISIBLE_ROWS) as f32;
+            let screen_room = crate::widgets::dialog_constrain_rect(ui.ctx()).bottom()
+                - ui.cursor().top()
+                - ui.spacing().window_margin.bottomf();
+            let list_h = (rows * row_pitch).min(screen_room.max(row_pitch));
             let list_w = crate::widgets::visible_width(ui);
             crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
                 crate::widgets::enable_dense_row_extend(ui);
@@ -229,19 +254,14 @@ impl CommandPaletteUi {
 }
 
 fn command_row(ui: &mut egui::Ui, item: &CommandItem, selected: bool) -> egui::Response {
-    let fill = if selected {
-        crate::theme::accent_dim()
-    } else {
-        Color32::TRANSPARENT
-    };
     let font = egui::TextStyle::Body.resolve(ui.style());
     let small = egui::TextStyle::Small.resolve(ui.style());
     let text_color = ui.visuals().text_color();
     let weak = ui.visuals().weak_text_color();
     let icon_side = font.size;
-    let icon_galley = match item.icon {
+    let icon_galley = match &item.icon {
         CommandIcon::Glyph(glyph) => Some(ui.painter().layout_no_wrap(
-            glyph.to_owned(),
+            (*glyph).to_owned(),
             overlay_icons::glyph_font_id(font.size),
             text_color,
         )),
@@ -257,18 +277,36 @@ fn command_row(ui: &mut egui::Ui, item: &CommandItem, selected: bool) -> egui::R
         8.0 + icon_w.max(22.0) + 8.0 + title_galley.size().x + 16.0 + hint_galley.size().x + 10.0;
     let row_w = ui.available_width().max(content_w);
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(row_w, ROW_H), Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let hovered = resp.hovered();
+    let hover_visuals = ui.visuals().widgets.hovered;
+    let fill = if selected {
+        crate::theme::accent_dim()
+    } else if hovered {
+        hover_visuals.weak_bg_fill
+    } else {
+        Color32::TRANSPARENT
+    };
     ui.painter().rect_filled(rect, CornerRadius::same(4), fill);
+    if hovered {
+        ui.painter().rect_stroke(
+            rect,
+            CornerRadius::same(4),
+            hover_visuals.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
     let y = rect.center().y;
     let mut x = rect.left() + 8.0;
     if let Some(galley) = icon_galley {
         ui.painter()
             .galley(egui::pos2(x, y - galley.size().y * 0.5), galley, text_color);
-    } else if let CommandIcon::Vector(paint) = item.icon {
+    } else if let CommandIcon::Vector(icon) = &item.icon {
         let icon_rect = egui::Rect::from_min_size(
             egui::pos2(x, y - icon_side * 0.5),
             egui::Vec2::splat(icon_side),
         );
-        paint(ui.painter(), icon_rect, text_color);
+        icon.paint(ui.painter(), icon_rect, text_color);
     }
     x += 22.0;
     ui.painter().galley(
@@ -656,7 +694,7 @@ fn push_named_map(
         out.push(CommandItem {
             title: display,
             hint: format!("{kind_label} · {program}"),
-            icon,
+            icon: icon.clone(),
             kind: CommandKind::OpenCatalogEntity {
                 tab,
                 program: program.to_string(),
@@ -696,14 +734,13 @@ fn ph(id: &str) -> CommandIcon {
 }
 
 fn action_icon(type_key: &str) -> CommandIcon {
-    if let Some(paint) = vector_action_icon(type_key) {
-        return CommandIcon::Vector(paint);
+    if let Some(icon) = VectorIcon::for_type(type_key) {
+        return CommandIcon::Vector(icon);
     }
     ph(match type_key {
         "click" => "mouse",
         "key" => "key",
         "type" => "keyboard",
-        "imagesearch" => "magnifying-glass",
         "ocr" => "text-aa",
         "findpixel" => "drop",
         "setvariable" => "equals",
@@ -711,7 +748,6 @@ fn action_icon(type_key: &str) -> CommandIcon {
         "loop" | "while" => "arrows-clockwise",
         "loopjump" => "stop",
         "foreachrow" => "list-bullets",
-        "foreachcell" => "grid-four",
         "conditional" => "question",
         "wait" => "timer",
         "pause" => "pause",

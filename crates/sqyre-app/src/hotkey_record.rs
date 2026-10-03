@@ -90,7 +90,7 @@ impl HotkeyRecordUi {
                     ui.label(
                         "Hold your hotkey. When it stays unchanged for 1 second, it will be saved.\nUse Cancel to dismiss (Esc when no keys are held).",
                     );
-                    ui.separator();
+                    crate::widgets::section_separator(ui);
                     let display = if last_chord.is_empty() {
                         "(no keys)".to_string()
                     } else {

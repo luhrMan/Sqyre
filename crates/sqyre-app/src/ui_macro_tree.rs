@@ -148,7 +148,13 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     let root = &app.workspace.macros[idx].root;
                     let root_children = root.children();
                     if root_children.is_empty() {
-                        ui.weak("No actions yet — Add Action");
+                        let _ = crate::widgets::empty_state(
+                            ui,
+                            "No actions yet",
+                            Some("Use Add Action to build this macro."),
+                            None,
+                            None,
+                        );
                     }
                     let known_vars = app
                         .tree
@@ -499,32 +505,6 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     if app.tree.drag_mode == TreeDragMode::Scroll && !ui.input(|i| i.pointer.primary_down()) {
         app.tree.drag_mode = TreeDragMode::Idle;
     }
-
-    match app.tree.selected_actions.as_slice() {
-        [] => {}
-        [aid] => {
-            let root = &app.workspace.macros[idx].root;
-            if let Some(sqyre_domain::TreeNodeRef::ElseFolder { .. }) = root.resolve_tree_id(*aid) {
-                ui.separator();
-                ui.label("Selected: Else (runs when not found / condition false)");
-            } else {
-                let action = if aid.is_root() {
-                    Some(root)
-                } else {
-                    root.find_by_id(*aid)
-                };
-                if let Some(action) = action {
-                    ui.separator();
-                    // display_name already uses taxonomy labels (never wire keys).
-                    ui.label(format!("Selected: {}", action.display_name()));
-                }
-            }
-        }
-        ids => {
-            ui.separator();
-            ui.label(format!("Selected: {} actions", ids.len()));
-        }
-    }
 }
 
 /// Apply Ctrl/Cmd toggle, Shift range, or plain single-select for tip-covered rows.
@@ -728,7 +708,7 @@ fn build_tree(
         match interaction.action {
             RowAction::Logs => *open_logs = Some(action_id),
             RowAction::Delete => *delete_action = Some(action_id),
-            RowAction::None => {}
+            RowAction::Edit | RowAction::None => {}
         }
         row_events.push((action_id, interaction));
     };
@@ -828,7 +808,6 @@ fn build_else_dir(
                         action: RowAction::None,
                         hovered: resp.hovered(),
                         pointer_in_row: resp.hovered(),
-                        secondary_clicked: false,
                         double_clicked: false,
                         primary_clicked: resp.clicked(),
                         row_rect,

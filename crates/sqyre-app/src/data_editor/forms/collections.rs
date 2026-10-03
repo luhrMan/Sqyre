@@ -199,24 +199,21 @@ impl DataEditor {
         });
         let mut remove_at: Option<usize> = None;
         for (i, member) in self.form_atlas_members.iter().enumerate() {
-            ui.horizontal(|ui| {
-                let label = ui.label(format!("• {member}"));
-                if let Some(prog) = self.selected_program.as_deref() {
-                    previews.show_for_entity(
-                        ui,
-                        &label,
-                        catalog,
-                        prog,
-                        member,
-                        PreviewKind::Collection,
-                    );
-                }
-                if crate::widgets::icon_button_colored(ui, "×", "Remove", Some(theme::MACRO_STOP))
-                    .clicked()
-                {
-                    remove_at = Some(i);
-                }
-            });
+            let label = ui.label(format!("• {member}"));
+            if let Some(prog) = self.selected_program.as_deref() {
+                previews.show_for_entity(
+                    ui,
+                    &label,
+                    catalog,
+                    prog,
+                    member,
+                    PreviewKind::Collection,
+                );
+            }
+            let menu_id = egui::Id::new(("atlas_member_menu", member));
+            if crate::widgets::row_danger_menu(ui, menu_id, label.rect, "Remove") {
+                remove_at = Some(i);
+            }
         }
         if let Some(i) = remove_at {
             self.form_atlas_members.remove(i);

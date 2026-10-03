@@ -88,23 +88,37 @@ fn new_macro_button_adds_macro() {
     );
 }
 
+fn open_first_wait_row_menu(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>) {
+    harness
+        .query_all_by_label("Wait")
+        .next()
+        .expect("demo macro should contain a Wait row")
+        .click_secondary();
+    harness.run();
+}
+
 #[test]
-fn tree_log_buttons_follow_log_meta_images_setting() {
+fn tree_row_menu_logs_entry_follows_log_meta_images_setting() {
     let mut harness = build_docs_harness([1000.0, 500.0], |_| {});
     harness.run();
     assert!(
         harness.query_all_by_label("Logs").next().is_none(),
-        "log buttons should be hidden when Log Meta Images is off"
+        "no inline log buttons on tree rows"
+    );
+    open_first_wait_row_menu(&mut harness);
+    harness.get_by_label("Edit");
+    harness.get_by_label("Delete");
+    assert!(
+        harness.query_all_by_label("Logs").next().is_none(),
+        "Logs menu entry should be hidden when Log Meta Images is off"
     );
 
     let mut harness = build_docs_harness([1000.0, 500.0], |app| {
         app.docs_settings_mut().save_meta_images = true;
     });
     harness.run();
-    assert!(
-        harness.query_all_by_label("Logs").next().is_some(),
-        "log buttons should show when Log Meta Images is on"
-    );
+    open_first_wait_row_menu(&mut harness);
+    harness.get_by_label("Logs");
 }
 
 #[test]
@@ -133,6 +147,74 @@ fn add_wait_from_picker_increases_tree() {
         harness.state().docs_selected_root_child_count(),
         before + 1,
         "picking Wait should insert a child under the demo root"
+    );
+}
+
+/// Same size as the `command-palette.png` golden, where the first row sits at y≈161.
+const PALETTE_HARNESS_SIZE: [f32; 2] = [1000.0, 560.0];
+const FIRST_ROW_Y: f32 = 161.0;
+
+fn press_release(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>, at: egui::Pos2) {
+    harness.hover_at(at);
+    harness.run_steps(2);
+    harness.input_mut().events.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run_steps(1);
+    let at = at + egui::vec2(2.0, 1.0);
+    harness.hover_at(at);
+    harness.input_mut().events.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run_steps(2);
+}
+
+#[test]
+fn command_palette_row_responds_to_mouse_click() {
+    let mut harness = build_docs_harness([1000.0, 600.0], |_| {});
+    harness.run_steps(4);
+    harness.get_by_label("Sqyre").click();
+    harness.run_steps(4);
+    assert!(harness.state().docs_command_palette_open());
+    press_release(&mut harness, egui::pos2(500.0, 190.0));
+    assert!(
+        !harness.state().docs_command_palette_open(),
+        "clicking a palette row should run it and close the palette"
+    );
+}
+
+fn open_palette_with_shortcut(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>) {
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::K);
+    harness.run_steps(4);
+    assert!(harness.state().docs_command_palette_open());
+}
+
+#[test]
+fn command_palette_reopened_after_click_outside_responds_to_mouse_click() {
+    let mut harness = build_docs_harness(PALETTE_HARNESS_SIZE, |_| {});
+    harness.run_steps(4);
+    open_palette_with_shortcut(&mut harness);
+    press_release(&mut harness, egui::pos2(60.0, 560.0));
+    assert!(
+        !harness.state().docs_command_palette_open(),
+        "clicking outside should dismiss the palette"
+    );
+    open_palette_with_shortcut(&mut harness);
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::Text("settings".into()));
+    harness.run_steps(2);
+    press_release(&mut harness, egui::pos2(500.0, FIRST_ROW_Y));
+    assert!(
+        harness.state().docs_settings_open(),
+        "reopened palette should run the clicked Open Settings row"
     );
 }
 

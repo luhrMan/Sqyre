@@ -20,7 +20,7 @@ pub enum ListNavAction {
 
 /// ↑↓ / Enter / Esc for an open list or picker. Prefer over ad-hoc `key_pressed`.
 pub fn poll_list_nav(ui: &mut egui::Ui) -> ListNavAction {
-    if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+    if crate::widgets::consume_escape(ui) {
         ListNavAction::Cancel
     } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowDown)) {
         ListNavAction::Down
@@ -147,33 +147,38 @@ pub fn picker_searchable_scroll_ex(
     {
         let mut trailing = opts.trailing.take();
         let mut below_search = opts.below_search.take();
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(
-                egui_phosphor::regular::MAGNIFYING_GLASS,
-            ))
-            .on_hover_text("Search");
-            // Fill leftover width without a fixed TextEdit min (default ~200)
-            // that would floor the data-editor left pane above the split clamp.
-            let mut edit = egui::TextEdit::singleline(search).desired_width(f32::INFINITY);
-            if let Some(hint) = opts.hint_text {
-                edit = edit.hint_text(hint);
-            }
-            let resp = ui.add(edit);
-            if let Some(fid) = focus_id {
-                focus_search_once(ui, fid, &resp);
-            }
-            if resp.changed() {
-                search_changed = true;
-            }
-            if let Some(trailing) = trailing.as_mut() {
-                trailing(ui);
-            }
-        });
+        crate::widgets::fill_row(
+            ui,
+            |ui| {
+                if let Some(trailing) = trailing.as_mut() {
+                    trailing(ui);
+                }
+            },
+            |ui| {
+                ui.label(egui::RichText::new(
+                    egui_phosphor::regular::MAGNIFYING_GLASS,
+                ))
+                .on_hover_text("Search");
+                // Fill leftover width without a fixed TextEdit min (default ~200)
+                // that would floor the data-editor left pane above the split clamp.
+                let mut edit = egui::TextEdit::singleline(search).desired_width(f32::INFINITY);
+                if let Some(hint) = opts.hint_text {
+                    edit = edit.hint_text(hint);
+                }
+                let resp = ui.add(edit);
+                if let Some(fid) = focus_id {
+                    focus_search_once(ui, fid, &resp);
+                }
+                if resp.changed() {
+                    search_changed = true;
+                }
+            },
+        );
         if let Some(below) = below_search.as_mut() {
             below(ui);
         }
     }
-    ui.separator();
+    crate::widgets::section_separator(ui);
     let q = search.trim().to_ascii_lowercase();
     // Fixed panes (footer_reserve == 0) use remaining height only — no popup screen cap.
     let pane = opts.footer_reserve <= 0.0;

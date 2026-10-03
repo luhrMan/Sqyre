@@ -13,6 +13,8 @@ pub struct MacroMetaUi {
     name_error: Option<String>,
     tag_draft: String,
     delay_open: bool,
+    /// Hotkey controls expanded beside the key toggle; kept across macro switches.
+    hotkey_open: bool,
     /// Selection identity used to refresh drafts when the user switches macros.
     synced_name: String,
     synced_idx: Option<usize>,
@@ -40,7 +42,7 @@ impl MacroMetaUi {
         self.delay_open = false;
     }
 
-    /// Name + delay row. Hotkey widgets are painted by the caller on the same row.
+    /// Name entry row.
     pub fn paint_name_row(
         &mut self,
         ui: &mut egui::Ui,
@@ -79,17 +81,29 @@ impl MacroMetaUi {
             ui.colored_label(crate::theme::error_fg(), err);
         }
 
-        ui.separator();
-        let delay_tip = format_delay_tooltip(m);
-        if ui
-            .add_enabled(enabled, egui::Button::new("⏱ Delays"))
-            .on_hover_text(delay_tip)
+        out
+    }
+
+    /// Icon button toggling the delay popup ([`Self::paint_delay_popup`]).
+    pub fn paint_delay_button(&mut self, ui: &mut egui::Ui, m: &Macro, enabled: bool) {
+        let tip = format_delay_tooltip(m);
+        if crate::ui_toolbar::toolbar_icon(ui, egui_phosphor::regular::TIMER, &tip, enabled)
             .clicked()
         {
             self.delay_open = !self.delay_open;
         }
+    }
 
-        out
+    /// Key icon toggle; returns whether the hotkey controls should be shown beside it.
+    pub fn paint_hotkey_toggle(&mut self, ui: &mut egui::Ui) -> bool {
+        crate::widgets::icon_toggle(
+            ui,
+            &mut self.hotkey_open,
+            "Hotkey",
+            egui_phosphor::regular::KEY,
+            egui_phosphor::fill::KEY,
+        );
+        self.hotkey_open
     }
 
     /// Tag chips + draft entry (draft before `Tags:` label).
@@ -180,7 +194,7 @@ fn delay_row(ui: &mut egui::Ui, label: &str, value: &mut i32) -> bool {
 }
 
 fn format_delay_tooltip(m: &Macro) -> String {
-    let mut parts = Vec::new();
+    let mut parts = vec!["Action delays (ms)".to_string()];
     if m.global_delay > 0 {
         parts.push(format!("Global: {} ms", m.global_delay));
     }
@@ -190,11 +204,7 @@ fn format_delay_tooltip(m: &Macro) -> String {
     if m.mouse_delay > 0 {
         parts.push(format!("Mouse: {} ms", m.mouse_delay));
     }
-    if parts.is_empty() {
-        "Action delays (ms)".into()
-    } else {
-        parts.join("\n")
-    }
+    parts.join("\n")
 }
 
 fn validate_rename(
@@ -277,6 +287,9 @@ mod tests {
         assert_eq!(format_delay_tooltip(&macro_), "Action delays (ms)");
         macro_.global_delay = 10;
         macro_.mouse_delay = 5;
-        assert_eq!(format_delay_tooltip(&macro_), "Global: 10 ms\nMouse: 5 ms");
+        assert_eq!(
+            format_delay_tooltip(&macro_),
+            "Action delays (ms)\nGlobal: 10 ms\nMouse: 5 ms"
+        );
     }
 }

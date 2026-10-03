@@ -129,6 +129,21 @@ impl EditorTab {
     pub(crate) fn is_desktop_only(self) -> bool {
         matches!(self, Self::ScreenCap | Self::PixelCheck)
     }
+
+    /// Noun in the delete confirmation (`item “foo”`). `None` when the tab cannot delete.
+    fn delete_subject(self) -> Option<&'static str> {
+        match self {
+            Self::Programs => Some("program"),
+            Self::Items => Some("item"),
+            Self::Points => Some("point"),
+            Self::SearchAreas => Some("search area"),
+            Self::Masks => Some("mask"),
+            Self::Collections => Some("collection"),
+            Self::Atlases => Some("atlas"),
+            Self::Overlay => Some("overlay button"),
+            Self::ScreenCap | Self::PixelCheck => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -644,7 +659,8 @@ impl DataEditor {
         // clipped header buttons when children claimed available_width as min_width.
         crate::widgets::fit_dialog_popup(
             egui::Window::new(WINDOW_TITLE)
-                .open(&mut open)
+                .title_bar(false)
+                .collapsible(false)
                 .default_size([880.0, 560.0])
                 .min_size(crate::widgets::FLOATER_MIN_EDITOR)
                 // No huge max_size — egui auto-expands toward max when content min_size ratchets.
@@ -655,8 +671,14 @@ impl DataEditor {
         )
         .show(ctx, |ui| {
             crate::widgets::fill_resize_body(ui, |ui| {
+                if self.ui_header(ui, env) {
+                    open = false;
+                }
                 self.ui_body(ui, env, selected_macro, previews);
             });
+            if crate::widgets::consume_escape(ui) {
+                open = false;
+            }
         });
         self.open = open;
         self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings, env.pending_scale);
@@ -795,6 +817,37 @@ impl DataEditor {
 }
 
 impl DataEditor {
+    /// Title row with section tabs and close; returns true when close was clicked.
+    fn ui_header(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) -> bool {
+        let mut close = false;
+        crate::widgets::fill_row(
+            ui,
+            |ui| {
+                close =
+                    crate::widgets::icon_button(ui, egui_phosphor::regular::X, "Close").clicked();
+            },
+            |ui| {
+                ui.label(egui::RichText::new(WINDOW_TITLE).strong());
+                ui.add_space(crate::theme::SPACE_12);
+                let section = EditorSection::of(self.tab);
+                for (sec, label) in [
+                    (EditorSection::Programs, "Programs"),
+                    (EditorSection::Items, "Items"),
+                    (EditorSection::Coordinates, "Coordinates"),
+                    (EditorSection::Tools, "Tools"),
+                ] {
+                    if !sec.is_available() {
+                        continue;
+                    }
+                    if ui.selectable_label(section == sec, label).clicked() && section != sec {
+                        self.switch_tab(sec.default_tab(), env.catalog, env.settings);
+                    }
+                }
+            },
+        );
+        close
+    }
+
     fn ui_body(
         &mut self,
         ui: &mut egui::Ui,
@@ -802,22 +855,6 @@ impl DataEditor {
         selected_macro: usize,
         previews: &mut PreviewTooltipCache,
     ) {
-        ui.horizontal_wrapped(|ui| {
-            let section = EditorSection::of(self.tab);
-            for (sec, label) in [
-                (EditorSection::Programs, "Programs"),
-                (EditorSection::Items, "Items"),
-                (EditorSection::Coordinates, "Coordinates"),
-                (EditorSection::Tools, "Tools"),
-            ] {
-                if !sec.is_available() {
-                    continue;
-                }
-                if ui.selectable_label(section == sec, label).clicked() && section != sec {
-                    self.switch_tab(sec.default_tab(), env.catalog, env.settings);
-                }
-            }
-        });
         let section = EditorSection::of(self.tab);
         if section.is_available() {
             ui.horizontal_wrapped(|ui| {
@@ -895,7 +932,7 @@ impl DataEditor {
                 }
             });
         }
-        ui.separator();
+        crate::widgets::section_separator(ui);
 
         if let Some(msg) = env.screen_click.status_label() {
             ui.colored_label(crate::theme::PRIMARY, msg);
@@ -917,7 +954,6 @@ impl DataEditor {
         let footer_rect =
             egui::Rect::from_min_max(egui::pos2(outer.min.x, outer.min.y + body_h), outer.max);
 
-        let splitter_w = crate::theme::PANEL_SPLITTER_W;
         let avail_w = body_rect.width();
         let min_left = avail_w * MIN_DATA_EDITOR_LEFT_FRAC;
         let max_left = avail_w * MAX_DATA_EDITOR_LEFT_FRAC;
@@ -926,31 +962,15 @@ impl DataEditor {
             .data_editor_left_split
             .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
         self.left_width = (avail_w * frac).clamp(min_left, max_left);
-        // Keep splitter + right inside body_rect — never allocate past the frame.
-        let left_w = self.left_width.min((avail_w - splitter_w).max(0.0));
-        let left_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(left_w, body_h));
-        let split_rect = egui::Rect::from_min_size(
-            egui::pos2(left_rect.right(), body_rect.top()),
-            egui::vec2(splitter_w, body_h),
-        );
-        let right_rect = egui::Rect::from_min_max(
-            egui::pos2(split_rect.right(), body_rect.top()),
-            body_rect.max,
-        );
+        let crate::widgets::SplitView {
+            left: mut left_ui,
+            right: mut right_ui,
+            splitter: split_rect,
+        } = crate::widgets::split_view(ui, body_rect, self.left_width);
 
         let mut tag_submit = false;
 
-        // `new_child` (not scope_builder): do not advance parent by form min_size.
-        {
-            let mut left_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(left_rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            left_ui.set_clip_rect(left_rect.intersect(ui.clip_rect()));
-            left_ui.set_max_size(left_rect.size());
-            self.draw_left_list(&mut left_ui, env.catalog, env.icons, previews, env.settings);
-        }
+        self.draw_left_list(&mut left_ui, env.catalog, env.icons, previews, env.settings);
 
         let split_resp = ui.interact(
             split_rect,
@@ -985,18 +1005,12 @@ impl DataEditor {
         }
 
         {
-            let mut right_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(right_rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            right_ui.set_clip_rect(right_rect.intersect(ui.clip_rect()));
-            right_ui.set_max_size(right_rect.size());
+            let content_w = right_ui.max_rect().width();
             let fill_tab = matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
             let mut paint_form = |ui: &mut egui::Ui| {
                 // Cap soft-wrap to the pane; dialog_scroll (both axes) still H-scrolls
                 // when a hard min-width (preview row, fixed fields) exceeds the viewport.
-                ui.set_max_width(right_rect.width());
+                ui.set_max_width(content_w);
                 let macros: &[Macro] = env.macros;
                 tag_submit = self.draw_form(
                     ui,
@@ -1014,7 +1028,7 @@ impl DataEditor {
             if fill_tab {
                 paint_form(&mut right_ui);
             } else {
-                pickers::dialog_scroll(right_rect.width(), body_h)
+                pickers::dialog_scroll(content_w, body_h)
                     .id_salt("data_editor_form")
                     .show(&mut right_ui, paint_form);
             }
@@ -1029,7 +1043,7 @@ impl DataEditor {
             footer_ui.set_clip_rect(footer_rect.intersect(ui.clip_rect()));
             footer_ui.set_max_size(footer_rect.size());
             footer_ui.vertical(|ui| {
-                ui.separator();
+                crate::widgets::section_separator(ui);
                 ui.horizontal_wrapped(|ui| {
                     let can_new = !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
                     if ui
@@ -1058,58 +1072,29 @@ impl DataEditor {
                     if save_clicked || save_enter || (tag_submit && save_enabled) {
                         self.on_update(env, previews);
                     }
-                    let can_delete = match self.tab {
-                        EditorTab::Programs => self.selected_program.is_some(),
-                        EditorTab::ScreenCap | EditorTab::PixelCheck => false,
-                        _ => self.selected_program.is_some() && self.selected_entity.is_some(),
-                    };
-                    if ui
-                        .add_enabled(
-                            can_delete,
-                            egui::Button::new(
-                                egui::RichText::new("Delete").color(crate::theme::MACRO_STOP),
-                            ),
-                        )
-                        .clicked()
-                    {
-                        let label = match self.tab {
-                            EditorTab::Programs => format!(
-                                "program “{}”",
-                                self.selected_program.as_deref().unwrap_or("")
-                            ),
-                            EditorTab::Items => {
-                                format!("item “{}”", self.selected_entity.as_deref().unwrap_or(""))
-                            }
-                            EditorTab::Points => {
-                                format!("point “{}”", self.selected_entity.as_deref().unwrap_or(""))
-                            }
-                            EditorTab::SearchAreas => format!(
-                                "search area “{}”",
-                                self.selected_entity.as_deref().unwrap_or("")
-                            ),
-                            EditorTab::Masks => {
-                                format!("mask “{}”", self.selected_entity.as_deref().unwrap_or(""))
-                            }
-                            EditorTab::Collections => format!(
-                                "collection “{}”",
-                                self.selected_entity.as_deref().unwrap_or("")
-                            ),
-                            EditorTab::Atlases => {
-                                format!("atlas “{}”", self.selected_entity.as_deref().unwrap_or(""))
-                            }
-                            EditorTab::Overlay => format!(
-                                "overlay button “{}”",
-                                self.selected_entity.as_deref().unwrap_or("")
-                            ),
-                            EditorTab::ScreenCap | EditorTab::PixelCheck => String::new(),
-                        };
-                        if !label.is_empty() {
-                            self.confirm = Some(PendingConfirm::Delete { label });
-                        }
-                    }
                 });
             });
         }
+    }
+
+    /// Ask to delete the selected program / entity (list row right-click → Delete).
+    pub(crate) fn request_delete_selected(&mut self) {
+        let Some(subject) = self.tab.delete_subject() else {
+            return;
+        };
+        let name = if self.tab == EditorTab::Programs {
+            self.selected_program.as_deref().unwrap_or("")
+        } else if self.selected_program.as_deref().is_none_or(str::is_empty) {
+            ""
+        } else {
+            self.selected_entity.as_deref().unwrap_or("")
+        };
+        if name.is_empty() {
+            return;
+        }
+        self.confirm = Some(PendingConfirm::Delete {
+            label: format!("{subject} “{name}”"),
+        });
     }
 
     /// Enter → Update only when this window is in front and no overlay owns the key.

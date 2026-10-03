@@ -150,6 +150,7 @@ impl DataEditor {
                     close = true;
                 }
             });
+            close |= crate::widgets::consume_escape(ui);
         });
         if !open || close {
             self.overlay_icon_picker_for = None;

@@ -28,6 +28,8 @@ pub const DEFAULT_SOUND_VOLUME: f32 = 0.25;
 pub const DEFAULT_UI_FONT_SIZE: i32 = 12;
 pub const DEFAULT_UI_SCALE: f32 = 1.5;
 pub const DEFAULT_COMPACT_PROGRAM_HEADERS: bool = true;
+pub const DEFAULT_WINDOW_BORDER: bool = true;
+pub const DEFAULT_RUN_BUTTON_GLOW: bool = true;
 pub const DEFAULT_BACKUP_INTERVAL_HOURS: i32 = 24;
 pub const MIN_BACKUP_INTERVAL_HOURS: i32 = 1;
 pub const MAX_BACKUP_INTERVAL_HOURS: i32 = 720;
@@ -492,6 +494,12 @@ pub struct UserSettings {
     /// In catalog lists, programs with a process icon omit the name (icon + child count only).
     #[serde(default = "default_compact_program_headers")]
     pub compact_program_headers: bool,
+    /// Gold border just inside the main window edge.
+    #[serde(default = "default_window_border")]
+    pub window_border: bool,
+    /// Pulsing green halo behind the Run button while it is enabled.
+    #[serde(default = "default_run_button_glow")]
+    pub run_button_glow: bool,
     #[serde(default = "default_hide_recording")]
     pub hide_app_during_recording: bool,
     /// Release keys/buttons still held from Down/hold actions when a macro ends.
@@ -566,6 +574,9 @@ pub struct UserSettings {
     /// Macro list side panel width in points.
     #[serde(default = "default_macro_list_width")]
     pub macro_list_width: f32,
+    /// Name of the macro selected when Sqyre last ran; reselected on startup.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub last_selected_macro: String,
     /// Rayon worker threads for image search, find-pixel, and capture conversion.
     /// Applied at process start (`build_global`); changing it needs a restart.
     #[serde(default = "default_worker_threads")]
@@ -605,6 +616,12 @@ fn default_drag_debounce() -> i32 {
 fn default_compact_program_headers() -> bool {
     DEFAULT_COMPACT_PROGRAM_HEADERS
 }
+fn default_window_border() -> bool {
+    DEFAULT_WINDOW_BORDER
+}
+fn default_run_button_glow() -> bool {
+    DEFAULT_RUN_BUTTON_GLOW
+}
 fn default_font_size() -> i32 {
     DEFAULT_UI_FONT_SIZE
 }
@@ -636,6 +653,8 @@ impl Default for UserSettings {
             save_meta_images: false,
             highlight_active_action: false,
             compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
+            window_border: DEFAULT_WINDOW_BORDER,
+            run_button_glow: DEFAULT_RUN_BUTTON_GLOW,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
             release_held_inputs_on_end: DEFAULT_RELEASE_HELD_INPUTS_ON_END,
             while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
@@ -662,6 +681,7 @@ impl Default for UserSettings {
             hotkey_tags_while_focused: false,
             data_editor_left_split: DEFAULT_DATA_EDITOR_LEFT_FRAC,
             macro_list_width: DEFAULT_MACRO_LIST_WIDTH,
+            last_selected_macro: String::new(),
             worker_threads: default_worker_threads(),
         }
     }
@@ -1056,6 +1076,7 @@ mod tests {
             image_search_variant_exit_early: false,
             ui_scale: 1.2,
             hotkey_tag_filters: vec!["combat".into()],
+            last_selected_macro: "farm loop".into(),
             ..Default::default()
         };
         s.action_colors.detection = "#aabbcc".into();
@@ -1103,6 +1124,7 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].icon_color, "#abcdef");
         assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
         assert_eq!(loaded.hotkey_tag_filters, vec!["combat".to_string()]);
+        assert_eq!(loaded.last_selected_macro, "farm loop");
         assert!(!loaded.hotkey_tags_while_focused);
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON

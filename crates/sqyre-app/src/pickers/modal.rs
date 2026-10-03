@@ -132,6 +132,7 @@ pub fn show_active_picker(
                             None,
                             sqyre_domain::CatalogItemSort::NameAsc,
                             &[],
+                            None,
                         );
                         let visible: usize = paint
                             .catalog
@@ -153,7 +154,7 @@ pub fn show_active_picker(
                             .sum();
                         list_vacancy(ui, q, visible, "items");
                     });
-                    ui.separator();
+                    crate::widgets::section_separator(ui);
                     if let Some(tags) = staged_tags.as_mut() {
                         let suggestions =
                             crate::data_editor::helpers::collect_all_item_tags(paint.catalog);
@@ -229,29 +230,34 @@ pub fn show_active_picker(
                         let kind = *kind;
                         let program_names: Vec<String> =
                             paint.catalog.program_names().cloned().collect();
-                        ui.horizontal(|ui| {
-                            ui.label(egui::RichText::new(
-                                egui_phosphor::regular::MAGNIFYING_GLASS,
-                            ))
-                            .on_hover_text("Search");
-                            let edit = egui::TextEdit::singleline(search)
-                                .desired_width(f32::INFINITY)
-                                .hint_text(HINT_LIST);
-                            let resp = ui.add(edit);
-                            focus_search_once(ui, focus_id, &resp);
-                            if resp.changed() {
-                                *scroll_to_selection = true;
-                            }
-                            super::collapse_all_buttons(ui, |ctx, open| {
-                                super::set_coord_list_openness(
-                                    ctx,
-                                    kind,
-                                    program_names.iter().map(|n| n.as_str()),
-                                    open,
-                                );
-                            });
-                        });
-                        ui.separator();
+                        crate::widgets::fill_row(
+                            ui,
+                            |ui| {
+                                super::collapse_all_buttons(ui, |ctx, open| {
+                                    super::set_coord_list_openness(
+                                        ctx,
+                                        kind,
+                                        program_names.iter().map(|n| n.as_str()),
+                                        open,
+                                    );
+                                });
+                            },
+                            |ui| {
+                                ui.label(egui::RichText::new(
+                                    egui_phosphor::regular::MAGNIFYING_GLASS,
+                                ))
+                                .on_hover_text("Search");
+                                let edit = egui::TextEdit::singleline(search)
+                                    .desired_width(f32::INFINITY)
+                                    .hint_text(HINT_LIST);
+                                let resp = ui.add(edit);
+                                focus_search_once(ui, focus_id, &resp);
+                                if resp.changed() {
+                                    *scroll_to_selection = true;
+                                }
+                            },
+                        );
+                        crate::widgets::section_separator(ui);
                         paint_coord_ref_list(
                             ui,
                             paint,
@@ -470,7 +476,7 @@ pub fn show_active_picker(
                 ActivePicker::None => {}
             }
 
-            ui.separator();
+            crate::widgets::section_separator(ui);
             let cell_has_sel = picker
                 .cell_pick_mut()
                 .and_then(|c| c.as_ref())

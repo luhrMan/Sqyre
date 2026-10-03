@@ -120,22 +120,6 @@ pub fn register_phosphor_family(fonts: &mut egui::FontDefinitions) {
     );
 }
 
-/// When `busy`, the glyph is dimmed and a time-based spinner is drawn over it.
-/// Animation frames come from the overlay pointer-wake thread (~50ms) — do not
-/// call `egui::Spinner` (it `request_repaint()`s every frame and thrash-lags games).
-pub(crate) fn paint_glyph_bare(
-    ui: &mut egui::Ui,
-    icon: &OverlayIcon,
-    size: f32,
-    busy: bool,
-    style: &OverlayPaintStyle,
-) -> egui::Response {
-    let (response, hit_rect) = allocate_glyph_hit(ui, size, busy);
-    let hovered = response.hovered() && !busy;
-    paint_glyph_contents(ui, icon, hit_rect, size, busy, style, hovered);
-    response
-}
-
 /// Allocate the interact / hit rect for an overlay glyph button.
 pub(crate) fn allocate_glyph_hit(
     ui: &mut egui::Ui,
@@ -152,6 +136,10 @@ pub(crate) fn allocate_glyph_hit(
 }
 
 /// Paint glyph chrome into an already-allocated hit rect.
+///
+/// When `busy`, the glyph is dimmed and a time-based spinner is drawn over it.
+/// Animation frames come from the overlay pointer-wake thread (~50ms) — do not
+/// call `egui::Spinner` (it `request_repaint()`s every frame and thrash-lags games).
 pub(crate) fn paint_glyph_contents(
     ui: &mut egui::Ui,
     icon: &OverlayIcon,
@@ -238,7 +226,15 @@ pub fn style_preview_button(
     size: f32,
     style: &OverlayPaintStyle,
 ) -> egui::Response {
-    paint_glyph_bare(ui, icon, size, false, style)
+    // The border is stroked outside the glyph rect; reserve room so panel clips don't cut it.
+    let pad = hover_border_width(style.border_width).ceil();
+    let (response, hit_rect) = allocate_glyph_hit(ui, size + 2.0 * pad, false);
+    paint_glyph_contents(ui, icon, hit_rect, size, false, style, response.hovered());
+    response
+}
+
+fn hover_border_width(border_width: f32) -> f32 {
+    (border_width * (2.0 / 1.5)).max(border_width + 0.5)
 }
 
 fn paint_overlay_chrome(
@@ -253,7 +249,7 @@ fn paint_overlay_chrome(
     }
     if style.border_width > 0.0 && style.border.a() > 0 {
         let width = if hovered {
-            (style.border_width * (2.0 / 1.5)).max(style.border_width + 0.5)
+            hover_border_width(style.border_width)
         } else {
             style.border_width
         };

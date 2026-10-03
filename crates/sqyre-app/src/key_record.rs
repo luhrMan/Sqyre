@@ -63,7 +63,7 @@ impl KeyRecordUi {
                     ui.label(
                         "Press the key you want to use.\nThe first key you press is saved.\nUse Cancel to dismiss without saving.",
                     );
-                    ui.separator();
+                    crate::widgets::section_separator(ui);
                     ui.monospace("(no key)");
                     // Escape is recordable — button only (no Esc dismiss).
                     cancel = dismiss_row(ui, false);

@@ -24,6 +24,6 @@ pub fn paint_action_edit_header(
     if let Some(err) = error {
         ui.colored_label(crate::theme::error_fg(), err);
     }
-    ui.separator();
+    crate::widgets::section_separator(ui);
     outcome
 }

@@ -78,11 +78,19 @@ pub fn inner_stroke() -> Stroke {
     Stroke::new(1.0, accent_dim())
 }
 
-/// Opaque stroke for structural panel / window splitters (egui `Panel` separator,
-/// data-editor split). Stronger than [`inner_stroke`]; matches window chrome hue.
+/// Half-opacity stroke for section separators and structural panel splitters
+/// (egui `Panel` separator, data-editor split). Stronger than [`inner_stroke`].
 pub fn panel_split_stroke() -> Stroke {
-    Stroke::new(1.0, PRIMARY)
+    Stroke::new(1.0, rgba([0xdc, 0x9d, 0x2e, 0x80]))
 }
+
+/// Gilded border painted just inside the main window edge.
+pub fn window_border_stroke() -> Stroke {
+    Stroke::new(1.0, PRIMARY.gamma_multiply(0.5))
+}
+
+/// Corner radius of [`window_border_stroke`].
+pub const WINDOW_BORDER_RADIUS: f32 = 8.0;
 
 /// Foreground that contrasts with a pastel/solid fill (Rec.601 luminance).
 pub fn contrast_fg(bg: Color32) -> Color32 {
@@ -147,8 +155,7 @@ mod tests {
         assert_eq!(chip_fill(), rgba([0xdc, 0x9d, 0x2e, 28]));
         assert_eq!(frame_fill(), rgba([0xdc, 0x9d, 0x2e, 13]));
         assert_eq!(inner_stroke().color, accent_dim());
-        assert_eq!(panel_split_stroke().color, PRIMARY);
-        assert_eq!(panel_split_stroke().color.a(), 255);
+        assert_eq!(panel_split_stroke().color, rgba([0xdc, 0x9d, 0x2e, 0x80]));
         assert_ne!(panel_split_stroke().color, inner_stroke().color);
     }
 

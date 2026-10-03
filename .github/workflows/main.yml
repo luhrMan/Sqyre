@@ -324,17 +324,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           push: "false"
 
-      - name: Cache tessdata
-        id: tessdata-linux
-        uses: actions/cache@v6
-        with:
-          path: assets/tessdata
-          key: tessdata-eng-v2
-
-      - name: Download tessdata
-        if: steps.tessdata-linux.outputs.cache-hit != 'true'
-        run: ./scripts/download-tessdata.sh
-
       - name: Cache Cargo registry (shared)
         uses: actions/cache@v6
         with:
@@ -365,7 +354,7 @@ jobs:
       - name: Prepare Cargo cache dirs
         run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}" .cache/sccache-linux
 
-      - name: Build Linux binary and AppImage
+      - name: Build Linux binary
         run: |
           VERSION="${{ needs.version.outputs.version }}"
           docker run --rm -u "$(id -u):$(id -g)" \
@@ -379,15 +368,13 @@ jobs:
             -e SCCACHE_DIR=/workspace/.cache/sccache-linux \
             -e SCCACHE_CACHE_SIZE=10G \
             -e RELEASE_VERSION="$VERSION" \
-            -e SQYRE_APPIMAGE_FORCE_NATIVE=1 \
             sqyre-linux-build \
             bash -c 'set -euo pipefail
-              scripts/linux/packaging/appimage/build-appimage.sh
-              cp scripts/linux/packaging/appimage/sqyre.AppDir/usr/bin/sqyre \
-                "/workspace/sqyre-v${RELEASE_VERSION}-linux-amd64"
+              cargo build -p sqyre-app --profile dist --features portal-capture
+              out="/workspace/sqyre-v${RELEASE_VERSION}-linux-amd64"
+              cp "${CARGO_TARGET_DIR}/dist/sqyre" "$out"
+              strip --strip-unneeded "$out"
               sccache --show-stats || true'
-          mv "bin/Sqyre-${VERSION}-x86_64.AppImage" \
-             "Sqyre-v${VERSION}-x86_64.AppImage"
 
       - name: Install zip
         run: sudo apt-get update && sudo apt-get install -y zip
@@ -398,18 +385,89 @@ jobs:
           zip -9 "sqyre-v${VERSION}-linux-amd64.zip" \
             "sqyre-v${VERSION}-linux-amd64"
 
+      - name: Upload Linux binary artifact (zipped)
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-binary-zip
+          path: sqyre-v${{ needs.version.outputs.version }}-linux-amd64.zip
+
+  build-appimage:
+    if: |
+      always() && !cancelled() &&
+      needs.version.result == 'success' &&
+      needs.version.outputs.should_release == 'true' &&
+      needs.linux-image.result == 'success' &&
+      needs.build-linux.result == 'success'
+    needs: [version, linux-image, build-linux]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Write VERSION
+        run: echo "${{ needs.version.outputs.version }}" > VERSION
+
+      - name: Ensure Linux build image
+        uses: ./.github/actions/ensure-linux-image
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          push: "false"
+
+      - name: Cache tessdata
+        id: tessdata-appimage
+        uses: actions/cache@v6
+        with:
+          path: assets/tessdata
+          key: tessdata-eng-v2
+
+      - name: Download tessdata
+        if: steps.tessdata-appimage.outputs.cache-hit != 'true'
+        run: ./scripts/download-tessdata.sh
+
+      - name: Download Linux binary artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-binary-zip
+          path: linux-binary
+
+      - name: Stage Linux binary for AppImage recipe
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          mkdir -p "${{ env.CARGO_TARGET_DIR_HOST }}/dist"
+          unzip -p "linux-binary/sqyre-v${VERSION}-linux-amd64.zip" "sqyre-v${VERSION}-linux-amd64" \
+            > "${{ env.CARGO_TARGET_DIR_HOST }}/dist/sqyre"
+          chmod 755 "${{ env.CARGO_TARGET_DIR_HOST }}/dist/sqyre"
+
+      - name: Build Linux AppImage
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          docker run --rm -u "$(id -u):$(id -g)" \
+            -v ${{ github.workspace }}:/workspace -w /workspace \
+            -e HOME=/tmp \
+            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
+            -e RUSTUP_HOME=/usr/local/rustup \
+            -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
+            -e RELEASE_VERSION="$VERSION" \
+            -e SQYRE_APPIMAGE_FORCE_NATIVE=1 \
+            -e SQYRE_APPIMAGE_SKIP_BUILD=1 \
+            sqyre-linux-build \
+            scripts/linux/packaging/appimage/build-appimage.sh
+          mv "bin/Sqyre-${VERSION}-x86_64.AppImage" \
+             "Sqyre-v${VERSION}-x86_64.AppImage"
+
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
       - name: Zip Linux AppImage
         run: |
           VERSION="${{ needs.version.outputs.version }}"
           # Store only: AppImage is already zstd squashfs + runtime.
           zip -0 "Sqyre-v${VERSION}-x86_64.AppImage.zip" \
             "Sqyre-v${VERSION}-x86_64.AppImage"
-
-      - name: Upload Linux binary artifact (zipped)
-        uses: actions/upload-artifact@v7
-        with:
-          name: linux-binary-zip
-          path: sqyre-v${{ needs.version.outputs.version }}-linux-amd64.zip
 
       - name: Upload Linux AppImage artifact (zipped)
         uses: actions/upload-artifact@v7
@@ -666,10 +724,11 @@ jobs:
       needs.version.result == 'success' &&
       needs.version.outputs.should_release == 'true' &&
       needs.build-linux.result == 'success' &&
+      needs.build-appimage.result == 'success' &&
       needs.build-flatpak.result == 'success' &&
       needs.build-windows.result == 'success' &&
       needs.build-wasm.result == 'success'
-    needs: [version, build-linux, build-flatpak, build-windows, build-wasm]
+    needs: [version, build-linux, build-appimage, build-flatpak, build-windows, build-wasm]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

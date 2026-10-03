@@ -19,8 +19,8 @@ mod tests {
     use super::*;
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, ConditionBlock, ConditionOperator,
-        CoordinateOutputs, CoordinateRef, DetectionBranch, MatchMode, MouseButton, PressState,
-        RepeatMode, ScalarValue, VariableAssignment, WaitTilFoundConfig,
+        CoordinateOutputs, CoordinateRef, DetectionBranch, MatchMode, RepeatMode, ScalarValue,
+        VariableAssignment, WaitTilFoundConfig,
     };
 
     #[test]
@@ -471,28 +471,12 @@ mod tests {
     }
 
     #[test]
-    fn pastel_dark_differs_from_light_and_glyphs_flip_with_state() {
+    fn pastel_dark_differs_from_light() {
         assert_ne!(
             action_pastel_color("click", false),
             action_pastel_color("click", true)
         );
         assert_ne!(nested_var_ref_color(false), nested_var_ref_color(true));
-        let down = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Click {
-                button: MouseButton::Left,
-                state: PressState::Down,
-            },
-        };
-        let up = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Click {
-                button: MouseButton::Left,
-                state: PressState::Up,
-            },
-        };
-        assert_eq!(action_icon_glyph(&down), "⬇");
-        assert_eq!(action_icon_glyph(&up), "⬆");
     }
 
     #[test]

@@ -351,7 +351,7 @@ fn anti_stuck_hold(interval_ms: u64) -> Duration {
 
 fn focus_label(focus: Option<&WindowInfo>) -> String {
     let Some(w) = focus else {
-        return "(none)".into();
+        return sqyre_domain::EMPTY_NONE.into();
     };
     let name = w.process_name.trim();
     let path = w.process_path.trim();

@@ -18,8 +18,6 @@ use std::collections::HashMap;
 
 /// Icon badge edge length.
 const ICON_SIZE: f32 = 18.0;
-/// Gap between logs and delete.
-const ROW_ACTION_BTN_GAP: f32 = 2.0;
 /// Pill inner padding (4×2).
 const PILL_MARGIN_X: i8 = 4;
 const PILL_MARGIN_Y: i8 = 2;
@@ -55,11 +53,12 @@ pub fn action_row_height(_action: &Action, interact_y: f32) -> f32 {
     default_row_height(interact_y)
 }
 
-/// Clickable chrome on a tree row.
+/// Entry picked from a tree row's right-click menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RowAction {
     #[default]
     None,
+    Edit,
     Logs,
     Delete,
 }
@@ -84,7 +83,6 @@ pub struct RowInteraction {
     /// Pointer over the row, treating non-interactable tooltip layers as transparent
     /// (view tip clickthrough) but not other windows covering the tree.
     pub pointer_in_row: bool,
-    pub secondary_clicked: bool,
     pub double_clicked: bool,
     pub primary_clicked: bool,
     /// Label content rect (for execution highlight follow / scroll).
@@ -101,7 +99,6 @@ impl Default for RowInteraction {
             action: RowAction::None,
             hovered: false,
             pointer_in_row: false,
-            secondary_clicked: false,
             double_clicked: false,
             primary_clicked: false,
             row_rect: egui::Rect::NOTHING,
@@ -174,15 +171,6 @@ fn target_thumb_size(
         .unwrap_or(Vec2::splat(TARGET_THUMB_MAX_H))
 }
 
-fn row_action_btn(
-    ui: &mut egui::Ui,
-    glyph: &str,
-    tip: &str,
-    color: Option<Color32>,
-) -> egui::Response {
-    crate::widgets::icon_button_bare_colored(ui, glyph, tip, color)
-}
-
 /// Paint the pastel type badge with a glyph.
 pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> egui::Response {
     let type_key = action.type_key();
@@ -199,11 +187,13 @@ pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> e
         egui::StrokeKind::Outside,
     );
     let fg = contrast_fg(pastel);
-    if let Some(paint) = crate::widgets::vector_action_icon(type_key) {
-        let icon_rect = egui::Rect::from_center_size(rect.center(), Vec2::splat(font.size * 1.1));
-        paint(ui.painter(), icon_rect, fg);
+    let side = crate::widgets::action_icon_side(font.size).min(rect.width() - 2.0);
+    if let Some(icon) = crate::widgets::VectorIcon::for_action(action) {
+        let icon_rect = egui::Rect::from_center_size(rect.center(), Vec2::splat(side));
+        icon.paint(ui.painter(), icon_rect, fg);
     } else {
-        crate::theme::paint_text_centered(ui, rect, action_icon_glyph(action), font, fg);
+        let glyph_font = crate::widgets::action_glyph_font(side, font.family);
+        crate::theme::paint_text_centered(ui, rect, action_icon_glyph(action), glyph_font, fg);
     }
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, label));
     resp.on_hover_text(label)
@@ -376,6 +366,9 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         return;
     }
 
+    let display =
+        sorted_image_search_targets(catalog, targets, &[], *sort_by, *sort_then, tag_priority);
+
     if !target_tags.is_empty() {
         crate::widgets::title_with_count(
             ui,
@@ -386,37 +379,54 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         if groups.is_empty() {
             ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
         } else {
+            let sizing_count = if display.is_empty() {
+                groups.iter().map(|g| g.members.len()).max().unwrap_or(0)
+            } else {
+                display.len()
+            };
             for group in &groups {
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
-                    ui.label(egui::RichText::new(group.polarity_label()).small().strong());
-                    ui.label(egui::RichText::new(group.name.as_str()).small());
-                });
-                if group.include {
-                    if group.members.is_empty() {
-                        ui.horizontal(|ui| {
-                            ui.add_space(crate::theme::SPACE_12);
+                let fill = if group.include {
+                    crate::theme::tag_include_fill()
+                } else {
+                    crate::theme::tag_exclude_fill()
+                };
+                egui::Frame::NONE
+                    .fill(fill)
+                    .corner_radius(egui::CornerRadius::same(4))
+                    .inner_margin(egui::Margin::same(crate::theme::SPACE_4 as i8))
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
+                            ui.label(egui::RichText::new(group.polarity_label()).small().strong());
+                            ui.label(egui::RichText::new(group.name.as_str()).small());
+                        });
+                        if group.members.is_empty() {
                             ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
-                        });
-                    } else {
-                        ui.indent(egui::Id::new(("is_tip_tag", group.name.as_str())), |ui| {
-                            paint_tip_item_name_list(ui, catalog, icons, &group.members);
-                        });
-                    }
-                }
+                        } else {
+                            ui.push_id(("is_tip_tag", group.include, group.name.as_str()), |ui| {
+                                crate::pickers::paint_even_icon_grid(
+                                    ui,
+                                    catalog,
+                                    icons,
+                                    &group.members,
+                                    |_| false,
+                                    crate::pickers::IconGridKind::TargetsSizedAs {
+                                        count: sizing_count,
+                                    },
+                                    crate::pickers::IconGridOps::default(),
+                                    None,
+                                );
+                            });
+                        }
+                    });
             }
+        }
+        if display.is_empty() {
+            return;
         }
         ui.add_space(crate::theme::SPACE_4);
     }
 
-    let display = sorted_image_search_targets(
-        catalog,
-        targets,
-        target_tags,
-        *sort_by,
-        *sort_then,
-        tag_priority,
-    );
     crate::widgets::title_with_count(
         ui,
         egui::RichText::new("Items").small().strong(),
@@ -433,10 +443,8 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         &display,
         |_| false,
         crate::pickers::IconGridKind::Targets { removable: false },
-        |_, _| {},
-        |_| {},
+        crate::pickers::IconGridOps::default(),
         None,
-        |_| false,
     );
 }
 
@@ -462,7 +470,7 @@ impl ImageSearchTipTagGroup {
 /// Resolve searched tag filters → display names and catalog member targets.
 ///
 /// Include tags expand to items that match the **full** filter set (every `+`
-/// and none of the `−`). Exclude tags are listed without members.
+/// and none of the `−`). Exclude tags list every item carrying that tag.
 pub(crate) fn image_search_tip_tag_groups(
     catalog: &ProgramCatalog,
     target_tags: &[String],
@@ -476,51 +484,29 @@ pub(crate) fn image_search_tip_tag_groups(
         let Some((include, name)) = parse_tag_filter(filter) else {
             continue;
         };
-        let members = if include {
-            let mut matched: Vec<(String, String)> = catalog_refs
-                .iter()
-                .filter(|item| {
-                    item.tags.iter().any(|t| t.trim() == name)
-                        && item_matches_tag_filters(&item.tags, target_tags)
-                })
-                .map(|item| {
-                    let (display, _) = crate::pickers::item_tooltip_parts(catalog, &item.target);
-                    (display, item.target.clone())
-                })
-                .collect();
-            matched.sort_by(|a, b| {
-                a.0.to_ascii_lowercase()
-                    .cmp(&b.0.to_ascii_lowercase())
-                    .then_with(|| a.1.cmp(&b.1))
-            });
-            matched.into_iter().map(|(_, target)| target).collect()
-        } else {
-            Vec::new()
-        };
+        let mut matched: Vec<(String, String)> = catalog_refs
+            .iter()
+            .filter(|item| {
+                item.tags.iter().any(|t| t.trim() == name)
+                    && (!include || item_matches_tag_filters(&item.tags, target_tags))
+            })
+            .map(|item| {
+                let (display, _) = crate::pickers::item_tooltip_parts(catalog, &item.target);
+                (display, item.target.clone())
+            })
+            .collect();
+        matched.sort_by(|a, b| {
+            a.0.to_ascii_lowercase()
+                .cmp(&b.0.to_ascii_lowercase())
+                .then_with(|| a.1.cmp(&b.1))
+        });
         groups.push(ImageSearchTipTagGroup {
             include,
             name,
-            members,
+            members: matched.into_iter().map(|(_, target)| target).collect(),
         });
     }
     groups
-}
-
-fn paint_tip_item_name_list(
-    ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
-    icons: &mut IconCache,
-    targets: &[String],
-) {
-    ui.spacing_mut().item_spacing.y = crate::theme::SPACE_2;
-    for target in targets {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
-            let _ = paint_target_thumb(ui, catalog, icons, target);
-            let (name, _) = crate::pickers::item_tooltip_parts(catalog, target);
-            ui.label(egui::RichText::new(name).small());
-        });
-    }
 }
 
 /// Display / search order for Image Search targets (explicit + tag expansion).
@@ -582,8 +568,6 @@ pub fn paint_action_row(
     validation_error: Option<&str>,
     show_logs: bool,
 ) -> RowInteraction {
-    let mut action_click = RowAction::None;
-    let mut chrome_hovered = false;
     let mut tip_hovered = false;
     // Match TreeView node height.
     let interact_y = row_height(ui);
@@ -592,44 +576,18 @@ pub fn paint_action_row(
 
     // egui_ltreeview remembers a content-based min width, so `available_width` can stay
     // wider than the visible panel after the user shrinks the window. Cap the row to the
-    // clip rect and anchor logs/delete on the visible right edge — inset further so a
-    // floating scrollbar cannot cover the buttons.
+    // clip rect, inset so a floating scrollbar cannot cover trailing pills.
     let spacing = ui.spacing().item_spacing.x;
     let visible_end = ui.clip_rect().right() - crate::widgets::floating_scrollbar_overlay_width(ui);
     let row_start = ui.cursor().min.x;
     let max_visible_w = (visible_end - row_start).max(0.0);
     let row_w = ui.available_width().min(max_visible_w);
 
-    let mut chrome_rect = egui::Rect::NOTHING;
     let mut drag_handle_rect = egui::Rect::NOTHING;
     let row = ui.allocate_ui_with_layout(
         Vec2::new(row_w, row_h),
-        egui::Layout::right_to_left(egui::Align::Center),
+        egui::Layout::left_to_right(egui::Align::Center),
         |ui| {
-            ui.spacing_mut().item_spacing.x = ROW_ACTION_BTN_GAP;
-
-            let del = row_action_btn(ui, "🗑", "Delete", Some(crate::theme::MACRO_STOP));
-            if del.contains_pointer() {
-                chrome_hovered = true;
-            }
-            if del.clicked() {
-                action_click = RowAction::Delete;
-            }
-            chrome_rect = del.rect;
-
-            if show_logs {
-                let logs = row_action_btn(ui, "📋", "Logs", None);
-                // contains_pointer: the full-row sense below steals `.hovered()` over these buttons.
-                if logs.contains_pointer() {
-                    chrome_hovered = true;
-                }
-                if logs.clicked() {
-                    action_click = RowAction::Logs;
-                }
-                chrome_rect = logs.rect.union(del.rect);
-            }
-            ui.spacing_mut().item_spacing.x = spacing;
-
             let content_w = ui.available_width().max(0.0);
             let (content_rect, _) =
                 ui.allocate_exact_size(Vec2::new(content_w, row_h), Sense::hover());
@@ -746,11 +704,7 @@ pub fn paint_action_row(
     }
     paint_row_highlight(ui, row.response.rect, highlight);
 
-    // Keep row click/hover sense off the logs/delete chrome so they win interaction.
-    let mut sense_rect = row.response.rect;
-    if chrome_rect.width() > 0.0 {
-        sense_rect.max.x = sense_rect.max.x.min(chrome_rect.min.x);
-    }
+    let sense_rect = row.response.rect;
 
     // Hover-only: a Sense::click overlay would steal TreeView selection clicks.
     // Primary/secondary/double are read geometrically (with layer_id_at) so they
@@ -766,29 +720,38 @@ pub fn paint_action_row(
     // when edge-constrain slides the tip over the row. Still blocked when
     // another Window/Area covers the tree (Settings, Data Editor, etc.).
     let our_layer = ui.layer_id();
-    let pointer_in_row = ui.input(|i| i.pointer.hover_pos()).is_some_and(|p| {
-        sense_rect.contains(p)
-            && !chrome_rect.contains(p)
-            && ui.ctx().layer_id_at(p) == Some(our_layer)
-    });
+    let pointer_in_row = ui
+        .input(|i| i.pointer.hover_pos())
+        .is_some_and(|p| sense_rect.contains(p) && ui.ctx().layer_id_at(p) == Some(our_layer));
+
+    let menu_id = egui::Id::new(("action_row_menu", our_layer, action.id));
+    let action_click = crate::widgets::rect_context_menu(ui, menu_id, sense_rect, |ui| {
+        if crate::widgets::menu_item(ui, "Edit", true) {
+            return RowAction::Edit;
+        }
+        if show_logs && crate::widgets::menu_item(ui, "Logs", true) {
+            return RowAction::Logs;
+        }
+        if crate::widgets::menu_item_danger(ui, "Delete", true) {
+            return RowAction::Delete;
+        }
+        RowAction::None
+    })
+    .unwrap_or_default();
 
     let over_row = pointer_in_row && action_click == RowAction::None;
     let primary_clicked = over_row && ui.input(|i| i.pointer.primary_clicked());
-    let secondary_clicked =
-        over_row && ui.input(|i| i.pointer.button_clicked(egui::PointerButton::Secondary));
     let double_clicked = over_row
         && ui.input(|i| {
             i.pointer
                 .button_double_clicked(egui::PointerButton::Primary)
         });
 
-    let hovered = (row.response.hovered() || tip_hovered || sense.hovered() || pointer_in_row)
-        && !chrome_hovered;
+    let hovered = row.response.hovered() || tip_hovered || sense.hovered() || pointer_in_row;
     RowInteraction {
         action: action_click,
         hovered: hovered && action_click == RowAction::None,
         pointer_in_row: over_row,
-        secondary_clicked,
         double_clicked,
         primary_clicked,
         row_rect: row.response.rect,
@@ -878,7 +841,7 @@ mod tests {
         );
         assert!(!groups[1].include);
         assert_eq!(groups[1].name, "junk");
-        assert!(groups[1].members.is_empty());
+        assert_eq!(groups[1].members, vec!["Game~Junk".to_string()]);
         assert_eq!(groups[0].polarity_label(), "+");
         assert_eq!(groups[1].polarity_label(), "−");
     }

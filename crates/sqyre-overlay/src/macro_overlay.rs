@@ -367,7 +367,7 @@ impl MacroOverlay {
             let focus_label = focus
                 .as_ref()
                 .map(|w| format!("{} ({})", w.process_name.trim(), w.process_path.trim()))
-                .unwrap_or_else(|| "(none)".into());
+                .unwrap_or_else(|| sqyre_domain::EMPTY_NONE.into());
             note(&format!(
                 "overlay: sync shown={shown} busy={busy_shown} gated={any_gated} skips={gated_skips} preview={} relocate={relocate} keep_above={keep_above} focus={focus_label}",
                 preview.is_some()

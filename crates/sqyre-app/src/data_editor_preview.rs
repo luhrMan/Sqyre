@@ -2,7 +2,7 @@ use crate::icon_cache::IconCache;
 use crate::image_view::{self, ImageViewTransform};
 use crate::theme;
 use crate::var_pills;
-use eframe::egui;
+use eframe::egui::{self, WidgetInfo, WidgetType};
 use sqyre_domain::{KnownVariableNames, ScalarValue};
 use sqyre_persist::{ProgramCatalog, ProgramSearchArea};
 use sqyre_validate::EntryValidation;
@@ -12,7 +12,7 @@ pub(crate) fn paint_preview_toolbar(
     view: Option<&mut ImageViewTransform>,
 ) -> bool {
     ui.add_space(crate::theme::SPACE_8);
-    ui.separator();
+    crate::widgets::section_separator(ui);
     let mut force = false;
     let show_zoom_hint = view.is_some();
     ui.horizontal(|ui| {
@@ -25,11 +25,13 @@ pub(crate) fn paint_preview_toolbar(
         }
         if let Some(view) = view {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui
-                    .add_enabled(view.needs_reset_button(), egui::Button::new("Reset view"))
-                    .on_hover_text("Fit image in viewport")
-                    .clicked()
-                {
+                const FIT_TIP: &str = "Fit image in viewport";
+                let enabled = view.needs_reset_button();
+                let resp = ui
+                    .add_enabled(enabled, egui::Button::new("Reset view"))
+                    .on_hover_text(FIT_TIP);
+                resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, FIT_TIP));
+                if resp.clicked() {
                     view.reset();
                 }
                 if view.shows_zoom_label() {
@@ -156,6 +158,7 @@ pub(crate) fn paint_preview_coord_chip(
         if resp.clicked() {
             *value = (n.saturating_sub(1)).to_string();
         }
+        resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, "Decrement"));
         resp.on_hover_text("Decrement");
     }
     if let (Some(plus), Some(n)) = (plus_rect, pure) {
@@ -170,6 +173,7 @@ pub(crate) fn paint_preview_coord_chip(
         if resp.clicked() {
             *value = (n.saturating_add(1)).to_string();
         }
+        resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, "Increment"));
         resp.on_hover_text("Increment");
     }
 
@@ -422,7 +426,7 @@ pub(crate) fn paint_disk_preview(
     replace_clicked: Option<&mut bool>,
 ) {
     ui.add_space(crate::theme::SPACE_8);
-    ui.separator();
+    crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).strong());
         if let Some(path) = path {
@@ -472,7 +476,7 @@ pub(crate) fn paint_zoomable_collection_preview(
     capturing: bool,
 ) {
     ui.add_space(crate::theme::SPACE_8);
-    ui.separator();
+    crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Collection image").strong());
         crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
@@ -493,11 +497,13 @@ pub(crate) fn paint_zoomable_collection_preview(
             *replace_clicked = true;
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .add_enabled(view.needs_reset_button(), egui::Button::new("Reset view"))
-                .on_hover_text("Fit image in viewport")
-                .clicked()
-            {
+            const FIT_TIP: &str = "Fit image in viewport";
+            let enabled = view.needs_reset_button();
+            let resp = ui
+                .add_enabled(enabled, egui::Button::new("Reset view"))
+                .on_hover_text(FIT_TIP);
+            resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, FIT_TIP));
+            if resp.clicked() {
                 view.reset();
             }
             if view.shows_zoom_label() {
@@ -728,16 +734,18 @@ pub(crate) fn paint_zoomable_atlas_preview(
     use sqyre_domain::{AtlasLayout, AtlasNode, CoordinateRef, Macro, NavDir};
 
     ui.add_space(crate::theme::SPACE_8);
-    ui.separator();
+    crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Atlas plane").strong());
         crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_ATLAS_PLANE);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui
-                .add_enabled(view.needs_reset_button(), egui::Button::new("Reset view"))
-                .on_hover_text("Fit plane in viewport")
-                .clicked()
-            {
+            const FIT_TIP: &str = "Fit plane in viewport";
+            let enabled = view.needs_reset_button();
+            let resp = ui
+                .add_enabled(enabled, egui::Button::new("Reset view"))
+                .on_hover_text(FIT_TIP);
+            resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, FIT_TIP));
+            if resp.clicked() {
                 view.reset();
             }
             if view.shows_zoom_label() {

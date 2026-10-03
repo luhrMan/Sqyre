@@ -29,7 +29,7 @@ make appimage
 # or: RELEASE_VERSION=1.2.3 scripts/linux/packaging/appimage/build-appimage.sh
 ```
 
-If `appimage-builder` / `mksquashfs` / `patchelf` are not on the host, the script **falls back to Docker** using [`.devcontainer/Dockerfile`](../../../.devcontainer/Dockerfile) (same image CI uses). Force a native-only attempt with `SQYRE_APPIMAGE_FORCE_NATIVE=1`.
+If `appimage-builder` / `mksquashfs` / `patchelf` are not on the host, the script **falls back to Docker** using [`.devcontainer/Dockerfile`](../../../.devcontainer/Dockerfile) (same image CI uses). Force a native-only attempt with `SQYRE_APPIMAGE_FORCE_NATIVE=1`. Set `SQYRE_APPIMAGE_SKIP_BUILD=1` to package an existing `$CARGO_TARGET_DIR/dist/sqyre` instead of running cargo (CI reuses the `build-linux` binary this way).
 
 Version resolution order: `RELEASE_VERSION` env → `VERSION` file → `crates/sqyre-app/Cargo.toml`.
 

@@ -1,14 +1,9 @@
 //! Action type icon glyphs for the macro tree.
 
-use sqyre_domain::{action_icon, Action, ActionKind, LoopJumpMode, PressState};
+use sqyre_domain::{action_icon, Action, ActionKind, LoopJumpMode};
 
 pub fn action_icon_glyph(action: &Action) -> &'static str {
     match &action.kind {
-        ActionKind::Click { state, .. } | ActionKind::Key { state, .. } => match state {
-            PressState::Down => "⬇",
-            PressState::Up => "⬆",
-            PressState::Tap => "↕",
-        },
         ActionKind::LoopJump { mode } => match mode {
             LoopJumpMode::Break => "⏹",
             LoopJumpMode::Continue => "⏭",

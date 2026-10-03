@@ -1,11 +1,21 @@
 //! YAML Macro Builder: schema-driven editor synced with the selected macro.
 
+mod context;
+mod highlight;
+
 use crate::data_editor::helpers::is_editor_listed_program;
+use crate::status_banner::StatusBanner;
+use context::{
+    enter_edit, find_yaml_context, shift_lines, Completion, EnterEdit, EntityKind, YamlContext,
+    INDENT,
+};
 use eframe::egui::{
     self, text::CCursor, text_edit::TextEditState, Key, Modifiers, PopupCloseBehavior, RectAlign,
 };
 use egui::text_selection::CCursorRange;
-use sqyre_domain::{blank_action, enum_values_for_field, Action, Macro, WIRE_TYPE_KEYS};
+use sqyre_domain::{
+    action_type_label, blank_action, Action, Macro, PROGRAM_DELIMITER, WIRE_TYPE_KEYS,
+};
 use sqyre_persist::{MacroYamlBuilderDrafts, MacroYamlDraftEntry, ProgramCatalog};
 use sqyre_serialize::{action_to_map, encode_macro_to_yaml};
 use sqyre_validate::{
@@ -33,10 +43,11 @@ pub enum YamlBuilderOutcome {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SuggestionKind {
+    /// Action type; accepting expands a blank action stub.
     Type,
     Field,
     Enum,
-    Entity,
+    Entity(EntityKind),
     MacroName,
 }
 
@@ -46,33 +57,47 @@ struct Suggestion {
     label: String,
     insert: String,
     hint: String,
-    /// When accepting an action type, expand a blank stub.
-    expand_stub: bool,
+    /// Owning program for catalog entities (empty otherwise).
+    program: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct YamlContext {
-    /// Character range to replace on accept.
-    start_char: usize,
-    end_char: usize,
-    kind: AcTrigger,
-    query: String,
-    indent: String,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AcTrigger {
-    TypeValue,
-    FieldKey,
-    EnumValue(&'static str),
-    EntityValue,
-    MacroNameValue,
-}
-
+/// Per-editor autocomplete state (egui temp data).
 #[derive(Clone, Default)]
-struct AcNav {
+struct AcState {
+    /// Popup may show. Set by typing; cleared by Esc, caret moves, and focus loss.
+    active: bool,
+    /// Popup was painted last frame, so it owns ↑↓ / Enter / Tab / Esc this frame.
+    shown: bool,
+    /// Caret char index from the last focused frame.
+    caret: Option<usize>,
+    /// Caret rect (global) from the last focused frame, so the popup holds still on focus loss.
+    anchor: Option<egui::Rect>,
     selected: usize,
     query: String,
+}
+
+impl AcState {
+    /// Popup stays open only while the user is typing at the same caret.
+    fn still_active(
+        &self,
+        typed: bool,
+        dismissed: bool,
+        focused: bool,
+        caret: Option<usize>,
+    ) -> bool {
+        if typed {
+            return true;
+        }
+        if dismissed {
+            return false;
+        }
+        if focused {
+            self.active && caret == self.caret
+        } else {
+            // Clicking a popup row drops editor focus; keep it one frame so the click lands.
+            self.active && self.shown
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,8 +114,7 @@ pub struct MacroYamlBuilderUi {
     bound_name: Option<String>,
     base_yaml: String,
     yaml: String,
-    status: Option<String>,
-    status_error: bool,
+    status: StatusBanner,
     last_report: YamlValidateReport,
     last_validated_yaml: String,
     validate_since: Option<f64>,
@@ -98,8 +122,6 @@ pub struct MacroYamlBuilderUi {
     drafts: MacroYamlBuilderDrafts,
     draft_choice: DraftChoice,
     stale_draft: Option<MacroYamlDraftEntry>,
-    /// Autocomplete stays off until the user edits YAML (avoids popup-on-open).
-    ac_armed: bool,
 }
 
 impl Default for MacroYamlBuilderUi {
@@ -119,8 +141,7 @@ impl MacroYamlBuilderUi {
             bound_name: None,
             base_yaml: String::new(),
             yaml: String::new(),
-            status: None,
-            status_error: false,
+            status: StatusBanner::default(),
             last_report: YamlValidateReport::ok(),
             last_validated_yaml: String::new(),
             validate_since: None,
@@ -128,7 +149,6 @@ impl MacroYamlBuilderUi {
             drafts,
             draft_choice: DraftChoice::None,
             stale_draft: None,
-            ac_armed: false,
         }
     }
 
@@ -139,11 +159,9 @@ impl MacroYamlBuilderUi {
     /// Open bound to the selected macro (or a blank skeleton).
     pub fn open_builder(&mut self, selected: Option<&Macro>) {
         self.open = true;
-        self.status = None;
-        self.status_error = false;
+        self.status.clear();
         self.draft_choice = DraftChoice::None;
         self.stale_draft = None;
-        self.ac_armed = false;
 
         let (name, tree_yaml) = match selected {
             Some(m) => {
@@ -257,19 +275,21 @@ impl MacroYamlBuilderUi {
 
         // Dim / block the painted Sqyre UI underneath (not the OS desktop).
         // Main chrome is drawn first; this Foreground veil greys it out.
-        egui::Area::new(egui::Id::new(WINDOW_ID).with("modal_dim"))
+        // Sublayer keeps the window directly above the veil even after the veil is clicked.
+        let dim_id = egui::Id::new(WINDOW_ID).with("modal_dim");
+        ctx.set_sublayer(
+            egui::LayerId::new(egui::Order::Foreground, dim_id),
+            egui::LayerId::new(egui::Order::Foreground, egui::Id::new(WINDOW_ID)),
+        );
+        egui::Area::new(dim_id)
             .order(egui::Order::Foreground)
             .fixed_pos(ctx.content_rect().min)
             .interactable(true)
             .show(ctx, |ui| {
                 let screen = ctx.content_rect();
                 let resp = ui.allocate_rect(screen, egui::Sense::click_and_drag());
-                // Opaque enough to read as a grey veil over Sqyre panels.
-                ui.painter().rect_filled(
-                    resp.rect,
-                    0.0,
-                    egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180),
-                );
+                ui.painter()
+                    .rect_filled(resp.rect, 0.0, crate::theme::modal_scrim());
             });
 
         let mut outcome = YamlBuilderOutcome::None;
@@ -309,7 +329,6 @@ impl MacroYamlBuilderUi {
         self.open = open;
         if !open {
             self.maybe_persist(now, true);
-            self.ac_armed = false;
         } else {
             self.maybe_persist(now, false);
             self.maybe_validate(now);
@@ -329,12 +348,28 @@ impl MacroYamlBuilderUi {
         outcome: &mut YamlBuilderOutcome,
         request_close: &mut bool,
     ) {
+        let bound = self
+            .bound_name
+            .clone()
+            .unwrap_or_else(|| "(new macro)".into());
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(bound).strong().heading());
+            if self.is_dirty() {
+                ui.weak("(unapplied changes)");
+            }
+        });
+        ui.label(
+            egui::RichText::new(
+                "Autocomplete suggests action types, fields, choices, catalog entries, and macro names. Tab expands a blank action.",
+            )
+            .weak(),
+        );
+        crate::widgets::section_separator(ui);
+
         if self.draft_choice == DraftChoice::Stale {
-            ui.label(
-                egui::RichText::new(
-                    "A saved draft no longer matches the current macro. Choose which to load.",
-                )
-                .strong(),
+            StatusBanner::paint_warn(
+                ui,
+                "A saved draft no longer matches the current macro. Choose which to load.",
             );
             ui.horizontal(|ui| {
                 if ui.button("Reload from Tree").clicked() {
@@ -353,58 +388,34 @@ impl MacroYamlBuilderUi {
                     self.draft_choice = DraftChoice::None;
                 }
             });
-            ui.separator();
+            crate::widgets::section_separator(ui);
         }
 
-        let bound = self
-            .bound_name
-            .clone()
-            .unwrap_or_else(|| "(new macro)".into());
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(format!("Editing: {bound}")).strong());
-            if self.is_dirty() {
-                ui.weak("(unapplied changes)");
-            }
-        });
-        ui.small(
-            "Schema autocomplete: type keys, fields, enums, entities, macro names. Tab expands blank action stubs.",
-        );
-
-        // Reserve footer (buttons + optional status) so the editor fills the rest.
+        // Reserve footer (separator + buttons + optional status) so the editor fills the rest.
         let spacing = ui.spacing().item_spacing.y;
         let button_h = ui.spacing().interact_size.y;
-        let status_h = if self.status.is_some() {
+        let status_h = if self.status.is_set() {
             ui.text_style_height(&egui::TextStyle::Body) + spacing
         } else {
             0.0
         };
-        let footer_h = button_h + status_h + spacing * 2.0;
+        let footer_h = button_h + status_h + spacing * 3.0 + crate::theme::SPACE_8;
         let editor_h = (ui.available_height() - footer_h).max(120.0);
-        let editor_w = ui.available_width();
 
         let suggestions = collect_runtime_suggestions(macros, catalog);
         let editor_id = egui::Id::new(WINDOW_ID).with("yaml");
-        ui.allocate_ui_with_layout(
-            egui::vec2(editor_w, editor_h),
-            egui::Layout::top_down(egui::Align::Min),
-            |ui| {
-                ui.set_max_size(egui::vec2(editor_w, editor_h));
-                yaml_text_edit(
-                    ui,
-                    editor_id,
-                    &mut self.yaml,
-                    &suggestions,
-                    editor_h,
-                    &mut self.ac_armed,
-                );
-            },
-        );
+        crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), editor_h)
+            .id_salt("yaml_scroll")
+            .show(ui, |ui| {
+                yaml_text_edit(ui, editor_id, &mut self.yaml, &suggestions, editor_h);
+            });
 
         if self.yaml != self.last_validated_yaml && self.validate_since.is_none() {
             self.validate_since = Some(ui.ctx().input(|i| i.time));
         }
 
-        ui.horizontal(|ui| {
+        crate::widgets::section_separator(ui);
+        ui.horizontal_wrapped(|ui| {
             if ui.button("Validate").clicked() {
                 self.last_report = report_macro_yaml(&self.yaml);
                 self.last_validated_yaml = self.yaml.clone();
@@ -414,16 +425,34 @@ impl MacroYamlBuilderUi {
                     self.set_status(self.last_report.summary(), true);
                 }
             }
-            let can_apply = !running
-                && self.bound_name.is_some()
-                && !self.yaml.trim().is_empty()
-                && self.draft_choice == DraftChoice::None;
+            let has_yaml = !self.yaml.trim().is_empty() && self.draft_choice == DraftChoice::None;
+            let existing: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
             if ui
-                .add_enabled(can_apply, egui::Button::new("Apply"))
-                .on_hover_text(if running {
+                .add_enabled(
+                    has_yaml,
+                    egui::Button::new(
+                        egui::RichText::new("Import as New").color(crate::theme::MACRO_START),
+                    ),
+                )
+                .on_hover_text("Add this YAML as a new macro")
+                .clicked()
+            {
+                match prepare_import_macro_yaml(&self.yaml, &existing) {
+                    Ok(m) => {
+                        *outcome = YamlBuilderOutcome::ImportMacro(Box::new(m));
+                    }
+                    Err(e) => self.set_status(e.to_string(), true),
+                }
+            }
+            let can_apply = !running && self.bound_name.is_some() && has_yaml && self.is_dirty();
+            if crate::widgets::dirty_action_button(ui, "Apply", can_apply)
+                .on_hover_text("Replace the selected macro with this YAML")
+                .on_disabled_hover_text(if running {
                     "Cannot apply while a macro is running"
+                } else if self.bound_name.is_none() {
+                    "No macro selected — use Import as New"
                 } else {
-                    "Replace the selected macro with this YAML"
+                    "No unapplied changes"
                 })
                 .clicked()
             {
@@ -434,44 +463,21 @@ impl MacroYamlBuilderUi {
                     Err(e) => self.set_status(e.to_string(), true),
                 }
             }
-            let existing: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
-            if ui
-                .add_enabled(
-                    !self.yaml.trim().is_empty() && self.draft_choice == DraftChoice::None,
-                    egui::Button::new("Import as New"),
-                )
-                .clicked()
-            {
-                match prepare_import_macro_yaml(&self.yaml, &existing) {
-                    Ok(m) => {
-                        *outcome = YamlBuilderOutcome::ImportMacro(Box::new(m));
-                    }
-                    Err(e) => self.set_status(e.to_string(), true),
-                }
-            }
-            if ui.button("Close").clicked() {
-                *request_close = true;
-            }
         });
-
-        if let Some(msg) = &self.status {
-            let color = if self.status_error {
-                crate::theme::error_fg()
-            } else {
-                crate::theme::ok_fg()
-            };
-            ui.colored_label(color, msg);
-        }
+        self.status.paint(ui);
 
         // Esc closes the modal when autocomplete is not consuming it.
-        if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+        if crate::widgets::consume_escape(ui) {
             *request_close = true;
         }
     }
 
     fn set_status(&mut self, msg: impl Into<String>, error: bool) {
-        self.status = Some(msg.into());
-        self.status_error = error;
+        if error {
+            self.status.set_err(msg);
+        } else {
+            self.status.set_ok(msg);
+        }
     }
 
     pub(crate) fn set_status_message(&mut self, msg: impl Into<String>, error: bool) {
@@ -568,8 +574,8 @@ fn collect_runtime_suggestions(macros: &[Macro], catalog: &ProgramCatalog) -> Ve
             kind: SuggestionKind::Type,
             label: (*key).into(),
             insert: (*key).into(),
-            hint: "action type".into(),
-            expand_stub: true,
+            hint: action_type_label(key).into(),
+            program: String::new(),
         });
     }
     for m in macros {
@@ -578,7 +584,7 @@ fn collect_runtime_suggestions(macros: &[Macro], catalog: &ProgramCatalog) -> Ve
             label: m.name.clone(),
             insert: yaml_quote_if_needed(&m.name),
             hint: "macro".into(),
-            expand_stub: false,
+            program: String::new(),
         });
     }
     let res = catalog.resolution_key();
@@ -589,37 +595,29 @@ fn collect_runtime_suggestions(macros: &[Macro], catalog: &ProgramCatalog) -> Ve
         let Some(prog) = catalog.get(program) else {
             continue;
         };
-        let delim = sqyre_domain::PROGRAM_DELIMITER;
-        for (k, it) in &prog.items {
-            let name = if it.name.trim().is_empty() {
-                k.clone()
-            } else {
-                it.name.clone()
-            };
-            let full = format!("{program}{delim}{name}");
+        out.push(Suggestion {
+            kind: SuggestionKind::Entity(EntityKind::Program),
+            label: program.clone(),
+            insert: yaml_quote_if_needed(program),
+            hint: "program".into(),
+            program: program.clone(),
+        });
+        let mut push_ref = |kind, key: &str, name: &str, what: &str| {
+            let full = format!("{program}{PROGRAM_DELIMITER}{}", nonempty_or(name, key));
             out.push(Suggestion {
-                kind: SuggestionKind::Entity,
-                label: full.clone(),
+                kind: SuggestionKind::Entity(kind),
                 insert: yaml_quote_if_needed(&full),
-                hint: format!("item · {program}"),
-                expand_stub: false,
+                label: full,
+                hint: format!("{what} · {program}"),
+                program: program.clone(),
             });
+        };
+        for (k, it) in &prog.items {
+            push_ref(EntityKind::Item, k, &it.name, "item");
         }
         if let Some(points) = prog.points.get(res).or_else(|| prog.points.values().next()) {
             for (k, pt) in points {
-                let name = if pt.name.trim().is_empty() {
-                    k.clone()
-                } else {
-                    pt.name.clone()
-                };
-                let full = format!("{program}{delim}{name}");
-                out.push(Suggestion {
-                    kind: SuggestionKind::Entity,
-                    label: full.clone(),
-                    insert: yaml_quote_if_needed(&full),
-                    hint: format!("point · {program}"),
-                    expand_stub: false,
-                });
+                push_ref(EntityKind::Point, k, &pt.name, "point");
             }
         }
         if let Some(areas) = prog
@@ -628,38 +626,33 @@ fn collect_runtime_suggestions(macros: &[Macro], catalog: &ProgramCatalog) -> Ve
             .or_else(|| prog.search_areas.values().next())
         {
             for (k, sa) in areas {
-                let name = if sa.name.trim().is_empty() {
-                    k.clone()
-                } else {
-                    sa.name.clone()
-                };
-                let full = format!("{program}{delim}{name}");
-                out.push(Suggestion {
-                    kind: SuggestionKind::Entity,
-                    label: full.clone(),
-                    insert: yaml_quote_if_needed(&full),
-                    hint: format!("search area · {program}"),
-                    expand_stub: false,
-                });
+                push_ref(EntityKind::SearchArea, k, &sa.name, "search area");
             }
         }
         for (k, c) in &prog.collections {
-            let name = if c.name.trim().is_empty() {
-                k.clone()
-            } else {
-                c.name.clone()
-            };
-            let full = format!("{program}{delim}{name}");
+            push_ref(EntityKind::Collection, k, &c.name, "collection");
+        }
+        // `atlas:` holds the bare atlas name; its program sits in the sibling `program:`.
+        for (k, a) in &prog.atlases {
+            let name = nonempty_or(&a.name, k);
             out.push(Suggestion {
-                kind: SuggestionKind::Entity,
-                label: full.clone(),
-                insert: yaml_quote_if_needed(&full),
-                hint: format!("collection · {program}"),
-                expand_stub: false,
+                kind: SuggestionKind::Entity(EntityKind::Atlas),
+                insert: yaml_quote_if_needed(&name),
+                label: name,
+                hint: format!("atlas · {program}"),
+                program: program.clone(),
             });
         }
     }
     out
+}
+
+fn nonempty_or(name: &str, key: &str) -> String {
+    if name.trim().is_empty() {
+        key.to_string()
+    } else {
+        name.to_string()
+    }
 }
 
 fn yaml_quote_if_needed(s: &str) -> String {
@@ -676,179 +669,43 @@ fn yaml_quote_if_needed(s: &str) -> String {
     }
 }
 
-fn find_yaml_context(text: &str, cursor: usize) -> Option<YamlContext> {
-    let cursor = cursor.min(text.len());
-    let line_start = text[..cursor].rfind('\n').map(|i| i + 1).unwrap_or(0);
-    let line = &text[line_start..cursor];
-    let indent: String = line
-        .chars()
-        .take_while(|c| *c == ' ' || *c == '\t')
-        .collect();
-    let trimmed = line.trim_start();
-
-    if let Some(rest) = trimmed.strip_prefix("type:") {
-        let val_start = line_start + (line.len() - rest.len());
-        let query = rest.trim_start().to_string();
-        let q_start = val_start + (rest.len() - rest.trim_start().len());
-        return Some(YamlContext {
-            start_char: q_start,
-            end_char: cursor,
-            kind: AcTrigger::TypeValue,
-            query,
-            indent,
-        });
-    }
-
-    // Bare key completion: incomplete key before ':'
-    if !trimmed.contains(':') && !trimmed.starts_with('-') {
-        return Some(YamlContext {
-            start_char: line_start + indent.len(),
-            end_char: cursor,
-            kind: AcTrigger::FieldKey,
-            query: trimmed.to_string(),
-            indent,
-        });
-    }
-
-    for field in [
-        "point",
-        "searcharea",
-        "cells",
-        "processpath",
-        "windowtitle",
-        "targetcolor",
-        "target",
-        "program",
-        "atlas",
-    ] {
-        let prefix = format!("{field}:");
-        if let Some(rest) = trimmed.strip_prefix(&prefix) {
-            let val_start = line_start + (line.len() - rest.len());
-            let query = rest.trim_start().to_string();
-            let q_start = val_start + (rest.len() - rest.trim_start().len());
-            return Some(YamlContext {
-                start_char: q_start,
-                end_char: cursor,
-                kind: AcTrigger::EntityValue,
-                query,
-                indent,
-            });
-        }
-    }
-
-    if let Some(rest) = trimmed.strip_prefix("macroname:") {
-        let val_start = line_start + (line.len() - rest.len());
-        let query = rest.trim_start().to_string();
-        let q_start = val_start + (rest.len() - rest.trim_start().len());
-        return Some(YamlContext {
-            start_char: q_start,
-            end_char: cursor,
-            kind: AcTrigger::MacroNameValue,
-            query,
-            indent,
-        });
-    }
-
-    for (field, _) in [
-        ("repeatmode", "repeatmode"),
-        ("button", "button"),
-        ("state", "state"),
-        ("match", "match"),
-        ("operator", "operator"),
-        ("mode", "mode"),
-        ("matchmethod", "matchmethod"),
-        ("sortby", "sortby"),
-        ("sortthen", "sortthen"),
-        ("grouping", "grouping"),
-        ("selectdevice", "selectdevice"),
-        ("selectbutton", "selectbutton"),
-        ("selectpressmode", "selectpressmode"),
-        ("hotkey_trigger", "hotkey_trigger"),
-    ] {
-        let prefix = format!("{field}:");
-        if let Some(rest) = trimmed.strip_prefix(&prefix) {
-            let val_start = line_start + (line.len() - rest.len());
-            let query = rest.trim_start().to_string();
-            let q_start = val_start + (rest.len() - rest.trim_start().len());
-            return Some(YamlContext {
-                start_char: q_start,
-                end_char: cursor,
-                kind: AcTrigger::EnumValue(field),
-                query,
-                indent,
-            });
-        }
-    }
-
-    // List item under targets:
-    if trimmed == "-" || trimmed.starts_with("- ") {
-        let before = &text[..line_start];
-        if before.lines().rev().any(|l| {
-            let t = l.trim();
-            t == "targets:" || t.starts_with("targets:")
-        }) {
-            let after_dash = trimmed.strip_prefix('-').unwrap_or(trimmed).trim_start();
-            let val_start = cursor - after_dash.len();
-            return Some(YamlContext {
-                start_char: val_start,
-                end_char: cursor,
-                kind: AcTrigger::EntityValue,
-                query: after_dash.to_string(),
-                indent,
-            });
-        }
-    }
-
-    None
-}
-
 fn suggestions_for_context(ctx: &YamlContext, runtime: &[Suggestion]) -> Vec<Suggestion> {
-    let q = ctx.query.to_ascii_lowercase();
-    let mut out: Vec<Suggestion> = match ctx.kind {
-        AcTrigger::TypeValue => runtime
+    let q = ctx
+        .query
+        .trim_start_matches(['"', '\''])
+        .to_ascii_lowercase();
+    let of_kind = |kind: SuggestionKind| {
+        runtime
             .iter()
-            .filter(|s| s.kind == SuggestionKind::Type)
+            .filter(move |s| s.kind == kind)
             .cloned()
+            .collect::<Vec<_>>()
+    };
+    let plain = |kind, value: &str, hint: &str| Suggestion {
+        kind,
+        label: value.into(),
+        insert: value.into(),
+        hint: hint.into(),
+        program: String::new(),
+    };
+    let mut out: Vec<Suggestion> = match &ctx.completion {
+        Completion::ActionType => of_kind(SuggestionKind::Type),
+        Completion::MacroName => of_kind(SuggestionKind::MacroName),
+        Completion::Entity { kind, program } => of_kind(SuggestionKind::Entity(*kind))
+            .into_iter()
+            .filter(|s| program.as_ref().is_none_or(|p| s.program == *p))
             .collect(),
-        AcTrigger::MacroNameValue => runtime
+        Completion::Enum { field, values } => values
             .iter()
-            .filter(|s| s.kind == SuggestionKind::MacroName)
-            .cloned()
+            .map(|v| plain(SuggestionKind::Enum, v, field))
             .collect(),
-        AcTrigger::EntityValue => runtime
+        Completion::Key(keys) => keys
             .iter()
-            .filter(|s| s.kind == SuggestionKind::Entity)
-            .cloned()
-            .collect(),
-        AcTrigger::EnumValue(field) => enum_values_for_field(field)
-            .unwrap_or(&[])
-            .iter()
-            .map(|v| Suggestion {
-                kind: SuggestionKind::Enum,
-                label: (*v).into(),
-                insert: (*v).into(),
-                hint: field.into(),
-                expand_stub: false,
+            .map(|k| Suggestion {
+                insert: format!("{k}: "),
+                ..plain(SuggestionKind::Field, k, "field")
             })
             .collect(),
-        AcTrigger::FieldKey => {
-            // Suggest common keys from all action descs + macro fields.
-            let mut keys = std::collections::BTreeSet::new();
-            for desc in sqyre_domain::ACTION_WIRE_DESCS {
-                for f in desc.fields {
-                    keys.insert(f.key);
-                }
-            }
-            keys.into_iter()
-                .map(|k| Suggestion {
-                    kind: SuggestionKind::Field,
-                    label: k.into(),
-                    insert: format!("{k}: "),
-                    hint: "field".into(),
-                    expand_stub: false,
-                })
-                .collect()
-        }
     };
     if !q.is_empty() {
         out.retain(|s| s.label.to_ascii_lowercase().contains(&q));
@@ -857,37 +714,51 @@ fn suggestions_for_context(ctx: &YamlContext, runtime: &[Suggestion]) -> Vec<Sug
     out
 }
 
-fn blank_action_stub_yaml(type_key: &str, indent: &str) -> Option<String> {
+/// Blank `type_key` action as YAML; the first line starts with `line_prefix`
+/// (e.g. `  - `) and the rest align under it.
+fn blank_action_stub_yaml(type_key: &str, line_prefix: &str) -> Option<String> {
     let action = blank_action(type_key)?;
     let map = action_to_map(&action).ok()?;
     let raw = serde_yaml::to_string(&serde_yaml::Value::Mapping(map)).ok()?;
-    // Drop document start and re-indent.
+    let rest_prefix = " ".repeat(line_prefix.len());
     let body = raw
         .lines()
         .filter(|l| *l != "---")
-        .map(|l| format!("{indent}{l}"))
+        .enumerate()
+        .map(|(i, l)| {
+            let prefix = if i == 0 { line_prefix } else { &rest_prefix };
+            format!("{prefix}{l}")
+        })
         .collect::<Vec<_>>()
         .join("\n");
     Some(body)
 }
 
-fn apply_completion(text: &mut String, ctx: &YamlContext, suggestion: &Suggestion) {
-    let start = ctx.start_char.min(text.len());
-    let end = ctx.end_char.min(text.len());
-    if suggestion.expand_stub {
-        if let Some(stub) = blank_action_stub_yaml(&suggestion.insert, &ctx.indent) {
-            // Replace from start of the type line through the incomplete value.
+/// Apply `suggestion` over `ctx`'s range; returns the byte offset for the new caret.
+fn apply_completion(text: &mut String, ctx: &YamlContext, suggestion: &Suggestion) -> usize {
+    let start = ctx.start.min(text.len());
+    let end = ctx.end.min(text.len());
+    if suggestion.kind == SuggestionKind::Type {
+        if let Some(stub) = blank_action_stub_yaml(&suggestion.insert, &ctx.line_prefix) {
+            // Replace the whole `type: …` line with the full stub.
             let line_start = text[..start].rfind('\n').map(|i| i + 1).unwrap_or(0);
-            // If we're on `type: …`, replace that line with the full stub.
             let line_end = text[end..]
                 .find('\n')
                 .map(|i| end + i)
                 .unwrap_or(text.len());
             text.replace_range(line_start..line_end, &stub);
-            return;
+            return line_start + stub.len();
         }
     }
     text.replace_range(start..end, &suggestion.insert);
+    start + suggestion.insert.len()
+}
+
+fn byte_index_from_char_index(s: &str, char_index: usize) -> usize {
+    s.char_indices()
+        .nth(char_index)
+        .map(|(i, _)| i)
+        .unwrap_or(s.len())
 }
 
 fn yaml_text_edit(
@@ -896,91 +767,87 @@ fn yaml_text_edit(
     value: &mut String,
     runtime: &[Suggestion],
     fill_height: f32,
-    ac_armed: &mut bool,
 ) {
     let ac_id = id.with("yaml_ac");
-    let was_open = ui
+    let mut st = ui
         .ctx()
-        .data(|d| d.get_temp::<bool>(ac_id.with("open")))
-        .unwrap_or(false);
-    let (down, up, accept, dismiss) = take_ac_keys(ui, was_open);
+        .data(|d| d.get_temp::<AcState>(ac_id))
+        .unwrap_or_default();
+    let (down, up, accept, dismiss) = take_ac_keys(ui, st.shown);
+    if !st.shown && ui.memory(|m| m.has_focus(id)) {
+        handle_indent_keys(ui, id, value);
+    }
 
     let mono_row = ui.text_style_height(&egui::TextStyle::Monospace).max(1.0);
     let rows = (((fill_height - 8.0) / mono_row).floor() as usize).max(8);
 
+    let gutter = highlight::gutter_width(ui, value);
+    let mut layouter = highlight::yaml_layouter(ui);
     let output = egui::TextEdit::multiline(value)
         .id(id)
+        // Keep Tab in the editor (indent) instead of moving focus.
+        .lock_focus(true)
         .desired_width(f32::INFINITY)
         .desired_rows(rows)
         .hint_text("name: …\nroot:\n  type: loop\n  …")
         .font(egui::TextStyle::Monospace)
+        .margin(egui::Margin {
+            left: gutter.ceil() as i8,
+            right: 4,
+            top: 2,
+            bottom: 2,
+        })
+        .layouter(&mut layouter)
         .show(ui);
 
-    if output.response.changed() {
-        *ac_armed = true;
-    }
-    if !*ac_armed {
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(ac_id.with("open"), false));
-        return;
+    let focused = output.response.has_focus();
+    let caret = output.cursor_range.map(|r| r.primary.index.0);
+    let caret_line = caret.map(|c| value.chars().take(c).filter(|ch| *ch == '\n').count());
+    highlight::paint_gutter(ui, &output, gutter, caret_line);
+    st.active = st.still_active(output.response.changed(), dismiss, focused, caret);
+    if focused {
+        st.caret = caret;
+        // Anchor under the text caret (not the bottom of the whole TextEdit).
+        st.anchor = output.cursor_range.map(|range| {
+            let local = output.galley.pos_from_cursor(range.primary);
+            let rect = egui::Rect::from_min_max(
+                output.galley_pos + local.min.to_vec2(),
+                output.galley_pos + local.max.to_vec2(),
+            );
+            ui.ctx()
+                .layer_transform_to_global(output.response.layer_id)
+                .map_or(rect, |t| t * rect)
+        });
     }
 
-    let cursor = output
-        .cursor_range
-        .map(|r| r.primary.index.0)
-        .unwrap_or(value.len());
-
-    let ctx = find_yaml_context(value, cursor);
+    let ctx = st
+        .caret
+        .filter(|_| st.active)
+        .and_then(|c| find_yaml_context(value, byte_index_from_char_index(value, c)));
     let filtered = ctx
         .as_ref()
         .map(|c| suggestions_for_context(c, runtime))
         .unwrap_or_default();
-    let open = !filtered.is_empty() && ctx.is_some();
-
-    ui.ctx()
-        .data_mut(|d| d.insert_temp(ac_id.with("open"), open));
-
-    if !open {
+    let (Some(ctx), Some(anchor_rect)) = (ctx.filter(|_| !filtered.is_empty()), st.anchor) else {
+        st.shown = false;
+        ui.ctx().data_mut(|d| d.insert_temp(ac_id, st));
         return;
-    }
-    let ctx = ctx.unwrap();
+    };
 
-    let mut nav = ui
-        .ctx()
-        .data(|d| d.get_temp::<AcNav>(ac_id.with("nav")))
-        .unwrap_or_default();
-    let prev_selected = nav.selected;
-    if nav.query != ctx.query {
-        nav.selected = 0;
-        nav.query = ctx.query.clone();
+    let prev_selected = st.selected;
+    if st.query != ctx.query {
+        st.selected = 0;
+        st.query = ctx.query.clone();
     }
+    st.selected = st.selected.min(filtered.len() - 1);
     if down {
-        nav.selected = (nav.selected + 1).min(filtered.len().saturating_sub(1));
+        st.selected = (st.selected + 1).min(filtered.len() - 1);
     }
     if up {
-        nav.selected = nav.selected.saturating_sub(1);
+        st.selected = st.selected.saturating_sub(1);
     }
-    let selection_moved = nav.selected != prev_selected || down || up;
-    if dismiss {
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(ac_id.with("open"), false));
-        return;
-    }
-
-    // Anchor under the text caret (not the bottom of the whole TextEdit).
-    let mut anchor_rect = output
-        .cursor_range
-        .map(|range| {
-            let local = output.galley.pos_from_cursor(range.primary);
-            egui::Rect::from_min_max(
-                output.galley_pos + local.min.to_vec2(),
-                output.galley_pos + local.max.to_vec2(),
-            )
-        })
-        .unwrap_or(output.response.rect);
-    if let Some(to_global) = ui.ctx().layer_transform_to_global(output.response.layer_id) {
-        anchor_rect = to_global * anchor_rect;
-    }
+    let selection_moved = st.selected != prev_selected || down || up;
+    let mut chosen = accept.then(|| filtered[st.selected].clone());
 
     let popup_w = AC_POPUP_MAX_W;
     let popup_id = ac_id.with("popup");
@@ -994,7 +861,7 @@ fn yaml_text_edit(
     )
     .align(RectAlign::BOTTOM_START)
     .align_alternatives(&[])
-    .gap(2.0)
+    .gap(crate::theme::SPACE_4)
     .close_behavior(PopupCloseBehavior::IgnoreClicks)
     .width(popup_w)
     .open(true)
@@ -1005,24 +872,14 @@ fn yaml_text_edit(
         let needs_scroll = filtered.len() > 8;
         let mut paint_rows = |ui: &mut egui::Ui| {
             for (i, s) in filtered.iter().enumerate() {
-                let selected = i == nav.selected;
+                let selected = i == st.selected;
                 let label = format!("{}  —  {}", s.label, s.hint);
                 let resp = ui.selectable_label(selected, egui::RichText::new(label).monospace());
                 if selected && selection_moved && needs_scroll {
                     resp.scroll_to_me(None);
                 }
                 if resp.clicked() {
-                    apply_completion(value, &ctx, s);
-                    if let Some(mut state) = TextEditState::load(ui.ctx(), id) {
-                        let idx = ctx.start_char + s.insert.len();
-                        state
-                            .cursor
-                            .set_char_range(Some(CCursorRange::one(CCursor::new(idx))));
-                        state.store(ui.ctx(), id);
-                    }
-                    ui.memory_mut(|m| m.request_focus(id));
-                    ui.ctx()
-                        .data_mut(|d| d.insert_temp(ac_id.with("open"), false));
+                    chosen = Some(s.clone());
                 }
             }
         };
@@ -1037,22 +894,76 @@ fn yaml_text_edit(
         }
     });
 
-    if accept && !filtered.is_empty() {
-        let s = &filtered[nav.selected.min(filtered.len() - 1)];
-        apply_completion(value, &ctx, s);
+    st.shown = true;
+    if let Some(s) = chosen {
+        let caret_byte = apply_completion(value, &ctx, &s);
+        let caret = value[..caret_byte].chars().count();
         if let Some(mut state) = TextEditState::load(ui.ctx(), id) {
-            let idx = ctx.start_char + s.insert.len();
             state
                 .cursor
-                .set_char_range(Some(CCursorRange::one(CCursor::new(idx))));
+                .set_char_range(Some(CCursorRange::one(CCursor::new(caret))));
             state.store(ui.ctx(), id);
         }
         ui.memory_mut(|m| m.request_focus(id));
-        ui.ctx()
-            .data_mut(|d| d.insert_temp(ac_id.with("open"), false));
+        st.caret = Some(caret);
+        // A completed key flows straight into its value suggestions; values close the popup.
+        st.active = s.kind == SuggestionKind::Field;
+        st.shown = false;
+    } else if !focused {
+        st.active = false;
+        st.shown = false;
     }
+    ui.ctx().data_mut(|d| d.insert_temp(ac_id, st));
+}
 
-    ui.ctx().data_mut(|d| d.insert_temp(ac_id.with("nav"), nav));
+/// Enter indents the new line to its YAML depth; Tab / Shift+Tab shift by [`INDENT`].
+fn handle_indent_keys(ui: &mut egui::Ui, id: egui::Id, value: &mut String) {
+    let Some(mut state) = TextEditState::load(ui.ctx(), id) else {
+        return;
+    };
+    let Some(range) = state.cursor.char_range() else {
+        return;
+    };
+    // Shift+Tab first: an unmodified pattern also matches Shift.
+    let (untab, tab, enter) = ui.input_mut(|i| {
+        let untab = i.consume_key(Modifiers::SHIFT, Key::Tab);
+        let tab = !untab && i.consume_key(Modifiers::NONE, Key::Tab);
+        let enter = i.consume_key(Modifiers::NONE, Key::Enter);
+        (untab, tab, enter)
+    });
+    let [a, b] = [range.primary.index.0, range.secondary.index.0]
+        .map(|c| byte_index_from_char_index(value, c));
+    let (start, end) = (a.min(b), a.max(b));
+    let (new_start, new_end) = if enter {
+        value.replace_range(start..end, "");
+        let caret = match enter_edit(value, start) {
+            EnterEdit::Insert(s) => {
+                value.insert_str(start, &s);
+                start + s.len()
+            }
+            EnterEdit::EndList {
+                start: line_start,
+                indent,
+            } => {
+                value.replace_range(line_start..start, &" ".repeat(indent));
+                line_start + indent
+            }
+        };
+        (caret, caret)
+    } else if untab || (tab && start != end) {
+        shift_lines(value, start, end, untab)
+    } else if tab {
+        value.insert_str(start, INDENT);
+        (start + INDENT.len(), start + INDENT.len())
+    } else {
+        return;
+    };
+    let to_char = |b: usize| CCursor::new(value[..b].chars().count());
+    state.cursor.set_char_range(Some(CCursorRange::two(
+        to_char(new_start),
+        to_char(new_end),
+    )));
+    state.store(ui.ctx(), id);
 }
 
 fn take_ac_keys(ui: &mut egui::Ui, ac_open: bool) -> (bool, bool, bool, bool) {
@@ -1086,18 +997,50 @@ mod tests {
     use sqyre_domain::{root_loop, ActionId, ActionKind, ScalarValue};
 
     #[test]
-    fn type_context_detected() {
-        let text = "  type: wa";
-        let ctx = find_yaml_context(text, text.len()).unwrap();
-        assert_eq!(ctx.kind, AcTrigger::TypeValue);
-        assert_eq!(ctx.query, "wa");
+    fn popup_opens_only_while_typing() {
+        let open = AcState {
+            active: true,
+            shown: true,
+            caret: Some(4),
+            ..Default::default()
+        };
+        assert!(open.still_active(false, false, true, Some(4)));
+        assert!(!open.still_active(false, true, true, Some(4)), "Esc closes");
+        assert!(
+            !open.still_active(false, false, true, Some(9)),
+            "click elsewhere closes"
+        );
+        assert!(
+            open.still_active(true, false, true, Some(9)),
+            "typing reopens"
+        );
+        assert!(
+            open.still_active(false, false, false, None),
+            "row click frame"
+        );
+        let idle = AcState::default();
+        assert!(
+            !idle.still_active(false, false, true, Some(2)),
+            "click never opens"
+        );
+        assert!(!idle.still_active(false, false, false, None));
     }
 
     #[test]
-    fn enum_context_detected() {
-        let text = "  repeatmode: onc";
-        let ctx = find_yaml_context(text, text.len()).unwrap();
-        assert!(matches!(ctx.kind, AcTrigger::EnumValue("repeatmode")));
+    fn completion_handles_non_ascii_text() {
+        let mut text = String::from("name: café\n  type: wa");
+        let cursor = byte_index_from_char_index(&text, text.chars().count());
+        let ctx = find_yaml_context(&text, cursor).unwrap();
+        let s = Suggestion {
+            kind: SuggestionKind::Enum,
+            label: "wait".into(),
+            insert: "wait".into(),
+            hint: String::new(),
+            program: String::new(),
+        };
+        let caret = apply_completion(&mut text, &ctx, &s);
+        assert_eq!(text, "name: café\n  type: wait");
+        assert_eq!(caret, text.len());
     }
 
     #[test]
@@ -1105,6 +1048,58 @@ mod tests {
         let stub = blank_action_stub_yaml("wait", "  ").unwrap();
         assert!(stub.contains("type: wait"));
         assert!(stub.contains("time:"));
+    }
+
+    #[test]
+    fn stub_expand_keeps_list_dash() {
+        let mut text = String::from("root:\n  subactions:\n  - type: wa");
+        let ctx = find_yaml_context(&text, text.len()).unwrap();
+        let s = Suggestion {
+            kind: SuggestionKind::Type,
+            label: "wait".into(),
+            insert: "wait".into(),
+            hint: String::new(),
+            program: String::new(),
+        };
+        apply_completion(&mut text, &ctx, &s);
+        let stub: Vec<&str> = text.lines().skip(2).collect();
+        assert!(stub[0].starts_with("  - "), "{text}");
+        assert!(stub[1..].iter().all(|l| l.starts_with("    ")), "{text}");
+        assert!(text.contains("type: wait"));
+    }
+
+    #[test]
+    fn targets_only_suggest_items() {
+        let mut catalog = ProgramCatalog::default();
+        catalog.create_program("Shop").unwrap();
+        catalog
+            .upsert_item(
+                "Shop",
+                sqyre_persist::ProgramItem {
+                    name: "Potion".into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        catalog
+            .upsert_point(
+                "Shop",
+                sqyre_persist::ProgramPoint {
+                    name: "Door".into(),
+                    monitor: 1,
+                    x: ScalarValue::Int(1),
+                    y: ScalarValue::Int(1),
+                },
+            )
+            .unwrap();
+        let runtime = collect_runtime_suggestions(&[], &catalog);
+        let text = "root:\n  subactions:\n  - type: imagesearch\n    targets:\n    - Sh";
+        let ctx = find_yaml_context(text, text.len()).unwrap();
+        let labels: Vec<String> = suggestions_for_context(&ctx, &runtime)
+            .into_iter()
+            .map(|s| s.label)
+            .collect();
+        assert_eq!(labels, ["Shop~Potion"]);
     }
 
     #[test]

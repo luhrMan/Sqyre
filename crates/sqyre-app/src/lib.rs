@@ -21,6 +21,7 @@ mod diag;
 pub mod docs_fixture;
 mod egui_keys;
 mod file_dialogs;
+mod focus_nav;
 mod hotkey_chooser;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod hotkey_focus_tags;
@@ -620,6 +621,8 @@ impl SqyreApp {
             #[cfg(not(target_arch = "wasm32"))]
             update: update::UpdateManager::default(),
         };
+        let last_selected = app.settings_ui.settings().last_selected_macro.clone();
+        app.select_macro_by_name(&last_selected);
         app.refresh_macro_hotkey_bindings();
         #[cfg(not(target_arch = "wasm32"))]
         app.maybe_start_update_check();
@@ -735,6 +738,7 @@ impl eframe::App for SqyreApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        focus_nav::lock_to_window(ui.ctx());
         self.take_pending_db_import();
         // Poll background tasks before floating windows so Settings sees fresh update state.
         ui_overlays::sync_frame_state(self, ui.ctx());
@@ -759,11 +763,18 @@ impl eframe::App for SqyreApp {
         action_tooltip::claim_view_tip_scroll(ui.ctx());
         ui_overlays::show_floating_windows(self, ui.ctx());
 
+        // The root viewport is transparent; translucent panel separators sit in
+        // gaps between panel fills and would show the desktop through them.
+        ui.painter()
+            .rect_filled(ui.ctx().content_rect(), 0.0, ui.visuals().panel_fill);
+
+        ui_toolbar::top_bar(self, ui);
         ui_macro_list::show(self, ui);
+        self.persist_selected_macro();
 
         egui::CentralPanel::default().show(ui, |ui| {
-            ui_toolbar::brand_header(self, ui);
-            ui_toolbar::main_toolbar(ui);
+            #[cfg(target_arch = "wasm32")]
+            ui_toolbar::wasm_editor_note(ui);
             if self.workspace.macros.is_empty() {
                 let clicked = crate::widgets::empty_state(
                     ui,
@@ -794,6 +805,10 @@ impl eframe::App for SqyreApp {
         // After tips/panels paint so tooltip preview outlines apply this frame.
         self.sync_recording_overlay(ui.ctx());
 
+        if self.settings_ui.settings().window_border {
+            paint_window_border(ui.ctx());
+        }
+
         // Modal sits above painted Sqyre chrome; skip shortcuts/palette while open.
         if self.macro_yaml_builder.is_open() || self.macro_prompt_builder.is_open() {
             return;
@@ -817,6 +832,20 @@ impl eframe::App for SqyreApp {
             [0.0, 0.0, 0.0, 0.0]
         }
     }
+}
+
+fn paint_window_border(ctx: &egui::Context) {
+    let stroke = theme::window_border_stroke();
+    ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("sqyre_window_border"),
+    ))
+    .rect_stroke(
+        ctx.content_rect(),
+        theme::WINDOW_BORDER_RADIUS,
+        stroke,
+        egui::StrokeKind::Inside,
+    );
 }
 
 impl Drop for SqyreApp {

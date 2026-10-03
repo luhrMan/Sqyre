@@ -95,6 +95,7 @@ impl VariablesPanelUi {
         let num_monitors = self.resolve_monitor_count();
         let mut persist = false;
         let mut open = self.open;
+        let mut close = false;
         crate::widgets::fit_dialog_popup(
             egui::Window::new(format!("Variables — {}", macro_.name))
                 .open(&mut open)
@@ -117,21 +118,23 @@ impl VariablesPanelUi {
                 ui.add_enabled_ui(enabled, |ui| {
                     persist |= self.body(ui, macro_, top_h);
                 });
-                ui.separator();
+                crate::widgets::section_separator(ui);
                 ui.horizontal_wrapped(|ui| {
                     ui.selectable_value(&mut self.bottom_tab, BottomTab::Runtime, "Runtime")
                         .on_hover_text(help::VAR_TAB_RUNTIME);
                     ui.selectable_value(&mut self.bottom_tab, BottomTab::Builtins, "Built-ins")
                         .on_hover_text(help::VAR_TAB_BUILTINS);
                 });
-                ui.separator();
+                crate::widgets::section_separator(ui);
                 match self.bottom_tab {
                     BottomTab::Runtime => self.show_runtime(ui, runtime_vars, running, bottom_h),
                     BottomTab::Builtins => self.show_builtins(ui, num_monitors, bottom_h),
                 }
             });
+            // After the body so an inline variable edit cancels first.
+            close = crate::widgets::consume_escape(ui);
         });
-        self.open = open;
+        self.open = open && !close;
         if running {
             ctx.request_repaint();
         }
@@ -157,11 +160,15 @@ impl VariablesPanelUi {
             snap.len(),
         );
         if snap.is_empty() {
-            ui.weak(if running {
-                "Waiting for variables…"
+            let (title, body) = if running {
+                ("Waiting for variables…", None)
             } else {
-                "No runtime snapshot yet — run a macro."
-            });
+                (
+                    "No runtime snapshot yet",
+                    Some("Run a macro to capture live values."),
+                )
+            };
+            let _ = crate::widgets::empty_state(ui, title, body, None, None);
             return;
         }
         ui.add(
@@ -184,7 +191,7 @@ impl VariablesPanelUi {
         crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
             crate::widgets::enable_dense_row_extend(ui);
             if filtered.is_empty() {
-                ui.weak("No matching variables.");
+                crate::widgets::list_vacancy(ui, &q, 0, "variables");
                 return;
             }
             for (name, value) in filtered {
@@ -258,7 +265,7 @@ impl VariablesPanelUi {
                 .desired_width(f32::INFINITY)
                 .hint_text("Filter declared variables…"),
         );
-        ui.separator();
+        crate::widgets::section_separator(ui);
 
         let mut remove_idx: Option<usize> = None;
         let mut start_edit: Option<usize> = None;
@@ -277,7 +284,7 @@ impl VariablesPanelUi {
         crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
             crate::widgets::enable_dense_row_extend(ui);
             if macro_.variable_decls.is_empty() {
-                ui.weak("No declared variables yet — click + Add.");
+                crate::widgets::list_vacancy(ui, "", 0, "declared variables");
                 return;
             }
             let mut any = false;
@@ -289,35 +296,31 @@ impl VariablesPanelUi {
                     continue;
                 }
                 any = true;
-                ui.horizontal(|ui| {
-                    ui.monospace(&d.name);
-                    ui.label(d.type_.as_str());
-                    if !d.initial_value.trim().is_empty() {
-                        ui.weak(format!("= {}", d.initial_value));
-                    }
-                    if !d.description.trim().is_empty() {
-                        ui.weak(&d.description);
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new("Remove").color(crate::theme::MACRO_STOP),
-                                )
-                                .small(),
-                            )
-                            .clicked()
-                        {
-                            remove_idx = Some(i);
+                let row = ui
+                    .horizontal(|ui| {
+                        ui.monospace(&d.name);
+                        ui.label(d.type_.as_str());
+                        if !d.initial_value.trim().is_empty() {
+                            ui.weak(format!("= {}", d.initial_value));
                         }
-                        if ui.small_button("Edit").clicked() {
-                            start_edit = Some(i);
+                        if !d.description.trim().is_empty() {
+                            ui.weak(&d.description);
                         }
-                    });
+                    })
+                    .response
+                    .on_hover_text("Right-click to edit or remove.");
+                let menu_id = egui::Id::new(("declared_var_menu", &d.name));
+                crate::widgets::row_context_menu(ui, menu_id, row.rect, |ui| {
+                    if crate::widgets::menu_item(ui, "Edit", true) {
+                        start_edit = Some(i);
+                    }
+                    if crate::widgets::menu_item_danger(ui, "Remove", true) {
+                        remove_idx = Some(i);
+                    }
                 });
             }
             if !any {
-                ui.weak("No matching variables.");
+                crate::widgets::list_vacancy(ui, &declared_q, 0, "variables");
             }
         });
 
@@ -348,7 +351,7 @@ impl VariablesPanelUi {
         }
 
         if let Some(edit) = self.editing.clone() {
-            ui.separator();
+            crate::widgets::section_separator(ui);
             ui.heading(if edit.index.is_some() {
                 "Edit variable"
             } else {

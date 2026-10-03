@@ -8,13 +8,23 @@ use eframe::egui::{Color32, Stroke};
 pub use sqyre_ui_theme::{
     accent_dim, chip_fill, contrast_fg, error_fg, frame_fill, inner_stroke, ok_fg,
     overlay_panel_fill, paint_galley_centered, paint_text_centered, panel_split_stroke, rgba,
-    warn_fg, MACRO_START, MACRO_STOP, PANEL_SPLITTER_W, PRIMARY, SPACE_12, SPACE_2, SPACE_4,
-    SPACE_8,
+    warn_fg, window_border_stroke, MACRO_START, MACRO_STOP, PANEL_SPLITTER_W, PRIMARY, SPACE_12,
+    SPACE_2, SPACE_4, SPACE_8, WINDOW_BORDER_RADIUS,
 };
 
 /// Dark scrim behind preview overlay chips / editors.
 pub fn preview_scrim() -> Color32 {
     rgba([16, 16, 16, 170])
+}
+
+/// Veil over the main window while a blocking modal (YAML Macro Builder) is open.
+pub fn modal_scrim() -> Color32 {
+    rgba([0, 0, 0, 180])
+}
+
+/// Numbers, booleans and `null` in the YAML Macro Builder editor.
+pub fn syntax_literal() -> Color32 {
+    Color32::from_rgb(110, 160, 230)
 }
 
 /// Semi-opaque black behind labels on preview imagery.
@@ -78,6 +88,16 @@ pub fn highlight_invalid_fill() -> Color32 {
     Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 45)
 }
 
+/// Soft green tint behind an Image Search include (`+`) tag section.
+pub fn tag_include_fill() -> Color32 {
+    Color32::from_rgba_unmultiplied(MACRO_START.r(), MACRO_START.g(), MACRO_START.b(), 40)
+}
+
+/// Soft red tint behind an Image Search exclude (`−`) tag section.
+pub fn tag_exclude_fill() -> Color32 {
+    Color32::from_rgba_unmultiplied(MACRO_STOP.r(), MACRO_STOP.g(), MACRO_STOP.b(), 40)
+}
+
 /// Soft blue fill for execution cursor row.
 pub fn highlight_cursor_fill() -> Color32 {
     rgba([90, 160, 240, 70])
@@ -101,11 +121,6 @@ pub fn picker_selected_stroke() -> Color32 {
 /// DnD drop-target hover stroke on icon grid.
 pub fn picker_drop_stroke() -> Color32 {
     Color32::from_rgb(80, 140, 200)
-}
-
-/// Remove-badge hover fill on icon grid (destructive [`MACRO_STOP`]).
-pub fn picker_remove_hover() -> Color32 {
-    MACRO_STOP
 }
 
 /// Collection cell selection fill.
@@ -132,7 +147,6 @@ mod tests {
     fn status_and_destructive_accents_share_semantic_helpers() {
         assert_eq!(preview_grid_stroke(), error_fg());
         assert_eq!(preview_warn_stroke(), warn_fg());
-        assert_eq!(picker_remove_hover(), MACRO_STOP);
         let err = error_fg();
         assert_eq!(
             highlight_invalid_fill(),

@@ -1,4 +1,4 @@
-//! System tray: Hide application (checkable) / Quit (GSR-style).
+//! System tray: Focus window / Hide application (checkable) / Quit (GSR-style).
 //!
 //! The title-bar close button quits Sqyre. Hide the window from the tray menu only.
 
@@ -209,6 +209,7 @@ fn show_window(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
         #[cfg(target_os = "windows")]
         let _ = win.set_minimized(false);
         win.set_visible(true);
+        win.focus_window();
     }
     ctx.send_viewport_cmd(ViewportCommand::Minimized(false));
     ctx.send_viewport_cmd(ViewportCommand::Visible(true));
@@ -340,6 +341,10 @@ impl LinuxTray {
         if !self.application_hidden {
             return;
         }
+        self.focus_from_tray();
+    }
+
+    fn focus_from_tray(&mut self) {
         self.application_hidden = false;
         send_tray_command(&self.cmd_tx, &self.wake, TrayCommand::SetVisible(true));
     }
@@ -369,6 +374,12 @@ impl ksni::Tray for LinuxTray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::{CheckmarkItem, MenuItem, StandardItem};
         vec![
+            StandardItem {
+                label: "Focus window".into(),
+                activate: Box::new(|this: &mut Self| this.focus_from_tray()),
+                ..Default::default()
+            }
+            .into(),
             CheckmarkItem {
                 label: "Hide application".into(),
                 checked: self.application_hidden,
@@ -408,6 +419,7 @@ fn install_inner(
     let icon = Icon::from_rgba(rgba, w, h).map_err(|e| format!("tray icon: {e}"))?;
 
     let menu = Menu::new();
+    let focus_item = MenuItem::new("Focus window", true, None);
     let hide_item = Box::leak(Box::new(CheckMenuItem::new(
         "Hide application",
         true,
@@ -415,8 +427,11 @@ fn install_inner(
         None,
     )));
     let quit_item = MenuItem::new("Quit", true, None);
+    let focus_id = focus_item.id().clone();
     let hide_id = hide_item.id().clone();
     let quit_id = quit_item.id().clone();
+    menu.append(&focus_item)
+        .map_err(|e| format!("tray menu: {e}"))?;
     menu.append(hide_item)
         .map_err(|e| format!("tray menu: {e}"))?;
     menu.append(&PredefinedMenuItem::separator())
@@ -431,6 +446,7 @@ fn install_inner(
         .build()
         .map_err(|e| format!("tray build: {e}"))?;
 
+    std::mem::forget(focus_item);
     std::mem::forget(quit_item);
 
     // CheckMenuItem is !Send on Windows (Rc). Keep the leaked item here and only
@@ -448,7 +464,12 @@ fn install_inner(
         .spawn(move || {
             let rx = MenuEvent::receiver();
             while let Ok(event) = rx.recv() {
-                if event.id == hide_id {
+                if event.id == focus_id {
+                    hidden_flag.store(false, Ordering::SeqCst);
+                    send_tray_command(&cmd_tx, &wake_thread, TrayCommand::SetVisible(true));
+                    #[cfg(target_os = "macos")]
+                    hide_for_thread.set_checked(false);
+                } else if event.id == hide_id {
                     let now_hidden = !hidden_flag.load(Ordering::SeqCst);
                     hidden_flag.store(now_hidden, Ordering::SeqCst);
                     send_tray_command(&cmd_tx, &wake_thread, TrayCommand::SetVisible(!now_hidden));

@@ -1,11 +1,9 @@
 use super::types::{
-    EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP, EDIT_THUMB, GRID_CELL, GRID_GAP, GRID_THUMB, REMOVE_BTN,
+    EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP, EDIT_THUMB, GRID_CELL, GRID_GAP, GRID_THUMB,
 };
 use crate::icon_cache::IconCache;
 use crate::image_view;
-use crate::theme::{
-    picker_drop_stroke, picker_remove_hover, picker_selected_fill, picker_selected_stroke,
-};
+use crate::theme::{picker_drop_stroke, picker_selected_fill, picker_selected_stroke};
 use eframe::egui::{self, Color32, Sense, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
@@ -142,8 +140,11 @@ pub enum IconGridKind {
     /// Catalog / picker: fixed cell size.
     Picker,
     /// Image Search target list: larger cells when few items, shrinking toward
-    /// the compact edit size as more are added. `removable` paints the × badge.
+    /// the compact edit size as more are added. `removable` adds a Remove menu entry.
     Targets { removable: bool },
+    /// Read-only target list sized like a [`Self::Targets`] grid of `count` items,
+    /// so sibling grids share one cell size.
+    TargetsSizedAs { count: usize },
 }
 
 impl IconGridKind {
@@ -152,7 +153,14 @@ impl IconGridKind {
     }
 
     fn scale_with_count(self) -> bool {
-        matches!(self, Self::Targets { .. })
+        matches!(self, Self::Targets { .. } | Self::TargetsSizedAs { .. })
+    }
+
+    fn sizing_count(self, count: usize) -> usize {
+        match self {
+            Self::TargetsSizedAs { count } => count,
+            _ => count,
+        }
     }
 }
 
@@ -176,19 +184,44 @@ pub(crate) fn adaptive_icon_cell(
 struct IconCellStyle {
     cell: f32,
     thumb: f32,
-    show_remove: bool,
+}
+
+impl IconCellStyle {
+    /// Height of one grid row: tallest fitted thumb plus the cell inset, so wide
+    /// icons do not leave a mostly empty square cell.
+    fn row_height(
+        self,
+        ctx: &egui::Context,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        row: &[String],
+    ) -> f32 {
+        let inset = self.cell - self.thumb;
+        let tallest = row
+            .iter()
+            .map(|target| {
+                let [tw, th] = icons.for_target_or_fallback(ctx, catalog, target).size();
+                image_view::fit_icon_thumb(tw as f32, th as f32, self.thumb, self.thumb).y
+            })
+            .fold(0.0, f32::max);
+        (tallest + inset).clamp(inset.max(1.0), self.cell)
+    }
 }
 
 fn metrics_for(kind: IconGridKind, count: usize, avail_w: f32) -> (IconCellStyle, f32) {
-    let show_remove = kind.show_remove();
     if kind.scale_with_count() {
         let inset = EDIT_CELL - EDIT_THUMB;
-        let cell = adaptive_icon_cell(count, avail_w, EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP);
+        let cell = adaptive_icon_cell(
+            kind.sizing_count(count),
+            avail_w,
+            EDIT_CELL,
+            EDIT_CELL_MAX,
+            EDIT_GAP,
+        );
         (
             IconCellStyle {
                 cell,
                 thumb: (cell - inset).max(0.0),
-                show_remove,
             },
             EDIT_GAP,
         )
@@ -197,74 +230,27 @@ fn metrics_for(kind: IconGridKind, count: usize, avail_w: f32) -> (IconCellStyle
             IconCellStyle {
                 cell: GRID_CELL,
                 thumb: GRID_THUMB,
-                show_remove,
             },
             GRID_GAP,
         )
     }
 }
 
-/// Top-right × badge rect for a cell body (extends slightly past the cell edge).
-fn remove_badge_rect(body: egui::Rect) -> egui::Rect {
-    egui::Rect::from_center_size(
-        egui::pos2(
-            body.right() - REMOVE_BTN * 0.35,
-            body.top() + REMOVE_BTN * 0.35,
-        ),
-        Vec2::splat(REMOVE_BTN),
-    )
-}
-
-/// Paint and interact the remove × badge over `body`.
-///
-/// Uses [`Sense::click_and_drag`] so, when registered *after* a parent
-/// [`Ui::dnd_drag_source`]'s drag sense, this badge wins both click and drag
-/// hit-testing over its rect (pure `Sense::drag` would otherwise steal the
-/// inner half of the badge and start a reorder drag).
-fn paint_remove_badge(ui: &mut egui::Ui, body: egui::Rect, target: &str) -> egui::Response {
-    let btn_rect = remove_badge_rect(body);
-    let btn_id = ui.id().with(("icon_rm", target));
-    let btn_resp = ui.interact(btn_rect, btn_id, Sense::click_and_drag());
-    let btn_fill = if btn_resp.hovered() {
-        picker_remove_hover()
-    } else {
-        Color32::from_gray(100)
-    };
-    ui.painter()
-        .circle_filled(btn_rect.center(), REMOVE_BTN * 0.5, btn_fill);
-    crate::theme::paint_text_centered(
-        ui,
-        btn_rect,
-        "×",
-        egui::FontId::proportional(REMOVE_BTN * 0.75),
-        Color32::WHITE,
-    );
-    btn_resp
-}
-
-/// Paint a selectable icon cell (fixed square, no under-icon label).
-/// Returns `(cell_clicked, remove_clicked, cell_response)`.
-///
-/// When `style.show_remove` is true the × is painted here only if
-/// `paint_remove` is true; reorderable grids paint the badge after
-/// [`Ui::dnd_drag_source`] so it sits above the drag sense.
-fn icon_grid_cell_ex(
+/// Paint a selectable `cell_w`×`row_h` icon cell (no under-icon label).
+/// Returns `(cell_clicked, cell_response)`.
+fn icon_grid_cell(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     target: &str,
     selected: bool,
     style: IconCellStyle,
-    paint_remove: bool,
-) -> (bool, bool, egui::Response) {
-    let IconCellStyle {
-        cell,
-        thumb,
-        show_remove,
-    } = style;
-    let rounding = if show_remove { 3.0 } else { 4.0 };
+    row_h: f32,
+) -> (bool, egui::Response) {
+    let IconCellStyle { cell, thumb } = style;
+    let rounding = 4.0;
 
-    let desired = Vec2::splat(cell);
+    let desired = Vec2::new(cell, row_h);
     let (rect, resp) = ui.allocate_exact_size(desired, Sense::click_and_drag());
 
     let fill = if selected {
@@ -288,22 +274,45 @@ fn icon_grid_cell_ex(
     let tex = icons.for_target_or_fallback(ui.ctx(), catalog, target);
     crate::icon_cache::paint_icon_thumb_at(ui, &tex, body.center(), thumb, thumb, 0.0, None);
 
-    let remove_clicked =
-        show_remove && paint_remove && paint_remove_badge(ui, body, target).clicked();
-
     attach_item_icon_tooltip(&resp, catalog, icons, target);
 
-    (resp.clicked() && !remove_clicked, remove_clicked, resp)
+    (resp.clicked(), resp)
+}
+
+/// Extra right-click menu entries for a grid cell, given its target.
+pub type IconCellMenu<'a> = dyn FnMut(&mut egui::Ui, &str) + 'a;
+/// Primary click on a cell: `(index, target)`.
+pub type IconCellClick<'a> = dyn FnMut(usize, &str) + 'a;
+/// Remove (or similar) for one displayed index.
+pub type IconIndexClick<'a> = dyn FnMut(usize) + 'a;
+/// Drag-reorder `(from_index, to_index)` in the displayed slice.
+pub type IconReorder<'a> = dyn FnMut(usize, usize) + 'a;
+/// Whether a target may show Remove.
+pub type IconTargetPred<'a> = dyn Fn(&str) -> bool + 'a;
+
+/// Click, remove, and reorder behavior for [`paint_even_icon_grid`].
+///
+/// [`Default`] paints a display-only grid. `is_removable: None` allows Remove on
+/// every target (still gated by [`IconGridKind::Targets`] `{ removable: true }`).
+/// Extra menu entries stay a separate argument so their lifetime is not tied to
+/// these callbacks.
+#[derive(Default)]
+pub struct IconGridOps<'a> {
+    pub on_cell: Option<&'a mut IconCellClick<'a>>,
+    pub on_remove: Option<&'a mut IconIndexClick<'a>>,
+    pub on_reorder: Option<&'a mut IconReorder<'a>>,
+    pub is_removable: Option<&'a IconTargetPred<'a>>,
 }
 
 /// Lay out `targets` in even rows (no column stretch, no staircase wrap).
 ///
-/// When `on_reorder` is provided, dragging a cell onto another reorders the list
+/// When `ops.on_reorder` is set, dragging a cell onto another reorders the list
 /// (`from_index`, `to_index` in the displayed `targets` slice).
 ///
-/// `is_removable` further gates the × badge when [`IconGridKind::Targets`] has
-/// `removable: true` (e.g. hide × on tag-filter-only Image Search matches).
-#[allow(clippy::too_many_arguments)] // even grid: selection, kind, and click/remove/reorder callbacks
+/// Right-clicking a cell opens a menu with `cell_menu` entries, then Remove when
+/// [`IconGridKind::Targets`] has `removable: true`, `ops.on_remove` is set, and
+/// `ops.is_removable` allows it (e.g. no Remove on tag-filter-only Image Search matches).
+#[allow(clippy::too_many_arguments)] // grid inputs plus ops; menu lifetime stays separate
 pub fn paint_even_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
@@ -311,58 +320,54 @@ pub fn paint_even_icon_grid(
     targets: &[String],
     is_selected: impl Fn(&str) -> bool,
     kind: IconGridKind,
-    mut on_cell: impl FnMut(usize, &str),
-    mut on_remove: impl FnMut(usize),
-    mut on_reorder: Option<&mut dyn FnMut(usize, usize)>,
-    is_removable: impl Fn(&str) -> bool,
+    mut ops: IconGridOps<'_>,
+    mut cell_menu: Option<&mut IconCellMenu<'_>>,
 ) {
     if targets.is_empty() {
         return;
     }
     // Visible clip ∩ max_rect, minus floating scrollbar overlay — not leftover
     // room toward Window max_size, and not width the bar will cover.
-    let avail_raw = crate::widgets::visible_content_width(ui);
-    let (style, gap) = metrics_for(kind, targets.len(), avail_raw);
-    // Cap to visible width — do not inflate past the pane (would raise min_size).
-    let avail = avail_raw;
+    let avail = crate::widgets::visible_content_width(ui);
+    let (style, gap) = metrics_for(kind, targets.len(), avail);
     ui.set_max_width(avail);
     let cols = grid_column_count_for_width(avail, style.cell, gap);
     let old_spacing = ui.spacing().item_spacing;
     ui.spacing_mut().item_spacing = Vec2::splat(gap);
 
-    let reorderable = on_reorder.is_some();
+    let reorderable = ops.on_reorder.is_some();
     let mut pending_reorder: Option<(usize, usize)> = None;
     let mut i = 0;
     while i < targets.len() {
+        let end = (i + cols).min(targets.len());
+        let row_h = if kind.scale_with_count() {
+            style.row_height(ui.ctx(), catalog, icons, &targets[i..end])
+        } else {
+            style.cell
+        };
         ui.allocate_ui_with_layout(
-            egui::vec2(avail, style.cell),
+            egui::vec2(avail, row_h),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.set_max_width(avail);
                 ui.spacing_mut().item_spacing = Vec2::splat(gap);
-                let end = (i + cols).min(targets.len());
                 for (k, target) in targets.iter().enumerate().take(end).skip(i) {
                     let sel = is_selected(target);
-                    let cell_removable = style.show_remove && is_removable(target);
+                    let cell_removable = kind.show_remove()
+                        && ops.on_remove.is_some()
+                        && ops.is_removable.is_none_or(|pred| pred(target));
                     let cell_id = ui.id().with(("icon_dnd", k, target));
-                    if reorderable {
-                        // Paint × after `dnd_drag_source`: that API registers
-                        // Sense::drag over the whole cell *after* contents, which
-                        // would otherwise steal the badge's inner hit area.
+                    let cell_rect = if reorderable {
                         let drag = ui.dnd_drag_source(cell_id, k, |ui| {
-                            let (clicked, _, cell) =
-                                icon_grid_cell_ex(ui, catalog, icons, target, sel, style, false);
+                            let (clicked, cell) =
+                                icon_grid_cell(ui, catalog, icons, target, sel, style, row_h);
                             if clicked {
-                                on_cell(k, target);
+                                if let Some(on_cell) = ops.on_cell.as_mut() {
+                                    on_cell(k, target);
+                                }
                             }
                             cell
                         });
-                        if cell_removable
-                            && !ui.ctx().is_being_dragged(cell_id)
-                            && paint_remove_badge(ui, drag.inner.rect, target).clicked()
-                        {
-                            on_remove(k);
-                        }
                         if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
                             let from = *payload;
                             if from != k {
@@ -376,19 +381,31 @@ pub fn paint_even_icon_grid(
                                 egui::StrokeKind::Outside,
                             );
                         }
+                        drag.inner.rect
                     } else {
-                        let cell_style = IconCellStyle {
-                            show_remove: cell_removable,
-                            ..style
-                        };
-                        let (clicked, remove, _) =
-                            icon_grid_cell_ex(ui, catalog, icons, target, sel, cell_style, true);
+                        let (clicked, cell) =
+                            icon_grid_cell(ui, catalog, icons, target, sel, style, row_h);
                         if clicked {
-                            on_cell(k, target);
+                            if let Some(on_cell) = ops.on_cell.as_mut() {
+                                on_cell(k, target);
+                            }
                         }
-                        if remove {
-                            on_remove(k);
-                        }
+                        cell.rect
+                    };
+                    if cell_removable || cell_menu.is_some() {
+                        let menu_id = cell_id.with("menu");
+                        crate::widgets::rect_context_menu(ui, menu_id, cell_rect, |ui| {
+                            if let Some(menu) = cell_menu.as_mut() {
+                                menu(ui, target);
+                            }
+                            if cell_removable
+                                && crate::widgets::menu_item_danger(ui, "Remove", true)
+                            {
+                                if let Some(on_remove) = ops.on_remove.as_mut() {
+                                    on_remove(k);
+                                }
+                            }
+                        });
                     }
                 }
             },
@@ -396,7 +413,7 @@ pub fn paint_even_icon_grid(
         i += cols;
     }
 
-    if let (Some((from, to)), Some(cb)) = (pending_reorder, on_reorder.as_mut()) {
+    if let (Some((from, to)), Some(cb)) = (pending_reorder, ops.on_reorder.as_mut()) {
         cb(from, to);
     }
 

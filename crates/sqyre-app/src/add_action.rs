@@ -10,7 +10,9 @@ use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, TipUiCtx};
 use crate::pickers::{self, ActivePicker};
 use crate::tree_chrome;
 use crate::widgets::SaveCancel;
-use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2, WidgetInfo, WidgetType};
+use eframe::egui::{
+    self, Color32, CornerRadius, Key, Modifiers, Sense, Vec2, WidgetInfo, WidgetType,
+};
 use sqyre_domain::{
     action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
 };
@@ -264,7 +266,7 @@ impl AddActionPicker {
                 }
             });
             ui.weak(HOVER_DELAY_HINT);
-            ui.separator();
+            crate::widgets::section_separator(ui);
 
             let list_h = pickers::popup_scroll_max_height(ui, 0.0);
             let list_w = crate::widgets::visible_width(ui);
@@ -439,10 +441,21 @@ impl AddActionPicker {
 
         // Escape: close nested pickers first, then the edit tip.
         // Skip while key / chord / screen recording.
-        if !bridges.key_record.is_open()
+        let owns_escape = match &self.tip {
+            Some(DefaultsTip::Edit(edit)) => {
+                !matches!(edit.picker, ActivePicker::None)
+                    || crate::focus_nav::is_top_layer(
+                        ctx,
+                        egui::LayerId::new(egui::Order::Middle, default_edit_id(&edit.action_type)),
+                    )
+            }
+            _ => false,
+        };
+        if owns_escape
+            && !bridges.key_record.is_open()
             && !bridges.hotkey_record.is_open()
             && !bridges.screen_click.is_armed()
-            && ctx.input(|i| i.key_pressed(Key::Escape))
+            && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
         {
             if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
                 match &mut edit.picker {
@@ -490,7 +503,7 @@ impl AddActionPicker {
         let save_enabled =
             matches!(&self.tip, Some(DefaultsTip::Edit(edit)) if edit.save_enabled());
 
-        let edit_id = egui::Id::new(("action_default_edit", type_key.as_str()));
+        let edit_id = default_edit_id(&type_key);
         crate::widgets::fit_dialog_window(
             egui::Window::new(format!("Default: {label}"))
                 .open(&mut open)
@@ -567,6 +580,10 @@ impl AddActionPicker {
     }
 }
 
+fn default_edit_id(action_type: &str) -> egui::Id {
+    egui::Id::new(("action_default_edit", action_type))
+}
+
 fn reassign_uids(action: &mut Action) {
     action.id = ActionId::new();
     if let Some(kids) = action.children_mut() {
@@ -595,18 +612,15 @@ fn picker_tile(
     let fill = Color32::from_rgba_unmultiplied(pastel[0], pastel[1], pastel[2], pastel[3]);
     let fg = crate::theme::contrast_fg(fill);
     let font = egui::TextStyle::Small.resolve(ui.style());
-    let vector_icon = crate::widgets::vector_action_icon(tmpl.action_type);
-    let text = match vector_icon {
-        Some(_) => tmpl.label.to_string(),
-        None => format!("{}  {}", action_icon_glyph(sample), tmpl.label),
-    };
-    let icon_side = font.size * 1.1;
-    // Icon plus a gap matching the glyph path's "  " separator.
-    let lead = vector_icon.map_or(0.0, |_| icon_side + font.size * 0.5);
-    let galley = ui.painter().layout_no_wrap(text, font, fg);
+    let icon_side = crate::widgets::action_icon_side(font.size);
+    let lead = icon_side + font.size * 0.5;
+    let glyph_font = crate::widgets::action_glyph_font(icon_side, font.family.clone());
+    let galley = ui
+        .painter()
+        .layout_no_wrap(tmpl.label.to_string(), font, fg);
     // Hug the label: content + pad is both the size and the floor.
-    let desired =
-        galley.size() + Vec2::new(lead + PICKER_TILE_PAD_X * 2.0, PICKER_TILE_PAD_Y * 2.0);
+    let content = Vec2::new(galley.size().x, galley.size().y.max(icon_side));
+    let desired = content + Vec2::new(lead + PICKER_TILE_PAD_X * 2.0, PICKER_TILE_PAD_Y * 2.0);
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
 
     let visuals = ui.style().interact(&response);
@@ -623,15 +637,22 @@ fn picker_tile(
         egui::StrokeKind::Inside,
     );
 
-    if let Some(paint) = vector_icon {
-        let icon_rect = egui::Rect::from_center_size(
-            egui::pos2(
-                rect.left() + PICKER_TILE_PAD_X + icon_side * 0.5,
-                rect.center().y,
-            ),
-            Vec2::splat(icon_side),
-        );
-        paint(ui.painter(), icon_rect, fg);
+    let icon_rect = egui::Rect::from_center_size(
+        egui::pos2(
+            rect.left() + PICKER_TILE_PAD_X + icon_side * 0.5,
+            rect.center().y,
+        ),
+        Vec2::splat(icon_side),
+    );
+    match crate::widgets::VectorIcon::for_action(sample) {
+        Some(icon) => icon.paint(ui.painter(), icon_rect, fg),
+        None => crate::theme::paint_text_centered(
+            ui,
+            icon_rect,
+            action_icon_glyph(sample),
+            glyph_font,
+            fg,
+        ),
     }
     let text_pos = egui::pos2(
         rect.left() + PICKER_TILE_PAD_X + lead,

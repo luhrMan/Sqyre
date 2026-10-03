@@ -27,6 +27,29 @@ pub fn text_field_width(
     });
 }
 
+/// One row whose `fill` content (e.g. a `desired_width(f32::INFINITY)` field)
+/// takes only the width left after `trailing`.
+///
+/// A fill-width widget followed by siblings in a plain `horizontal` pushes them
+/// past the pane edge; egui then widens the parent region, so right-aligned
+/// footers and later full-width content stay off-screen at any window size.
+/// `trailing` is laid out right-to-left: the first widget added is rightmost.
+pub fn fill_row<R>(
+    ui: &mut egui::Ui,
+    trailing: impl FnOnce(&mut egui::Ui),
+    fill: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            trailing(ui);
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), fill)
+                .inner
+        })
+        .inner
+    })
+    .inner
+}
+
 /// Labeled DragValue (no `.prefix`); configure speed/range via `configure`.
 pub fn drag_field<Num: egui::emath::Numeric>(
     ui: &mut egui::Ui,
@@ -305,7 +328,7 @@ pub fn searchable_combo_with(
                 ui.ctx()
                     .data_mut(|d| d.insert_temp(search_id, search.clone()));
 
-                ui.separator();
+                crate::widgets::section_separator(ui);
 
                 let q = search.trim().to_ascii_lowercase();
                 let mut any = false;
@@ -357,7 +380,9 @@ pub fn searchable_combo_with(
                 }
 
                 if !any {
-                    ui.weak("No matching options.");
+                    // Combo-inline: title only (full list_vacancy chrome is too tall in popups).
+                    let copy = crate::widgets::list_vacancy_copy(&q, "options");
+                    ui.weak(copy.title);
                 }
             });
 
@@ -410,4 +435,43 @@ fn paint_combo_option(
         *value = option_value.to_string();
     }
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fill_row_keeps_trailing_inside_pane_and_parent_unwidened() {
+        const PANE_W: f32 = 300.0;
+        let ctx = egui::Context::default();
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(PANE_W, 200.0));
+            let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+            let mut text = String::new();
+            let mut button = egui::Rect::NOTHING;
+            let field = fill_row(
+                &mut pane_ui,
+                |ui| button = ui.button("Refresh").rect,
+                |ui| {
+                    ui.add(egui::TextEdit::singleline(&mut text).desired_width(f32::INFINITY))
+                        .rect
+                },
+            );
+            assert!(
+                button.right() <= pane.right() + 0.5,
+                "{button:?} past {pane:?}"
+            );
+            assert!(
+                field.right() <= button.left(),
+                "{field:?} overlaps {button:?}"
+            );
+            assert!(
+                pane_ui.min_rect().width() <= PANE_W + 0.5,
+                "row widened parent to {}",
+                pane_ui.min_rect().width()
+            );
+        })
+        .drop_without_applying_deltas();
+    }
 }

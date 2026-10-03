@@ -61,7 +61,7 @@ impl HotkeyFocusTagPoller {
         let focus_label = focus
             .as_ref()
             .map(|w| format!("{} ({})", w.process_name.trim(), w.process_path.trim()))
-            .unwrap_or_else(|| "(none)".into());
+            .unwrap_or_else(|| sqyre_domain::EMPTY_NONE.into());
         note(&format!(
             "hotkey-focus: tags {:?} -> {:?} focus={focus_label}",
             prev.unwrap_or_default(),
