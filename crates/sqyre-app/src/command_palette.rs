@@ -13,7 +13,14 @@ use sqyre_ui_model::action_picker_category;
 
 const WINDOW_ID: &str = "sqyre_command_palette";
 const ROW_H: f32 = 28.0;
-const MAX_VISIBLE_ROWS: usize = 10;
+const MAX_VISIBLE_ROWS: usize = 8;
+/// Spotlight-like: about half the window wide, capped so wide monitors stay compact.
+const WIDTH_FRACTION: f32 = 0.5;
+const MAX_WIDTH: f32 = 600.0;
+/// Sits in the upper fifth of the window rather than hugging the top edge.
+const TOP_FRACTION: f32 = 0.18;
+const MIN_TOP: f32 = 48.0;
+const MAX_TOP: f32 = 180.0;
 const CREATE_SCORE_PENALTY: u32 = 40;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -124,8 +131,15 @@ impl CommandPaletteUi {
         let mut query_changed = false;
 
         // Full-screen hit target under the window: click outside dismisses.
-        // Drawn first so the palette window stays on top in Foreground order.
-        egui::Area::new(egui::Id::new(format!("{WINDOW_ID}_dismiss")))
+        // `move_to_top` does not order layers that both want the top, so clicking
+        // this target once would leave it above the window on every later open.
+        // As a sublayer the window is always placed directly above it.
+        let dismiss_id = egui::Id::new(format!("{WINDOW_ID}_dismiss"));
+        ctx.set_sublayer(
+            egui::LayerId::new(egui::Order::Foreground, dismiss_id),
+            egui::LayerId::new(egui::Order::Foreground, egui::Id::new(WINDOW_ID)),
+        );
+        egui::Area::new(dismiss_id)
             .order(egui::Order::Foreground)
             .fixed_pos(ctx.content_rect().min)
             .interactable(true)
@@ -136,21 +150,26 @@ impl CommandPaletteUi {
                 }
             });
 
+        let constrain = crate::widgets::dialog_constrain_rect(ctx);
+        let width = (constrain.width() * WIDTH_FRACTION)
+            .clamp(crate::widgets::FLOATER_MIN_PALETTE[0], MAX_WIDTH)
+            .min(constrain.width());
+        let top = (constrain.height() * TOP_FRACTION).clamp(MIN_TOP, MAX_TOP);
         let mut open = self.open;
         crate::widgets::fit_dialog_popup(
             egui::Window::new("Command palette")
                 .title_bar(false)
                 .collapsible(false)
                 .resizable(false)
-                .anchor(egui::Align2::CENTER_TOP, [0.0, 72.0])
-                .default_width(520.0)
-                .min_width(crate::widgets::FLOATER_MIN_PALETTE[0])
+                .anchor(egui::Align2::CENTER_TOP, [0.0, top])
                 .order(egui::Order::Foreground)
                 .open(&mut open),
             ctx,
             egui::Id::new(WINDOW_ID),
             pending_scale,
         )
+        .min_width(width)
+        .max_width(width)
         .show(ctx, |ui| {
             let (esc, enter, down, up) = ui.input_mut(|i| {
                 (
@@ -235,11 +254,6 @@ impl CommandPaletteUi {
 }
 
 fn command_row(ui: &mut egui::Ui, item: &CommandItem, selected: bool) -> egui::Response {
-    let fill = if selected {
-        crate::theme::accent_dim()
-    } else {
-        Color32::TRANSPARENT
-    };
     let font = egui::TextStyle::Body.resolve(ui.style());
     let small = egui::TextStyle::Small.resolve(ui.style());
     let text_color = ui.visuals().text_color();
@@ -263,7 +277,25 @@ fn command_row(ui: &mut egui::Ui, item: &CommandItem, selected: bool) -> egui::R
         8.0 + icon_w.max(22.0) + 8.0 + title_galley.size().x + 16.0 + hint_galley.size().x + 10.0;
     let row_w = ui.available_width().max(content_w);
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(row_w, ROW_H), Sense::click());
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let hovered = resp.hovered();
+    let hover_visuals = ui.visuals().widgets.hovered;
+    let fill = if selected {
+        crate::theme::accent_dim()
+    } else if hovered {
+        hover_visuals.weak_bg_fill
+    } else {
+        Color32::TRANSPARENT
+    };
     ui.painter().rect_filled(rect, CornerRadius::same(4), fill);
+    if hovered {
+        ui.painter().rect_stroke(
+            rect,
+            CornerRadius::same(4),
+            hover_visuals.bg_stroke,
+            egui::StrokeKind::Inside,
+        );
+    }
     let y = rect.center().y;
     let mut x = rect.left() + 8.0;
     if let Some(galley) = icon_galley {

@@ -156,6 +156,11 @@ impl SqyreApp {
         self.command_palette.open_palette();
     }
 
+    /// Whether the settings window is showing (docs / interaction harnesses).
+    pub fn docs_settings_open(&self) -> bool {
+        self.settings_ui.open
+    }
+
     /// Whether the command palette is showing (docs / interaction harnesses).
     pub fn docs_command_palette_open(&self) -> bool {
         self.command_palette.is_open()
