@@ -6,7 +6,7 @@ use eframe::egui::{
 
 use crate::theme::{accent_dim, paint_galley_centered, paint_text_centered, MACRO_STOP, PRIMARY};
 
-/// Minimum square hit target for icon-only buttons (framed and bare).
+/// Minimum square hit target for icon-only buttons.
 /// Side grows with Button text so glyphs track the Font size setting.
 pub const ICON_BTN_SIDE: f32 = 18.0;
 
@@ -36,7 +36,7 @@ pub(crate) fn paint_keyboard_focus_ring(
     );
 }
 
-/// Framed icon-only button with optically centered glyph.
+/// Frameless icon-only button with optically centered glyph.
 ///
 /// `tip` is the AccessKit name and hover text (required for actionable icons).
 pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
@@ -63,15 +63,7 @@ fn icon_button_inner(
     let font_id = icon_btn_font(ui);
     let desired = Vec2::splat(icon_btn_side(ui));
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
-    let visuals = ui.style().interact(&response);
-    ui.painter().rect(
-        rect,
-        visuals.corner_radius,
-        visuals.weak_bg_fill,
-        visuals.bg_stroke,
-        egui::StrokeKind::Inside,
-    );
-    let fg = color.unwrap_or_else(|| visuals.text_color());
+    let fg = color.unwrap_or_else(|| ui.style().interact(&response).text_color());
     paint_text_centered(ui, rect, glyph, font_id, fg);
     paint_keyboard_focus_ring(ui, rect, &response);
     response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tip));
