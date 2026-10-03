@@ -709,7 +709,6 @@ fn action_icon(type_key: &str) -> CommandIcon {
         "click" => "mouse",
         "key" => "key",
         "type" => "keyboard",
-        "imagesearch" => "magnifying-glass",
         "ocr" => "text-aa",
         "findpixel" => "drop",
         "setvariable" => "equals",
