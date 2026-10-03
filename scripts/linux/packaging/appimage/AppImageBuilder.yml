@@ -29,9 +29,11 @@ script:
     TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
     export CARGO_TARGET_DIR="$TARGET_DIR"
     echo "cargo=$(command -v cargo) target=$TARGET_DIR"
-    (cd "$ROOT" && cargo build -p sqyre-app --profile dist --features portal-capture)
+    if [ "${SQYRE_APPIMAGE_SKIP_BUILD:-}" != "1" ]; then
+      (cd "$ROOT" && cargo build -p sqyre-app --profile dist --features portal-capture)
+    fi
     if [ ! -x "$TARGET_DIR/dist/sqyre" ]; then
-      echo "ERROR: missing $TARGET_DIR/dist/sqyre after cargo build" >&2
+      echo "ERROR: missing $TARGET_DIR/dist/sqyre (cargo build or SQYRE_APPIMAGE_SKIP_BUILD input)" >&2
       exit 1
     fi
     "$SOURCE_DIR/../generate-app-icon.sh" 256

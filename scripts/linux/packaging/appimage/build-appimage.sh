@@ -4,6 +4,8 @@
 # Prefer a native build when appimage-builder + squashfs-tools are installed
 # (devcontainer). Otherwise re-run inside the project Docker image when Docker
 # is available (same path CI uses).
+#
+#   SQYRE_APPIMAGE_SKIP_BUILD=1 — skip cargo; package existing $CARGO_TARGET_DIR/dist/sqyre
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,9 +42,10 @@ need_native_tools() {
 # missing (extract-and-run) and slower even with FUSE (xz random reads).
 # We --skip-appimage and repack the AppDir with type2-runtime + zstd instead.
 #
-# type2-runtime continuous build (commit 75849dc). Override URL/SHA via env when bumping.
-TYPE2_RUNTIME_URL="${SQYRE_APPIMAGE_RUNTIME_URL:-https://github.com/AppImage/type2-runtime/releases/download/continuous/runtime-x86_64}"
-TYPE2_RUNTIME_SHA256="${SQYRE_APPIMAGE_RUNTIME_SHA256:-1cc49bcf1e2ccd593c379adb17c9f85a36d619088296504de95b1d06215aebbf}"
+# Pin a dated type2-runtime tag: `continuous` is rebuilt in place and breaks the SHA check.
+# Override URL/SHA via env when bumping.
+TYPE2_RUNTIME_URL="${SQYRE_APPIMAGE_RUNTIME_URL:-https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64}"
+TYPE2_RUNTIME_SHA256="${SQYRE_APPIMAGE_RUNTIME_SHA256:-2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d}"
 
 sha256_file() {
   if have_cmd sha256sum; then
@@ -235,6 +238,7 @@ run_docker() {
     -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
     -e RELEASE_VERSION="$APP_VERSION" \
     -e SQYRE_APPIMAGE_FORCE_NATIVE=1 \
+    -e SQYRE_APPIMAGE_SKIP_BUILD="${SQYRE_APPIMAGE_SKIP_BUILD:-}" \
     "$IMAGE" \
     bash -c 'set -euo pipefail; scripts/linux/packaging/appimage/build-appimage.sh'
 
