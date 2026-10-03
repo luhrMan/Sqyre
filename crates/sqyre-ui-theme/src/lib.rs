@@ -84,6 +84,14 @@ pub fn panel_split_stroke() -> Stroke {
     Stroke::new(1.0, rgba([0xdc, 0x9d, 0x2e, 0x80]))
 }
 
+/// Gilded border painted just inside the main window edge.
+pub fn window_border_stroke() -> Stroke {
+    Stroke::new(1.0, PRIMARY.gamma_multiply(0.5))
+}
+
+/// Corner radius of [`window_border_stroke`].
+pub const WINDOW_BORDER_RADIUS: f32 = 8.0;
+
 /// Foreground that contrasts with a pastel/solid fill (Rec.601 luminance).
 pub fn contrast_fg(bg: Color32) -> Color32 {
     let lum = 0.299 * bg.r() as f32 + 0.587 * bg.g() as f32 + 0.114 * bg.b() as f32;

@@ -801,6 +801,10 @@ impl eframe::App for SqyreApp {
         // After tips/panels paint so tooltip preview outlines apply this frame.
         self.sync_recording_overlay(ui.ctx());
 
+        if self.settings_ui.settings().window_border {
+            paint_window_border(ui.ctx());
+        }
+
         // Modal sits above painted Sqyre chrome; skip shortcuts/palette while open.
         if self.macro_yaml_builder.is_open() || self.macro_prompt_builder.is_open() {
             return;
@@ -824,6 +828,20 @@ impl eframe::App for SqyreApp {
             [0.0, 0.0, 0.0, 0.0]
         }
     }
+}
+
+fn paint_window_border(ctx: &egui::Context) {
+    let stroke = theme::window_border_stroke();
+    ctx.layer_painter(egui::LayerId::new(
+        egui::Order::Foreground,
+        egui::Id::new("sqyre_window_border"),
+    ))
+    .rect_stroke(
+        ctx.content_rect(),
+        theme::WINDOW_BORDER_RADIUS,
+        stroke,
+        egui::StrokeKind::Inside,
+    );
 }
 
 impl Drop for SqyreApp {

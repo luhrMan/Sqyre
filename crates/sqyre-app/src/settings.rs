@@ -1394,6 +1394,15 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        if setting_visible(q, section_hit, SETTING_WINDOW_BORDER)
+            && ui
+                .checkbox(&mut self.settings.window_border, "Window border")
+                .on_hover_text("Show a thin gold outline around the edge of the main window.")
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
         if setting_visible(q, section_hit, SETTING_FONT_SIZE) {
             ui.add_space(crate::theme::SPACE_8);
             ui.horizontal(|ui| {
@@ -1686,6 +1695,7 @@ const SETTING_UPDATE_ACTIONS: &[&str] = &[
 ];
 
 const SETTING_COMPACT_HEADERS: &[&str] = &["compact", "program headers", "icons", "headers"];
+const SETTING_WINDOW_BORDER: &[&str] = &["window border", "border", "outline"];
 const SETTING_FONT_SIZE: &[&str] = &["font size", "font", "text size"];
 const SETTING_UI_SCALE: &[&str] = &["ui scale", "scale", "padding"];
 const SETTING_ACTION_COLORS: &[&str] =
@@ -1719,6 +1729,7 @@ const UPDATES_SETTINGS: &[&[&str]] = &[
 ];
 const APPEARANCE_SETTINGS: &[&[&str]] = &[
     SETTING_COMPACT_HEADERS,
+    SETTING_WINDOW_BORDER,
     SETTING_FONT_SIZE,
     SETTING_UI_SCALE,
     SETTING_ACTION_COLORS,

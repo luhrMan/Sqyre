@@ -28,6 +28,7 @@ pub const DEFAULT_SOUND_VOLUME: f32 = 0.25;
 pub const DEFAULT_UI_FONT_SIZE: i32 = 12;
 pub const DEFAULT_UI_SCALE: f32 = 1.5;
 pub const DEFAULT_COMPACT_PROGRAM_HEADERS: bool = true;
+pub const DEFAULT_WINDOW_BORDER: bool = true;
 pub const DEFAULT_BACKUP_INTERVAL_HOURS: i32 = 24;
 pub const MIN_BACKUP_INTERVAL_HOURS: i32 = 1;
 pub const MAX_BACKUP_INTERVAL_HOURS: i32 = 720;
@@ -492,6 +493,9 @@ pub struct UserSettings {
     /// In catalog lists, programs with a process icon omit the name (icon + child count only).
     #[serde(default = "default_compact_program_headers")]
     pub compact_program_headers: bool,
+    /// Gold border just inside the main window edge.
+    #[serde(default = "default_window_border")]
+    pub window_border: bool,
     #[serde(default = "default_hide_recording")]
     pub hide_app_during_recording: bool,
     /// Release keys/buttons still held from Down/hold actions when a macro ends.
@@ -605,6 +609,9 @@ fn default_drag_debounce() -> i32 {
 fn default_compact_program_headers() -> bool {
     DEFAULT_COMPACT_PROGRAM_HEADERS
 }
+fn default_window_border() -> bool {
+    DEFAULT_WINDOW_BORDER
+}
 fn default_font_size() -> i32 {
     DEFAULT_UI_FONT_SIZE
 }
@@ -636,6 +643,7 @@ impl Default for UserSettings {
             save_meta_images: false,
             highlight_active_action: false,
             compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
+            window_border: DEFAULT_WINDOW_BORDER,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
             release_held_inputs_on_end: DEFAULT_RELEASE_HELD_INPUTS_ON_END,
             while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
