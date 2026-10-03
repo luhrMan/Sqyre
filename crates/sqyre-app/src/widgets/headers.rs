@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-/// Weak `(count)` painted flush-right in the remaining row width.
+/// Weak `(count)` label.
 fn paint_count(ui: &mut egui::Ui, count: usize) {
     ui.label(egui::RichText::new(format!("({count})")).weak());
 }
@@ -30,20 +30,43 @@ fn count_row(
     .inner
 }
 
-/// Title on the left, `(count)` right-aligned. Returns the title response.
+/// Title with a weak `(count)` right after it. Returns the title response.
+///
+/// Sized to its text so content-sized sections (framed tips, cards) do not
+/// stretch to full width; panel headers use [`heading_with_count`].
 pub fn title_with_count(
     ui: &mut egui::Ui,
     title: impl Into<egui::WidgetText>,
     count: usize,
 ) -> egui::Response {
-    count_row(
-        ui,
-        |ui| ui.add(egui::Label::new(title).selectable(false)),
-        count,
-    )
+    ui.horizontal(|ui| {
+        let resp = ui.add(egui::Label::new(title).selectable(false));
+        paint_count(ui, count);
+        resp
+    })
+    .inner
 }
 
-/// Heading on the left, `(count)` right-aligned.
+/// Heading on the left, `(count)` right-aligned across the panel.
 pub fn heading_with_count(ui: &mut egui::Ui, title: &str, count: usize) -> egui::Response {
-    title_with_count(ui, egui::RichText::new(title).heading(), count)
+    heading_with_count_and(ui, title, count, |_| {})
+}
+
+/// [`heading_with_count`] with extra widgets (e.g. a "New" button) right after the title.
+pub fn heading_with_count_and(
+    ui: &mut egui::Ui,
+    title: &str,
+    count: usize,
+    after_title: impl FnOnce(&mut egui::Ui),
+) -> egui::Response {
+    count_row(
+        ui,
+        |ui| {
+            let resp =
+                ui.add(egui::Label::new(egui::RichText::new(title).heading()).selectable(false));
+            after_title(ui);
+            resp
+        },
+        count,
+    )
 }

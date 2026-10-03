@@ -1,9 +1,9 @@
-//! Central-panel toolbars: brand header chrome, separator strip, hotkey row, action chrome.
+//! Window top bar (brand / Data Editor / Settings) and central-panel toolbars: hotkey row, action chrome.
 
 use crate::macro_meta::collect_all_macro_tags;
 use crate::theme;
 use crate::SqyreApp;
-use eframe::egui::{self, Color32, Vec2};
+use eframe::egui::{self, Color32};
 use sqyre_hotkeys::{format_hotkey, HotkeyTrigger};
 use sqyre_ui_model::action_pastel_color;
 use std::sync::atomic::Ordering;
@@ -27,22 +27,23 @@ fn toolbar_icon_colored(
     .inner
 }
 
-pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
+/// Full-width window header above the macro list and central panel:
+/// Sqyre command palette on the left; Data Editor / Settings / list toggle on the right.
+/// Must be shown before the side panel so it spans the whole window width.
+pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    egui::Panel::top("app_top_bar")
+        .frame(
+            egui::Frame::side_top_panel(ui.style())
+                .inner_margin(egui::Margin::symmetric(8, theme::SPACE_4 as i8)),
+        )
+        .show(ui, |ui| brand_header(app, ui));
+}
+
+fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
-        // Tight gap between chrome controls flanking the brand/CP affordance.
         ui.spacing_mut().item_spacing.x = theme::SPACE_4;
 
-        // 1. Macro-list toggle — left of the Sqyre command-palette button.
-        let (list_glyph, list_tip) = if app.macro_list_open {
-            ("◁", "Hide macro list")
-        } else {
-            ("☰", "Show macro list")
-        };
-        if toolbar_icon(ui, list_glyph, list_tip, true).clicked() {
-            app.macro_list_open = !app.macro_list_open;
-        }
-
-        // 2. Brand / command palette (primary affordance).
+        // Brand / command palette (primary affordance), top-left of the window.
         let tex = app.icon_cache.sqyre_fallback(ui.ctx());
         let size = egui::vec2(28.0, 28.0);
         let image = egui::Image::new((tex.id(), size))
@@ -58,66 +59,70 @@ pub fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.command_palette.open_palette();
         }
 
-        // 3. Compact cluster to the right of CP:
-        //    row1 Data Editor / Settings
-        //    row2 import/export (wasm only)
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = theme::SPACE_2;
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-                if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
-                    app.data_editor.request_open(ui.ctx());
-                }
-                if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
-                    app.settings_ui.request_open(ui.ctx());
-                }
-            });
-            #[cfg(target_arch = "wasm32")]
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-                if toolbar_icon(ui, "⬇", "Import db.yaml", true).clicked() {
-                    app.request_db_import();
-                }
-                if toolbar_icon(ui, "⬆", "Export db.yaml", true).clicked() {
-                    app.export_db_yaml();
-                }
-            });
-        });
-
         #[cfg(not(target_arch = "wasm32"))]
         show_update_banner(app, ui);
 
-        // With no macros the meta section (and its run row) is not drawn.
-        if app.workspace.macros.is_empty() {
-            let status = app.run_session.state.status.lock().clone();
-            if !status.is_empty() {
-                let right_w = ui.available_width();
-                ui.allocate_ui_with_layout(
-                    Vec2::new(right_w, ui.spacing().interact_size.y),
-                    egui::Layout::right_to_left(egui::Align::Center),
-                    |ui| {
-                        ui.label(status);
-                    },
-                );
+        // Right-to-left: first added is rightmost.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let (list_glyph, list_tip) = if app.macro_list_open {
+                ("▷", "Hide macro list")
+            } else {
+                ("☰", "Show macro list")
+            };
+            if toolbar_icon(ui, list_glyph, list_tip, true).clicked() {
+                app.macro_list_open = !app.macro_list_open;
             }
-        }
+            if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
+                app.settings_ui.request_open(ui.ctx());
+            }
+            if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {
+                app.data_editor.request_open(ui.ctx());
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                if toolbar_icon(ui, "⬆", "Export db.yaml", true).clicked() {
+                    app.export_db_yaml();
+                }
+                if toolbar_icon(ui, "⬇", "Import db.yaml", true).clicked() {
+                    app.request_db_import();
+                }
+            }
+
+            // With no macros the meta section (and its run row) is not drawn.
+            if app.workspace.macros.is_empty() {
+                let status = app.run_session.state.status.lock().clone();
+                if !status.is_empty() {
+                    ui.add(egui::Label::new(&status).truncate())
+                        .on_hover_text(&status);
+                }
+            }
+        });
     });
 }
 
-/// Run/stop controls (desktop) and the run status line, above the macro name row.
-fn paint_run_row(app: &mut SqyreApp, ui: &mut egui::Ui) {
+/// Pulsing halo behind the Run button, painted into a slot reserved before the button.
+#[cfg(not(target_arch = "wasm32"))]
+fn paint_run_glow(ui: &egui::Ui, slot: egui::layers::ShapeIdx, rect: egui::Rect) {
+    let pulse = crate::widgets::glow_pulse(ui);
+    let rounding = ui.visuals().widgets.inactive.corner_radius;
+    let halo = crate::widgets::glow_halo_shapes(rect, rounding, theme::MACRO_START, pulse);
+    ui.painter().set(slot, egui::Shape::Vec(halo));
+}
+
+/// Run/stop (desktop), delay + hotkey toggles, and the run status line, above the macro name row.
+fn paint_run_row(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) {
     let status = app.run_session.state.status.lock().clone();
-    #[cfg(target_arch = "wasm32")]
-    if status.is_empty() {
-        return;
-    }
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = theme::SPACE_4;
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let running = app.run_session.state.running.load(Ordering::SeqCst);
-            if toolbar_icon_colored(ui, "▶", "Run", !running, Some(theme::MACRO_START)).clicked()
-            {
+            let glow = (app.settings_ui.settings().run_button_glow && !running)
+                .then(|| ui.painter().add(egui::Shape::Noop));
+            let run = toolbar_icon_colored(ui, "▶", "Run", !running, Some(theme::MACRO_START));
+            if let Some(slot) = glow {
+                paint_run_glow(ui, slot, run.rect);
+            }
+            if run.clicked() {
                 app.start_macro(ui.ctx());
             }
             if toolbar_icon_colored(
@@ -134,6 +139,27 @@ fn paint_run_row(app: &mut SqyreApp, ui: &mut egui::Ui) {
             {
                 app.request_stop();
             }
+            crate::widgets::section_separator(ui);
+        }
+        app.workspace
+            .macro_meta
+            .paint_delay_button(ui, &app.workspace.macros[idx], !running);
+        let hotkey_open = app.workspace.macro_meta.paint_hotkey_toggle(ui);
+        let hk_label = {
+            let m = &app.workspace.macros[idx];
+            if m.hotkey.is_empty() {
+                sqyre_domain::EMPTY_NOT_SET.to_string()
+            } else {
+                format_hotkey(&m.hotkey)
+            }
+        };
+        ui.weak(hk_label);
+        if hotkey_open {
+            theme::section_frame(ui.style())
+                .inner_margin(egui::Margin::symmetric(theme::SPACE_4 as i8, 1))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| paint_hotkey_controls(app, ui, idx, running));
+                });
         }
         if !status.is_empty() {
             ui.add(egui::Label::new(&status).truncate())
@@ -173,15 +199,15 @@ fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
     });
 }
 
-/// Strip below the brand header: wasm editor note + separator.
-/// Chrome controls (list toggle, Data Editor, Settings) live in [`brand_header`];
+/// Browser editor note at the top of the central panel.
+/// Chrome controls (list toggle, Data Editor, Settings) live in [`top_bar`];
 /// run/stop sits above the macro name row in [`show_meta_and_hotkey`].
-pub fn main_toolbar(ui: &mut egui::Ui) {
-    #[cfg(target_arch = "wasm32")]
+#[cfg(target_arch = "wasm32")]
+pub fn wasm_editor_note(ui: &mut egui::Ui) {
     ui.small(
         "Browser editor: import/export db.yaml. Run, capture, and global hotkeys are desktop-only.",
     );
-    ui.separator();
+    crate::widgets::section_separator(ui);
 }
 
 /// Macro name/tags editor and global hotkey controls for the selected macro.
@@ -204,18 +230,13 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         .map(|m| m.name.clone())
         .collect();
     let all_tags = collect_all_macro_tags(&app.workspace.macros);
-    paint_run_row(app, ui);
+    paint_run_row(app, ui, idx, running);
     let meta = ui
         .horizontal_wrapped(|ui| {
-            let row = {
-                let m = &mut app.workspace.macros[idx];
-                app.workspace
-                    .macro_meta
-                    .paint_name_row(ui, m, &other_names, meta_enabled)
-            };
-            ui.separator();
-            paint_hotkey_controls(app, ui, idx, running);
-            row
+            let m = &mut app.workspace.macros[idx];
+            app.workspace
+                .macro_meta
+                .paint_name_row(ui, m, &other_names, meta_enabled)
         })
         .inner;
     if let Some(new_name) = meta.rename_to {
@@ -260,21 +281,11 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         return false;
     }
 
-    ui.separator();
+    crate::widgets::section_separator(ui);
     true
 }
 
 fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) {
-    ui.label("Hotkey:");
-    let hk_label = {
-        let m = &app.workspace.macros[idx];
-        if m.hotkey.is_empty() {
-            sqyre_domain::EMPTY_NOT_SET.to_string()
-        } else {
-            format_hotkey(&m.hotkey)
-        }
-    };
-    ui.monospace(&hk_label);
     if crate::widgets::record_icon_button(ui, "Record a global hotkey chord", !running).clicked() {
         app.hotkey_record.open(&app.run_session.macro_hotkeys);
     }
@@ -352,7 +363,14 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         if toolbar_icon_colored(ui, "x", "Variables", true, Some(vars_color)).clicked() {
             app.variables_panel.open = true;
         }
-        if toolbar_icon(ui, "✦", "AI Macro Builder", true).clicked() {
+        if toolbar_icon(
+            ui,
+            egui_phosphor::regular::SPARKLE,
+            "AI Macro Builder",
+            true,
+        )
+        .clicked()
+        {
             app.macro_prompt_builder.open_builder();
         }
         if toolbar_icon(ui, "{}", "YAML Macro Builder", true).clicked() {
@@ -365,7 +383,7 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
                 app.macro_yaml_builder.open_builder(selected);
             }
         }
-        ui.separator();
+        crate::widgets::section_separator(ui);
         if toolbar_icon(ui, "📄", "Copy (Ctrl+C)", can_copy && !running).clicked() {
             app.copy_selection(ui.ctx());
         }

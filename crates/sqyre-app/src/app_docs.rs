@@ -38,6 +38,8 @@ impl SqyreApp {
             play_ui_sounds: false,
             play_finish_sound: false,
             auto_update_check: false,
+            // Continuous repaint keeps `Harness::run` from settling; goldens stay deterministic.
+            run_button_glow: false,
             ..UserSettings::default()
         };
         SettingsUi::apply_action_colors(&settings);

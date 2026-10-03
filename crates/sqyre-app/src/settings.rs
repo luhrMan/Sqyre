@@ -1403,6 +1403,17 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        if setting_visible(q, section_hit, SETTING_RUN_GLOW)
+            && ui
+                .checkbox(&mut self.settings.run_button_glow, "Glowing Run button")
+                .on_hover_text(
+                    "Softly pulse a green glow around the Run button when a macro is ready to run.",
+                )
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
         if setting_visible(q, section_hit, SETTING_FONT_SIZE) {
             ui.add_space(crate::theme::SPACE_8);
             ui.horizontal(|ui| {
@@ -1696,6 +1707,7 @@ const SETTING_UPDATE_ACTIONS: &[&str] = &[
 
 const SETTING_COMPACT_HEADERS: &[&str] = &["compact", "program headers", "icons", "headers"];
 const SETTING_WINDOW_BORDER: &[&str] = &["window border", "border", "outline"];
+const SETTING_RUN_GLOW: &[&str] = &["run button", "glow", "pulse", "animation"];
 const SETTING_FONT_SIZE: &[&str] = &["font size", "font", "text size"];
 const SETTING_UI_SCALE: &[&str] = &["ui scale", "scale", "padding"];
 const SETTING_ACTION_COLORS: &[&str] =
@@ -1730,6 +1742,7 @@ const UPDATES_SETTINGS: &[&[&str]] = &[
 const APPEARANCE_SETTINGS: &[&[&str]] = &[
     SETTING_COMPACT_HEADERS,
     SETTING_WINDOW_BORDER,
+    SETTING_RUN_GLOW,
     SETTING_FONT_SIZE,
     SETTING_UI_SCALE,
     SETTING_ACTION_COLORS,

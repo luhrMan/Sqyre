@@ -18,8 +18,9 @@ pub use context_menu::{
     response_danger_menu, row_context_menu, row_danger_menu,
 };
 pub use controls::{
-    dirty_action_button, icon_button, icon_button_colored, icon_toggle, mouse_button_picker,
-    press_state_toggle, record_icon_button, ICON_BTN_SIDE, PHOSPHOR_FILL_FAMILY,
+    dirty_action_button, glow_halo_shapes, glow_pulse, icon_button, icon_button_colored,
+    icon_toggle, mouse_button_picker, press_state_toggle, record_icon_button, ICON_BTN_SIDE,
+    PHOSPHOR_FILL_FAMILY,
 };
 pub use dialogs::{
     confirm_cancel_row, confirm_choice_row, confirm_window, dialog_constrain_rect, dismiss_row,
@@ -35,7 +36,7 @@ pub use fields::{
     drag_field_enabled, fill_row, searchable_combo, searchable_combo_width, searchable_combo_with,
     text_field, text_field_width, W_TEXT, W_VAR,
 };
-pub use headers::{heading_with_count, title_with_count};
+pub use headers::{heading_with_count, heading_with_count_and, title_with_count};
 pub use match_settings::configure_match_blur_drag;
 pub use scroll::{
     dialog_scroll, enable_dense_row_extend, scroll_both, scroll_vertical, SCROLL_SOURCE_NO_DRAG,

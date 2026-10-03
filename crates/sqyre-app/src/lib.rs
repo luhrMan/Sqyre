@@ -766,11 +766,12 @@ impl eframe::App for SqyreApp {
         ui.painter()
             .rect_filled(ui.ctx().content_rect(), 0.0, ui.visuals().panel_fill);
 
+        ui_toolbar::top_bar(self, ui);
         ui_macro_list::show(self, ui);
 
         egui::CentralPanel::default().show(ui, |ui| {
-            ui_toolbar::brand_header(self, ui);
-            ui_toolbar::main_toolbar(ui);
+            #[cfg(target_arch = "wasm32")]
+            ui_toolbar::wasm_editor_note(ui);
             if self.workspace.macros.is_empty() {
                 let clicked = crate::widgets::empty_state(
                     ui,

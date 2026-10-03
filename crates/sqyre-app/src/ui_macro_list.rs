@@ -418,16 +418,21 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
         sqyre_persist::MIN_MACRO_LIST_WIDTH,
         sqyre_persist::MAX_MACRO_LIST_WIDTH,
     );
-    egui::Panel::left("macro_list_tags")
+    egui::Panel::right("macro_list_tags")
         .default_size(list_w)
         .size_range(sqyre_persist::MIN_MACRO_LIST_WIDTH..=sqyre_persist::MAX_MACRO_LIST_WIDTH)
+        // Default side margin is 2px tall, which the window border eats into.
+        .frame(
+            egui::Frame::side_top_panel(ui.style())
+                .inner_margin(egui::Margin::symmetric(8, crate::theme::SPACE_4 as i8)),
+        )
         .show_collapsible(ui, &mut open, |ui| {
             // Side panels persist last-frame content width; never let children
             // request more than the allocated pane or the panel grows every frame.
             let pane_w = ui.available_width();
             ui.set_max_width(pane_w);
 
-            crate::widgets::heading_with_count(ui, "Macros", {
+            let macro_count = {
                 let filter = app.macro_list_filter.trim();
                 if filter.is_empty() {
                     app.workspace.macros.len()
@@ -438,7 +443,22 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         .filter(|m| pickers::query_matches_name_or_tags(filter, &m.name, &m.tags))
                         .count()
                 }
+            };
+            let mut new_clicked = false;
+            crate::widgets::heading_with_count_and(ui, "Macros", macro_count, |ui| {
+                // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
+                // (＋, ⧉) render as tofu in egui's default font stack.
+                new_clicked = crate::widgets::icon_button_colored(
+                    ui,
+                    "+",
+                    "New macro",
+                    Some(crate::theme::MACRO_START),
+                )
+                .clicked();
             });
+            if new_clicked {
+                app.create_macro();
+            }
             // True load failures only (corrupt db / undecodable macros). Per-macro
             // validation issues are shown on the macro rows and action tree.
             // List-scoped: same color/prefix rules as StatusBanner panel footers.
@@ -451,19 +471,6 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             if let Some(err) = &app.workspace.save_error {
                 StatusBanner::paint_prefixed_error(ui, PREFIX_SAVE_ERROR, err);
             }
-            ui.horizontal(|ui| {
-                // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
-                // (＋, ⧉) render as tofu in egui's default font stack.
-                let new_resp = crate::widgets::icon_button_colored(
-                    ui,
-                    "+",
-                    "New macro",
-                    Some(crate::theme::MACRO_START),
-                );
-                if new_resp.clicked() {
-                    app.create_macro();
-                }
-            });
             ui.add(
                 egui::TextEdit::singleline(&mut app.macro_list_filter)
                     .desired_width(pane_w)

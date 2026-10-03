@@ -29,6 +29,7 @@ pub const DEFAULT_UI_FONT_SIZE: i32 = 12;
 pub const DEFAULT_UI_SCALE: f32 = 1.5;
 pub const DEFAULT_COMPACT_PROGRAM_HEADERS: bool = true;
 pub const DEFAULT_WINDOW_BORDER: bool = true;
+pub const DEFAULT_RUN_BUTTON_GLOW: bool = true;
 pub const DEFAULT_BACKUP_INTERVAL_HOURS: i32 = 24;
 pub const MIN_BACKUP_INTERVAL_HOURS: i32 = 1;
 pub const MAX_BACKUP_INTERVAL_HOURS: i32 = 720;
@@ -496,6 +497,9 @@ pub struct UserSettings {
     /// Gold border just inside the main window edge.
     #[serde(default = "default_window_border")]
     pub window_border: bool,
+    /// Pulsing green halo behind the Run button while it is enabled.
+    #[serde(default = "default_run_button_glow")]
+    pub run_button_glow: bool,
     #[serde(default = "default_hide_recording")]
     pub hide_app_during_recording: bool,
     /// Release keys/buttons still held from Down/hold actions when a macro ends.
@@ -612,6 +616,9 @@ fn default_compact_program_headers() -> bool {
 fn default_window_border() -> bool {
     DEFAULT_WINDOW_BORDER
 }
+fn default_run_button_glow() -> bool {
+    DEFAULT_RUN_BUTTON_GLOW
+}
 fn default_font_size() -> i32 {
     DEFAULT_UI_FONT_SIZE
 }
@@ -644,6 +651,7 @@ impl Default for UserSettings {
             highlight_active_action: false,
             compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
             window_border: DEFAULT_WINDOW_BORDER,
+            run_button_glow: DEFAULT_RUN_BUTTON_GLOW,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
             release_held_inputs_on_end: DEFAULT_RELEASE_HELD_INPUTS_ON_END,
             while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
