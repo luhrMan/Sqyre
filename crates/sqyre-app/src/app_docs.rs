@@ -156,6 +156,10 @@ impl SqyreApp {
         self.command_palette.open_palette();
     }
 
+    /// Whether the command palette is showing (docs / interaction harnesses).
+    pub fn docs_command_palette_open(&self) -> bool {
+        self.command_palette.is_open()
+    }
     pub fn open_data_editor(&mut self) {
         // Coordinates → Points shows the post-ScreenCap tab strip with filled form data.
         self.data_editor

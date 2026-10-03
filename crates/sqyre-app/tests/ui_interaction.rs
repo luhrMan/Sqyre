@@ -150,6 +150,41 @@ fn add_wait_from_picker_increases_tree() {
     );
 }
 
+fn press_release(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>, at: egui::Pos2) {
+    harness.hover_at(at);
+    harness.run_steps(2);
+    harness.input_mut().events.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run_steps(1);
+    let at = at + egui::vec2(2.0, 1.0);
+    harness.hover_at(at);
+    harness.input_mut().events.push(egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    harness.run_steps(2);
+}
+
+#[test]
+fn command_palette_row_responds_to_mouse_click() {
+    let mut harness = build_docs_harness([1000.0, 600.0], |_| {});
+    harness.run_steps(4);
+    harness.get_by_label("Sqyre").click();
+    harness.run_steps(4);
+    assert!(harness.state().docs_command_palette_open());
+    press_release(&mut harness, egui::pos2(500.0, 150.0));
+    assert!(
+        !harness.state().docs_command_palette_open(),
+        "clicking a palette row should run it and close the palette"
+    );
+}
+
 #[test]
 fn run_toolbar_button_is_present() {
     let mut harness = build_docs_harness([1000.0, 500.0], |_| {});
