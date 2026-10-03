@@ -365,10 +365,12 @@ pub fn tag_chip_editor(
             });
     }
 
+    // `was_open`: egui drops the draft's focus on the click frame before the popup paints,
+    // so the popup must survive that frame for the suggestion click to register.
     let show_popup = opts.enabled
         && pending.is_none()
         && !suggestions.is_empty()
-        && (tag_resp.has_focus() || nav.selected.is_some());
+        && (was_open || tag_resp.has_focus() || nav.selected.is_some());
     if show_popup {
         let popup_width = tag_resp.rect.width().max(140.0);
         egui::Popup::from_response(&tag_resp)
@@ -692,6 +694,47 @@ mod tests {
         assert_eq!(step_tag_suggest_selection(Some(2), 3, false), Some(1));
         assert_eq!(step_tag_suggest_selection(None, 3, false), None);
         assert_eq!(step_tag_suggest_selection(None, 0, true), None);
+    }
+
+    fn pointer_click(
+        harness: &mut egui_kittest::Harness<'_, (Vec<String>, String)>,
+        at: egui::Pos2,
+    ) {
+        harness.hover_at(at);
+        harness.run_steps(2);
+        for pressed in [true, false] {
+            harness.input_mut().events.push(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            });
+            harness.run_steps(1);
+        }
+        harness.run_steps(2);
+    }
+
+    #[test]
+    fn clicking_suggestion_adds_tag() {
+        use egui_kittest::kittest::Queryable;
+        let all: Vec<String> = vec!["alpha".into(), "beta".into()];
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size([400.0, 300.0])
+            .build_ui_state(
+                move |ui, (tags, draft): &mut (Vec<String>, String)| {
+                    tag_chip_editor(ui, tags, draft, &all, TagChipOptions::default());
+                },
+                (Vec::new(), String::new()),
+            );
+        harness.run_steps(2);
+        let field = harness
+            .get_by_role(egui::accesskit::Role::TextInput)
+            .rect()
+            .center();
+        pointer_click(&mut harness, field);
+        let beta = harness.get_by_label("beta").rect().center();
+        pointer_click(&mut harness, beta);
+        assert_eq!(harness.state().0, vec!["beta".to_string()]);
     }
 
     #[test]
