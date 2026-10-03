@@ -44,7 +44,9 @@ pub struct SelectionGrab {
     armed: bool,
 }
 
-// HWND handle: all use stays on the owning UI thread.
+// SAFETY: HWND is an opaque handle, never dereferenced; Win32 calls on it from a non-owning thread
+// fail (DestroyWindow errors, PeekMessage sees nothing) rather than cause UB, and the wndproc only
+// touches atomics. Thread affinity is a correctness concern only (callers keep it on the UI thread).
 unsafe impl Send for SelectionGrab {}
 
 impl SelectionGrab {
@@ -242,13 +244,18 @@ fn clear_pending() {
     ESCAPE.store(false, Ordering::Relaxed);
 }
 
+/// # Safety
+/// No preconditions; only writes a stack `POINT` via `GetCursorPos`.
 unsafe fn seed_pos_from_cursor() {
-    let mut pt = POINT::default();
-    if GetCursorPos(&mut pt).is_ok() {
-        let prev_x = POS_X.swap(pt.x, Ordering::Relaxed);
-        let prev_y = POS_Y.swap(pt.y, Ordering::Relaxed);
-        if prev_x != pt.x || prev_y != pt.y {
-            MOVED.store(true, Ordering::Relaxed);
+    // SAFETY: `pt` is a live stack out-param for GetCursorPos.
+    unsafe {
+        let mut pt = POINT::default();
+        if GetCursorPos(&mut pt).is_ok() {
+            let prev_x = POS_X.swap(pt.x, Ordering::Relaxed);
+            let prev_y = POS_Y.swap(pt.y, Ordering::Relaxed);
+            if prev_x != pt.x || prev_y != pt.y {
+                MOVED.store(true, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -259,29 +266,33 @@ unsafe extern "system" fn grab_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    match msg {
-        WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP => {
-            seed_pos_from_cursor();
-            MOVED.store(true, Ordering::Relaxed);
-            if msg == WM_LBUTTONDOWN {
-                LEFT_CLICKS.fetch_add(1, Ordering::Relaxed);
-            } else if msg == WM_LBUTTONUP {
-                LEFT_RELEASES.fetch_add(1, Ordering::Relaxed);
+    // SAFETY: invoked by the system with a valid `hwnd` of our class and its message params,
+    // which are forwarded unchanged to DefWindowProcW; other calls take no pointers.
+    unsafe {
+        match msg {
+            WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONUP => {
+                seed_pos_from_cursor();
+                MOVED.store(true, Ordering::Relaxed);
+                if msg == WM_LBUTTONDOWN {
+                    LEFT_CLICKS.fetch_add(1, Ordering::Relaxed);
+                } else if msg == WM_LBUTTONUP {
+                    LEFT_RELEASES.fetch_add(1, Ordering::Relaxed);
+                }
+                LRESULT(0)
             }
-            LRESULT(0)
-        }
-        WM_KEYDOWN => {
-            if wparam.0 as u16 == VK_ESCAPE.0 {
-                ESCAPE.store(true, Ordering::Relaxed);
+            WM_KEYDOWN => {
+                if wparam.0 as u16 == VK_ESCAPE.0 {
+                    ESCAPE.store(true, Ordering::Relaxed);
+                }
+                LRESULT(0)
             }
-            LRESULT(0)
+            WM_SETCURSOR => {
+                let _ = SetCursor(LoadCursorW(None, IDC_CROSS).ok());
+                LRESULT(1)
+            }
+            WM_DESTROY => LRESULT(0),
+            _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
-        WM_SETCURSOR => {
-            let _ = SetCursor(LoadCursorW(None, IDC_CROSS).ok());
-            LRESULT(1)
-        }
-        WM_DESTROY => LRESULT(0),
-        _ => DefWindowProcW(hwnd, msg, wparam, lparam),
     }
 }
 

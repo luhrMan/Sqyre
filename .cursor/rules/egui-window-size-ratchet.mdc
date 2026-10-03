@@ -28,9 +28,10 @@ egui::ScrollArea::vertical()
 
 ```rust
 // ✅ Window: bounds only when the body owns its ScrollArea
-crate::widgets::fit_dialog_popup(window.resizable(true).default_size([420.0, 480.0]), ctx)
+crate::widgets::fit_dialog_popup(window.resizable(true).default_size([420.0, 480.0]), ctx, id, pending_scale)
     // optional: tighter than full screen so a layout bug cannot fill the monitor
-    .max_size(egui::vec2(constrain.x.min(720.0), constrain.y.min(900.0)));
+    .max_size(crate::widgets::dialog_constrain_rect(ctx).size().min(egui::vec2(720.0, 900.0)));
+// fill_resize_body pairs with fit_dialog_popup only; fit_dialog_window's outer scroll defeats it.
 
 // ✅ Pin content without letting child min_size advance the parent
 crate::widgets::fill_resize_body(ui, |ui| { /* … */ });
@@ -50,7 +51,7 @@ crate::widgets::fill_row(
 //      footers (Save/Cancel) and later full-width content stay off-screen.
 
 // ✅ Both-axis scroll, viewport-capped (vertical-only + auto_shrink false expands width)
-crate::pickers::dialog_scroll(ui.available_width(), max_h)
+crate::pickers::dialog_scroll(crate::widgets::visible_width(ui), max_h)
     .show(ui, |ui| {
         ui.set_max_width(w);
         /* … */
@@ -66,6 +67,7 @@ Prefer `fill_resize_body`, `dialog_scroll`, `new_child` for absolute panes, and 
 | `fill_resize_body` | Window body that must fill but stay resizable |
 | `fill_row` | Fill-width field with trailing buttons on the same row |
 | `visible_width` / `visible_height` / `visible_size` | Layout budget from clip ∩ max_rect |
+| `visible_content_width` | Width minus floating scrollbar overlay (size grids after this, not before) |
 | `popup_scroll_max_height` | Scroll pane height that will not ratchet |
 
 `sqyre-overlay` cannot import `sqyre-app`; keep picker layout local (see `icons.rs`).

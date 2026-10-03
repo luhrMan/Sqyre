@@ -51,9 +51,9 @@ impl PlanarF32 {
                     let pi = (y * w + x) * ch;
                     let gi = y * w + x;
                     for c in 0..ch {
-                        // SAFETY: each row `y` writes a disjoint `gi` range within
-                        // every plane; no two threads share an index.
                         let ptr = data_addr as *mut f32;
+                        // SAFETY: `c * plane + gi < ch * plane == data.len()` and `data` outlives
+                        // the blocking par loop; each row `y` owns a disjoint `gi` range per plane.
                         unsafe {
                             *ptr.add(c * plane + gi) = src[pi + c] as f32;
                         }

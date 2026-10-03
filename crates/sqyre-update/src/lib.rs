@@ -150,7 +150,13 @@ pub fn is_flatpak_install() -> bool {
 
 /// Which install shape we are updating.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // variants are selected per target OS; all used in tests
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "variants are selected per target OS; all used in tests"
+    )
+)]
 enum InstallKind {
     LinuxBinary,
     LinuxAppImage,

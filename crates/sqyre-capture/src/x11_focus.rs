@@ -166,31 +166,39 @@ pub(crate) fn activate_window(
 // outlives this call; all Xlib calls inside are otherwise self-contained
 // (properties are null/status-checked and freed with `XFree`).
 unsafe fn list_on_display(display: *mut _XDisplay) -> Result<Vec<WindowInfo>, CaptureError> {
-    let root = XDefaultRootWindow(display);
-    let clients = client_list(display, root)?;
-    let mut out = Vec::with_capacity(clients.len());
-    let mut seen = HashSet::new();
-    for win in clients {
-        let Some(info) = window_info_of(display, win) else {
-            continue;
-        };
-        let key = format!("{}:{}:{}", info.process_path, info.process_name, info.title);
-        if !seen.insert(key) {
-            continue;
+    // SAFETY: caller guarantees `display` is a live Xlib connection; `root` and the
+    // `_NET_CLIENT_LIST` windows passed on all come from that same connection.
+    unsafe {
+        let root = XDefaultRootWindow(display);
+        let clients = client_list(display, root)?;
+        let mut out = Vec::with_capacity(clients.len());
+        let mut seen = HashSet::new();
+        for win in clients {
+            let Some(info) = window_info_of(display, win) else {
+                continue;
+            };
+            let key = format!("{}:{}:{}", info.process_path, info.process_name, info.title);
+            if !seen.insert(key) {
+                continue;
+            }
+            out.push(info);
         }
-        out.push(info);
+        Ok(out)
     }
-    Ok(out)
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection that
 // outlives this call.
 unsafe fn active_on_display(display: *mut _XDisplay) -> Result<Option<WindowInfo>, CaptureError> {
-    let root = XDefaultRootWindow(display);
-    let Some(win) = active_window_id(display, root)? else {
-        return Ok(None);
-    };
-    Ok(window_info_of(display, win))
+    // SAFETY: caller guarantees `display` is a live Xlib connection; `root` and the
+    // active window id passed on come from that same connection.
+    unsafe {
+        let root = XDefaultRootWindow(display);
+        let Some(win) = active_window_id(display, root)? else {
+            return Ok(None);
+        };
+        Ok(window_info_of(display, win))
+    }
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection and a
@@ -200,121 +208,133 @@ unsafe fn active_window_id(
     display: *mut Display,
     root: Window,
 ) -> Result<Option<Window>, CaptureError> {
-    let atom = intern(display, "_NET_ACTIVE_WINDOW")?;
-    let mut actual_type: Atom = 0;
-    let mut actual_format: i32 = 0;
-    let mut nitems: u64 = 0;
-    let mut bytes_after: u64 = 0;
-    let mut prop: *mut u8 = ptr::null_mut();
-    let status = XGetWindowProperty(
-        display,
-        root,
-        atom,
-        0,
-        1,
-        False,
-        XA_WINDOW,
-        &mut actual_type,
-        &mut actual_format,
-        &mut nitems,
-        &mut bytes_after,
-        &mut prop,
-    );
-    if status != Success as i32 || prop.is_null() || nitems == 0 {
-        if !prop.is_null() {
-            XFree(prop as *mut _);
+    // SAFETY: caller guarantees live `display` + `root`; `prop` is read only after the
+    // status/null/nitems check and freed exactly once with `XFree` on every path.
+    unsafe {
+        let atom = intern(display, "_NET_ACTIVE_WINDOW")?;
+        let mut actual_type: Atom = 0;
+        let mut actual_format: i32 = 0;
+        let mut nitems: u64 = 0;
+        let mut bytes_after: u64 = 0;
+        let mut prop: *mut u8 = ptr::null_mut();
+        let status = XGetWindowProperty(
+            display,
+            root,
+            atom,
+            0,
+            1,
+            False,
+            XA_WINDOW,
+            &mut actual_type,
+            &mut actual_format,
+            &mut nitems,
+            &mut bytes_after,
+            &mut prop,
+        );
+        if status != Success as i32 || prop.is_null() || nitems == 0 || actual_format != 32 {
+            if !prop.is_null() {
+                XFree(prop as *mut _);
+            }
+            return Ok(None);
         }
-        return Ok(None);
-    }
-    let win = *(prop as *const Window);
-    XFree(prop as *mut _);
-    if win == 0 {
-        Ok(None)
-    } else {
-        Ok(Some(win))
+        let win = *(prop as *const Window);
+        XFree(prop as *mut _);
+        if win == 0 {
+            Ok(None)
+        } else {
+            Ok(Some(win))
+        }
     }
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection and a
 // valid `win` window.
 unsafe fn window_info_of(display: *mut Display, win: Window) -> Option<WindowInfo> {
-    let title = window_title_of(display, win)?;
-    if title.trim().is_empty() {
-        return None;
-    }
-    // PID is best-effort: some Wine/games windows omit `_NET_WM_PID`, and Flatpak
-    // often cannot read another sandbox's `/proc/<pid>/exe`. Fall back to WM_CLASS.
-    let pid = window_pid(display, win).unwrap_or(0);
-    let (mut name, mut path) = if pid != 0 {
-        crate::linux::wayland::process_identity(pid)
-    } else {
-        (String::new(), String::new())
-    };
-    if let Some((instance, class)) = window_class(display, win) {
-        if name.is_empty() {
-            name = if !class.is_empty() {
-                class.clone()
-            } else {
-                instance.clone()
-            };
+    // SAFETY: caller guarantees live `display` and a `win` from that connection; every
+    // helper called here has that same contract.
+    unsafe {
+        let title = window_title_of(display, win)?;
+        if title.trim().is_empty() {
+            return None;
+        }
+        // PID is best-effort: some Wine/games windows omit `_NET_WM_PID`, and Flatpak
+        // often cannot read another sandbox's `/proc/<pid>/exe`. Fall back to WM_CLASS.
+        let pid = window_pid(display, win).unwrap_or(0);
+        let (mut name, mut path) = if pid != 0 {
+            crate::linux::wayland::process_identity(pid)
+        } else {
+            (String::new(), String::new())
+        };
+        if let Some((instance, class)) = window_class(display, win) {
+            if name.is_empty() {
+                name = if !class.is_empty() {
+                    class.clone()
+                } else {
+                    instance.clone()
+                };
+            }
+            if path.is_empty() {
+                // Prefer class (stable) over instance for Focus bindings.
+                path = if !class.is_empty() { class } else { instance };
+            }
         }
         if path.is_empty() {
-            // Prefer class (stable) over instance for Focus bindings.
-            path = if !class.is_empty() { class } else { instance };
+            path = title.clone();
         }
-    }
-    if path.is_empty() {
-        path = title.clone();
-    }
-    if name.is_empty() {
-        name = path.clone();
-    }
-    let icon = window_icon(display, win).or_else(|| {
-        if pid != 0 {
-            crate::linux::wayland::desktop_icon_for_pid(pid, &path)
-        } else {
-            crate::linux::wayland::desktop_icon_for_app_id(&path)
+        if name.is_empty() {
+            name = path.clone();
         }
-    });
-    Some(WindowInfo {
-        title,
-        process_name: name,
-        process_path: path,
-        icon,
-    })
+        let icon = window_icon(display, win).or_else(|| {
+            if pid != 0 {
+                crate::linux::wayland::desktop_icon_for_pid(pid, &path)
+            } else {
+                crate::linux::wayland::desktop_icon_for_app_id(&path)
+            }
+        });
+        Some(WindowInfo {
+            title,
+            process_name: name,
+            process_path: path,
+            icon,
+        })
+    }
 }
 
 /// `(instance, class)` from ICCCM `WM_CLASS`, if set.
 // SAFETY: callers must pass a live, non-null Xlib `display` and valid `win`;
 // `XGetClassHint` allocates `res_name`/`res_class` which we free with `XFree`.
 unsafe fn window_class(display: *mut Display, win: Window) -> Option<(String, String)> {
-    let mut hint = XClassHint {
-        res_name: std::ptr::null_mut(),
-        res_class: std::ptr::null_mut(),
-    };
-    if XGetClassHint(display, win, &mut hint) == 0 {
-        return None;
-    }
-    let instance = if hint.res_name.is_null() {
-        String::new()
-    } else {
-        let s = CStr::from_ptr(hint.res_name).to_string_lossy().into_owned();
-        XFree(hint.res_name as *mut _);
-        s
-    };
-    let class = if hint.res_class.is_null() {
-        String::new()
-    } else {
-        let s = CStr::from_ptr(hint.res_class)
-            .to_string_lossy()
-            .into_owned();
-        XFree(hint.res_class as *mut _);
-        s
-    };
-    if instance.is_empty() && class.is_empty() {
-        None
-    } else {
-        Some((instance, class))
+    // SAFETY: caller guarantees live `display` + `win`; `res_name`/`res_class` are
+    // null-checked before `CStr::from_ptr` and each is `XFree`d once after copying.
+    unsafe {
+        let mut hint = XClassHint {
+            res_name: std::ptr::null_mut(),
+            res_class: std::ptr::null_mut(),
+        };
+        if XGetClassHint(display, win, &mut hint) == 0 {
+            return None;
+        }
+        let instance = if hint.res_name.is_null() {
+            String::new()
+        } else {
+            let s = CStr::from_ptr(hint.res_name).to_string_lossy().into_owned();
+            XFree(hint.res_name as *mut _);
+            s
+        };
+        let class = if hint.res_class.is_null() {
+            String::new()
+        } else {
+            let s = CStr::from_ptr(hint.res_class)
+                .to_string_lossy()
+                .into_owned();
+            XFree(hint.res_class as *mut _);
+            s
+        };
+        if instance.is_empty() && class.is_empty() {
+            None
+        } else {
+            Some((instance, class))
+        }
     }
 }
 
@@ -323,37 +343,41 @@ unsafe fn window_class(display: *mut Display, win: Window) -> Option<(String, St
 // valid `win` window; `prop`/`nitems`/`actual_format` are checked before the
 // slice is built, and `XFree` is called on every path that allocates `prop`.
 unsafe fn window_icon(display: *mut Display, win: Window) -> Option<ProcessIcon> {
-    let atom = intern(display, "_NET_WM_ICON").ok()?;
-    let mut actual_type: Atom = 0;
-    let mut actual_format: i32 = 0;
-    let mut nitems: u64 = 0;
-    let mut bytes_after: u64 = 0;
-    let mut prop: *mut u8 = ptr::null_mut();
-    // Enough for several multi-resolution icons (CARDINALs as platform longs).
-    let status = XGetWindowProperty(
-        display,
-        win,
-        atom,
-        0,
-        1 << 18,
-        False,
-        XA_CARDINAL,
-        &mut actual_type,
-        &mut actual_format,
-        &mut nitems,
-        &mut bytes_after,
-        &mut prop,
-    );
-    if status != Success as i32 || prop.is_null() || nitems == 0 || actual_format != 32 {
-        if !prop.is_null() {
-            XFree(prop as *mut _);
+    // SAFETY: caller guarantees live `display` + `win`; the slice covers exactly `nitems`
+    // format-32 longs Xlib returned, and `prop` is `XFree`d once after it is dropped.
+    unsafe {
+        let atom = intern(display, "_NET_WM_ICON").ok()?;
+        let mut actual_type: Atom = 0;
+        let mut actual_format: i32 = 0;
+        let mut nitems: u64 = 0;
+        let mut bytes_after: u64 = 0;
+        let mut prop: *mut u8 = ptr::null_mut();
+        // Enough for several multi-resolution icons (CARDINALs as platform longs).
+        let status = XGetWindowProperty(
+            display,
+            win,
+            atom,
+            0,
+            1 << 18,
+            False,
+            XA_CARDINAL,
+            &mut actual_type,
+            &mut actual_format,
+            &mut nitems,
+            &mut bytes_after,
+            &mut prop,
+        );
+        if status != Success as i32 || prop.is_null() || nitems == 0 || actual_format != 32 {
+            if !prop.is_null() {
+                XFree(prop as *mut _);
+            }
+            return None;
         }
-        return None;
+        let slice = std::slice::from_raw_parts(prop as *const c_ulong, nitems as usize);
+        let icon = pick_net_wm_icon(slice);
+        XFree(prop as *mut _);
+        icon
     }
-    let slice = std::slice::from_raw_parts(prop as *const c_ulong, nitems as usize);
-    let icon = pick_net_wm_icon(slice);
-    XFree(prop as *mut _);
-    icon
 }
 
 /// Parse EWMH `_NET_WM_ICON` cardinals (ARGB in the low 32 bits of each long).
@@ -419,158 +443,179 @@ unsafe fn activate_on_display(
     process_path: &str,
     window_title: &str,
 ) -> Result<bool, CaptureError> {
-    let root = XDefaultRootWindow(display);
-    let clients = client_list(display, root)?;
-    for win in clients {
-        let Some(info) = window_info_of(display, win) else {
-            continue;
-        };
-        if !titles_equal(&info.title, window_title) {
-            continue;
+    // SAFETY: caller guarantees `display` is a live Xlib connection; `root` and the
+    // client windows passed on come from that same connection.
+    unsafe {
+        let root = XDefaultRootWindow(display);
+        let clients = client_list(display, root)?;
+        for win in clients {
+            let Some(info) = window_info_of(display, win) else {
+                continue;
+            };
+            if !titles_equal(&info.title, window_title) {
+                continue;
+            }
+            if !crate::window_matches_process(&info, process_path) {
+                continue;
+            }
+            return set_active_window(display, root, win).map(|()| true);
         }
-        if !crate::window_matches_process(&info, process_path) {
-            continue;
-        }
-        return set_active_window(display, root, win).map(|()| true);
+        Ok(false)
     }
-    Ok(false)
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection and a
 // valid `root` window; `prop`/`nitems` are status- and null-checked before the
 // slice is built, and `XFree` is called on every path that allocates `prop`.
 unsafe fn client_list(display: *mut Display, root: Window) -> Result<Vec<Window>, CaptureError> {
-    let atom = intern(display, "_NET_CLIENT_LIST")?;
-    let mut actual_type: Atom = 0;
-    let mut actual_format: i32 = 0;
-    let mut nitems: u64 = 0;
-    let mut bytes_after: u64 = 0;
-    let mut prop: *mut u8 = ptr::null_mut();
-    let status = XGetWindowProperty(
-        display,
-        root,
-        atom,
-        0,
-        4096,
-        False,
-        XA_WINDOW,
-        &mut actual_type,
-        &mut actual_format,
-        &mut nitems,
-        &mut bytes_after,
-        &mut prop,
-    );
-    if status != Success as i32 || prop.is_null() || nitems == 0 {
-        if !prop.is_null() {
-            XFree(prop as *mut _);
+    // SAFETY: caller guarantees live `display` + `root`; `prop` is null/status-checked
+    // before the slice is copied out, then `XFree`d once on every path.
+    unsafe {
+        let atom = intern(display, "_NET_CLIENT_LIST")?;
+        let mut actual_type: Atom = 0;
+        let mut actual_format: i32 = 0;
+        let mut nitems: u64 = 0;
+        let mut bytes_after: u64 = 0;
+        let mut prop: *mut u8 = ptr::null_mut();
+        let status = XGetWindowProperty(
+            display,
+            root,
+            atom,
+            0,
+            4096,
+            False,
+            XA_WINDOW,
+            &mut actual_type,
+            &mut actual_format,
+            &mut nitems,
+            &mut bytes_after,
+            &mut prop,
+        );
+        if status != Success as i32 || prop.is_null() || nitems == 0 || actual_format != 32 {
+            if !prop.is_null() {
+                XFree(prop as *mut _);
+            }
+            return Err(CaptureError::Message(
+                "failed to read _NET_CLIENT_LIST".into(),
+            ));
         }
-        return Err(CaptureError::Message(
-            "failed to read _NET_CLIENT_LIST".into(),
-        ));
+        let slice = std::slice::from_raw_parts(prop as *const Window, nitems as usize);
+        let out = slice.to_vec();
+        XFree(prop as *mut _);
+        Ok(out)
     }
-    let slice = std::slice::from_raw_parts(prop as *const Window, nitems as usize);
-    let out = slice.to_vec();
-    XFree(prop as *mut _);
-    Ok(out)
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection and a
 // valid `win` window; `name.value` is null-checked before `CStr::from_ptr`,
 // and `XFree` is called after the C string is copied into an owned `String`.
 unsafe fn window_title_of(display: *mut Display, win: Window) -> Option<String> {
-    if let Ok(atom) = intern(display, "_NET_WM_NAME") {
-        if let Some(s) = get_string_prop(display, win, atom) {
+    // SAFETY: caller guarantees live `display` + `win`; `name.value` is null-checked
+    // before `CStr::from_ptr` and `XFree`d once after the string is copied.
+    unsafe {
+        if let Ok(atom) = intern(display, "_NET_WM_NAME") {
+            if let Some(s) = get_string_prop(display, win, atom) {
+                if !s.trim().is_empty() {
+                    return Some(s);
+                }
+            }
+        }
+        let mut name: x11::xlib::XTextProperty = std::mem::zeroed();
+        if XGetWMName(display, win, &mut name) != 0 && !name.value.is_null() {
+            let c = CStr::from_ptr(name.value as *const _);
+            let s = c.to_string_lossy().into_owned();
+            XFree(name.value as *mut _);
             if !s.trim().is_empty() {
                 return Some(s);
             }
         }
+        None
     }
-    let mut name: x11::xlib::XTextProperty = std::mem::zeroed();
-    if XGetWMName(display, win, &mut name) != 0 && !name.value.is_null() {
-        let c = CStr::from_ptr(name.value as *const _);
-        let s = c.to_string_lossy().into_owned();
-        XFree(name.value as *mut _);
-        if !s.trim().is_empty() {
-            return Some(s);
-        }
-    }
-    None
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection and a
 // valid `win` window; `prop`/`nitems` are status- and null-checked before the
 // slice is built, and `XFree` is called on every path that allocates `prop`.
 unsafe fn get_string_prop(display: *mut Display, win: Window, atom: Atom) -> Option<String> {
-    let utf8 = intern(display, "UTF8_STRING").ok()?;
-    let mut actual_type: Atom = 0;
-    let mut actual_format: i32 = 0;
-    let mut nitems: u64 = 0;
-    let mut bytes_after: u64 = 0;
-    let mut prop: *mut u8 = ptr::null_mut();
-    let status = XGetWindowProperty(
-        display,
-        win,
-        atom,
-        0,
-        4096,
-        False,
-        utf8,
-        &mut actual_type,
-        &mut actual_format,
-        &mut nitems,
-        &mut bytes_after,
-        &mut prop,
-    );
-    if status != Success as i32 || prop.is_null() || nitems == 0 {
-        if !prop.is_null() {
-            XFree(prop as *mut _);
+    // SAFETY: caller guarantees live `display` + `win`; the byte slice covers `nitems`
+    // format-8 items returned by Xlib, and `prop` is `XFree`d once after copying.
+    unsafe {
+        let utf8 = intern(display, "UTF8_STRING").ok()?;
+        let mut actual_type: Atom = 0;
+        let mut actual_format: i32 = 0;
+        let mut nitems: u64 = 0;
+        let mut bytes_after: u64 = 0;
+        let mut prop: *mut u8 = ptr::null_mut();
+        let status = XGetWindowProperty(
+            display,
+            win,
+            atom,
+            0,
+            4096,
+            False,
+            utf8,
+            &mut actual_type,
+            &mut actual_format,
+            &mut nitems,
+            &mut bytes_after,
+            &mut prop,
+        );
+        if status != Success as i32 || prop.is_null() || nitems == 0 {
+            if !prop.is_null() {
+                XFree(prop as *mut _);
+            }
+            return None;
         }
-        return None;
+        let bytes = std::slice::from_raw_parts(prop, nitems as usize);
+        let s = String::from_utf8_lossy(bytes)
+            .trim_end_matches('\0')
+            .to_string();
+        XFree(prop as *mut _);
+        Some(s)
     }
-    let bytes = std::slice::from_raw_parts(prop, nitems as usize);
-    let s = String::from_utf8_lossy(bytes)
-        .trim_end_matches('\0')
-        .to_string();
-    XFree(prop as *mut _);
-    Some(s)
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection and a
 // valid `win` window; `prop`/`nitems` are status- and null-checked before the
 // `u32` read, and `XFree` is called on every path that allocates `prop`.
 unsafe fn window_pid(display: *mut Display, win: Window) -> Option<u32> {
-    let atom = intern(display, "_NET_WM_PID").ok()?;
-    let mut actual_type: Atom = 0;
-    let mut actual_format: i32 = 0;
-    let mut nitems: u64 = 0;
-    let mut bytes_after: u64 = 0;
-    let mut prop: *mut u8 = ptr::null_mut();
-    let status = XGetWindowProperty(
-        display,
-        win,
-        atom,
-        0,
-        1,
-        False,
-        XA_CARDINAL,
-        &mut actual_type,
-        &mut actual_format,
-        &mut nitems,
-        &mut bytes_after,
-        &mut prop,
-    );
-    if status != Success as i32 || prop.is_null() || nitems == 0 {
-        if !prop.is_null() {
-            XFree(prop as *mut _);
+    // SAFETY: caller guarantees live `display` + `win`; `prop` is read only after the
+    // status/null/nitems check and freed exactly once with `XFree` on every path.
+    unsafe {
+        let atom = intern(display, "_NET_WM_PID").ok()?;
+        let mut actual_type: Atom = 0;
+        let mut actual_format: i32 = 0;
+        let mut nitems: u64 = 0;
+        let mut bytes_after: u64 = 0;
+        let mut prop: *mut u8 = ptr::null_mut();
+        let status = XGetWindowProperty(
+            display,
+            win,
+            atom,
+            0,
+            1,
+            False,
+            XA_CARDINAL,
+            &mut actual_type,
+            &mut actual_format,
+            &mut nitems,
+            &mut bytes_after,
+            &mut prop,
+        );
+        if status != Success as i32 || prop.is_null() || nitems == 0 || actual_format != 32 {
+            if !prop.is_null() {
+                XFree(prop as *mut _);
+            }
+            return None;
         }
-        return None;
-    }
-    let pid = *(prop as *const u32);
-    XFree(prop as *mut _);
-    if pid == 0 {
-        None
-    } else {
-        Some(pid)
+        // Format-32 property items are returned as C `long`s.
+        let pid = *(prop as *const c_ulong) as u32;
+        XFree(prop as *mut _);
+        if pid == 0 {
+            None
+        } else {
+            Some(pid)
+        }
     }
 }
 
@@ -582,37 +627,41 @@ unsafe fn set_active_window(
     root: Window,
     win: Window,
 ) -> Result<(), CaptureError> {
-    let atom = intern(display, "_NET_ACTIVE_WINDOW")?;
-    let mut data = x11::xlib::ClientMessageData::new();
-    data.set_long(0, 2); // source indication: pager
-    data.set_long(1, 0);
-    data.set_long(2, 0);
-    data.set_long(3, 0);
-    data.set_long(4, 0);
+    // SAFETY: caller guarantees live `display`, `root`, `win`; the zeroed `XEvent` is
+    // fully initialized as a client message and outlives the `XSendEvent` borrow.
+    unsafe {
+        let atom = intern(display, "_NET_ACTIVE_WINDOW")?;
+        let mut data = x11::xlib::ClientMessageData::new();
+        data.set_long(0, 2); // source indication: pager
+        data.set_long(1, 0);
+        data.set_long(2, 0);
+        data.set_long(3, 0);
+        data.set_long(4, 0);
 
-    let mut event: XEvent = std::mem::zeroed();
-    event.client_message = x11::xlib::XClientMessageEvent {
-        type_: ClientMessage,
-        serial: 0,
-        send_event: False,
-        display,
-        window: win,
-        message_type: atom,
-        format: 32,
-        data,
-    };
+        let mut event: XEvent = std::mem::zeroed();
+        event.client_message = x11::xlib::XClientMessageEvent {
+            type_: ClientMessage,
+            serial: 0,
+            send_event: False,
+            display,
+            window: win,
+            message_type: atom,
+            format: 32,
+            data,
+        };
 
-    const SUBSTRUCTURE_REDIRECT: i64 = 1 << 20;
-    const SUBSTRUCTURE_NOTIFY: i64 = 1 << 19;
-    let mask = SUBSTRUCTURE_REDIRECT | SUBSTRUCTURE_NOTIFY;
-    let status = XSendEvent(display, root, False, mask, &mut event);
-    if status == 0 {
-        return Err(CaptureError::Message(
-            "XSendEvent _NET_ACTIVE_WINDOW failed".into(),
-        ));
+        const SUBSTRUCTURE_REDIRECT: i64 = 1 << 20;
+        const SUBSTRUCTURE_NOTIFY: i64 = 1 << 19;
+        let mask = SUBSTRUCTURE_REDIRECT | SUBSTRUCTURE_NOTIFY;
+        let status = XSendEvent(display, root, False, mask, &mut event);
+        if status == 0 {
+            return Err(CaptureError::Message(
+                "XSendEvent _NET_ACTIVE_WINDOW failed".into(),
+            ));
+        }
+        XFlush(display);
+        Ok(())
     }
-    XFlush(display);
-    Ok(())
 }
 
 struct OverlayWindowGeom {
@@ -624,26 +673,30 @@ struct OverlayWindowGeom {
 unsafe fn overlay_windows_on_display(
     display: *mut _XDisplay,
 ) -> Result<Vec<OverlayWindowGeom>, CaptureError> {
-    let our_pid = std::process::id();
-    let root = XDefaultRootWindow(display);
-    let clients = client_list(display, root)?;
-    let mut out = Vec::new();
-    for win in clients {
-        let Some(pid) = window_pid(display, win) else {
-            continue;
-        };
-        if pid != our_pid {
-            continue;
+    // SAFETY: caller guarantees `display` is a live Xlib connection; `root` and client
+    // windows passed to helpers come from that same connection.
+    unsafe {
+        let our_pid = std::process::id();
+        let root = XDefaultRootWindow(display);
+        let clients = client_list(display, root)?;
+        let mut out = Vec::new();
+        for win in clients {
+            let Some(pid) = window_pid(display, win) else {
+                continue;
+            };
+            if pid != our_pid {
+                continue;
+            }
+            let Some(title) = window_title_of(display, win) else {
+                continue;
+            };
+            if title.trim() != OVERLAY_WM_TITLE {
+                continue;
+            }
+            out.push(OverlayWindowGeom { win });
         }
-        let Some(title) = window_title_of(display, win) else {
-            continue;
-        };
-        if title.trim() != OVERLAY_WM_TITLE {
-            continue;
-        }
-        out.push(OverlayWindowGeom { win });
+        Ok(out)
     }
-    Ok(out)
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection that
@@ -651,89 +704,105 @@ unsafe fn overlay_windows_on_display(
 unsafe fn enable_overlay_transparency_on_display(
     display: *mut _XDisplay,
 ) -> Result<(), CaptureError> {
-    let windows = overlay_windows_on_display(display)?;
-    if windows.is_empty() {
-        return Ok(());
+    // SAFETY: caller guarantees live `display`; `attrs` is zero-initialized (valid for
+    // this POD struct) and only `CWBackPixel` is read by `XChangeWindowAttributes`.
+    unsafe {
+        let windows = overlay_windows_on_display(display)?;
+        if windows.is_empty() {
+            return Ok(());
+        }
+        let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+        attrs.background_pixel = 0;
+        let mask = CWBackPixel;
+        for geom in windows {
+            XChangeWindowAttributes(display, geom.win, mask, &mut attrs);
+        }
+        XFlush(display);
+        Ok(())
     }
-    let mut attrs: XSetWindowAttributes = std::mem::zeroed();
-    attrs.background_pixel = 0;
-    let mask = CWBackPixel;
-    for geom in windows {
-        XChangeWindowAttributes(display, geom.win, mask, &mut attrs);
-    }
-    XFlush(display);
-    Ok(())
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection that
 // outlives this call; the windows passed on come from `_NET_CLIENT_LIST` on
 // that same connection.
 unsafe fn skip_taskbar_on_display(display: *mut _XDisplay) -> Result<(), CaptureError> {
-    let our_pid = std::process::id();
-    let root = XDefaultRootWindow(display);
-    let clients = client_list(display, root)?;
-    let state = intern(display, "_NET_WM_STATE")?;
-    let skip_taskbar = intern(display, "_NET_WM_STATE_SKIP_TASKBAR")?;
-    let skip_pager = intern(display, "_NET_WM_STATE_SKIP_PAGER")?;
-    let win_type = intern(display, "_NET_WM_WINDOW_TYPE")?;
-    let type_notification = intern(display, "_NET_WM_WINDOW_TYPE_NOTIFICATION")?;
-    for win in clients {
-        let Some(pid) = window_pid(display, win) else {
-            continue;
-        };
-        if pid != our_pid {
-            continue;
+    // SAFETY: caller guarantees live `display`; `root`, client windows, and atoms all
+    // come from that connection, satisfying each helper's contract.
+    unsafe {
+        let our_pid = std::process::id();
+        let root = XDefaultRootWindow(display);
+        let clients = client_list(display, root)?;
+        let state = intern(display, "_NET_WM_STATE")?;
+        let skip_taskbar = intern(display, "_NET_WM_STATE_SKIP_TASKBAR")?;
+        let skip_pager = intern(display, "_NET_WM_STATE_SKIP_PAGER")?;
+        let win_type = intern(display, "_NET_WM_WINDOW_TYPE")?;
+        let type_notification = intern(display, "_NET_WM_WINDOW_TYPE_NOTIFICATION")?;
+        for win in clients {
+            let Some(pid) = window_pid(display, win) else {
+                continue;
+            };
+            if pid != our_pid {
+                continue;
+            }
+            let Some(title) = window_title_of(display, win) else {
+                continue;
+            };
+            if title.trim() != OVERLAY_WM_TITLE {
+                continue;
+            }
+            // Property replace so the hint sticks even if the WM ignores ClientMessage
+            // before the window is fully mapped (common for deferred egui viewports).
+            set_window_type(display, win, win_type, type_notification);
+            set_net_wm_state(display, win, state, &[skip_taskbar, skip_pager]);
+            send_net_wm_state_add(display, root, win, state, skip_taskbar, skip_pager);
         }
-        let Some(title) = window_title_of(display, win) else {
-            continue;
-        };
-        if title.trim() != OVERLAY_WM_TITLE {
-            continue;
-        }
-        // Property replace so the hint sticks even if the WM ignores ClientMessage
-        // before the window is fully mapped (common for deferred egui viewports).
-        set_window_type(display, win, win_type, type_notification);
-        set_net_wm_state(display, win, state, &[skip_taskbar, skip_pager]);
-        send_net_wm_state_add(display, root, win, state, skip_taskbar, skip_pager);
+        XFlush(display);
+        Ok(())
     }
-    XFlush(display);
-    Ok(())
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection, a valid
 // `win`, and atoms interned on that connection; the single-element `atom` buffer
 // matches the `format: 32` / `nelements: 1` passed to `XChangeProperty`.
 unsafe fn set_window_type(display: *mut Display, win: Window, win_type: Atom, type_atom: Atom) {
-    let mut atom = type_atom;
-    XChangeProperty(
-        display,
-        win,
-        win_type,
-        XA_ATOM,
-        32,
-        PropModeReplace,
-        &mut atom as *mut Atom as *mut u8,
-        1,
-    );
+    // SAFETY: caller guarantees live `display`, `win`, and atoms from that connection;
+    // `atom` is one long-sized element matching format 32 / nelements 1.
+    unsafe {
+        let mut atom = type_atom;
+        XChangeProperty(
+            display,
+            win,
+            win_type,
+            XA_ATOM,
+            32,
+            PropModeReplace,
+            &mut atom as *mut Atom as *mut u8,
+            1,
+        );
+    }
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection, a valid
 // `win`, and atoms interned on that connection; `atoms` is copied into the property.
 unsafe fn set_net_wm_state(display: *mut Display, win: Window, state_atom: Atom, atoms: &[Atom]) {
-    if atoms.is_empty() {
-        return;
+    // SAFETY: caller guarantees live `display`, `win`, and atoms from that connection;
+    // `buf` holds `buf.len()` long-sized atoms and outlives `XChangeProperty`.
+    unsafe {
+        if atoms.is_empty() {
+            return;
+        }
+        let mut buf = atoms.to_vec();
+        XChangeProperty(
+            display,
+            win,
+            state_atom,
+            XA_ATOM,
+            32,
+            PropModeReplace,
+            buf.as_mut_ptr() as *mut u8,
+            buf.len() as i32,
+        );
     }
-    let mut buf = atoms.to_vec();
-    XChangeProperty(
-        display,
-        win,
-        state_atom,
-        XA_ATOM,
-        32,
-        PropModeReplace,
-        buf.as_mut_ptr() as *mut u8,
-        buf.len() as i32,
-    );
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection, valid
@@ -747,47 +816,55 @@ unsafe fn send_net_wm_state_add(
     atom1: Atom,
     atom2: Atom,
 ) {
-    const NET_WM_STATE_ADD: i64 = 1;
-    let mut data = x11::xlib::ClientMessageData::new();
-    data.set_long(0, NET_WM_STATE_ADD);
-    data.set_long(1, atom1 as i64);
-    data.set_long(2, atom2 as i64);
-    data.set_long(3, 1); // source: application
-    data.set_long(4, 0);
+    // SAFETY: caller guarantees live `display`, `root`, `win`, and atoms; the zeroed
+    // `XEvent` is fully initialized as a client message and outlives `XSendEvent`.
+    unsafe {
+        const NET_WM_STATE_ADD: i64 = 1;
+        let mut data = x11::xlib::ClientMessageData::new();
+        data.set_long(0, NET_WM_STATE_ADD);
+        data.set_long(1, atom1 as i64);
+        data.set_long(2, atom2 as i64);
+        data.set_long(3, 1); // source: application
+        data.set_long(4, 0);
 
-    let mut event: XEvent = std::mem::zeroed();
-    event.client_message = x11::xlib::XClientMessageEvent {
-        type_: ClientMessage,
-        serial: 0,
-        send_event: True,
-        display,
-        window: win,
-        message_type: state_atom,
-        format: 32,
-        data,
-    };
+        let mut event: XEvent = std::mem::zeroed();
+        event.client_message = x11::xlib::XClientMessageEvent {
+            type_: ClientMessage,
+            serial: 0,
+            send_event: True,
+            display,
+            window: win,
+            message_type: state_atom,
+            format: 32,
+            data,
+        };
 
-    const SUBSTRUCTURE_REDIRECT: i64 = 1 << 20;
-    const SUBSTRUCTURE_NOTIFY: i64 = 1 << 19;
-    let mask = SUBSTRUCTURE_REDIRECT | SUBSTRUCTURE_NOTIFY;
-    let _ = XSendEvent(display, root, False, mask, &mut event);
+        const SUBSTRUCTURE_REDIRECT: i64 = 1 << 20;
+        const SUBSTRUCTURE_NOTIFY: i64 = 1 << 19;
+        let mask = SUBSTRUCTURE_REDIRECT | SUBSTRUCTURE_NOTIFY;
+        let _ = XSendEvent(display, root, False, mask, &mut event);
+    }
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection; the
 // `CString` outlives the `XInternAtom` call that reads its pointer.
 unsafe fn intern(display: *mut Display, name: &str) -> Result<Atom, CaptureError> {
-    let c = CString::new(name).map_err(|e| CaptureError::X11 {
-        op: "XInternAtom",
-        detail: format!("{name}: {e}"),
-    })?;
-    let atom = XInternAtom(display, c.as_ptr(), False);
-    if atom == 0 {
-        Err(CaptureError::X11 {
+    // SAFETY: caller guarantees `display` is a live Xlib connection; `c` is a
+    // NUL-terminated `CString` that outlives the `XInternAtom` call.
+    unsafe {
+        let c = CString::new(name).map_err(|e| CaptureError::X11 {
             op: "XInternAtom",
-            detail: format!("{name} failed"),
-        })
-    } else {
-        Ok(atom)
+            detail: format!("{name}: {e}"),
+        })?;
+        let atom = XInternAtom(display, c.as_ptr(), False);
+        if atom == 0 {
+            Err(CaptureError::X11 {
+                op: "XInternAtom",
+                detail: format!("{name} failed"),
+            })
+        } else {
+            Ok(atom)
+        }
     }
 }
 

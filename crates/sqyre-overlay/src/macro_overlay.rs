@@ -6,6 +6,7 @@
 //!
 //! **Other OS:** no-op for now (reintroduce per-OS later).
 
+#[cfg(target_os = "linux")]
 use crate::icons::{self as overlay_icons};
 use egui::{self};
 use parking_lot::Mutex;
@@ -13,9 +14,10 @@ use sqyre_capture::{
     get_active_window, note, window_is_our_process, window_is_transient_shell_focus,
     window_matches_binding, window_matches_program, WindowInfo,
 };
+use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, GENERAL_PROGRAM};
+#[cfg(target_os = "linux")]
 use sqyre_persist::{
-    OverlayButtonConfig, ProgramCatalog, DEFAULT_OVERLAY_BUTTON_SIZE, GENERAL_PROGRAM,
-    MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
+    DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
 };
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -265,7 +267,10 @@ impl MacroOverlay {
     }
 
     /// Show/hide buttons from settings + focus gate; drain native clicks into `pending_macros`.
-    #[allow(clippy::too_many_arguments)] // ctx + button set, catalog, queues, and relocate in one sync
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "ctx + button set, catalog, queues, and relocate in one sync"
+    )]
     pub fn sync(
         &mut self,
         ctx: &egui::Context,
@@ -635,6 +640,10 @@ fn keep_focus_gated_button(
     btn.visibility_gate.is_active() && win.is_none()
 }
 
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(dead_code, reason = "drawn only by the Linux X11 host")
+)]
 struct ButtonDraw {
     cfg: OverlayButtonConfig,
     busy: bool,

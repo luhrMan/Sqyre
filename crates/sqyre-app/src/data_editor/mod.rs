@@ -125,7 +125,10 @@ impl EditorTab {
 
     /// Capture / match tools unavailable in the WASM GUI editor.
     /// Called from `switch_tab` under `cfg(target_arch = "wasm32")`.
-    #[allow(dead_code)]
+    #[cfg_attr(
+        not(any(test, target_arch = "wasm32")),
+        expect(dead_code, reason = "only the WASM editor hides desktop-only tabs")
+    )]
     pub(crate) fn is_desktop_only(self) -> bool {
         matches!(self, Self::ScreenCap | Self::PixelCheck)
     }
@@ -418,7 +421,10 @@ impl DataEditor {
     ///
     /// Shown while a button is selected for editing, even before Save is clicked.
     /// Called from `sync_macro_overlay` when `overlay-buttons` is enabled.
-    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
+    #[cfg_attr(
+        not(feature = "overlay-buttons"),
+        allow(dead_code, reason = "used only by live overlay buttons")
+    )]
     pub fn overlay_edit_preview(&self) -> Option<OverlayButtonConfig> {
         if !self.open || !matches!(self.tab, EditorTab::Overlay) {
             return None;
@@ -473,7 +479,10 @@ impl DataEditor {
     }
 
     /// True while the Data Editor Overlay tab is open (drag-to-relocate mode).
-    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
+    #[cfg_attr(
+        not(feature = "overlay-buttons"),
+        allow(dead_code, reason = "used only by live overlay buttons")
+    )]
     pub fn overlay_relocate_mode(&self) -> bool {
         self.open && matches!(self.tab, EditorTab::Overlay)
     }
@@ -482,7 +491,10 @@ impl DataEditor {
     ///
     /// `None` when the Overlay tab is closed, or open with no program selected
     /// (then no settings-backed buttons are hosted for drag).
-    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
+    #[cfg_attr(
+        not(feature = "overlay-buttons"),
+        allow(dead_code, reason = "used only by live overlay buttons")
+    )]
     pub fn overlay_relocate_program(&self) -> Option<&str> {
         if self.overlay_relocate_mode() {
             self.selected_program.as_deref()
@@ -492,7 +504,10 @@ impl DataEditor {
     }
 
     /// Apply desktop positions from overlay drag-relocate; clears catalog point refs.
-    #[cfg_attr(not(feature = "overlay-buttons"), allow(dead_code))]
+    #[cfg_attr(
+        not(feature = "overlay-buttons"),
+        allow(dead_code, reason = "used only by live overlay buttons")
+    )]
     pub fn apply_overlay_relocations(
         &mut self,
         settings: &mut UserSettings,

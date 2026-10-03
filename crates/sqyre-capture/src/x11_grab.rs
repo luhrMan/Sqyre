@@ -226,32 +226,36 @@ unsafe fn apply_x_event(
     out: &mut GrabPoll,
     last_pos: &mut (i32, i32),
 ) {
-    // Compare against Xlib event-type constants with `==` (not `match`) so Clippy's
-    // `non_upper_case_globals` lint does not fire on the X11 names.
-    let ty = event.get_type();
-    if ty == MotionNotify {
-        let motion = &*(event as *const XEvent as *const x11::xlib::XMotionEvent);
-        *last_pos = (motion.x_root, motion.y_root);
-        out.moved = true;
-    } else if ty == ButtonPress {
-        let button = &*(event as *const XEvent as *const x11::xlib::XButtonEvent);
-        *last_pos = (button.x_root, button.y_root);
-        out.moved = true;
-        if button.button == 1 {
-            out.left_clicks = out.left_clicks.saturating_add(1);
-        }
-    } else if ty == ButtonRelease {
-        let button = &*(event as *const XEvent as *const x11::xlib::XButtonEvent);
-        *last_pos = (button.x_root, button.y_root);
-        out.moved = true;
-        if button.button == 1 {
-            out.left_releases = out.left_releases.saturating_add(1);
-        }
-    } else if ty == KeyPress {
-        let key = &*(event as *const XEvent as *const x11::xlib::XKeyEvent);
-        let keysym = XKeycodeToKeysym(display, key.keycode as u8, 0);
-        if keysym == XK_ESCAPE {
-            out.escape = true;
+    // SAFETY: caller passes an `XEvent` filled by `XNextEvent` on live `display`; each
+    // cast reads the union variant matching the checked `get_type()`.
+    unsafe {
+        // Compare against Xlib event-type constants with `==` (not `match`) so Clippy's
+        // `non_upper_case_globals` lint does not fire on the X11 names.
+        let ty = event.get_type();
+        if ty == MotionNotify {
+            let motion = &*(event as *const XEvent as *const x11::xlib::XMotionEvent);
+            *last_pos = (motion.x_root, motion.y_root);
+            out.moved = true;
+        } else if ty == ButtonPress {
+            let button = &*(event as *const XEvent as *const x11::xlib::XButtonEvent);
+            *last_pos = (button.x_root, button.y_root);
+            out.moved = true;
+            if button.button == 1 {
+                out.left_clicks = out.left_clicks.saturating_add(1);
+            }
+        } else if ty == ButtonRelease {
+            let button = &*(event as *const XEvent as *const x11::xlib::XButtonEvent);
+            *last_pos = (button.x_root, button.y_root);
+            out.moved = true;
+            if button.button == 1 {
+                out.left_releases = out.left_releases.saturating_add(1);
+            }
+        } else if ty == KeyPress {
+            let key = &*(event as *const XEvent as *const x11::xlib::XKeyEvent);
+            let keysym = XKeycodeToKeysym(display, key.keycode as u8, 0);
+            if keysym == XK_ESCAPE {
+                out.escape = true;
+            }
         }
     }
 }

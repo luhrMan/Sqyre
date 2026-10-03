@@ -381,7 +381,10 @@ pub struct SqyreApp {
     /// One-frame OS-resize event for proportional floating-dialog scale.
     pending_viewport_scale: Option<crate::widgets::ViewportScaleEvent>,
     /// WASM async YAML import result (unused on native).
-    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+    #[cfg_attr(
+        not(target_arch = "wasm32"),
+        expect(dead_code, reason = "async YAML import exists only on wasm")
+    )]
     pending_import: PendingImport,
     /// Work handed to worker threads and polled each frame (native only).
     #[cfg(not(target_arch = "wasm32"))]
@@ -476,7 +479,6 @@ impl SqyreApp {
         add_action_picker.load_from_settings(settings_ui.settings());
 
         let (db, macros, catalog, load_error) = match Database::load_default_with_warnings() {
-            #[cfg_attr(not(target_arch = "wasm32"), allow(unused_mut))]
             Ok((mut db, load_warnings)) => {
                 let mut catalog = Arc::unwrap_or_clone(db.program_catalog().unwrap_or_default());
                 let mut macros: Vec<_> = db.macros.values().cloned().collect();

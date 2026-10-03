@@ -1,0 +1,16 @@
+---
+description: Keep the wasm32 GUI-only editor building when touching sqyre-app or its shared deps
+globs: Cargo.toml, crates/sqyre-app/**, crates/sqyre-overlay/**, crates/sqyre-ui-*/**, crates/sqyre-domain/**, crates/sqyre-persist/**, crates/sqyre-serialize/**, crates/sqyre-validate/**, crates/sqyre-varref/**, crates/sqyre-hotkeys/**, crates/sqyre-ports/**
+alwaysApply: false
+---
+
+# WASM editor
+
+`sqyre-app` also builds for `wasm32-unknown-unknown` with `--no-default-features` as a browser-only macro editor (import/export `db.yaml`; no Run, capture, OCR, hotkeys, tray, or overlays).
+
+- Runtime code sits behind the `native-runtime` / `hooks` / `overlay-buttons` features or `#[cfg(not(target_arch = "wasm32"))]`. New native deps go under `[target.'cfg(not(target_arch = "wasm32"))'.dependencies]` or an optional feature dep — never in the unconditional `[dependencies]` of `sqyre-app` or crates it always pulls in.
+- Crates in the editor graph — `sqyre-domain`, `-varref`, `-ui-model`, `-ui-theme`, `-ports`, `-persist`, `-serialize`, `-validate`, `-hotkeys` (no `hooks`), `-overlay` (no `runtime`) — stay wasm-clean: no `std::thread`, `std::fs`, `std::process`, `std::env::{temp_dir,current_exe}` or OS APIs without a `#[cfg(target_arch = "wasm32")]` split. Time via `web-time` (`std` `Instant`/`SystemTime::now` panic). RNG: keep workspace `uuid` `js`; a direct `getrandom` dep needs its wasm backend feature.
+- Never block the browser main thread (no `block_on`/`pollster`, sync `rfd::FileDialog`, sleeps, busy-waits). `wasm_bindgen_futures::spawn_local`, stash the result, poll it in `update` — pattern in `wasm_io.rs`; file dialogs go through `file_dialogs.rs`.
+- Panics/logs: `console_error_panic_hook` + `eframe::WebLogger` (`main.rs`). `eprintln!` (incl. `crate::log::warn`) is discarded in the browser.
+- Hide or disable runtime-only UI on wasm rather than showing broken controls.
+- Verify with `make wasm-check` (CI; `cargo check` only — no clippy/tests on wasm). `make wasm` → `bin/wasm/` for deploys; never ship `trunk serve`'s `dist/`.

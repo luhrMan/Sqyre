@@ -47,17 +47,6 @@ impl FixedResolver {
         }
     }
 
-    #[allow(dead_code)]
-    pub const fn with_grid(rows: i32, cols: i32) -> Self {
-        Self {
-            point: (0, 0),
-            area: (0, 0, 100, 100),
-            grid: Some((rows, cols)),
-            collections: None,
-            atlas_members: None,
-        }
-    }
-
     pub fn with_atlas(collections: Vec<AtlasMemberSpec>, members: Vec<String>) -> Self {
         let mut map = HashMap::new();
         for spec in collections {

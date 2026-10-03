@@ -1,37 +1,25 @@
 ---
-description: Run make fmt/check/clippy/test after writing or changing code
+description: Run make fmt/check/test after writing or changing code
 alwaysApply: true
 ---
 
 # Verify Newly Written Code
 
-After writing or materially changing code in this repo, run the Makefile quality gate before considering the work done. Do not skip this for “small” edits that touch Rust, build, or packaging.
-
-## Required sequence
-
-Run in this order from the workspace root:
+After writing or materially changing Rust, build, or packaging files, run from the workspace root, in order:
 
 1. `make fmt` — apply rustfmt
-2. `make check` — `check-fmt` + clippy (`-D warnings`) + `cargo deny`
-3. `make clippy` — clippy again explicitly (`-D warnings`)
-4. `make test` — workspace tests (nextest when available)
+2. `make check` — `check-fmt` + clippy (`-D warnings`, default features) + `cargo deny` (Linux graph)
+3. `make test` — nextest workspace + Linux `sqyre-capture --features portal-capture` pass; crate-only `cargo test -p …` does not count
 
-Fix failures before finishing. Do not silence Clippy with broad `#[allow]` or weaken workspace lint policy to land the change.
+All must exit 0 before saying the work is done or opening a PR. On failure, fix the cause and re-run from `make fmt`. Do not silence Clippy with broad `#[allow]` or weaken workspace lint policy.
 
-## When to run
+Also run when relevant (CI enforces the first three):
+- Dependencies changed → `make machete`
+- Code in a crate listed in `scripts/coverage-floors.json` → `make coverage-floors`
+- `sqyre-app` UI or crates it uses → `make wasm-check` (see `wasm-editor`)
+- `portal-capture` / Wayland code → `cargo clippy -p sqyre-capture --features portal-capture --all-targets -- -D warnings`
+- Windows-only code (`win_*`, `#[cfg(windows)]`) → `make windows`, or state it was not compiled
 
-- After implementing a feature, fix, or refactor
-- After resolving review or CI feedback that changed code
-- Before saying the task is complete or opening a PR
+The final summary names which gates ran and their result, plus any blocker.
 
-## When you may skip
-
-- Pure docs/markdown/rule edits with no code or build-file changes
-- Read-only investigation with no writes
-- The user explicitly asked not to run checks
-
-## Notes
-
-- Prefer these Makefile targets over ad-hoc `cargo fmt` / `cargo clippy` / `cargo test` so flags match CI.
-- `make check` already includes clippy; still run `make clippy` as listed so the full gate is explicit and failures are obvious.
-- If a target fails, fix the cause and re-run from `make fmt` through the failing step (then continue the rest).
+Skip only for docs/markdown/rule-only edits, read-only investigation, or when the user explicitly waives it. Prefer these targets over ad-hoc cargo so flags match CI.

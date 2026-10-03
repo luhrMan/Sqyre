@@ -5,7 +5,10 @@
 //! `ok_fg`, which are reserved for chrome and banners.
 
 #[cfg(feature = "native-runtime")]
-#[allow(clippy::too_many_arguments)] // pixel-check helpers share LTRB, match settings, and cache payloads
+#[expect(
+    clippy::too_many_arguments,
+    reason = "pixel-check helpers share LTRB, match settings, and cache payloads"
+)]
 mod inner {
     use crate::data_editor_preview::variant_display_label;
     use crate::icon_variants::variant_path;

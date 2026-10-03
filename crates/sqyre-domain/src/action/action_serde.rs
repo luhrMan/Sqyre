@@ -34,7 +34,7 @@ fn is_default_smooth_delay(v: &i32) -> bool {
 // `type_` fields are only read by the derived untagged-enum matching logic
 // (each variant is tried in turn and only matches if its tag deserializes),
 // never by ordinary field access, so they trip `dead_code` post-monomorphization.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "`type_` tags are read only by untagged matching")]
 #[derive(Deserialize)]
 #[serde(untagged)]
 enum ActionKindWire {

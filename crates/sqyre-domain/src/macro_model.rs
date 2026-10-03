@@ -29,7 +29,6 @@ pub struct Macro {
     pub variable_decls: Vec<VariableDecl>,
     /// Runtime store; never persisted.
     #[serde(skip)]
-    #[cfg_attr(test, allow(dead_code))]
     pub variables: VariableStore,
 }
 

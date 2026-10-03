@@ -17,12 +17,12 @@ Audience: **casual automation beginners first**. Power-user / technical controls
 ### Sortable
 - Named lists (macros, items, programs, coords, tags, …) present a **stable, predictable order** (usually display-name, case-insensitive).
 - If order matters to the user, expose an obvious control (column header, sort menu, or existing domain sort) — do not rely on insertion order alone.
-- Reuse helpers like `sort_by_display_name` / existing `sort_by` patterns rather than ad-hoc sorts that disagree across panels.
+- Reuse `macro_meta::cmp_display_name` (macros) / `pickers::sort_by_display_name` (name/id rows) rather than ad-hoc sorts that disagree across panels.
 
 ### Searchable
 - Any list that can grow beyond ~a screenful needs a **filter field** with `hint_text` (what to type) and case-insensitive match on the labels users see.
-- Prefer shared widgets: `searchable_combo` / `searchable_combo_with` for growing dropdowns; pane filters like `macro_list_filter` / command-palette query for free lists.
-- Empty filter results: show a short plain message (“No matching …”), never a blank void.
+- Prefer `widgets::searchable_combo` / `searchable_combo_with` for growing dropdowns; for free lists mirror the macro-list filter (`ui_macro_list.rs`) or the command-palette query.
+- Empty / no-match bodies: `widgets::list_vacancy` / `empty_state` — never a blank void.
 
 ### Navigable (local first)
 - Prefer **in-panel** keyboard behavior over new global chords. Do not steal keys while recording macros/hotkeys/chords.
@@ -32,7 +32,7 @@ Audience: **casual automation beginners first**. Power-user / technical controls
   - **Esc** — cancel / close / clear selection as appropriate
   - **type-to-filter** when a search field exists (focus it on open when that is the main job, e.g. command palette)
 - Keep mouse/click paths complete; keyboard is additive accessibility, not the only way.
-- Mirror proven patterns: command palette (`consume_key` for Esc/Enter/arrows), dialogs (`widgets/dialogs`), var-pill suggest (`var_pills`).
+- Mirror proven patterns: `widgets::consume_escape` (Esc closes the topmost layer only — never raw `consume_key(Escape)`), `poll_confirm_keys`, `save_cancel_row` / `confirm_window`, command palette, `var_pills`.
 
 ### Usable
 - Primary actions are visible buttons/menus — not gesture- or hotkey-only.
@@ -50,11 +50,21 @@ Audience: **casual automation beginners first**. Power-user / technical controls
 Keep surfaces **visually interchangeable**: same control kinds should look and lay out the same so refactors stay safe and screenshots/docs stay reliable.
 
 - **Compose shared primitives** — `theme::*` (colors, framed sections, overlays), `widgets::*` (icon/controls, fields, dialogs, headers, tags), `pickers::*`, `tip_section` / `tip_wrapped_section` / `tip_advanced`. Do not copy-paste one-off spacing, strokes, or button chrome.
-- **No local palettes** — use `theme::PRIMARY`, `MACRO_START`, `MACRO_STOP`, `accent_dim`, `overlay_panel_fill`, `contrast_fg`, and egui `TextStyle` / `ui.visuals()`. Avoid hard-coded `Color32::from_rgb(…)` in panel code unless extending `theme/` tokens.
+- **No local palettes** — use `theme::PRIMARY`, `MACRO_START`, `MACRO_STOP`, `accent_dim`, `overlay_panel_fill`, `contrast_fg`, and egui `TextStyle` / `ui.visuals()`. Avoid hard-coded `Color32::from_rgb(…)` in panel code unless adding a token in `sqyre-ui-theme` (shared with overlay) or `sqyre-app/src/theme/tokens.rs` (app-only).
 - **Stable geometry** — prefer shared widths (`W_TEXT`, `W_VAR`), `fit_dialog_window` / `fit_dialog_popup` / `fill_resize_body`, and `dialog_scroll`. Obey [egui-window-size-ratchet](egui-window-size-ratchet.mdc); do not invent per-panel size math that drifts.
 - **Match the nearest sibling** — new rows, toolbars, lists, and confirm footers should mirror an adjacent panel of the same kind (same icon size, gap, weak-count suffix, Save/Cancel row). Visual novelty needs an explicit product ask.
 - **Extract on repeat** — if the same layout appears twice, lift it into `widgets` / `theme` / `tip_*` instead of diverging copies (easier refactors, fewer look bugs).
 - **Predictable density** — reuse existing section gaps and `horizontal_wrapped` patterns from tip sections; do not mix dense custom grids next to standard framed sections without cause.
+
+### Accessible (AccessKit is on via eframe defaults)
+- Icon-only buttons use `widgets::icon_button(ui, glyph, tip)`, which sets an AccessKit label. Custom-painted widgets call `response.widget_info(|| WidgetInfo::labeled(..))`; a glyph is not a label (screen readers and `egui_kittest` `get_by_label` depend on it).
+- Do not signal state by color alone; pair with icon/text. Text on custom fills uses `contrast_fg(bg)`.
+- Request focus once on open (track a flag), not every frame; keep Tab order = add order.
+
+### Immediate-mode hygiene
+- Stable IDs: `id_salt(..)` on ScrollArea/ComboBox/CollapsingHeader inside loops; `ui.push_id(domain_id, ..)`, never a row index (sort/filter shifts state).
+- No per-frame disk I/O, image decode, or large sorts/filters — cache and invalidate on change.
+- Prefer `request_repaint_after(d)`; unconditional `request_repaint()` only while animating or a run is active.
 
 ## Checklist (new or touched UI)
 
@@ -65,6 +75,7 @@ Keep surfaces **visually interchangeable**: same control kinds should look and l
 - [ ] Labels, hints, and errors readable by a non-technical user
 - [ ] Reused `theme::*` tokens/visuals, `widgets::*` (incl. controls), `pickers::*`, `tip_*` / `tip_advanced` (no one-off chrome/colors)
 - [ ] Layout matches a sibling of the same kind; dialogs use shared fit/scroll helpers
+- [ ] Icon/custom widgets labeled; stable ids in loops; no heavy per-frame work
 
 ## Out of scope unless asked
 

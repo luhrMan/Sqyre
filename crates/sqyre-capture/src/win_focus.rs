@@ -133,28 +133,37 @@ fn enum_top_level_windows() -> Result<Vec<HWND>, AutomationError> {
 }
 
 unsafe extern "system" fn enum_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    // SAFETY: `lparam` is the `Vec<HWND>` pointer passed from `enum_top_level_windows`.
-    let list = &mut *(lparam.0 as *mut Vec<HWND>);
-    if is_listable_window(hwnd) {
-        list.push(hwnd);
+    unsafe {
+        // SAFETY: `lparam` is the `Vec<HWND>` pointer passed from `enum_top_level_windows`.
+        let list = &mut *(lparam.0 as *mut Vec<HWND>);
+        if is_listable_window(hwnd) {
+            list.push(hwnd);
+        }
+        BOOL(1)
     }
-    BOOL(1)
 }
 
 /// Visible top-level app windows (no owner, not tool windows) with a title.
+///
+/// # Safety
+/// `hwnd` should come from `EnumWindows`; the queries tolerate stale handles by failing.
 unsafe fn is_listable_window(hwnd: HWND) -> bool {
-    if !IsWindowVisible(hwnd).as_bool() {
-        return false;
+    // SAFETY: read-only Win32 window queries on a caller-supplied HWND; a destroyed window
+    // makes them return false/0/Err rather than touching invalid memory.
+    unsafe {
+        if !IsWindowVisible(hwnd).as_bool() {
+            return false;
+        }
+        // Owned windows (e.g. dialogs) — Err means no owner.
+        if GetWindow(hwnd, GW_OWNER).is_ok() {
+            return false;
+        }
+        let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
+        if ex & WS_EX_TOOLWINDOW.0 != 0 {
+            return false;
+        }
+        matches!(window_title_of(hwnd), Some(t) if !t.trim().is_empty())
     }
-    // Owned windows (e.g. dialogs) — Err means no owner.
-    if GetWindow(hwnd, GW_OWNER).is_ok() {
-        return false;
-    }
-    let ex = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-    if ex & WS_EX_TOOLWINDOW.0 != 0 {
-        return false;
-    }
-    matches!(window_title_of(hwnd), Some(t) if !t.trim().is_empty())
 }
 
 fn window_info_of(hwnd: HWND) -> Option<WindowInfo> {
@@ -289,120 +298,128 @@ fn icon_from_exe(path: &str) -> Option<ProcessIcon> {
 }
 
 /// Convert `HICON` to RGBA. When `destroy` is true, destroys the icon afterward.
+///
+/// # Safety
+/// `hicon` is a valid icon handle; with `destroy`, the caller owns it and must not use it after.
 unsafe fn hicon_to_rgba(hicon: HICON, destroy: bool) -> Option<ProcessIcon> {
-    let mut info = ICONINFO::default();
-    if GetIconInfo(hicon, &mut info).is_err() {
-        if destroy {
-            let _ = DestroyIcon(hicon);
+    // SAFETY: caller contract on `hicon`/`destroy`; `bits` is a live 32bpp top-down DIB of
+    // `width * height * 4` bytes, read only before `dib` is deleted.
+    unsafe {
+        let mut info = ICONINFO::default();
+        if GetIconInfo(hicon, &mut info).is_err() {
+            if destroy {
+                let _ = DestroyIcon(hicon);
+            }
+            return None;
         }
-        return None;
-    }
 
-    let color = info.hbmColor;
-    let mask = info.hbmMask;
-    let mut bm = BITMAP::default();
-    let hbmp = if !color.is_invalid() { color } else { mask };
-    if hbmp.is_invalid()
-        || GetObjectW(
-            HGDIOBJ::from(hbmp),
-            size_of::<BITMAP>() as i32,
-            Some(&mut bm as *mut BITMAP as *mut _),
-        ) == 0
-    {
+        let color = info.hbmColor;
+        let mask = info.hbmMask;
+        let mut bm = BITMAP::default();
+        let hbmp = if !color.is_invalid() { color } else { mask };
+        if hbmp.is_invalid()
+            || GetObjectW(
+                HGDIOBJ::from(hbmp),
+                size_of::<BITMAP>() as i32,
+                Some(&mut bm as *mut BITMAP as *mut _),
+            ) == 0
+        {
+            if !color.is_invalid() {
+                let _ = DeleteObject(HGDIOBJ::from(color));
+            }
+            if !mask.is_invalid() {
+                let _ = DeleteObject(HGDIOBJ::from(mask));
+            }
+            if destroy {
+                let _ = DestroyIcon(hicon);
+            }
+            return None;
+        }
+
+        let width = bm.bmWidth.max(1);
+        let height = bm.bmHeight.unsigned_abs().max(1);
+
         if !color.is_invalid() {
             let _ = DeleteObject(HGDIOBJ::from(color));
         }
         if !mask.is_invalid() {
             let _ = DeleteObject(HGDIOBJ::from(mask));
         }
-        if destroy {
-            let _ = DestroyIcon(hicon);
+
+        let bmi = BITMAPINFO {
+            bmiHeader: BITMAPINFOHEADER {
+                biSize: size_of::<BITMAPINFOHEADER>() as u32,
+                biWidth: width,
+                biHeight: -(height as i32), // top-down
+                biPlanes: 1,
+                biBitCount: 32,
+                biCompression: 0, // BI_RGB
+                biSizeImage: 0,
+                biXPelsPerMeter: 0,
+                biYPelsPerMeter: 0,
+                biClrUsed: 0,
+                biClrImportant: 0,
+            },
+            bmiColors: [Default::default()],
+        };
+
+        let screen = GetDC(None);
+        if screen.is_invalid() {
+            if destroy {
+                let _ = DestroyIcon(hicon);
+            }
+            return None;
         }
-        return None;
-    }
-
-    let width = bm.bmWidth.max(1);
-    let height = bm.bmHeight.unsigned_abs().max(1);
-
-    if !color.is_invalid() {
-        let _ = DeleteObject(HGDIOBJ::from(color));
-    }
-    if !mask.is_invalid() {
-        let _ = DeleteObject(HGDIOBJ::from(mask));
-    }
-
-    let bmi = BITMAPINFO {
-        bmiHeader: BITMAPINFOHEADER {
-            biSize: size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: width,
-            biHeight: -(height as i32), // top-down
-            biPlanes: 1,
-            biBitCount: 32,
-            biCompression: 0, // BI_RGB
-            biSizeImage: 0,
-            biXPelsPerMeter: 0,
-            biYPelsPerMeter: 0,
-            biClrUsed: 0,
-            biClrImportant: 0,
-        },
-        bmiColors: [Default::default()],
-    };
-
-    let screen = GetDC(None);
-    if screen.is_invalid() {
-        if destroy {
-            let _ = DestroyIcon(hicon);
-        }
-        return None;
-    }
-    let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
-    let dib = match CreateDIBSection(Some(screen), &bmi, DIB_RGB_COLORS, &mut bits, None, 0) {
-        Ok(h) if !h.is_invalid() && !bits.is_null() => h,
-        _ => {
+        let mut bits: *mut core::ffi::c_void = std::ptr::null_mut();
+        let dib = match CreateDIBSection(Some(screen), &bmi, DIB_RGB_COLORS, &mut bits, None, 0) {
+            Ok(h) if !h.is_invalid() && !bits.is_null() => h,
+            _ => {
+                ReleaseDC(None, screen);
+                if destroy {
+                    let _ = DestroyIcon(hicon);
+                }
+                return None;
+            }
+        };
+        let mem = CreateCompatibleDC(Some(screen));
+        if mem.is_invalid() {
+            let _ = DeleteObject(HGDIOBJ::from(dib));
             ReleaseDC(None, screen);
             if destroy {
                 let _ = DestroyIcon(hicon);
             }
             return None;
         }
-    };
-    let mem = CreateCompatibleDC(Some(screen));
-    if mem.is_invalid() {
-        let _ = DeleteObject(HGDIOBJ::from(dib));
+        let old = SelectObject(mem, HGDIOBJ::from(dib));
+        let draw_ok =
+            DrawIconEx(mem, 0, 0, hicon, width, height as i32, 0, None, DI_NORMAL).is_ok();
+        SelectObject(mem, old);
+        let _ = DeleteDC(mem);
         ReleaseDC(None, screen);
+
+        let icon = if draw_ok {
+            let px = (width as usize).checked_mul(height as usize)?;
+            let src = std::slice::from_raw_parts(bits as *const u8, px * 4);
+            let mut rgba = Vec::with_capacity(px * 4);
+            // DIB is BGRA.
+            for chunk in src.chunks_exact(4) {
+                rgba.extend_from_slice(&[chunk[2], chunk[1], chunk[0], chunk[3]]);
+            }
+            Some(ProcessIcon {
+                width: width as u32,
+                height,
+                rgba,
+            })
+        } else {
+            None
+        };
+
+        let _ = DeleteObject(HGDIOBJ::from(dib));
         if destroy {
             let _ = DestroyIcon(hicon);
         }
-        return None;
+        icon
     }
-    let old = SelectObject(mem, HGDIOBJ::from(dib));
-    let draw_ok = DrawIconEx(mem, 0, 0, hicon, width, height as i32, 0, None, DI_NORMAL).is_ok();
-    SelectObject(mem, old);
-    let _ = DeleteDC(mem);
-    ReleaseDC(None, screen);
-
-    let icon = if draw_ok {
-        let px = (width as usize).checked_mul(height as usize)?;
-        let src = std::slice::from_raw_parts(bits as *const u8, px * 4);
-        let mut rgba = Vec::with_capacity(px * 4);
-        // DIB is BGRA.
-        for chunk in src.chunks_exact(4) {
-            rgba.extend_from_slice(&[chunk[2], chunk[1], chunk[0], chunk[3]]);
-        }
-        Some(ProcessIcon {
-            width: width as u32,
-            height,
-            rgba,
-        })
-    } else {
-        None
-    };
-
-    let _ = DeleteObject(HGDIOBJ::from(dib));
-    if destroy {
-        let _ = DestroyIcon(hicon);
-    }
-    icon
 }
 
 fn set_foreground(hwnd: HWND) -> Result<(), AutomationError> {
@@ -513,14 +530,16 @@ pub fn enable_overlay_window_transparency() -> Result<(), CaptureError> {
 }
 
 unsafe extern "system" fn enum_overlay_windows_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
-    // SAFETY: `lparam` is the `Vec<HWND>` pointer from `enable_overlay_window_transparency`.
-    let list = &mut *(lparam.0 as *mut Vec<HWND>);
-    // Include tool windows (`with_taskbar(false)` → WS_EX_TOOLWINDOW); overlays are not
-    // "listable" app windows.
-    if IsWindowVisible(hwnd).as_bool() {
-        list.push(hwnd);
+    unsafe {
+        // SAFETY: `lparam` is the `Vec<HWND>` pointer from `enable_overlay_window_transparency`.
+        let list = &mut *(lparam.0 as *mut Vec<HWND>);
+        // Include tool windows (`with_taskbar(false)` → WS_EX_TOOLWINDOW); overlays are not
+        // "listable" app windows.
+        if IsWindowVisible(hwnd).as_bool() {
+            list.push(hwnd);
+        }
+        BOOL(1)
     }
-    BOOL(1)
 }
 
 fn enable_dwm_per_pixel_alpha(hwnd: HWND) -> Result<(), CaptureError> {

@@ -331,7 +331,10 @@ pub(crate) fn execute_navigate_key(
     ))
 }
 
-#[allow(clippy::too_many_arguments)] // nav step: executor, macro, atlas cell, options, and outputs together
+#[expect(
+    clippy::too_many_arguments,
+    reason = "nav step: executor, macro, atlas cell, options, and outputs together"
+)]
 fn on_nav(
     exec: &mut Executor<'_>,
     action_id: ActionId,

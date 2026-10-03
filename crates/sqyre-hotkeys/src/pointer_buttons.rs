@@ -9,7 +9,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static LEFT_DOWN: AtomicBool = AtomicBool::new(false);
 
 /// Update from the hook thread on every left ButtonPress / ButtonRelease.
-#[cfg_attr(not(feature = "hooks"), allow(dead_code))]
+#[cfg_attr(
+    not(feature = "hooks"),
+    expect(dead_code, reason = "only the OS hook threads report button state")
+)]
 pub(crate) fn set_left_button_down(down: bool) {
     LEFT_DOWN.store(down, Ordering::Relaxed);
 }

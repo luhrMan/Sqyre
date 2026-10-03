@@ -55,11 +55,9 @@ db.migrated.yaml
 
 # Local update-signing private key (never commit)
 .secrets/
-.cursor/rules/clean-git-messages.mdc
 mem.log
 dhat-heap.json
 
 docs/blog
 .cursor/cli.json
-.cursor/rules/no-cursor-attribution.mdc
-.cursor/rules/commit-author-luhrman.mdc
+.cursor/rules/git-identity.mdc

@@ -362,6 +362,7 @@ fn host_loop(
 
     // Separate Display for pointer samples — never issue ConfigureWindow on it.
     // QueryPointer on the configure connection stalls under fullscreen XWayland.
+    // SAFETY: null name selects $DISPLAY; result is null-checked before every use.
     let ptr_display = unsafe { XOpenDisplay(std::ptr::null()) };
     if !ptr_display.is_null() {
         register_secondary_x_display(ptr_display.cast());
@@ -369,12 +370,15 @@ fn host_loop(
 
     // SAFETY: `display` just opened and non-null.
     let screen = unsafe { XDefaultScreen(display) };
+    // SAFETY: `display` is open and non-null.
     let root = unsafe { XDefaultRootWindow(display) };
+    // SAFETY: `display` is open and `root` belongs to it; valuemask 0 means `values` is unread.
     let gc = unsafe { XCreateGC(display, root, 0, std::ptr::null_mut()) };
     if gc.is_null() {
         note("overlay-x11: XCreateGC failed");
         if !ptr_display.is_null() {
             unregister_secondary_x_display(ptr_display.cast());
+            // SAFETY: non-null `ptr_display` is unregistered and not used again after close.
             unsafe { x_close_display(ptr_display) };
         }
         unregister_secondary_x_display(display.cast());
@@ -386,6 +390,7 @@ fn host_loop(
     let xfd = unsafe { XConnectionNumber(display) };
     // SAFETY: host-thread display; cursors freed in destroy_all before close.
     let move_cursor = unsafe { XCreateFontCursor(display, XC_FLEUR) };
+    // SAFETY: same live host-thread `display`; freed in destroy_all before close.
     let arrow_cursor = unsafe { XCreateFontCursor(display, XC_LEFT_PTR) };
 
     let mut state = HostState {
@@ -483,6 +488,7 @@ fn host_loop(
             last_x_growth = Instant::now();
         }
 
+        // SAFETY: `state.display` stays open on this thread until the loop exits.
         let before_pending = unsafe { XPending(state.display) };
         let _got_pointer = drain_x_events(&mut state);
         // Poll-track relocate: portal / quiet X after press (X11 or Wayland poll-hit).
@@ -890,6 +896,7 @@ fn cancel_drag(state: &mut HostState) {
             x_move_resize(state.display, hit, drag.start_x, drag.start_y, w, h);
         }
         apply_hit_rounded_input(state.display, hit, w, h, radius);
+        // SAFETY: HostState display invariant: `state.display` is open on this thread.
         unsafe {
             x_flush(state.display);
         }
@@ -919,6 +926,7 @@ fn commit_drag(state: &mut HostState) {
             x_move_resize(state.display, hit, nx, ny, w, h);
         }
         apply_hit_rounded_input(state.display, hit, w, h, radius);
+        // SAFETY: HostState display invariant: `state.display` is open on this thread.
         unsafe {
             x_flush(state.display);
         }
@@ -1368,33 +1376,40 @@ fn sync_relocate_shield(state: &mut HostState) {
 }
 
 /// Root pointer + Button1 on `display`. Round-trip — prefer quiet connection.
+///
+/// # Safety
+/// `display` is null or an open Display used only on the calling thread.
 unsafe fn query_pointer_root(display: *mut Display) -> Option<(i32, i32, bool)> {
-    if display.is_null() {
-        return None;
+    // SAFETY: caller passes null or an open Display used only on this thread; null is
+    // rejected below and all out-params point to live locals.
+    unsafe {
+        if display.is_null() {
+            return None;
+        }
+        let root = XDefaultRootWindow(display);
+        let mut root_ret: Window = 0;
+        let mut child: Window = 0;
+        let mut root_x = 0;
+        let mut root_y = 0;
+        let mut win_x = 0;
+        let mut win_y = 0;
+        let mut mask = 0u32;
+        if XQueryPointer(
+            display,
+            root,
+            &mut root_ret,
+            &mut child,
+            &mut root_x,
+            &mut root_y,
+            &mut win_x,
+            &mut win_y,
+            &mut mask,
+        ) == 0
+        {
+            return None;
+        }
+        Some((root_x, root_y, mask & Button1Mask != 0))
     }
-    let root = XDefaultRootWindow(display);
-    let mut root_ret: Window = 0;
-    let mut child: Window = 0;
-    let mut root_x = 0;
-    let mut root_y = 0;
-    let mut win_x = 0;
-    let mut win_y = 0;
-    let mut mask = 0u32;
-    if XQueryPointer(
-        display,
-        root,
-        &mut root_ret,
-        &mut child,
-        &mut root_x,
-        &mut root_y,
-        &mut win_x,
-        &mut win_y,
-        &mut mask,
-    ) == 0
-    {
-        return None;
-    }
-    Some((root_x, root_y, mask & Button1Mask != 0))
 }
 
 fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton, OverlayError> {
@@ -1813,6 +1828,7 @@ fn discard_pending_crossing(state: &mut HostState) {
         if pending <= 0 {
             break;
         }
+        // SAFETY: `XEvent` is a C union of POD structs; all-zero is a valid value.
         let mut event: XEvent = unsafe { std::mem::zeroed() };
         // SAFETY: event written by XNextEvent before type check.
         unsafe {
@@ -1880,6 +1896,7 @@ fn repaint_chooser(state: &mut HostState) {
         ch.w = tw;
         ch.h = th;
     }
+    // SAFETY: HostState display invariant: `state.display` is open on this thread.
     unsafe {
         x_flush(state.display);
     }
@@ -1963,6 +1980,7 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec) {
         0
     };
     // Grab on the hit cover so outside clicks dismiss under fullscreen games.
+    // SAFETY: HostState display invariant; `hit` was just created and mapped on it.
     let grab_status = unsafe {
         XGrabPointer(
             state.display,
@@ -2264,8 +2282,9 @@ fn drain_x_events(state: &mut HostState) -> bool {
         if pending <= 0 {
             break;
         }
-        // SAFETY: `event` is written by XNextEvent before any field reads below.
+        // SAFETY: `XEvent` is a C union of POD structs; all-zero is a valid value.
         let mut event: XEvent = unsafe { std::mem::zeroed() };
+        // SAFETY: HostState display invariant; `event` is written before any field reads below.
         unsafe {
             XNextEvent(state.display, &mut event);
         }
@@ -2620,119 +2639,168 @@ fn alloc_color(state: &HostState, rgb: [u8; 3]) -> c_ulong {
 
 // --- Thin Xlib wrappers (HostState display / window invariants) ---------------
 
-// SAFETY: `display` live; `win` was created on it and not yet destroyed.
+/// # Safety
+/// `display` is a live host-thread connection; `win` was created on it and not yet destroyed.
 unsafe fn x_select_button_input(display: *mut Display, win: Window, relocate: bool) {
-    XSelectInput(display, win, button_event_mask(relocate));
+    // SAFETY: caller guarantees a live `display` and an undestroyed `win` on it.
+    unsafe {
+        XSelectInput(display, win, button_event_mask(relocate));
+    }
 }
 
-// SAFETY: face is InputOutput — keep Expose/StructureNotify with button masks.
+/// Face is InputOutput — keep Expose/StructureNotify with button masks.
+///
+/// # Safety
+/// `display` is a live host-thread connection; `win` was created on it and not yet destroyed.
 unsafe fn x_select_face_input(display: *mut Display, win: Window, relocate: bool) {
-    XSelectInput(
-        display,
-        win,
-        ExposureMask | StructureNotifyMask | button_event_mask(relocate),
-    );
+    // SAFETY: caller guarantees a live `display` and an undestroyed `win` on it.
+    unsafe {
+        XSelectInput(
+            display,
+            win,
+            ExposureMask | StructureNotifyMask | button_event_mask(relocate),
+        );
+    }
 }
 
-// SAFETY: `display` is a live host-thread connection (see module docs).
+/// # Safety
+/// `display` is a live host-thread connection (see module docs).
 unsafe fn x_flush(display: *mut Display) {
-    XFlush(display);
+    // SAFETY: caller guarantees `display` is open and used only on this thread.
+    unsafe {
+        XFlush(display);
+    }
 }
 
-// SAFETY: `display` live; `win` was created on it and not yet destroyed.
+/// # Safety
+/// `display` is live; `win` was created on it and not yet destroyed.
 unsafe fn x_destroy_window(display: *mut Display, win: Window) {
-    XDestroyWindow(display, win);
+    // SAFETY: caller guarantees a live `display` and an undestroyed `win` on it.
+    unsafe {
+        XDestroyWindow(display, win);
+    }
 }
 
-// SAFETY: `display` live; `win` was created on it and not yet destroyed.
+/// # Safety
+/// `display` is live; `win` was created on it and not yet destroyed.
 unsafe fn x_move_resize(display: *mut Display, win: Window, x: i32, y: i32, w: u32, h: u32) {
-    XMoveResizeWindow(display, win, x, y, w, h);
+    // SAFETY: caller guarantees a live `display` and an undestroyed `win` on it.
+    unsafe {
+        XMoveResizeWindow(display, win, x, y, w, h);
+    }
 }
 
-// SAFETY: `display` live; `win` was created on it and not yet destroyed.
+/// # Safety
+/// `display` is live; `win` was created on it and not yet destroyed.
 unsafe fn x_unmap(display: *mut Display, win: Window) {
-    XUnmapWindow(display, win);
+    // SAFETY: caller guarantees a live `display` and an undestroyed `win` on it.
+    unsafe {
+        XUnmapWindow(display, win);
+    }
 }
 
-// SAFETY: `display` live for this thread.
+/// # Safety
+/// `display` is a live connection used only on this thread.
 unsafe fn x_sync(display: *mut Display) {
-    XSync(display, False);
+    // SAFETY: caller guarantees `display` is open and used only on this thread.
+    unsafe {
+        XSync(display, False);
+    }
 }
 
-// SAFETY: `display` live; `gc` was created with XCreateGC on it and not freed.
+/// # Safety
+/// `display` is live; `gc` was created with XCreateGC on it and is not used after this call.
 unsafe fn x_free_gc(display: *mut Display, gc: *mut x11::xlib::_XGC) {
-    XFreeGC(display, gc);
+    // SAFETY: caller guarantees a live `display` and an unfreed `gc` created on it.
+    unsafe {
+        XFreeGC(display, gc);
+    }
 }
 
-// SAFETY: `display` from XOpenDisplay on this thread; no further use after return.
+/// # Safety
+/// `display` came from XOpenDisplay on this thread and is not used after return.
 unsafe fn x_close_display(display: *mut Display) {
-    XCloseDisplay(display);
+    // SAFETY: caller guarantees an open, non-null `display` with no further use.
+    unsafe {
+        XCloseDisplay(display);
+    }
 }
 
-// SAFETY: callers pass a live host-thread `display` and a `win` created on it.
+/// # Safety
+/// `display` is a live host-thread connection and `win` was created on it.
 unsafe fn set_net_wm_type_notification(display: *mut Display, win: Window) {
-    let ty = XInternAtom(display, c"_NET_WM_WINDOW_TYPE".as_ptr(), False);
-    let notification = XInternAtom(display, c"_NET_WM_WINDOW_TYPE_NOTIFICATION".as_ptr(), False);
-    if ty == 0 || notification == 0 {
-        return;
+    // SAFETY: caller guarantees live `display`/`win`; atom names are NUL-terminated C
+    // literals and `val` outlives the XChangeProperty call (1 element, format 32).
+    unsafe {
+        let ty = XInternAtom(display, c"_NET_WM_WINDOW_TYPE".as_ptr(), False);
+        let notification =
+            XInternAtom(display, c"_NET_WM_WINDOW_TYPE_NOTIFICATION".as_ptr(), False);
+        if ty == 0 || notification == 0 {
+            return;
+        }
+        let mut val: c_ulong = notification as c_ulong;
+        x11::xlib::XChangeProperty(
+            display,
+            win,
+            ty,
+            x11::xlib::XA_ATOM,
+            32,
+            x11::xlib::PropModeReplace,
+            (&mut val as *mut c_ulong).cast::<u8>(),
+            1,
+        );
     }
-    let mut val: c_ulong = notification as c_ulong;
-    x11::xlib::XChangeProperty(
-        display,
-        win,
-        ty,
-        x11::xlib::XA_ATOM,
-        32,
-        x11::xlib::PropModeReplace,
-        (&mut val as *mut c_ulong).cast::<u8>(),
-        1,
-    );
 }
 
-// SAFETY: callers pass a live host-thread `display`, its root, and a `win` on it.
+/// # Safety
+/// `display` is a live host-thread connection, `root` is its root, and `win` was created on it.
 unsafe fn set_skip_taskbar_state(display: *mut Display, root: Window, win: Window) {
-    let state = XInternAtom(display, c"_NET_WM_STATE".as_ptr(), False);
-    let skip_taskbar = XInternAtom(display, c"_NET_WM_STATE_SKIP_TASKBAR".as_ptr(), False);
-    let skip_pager = XInternAtom(display, c"_NET_WM_STATE_SKIP_PAGER".as_ptr(), False);
-    let above = XInternAtom(display, c"_NET_WM_STATE_ABOVE".as_ptr(), False);
-    if state == 0 || skip_taskbar == 0 {
-        return;
+    // SAFETY: caller guarantees live `display`/`root`/`win`; `atoms` outlives XChangeProperty
+    // (3 elements, format 32) and the zeroed `XEvent` is a valid POD union value.
+    unsafe {
+        let state = XInternAtom(display, c"_NET_WM_STATE".as_ptr(), False);
+        let skip_taskbar = XInternAtom(display, c"_NET_WM_STATE_SKIP_TASKBAR".as_ptr(), False);
+        let skip_pager = XInternAtom(display, c"_NET_WM_STATE_SKIP_PAGER".as_ptr(), False);
+        let above = XInternAtom(display, c"_NET_WM_STATE_ABOVE".as_ptr(), False);
+        if state == 0 || skip_taskbar == 0 {
+            return;
+        }
+        let mut atoms: [c_ulong; 3] = [
+            skip_taskbar as c_ulong,
+            skip_pager as c_ulong,
+            above as c_ulong,
+        ];
+        x11::xlib::XChangeProperty(
+            display,
+            win,
+            state,
+            x11::xlib::XA_ATOM,
+            32,
+            x11::xlib::PropModeReplace,
+            atoms.as_mut_ptr().cast::<u8>(),
+            3,
+        );
+        // Also ClientMessage for WMs that ignore property until mapped.
+        let mut ev: XEvent = std::mem::zeroed();
+        {
+            let c = &mut ev.client_message;
+            c.type_ = x11::xlib::ClientMessage;
+            c.window = win;
+            c.message_type = state;
+            c.format = 32;
+            c.data.set_long(0, 1); // _NET_WM_STATE_ADD
+            c.data.set_long(1, skip_taskbar as c_long);
+            c.data.set_long(2, above as c_long);
+            c.data.set_long(3, 1);
+        }
+        x11::xlib::XSendEvent(
+            display,
+            root,
+            False,
+            (x11::xlib::SubstructureNotifyMask | x11::xlib::SubstructureRedirectMask) as c_long,
+            &mut ev,
+        );
     }
-    let mut atoms: [c_ulong; 3] = [
-        skip_taskbar as c_ulong,
-        skip_pager as c_ulong,
-        above as c_ulong,
-    ];
-    x11::xlib::XChangeProperty(
-        display,
-        win,
-        state,
-        x11::xlib::XA_ATOM,
-        32,
-        x11::xlib::PropModeReplace,
-        atoms.as_mut_ptr().cast::<u8>(),
-        3,
-    );
-    // Also ClientMessage for WMs that ignore property until mapped.
-    let mut ev: XEvent = std::mem::zeroed();
-    {
-        let c = &mut ev.client_message;
-        c.type_ = x11::xlib::ClientMessage;
-        c.window = win;
-        c.message_type = state;
-        c.format = 32;
-        c.data.set_long(0, 1); // _NET_WM_STATE_ADD
-        c.data.set_long(1, skip_taskbar as c_long);
-        c.data.set_long(2, above as c_long);
-        c.data.set_long(3, 1);
-    }
-    x11::xlib::XSendEvent(
-        display,
-        root,
-        False,
-        (x11::xlib::SubstructureNotifyMask | x11::xlib::SubstructureRedirectMask) as c_long,
-        &mut ev,
-    );
 }
 
 fn wait_x_or_timeout(xfd: RawFd, timeout_ms: u64) {

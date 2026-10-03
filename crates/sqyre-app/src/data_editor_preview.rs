@@ -62,7 +62,10 @@ fn pure_i32(s: &str) -> Option<i32> {
 
 /// Coord chip overlaid on a preview edge: sizes to text, Sqyre yellow border,
 /// and when the value is a pure integer: drag-to-adjust + −/+ steppers.
-#[allow(clippy::too_many_arguments)] // chip overlays one preview edge with edit + validation
+#[expect(
+    clippy::too_many_arguments,
+    reason = "chip overlays one preview edge with edit + validation"
+)]
 pub(crate) fn paint_preview_coord_chip(
     ui: &mut egui::Ui,
     preview: egui::Rect,
@@ -463,7 +466,10 @@ pub(crate) fn paint_disk_preview(
 }
 
 /// Collection-tab preview with wheel zoom / drag pan.
-#[allow(clippy::too_many_arguments)] // zoomable preview: path, grid, view, replace, and size
+#[expect(
+    clippy::too_many_arguments,
+    reason = "zoomable preview: path, grid, view, replace, and size"
+)]
 pub(crate) fn paint_zoomable_collection_preview(
     ui: &mut egui::Ui,
     icons: &mut IconCache,

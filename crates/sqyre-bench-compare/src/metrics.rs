@@ -118,6 +118,8 @@ fn duration_ns(d: Duration) -> u64 {
 }
 
 fn cpu_times() -> (Duration, Duration) {
+    // SAFETY: `getrusage` gets a valid out-pointer to a zeroed `rusage`; `assume_init` runs
+    // only on success, and an all-zero `rusage` is a valid value regardless.
     unsafe {
         let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
         if libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) != 0 {

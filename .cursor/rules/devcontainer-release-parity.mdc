@@ -1,6 +1,7 @@
 ---
 description: Keep .devcontainer able to build every Linux-host release target
-alwaysApply: true
+globs: Makefile, Cargo.toml, Cargo.lock, crates/*/Cargo.toml, rust-toolchain.toml, deny.toml, .devcontainer/**, scripts/**, .github/**
+alwaysApply: false
 ---
 
 # Devcontainer release-build parity
@@ -26,6 +27,10 @@ Whenever a **build or packaging requirement** changes (Makefile targets, Dockerf
 3. Keep nested images self-contained ([`scripts/windows/Dockerfile`](scripts/windows/Dockerfile), AppImage path, Flatpak builder image) — the outer container only needs the Docker client + enough deps for native Linux builds.
 4. Update [`docs/DEVELOPING.md`](docs/DEVELOPING.md) if the developer workflow changes.
 5. Smoke-check from the container mindset: `make release`, `make appimage`, `make flatpak` (or its Docker path), `make windows`, and `make wasm` must remain reachable.
+6. Toolchain bumps move together: `rust-toolchain.toml`, `ARG RUST_VERSION` in `.devcontainer/Dockerfile` and `scripts/windows/Dockerfile`, every `dtolnay/rust-toolchain@…` in `.github/workflows/main.yml`.
+7. `Cargo.lock` changed → rerun `scripts/linux/packaging/flatpak/generate-cargo-sources.sh` (Flatpak builds offline; CI reuses the committed `cargo-sources.json`).
+8. `.devcontainer/Dockerfile` is also the CI Linux build image: any tool a Make target or CI step calls is installed there with `cargo install --locked`.
+9. Nested `docker run -v` mounts use host paths via `scripts/lib/docker-host-path.sh` (`LOCAL_WORKSPACE_FOLDER`).
 
 ## Examples
 
