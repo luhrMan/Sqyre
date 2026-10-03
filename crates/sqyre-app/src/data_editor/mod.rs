@@ -659,7 +659,8 @@ impl DataEditor {
         // clipped header buttons when children claimed available_width as min_width.
         crate::widgets::fit_dialog_popup(
             egui::Window::new(WINDOW_TITLE)
-                .open(&mut open)
+                .title_bar(false)
+                .collapsible(false)
                 .default_size([880.0, 560.0])
                 .min_size(crate::widgets::FLOATER_MIN_EDITOR)
                 // No huge max_size — egui auto-expands toward max when content min_size ratchets.
@@ -670,6 +671,9 @@ impl DataEditor {
         )
         .show(ctx, |ui| {
             crate::widgets::fill_resize_body(ui, |ui| {
+                if self.ui_header(ui, env) {
+                    open = false;
+                }
                 self.ui_body(ui, env, selected_macro, previews);
             });
         });
@@ -810,6 +814,37 @@ impl DataEditor {
 }
 
 impl DataEditor {
+    /// Title row with section tabs and close; returns true when close was clicked.
+    fn ui_header(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) -> bool {
+        let mut close = false;
+        crate::widgets::fill_row(
+            ui,
+            |ui| {
+                close =
+                    crate::widgets::icon_button(ui, egui_phosphor::regular::X, "Close").clicked();
+            },
+            |ui| {
+                ui.label(egui::RichText::new(WINDOW_TITLE).strong());
+                ui.add_space(crate::theme::SPACE_12);
+                let section = EditorSection::of(self.tab);
+                for (sec, label) in [
+                    (EditorSection::Programs, "Programs"),
+                    (EditorSection::Items, "Items"),
+                    (EditorSection::Coordinates, "Coordinates"),
+                    (EditorSection::Tools, "Tools"),
+                ] {
+                    if !sec.is_available() {
+                        continue;
+                    }
+                    if ui.selectable_label(section == sec, label).clicked() && section != sec {
+                        self.switch_tab(sec.default_tab(), env.catalog, env.settings);
+                    }
+                }
+            },
+        );
+        close
+    }
+
     fn ui_body(
         &mut self,
         ui: &mut egui::Ui,
@@ -817,22 +852,6 @@ impl DataEditor {
         selected_macro: usize,
         previews: &mut PreviewTooltipCache,
     ) {
-        ui.horizontal_wrapped(|ui| {
-            let section = EditorSection::of(self.tab);
-            for (sec, label) in [
-                (EditorSection::Programs, "Programs"),
-                (EditorSection::Items, "Items"),
-                (EditorSection::Coordinates, "Coordinates"),
-                (EditorSection::Tools, "Tools"),
-            ] {
-                if !sec.is_available() {
-                    continue;
-                }
-                if ui.selectable_label(section == sec, label).clicked() && section != sec {
-                    self.switch_tab(sec.default_tab(), env.catalog, env.settings);
-                }
-            }
-        });
         let section = EditorSection::of(self.tab);
         if section.is_available() {
             ui.horizontal_wrapped(|ui| {
