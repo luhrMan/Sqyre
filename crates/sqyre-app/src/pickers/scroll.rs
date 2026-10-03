@@ -20,7 +20,7 @@ pub enum ListNavAction {
 
 /// ↑↓ / Enter / Esc for an open list or picker. Prefer over ad-hoc `key_pressed`.
 pub fn poll_list_nav(ui: &mut egui::Ui) -> ListNavAction {
-    if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+    if crate::widgets::consume_escape(ui) {
         ListNavAction::Cancel
     } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::ArrowDown)) {
         ListNavAction::Down

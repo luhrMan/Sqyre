@@ -433,7 +433,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
             if !close
                 && !ui.ctx().text_edit_focused()
                 && !ui.ctx().egui_wants_keyboard_input()
-                && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+                && crate::widgets::consume_escape(ui)
             {
                 close = true;
             }

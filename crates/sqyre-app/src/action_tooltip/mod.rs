@@ -7,7 +7,7 @@ mod sections;
 
 use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::tree_chrome::{self, RowInteraction};
-use eframe::egui::{self, Key, Order, Vec2};
+use eframe::egui::{self, Key, Modifiers, Order, Vec2};
 use sqyre_domain::{
     action_type_description, action_type_label, Action, ActionId, ActionKind, CoordinateRef, Macro,
 };
@@ -297,6 +297,26 @@ pub fn end_hover_pass(state: &mut TooltipState, any_view_hover: bool) {
 
 /// Paint view or edit tooltip for the current frame.
 ///
+fn edit_tip_area_id(action_id: ActionId) -> egui::Id {
+    // Bump salt when changing default/min/max sizing so persisted locked sizes are discarded.
+    egui::Id::new(("action_edit_tip", "grow_v12", action_id))
+}
+
+/// View tips float at tooltip order; the edit window (or its picker) must be on top.
+fn tip_owns_escape(state: &TooltipState, ctx: &egui::Context) -> bool {
+    match state {
+        TooltipState::Hidden => false,
+        TooltipState::View { .. } => true,
+        TooltipState::Edit(edit) => {
+            !matches!(edit.picker, ActivePicker::None)
+                || crate::focus_nav::is_top_layer(
+                    ctx,
+                    egui::LayerId::new(Order::Middle, edit_tip_area_id(edit.action_id)),
+                )
+        }
+    }
+}
+
 /// Returns action ids that should be removed when a provisional new-action
 /// edit was cancelled without saving.
 pub fn show(
@@ -316,7 +336,8 @@ pub fn show(
     if !bridges.key_record.is_open()
         && !bridges.hotkey_record.is_open()
         && !bridges.screen_click.is_armed()
-        && ctx.input(|i| i.key_pressed(Key::Escape))
+        && tip_owns_escape(state, ctx)
+        && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
     {
         let (consumed, discard) = state.handle_escape();
         if consumed {
@@ -668,8 +689,7 @@ fn show_edit_window(
     let mut open = true;
 
     // Stable Area id (also keys egui's resize state as `area_id.with("resize")`).
-    // Bump salt when changing default/min/max sizing so persisted locked sizes are discarded.
-    let area_id = egui::Id::new(("action_edit_tip", "grow_v12", action_id));
+    let area_id = edit_tip_area_id(action_id);
     let (fitting, fit_fields_h) = match state {
         TooltipState::Edit(edit) => (edit.auto_fit, edit.fields_height),
         _ => (false, 0.0),

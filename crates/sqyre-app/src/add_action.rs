@@ -10,7 +10,9 @@ use crate::paint_ctx::{CatalogPaint, EditFieldsCtx, RecordBridges, TipUiCtx};
 use crate::pickers::{self, ActivePicker};
 use crate::tree_chrome;
 use crate::widgets::SaveCancel;
-use eframe::egui::{self, Color32, CornerRadius, Key, Sense, Vec2, WidgetInfo, WidgetType};
+use eframe::egui::{
+    self, Color32, CornerRadius, Key, Modifiers, Sense, Vec2, WidgetInfo, WidgetType,
+};
 use sqyre_domain::{
     action_templates, action_type_label, blank_action, Action, ActionId, ActionTemplate,
 };
@@ -439,10 +441,21 @@ impl AddActionPicker {
 
         // Escape: close nested pickers first, then the edit tip.
         // Skip while key / chord / screen recording.
-        if !bridges.key_record.is_open()
+        let owns_escape = match &self.tip {
+            Some(DefaultsTip::Edit(edit)) => {
+                !matches!(edit.picker, ActivePicker::None)
+                    || crate::focus_nav::is_top_layer(
+                        ctx,
+                        egui::LayerId::new(egui::Order::Middle, default_edit_id(&edit.action_type)),
+                    )
+            }
+            _ => false,
+        };
+        if owns_escape
+            && !bridges.key_record.is_open()
             && !bridges.hotkey_record.is_open()
             && !bridges.screen_click.is_armed()
-            && ctx.input(|i| i.key_pressed(Key::Escape))
+            && ctx.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
         {
             if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
                 match &mut edit.picker {
@@ -490,7 +503,7 @@ impl AddActionPicker {
         let save_enabled =
             matches!(&self.tip, Some(DefaultsTip::Edit(edit)) if edit.save_enabled());
 
-        let edit_id = egui::Id::new(("action_default_edit", type_key.as_str()));
+        let edit_id = default_edit_id(&type_key);
         crate::widgets::fit_dialog_window(
             egui::Window::new(format!("Default: {label}"))
                 .open(&mut open)
@@ -565,6 +578,10 @@ impl AddActionPicker {
         }
         false
     }
+}
+
+fn default_edit_id(action_type: &str) -> egui::Id {
+    egui::Id::new(("action_default_edit", action_type))
 }
 
 fn reassign_uids(action: &mut Action) {

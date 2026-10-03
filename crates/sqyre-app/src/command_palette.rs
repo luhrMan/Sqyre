@@ -171,9 +171,9 @@ impl CommandPaletteUi {
         .min_width(width)
         .max_width(width)
         .show(ctx, |ui| {
-            let (esc, enter, down, up) = ui.input_mut(|i| {
+            let esc = crate::widgets::consume_escape(ui);
+            let (enter, down, up) = ui.input_mut(|i| {
                 (
-                    i.consume_key(Modifiers::NONE, Key::Escape),
                     i.consume_key(Modifiers::NONE, Key::Enter),
                     i.consume_key(Modifiers::NONE, Key::ArrowDown),
                     i.consume_key(Modifiers::NONE, Key::ArrowUp),

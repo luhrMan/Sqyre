@@ -5,7 +5,7 @@
 //! expanded window (or popup) owns keyboard navigation: when an arrow press
 //! moves focus anywhere else, it is redirected to the nearest widget inside
 //! that window. Collapsed windows are skipped, and with no window open the
-//! main panels own navigation.
+//! main panels own navigation. The same top surface owns Esc ([`is_top_layer`]).
 
 use eframe::egui::{self, collapsing_header::CollapsingState, Id, Key, LayerId, Order, Rect, Vec2};
 
@@ -128,6 +128,20 @@ fn nearest_by_distance(from: Rect, candidates: &[(Id, Rect)]) -> Option<Id> {
                 .total_cmp(&b.1.center().distance_sq(origin))
         })
         .map(|(id, _)| *id)
+}
+
+/// Whether `layer` is the top surface that should handle Esc.
+///
+/// Tooltip-order layers float above every window, so they always qualify;
+/// sublayers (e.g. a palette window over its dismiss area) count as their parent.
+pub fn is_top_layer(ctx: &egui::Context, layer: LayerId) -> bool {
+    if matches!(layer.order, Order::Tooltip | Order::Debug) {
+        return true;
+    }
+    let layer = ctx
+        .memory(|m| m.areas().parent_layer(layer))
+        .unwrap_or(layer);
+    layer == home_layer(ctx)
 }
 
 /// Topmost visible, expanded window or popup with focusable widgets; the main

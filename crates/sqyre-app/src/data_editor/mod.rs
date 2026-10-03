@@ -676,6 +676,9 @@ impl DataEditor {
                 }
                 self.ui_body(ui, env, selected_macro, previews);
             });
+            if crate::widgets::consume_escape(ui) {
+                open = false;
+            }
         });
         self.open = open;
         self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings, env.pending_scale);

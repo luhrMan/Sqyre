@@ -110,6 +110,7 @@ pub fn show_logs_window(
         pending_scale,
     )
     .show(ctx, |ui| {
+        close_clicked = crate::widgets::consume_escape(ui);
         ui.horizontal(|ui| {
             if ui.button("Copy text").clicked() {
                 ui.ctx().copy_text(lines_for(&entries).join("\n"));

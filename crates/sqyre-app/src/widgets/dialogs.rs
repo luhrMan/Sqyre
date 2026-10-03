@@ -256,9 +256,16 @@ pub enum SaveCancel {
     Cancel,
 }
 
+/// Consume Esc only when `ui` is in the top window / popup (or a tooltip), so one
+/// press closes one surface instead of whichever window painted first.
+pub fn consume_escape(ui: &mut egui::Ui) -> bool {
+    crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
+        && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
+}
+
 /// Esc → cancel; Enter → save when enabled and no text field wants keys.
 fn poll_save_keys(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
-    if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+    if consume_escape(ui) {
         SaveCancel::Cancel
     } else if save_enabled
         && !ui.ctx().egui_wants_keyboard_input()
@@ -341,7 +348,7 @@ fn confirm_button(ui: &mut egui::Ui, label: &str, kind: ConfirmKind) -> egui::Re
 ///
 /// Keys are consumed so they do not leak to the UI under the dialog.
 pub fn poll_confirm_keys(ui: &mut egui::Ui) -> ConfirmCancel {
-    if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+    if consume_escape(ui) {
         ConfirmCancel::Cancel
     } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter)) {
         ConfirmCancel::Confirm
@@ -362,7 +369,7 @@ pub fn dismiss_row(ui: &mut egui::Ui, esc_dismisses: bool) -> bool {
             cancel = true;
         }
     });
-    if !cancel && esc_dismisses && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape)) {
+    if !cancel && esc_dismisses && consume_escape(ui) {
         cancel = true;
     }
     cancel
@@ -520,6 +527,41 @@ mod tests {
             assert_eq!(save_cancel_row(ui, false), SaveCancel::None);
         })
         .drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn consume_escape_only_in_top_window() {
+        fn frame(ctx: &egui::Context, input: RawInput) -> (bool, bool) {
+            let mut hits = (false, false);
+            ctx.run_ui(input, |ui| {
+                let ctx = ui.ctx().clone();
+                egui::Window::new("lower").show(&ctx, |ui| {
+                    let _ = ui.button("a");
+                    hits.0 = consume_escape(ui);
+                });
+                egui::Window::new("upper").show(&ctx, |ui| {
+                    let _ = ui.button("b");
+                    hits.1 = consume_escape(ui);
+                });
+            })
+            .drop_without_applying_deltas();
+            hits
+        }
+
+        let ctx = egui::Context::default();
+        // First frames are egui's invisible sizing pass.
+        for _ in 0..3 {
+            assert_eq!(frame(&ctx, RawInput::default()), (false, false));
+        }
+        let mut esc = RawInput::default();
+        esc.events.push(Event::Key {
+            key: Key::Escape,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        assert_eq!(frame(&ctx, esc), (false, true));
     }
 
     #[test]

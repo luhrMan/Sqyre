@@ -324,7 +324,7 @@ impl SettingsUi {
         #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
     ) {
         // Esc: clear search first, then close (window already has titlebar close).
-        if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+        if crate::widgets::consume_escape(ui) {
             if !self.search.is_empty() {
                 self.search.clear();
             } else {

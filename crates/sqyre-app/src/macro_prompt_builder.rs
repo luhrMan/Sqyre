@@ -90,6 +90,7 @@ impl MacroPromptBuilderUi {
         let suggestions = collect_suggestions(macros, catalog);
         let mut outcome = PromptBuilderOutcome::None;
         let mut open = self.open;
+        let mut close = false;
 
         crate::widgets::fit_dialog_popup(
             egui::Window::new("AI Macro Builder")
@@ -106,9 +107,11 @@ impl MacroPromptBuilderUi {
             crate::widgets::fill_resize_body(ui, |ui| {
                 self.body(ui, macros, catalog, &suggestions, &mut outcome);
             });
+            // After the body so an open `@` autocomplete consumes Esc first.
+            close = crate::widgets::consume_escape(ui);
         });
 
-        self.open = open;
+        self.open = open && !close;
         outcome
     }
 

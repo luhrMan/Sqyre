@@ -275,7 +275,13 @@ impl MacroYamlBuilderUi {
 
         // Dim / block the painted Sqyre UI underneath (not the OS desktop).
         // Main chrome is drawn first; this Foreground veil greys it out.
-        egui::Area::new(egui::Id::new(WINDOW_ID).with("modal_dim"))
+        // Sublayer keeps the window directly above the veil even after the veil is clicked.
+        let dim_id = egui::Id::new(WINDOW_ID).with("modal_dim");
+        ctx.set_sublayer(
+            egui::LayerId::new(egui::Order::Foreground, dim_id),
+            egui::LayerId::new(egui::Order::Foreground, egui::Id::new(WINDOW_ID)),
+        );
+        egui::Area::new(dim_id)
             .order(egui::Order::Foreground)
             .fixed_pos(ctx.content_rect().min)
             .interactable(true)
@@ -461,7 +467,7 @@ impl MacroYamlBuilderUi {
         self.status.paint(ui);
 
         // Esc closes the modal when autocomplete is not consuming it.
-        if ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
+        if crate::widgets::consume_escape(ui) {
             *request_close = true;
         }
     }

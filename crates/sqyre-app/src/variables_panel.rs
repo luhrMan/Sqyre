@@ -95,6 +95,7 @@ impl VariablesPanelUi {
         let num_monitors = self.resolve_monitor_count();
         let mut persist = false;
         let mut open = self.open;
+        let mut close = false;
         crate::widgets::fit_dialog_popup(
             egui::Window::new(format!("Variables — {}", macro_.name))
                 .open(&mut open)
@@ -130,8 +131,10 @@ impl VariablesPanelUi {
                     BottomTab::Builtins => self.show_builtins(ui, num_monitors, bottom_h),
                 }
             });
+            // After the body so an inline variable edit cancels first.
+            close = crate::widgets::consume_escape(ui);
         });
-        self.open = open;
+        self.open = open && !close;
         if running {
             ctx.request_repaint();
         }
