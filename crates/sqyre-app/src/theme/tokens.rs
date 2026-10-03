@@ -17,6 +17,16 @@ pub fn preview_scrim() -> Color32 {
     rgba([16, 16, 16, 170])
 }
 
+/// Veil over the main window while a blocking modal (YAML Macro Builder) is open.
+pub fn modal_scrim() -> Color32 {
+    rgba([0, 0, 0, 180])
+}
+
+/// Numbers, booleans and `null` in the YAML Macro Builder editor.
+pub fn syntax_literal() -> Color32 {
+    Color32::from_rgb(110, 160, 230)
+}
+
 /// Semi-opaque black behind labels on preview imagery.
 pub fn preview_label_dim() -> Color32 {
     rgba([0, 0, 0, 150])
