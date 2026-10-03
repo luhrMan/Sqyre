@@ -364,6 +364,9 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         return;
     }
 
+    let display =
+        sorted_image_search_targets(catalog, targets, &[], *sort_by, *sort_then, tag_priority);
+
     if !target_tags.is_empty() {
         crate::widgets::title_with_count(
             ui,
@@ -374,37 +377,54 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         if groups.is_empty() {
             ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
         } else {
+            let sizing_count = if display.is_empty() {
+                groups.iter().map(|g| g.members.len()).max().unwrap_or(0)
+            } else {
+                display.len()
+            };
             for group in &groups {
-                ui.horizontal_wrapped(|ui| {
-                    ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
-                    ui.label(egui::RichText::new(group.polarity_label()).small().strong());
-                    ui.label(egui::RichText::new(group.name.as_str()).small());
-                });
-                if group.include {
-                    if group.members.is_empty() {
-                        ui.horizontal(|ui| {
-                            ui.add_space(crate::theme::SPACE_12);
+                let fill = if group.include {
+                    crate::theme::tag_include_fill()
+                } else {
+                    crate::theme::tag_exclude_fill()
+                };
+                egui::Frame::NONE
+                    .fill(fill)
+                    .corner_radius(egui::CornerRadius::same(4))
+                    .inner_margin(egui::Margin::same(crate::theme::SPACE_4 as i8))
+                    .show(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
+                            ui.label(egui::RichText::new(group.polarity_label()).small().strong());
+                            ui.label(egui::RichText::new(group.name.as_str()).small());
+                        });
+                        if group.members.is_empty() {
                             ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
-                        });
-                    } else {
-                        ui.indent(egui::Id::new(("is_tip_tag", group.name.as_str())), |ui| {
-                            paint_tip_item_name_list(ui, catalog, icons, &group.members);
-                        });
-                    }
-                }
+                        } else {
+                            ui.push_id(("is_tip_tag", group.include, group.name.as_str()), |ui| {
+                                crate::pickers::paint_even_icon_grid(
+                                    ui,
+                                    catalog,
+                                    icons,
+                                    &group.members,
+                                    |_| false,
+                                    crate::pickers::IconGridKind::TargetsSizedAs {
+                                        count: sizing_count,
+                                    },
+                                    crate::pickers::IconGridOps::default(),
+                                    None,
+                                );
+                            });
+                        }
+                    });
             }
+        }
+        if display.is_empty() {
+            return;
         }
         ui.add_space(crate::theme::SPACE_4);
     }
 
-    let display = sorted_image_search_targets(
-        catalog,
-        targets,
-        target_tags,
-        *sort_by,
-        *sort_then,
-        tag_priority,
-    );
     crate::widgets::title_with_count(
         ui,
         egui::RichText::new("Items").small().strong(),
@@ -448,7 +468,7 @@ impl ImageSearchTipTagGroup {
 /// Resolve searched tag filters → display names and catalog member targets.
 ///
 /// Include tags expand to items that match the **full** filter set (every `+`
-/// and none of the `−`). Exclude tags are listed without members.
+/// and none of the `−`). Exclude tags list every item carrying that tag.
 pub(crate) fn image_search_tip_tag_groups(
     catalog: &ProgramCatalog,
     target_tags: &[String],
@@ -462,51 +482,29 @@ pub(crate) fn image_search_tip_tag_groups(
         let Some((include, name)) = parse_tag_filter(filter) else {
             continue;
         };
-        let members = if include {
-            let mut matched: Vec<(String, String)> = catalog_refs
-                .iter()
-                .filter(|item| {
-                    item.tags.iter().any(|t| t.trim() == name)
-                        && item_matches_tag_filters(&item.tags, target_tags)
-                })
-                .map(|item| {
-                    let (display, _) = crate::pickers::item_tooltip_parts(catalog, &item.target);
-                    (display, item.target.clone())
-                })
-                .collect();
-            matched.sort_by(|a, b| {
-                a.0.to_ascii_lowercase()
-                    .cmp(&b.0.to_ascii_lowercase())
-                    .then_with(|| a.1.cmp(&b.1))
-            });
-            matched.into_iter().map(|(_, target)| target).collect()
-        } else {
-            Vec::new()
-        };
+        let mut matched: Vec<(String, String)> = catalog_refs
+            .iter()
+            .filter(|item| {
+                item.tags.iter().any(|t| t.trim() == name)
+                    && (!include || item_matches_tag_filters(&item.tags, target_tags))
+            })
+            .map(|item| {
+                let (display, _) = crate::pickers::item_tooltip_parts(catalog, &item.target);
+                (display, item.target.clone())
+            })
+            .collect();
+        matched.sort_by(|a, b| {
+            a.0.to_ascii_lowercase()
+                .cmp(&b.0.to_ascii_lowercase())
+                .then_with(|| a.1.cmp(&b.1))
+        });
         groups.push(ImageSearchTipTagGroup {
             include,
             name,
-            members,
+            members: matched.into_iter().map(|(_, target)| target).collect(),
         });
     }
     groups
-}
-
-fn paint_tip_item_name_list(
-    ui: &mut egui::Ui,
-    catalog: &ProgramCatalog,
-    icons: &mut IconCache,
-    targets: &[String],
-) {
-    ui.spacing_mut().item_spacing.y = crate::theme::SPACE_2;
-    for target in targets {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
-            let _ = paint_target_thumb(ui, catalog, icons, target);
-            let (name, _) = crate::pickers::item_tooltip_parts(catalog, target);
-            ui.label(egui::RichText::new(name).small());
-        });
-    }
 }
 
 /// Display / search order for Image Search targets (explicit + tag expansion).
@@ -841,7 +839,7 @@ mod tests {
         );
         assert!(!groups[1].include);
         assert_eq!(groups[1].name, "junk");
-        assert!(groups[1].members.is_empty());
+        assert_eq!(groups[1].members, vec!["Game~Junk".to_string()]);
         assert_eq!(groups[0].polarity_label(), "+");
         assert_eq!(groups[1].polarity_label(), "−");
     }

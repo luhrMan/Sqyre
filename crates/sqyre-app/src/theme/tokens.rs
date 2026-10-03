@@ -78,6 +78,16 @@ pub fn highlight_invalid_fill() -> Color32 {
     Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), 45)
 }
 
+/// Soft green tint behind an Image Search include (`+`) tag section.
+pub fn tag_include_fill() -> Color32 {
+    Color32::from_rgba_unmultiplied(MACRO_START.r(), MACRO_START.g(), MACRO_START.b(), 40)
+}
+
+/// Soft red tint behind an Image Search exclude (`−`) tag section.
+pub fn tag_exclude_fill() -> Color32 {
+    Color32::from_rgba_unmultiplied(MACRO_STOP.r(), MACRO_STOP.g(), MACRO_STOP.b(), 40)
+}
+
 /// Soft blue fill for execution cursor row.
 pub fn highlight_cursor_fill() -> Color32 {
     rgba([90, 160, 240, 70])

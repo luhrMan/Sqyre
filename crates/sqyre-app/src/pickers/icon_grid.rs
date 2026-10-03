@@ -142,6 +142,9 @@ pub enum IconGridKind {
     /// Image Search target list: larger cells when few items, shrinking toward
     /// the compact edit size as more are added. `removable` adds a Remove menu entry.
     Targets { removable: bool },
+    /// Read-only target list sized like a [`Self::Targets`] grid of `count` items,
+    /// so sibling grids share one cell size.
+    TargetsSizedAs { count: usize },
 }
 
 impl IconGridKind {
@@ -150,7 +153,14 @@ impl IconGridKind {
     }
 
     fn scale_with_count(self) -> bool {
-        matches!(self, Self::Targets { .. })
+        matches!(self, Self::Targets { .. } | Self::TargetsSizedAs { .. })
+    }
+
+    fn sizing_count(self, count: usize) -> usize {
+        match self {
+            Self::TargetsSizedAs { count } => count,
+            _ => count,
+        }
     }
 }
 
@@ -176,10 +186,38 @@ struct IconCellStyle {
     thumb: f32,
 }
 
+impl IconCellStyle {
+    /// Height of one grid row: tallest fitted thumb plus the cell inset, so wide
+    /// icons do not leave a mostly empty square cell.
+    fn row_height(
+        self,
+        ctx: &egui::Context,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        row: &[String],
+    ) -> f32 {
+        let inset = self.cell - self.thumb;
+        let tallest = row
+            .iter()
+            .map(|target| {
+                let [tw, th] = icons.for_target_or_fallback(ctx, catalog, target).size();
+                image_view::fit_icon_thumb(tw as f32, th as f32, self.thumb, self.thumb).y
+            })
+            .fold(0.0, f32::max);
+        (tallest + inset).clamp(inset.max(1.0), self.cell)
+    }
+}
+
 fn metrics_for(kind: IconGridKind, count: usize, avail_w: f32) -> (IconCellStyle, f32) {
     if kind.scale_with_count() {
         let inset = EDIT_CELL - EDIT_THUMB;
-        let cell = adaptive_icon_cell(count, avail_w, EDIT_CELL, EDIT_CELL_MAX, EDIT_GAP);
+        let cell = adaptive_icon_cell(
+            kind.sizing_count(count),
+            avail_w,
+            EDIT_CELL,
+            EDIT_CELL_MAX,
+            EDIT_GAP,
+        );
         (
             IconCellStyle {
                 cell,
@@ -198,7 +236,7 @@ fn metrics_for(kind: IconGridKind, count: usize, avail_w: f32) -> (IconCellStyle
     }
 }
 
-/// Paint a selectable icon cell (fixed square, no under-icon label).
+/// Paint a selectable `cell_w`×`row_h` icon cell (no under-icon label).
 /// Returns `(cell_clicked, cell_response)`.
 fn icon_grid_cell(
     ui: &mut egui::Ui,
@@ -207,11 +245,12 @@ fn icon_grid_cell(
     target: &str,
     selected: bool,
     style: IconCellStyle,
+    row_h: f32,
 ) -> (bool, egui::Response) {
     let IconCellStyle { cell, thumb } = style;
     let rounding = 4.0;
 
-    let desired = Vec2::splat(cell);
+    let desired = Vec2::new(cell, row_h);
     let (rect, resp) = ui.allocate_exact_size(desired, Sense::click_and_drag());
 
     let fill = if selected {
@@ -300,13 +339,18 @@ pub fn paint_even_icon_grid(
     let mut pending_reorder: Option<(usize, usize)> = None;
     let mut i = 0;
     while i < targets.len() {
+        let end = (i + cols).min(targets.len());
+        let row_h = if kind.scale_with_count() {
+            style.row_height(ui.ctx(), catalog, icons, &targets[i..end])
+        } else {
+            style.cell
+        };
         ui.allocate_ui_with_layout(
-            egui::vec2(avail, style.cell),
+            egui::vec2(avail, row_h),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
                 ui.set_max_width(avail);
                 ui.spacing_mut().item_spacing = Vec2::splat(gap);
-                let end = (i + cols).min(targets.len());
                 for (k, target) in targets.iter().enumerate().take(end).skip(i) {
                     let sel = is_selected(target);
                     let cell_removable = kind.show_remove()
@@ -316,7 +360,7 @@ pub fn paint_even_icon_grid(
                     let cell_rect = if reorderable {
                         let drag = ui.dnd_drag_source(cell_id, k, |ui| {
                             let (clicked, cell) =
-                                icon_grid_cell(ui, catalog, icons, target, sel, style);
+                                icon_grid_cell(ui, catalog, icons, target, sel, style, row_h);
                             if clicked {
                                 if let Some(on_cell) = ops.on_cell.as_mut() {
                                     on_cell(k, target);
@@ -340,7 +384,7 @@ pub fn paint_even_icon_grid(
                         drag.inner.rect
                     } else {
                         let (clicked, cell) =
-                            icon_grid_cell(ui, catalog, icons, target, sel, style);
+                            icon_grid_cell(ui, catalog, icons, target, sel, style, row_h);
                         if clicked {
                             if let Some(on_cell) = ops.on_cell.as_mut() {
                                 on_cell(k, target);
