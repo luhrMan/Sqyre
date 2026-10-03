@@ -154,7 +154,7 @@ pub fn show_active_picker(
                             .sum();
                         list_vacancy(ui, q, visible, "items");
                     });
-                    ui.separator();
+                    crate::widgets::section_separator(ui);
                     if let Some(tags) = staged_tags.as_mut() {
                         let suggestions =
                             crate::data_editor::helpers::collect_all_item_tags(paint.catalog);
@@ -257,7 +257,7 @@ pub fn show_active_picker(
                                 }
                             },
                         );
-                        ui.separator();
+                        crate::widgets::section_separator(ui);
                         paint_coord_ref_list(
                             ui,
                             paint,
@@ -476,7 +476,7 @@ pub fn show_active_picker(
                 ActivePicker::None => {}
             }
 
-            ui.separator();
+            crate::widgets::section_separator(ui);
             let cell_has_sel = picker
                 .cell_pick_mut()
                 .and_then(|c| c.as_ref())

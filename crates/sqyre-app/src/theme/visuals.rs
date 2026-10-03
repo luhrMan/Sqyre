@@ -21,7 +21,7 @@ pub fn dark_visuals() -> Visuals {
     v.selection.bg_fill = dim;
     v.selection.stroke = Stroke::new(1.0, SELECTION_FG);
 
-    // Separators + panel split lines — opaque structural stroke (not dim inner cards).
+    // Separators + panel split lines — half-opacity structural stroke (not dim inner cards).
     v.widgets.noninteractive.bg_stroke = panel_split_stroke();
 
     v.widgets.hovered.bg_stroke = Stroke::new(1.0, PRIMARY);
@@ -94,7 +94,7 @@ pub fn titled_section(
         if !subtitle.is_empty() {
             ui.label(egui::RichText::new(subtitle).weak());
         }
-        ui.separator();
+        crate::widgets::section_separator(ui);
         add_contents(ui);
     });
 }
@@ -115,7 +115,6 @@ mod tests {
         assert_eq!(v.widgets.hovered.bg_stroke.color, PRIMARY);
         assert_eq!(v.window_stroke.color, PRIMARY);
         assert_eq!(v.widgets.noninteractive.bg_stroke, panel_split_stroke());
-        assert_eq!(v.widgets.noninteractive.bg_stroke.color.a(), 255);
     }
 
     #[test]
@@ -127,6 +126,6 @@ mod tests {
         assert_eq!(style.visuals.window_stroke.color, PRIMARY);
         assert_eq!(section_frame(&style).stroke.color, accent_dim());
         assert_eq!(inner_stroke().color, accent_dim());
-        assert_eq!(panel_split_stroke().color, PRIMARY);
+        assert_eq!(panel_split_stroke().color.a(), 0x80);
     }
 }

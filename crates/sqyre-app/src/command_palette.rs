@@ -179,7 +179,7 @@ impl CommandPaletteUi {
                 }
                 query_changed = resp.changed();
             });
-            ui.separator();
+            crate::widgets::section_separator(ui);
 
             let filtered = filter_ranked(&self.query, commands);
             if query_changed {

@@ -269,11 +269,28 @@ fn paint_tag_node(
 ) {
     if !is_first_root {
         ui.add_space(SPACE_8);
-        ui.separator();
+        crate::widgets::section_separator(ui);
         ui.add_space(SPACE_4);
     }
 
     let id = ui.make_persistent_id(("macro_list_tag", path));
+    let open =
+        egui::collapsing_header::CollapsingState::load(ui.ctx(), id).is_some_and(|s| s.is_open());
+    if open {
+        crate::widgets::tinted_section(ui, |ui| paint_tag_group(ui, ctx, id, path, label, node));
+    } else {
+        paint_tag_group(ui, ctx, id, path, label, node);
+    }
+}
+
+fn paint_tag_group(
+    ui: &mut egui::Ui,
+    ctx: &mut PaintTagCtx<'_>,
+    id: egui::Id,
+    path: &str,
+    label: &str,
+    node: &TagTreeNode,
+) {
     let count = node.subtree_macro_count();
     let filters = ctx.app.workspace.hotkey_tag_filters.as_slice();
     let exact_selected = filters.iter().any(|t| t == path);
@@ -360,8 +377,10 @@ fn paint_tag_node(
                 ui.add_space(SPACE_4);
                 ui.horizontal(|ui| {
                     ui.add_space(SPACE_12);
+                    // Item spacing sits between the indent and the column; leaving it
+                    // out overflows the viewport and enables horizontal drag-scroll.
+                    let nested_w = (ctx.list_w - SPACE_12 - ui.spacing().item_spacing.x).max(0.0);
                     ui.vertical(|ui| {
-                        let nested_w = (ctx.list_w - SPACE_12).max(0.0);
                         ui.set_max_width(nested_w);
                         let mut nested = PaintTagCtx {
                             app: ctx.app,
@@ -467,7 +486,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 let font = egui::TextStyle::Small.resolve(ui.style());
                 ui.small(elide_to_width(ui, &label, pane_w, font));
             }
-            ui.separator();
+            crate::widgets::section_separator(ui);
             let list_h = ui.available_height();
             // Exact slot + clipped child: overflow from ScrollArea/collapsing headers
             // must not widen the side panel's persisted size.

@@ -328,7 +328,7 @@ pub fn searchable_combo_with(
                 ui.ctx()
                     .data_mut(|d| d.insert_temp(search_id, search.clone()));
 
-                ui.separator();
+                crate::widgets::section_separator(ui);
 
                 let q = search.trim().to_ascii_lowercase();
                 let mut any = false;

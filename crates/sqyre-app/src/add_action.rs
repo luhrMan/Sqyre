@@ -264,7 +264,7 @@ impl AddActionPicker {
                 }
             });
             ui.weak(HOVER_DELAY_HINT);
-            ui.separator();
+            crate::widgets::section_separator(ui);
 
             let list_h = pickers::popup_scroll_max_height(ui, 0.0);
             let list_w = crate::widgets::visible_width(ui);

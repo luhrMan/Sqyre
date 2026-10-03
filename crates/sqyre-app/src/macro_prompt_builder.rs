@@ -169,7 +169,7 @@ impl MacroPromptBuilderUi {
             }
         });
 
-        ui.separator();
+        crate::widgets::section_separator(ui);
         ui.label(egui::RichText::new("Generated prompt").strong());
         let prompt_h = (third - 28.0).max(80.0);
         crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), prompt_h)
@@ -186,7 +186,7 @@ impl MacroPromptBuilderUi {
                 );
             });
 
-        ui.separator();
+        crate::widgets::section_separator(ui);
         ui.label(egui::RichText::new("Import AI response").strong());
         ui.small("Paste the YAML macro returned by the AI (no markdown fences).");
         let yaml_h = (third - 56.0).max(80.0);

@@ -117,14 +117,14 @@ impl VariablesPanelUi {
                 ui.add_enabled_ui(enabled, |ui| {
                     persist |= self.body(ui, macro_, top_h);
                 });
-                ui.separator();
+                crate::widgets::section_separator(ui);
                 ui.horizontal_wrapped(|ui| {
                     ui.selectable_value(&mut self.bottom_tab, BottomTab::Runtime, "Runtime")
                         .on_hover_text(help::VAR_TAB_RUNTIME);
                     ui.selectable_value(&mut self.bottom_tab, BottomTab::Builtins, "Built-ins")
                         .on_hover_text(help::VAR_TAB_BUILTINS);
                 });
-                ui.separator();
+                crate::widgets::section_separator(ui);
                 match self.bottom_tab {
                     BottomTab::Runtime => self.show_runtime(ui, runtime_vars, running, bottom_h),
                     BottomTab::Builtins => self.show_builtins(ui, num_monitors, bottom_h),
@@ -262,7 +262,7 @@ impl VariablesPanelUi {
                 .desired_width(f32::INFINITY)
                 .hint_text("Filter declared variables…"),
         );
-        ui.separator();
+        crate::widgets::section_separator(ui);
 
         let mut remove_idx: Option<usize> = None;
         let mut start_edit: Option<usize> = None;
@@ -348,7 +348,7 @@ impl VariablesPanelUi {
         }
 
         if let Some(edit) = self.editing.clone() {
-            ui.separator();
+            crate::widgets::section_separator(ui);
             ui.heading(if edit.index.is_some() {
                 "Edit variable"
             } else {

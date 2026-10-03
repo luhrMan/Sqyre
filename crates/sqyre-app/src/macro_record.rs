@@ -299,7 +299,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
             ui.label(
                 "Hover for view tip, double-click to edit, right-click for Edit / Delete. Copy and paste into a macro.",
             );
-            ui.separator();
+            crate::widgets::section_separator(ui);
 
             if !points.is_empty() {
                 crate::widgets::heading_with_count(ui, "Temporary points", points.len());
@@ -382,7 +382,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                 if ui.button("Save selected points").clicked() {
                     save_points = true;
                 }
-                ui.separator();
+                crate::widgets::section_separator(ui);
             }
 
             let action_count = draft.root.children().len();
@@ -417,7 +417,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                     }
                 });
 
-            ui.separator();
+            crate::widgets::section_separator(ui);
             ui.horizontal(|ui| {
                 if ui.button("Copy").clicked() {
                     copy = true;

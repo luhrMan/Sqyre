@@ -910,7 +910,7 @@ impl DataEditor {
                 }
             });
         }
-        ui.separator();
+        crate::widgets::section_separator(ui);
 
         if let Some(msg) = env.screen_click.status_label() {
             ui.colored_label(crate::theme::PRIMARY, msg);
@@ -932,7 +932,6 @@ impl DataEditor {
         let footer_rect =
             egui::Rect::from_min_max(egui::pos2(outer.min.x, outer.min.y + body_h), outer.max);
 
-        let splitter_w = crate::theme::PANEL_SPLITTER_W;
         let avail_w = body_rect.width();
         let min_left = avail_w * MIN_DATA_EDITOR_LEFT_FRAC;
         let max_left = avail_w * MAX_DATA_EDITOR_LEFT_FRAC;
@@ -941,31 +940,15 @@ impl DataEditor {
             .data_editor_left_split
             .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
         self.left_width = (avail_w * frac).clamp(min_left, max_left);
-        // Keep splitter + right inside body_rect — never allocate past the frame.
-        let left_w = self.left_width.min((avail_w - splitter_w).max(0.0));
-        let left_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(left_w, body_h));
-        let split_rect = egui::Rect::from_min_size(
-            egui::pos2(left_rect.right(), body_rect.top()),
-            egui::vec2(splitter_w, body_h),
-        );
-        let right_rect = egui::Rect::from_min_max(
-            egui::pos2(split_rect.right(), body_rect.top()),
-            body_rect.max,
-        );
+        let crate::widgets::SplitView {
+            left: mut left_ui,
+            right: mut right_ui,
+            splitter: split_rect,
+        } = crate::widgets::split_view(ui, body_rect, self.left_width);
 
         let mut tag_submit = false;
 
-        // `new_child` (not scope_builder): do not advance parent by form min_size.
-        {
-            let mut left_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(left_rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            left_ui.set_clip_rect(left_rect.intersect(ui.clip_rect()));
-            left_ui.set_max_size(left_rect.size());
-            self.draw_left_list(&mut left_ui, env.catalog, env.icons, previews, env.settings);
-        }
+        self.draw_left_list(&mut left_ui, env.catalog, env.icons, previews, env.settings);
 
         let split_resp = ui.interact(
             split_rect,
@@ -1000,18 +983,12 @@ impl DataEditor {
         }
 
         {
-            let mut right_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(right_rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            right_ui.set_clip_rect(right_rect.intersect(ui.clip_rect()));
-            right_ui.set_max_size(right_rect.size());
+            let content_w = right_ui.max_rect().width();
             let fill_tab = matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
             let mut paint_form = |ui: &mut egui::Ui| {
                 // Cap soft-wrap to the pane; dialog_scroll (both axes) still H-scrolls
                 // when a hard min-width (preview row, fixed fields) exceeds the viewport.
-                ui.set_max_width(right_rect.width());
+                ui.set_max_width(content_w);
                 let macros: &[Macro] = env.macros;
                 tag_submit = self.draw_form(
                     ui,
@@ -1029,7 +1006,7 @@ impl DataEditor {
             if fill_tab {
                 paint_form(&mut right_ui);
             } else {
-                pickers::dialog_scroll(right_rect.width(), body_h)
+                pickers::dialog_scroll(content_w, body_h)
                     .id_salt("data_editor_form")
                     .show(&mut right_ui, paint_form);
             }
@@ -1044,7 +1021,7 @@ impl DataEditor {
             footer_ui.set_clip_rect(footer_rect.intersect(ui.clip_rect()));
             footer_ui.set_max_size(footer_rect.size());
             footer_ui.vertical(|ui| {
-                ui.separator();
+                crate::widgets::section_separator(ui);
                 ui.horizontal_wrapped(|ui| {
                     let can_new = !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
                     if ui

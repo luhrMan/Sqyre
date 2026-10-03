@@ -178,7 +178,7 @@ pub fn picker_searchable_scroll_ex(
             below(ui);
         }
     }
-    ui.separator();
+    crate::widgets::section_separator(ui);
     let q = search.trim().to_ascii_lowercase();
     // Fixed panes (footer_reserve == 0) use remaining height only — no popup screen cap.
     let pane = opts.footer_reserve <= 0.0;

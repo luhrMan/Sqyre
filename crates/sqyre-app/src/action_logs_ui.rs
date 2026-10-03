@@ -127,7 +127,7 @@ pub fn show_logs_window(
                 }
             });
         });
-        ui.separator();
+        crate::widgets::section_separator(ui);
 
         let list_h = crate::pickers::popup_scroll_max_height(ui, 0.0);
         let list_w = crate::widgets::visible_width(ui);
@@ -360,7 +360,7 @@ fn show_item_detail(
         ui.label(egui::RichText::new(title).strong().heading());
         ui.label(egui::RichText::new(summary).weak());
     });
-    ui.separator();
+    crate::widgets::section_separator(ui);
 
     if !details.is_empty() {
         ui.label(egui::RichText::new("Details").strong().small());

@@ -761,6 +761,11 @@ impl eframe::App for SqyreApp {
         action_tooltip::claim_view_tip_scroll(ui.ctx());
         ui_overlays::show_floating_windows(self, ui.ctx());
 
+        // The root viewport is transparent; translucent panel separators sit in
+        // gaps between panel fills and would show the desktop through them.
+        ui.painter()
+            .rect_filled(ui.ctx().content_rect(), 0.0, ui.visuals().panel_fill);
+
         ui_macro_list::show(self, ui);
 
         egui::CentralPanel::default().show(ui, |ui| {

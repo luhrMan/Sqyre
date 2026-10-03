@@ -353,7 +353,7 @@ impl MacroYamlBuilderUi {
                     self.draft_choice = DraftChoice::None;
                 }
             });
-            ui.separator();
+            crate::widgets::section_separator(ui);
         }
 
         let bound = self

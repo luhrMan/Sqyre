@@ -12,7 +12,7 @@ pub(crate) fn paint_preview_toolbar(
     view: Option<&mut ImageViewTransform>,
 ) -> bool {
     ui.add_space(crate::theme::SPACE_8);
-    ui.separator();
+    crate::widgets::section_separator(ui);
     let mut force = false;
     let show_zoom_hint = view.is_some();
     ui.horizontal(|ui| {
@@ -426,7 +426,7 @@ pub(crate) fn paint_disk_preview(
     replace_clicked: Option<&mut bool>,
 ) {
     ui.add_space(crate::theme::SPACE_8);
-    ui.separator();
+    crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).strong());
         if let Some(path) = path {
@@ -476,7 +476,7 @@ pub(crate) fn paint_zoomable_collection_preview(
     capturing: bool,
 ) {
     ui.add_space(crate::theme::SPACE_8);
-    ui.separator();
+    crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Collection image").strong());
         crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
@@ -734,7 +734,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
     use sqyre_domain::{AtlasLayout, AtlasNode, CoordinateRef, Macro, NavDir};
 
     ui.add_space(crate::theme::SPACE_8);
-    ui.separator();
+    crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new("Atlas plane").strong());
         crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_ATLAS_PLANE);

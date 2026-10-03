@@ -1241,7 +1241,7 @@ fn yaml_value_field(
                     ui.close();
                 }
             }
-            ui.separator();
+            crate::widgets::section_separator(ui);
             for c in EXPRESSION_CONSTANTS {
                 if ui.button(*c).clicked() {
                     insert = Some((*c).to_string());
@@ -1587,7 +1587,7 @@ pub(super) fn list_columns_editor(
     for (i, col) in sources.iter_mut().enumerate() {
         ui.push_id(i, |ui| {
             if i > 0 {
-                ui.separator();
+                crate::widgets::section_separator(ui);
             }
             let frame = theme::section_frame(ui.style()).show(ui, |ui| {
                 var_ref_field(
@@ -1642,7 +1642,7 @@ fn assignments_editor(
     for (i, a) in assignments.iter_mut().enumerate() {
         ui.push_id(i, |ui| {
             if i > 0 {
-                ui.separator();
+                crate::widgets::section_separator(ui);
             }
             let frame = theme::section_frame(ui.style()).show(ui, |ui| {
                 var_pills::var_name_text_edit(

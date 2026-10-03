@@ -365,7 +365,7 @@ impl SettingsUi {
         if clear_search {
             self.search.clear();
         }
-        ui.separator();
+        crate::widgets::section_separator(ui);
 
         let footer = if self.status_banner.status.is_some() {
             40.0
@@ -407,54 +407,33 @@ impl SettingsUi {
         }
 
         const SIDEBAR_W: f32 = 132.0;
-        let splitter_w = crate::theme::PANEL_SPLITTER_W;
-        let left_w = SIDEBAR_W.min((body_rect.width() - splitter_w).max(0.0));
-        let left_rect = egui::Rect::from_min_size(body_rect.min, egui::vec2(left_w, body_h));
-        let split_rect = egui::Rect::from_min_size(
-            egui::pos2(left_rect.right(), body_rect.top()),
-            egui::vec2(splitter_w, body_h),
-        );
-        let right_rect = egui::Rect::from_min_max(
-            egui::pos2(split_rect.right(), body_rect.top()),
-            body_rect.max,
-        );
+        let crate::widgets::SplitView {
+            left: mut left_ui,
+            right: mut right_ui,
+            splitter,
+        } = crate::widgets::split_view(ui, body_rect, SIDEBAR_W);
 
-        {
-            let mut left_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(left_rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            left_ui.set_clip_rect(left_rect.intersect(ui.clip_rect()));
-            left_ui.set_max_size(left_rect.size());
-            for section in visible_sections.iter().copied() {
-                if left_ui
-                    .selectable_label(self.active_section == section, section.label())
-                    .on_hover_text("↑↓ to switch sections")
-                    .clicked()
-                {
-                    self.active_section = section;
-                }
+        for section in visible_sections.iter().copied() {
+            if left_ui
+                .selectable_label(self.active_section == section, section.label())
+                .on_hover_text("↑↓ to switch sections")
+                .clicked()
+            {
+                self.active_section = section;
             }
         }
         ui.painter().vline(
-            split_rect.center().x,
-            split_rect.y_range(),
+            splitter.center().x,
+            splitter.y_range(),
             crate::theme::panel_split_stroke(),
         );
         {
-            let mut right_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(right_rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            right_ui.set_clip_rect(right_rect.intersect(ui.clip_rect()));
-            right_ui.set_max_size(right_rect.size());
-            crate::pickers::dialog_scroll(right_rect.width(), body_h)
+            let content_w = right_ui.max_rect().width();
+            crate::pickers::dialog_scroll(content_w, body_h)
                 .id_salt("user_settings_content")
                 .show(&mut right_ui, |ui| {
                     // Soft-wrap to pane width; both-axis scroll covers hard min overflows.
-                    ui.set_max_width(right_rect.width());
+                    ui.set_max_width(content_w);
                     if visible_sections.is_empty() {
                         crate::widgets::list_vacancy(ui, &q, 0, "settings");
                         return;
@@ -462,7 +441,7 @@ impl SettingsUi {
                     let section = self.active_section;
                     ui.label(egui::RichText::new(section.label()).strong().heading());
                     ui.label(egui::RichText::new(section.subtitle()).weak());
-                    ui.separator();
+                    crate::widgets::section_separator(ui);
                     let section_hit = match section {
                         SettingsSection::General => query_matches(&q, SECTION_GENERAL),
                         SettingsSection::Sound => query_matches(&q, SECTION_SOUND),

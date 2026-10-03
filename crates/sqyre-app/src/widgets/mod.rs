@@ -9,6 +9,7 @@ pub mod fields;
 pub mod headers;
 pub mod match_settings;
 pub mod scroll;
+pub mod sections;
 pub mod tags;
 
 pub(crate) use action_icons::{vector_action_icon, VectorIcon};
@@ -39,4 +40,5 @@ pub use match_settings::configure_match_blur_drag;
 pub use scroll::{
     dialog_scroll, enable_dense_row_extend, scroll_both, scroll_vertical, SCROLL_SOURCE_NO_DRAG,
 };
+pub use sections::{section_separator, split_view, tinted_section, SplitView};
 pub use tags::{tag_chip_editor, TagChipOptions};
