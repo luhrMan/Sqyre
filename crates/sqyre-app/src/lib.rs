@@ -621,6 +621,8 @@ impl SqyreApp {
             #[cfg(not(target_arch = "wasm32"))]
             update: update::UpdateManager::default(),
         };
+        let last_selected = app.settings_ui.settings().last_selected_macro.clone();
+        app.select_macro_by_name(&last_selected);
         app.refresh_macro_hotkey_bindings();
         #[cfg(not(target_arch = "wasm32"))]
         app.maybe_start_update_check();
@@ -768,6 +770,7 @@ impl eframe::App for SqyreApp {
 
         ui_toolbar::top_bar(self, ui);
         ui_macro_list::show(self, ui);
+        self.persist_selected_macro();
 
         egui::CentralPanel::default().show(ui, |ui| {
             #[cfg(target_arch = "wasm32")]

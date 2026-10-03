@@ -234,6 +234,23 @@ impl SqyreApp {
         }
     }
 
+    /// Save the selected macro's name so the next launch reopens it.
+    pub(crate) fn persist_selected_macro(&mut self) {
+        let Some(name) = self
+            .workspace
+            .macros
+            .get(self.workspace.selected_macro)
+            .map(|m| m.name.as_str())
+        else {
+            return;
+        };
+        if self.settings_ui.settings().last_selected_macro == name {
+            return;
+        }
+        self.settings_ui.settings_mut().last_selected_macro = name.to_string();
+        let _ = self.settings_ui.save_settings();
+    }
+
     pub(crate) fn create_macro(&mut self) {
         let name = self.unique_macro_name("new macro");
         let m = Macro::new(name.clone(), 0, vec![]);
