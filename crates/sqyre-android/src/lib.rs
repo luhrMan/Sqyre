@@ -27,21 +27,50 @@ pub fn frames() -> &'static FrameStore {
     &FRAMES
 }
 
-type StopHandler = Arc<dyn Fn() + Send + Sync>;
+pub type ShellHandler = Arc<dyn Fn() + Send + Sync>;
 
-static STOP_HANDLER: Mutex<Option<StopHandler>> = Mutex::new(None);
+/// One notification action's callback, replaced when the app reloads.
+struct HandlerSlot(Mutex<Option<ShellHandler>>);
 
-/// Called when the user taps Stop on the screen-recording notification.
-pub fn set_stop_handler(handler: StopHandler) {
-    *STOP_HANDLER.lock() = Some(handler);
+impl HandlerSlot {
+    const fn new() -> Self {
+        Self(Mutex::new(None))
+    }
+
+    fn set(&self, handler: ShellHandler) {
+        *self.0.lock() = Some(handler);
+    }
+
+    /// No-op before a handler is set. The lock is released before the call.
+    fn fire(&self) {
+        let handler = self.0.lock().clone();
+        if let Some(handler) = handler {
+            handler();
+        }
+    }
 }
 
-/// Forward a Stop tap to the registered handler (no-op before one is set).
+static STOP_HANDLER: HandlerSlot = HandlerSlot::new();
+static CONTINUE_HANDLER: HandlerSlot = HandlerSlot::new();
+
+/// Called when the user taps Stop on the screen-recording notification.
+pub fn set_stop_handler(handler: ShellHandler) {
+    STOP_HANDLER.set(handler);
+}
+
+/// Forward a Stop tap to the registered handler.
 pub fn request_stop() {
-    let handler = STOP_HANDLER.lock().clone();
-    if let Some(handler) = handler {
-        handler();
-    }
+    STOP_HANDLER.fire();
+}
+
+/// Called when the user taps Continue on the screen-recording notification.
+pub fn set_continue_handler(handler: ShellHandler) {
+    CONTINUE_HANDLER.set(handler);
+}
+
+/// Forward a Continue tap to the registered handler.
+pub fn request_continue() {
+    CONTINUE_HANDLER.fire();
 }
 
 #[cfg(test)]
@@ -49,16 +78,40 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    #[test]
-    fn stop_reaches_the_latest_handler() {
-        request_stop();
+    fn counting_handler() -> (ShellHandler, Arc<AtomicUsize>) {
         let hits = Arc::new(AtomicUsize::new(0));
         let counter = Arc::clone(&hits);
-        set_stop_handler(Arc::new(move || {
+        let handler: ShellHandler = Arc::new(move || {
             counter.fetch_add(1, Ordering::SeqCst);
-        }));
+        });
+        (handler, hits)
+    }
+
+    #[test]
+    fn slot_reaches_the_latest_handler() {
+        let slot = HandlerSlot::new();
+        slot.fire();
+        let (first, first_hits) = counting_handler();
+        slot.set(first);
+        slot.fire();
+        let (second, second_hits) = counting_handler();
+        slot.set(second);
+        slot.fire();
+        slot.fire();
+        assert_eq!(first_hits.load(Ordering::SeqCst), 1);
+        assert_eq!(second_hits.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn stop_and_continue_use_separate_handlers() {
+        let (stop, stop_hits) = counting_handler();
+        let (cont, cont_hits) = counting_handler();
+        set_stop_handler(stop);
+        set_continue_handler(cont);
+        request_continue();
+        request_continue();
         request_stop();
-        request_stop();
-        assert_eq!(hits.load(Ordering::SeqCst), 2);
+        assert_eq!(stop_hits.load(Ordering::SeqCst), 1);
+        assert_eq!(cont_hits.load(Ordering::SeqCst), 2);
     }
 }

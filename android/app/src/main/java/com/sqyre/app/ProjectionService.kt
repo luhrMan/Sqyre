@@ -35,6 +35,7 @@ class ProjectionService : Service() {
         private const val EXTRA_RESULT_CODE = "resultCode"
         private const val EXTRA_RESULT_DATA = "resultData"
         private const val ACTION_STOP_MACRO = "com.sqyre.app.STOP_MACRO"
+        private const val ACTION_CONTINUE_MACRO = "com.sqyre.app.CONTINUE_MACRO"
 
         @Volatile
         var running = false
@@ -57,9 +58,15 @@ class ProjectionService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP_MACRO) {
-            SqyreBridge.nativeOnStopRequested()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP_MACRO -> {
+                SqyreBridge.nativeOnStopRequested()
+                return START_NOT_STICKY
+            }
+            ACTION_CONTINUE_MACRO -> {
+                SqyreBridge.nativeOnContinueRequested()
+                return START_NOT_STICKY
+            }
         }
         // Android 14+: the foreground type must be active before getMediaProjection.
         startForeground(NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
@@ -186,18 +193,24 @@ class ProjectionService : Service() {
         manager.createNotificationChannel(
             NotificationChannel(CHANNEL_ID, getString(R.string.projection_channel), NotificationManager.IMPORTANCE_LOW),
         )
-        val stop = PendingIntent.getService(
-            this,
-            0,
-            Intent(this, ProjectionService::class.java).setAction(ACTION_STOP_MACRO),
-            PendingIntent.FLAG_IMMUTABLE,
-        )
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.projection_running))
             .setSmallIcon(android.R.drawable.ic_menu_camera)
             .setOngoing(true)
-            .addAction(Notification.Action.Builder(null, getString(R.string.projection_stop), stop).build())
+            .addAction(action(R.string.projection_continue, ACTION_CONTINUE_MACRO, 1))
+            .addAction(action(R.string.projection_stop, ACTION_STOP_MACRO, 0))
             .build()
+    }
+
+    /** Distinct [requestCode]s keep the two PendingIntents from replacing each other. */
+    private fun action(label: Int, action: String, requestCode: Int): Notification.Action {
+        val intent = PendingIntent.getService(
+            this,
+            requestCode,
+            Intent(this, ProjectionService::class.java).setAction(action),
+            PendingIntent.FLAG_IMMUTABLE,
+        )
+        return Notification.Action.Builder(null, getString(label), intent).build()
     }
 }

@@ -449,10 +449,16 @@ impl SqyreApp {
         let run = RunState::default();
         let stop = run.stop.clone();
         #[cfg(target_os = "android")]
-        sqyre_android::set_stop_handler({
-            let stop = stop.clone();
-            Arc::new(move || stop.request_stop())
-        });
+        {
+            sqyre_android::set_stop_handler({
+                let stop = stop.clone();
+                Arc::new(move || stop.request_stop())
+            });
+            sqyre_android::set_continue_handler({
+                let continue_wait = continue_wait.clone();
+                Arc::new(move || continue_wait.signal_continue())
+            });
+        }
         let pending_hotkey_macros = Arc::new(Mutex::new(Vec::new()));
         let pending_for_cb = Arc::clone(&pending_hotkey_macros);
         let hotkey_repaint = Arc::new(Mutex::new(None::<egui::Context>));

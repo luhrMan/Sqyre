@@ -6,4 +6,5 @@
     <string name="projection_channel">Screen recording</string>
     <string name="projection_running">Sqyre can see the screen for image search and OCR</string>
     <string name="projection_stop">Stop macro</string>
+    <string name="projection_continue">Continue</string>
 </resources>

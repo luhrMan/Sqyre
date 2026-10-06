@@ -11,7 +11,7 @@ mod system_shortcuts;
 
 #[cfg(all(feature = "hooks", target_os = "windows"))]
 pub use continue_wait::vk_key_name;
-pub use continue_wait::ContinueWaitBridge;
+pub use continue_wait::{ContinueSource, ContinueWaitBridge};
 pub use macro_hotkeys::{
     chord_all_pressed, chord_fully_released, format_hotkey, parse_hotkey, HotkeyTrigger,
     MacroHotkeyBinding, MacroHotkeyBridge,
@@ -127,7 +127,7 @@ pub fn default_hotkeys() -> (
     let macro_hotkeys = MacroHotkeyBridge::new();
     #[cfg(all(feature = "hooks", target_os = "windows"))]
     {
-        let bridge = ContinueWaitBridge::new(true);
+        let bridge = ContinueWaitBridge::new(ContinueSource::Keys);
         (
             Box::new(OsHotkeys::new(
                 bridge.clone(),
@@ -143,7 +143,7 @@ pub fn default_hotkeys() -> (
     }
     #[cfg(all(feature = "hooks", not(target_os = "windows")))]
     {
-        let bridge = ContinueWaitBridge::new(true);
+        let bridge = ContinueWaitBridge::new(ContinueSource::Keys);
         (
             Box::new(RdevHotkeys::new(
                 bridge.clone(),
@@ -159,9 +159,14 @@ pub fn default_hotkeys() -> (
     }
     #[cfg(not(feature = "hooks"))]
     {
+        // Android has no global keys; the screen-recording notification signals Continue.
+        #[cfg(target_os = "android")]
+        let source = ContinueSource::Signal;
+        #[cfg(not(target_os = "android"))]
+        let source = ContinueSource::Unavailable;
         (
             Box::new(NullHotkeys::default()),
-            ContinueWaitBridge::new(false),
+            ContinueWaitBridge::new(source),
             screen_click,
             macro_record,
             macro_hotkeys,

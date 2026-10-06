@@ -6,7 +6,7 @@
 
 use crate::frame::FrameLayout;
 use crate::pointer::Gesture;
-use crate::{frames, request_stop, status, AndroidError};
+use crate::{frames, request_continue, request_stop, status, AndroidError};
 use jni::objects::{GlobalRef, JByteBuffer, JClass, JValue};
 use jni::sys::jint;
 use jni::{JNIEnv, JavaVM};
@@ -244,6 +244,21 @@ pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnStopRequested(
 ) {
     guard("nativeOnStopRequested", || {
         request_stop();
+        Ok(())
+    });
+}
+
+#[no_mangle]
+#[allow(
+    non_snake_case,
+    reason = "JNI symbol names are fixed by the Kotlin class"
+)]
+pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnContinueRequested(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    guard("nativeOnContinueRequested", || {
+        request_continue();
         Ok(())
     });
 }

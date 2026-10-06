@@ -45,7 +45,8 @@ impl SqyreApp {
         SettingsUi::apply_action_colors(&settings);
 
         let hotkeys: Box<dyn HotkeyService> = Box::new(NullHotkeys::default());
-        let continue_wait = sqyre_hotkeys::ContinueWaitBridge::new(false);
+        let continue_wait =
+            sqyre_hotkeys::ContinueWaitBridge::new(sqyre_hotkeys::ContinueSource::Unavailable);
         let screen_click = ScreenClickBridge::new();
         let macro_hotkeys = sqyre_hotkeys::MacroHotkeyBridge::new();
         let run = RunState::default();

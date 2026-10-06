@@ -63,6 +63,8 @@ object SqyreBridge {
 
     @JvmStatic external fun nativeOnStopRequested()
 
+    @JvmStatic external fun nativeOnContinueRequested()
+
     @JvmStatic
     fun press(x: Int, y: Int, durationMs: Long): Int = guarded("press") {
         val service = SqyreAccessibilityService.instance ?: return@guarded ACCESSIBILITY_OFF

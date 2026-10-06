@@ -9,11 +9,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use web_time::{Duration, Instant};
 
+/// What can end a continue wait.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContinueSource {
+    /// No global keys and no shell signal: every wait fails.
+    Unavailable,
+    /// Global key hooks feed [`ContinueWaitBridge::on_pressed_keys`].
+    Keys,
+    /// No global keys: only [`ContinueWaitBridge::signal_continue`] (a notification
+    /// action) ends a single-chord wait. Multi-chord waits fail.
+    Signal,
+}
+
 /// Bridge between the hotkey listener thread and key waiters.
 #[derive(Clone)]
 pub struct ContinueWaitBridge {
     inner: Arc<Inner>,
-    hooks_enabled: bool,
+    source: ContinueSource,
 }
 
 struct Inner {
@@ -43,14 +55,26 @@ struct WaitState {
 }
 
 impl ContinueWaitBridge {
-    pub fn new(hooks_enabled: bool) -> Self {
+    pub fn new(source: ContinueSource) -> Self {
         Self {
             inner: Arc::new(Inner {
                 state: Mutex::new(WaitState::default()),
                 cv: Condvar::new(),
             }),
-            hooks_enabled,
+            source,
         }
+    }
+
+    /// End the current single-chord wait (Pause) as if its chord were pressed.
+    /// No-op when nothing waits or the wait has several chords.
+    pub fn signal_continue(&self) {
+        let mut g = self.inner.state.lock();
+        if !g.waiting || g.signaled || g.chords.len() != 1 {
+            return;
+        }
+        g.matched = Some(0);
+        g.signaled = true;
+        self.inner.cv.notify_all();
     }
 
     /// Whether a lone Escape should resume Pause instead of stopping the macro.
@@ -147,12 +171,15 @@ impl ContinueWaitBridge {
         _pass_through: bool,
         stop: &AtomicBool,
     ) -> Result<usize, HotkeyError> {
-        if !self.hooks_enabled {
+        if self.source == ContinueSource::Unavailable {
             return Err(HotkeyError::WaitUnavailable);
         }
         let normalized: Vec<Vec<String>> = chords.iter().map(|c| normalize_keys(c)).collect();
         if normalized.iter().all(|c| c.is_empty()) {
             return Err(HotkeyError::NoChords);
+        }
+        if self.source == ContinueSource::Signal && normalized.len() != 1 {
+            return Err(HotkeyError::WaitUnavailable);
         }
         for c in &normalized {
             if !c.is_empty() {
@@ -436,7 +463,7 @@ mod tests {
 
     #[test]
     fn wait_errors_without_hooks() {
-        let b = ContinueWaitBridge::new(false);
+        let b = ContinueWaitBridge::new(ContinueSource::Unavailable);
         let stop = AtomicBool::new(false);
         let err = b
             .wait_for_continue(&["f9".into()], false, &stop)
@@ -445,8 +472,61 @@ mod tests {
     }
 
     #[test]
+    fn signal_ends_a_pause_wait() {
+        let b = ContinueWaitBridge::new(ContinueSource::Signal);
+        let stop = AtomicBool::new(false);
+        let bridge = b.clone();
+        let handle = thread::spawn(move || {
+            while !bridge.inner.state.lock().waiting {
+                thread::yield_now();
+            }
+            bridge.signal_continue();
+        });
+        b.wait_for_continue(&["f9".into()], false, &stop).unwrap();
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn signal_before_a_wait_is_dropped() {
+        let b = ContinueWaitBridge::new(ContinueSource::Signal);
+        b.signal_continue();
+        let g = b.inner.state.lock();
+        assert!(!g.signaled);
+        assert!(g.matched.is_none());
+    }
+
+    #[test]
+    fn signal_mode_rejects_multi_chord_waits() {
+        let b = ContinueWaitBridge::new(ContinueSource::Signal);
+        let stop = AtomicBool::new(false);
+        let err = b
+            .wait_for_any_chord(&[vec!["up".into()], vec!["down".into()]], &[], false, &stop)
+            .unwrap_err();
+        assert!(matches!(err, HotkeyError::WaitUnavailable));
+    }
+
+    #[test]
+    fn signal_mode_wait_stops_on_flag() {
+        let b = ContinueWaitBridge::new(ContinueSource::Signal);
+        let stop_flag = Arc::new(AtomicBool::new(false));
+        let s = Arc::clone(&stop_flag);
+        let bridge = b.clone();
+        let handle = thread::spawn(move || {
+            while !bridge.inner.state.lock().waiting {
+                thread::yield_now();
+            }
+            s.store(true, Ordering::SeqCst);
+        });
+        let err = b
+            .wait_for_continue(&["f9".into()], false, stop_flag.as_ref())
+            .unwrap_err();
+        assert!(matches!(err, HotkeyError::Stopped));
+        handle.join().unwrap();
+    }
+
+    #[test]
     fn wait_signaled_by_pressed_keys() {
-        let b = ContinueWaitBridge::new(true);
+        let b = ContinueWaitBridge::new(ContinueSource::Keys);
         let stop = AtomicBool::new(false);
         let bridge = b.clone();
         let handle = thread::spawn(move || {
@@ -461,7 +541,7 @@ mod tests {
 
     #[test]
     fn wait_any_picks_longest_chord() {
-        let b = ContinueWaitBridge::new(true);
+        let b = ContinueWaitBridge::new(ContinueSource::Keys);
         let stop = AtomicBool::new(false);
         let bridge = b.clone();
         let handle = thread::spawn(move || {
@@ -485,7 +565,7 @@ mod tests {
 
     #[test]
     fn wait_stops_on_flag() {
-        let b = ContinueWaitBridge::new(true);
+        let b = ContinueWaitBridge::new(ContinueSource::Keys);
         let stop_flag = Arc::new(AtomicBool::new(false));
         let s = Arc::clone(&stop_flag);
         let handle = thread::spawn(move || {
