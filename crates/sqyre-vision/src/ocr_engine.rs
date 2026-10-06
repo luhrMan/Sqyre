@@ -147,10 +147,30 @@ pub fn ensure_english_tessdata() -> Result<PathBuf, PortError> {
     Ok(dest)
 }
 
+/// Tessdata directory the host app ships (Android extracts it from the APK).
+static APP_TESSDATA_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// Use `dir` for `eng.traineddata` ahead of system paths, and as the download target.
+///
+/// Call once at startup, before the first OCR. Later calls are ignored.
+pub fn set_tessdata_dir(dir: PathBuf) {
+    // A recreated Android activity re-enters startup in the same process with the same path.
+    let _ = APP_TESSDATA_DIR.set(dir);
+}
+
 fn find_english_tessdata() -> Option<PathBuf> {
+    find_english_tessdata_with(APP_TESSDATA_DIR.get().map(PathBuf::as_path))
+}
+
+fn find_english_tessdata_with(app_dir: Option<&Path>) -> Option<PathBuf> {
     if let Ok(p) = std::env::var("SQYRE_TESSDATA") {
         if has_english_tessdata(&p) {
             return Some(PathBuf::from(p));
+        }
+    }
+    if let Some(dir) = app_dir {
+        if has_english_tessdata(dir) {
+            return Some(dir.to_path_buf());
         }
     }
     for candidate in platform_tessdata_paths() {
@@ -172,6 +192,9 @@ fn has_english_tessdata(path: impl AsRef<Path>) -> bool {
 
 /// User-writable install path used when system / env tessdata is absent.
 fn writable_tessdata_dir() -> PathBuf {
+    if let Some(dir) = APP_TESSDATA_DIR.get() {
+        return dir.clone();
+    }
     #[cfg(target_os = "windows")]
     {
         if let Some(appdata) = std::env::var_os("APPDATA") {
@@ -382,6 +405,29 @@ mod tests {
         let err = recognize_image(&bad, &path).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("unsupported channels"), "{msg}");
+    }
+
+    #[test]
+    fn app_tessdata_dir_wins_over_system_paths() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let dir = tmp.path().join("tessdata");
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        std::fs::write(dir.join("eng.traineddata"), b"model").expect("write");
+        let env_dir = std::env::var("SQYRE_TESSDATA")
+            .ok()
+            .filter(|p| has_english_tessdata(p))
+            .map(PathBuf::from);
+        let expected = env_dir.unwrap_or_else(|| dir.clone());
+        assert_eq!(find_english_tessdata_with(Some(&dir)), Some(expected));
+    }
+
+    #[test]
+    fn app_tessdata_dir_without_model_is_skipped() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        assert_eq!(
+            find_english_tessdata_with(Some(tmp.path())),
+            find_english_tessdata_with(None)
+        );
     }
 
     #[test]

@@ -153,6 +153,9 @@ pub fn run() -> eframe::Result<()> {
 #[no_mangle]
 fn android_main(app: winit::platform::android::activity::AndroidApp) {
     if let Some(home) = app.internal_data_path() {
+        // MainActivity extracts the APK's eng.traineddata here before Rust starts.
+        #[cfg(feature = "native-runtime")]
+        sqyre_vision::set_tessdata_dir(home.join("tessdata"));
         sqyre_persist::set_home_dir(home);
     }
     let mut options = native_options();
