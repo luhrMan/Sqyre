@@ -1,5 +1,7 @@
 //! Screen capture in absolute virtual-desktop coordinates.
 
+#[cfg(target_os = "android")]
+mod android_capture;
 mod diag;
 mod error;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -53,8 +55,8 @@ pub use linux::{
 };
 pub use outline_rect::OutlineRect;
 pub use pixel_convert::{
-    strip_rgba_row_to_rgb, swizzle_row_to_rgba, zpixmap_to_rgb, zpixmap_to_rgba, RgbaSrcFormat,
-    PARALLEL_ROW_GATE,
+    crop_packed_rgba, crop_packed_rgba_to_rgb, strip_rgba_row_to_rgb, swizzle_row_to_rgba,
+    zpixmap_to_rgb, zpixmap_to_rgba, RgbaSrcFormat, PARALLEL_ROW_GATE,
 };
 pub use selection_grab::GrabPoll;
 pub use stub::{NullCapturer, SolidCapturer};
@@ -63,6 +65,12 @@ pub use stub::{NullCapturer, SolidCapturer};
 pub use win_capture::{
     reset_shared_capturer, shared_capturer, shared_capturer_if_ready, shared_capturer_is_opening,
     shared_capturer_open_superseded, OsCapturer, SharedRunCapturer,
+};
+
+#[cfg(target_os = "android")]
+pub use android_capture::{
+    reset_shared_capturer, shared_capturer, shared_capturer_if_ready, shared_capturer_is_opening,
+    shared_capturer_open_superseded, OsCapturer, OsWindowFocuser, SharedRunCapturer,
 };
 
 #[cfg(all(target_os = "linux", feature = "portal-capture"))]
@@ -114,36 +122,36 @@ pub use outline_stub::SelectionOutline;
 pub use grab_stub::SelectionGrab;
 
 /// macOS / other: capture not implemented yet.
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub type OsCapturer = NullCapturer;
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn shared_capturer() -> Result<std::sync::Arc<OsCapturer>, CaptureError> {
     Err(CaptureError::UnsupportedPlatform)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn shared_capturer_if_ready() -> Option<Result<std::sync::Arc<OsCapturer>, CaptureError>> {
     None
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn shared_capturer_is_opening() -> bool {
     false
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn reset_shared_capturer() {}
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn shared_capturer_open_superseded() -> bool {
     false
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub struct SharedRunCapturer(pub std::sync::Arc<OsCapturer>);
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 impl sqyre_ports::ScreenCapturer for SharedRunCapturer {
     fn capture_monitor(
         &mut self,
@@ -506,7 +514,7 @@ pub fn nudge_portal_capture_after_ui_hide() {}
 /// Stops further frame copies until the next capture wait so the full-desktop RGBA
 /// buffer does not keep RSS elevated while idle. Streams stay connected.
 pub fn release_capture_frame_cache() {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         let Some(Ok(cap)) = shared_capturer_if_ready() else {
             return;
@@ -517,14 +525,14 @@ pub fn release_capture_frame_cache() {
 
 /// Current portal CPU frame-cache size in bytes (0 if unused / released / non-portal).
 pub fn capture_frame_cache_bytes() -> usize {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         match shared_capturer_if_ready() {
             Some(Ok(cap)) => cap.cpu_frame_cache_bytes(),
             _ => 0,
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     {
         0
     }
@@ -844,11 +852,11 @@ pub fn window_matches_binding(win: &WindowInfo, process_path: &str, window_title
 }
 
 /// Stub focuser when OS window activation is not implemented.
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OsWindowFocuser;
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 impl sqyre_ports::WindowFocuser for OsWindowFocuser {
     fn focus(
         &self,

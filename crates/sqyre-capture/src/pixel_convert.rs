@@ -104,6 +104,64 @@ pub fn strip_rgba_row_to_rgb(src: &[u8], width: usize, dst: &mut [u8]) {
     });
 }
 
+/// Copy a `w × h` window at (`x`, `y`) out of a tightly packed RGBA frame `frame_w` wide.
+///
+/// The window must lie inside the frame.
+pub fn crop_packed_rgba(
+    src: &[u8],
+    frame_w: usize,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+) -> Vec<u8> {
+    crop_rows(src, frame_w, x, y, w, h, 4, |s, d| d.copy_from_slice(s))
+}
+
+/// Like [`crop_packed_rgba`], dropping alpha (tightly packed RGB out).
+pub fn crop_packed_rgba_to_rgb(
+    src: &[u8],
+    frame_w: usize,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+) -> Vec<u8> {
+    crop_rows(src, frame_w, x, y, w, h, 3, |s, d| {
+        strip_rgba_row_to_rgb(s, w, d)
+    })
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "private helper shared by the two crop kernels"
+)]
+fn crop_rows(
+    src: &[u8],
+    frame_w: usize,
+    x: usize,
+    y: usize,
+    w: usize,
+    h: usize,
+    out_bpp: usize,
+    copy_row: impl Fn(&[u8], &mut [u8]) + Sync,
+) -> Vec<u8> {
+    if w == 0 || h == 0 {
+        return Vec::new();
+    }
+    let mut out = vec![0u8; w * h * out_bpp];
+    let row = |(r, dst): (usize, &mut [u8])| {
+        let s = ((y + r) * frame_w + x) * 4;
+        copy_row(&src[s..s + w * 4], dst);
+    };
+    if h >= PARALLEL_ROW_GATE {
+        out.par_chunks_mut(w * out_bpp).enumerate().for_each(row);
+    } else {
+        out.chunks_mut(w * out_bpp).enumerate().for_each(row);
+    }
+    out
+}
+
 /// Convert X11 ZPixmap bytes (typically BGRA on little-endian) into an [`RgbaImage`].
 ///
 /// `bpp` is bytes per pixel from `bits_per_pixel / 8` (must be ≥ 3).
@@ -314,6 +372,48 @@ mod tests {
 
         swizzle_row_to_rgba(&[1, 2, 3, 0, 4, 5, 6, 0], 2, RgbaSrcFormat::Rgbx, &mut out);
         assert_eq!(out, [1, 2, 3, 255, 4, 5, 6, 255]);
+    }
+
+    /// `frame_w × frame_h` RGBA frame; pixel (x, y) = [x, y, 9, 200].
+    fn coord_frame(frame_w: usize, frame_h: usize) -> Vec<u8> {
+        (0..frame_h)
+            .flat_map(|y| (0..frame_w).flat_map(move |x| [x as u8, y as u8, 9, 200]))
+            .collect()
+    }
+
+    #[test]
+    fn crop_packed_rgba_copies_the_window() {
+        let frame = coord_frame(5, 4);
+        let out = crop_packed_rgba(&frame, 5, 1, 2, 3, 2);
+        assert_eq!(out.len(), 3 * 2 * 4);
+        assert_eq!(&out[..4], &[1, 2, 9, 200]);
+        assert_eq!(&out[out.len() - 4..], &[3, 3, 9, 200]);
+    }
+
+    #[test]
+    fn crop_packed_rgba_to_rgb_drops_alpha() {
+        let frame = coord_frame(4, 3);
+        let out = crop_packed_rgba_to_rgb(&frame, 4, 2, 1, 2, 2);
+        assert_eq!(out, vec![2, 1, 9, 3, 1, 9, 2, 2, 9, 3, 2, 9]);
+    }
+
+    #[test]
+    fn crop_parallel_matches_serial_rows() {
+        let (fw, fh) = (40, PARALLEL_ROW_GATE + 8);
+        let frame = coord_frame(fw, fh);
+        let h = PARALLEL_ROW_GATE + 2;
+        let out = crop_packed_rgba_to_rgb(&frame, fw, 3, 4, 10, h);
+        for r in 0..h {
+            let px = &out[r * 10 * 3..r * 10 * 3 + 3];
+            assert_eq!(px, &[3, (4 + r) as u8, 9], "row {r}");
+        }
+    }
+
+    #[test]
+    fn crop_empty_window_is_empty() {
+        let frame = coord_frame(2, 2);
+        assert!(crop_packed_rgba(&frame, 2, 0, 0, 0, 2).is_empty());
+        assert!(crop_packed_rgba_to_rgb(&frame, 2, 0, 0, 2, 0).is_empty());
     }
 
     #[test]
