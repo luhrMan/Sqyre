@@ -14,6 +14,8 @@ pub enum NotReady {
     AwaitingFirstFrame,
     #[error("portal capture: no frame yet from PipeWire")]
     NoFrameYet,
+    #[error("screen capture is waiting for screen-recording permission")]
+    AwaitingProjection,
 }
 
 /// Failure capturing screen pixels or querying display geometry.
@@ -61,6 +63,9 @@ pub enum CaptureError {
     /// The xdg-desktop-portal ScreenCast session failed or was refused.
     #[error("portal capture: {0}")]
     Portal(String),
+    /// The Android MediaProjection session stopped or delivered a bad frame.
+    #[error("screen recording: {0}")]
+    Projection(String),
     /// Anything without a dedicated variant. Prefer adding one over reaching
     /// for this — callers cannot match on a string.
     #[error("{0}")]
@@ -93,6 +98,7 @@ mod tests {
             NotReady::AwaitingPortalPermission,
             NotReady::AwaitingFirstFrame,
             NotReady::NoFrameYet,
+            NotReady::AwaitingProjection,
         ] {
             assert!(CaptureError::from(r).is_retryable(), "{r:?}");
         }
@@ -100,6 +106,7 @@ mod tests {
             CaptureError::OpenDisplay,
             CaptureError::UnsupportedPlatform,
             CaptureError::Portal("session closed".into()),
+            CaptureError::Projection("stopped".into()),
             CaptureError::Message("waiting for portal".into()),
         ] {
             assert!(!e.is_retryable(), "{e:?}");
