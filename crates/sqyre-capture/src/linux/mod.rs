@@ -1,5 +1,6 @@
 //! Linux session detection and Wayland backend stubs.
 
+pub mod app_scope;
 pub mod capturer;
 pub mod session;
 pub mod wayland;

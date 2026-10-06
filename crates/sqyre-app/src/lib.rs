@@ -16,6 +16,8 @@ mod command_palette;
 mod data_editor;
 mod data_editor_preview;
 mod demo_icons;
+#[cfg(target_os = "linux")]
+mod desktop_entry;
 #[cfg(feature = "native-runtime")]
 mod diag;
 pub mod docs_fixture;
@@ -150,6 +152,10 @@ pub fn run() -> eframe::Result<()> {
         diag::install(sqyre_persist::sqyre_dir());
     }
     sqyre_update::cleanup_stale_update();
+    #[cfg(target_os = "linux")]
+    desktop_entry::install();
+    #[cfg(all(feature = "native-runtime", target_os = "linux"))]
+    sqyre_capture::linux::app_scope::enter_app_scope(assets::APP_ID);
     #[cfg(all(
         not(target_arch = "wasm32"),
         feature = "native-runtime",
