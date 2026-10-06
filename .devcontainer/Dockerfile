@@ -110,6 +110,19 @@ RUN set -eux \
  && chmod -R a+rX /usr/local/rustup /usr/local/cargo \
  && java -version && gradle --version && cargo ndk --version
 
+# x86_64 emulator for `make android-emulator` (needs /dev/kvm; see scripts/android/emulator.sh).
+# Separate layer so the SDK/NDK layer above stays cached.
+ARG ANDROID_EMULATOR_IMAGE="system-images;android-35;google_apis;x86_64"
+RUN set -eux \
+ && apt-get update && apt-get install -y --no-install-recommends \
+      libpulse0 libnss3 libxcomposite1 libxcursor1 libxdamage1 libxi6 libxtst6 libxkbfile1 \
+      libgl1 libegl1 libgbm1 libdrm2 libxshmfence1 libxkbcommon-x11-0 libxcb-cursor0 libbsd0 \
+      libsm6 libice6 \
+ && rm -rf /var/lib/apt/lists/* \
+ && sdkmanager --install "emulator" "${ANDROID_EMULATOR_IMAGE}" \
+ && chmod -R a+rwX "${ANDROID_HOME}"
+ENV PATH="/opt/android-sdk/emulator:${PATH}"
+
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=1000
