@@ -187,6 +187,10 @@ fn native_options() -> eframe::NativeOptions {
         renderer: eframe::Renderer::Glow,
         #[cfg(target_os = "linux")]
         renderer: eframe::Renderer::Wgpu,
+        // GLES works on every device; wgpu picks Vulkan, which crashes the emulator's
+        // SwiftShader host renderer and is unreliable on older phone drivers.
+        #[cfg(target_os = "android")]
+        renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
     // Native Wayland: winit's set_visible / set_outer_position are no-ops, so tray-hide
