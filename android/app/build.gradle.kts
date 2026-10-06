@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -6,6 +8,13 @@ plugins {
 android {
     namespace = "com.sqyre.app"
     compileSdk = 35
+    // Same NDK cargo-ndk links with; AGP needs it to strip debug info from libsqyre_app.so.
+    System.getenv("ANDROID_NDK_HOME")?.let { ndk ->
+        ndkPath = ndk
+        ndkVersion = Properties()
+            .apply { file("$ndk/source.properties").inputStream().use { load(it) } }
+            .getProperty("Pkg.Revision")
+    }
 
     defaultConfig {
         applicationId = "com.sqyre.app"
