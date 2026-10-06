@@ -7,6 +7,7 @@ use super::{DataEditor, DataEditorCtx, EditorTab, PendingConfirm, VariantPrompt}
 use crate::data_editor_preview::{
     fit_panel, fit_thumbnail, pixel_size_text, variant_display_label, variant_name_from_path,
 };
+use crate::file_dialogs::PickPurpose;
 use crate::icon_cache::IconCache;
 use crate::icon_variants::{self, AddVariantError};
 use eframe::egui;
@@ -21,6 +22,7 @@ use sqyre_vision::invalidate_search_masks_under;
 
 #[cfg(not(feature = "native-runtime"))]
 fn invalidate_search_masks_under(_path: &std::path::Path) {}
+use std::path::PathBuf;
 #[cfg(feature = "native-runtime")]
 use std::sync::mpsc;
 use std::sync::mpsc::TryRecvError;
@@ -33,7 +35,6 @@ impl DataEditor {
         ui: &mut egui::Ui,
         icons: &mut IconCache,
         catalog: &ProgramCatalog,
-        settings: &UserSettings,
         target: &str,
         item: &str,
     ) {
@@ -57,7 +58,7 @@ impl DataEditor {
                         )
                         .clicked()
                     {
-                        self.pick_and_add_variant(catalog, icons, settings);
+                        self.request_variant_pick();
                     }
                     if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
                         icons.invalidate_target(target);
@@ -122,15 +123,26 @@ impl DataEditor {
         });
     }
 
-    pub(crate) fn pick_and_add_variant(
+    pub(crate) fn request_variant_pick(&mut self) {
+        if self.selected_program.is_none() || self.selected_entity.is_none() {
+            self.set_err("Select an item first.");
+            return;
+        }
+        crate::file_dialogs::request(
+            PickPurpose::IconVariant,
+            "Add icon variant",
+            Some(&screen_cap_path()),
+        );
+    }
+
+    /// Finish [`Self::request_variant_pick`] with the chosen PNG.
+    pub(crate) fn add_picked_variant(
         &mut self,
         catalog: &ProgramCatalog,
         icons: &mut IconCache,
         settings: &UserSettings,
+        path: PathBuf,
     ) {
-        let Some(path) = crate::file_dialogs::pick_png(&screen_cap_path()) else {
-            return;
-        };
         let (Some(prog), Some(item)) =
             (self.selected_program.clone(), self.selected_entity.clone())
         else {
@@ -243,14 +255,25 @@ impl DataEditor {
         }
     }
 
-    pub(crate) fn upload_mask_image(&mut self, catalog: &ProgramCatalog, icons: &mut IconCache) {
+    pub(crate) fn request_mask_image_pick(&mut self) {
+        if self.selected_program.is_none() || self.selected_entity.is_none() {
+            self.set_err("Select a mask first.");
+            return;
+        }
+        crate::file_dialogs::request(PickPurpose::MaskImage, "Upload mask image", None);
+    }
+
+    /// Finish [`Self::request_mask_image_pick`] with the chosen image.
+    pub(crate) fn upload_mask_image(
+        &mut self,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        src: PathBuf,
+    ) {
         let (Some(prog), Some(mask)) =
             (self.selected_program.clone(), self.selected_entity.clone())
         else {
             self.set_err("Select a mask first.");
-            return;
-        };
-        let Some(src) = crate::file_dialogs::pick_image() else {
             return;
         };
         let dest = catalog.mask_image_path(&prog, &mask);

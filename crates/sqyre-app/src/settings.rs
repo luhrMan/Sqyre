@@ -1,5 +1,6 @@
 //! User Settings window.
 
+use crate::file_dialogs::PickPurpose;
 use crate::status_banner::StatusBanner;
 use eframe::egui::{self, Color32};
 use sqyre_domain::Macro;
@@ -799,7 +800,9 @@ impl SettingsUi {
                         Err(e) => self.set_err(format!("Open folder failed: {e}")),
                     }
                 }
-                if ui.button("Choose location…").clicked() {
+                if crate::file_dialogs::supported(PickPurpose::SqyreLocation)
+                    && ui.button("Choose location…").clicked()
+                {
                     self.choose_sqyre_location();
                 }
                 if flatpak {
@@ -937,7 +940,7 @@ impl SettingsUi {
                     self.run_manual_backup();
                 }
                 if ui.button("Restore from backup…").clicked() {
-                    self.choose_restore_backup();
+                    self.request_restore_backup();
                 }
             });
         }
@@ -971,23 +974,32 @@ impl SettingsUi {
         self.set_ok(format!("Backup saved: {name}"));
     }
 
-    /// Pick a backup zip and open Settings on the restore confirm dialog.
+    /// Pick a backup zip; [`Self::apply_pick`] opens Settings on the restore confirm.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn request_restore_backup(&mut self) {
-        self.choose_restore_backup();
+        let start = backups_dir();
+        let start = if start.exists() { start } else { sqyre_dir() };
+        crate::file_dialogs::request(
+            PickPurpose::RestoreBackup,
+            "Restore from backup",
+            Some(&start),
+        );
+    }
+
+    /// Finish a Settings pick and open Settings on its confirm dialog.
+    pub(crate) fn apply_pick(&mut self, purpose: PickPurpose, path: PathBuf) {
+        match purpose {
+            PickPurpose::RestoreBackup => {
+                self.confirm = Some(PendingConfirm::RestoreBackup { path });
+            }
+            PickPurpose::SqyreLocation | PickPurpose::HostSqyreLocation => {
+                self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(path));
+            }
+            PickPurpose::IconVariant | PickPurpose::MaskImage => return,
+        }
         if self.confirm.is_some() {
             self.open = true;
         }
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn choose_restore_backup(&mut self) {
-        let start = backups_dir();
-        let start = if start.exists() { start } else { sqyre_dir() };
-        let Some(path) = crate::file_dialogs::pick_zip("Restore from backup", &start) else {
-            return;
-        };
-        self.confirm = Some(PendingConfirm::RestoreBackup { path });
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1083,11 +1095,11 @@ impl SettingsUi {
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(sqyre_dir);
-        let Some(picked) = crate::file_dialogs::pick_folder("Choose .sqyre location", &start)
-        else {
-            return;
-        };
-        self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(picked));
+        crate::file_dialogs::request(
+            PickPurpose::SqyreLocation,
+            "Choose .sqyre location",
+            Some(&start),
+        );
     }
 
     /// Flatpak: portal-pick host `~/.sqyre` (or its parent) so the sandbox can use it.
@@ -1096,12 +1108,11 @@ impl SettingsUi {
             .map(PathBuf::from)
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or_else(sqyre_dir);
-        let Some(picked) =
-            crate::file_dialogs::pick_folder("Select host ~/.sqyre (or your Home folder)", &start)
-        else {
-            return;
-        };
-        self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(picked));
+        crate::file_dialogs::request(
+            PickPurpose::HostSqyreLocation,
+            "Select host ~/.sqyre (or your Home folder)",
+            Some(&start),
+        );
     }
 
     fn confirm_sqyre_location(&mut self, new_dir: PathBuf) {

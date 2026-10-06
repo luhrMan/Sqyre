@@ -65,6 +65,9 @@ object SqyreBridge {
 
     @JvmStatic external fun nativeOnContinueRequested()
 
+    /** Answer for [pickDocument] [id]: a readable copy in app cache, or `""` when cancelled. */
+    @JvmStatic external fun nativeOnDocumentPicked(id: Int, path: String)
+
     @JvmStatic
     fun press(x: Int, y: Int, durationMs: Long): Int = guarded("press") {
         val service = SqyreAccessibilityService.instance ?: return@guarded ACCESSIBILITY_OFF
@@ -146,6 +149,17 @@ object SqyreBridge {
 
     private fun appLine(pkg: String, label: String): String =
         pkg + "\t" + label.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
+
+    /** Open the Storage Access Framework picker; always answers via [nativeOnDocumentPicked]. */
+    @JvmStatic
+    fun pickDocument(id: Int, mimeTypes: Array<String>) {
+        val act = activity.get()
+        if (act == null) {
+            nativeOnDocumentPicked(id, "")
+            return
+        }
+        act.runOnUiThread { act.pickDocument(id, mimeTypes) }
+    }
 
     @JvmStatic
     fun requestProjection() {

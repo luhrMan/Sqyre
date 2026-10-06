@@ -753,6 +753,34 @@ impl SqyreApp {
         app.bind_hotkey_repaint(cc.egui_ctx.clone());
         app
     }
+
+    /// Route a finished [`file_dialogs::request`] to the panel that asked for it.
+    fn apply_picked_file(&mut self, ctx: &egui::Context) {
+        if file_dialogs::pending() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        }
+        let Some(picked) = file_dialogs::take_picked() else {
+            return;
+        };
+        match picked.purpose {
+            file_dialogs::PickPurpose::IconVariant => self.data_editor.add_picked_variant(
+                &self.workspace.catalog,
+                &mut self.icon_cache,
+                self.settings_ui.settings(),
+                picked.path,
+            ),
+            file_dialogs::PickPurpose::MaskImage => self.data_editor.upload_mask_image(
+                &self.workspace.catalog,
+                &mut self.icon_cache,
+                picked.path,
+            ),
+            purpose @ (file_dialogs::PickPurpose::RestoreBackup
+            | file_dialogs::PickPurpose::SqyreLocation
+            | file_dialogs::PickPurpose::HostSqyreLocation) => {
+                self.settings_ui.apply_pick(purpose, picked.path);
+            }
+        }
+    }
 }
 
 impl eframe::App for SqyreApp {
@@ -782,6 +810,7 @@ impl eframe::App for SqyreApp {
         }
         self.poll_hotkey_chooser_escape(ctx);
         self.start_deferred_pick(ctx);
+        self.apply_picked_file(ctx);
         // Unmap as soon as the WM asks to close so portal/tray/wgpu teardown
         // is not user-visible (Drop alone was finishing in <1s while the window
         // stayed up for ~2s afterward).

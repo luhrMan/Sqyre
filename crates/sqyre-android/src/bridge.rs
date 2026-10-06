@@ -7,10 +7,10 @@
 use crate::frame::FrameLayout;
 use crate::pointer::Gesture;
 use crate::{
-    frames, parse_app_line, parse_app_list, request_continue, request_stop, status, AndroidError,
-    LaunchableApp,
+    frames, parse_app_line, parse_app_list, picks, request_continue, request_stop, status,
+    AndroidError, LaunchableApp,
 };
-use jni::objects::{GlobalRef, JByteBuffer, JClass, JString, JValue};
+use jni::objects::{GlobalRef, JByteBuffer, JClass, JObject, JString, JValue};
 use jni::sys::jint;
 use jni::{JNIEnv, JavaVM};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -146,6 +146,33 @@ pub fn launchable_apps() -> Result<Vec<LaunchableApp>, AndroidError> {
 /// App whose window came to the front last; `None` while the accessibility service is off.
 pub fn foreground_app() -> Result<Option<LaunchableApp>, AndroidError> {
     Ok(parse_app_line(&call_text("foregroundApp")?))
+}
+
+/// Open the system document picker for pick `id`, limited to `mime_types`.
+/// The shell answers through `nativeOnDocumentPicked`.
+pub fn pick_document(id: i32, mime_types: &[&str]) -> Result<(), AndroidError> {
+    with_bridge(|env, class| {
+        let mimes = env.new_object_array(
+            i32::try_from(mime_types.len()).unwrap_or(i32::MAX),
+            "java/lang/String",
+            JObject::null(),
+        )?;
+        for (i, mime) in (0..).zip(mime_types) {
+            let mime = env.new_string(mime)?;
+            env.set_object_array_element(&mimes, i, &mime)?;
+            env.delete_local_ref(mime)?;
+        }
+        let result = env
+            .call_static_method(
+                class,
+                "pickDocument",
+                "(I[Ljava/lang/String;)V",
+                &[JValue::Int(id), (&mimes).into()],
+            )
+            .and_then(|v| v.v());
+        env.delete_local_ref(mimes)?;
+        result
+    })
 }
 
 /// Ask the shell to show the screen-recording consent dialog (no-op while one is pending).
@@ -286,6 +313,24 @@ pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnContinueRequested(
 ) {
     guard("nativeOnContinueRequested", || {
         request_continue();
+        Ok(())
+    });
+}
+
+#[no_mangle]
+#[allow(
+    non_snake_case,
+    reason = "JNI symbol names are fixed by the Kotlin class"
+)]
+pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnDocumentPicked(
+    mut env: JNIEnv,
+    _class: JClass,
+    id: jint,
+    path: JString,
+) {
+    guard("nativeOnDocumentPicked", || {
+        let path: String = env.get_string(&path)?.into();
+        picks().complete(id, &path);
         Ok(())
     });
 }

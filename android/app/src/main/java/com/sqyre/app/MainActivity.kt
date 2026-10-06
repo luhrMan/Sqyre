@@ -5,12 +5,17 @@ import android.app.NativeActivity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.util.Log
+import java.io.File
 
-/** Hosts the egui UI (Rust `android_main`) and owns the screen-recording consent flow. */
+/** Hosts the egui UI (Rust `android_main`) and owns the screen-recording and file-picker flows. */
 class MainActivity : NativeActivity() {
     private var projectionPending = false
+    private var pickId: Int? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         SqyreBridge.attach(this)
@@ -36,23 +41,81 @@ class MainActivity : NativeActivity() {
         startActivityForResult(manager.createScreenCaptureIntent(), REQUEST_PROJECTION)
     }
 
-    @Deprecated("NativeActivity has no ActivityResult API")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode != REQUEST_PROJECTION) {
+    /** Open the document picker; a newer pick cancels the unanswered one. */
+    fun pickDocument(id: Int, mimeTypes: Array<String>) {
+        pickId?.let { SqyreBridge.nativeOnDocumentPicked(it, "") }
+        pickId = id
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT)
+            .addCategory(Intent.CATEGORY_OPENABLE)
+            .setType(if (mimeTypes.size == 1) mimeTypes[0] else "*/*")
+        if (mimeTypes.size > 1) intent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes)
+        try {
             @Suppress("DEPRECATION")
-            super.onActivityResult(requestCode, resultCode, data)
-            return
-        }
-        projectionPending = false
-        if (resultCode == RESULT_OK && data != null) {
-            ProjectionService.start(this, resultCode, data)
-        } else {
-            SqyreBridge.nativeOnProjectionStopped()
+            startActivityForResult(intent, REQUEST_PICK_DOCUMENT)
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "document picker unavailable", e)
+            pickId = null
+            SqyreBridge.nativeOnDocumentPicked(id, "")
         }
     }
 
+    @Deprecated("NativeActivity has no ActivityResult API")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        when (requestCode) {
+            REQUEST_PROJECTION -> {
+                projectionPending = false
+                if (resultCode == RESULT_OK && data != null) {
+                    ProjectionService.start(this, resultCode, data)
+                } else {
+                    SqyreBridge.nativeOnProjectionStopped()
+                }
+            }
+            REQUEST_PICK_DOCUMENT -> {
+                val id = pickId ?: return
+                pickId = null
+                val uri = data?.data
+                if (resultCode != RESULT_OK || uri == null) {
+                    SqyreBridge.nativeOnDocumentPicked(id, "")
+                    return
+                }
+                Thread({ SqyreBridge.nativeOnDocumentPicked(id, copyToCache(uri)) }, "sqyre-pick").start()
+            }
+            else -> {
+                @Suppress("DEPRECATION")
+                super.onActivityResult(requestCode, resultCode, data)
+            }
+        }
+    }
+
+    /** Copy [uri] into `cache/picked/` so Rust can read it as a file; `""` on failure. */
+    private fun copyToCache(uri: Uri): String {
+        return try {
+            val dir = File(cacheDir, "picked").apply {
+                deleteRecursively()
+                mkdirs()
+            }
+            val dest = File(dir, displayName(uri))
+            val input = contentResolver.openInputStream(uri) ?: return ""
+            input.use { src -> dest.outputStream().use { src.copyTo(it) } }
+            dest.absolutePath
+        } catch (e: Exception) {
+            Log.w(TAG, "copy picked document failed", e)
+            ""
+        }
+    }
+
+    /** Provider display name reduced to a safe file name (keeps the extension). */
+    private fun displayName(uri: Uri): String {
+        val name = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+        val safe = name?.substringAfterLast('/')?.trim()?.takeIf { it.isNotEmpty() && it != "." && it != ".." }
+        return safe ?: "document"
+    }
+
     private companion object {
+        const val TAG = "SqyreMain"
         const val REQUEST_PROJECTION = 1
         const val REQUEST_NOTIFICATIONS = 2
+        const val REQUEST_PICK_DOCUMENT = 3
     }
 }

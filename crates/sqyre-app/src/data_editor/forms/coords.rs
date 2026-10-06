@@ -184,7 +184,7 @@ impl DataEditor {
                 .on_hover_text("Replace this mask with a PNG from disk.")
                 .clicked()
             {
-                self.upload_mask_image(catalog, icons);
+                self.request_mask_image_pick();
             }
             if ui
                 .add_enabled(

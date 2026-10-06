@@ -6,6 +6,7 @@
 mod apps;
 mod error;
 mod frame;
+mod picks;
 mod pointer;
 pub mod status;
 
@@ -15,6 +16,7 @@ pub mod bridge;
 pub use apps::{parse_app_line, parse_app_list, LaunchableApp};
 pub use error::AndroidError;
 pub use frame::{Frame, FrameLayout, FrameStore, Projection, DEMAND_WINDOW};
+pub use picks::DocumentPicks;
 pub use pointer::{
     Gesture, PointerError, PointerPlanner, LONG_PRESS_MS, MAX_GESTURE_MS, SCROLL_MS, TAP_MS,
 };
@@ -27,6 +29,13 @@ static FRAMES: FrameStore = FrameStore::new();
 /// Process-wide projection frame store fed by the shell.
 pub fn frames() -> &'static FrameStore {
     &FRAMES
+}
+
+static PICKS: DocumentPicks = DocumentPicks::new();
+
+/// Process-wide document pick slot answered by the shell.
+pub fn picks() -> &'static DocumentPicks {
+    &PICKS
 }
 
 pub type ShellHandler = Arc<dyn Fn() + Send + Sync>;
