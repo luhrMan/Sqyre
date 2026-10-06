@@ -15,6 +15,13 @@ use std::time::SystemTime;
 const DEV_PATH: &str = "/dev/input";
 const EPOLL_TIMEOUT_MS: i32 = 100;
 
+static WATCHING: AtomicBool = AtomicBool::new(false);
+
+/// True while [`watch_events`] is reading devices.
+pub fn watching() -> bool {
+    WATCHING.load(Ordering::SeqCst)
+}
+
 pub fn watch_events(
     stop: Arc<AtomicBool>,
     mut on_event: impl FnMut(Event),
@@ -53,6 +60,7 @@ pub fn watch_events(
     let mut x = 0.0_f64;
     let mut y = 0.0_f64;
 
+    WATCHING.store(true, Ordering::SeqCst);
     while !stop.load(Ordering::SeqCst) {
         let n = match epoll::wait(epoll_fd, EPOLL_TIMEOUT_MS, &mut buf) {
             Ok(n) => n,
@@ -78,6 +86,7 @@ pub fn watch_events(
             }
         }
     }
+    WATCHING.store(false, Ordering::SeqCst);
 
     let _ = epoll::close(epoll_fd);
     Ok(())

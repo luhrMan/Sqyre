@@ -23,6 +23,23 @@ const OUTER_MARGIN_X: i8 = 4;
 const OUTER_MARGIN_Y: i8 = 2;
 const OUTER_RADIUS: f32 = 5.0;
 
+/// Tallest summary pill (outer chrome around a nested chip) at the current Small font.
+///
+/// Measured from a laid-out galley, not `text_style_height`, so pixel-snapped
+/// glyph bounds at fractional/HiDPI scales are included. Rounded up to a whole
+/// physical pixel so it can serve as a layout band height.
+pub fn summary_pill_height(ui: &egui::Ui) -> f32 {
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let text_h = ui
+        .painter()
+        .layout_no_wrap("Ag".to_owned(), font, Color32::WHITE)
+        .size()
+        .y;
+    let h = text_h + (OUTER_MARGIN_Y as f32 + NESTED_MARGIN_Y as f32) * 2.0;
+    let ppp = ui.ctx().pixels_per_point();
+    (h * ppp).ceil() / ppp
+}
+
 fn nested_fill(unknown: bool, is_dark: bool) -> Color32 {
     if unknown {
         rgba_pub(action_pastel_color("warning", is_dark))
@@ -533,7 +550,7 @@ pub fn var_name_text_edit(
     desired_width: f32,
     help: &str,
 ) {
-    ui.horizontal(|ui| {
+    crate::widgets::wrap_unit(ui, |ui| {
         crate::action_tooltip::help::label(ui, label, help);
         let width = resolve_edit_width(ui, desired_width, 0.0);
         let id = ui.id().with(("var_name_edit", label));
@@ -635,7 +652,7 @@ pub fn validated_var_ref_edit(
         validation,
         help,
     } = opts;
-    ui.horizontal(|ui| {
+    crate::widgets::wrap_unit(ui, |ui| {
         crate::action_tooltip::help::label(ui, label, help);
         let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
         let id = ui.id().with(("validated_var_ref", label));
@@ -787,6 +804,39 @@ mod tests {
             paint_summary_pill(ui, "setvariable", &pill, &known, true);
         })
         .drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn summary_pills_fit_tree_row_at_hidpi() {
+        let ctx = egui::Context::default();
+        let known = known_variable_set(["count"]);
+        for (ppp, base) in [(1.0, 14.0_f32), (1.5, 14.0), (2.0, 16.0), (1.25, 20.0)] {
+            ctx.set_pixels_per_point(ppp);
+            let mut style = (*ctx.global_style()).clone();
+            style.text_styles.insert(
+                egui::TextStyle::Small,
+                egui::FontId::proportional((base * 0.85).round()),
+            );
+            style
+                .text_styles
+                .insert(egui::TextStyle::Button, egui::FontId::proportional(base));
+            ctx.set_global_style(style);
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let row_h = crate::tree_chrome::row_height(ui);
+                ui.horizontal(|ui| {
+                    let value = paint_value_pill(ui, "${count}", "click", &known, true);
+                    let name = paint_variable_name_pill(ui, "Var", "count", "click", &known, true);
+                    for pill in [value, name] {
+                        assert!(
+                            pill.rect.height() <= row_h + 0.01,
+                            "ppp {ppp} base {base}: pill {:.2} > row {row_h:.2}",
+                            pill.rect.height()
+                        );
+                    }
+                });
+            })
+            .drop_without_applying_deltas();
+        }
     }
 
     #[test]

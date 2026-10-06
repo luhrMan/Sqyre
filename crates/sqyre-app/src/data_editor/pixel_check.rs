@@ -935,7 +935,7 @@ mod inner {
         tmpl_w: usize,
         tmpl_h: usize,
     ) {
-        ui.horizontal_wrapped(|ui| {
+        ui.horizontal(|ui| {
             // Color scale bar
             let (bar, _) = ui.allocate_exact_size(egui::vec2(120.0, 10.0), egui::Sense::hover());
             if ui.is_rect_visible(bar) {

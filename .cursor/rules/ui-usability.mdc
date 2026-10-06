@@ -55,6 +55,7 @@ Keep surfaces **visually interchangeable**: same control kinds should look and l
 - **Match the nearest sibling** — new rows, toolbars, lists, and confirm footers should mirror an adjacent panel of the same kind (same icon size, gap, weak-count suffix, Save/Cancel row). Visual novelty needs an explicit product ask.
 - **Extract on repeat** — if the same layout appears twice, lift it into `widgets` / `theme` / `tip_*` instead of diverging copies (easier refactors, fewer look bugs).
 - **Predictable density** — reuse existing section gaps and `horizontal_wrapped` patterns from tip sections; do not mix dense custom grids next to standard framed sections without cause.
+- **Wrapping rows** — multi-field rows use `widgets::wrapped_row` (or `tip_wrapped_section`); every label + control (or icon + pill, thumbnail cell, …) group inside is one `widgets::wrap_unit` so wrapping never splits it. Shared field helpers (`text_field`, `drag_field`, `combo_*`, var-ref edits, `help::label`) already do this. Never nest a bare `ui.horizontal` / `ui.vertical` group in a wrapping row — it overflows instead of wrapping.
 
 ## Checklist (new or touched UI)
 

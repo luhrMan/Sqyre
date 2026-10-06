@@ -14,7 +14,7 @@ use crate::tree_chrome;
 use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{
     combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
-    searchable_combo, searchable_combo_with, text_field, W_TEXT, W_VAR,
+    searchable_combo, searchable_combo_with, text_field, wrap_unit, wrapped_row, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
@@ -127,7 +127,7 @@ pub fn paint_edit_fields(
         }
         ActionKind::Key { key, state } => {
             tip_wrapped_section(ui, |ui| {
-                ui.horizontal(|ui| {
+                wrap_unit(ui, |ui| {
                     var_ref_field(
                         ui,
                         "Key",
@@ -146,13 +146,15 @@ pub fn paint_edit_fields(
                         key_record.open(macro_hotkeys);
                     }
                 });
-                ui.vertical(|ui| {
-                    help::tip(ui.small("Up"), h::KEY_STATE);
-                    ui.horizontal(|ui| {
-                        help::tip(crate::widgets::press_state_toggle(ui, state), h::KEY_STATE);
-                        help::tip(ui.small("Tap"), h::KEY_STATE);
+                wrap_unit(ui, |ui| {
+                    ui.vertical(|ui| {
+                        help::tip(ui.small("Up"), h::KEY_STATE);
+                        ui.horizontal(|ui| {
+                            help::tip(crate::widgets::press_state_toggle(ui, state), h::KEY_STATE);
+                            help::tip(ui.small("Tap"), h::KEY_STATE);
+                        });
+                        help::tip(ui.small("Down"), h::KEY_STATE);
                     });
-                    help::tip(ui.small("Down"), h::KEY_STATE);
                 });
             });
         }
@@ -530,46 +532,50 @@ pub fn paint_edit_fields(
         }
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
-                help::label(ui, "Program", h::NAV_PROGRAM);
-                let programs: Vec<String> = catalog.program_names().cloned().collect();
-                let mut current = data.program.clone();
-                let mut option_icon =
-                    |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
-                searchable_combo_with(
-                    ui,
-                    "nav_program",
-                    &mut current,
-                    &programs,
-                    sqyre_domain::EMPTY_NONE,
-                    Some(sqyre_domain::EMPTY_NONE),
-                    None,
-                    None,
-                    Some(&mut option_icon),
-                );
-                if current != data.program {
-                    data.program = current;
-                }
-                help::label(ui, "Atlas", h::NAV_ATLAS);
-                let atlases: Vec<String> = if data.program.trim().is_empty() {
-                    Vec::new()
-                } else {
-                    catalog
-                        .get(data.program.trim())
-                        .map(|p| p.atlases.keys().cloned().collect())
-                        .unwrap_or_default()
-                };
-                let mut current = data.atlas.clone();
-                searchable_combo(
-                    ui,
-                    "nav_atlas",
-                    &mut current,
-                    &atlases,
-                    sqyre_domain::EMPTY_NONE,
-                    None,
-                );
-                if current != data.atlas {
-                    data.atlas = current;
-                }
+                wrap_unit(ui, |ui| {
+                    help::label(ui, "Program", h::NAV_PROGRAM);
+                    let programs: Vec<String> = catalog.program_names().cloned().collect();
+                    let mut current = data.program.clone();
+                    let mut option_icon =
+                        |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
+                    searchable_combo_with(
+                        ui,
+                        "nav_program",
+                        &mut current,
+                        &programs,
+                        sqyre_domain::EMPTY_NONE,
+                        Some(sqyre_domain::EMPTY_NONE),
+                        None,
+                        None,
+                        Some(&mut option_icon),
+                    );
+                    if current != data.program {
+                        data.program = current;
+                    }
+                });
+                wrap_unit(ui, |ui| {
+                    help::label(ui, "Atlas", h::NAV_ATLAS);
+                    let atlases: Vec<String> = if data.program.trim().is_empty() {
+                        Vec::new()
+                    } else {
+                        catalog
+                            .get(data.program.trim())
+                            .map(|p| p.atlases.keys().cloned().collect())
+                            .unwrap_or_default()
+                    };
+                    let mut current = data.atlas.clone();
+                    searchable_combo(
+                        ui,
+                        "nav_atlas",
+                        &mut current,
+                        &atlases,
+                        sqyre_domain::EMPTY_NONE,
+                        None,
+                    );
+                    if current != data.atlas {
+                        data.atlas = current;
+                    }
+                });
             });
             tip_section(ui, |ui| {
                 string_list_field(ui, "Chord up", &mut data.chords.up, h::NAV_CHORD_UP);
@@ -731,17 +737,19 @@ fn targets_editor(
         sort_then,
         tag_priority,
     } = edit;
-    ui.horizontal_wrapped(|ui| {
-        help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
-        ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
-        if !target_tags.is_empty() {
-            help::tip(
-                ui.label(
-                    egui::RichText::new(format!("· {} tag filters", target_tags.len())).weak(),
-                ),
-                h::IS_TARGET_TAGS,
-            );
-        }
+    wrapped_row(ui, |ui| {
+        wrap_unit(ui, |ui| {
+            help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
+            ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
+            if !target_tags.is_empty() {
+                help::tip(
+                    ui.label(
+                        egui::RichText::new(format!("· {} tag filters", target_tags.len())).weak(),
+                    ),
+                    h::IS_TARGET_TAGS,
+                );
+            }
+        });
         if ui
             .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
             .on_hover_text(h::IS_ITEMS)
@@ -936,7 +944,7 @@ fn path_wrap_rows(available_width: f32, path: &str) -> usize {
 /// Label + read-only value + pick button. Returns true when pick was clicked.
 fn picker_display_row(ui: &mut egui::Ui, label: &str, help_text: &str, display: &str) -> bool {
     let mut clicked = false;
-    ui.horizontal(|ui| {
+    wrap_unit(ui, |ui| {
         help::label(ui, label, help_text);
         ui.label(if display.is_empty() {
             sqyre_domain::EMPTY_UNSET
@@ -1394,7 +1402,7 @@ fn repeat_mode_label(ui: &egui::Ui, mode: RepeatMode) -> egui::WidgetText {
 }
 
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
-    ui.horizontal(|ui| {
+    wrap_unit(ui, |ui| {
         help::label(ui, "Repeat mode", h::REPEAT_MODE);
         help::tip(
             egui::ComboBox::from_id_salt("Repeat mode")

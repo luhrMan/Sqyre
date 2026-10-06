@@ -3,6 +3,8 @@
 //! # Conventions
 //!
 //! - [`tip_wrapped_section`] — compact labeled fields, combos, checkboxes, DragValues.
+//!   Each label + control pair is one [`crate::widgets::wrap_unit`] so wrapping never
+//!   splits it; shared field helpers already do this.
 //! - [`tip_section`] — multiline editors, icon grids, previews, repeatable list editors.
 //! - [`tip_advanced`] — collapsed-by-default “Advanced” header; fill with tip_* sections.
 //! - Field labels use `help::label` + control (not `DragValue.prefix`).
@@ -10,7 +12,7 @@
 //!   per-item frame only for multi-line list items).
 
 use crate::theme;
-use eframe::egui::{self, Vec2};
+use eframe::egui;
 
 /// Vertical gap between consecutive tip sections.
 const SECTION_GAP: f32 = crate::theme::SPACE_4;
@@ -26,10 +28,7 @@ pub fn tip_section(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) 
 /// Multi-line editors and icon grids should use [`tip_section`] instead so they stay full-width.
 pub fn tip_wrapped_section(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
     tip_section(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = Vec2::splat(crate::theme::SPACE_8);
-            add_contents(ui);
-        });
+        crate::widgets::wrapped_row(ui, add_contents);
     });
 }
 

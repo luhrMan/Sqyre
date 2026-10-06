@@ -5154,9 +5154,13 @@ dependencies = [
 name = "sqyre-hotkeys"
 version = "0.1.0"
 dependencies = [
+ "ashpd",
+ "async-io",
  "epoll",
  "evdev-rs 0.6.3",
+ "futures-util",
  "parking_lot",
+ "pollster 1.0.1",
  "rdev",
  "sqyre-domain",
  "thiserror 2.0.21",

@@ -72,6 +72,7 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             if toolbar_icon(ui, list_glyph, list_tip, true).clicked() {
                 app.macro_list_open = !app.macro_list_open;
             }
+            crate::widgets::section_separator(ui);
             if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
                 app.settings_ui.request_open(ui.ctx());
             }
@@ -217,7 +218,6 @@ fn paint_delay_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running
     app.workspace
         .macro_meta
         .paint_delay_button(ui, &app.workspace.macros[idx], !running);
-    let hotkey_open = app.workspace.macro_meta.paint_hotkey_toggle(ui);
     let hk_label = {
         let m = &app.workspace.macros[idx];
         if m.hotkey.is_empty() {
@@ -226,13 +226,20 @@ fn paint_delay_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running
             format_hotkey(&m.hotkey)
         }
     };
-    ui.weak(hk_label);
+    let hotkey_open = crate::widgets::wrap_unit(ui, |ui| {
+        let open = app.workspace.macro_meta.paint_hotkey_toggle(ui);
+        ui.weak(hk_label);
+        open
+    })
+    .inner;
     if hotkey_open {
-        theme::section_frame(ui.style())
-            .inner_margin(egui::Margin::symmetric(theme::SPACE_4 as i8, 1))
-            .show(ui, |ui| {
-                ui.horizontal(|ui| paint_hotkey_controls(app, ui, idx, running));
-            });
+        crate::widgets::wrap_unit(ui, |ui| {
+            theme::section_frame(ui.style())
+                .inner_margin(egui::Margin::symmetric(theme::SPACE_4 as i8, 1))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| paint_hotkey_controls(app, ui, idx, running));
+                });
+        });
     }
 }
 
@@ -319,8 +326,6 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
     if app.workspace.macros.is_empty() {
         return false;
     }
-
-    crate::widgets::section_separator(ui);
     true
 }
 

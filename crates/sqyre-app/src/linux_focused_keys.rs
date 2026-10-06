@@ -1,4 +1,5 @@
-//! On Wayland, mirror egui key state into hotkey bridges when the evdev hook is unavailable.
+//! On Wayland, mirror egui key state into hotkey bridges when the evdev watch is not running
+//! (or a key-record dialog is open).
 //!
 //! Macro recording on Wayland uses evdev for global mouse/keyboard; avoid
 //! duplicating those events from egui when that path is active.
@@ -7,7 +8,7 @@ use crate::egui_keys::egui_key_name;
 use crate::SqyreApp;
 use eframe::egui::{self, Key};
 use sqyre_capture::{LinuxSessionInfo, LinuxSessionKind};
-use sqyre_hotkeys::linux_uses_evdev_grab;
+use sqyre_hotkeys::{linux_evdev_watching, linux_uses_evdev_grab};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -23,6 +24,11 @@ pub fn feed_focused_keyboard(app: &mut SqyreApp, ctx: &egui::Context) {
 
     // evdev owns macro-record input on Wayland (including clicks).
     if recording && linux_uses_evdev_grab() {
+        return;
+    }
+    // evdev already matches chords and Esc while focused. A second matcher fed
+    // from egui shares the per-chord latch and sees key-ups later, so it re-fires.
+    if linux_evdev_watching() && !record_ui_open {
         return;
     }
 

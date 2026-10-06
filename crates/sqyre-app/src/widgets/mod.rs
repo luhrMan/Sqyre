@@ -11,6 +11,7 @@ pub mod match_settings;
 pub mod scroll;
 pub mod sections;
 pub mod tags;
+pub mod wrap;
 
 pub(crate) use action_icons::{action_glyph_font, action_icon_side, VectorIcon};
 pub use context_menu::{
@@ -44,3 +45,4 @@ pub use scroll::{
 };
 pub use sections::{section_separator, split_view, tinted_section, SplitView};
 pub use tags::{tag_chip_editor, TagChipOptions};
+pub use wrap::{wrap_unit, wrapped_row};

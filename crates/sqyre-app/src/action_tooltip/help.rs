@@ -38,7 +38,7 @@ pub fn label(ui: &mut egui::Ui, text: &str, help: &str) -> egui::Response {
     if help.is_empty() {
         return ui.label(text);
     }
-    ui.horizontal(|ui| {
+    crate::widgets::wrap_unit(ui, |ui| {
         ui.spacing_mut().item_spacing.x = crate::theme::SPACE_2;
         let resp = ui.label(text);
         icon(ui, help);

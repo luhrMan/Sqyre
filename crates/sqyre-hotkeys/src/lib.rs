@@ -5,7 +5,9 @@ mod error;
 mod macro_hotkeys;
 mod macro_record;
 mod pointer_buttons;
+mod popup_escape;
 mod screen_click;
+mod system_shortcuts;
 
 #[cfg(all(feature = "hooks", target_os = "windows"))]
 pub use continue_wait::vk_key_name;
@@ -16,10 +18,15 @@ pub use macro_hotkeys::{
 };
 pub use macro_record::{MacroRecordBridge, MacroRecordEvent, RecordMouseButton};
 pub use pointer_buttons::left_button_down;
+pub use popup_escape::{claim_popup_escape, take_popup_escape};
 pub use screen_click::ScreenClickBridge;
 pub use sqyre_domain::{
     failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
     validate_continue_key, validate_not_failsafe, KeyError, FAILSAFE_KEYS, FAILSAFE_LABEL,
+};
+pub use system_shortcuts::{
+    open_system_shortcuts, system_shortcuts_configurable, system_shortcuts_status,
+    SystemShortcutsStatus,
 };
 
 pub use error::HotkeyError;
@@ -95,8 +102,11 @@ mod hooks;
 #[cfg(all(feature = "hooks", target_os = "linux"))]
 mod linux_evdev;
 
+#[cfg(all(feature = "portal-shortcuts", target_os = "linux"))]
+mod linux_portal_shortcuts;
+
 #[cfg(all(feature = "hooks", not(target_os = "windows")))]
-pub use hooks::{linux_can_open_evdev, linux_uses_evdev_grab, RdevHotkeys};
+pub use hooks::{linux_can_open_evdev, linux_evdev_watching, linux_uses_evdev_grab, RdevHotkeys};
 
 #[cfg(all(feature = "hooks", target_os = "windows"))]
 mod win_hooks;

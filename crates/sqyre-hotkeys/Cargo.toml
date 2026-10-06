@@ -9,6 +9,8 @@ description = "Global hotkeys (Esc stop / failsafe); stubs for CI"
 default = []
 # Enable OS-level hooks (needs display / input permissions).
 hooks = ["dep:rdev"]
+# Wayland: macro chords via the GlobalShortcuts portal (compositor-owned, user-editable).
+portal-shortcuts = ["hooks", "dep:ashpd", "dep:pollster", "dep:futures-util", "dep:async-io"]
 
 [lints]
 workspace = true
@@ -23,6 +25,10 @@ web-time = { workspace = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 evdev-rs = "0.6"
 epoll = "4.4"
+ashpd = { version = "0.11", default-features = false, features = ["async-std"], optional = true }
+pollster = { version = "1.0", optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["std"], optional = true }
+async-io = { version = "2", optional = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [

@@ -6,7 +6,7 @@
 use crate::cap_log;
 use crate::error::CaptureError;
 use reis::ei::{self, button::ButtonState, keyboard::KeyState};
-use reis::event::{Device, DeviceCapability, EiEvent, EiEventConverter};
+use reis::event::{Device, DeviceCapability, EiEvent, EiEventConverter, Region};
 use reis::handshake::EiHandshaker;
 use reis::PendingRequestResult;
 use sqyre_ports::AutomationError;
@@ -201,52 +201,28 @@ impl EisInput {
         AutomationError::Backend(format!("EIS has no resumed {cap:?} device"))
     }
 
-    /// `None` if the device has no regions (unrestricted) or `(x,y)` is inside one.
-    fn outside_regions(device: &Device, x: i32, y: i32) -> Option<String> {
-        let regions = device.regions();
-        if regions.is_empty() {
-            return None;
-        }
-        let inside = regions.iter().any(|r| {
-            let rx = r.x as i32;
-            let ry = r.y as i32;
-            let rw = r.width as i32;
-            let rh = r.height as i32;
-            x >= rx && y >= ry && x < rx.saturating_add(rw) && y < ry.saturating_add(rh)
-        });
-        if inside {
-            None
-        } else {
-            let detail = regions
-                .iter()
-                .map(|r| format!("{}x{}+{}+{}", r.width, r.height, r.x, r.y))
-                .collect::<Vec<_>>()
-                .join(",");
-            Some(detail)
-        }
-    }
-
     pub(crate) fn move_to(&mut self, x: i32, y: i32) -> Result<(), AutomationError> {
         self.drain();
         let idx = self
             .device_for(DeviceCapability::PointerAbsolute)
             .ok_or_else(|| Self::missing(DeviceCapability::PointerAbsolute))?;
-        if let Some(detail) = Self::outside_regions(&self.devices[idx].device, x, y) {
-            cap_log(
-                "INPUT",
-                "fail",
-                &format!("abs outside region pos={x},{y} {detail}"),
-            );
-            return Err(AutomationError::Backend(format!(
-                "EIS absolute pointer ({x},{y}) outside device regions ({detail})"
-            )));
-        }
+        let (lx, ly) =
+            region_coords(self.devices[idx].device.regions(), x, y).map_err(|detail| {
+                cap_log(
+                    "INPUT",
+                    "fail",
+                    &format!("abs outside region pos={x},{y} {detail}"),
+                );
+                AutomationError::Backend(format!(
+                    "EIS absolute pointer ({x},{y}) outside device regions ({detail})"
+                ))
+            })?;
         self.ensure_emulating(idx);
         let ptr = self.devices[idx]
             .device
             .interface::<ei::PointerAbsolute>()
             .ok_or_else(|| Self::missing(DeviceCapability::PointerAbsolute))?;
-        ptr.motion_absolute(x as f32, y as f32);
+        ptr.motion_absolute(lx, ly);
         self.emit_frame(idx);
         Ok(())
     }
@@ -277,22 +253,23 @@ impl EisInput {
                 self.device_for(DeviceCapability::PointerAbsolute)
                     .ok_or_else(|| Self::missing(DeviceCapability::PointerAbsolute))?
             };
-            if let Some(detail) = Self::outside_regions(&self.devices[ptr_idx].device, x, y) {
-                cap_log(
-                    "INPUT",
-                    "fail",
-                    &format!("click reseat outside region pos={x},{y} {detail}"),
-                );
-                return Err(AutomationError::Backend(format!(
-                    "EIS click reseat ({x},{y}) outside device regions ({detail})"
-                )));
-            }
+            let (lx, ly) =
+                region_coords(self.devices[ptr_idx].device.regions(), x, y).map_err(|detail| {
+                    cap_log(
+                        "INPUT",
+                        "fail",
+                        &format!("click reseat outside region pos={x},{y} {detail}"),
+                    );
+                    AutomationError::Backend(format!(
+                        "EIS click reseat ({x},{y}) outside device regions ({detail})"
+                    ))
+                })?;
             self.ensure_emulating(ptr_idx);
             let ptr = self.devices[ptr_idx]
                 .device
                 .interface::<ei::PointerAbsolute>()
                 .ok_or_else(|| Self::missing(DeviceCapability::PointerAbsolute))?;
-            ptr.motion_absolute(x as f32, y as f32);
+            ptr.motion_absolute(lx, ly);
             if ptr_idx != idx {
                 self.emit_frame(ptr_idx);
             }
@@ -349,6 +326,43 @@ impl EisInput {
         self.emit_frame(idx);
         Ok(())
     }
+}
+
+/// Desktop pixel → EIS logical coordinates.
+///
+/// Regions are logical with a per-region scale (COSMIC at 200%:
+/// `1440x960+0+0@2` for a 2880×1920 output); Sqyre works in physical pixels.
+/// The physical rect is taken as the logical rect × scale. No regions means
+/// the device is unrestricted and takes desktop pixels as-is.
+fn region_coords(regions: &[Region], x: i32, y: i32) -> Result<(f32, f32), String> {
+    if regions.is_empty() {
+        return Ok((x as f32, y as f32));
+    }
+    let (fx, fy) = (f64::from(x), f64::from(y));
+    regions
+        .iter()
+        .find_map(|r| {
+            let s = if r.scale > 0.0 {
+                f64::from(r.scale)
+            } else {
+                1.0
+            };
+            let (px, py) = (f64::from(r.x) * s, f64::from(r.y) * s);
+            let (pw, ph) = (f64::from(r.width) * s, f64::from(r.height) * s);
+            (fx >= px && fy >= py && fx < px + pw && fy < py + ph).then(|| {
+                (
+                    (f64::from(r.x) + (fx - px) / s) as f32,
+                    (f64::from(r.y) + (fy - py) / s) as f32,
+                )
+            })
+        })
+        .ok_or_else(|| {
+            regions
+                .iter()
+                .map(|r| format!("{}x{}+{}+{}@{}", r.width, r.height, r.x, r.y, r.scale))
+                .collect::<Vec<_>>()
+                .join(",")
+        })
 }
 
 fn handshake_with_timeout(
@@ -423,5 +437,39 @@ fn poll_readable_timeout(fd: impl AsFd, timeout: Duration) -> std::io::Result<bo
             return Err(err);
         }
         return Ok(n > 0);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn region(x: u32, y: u32, width: u32, height: u32, scale: f32) -> Region {
+        Region {
+            x,
+            y,
+            width,
+            height,
+            scale,
+            mapping_id: None,
+        }
+    }
+
+    #[test]
+    fn scaled_region_maps_physical_to_logical() {
+        let regions = [region(0, 0, 1440, 960, 2.0)];
+        assert_eq!(region_coords(&regions, 1440, 960), Ok((720.0, 480.0)));
+        assert_eq!(region_coords(&regions, 2879, 0), Ok((1439.5, 0.0)));
+        assert!(region_coords(&regions, 2880, 0).is_err());
+    }
+
+    #[test]
+    fn unscaled_and_unrestricted() {
+        let regions = [
+            region(0, 0, 1920, 1080, 1.0),
+            region(1920, 0, 2560, 1440, 1.0),
+        ];
+        assert_eq!(region_coords(&regions, 2000, 10), Ok((2000.0, 10.0)));
+        assert_eq!(region_coords(&[], 5, 6), Ok((5.0, 6.0)));
     }
 }

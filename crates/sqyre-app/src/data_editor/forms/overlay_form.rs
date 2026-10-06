@@ -113,24 +113,20 @@ impl DataEditor {
         ui.add_space(crate::theme::SPACE_4);
         let point_set = !self.form_overlay_point.trim().is_empty();
         ui.add_enabled_ui(!point_set, |ui| {
-            ui.horizontal(|ui| {
-                help::label(ui, "X", help::DE_OVERLAY_X);
-                help::tip(
-                    ui.add(
-                        egui::DragValue::new(&mut self.form_overlay_x)
-                            .speed(1.0)
-                            .suffix(" px"),
-                    ),
+            crate::widgets::wrapped_row(ui, |ui| {
+                crate::widgets::drag_field(
+                    ui,
+                    "X",
                     help::DE_OVERLAY_X,
+                    &mut self.form_overlay_x,
+                    |d| d.speed(1.0).suffix(" px"),
                 );
-                help::label(ui, "Y", help::DE_OVERLAY_Y);
-                help::tip(
-                    ui.add(
-                        egui::DragValue::new(&mut self.form_overlay_y)
-                            .speed(1.0)
-                            .suffix(" px"),
-                    ),
+                crate::widgets::drag_field(
+                    ui,
+                    "Y",
                     help::DE_OVERLAY_Y,
+                    &mut self.form_overlay_y,
+                    |d| d.speed(1.0).suffix(" px"),
                 );
             });
         });
@@ -272,26 +268,28 @@ impl DataEditor {
                     help::DE_OVERLAY_SIZE,
                 );
             });
-            ui.horizontal(|ui| {
-                help::label(ui, "Corner radius", help::DE_OVERLAY_RADIUS);
-                help::tip(
-                    ui.add(
-                        egui::DragValue::new(&mut self.form_overlay_corner_radius)
-                            .speed(0.5)
-                            .range(MIN_OVERLAY_CORNER_RADIUS..=MAX_OVERLAY_CORNER_RADIUS)
-                            .suffix(" px"),
-                    ),
+            crate::widgets::wrapped_row(ui, |ui| {
+                crate::widgets::drag_field(
+                    ui,
+                    "Corner radius",
                     help::DE_OVERLAY_RADIUS,
+                    &mut self.form_overlay_corner_radius,
+                    |d| {
+                        d.speed(0.5)
+                            .range(MIN_OVERLAY_CORNER_RADIUS..=MAX_OVERLAY_CORNER_RADIUS)
+                            .suffix(" px")
+                    },
                 );
-                help::label(ui, "Border width", help::DE_OVERLAY_BORDER);
-                help::tip(
-                    ui.add(
-                        egui::DragValue::new(&mut self.form_overlay_border_width)
-                            .speed(0.1)
-                            .range(MIN_OVERLAY_BORDER_WIDTH..=MAX_OVERLAY_BORDER_WIDTH)
-                            .suffix(" px"),
-                    ),
+                crate::widgets::drag_field(
+                    ui,
+                    "Border width",
                     help::DE_OVERLAY_BORDER,
+                    &mut self.form_overlay_border_width,
+                    |d| {
+                        d.speed(0.1)
+                            .range(MIN_OVERLAY_BORDER_WIDTH..=MAX_OVERLAY_BORDER_WIDTH)
+                            .suffix(" px")
+                    },
                 );
             });
             ui.add_space(crate::theme::SPACE_4);

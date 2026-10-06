@@ -483,36 +483,8 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     crate::win_focused_keys::feed_focused_keyboard(app, ctx);
     #[cfg(all(target_os = "linux", feature = "native-runtime"))]
     crate::linux_focused_keys::feed_focused_keyboard(app, ctx);
-    app.drain_pending_hotkey_macros(ctx);
     if let Some(name) = app.paint_hotkey_chooser(ctx) {
-        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-        sqyre_capture::event_log(
-            "SQYRE_HOTKEY",
-            &[("fire", "chosen"), ("name", name.as_str())],
-        );
-        // Explicit pick: if a macro is already running, stop it and start this
-        // one when the worker clears (silent already-running skips felt broken).
-        if app.run_session.state.running.load(Ordering::SeqCst) {
-            app.request_stop();
-            app.start_when_idle = Some(name);
-            *app.run_session.state.status.lock() = "Stopping…".into();
-        } else {
-            app.start_when_idle = None;
-            app.start_macro_by_name(&name, ctx);
-        }
-    }
-    if !app.run_session.state.running.load(Ordering::SeqCst) {
-        if let Some(name) = app.start_when_idle.take() {
-            app.start_macro_by_name(&name, ctx);
-        }
-    }
-
-    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-    {
-        let enabled = app.settings_ui.settings().hotkey_tags_while_focused;
-        if let Some(tags) = app.hotkey_focus_tags.poll(enabled, &app.workspace.catalog) {
-            app.set_hotkey_tag_filters(tags);
-        }
+        app.start_chosen_macro(name, ctx);
     }
 
     if let Some(chord) = app.hotkey_record.show(
