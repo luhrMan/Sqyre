@@ -1,129 +1,134 @@
 # Android port
 
-Plan for a sideloaded Android build of the Sqyre runner. Same macro YAML, same executor, same detection. Android supplies new backends for the existing `sqyre-ports` traits. Behavior that the OS cannot provide fails with `AutomationError::Unsupported` so a desktop macro does not silently do something else.
+A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, executor and detection as desktop. Android provides new backends for the existing `sqyre-ports` traits. When the OS cannot do something, the call fails with `AutomationError::Unsupported`, so a desktop macro never silently does something else.
 
-This is a plan. No Android target exists in the tree yet.
+**Status:** the scaffold is in the tree: `crates/sqyre-android`, the capture, input and focus backends, the Kotlin shell in `android/`, and `make android` / `make android-check`. The phases below say what each one still has to prove on a device.
 
 ## Parity contract
 
 | Surface | On Android |
 |---------|------------|
 | Macro YAML, variables, flow (loop, while, if, for-each, run macro, wait) | Same executor |
-| Image search, find pixel | Same `sqyre-match` / `sqyre-vision` once a frame exists |
-| OCR | Same Tesseract (`leptess`) and `eng.traineddata`, built with the NDK |
-| Capture | `MediaProjection` frames in one pixel buffer. That buffer is the virtual desktop |
-| Left click, scroll, clipboard | Accessibility gesture, swipe, `ClipboardManager` |
-| Move | Records the point. A later click uses it. No hover |
-| Right click | Long-press at the last point |
-| Middle click | `AutomationError::Unsupported("middle click")` |
-| Key down / key up | `AutomationError::Unsupported` for every desktop key name. Android cannot inject hardware keys into other apps |
-| Type | Writes the focused editable (`ACTION_SET_TEXT`, otherwise clipboard + `ACTION_PASTE`). Custom views that only listen for key events will not see it |
-| Focus window | `process_path` is the application id. Non-empty `window_title` must match the activity label. Launch is an `Intent` |
-| Pause continue-key, macro hotkeys, failsafe chord | The process cannot hear global keys. Stop and Continue are notification actions plus the in-app buttons |
-| Overlay buttons | `TYPE_APPLICATION_OVERLAY` windows that start a macro |
-| Tray | Ongoing foreground-service notification |
-| Selection grab, ScreenCap, PixelCheck | Crop or sample the projection frame; the outline is an overlay |
-| Recording | Accessibility touch events become move + click steps when they carry coordinates. Key recording stays off |
-| Data dir, zip backups, import / export | App files directory via `set_sqyre_dir_override` |
-| Self-update | `sqyre-update` stays `Unsupported`. Install is a new APK |
-| Editor | Current egui shell. A later pass only fixes layouts that are unusable with touch |
+| Image search, find pixel | Same `sqyre-match` / `sqyre-vision`, once a frame exists |
+| OCR | Same Tesseract (`leptess`) and `eng.traineddata`, built with the NDK (phase 3) |
+| Capture | `MediaProjection` frames at the real display size. That frame is the whole virtual desktop: one monitor at (0, 0) |
+| Move | Records the point. There is no hover |
+| Left click | Tap at the last point. Down then up with a move in between is a swipe. A long hold keeps its duration |
+| Right click | Long-press at the last point (at least 600 ms) |
+| Middle click, scroll-wheel click | `Unsupported` |
+| Scroll | Quarter-screen swipe at the pointer (screen center before any move) |
+| Key down / key up | `Unsupported` for every key name. Android cannot inject hardware keys into other apps |
+| Type | Appends to the focused editable field with `ACTION_SET_TEXT`. Custom views that only listen for key events will not see it |
+| Clipboard | `ClipboardManager` |
+| Focus window | `process_path` is the app package. A non-empty `window_title` must equal the app label. The app is launched with an `Intent` |
+| Pause continue-key, macro hotkeys, failsafe chord | The process cannot hear global keys. Stop is a notification action plus the in-app button |
+| Overlay buttons, tray | Not yet (phase 5) |
+| Selection grab, ScreenCap, PixelCheck | Crop or sample the projection frame (phase 5 for the selection UI) |
+| Recording | Not yet (phase 5) |
+| Data dir, zip backups, import / export | App-private storage: `internal_data_path()` is the home for `~/.sqyre` and `~/.config/sqyre`. File pickers return nothing until the shell exposes the Storage Access Framework |
+| Self-update | Desktop-only. A new version is a new APK |
+| Editor | Current egui shell. A later pass fixes layouts that are unusable with touch |
 
-Multi-monitor virtual desktops, global hooks (`rdev`, evdev, Win32 low-level hooks), X11 override-redirect overlays, and replacing the running binary are desktop-only. `sqyre-probe` stays a desktop CLI. Permission state lives in the Android settings screen.
+Multi-monitor desktops, global hooks (`rdev`, evdev, Win32 low-level hooks), X11 overlays and replacing the running binary are desktop-only.
 
 ## Shape
 
 ```
 executor (unchanged)
-  AutomationBackend  → AndroidAutomation
-  ScreenCapturer     → AndroidCapturer
-  WindowFocuser      → AndroidFocuser
+  AutomationBackend  → sqyre_input::OsAutomation      (crates/sqyre-input/src/android.rs)
+  ScreenCapturer     → sqyre_capture::OsCapturer      (crates/sqyre-capture/src/android_capture.rs)
+  WindowFocuser      → sqyre_capture::OsWindowFocuser (same file)
   OcrEngine          → existing LeptessOcr
 
-Kotlin shell (required; these APIs are not available to Rust)
-  activity hosting eframe
-  projection foreground service + ImageReader
-  accessibility service
-  overlay windows
-  notification actions (Stop, Continue, macro list)
+crates/sqyre-android (the only JNI boundary)
+  FrameStore         latest projection frame + projection state (pure, host-tested)
+  PointerPlanner     mouse calls → gestures (pure, host-tested)
+  status             Kotlin status codes → AndroidError
+  bridge             JNI calls out, natives in (android only)
+
+android/ (Kotlin shell; these APIs are not reachable from Rust)
+  MainActivity              NativeActivity hosting eframe; screen-recording consent
+  ProjectionService         foreground service, MediaProjection → ImageReader → nativeOnFrame
+  SqyreAccessibilityService gestures and text edits
+  SqyreBridge               static methods Rust calls; status codes
 ```
 
-Add `crates/sqyre-android` as the only JNI boundary. Capture, input, hotkeys, and overlay call it. They do not each link `jni` or embed Kotlin. Macro logic stays in the existing crates.
+Platform code lives in `#[cfg(target_os = "android")]` modules behind the same OS-neutral names desktop uses (`OsCapturer`, `OsWindowFocuser`, `OsAutomation`). Android is not `target_os = "linux"`, so Linux-only modules stay out without extra gating.
 
-`native-runtime` stays the feature that pulls executor, vision, match, and capture. X11, Win32, ksni, tray-icon, and evdev are already cfg-gated to Linux or Windows. `sqyre-input` still depends on `rustautogui` and `arboard` for every target; those become Linux/Windows dependencies, with the Android backend beside them. `sqyre-app`’s `not(wasm32)` block must not pull `fs2` or `sqyre-update` into the Android build. Platform code uses `#[cfg(target_os = "android")]` modules, same as `linux/` and `win_*` in `sqyre-capture`.
+### Frames
 
-JNI calls run on a dedicated thread that is attached to the VM. The executor worker sends commands and waits. The projection service publishes the latest frame; `capture_rect_rgb` copies out of that buffer and implements the RGB path directly (the `ScreenCapturer` default RGBA round-trip is not the production path).
+The shell offers every `ImageReader` frame to Rust. Rust copies a frame only while a capture asked within the last 2 s, so an idle projection costs nothing. The first capture after an idle gap drops the stale frame and waits up to 500 ms for a new one. `capture_rect_rgb` crops straight out of the packed RGBA frame. There is no RGBA round-trip.
 
-## Coordinate and input mapping
+The shared capturer always opens. The first capture with no projection asks the shell for consent and returns `NotReady::AwaitingProjection`, so search retries until the user answers. A denial, a revoke or the shell tearing down marks the projection stopped, and captures fail with `CaptureError::Projection`. Each new macro run re-arms a stopped projection so the next capture can ask again.
 
-Create the virtual display at the device’s real pixel size so gesture coordinates and frame coordinates match. `virtual_bounds` is that frame. `capture_monitor` is display `0` only; any other index returns `CaptureError::UnsupportedPlatform`. Rotation recreates the display and clears the cached frame. Absolute points from a previous orientation are stale, the same way a desktop resolution change is stale. The status line says when the display was recreated.
+### Input
 
-`move_to` stores `(x, y)` and does not emit a gesture. A left click that presses and releases in one step is a tap at that point. A click split into separate down and up actions returns `Unsupported`: an accessibility gesture cannot hold the pointer open across executor steps. Scroll is a short swipe. Smooth move and the following click stay two executor calls; the tap uses the stored point.
+An accessibility gesture is dispatched whole, so a press cannot stay open while other steps run. Down records the press. Up turns it into one gesture: a tap, a long-press as long as the hold (capped at 60 s), or a swipe if the pointer moved in between. A release with no press is a no-op.
 
-`type_char` buffers characters until a short idle or the macro leaves the type action, then commits the string once. Per-character `delay_ms` still paces the buffer. If no editable node is focused, the call returns `AutomationError::Backend`.
+`OsAutomation::new` fails while the accessibility service is off and opens Android's accessibility settings, so Run surfaces the error instead of dropping input.
 
-Focus: empty `process_path` is `InvalidArg`. No matching installed package, or a title that does not match, is `WindowNotFound`. The desktop error text already names path and title; keep it. The UI label for the field can say “package” on Android while the YAML key stays `process_path`.
+### Stop
 
-Failsafe stays Ctrl+Alt+Shift+Esc in the domain so desktop files still validate. The Android listener is the notification Stop action, wired to the same stop flag the Esc hook uses on desktop.
+The screen-recording notification has a Stop macro action. It calls `nativeOnStopRequested`, which reaches the same `StopFlag` the desktop Esc hook uses (`sqyre_android::set_stop_handler`, installed in `SqyreApp::load`).
 
 ## Phases
 
-Each phase leaves `make test` green on the desktop host. Android modules are `cfg`-gated, so Linux and Windows builds do not link them.
+Each phase keeps `make fmt && make check && make test` green on the desktop host.
 
 ### 1. Editor APK
 
-`make android` produces a debug APK for `aarch64-linux-android` with `--no-default-features` (same editor surface as `make wasm`). Entry is eframe’s Android `android_main` in `crates/sqyre-app`. On startup, set the data dir to the app files directory before any persist call.
+`make android` builds `sqyre-app` with `--no-default-features` (the same editor surface as `make wasm`) for `arm64-v8a`, then the Gradle shell, and copies `bin/sqyre-debug.apk`. `android_main` in `crates/sqyre-app/src/lib.rs` sets the home dir before any persist call.
 
-Exit: the APK installs on an emulator, opens the editor, and round-trips `db.yaml` through the system file picker.
-
-Also in this phase, because it is a new release target: Android SDK, NDK, and `cargo-ndk` in `.devcontainer/Dockerfile` (or a nested image invoked by `make android`, with the Docker socket already in the devcontainer), a note in `docs/DEVELOPING.md`, and `cargo check --target aarch64-linux-android -p sqyre-app --no-default-features`.
+Exit: the APK installs on an emulator, opens the editor, and persists `db.yaml` across restarts.
 
 ### 2. Capture
 
-Kotlin projection service. `AndroidCapturer` implements `shared_capturer`, `SharedRunCapturer`, and `capture_rect_rgb`. Settings explain the consent dialog and show a live permission state. Lost projection (user revoke, display change) surfaces `CaptureError` on the next search instead of reusing a stale frame.
-
-Exit: ScreenCap saves a PNG of another app’s current screen after the user accepts the system dialog. PixelCheck reads a pixel from that frame.
+Exit: with `ANDROID_FEATURES=native-runtime,overlay-buttons`, ScreenCap saves a PNG of another app's screen after the user accepts the system dialog, and PixelCheck reads a pixel from that frame. Rotation produces frames at the new size.
 
 ### 3. Detection
 
-Turn `native-runtime` on for the Android build. Vendor or cross-build Leptonica and Tesseract in `scripts/android/`, install headers and libs where the `leptess` build script can see them, and ship `assets/tessdata/eng.traineddata` inside the APK. OCR preprocess stays in `sqyre-vision`.
+Cross-build Leptonica and Tesseract in `scripts/android/` so the `leptess` build script finds them. Ship `assets/tessdata/eng.traineddata` in the APK. Then make `native-runtime,overlay-buttons` the default `ANDROID_FEATURES`.
 
-Exit: an image-search step and an OCR step run against the live projection and hit the same executor code as desktop. Host tests for `sqyre-match` stay the correctness gate; a device check confirms the frame path.
+Exit: an image-search step and an OCR step run against the live projection.
 
 ### 4. Pointer, text, clipboard
 
-`AndroidAutomation` in `sqyre-input` behind `target_os = "android"`. Wire it from `app_backends::os_automation` and `app_run.rs` the way `OsAutomation` is wired on desktop. Accessibility must be on before Run; otherwise start fails with a status line that opens the system accessibility screen.
+Exit: a macro moves, taps, swipes, long-presses, scrolls, and types into another app's focused text field. Middle click and any key action end the step with `Unsupported`. Clipboard writes work.
 
-Exit: a macro moves, left-clicks, scrolls, and types into a focused text field of another app. Middle click and any `key` action end the step with `Unsupported`. Clipboard save works.
+### 5. Launch, overlay, record
 
-### 5. Launch, overlay, stop, record
+Focus Window already launches a package. Still to do:
+- a package picker in place of `list_open_windows`;
+- overlay buttons as `TYPE_APPLICATION_OVERLAY` windows;
+- Continue on the notification;
+- recording from accessibility touch events;
+- a Storage Access Framework file picker.
 
-`AndroidFocuser` as `OsWindowFocuser`. Overlay buttons start macros. The foreground notification is the tray: show/hide is irrelevant for a single activity; Stop, Continue, and the running macro name are the actions. Recording writes move and click steps from accessibility touch events.
-
-Exit: Focus Window launches a package. An overlay button runs a macro. Stop on the notification halts it. Pause ends when the user hits Continue.
+Exit: an overlay button runs a macro, Stop on the notification halts it, and Pause ends on Continue.
 
 ### 6. Touch layout
 
-Only layouts that fail on a phone: toolbar overflow, pickers that assume a mouse drag, dialogs that ratchet off-screen. Reuse the existing egui helpers. Keep the desktop layout on a wide window.
+Fix only the layouts that fail on a phone: toolbar overflow, pickers that assume a mouse drag, and dialogs that ratchet off-screen.
 
-Exit: create a macro, add an image search, run it, and stop it on a phone-sized emulator without a hardware keyboard.
+Exit: create a macro, add an image search, run it, and stop it on a phone-sized emulator with no hardware keyboard.
 
 ## Build and packaging
 
 | Target | Output |
 |--------|--------|
-| `aarch64-linux-android` | The APK that ships |
-| `x86_64-linux-android` | Emulator builds |
+| `aarch64-linux-android` (`arm64-v8a`) | The APK that ships |
+| `x86_64-linux-android` | Emulator builds (`ANDROID_ABIS="arm64-v8a x86_64"`) |
 
-Minimum SDK is whatever eframe 0.36’s `android-activity` and `MediaProjection` need together (API 29 or newer; pin the exact level when the shell is created). One activity, `singleTask`. Release builds are signed sideload APKs under `bin/`. No Play listing and no store metadata in this plan.
-
-`sqyre-app`’s non-wasm dependency block currently pulls `sqyre-input`, `sqyre-update`, and `winit` for every native target. Split that so Android gets `sqyre-android` and the Android input backend, and desktop keeps `fs2` and `sqyre-update`.
+- **SDK levels:** min SDK 29, target and compile SDK 35.
+- **Activity:** one `singleTask` `NativeActivity` subclass.
+- **Toolchain:** the devcontainer carries JDK 17, the SDK, NDK r27, Gradle and `cargo-ndk`.
+- **Releases:** `ANDROID_PROFILE=release make android` builds an unsigned release APK. Signing and a store listing are out of scope.
 
 ## Tests
 
-- Desktop: `make fmt`, `make check`, `make clippy`, `make test` on every phase that touches Rust.
-- Android compile: `cargo ndk -t arm64-v8a check` for `sqyre-app` with `native-runtime` once phase 3 lands.
-- Pure tests, no device: frame-to-`DesktopRect` mapping, package + title match, and the key / middle-click `Unsupported` policy.
-- Device or emulator, by hand, at the exit criteria above. Emulator images do not join CI in the first pass.
+- **Desktop:** `make fmt`, `make check` and `make test`. The pure `sqyre-android` modules (frame packing, frame store, gesture planning, status codes) and the crop kernels in `sqyre-capture` run here.
+- **Android compile:** `make android-check` in the devcontainer.
+- **Device or emulator:** by hand, at each phase's exit criteria. Emulators are not in CI yet.
 
 ## Out of scope
 
@@ -131,5 +136,4 @@ Minimum SDK is whatever eframe 0.36’s `android-activity` and `MediaProjection`
 - A Play Store build
 - ML Kit or any OCR engine other than Tesseract
 - Remapping desktop key names onto Back, Home, or volume keys
-- Changing macro YAML to an Android-specific schema
-- Shipping macOS capture as part of this work
+- An Android-specific macro YAML schema

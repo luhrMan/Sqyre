@@ -6,13 +6,14 @@ Sqyre is a Rust Cargo workspace (egui desktop automation app + WASM editor); the
 
 - `crates/sqyre-app` — GUI binary → `./bin/sqyre`; brand icons in `crates/sqyre-app/assets/`
 - Libs: `sqyre-domain`, `-ui-model`, `-ui-theme`, `-serialize`, `-persist`, `-validate`, `-varref`, `-match`, `-vision`, `-ports`, `-capture`, `-executor`, `-hotkeys`, `-input`, `-overlay`, `-update`
+- Android: `sqyre-android` (only JNI crate) + Kotlin shell in `android/` → `make android`; see [`docs/ANDROID.md`](docs/ANDROID.md)
 - Tools: `sqyre-probe` (capability probe → `./bin/sqyre-probe`), `sqyre-bench-compare` (local bench harness)
 - tessdata: `assets/tessdata/` (fetched by `make tessdata`, not committed)
 
 ## Build
 
 - `make` (debug) / `make release` → `./bin/sqyre`; `make dev` = release opts without LTO; `make help` lists all targets.
-- Release artifacts: `make appimage` / `flatpak` / `windows` / `wasm` (devcontainer must keep these working).
+- Release artifacts: `make appimage` / `flatpak` / `windows` / `wasm` / `android` (devcontainer must keep these working).
 - Linux `make` builds add `--features portal-capture` (Wayland); plain `cargo build/clippy -p sqyre-app` skips that code.
 - Toolchain pinned in `rust-toolchain.toml`; edition 2021. New shared deps go in `[workspace.dependencies]` (`default-features = false` when defaults are heavy) and must pass `cargo deny` and `make machete`. Features unify workspace-wide — native-only deps via target `cfg`.
 
