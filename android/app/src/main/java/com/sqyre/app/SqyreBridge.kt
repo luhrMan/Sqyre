@@ -65,6 +65,9 @@ object SqyreBridge {
 
     @JvmStatic external fun nativeOnContinueRequested()
 
+    /** Window edges covered by system bars or cutouts, in physical pixels. */
+    @JvmStatic external fun nativeOnInsets(left: Int, top: Int, right: Int, bottom: Int)
+
     /** Answer for [pickDocument] [id]: a readable copy in app cache, or `""` when cancelled. */
     @JvmStatic external fun nativeOnDocumentPicked(id: Int, path: String)
 

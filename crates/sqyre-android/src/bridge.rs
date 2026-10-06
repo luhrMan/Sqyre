@@ -7,8 +7,8 @@
 use crate::frame::FrameLayout;
 use crate::pointer::Gesture;
 use crate::{
-    frames, parse_app_line, parse_app_list, picks, request_continue, request_stop, status,
-    AndroidError, LaunchableApp,
+    frames, insets, parse_app_line, parse_app_list, picks, request_continue, request_stop, status,
+    AndroidError, Insets, LaunchableApp,
 };
 use jni::objects::{GlobalRef, JByteBuffer, JClass, JObject, JString, JValue};
 use jni::sys::jint;
@@ -313,6 +313,25 @@ pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnContinueRequested(
 ) {
     guard("nativeOnContinueRequested", || {
         request_continue();
+        Ok(())
+    });
+}
+
+#[no_mangle]
+#[allow(
+    non_snake_case,
+    reason = "JNI symbol names are fixed by the Kotlin class"
+)]
+pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnInsets(
+    _env: JNIEnv,
+    _class: JClass,
+    left: jint,
+    top: jint,
+    right: jint,
+    bottom: jint,
+) {
+    guard("nativeOnInsets", || {
+        insets().set(Insets::from_px(left, top, right, bottom));
         Ok(())
     });
 }

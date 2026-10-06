@@ -6,6 +6,7 @@
 mod apps;
 mod error;
 mod frame;
+mod insets;
 mod picks;
 mod pointer;
 pub mod status;
@@ -16,6 +17,7 @@ pub mod bridge;
 pub use apps::{parse_app_line, parse_app_list, LaunchableApp};
 pub use error::AndroidError;
 pub use frame::{Frame, FrameLayout, FrameStore, Projection, DEMAND_WINDOW};
+pub use insets::{InsetStore, Insets};
 pub use picks::DocumentPicks;
 pub use pointer::{
     Gesture, PointerError, PointerPlanner, LONG_PRESS_MS, MAX_GESTURE_MS, SCROLL_MS, TAP_MS,
@@ -36,6 +38,13 @@ static PICKS: DocumentPicks = DocumentPicks::new();
 /// Process-wide document pick slot answered by the shell.
 pub fn picks() -> &'static DocumentPicks {
     &PICKS
+}
+
+static INSETS: InsetStore = InsetStore::new();
+
+/// Process-wide window insets reported by the shell.
+pub fn insets() -> &'static InsetStore {
+    &INSETS
 }
 
 pub type ShellHandler = Arc<dyn Fn() + Send + Sync>;

@@ -115,6 +115,8 @@ Exit: an overlay button runs a macro, Stop on the notification halts it, and Pau
 
 Fix only the layouts that fail on a phone: toolbar overflow, pickers that assume a mouse drag, and dialogs that ratchet off-screen.
 
+Done: API 35 draws the window edge to edge. `MainActivity` reports the system bar and cutout insets (`nativeOnInsets`), `SqyreApp::raw_input_hook` hands them to egui as safe-area insets, and the main panels lay out inside `content_rect`. The activity uses a no-action-bar theme, because the native surface hides the action bar while its height still counts toward the insets. Still open: the default UI scale (1.5) ignores screen density, so controls are small on phones.
+
 Exit: create a macro, add an image search, run it, and stop it on a phone-sized emulator with no hardware keyboard.
 
 ## Build and packaging

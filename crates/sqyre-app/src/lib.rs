@@ -832,6 +832,19 @@ impl eframe::App for SqyreApp {
         }
     }
 
+    // egui-winit fills safe-area insets only on iOS.
+    #[cfg(target_os = "android")]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let px = sqyre_android::insets().get();
+        let ppp = ctx.pixels_per_point();
+        raw_input.safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 {
+            left: f32::from(px.left) / ppp,
+            right: f32::from(px.right) / ppp,
+            top: f32::from(px.top) / ppp,
+            bottom: f32::from(px.bottom) / ppp,
+        }));
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         focus_nav::lock_to_window(ui.ctx());
         self.take_pending_db_import();
@@ -861,8 +874,49 @@ impl eframe::App for SqyreApp {
         // The root viewport is transparent; translucent panel separators sit in
         // gaps between panel fills and would show the desktop through them.
         ui.painter()
-            .rect_filled(ui.ctx().content_rect(), 0.0, ui.visuals().panel_fill);
+            .rect_filled(ui.ctx().viewport_rect(), 0.0, ui.visuals().panel_fill);
 
+        // The root Ui spans the whole viewport, including Android's system bars.
+        let content = ui.ctx().content_rect();
+        ui.scope_builder(egui::UiBuilder::new().max_rect(content), |ui| {
+            self.show_panels(ui);
+        });
+
+        // After tips/panels paint so tooltip preview outlines apply this frame.
+        self.sync_recording_overlay(ui.ctx());
+
+        if self.settings_ui.settings().window_border {
+            paint_window_border(ui.ctx());
+        }
+
+        // Modal sits above painted Sqyre chrome; skip shortcuts/palette while open.
+        if self.macro_yaml_builder.is_open() || self.macro_prompt_builder.is_open() {
+            return;
+        }
+        ui_overlays::handle_shortcuts(self, ui);
+        ui_overlays::show_command_palette(self, ui.ctx());
+    }
+
+    /// Fully transparent clear so deferred overlay viewports (`with_transparent(true)`)
+    /// don't paint eframe's default dark plate behind the gold chrome.
+    ///
+    /// On wasm there are no transparent OS overlay windows — an opaque clear keeps a
+    /// panic/blank frame from looking like the page body color bleeding through.
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        #[cfg(target_arch = "wasm32")]
+        {
+            egui::Rgba::from(egui::Color32::from_rgb(0x1a, 0x1a, 0x1a)).to_array()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            [0.0, 0.0, 0.0, 0.0]
+        }
+    }
+}
+
+impl SqyreApp {
+    /// Top bar, macro list and the selected macro, in that order so the top bar spans the width.
+    fn show_panels(&mut self, ui: &mut egui::Ui) {
         ui_toolbar::top_bar(self, ui);
         ui_macro_list::show(self, ui);
         self.persist_selected_macro();
@@ -896,36 +950,6 @@ impl eframe::App for SqyreApp {
             let force_openness = ui_toolbar::action_toolbar(self, ui);
             ui_macro_tree::show(self, ui, force_openness);
         });
-
-        // After tips/panels paint so tooltip preview outlines apply this frame.
-        self.sync_recording_overlay(ui.ctx());
-
-        if self.settings_ui.settings().window_border {
-            paint_window_border(ui.ctx());
-        }
-
-        // Modal sits above painted Sqyre chrome; skip shortcuts/palette while open.
-        if self.macro_yaml_builder.is_open() || self.macro_prompt_builder.is_open() {
-            return;
-        }
-        ui_overlays::handle_shortcuts(self, ui);
-        ui_overlays::show_command_palette(self, ui.ctx());
-    }
-
-    /// Fully transparent clear so deferred overlay viewports (`with_transparent(true)`)
-    /// don't paint eframe's default dark plate behind the gold chrome.
-    ///
-    /// On wasm there are no transparent OS overlay windows — an opaque clear keeps a
-    /// panic/blank frame from looking like the page body color bleeding through.
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        #[cfg(target_arch = "wasm32")]
-        {
-            egui::Rgba::from(egui::Color32::from_rgb(0x1a, 0x1a, 0x1a)).to_array()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            [0.0, 0.0, 0.0, 0.0]
-        }
     }
 }
 

@@ -10,6 +10,8 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
 import android.util.Log
+import android.view.View
+import android.view.WindowInsets
 import java.io.File
 
 /** Hosts the egui UI (Rust `android_main`) and owns the screen-recording and file-picker flows. */
@@ -21,6 +23,7 @@ class MainActivity : NativeActivity() {
         SqyreBridge.attach(this)
         Tessdata.install(this)
         super.onCreate(savedInstanceState)
+        reportInsets()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
@@ -31,6 +34,28 @@ class MainActivity : NativeActivity() {
     override fun onDestroy() {
         SqyreBridge.detach(this)
         super.onDestroy()
+    }
+
+    /**
+     * Forward the system bar and cutout insets that overlap the native surface, so egui keeps
+     * its panels out of them (API 35 draws every target-35 app edge to edge).
+     */
+    private fun reportInsets() {
+        findViewById<View>(android.R.id.content).setOnApplyWindowInsetsListener { view, insets ->
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                SqyreBridge.nativeOnInsets(bars.left, bars.top, bars.right, bars.bottom)
+            } else {
+                @Suppress("DEPRECATION")
+                SqyreBridge.nativeOnInsets(
+                    insets.systemWindowInsetLeft,
+                    insets.systemWindowInsetTop,
+                    insets.systemWindowInsetRight,
+                    insets.systemWindowInsetBottom,
+                )
+            }
+            view.onApplyWindowInsets(insets)
+        }
     }
 
     /** Show the system consent dialog unless one is already up or recording is running. */
