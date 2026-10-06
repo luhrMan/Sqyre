@@ -17,7 +17,7 @@ Single source for platform conventions; other rules and skills link here.
 | Windows | Bare `.exe`: GDI capture, outline, focus, low-level hooks (`win_*`) |
 | macOS | Capture/focus stubbed; `make macos` host-only |
 | wasm32 | GUI-only editor, no runtime (see `wasm-editor`) |
-| Android | Scaffold: MediaProjection capture, accessibility gestures, app-launch focus via `sqyre-android` (only JNI crate); no keys, hooks, overlay, or file pickers yet (`docs/ANDROID.md`). `target_os = "android"` is not `linux` but is `unix` |
+| Android | Scaffold: MediaProjection capture, accessibility gestures, app-launch focus via `sqyre-android` (only JNI crate); app picker, SAF document picks, notification Stop/Continue, static Tesseract; no keys, hooks, overlay, or folder picks (`docs/ANDROID.md`). `target_os = "android"` is not `linux` but is `unix` |
 
 Ship formats: Linux AppImage + Flatpak, Windows `.exe`, WASM zip. No MSI/DMG/Nix unless asked.
 

@@ -2,7 +2,7 @@
 
 A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, executor and detection as desktop. Android provides new backends for the existing `sqyre-ports` traits. When the OS cannot do something, the call fails with `AutomationError::Unsupported`, so a desktop macro never silently does something else.
 
-**Status:** the scaffold is in the tree: `crates/sqyre-android`, the capture, input and focus backends, the Kotlin shell in `android/`, and `make android` / `make android-check`. The phases below say what each one still has to prove on a device.
+**Status:** `make android` builds a runtime APK (`native-runtime,overlay-buttons`, Tesseract linked statically, `eng.traineddata` bundled) and `make android-check` compiles both the editor and runtime surfaces. Capture, input, focus, OCR, the app picker, the notification Stop/Continue actions and document picks are in the tree. None of it has been exercised on a device yet; the phases below say what each one still has to prove.
 
 ## Parity contract
 
@@ -10,7 +10,7 @@ A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, exe
 |---------|------------|
 | Macro YAML, variables, flow (loop, while, if, for-each, run macro, wait) | Same executor |
 | Image search, find pixel | Same `sqyre-match` / `sqyre-vision`, once a frame exists |
-| OCR | Same Tesseract (`leptess`) and `eng.traineddata`, built with the NDK (phase 3) |
+| OCR | Same Tesseract (`leptess`) and `eng.traineddata`. Leptonica and Tesseract are static NDK builds; the APK's `tessdata` asset is copied to app storage on launch |
 | Capture | `MediaProjection` frames at the real display size. That frame is the whole virtual desktop: one monitor at (0, 0) |
 | Move | Records the point. There is no hover |
 | Left click | Tap at the last point. Down then up with a move in between is a swipe. A long hold keeps its duration |
@@ -20,12 +20,12 @@ A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, exe
 | Key down / key up | `Unsupported` for every key name. Android cannot inject hardware keys into other apps |
 | Type | Appends to the focused editable field with `ACTION_SET_TEXT`. Custom views that only listen for key events will not see it |
 | Clipboard | `ClipboardManager` |
-| Focus window | `process_path` is the app package. A non-empty `window_title` must equal the app label. The app is launched with an `Intent` |
-| Pause continue-key, macro hotkeys, failsafe chord | The process cannot hear global keys. Stop is a notification action plus the in-app button |
+| Focus window | `process_path` is the app package. A non-empty `window_title` must equal the app label. The app is launched with an `Intent`. The window picker lists launchable apps (label as title, package as path); the active window is the foreground package seen by the accessibility service |
+| Pause continue-key, macro hotkeys, failsafe chord | The process cannot hear global keys. Stop and Continue are actions on the screen-recording notification (Continue ends a single-key Pause; multi-key Pause waits are `Unsupported`), plus the in-app Stop button |
 | Overlay buttons, tray | Not yet (phase 5) |
 | Selection grab, ScreenCap, PixelCheck | Crop or sample the projection frame (phase 5 for the selection UI) |
 | Recording | Not yet (phase 5) |
-| Data dir, zip backups, import / export | App-private storage: `internal_data_path()` is the home for `~/.sqyre` and `~/.config/sqyre`. File pickers return nothing until the shell exposes the Storage Access Framework |
+| Data dir, zip backups, import / export | App-private storage: `internal_data_path()` is the home for `~/.sqyre` and `~/.config/sqyre`. Image and zip picks use the Storage Access Framework; the chosen document is copied into the app cache first. Folder picks are not offered |
 | Self-update | Desktop-only. A new version is a new APK |
 | Editor | Current egui shell. A later pass fixes layouts that are unusable with touch |
 
@@ -67,9 +67,17 @@ An accessibility gesture is dispatched whole, so a press cannot stay open while 
 
 `OsAutomation::new` fails while the accessibility service is off and opens Android's accessibility settings, so Run surfaces the error instead of dropping input.
 
-### Stop
+### Stop and Continue
 
-The screen-recording notification has a Stop macro action. It calls `nativeOnStopRequested`, which reaches the same `StopFlag` the desktop Esc hook uses (`sqyre_android::set_stop_handler`, installed in `SqyreApp::load`).
+The screen-recording notification has Continue and Stop macro actions. Stop calls `nativeOnStopRequested`, which reaches the same `StopFlag` the desktop Esc hook uses (`sqyre_android::set_stop_handler`, installed in `SqyreApp::load`). Continue calls `nativeOnContinueRequested`, which signals `ContinueWaitBridge` (`ContinueSource::Signal`) and ends a waiting Pause step.
+
+### File picks
+
+Desktop, Android and WASM share one async path in `crates/sqyre-app/src/file_dialogs.rs`: a UI action calls `request(purpose, …)`, and `apply_picked_file` routes the finished pick by purpose on a later frame. Desktop answers synchronously with `rfd`. Android starts `ACTION_OPEN_DOCUMENT` and never blocks the egui thread, which would deadlock `NativeActivity` lifecycle callbacks. The shell copies the document to `cache/picked/` and calls `nativeOnDocumentPicked`; `sqyre_android::DocumentPicks` drops stale or cancelled answers.
+
+### OCR
+
+`scripts/android/build-ocr.sh` downloads pinned Leptonica and Tesseract sources (SHA-256 checked) and builds static libraries per ABI into `target/android/ocr/<abi>` with CMake, Ninja and the NDK toolchain file. A finished ABI is skipped on later runs. `scripts/android/ocr-env.sh` points the `leptonica-sys` / `tesseract-sys` build scripts at those `.pc` files and adds the static C++ runtime to the link. `build-apk.sh` copies `assets/tessdata` (running `make tessdata`'s download if missing) into the APK; `Tessdata.install` extracts it to `files/tessdata` and `sqyre_vision::set_tessdata_dir` makes discovery look there first.
 
 ## Phases
 
@@ -77,7 +85,7 @@ Each phase keeps `make fmt && make check && make test` green on the desktop host
 
 ### 1. Editor APK
 
-`make android` builds `sqyre-app` with `--no-default-features` (the same editor surface as `make wasm`) for `arm64-v8a`, then the Gradle shell, and copies `bin/sqyre-debug.apk`. `android_main` in `crates/sqyre-app/src/lib.rs` sets the home dir before any persist call.
+`ANDROID_FEATURES= make android` (empty) builds `sqyre-app` with `--no-default-features` (the same editor surface as `make wasm`) for `arm64-v8a`, then the Gradle shell, and copies `bin/sqyre-debug.apk`. `android_main` in `crates/sqyre-app/src/lib.rs` sets the home dir before any persist call.
 
 Exit: the APK installs on an emulator, opens the editor, and persists `db.yaml` across restarts.
 
@@ -87,7 +95,7 @@ Exit: with `ANDROID_FEATURES=native-runtime,overlay-buttons`, ScreenCap saves a 
 
 ### 3. Detection
 
-Cross-build Leptonica and Tesseract in `scripts/android/` so the `leptess` build script finds them. Ship `assets/tessdata/eng.traineddata` in the APK. Then make `native-runtime,overlay-buttons` the default `ANDROID_FEATURES`.
+Done in the build: see [OCR](#ocr). `native-runtime,overlay-buttons` is the default `ANDROID_FEATURES`.
 
 Exit: an image-search step and an OCR step run against the live projection.
 
@@ -97,12 +105,9 @@ Exit: a macro moves, taps, swipes, long-presses, scrolls, and types into another
 
 ### 5. Launch, overlay, record
 
-Focus Window already launches a package. Still to do:
-- a package picker in place of `list_open_windows`;
+Done: Focus Window launches a package, the window picker lists launchable apps, Continue is on the notification, and image/zip picks use the Storage Access Framework. Still to do:
 - overlay buttons as `TYPE_APPLICATION_OVERLAY` windows;
-- Continue on the notification;
-- recording from accessibility touch events;
-- a Storage Access Framework file picker.
+- recording from accessibility touch events.
 
 Exit: an overlay button runs a macro, Stop on the notification halts it, and Pause ends on Continue.
 
@@ -121,13 +126,15 @@ Exit: create a macro, add an image search, run it, and stop it on a phone-sized 
 
 - **SDK levels:** min SDK 29, target and compile SDK 35.
 - **Activity:** one `singleTask` `NativeActivity` subclass.
-- **Toolchain:** the devcontainer carries JDK 17, the SDK, NDK r27, Gradle and `cargo-ndk`.
+- **Toolchain:** the devcontainer carries JDK 17, the SDK, NDK r27, Gradle, `cargo-ndk`, CMake and Ninja.
+- **Features:** `ANDROID_FEATURES` defaults to `native-runtime,overlay-buttons`; set it empty for an editor-only APK without the OCR build.
+- **Stripping:** Gradle reads `ANDROID_NDK_HOME` and its `source.properties` so AGP strips `libsqyre_app.so` with the NDK `cargo-ndk` linked against.
 - **Releases:** `ANDROID_PROFILE=release make android` builds an unsigned release APK. Signing and a store listing are out of scope.
 
 ## Tests
 
-- **Desktop:** `make fmt`, `make check` and `make test`. The pure `sqyre-android` modules (frame packing, frame store, gesture planning, status codes) and the crop kernels in `sqyre-capture` run here.
-- **Android compile:** `make android-check` in the devcontainer.
+- **Desktop:** `make fmt`, `make check` and `make test`. The pure `sqyre-android` modules (frame packing, frame store, gesture planning, status codes, app-list parsing, document picks, notification handlers) and the crop kernels in `sqyre-capture` run here.
+- **Android compile:** `make android-check` in the devcontainer checks the editor and runtime `sqyre-app` plus `sqyre-capture`, `sqyre-input` and `sqyre-probe`. It builds the OCR libraries on first run.
 - **Device or emulator:** by hand, at each phase's exit criteria. Emulators are not in CI yet.
 
 ## Out of scope
