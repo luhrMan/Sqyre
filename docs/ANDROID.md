@@ -145,8 +145,9 @@ Build an APK with an x86_64 library first: `ANDROID_ABIS="arm64-v8a x86_64" make
 | `scripts/android/emulator.sh screenshot [FILE]` | Saves the screen to `FILE` (default `bin/emulator.png`) |
 | `scripts/android/emulator.sh adb ARGS...` | Runs `adb` against the emulator, e.g. `adb logcat -b crash` |
 
-- **Where it runs:** directly when `emulator` is on `PATH` and `/dev/kvm` is usable; otherwise in a `sqyre-android-emulator` container from the devcontainer image (built on first use), with `--network host`, `/dev/kvm` and, for the window, the host X socket and `XAUTHORITY`.
-- **GPU:** `SQYRE_EMULATOR_GPU` defaults to `swangle_indirect`; `swiftshader_indirect` segfaults during boot on this image.
+- **Where it runs:** directly when `emulator` is on `PATH` and `/dev/kvm` is usable; otherwise in a `sqyre-android-emulator` container from the devcontainer image (built on first use), with `--network host`, `/dev/kvm`, `/dev/dri` and, for the window, the host X socket and `XAUTHORITY`. From the devcontainer the window uses `HOST_DISPLAY` and `HOST_XAUTHORITY`, which `devcontainer.json` captures when the container is created; rebuild the devcontainer after logging in again, or the auth file path is stale.
+- **GPU:** `SQYRE_EMULATOR_GPU` overrides the mode. The window defaults to `host` (needs a `/dev/dri` render node and an X display); headless runs and hosts without a render node use `swangle_indirect`, which renders fine but leaves the window gray. `swiftshader_indirect` segfaults during boot on this image.
+- **Failures:** a boot failure prints the end of the emulator log. The container is kept until the next `start` or `stop`, so `docker logs sqyre-android-emulator` still works.
 - **Signing:** each fresh build container makes a new debug key, so `install` uninstalls first when the signature changed. App data is reset when that happens.
 - **Logs:** the emulator log is `target/emulator.log` (local) or `docker logs sqyre-android-emulator`.
 
