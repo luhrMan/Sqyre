@@ -3,6 +3,7 @@
 //! The only crate that talks JNI. Frame storage, gesture planning, and status decoding
 //! are plain Rust so they build and test on the host; [`bridge`] exists only on Android.
 
+mod apps;
 mod error;
 mod frame;
 mod pointer;
@@ -11,6 +12,7 @@ pub mod status;
 #[cfg(target_os = "android")]
 pub mod bridge;
 
+pub use apps::{parse_app_line, parse_app_list, LaunchableApp};
 pub use error::AndroidError;
 pub use frame::{Frame, FrameLayout, FrameStore, Projection, DEMAND_WINDOW};
 pub use pointer::{

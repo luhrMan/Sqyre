@@ -116,6 +116,37 @@ object SqyreBridge {
         OK
     }
 
+    /**
+     * Launchable apps as `package\tlabel` lines (parsed by `sqyre_android::apps`).
+     * Empty when the context is gone.
+     */
+    @JvmStatic
+    fun launchableApps(): String = guardedText("launchableApps") {
+        val pm = appContext?.packageManager ?: return@guardedText ""
+        val launcher = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+        pm.queryIntentActivities(launcher, 0).joinToString("\n") { info ->
+            val pkg = info.activityInfo.packageName
+            appLine(pkg, info.loadLabel(pm).toString())
+        }
+    }
+
+    /** Front app as one `package\tlabel` line; empty while the accessibility service is off. */
+    @JvmStatic
+    fun foregroundApp(): String = guardedText("foregroundApp") {
+        val pkg = SqyreAccessibilityService.instance?.foregroundPackage.orEmpty()
+        if (pkg.isEmpty()) return@guardedText ""
+        val pm = appContext?.packageManager ?: return@guardedText appLine(pkg, "")
+        val label = try {
+            pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+        } catch (e: PackageManager.NameNotFoundException) {
+            ""
+        }
+        appLine(pkg, label)
+    }
+
+    private fun appLine(pkg: String, label: String): String =
+        pkg + "\t" + label.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
+
     @JvmStatic
     fun requestProjection() {
         val act = activity.get() ?: return
@@ -146,5 +177,14 @@ object SqyreBridge {
         } catch (e: Exception) {
             Log.w(TAG, "$what failed", e)
             REJECTED
+        }
+
+    /** Text-returning variant of [guarded]: failures read as an empty list. */
+    private inline fun guardedText(what: String, block: () -> String): String =
+        try {
+            block()
+        } catch (e: Exception) {
+            Log.w(TAG, "$what failed", e)
+            ""
         }
 }

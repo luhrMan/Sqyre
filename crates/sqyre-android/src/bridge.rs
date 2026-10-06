@@ -6,8 +6,11 @@
 
 use crate::frame::FrameLayout;
 use crate::pointer::Gesture;
-use crate::{frames, request_continue, request_stop, status, AndroidError};
-use jni::objects::{GlobalRef, JByteBuffer, JClass, JValue};
+use crate::{
+    frames, parse_app_line, parse_app_list, request_continue, request_stop, status, AndroidError,
+    LaunchableApp,
+};
+use jni::objects::{GlobalRef, JByteBuffer, JClass, JString, JValue};
 use jni::sys::jint;
 use jni::{JNIEnv, JavaVM};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -119,6 +122,30 @@ pub fn launch(package: &str, label: &str) -> Result<(), AndroidError> {
         .i()
     })?;
     status::check(code)
+}
+
+/// Call a no-arg `SqyreBridge` method that returns a `String`.
+fn call_text(method: &str) -> Result<String, AndroidError> {
+    with_bridge(|env, class| {
+        let obj = JString::from(
+            env.call_static_method(class, method, "()Ljava/lang/String;", &[])?
+                .l()?,
+        );
+        let text: String = env.get_string(&obj)?.into();
+        // Worker threads stay attached, so local refs are never freed by a returning frame.
+        env.delete_local_ref(obj)?;
+        Ok(text)
+    })
+}
+
+/// Apps with a launcher activity, sorted by label.
+pub fn launchable_apps() -> Result<Vec<LaunchableApp>, AndroidError> {
+    Ok(parse_app_list(&call_text("launchableApps")?))
+}
+
+/// App whose window came to the front last; `None` while the accessibility service is off.
+pub fn foreground_app() -> Result<Option<LaunchableApp>, AndroidError> {
+    Ok(parse_app_line(&call_text("foregroundApp")?))
 }
 
 /// Ask the shell to show the screen-recording consent dialog (no-op while one is pending).

@@ -603,7 +603,12 @@ pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     win_focus::list_open_windows()
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(target_os = "android")]
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
+    android_capture::list_open_windows()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     Err(CaptureError::UnsupportedPlatform)
 }
@@ -619,7 +624,12 @@ pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
     win_focus::get_active_window()
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(target_os = "android")]
+pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
+    android_capture::get_active_window()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
     Err(CaptureError::UnsupportedPlatform)
 }

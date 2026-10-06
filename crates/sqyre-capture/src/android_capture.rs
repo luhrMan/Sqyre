@@ -3,9 +3,9 @@
 //! The display is the whole virtual desktop: one monitor at (0, 0) in physical pixels,
 //! the same space accessibility gestures use.
 
-use crate::{crop_packed_rgba, crop_packed_rgba_to_rgb, CaptureError, NotReady};
+use crate::{crop_packed_rgba, crop_packed_rgba_to_rgb, CaptureError, NotReady, WindowInfo};
 use image::RgbaImage;
-use sqyre_android::{bridge, frames, AndroidError, Frame};
+use sqyre_android::{bridge, frames, AndroidError, Frame, LaunchableApp};
 use sqyre_ports::{AutomationError, DesktopRect, RgbCapture};
 use std::time::Duration;
 
@@ -169,6 +169,29 @@ fn to_rgb(frame: &Frame, rect: DesktopRect) -> Result<RgbCapture, CaptureError> 
         height: win.h as u32,
         data,
     })
+}
+
+/// Focus Window picker rows: one per launchable app (package as path, label as title).
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
+    let apps =
+        bridge::launchable_apps().map_err(|e| CaptureError::Message(format!("app list: {e}")))?;
+    Ok(apps.iter().map(window_info).collect())
+}
+
+/// App that came to the front last (tracked by the accessibility service).
+pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
+    let app = bridge::foreground_app()
+        .map_err(|e| CaptureError::Message(format!("foreground app: {e}")))?;
+    Ok(app.as_ref().map(window_info))
+}
+
+fn window_info(app: &LaunchableApp) -> WindowInfo {
+    WindowInfo {
+        title: app.label.clone(),
+        process_name: app.short_name().to_string(),
+        process_path: app.package.clone(),
+        icon: None,
+    }
 }
 
 /// Focus Window on Android: launch (or bring forward) the app whose package is the

@@ -37,7 +37,15 @@ class SqyreAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        event.packageName?.toString()?.takeIf { it.isNotEmpty() }?.let { foregroundPackage = it }
+    }
+
+    /** Package of the last window that came to the front (empty before the first event). */
+    @Volatile
+    var foregroundPackage: String = ""
+        private set
 
     override fun onInterrupt() {}
 
