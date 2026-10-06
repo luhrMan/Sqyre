@@ -1055,13 +1055,20 @@ fn pw_video_enum_format_bytes() -> Result<Vec<u8>, CaptureError> {
             VideoFormat::BGRx,
             VideoFormat::BGRA,
         ),
-        // Mutter fixates VideoFramerate at 0/1 (emit-on-damage). A non-zero
-        // VideoFramerate range fails to negotiate. Periodic frames come from
-        // VideoMaxFramerate (same as xdg-desktop-portal-wlr).
+        // Mutter fixates VideoFramerate at 0/1 (emit-on-damage); COSMIC fixates
+        // 60/1. The range must include 0/1 or Mutter fails to negotiate.
+        // Periodic frames come from VideoMaxFramerate (same as xdg-desktop-portal-wlr).
         pw::spa::pod::property!(
             pw::spa::param::format::FormatProperties::VideoFramerate,
+            Choice,
+            Range,
             Fraction,
-            pw::spa::utils::Fraction { num: 0, denom: 1 }
+            pw::spa::utils::Fraction { num: 0, denom: 1 },
+            pw::spa::utils::Fraction { num: 0, denom: 1 },
+            pw::spa::utils::Fraction {
+                num: 1000,
+                denom: 1
+            }
         ),
         pw::spa::pod::property!(
             pw::spa::param::format::FormatProperties::VideoMaxFramerate,
