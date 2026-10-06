@@ -21,7 +21,7 @@ pub fn text_field_width(
     value: &mut String,
     width: f32,
 ) {
-    ui.horizontal(|ui| {
+    super::wrap_unit(ui, |ui| {
         help::label(ui, label, help_text);
         ui.add(egui::TextEdit::singleline(value).desired_width(width));
     });
@@ -69,7 +69,7 @@ pub fn drag_field_enabled<Num: egui::emath::Numeric>(
     enabled: bool,
     configure: impl FnOnce(egui::DragValue<'_>) -> egui::DragValue<'_>,
 ) {
-    ui.horizontal(|ui| {
+    super::wrap_unit(ui, |ui| {
         help::label(ui, label, help_text);
         ui.add_enabled(enabled, configure(egui::DragValue::new(value)));
     });
@@ -82,7 +82,7 @@ pub fn combo_str(
     value: &mut String,
     options: &[&str],
 ) {
-    ui.horizontal(|ui| {
+    super::wrap_unit(ui, |ui| {
         help::label(ui, label, help_text);
         let display = if value.is_empty() {
             sqyre_domain::EMPTY_UNSET.to_string()
@@ -138,7 +138,7 @@ pub fn combo_enum<T: Copy + PartialEq>(
     options: &[T],
     display: impl Fn(T) -> &'static str,
 ) {
-    ui.horizontal(|ui| {
+    super::wrap_unit(ui, |ui| {
         help::label(ui, label, help_text);
         egui::ComboBox::from_id_salt(label)
             .selected_text(display(*value))
@@ -162,7 +162,7 @@ pub fn combo_str_labeled(
     options: &[(&str, &str)],
     empty_default: &str,
 ) {
-    ui.horizontal(|ui| {
+    super::wrap_unit(ui, |ui| {
         help::label(ui, label, help_text);
         let empty_label = options
             .iter()

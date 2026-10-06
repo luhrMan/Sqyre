@@ -85,23 +85,25 @@ impl DataEditor {
                 let variant = variant_name_from_path(path, item);
                 let is_demo = !path.is_file() && crate::demo_icons::contains(path);
                 let deny = is_demo || !can_delete || variant.is_empty() || variant == "Original";
-                let cell = ui.vertical(|ui| {
-                    ui.set_max_width(112.0);
-                    match icons.for_path(ui.ctx(), path) {
-                        Some(tex) => {
-                            let [tw, th] = tex.size();
-                            let size = fit_thumbnail(tw as f32, th as f32);
-                            ui.add(egui::Image::new((tex.id(), size)));
-                            ui.small(pixel_size_text(tw as i32, th as i32));
+                let cell = crate::widgets::wrap_unit(ui, |ui| {
+                    ui.vertical(|ui| {
+                        ui.set_max_width(112.0);
+                        match icons.for_path(ui.ctx(), path) {
+                            Some(tex) => {
+                                let [tw, th] = tex.size();
+                                let size = fit_thumbnail(tw as f32, th as f32);
+                                ui.add(egui::Image::new((tex.id(), size)));
+                                ui.small(pixel_size_text(tw as i32, th as i32));
+                            }
+                            None => {
+                                ui.weak("Missing");
+                            }
                         }
-                        None => {
-                            ui.weak("Missing");
+                        ui.small(variant_display_label(&variant));
+                        if is_demo {
+                            ui.weak("demo");
                         }
-                    }
-                    ui.small(variant_display_label(&variant));
-                    if is_demo {
-                        ui.weak("demo");
-                    }
+                    });
                 });
                 let menu_id = egui::Id::new(("icon_variant_menu", item, &variant));
                 if crate::widgets::rect_danger_menu(

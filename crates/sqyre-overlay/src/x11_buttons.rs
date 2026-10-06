@@ -34,8 +34,8 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use x11::xfixes::{
-    XFixesCreateRegion, XFixesDestroyRegion, XFixesHideCursor, XFixesQueryExtension,
-    XFixesQueryVersion, XFixesSetWindowShapeRegion, XFixesShowCursor,
+    XFixesCreateRegion, XFixesDestroyRegion, XFixesQueryExtension, XFixesQueryVersion,
+    XFixesSetWindowShapeRegion,
 };
 use x11::xlib::{
     AllocNone, Below, Button1Mask, ButtonPress, ButtonPressMask, ButtonRelease, ButtonReleaseMask,
@@ -253,10 +253,10 @@ struct TipWindow {
 }
 
 struct ChooserWindow {
-    /// Painted panel (`InputOutput`); empty ShapeInput — clicks go to [`Self::hit`].
-    face: Window,
-    /// Invisible full hit target (`InputOnly`) above the face (same pattern as overlay buttons).
-    hit: Window,
+    /// Painted panel that also takes input. Unlike overlay buttons there is no
+    /// `InputOnly` hit cover: XWayland gives InputOnly windows no Wayland surface,
+    /// so the compositor would only route clicks to it over another X window.
+    win: Window,
     w: u32,
     h: u32,
     title: String,
@@ -270,8 +270,6 @@ struct ChooserWindow {
     pressed_row: Option<usize>,
     mapped: bool,
     grab_active: bool,
-    /// True after [`XFixesShowCursor`] — must pair with Hide on dismiss (games may hide cursor).
-    cursor_shown: bool,
 }
 
 struct DragState {
@@ -545,14 +543,12 @@ fn host_loop(
         let chooser_open = state.chooser.as_ref().is_some_and(|c| c.mapped);
         let relocating = state.drag.is_some();
         if chooser_open {
-            // Face then hit — same stacking as overlay buttons.
             if let Some(ch) = state.chooser.as_ref() {
-                // SAFETY: HostState display invariant; chooser windows still live.
+                // SAFETY: HostState display invariant; chooser window still live.
                 unsafe {
-                    XMapRaised(state.display, ch.face);
-                    XMapRaised(state.display, ch.hit);
+                    XMapRaised(state.display, ch.win);
                     if state.arrow_cursor != 0 {
-                        XDefineCursor(state.display, ch.hit, state.arrow_cursor);
+                        XDefineCursor(state.display, ch.win, state.arrow_cursor);
                     }
                     x_flush(state.display);
                 }
@@ -1889,8 +1885,8 @@ fn repaint_chooser(state: &mut HostState) {
     if tw == 0 || th == 0 || rgba.is_empty() {
         return;
     }
-    let face = ch.face;
-    blit_rgba(state, face, tw, th, &rgba);
+    let win = ch.win;
+    blit_rgba(state, win, tw, th, &rgba);
     if let Some(ch) = state.chooser.as_mut() {
         ch.rows = rows;
         ch.w = tw;
@@ -1913,35 +1909,18 @@ fn set_chooser_hover(state: &mut HostState, hover: Option<usize>) {
     repaint_chooser(state);
 }
 
-/// Force a visible arrow while the chooser is open (fullscreen games often hide it).
-fn force_pointer_cursor_visible(state: &HostState, hit: Window) -> bool {
-    // SAFETY: HostState display invariant; hit created on this display.
-    unsafe {
-        if state.arrow_cursor != 0 {
-            XDefineCursor(state.display, hit, state.arrow_cursor);
-        }
-        let mut event_base = 0;
-        let mut error_base = 0;
-        if XFixesQueryExtension(state.display, &mut event_base, &mut error_base) == 0 {
-            x_flush(state.display);
-            note("overlay-x11: chooser cursor define only (no XFixes)");
-            return false;
-        }
-        // Nesting Show/Hide — must pair with restore_pointer_cursor_visibility.
-        XFixesShowCursor(state.display, state.root);
-        x_flush(state.display);
-        true
-    }
-}
-
-fn restore_pointer_cursor_visibility(state: &HostState, hit: Window, shown: bool) {
-    if !shown {
+/// Arrow cursor over the chooser (fullscreen games often blank theirs).
+///
+/// No XFixesShowCursor: it only undoes this client's own HideCursor, so it cannot
+/// reveal a game's hidden cursor, and the paired HideCursor on dismiss would hide
+/// the pointer over every X window (including Sqyre) until exit.
+fn define_chooser_cursor(state: &HostState, win: Window) {
+    if state.arrow_cursor == 0 {
         return;
     }
-    // SAFETY: matches force_pointer_cursor_visible Show on root.
+    // SAFETY: HostState display invariant; win created on this display.
     unsafe {
-        XFixesHideCursor(state.display, state.root);
-        XUndefineCursor(state.display, hit);
+        XDefineCursor(state.display, win, state.arrow_cursor);
         x_flush(state.display);
     }
 }
@@ -1955,20 +1934,17 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec) {
         note("overlay-x11: chooser raster empty");
         return;
     }
-    let Ok((face, hit)) = create_chooser_windows(state, spec.x, spec.y, tw, th) else {
+    let Ok(win) = create_chooser_window(state, spec.x, spec.y, tw, th) else {
         note("overlay-x11: chooser create failed");
         return;
     };
-    blit_rgba(state, face, tw, th, &rgba);
-    // Map face then hit (InputOnly on top) — same proven stacking as overlay buttons.
+    blit_rgba(state, win, tw, th, &rgba);
     // SAFETY: HostState display invariant.
     unsafe {
-        XMapRaised(state.display, face);
-        XMapRaised(state.display, hit);
+        XMapRaised(state.display, win);
         XSync(state.display, False);
     }
-    // Games often hide the cursor via an active grab. Force it visible for picking.
-    let cursor_shown = force_pointer_cursor_visible(state, hit);
+    define_chooser_cursor(state, win);
     let grab_mask = (ButtonPressMask
         | ButtonReleaseMask
         | PointerMotionMask
@@ -1984,7 +1960,7 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec) {
     let grab_status = unsafe {
         XGrabPointer(
             state.display,
-            hit,
+            win,
             False,
             grab_mask,
             GrabModeAsync,
@@ -1997,8 +1973,7 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec) {
     let grab_ok = grab_status == Success as c_int;
     let row_n = rows.len();
     state.chooser = Some(ChooserWindow {
-        face,
-        hit,
+        win,
         w: tw,
         h: th,
         title: spec.title,
@@ -2008,25 +1983,22 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec) {
         pressed_row: None,
         mapped: true,
         grab_active: grab_ok,
-        cursor_shown,
     });
     // SAFETY: re-assert stacking after grab.
     unsafe {
-        XMapRaised(state.display, face);
-        XMapRaised(state.display, hit);
+        XMapRaised(state.display, win);
         x_flush(state.display);
     }
     note(&format!(
-        "overlay-x11: chooser shown names={} at {},{} grab_status={} grab_ok={} cursor_shown={} face+hit",
+        "overlay-x11: chooser shown names={} at {},{} grab_status={} grab_ok={}",
         row_n.saturating_sub(1),
         spec.x,
         spec.y,
         grab_status,
         grab_ok,
-        cursor_shown
     ));
     mark_site(&format!(
-        "overlay:chooser:shown:grab={grab_status}:ok={grab_ok}:cursor={cursor_shown}:n={}:face+hit",
+        "overlay:chooser:shown:grab={grab_status}:ok={grab_ok}:n={}",
         row_n.saturating_sub(1)
     ));
     if let Some(ctx) = &state.wake {
@@ -2051,15 +2023,12 @@ fn hide_chooser(state: &mut HostState, result: Option<HotkeyChooserResult>) {
         }
         ch.grab_active = false;
     }
-    restore_pointer_cursor_visibility(state, ch.hit, ch.cursor_shown);
     // SAFETY: HostState display invariant.
     unsafe {
         if ch.mapped {
-            x_unmap(state.display, ch.hit);
-            x_unmap(state.display, ch.face);
+            x_unmap(state.display, ch.win);
         }
-        x_destroy_window(state.display, ch.hit);
-        x_destroy_window(state.display, ch.face);
+        x_destroy_window(state.display, ch.win);
         x_flush(state.display);
     }
     if let Some(r) = result {
@@ -2070,48 +2039,28 @@ fn hide_chooser(state: &mut HostState, result: Option<HotkeyChooserResult>) {
     }
 }
 
-/// Face (visual) + InputOnly hit cover — mirrors overlay button construction.
-fn create_chooser_windows(
+/// Painted, input-owning override-redirect panel (see [`ChooserWindow::win`]).
+fn create_chooser_window(
     state: &HostState,
     x: i32,
     y: i32,
     w: u32,
     h: u32,
-) -> Result<(Window, Window), String> {
+) -> Result<Window, String> {
     let bg_pixel = alloc_color(state, TIP_BG_RGB);
-    // SAFETY: HostState display invariant — same lifecycle as button face/hit.
+    // SAFETY: HostState display invariant — same lifecycle as button faces.
     unsafe {
-        let mut hit_attrs: XSetWindowAttributes = std::mem::zeroed();
-        hit_attrs.override_redirect = True;
-        hit_attrs.event_mask = ButtonPressMask
-            | ButtonReleaseMask
-            | PointerMotionMask
-            | EnterWindowMask
-            | LeaveWindowMask;
-        let hit = XCreateWindow(
-            state.display,
-            state.root,
-            x,
-            y,
-            w.max(1),
-            h.max(1),
-            0,
-            0,
-            InputOnly as c_uint,
-            std::ptr::null_mut(),
-            CWOverrideRedirect | CWEventMask,
-            &mut hit_attrs,
-        );
-        if hit == 0 {
-            return Err("XCreateWindow chooser hit failed".into());
-        }
-
         let mut face_attrs: XSetWindowAttributes = std::mem::zeroed();
         face_attrs.background_pixel = bg_pixel;
         face_attrs.border_pixel = bg_pixel;
         face_attrs.override_redirect = True;
         face_attrs.backing_store = WhenMapped;
-        face_attrs.event_mask = ExposureMask;
+        face_attrs.event_mask = ExposureMask
+            | ButtonPressMask
+            | ButtonReleaseMask
+            | PointerMotionMask
+            | EnterWindowMask
+            | LeaveWindowMask;
         let face = XCreateWindow(
             state.display,
             state.root,
@@ -2127,21 +2076,21 @@ fn create_chooser_windows(
             &mut face_attrs,
         );
         if face == 0 {
-            x_destroy_window(state.display, hit);
-            return Err("XCreateWindow chooser face failed".into());
+            return Err("XCreateWindow chooser failed".into());
         }
         let c_title = std::ffi::CString::new(OVERLAY_WM_TITLE).unwrap_or_default();
         XStoreName(state.display, face, c_title.as_ptr());
         set_net_wm_type_notification(state.display, face);
         set_skip_taskbar_state(state.display, state.root, face);
-        // Face: rounded visual only. Hit: full rounded input region (owns clicks).
-        apply_face_rounded_bounding(state.display, face, w, h, TIP_CORNER_PX);
-        apply_chooser_hit_shape(state.display, hit, w, h, TIP_CORNER_PX);
-        Ok((face, hit))
+        let radius = TIP_CORNER_PX.round().max(0.0) as i32;
+        let mut rects = rounded_rect_xrectangles(w as i32, h as i32, radius);
+        apply_shape_region(state.display, face, SHAPE_BOUNDING, &mut rects);
+        apply_chooser_input_shape(state.display, face, w, h, TIP_CORNER_PX);
+        Ok(face)
     }
 }
 
-fn apply_chooser_hit_shape(display: *mut Display, hit: Window, w: u32, h: u32, radius_px: f32) {
+fn apply_chooser_input_shape(display: *mut Display, hit: Window, w: u32, h: u32, radius_px: f32) {
     if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
         return;
     }
@@ -2313,7 +2262,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
             if state
                 .chooser
                 .as_ref()
-                .is_some_and(|c| c.face == win && c.mapped)
+                .is_some_and(|c| c.win == win && c.mapped)
             {
                 repaint_chooser(state);
                 continue;
@@ -2357,7 +2306,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
             if state
                 .chooser
                 .as_ref()
-                .is_some_and(|c| c.mapped && c.hit == win)
+                .is_some_and(|c| c.mapped && c.win == win)
             {
                 if !enter {
                     set_chooser_hover(state, None);
@@ -2404,7 +2353,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 (m.window, m.x, m.y, m.x_root, m.y_root)
             };
             if state.chooser.as_ref().is_some_and(|c| c.mapped) {
-                let hit = state.chooser.as_ref().map(|c| c.hit);
+                let hit = state.chooser.as_ref().map(|c| c.win);
                 let hover =
                     if hit == Some(win) || state.chooser.as_ref().is_some_and(|c| c.grab_active) {
                         state.chooser.as_ref().and_then(|c| chooser_row_at(c, x, y))
@@ -2430,7 +2379,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 continue;
             }
             if state.chooser.as_ref().is_some_and(|c| c.mapped) {
-                let chooser_hit = state.chooser.as_ref().map(|c| c.hit);
+                let chooser_hit = state.chooser.as_ref().map(|c| c.win);
                 mark_site(&format!(
                     "overlay:chooser:btn={button}:win={win}:xy={x},{y}:root={root_x},{root_y}:hit={}",
                     chooser_hit == Some(win)

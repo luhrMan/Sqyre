@@ -288,6 +288,8 @@ fn handle_keyboard(wparam: WPARAM, lparam: LPARAM) {
                 // Macro recording takes Esc.
             } else if ctx.screen_click.on_escape() {
                 // Point/area recording takes Esc; don't also stop macros.
+            } else if crate::popup_escape::on_escape() {
+                // Open popup (hotkey chooser) takes Esc.
             } else if crate::failsafe_modifiers_held(&ctx.pressed) {
                 esc = EscAction::Failsafe(Arc::clone(&ctx.callbacks.on_failsafe));
             } else if !ctrl && !shift && !ctx.continue_wait.continue_is_escape() {

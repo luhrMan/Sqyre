@@ -134,13 +134,14 @@ impl DataEditor {
         )
         .submitted;
         ui.add_space(crate::theme::SPACE_4);
-        ui.horizontal(|ui| {
-            help::label(ui, "Cols", help::DE_COLS);
-            ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0));
-            help::label(ui, "Rows", help::DE_ROWS);
-            ui.add(egui::TextEdit::singleline(&mut self.form_rows).desired_width(80.0));
-            help::label(ui, "Stack max", help::DE_STACK_MAX);
-            ui.add(egui::TextEdit::singleline(&mut self.form_stack_max).desired_width(80.0));
+        crate::widgets::wrapped_row(ui, |ui| {
+            for (label, help_text, value) in [
+                ("Cols", help::DE_COLS, &mut self.form_cols),
+                ("Rows", help::DE_ROWS, &mut self.form_rows),
+                ("Stack max", help::DE_STACK_MAX, &mut self.form_stack_max),
+            ] {
+                crate::widgets::text_field_width(ui, label, help_text, value, 80.0);
+            }
         });
         ui.add_space(crate::theme::SPACE_4);
         help::label(ui, "Mask", help::DE_MASK);

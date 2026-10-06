@@ -1,6 +1,10 @@
 //! User Settings → Permissions: background probe + status rows.
 
 use eframe::egui::{self, Color32, RichText};
+use sqyre_hotkeys::{
+    open_system_shortcuts, system_shortcuts_configurable, system_shortcuts_status,
+    SystemShortcutsStatus,
+};
 use sqyre_probe::{
     build_permission_items, run_probe, PermissionEligibility, PermissionItem, ProbeOptions,
 };
@@ -128,6 +132,9 @@ impl PermissionsPanel {
         self.ensure_loaded(ctx);
         self.maybe_refresh_after_capture(ctx);
         apply_live_capture_status(&mut self.items);
+        if system_shortcuts_status() == SystemShortcutsStatus::Waiting {
+            ctx.request_repaint_after(Duration::from_millis(250));
+        }
 
         ui.horizontal(|ui| {
             ui.label(
@@ -195,6 +202,10 @@ impl PermissionsPanel {
                     self.refresh_when_capture_ready = false;
                     ctx.request_repaint();
                 }
+                PermissionRowAction::SystemShortcuts => {
+                    open_system_shortcuts();
+                    ctx.request_repaint_after(Duration::from_millis(300));
+                }
                 PermissionRowAction::None => {}
             }
             ui.add_space(crate::theme::SPACE_12);
@@ -232,9 +243,40 @@ fn apply_live_capture_status(items: &mut [PermissionItem]) {
                     item.eligibility = PermissionEligibility::Needed;
                 }
             }
+            "global_shortcuts" => apply_system_shortcuts_status(item, system_shortcuts_status()),
             _ => {}
         }
     }
+}
+
+fn apply_system_shortcuts_status(item: &mut PermissionItem, status: SystemShortcutsStatus) {
+    let (eligibility, detail) = match status {
+        SystemShortcutsStatus::Unavailable => return,
+        SystemShortcutsStatus::Waiting => (
+            PermissionEligibility::Checking,
+            "Waiting for the desktop's shortcut dialog.".to_string(),
+        ),
+        SystemShortcutsStatus::Active { bound } => (
+            PermissionEligibility::Granted,
+            match bound {
+                0 => "No macro hotkeys to register yet.".to_string(),
+                1 => "1 macro hotkey is handled by your desktop.".to_string(),
+                n => format!("{n} macro hotkeys are handled by your desktop."),
+            },
+        ),
+        SystemShortcutsStatus::Declined => (
+            PermissionEligibility::Needed,
+            "The shortcut dialog was dismissed. Hotkeys still work when Sqyre can read input devices."
+                .to_string(),
+        ),
+        SystemShortcutsStatus::Failed(e) => (
+            PermissionEligibility::Needed,
+            format!("Desktop shortcuts failed ({e}). Hotkeys fall back to input devices."),
+        ),
+    };
+    item.eligibility = eligibility;
+    item.detail = Some(detail);
+    item.setup_steps.clear();
 }
 
 fn mark_portal_permissions_revoked(items: &mut [PermissionItem]) {
@@ -256,6 +298,18 @@ enum PermissionRowAction {
     None,
     ShareScreen,
     Revoke,
+    SystemShortcuts,
+}
+
+/// Button label for the global-shortcuts row, when the desktop backend can act.
+fn system_shortcuts_button() -> Option<&'static str> {
+    match system_shortcuts_status() {
+        SystemShortcutsStatus::Active { bound } if bound > 0 && system_shortcuts_configurable() => {
+            Some("Change shortcuts")
+        }
+        SystemShortcutsStatus::Declined => Some("Set up shortcuts"),
+        _ => None,
+    }
 }
 
 fn paint_permission_row(
@@ -307,9 +361,23 @@ fn paint_permission_row(
             }
             let share_screen = item.id == "screen_recording" && portal_session;
             let revoke = item.portal_grant_revocable() && portal_session;
-            if share_screen || revoke {
+            let shortcuts = (item.id == "global_shortcuts")
+                .then(system_shortcuts_button)
+                .flatten();
+            if share_screen || revoke || shortcuts.is_some() {
                 ui.add_space(crate::theme::SPACE_8);
                 ui.horizontal(|ui| {
+                    if let Some(label) = shortcuts {
+                        if ui
+                            .button(label)
+                            .on_hover_text(
+                                "Open your desktop's shortcut settings to choose the keys that run your macros.",
+                            )
+                            .clicked()
+                        {
+                            action = PermissionRowAction::SystemShortcuts;
+                        }
+                    }
                     if share_screen {
                         let label = if item.eligibility == PermissionEligibility::Granted {
                             "Change shared screen"

@@ -18,11 +18,19 @@ impl SqyreApp {
 
     pub(crate) fn drain_pending_hotkey_macros(&mut self, ctx: &egui::Context) {
         // Don't take while a chooser is open — overlay clicks share this queue
-        // and used to be discarded here.
-        if self.hotkey_chooser.is_some() {
+        // and used to be discarded here. Names from the press that opened it can
+        // still be arriving; drop those so the menu does not reopen after a pick.
+        if let Some(open) = &self.hotkey_chooser {
+            let macros = &self.workspace.macros;
+            self.pending_hotkey_macros.lock().retain(|name| {
+                crate::hotkey_chooser::chord_of(name, macros).as_ref() != Some(&open.chord)
+            });
             return;
         }
-        let pending: Vec<String> = std::mem::take(&mut *self.pending_hotkey_macros.lock());
+        let pending: Vec<String> = self
+            .run_session
+            .macro_hotkeys
+            .between_fires(|| std::mem::take(&mut *self.pending_hotkey_macros.lock()));
         if pending.is_empty() {
             return;
         }
@@ -37,7 +45,8 @@ impl SqyreApp {
             );
             self.start_macro_by_name(&name, ctx);
         }
-        for (chord_key, _trigger, names) in groups {
+        for (chord_key, trigger, names) in groups {
+            let chord = (chord_key, trigger);
             if names.len() <= 1 {
                 if let Some(name) = names.into_iter().next() {
                     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
@@ -49,17 +58,16 @@ impl SqyreApp {
                 }
                 continue;
             }
-            let chord_label = chord_key.replace('+', " + ");
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             sqyre_capture::event_log(
                 "SQYRE_HOTKEY",
                 &[
                     ("fire", "choose"),
-                    ("chord", chord_label.as_str()),
+                    ("chord", chord.0.as_str()),
                     ("count", &names.len().to_string()),
                 ],
             );
-            self.open_hotkey_chooser(names, chord_label, ctx);
+            self.open_hotkey_chooser(names, chord, ctx);
             // One chooser at a time; remaining groups wait for a later fire.
             break;
         }

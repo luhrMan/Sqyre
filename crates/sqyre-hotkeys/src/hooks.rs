@@ -69,6 +69,17 @@ pub fn linux_can_open_evdev() -> bool {
     true
 }
 
+/// Whether the Wayland evdev watch is live (it sees keys whether or not Sqyre is focused).
+#[cfg(target_os = "linux")]
+pub fn linux_evdev_watching() -> bool {
+    crate::linux_evdev::watching()
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn linux_evdev_watching() -> bool {
+    false
+}
+
 fn record_button(button: Button) -> Option<RecordMouseButton> {
     match button {
         Button::Left => Some(RecordMouseButton::Left),
@@ -160,6 +171,8 @@ impl HookCtx {
                         // Macro recording takes Esc.
                     } else if self.screen_click.on_escape() {
                         // Point/area recording takes Esc; don't also stop macros.
+                    } else if crate::popup_escape::on_escape() {
+                        // Open popup (hotkey chooser) takes Esc.
                     } else if crate::failsafe_modifiers_held(&self.pressed) {
                         (self.callbacks.on_failsafe)();
                     } else if !ctrl && !shift && !self.continue_wait.continue_is_escape() {
@@ -227,6 +240,13 @@ impl HotkeyService for RdevHotkeys {
         self.stop();
         let stop = Arc::clone(&self.stop);
         stop.store(false, Ordering::SeqCst);
+        #[cfg(all(feature = "portal-shortcuts", target_os = "linux"))]
+        if linux_uses_evdev_grab() {
+            crate::linux_portal_shortcuts::spawn(
+                self.macro_hotkeys.clone(),
+                Arc::clone(&callbacks.on_macro_hotkey),
+            );
+        }
         let ctx = HookCtx {
             stop,
             continue_wait: self.continue_wait.clone(),
@@ -247,6 +267,8 @@ impl HotkeyService for RdevHotkeys {
     fn stop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         crate::pointer_buttons::set_left_button_down(false);
+        #[cfg(all(feature = "portal-shortcuts", target_os = "linux"))]
+        crate::linux_portal_shortcuts::stop(&self.macro_hotkeys);
         // Wayland evdev watch uses a short epoll timeout and can join. X11 `listen` blocks forever.
         #[cfg(target_os = "linux")]
         if linux_uses_evdev_grab() {
