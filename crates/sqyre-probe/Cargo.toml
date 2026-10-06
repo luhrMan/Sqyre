@@ -17,12 +17,16 @@ portal-capture = ["sqyre-capture/portal-capture"]
 
 [dependencies]
 sqyre-capture = { path = "../sqyre-capture" }
-sqyre-hotkeys = { path = "../sqyre-hotkeys", features = ["hooks"] }
+sqyre-hotkeys = { path = "../sqyre-hotkeys" }
 sqyre-input = { path = "../sqyre-input" }
 sqyre-ports = { path = "../sqyre-ports" }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 web-time = { workspace = true }
+
+# Android has no global key hooks (rdev does not build there).
+[target.'cfg(not(target_os = "android"))'.dependencies]
+sqyre-hotkeys = { path = "../sqyre-hotkeys", features = ["hooks"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.11", default-features = false, features = ["async-std"] }

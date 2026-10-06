@@ -274,6 +274,9 @@ mod native_run {
             // Must run on the UI thread: winit's SetCapture/ReleaseCapture are
             // thread-affine. Doing this only on the worker never clears Start-click capture.
             sqyre_input::prepare_for_automation();
+            // A screen recording the user stopped may be requested again by this run.
+            #[cfg(target_os = "android")]
+            sqyre_android::frames().rearm();
 
             thread::spawn(move || {
                 let _clear_running = RunningClearOnDrop {

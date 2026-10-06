@@ -5031,6 +5031,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "sqyre-android"
+version = "0.1.0"
+dependencies = [
+ "jni 0.21.1",
+ "parking_lot",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "sqyre-app"
 version = "0.1.0"
 dependencies = [
@@ -5053,6 +5062,7 @@ dependencies = [
  "rodio",
  "serde_yaml",
  "skrifa",
+ "sqyre-android",
  "sqyre-capture",
  "sqyre-domain",
  "sqyre-executor",
@@ -5112,6 +5122,7 @@ dependencies = [
  "pulp",
  "rayon",
  "reis",
+ "sqyre-android",
  "sqyre-ports",
  "wayland-client",
  "wayland-protocols",
@@ -5174,6 +5185,7 @@ version = "0.1.0"
 dependencies = [
  "arboard",
  "rustautogui",
+ "sqyre-android",
  "sqyre-ports",
  "windows",
 ]

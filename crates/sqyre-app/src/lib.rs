@@ -145,36 +145,25 @@ fn apply_worker_thread_pool(worker_threads: i32) {
 /// Launch the desktop shell (single-instance lock, tray, fonts).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run() -> eframe::Result<()> {
-    let _ = sqyre_persist::initialize_directories();
-    #[cfg(feature = "native-runtime")]
-    {
-        crate::app_backends::tune_process_heap();
-        diag::install(sqyre_persist::sqyre_dir());
+    run_with(native_options())
+}
+
+/// Android entry point, called by `android-activity` on its main thread.
+#[cfg(target_os = "android")]
+#[no_mangle]
+fn android_main(app: winit::platform::android::activity::AndroidApp) {
+    if let Some(home) = app.internal_data_path() {
+        sqyre_persist::set_home_dir(home);
     }
-    sqyre_update::cleanup_stale_update();
-    #[cfg(target_os = "linux")]
-    desktop_entry::install();
-    #[cfg(all(feature = "native-runtime", target_os = "linux"))]
-    sqyre_capture::linux::app_scope::enter_app_scope(assets::APP_ID);
-    #[cfg(all(
-        not(target_arch = "wasm32"),
-        feature = "native-runtime",
-        target_os = "linux"
-    ))]
-    install_x11_secondary_error_hook();
+    let mut options = native_options();
+    options.android_app = Some(app);
+    if let Err(e) = run_with(options) {
+        crate::log::warn(format!("eframe exited with error: {e}"));
+    }
+}
 
-    let instance_lock = match single_instance::try_acquire() {
-        Ok(Some(lock)) => Some(lock),
-        Ok(None) => {
-            crate::log::warn("Sqyre is already running");
-            std::process::exit(0);
-        }
-        Err(e) => {
-            crate::log::warn(format!("failed to acquire instance lock: {e}"));
-            std::process::exit(1);
-        }
-    };
-
+#[cfg(not(target_arch = "wasm32"))]
+fn native_options() -> eframe::NativeOptions {
     let mut options = eframe::NativeOptions {
         viewport: {
             let builder = egui::ViewportBuilder::default()
@@ -210,6 +199,41 @@ pub fn run() -> eframe::Result<()> {
         #[cfg(feature = "native-runtime")]
         sqyre_capture::note("ui: X11/XWayland event loop (tray hide + overlay Alt-Tab)");
     }
+    options
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn run_with(options: eframe::NativeOptions) -> eframe::Result<()> {
+    let _ = sqyre_persist::initialize_directories();
+    #[cfg(feature = "native-runtime")]
+    {
+        crate::app_backends::tune_process_heap();
+        diag::install(sqyre_persist::sqyre_dir());
+    }
+    sqyre_update::cleanup_stale_update();
+    #[cfg(target_os = "linux")]
+    desktop_entry::install();
+    #[cfg(all(feature = "native-runtime", target_os = "linux"))]
+    sqyre_capture::linux::app_scope::enter_app_scope(assets::APP_ID);
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "native-runtime",
+        target_os = "linux"
+    ))]
+    install_x11_secondary_error_hook();
+
+    let instance_lock = match single_instance::try_acquire() {
+        Ok(Some(lock)) => Some(lock),
+        Ok(None) => {
+            crate::log::warn("Sqyre is already running");
+            std::process::exit(0);
+        }
+        Err(e) => {
+            crate::log::warn(format!("failed to acquire instance lock: {e}"));
+            std::process::exit(1);
+        }
+    };
+
     let result = eframe::run_native(
         assets::APP_ID,
         options,
@@ -424,6 +448,11 @@ impl SqyreApp {
         screen_click.set_absolute_pos(sqyre_capture::portal_cursor_position);
         let run = RunState::default();
         let stop = run.stop.clone();
+        #[cfg(target_os = "android")]
+        sqyre_android::set_stop_handler({
+            let stop = stop.clone();
+            Arc::new(move || stop.request_stop())
+        });
         let pending_hotkey_macros = Arc::new(Mutex::new(Vec::new()));
         let pending_for_cb = Arc::clone(&pending_hotkey_macros);
         let hotkey_repaint = Arc::new(Mutex::new(None::<egui::Context>));

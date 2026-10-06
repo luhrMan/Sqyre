@@ -6,17 +6,19 @@
 //! portal calls panic with "no reactor running".
 //!
 //! On WASM, sync `FileDialog` is unavailable — use `wasm_io` async dialogs.
+//! `rfd` has no Android backend; pickers return `None` there until the shell
+//! exposes the Storage Access Framework.
 
 use std::path::PathBuf;
 
 /// PNG open dialog (icon variants).
 pub fn pick_png(start: &std::path::Path) -> Option<PathBuf> {
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
         let _ = start;
         None
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
         rfd::FileDialog::new()
             .set_directory(start)
@@ -27,11 +29,11 @@ pub fn pick_png(start: &std::path::Path) -> Option<PathBuf> {
 
 /// Common raster formats (mask upload).
 pub fn pick_image() -> Option<PathBuf> {
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
         None
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
         rfd::FileDialog::new()
             .add_filter("Images", &["png", "jpg", "jpeg", "bmp"])
@@ -41,12 +43,12 @@ pub fn pick_image() -> Option<PathBuf> {
 
 /// Folder picker (settings: choose `.sqyre` location).
 pub fn pick_folder(title: &str, start: &std::path::Path) -> Option<PathBuf> {
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
         let _ = (title, start);
         None
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
         rfd::FileDialog::new()
             .set_title(title)
@@ -57,12 +59,12 @@ pub fn pick_folder(title: &str, start: &std::path::Path) -> Option<PathBuf> {
 
 /// Zip open dialog (settings: restore backup).
 pub fn pick_zip(title: &str, start: &std::path::Path) -> Option<PathBuf> {
-    #[cfg(target_arch = "wasm32")]
+    #[cfg(any(target_arch = "wasm32", target_os = "android"))]
     {
         let _ = (title, start);
         None
     }
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     {
         rfd::FileDialog::new()
             .set_title(title)

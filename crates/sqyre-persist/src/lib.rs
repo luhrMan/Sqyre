@@ -72,6 +72,9 @@ pub const MAX_MACROS: usize = 2_000;
 
 static DIR_OVERRIDE: RwLock<Option<PathBuf>> = RwLock::new(None);
 
+#[cfg(not(target_arch = "wasm32"))]
+static HOME_DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+
 /// Serializes tests that mutate [`set_sqyre_dir_override`].
 static DIR_OVERRIDE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
@@ -119,19 +122,35 @@ pub fn set_sqyre_dir_override(path: Option<PathBuf>) {
     *DIR_OVERRIDE.write() = path;
 }
 
+/// Replace the user home for Sqyre paths (Android app-private storage has no `$HOME`).
+///
+/// Call once at startup, before any path lookup.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn set_home_dir(path: PathBuf) {
+    // A recreated Android activity re-enters startup in the same process with the same path.
+    let _ = HOME_DIR.set(path);
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn home_dir() -> PathBuf {
+    HOME_DIR
+        .get()
+        .cloned()
+        .or_else(dirs::home_dir)
+        .unwrap_or_else(std::env::temp_dir)
+}
+
 /// Per-user config directory for Sqyre (`~/.config/sqyre` on Linux).
 ///
 /// Holds the data-dir pointer and the single-instance lock — paths that must
 /// not move when the relocatable data directory changes.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn sqyre_config_dir() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(std::env::temp_dir)
-                .join(".config")
-        })
-        .join("sqyre")
+    let base = match HOME_DIR.get() {
+        Some(home) => home.join(".config"),
+        None => dirs::config_dir().unwrap_or_else(|| home_dir().join(".config")),
+    };
+    base.join("sqyre")
 }
 
 /// Run `f` with a temporary Sqyre dir override, serialized against other override users.
@@ -154,9 +173,7 @@ pub fn sqyre_dir() -> PathBuf {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        dirs::home_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .join(SQYRE_DIR)
+        home_dir().join(SQYRE_DIR)
     }
 }
 

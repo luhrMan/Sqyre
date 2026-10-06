@@ -61,7 +61,6 @@ sqyre-vision = { path = "../sqyre-vision", optional = true }
 sqyre-match = { path = "../sqyre-match", optional = true }
 rayon = { workspace = true, optional = true }
 serde_yaml = { workspace = true }
-rfd = { workspace = true }
 parking_lot = { workspace = true }
 thiserror = { workspace = true }
 web-time = { workspace = true }
@@ -88,6 +87,14 @@ tray-icon = { workspace = true }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse"] }
+
+# rfd has no Android backend.
+[target.'cfg(not(target_os = "android"))'.dependencies]
+rfd = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+sqyre-android = { path = "../sqyre-android" }
+winit = { version = "0.30", features = ["android-native-activity"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-bindgen-futures = "0.4"
