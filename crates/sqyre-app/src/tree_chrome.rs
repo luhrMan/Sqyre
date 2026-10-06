@@ -2,6 +2,7 @@
 
 use crate::icon_cache::IconCache;
 use crate::image_view;
+use crate::paint_ctx::VarTheme;
 use crate::pickers::attach_item_icon_tooltip;
 use crate::theme::{
     highlight_cursor_fill, highlight_invalid_fill, highlight_owner_fill, highlight_progress_fill,
@@ -34,7 +35,7 @@ pub fn default_row_height(interact_y: f32) -> f32 {
     interact_y.max(ICON_SIZE)
 }
 
-/// Row height including type-badge and icon-button glyphs that track Font size.
+/// Row height including type-badge, summary pills, and icon-button glyphs that track Font size.
 pub fn row_height(ui: &egui::Ui) -> f32 {
     let btn_h = ui
         .text_style_height(&egui::TextStyle::Button)
@@ -42,6 +43,7 @@ pub fn row_height(ui: &egui::Ui) -> f32 {
     default_row_height(ui.spacing().interact_size.y)
         .max(type_badge_side(ui))
         .max(btn_h)
+        .max(var_pills::summary_pill_height(ui))
 }
 
 fn type_badge_side(ui: &egui::Ui) -> f32 {
@@ -223,14 +225,38 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
     ui.interact(rect, ui.id().with(("action_pill", text)), Sense::hover())
 }
 
-fn paint_summary_pill(
+/// Leading program/window icon + summary pill, vertically centered in a `band_h` cell.
+///
+/// `ui.horizontal` alone starts at `interact_size.y`; when the pill is taller, the
+/// parent row grows after the first cell and later cells center lower (wrapped
+/// tooltip rows) or overflow the row clip (tree rows).
+pub(crate) fn paint_summary_pill_cell(
     ui: &mut egui::Ui,
     action: &Action,
     pill: &SummaryPill,
-    known: &KnownVariableNames,
-    is_dark: bool,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    theme: VarTheme<'_>,
+    band_h: f32,
 ) -> egui::Response {
-    var_pills::paint_summary_pill(ui, action.type_key(), pill, known, is_dark)
+    let prev_h = ui.spacing().interact_size.y;
+    ui.spacing_mut().interact_size.y = band_h;
+    let resp = crate::widgets::wrap_unit(ui, |ui| {
+        ui.spacing_mut().interact_size.y = prev_h;
+        if let ActionKind::FocusWindow {
+            process_path,
+            window_title,
+        } = &action.kind
+        {
+            crate::icon_cache::paint_leading_process_icon(ui, icons, process_path, window_title);
+        } else {
+            crate::icon_cache::paint_leading_program_icon(ui, catalog, icons, &pill.text);
+        }
+        var_pills::paint_summary_pill(ui, action.type_key(), pill, theme.known_vars, theme.is_dark);
+    })
+    .response;
+    ui.spacing_mut().interact_size.y = prev_h;
+    resp
 }
 
 fn paint_color_swatch(ui: &mut egui::Ui, hex: &str) -> Option<egui::Response> {
@@ -634,27 +660,18 @@ pub fn paint_action_row(
                                 .unwrap_or(&[])
                         };
                         for pill in pills {
-                            let resp = ui
-                                .horizontal(|ui| {
-                                    if let ActionKind::FocusWindow {
-                                        process_path,
-                                        window_title,
-                                    } = &action.kind
-                                    {
-                                        crate::icon_cache::paint_leading_process_icon(
-                                            ui,
-                                            icons,
-                                            process_path,
-                                            window_title,
-                                        );
-                                    } else {
-                                        crate::icon_cache::paint_leading_program_icon(
-                                            ui, catalog, icons, &pill.text,
-                                        );
-                                    }
-                                    paint_summary_pill(ui, action, pill, known_vars, is_dark);
-                                })
-                                .response;
+                            let resp = paint_summary_pill_cell(
+                                ui,
+                                action,
+                                pill,
+                                catalog,
+                                icons,
+                                VarTheme {
+                                    known_vars,
+                                    is_dark,
+                                },
+                                row_h,
+                            );
                             extend_drag_handle(&mut drag_handle_rect, resp.rect);
                             if resp.hovered() {
                                 tip_hovered = true;
@@ -928,6 +945,63 @@ mod tests {
         let tall = image_view::fit_icon_thumb(16.0, 32.0, TARGET_THUMB_MAX_W, TARGET_THUMB_MAX_H);
         assert!((tall.x / tall.y - 0.5).abs() < 0.01);
         assert!((tall.y - TARGET_THUMB_MAX_H).abs() < 0.01);
+    }
+
+    #[test]
+    fn wrapped_summary_pill_cells_share_vertical_band() {
+        let ctx = egui::Context::default();
+        crate::settings::SettingsUi::install_fonts(&ctx);
+        let settings = sqyre_persist::UserSettings {
+            ui_scale: 1.25,
+            ui_font_size: 16,
+            ..Default::default()
+        };
+        crate::settings::SettingsUi::apply_appearance(&ctx, &settings);
+        let action = Action {
+            id: ActionId::new(),
+            kind: ActionKind::Click {
+                button: "left".into(),
+                state: PressState::Tap,
+            },
+        };
+        let catalog = ProgramCatalog::default();
+        let mut icons = IconCache::new();
+        let known = KnownVariableNames::default();
+        let mut cells: Vec<egui::Rect> = Vec::new();
+        // Second frame: wrap units have remembered widths.
+        for _ in 0..2 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                ui.set_max_width(400.0);
+                ui.horizontal_wrapped(|ui| {
+                    let band_h = var_pills::summary_pill_height(ui);
+                    cells = action
+                        .tree_summary_pills()
+                        .iter()
+                        .map(|pill| {
+                            let theme = VarTheme {
+                                known_vars: &known,
+                                is_dark: true,
+                            };
+                            paint_summary_pill_cell(
+                                ui, &action, pill, &catalog, &mut icons, theme, band_h,
+                            )
+                            .rect
+                        })
+                        .collect();
+                });
+            })
+            .drop_without_applying_deltas();
+        }
+        assert!(cells.len() >= 2, "click shows button + state pills");
+        for cell in &cells[1..] {
+            assert!(
+                (cell.top() - cells[0].top()).abs() < 0.01
+                    && (cell.height() - cells[0].height()).abs() < 0.01,
+                "cells diverge: {:?} vs {:?}",
+                cells[0],
+                cell
+            );
+        }
     }
 
     #[test]

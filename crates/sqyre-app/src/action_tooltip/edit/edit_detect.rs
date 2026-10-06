@@ -11,7 +11,9 @@ use crate::paint_ctx::{CatalogPaint, VarTheme};
 use crate::pickers::ActivePicker;
 use crate::tree_chrome;
 use crate::var_pills;
-use crate::widgets::{configure_match_blur_drag, drag_field, match_settings, text_field, W_VAR};
+use crate::widgets::{
+    configure_match_blur_drag, drag_field, match_settings, text_field, wrap_unit, W_VAR,
+};
 use eframe::egui;
 use sqyre_domain::{
     clamp_color_tolerance, clamp_ocr_resize, clamp_ocr_threshold, parse_hex_color, CoordinateRef,
@@ -238,7 +240,7 @@ pub(super) fn paint_find_pixel_fields(
     } = fields;
     detection_primary_header(ui, paint, picker, name, search_area);
     tip_wrapped_section(ui, |ui| {
-        ui.horizontal(|ui| {
+        wrap_unit(ui, |ui| {
             var_ref_field(
                 ui,
                 "Target color",

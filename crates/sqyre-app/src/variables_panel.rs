@@ -369,7 +369,7 @@ impl VariablesPanelUi {
         let mut persist = false;
 
         crate::widgets::text_field_width(ui, "Name", help::VAR_NAME, &mut edit.name, 160.0);
-        ui.horizontal_wrapped(|ui| {
+        crate::widgets::wrap_unit(ui, |ui| {
             help::label(ui, "Type", help::VAR_TYPE);
             for (label, ty) in [
                 ("auto", VariableType::Auto),
