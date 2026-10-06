@@ -425,7 +425,6 @@ impl SqyreApp {
         let pending_for_cb = Arc::clone(&pending_hotkey_macros);
         let hotkey_repaint = Arc::new(Mutex::new(None::<egui::Context>));
         let repaint_for_cb = Arc::clone(&hotkey_repaint);
-
         #[cfg(not(target_arch = "wasm32"))]
         let hotkey_callbacks = HotkeyCallbacks {
             on_escape_stop: Arc::new(move || stop.request_stop()),
@@ -729,6 +728,23 @@ impl eframe::App for SqyreApp {
         crate::mem_diag::tick(ctx);
         #[cfg(not(target_arch = "wasm32"))]
         self.tray.poll_commands(ctx, frame);
+        // Runs while minimized: eframe skips `ui` for a hidden root viewport.
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        {
+            let enabled = self.settings_ui.settings().hotkey_tags_while_focused;
+            if let Some(tags) = self
+                .hotkey_focus_tags
+                .poll(enabled, &self.workspace.catalog)
+            {
+                self.set_hotkey_tag_filters(tags);
+            }
+        }
+        self.drain_pending_hotkey_macros(ctx);
+        if let Some(name) = self.poll_native_hotkey_chooser(ctx) {
+            self.start_chosen_macro(name, ctx);
+        }
+        self.poll_hotkey_chooser_escape(ctx);
+        self.start_deferred_pick(ctx);
         // Unmap as soon as the WM asks to close so portal/tray/wgpu teardown
         // is not user-visible (Drop alone was finishing in <1s while the window
         // stayed up for ~2s afterward).

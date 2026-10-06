@@ -5,6 +5,7 @@ mod error;
 mod macro_hotkeys;
 mod macro_record;
 mod pointer_buttons;
+mod popup_escape;
 mod screen_click;
 
 #[cfg(all(feature = "hooks", target_os = "windows"))]
@@ -16,6 +17,7 @@ pub use macro_hotkeys::{
 };
 pub use macro_record::{MacroRecordBridge, MacroRecordEvent, RecordMouseButton};
 pub use pointer_buttons::left_button_down;
+pub use popup_escape::{claim_popup_escape, take_popup_escape};
 pub use screen_click::ScreenClickBridge;
 pub use sqyre_domain::{
     failsafe_modifiers_held, is_failsafe_chord, normalize_key_name, normalize_keys,
@@ -96,7 +98,7 @@ mod hooks;
 mod linux_evdev;
 
 #[cfg(all(feature = "hooks", not(target_os = "windows")))]
-pub use hooks::{linux_can_open_evdev, linux_uses_evdev_grab, RdevHotkeys};
+pub use hooks::{linux_can_open_evdev, linux_evdev_watching, linux_uses_evdev_grab, RdevHotkeys};
 
 #[cfg(all(feature = "hooks", target_os = "windows"))]
 mod win_hooks;

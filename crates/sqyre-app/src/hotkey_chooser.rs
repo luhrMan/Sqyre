@@ -4,6 +4,7 @@ use crate::SqyreApp;
 use eframe::egui::{self, Pos2, Vec2, ViewportBuilder, ViewportId};
 use sqyre_hotkeys::{HotkeyTrigger, MacroHotkeyBinding};
 use std::collections::{BTreeMap, HashSet};
+use std::sync::atomic::Ordering;
 
 const CHOOSER_ID: &str = "sqyre_hotkey_chooser";
 const MENU_OFFSET: Vec2 = Vec2::new(crate::theme::SPACE_12, crate::theme::SPACE_12);
@@ -15,6 +16,8 @@ const MAX_W: f32 = 360.0;
 #[derive(Debug, Clone)]
 pub(crate) struct HotkeyChooserState {
     pub names: Vec<String>,
+    /// Chord being chosen; repeat fires of it are dropped while the menu is open.
+    pub chord: ChordKey,
     pub chord_label: String,
     /// Screen position in egui points, captured once when the menu opens.
     pub anchor: Pos2,
@@ -27,6 +30,20 @@ pub(crate) struct HotkeyChooserState {
 /// Macros sharing one chord: `(normalized chord, trigger, macro names)`.
 pub(crate) type ChordGroup = (String, HotkeyTrigger, Vec<String>);
 
+/// Normalized chord key (`"ctrl+f1"`) + trigger.
+pub(crate) type ChordKey = (String, HotkeyTrigger);
+
+fn macro_chord(m: &sqyre_domain::Macro) -> Option<ChordKey> {
+    let trigger = HotkeyTrigger::parse(&m.hotkey_trigger);
+    let chord = MacroHotkeyBinding::new(m.name.clone(), m.hotkey.clone(), trigger).chord;
+    (!chord.is_empty()).then(|| (chord.join("+"), trigger))
+}
+
+/// Chord of the macro named `name`, if it has one.
+pub(crate) fn chord_of(name: &str, macros: &[sqyre_domain::Macro]) -> Option<ChordKey> {
+    macros.iter().find(|m| m.name == name).and_then(macro_chord)
+}
+
 /// Group pending macro names by normalized chord + trigger.
 /// Returns groups of unique macro names (order preserved within each group).
 pub(crate) fn group_pending_by_chord(
@@ -37,27 +54,14 @@ pub(crate) fn group_pending_by_chord(
         macros.iter().map(|m| (m.name.as_str(), m)).collect();
 
     // Preserve first-seen chord order from pending.
-    let mut order: Vec<(String, HotkeyTrigger)> = Vec::new();
-    let mut groups: BTreeMap<(String, HotkeyTrigger), Vec<String>> = BTreeMap::new();
+    let mut order: Vec<ChordKey> = Vec::new();
+    let mut groups: BTreeMap<ChordKey, Vec<String>> = BTreeMap::new();
 
     for name in pending {
-        let Some(m) = by_name.get(name.as_str()) else {
+        let Some((chord_key, trigger)) = by_name.get(name.as_str()).and_then(|m| macro_chord(m))
+        else {
             continue;
         };
-        if m.hotkey.is_empty() {
-            continue;
-        }
-        let chord = MacroHotkeyBinding::new(
-            m.name.clone(),
-            m.hotkey.clone(),
-            HotkeyTrigger::parse(&m.hotkey_trigger),
-        )
-        .chord;
-        if chord.is_empty() {
-            continue;
-        }
-        let chord_key = chord.join("+");
-        let trigger = HotkeyTrigger::parse(&m.hotkey_trigger);
         let key = (chord_key.clone(), trigger);
         let entry = groups.entry(key.clone()).or_default();
         if !entry.iter().any(|n| n == name) {
@@ -137,9 +141,10 @@ impl SqyreApp {
     pub(crate) fn open_hotkey_chooser(
         &mut self,
         names: Vec<String>,
-        chord_label: String,
+        chord: ChordKey,
         ctx: &egui::Context,
     ) {
+        let chord_label = chord.0.replace('+', " + ");
         let row_count = names.len().max(1) as f32;
         let title_h = 22.0;
         let height = PAD * 2.0 + title_h + row_count * ROW_H + 4.0;
@@ -194,6 +199,7 @@ impl SqyreApp {
 
         self.hotkey_chooser = Some(HotkeyChooserState {
             names,
+            chord,
             chord_label,
             anchor,
             native,
@@ -202,43 +208,107 @@ impl SqyreApp {
         ctx.request_repaint();
     }
 
-    /// Paint / poll the conflict chooser when open. Returns a macro name to start.
-    pub(crate) fn paint_hotkey_chooser(&mut self, ctx: &egui::Context) -> Option<String> {
-        let state = self.hotkey_chooser.clone()?;
-
-        if state.native {
-            #[cfg(all(
-                feature = "native-runtime",
-                feature = "overlay-buttons",
-                target_os = "linux"
-            ))]
-            {
-                let result = self.macro_overlay.take_hotkey_chooser_result();
-                match result {
-                    Some(sqyre_overlay::NativeHotkeyChooserResult::Picked(name)) => {
-                        self.hotkey_chooser = None;
-                        return Some(name);
-                    }
-                    Some(sqyre_overlay::NativeHotkeyChooserResult::Dismissed) => {
-                        self.hotkey_chooser = None;
-                        return None;
-                    }
-                    None => {
-                        // Native host owns input; light wake so we keep polling the result.
-                        ctx.request_repaint_after(std::time::Duration::from_millis(50));
-                        return None;
-                    }
+    /// Poll the native X11 chooser host. Returns a macro name to start.
+    ///
+    /// Called from `App::logic` so a pick lands while the main window is minimized.
+    pub(crate) fn poll_native_hotkey_chooser(&mut self, ctx: &egui::Context) -> Option<String> {
+        if !self.hotkey_chooser.as_ref()?.native {
+            return None;
+        }
+        #[cfg(all(
+            feature = "native-runtime",
+            feature = "overlay-buttons",
+            target_os = "linux"
+        ))]
+        {
+            match self.macro_overlay.take_hotkey_chooser_result() {
+                Some(sqyre_overlay::NativeHotkeyChooserResult::Picked(name)) => {
+                    self.hotkey_chooser = None;
+                    Some(name)
+                }
+                Some(sqyre_overlay::NativeHotkeyChooserResult::Dismissed) => {
+                    self.hotkey_chooser = None;
+                    None
+                }
+                None => {
+                    // Native host owns input; light wake so we keep polling the result.
+                    ctx.request_repaint_after(std::time::Duration::from_millis(50));
+                    None
                 }
             }
-            #[cfg(not(all(
-                feature = "native-runtime",
-                feature = "overlay-buttons",
-                target_os = "linux"
-            )))]
-            {
-                self.hotkey_chooser = None;
-                return None;
-            }
+        }
+        #[cfg(not(all(
+            feature = "native-runtime",
+            feature = "overlay-buttons",
+            target_os = "linux"
+        )))]
+        {
+            let _ = ctx;
+            self.hotkey_chooser = None;
+            None
+        }
+    }
+
+    /// Dismiss the chooser on a global Esc from the hotkey hook.
+    ///
+    /// The native chooser never has keyboard focus over native Wayland apps, and
+    /// claiming Esc keeps the hook from also stopping macros.
+    pub(crate) fn poll_hotkey_chooser_escape(&mut self, ctx: &egui::Context) {
+        let open = self.hotkey_chooser.is_some();
+        sqyre_hotkeys::claim_popup_escape(open);
+        if !open {
+            return;
+        }
+        if !sqyre_hotkeys::take_popup_escape() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+            return;
+        }
+        #[cfg(all(
+            feature = "native-runtime",
+            feature = "overlay-buttons",
+            target_os = "linux"
+        ))]
+        if self.hotkey_chooser.as_ref().is_some_and(|c| c.native) {
+            self.macro_overlay.hide_hotkey_chooser();
+            let _ = self.macro_overlay.take_hotkey_chooser_result();
+        }
+        self.hotkey_chooser = None;
+    }
+
+    /// Start a macro picked in the chooser, stopping the current run first.
+    pub(crate) fn start_chosen_macro(&mut self, name: String, ctx: &egui::Context) {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        sqyre_capture::event_log(
+            "SQYRE_HOTKEY",
+            &[("fire", "chosen"), ("name", name.as_str())],
+        );
+        // Explicit pick: if a macro is already running, stop it and start this
+        // one when the worker clears (silent already-running skips felt broken).
+        if self.run_session.state.running.load(Ordering::SeqCst) {
+            self.request_stop();
+            self.start_when_idle = Some(name);
+            *self.run_session.state.status.lock() = "Stopping…".into();
+        } else {
+            self.start_when_idle = None;
+            self.start_macro_by_name(&name, ctx);
+        }
+    }
+
+    /// Start a chooser pick deferred by [`Self::start_chosen_macro`] once the run clears.
+    pub(crate) fn start_deferred_pick(&mut self, ctx: &egui::Context) {
+        if self.run_session.state.running.load(Ordering::SeqCst) {
+            return;
+        }
+        if let Some(name) = self.start_when_idle.take() {
+            self.start_macro_by_name(&name, ctx);
+        }
+    }
+
+    /// Paint the egui conflict chooser when open. Returns a macro name to start.
+    pub(crate) fn paint_hotkey_chooser(&mut self, ctx: &egui::Context) -> Option<String> {
+        let state = self.hotkey_chooser.clone()?;
+        if state.native {
+            return None;
         }
 
         let row_count = state.names.len().max(1) as f32;

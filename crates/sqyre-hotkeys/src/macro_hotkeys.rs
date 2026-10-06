@@ -224,6 +224,13 @@ impl MacroHotkeyBridge {
             .collect()
     }
 
+    /// Run `f` while no chord evaluation is firing, so a shared chord's macros are
+    /// observed all-or-nothing. `f` must not call back into this bridge.
+    pub fn between_fires<R>(&self, f: impl FnOnce() -> R) -> R {
+        let _bindings = self.inner.bindings.lock();
+        f()
+    }
+
     /// Refcounted: while >0, chords do not fire.
     pub fn suspend(&self) {
         *self.inner.suspend_count.lock() += 1;
