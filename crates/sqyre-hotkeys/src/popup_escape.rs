@@ -22,7 +22,10 @@ pub fn take_popup_escape() -> bool {
 }
 
 /// Hook thread: returns `true` when an open popup took this Esc.
-#[cfg_attr(not(feature = "hooks"), allow(dead_code))]
+#[cfg_attr(
+    not(feature = "hooks"),
+    allow(dead_code, reason = "called only by the hooks thread and tests")
+)]
 pub(crate) fn on_escape() -> bool {
     if CLAIMED.load(Ordering::SeqCst) {
         PRESSED.store(true, Ordering::SeqCst);
