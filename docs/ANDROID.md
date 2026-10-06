@@ -130,12 +130,31 @@ Exit: create a macro, add an image search, run it, and stop it on a phone-sized 
 - **Features:** `ANDROID_FEATURES` defaults to `native-runtime,overlay-buttons`; set it empty for an editor-only APK without the OCR build.
 - **Stripping:** Gradle reads `ANDROID_NDK_HOME` and its `source.properties` so AGP strips `libsqyre_app.so` with the NDK `cargo-ndk` linked against.
 - **Releases:** `ANDROID_PROFILE=release make android` builds an unsigned release APK. Signing and a store listing are out of scope.
+- **Renderer:** eframe is pinned to Glow (GLES) on Android. wgpu would pick Vulkan, which crashes the emulator's SwiftShader host renderer.
+
+## Emulator
+
+Build an APK with an x86_64 library first: `ANDROID_ABIS="arm64-v8a x86_64" make android`.
+
+| Command | Effect |
+|---------|--------|
+| `make android-emulator` | Boots the `sqyre` AVD (Pixel 6, API 35 `google_apis` x86_64) in a window, installs `bin/sqyre-debug.apk`, enables the accessibility service and launches the app |
+| `make android-emulator-headless` | Same with no window, for agents and scripted checks |
+| `make android-emulator-stop` | Stops the emulator |
+| `scripts/android/emulator.sh install` | Reinstalls and relaunches after a rebuild |
+| `scripts/android/emulator.sh screenshot [FILE]` | Saves the screen to `FILE` (default `bin/emulator.png`) |
+| `scripts/android/emulator.sh adb ARGS...` | Runs `adb` against the emulator, e.g. `adb logcat -b crash` |
+
+- **Where it runs:** directly when `emulator` is on `PATH` and `/dev/kvm` is usable; otherwise in a `sqyre-android-emulator` container from the devcontainer image (built on first use), with `--network host`, `/dev/kvm` and, for the window, the host X socket and `XAUTHORITY`.
+- **GPU:** `SQYRE_EMULATOR_GPU` defaults to `swangle_indirect`; `swiftshader_indirect` segfaults during boot on this image.
+- **Signing:** each fresh build container makes a new debug key, so `install` uninstalls first when the signature changed. App data is reset when that happens.
+- **Logs:** the emulator log is `target/emulator.log` (local) or `docker logs sqyre-android-emulator`.
 
 ## Tests
 
 - **Desktop:** `make fmt`, `make check` and `make test`. The pure `sqyre-android` modules (frame packing, frame store, gesture planning, status codes, app-list parsing, document picks, notification handlers) and the crop kernels in `sqyre-capture` run here.
 - **Android compile:** `make android-check` in the devcontainer checks the editor and runtime `sqyre-app` plus `sqyre-capture`, `sqyre-input` and `sqyre-probe`. It builds the OCR libraries on first run.
-- **Device or emulator:** by hand, at each phase's exit criteria. Emulators are not in CI yet.
+- **Device or emulator:** by hand, at each phase's exit criteria, with `make android-emulator` or `make android-emulator-headless` plus `scripts/android/emulator.sh screenshot`. Emulators are not in CI yet.
 
 ## Out of scope
 
