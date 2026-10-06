@@ -72,10 +72,12 @@ RUN set -eux \
  && chmod 755 /usr/local/bin/sccache-rustc-wrapper \
  && sccache --version
 
-# Android APK (`make android` / `make android-check`): JDK 17, SDK, NDK, Gradle, cargo-ndk.
+# Android APK (`make android` / `make android-check`): JDK 17, SDK, NDK, Gradle, cargo-ndk;
+# CMake + Ninja cross-build Leptonica/Tesseract (scripts/android/build-ocr.sh).
 ARG ANDROID_CMDLINE_TOOLS=11076708
 ARG ANDROID_PLATFORM=35
-ARG ANDROID_BUILD_TOOLS=35.0.0
+# AGP 8.7 builds with build-tools 34 unless the Gradle file pins another.
+ARG ANDROID_BUILD_TOOLS=34.0.0
 ARG ANDROID_NDK_VERSION=27.2.12479018
 ARG GRADLE_VERSION=8.10.2
 ENV ANDROID_HOME=/opt/android-sdk \
@@ -83,7 +85,7 @@ ENV ANDROID_HOME=/opt/android-sdk \
     JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
     PATH="/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:${PATH}"
 RUN set -eux \
- && apt-get update && apt-get install -y --no-install-recommends openjdk-17-jdk-headless unzip \
+ && apt-get update && apt-get install -y --no-install-recommends openjdk-17-jdk-headless unzip cmake ninja-build \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p "${ANDROID_HOME}/cmdline-tools" \
  && curl -fsSL -o /tmp/cmdline-tools.zip \

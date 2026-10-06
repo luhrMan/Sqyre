@@ -40,6 +40,7 @@ scripts/linux/packaging/flatpak/.com.sqyre.app.*.yml
 
 # Android shell build outputs (cargo-ndk + Gradle)
 /android/app/src/main/jniLibs/
+/android/app/src/main/assets/
 /android/.gradle/
 /android/build/
 /android/app/build/
