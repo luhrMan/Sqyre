@@ -332,21 +332,25 @@ unsafe extern "system" fn monitor_enum_proc(
     lprc: *mut RECT,
     lparam: LPARAM,
 ) -> BOOL {
-    let rects = &mut *(lparam.0 as *mut Vec<DesktopRect>);
-    if !lprc.is_null() {
-        let r = *lprc;
-        let w = r.right - r.left;
-        let h = r.bottom - r.top;
-        if w > 0 && h > 0 {
-            rects.push(DesktopRect {
-                x: r.left,
-                y: r.top,
-                w,
-                h,
-            });
+    // SAFETY: `lparam` is the `&mut Vec<DesktopRect>` passed by EnumDisplayMonitors' caller, live
+    // and unaliased for the synchronous enumeration; `lprc` is null-checked before reading.
+    unsafe {
+        let rects = &mut *(lparam.0 as *mut Vec<DesktopRect>);
+        if !lprc.is_null() {
+            let r = *lprc;
+            let w = r.right - r.left;
+            let h = r.bottom - r.top;
+            if w > 0 && h > 0 {
+                rects.push(DesktopRect {
+                    x: r.left,
+                    y: r.top,
+                    w,
+                    h,
+                });
+            }
         }
+        BOOL(1)
     }
-    BOOL(1)
 }
 
 #[cfg(test)]

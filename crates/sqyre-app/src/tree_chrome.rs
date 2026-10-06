@@ -580,7 +580,10 @@ fn catalog_item_refs(catalog: &ProgramCatalog) -> Vec<sqyre_domain::CatalogItemR
 }
 
 /// Full tree-row label content. Tooltip show/hide is handled by `action_tooltip`.
-#[allow(clippy::too_many_arguments)] // row paint: catalog, theme, highlight, pills cache, and chrome flags
+#[expect(
+    clippy::too_many_arguments,
+    reason = "row paint: catalog, theme, highlight, pills cache, and chrome flags"
+)]
 pub fn paint_action_row(
     ui: &mut egui::Ui,
     action: &Action,

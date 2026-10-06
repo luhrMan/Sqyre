@@ -434,8 +434,8 @@ impl KickConn {
             },
         );
         // Small windowed surface: alpha works on Mutter for non-fullscreen.
-        let w = kick.w.min(XDG_KICK_MAX).max(2);
-        let h = kick.h.min(XDG_KICK_MAX).max(2);
+        let w = kick.w.clamp(2, XDG_KICK_MAX);
+        let h = kick.h.clamp(2, XDG_KICK_MAX);
 
         let qh = self.queue.handle();
         let compositor = self.state.compositor.as_ref().expect("compositor").clone();

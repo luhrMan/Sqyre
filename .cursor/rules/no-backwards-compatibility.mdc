@@ -25,24 +25,8 @@ This project does not maintain backwards compatibility. Prefer clean, breaking c
 
 Only preserve backwards compatibility when the user explicitly requests it in the current task.
 
-## Examples
+## Rust specifics
 
-```rust
-// ❌ BAD — compatibility shim
-pub use fetch_user as get_user;
-pub fn fetch_user_legacy(id: &str) -> User { /* old shape */ }
-
-// ✅ GOOD — one API, breaking change applied everywhere
-pub fn fetch_user(id: &str) -> User { /* new shape */ }
-```
-
-```rust
-// ❌ BAD — dual behavior
-if use_legacy_parser {
-    return parse_v1(data);
-}
-parse_v2(data)
-
-// ✅ GOOD — remove v1 and migrate callers
-parse_v2(data)
-```
+- Shims to avoid: `#[deprecated]`, `pub use old as new`, `_legacy`/`_v2` fns, `#[serde(alias = …)]` or `#[serde(default)]` added only to read old files.
+- Crates are internal `0.1.0`; no semver bumps or `#[non_exhaustive]`.
+- On-disk formats (`db.yaml`, settings) may break, but update `sqyre-validate` and serde round-trip tests in the same change.

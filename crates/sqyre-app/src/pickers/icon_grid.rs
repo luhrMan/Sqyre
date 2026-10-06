@@ -312,7 +312,10 @@ pub struct IconGridOps<'a> {
 /// Right-clicking a cell opens a menu with `cell_menu` entries, then Remove when
 /// [`IconGridKind::Targets`] has `removable: true`, `ops.on_remove` is set, and
 /// `ops.is_removable` allows it (e.g. no Remove on tag-filter-only Image Search matches).
-#[allow(clippy::too_many_arguments)] // grid inputs plus ops; menu lifetime stays separate
+#[expect(
+    clippy::too_many_arguments,
+    reason = "grid inputs plus ops; menu lifetime stays separate"
+)]
 pub fn paint_even_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,

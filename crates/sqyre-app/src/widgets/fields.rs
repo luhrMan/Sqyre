@@ -257,7 +257,10 @@ pub fn searchable_combo_width(
 ///
 /// When `option_icon` is set, a leading icon is drawn on each option row and beside the
 /// closed combo button for the current value.
-#[allow(clippy::too_many_arguments)] // searchable combo: value, options, empty/none labels, width, and hover/icon callbacks
+#[expect(
+    clippy::too_many_arguments,
+    reason = "searchable combo: value, options, empty/none labels, width, and hover/icon callbacks"
+)]
 pub fn searchable_combo_with(
     ui: &mut egui::Ui,
     id_salt: impl Hash + std::fmt::Debug,

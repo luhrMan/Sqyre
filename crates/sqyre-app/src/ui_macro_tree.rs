@@ -663,7 +663,10 @@ fn flattened_visible_index(root: &Action, target: ActionId) -> Option<usize> {
     found
 }
 
-#[allow(clippy::too_many_arguments)] // tree walk: builder, action, selection outputs, paint ctx, and scroll follow
+#[expect(
+    clippy::too_many_arguments,
+    reason = "tree walk: builder, action, selection outputs, paint ctx, and scroll follow"
+)]
 fn build_tree(
     builder: &mut TreeViewBuilder<'_, ActionId>,
     action: &Action,
@@ -758,7 +761,10 @@ fn build_tree(
     }
 }
 
-#[allow(clippy::too_many_arguments)] // tree walk: builder, action, selection outputs, paint ctx, and scroll follow
+#[expect(
+    clippy::too_many_arguments,
+    reason = "tree walk: builder, action, selection outputs, paint ctx, and scroll follow"
+)]
 fn build_else_dir(
     builder: &mut TreeViewBuilder<'_, ActionId>,
     detection: &Action,

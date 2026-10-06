@@ -4,8 +4,11 @@
 [graph]
 targets = [
     "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-pc-windows-gnu",
+    "wasm32-unknown-unknown",
 ]
-all-features = false
+all-features = true
 
 [advisories]
 # Only fail unmaintained advisories for direct workspace deps (ttf-parser is

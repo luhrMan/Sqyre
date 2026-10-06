@@ -290,11 +290,12 @@ impl Drop for FrozenSelectionOverlay {
     fn drop(&mut self) {
         crate::mark_site("snapshot:drop:start");
         let t0 = std::time::Instant::now();
-        // SAFETY: destroy only resources we created on `self.display`.
         // Mid-session we must flush/close so the override-redirect cover unmaps
         // (skipping XFlush left a "frozen" screen until process exit). On process
         // quit, skip flush/close — they block for seconds under busy XWayland.
         let exiting = crate::process_exiting();
+        // SAFETY: destroy only resources we created on `self.display`; each handle
+        // is zeroed/nulled after release so nothing is freed twice.
         unsafe {
             if !self.display.is_null() {
                 if self.window != 0 {
@@ -346,19 +347,23 @@ unsafe fn open_overlay(
     image: RgbaImage,
     bounds: DesktopRect,
 ) -> Result<FrozenSelectionOverlay, CaptureError> {
-    let display = XOpenDisplay(ptr::null());
-    if display.is_null() {
-        return Err(CaptureError::Message(
-            "XOpenDisplay failed for snapshot overlay (need X11)".into(),
-        ));
-    }
-    crate::x11_secondary::register(display);
-    match map_overlay(display, image, bounds) {
-        Ok(overlay) => Ok(overlay),
-        Err(e) => {
-            crate::x11_secondary::unregister(display);
-            XCloseDisplay(display);
-            Err(e)
+    // SAFETY: no caller preconditions; the display opened here is null-checked and
+    // unregistered/closed exactly once if `map_overlay` fails.
+    unsafe {
+        let display = XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return Err(CaptureError::Message(
+                "XOpenDisplay failed for snapshot overlay (need X11)".into(),
+            ));
+        }
+        crate::x11_secondary::register(display);
+        match map_overlay(display, image, bounds) {
+            Ok(overlay) => Ok(overlay),
+            Err(e) => {
+                crate::x11_secondary::unregister(display);
+                XCloseDisplay(display);
+                Err(e)
+            }
         }
     }
 }
@@ -401,19 +406,23 @@ fn input_cover_bounds() -> Result<DesktopRect, CaptureError> {
 const INPUT_COVER_OPACITY_FALLBACK: f32 = 0.02;
 
 unsafe fn open_input_overlay(bounds: DesktopRect) -> Result<FrozenSelectionOverlay, CaptureError> {
-    let display = XOpenDisplay(ptr::null());
-    if display.is_null() {
-        return Err(CaptureError::Message(
-            "XOpenDisplay failed for selection cover (need X11)".into(),
-        ));
-    }
-    crate::x11_secondary::register(display);
-    match map_input_overlay(display, bounds) {
-        Ok(overlay) => Ok(overlay),
-        Err(e) => {
-            crate::x11_secondary::unregister(display);
-            XCloseDisplay(display);
-            Err(e)
+    // SAFETY: no caller preconditions; the display opened here is null-checked and
+    // unregistered/closed exactly once if `map_input_overlay` fails.
+    unsafe {
+        let display = XOpenDisplay(ptr::null());
+        if display.is_null() {
+            return Err(CaptureError::Message(
+                "XOpenDisplay failed for selection cover (need X11)".into(),
+            ));
+        }
+        crate::x11_secondary::register(display);
+        match map_input_overlay(display, bounds) {
+            Ok(overlay) => Ok(overlay),
+            Err(e) => {
+                crate::x11_secondary::unregister(display);
+                XCloseDisplay(display);
+                Err(e)
+            }
         }
     }
 }
@@ -422,56 +431,225 @@ unsafe fn map_input_overlay(
     display: *mut Display,
     bounds: DesktopRect,
 ) -> Result<FrozenSelectionOverlay, CaptureError> {
-    let screen = XDefaultScreen(display);
-    let root = XDefaultRootWindow(display);
-    let width = bounds.w.max(1) as c_uint;
-    let height = bounds.h.max(1) as c_uint;
+    // SAFETY: caller guarantees `display` is a live Xlib connection; zeroed `vinfo`/
+    // `attrs` are valid POD, and every created resource is freed on failure paths.
+    unsafe {
+        let screen = XDefaultScreen(display);
+        let root = XDefaultRootWindow(display);
+        let width = bounds.w.max(1) as c_uint;
+        let height = bounds.h.max(1) as c_uint;
 
-    let mut vinfo: XVisualInfo = std::mem::zeroed();
-    let argb = XMatchVisualInfo(display, screen, 32, TrueColor, &mut vinfo) != 0;
+        let mut vinfo: XVisualInfo = std::mem::zeroed();
+        let argb = XMatchVisualInfo(display, screen, 32, TrueColor, &mut vinfo) != 0;
 
-    let (window, colormap, visual, depth, gold_pixel) = if argb {
-        let visual = vinfo.visual;
-        let depth = vinfo.depth;
-        let colormap = XCreateColormap(display, root, visual, AllocNone);
-        let mut attrs: XSetWindowAttributes = std::mem::zeroed();
-        attrs.override_redirect = True;
-        attrs.colormap = colormap;
-        attrs.border_pixel = 0;
-        attrs.background_pixel = 0;
-        attrs.backing_store = WhenMapped;
-        attrs.event_mask =
-            ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask | ExposureMask;
-        let window = XCreateWindow(
-            display,
-            root,
-            bounds.x,
-            bounds.y,
-            width,
-            height,
-            0,
-            depth,
-            InputOutput as c_uint,
-            visual,
-            CWOverrideRedirect
-                | CWColormap
-                | CWBorderPixel
-                | CWBackPixel
-                | CWBackingStore
-                | CWEventMask,
-            &mut attrs,
-        );
-        if window == 0 {
-            XFreeColormap(display, colormap);
+        let (window, colormap, visual, depth, gold_pixel) = if argb {
+            let visual = vinfo.visual;
+            let depth = vinfo.depth;
+            let colormap = XCreateColormap(display, root, visual, AllocNone);
+            let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+            attrs.override_redirect = True;
+            attrs.colormap = colormap;
+            attrs.border_pixel = 0;
+            attrs.background_pixel = 0;
+            attrs.backing_store = WhenMapped;
+            attrs.event_mask = ButtonPressMask
+                | ButtonReleaseMask
+                | PointerMotionMask
+                | KeyPressMask
+                | ExposureMask;
+            let window = XCreateWindow(
+                display,
+                root,
+                bounds.x,
+                bounds.y,
+                width,
+                height,
+                0,
+                depth,
+                InputOutput as c_uint,
+                visual,
+                CWOverrideRedirect
+                    | CWColormap
+                    | CWBorderPixel
+                    | CWBackPixel
+                    | CWBackingStore
+                    | CWEventMask,
+                &mut attrs,
+            );
+            if window == 0 {
+                XFreeColormap(display, colormap);
+                return Err(CaptureError::Message(
+                    "XCreateWindow failed for ARGB selection cover".into(),
+                ));
+            }
+            let gold = alloc_argb_stroke_pixel(visual);
+            (window, colormap, visual, depth, gold)
+        } else {
+            let visual = XDefaultVisual(display, screen);
+            let depth = XDefaultDepth(display, screen);
+            let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+            attrs.override_redirect = True;
+            attrs.border_pixel = 0;
+            attrs.backing_store = WhenMapped;
+            attrs.event_mask = ButtonPressMask
+                | ButtonReleaseMask
+                | PointerMotionMask
+                | KeyPressMask
+                | ExposureMask;
+            let window = XCreateWindow(
+                display,
+                root,
+                bounds.x,
+                bounds.y,
+                width,
+                height,
+                0,
+                depth,
+                InputOutput as c_uint,
+                visual,
+                CWOverrideRedirect | CWBorderPixel | CWBackingStore | CWEventMask,
+                &mut attrs,
+            );
+            if window == 0 {
+                return Err(CaptureError::Message(
+                    "XCreateWindow failed for selection cover".into(),
+                ));
+            }
+            XSetWindowBackground(display, window, 0);
+            set_window_opacity(display, window, INPUT_COVER_OPACITY_FALLBACK);
+            let gold = alloc_stroke_pixel(display, screen, visual);
+            (window, 0, visual, depth, gold)
+        };
+
+        let gc = XCreateGC(display, window, 0, ptr::null_mut());
+        if gc.is_null() {
+            XDestroyWindow(display, window);
+            if colormap != 0 {
+                XFreeColormap(display, colormap);
+            }
             return Err(CaptureError::Message(
-                "XCreateWindow failed for ARGB selection cover".into(),
+                "XCreateGC failed for selection cover".into(),
             ));
         }
-        let gold = alloc_argb_stroke_pixel(visual);
-        (window, colormap, visual, depth, gold)
-    } else {
+
+        XSelectInput(
+            display,
+            window,
+            ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask | ExposureMask,
+        );
+        let screen_w = x11::xlib::XDisplayWidth(display, screen);
+        let screen_h = x11::xlib::XDisplayHeight(display, screen);
+        let cached_rects = crate::x11_capture::xinerama_monitor_rects_on(
+            display,
+            DesktopRect {
+                x: 0,
+                y: 0,
+                w: screen_w,
+                h: screen_h,
+            },
+        );
+        let cursor = XCreateFontCursor(display, XC_CROSSHAIR);
+        XDefineCursor(display, window, cursor);
+        XMapRaised(display, window);
+        XClearWindow(display, window);
+        let _ = XSetInputFocus(display, window, RevertToParent, CurrentTime);
+        XFlush(display);
+
+        let mode = if argb { "argb" } else { "opacity" };
+        crate::event_log(
+            "SQYRE_SNAPSHOT",
+            &[
+                ("op", "input_cover"),
+                ("mode", mode),
+                (
+                    "size",
+                    &format!("{}x{}+{}+{}", width, height, bounds.x, bounds.y),
+                ),
+                ("depth", &depth.to_string()),
+            ],
+        );
+        crate::mark_site("snapshot:ready");
+
+        let _ = visual; // used above for gold / create
+        Ok(FrozenSelectionOverlay {
+            display,
+            window,
+            pixmap: 0,
+            gc,
+            cursor,
+            colormap,
+            bounds,
+            image: RgbaImage::new(1, 1),
+            last_pos: (bounds.x, bounds.y),
+            gold_pixel,
+            last_rect: None,
+            needs_paint: false,
+            live_paint: true,
+            cached_rects,
+        })
+    }
+}
+
+unsafe fn set_window_opacity(display: *mut Display, window: Window, opacity: f32) {
+    // SAFETY: caller guarantees live `display` and `window` created on it; `name`
+    // and `value` outlive the `XInternAtom`/`XChangeProperty` calls reading them.
+    unsafe {
+        let name = CString::new("_NET_WM_WINDOW_OPACITY").expect("atom name");
+        let atom = XInternAtom(display, name.as_ptr(), False);
+        if atom == 0 {
+            return;
+        }
+        // Format-32 property data is read by Xlib as C `long`s, not `u32`s.
+        let value = (((opacity.clamp(0.0, 1.0) as f64) * (u32::MAX as f64)) as u32) as c_ulong;
+        XChangeProperty(
+            display,
+            window,
+            atom,
+            XA_CARDINAL,
+            32,
+            PropModeReplace,
+            (&raw const value).cast::<u8>(),
+            1,
+        );
+    }
+}
+
+unsafe fn alloc_argb_stroke_pixel(visual: *mut x11::xlib::Visual) -> c_ulong {
+    // SAFETY: caller guarantees `visual` is null or points to a live Xlib `Visual`;
+    // it is null-checked before the mask fields are read.
+    unsafe {
+        let (rm, gm, bm) = if visual.is_null() {
+            (0x00FF_0000, 0x0000_FF00, 0x0000_00FF)
+        } else {
+            (
+                (*visual).red_mask,
+                (*visual).green_mask,
+                (*visual).blue_mask,
+            )
+        };
+        let rgb = pack_pixel(STROKE_R, STROKE_G, STROKE_B, rm, gm, bm);
+        // Common 32-bit TrueColor: alpha in the remaining high bits.
+        let used = rm | gm | bm;
+        let alpha_mask = (!used) & 0xFFFF_FFFF;
+        u64::from(rgb | alpha_mask as u32)
+    }
+}
+
+unsafe fn map_overlay(
+    display: *mut Display,
+    image: RgbaImage,
+    bounds: DesktopRect,
+) -> Result<FrozenSelectionOverlay, CaptureError> {
+    // SAFETY: caller guarantees live `display`; `packed` holds width*height*4 bytes
+    // matching the XImage layout and is detached before `XDestroyImage` frees it.
+    unsafe {
+        let screen = XDefaultScreen(display);
+        let root = XDefaultRootWindow(display);
         let visual = XDefaultVisual(display, screen);
         let depth = XDefaultDepth(display, screen);
+        let width = image.width();
+        let height = image.height();
+
         let mut attrs: XSetWindowAttributes = std::mem::zeroed();
         attrs.override_redirect = True;
         attrs.border_pixel = 0;
@@ -494,264 +672,118 @@ unsafe fn map_input_overlay(
         );
         if window == 0 {
             return Err(CaptureError::Message(
-                "XCreateWindow failed for selection cover".into(),
+                "XCreateWindow failed for snapshot overlay".into(),
             ));
         }
-        XSetWindowBackground(display, window, 0);
-        set_window_opacity(display, window, INPUT_COVER_OPACITY_FALLBACK);
-        let gold = alloc_stroke_pixel(display, screen, visual);
-        (window, 0, visual, depth, gold)
-    };
 
-    let gc = XCreateGC(display, window, 0, ptr::null_mut());
-    if gc.is_null() {
-        XDestroyWindow(display, window);
-        if colormap != 0 {
-            XFreeColormap(display, colormap);
+        let pixmap = XCreatePixmap(display, window, width, height, depth as c_uint);
+        if pixmap == 0 {
+            XDestroyWindow(display, window);
+            return Err(CaptureError::Message(
+                "XCreatePixmap failed for snapshot overlay".into(),
+            ));
         }
-        return Err(CaptureError::Message(
-            "XCreateGC failed for selection cover".into(),
-        ));
-    }
+        let gc = XCreateGC(display, pixmap, 0, ptr::null_mut());
+        if gc.is_null() {
+            XFreePixmap(display, pixmap);
+            XDestroyWindow(display, window);
+            return Err(CaptureError::Message(
+                "XCreateGC failed for snapshot overlay".into(),
+            ));
+        }
 
-    XSelectInput(
-        display,
-        window,
-        ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask | ExposureMask,
-    );
-    let screen_w = x11::xlib::XDisplayWidth(display, screen);
-    let screen_h = x11::xlib::XDisplayHeight(display, screen);
-    let cached_rects = crate::x11_capture::xinerama_monitor_rects_on(
-        display,
-        DesktopRect {
-            x: 0,
-            y: 0,
-            w: screen_w,
-            h: screen_h,
-        },
-    );
-    let cursor = XCreateFontCursor(display, XC_CROSSHAIR);
-    XDefineCursor(display, window, cursor);
-    XMapRaised(display, window);
-    XClearWindow(display, window);
-    let _ = XSetInputFocus(display, window, RevertToParent, CurrentTime);
-    XFlush(display);
-
-    let mode = if argb { "argb" } else { "opacity" };
-    crate::event_log(
-        "SQYRE_SNAPSHOT",
-        &[
-            ("op", "input_cover"),
-            ("mode", mode),
+        let (red_mask, green_mask, blue_mask) = if visual.is_null() {
+            (0x00FF_0000, 0x0000_FF00, 0x0000_00FF)
+        } else {
             (
-                "size",
-                &format!("{}x{}+{}+{}", width, height, bounds.x, bounds.y),
-            ),
-            ("depth", &depth.to_string()),
-        ],
-    );
-    crate::mark_site("snapshot:ready");
+                (*visual).red_mask,
+                (*visual).green_mask,
+                (*visual).blue_mask,
+            )
+        };
+        let mut packed = pack_truecolor(&image, red_mask, green_mask, blue_mask);
+        let ximage = XCreateImage(
+            display,
+            visual,
+            depth as c_uint,
+            ZPixmap,
+            0,
+            packed.as_mut_ptr().cast::<c_char>(),
+            width,
+            height,
+            32,
+            (width * 4) as c_int,
+        );
+        if ximage.is_null() {
+            XFreeGC(display, gc);
+            XFreePixmap(display, pixmap);
+            XDestroyWindow(display, window);
+            return Err(CaptureError::Message(
+                "XCreateImage failed for snapshot overlay".into(),
+            ));
+        }
+        (*ximage).byte_order = LSBFirst;
+        (*ximage).bits_per_pixel = 32;
+        XPutImage(display, pixmap, gc, ximage, 0, 0, 0, 0, width, height);
+        // XDestroyImage would XFree our Vec buffer; detach it first.
+        (*ximage).data = ptr::null_mut();
+        XDestroyImage(ximage);
 
-    let _ = visual; // used above for gold / create
-    Ok(FrozenSelectionOverlay {
-        display,
-        window,
-        pixmap: 0,
-        gc,
-        cursor,
-        colormap,
-        bounds,
-        image: RgbaImage::new(1, 1),
-        last_pos: (bounds.x, bounds.y),
-        gold_pixel,
-        last_rect: None,
-        needs_paint: false,
-        live_paint: true,
-        cached_rects,
-    })
-}
+        XSetWindowBackgroundPixmap(display, window, pixmap);
+        XSelectInput(
+            display,
+            window,
+            ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask | ExposureMask,
+        );
+        let gold_pixel = alloc_stroke_pixel(display, screen, visual);
+        let screen_w = x11::xlib::XDisplayWidth(display, screen);
+        let screen_h = x11::xlib::XDisplayHeight(display, screen);
+        let cached_rects = crate::x11_capture::xinerama_monitor_rects_on(
+            display,
+            DesktopRect {
+                x: 0,
+                y: 0,
+                w: screen_w,
+                h: screen_h,
+            },
+        );
+        let cursor = XCreateFontCursor(display, XC_CROSSHAIR);
+        XDefineCursor(display, window, cursor);
+        XMapRaised(display, window);
+        // Show the freeze background pixmap without a full XCopyArea/XSync (both
+        // stall hard on large GNOME/XWayland virtual desktops).
+        XClearWindow(display, window);
+        let _ = XSetInputFocus(display, window, RevertToParent, CurrentTime);
+        XFlush(display);
 
-unsafe fn set_window_opacity(display: *mut Display, window: Window, opacity: f32) {
-    let name = CString::new("_NET_WM_WINDOW_OPACITY").expect("atom name");
-    let atom = XInternAtom(display, name.as_ptr(), False);
-    if atom == 0 {
-        return;
+        crate::event_log(
+            "SQYRE_SNAPSHOT",
+            &[
+                ("op", "open"),
+                (
+                    "size",
+                    &format!("{}x{}+{}+{}", width, height, bounds.x, bounds.y),
+                ),
+            ],
+        );
+
+        Ok(FrozenSelectionOverlay {
+            display,
+            window,
+            pixmap,
+            gc,
+            cursor,
+            colormap: 0,
+            bounds,
+            image,
+            last_pos: (bounds.x, bounds.y),
+            gold_pixel,
+            last_rect: None,
+            needs_paint: false,
+            live_paint: false,
+            cached_rects,
+        })
     }
-    let value: u32 = ((opacity.clamp(0.0, 1.0) as f64) * (u32::MAX as f64)) as u32;
-    XChangeProperty(
-        display,
-        window,
-        atom,
-        XA_CARDINAL,
-        32,
-        PropModeReplace,
-        (&raw const value).cast::<u8>(),
-        1,
-    );
-}
-
-unsafe fn alloc_argb_stroke_pixel(visual: *mut x11::xlib::Visual) -> c_ulong {
-    let (rm, gm, bm) = if visual.is_null() {
-        (0x00FF_0000, 0x0000_FF00, 0x0000_00FF)
-    } else {
-        (
-            (*visual).red_mask,
-            (*visual).green_mask,
-            (*visual).blue_mask,
-        )
-    };
-    let rgb = pack_pixel(STROKE_R, STROKE_G, STROKE_B, rm, gm, bm);
-    // Common 32-bit TrueColor: alpha in the remaining high bits.
-    let used = rm | gm | bm;
-    let alpha_mask = (!used) & 0xFFFF_FFFF;
-    u64::from(rgb | alpha_mask as u32)
-}
-
-unsafe fn map_overlay(
-    display: *mut Display,
-    image: RgbaImage,
-    bounds: DesktopRect,
-) -> Result<FrozenSelectionOverlay, CaptureError> {
-    let screen = XDefaultScreen(display);
-    let root = XDefaultRootWindow(display);
-    let visual = XDefaultVisual(display, screen);
-    let depth = XDefaultDepth(display, screen);
-    let width = image.width();
-    let height = image.height();
-
-    let mut attrs: XSetWindowAttributes = std::mem::zeroed();
-    attrs.override_redirect = True;
-    attrs.border_pixel = 0;
-    attrs.backing_store = WhenMapped;
-    attrs.event_mask =
-        ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask | ExposureMask;
-    let window = XCreateWindow(
-        display,
-        root,
-        bounds.x,
-        bounds.y,
-        width,
-        height,
-        0,
-        depth,
-        InputOutput as c_uint,
-        visual,
-        CWOverrideRedirect | CWBorderPixel | CWBackingStore | CWEventMask,
-        &mut attrs,
-    );
-    if window == 0 {
-        return Err(CaptureError::Message(
-            "XCreateWindow failed for snapshot overlay".into(),
-        ));
-    }
-
-    let pixmap = XCreatePixmap(display, window, width, height, depth as c_uint);
-    if pixmap == 0 {
-        XDestroyWindow(display, window);
-        return Err(CaptureError::Message(
-            "XCreatePixmap failed for snapshot overlay".into(),
-        ));
-    }
-    let gc = XCreateGC(display, pixmap, 0, ptr::null_mut());
-    if gc.is_null() {
-        XFreePixmap(display, pixmap);
-        XDestroyWindow(display, window);
-        return Err(CaptureError::Message(
-            "XCreateGC failed for snapshot overlay".into(),
-        ));
-    }
-
-    let (red_mask, green_mask, blue_mask) = if visual.is_null() {
-        (0x00FF_0000, 0x0000_FF00, 0x0000_00FF)
-    } else {
-        (
-            (*visual).red_mask,
-            (*visual).green_mask,
-            (*visual).blue_mask,
-        )
-    };
-    let mut packed = pack_truecolor(&image, red_mask, green_mask, blue_mask);
-    let ximage = XCreateImage(
-        display,
-        visual,
-        depth as c_uint,
-        ZPixmap,
-        0,
-        packed.as_mut_ptr().cast::<c_char>(),
-        width,
-        height,
-        32,
-        (width * 4) as c_int,
-    );
-    if ximage.is_null() {
-        XFreeGC(display, gc);
-        XFreePixmap(display, pixmap);
-        XDestroyWindow(display, window);
-        return Err(CaptureError::Message(
-            "XCreateImage failed for snapshot overlay".into(),
-        ));
-    }
-    (*ximage).byte_order = LSBFirst;
-    (*ximage).bits_per_pixel = 32;
-    XPutImage(display, pixmap, gc, ximage, 0, 0, 0, 0, width, height);
-    // XDestroyImage would XFree our Vec buffer; detach it first.
-    (*ximage).data = ptr::null_mut();
-    XDestroyImage(ximage);
-
-    XSetWindowBackgroundPixmap(display, window, pixmap);
-    XSelectInput(
-        display,
-        window,
-        ButtonPressMask | ButtonReleaseMask | PointerMotionMask | KeyPressMask | ExposureMask,
-    );
-    let gold_pixel = alloc_stroke_pixel(display, screen, visual);
-    let screen_w = x11::xlib::XDisplayWidth(display, screen);
-    let screen_h = x11::xlib::XDisplayHeight(display, screen);
-    let cached_rects = crate::x11_capture::xinerama_monitor_rects_on(
-        display,
-        DesktopRect {
-            x: 0,
-            y: 0,
-            w: screen_w,
-            h: screen_h,
-        },
-    );
-    let cursor = XCreateFontCursor(display, XC_CROSSHAIR);
-    XDefineCursor(display, window, cursor);
-    XMapRaised(display, window);
-    // Show the freeze background pixmap without a full XCopyArea/XSync (both
-    // stall hard on large GNOME/XWayland virtual desktops).
-    XClearWindow(display, window);
-    let _ = XSetInputFocus(display, window, RevertToParent, CurrentTime);
-    XFlush(display);
-
-    crate::event_log(
-        "SQYRE_SNAPSHOT",
-        &[
-            ("op", "open"),
-            (
-                "size",
-                &format!("{}x{}+{}+{}", width, height, bounds.x, bounds.y),
-            ),
-        ],
-    );
-
-    Ok(FrozenSelectionOverlay {
-        display,
-        window,
-        pixmap,
-        gc,
-        cursor,
-        colormap: 0,
-        bounds,
-        image,
-        last_pos: (bounds.x, bounds.y),
-        gold_pixel,
-        last_rect: None,
-        needs_paint: false,
-        live_paint: false,
-        cached_rects,
-    })
 }
 
 unsafe fn apply_x_event(
@@ -761,33 +793,37 @@ unsafe fn apply_x_event(
     last_pos: &mut (i32, i32),
     needs_paint: &mut bool,
 ) {
-    let ty = event.get_type();
-    if ty == MotionNotify {
-        let motion = &*(event as *const XEvent as *const x11::xlib::XMotionEvent);
-        *last_pos = (motion.x_root, motion.y_root);
-        out.moved = true;
-    } else if ty == ButtonPress {
-        let button = &*(event as *const XEvent as *const x11::xlib::XButtonEvent);
-        *last_pos = (button.x_root, button.y_root);
-        out.moved = true;
-        if button.button == 1 {
-            out.left_clicks = out.left_clicks.saturating_add(1);
+    // SAFETY: caller passes an `XEvent` filled by `XNextEvent` on live `display`; each
+    // cast reads the union variant matching the checked `get_type()`.
+    unsafe {
+        let ty = event.get_type();
+        if ty == MotionNotify {
+            let motion = &*(event as *const XEvent as *const x11::xlib::XMotionEvent);
+            *last_pos = (motion.x_root, motion.y_root);
+            out.moved = true;
+        } else if ty == ButtonPress {
+            let button = &*(event as *const XEvent as *const x11::xlib::XButtonEvent);
+            *last_pos = (button.x_root, button.y_root);
+            out.moved = true;
+            if button.button == 1 {
+                out.left_clicks = out.left_clicks.saturating_add(1);
+            }
+        } else if ty == ButtonRelease {
+            let button = &*(event as *const XEvent as *const x11::xlib::XButtonEvent);
+            *last_pos = (button.x_root, button.y_root);
+            out.moved = true;
+            if button.button == 1 {
+                out.left_releases = out.left_releases.saturating_add(1);
+            }
+        } else if ty == KeyPress {
+            let key = &*(event as *const XEvent as *const x11::xlib::XKeyEvent);
+            let keysym = XKeycodeToKeysym(display, key.keycode as u8, 0);
+            if keysym == XK_ESCAPE {
+                out.escape = true;
+            }
+        } else if ty == Expose {
+            *needs_paint = true;
         }
-    } else if ty == ButtonRelease {
-        let button = &*(event as *const XEvent as *const x11::xlib::XButtonEvent);
-        *last_pos = (button.x_root, button.y_root);
-        out.moved = true;
-        if button.button == 1 {
-            out.left_releases = out.left_releases.saturating_add(1);
-        }
-    } else if ty == KeyPress {
-        let key = &*(event as *const XEvent as *const x11::xlib::XKeyEvent);
-        let keysym = XKeycodeToKeysym(display, key.keycode as u8, 0);
-        if keysym == XK_ESCAPE {
-            out.escape = true;
-        }
-    } else if ty == Expose {
-        *needs_paint = true;
     }
 }
 
@@ -796,28 +832,32 @@ unsafe fn alloc_stroke_pixel(
     screen: c_int,
     visual: *mut x11::xlib::Visual,
 ) -> c_ulong {
-    let mut color = XColor {
-        pixel: 0,
-        red: u16::from(STROKE_R) << 8,
-        green: u16::from(STROKE_G) << 8,
-        blue: u16::from(STROKE_B) << 8,
-        flags: 0,
-        pad: 0,
-    };
-    let cmap = XDefaultColormap(display, screen);
-    if XAllocColor(display, cmap, &mut color) != 0 {
-        return color.pixel;
+    // SAFETY: caller guarantees live `display`, valid `screen`, and `visual` null or
+    // a live `Visual` (null-checked before deref); `color` outlives `XAllocColor`.
+    unsafe {
+        let mut color = XColor {
+            pixel: 0,
+            red: u16::from(STROKE_R) << 8,
+            green: u16::from(STROKE_G) << 8,
+            blue: u16::from(STROKE_B) << 8,
+            flags: 0,
+            pad: 0,
+        };
+        let cmap = XDefaultColormap(display, screen);
+        if XAllocColor(display, cmap, &mut color) != 0 {
+            return color.pixel;
+        }
+        let (rm, gm, bm) = if visual.is_null() {
+            (0x00FF_0000, 0x0000_FF00, 0x0000_00FF)
+        } else {
+            (
+                (*visual).red_mask,
+                (*visual).green_mask,
+                (*visual).blue_mask,
+            )
+        };
+        u64::from(pack_pixel(STROKE_R, STROKE_G, STROKE_B, rm, gm, bm))
     }
-    let (rm, gm, bm) = if visual.is_null() {
-        (0x00FF_0000, 0x0000_FF00, 0x0000_00FF)
-    } else {
-        (
-            (*visual).red_mask,
-            (*visual).green_mask,
-            (*visual).blue_mask,
-        )
-    };
-    u64::from(pack_pixel(STROKE_R, STROKE_G, STROKE_B, rm, gm, bm))
 }
 
 fn window_local_edges(bounds: DesktopRect, rect: OutlineRect) -> Vec<(i32, i32, c_uint, c_uint)> {
@@ -837,8 +877,12 @@ unsafe fn blit_edges_from_pixmap(
     bounds: DesktopRect,
     rect: OutlineRect,
 ) {
-    for (x, y, ew, eh) in window_local_edges(bounds, rect) {
-        XCopyArea(display, pixmap, window, gc, x, y, ew, eh, x, y);
+    // SAFETY: caller guarantees live `display` with `pixmap`, `window`, and `gc`
+    // all created on it; rects are clipped to the window bounds.
+    unsafe {
+        for (x, y, ew, eh) in window_local_edges(bounds, rect) {
+            XCopyArea(display, pixmap, window, gc, x, y, ew, eh, x, y);
+        }
     }
 }
 

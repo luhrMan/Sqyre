@@ -73,7 +73,10 @@ pub fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Con
 /// scroll it into view (data editor tab switch).
 ///
 /// `item_menu` fills the right-click menu of each item cell.
-#[allow(clippy::too_many_arguments)] // accordion grid: selection mode plus optional program click / item menu
+#[expect(
+    clippy::too_many_arguments,
+    reason = "accordion grid: selection mode plus optional program click / item menu"
+)]
 pub fn paint_items_icon_grid(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,

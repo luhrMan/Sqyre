@@ -5,7 +5,10 @@
 //! (`overlay-buttons`). Fast local loop:
 //! `cargo run -p sqyre-overlay --features sandbox --bin overlay_sandbox`.
 
-#![cfg_attr(not(feature = "runtime"), allow(dead_code))]
+#![cfg_attr(
+    not(feature = "runtime"),
+    allow(dead_code, reason = "editor builds keep only the icon catalog")
+)]
 
 pub mod icons;
 

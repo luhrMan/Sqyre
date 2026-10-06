@@ -33,7 +33,7 @@ Detection kinds: **Image Search**, **OCR**, **Find Pixel**. Treat them as one pr
 3. **Wait timeout → one final search** — after `wait_until_found` / `wait_while_found` times out, re-run `try_once` once (shell already does this). Keep that contract.
 4. **Same defaults** — `DetectionCtx` wait/repeat intervals default to `100` ms unless the action config overrides via `WaitTilFoundConfig`.
 5. **Backoff only in `retry_until`** — interval doubles up to `min(interval*5, 2000)`. Repeat loops use a fixed interval. Do not copy backoff into one kind only.
-6. **`fresh` semantics** — Image Search always fresh-captures. OCR / Find Pixel: first attempt may crop cache (`fresh=false`); wait/repeat recaptures use `fresh=true`. Do not invert this without updating all kinds + tests.
+6. **`fresh` semantics** — first attempt: Image Search is fresh only when input dirtied the screen (`mark_capture_dirty` → `take_capture_fresh`), else it crops the cache; OCR / Find Pixel crop (`fresh=false`). All wait/repeat recaptures use `fresh=true`. Do not change without updating all kinds + tests.
 7. **Interruptibility** — sleeps go through `interruptible_sleep`; check `stop_flag` / `check_stopped` on long match work. Never block stop on a search.
 8. **Hit application** — outputs, highlights, and branch children go through `apply_detection_hits` / shared helpers. No kind-specific coordinate side effects.
 
@@ -54,7 +54,9 @@ Every wait/repeat poll is a full attempt. Minimize work **per attempt** and **ac
 | Keep pipeline image clones behind `log_images_enabled()` | Clone full frames for logs on every attempt |
 | Prefer smaller search areas / early exits on stop | Full-desktop search + ignore `stop_flag` mid-parallel |
 
-`sqyre-match` performance budgets in unit tests are load-bearing — do not weaken them to hide regressions; fix the path (FFT vs direct, packing, prep reuse).
+`sqyre-match` perf budgets are load-bearing (see `testing`); fix the path (FFT vs direct, packing, prep reuse).
+
+Measuring: same machine, release builds, before vs after — `make bench` or `BENCH_BASELINE=x make bench-baseline-save` → change → `make bench-baseline-diff`. Debug runs, single samples, and `perf_budget_secs` tests are not measurements; report median + spread.
 
 ## Timing instrumentation
 
@@ -64,7 +66,7 @@ Use `exec.log_timing(action_id, step, elapsed)` / `timed_step` — never `printl
 
 | Kind | Steps |
 |------|--------|
-| Shared capture helper | `capture` (inside `capture_search_buf`) |
+| Shared capture helper | `capture` (inside `capture_search_buf`; nested within Image's `capture+preprocess`) |
 | Image | `capture+preprocess`, `match`, `wait`, `apply` |
 | OCR | `preprocess`, `recognize`, `wait`, `apply` |
 | Pixel | `scan`, `wait`, `apply` |

@@ -136,7 +136,10 @@ fn video_format_to_src(format: VideoFormat) -> Result<RgbaSrcFormat, CaptureErro
     }
 }
 
-#[allow(clippy::too_many_arguments)] // src frame + dest rect in one blit
+#[expect(
+    clippy::too_many_arguments,
+    reason = "src frame + dest rect in one blit"
+)]
 pub(super) fn copy_pw_frame_into_rect(
     src: &[u8],
     size: usize,
@@ -190,7 +193,10 @@ pub(super) fn copy_pw_frame_into_rect(
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)] // row copy needs src/dst geometry in one pass
+#[expect(
+    clippy::too_many_arguments,
+    reason = "row copy needs src/dst geometry in one pass"
+)]
 fn copy_pw_frame_to_rgba_at(
     src: &[u8],
     size: usize,

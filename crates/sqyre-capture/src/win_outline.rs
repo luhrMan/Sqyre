@@ -35,7 +35,9 @@ pub struct SelectionOutline {
     last: Option<OutlineRect>,
 }
 
-// HWND handles: all use stays on the owning poller thread.
+// SAFETY: HWNDs are opaque handles, never dereferenced; Win32 calls on them from a non-owning
+// thread either work (SetWindowPos) or fail (DestroyWindow) rather than cause UB, and the wndproc
+// holds no state. Thread affinity is a correctness concern only (callers keep it on the UI thread).
 unsafe impl Send for SelectionOutline {}
 
 impl SelectionOutline {
@@ -199,24 +201,34 @@ fn destroy_edges(edges: &[HWND; 4]) {
     }
 }
 
+/// # Safety
+/// `edges` are HWNDs created by `create_edge` and not yet destroyed.
 unsafe fn place_edges(edges: &[HWND; 4], r: OutlineRect) {
-    for (&hwnd, &(x, y, w, h)) in edges.iter().zip(edge_placements(r).iter()) {
-        configure(hwnd, x, y, w, h);
+    // SAFETY: caller guarantees each edge HWND is live, satisfying `configure`'s contract.
+    unsafe {
+        for (&hwnd, &(x, y, w, h)) in edges.iter().zip(edge_placements(r).iter()) {
+            configure(hwnd, x, y, w, h);
+        }
     }
 }
 
+/// # Safety
+/// `hwnd` is a live edge window created by `create_edge`.
 unsafe fn configure(hwnd: HWND, x: i32, y: i32, w: i32, h: i32) {
-    let _ = SetWindowPos(
-        hwnd,
-        Some(HWND_TOPMOST),
-        x,
-        y,
-        w.max(1),
-        h.max(1),
-        SWP_SHOWWINDOW | SWP_NOACTIVATE,
-    );
-    let _ = InvalidateRect(Some(hwnd), None, true);
-    let _ = UpdateWindow(hwnd);
+    // SAFETY: caller guarantees `hwnd` is live; no pointers are passed (null update rect).
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            x,
+            y,
+            w.max(1),
+            h.max(1),
+            SWP_SHOWWINDOW | SWP_NOACTIVATE,
+        );
+        let _ = InvalidateRect(Some(hwnd), None, true);
+        let _ = UpdateWindow(hwnd);
+    }
 }
 
 unsafe extern "system" fn outline_wnd_proc(
@@ -225,11 +237,15 @@ unsafe extern "system" fn outline_wnd_proc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    if msg == WM_NCHITTEST {
-        // Click-through so screen-click recording still receives the second corner.
-        return LRESULT(HTTRANSPARENT as isize);
+    // SAFETY: invoked by the system with a valid `hwnd` of our class and its message params,
+    // which are forwarded unchanged to DefWindowProcW.
+    unsafe {
+        if msg == WM_NCHITTEST {
+            // Click-through so screen-click recording still receives the second corner.
+            return LRESULT(HTTRANSPARENT as isize);
+        }
+        DefWindowProcW(hwnd, msg, wparam, lparam)
     }
-    DefWindowProcW(hwnd, msg, wparam, lparam)
 }
 
 #[cfg(test)]

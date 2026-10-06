@@ -1,0 +1,18 @@
+---
+description: Sqyre testing conventions (headless CI, determinism, coverage floors, perf budgets)
+globs: **/tests/**/*.rs, **/*test*.rs, **/benches/**, scripts/coverage-floors.json, .config/nextest.toml
+alwaysApply: false
+---
+
+# Testing
+
+- **Headless first.** CI has no display/session. Use `NullCapturer`, `NullHotkeys`, and executor `test_support` (`RecordingBackend`, `RecordingCapturer`); never require X11, Wayland, portals, or `/dev/input`. Offscreen software wgpu (lavapipe) is allowed for `egui_kittest` tests (nextest `gpu` group). Session-dependent checks are `#[ignore = "reason"]` (see `sqyre-probe/tests/linux_desktop_parity.rs`) and run manually.
+- **Layout.** Private logic: inline `#[cfg(test)] mod tests`. Public API / cross-crate flows: `crates/<crate>/tests/`. Search control-flow/cache changes get cases in `sqyre-executor/src/search/tests.rs` (see `search-timing-consistency`).
+- **Test the layer that changed.** Pure crates (`sqyre-domain`, `-varref`, `-serialize`, `-validate`, `-persist`, `-executor`) get unit tests with every behavior change.
+- **Parsers/codecs.** YAML codec and varref grammar changes extend the existing `proptest!` round-trip properties. Decoding user-supplied `db.yaml` returns `Err`, never panics, on malformed or deeply nested input.
+- **Determinism.** No real sleeps; assert on recorded `sleep:N` events or use bounded polling. Seed randomness. Never add nextest retries or `#[ignore]` to hide a flake — fix it.
+- **Coverage floors are load-bearing.** `scripts/coverage-floors.json` (`make coverage-floors`) is never lowered to land a change; add tests. OS crates are intentionally ungated.
+- **Perf budgets.** `perf_budget_secs` in `sqyre-match` is a coarse wall-clock guard (debug ×10); never loosen it. Measure real regressions with `make bench-baseline-save` / `bench-baseline-diff`.
+- **Doctests.** nextest skips them; keep doc examples ` ```text ` or `no_run` unless `cargo test --doc` runs them.
+- **Windows CI** tests only `sqyre-domain`, `-varref`, `-serialize`, `-validate`, `-persist`; keep those free of Linux-only assumptions.
+- Benches stay local-only (`make bench`, `make bench-compare`); `clippy --all-targets` keeps them compiling.

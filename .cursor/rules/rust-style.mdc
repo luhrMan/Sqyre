@@ -1,0 +1,41 @@
+---
+description: Sqyre Rust style — errors, API shape, Clippy, unsafe, concurrency, logging
+globs: **/*.rs
+alwaysApply: false
+---
+
+# Rust style
+
+The [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/) apply. Project-specific constraints:
+
+## Errors
+
+- Library crates: `thiserror` enums (`CaptureError`, `PortError`, `ExecError`, …). No `anyhow`, `Box<dyn Error>`, or `Result<_, String>` in new/touched APIs; keep the cause via `#[from]`/`#[source]`, not `format!("{e}")`.
+- `unwrap`/`expect` only in tests or truly unreachable paths: `expect("why unreachable")`.
+- Do not swallow errors (`let _ =`, bare `.ok()`) without a one-line reason.
+- Never panic out of FFI callbacks (Win32 hooks/wndprocs, X11 error handler, PipeWire): unwinding through `extern "C"` aborts.
+
+## Types
+
+- No `#[non_exhaustive]` on workspace types; exhaustive `match` is what surfaces every call site on a breaking change.
+
+## Clippy
+
+CI: `clippy --workspace --all-targets -D warnings`. Fix at the source; if unavoidable, `#[expect(clippy::…, reason = "…")]` on the smallest item (not `#[allow]`). Never weaken workspace lints.
+
+## Unsafe
+
+- Only for FFI or proven invariants; never to dodge the borrow checker. Wrap raw handles (Display, HWND, fds) in owned types with `Drop`.
+- `// SAFETY:` on every `unsafe` block and `unsafe impl Send/Sync` (state why cross-thread use is sound, not that it doesn't happen); `# Safety` doc on every `unsafe fn`; inside an `unsafe fn`, still wrap ops in `unsafe {}`.
+
+## Concurrency
+
+- Prefer `parking_lot` locks (workspace dep, no poisoning).
+- Edition 2021: `if let`/`match` on `m.lock()…` keeps the guard alive through all arms/else — bind and drop first. No guard across blocking I/O, capture, or calls that take other locks.
+- Async is confined to the Wayland portal (`ashpd` + `pollster::block_on` on a dedicated thread). No tokio/async-std; never block the egui frame — spawn work and poll.
+
+## Logging
+
+- Crates depending on `sqyre-capture`: `sqyre_capture::{note, event_log, cap_log, mark_site}`. During a run: `Executor::log` / `log_timing`. `sqyre-app` user-facing stderr: `crate::log::warn`.
+- Lower crates (domain, match, vision, hotkeys, …) return errors; a detached thread with no caller may `eprintln!("sqyre-<crate>: …")`.
+- `println!` only in CLI bins, `--version`/`--help`, `build.rs`. No `tracing`/`env_logger`; `log` is wasm-only (`WebLogger`). See `debug-from-logs`.

@@ -1,7 +1,7 @@
 # Sqyre build helpers. Default output: ./bin
 # Binary is Rust (sqyre-app). Linux AppImage packaging uses the same stack.
 # Windows: Docker MinGW cross from Linux (scripts/windows/), or native on Windows.
-.PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat dev windows macos test smoke bench \
+.PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat dev windows macos test doctest smoke bench \
 	bench-compare bench-compare-rust bench-compare-go bench-baseline-save bench-baseline-diff \
 	coverage coverage-floors check check-fmt fmt clippy deny machete \
 	clean-sweep release-gate run tessdata appimage flatpak install-desktop docs-media wasm wasm-check help
@@ -84,7 +84,8 @@ help:
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
 	@echo "                 (Docker MinGW cross on Linux; native on Windows)"
 	@echo "  macos        - fmt + check, then native macOS release -> $(BIN)/sqyre  (macOS host)"
-	@echo "  test         - cargo nextest (fallback: cargo test)"
+	@echo "  test         - cargo nextest (fallback: cargo test) + doctest"
+	@echo "  doctest      - cargo test --doc (nextest skips doctests)"
 	@echo "  smoke        - debug build then ./bin/sqyre --version"
 	@echo "  bench        - criterion benches (match, vision, serialize; not run in CI)"
 	@echo "  bench-compare - Rust+Go comparative harness + side-by-side summary (local)"
@@ -93,10 +94,10 @@ help:
 	@echo "  wasm-check   - cargo check sqyre-app for wasm32 (no Trunk / no full wasm build)"
 	@echo "  check-fmt    - cargo fmt --check"
 	@echo "  fmt          - cargo fmt --all (write)"
-	@echo "  clippy       - cargo clippy --workspace --all-targets (-D warnings)"
+	@echo "  clippy       - cargo clippy --workspace --all-targets (-D warnings; + portal-capture on Linux)"
 	@echo "  deny         - cargo deny check (licenses / advisories / bans / sources)"
 	@echo "  machete      - cargo machete (unused path/crate deps)"
-	@echo "  check        - check-fmt + clippy + deny (CI quality gates)"
+	@echo "  check        - check-fmt + clippy + deny + machete (CI quality gates)"
 	@echo "  release-gate - fmt then check (used by release/packaging targets)"
 	@echo "  coverage     - llvm-cov nextest → HTML + lcov + summary.json (install: cargo-llvm-cov)"
 	@echo "  coverage-floors - line-coverage gates for pure crates (see scripts/coverage-floors.json)"
@@ -209,6 +210,11 @@ ifeq ($(HOST_OS),linux)
 		$(CARGO) test -p sqyre-capture --features portal-capture $(CARGO_FLAGS); \
 	fi
 endif
+	$(MAKE) doctest
+
+# nextest skips doctests; run them separately.
+doctest:
+	$(CARGO) test --doc --workspace $(CARGO_FLAGS)
 
 smoke: sqyre
 	$(BIN)/sqyre$(BIN_EXT) --version
@@ -255,6 +261,11 @@ fmt:
 
 clippy:
 	$(CARGO) clippy --workspace --all-targets $(CARGO_FLAGS) -- -D warnings
+ifeq ($(HOST_OS),linux)
+	@# Shipped Linux builds enable portal-capture; lint that code too.
+	$(CARGO) clippy -p sqyre-capture -p sqyre-probe -p sqyre-app --all-targets \
+		--features sqyre-app/portal-capture $(CARGO_FLAGS) -- -D warnings
+endif
 
 deny:
 	@if ! $(CARGO) deny --version >/dev/null 2>&1; then \
@@ -288,7 +299,7 @@ clean-sweep:
 	fi
 	@du -sh $(TARGET_DIR) $(TARGET_DIR)-dhat 2>/dev/null || true
 
-check: check-fmt clippy deny
+check: check-fmt clippy deny machete
 
 # Report-only coverage (no % gate). Requires cargo-llvm-cov + llvm-tools-preview.
 # One instrumented nextest (fallback: cargo test) run; HTML + LCOV + JSON summary.
@@ -308,6 +319,14 @@ coverage:
 		echo "cargo-nextest not found; falling back to cargo llvm-cov (cargo test)"; \
 		$(CARGO) llvm-cov --workspace --no-report $(CARGO_FLAGS); \
 	fi
+ifeq ($(HOST_OS),linux)
+	@# Portal FrameCache tests need portal-capture (mirrors `make test`).
+	@if $(CARGO) nextest --version >/dev/null 2>&1; then \
+		$(CARGO) llvm-cov nextest -p sqyre-capture --features portal-capture --no-report $(CARGO_FLAGS); \
+	else \
+		$(CARGO) llvm-cov -p sqyre-capture --features portal-capture --no-report $(CARGO_FLAGS); \
+	fi
+endif
 	$(CARGO) llvm-cov report --html --output-dir $(TARGET_DIR)/coverage
 	$(CARGO) llvm-cov report --lcov --output-path $(TARGET_DIR)/coverage/lcov.info
 	$(CARGO) llvm-cov report --json --summary-only --output-path $(TARGET_DIR)/coverage/summary.json

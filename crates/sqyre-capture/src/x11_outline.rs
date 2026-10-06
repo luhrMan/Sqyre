@@ -318,9 +318,9 @@ impl Drop for SelectionOutline {
         // XCloseDisplay can block the same way, but we must free the X client
         // slots: leaking them every open/drop cycle hits "Maximum number of
         // clients reached" and then rustautogui panics on overlay run.
-        // SAFETY: edges were created on `self.display`; pointers are taken and
-        // nullled before the close threads run so this Drop never uses them again.
         let mut to_close: [*mut Display; 2] = [ptr::null_mut(); 2];
+        // SAFETY: edges were created on `self.display`; pointers are taken and
+        // nulled before the close threads run so this Drop never uses them again.
         unsafe {
             if !self.display.is_null() {
                 for &w in &self.edges {
@@ -355,19 +355,23 @@ impl Drop for SelectionOutline {
 // SAFETY: callers must pass a live, non-null Xlib `display` connection and a
 // screen index valid on it; `color` is a stack local that outlives `XAllocColor`.
 unsafe fn alloc_stroke_pixel(display: *mut Display, screen: c_int) -> Result<c_ulong, String> {
-    let mut color = XColor {
-        pixel: 0,
-        red: u16::from(STROKE_R) << 8,
-        green: u16::from(STROKE_G) << 8,
-        blue: u16::from(STROKE_B) << 8,
-        flags: 0,
-        pad: 0,
-    };
-    let cmap = XDefaultColormap(display, screen);
-    if XAllocColor(display, cmap, &mut color) == 0 {
-        return Err("XAllocColor failed for selection outline".into());
+    // SAFETY: caller guarantees live `display` and a valid `screen`; `color` is a
+    // stack local that outlives the `XAllocColor` call writing into it.
+    unsafe {
+        let mut color = XColor {
+            pixel: 0,
+            red: u16::from(STROKE_R) << 8,
+            green: u16::from(STROKE_G) << 8,
+            blue: u16::from(STROKE_B) << 8,
+            flags: 0,
+            pad: 0,
+        };
+        let cmap = XDefaultColormap(display, screen);
+        if XAllocColor(display, cmap, &mut color) == 0 {
+            return Err("XAllocColor failed for selection outline".into());
+        }
+        Ok(color.pixel)
     }
-    Ok(color.pixel)
 }
 
 fn open_x_display() -> Result<*mut Display, CaptureError> {
@@ -415,29 +419,33 @@ fn schedule_x_close(display: *mut Display) {
 /// Root pointer on `display`. Round-trip — do not call while `ConfigureWindow` is pending
 /// on this same connection.
 unsafe fn query_pointer_on(display: *mut Display) -> Option<(i32, i32, bool)> {
-    let root = XDefaultRootWindow(display);
-    let mut root_ret: Window = 0;
-    let mut child: Window = 0;
-    let mut root_x = 0;
-    let mut root_y = 0;
-    let mut win_x = 0;
-    let mut win_y = 0;
-    let mut mask = 0u32;
-    if XQueryPointer(
-        display,
-        root,
-        &mut root_ret,
-        &mut child,
-        &mut root_x,
-        &mut root_y,
-        &mut win_x,
-        &mut win_y,
-        &mut mask,
-    ) == 0
-    {
-        return None;
+    // SAFETY: caller guarantees `display` is a live Xlib connection with no pending
+    // configure requests; all out-params are stack locals outliving `XQueryPointer`.
+    unsafe {
+        let root = XDefaultRootWindow(display);
+        let mut root_ret: Window = 0;
+        let mut child: Window = 0;
+        let mut root_x = 0;
+        let mut root_y = 0;
+        let mut win_x = 0;
+        let mut win_y = 0;
+        let mut mask = 0u32;
+        if XQueryPointer(
+            display,
+            root,
+            &mut root_ret,
+            &mut child,
+            &mut root_x,
+            &mut root_y,
+            &mut win_x,
+            &mut win_y,
+            &mut mask,
+        ) == 0
+        {
+            return None;
+        }
+        Some((root_x, root_y, mask & Button1Mask != 0))
     }
-    Some((root_x, root_y, mask & Button1Mask != 0))
 }
 
 // SAFETY: callers must pass a live, non-null Xlib `display` connection plus a
@@ -449,29 +457,33 @@ unsafe fn create_edge(
     screen: c_int,
     pixel: c_ulong,
 ) -> Result<Window, String> {
-    let mut attrs: XSetWindowAttributes = std::mem::zeroed();
-    attrs.background_pixel = pixel;
-    attrs.border_pixel = pixel;
-    attrs.override_redirect = True;
-    let mask = CWBackPixel | CWBorderPixel | CWOverrideRedirect;
-    let win = XCreateWindow(
-        display,
-        root,
-        0,
-        0,
-        1,
-        1,
-        0,
-        XDefaultDepth(display, screen),
-        InputOutput as c_uint,
-        XDefaultVisual(display, screen),
-        mask,
-        &mut attrs,
-    );
-    if win == 0 {
-        return Err("XCreateWindow failed for selection edge".into());
+    // SAFETY: caller guarantees live `display` with valid `root`/`screen`/`pixel`;
+    // `attrs` is zeroed POD with every `mask` field set, outliving `XCreateWindow`.
+    unsafe {
+        let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+        attrs.background_pixel = pixel;
+        attrs.border_pixel = pixel;
+        attrs.override_redirect = True;
+        let mask = CWBackPixel | CWBorderPixel | CWOverrideRedirect;
+        let win = XCreateWindow(
+            display,
+            root,
+            0,
+            0,
+            1,
+            1,
+            0,
+            XDefaultDepth(display, screen),
+            InputOutput as c_uint,
+            XDefaultVisual(display, screen),
+            mask,
+            &mut attrs,
+        );
+        if win == 0 {
+            return Err("XCreateWindow failed for selection edge".into());
+        }
+        Ok(win)
     }
-    Ok(win)
 }
 
 /// Empty `ShapeInput` so XWayland/Mutter does not treat the cursor as inside
@@ -512,9 +524,13 @@ fn apply_input_passthrough(display: *mut Display, edges: &[Window; 4]) -> bool {
 // SAFETY: `display` is a live connection; unread events are discarded so the
 // Xlib input buffer cannot stall later `XFlush` / `XConfigureWindow` calls.
 unsafe fn drain_x_events(display: *mut Display) {
-    while XPending(display) != 0 {
-        let mut event: XEvent = std::mem::zeroed();
-        XNextEvent(display, &mut event);
+    // SAFETY: caller guarantees `display` is a live Xlib connection; `event` is a
+    // stack-local zeroed `XEvent` that `XNextEvent` fully overwrites.
+    unsafe {
+        while XPending(display) != 0 {
+            let mut event: XEvent = std::mem::zeroed();
+            XNextEvent(display, &mut event);
+        }
     }
 }
 
@@ -522,19 +538,23 @@ unsafe fn drain_x_events(display: *mut Display) {
 // `win` created on it; `changes` is a stack local that outlives
 // `XConfigureWindow`, and every field named by `mask` is initialized.
 unsafe fn configure(display: *mut Display, win: Window, x: i32, y: i32, w: i32, h: i32) {
-    let mut changes = XWindowChanges {
-        x,
-        y,
-        width: w.max(1),
-        height: h.max(1),
-        border_width: 0,
-        sibling: 0,
-        stack_mode: 0,
-    };
-    // Do not raise on every mouse-move: MapRaised + CWStackMode floods XWayland
-    // and the outline stops tracking once the request queue backs up.
-    let mask = (CWX | CWY | CWWidth | CWHeight) as c_uint;
-    XConfigureWindow(display, win, mask, &mut changes);
+    // SAFETY: caller guarantees live `display` and `win` created on it; `changes`
+    // initializes every `mask` field and outlives `XConfigureWindow`.
+    unsafe {
+        let mut changes = XWindowChanges {
+            x,
+            y,
+            width: w.max(1),
+            height: h.max(1),
+            border_width: 0,
+            sibling: 0,
+            stack_mode: 0,
+        };
+        // Do not raise on every mouse-move: MapRaised + CWStackMode floods XWayland
+        // and the outline stops tracking once the request queue backs up.
+        let mask = (CWX | CWY | CWWidth | CWHeight) as c_uint;
+        XConfigureWindow(display, win, mask, &mut changes);
+    }
 }
 
 #[cfg(test)]

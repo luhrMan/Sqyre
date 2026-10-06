@@ -296,7 +296,10 @@ fn build_sparse_template(
     )
 }
 
-#[allow(clippy::too_many_arguments)] // match kernel: image geometry, packed template, method, and optional prep
+#[expect(
+    clippy::too_many_arguments,
+    reason = "match kernel: image geometry, packed template, method, and optional prep"
+)]
 fn match_direct(
     search: &ImageBuf,
     tmpl: &crate::corr_simd::SparseTemplate,
@@ -581,7 +584,10 @@ fn forward_fft_search(search: &ImageBuf, dft_w: usize, dft_h: usize, parallel: b
 }
 
 /// DFT cross-correlation of sparse template vs search, then method-specific finish.
-#[allow(clippy::too_many_arguments)] // match kernel: image geometry, sparse template, method, and optional prep
+#[expect(
+    clippy::too_many_arguments,
+    reason = "match kernel: image geometry, sparse template, method, and optional prep"
+)]
 fn match_fft(
     search: &ImageBuf,
     pack: &crate::corr_simd::SparseTemplate,

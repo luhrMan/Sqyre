@@ -1,18 +1,32 @@
 ---
-description: Cross-platform Rust (conditional compilation) for Sqyre
-alwaysApply: true
+description: Cross-platform Rust (conditional compilation, platform layout) for Sqyre
+globs: crates/**/*.rs, crates/*/Cargo.toml
+alwaysApply: false
 ---
 
 # Cross-platform Rust
 
-When touching OS-specific code (capture, focus, overlays, trays, hotkeys), use Rust conditional compilation correctly so targets compile cleanly.
+Single source for platform conventions; other rules and skills link here.
+
+## Platforms
+
+| Target | Status |
+|--------|--------|
+| Linux X11 | Shipped (`x11_*` in `sqyre-capture`, rdev hotkeys) |
+| Linux Wayland | Shipped. Portal ScreenCast+PipeWire capture and RemoteDesktop EIS input need `portal-capture` (Linux Makefile targets enable it); foreign-toplevel/AT-SPI windows and layer-shell outline/grab always build; evdev hotkeys need `hooks` (`linux/wayland/`, `linux/session.rs`). Per-desktop gaps: `linux-desktop-parity` |
+| Windows | Bare `.exe`: GDI capture, outline, focus, low-level hooks (`win_*`) |
+| macOS | Capture/focus stubbed; `make macos` host-only |
+| wasm32 | GUI-only editor, no runtime (see `wasm-editor`) |
+
+Ship formats: Linux AppImage + Flatpak, Windows `.exe`, WASM zip. No MSI/DMG/Nix unless asked.
 
 ## `#[cfg]` vs `cfg!`
 
-- **`#[cfg(...)]`** — compile-time inclusion; code is removed when false.
-- **`cfg!(...)`** — runtime boolean; code is still type-checked on every target.
-
-Never call platform-only APIs inside `if cfg!(...)` — use `#[cfg]` modules or blocks instead.
+- `#[cfg(...)]` removes code at compile time; `cfg!(...)` is a runtime bool and still type-checks on every target.
+- Never call platform-only APIs inside `if cfg!(...)`; use `#[cfg]` modules or blocks.
+- Platform imports live inside the `#[cfg]` block/module that uses them; do not paper over with `#[allow(unused_imports)]`.
+- Cargo: `[target.'cfg(...)'.dependencies]` for OS crates (`x11`, `windows`, `tray-icon`, …).
+- Use family predicates (`unix` / `windows`) only when behavior truly matches; usually split `target_os = "linux"` / `"windows"` / `"macos"`.
 
 ```rust
 // CORRECT
@@ -21,26 +35,24 @@ fn capture() { /* Win32 */ }
 
 // WRONG — still type-checked on Linux
 fn capture() {
-    if cfg!(target_os = "windows") {
-        /* Win32 APIs fail to compile on Linux */
-    }
+    if cfg!(target_os = "windows") { /* Win32 APIs */ }
 }
 ```
 
-## Scope imports inside cfg blocks
+## Features and targets
 
-Platform-specific imports belong inside the `#[cfg]` block or module that uses them. Do not paper over unused imports with `#[allow(unused_imports)]`.
+- Features are additive (Cargo book): enabling one only adds code. No mutually exclusive features; no `cfg(not(feature = …))` that changes enabled behavior; no `wasm`/`x11`/`wayland` features — use `cfg(target_*)` and runtime session detection.
+- Custom cfgs must be declared (`[lints.rust] unexpected_cfgs` `check-cfg` or `cargo::rustc-check-cfg`).
+- A Linux build only proves Linux cfgs. Touching `win_*`/`cfg(windows)` → `make windows` (or say it wasn't compiled); `portal-capture` code → `--features portal-capture`; editor-reachable code → `make wasm-check`.
 
-## Sqyre platform layout
+## FFI (Win32 / X11 / PipeWire)
 
-- **`sqyre-capture`**: Linux `x11_*`, Windows `win_*`, macOS/other stubs; public API is `OsCapturer`, `shared_capturer`, `SharedRunCapturer`, `OsWindowFocuser`.
-- **Cargo**: use `[target.'cfg(...)'.dependencies]` for OS crates (`x11`, `windows`, `tray-icon`, etc.).
-- Do not add dual codecs or compatibility shims for format changes.
-- Do not expand packaging (MSI/DMG) unless asked — Linux ships AppImage + Flatpak.
+- `windows` crate only (no `winapi`). Own each handle (`HDC`, `HBITMAP`, `Display*`, `XImage`, PipeWire fds/buffers) in an RAII guard whose `Drop` releases it, so `?`/early returns cannot leak (see `X11State`, `MappedFd`).
+- Keep `unsafe` inside the platform module behind safe fns; `// SAFETY:` per `rust-style`.
 
-## Checklist
+## Public surface
 
-- Platform imports scoped under `#[cfg]`
-- Shared traits (`ScreenCapturer`, `WindowFocuser`, `AutomationBackend`) stay OS-agnostic
-- Public names are OS-neutral (`OsCapturer`, not `X11Capturer`)
-- Prefer family predicates (`unix` / `windows`) only when behavior truly matches; Sqyre often needs `target_os = "linux"` vs `"windows"` vs `"macos"` separately
+- One OS-neutral API across targets: `OsCapturer`, `shared_capturer`, `SharedRunCapturer`, `OsWindowFocuser` (never `X11Capturer`-style names).
+- Shared traits (`ScreenCapturer`, `WindowFocuser`, `AutomationBackend`) stay OS-agnostic.
+- Wayland vs X11 is a runtime session choice (`linux/session.rs`) behind the same surface, not a parallel API.
+- Extend existing `#[cfg]` modules instead of inventing parallel stacks; no dual codecs or compatibility shims.

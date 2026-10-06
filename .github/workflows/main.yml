@@ -252,9 +252,9 @@ jobs:
             sqyre-linux-build \
             bash -c 'set -euo pipefail
               make check
-              make machete
               # Instrumented nextest (replaces separate make test + make coverage).
               make coverage
+              make doctest
               COVERAGE_REPORT_JSON=/workspace/target/coverage/summary.json make coverage-floors
               make smoke
               make wasm-check
@@ -291,6 +291,10 @@ jobs:
           key: ${{ runner.os }}-cargo-agnostic-v1-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-agnostic-v1-
+
+      - name: Clippy Windows-specific crates
+        run: |
+          cargo clippy -p sqyre-capture -p sqyre-hotkeys -p sqyre-input -p sqyre-overlay --all-targets -- -D warnings
 
       - name: Test OS-agnostic crates
         run: |

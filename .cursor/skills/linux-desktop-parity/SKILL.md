@@ -11,7 +11,7 @@ Reach **full parity tier** on the user's graphical Linux session. Do not treat `
 
 ## Agent loop
 
-1. Build probe: `make probe` (or `cargo build -p sqyre-probe`).
+1. Build probe: `make probe` (adds `--features portal-capture`; plain `cargo build -p sqyre-probe` leaves `capture.wayland_portal` pending).
 2. Run: `./bin/sqyre-probe --json` (add `--human` for stderr summary).
 3. Parse JSON: check `parity_tier`, `capabilities`, `permissions_needed`.
 4. If permissions are missing, tell the user the exact DE settings path (see below) and re-run with `--wait-permissions 120`.
@@ -50,18 +50,24 @@ SQYRE_PROBE parity_tier=… ms=…
 | Synthetic input | `sudo usermod -aG input $USER` then re-login | same | same |
 | Global shortcuts | Portal / Settings → Keyboard | Portal / System Settings | Portal (evolving) |
 
-Pure Wayland without XWayland: enable `portal-capture` at build time (`cargo build -p sqyre-app --features portal-capture`; needs libpipewire ≥ 1.0 dev headers — Ubuntu 24.04+). `make release` on Linux enables it automatically.
+Pure Wayland without XWayland needs `portal-capture` (libpipewire ≥ 1.0 dev headers — Ubuntu 24.04+). Linux Makefile targets (`make`, `make release`, `make probe`, bundles) enable it; plain `cargo build` does not.
+
+## Portal rules
+
+- UI thread: never call `shared_capturer()` when `shared_capturer_open_may_block()`; use `shared_capturer_nonblocking()` (returns `NotReady`) and let a worker/probe open it.
+- Grants persist via restore tokens (`PersistMode::ExplicitlyRevoked`); `revoke_portal_grants()` clears them. App id `com.sqyre.app` must match the Flatpak id.
 
 ## Backend layout
 
 ```
 crates/sqyre-capture/src/linux/
   session.rs          # X11 / XWayland / portal detection
-  wayland/            # portal capture, foreign-toplevel, layer-shell (incremental)
+  wayland/            # portal ScreenCast+PipeWire, RemoteDesktop EIS, foreign-toplevel, AT-SPI, layer-shell
+crates/sqyre-hotkeys/src/linux_evdev.rs   # Wayland hotkeys (needs /dev/input access)
 crates/sqyre-probe/   # structured JSON capability probe
 ```
 
-Wayland stubs report `pending` until implemented. Probe keys: `capture.wayland_impl`, `capture.wayland_portal`, `outline.wayland_impl`, `grab.wayland_impl`, `input.wayland_impl`.
+Probe keys report `pending` when a backend is unavailable in the session or build: `capture.wayland_impl`, `capture.wayland_portal`, `windows.wayland_impl`, `input.wayland_impl`, `outline.wayland_impl`, `grab.wayland_impl`.
 
 ## Tests
 
@@ -80,14 +86,16 @@ cargo test -p sqyre-probe --test linux_desktop_parity -- --ignored --nocapture
 - File dialogs or tray working (portal/DBus — unrelated to capture parity)
 - `libwayland-dev` present in devcontainer (link dep only)
 
-## Implementation order
+## Backend status (Wayland)
 
-1. Session detection + probe (done)
-2. Portal + PipeWire capture (`portal_capture_implemented()` → true)
-3. Foreign-toplevel window focus
-4. uinput input backend
-5. Portal GlobalShortcuts hotkeys
-6. wlr-layer-shell outline + grab
-7. Optional KWin D-Bus fast paths for Plasma
+| Capability | Backend | Notes |
+|------------|---------|-------|
+| Session + probe | `session.rs`, `sqyre-probe` | done |
+| Capture | portal ScreenCast + PipeWire (`portal-capture`) | done |
+| Windows list/focus | foreign-toplevel, AT-SPI fallback | done; GNOME lacks foreign-toplevel |
+| Input | portal RemoteDesktop EIS (shared ScreenCast session) | done; needs "Allow Remote Interaction". uinput fallback not implemented |
+| Hotkeys | evdev | done; needs `input` group. Portal GlobalShortcuts not implemented |
+| Outline / grab | wlr-layer-shell | done where compositor exposes it (not GNOME) |
+| KWin D-Bus fast paths | — | not implemented (optional) |
 
-After each step, re-run `./bin/sqyre-probe --json` and confirm the relevant capability moves from `pending`/`fail` to `ok`.
+After backend changes, re-run `./bin/sqyre-probe --json` and confirm the capability moves from `pending`/`fail` to `ok`.

@@ -191,8 +191,9 @@ fn zpixmap_swizzle(
             arch.dispatch(|| {
                 for (x, chunk) in row.chunks_exact(bpp).enumerate() {
                     let di = (y * w + x) * out_bpp;
-                    // SAFETY: each row `y` writes a disjoint output range.
                     let dst = out_addr as *mut u8;
+                    // SAFETY: `out.len() == w * h * out_bpp` (checked above) bounds `di..di + out_bpp`;
+                    // `out` outlives the blocking par loop and each row `y` writes a disjoint range.
                     unsafe {
                         *dst.add(di) = chunk[2]; // R
                         *dst.add(di + 1) = chunk[1]; // G

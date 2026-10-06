@@ -117,8 +117,9 @@ pub fn resize_nearest(img: &ImageBuf, tw: usize, th: usize) -> ImageBuf {
             let sx = x * sw / tw;
             let s = (sy * sw + sx) * ch;
             let d = (y * tw + x) * ch;
-            // SAFETY: each output row `y` is disjoint.
             let dst = data_addr as *mut u8;
+            // SAFETY: `sx < sw`, `sy < sh` keep `s + ch <= src.len()`; `d + ch <= data.len()`, `data`
+            // outlives the blocking par loop, and each row `y` writes a disjoint output range.
             unsafe {
                 std::ptr::copy_nonoverlapping(src.as_ptr().add(s), dst.add(d), ch);
             }

@@ -4,7 +4,10 @@
 //! [`crate::wasm_demo_seed`] fills it so the editor can show tiles without a filesystem.
 
 // Registration helpers are only called from the wasm seed / unit tests.
-#![cfg_attr(not(any(test, target_arch = "wasm32")), allow(dead_code))]
+#![cfg_attr(
+    not(any(test, target_arch = "wasm32")),
+    expect(dead_code, reason = "demo icons are seeded only on wasm and in tests")
+)]
 
 use image::{Rgba, RgbaImage};
 use sqyre_persist::images_path;
