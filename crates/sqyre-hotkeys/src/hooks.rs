@@ -240,6 +240,13 @@ impl HotkeyService for RdevHotkeys {
         self.stop();
         let stop = Arc::clone(&self.stop);
         stop.store(false, Ordering::SeqCst);
+        #[cfg(all(feature = "portal-shortcuts", target_os = "linux"))]
+        if linux_uses_evdev_grab() {
+            crate::linux_portal_shortcuts::spawn(
+                self.macro_hotkeys.clone(),
+                Arc::clone(&callbacks.on_macro_hotkey),
+            );
+        }
         let ctx = HookCtx {
             stop,
             continue_wait: self.continue_wait.clone(),
@@ -260,6 +267,8 @@ impl HotkeyService for RdevHotkeys {
     fn stop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         crate::pointer_buttons::set_left_button_down(false);
+        #[cfg(all(feature = "portal-shortcuts", target_os = "linux"))]
+        crate::linux_portal_shortcuts::stop(&self.macro_hotkeys);
         // Wayland evdev watch uses a short epoll timeout and can join. X11 `listen` blocks forever.
         #[cfg(target_os = "linux")]
         if linux_uses_evdev_grab() {

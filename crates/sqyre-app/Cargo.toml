@@ -17,8 +17,8 @@ path = "src/main.rs"
 [features]
 # Full desktop runtime: macro execution, screen capture, OCR/vision.
 default = ["native-runtime", "hooks", "overlay-buttons"]
-# Wayland portal ScreenCast + PipeWire (needs libpipewire ≥ 1.0 dev headers).
-portal-capture = ["sqyre-capture/portal-capture", "sqyre-probe/portal-capture"]
+# Wayland portals: ScreenCast + PipeWire (needs libpipewire ≥ 1.0 dev headers) and GlobalShortcuts.
+portal-capture = ["sqyre-capture/portal-capture", "sqyre-probe/portal-capture", "sqyre-hotkeys/portal-shortcuts"]
 native-runtime = ["dep:sqyre-executor", "dep:sqyre-vision", "dep:sqyre-match", "dep:sqyre-capture", "dep:sqyre-probe", "dep:rayon", "sqyre-overlay/runtime"]
 # OS global hotkeys (rdev). Disabled for wasm builds (`--no-default-features`).
 hooks = ["sqyre-hotkeys/hooks"]

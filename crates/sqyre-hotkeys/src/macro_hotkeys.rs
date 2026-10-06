@@ -178,10 +178,21 @@ struct BindingRuntime {
     release: ReleasePhase,
 }
 
+/// Edge reported by a compositor-owned shortcut.
+#[cfg(all(feature = "portal-shortcuts", target_os = "linux"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShortcutEdge {
+    Activated,
+    Deactivated,
+}
+
 struct Inner {
     bindings: Mutex<Vec<BindingRuntime>>,
     suspend_count: Mutex<u32>,
     pressed: Mutex<HashSet<&'static str>>,
+    /// Macros whose chords the desktop delivers (GlobalShortcuts portal); key
+    /// matching skips them so they do not fire twice.
+    system_owned: Mutex<HashSet<String>>,
 }
 
 /// Shared registry between the hook thread and the UI.
@@ -197,7 +208,41 @@ impl MacroHotkeyBridge {
                 bindings: Mutex::new(Vec::new()),
                 suspend_count: Mutex::new(0),
                 pressed: Mutex::new(HashSet::new()),
+                system_owned: Mutex::new(HashSet::new()),
             }),
+        }
+    }
+
+    #[cfg(all(feature = "portal-shortcuts", target_os = "linux"))]
+    pub(crate) fn set_system_owned(&self, names: HashSet<String>) {
+        *self.inner.system_owned.lock() = names;
+    }
+
+    /// Fire a compositor-delivered shortcut, honoring suspend and the binding trigger.
+    #[cfg(all(feature = "portal-shortcuts", target_os = "linux"))]
+    pub(crate) fn on_system_shortcut(
+        &self,
+        macro_name: &str,
+        edge: ShortcutEdge,
+        on_fire: &dyn Fn(String),
+    ) {
+        if self.is_suspended() || !self.inner.system_owned.lock().contains(macro_name) {
+            return;
+        }
+        let trigger = self
+            .inner
+            .bindings
+            .lock()
+            .iter()
+            .find(|r| r.binding.macro_name == macro_name)
+            .map(|r| r.binding.trigger);
+        let fire = matches!(
+            (trigger, edge),
+            (Some(HotkeyTrigger::Press), ShortcutEdge::Activated)
+                | (Some(HotkeyTrigger::Release), ShortcutEdge::Deactivated)
+        );
+        if fire {
+            on_fire(macro_name.to_string());
         }
     }
 
@@ -279,8 +324,12 @@ impl MacroHotkeyBridge {
             return;
         }
 
+        let system_owned = self.inner.system_owned.lock();
         let mut bindings = self.inner.bindings.lock();
         for runtime in bindings.iter_mut() {
+            if system_owned.contains(&runtime.binding.macro_name) {
+                continue;
+            }
             let all = chord_all_pressed(pressed, &runtime.binding.chord);
             let released = chord_fully_released(pressed, &runtime.binding.chord);
             match runtime.binding.trigger {
@@ -456,6 +505,33 @@ mod tests {
         pressed.insert("f9");
         bridge.on_pressed_keys(&pressed, &fire);
         assert_eq!(fires.load(Ordering::SeqCst), 1);
+    }
+
+    #[cfg(all(feature = "portal-shortcuts", target_os = "linux"))]
+    #[test]
+    fn system_owned_chords_fire_only_from_portal() {
+        let bridge = MacroHotkeyBridge::new();
+        bridge.set_bindings(vec![
+            MacroHotkeyBinding::new("P", vec!["f8".into()], HotkeyTrigger::Press),
+            MacroHotkeyBinding::new("R", vec!["f9".into()], HotkeyTrigger::Release),
+        ]);
+        bridge.set_system_owned(["P".to_string(), "R".to_string()].into());
+        let fired = Mutex::new(Vec::new());
+        let fire = |name: String| fired.lock().push(name);
+
+        let pressed: HashSet<&'static str> = ["f8", "f9"].into();
+        bridge.on_pressed_keys(&pressed, &fire);
+        assert!(fired.lock().is_empty());
+
+        bridge.on_system_shortcut("P", ShortcutEdge::Activated, &fire);
+        bridge.on_system_shortcut("P", ShortcutEdge::Deactivated, &fire);
+        bridge.on_system_shortcut("R", ShortcutEdge::Activated, &fire);
+        bridge.on_system_shortcut("R", ShortcutEdge::Deactivated, &fire);
+        assert_eq!(*fired.lock(), vec!["P".to_string(), "R".to_string()]);
+
+        bridge.suspend();
+        bridge.on_system_shortcut("P", ShortcutEdge::Activated, &fire);
+        assert_eq!(fired.lock().len(), 2);
     }
 
     #[test]
