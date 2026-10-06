@@ -72,6 +72,42 @@ RUN set -eux \
  && chmod 755 /usr/local/bin/sccache-rustc-wrapper \
  && sccache --version
 
+# Android APK (`make android` / `make android-check`): JDK 17, SDK, NDK, Gradle, cargo-ndk.
+ARG ANDROID_CMDLINE_TOOLS=11076708
+ARG ANDROID_PLATFORM=35
+ARG ANDROID_BUILD_TOOLS=35.0.0
+ARG ANDROID_NDK_VERSION=27.2.12479018
+ARG GRADLE_VERSION=8.10.2
+ENV ANDROID_HOME=/opt/android-sdk \
+    ANDROID_NDK_HOME=/opt/android-sdk/ndk/${ANDROID_NDK_VERSION} \
+    JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
+    PATH="/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:${PATH}"
+RUN set -eux \
+ && apt-get update && apt-get install -y --no-install-recommends openjdk-17-jdk-headless unzip \
+ && rm -rf /var/lib/apt/lists/* \
+ && mkdir -p "${ANDROID_HOME}/cmdline-tools" \
+ && curl -fsSL -o /tmp/cmdline-tools.zip \
+      "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS}_latest.zip" \
+ && unzip -q /tmp/cmdline-tools.zip -d "${ANDROID_HOME}/cmdline-tools" \
+ && mv "${ANDROID_HOME}/cmdline-tools/cmdline-tools" "${ANDROID_HOME}/cmdline-tools/latest" \
+ && rm /tmp/cmdline-tools.zip \
+ && yes | sdkmanager --licenses >/dev/null \
+ && sdkmanager --install \
+      "platform-tools" \
+      "platforms;android-${ANDROID_PLATFORM}" \
+      "build-tools;${ANDROID_BUILD_TOOLS}" \
+      "ndk;${ANDROID_NDK_VERSION}" \
+ && curl -fsSL -o /tmp/gradle.zip \
+      "https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip" \
+ && unzip -q /tmp/gradle.zip -d /opt \
+ && mv "/opt/gradle-${GRADLE_VERSION}" /opt/gradle \
+ && rm /tmp/gradle.zip \
+ && chmod -R a+rwX "${ANDROID_HOME}" \
+ && rustup target add aarch64-linux-android x86_64-linux-android \
+ && cargo install cargo-ndk --locked \
+ && chmod -R a+rX /usr/local/rustup /usr/local/cargo \
+ && java -version && gradle --version && cargo ndk --version
+
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=1000

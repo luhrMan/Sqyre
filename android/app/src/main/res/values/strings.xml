@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sqyre</string>
+    <string name="accessibility_label">Sqyre automation</string>
+    <string name="accessibility_description">Lets Sqyre macros tap, swipe, type into text fields, and switch apps. Sqyre does not read or send screen content anywhere.</string>
+    <string name="projection_channel">Screen recording</string>
+    <string name="projection_running">Sqyre can see the screen for image search and OCR</string>
+    <string name="projection_stop">Stop macro</string>
+</resources>

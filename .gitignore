@@ -38,6 +38,13 @@ scripts/linux/packaging/flatpak/repo/
 scripts/linux/packaging/flatpak/.flatpak-builder/
 scripts/linux/packaging/flatpak/.com.sqyre.app.*.yml
 
+# Android shell build outputs (cargo-ndk + Gradle)
+/android/app/src/main/jniLibs/
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
+
 # CI / local caches when using workspace paths
 .cache/
 .devcontainer/builds/
