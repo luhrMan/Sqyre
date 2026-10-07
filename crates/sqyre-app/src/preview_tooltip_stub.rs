@@ -100,12 +100,12 @@ fn paint_unavailable_panel(ui: &mut egui::Ui, _view: &mut ImageViewTransform) ->
     let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
+    crate::data_editor_preview::paint_preview_message(
+        ui,
+        rect,
         UNAVAILABLE,
-        egui::TextStyle::Small.resolve(ui.style()),
         crate::theme::error_fg(),
+        crate::data_editor_preview::PREVIEW_CHIP_INSET,
     );
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
     rect

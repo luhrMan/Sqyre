@@ -1021,13 +1021,7 @@ fn paint_preview_status(ui: &mut egui::Ui, caption: &str, err: &str) {
     );
     ui.painter()
         .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
-        err,
-        egui::TextStyle::Small.resolve(ui.style()),
-        crate::theme::error_fg(),
-    );
+    crate::data_editor_preview::paint_preview_message(ui, rect, err, crate::theme::error_fg(), 0.0);
     ui.label(caption);
 }
 
@@ -1114,12 +1108,12 @@ fn paint_preview_panel_placeholder(
     let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
+    crate::data_editor_preview::paint_preview_message(
+        ui,
+        rect,
         err,
-        egui::TextStyle::Small.resolve(ui.style()),
         crate::theme::error_fg(),
+        crate::data_editor_preview::PREVIEW_CHIP_INSET,
     );
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
     rect

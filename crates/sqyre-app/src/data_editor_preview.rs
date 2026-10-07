@@ -414,6 +414,35 @@ fn paint_preview_size_badge(ui: &egui::Ui, viewport: egui::Rect, lines: &[String
     }
 }
 
+/// Horizontal inset that keeps placeholder text clear of left/right coord chips.
+pub(crate) const PREVIEW_CHIP_INSET: f32 = 100.0;
+
+/// Centered status/error text inside a preview placeholder, word-wrapped to
+/// `rect` minus `side_inset` per side (never narrower than a readable minimum).
+pub(crate) fn paint_preview_message(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    text: &str,
+    color: egui::Color32,
+    side_inset: f32,
+) {
+    const MIN_WRAP_W: f32 = 120.0;
+    const EDGE_PAD: f32 = 8.0;
+    let max_w = (rect.width() - EDGE_PAD * 2.0).max(1.0);
+    let wrap_w = (rect.width() - side_inset * 2.0).max(MIN_WRAP_W).min(max_w);
+    let mut job = egui::text::LayoutJob::simple(
+        text.to_owned(),
+        egui::TextStyle::Small.resolve(ui.style()),
+        color,
+        wrap_w,
+    );
+    job.halign = egui::Align::Center;
+    let painter = ui.painter_at(rect);
+    let galley = painter.layout_job(job);
+    let pos = egui::pos2(rect.center().x, rect.center().y - galley.size().y * 0.5);
+    painter.galley(pos, galley, color);
+}
+
 /// 1px dim gold border around a Data Editor image preview.
 pub(crate) fn paint_preview_frame(painter: &egui::Painter, rect: egui::Rect) {
     painter.rect_stroke(rect, 0.0, theme::inner_stroke(), egui::StrokeKind::Inside);
