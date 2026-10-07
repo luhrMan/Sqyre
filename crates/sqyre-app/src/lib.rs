@@ -91,6 +91,7 @@ mod tree_clipboard;
 mod tree_dnd;
 mod tree_history;
 mod tree_state;
+mod tree_swipe;
 mod ui_macro_list;
 mod ui_macro_tree;
 mod ui_overlays;

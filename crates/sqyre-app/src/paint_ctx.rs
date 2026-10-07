@@ -45,6 +45,8 @@ pub struct TreePaint<'a> {
     pub paint_revision: u64,
     /// Show per-row Logs buttons (user "Log Meta Images" setting).
     pub show_logs: bool,
+    /// Row being swiped (or settling) and its horizontal offset.
+    pub swipe: Option<(ActionId, f32)>,
 }
 
 /// Catalog paint + var theme + recording bridges (action tooltip / defaults edit).

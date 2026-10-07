@@ -6,6 +6,7 @@ use crate::paint_ctx::{CatalogPaint, RecordBridges, TipUiCtx, TreePaint, VarThem
 use crate::tree_chrome::{self, RowAction, RowHighlight, RowInteraction};
 use crate::tree_dnd;
 use crate::tree_history::{TreeHistory, TreeSnapshot};
+use crate::tree_swipe::{self, SwipeAction, SwipeSettle};
 use crate::SqyreApp;
 use eframe::egui;
 use egui_ltreeview::{Action as TreeAction, NodeBuilder, TreeView, TreeViewBuilder, TreeViewState};
@@ -19,7 +20,6 @@ pub use crate::tree_state::TreeDragMode;
 const TREE_SCROLL_STOP_SPEED: f32 = 20.0;
 /// Match egui `ScrollArea` friction (points / second²).
 const TREE_SCROLL_FRICTION: f32 = 1000.0;
-
 pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>) {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     let idx = app
@@ -51,6 +51,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     let follow = highlight_follow_target(&hl_snap);
     let scroll_to = follow.filter(|id| app.tree.last_exec_follow != Some(*id));
     let mut scrolled_follow = false;
+    let mut swipe_done: Option<(ActionId, SwipeAction)> = None;
     // Floating bars allocate 0 by default and cover the row chrome; reserve
     // bar_width so logs/delete stay clear when the scrollbar appears.
     let actions = ui
@@ -81,11 +82,54 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         // Hand off to kinetic coast (same as egui ScrollArea).
                         app.tree.scroll_vel = pointer_vel_y;
                     }
+                    let swipe_row_w = |rows: &[(ActionId, egui::Rect)], aid: ActionId| {
+                        rows.iter()
+                            .find(|(id, _)| *id == aid)
+                            .map_or(0.0, |(_, r)| r.width())
+                    };
+                    if let TreeDragMode::Swipe(aid) = app.tree.drag_mode {
+                        if primary_down {
+                            if let Some(dx) = ui.input(|i| {
+                                Some(i.pointer.latest_pos()?.x - i.pointer.press_origin()?.x)
+                            }) {
+                                app.tree.swipe_dx = dx;
+                            }
+                        } else {
+                            // Released: Swipe→Idle happens at the end of this frame.
+                            let row_w = swipe_row_w(&app.tree.swipe_rows, aid);
+                            let dx = std::mem::take(&mut app.tree.swipe_dx);
+                            let act = tree_swipe::outcome(dx);
+                            let delete = act == Some(SwipeAction::Delete);
+                            app.tree.swipe_settle = Some(SwipeSettle {
+                                aid,
+                                offset: tree_swipe::rubber_band(dx),
+                                target: if delete { row_w } else { 0.0 },
+                                delete,
+                            });
+                            if act == Some(SwipeAction::Edit) {
+                                swipe_done = Some((aid, SwipeAction::Edit));
+                            }
+                        }
+                    }
+                    if let Some(mut settle) = app.tree.swipe_settle {
+                        if settle.step(dt) {
+                            if settle.delete {
+                                swipe_done = Some((settle.aid, SwipeAction::Delete));
+                            }
+                            app.tree.swipe_settle = None;
+                        } else {
+                            app.tree.swipe_settle = Some(settle);
+                            ui.ctx().request_repaint();
+                        }
+                    }
                     if !primary_down {
-                        // Keep Scroll through TreeView + Move handling this frame.
+                        // Keep Scroll/Swipe through TreeView + Move handling this frame.
                         // Clearing early re-enables DnD on drag_stopped and egui_ltreeview
                         // emits a spurious Move (often empty sources) that records undo.
-                        if app.tree.drag_mode != TreeDragMode::Scroll {
+                        if !matches!(
+                            app.tree.drag_mode,
+                            TreeDragMode::Scroll | TreeDragMode::Swipe(_)
+                        ) {
                             app.tree.drag_mode = TreeDragMode::Idle;
                         }
                     } else if app.tree.drag_mode == TreeDragMode::Idle {
@@ -99,20 +143,39 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                             // interactable(false) so layer_id_at still hits us.
                             let tree_layer = ui.layer_id();
                             let scroll_clip = ui.clip_rect();
-                            let press_on_tree = ui
-                                .ctx()
-                                .input(|i| i.pointer.press_origin())
-                                .is_some_and(|p| {
-                                    scroll_clip.contains(p)
-                                        && ui.ctx().layer_id_at(p) == Some(tree_layer)
-                                });
-                            if press_on_tree {
-                                let on_handle = ui.input(|i| {
-                                    i.pointer.press_origin().is_some_and(|p| {
-                                        app.tree.drag_handles.iter().any(|r| r.contains(p))
-                                    })
-                                });
-                                app.tree.drag_mode = if on_handle {
+                            let (press_origin, latest) =
+                                ui.input(|i| (i.pointer.press_origin(), i.pointer.latest_pos()));
+                            let press_on_tree = press_origin.filter(|p| {
+                                scroll_clip.contains(*p)
+                                    && ui.ctx().layer_id_at(*p) == Some(tree_layer)
+                            });
+                            if let Some(origin) = press_on_tree {
+                                let travel = latest.map_or(egui::Vec2::ZERO, |p| p - origin);
+                                let swipe_row = if tree_swipe::is_swipe(travel) && !running {
+                                    app.tree
+                                        .swipe_rows
+                                        .iter()
+                                        .find(|(_, r)| r.contains(origin))
+                                        .map(|(id, _)| *id)
+                                        // Else folders have no action to delete or edit.
+                                        .filter(|id| {
+                                            app.workspace.macros[idx].root.find_by_id(*id).is_some()
+                                        })
+                                } else {
+                                    None
+                                };
+                                let on_handle =
+                                    app.tree.drag_handles.iter().any(|r| r.contains(origin));
+                                app.tree.drag_mode = if let Some(aid) = swipe_row {
+                                    // A row still sliding out finishes its delete now.
+                                    if let Some(prev) = app.tree.swipe_settle.take() {
+                                        if prev.delete {
+                                            swipe_done = Some((prev.aid, SwipeAction::Delete));
+                                        }
+                                    }
+                                    app.tree.swipe_dx = travel.x;
+                                    TreeDragMode::Swipe(aid)
+                                } else if on_handle {
                                     TreeDragMode::Reorder
                                 } else {
                                     TreeDragMode::Scroll
@@ -140,7 +203,11 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                     } else {
                         app.tree.scroll_vel = 0.0;
                     }
-                    let allow_dnd = !running && app.tree.drag_mode != TreeDragMode::Scroll;
+                    let allow_dnd = !running
+                        && matches!(
+                            app.tree.drag_mode,
+                            TreeDragMode::Idle | TreeDragMode::Reorder
+                        );
 
                     let show_logs = app.settings_ui.settings().save_meta_images;
                     let catalog = &app.workspace.catalog;
@@ -179,6 +246,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         pills_cache: &mut app.tree.pills_cache,
                         paint_revision,
                         show_logs,
+                        swipe: match app.tree.drag_mode {
+                            TreeDragMode::Swipe(aid) if primary_down => {
+                                Some((aid, tree_swipe::rubber_band(app.tree.swipe_dx)))
+                            }
+                            _ => app.tree.swipe_settle.map(|s| (s.aid, s.offset)),
+                        },
                     };
                     // egui_ltreeview sizes to max(available, content) and ratchets
                     // `state.min_width` upward only. A vertical ScrollArea with
@@ -284,11 +357,17 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     }
 
     app.tree.drag_handles.clear();
-    for (_, interaction) in &row_events {
+    app.tree.swipe_rows.clear();
+    for (aid, interaction) in &row_events {
         let r = interaction.drag_handle_rect;
         if r.width() > 0.0 && r.height() > 0.0 {
             app.tree.drag_handles.push(r);
         }
+        app.tree.swipe_rows.push((*aid, interaction.row_rect));
+    }
+    match swipe_done {
+        Some((aid, SwipeAction::Delete)) => delete_action = Some(aid),
+        Some((_, SwipeAction::Edit)) | None => {}
     }
 
     // Row overlay is clickthrough (Sense::hover + geometric clicks). When a
@@ -343,8 +422,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
 
     let pointer = ui.ctx().pointer_interact_pos();
     let mut any_view_hover = false;
+    let swiping =
+        matches!(app.tree.drag_mode, TreeDragMode::Swipe(_)) || app.tree.swipe_settle.is_some();
     // Prefer edit-open from any row; otherwise last hovered wins for view.
-    for (aid, interaction) in &row_events {
+    for (aid, interaction) in row_events.iter().filter(|_| !swiping) {
         if interaction.hovered || interaction.pointer_in_row {
             any_view_hover = true;
         }
@@ -354,6 +435,16 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         }
     }
     action_tooltip::end_hover_pass(&mut app.tree.tooltip, any_view_hover);
+    if let Some((aid, SwipeAction::Edit)) = swipe_done {
+        if let Some(action) = app.workspace.macros[idx].root.find_by_id(aid) {
+            let action = action.clone();
+            let anchor = row_events
+                .iter()
+                .find(|(id, _)| *id == aid)
+                .map_or(egui::pos2(40.0, 40.0), |(_, r)| r.row_rect.left_bottom());
+            app.tree.tooltip.open_edit(&action, anchor);
+        }
+    }
 
     {
         let selected = app.tree.selected_actions.clone();
@@ -454,7 +545,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 ui.memory_mut(|m| m.request_focus(id));
             }
             TreeAction::Move(dnd) => {
-                if running || app.tree.drag_mode == TreeDragMode::Scroll {
+                if running
+                    || matches!(
+                        app.tree.drag_mode,
+                        TreeDragMode::Scroll | TreeDragMode::Swipe(_)
+                    )
+                {
                     continue;
                 }
                 let target_aid = dnd.target;
@@ -464,7 +560,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                 pending_move = Some((dnd.source, target_aid, slot));
             }
             TreeAction::Drag(dnd) => {
-                if app.tree.drag_mode == TreeDragMode::Scroll {
+                if matches!(
+                    app.tree.drag_mode,
+                    TreeDragMode::Scroll | TreeDragMode::Swipe(_)
+                ) {
                     dnd.remove_drop_marker(ui);
                     continue;
                 }
@@ -501,8 +600,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             }
         }
     }
-    // Finish deferred Scroll→Idle now that TreeView Move/Drag are handled.
-    if app.tree.drag_mode == TreeDragMode::Scroll && !ui.input(|i| i.pointer.primary_down()) {
+    // Finish deferred Scroll/Swipe→Idle now that TreeView Move/Drag are handled.
+    if matches!(
+        app.tree.drag_mode,
+        TreeDragMode::Scroll | TreeDragMode::Swipe(_)
+    ) && !ui.input(|i| i.pointer.primary_down())
+    {
         app.tree.drag_mode = TreeDragMode::Idle;
     }
 }
@@ -691,19 +794,30 @@ fn build_tree(
         let validation_error = sqyre_validate::validate_action(action, Some(tree.active_macro))
             .err()
             .map(|e| e.to_string());
-        let interaction = tree_chrome::paint_action_row(
-            ui,
-            action,
-            tree.catalog,
-            tree.icons,
-            tree.theme.known_vars,
-            tree.theme.is_dark,
-            highlight,
-            tree.pills_cache,
-            tree.paint_revision,
-            validation_error.as_deref(),
-            tree.show_logs,
-        );
+        let swipe_offset = tree
+            .swipe
+            .filter(|(id, _)| *id == action_id)
+            .map_or(0.0, |(_, dx)| dx);
+        let row_min = ui.cursor().min;
+        let row_right =
+            ui.clip_rect().right() - crate::widgets::floating_scrollbar_overlay_width(ui);
+        let swipe_rect =
+            egui::Rect::from_min_max(row_min, egui::pos2(row_right, row_min.y + row_h));
+        let interaction = tree_swipe::paint_row(ui, action_id, swipe_rect, swipe_offset, |ui| {
+            tree_chrome::paint_action_row(
+                ui,
+                action,
+                tree.catalog,
+                tree.icons,
+                tree.theme.known_vars,
+                tree.theme.is_dark,
+                highlight,
+                tree.pills_cache,
+                tree.paint_revision,
+                validation_error.as_deref(),
+                tree.show_logs,
+            )
+        });
         if should_scroll {
             ui.scroll_to_rect(interaction.row_rect, Some(egui::Align::Center));
             *scrolled_follow = true;
