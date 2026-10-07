@@ -58,6 +58,10 @@ android/ (Kotlin shell; these APIs are not reachable from Rust)
 
 Platform code lives in `#[cfg(target_os = "android")]` modules behind the same OS-neutral names desktop uses (`OsCapturer`, `OsWindowFocuser`, `OsAutomation`). Android is not `target_os = "linux"`, so Linux-only modules stay out without extra gating.
 
+### Lifecycle
+
+winit 0.30 ignores `onDestroy` and cannot create a second event loop in one process, while `NativeActivity.onDestroy` waits for `android_main` to return. The manifest declares every config change it can, so rotation, font scale, locale and similar changes reach the running UI. Android still recreates the activity on some changes that cannot be declared, such as theme overlay updates. For those, `MainActivity.onDestroy` starts a fresh task and kills the process; a real finish just kills it. Anything running in the process stops, including a macro run and the projection.
+
 ### Frames
 
 The shell offers every `ImageReader` frame to Rust. Rust copies a frame only while a capture asked within the last 2 s, so an idle projection costs nothing. The first capture after an idle gap drops the stale frame and waits up to 500 ms for a new one. `capture_rect_rgb` crops straight out of the packed RGBA frame. There is no RGBA round-trip.

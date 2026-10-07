@@ -8,6 +8,7 @@ import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Process
 import android.provider.OpenableColumns
 import android.util.Log
 import android.view.View
@@ -58,8 +59,18 @@ class MainActivity : NativeActivity() {
         super.onStop()
     }
 
+    /**
+     * winit can neither leave nor recreate its event loop, so `NativeActivity.onDestroy` would
+     * wait forever for `android_main` to return. End the process instead; when Android is only
+     * recreating the activity (a theme overlay or undeclared config change), start a fresh one.
+     */
     override fun onDestroy() {
         SqyreBridge.detach(this)
+        if (!isFinishing) {
+            Log.w(TAG, "activity recreated; restarting the process")
+            startActivity(Intent.makeRestartActivityTask(componentName))
+        }
+        Process.killProcess(Process.myPid())
         super.onDestroy()
     }
 
