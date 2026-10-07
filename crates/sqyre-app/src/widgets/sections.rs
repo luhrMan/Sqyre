@@ -9,7 +9,7 @@ const PANE_TAG: &str = "sqyre_split_pane";
 /// Vertical room a separator claims (matches `egui::Separator` default spacing).
 const SEPARATOR_SPACING: f32 = 6.0;
 /// Content inset from the splitter line, so text and widgets never touch it.
-const PANE_PAD: f32 = SPACE_4;
+pub const PANE_PAD: f32 = SPACE_4;
 /// How far a [`tinted_section`] fill reaches past its content on each side.
 const TINT_PAD: f32 = SPACE_4;
 

@@ -253,7 +253,7 @@ pub const DE_NAME: &str =
 pub const DE_RUNNING_PROGRAM: &str =
     "Process and window title that must own focus for this program's overlay buttons to show.";
 pub const DE_PROGRAM_MACRO_TAGS: &str =
-    "When Settings → while focused is on, these tags become the hotkey selection while this program owns focus. Same labels as macro tags.";
+    "When Settings → Macros → Hotkeys → while focused is on, these tags become the hotkey selection while this program owns focus. Same labels as macro tags.";
 pub const DE_COLS: &str =
     "Grid columns this item occupies in a collection. Image Search uses this footprint (0 = 1).";
 pub const DE_ROWS: &str =
