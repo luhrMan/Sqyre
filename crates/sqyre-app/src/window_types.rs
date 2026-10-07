@@ -29,6 +29,17 @@ impl WindowInfo {
         };
         format!("{}  ({} — {})", title, self.process_name, self.process_path)
     }
+
+    /// Program process binding: path, else process name, else title.
+    pub fn process_key(&self) -> String {
+        if !self.process_path.trim().is_empty() {
+            self.process_path.clone()
+        } else if !self.process_name.trim().is_empty() {
+            self.process_name.clone()
+        } else {
+            self.title.clone()
+        }
+    }
 }
 
 #[cfg(feature = "native-runtime")]

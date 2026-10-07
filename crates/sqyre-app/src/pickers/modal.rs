@@ -370,14 +370,14 @@ pub fn show_active_picker(
                         if let Some(&i) = filtered.get(sel) {
                             let w = &windows[i];
                             *window_title = w.title.clone();
-                            *process_path = window_process_key(w);
+                            *process_path = w.process_key();
                             save = true;
                         }
                     } else if matches!(nav, ListNavAction::Up | ListNavAction::Down) {
                         if let Some(&i) = filtered.get(sel) {
                             let w = &windows[i];
                             *window_title = w.title.clone();
-                            *process_path = window_process_key(w);
+                            *process_path = w.process_key();
                             *scroll_to_selection = true;
                         }
                     }
@@ -447,7 +447,7 @@ pub fn show_active_picker(
                                 }
                                 if resp.clicked() {
                                     *window_title = w.title.clone();
-                                    *process_path = window_process_key(w);
+                                    *process_path = w.process_key();
                                 }
                             }
                             if !loading {
@@ -571,14 +571,4 @@ pub fn show_active_picker(
         *picker = ActivePicker::None;
     }
     result
-}
-
-fn window_process_key(w: &crate::window_types::WindowInfo) -> String {
-    if !w.process_path.trim().is_empty() {
-        w.process_path.clone()
-    } else if !w.process_name.trim().is_empty() {
-        w.process_name.clone()
-    } else {
-        w.title.clone()
-    }
 }
