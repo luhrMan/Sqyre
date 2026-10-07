@@ -24,11 +24,28 @@ class MainActivity : NativeActivity() {
         Tessdata.install(this)
         super.onCreate(savedInstanceState)
         reportInsets()
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+    }
+
+    /** True when Android 13+ still has to ask for notifications. */
+    fun notificationsAskable(): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-        ) {
-            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+
+    /** Show the notification permission dialog; answers via [SqyreBridge.nativeOnNotificationsAnswered]. */
+    fun requestNotifications() {
+        if (!notificationsAskable()) {
+            SqyreBridge.nativeOnNotificationsAnswered()
+            return
         }
+        requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        if (requestCode == REQUEST_NOTIFICATIONS) {
+            SqyreBridge.nativeOnNotificationsAnswered()
+            return
+        }
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
 
     override fun onStart() {

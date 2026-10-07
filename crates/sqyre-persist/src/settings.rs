@@ -585,6 +585,9 @@ pub struct UserSettings {
     /// Applied at process start (`build_global`); changing it needs a restart.
     #[serde(default = "default_worker_threads")]
     pub worker_threads: i32,
+    /// First-start permissions popup was confirmed; later launches skip it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub permissions_intro_done: bool,
 }
 
 fn default_hide_recording() -> bool {
@@ -688,6 +691,7 @@ impl Default for UserSettings {
             macro_list_width: DEFAULT_MACRO_LIST_WIDTH,
             last_selected_macro: String::new(),
             worker_threads: default_worker_threads(),
+            permissions_intro_done: false,
         }
     }
 }
@@ -1083,6 +1087,7 @@ mod tests {
             ui_scale: 1.2,
             hotkey_tag_filters: vec!["combat".into()],
             last_selected_macro: "farm loop".into(),
+            permissions_intro_done: true,
             ..Default::default()
         };
         s.action_colors.detection = "#aabbcc".into();
@@ -1131,6 +1136,7 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
         assert_eq!(loaded.hotkey_tag_filters, vec!["combat".to_string()]);
         assert_eq!(loaded.last_selected_macro, "farm loop");
+        assert!(loaded.permissions_intro_done);
         assert!(!loaded.hotkey_tags_while_focused);
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON

@@ -150,6 +150,10 @@ impl SqyreApp {
                 target_os = "linux"
             ))]
             portal_probe: crate::PortalProbe::finished(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            hotkeys_deferred: None,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            permissions_intro: None,
         };
         if let Some(m) = app.workspace.macros.first() {
             app.workspace.macro_meta.sync_selection(0, m);

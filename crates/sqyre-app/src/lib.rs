@@ -59,6 +59,8 @@ mod overlay_icons {
 mod overlay_visibility;
 mod paint_ctx;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+mod permissions_intro;
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod permissions_panel;
 mod pickers;
 #[cfg(feature = "native-runtime")]
@@ -311,6 +313,20 @@ fn install_x11_secondary_error_hook() {
     }));
 }
 
+/// Hold hotkeys back while the first-start permissions popup is up, and on Wayland until
+/// the deferred ScreenCast picker has closed.
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+fn defer_hotkeys_at_startup(intro_pending: bool) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        intro_pending || sqyre_capture::shared_capturer_open_may_block()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        intro_pending
+    }
+}
+
 /// Sync macros/catalog into `db` and write `db.yaml`. The single database-save
 /// implementation shared by [`SqyreApp::persist_database`] and
 /// [`SqyreApp::persist_database_for_editor`] so the two call sites cannot drift.
@@ -355,9 +371,6 @@ pub(crate) struct PortalProbe {
     /// Do not start portal ScreenCast before this instant, so the first frames
     /// stay responsive.
     not_before: Option<std::time::Instant>,
-    /// Wayland: start evdev after the ScreenCast picker so device fds do not
-    /// steal clicks.
-    hotkeys_deferred: Option<HotkeyCallbacks>,
 }
 
 #[cfg(all(
@@ -451,6 +464,13 @@ pub struct SqyreApp {
         target_os = "linux"
     ))]
     pub(crate) portal_probe: PortalProbe,
+    /// Hotkeys not started yet: until the first-start permissions popup is confirmed,
+    /// and on Wayland until after the ScreenCast picker (evdev fds would steal its clicks).
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    pub(crate) hotkeys_deferred: Option<HotkeyCallbacks>,
+    /// First-start permissions popup; `None` once confirmed and every prompt was shown.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    pub(crate) permissions_intro: Option<permissions_intro::PermissionsIntro>,
     /// Background update check / download (native only).
     #[cfg(not(target_arch = "wasm32"))]
     update: update::UpdateManager,
@@ -510,12 +530,11 @@ impl SqyreApp {
                 crate::hotkey_wake::queue_macro_hotkey(&pending_for_cb, &repaint_for_cb, name);
             }),
         };
-        #[cfg(all(
-            not(target_arch = "wasm32"),
-            feature = "native-runtime",
-            target_os = "linux"
-        ))]
-        let hotkeys_deferred = if sqyre_capture::shared_capturer_open_may_block() {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        let permissions_intro =
+            (!settings.permissions_intro_done).then(permissions_intro::PermissionsIntro::new);
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        let hotkeys_deferred = if defer_hotkeys_at_startup(permissions_intro.is_some()) {
             Some(hotkey_callbacks)
         } else {
             if let Err(e) = hotkeys.start(hotkey_callbacks) {
@@ -523,10 +542,7 @@ impl SqyreApp {
             }
             None
         };
-        #[cfg(all(
-            not(target_arch = "wasm32"),
-            not(all(feature = "native-runtime", target_os = "linux"))
-        ))]
+        #[cfg(all(not(target_arch = "wasm32"), not(feature = "native-runtime")))]
         if let Err(e) = hotkeys.start(hotkey_callbacks) {
             crate::log::warn(format!("failed to start global hotkeys: {e}"));
         }
@@ -695,10 +711,11 @@ impl SqyreApp {
                 feature = "native-runtime",
                 target_os = "linux"
             ))]
-            portal_probe: PortalProbe {
-                hotkeys_deferred,
-                ..PortalProbe::default()
-            },
+            portal_probe: PortalProbe::default(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            hotkeys_deferred,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            permissions_intro,
             #[cfg(not(target_arch = "wasm32"))]
             update: update::UpdateManager::default(),
         };
@@ -710,13 +727,9 @@ impl SqyreApp {
         app
     }
 
-    #[cfg(all(
-        not(target_arch = "wasm32"),
-        feature = "native-runtime",
-        target_os = "linux"
-    ))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     pub(crate) fn start_deferred_hotkeys(&mut self) {
-        let Some(callbacks) = self.portal_probe.hotkeys_deferred.take() else {
+        let Some(callbacks) = self.hotkeys_deferred.take() else {
             return;
         };
         if let Err(e) = self.hotkeys.start(callbacks) {
@@ -923,6 +936,10 @@ impl eframe::App for SqyreApp {
 
         // Modal sits above painted Sqyre chrome; skip shortcuts/palette while open.
         if self.macro_yaml_builder.is_open() || self.macro_prompt_builder.is_open() {
+            return;
+        }
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        if self.permissions_intro.is_some() {
             return;
         }
         ui_overlays::handle_shortcuts(self, ui);

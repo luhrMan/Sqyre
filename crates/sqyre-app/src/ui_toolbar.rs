@@ -73,7 +73,17 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 app.macro_list_open = !app.macro_list_open;
             }
             crate::widgets::section_separator(ui);
-            if toolbar_icon(ui, "⚙", "Settings", true).clicked() {
+            let permissions_missing = app.settings_ui.permissions_missing();
+            let settings_tip = if permissions_missing {
+                "Settings: a permission is missing"
+            } else {
+                "Settings"
+            };
+            let settings_btn = toolbar_icon(ui, "⚙", settings_tip, true);
+            if permissions_missing {
+                crate::widgets::warn_badge(ui, settings_btn.rect);
+            }
+            if settings_btn.clicked() {
                 app.settings_ui.request_open(ui.ctx());
             }
             if toolbar_icon(ui, "📁", "Data Editor", true).clicked() {

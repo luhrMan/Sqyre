@@ -14,6 +14,7 @@ use jni::objects::{GlobalRef, JByteArray, JByteBuffer, JClass, JObject, JString,
 use jni::sys::{jboolean, jint};
 use jni::{JNIEnv, JavaVM};
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
 
 struct Bridge {
@@ -224,6 +225,28 @@ pub fn request_projection() -> Result<(), AndroidError> {
     })
 }
 
+/// Notification permission dialog shown by [`request_notifications`] and not yet answered.
+static NOTIFICATIONS_PROMPT_OPEN: AtomicBool = AtomicBool::new(false);
+
+/// Show the notification permission dialog (Android 13+). Returns `false` when there was
+/// nothing to ask, so no answer will follow.
+pub fn request_notifications() -> Result<bool, AndroidError> {
+    NOTIFICATIONS_PROMPT_OPEN.store(true, Ordering::Release);
+    let asked = with_bridge(|env, class| {
+        env.call_static_method(class, "requestNotifications", "()Z", &[])?
+            .z()
+    });
+    if !matches!(asked, Ok(true)) {
+        NOTIFICATIONS_PROMPT_OPEN.store(false, Ordering::Release);
+    }
+    asked
+}
+
+/// True while the dialog from [`request_notifications`] is still up.
+pub fn notifications_prompt_open() -> bool {
+    NOTIFICATIONS_PROMPT_OPEN.load(Ordering::Acquire)
+}
+
 pub fn accessibility_enabled() -> Result<bool, AndroidError> {
     with_bridge(|env, class| {
         env.call_static_method(class, "accessibilityEnabled", "()Z", &[])?
@@ -234,6 +257,21 @@ pub fn accessibility_enabled() -> Result<bool, AndroidError> {
 pub fn open_accessibility_settings() -> Result<(), AndroidError> {
     with_bridge(|env, class| {
         env.call_static_method(class, "openAccessibilitySettings", "()V", &[])?
+            .v()
+    })
+}
+
+/// False when the user blocked Sqyre's notifications, which hides Stop and Continue.
+pub fn notifications_enabled() -> Result<bool, AndroidError> {
+    with_bridge(|env, class| {
+        env.call_static_method(class, "notificationsEnabled", "()Z", &[])?
+            .z()
+    })
+}
+
+pub fn open_notification_settings() -> Result<(), AndroidError> {
+    with_bridge(|env, class| {
+        env.call_static_method(class, "openNotificationSettings", "()V", &[])?
             .v()
     })
 }
@@ -327,6 +365,18 @@ pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnProjectionStopped(
         frames().mark_stopped();
         Ok(())
     });
+}
+
+#[no_mangle]
+#[allow(
+    non_snake_case,
+    reason = "JNI symbol names are fixed by the Kotlin class"
+)]
+pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnNotificationsAnswered(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    NOTIFICATIONS_PROMPT_OPEN.store(false, Ordering::Release);
 }
 
 #[no_mangle]

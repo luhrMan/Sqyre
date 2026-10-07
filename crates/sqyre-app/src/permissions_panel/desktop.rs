@@ -10,13 +10,17 @@ use sqyre_probe::{
 };
 use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 enum ProbeMsg {
     Done(Result<Vec<PermissionItem>, String>),
 }
 
 const IN_APP_PROBE_TIMEOUT: Duration = Duration::from_secs(6);
+/// Live grant checks read portal tokens from disk; do not repeat them every frame.
+const LIVE_STATUS_INTERVAL: Duration = Duration::from_secs(1);
+/// Minimum gap between re-probes triggered by the window regaining focus.
+const FOCUS_REPROBE_INTERVAL: Duration = Duration::from_secs(30);
 
 #[derive(Default)]
 pub struct PermissionsPanel {
@@ -27,9 +31,47 @@ pub struct PermissionsPanel {
     started_once: bool,
     /// Re-run once after the deferred portal capturer finishes opening.
     refresh_when_capture_ready: bool,
+    live_status_at: Option<Instant>,
+    probed_at: Option<Instant>,
+    was_focused: bool,
+    missing: bool,
 }
 
 impl PermissionsPanel {
+    /// Background work that keeps [`Self::has_missing`] current while Settings is closed.
+    pub fn tick(&mut self, ctx: &egui::Context) {
+        self.poll(ctx);
+        self.ensure_loaded(ctx);
+        self.maybe_refresh_after_capture(ctx);
+        let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
+        let regained = focused && !self.was_focused;
+        self.was_focused = focused;
+        if regained
+            && self
+                .probed_at
+                .is_none_or(|t| t.elapsed() >= FOCUS_REPROBE_INTERVAL)
+        {
+            self.refresh(ctx);
+        }
+        if self
+            .live_status_at
+            .is_none_or(|t| t.elapsed() >= LIVE_STATUS_INTERVAL)
+        {
+            self.update_live_status();
+        }
+    }
+
+    /// At least one permission still needs the user's action.
+    pub fn has_missing(&self) -> bool {
+        self.missing
+    }
+
+    fn update_live_status(&mut self) {
+        apply_live_capture_status(&mut self.items);
+        self.missing = any_missing(&self.items);
+        self.live_status_at = Some(Instant::now());
+    }
+
     pub fn poll(&mut self, ctx: &egui::Context) {
         let Some(rx) = self.rx.as_ref() else {
             return;
@@ -39,10 +81,10 @@ impl PermissionsPanel {
                 self.rx = None;
                 self.running = false;
                 match result {
-                    Ok(mut items) => {
-                        apply_live_capture_status(&mut items);
+                    Ok(items) => {
                         self.items = items;
                         self.error = None;
+                        self.update_live_status();
                     }
                     Err(e) => self.error = Some(e),
                 }
@@ -73,6 +115,7 @@ impl PermissionsPanel {
         }
         self.running = true;
         self.error = None;
+        self.probed_at = Some(Instant::now());
         self.refresh_when_capture_ready = sqyre_capture::shared_capturer_open_may_block()
             && sqyre_capture::shared_capturer_if_ready().is_none();
         let (tx, rx) = mpsc::channel();
@@ -131,7 +174,7 @@ impl PermissionsPanel {
         self.poll(ctx);
         self.ensure_loaded(ctx);
         self.maybe_refresh_after_capture(ctx);
-        apply_live_capture_status(&mut self.items);
+        self.update_live_status();
         if system_shortcuts_status() == SystemShortcutsStatus::Waiting {
             ctx.request_repaint_after(Duration::from_millis(250));
         }
@@ -190,13 +233,13 @@ impl PermissionsPanel {
                 PermissionRowAction::ShareScreen => {
                     sqyre_capture::request_portal_screencast_picker();
                     self.refresh_when_capture_ready = true;
-                    apply_live_capture_status(&mut self.items);
+                    self.update_live_status();
                     ctx.request_repaint();
                 }
                 PermissionRowAction::Revoke => {
                     sqyre_capture::revoke_portal_grants();
                     mark_portal_permissions_revoked(&mut self.items);
-                    apply_live_capture_status(&mut self.items);
+                    self.update_live_status();
                     self.refresh(ctx);
                     // `refresh` waits for a capturer that we just dropped on purpose.
                     self.refresh_when_capture_ready = false;
@@ -211,6 +254,13 @@ impl PermissionsPanel {
             ui.add_space(crate::theme::SPACE_12);
         }
     }
+}
+
+/// Only `Needed` counts: `Checking`, `NotRequired`, and `Unavailable` are not the user's to fix.
+fn any_missing(items: &[PermissionItem]) -> bool {
+    items
+        .iter()
+        .any(|item| item.eligibility == PermissionEligibility::Needed)
 }
 
 fn apply_live_capture_status(items: &mut [PermissionItem]) {
@@ -319,29 +369,14 @@ fn paint_permission_row(
 ) -> PermissionRowAction {
     let mut action = PermissionRowAction::None;
     let portal_session = sqyre_capture::shared_capturer_open_may_block();
-    egui::Frame::NONE
-        .fill(crate::theme::overlay_panel_fill())
-        .stroke(egui::Stroke::new(
-            1.0,
-            ui.visuals().widgets.noninteractive.bg_stroke.color,
-        ))
-        .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::same(10))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let title = ui.label(RichText::new(item.title).strong());
-                if let Some(tip) = &item.tooltip {
-                    title.on_hover_text(tip);
-                } else {
-                    title.on_hover_text(item.summary);
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.colored_label(
-                        eligibility_color(item.eligibility),
-                        item.eligibility.label(),
-                    );
-                });
-            });
+    super::row_frame(ui).show(ui, |ui| {
+            super::row_header(
+                ui,
+                item.title,
+                item.tooltip.as_deref().unwrap_or(item.summary),
+                item.eligibility.label(),
+                eligibility_color(item.eligibility),
+            );
             ui.label(RichText::new(item.summary).weak().small());
             if let Some(detail) = &item.detail {
                 ui.add_space(crate::theme::SPACE_4);
@@ -443,6 +478,22 @@ mod tests {
             copy_command: None,
             tooltip: None,
         }
+    }
+
+    #[test]
+    fn only_needed_counts_as_missing() {
+        let mut item = granted_item("screen_recording");
+        for (eligibility, missing) in [
+            (PermissionEligibility::Granted, false),
+            (PermissionEligibility::NotRequired, false),
+            (PermissionEligibility::Unavailable, false),
+            (PermissionEligibility::Checking, false),
+            (PermissionEligibility::Needed, true),
+        ] {
+            item.eligibility = eligibility;
+            assert_eq!(any_missing(std::slice::from_ref(&item)), missing);
+        }
+        assert!(!any_missing(&[]));
     }
 
     #[test]

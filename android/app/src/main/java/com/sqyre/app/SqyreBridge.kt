@@ -1,5 +1,6 @@
 package com.sqyre.app
 
+import android.app.NotificationManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -62,6 +63,9 @@ object SqyreBridge {
     )
 
     @JvmStatic external fun nativeOnProjectionStopped()
+
+    /** The notification permission dialog from [requestNotifications] closed (or was not needed). */
+    @JvmStatic external fun nativeOnNotificationsAnswered()
 
     /** [MainActivity] started or stopped; frames seen while hidden become the editor backdrop. */
     @JvmStatic external fun nativeOnShellVisible(visible: Boolean)
@@ -224,6 +228,15 @@ object SqyreBridge {
         act.runOnUiThread { act.requestProjection() }
     }
 
+    /** Ask for notifications; false when there is nothing to ask (no answer will follow). */
+    @JvmStatic
+    fun requestNotifications(): Boolean {
+        val act = activity.get() ?: return false
+        if (!act.notificationsAskable()) return false
+        act.runOnUiThread { act.requestNotifications() }
+        return true
+    }
+
     @JvmStatic
     fun accessibilityEnabled(): Boolean = SqyreAccessibilityService.instance != null
 
@@ -232,6 +245,21 @@ object SqyreBridge {
         val ctx = appContext ?: return
         ctx.startActivity(
             Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
+    /** False when the user blocked Sqyre's notifications (that hides Stop / Continue). */
+    @JvmStatic
+    fun notificationsEnabled(): Boolean =
+        appContext?.getSystemService(NotificationManager::class.java)?.areNotificationsEnabled() ?: false
+
+    @JvmStatic
+    fun openNotificationSettings() {
+        val ctx = appContext ?: return
+        ctx.startActivity(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
     }
 

@@ -73,9 +73,7 @@ impl SettingsSection {
             Self::Macros => "How macros run, record, respond to hotkeys, and search the screen.",
             Self::Sound => "Cue sounds for macros and UI actions.",
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            Self::Permissions => {
-                "Desktop access for capture, recording, hotkeys, and macro playback."
-            }
+            Self::Permissions => "Access Sqyre needs for capture, input, and macro playback.",
             Self::Data => {
                 "Data folder location and zip backups of macros, settings, images, and variables."
             }
@@ -96,6 +94,17 @@ impl SettingsSection {
             #[cfg(not(target_arch = "wasm32"))]
             Self::Updates => section_visible(q, SECTION_UPDATES, UPDATES_SETTINGS),
             Self::Appearance => appearance_section_visible(q),
+        }
+    }
+
+    fn is_permissions(self) -> bool {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        {
+            self == Self::Permissions
+        }
+        #[cfg(not(all(not(target_arch = "wasm32"), feature = "native-runtime")))]
+        {
+            false
         }
     }
 
@@ -161,6 +170,24 @@ impl SettingsUi {
 
     pub fn settings_mut(&mut self) -> &mut UserSettings {
         &mut self.settings
+    }
+
+    /// Background permission checks behind the missing-permission badge.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    pub fn tick_permissions(&mut self, ctx: &egui::Context) {
+        self.permissions.tick(ctx);
+    }
+
+    /// At least one permission in Settings → Permissions needs the user's action.
+    pub fn permissions_missing(&self) -> bool {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        {
+            self.permissions.has_missing()
+        }
+        #[cfg(not(all(not(target_arch = "wasm32"), feature = "native-runtime")))]
+        {
+            false
+        }
     }
 
     pub fn save_settings(&mut self) -> Result<(), String> {
@@ -419,12 +446,20 @@ impl SettingsUi {
             splitter,
         } = crate::widgets::split_view(ui, body_rect, sidebar_width(ui));
 
+        let permissions_missing = self.permissions_missing();
         for section in visible_sections.iter().copied() {
-            if left_ui
-                .selectable_label(self.active_section == section, section.label())
-                .on_hover_text("↑↓ to switch sections")
-                .clicked()
-            {
+            let warn = permissions_missing && section.is_permissions();
+            let response =
+                left_ui.selectable_label(self.active_section == section, section.label());
+            if warn {
+                crate::widgets::warn_badge(&mut left_ui, response.rect);
+            }
+            let tip = if warn {
+                "A permission is missing. ↑↓ to switch sections"
+            } else {
+                "↑↓ to switch sections"
+            };
+            if response.on_hover_text(tip).clicked() {
                 self.active_section = section;
             }
         }
@@ -1778,6 +1813,8 @@ const PERMISSIONS_PANEL: &[&str] = &[
     "wayland",
     "evdev",
     "revoke",
+    "accessibility",
+    "notifications",
 ];
 
 const DATA_LOCATION: &[&str] = &[

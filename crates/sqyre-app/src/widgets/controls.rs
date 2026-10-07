@@ -70,6 +70,21 @@ fn icon_button_inner(
     response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
 
+/// Small `⚠` over the top-right corner of `rect` (e.g. a button's response rect).
+///
+/// Color alone is not enough: callers also change the hover text to say what is wrong.
+pub fn warn_badge(ui: &mut egui::Ui, rect: egui::Rect) {
+    let font_id = egui::FontId::proportional(ui.text_style_height(&egui::TextStyle::Small));
+    let side = font_id.size;
+    let badge = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - side * 0.2, rect.top() + side * 0.3),
+        Vec2::splat(side),
+    );
+    ui.painter()
+        .circle_filled(badge.center(), side * 0.55, ui.visuals().panel_fill);
+    paint_text_centered(ui, badge, "⚠", font_id, crate::theme::warn_fg());
+}
+
 /// Named font family for Phosphor Fill (outline Regular stays on Proportional).
 pub const PHOSPHOR_FILL_FAMILY: &str = "phosphor-fill";
 

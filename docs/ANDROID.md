@@ -29,6 +29,7 @@ A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, exe
 | Color and macro recording | Not yet (phase 5) |
 | Data dir, zip backups, import / export | App-private storage: `internal_data_path()` is the home for `~/.sqyre` and `~/.config/sqyre`. Image and zip picks use the Storage Access Framework; the chosen document is copied into the app cache first. Folder picks are not offered |
 | Self-update | Desktop-only. A new version is a new APK |
+| Settings → Permissions | Screen recording, the accessibility service and notifications, each with a button that opens the matching prompt or system settings. Accessibility and notifications are rechecked when the page opens and when Sqyre returns to the front (`nativeOnShellVisible`); screen recording state is read live |
 | Editor | Current egui shell. A later pass fixes layouts that are unusable with touch |
 
 Multi-monitor desktops, global hooks (`rdev`, evdev, Win32 low-level hooks), X11 overlays and replacing the running binary are desktop-only.

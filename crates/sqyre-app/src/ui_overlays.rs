@@ -279,6 +279,31 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             .unwrap_or_else(|| ctx.content_rect().center());
         app.insert_blank_action(action, anchor);
     }
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    show_permissions_intro(app, ctx);
+}
+
+/// First-start permissions popup. Confirming saves the flag; once every prompt has been
+/// shown the deferred startup work (portal probe on Linux, hotkeys) resumes.
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+fn show_permissions_intro(app: &mut SqyreApp, ctx: &egui::Context) {
+    let Some(intro) = app.permissions_intro.as_mut() else {
+        return;
+    };
+    if intro.show(ctx) {
+        app.settings_ui.settings_mut().permissions_intro_done = true;
+        if let Err(e) = app.settings_ui.save_settings() {
+            crate::log::warn(format!("save settings after permissions intro: {e}"));
+        }
+    }
+    if !intro.finished() {
+        return;
+    }
+    app.permissions_intro = None;
+    // Linux starts hotkeys from `poll_deferred_capture_probe`, after the portal picker.
+    #[cfg(not(target_os = "linux"))]
+    app.start_deferred_hotkeys();
+    ctx.request_repaint();
 }
 
 /// Open portal ScreenCast after the window is up (startup must not block on the picker).
@@ -295,7 +320,7 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
     use std::sync::mpsc::TryRecvError;
     use std::time::Duration;
 
-    if app.portal_probe.finished {
+    if app.portal_probe.finished || app.permissions_intro.is_some() {
         return;
     }
 
@@ -375,6 +400,10 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         target_os = "linux"
     ))]
     poll_deferred_capture_probe(app, ctx);
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    if app.permissions_intro.is_none() {
+        app.settings_ui.tick_permissions(ctx);
+    }
 
     crate::widgets::sync_viewport_window_scale(
         ctx,
