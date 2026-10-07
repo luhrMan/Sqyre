@@ -272,12 +272,6 @@ pub fn searchable_combo_with(
     mut on_option_hover: Option<&mut ComboOptionHover<'_>>,
     mut option_icon: Option<&mut ComboOptionIcon<'_>>,
 ) -> egui::Response {
-    // Match `ComboBox::from_id_salt(salt)` → `make_persistent_id(salt)`.
-    let button_id = ui.make_persistent_id(&id_salt);
-    let popup_id = button_id.with("popup");
-    let search_id = button_id.with("search");
-    let focused_id = button_id.with("search_focused");
-
     let display = if value.is_empty() {
         empty_text.to_string()
     } else {
@@ -294,6 +288,14 @@ pub fn searchable_combo_with(
     let mut changed = false;
     let response = ui
         .horizontal(|ui| {
+            // Must match `ComboBox::from_id_salt(salt)` → `make_persistent_id(IdSalt::new(salt))`
+            // on this horizontal child `ui` (its id differs from the caller's). A mismatch
+            // re-requests search focus every frame, which flickers the Android soft keyboard.
+            let button_id = ui.make_persistent_id(egui::IdSalt::new(&id_salt));
+            let popup_id = button_id.with("popup");
+            let search_id = button_id.with("search");
+            let focused_id = button_id.with("search_focused");
+
             if let Some(tex) = closed_icon.as_ref() {
                 crate::icon_cache::paint_process_icon(
                     ui,
@@ -476,5 +478,42 @@ mod tests {
             );
         })
         .drop_without_applying_deltas();
+    }
+
+    #[test]
+    fn searchable_combo_focuses_search_once_and_keeps_query() {
+        use egui_kittest::kittest::Queryable;
+
+        let options = vec!["apple".to_string(), "banana".to_string()];
+        let mut harness = egui_kittest::Harness::new_ui_state(
+            |ui, value: &mut String| {
+                searchable_combo(ui, "fruit", value, &options, "Pick", None);
+            },
+            String::new(),
+        );
+        harness.run();
+        harness.get_by_role(egui::accesskit::Role::ComboBox).click();
+        harness.run();
+
+        // Re-requesting focus every frame interrupts IME, which flickers the Android keyboard.
+        for _ in 0..3 {
+            harness.step();
+            let ime = harness.output().platform_output.ime.as_ref();
+            assert!(ime.is_some(), "search field should own the IME");
+            assert!(
+                !ime.is_some_and(|i| i.should_interrupt_composition),
+                "focus re-requested while the popup stays open"
+            );
+        }
+
+        harness
+            .get_by_role(egui::accesskit::Role::TextInput)
+            .type_text("ban");
+        harness.run();
+        assert!(harness.query_by_label("banana").is_some());
+        assert!(
+            harness.query_by_label("apple").is_none(),
+            "query should persist across frames"
+        );
     }
 }
