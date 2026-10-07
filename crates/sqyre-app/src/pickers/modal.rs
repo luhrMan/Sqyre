@@ -129,6 +129,7 @@ pub fn show_active_picker(
                             None,
                             &mut header_click,
                             compact_program_headers,
+                            false,
                             None,
                             sqyre_domain::CatalogItemSort::NameAsc,
                             &[],

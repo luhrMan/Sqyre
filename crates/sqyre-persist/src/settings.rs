@@ -495,6 +495,9 @@ pub struct UserSettings {
     /// In catalog lists, programs with a process icon omit the name (icon + child count only).
     #[serde(default = "default_compact_program_headers")]
     pub compact_program_headers: bool,
+    /// Data Editor lists keep program headers that have no entries for the current tab.
+    #[serde(default)]
+    pub show_empty_program_headers: bool,
     /// Gold border just inside the main window edge.
     #[serde(default = "default_window_border")]
     pub window_border: bool,
@@ -654,6 +657,7 @@ impl Default for UserSettings {
             save_meta_images: false,
             highlight_active_action: false,
             compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
+            show_empty_program_headers: false,
             window_border: DEFAULT_WINDOW_BORDER,
             run_button_glow: DEFAULT_RUN_BUTTON_GLOW,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
@@ -1073,6 +1077,7 @@ mod tests {
         let mut s = UserSettings {
             save_meta_images: true,
             highlight_active_action: true,
+            show_empty_program_headers: true,
             image_search_close_matches_distance: 25,
             image_search_variant_exit_early: false,
             ui_scale: 1.2,

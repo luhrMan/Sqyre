@@ -1408,6 +1408,20 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        if setting_visible(q, section_hit, SETTING_EMPTY_HEADERS)
+            && ui
+                .checkbox(
+                    &mut self.settings.show_empty_program_headers,
+                    "Show empty program headers",
+                )
+                .on_hover_text(
+                    "In the Data Editor lists, keep a header for every program even when it has nothing on that tab (for example, no items or no points).",
+                )
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
         if setting_visible(q, section_hit, SETTING_WINDOW_BORDER)
             && ui
                 .checkbox(&mut self.settings.window_border, "Window border")
@@ -1722,6 +1736,7 @@ const SETTING_UPDATE_ACTIONS: &[&str] = &[
 ];
 
 const SETTING_COMPACT_HEADERS: &[&str] = &["compact", "program headers", "icons", "headers"];
+const SETTING_EMPTY_HEADERS: &[&str] = &["empty", "program headers", "headers", "hide"];
 const SETTING_WINDOW_BORDER: &[&str] = &["window border", "border", "outline"];
 const SETTING_RUN_GLOW: &[&str] = &["run button", "glow", "pulse", "animation"];
 const SETTING_FONT_SIZE: &[&str] = &["font size", "font", "text size"];
@@ -1757,6 +1772,7 @@ const UPDATES_SETTINGS: &[&[&str]] = &[
 ];
 const APPEARANCE_SETTINGS: &[&[&str]] = &[
     SETTING_COMPACT_HEADERS,
+    SETTING_EMPTY_HEADERS,
     SETTING_WINDOW_BORDER,
     SETTING_RUN_GLOW,
     SETTING_FONT_SIZE,
