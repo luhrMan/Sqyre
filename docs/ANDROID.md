@@ -20,7 +20,7 @@ A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, exe
 | Key down / key up | `Unsupported` for every key name. Android cannot inject hardware keys into other apps |
 | Type | Appends to the focused editable field with `ACTION_SET_TEXT`. Custom views that only listen for key events will not see it |
 | Clipboard | `ClipboardManager` |
-| Focus window | `process_path` is the app package. A non-empty `window_title` must equal the app label. The app is launched with an `Intent`. The window picker lists launchable apps (label as title, package as path); the active window is the foreground package seen by the accessibility service |
+| Focus window | `process_path` is the app package. A non-empty `window_title` must equal the app label. The app is launched with an `Intent`. The window picker lists launchable apps (label as title, package as path, launcher icon as the process icon, saved with the program like desktop icons); the active window is the foreground package seen by the accessibility service |
 | Pause continue-key, macro hotkeys, failsafe chord | The process cannot hear global keys. Stop and Continue are actions on the screen-recording notification (Continue ends a single-key Pause; multi-key Pause waits are `Unsupported`), plus the in-app Stop button |
 | Overlay buttons, tray | Not yet (phase 5) |
 | Selection grab, ScreenCap, PixelCheck | Crop or sample the projection frame (phase 5 for the selection UI) |

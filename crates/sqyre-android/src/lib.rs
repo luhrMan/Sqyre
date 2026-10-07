@@ -14,7 +14,7 @@ pub mod status;
 #[cfg(target_os = "android")]
 pub mod bridge;
 
-pub use apps::{parse_app_line, parse_app_list, LaunchableApp};
+pub use apps::{parse_app_line, parse_app_list, AppIcon, LaunchableApp};
 pub use error::AndroidError;
 pub use frame::{Frame, FrameLayout, FrameStore, Projection, DEMAND_WINDOW};
 pub use insets::{InsetStore, Insets};

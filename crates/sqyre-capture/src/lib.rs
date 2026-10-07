@@ -233,6 +233,7 @@ pub const PROCESS_ICON_TARGET_PX: u32 = 48;
 ///
 /// Linux: `_NET_WM_ICON` from a matching open window, then freedesktop theme icons.
 /// Windows: icon resource from the executable (works even when the app is not running).
+/// Android: launcher icon of the app package.
 /// Other platforms: always `None`.
 #[cfg(target_os = "linux")]
 pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIcon> {
@@ -252,7 +253,12 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
     win_focus::process_icon(process_path, window_title)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(target_os = "android")]
+pub fn process_icon(process_path: &str, _window_title: &str) -> Option<ProcessIcon> {
+    android_capture::process_icon(process_path)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn process_icon(_process_path: &str, _window_title: &str) -> Option<ProcessIcon> {
     None
 }

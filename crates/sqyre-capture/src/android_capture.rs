@@ -3,7 +3,10 @@
 //! The display is the whole virtual desktop: one monitor at (0, 0) in physical pixels,
 //! the same space accessibility gestures use.
 
-use crate::{crop_packed_rgba, crop_packed_rgba_to_rgb, CaptureError, NotReady, WindowInfo};
+use crate::{
+    crop_packed_rgba, crop_packed_rgba_to_rgb, CaptureError, NotReady, ProcessIcon, WindowInfo,
+    PROCESS_ICON_TARGET_PX,
+};
 use image::RgbaImage;
 use sqyre_android::{bridge, frames, AndroidError, Frame, LaunchableApp};
 use sqyre_ports::{AutomationError, DesktopRect, RgbCapture};
@@ -175,7 +178,32 @@ fn to_rgb(frame: &Frame, rect: DesktopRect) -> Result<RgbCapture, CaptureError> 
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     let apps =
         bridge::launchable_apps().map_err(|e| CaptureError::Message(format!("app list: {e}")))?;
-    Ok(apps.iter().map(window_info).collect())
+    Ok(apps
+        .iter()
+        .map(|app| WindowInfo {
+            icon: process_icon(&app.package),
+            ..window_info(app)
+        })
+        .collect())
+}
+
+/// Launcher icon for the app package bound as `process_path`.
+pub fn process_icon(process_path: &str) -> Option<ProcessIcon> {
+    let package = process_path.trim();
+    if package.is_empty() {
+        return None;
+    }
+    match bridge::app_icon(package, PROCESS_ICON_TARGET_PX) {
+        Ok(icon) => icon.map(|i| ProcessIcon {
+            width: i.side,
+            height: i.side,
+            rgba: i.rgba,
+        }),
+        Err(e) => {
+            crate::note(&format!("app icon {package}: {e}"));
+            None
+        }
+    }
 }
 
 /// App that came to the front last (tracked by the accessibility service).

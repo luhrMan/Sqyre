@@ -8,9 +8,9 @@ use crate::frame::FrameLayout;
 use crate::pointer::Gesture;
 use crate::{
     frames, insets, parse_app_line, parse_app_list, picks, request_continue, request_stop, status,
-    AndroidError, Insets, LaunchableApp,
+    AndroidError, AppIcon, Insets, LaunchableApp,
 };
-use jni::objects::{GlobalRef, JByteBuffer, JClass, JObject, JString, JValue};
+use jni::objects::{GlobalRef, JByteArray, JByteBuffer, JClass, JObject, JString, JValue};
 use jni::sys::jint;
 use jni::{JNIEnv, JavaVM};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -141,6 +141,31 @@ fn call_text(method: &str) -> Result<String, AndroidError> {
 /// Apps with a launcher activity, sorted by label.
 pub fn launchable_apps() -> Result<Vec<LaunchableApp>, AndroidError> {
     Ok(parse_app_list(&call_text("launchableApps")?))
+}
+
+/// `package`'s launcher icon rendered at `side`²; `None` when the app is gone or has none.
+pub fn app_icon(package: &str, side: u32) -> Result<Option<AppIcon>, AndroidError> {
+    let rgba = with_bridge(|env, class| {
+        let package = env.new_string(package)?;
+        let array = JByteArray::from(
+            env.call_static_method(
+                class,
+                "appIcon",
+                "(Ljava/lang/String;I)[B",
+                &[
+                    (&package).into(),
+                    JValue::Int(i32::try_from(side).unwrap_or(i32::MAX)),
+                ],
+            )?
+            .l()?,
+        );
+        let rgba = env.convert_byte_array(&array)?;
+        // Called once per listed app on an attached worker; free refs to bound the table.
+        env.delete_local_ref(array)?;
+        env.delete_local_ref(package)?;
+        Ok(rgba)
+    })?;
+    Ok(AppIcon::from_rgba(side, rgba))
 }
 
 /// App whose window came to the front last; `None` while the accessibility service is off.

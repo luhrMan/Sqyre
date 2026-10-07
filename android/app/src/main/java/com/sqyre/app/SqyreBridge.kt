@@ -5,6 +5,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Path
 import android.provider.Settings
 import android.util.Log
@@ -150,6 +152,36 @@ object SqyreBridge {
         appLine(pkg, label)
     }
 
+    /**
+     * [packageName]'s launcher icon as [sizePx]² unpremultiplied RGBA bytes (read by
+     * `sqyre_android::AppIcon`). Empty when the app is gone or the context is.
+     */
+    @JvmStatic
+    fun appIcon(packageName: String, sizePx: Int): ByteArray = guardedBytes("appIcon") {
+        val pm = appContext?.packageManager ?: return@guardedBytes ByteArray(0)
+        if (sizePx <= 0) return@guardedBytes ByteArray(0)
+        val drawable = try {
+            pm.getApplicationIcon(packageName)
+        } catch (e: PackageManager.NameNotFoundException) {
+            return@guardedBytes ByteArray(0)
+        }
+        val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+        drawable.setBounds(0, 0, sizePx, sizePx)
+        drawable.draw(Canvas(bitmap))
+        val pixels = IntArray(sizePx * sizePx)
+        // getPixels returns unpremultiplied ARGB.
+        bitmap.getPixels(pixels, 0, sizePx, 0, 0, sizePx, sizePx)
+        bitmap.recycle()
+        val rgba = ByteArray(pixels.size * 4)
+        for ((i, argb) in pixels.withIndex()) {
+            rgba[i * 4] = (argb shr 16).toByte()
+            rgba[i * 4 + 1] = (argb shr 8).toByte()
+            rgba[i * 4 + 2] = argb.toByte()
+            rgba[i * 4 + 3] = (argb ushr 24).toByte()
+        }
+        rgba
+    }
+
     private fun appLine(pkg: String, label: String): String =
         pkg + "\t" + label.replace('\t', ' ').replace('\n', ' ').replace('\r', ' ')
 
@@ -203,5 +235,14 @@ object SqyreBridge {
         } catch (e: Exception) {
             Log.w(TAG, "$what failed", e)
             ""
+        }
+
+    /** Byte-returning variant of [guarded]: failures read as no data. */
+    private inline fun guardedBytes(what: String, block: () -> ByteArray): ByteArray =
+        try {
+            block()
+        } catch (e: Exception) {
+            Log.w(TAG, "$what failed", e)
+            ByteArray(0)
         }
 }
