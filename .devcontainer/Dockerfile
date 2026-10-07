@@ -123,6 +123,20 @@ RUN set -eux \
  && chmod -R a+rwX "${ANDROID_HOME}"
 ENV PATH="/opt/android-sdk/emulator:${PATH}"
 
+# scrcpy is the emulator's window (`make android-emulator`); the emulator runs -no-window.
+ARG SCRCPY_VERSION=5.0
+ARG SCRCPY_SHA256=f052ad9eb981879e8c5f066c5ef122b39b6c9853b383d6497219030e6549baed
+RUN set -eux \
+ && curl -fsSL -o /tmp/scrcpy.tar.gz \
+      "https://github.com/Genymobile/scrcpy/releases/download/v${SCRCPY_VERSION}/scrcpy-linux-x86_64-v${SCRCPY_VERSION}.tar.gz" \
+ && echo "${SCRCPY_SHA256}  /tmp/scrcpy.tar.gz" | sha256sum -c - \
+ && mkdir -p /opt/scrcpy \
+ && tar -xzf /tmp/scrcpy.tar.gz -C /opt/scrcpy --strip-components=1 \
+ && rm /tmp/scrcpy.tar.gz /opt/scrcpy/adb \
+ && /opt/scrcpy/scrcpy --version
+ENV PATH="/opt/scrcpy:${PATH}" \
+    ADB=/opt/android-sdk/platform-tools/adb
+
 ARG USERNAME=vscode
 ARG USER_UID=1000
 ARG USER_GID=1000

@@ -113,7 +113,7 @@ help:
 	@echo "  wasm         - fmt + check, then GUI-only WASM editor -> $(BIN)/wasm/ (requires Trunk)"
 	@echo "  android      - fmt + check, then sideload APK -> $(BIN)/sqyre-debug.apk"
 	@echo "                 (ANDROID_FEATURES=…; ANDROID_PROFILE=release; see docs/ANDROID.md)"
-	@echo "  android-emulator - boot an x86_64 emulator window (KVM), install + launch the APK"
+	@echo "  android-emulator - boot an x86_64 emulator (KVM), install + launch the APK, open scrcpy"
 	@echo "                 (build with ANDROID_ABIS=\"arm64-v8a x86_64\"; Docker fallback without the SDK)"
 	@echo "  android-emulator-headless - same without a window (scripts/android/emulator.sh screenshot|adb)"
 	@echo "  android-emulator-stop - shut the emulator down"

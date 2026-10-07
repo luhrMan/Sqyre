@@ -140,15 +140,17 @@ Build an APK with an x86_64 library first: `ANDROID_ABIS="arm64-v8a x86_64" make
 
 | Command | Effect |
 |---------|--------|
-| `make android-emulator` | Boots the `sqyre` AVD (Pixel 6, API 35 `google_apis` x86_64) in a window, installs `bin/sqyre-debug.apk`, enables the accessibility service and launches the app |
-| `make android-emulator-headless` | Same with no window, for agents and scripted checks |
+| `make android-emulator` | Boots the `sqyre` AVD (Pixel 6, API 35 `google_apis` x86_64), installs `bin/sqyre-debug.apk`, enables the accessibility service, launches the app and opens a scrcpy window |
+| `make android-emulator-headless` | Same without the scrcpy window, for agents and scripted checks |
 | `make android-emulator-stop` | Stops the emulator |
+| `scripts/android/emulator.sh view` | Reopens the scrcpy window after it was closed (the emulator keeps running) |
 | `scripts/android/emulator.sh install` | Reinstalls and relaunches after a rebuild |
 | `scripts/android/emulator.sh screenshot [FILE]` | Saves the screen to `FILE` (default `bin/emulator.png`) |
 | `scripts/android/emulator.sh adb ARGS...` | Runs `adb` against the emulator, e.g. `adb logcat -b crash` |
 
-- **Where it runs:** directly when `emulator` is on `PATH` and `/dev/kvm` is usable; otherwise in a `sqyre-android-emulator` container from the devcontainer image (built on first use), with `--network host`, `/dev/kvm`, `/dev/dri` and, for the window, the host X socket and `XAUTHORITY`. From the devcontainer the window uses `HOST_DISPLAY` and `HOST_XAUTHORITY`, which `devcontainer.json` captures when the container is created; rebuild the devcontainer after logging in again, or the auth file path is stale.
-- **GPU:** `SQYRE_EMULATOR_GPU` overrides the mode. The window defaults to `host` (needs a `/dev/dri` render node and an X display); headless runs and hosts without a render node use `swangle_indirect`, which renders fine but leaves the window gray. `swiftshader_indirect` segfaults during boot on this image.
+- **Window:** the emulator always runs with `-no-window`; [scrcpy](https://github.com/Genymobile/scrcpy) (installed in the devcontainer image) shows the screen and forwards input over adb. The emulator's own Qt window drops input for seconds at a time under XWayland, which GNOME reports as "not responding". Closing the scrcpy window leaves the emulator running. The scrcpy log is `target/scrcpy.log`. An image built before scrcpy was added needs `docker rmi sqyre-dev-android` to rebuild.
+- **Where it runs:** directly when `emulator` is on `PATH` and `/dev/kvm` is usable; otherwise in a `sqyre-android-emulator` container from the devcontainer image (built on first use), with `--network host`, `/dev/kvm` and, for scrcpy, `/dev/dri`, the host X socket and `XAUTHORITY`. From the devcontainer scrcpy uses `HOST_DISPLAY` and `HOST_XAUTHORITY`, which `devcontainer.json` captures when the container is created; rebuild the devcontainer after logging in again, or the auth file path is stale.
+- **GPU:** `SQYRE_EMULATOR_GPU` overrides the mode. With an X display and a `/dev/dri` render node it defaults to `host` (scrcpy holds 60 fps at its 1200 px `--max-size`); headless runs and hosts without a render node use `swangle_indirect`, which tops out around 20 fps. `swiftshader_indirect` segfaults during boot on this image.
 - **Failures:** a boot failure prints the end of the emulator log. The container is kept until the next `start` or `stop`, so `docker logs sqyre-android-emulator` still works.
 - **Signing:** each fresh build container makes a new debug key, so `install` uninstalls first when the signature changed. App data is reset when that happens.
 - **Logs:** the emulator log is `target/emulator.log` (local) or `docker logs sqyre-android-emulator`.

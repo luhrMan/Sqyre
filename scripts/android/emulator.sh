@@ -2,11 +2,17 @@
 # Run Sqyre on an x86_64 Android emulator (KVM).
 #
 # Usage:
-#   emulator.sh start [--headless]   boot the AVD, install bin/sqyre-debug.apk, launch it
+#   emulator.sh start [--headless]   boot the AVD, install bin/sqyre-debug.apk, launch it,
+#                                    then open the scrcpy window (unless --headless)
+#   emulator.sh view                 (re)open the scrcpy window on the running emulator
 #   emulator.sh install              reinstall the APK, enable the accessibility service
 #   emulator.sh screenshot [FILE]    PNG of the screen (default: bin/emulator.png)
 #   emulator.sh adb ARGS...          run adb against the emulator
 #   emulator.sh stop
+#
+# The emulator always runs without its own window: its Qt window drops input and trips
+# GNOME's "not responding" check under XWayland. scrcpy shows the screen and forwards
+# input over adb instead.
 #
 # Runs the SDK emulator directly when `emulator` and a writable /dev/kvm are present.
 # Otherwise (host without the SDK, or the devcontainer, which has no /dev/kvm) it runs
@@ -15,11 +21,11 @@
 # Env:
 #   SQYRE_ANDROID_IMAGE   Docker image with the SDK + emulator (default: sqyre-dev-android;
 #                         built from .devcontainer/Dockerfile when missing)
-#   SQYRE_EMULATOR_GPU    emulator -gpu mode (default: host for the window with a /dev/dri
-#                         render node, else swangle_indirect, which cannot draw into the window)
+#   SQYRE_EMULATOR_GPU    emulator -gpu mode (default: host with an X display and a /dev/dri
+#                         render node, else swangle_indirect)
 #   HOST_DISPLAY, HOST_XAUTHORITY
-#                         host X display and auth file for the window when started from
-#                         the devcontainer (set by devcontainer.json at container creation)
+#                         host X display and auth file for the scrcpy window when started
+#                         from the devcontainer (set by devcontainer.json at container creation)
 set -euo pipefail
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/repo-root.sh
@@ -64,10 +70,9 @@ ensure_avd() {
 	fi
 }
 
-# `host` renders through GLX, so it needs the window's X display.
+# `host` renders on the GPU through GLX even with -no-window, so it needs an X display.
 default_gpu() {
-	local headless=$1
-	if [ "$headless" = 0 ] && [ -r /dev/dri/renderD128 ] && [ -w /dev/dri/renderD128 ]; then
+	if [ -n "${DISPLAY:-}" ] && [ -r /dev/dri/renderD128 ] && [ -w /dev/dri/renderD128 ]; then
 		echo host
 	else
 		echo swangle_indirect
@@ -75,12 +80,8 @@ default_gpu() {
 }
 
 emulator_args() {
-	local headless=$1
 	local args=(-avd "$AVD" -no-snapshot-save -no-boot-anim -memory 4096 -cores 4
-		-gpu "${SQYRE_EMULATOR_GPU:-$(default_gpu "$headless")}")
-	if [ "$headless" = 1 ]; then
-		args+=(-no-window -no-audio)
-	fi
+		-no-window -no-audio -gpu "${SQYRE_EMULATOR_GPU:-$(default_gpu)}")
 	printf '%s\n' "${args[@]}"
 }
 
@@ -119,6 +120,17 @@ install_apk() {
 	echo "Installed and launched $PKG"
 }
 
+view_local() {
+	command -v scrcpy >/dev/null 2>&1 \
+		|| die "scrcpy not found (rebuild the image: docker rmi $DOCKER_IMAGE)"
+	[ -n "${DISPLAY:-}" ] || die "no DISPLAY for the scrcpy window"
+	mkdir -p "$REPO_ROOT/target"
+	# The guest encodes the stream in software: 1200 px holds 60 fps, full size ~45.
+	ADB="$(command -v adb)" setsid scrcpy --window-title "Sqyre emulator" --no-audio \
+		--max-size 1200 >"$REPO_ROOT/target/scrcpy.log" 2>&1 </dev/null &
+	echo "scrcpy window opened (log: target/scrcpy.log)"
+}
+
 start_local() {
 	local headless=$1 foreground=$2
 	ensure_avd
@@ -128,7 +140,7 @@ start_local() {
 		rm -f "$ANDROID_AVD_HOME/$AVD.avd/"*.lock
 	fi
 	local args
-	mapfile -t args < <(emulator_args "$headless")
+	mapfile -t args < <(emulator_args)
 	if [ "$foreground" = 1 ]; then
 		exec emulator "${args[@]}"
 	fi
@@ -137,6 +149,9 @@ start_local() {
 	echo "Emulator log: $REPO_ROOT/target/emulator.log"
 	wait_boot
 	install_apk
+	if [ "$headless" = 0 ]; then
+		view_local
+	fi
 }
 
 ensure_image() {
@@ -180,15 +195,11 @@ start_container() {
 	if [ -e /dev/kvm ]; then
 		run+=(--group-add "$(stat -c %g /dev/kvm)")
 	fi
-	if host_has_render_node; then
-		run+=(--device /dev/dri)
-	elif [ "$headless" = 0 ]; then
-		echo "emulator.sh: no /dev/dri render node; the window may stay gray (use --headless)" >&2
-	fi
-	local mode=()
-	if [ "$headless" = 1 ]; then
-		mode=(--headless)
-	else
+	if [ "$headless" = 0 ]; then
+		# The render node lets the emulator use -gpu host and scrcpy render with OpenGL.
+		if host_has_render_node; then
+			run+=(--device /dev/dri)
+		fi
 		run+=(-e "DISPLAY=${HOST_DISPLAY:-${DISPLAY:-:0}}" -v /tmp/.X11-unix:/tmp/.X11-unix)
 		local xauth=""
 		if [ -n "${HOST_XAUTHORITY:-}" ]; then
@@ -202,13 +213,16 @@ start_container() {
 			run+=(-e XAUTHORITY=/tmp/.Xauthority
 				--mount "type=bind,source=$xauth,target=/tmp/.Xauthority,readonly")
 		else
-			echo "emulator.sh: no XAUTHORITY; the window needs host X access (use --headless)" >&2
+			echo "emulator.sh: no XAUTHORITY; scrcpy needs host X access (use --headless)" >&2
 		fi
 	fi
-	"${run[@]}" "$DOCKER_IMAGE" bash /workspace/scripts/android/emulator.sh start --foreground "${mode[@]}" >/dev/null
+	"${run[@]}" "$DOCKER_IMAGE" bash /workspace/scripts/android/emulator.sh start --foreground >/dev/null
 	echo "Emulator container: $CONTAINER (docker logs -f $CONTAINER)"
 	wait_container
 	in_container install
+	if [ "$headless" = 0 ]; then
+		in_container view
+	fi
 }
 
 cmd="${1:-start}"
@@ -234,6 +248,9 @@ wait)
 	;;
 install)
 	if can_run_local; then install_apk; else in_container install; fi
+	;;
+view)
+	if can_run_local; then view_local; else in_container view; fi
 	;;
 screenshot)
 	out="${1:-$REPO_ROOT/bin/emulator.png}"
@@ -262,6 +279,6 @@ stop)
 	echo "Emulator stopped"
 	;;
 *)
-	die "unknown command: $cmd (start | install | screenshot | adb | stop)"
+	die "unknown command: $cmd (start | view | install | screenshot | adb | stop)"
 	;;
 esac
