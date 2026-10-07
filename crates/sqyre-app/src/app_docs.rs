@@ -29,9 +29,8 @@ use std::sync::Arc;
 
 impl SqyreApp {
     pub fn for_docs() -> Self {
-        // Keep docs/screenshot/kittest harnesses at 1.0 PPP. Product default scale
-        // may be higher for desktop readability, but AccessKit pointer clicks and
-        // golden PNGs assume unscaled coordinates.
+        // Keep docs/screenshot/kittest harnesses at 1.0 PPP: AccessKit pointer clicks
+        // and golden PNGs assume unscaled coordinates.
         let settings = UserSettings {
             ui_scale: 1.0,
             // Headless kittest/docs must not touch Pulse, GitHub, or portal ScreenCast.

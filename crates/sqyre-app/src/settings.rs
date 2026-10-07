@@ -197,7 +197,8 @@ impl SettingsUi {
         } else {
             DEFAULT_UI_SCALE
         };
-        ctx.set_pixels_per_point(scale);
+        // Multiplies the OS scale (monitor DPI, Android density, browser pixel ratio).
+        ctx.set_zoom_factor(scale);
 
         crate::theme::apply(ctx);
 
@@ -1459,7 +1460,8 @@ impl SettingsUi {
                             .fixed_decimals(1),
                     )
                     .on_hover_text(
-                        "Scale padding, icons, and other non-text UI elements (1.0 = default).",
+                        "Scale padding, icons, and other non-text UI elements relative to the \
+                         display's own scale (1.0 = default).",
                     )
                     .changed()
                 {
