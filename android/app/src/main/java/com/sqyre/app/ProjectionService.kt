@@ -196,7 +196,7 @@ class ProjectionService : Service() {
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(getString(R.string.projection_running))
-            .setSmallIcon(android.R.drawable.ic_menu_camera)
+            .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .addAction(action(R.string.projection_continue, ACTION_CONTINUE_MACRO, 1))
             .addAction(action(R.string.projection_stop, ACTION_STOP_MACRO, 0))
