@@ -118,6 +118,8 @@ impl SqyreApp {
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: RecordingOverlay::new(),
+            #[cfg(all(target_os = "android", feature = "native-runtime"))]
+            screen_pick: Default::default(),
             #[cfg(feature = "native-runtime")]
             macro_overlay: MacroOverlay::new(),
             #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]

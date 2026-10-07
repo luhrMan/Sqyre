@@ -73,6 +73,8 @@ mod recorded_action;
 #[cfg(feature = "native-runtime")]
 mod recording_overlay;
 mod run_session;
+#[cfg(all(target_os = "android", feature = "native-runtime"))]
+mod screen_pick;
 mod settings;
 #[cfg(not(target_arch = "wasm32"))]
 mod single_instance;
@@ -402,6 +404,9 @@ pub struct SqyreApp {
     /// Outline windows for live search-area selection rect.
     #[cfg(feature = "native-runtime")]
     recording_overlay: crate::recording_overlay::RecordingOverlay,
+    /// Android: still of the previous app to place a recorded point or search area on.
+    #[cfg(all(target_os = "android", feature = "native-runtime"))]
+    screen_pick: crate::screen_pick::ScreenPick,
     /// Always-on-top floating buttons that start macros.
     #[cfg(feature = "native-runtime")]
     macro_overlay: sqyre_overlay::MacroOverlay,
@@ -663,6 +668,8 @@ impl SqyreApp {
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: recording_overlay::RecordingOverlay::new(),
+            #[cfg(all(target_os = "android", feature = "native-runtime"))]
+            screen_pick: Default::default(),
             #[cfg(feature = "native-runtime")]
             macro_overlay: sqyre_overlay::MacroOverlay::new(),
             #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]

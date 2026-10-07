@@ -31,6 +31,16 @@ class MainActivity : NativeActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        SqyreBridge.nativeOnShellVisible(true)
+    }
+
+    override fun onStop() {
+        SqyreBridge.nativeOnShellVisible(false)
+        super.onStop()
+    }
+
     override fun onDestroy() {
         SqyreBridge.detach(this)
         super.onDestroy()

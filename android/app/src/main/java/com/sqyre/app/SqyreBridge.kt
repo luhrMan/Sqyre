@@ -63,6 +63,9 @@ object SqyreBridge {
 
     @JvmStatic external fun nativeOnProjectionStopped()
 
+    /** [MainActivity] started or stopped; frames seen while hidden become the editor backdrop. */
+    @JvmStatic external fun nativeOnShellVisible(visible: Boolean)
+
     @JvmStatic external fun nativeOnStopRequested()
 
     @JvmStatic external fun nativeOnContinueRequested()
@@ -121,6 +124,25 @@ object SqyreBridge {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
         // The bound accessibility service may start activities from the background.
         (SqyreAccessibilityService.instance ?: ctx).startActivity(intent)
+        OK
+    }
+
+    /** Bring [MainActivity] back in front of the app that covers it. */
+    @JvmStatic
+    fun showShell(): Int = guarded("showShell") {
+        val ctx = appContext ?: return@guarded REJECTED
+        val intent = Intent(ctx, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
+        // The bound accessibility service may start activities from the background.
+        (SqyreAccessibilityService.instance ?: ctx).startActivity(intent)
+        OK
+    }
+
+    /** Send Sqyre's task to the back so the app used before it comes to the front. */
+    @JvmStatic
+    fun showPrevious(): Int = guarded("showPrevious") {
+        val act = activity.get() ?: return@guarded REJECTED
+        act.runOnUiThread { act.moveTaskToBack(true) }
         OK
     }
 

@@ -47,6 +47,12 @@ impl OsCapturer {
         to_rgb(&fresh()?, rect)
     }
 
+    /// Crop the backdrop (last screen seen while Sqyre was hidden) for editor previews.
+    pub fn capture_backdrop_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        let (_, frame) = frames().backdrop().ok_or(CaptureError::NoSavedScreen)?;
+        to_rgba(&frame, rect)
+    }
+
     /// Frames are already deduplicated by the store, so every capture is "quiet".
     pub fn capture_rect_rgb_quiet_ref(
         &self,

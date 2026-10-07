@@ -84,6 +84,8 @@ pub struct PreviewTooltipCache {
     desktop_outline: Option<(i32, i32, i32, i32)>,
     /// Desktop outline from a hovered list row / coord label; wins over embedded.
     desktop_outline_hover: Option<(i32, i32, i32, i32)>,
+    #[cfg(target_os = "android")]
+    backdrop_generation: u64,
 }
 
 impl PreviewTooltipCache {
@@ -151,13 +153,31 @@ impl PreviewTooltipCache {
     ///
     /// Consumed by the recording overlay so the gold selection outline is drawn on
     /// the real desktop at the point / search-area location while the tip is open.
+    ///
+    /// Android has no desktop outline (Sqyre covers the screen), so it always gets `None`.
     pub fn take_desktop_outline(&mut self) -> Option<(i32, i32, i32, i32)> {
-        let outline = self
-            .desktop_outline_hover
-            .take()
-            .or_else(|| self.desktop_outline.take());
-        self.desktop_outline = None;
-        outline
+        let hover = self.desktop_outline_hover.take();
+        let embedded = self.desktop_outline.take();
+        #[cfg(target_os = "android")]
+        {
+            let _ = (hover, embedded);
+            None
+        }
+        #[cfg(not(target_os = "android"))]
+        hover.or(embedded)
+    }
+
+    /// Android previews crop the backdrop; drop them all when a newer one arrives.
+    #[cfg(target_os = "android")]
+    fn drop_stale_backdrop_previews(&mut self) {
+        let generation = sqyre_android::frames().backdrop_generation();
+        if generation != self.backdrop_generation {
+            self.backdrop_generation = generation;
+            self.entries.clear();
+            self.order.clear();
+            self.pending.clear();
+            self.failures.clear();
+        }
     }
 
     fn request_desktop_outline_embedded(&mut self, coords: PreviewCoords) {
@@ -373,6 +393,8 @@ impl PreviewTooltipCache {
         force: bool,
         max_dim: u32,
     ) -> Result<(TextureHandle, String), String> {
+        #[cfg(target_os = "android")]
+        self.drop_stale_backdrop_previews();
         let keep_region = max_dim >= PANEL_MAX_DIM
             && matches!(coords, PreviewCoords::SearchArea { grid: None, .. });
         if force {
@@ -629,6 +651,13 @@ fn capture_preview(
     fresh: bool,
     keep_region: bool,
 ) -> Result<CapturedPreview, CaptureError> {
+    // A live Android frame shows Sqyre itself, so previews use the saved backdrop.
+    #[cfg(target_os = "android")]
+    let capture_rect = |bounds: DesktopRect| {
+        let _ = fresh;
+        capturer.capture_backdrop_rect_ref(bounds)
+    };
+    #[cfg(not(target_os = "android"))]
     let capture_rect = |bounds: DesktopRect| {
         if fresh {
             capturer.capture_rect_fresh_ref(bounds)

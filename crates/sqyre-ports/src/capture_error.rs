@@ -66,6 +66,9 @@ pub enum CaptureError {
     /// The Android MediaProjection session stopped or delivered a bad frame.
     #[error("screen recording: {0}")]
     Projection(String),
+    /// Android: no frame of another app has been seen since Sqyre opened.
+    #[error("no screen saved yet: open the app you automate, then come back to Sqyre")]
+    NoSavedScreen,
     /// Anything without a dedicated variant. Prefer adding one over reaching
     /// for this — callers cannot match on a string.
     #[error("{0}")]
@@ -107,6 +110,7 @@ mod tests {
             CaptureError::UnsupportedPlatform,
             CaptureError::Portal("session closed".into()),
             CaptureError::Projection("stopped".into()),
+            CaptureError::NoSavedScreen,
             CaptureError::Message("waiting for portal".into()),
         ] {
             assert!(!e.is_retryable(), "{e:?}");

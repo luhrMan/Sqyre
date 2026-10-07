@@ -89,7 +89,9 @@ impl SqyreApp {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let should_hide = self.settings_ui.settings().hide_app_during_recording
+            // Android has one window; hiding it leaves a black screen with nothing to pick on.
+            let should_hide = !cfg!(target_os = "android")
+                && self.settings_ui.settings().hide_app_during_recording
                 && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed());
             if should_hide && !self.hidden_for_recording {
                 self.hidden_for_recording = true;
@@ -127,6 +129,8 @@ impl SqyreApp {
                 preview_outline,
                 self.hidden_for_recording,
             );
+            #[cfg(target_os = "android")]
+            self.screen_pick.sync(ctx, &self.screen_click);
         }
         #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]
         let _ = ctx;

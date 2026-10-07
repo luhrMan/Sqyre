@@ -3,6 +3,10 @@
 //! The shell offers every `ImageReader` frame; the store only copies one while a
 //! capture has asked within [`DEMAND_WINDOW`], so an idle projection does not keep
 //! a full-screen copy alive or burn a memcpy per display refresh.
+//!
+//! While Sqyre is fullscreen the projection only sees Sqyre itself, so the store also
+//! keeps a *backdrop*: the last frame published while the shell was in the background.
+//! Editor previews crop that instead of the live frame.
 
 use crate::AndroidError;
 use parking_lot::{Condvar, Mutex, MutexGuard};
@@ -89,6 +93,10 @@ struct State {
     generation: u64,
     demand_at: Option<Instant>,
     projection: Projection,
+    backdrop: Option<Frame>,
+    backdrop_generation: u64,
+    shell_visible: bool,
+    shell_shown: u64,
 }
 
 impl State {
@@ -127,6 +135,10 @@ impl FrameStore {
                 generation: 0,
                 demand_at: None,
                 projection: Projection::NotStarted,
+                backdrop: None,
+                backdrop_generation: 0,
+                shell_visible: true,
+                shell_shown: 0,
             }),
             ready: Condvar::new(),
         }
@@ -142,11 +154,53 @@ impl FrameStore {
         let frame = Frame::pack(layout, src)?;
         let mut s = self.state.lock();
         s.projection = Projection::Running;
+        if !s.shell_visible {
+            s.backdrop = Some(frame.clone());
+            s.backdrop_generation += 1;
+        }
         s.frame = Some(frame);
         s.generation += 1;
         drop(s);
         self.ready.notify_all();
         Ok(())
+    }
+
+    /// The shell's activity was shown or hidden. Hiding keeps frames flowing for
+    /// [`DEMAND_WINDOW`] so the app now in front becomes the backdrop.
+    pub fn set_shell_visible(&self, visible: bool) {
+        let mut s = self.state.lock();
+        s.shell_visible = visible;
+        if visible {
+            s.shell_shown += 1;
+        } else {
+            s.demand_at = Some(Instant::now());
+        }
+    }
+
+    /// False while another app is in front of Sqyre.
+    pub fn shell_visible(&self) -> bool {
+        self.state.lock().shell_visible
+    }
+
+    /// Bumped each time the shell comes back to the front (e.g. from system settings).
+    pub fn shell_shown_count(&self) -> u64 {
+        self.state.lock().shell_shown
+    }
+
+    /// Last frame seen while the shell was hidden, with a counter that changes on every update.
+    pub fn backdrop(&self) -> Option<(u64, Frame)> {
+        let s = self.state.lock();
+        s.backdrop.clone().map(|f| (s.backdrop_generation, f))
+    }
+
+    /// Changes whenever [`Self::backdrop`] does.
+    pub fn backdrop_generation(&self) -> u64 {
+        self.state.lock().backdrop_generation
+    }
+
+    /// A frame arrived that nobody asked for: the projection is up, nothing to copy.
+    pub fn mark_running(&self) {
+        self.state.lock().projection = Projection::Running;
     }
 
     /// The shell lost or refused the projection; drop the cached frame.
@@ -322,6 +376,9 @@ mod tests {
         ));
         store.rearm();
         assert_eq!(store.projection(), Projection::NotStarted);
+        store.mark_running();
+        assert_eq!(store.projection(), Projection::Running);
+        assert_eq!(store.cached_bytes(), 0);
     }
 
     #[test]
@@ -343,6 +400,30 @@ mod tests {
         store.release();
         assert_eq!(store.cached_bytes(), 0);
         assert!(!store.wants_frames());
+    }
+
+    #[test]
+    fn backdrop_keeps_the_last_frame_seen_while_hidden() {
+        let store = FrameStore::new();
+        let (layout, src) = padded_plane();
+        store.publish(layout, &src).expect("publish");
+        assert!(store.backdrop().is_none());
+
+        assert!(store.shell_visible());
+        store.set_shell_visible(false);
+        assert!(!store.shell_visible());
+        assert!(store.wants_frames());
+        store.publish(layout, &src).expect("publish");
+        let (generation, frame) = store.backdrop().expect("backdrop");
+        assert_eq!(frame.width(), 3);
+        assert_eq!(store.backdrop_generation(), generation);
+
+        store.set_shell_visible(true);
+        assert_eq!(store.shell_shown_count(), 1);
+        store.publish(layout, &src).expect("publish");
+        store.release();
+        store.mark_stopped();
+        assert_eq!(store.backdrop().expect("kept").0, generation);
     }
 
     #[test]

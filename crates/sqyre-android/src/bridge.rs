@@ -11,7 +11,7 @@ use crate::{
     AndroidError, AppIcon, Insets, LaunchableApp,
 };
 use jni::objects::{GlobalRef, JByteArray, JByteBuffer, JClass, JObject, JString, JValue};
-use jni::sys::jint;
+use jni::sys::{jboolean, jint};
 use jni::{JNIEnv, JavaVM};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::OnceLock;
@@ -120,6 +120,22 @@ pub fn launch(package: &str, label: &str) -> Result<(), AndroidError> {
             &[(&package).into(), (&label).into()],
         )?
         .i()
+    })?;
+    status::check(code)
+}
+
+/// Bring Sqyre's activity back in front of the app that covers it.
+pub fn show_shell() -> Result<(), AndroidError> {
+    let code =
+        with_bridge(|env, class| env.call_static_method(class, "showShell", "()I", &[])?.i())?;
+    status::check(code)
+}
+
+/// Send Sqyre's task to the back so the app used before it comes to the front.
+pub fn show_previous() -> Result<(), AndroidError> {
+    let code = with_bridge(|env, class| {
+        env.call_static_method(class, "showPrevious", "()I", &[])?
+            .i()
     })?;
     status::check(code)
 }
@@ -275,6 +291,7 @@ pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnFrame(
 ) {
     guard("nativeOnFrame", || {
         if !frames().wants_frames() {
+            frames().mark_running();
             return Ok(());
         }
         let ptr = env.get_direct_buffer_address(&buffer)?;
@@ -308,6 +325,22 @@ pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnProjectionStopped(
 ) {
     guard("nativeOnProjectionStopped", || {
         frames().mark_stopped();
+        Ok(())
+    });
+}
+
+#[no_mangle]
+#[allow(
+    non_snake_case,
+    reason = "JNI symbol names are fixed by the Kotlin class"
+)]
+pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnShellVisible(
+    _env: JNIEnv,
+    _class: JClass,
+    visible: jboolean,
+) {
+    guard("nativeOnShellVisible", || {
+        frames().set_shell_visible(visible != 0);
         Ok(())
     });
 }

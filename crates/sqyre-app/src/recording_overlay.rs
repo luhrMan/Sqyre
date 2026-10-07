@@ -162,7 +162,10 @@ impl RecordingOverlay {
 
         if recording {
             self.ensure_wake_poller(ctx.clone(), screen_click.clone(), macro_record.cloned());
-            self.show_coords_hud(ctx, screen_click, macro_record, main_window_hidden);
+            // Android cannot open a second window; `screen_pick` shows the status.
+            if !cfg!(target_os = "android") {
+                self.show_coords_hud(ctx, screen_click, macro_record, main_window_hidden);
+            }
         } else {
             self.hud_at_top = None;
             self.hud_window_size = None;
@@ -194,7 +197,7 @@ impl RecordingOverlay {
 
     /// Arm / poll / disarm the fullscreen grab for any screen-click recording mode.
     fn sync_selection_grab(&mut self, screen_click: &ScreenClickBridge) {
-        if !screen_click.is_armed() {
+        if !screen_click.is_armed() || cfg!(target_os = "android") {
             self.release_selection_grab(screen_click);
             return;
         }

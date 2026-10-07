@@ -24,7 +24,9 @@ A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, exe
 | Pause continue-key, macro hotkeys, failsafe chord | The process cannot hear global keys. Stop and Continue are actions on the screen-recording notification (Continue ends a single-key Pause; multi-key Pause waits are `Unsupported`), plus the in-app Stop button |
 | Overlay buttons, tray | Not yet (phase 5) |
 | Selection grab, ScreenCap, PixelCheck | Crop or sample the projection frame (phase 5 for the selection UI) |
-| Recording | Not yet (phase 5) |
+| Coordinate previews, desktop outline | Sqyre covers the screen, so previews crop the *backdrop*: the last frame seen while Sqyre was in the background (`MainActivity` reports `onStart`/`onStop` through `nativeOnShellVisible`). There is no on-screen outline; the tooltip preview shows the location |
+| Point and search-area recording | Sqyre cannot see touches in other apps, so recording shows a still of the app used before Sqyre (`screen_pick.rs`). The still is the backdrop; when there is none yet, or on Retake, Sqyre sends itself to the back (`SqyreBridge.showPrevious`), takes one frame of the app that comes to the front, and returns (`SqyreBridge.showShell`). For a point, a tap places it, a drag nudges it, and a loupe magnifies it; for a search area, a drag draws it from corner to corner. Sqyre is never hidden for recording on Android |
+| Color and macro recording | Not yet (phase 5) |
 | Data dir, zip backups, import / export | App-private storage: `internal_data_path()` is the home for `~/.sqyre` and `~/.config/sqyre`. Image and zip picks use the Storage Access Framework; the chosen document is copied into the app cache first. Folder picks are not offered |
 | Self-update | Desktop-only. A new version is a new APK |
 | Editor | Current egui shell. A later pass fixes layouts that are unusable with touch |
