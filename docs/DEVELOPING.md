@@ -101,7 +101,7 @@ Build caches (all gitignored):
 | `wasm` | GUI-only browser editor → `bin/wasm/` (Trunk; no Run/capture/OCR) |
 | `android-check` | `cargo ndk check` of `sqyre-app` (editor and `native-runtime,overlay-buttons`) and the Android backends for `arm64-v8a`; cross-builds OCR libs into `target/android/ocr` on first run |
 | `android` | Sideload APK with bundled `eng.traineddata` → `bin/sqyre-debug.apk` (`ANDROID_FEATURES` default `native-runtime,overlay-buttons`, empty = editor only; `ANDROID_PROFILE`, `ANDROID_ABIS`; [ANDROID.md](./ANDROID.md)) |
-| `android-emulator` / `android-emulator-headless` / `android-emulator-stop` | x86_64 API 35 emulator (window or headless) that installs and launches `bin/sqyre-debug.apk`; needs `/dev/kvm` and an APK built with `ANDROID_ABIS="arm64-v8a x86_64"` ([ANDROID.md](./ANDROID.md#emulator)) |
+| `android-emulator` / `android-emulator-headless` / `android-emulator-stop` | x86_64 API 35 emulator (window or headless) that installs and launches `bin/sqyre-debug.apk`; needs `/dev/kvm` and an APK that includes x86_64, which `make android` builds by default ([ANDROID.md](./ANDROID.md#emulator)) |
 | `tessdata` | Tesseract trained data via `scripts/download-tessdata.sh` |
 
 Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` / `make flatpak` / `make release` / `make windows` to stamp package names and embed `SQYRE_VERSION` in the binary for auto-update checks (Flatpak disables in-app self-replace — use `flatpak update`). Local builds without either default to `0.0.0-dev` (update checks disabled).

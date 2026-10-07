@@ -92,7 +92,7 @@ Each phase keeps `make fmt && make check && make test` green on the desktop host
 
 ### 1. Editor APK
 
-`ANDROID_FEATURES= make android` (empty) builds `sqyre-app` with `--no-default-features` (the same editor surface as `make wasm`) for `arm64-v8a`, then the Gradle shell, and copies `bin/sqyre-debug.apk`. `android_main` in `crates/sqyre-app/src/lib.rs` sets the home dir before any persist call.
+`ANDROID_FEATURES= make android` (empty) builds `sqyre-app` with `--no-default-features` (the same editor surface as `make wasm`) for `arm64-v8a` and `x86_64`, then the Gradle shell, and copies `bin/sqyre-debug.apk`. `android_main` in `crates/sqyre-app/src/lib.rs` sets the home dir before any persist call.
 
 Exit: the APK installs on an emulator, opens the editor, and persists `db.yaml` across restarts.
 
@@ -131,7 +131,7 @@ Exit: create a macro, add an image search, run it, and stop it on a phone-sized 
 | Target | Output |
 |--------|--------|
 | `aarch64-linux-android` (`arm64-v8a`) | The APK that ships |
-| `x86_64-linux-android` | Emulator builds (`ANDROID_ABIS="arm64-v8a x86_64"`) |
+| `x86_64-linux-android` | Emulator library, also built by default (`ANDROID_ABIS=arm64-v8a` skips it) |
 
 - **SDK levels:** min SDK 29, target and compile SDK 35.
 - **Activity:** one `singleTask` `NativeActivity` subclass.
@@ -143,7 +143,7 @@ Exit: create a macro, add an image search, run it, and stop it on a phone-sized 
 
 ## Emulator
 
-Build an APK with an x86_64 library first: `ANDROID_ABIS="arm64-v8a x86_64" make android`.
+Build the APK first with `make android`; it includes the x86_64 library by default.
 
 | Command | Effect |
 |---------|--------|

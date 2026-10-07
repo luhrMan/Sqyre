@@ -98,9 +98,9 @@ wait_boot() {
 }
 
 install_apk() {
-	[ -f "$APK" ] || die "no $APK (make android ANDROID_ABIS=\"arm64-v8a x86_64\")"
+	[ -f "$APK" ] || die "no $APK (run make android)"
 	unzip -l "$APK" | grep 'lib/x86_64/libsqyre_app.so' >/dev/null \
-		|| die "$APK has no x86_64 library (make android ANDROID_ABIS=\"arm64-v8a x86_64\")"
+		|| die "$APK has no x86_64 library (rebuild with make android, without ANDROID_ABIS=arm64-v8a)"
 	local out
 	if ! out="$(adb install -r -g "$APK" 2>&1)"; then
 		case "$out" in

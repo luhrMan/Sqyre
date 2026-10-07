@@ -9,7 +9,8 @@
 #   ANDROID_FEATURES  sqyre-app features (default: native-runtime,overlay-buttons;
 #                     empty = editor only, the same surface as `make wasm`)
 #   ANDROID_PROFILE   debug | release (default: debug)
-#   ANDROID_ABIS      space-separated ABIs: arm64-v8a, x86_64 (default: arm64-v8a)
+#   ANDROID_ABIS      space-separated ABIs: arm64-v8a, x86_64 (default: both; x86_64 is
+#                     for the emulator)
 set -euo pipefail
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/repo-root.sh
@@ -17,7 +18,7 @@ _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 FEATURES="${ANDROID_FEATURES-native-runtime,overlay-buttons}"
 PROFILE="${ANDROID_PROFILE:-debug}"
-ABIS="${ANDROID_ABIS:-arm64-v8a}"
+ABIS="${ANDROID_ABIS:-arm64-v8a x86_64}"
 MIN_SDK=29
 
 for tool in cargo-ndk gradle; do
