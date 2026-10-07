@@ -692,7 +692,7 @@ impl UserSettings {
     pub fn load_default() -> Result<Self> {
         #[cfg(target_arch = "wasm32")]
         {
-            return Ok(Self::default());
+            Ok(Self::default())
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -723,7 +723,7 @@ impl UserSettings {
         #[cfg(target_arch = "wasm32")]
         {
             let _ = self;
-            return Ok(());
+            Ok(())
         }
         #[cfg(not(target_arch = "wasm32"))]
         {

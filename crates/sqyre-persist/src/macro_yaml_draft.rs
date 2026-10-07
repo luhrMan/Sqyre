@@ -37,7 +37,7 @@ impl MacroYamlBuilderDrafts {
     pub fn load_default() -> Result<Self> {
         #[cfg(target_arch = "wasm32")]
         {
-            return Ok(Self::default());
+            Ok(Self::default())
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -64,7 +64,7 @@ impl MacroYamlBuilderDrafts {
         #[cfg(target_arch = "wasm32")]
         {
             let _ = self;
-            return Ok(());
+            Ok(())
         }
         #[cfg(not(target_arch = "wasm32"))]
         {

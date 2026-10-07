@@ -8,6 +8,7 @@ mod error;
 mod grab_stub;
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 mod outline_geometry;
 mod outline_rect;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -25,6 +26,7 @@ mod win_focus;
 mod win_grab;
 #[cfg(target_os = "windows")]
 mod win_outline;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 mod window_match;
 #[cfg(target_os = "linux")]
 mod x11_capture;

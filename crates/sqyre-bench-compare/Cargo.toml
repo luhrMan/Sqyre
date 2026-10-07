@@ -11,7 +11,6 @@ name = "sqyre-bench-compare"
 path = "src/main.rs"
 
 [dependencies]
-libc = "0.2"
 rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -21,6 +20,9 @@ sqyre-match = { path = "../sqyre-match" }
 sqyre-persist = { path = "../sqyre-persist" }
 sqyre-serialize = { path = "../sqyre-serialize" }
 sqyre-vision = { path = "../sqyre-vision" }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [lints]
 workspace = true
