@@ -93,8 +93,23 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             let status = app.run_session.state.status.lock().clone();
             if !status.is_empty() {
                 ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    ui.add(egui::Label::new(&status).truncate())
-                        .on_hover_text(&status);
+                    // Hover shows the elided text on desktop; touch screens have no
+                    // hover, so a tap opens the full message.
+                    let resp = ui.add(
+                        egui::Label::new(&status)
+                            .truncate()
+                            .selectable(false)
+                            .sense(egui::Sense::click()),
+                    );
+                    let width = crate::widgets::dialog_constrain_rect(ui.ctx())
+                        .width()
+                        .min(420.0);
+                    egui::Popup::from_toggle_button_response(&resp)
+                        .width(width)
+                        .show(|ui| {
+                            ui.set_max_width(width);
+                            ui.add(egui::Label::new(&status).wrap());
+                        });
                 });
             }
         });
