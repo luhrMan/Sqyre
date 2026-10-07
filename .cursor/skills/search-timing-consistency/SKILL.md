@@ -5,8 +5,8 @@ description: >-
   efficient — shared wait/retry shell, cache reuse, and stable timing steps.
   Use when editing search, match, OCR, find-pixel, wait-until-found, search
   cache, PreparedTemplate, SearchPrep, log_timing, capture_search_buf, or
-  detection branches; when optimizing search latency; or when search kinds
-  diverge in behavior or timings.
+  detection branches; when optimizing search latency or running/editing
+  benches; or when search kinds diverge in behavior or timings.
 ---
 
 # Search timing consistency
@@ -56,7 +56,17 @@ Every wait/repeat poll is a full attempt. Minimize work **per attempt** and **ac
 
 `sqyre-match` perf budgets are load-bearing (see `testing`); fix the path (FFT vs direct, packing, prep reuse).
 
-Measuring: same machine, release builds, before vs after — `make bench` or `BENCH_BASELINE=x make bench-baseline-save` → change → `make bench-baseline-diff`. Debug runs, single samples, and `perf_budget_secs` tests are not measurements; report median + spread.
+## Measuring
+
+Same machine, release builds, before vs after: `BENCH_BASELINE=x make bench-baseline-save` on the unchanged tree → change → `make bench-baseline-diff` (or `make bench`). Debug runs, single samples, and `perf_budget_secs` tests are not measurements; report median + spread.
+
+- **Run benches alone.** Never alongside another bench, `make test`, a build, or subagents compiling — they compete for CPU and the numbers are invalid.
+- **Never game the benches.** Do not shrink inputs, cut iterations/sample counts, drop cases, or otherwise edit bench sources to show a speedup; improve the library code. A bench-source change needs its own justification, separate from the optimization.
+- **Suspicious speedups are bugs until proven otherwise.** A large or input-size-independent gain usually means work was skipped. Confirm behavior is unchanged (`make test`, outputs match the old path) before reporting it.
+- **Benches are independent of caches.** `search_cache`, `PreparedTemplate`, and `SearchPrep` reuse must not leak between iterations unless the bench is explicitly measuring the warm path; measure cold and warm separately.
+- **No `RUSTFLAGS` / `target-cpu=native`** when measuring; use the Makefile targets as-is.
+- **Use the existing harness** (`make bench`, `bench-compare`, baseline save/diff); do not write ad-hoc timing loops.
+- **Hot-path refactors are measured too.** Refactors in `sqyre-match`, `sqyre-vision`, or `sqyre-executor/src/search/` need a `bench-baseline-diff` with no regressions, not just passing tests.
 
 ## Timing instrumentation
 

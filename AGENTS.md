@@ -45,5 +45,5 @@ Rules live in [`.cursor/rules/`](.cursor/rules/), skills in [`.cursor/skills/`](
 | Devcontainer release parity | `devcontainer-release-parity.mdc` |
 | Debugging from logs | `skills/debug-from-logs` |
 | Wayland/desktop parity, probe | `skills/linux-desktop-parity` |
-| Search/OCR/pixel hot path | `skills/search-timing-consistency` |
+| Search/OCR/pixel hot path, benchmarking | `skills/search-timing-consistency` |
 | Commit review | `skills/commit-quality-review` |
