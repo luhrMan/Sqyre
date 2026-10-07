@@ -65,6 +65,7 @@ impl Default for CapabilityResult {
 }
 
 impl CapabilityResult {
+    #[cfg(target_os = "linux")]
     fn ok() -> Self {
         Self {
             status: CapStatus::Ok,
@@ -566,6 +567,8 @@ fn probe_windows(caps: &mut BTreeMap<String, CapabilityResult>) {
 }
 
 fn probe_input(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityResult>) {
+    #[cfg(not(target_os = "linux"))]
+    let _ = session;
     #[cfg(all(target_os = "linux", feature = "portal-capture"))]
     if session.session_type == "wayland" {
         caps.insert(
@@ -664,6 +667,8 @@ fn hotkeys_backend_label() -> &'static str {
 }
 
 fn probe_hotkeys_inferred(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityResult>) {
+    #[cfg(not(target_os = "linux"))]
+    let _ = session;
     caps.insert(
         "hotkeys.start".into(),
         timed(|| {
@@ -685,6 +690,8 @@ fn probe_hotkeys_inferred(session: &SessionReport, caps: &mut BTreeMap<String, C
 }
 
 fn probe_hotkeys(session: &SessionReport, caps: &mut BTreeMap<String, CapabilityResult>) {
+    #[cfg(not(target_os = "linux"))]
+    let _ = session;
     caps.insert(
         "hotkeys.start".into(),
         timed(|| {

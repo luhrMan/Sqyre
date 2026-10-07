@@ -23,4 +23,4 @@ cd "$REPO_ROOT"
 # shellcheck source=scripts/android/ocr-env.sh
 . "$_here/ocr-env.sh"
 "${ndk[@]}" -p sqyre-app --lib --no-default-features --features native-runtime,overlay-buttons "${extra[@]}"
-"${ndk[@]}" -p sqyre-capture -p sqyre-input -p sqyre-probe "${extra[@]}"
+"${ndk[@]}" -p sqyre-capture -p sqyre-input "${extra[@]}"

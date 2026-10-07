@@ -54,7 +54,6 @@ sqyre-varref = { path = "../sqyre-varref" }
 sqyre-executor = { path = "../sqyre-executor", optional = true }
 sqyre-serialize = { path = "../sqyre-serialize" }
 sqyre-capture = { path = "../sqyre-capture", optional = true }
-sqyre-probe = { path = "../sqyre-probe", optional = true }
 sqyre-hotkeys = { path = "../sqyre-hotkeys" }
 sqyre-overlay = { path = "../sqyre-overlay", default-features = false }
 sqyre-vision = { path = "../sqyre-vision", optional = true }
@@ -88,9 +87,10 @@ tray-icon = { workspace = true }
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
-# rfd has no Android backend.
+# rfd has no Android backend; the probe checks desktop sessions only.
 [target.'cfg(not(target_os = "android"))'.dependencies]
 rfd = { workspace = true }
+sqyre-probe = { path = "../sqyre-probe", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 sqyre-android = { path = "../sqyre-android" }

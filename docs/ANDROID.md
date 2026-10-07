@@ -156,7 +156,7 @@ Build an APK with an x86_64 library first: `ANDROID_ABIS="arm64-v8a x86_64" make
 ## Tests
 
 - **Desktop:** `make fmt`, `make check` and `make test`. The pure `sqyre-android` modules (frame packing, frame store, gesture planning, status codes, app-list parsing, document picks, notification handlers) and the crop kernels in `sqyre-capture` run here.
-- **Android compile:** `make android-check` in the devcontainer checks the editor and runtime `sqyre-app` plus `sqyre-capture`, `sqyre-input` and `sqyre-probe`. It builds the OCR libraries on first run.
+- **Android compile:** `make android-check` in the devcontainer checks the editor and runtime `sqyre-app` plus `sqyre-capture` and `sqyre-input`. `sqyre-probe` checks desktop sessions and is not built for Android. It builds the OCR libraries on first run.
 - **Device or emulator:** by hand, at each phase's exit criteria, with `make android-emulator` or `make android-emulator-headless` plus `scripts/android/emulator.sh screenshot`. Emulators are not in CI yet.
 
 ## Out of scope

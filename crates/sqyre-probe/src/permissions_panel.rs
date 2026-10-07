@@ -144,7 +144,6 @@ fn input_device_group_item(
         setup_steps.push("If /dev/input is not readable, add your user to the input group, then log out and back in.".into());
         setup_steps
             .push("On some distros the group is named plugdev — add both if they exist.".into());
-        #[cfg(target_os = "linux")]
         if crate::permissions::is_immutable_linux() {
             setup_steps.extend(crate::permissions::atomic_group_setup_steps("input"));
             tooltip = Some(crate::permissions::atomic_group_tooltip("input"));
@@ -255,16 +254,11 @@ fn global_hotkeys_item(
         copy_command = None;
         (PermissionEligibility::Granted, None)
     } else {
-        #[cfg(target_os = "linux")]
         if session.session_type == "wayland" {
             setup_steps
                 .push("Recording and Esc-stop hotkeys need input device access on Wayland.".into());
             copy_command = Some("sudo usermod -aG input $USER".into());
         } else {
-            copy_command = None;
-        }
-        #[cfg(not(target_os = "linux"))]
-        {
             copy_command = None;
         }
         (
