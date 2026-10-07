@@ -182,6 +182,7 @@ impl AddActionPicker {
     }
 
     /// Apply a hex color from the Find Pixel screen dropper onto a defaults draft.
+    #[cfg(feature = "native-runtime")]
     pub fn apply_recorded_color(&mut self, recorded: String) {
         let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() else {
             return;

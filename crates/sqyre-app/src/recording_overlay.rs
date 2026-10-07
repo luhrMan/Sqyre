@@ -98,17 +98,12 @@ impl RecordingOverlay {
         macro_record: Option<&sqyre_hotkeys::MacroRecordBridge>,
         preview_outline: Option<OutlineCorners>,
         main_window_hidden: bool,
-        expect_hide_for_recording: bool,
     ) {
         let was_recording = screen_click.is_armed() || macro_record.is_some_and(|b| b.is_armed());
         self.sync_selection_grab(screen_click);
         #[cfg(target_os = "linux")]
         {
-            if !self.sync_linux_snapshot(
-                screen_click,
-                main_window_hidden,
-                expect_hide_for_recording,
-            ) {
+            if !self.sync_linux_snapshot(screen_click, main_window_hidden) {
                 self.sync_linux_pointer(screen_click);
             }
         }
@@ -299,7 +294,6 @@ impl RecordingOverlay {
         &mut self,
         screen_click: &ScreenClickBridge,
         _main_window_hidden: bool,
-        _expect_hide_for_recording: bool,
     ) -> bool {
         if !skip_x11_pointer_grab() {
             self.close_snapshot();
@@ -680,7 +674,7 @@ impl Drop for RecordingOverlay {
         }
         // Do not outline.clear() here — that XFlushs under the game. Drop destroys
         // windows without flush and closes Displays on helper threads.
-        drop(self.outline.take());
+        self.outline = None;
         mark_site("recording_overlay:drop:after_outline");
         #[cfg(target_os = "linux")]
         self.close_snapshot();
@@ -705,6 +699,7 @@ fn skip_x11_pointer_grab() -> bool {
 ///
 /// Portal wins whenever it exists (XWayland games included). XQueryPointer is
 /// only a fallback for when ScreenCast cursor metadata is missing.
+#[cfg(target_os = "linux")]
 fn linux_pointer_snap(
     portal: Option<(i32, i32)>,
     last_x11: Option<(i32, i32)>,
@@ -723,6 +718,7 @@ fn linux_pointer_snap(
 
 /// Clamp to the bounding box of the known outputs so a stuck edge drag cannot
 /// walk `last_pos` to ±∞.
+#[cfg(target_os = "linux")]
 fn clamp_to_desktop(rects: &[DesktopRect], x: i32, y: i32) -> (i32, i32) {
     let Some(first) = rects.first() else {
         return (x.max(0), y.max(0));
@@ -923,6 +919,7 @@ mod tests {
         assert!(pick_hud_edge(Some(false), 700, mon));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn clamp_to_desktop_rejects_negatives_and_past_edge() {
         let rects = [
@@ -945,6 +942,7 @@ mod tests {
         assert_eq!(clamp_to_desktop(&[], -3, 10), (0, 10));
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn linux_pointer_snap_prefers_portal_over_x11() {
         assert_eq!(

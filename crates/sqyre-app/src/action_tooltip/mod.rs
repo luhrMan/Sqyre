@@ -212,6 +212,7 @@ impl TooltipState {
     }
 
     /// Apply a hex color from the Find Pixel screen dropper onto the draft.
+    #[cfg(feature = "native-runtime")]
     pub fn apply_recorded_color(&mut self, recorded: String) {
         let Self::Edit(edit) = self else {
             return;
@@ -1063,6 +1064,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native-runtime")]
     fn apply_recorded_color_updates_find_pixel_draft() {
         let child = Action {
             id: ActionId::new(),

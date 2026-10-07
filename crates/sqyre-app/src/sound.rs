@@ -1,6 +1,7 @@
 //! Embedded cue sounds for the desktop shell.
 
 /// Age of Empires I “under attack” sting — macro finish cue.
+#[cfg(any(test, feature = "native-runtime"))]
 const FINISH_SOUND_MP3: &[u8] = include_bytes!("../assets/sounds/aoe1-under-attack.mp3");
 
 /// Cue when the user adds a macro, action, or catalog entity.
@@ -41,6 +42,7 @@ fn play_mp3_blocking(bytes: &'static [u8], volume: f32) {
 /// Fire-and-forget playback of the macro finish sound on a background thread.
 ///
 /// Failures (no audio device, decode errors) are ignored so run completion is never blocked.
+#[cfg(feature = "native-runtime")]
 pub fn play_finish_sound(volume: f32) {
     play_mp3(FINISH_SOUND_MP3, "sqyre-finish-sound", volume);
 }

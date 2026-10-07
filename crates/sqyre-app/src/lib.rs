@@ -21,6 +21,11 @@ mod desktop_entry;
 #[cfg(feature = "native-runtime")]
 mod diag;
 pub mod docs_fixture;
+#[cfg(any(
+    test,
+    target_os = "windows",
+    all(target_os = "linux", feature = "native-runtime")
+))]
 mod egui_keys;
 mod file_dialogs;
 mod focus_nav;
@@ -69,11 +74,13 @@ mod recorded_action;
 mod recording_overlay;
 mod run_session;
 mod settings;
+#[cfg(not(target_arch = "wasm32"))]
 mod single_instance;
 #[cfg(not(target_arch = "wasm32"))]
 mod sound;
 mod status_banner;
 pub mod theme;
+#[cfg(not(target_arch = "wasm32"))]
 mod tray;
 mod tree_chrome;
 mod tree_clipboard;
@@ -167,7 +174,7 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn native_options() -> eframe::NativeOptions {
-    let mut options = eframe::NativeOptions {
+    let options = eframe::NativeOptions {
         viewport: {
             let builder = egui::ViewportBuilder::default()
                 .with_inner_size([960.0, 640.0])
@@ -197,6 +204,8 @@ fn native_options() -> eframe::NativeOptions {
     // cannot unmap the root window (the old 1×1 off-screen hack left an Alt-Tab skeleton)
     // and X11 window-type / SKIP_TASKBAR hints never apply to overlay viewports.
     // Prefer XWayland whenever DISPLAY is available (normal GNOME/Plasma/Cosmic sessions).
+    #[cfg(target_os = "linux")]
+    let mut options = options;
     #[cfg(target_os = "linux")]
     if std::env::var_os("DISPLAY").is_some() {
         options.event_loop_builder = Some(Box::new(|builder| {
@@ -322,6 +331,7 @@ pub(crate) struct BackgroundTasks {
     /// In-flight automatic backup.
     pub backup: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
     /// Find Pixel color sample taken off the UI thread.
+    #[cfg(feature = "native-runtime")]
     pub pixel_sample: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
 }
 
@@ -387,6 +397,7 @@ pub struct SqyreApp {
     macro_prompt_builder: MacroPromptBuilderUi,
     macro_yaml_builder: MacroYamlBuilderUi,
     /// Window was hidden because a point/search-area recording is armed.
+    #[cfg(not(target_arch = "wasm32"))]
     hidden_for_recording: bool,
     /// Outline windows for live search-area selection rect.
     #[cfg(feature = "native-runtime")]
@@ -408,8 +419,10 @@ pub struct SqyreApp {
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
     macro_list_filter: String,
+    #[cfg(not(target_arch = "wasm32"))]
     tray: tray::SystemTray,
     /// Process-wide single-instance lock (held for the app lifetime).
+    #[cfg(not(target_arch = "wasm32"))]
     instance_lock: Option<single_instance::InstanceLock>,
     /// Confirm dialog for deleting the selected macro.
     pending_delete_macro: Option<String>,
@@ -466,6 +479,13 @@ impl SqyreApp {
                 Arc::new(move || continue_wait.signal_continue())
             });
         }
+        #[cfg(not(any(
+            feature = "native-runtime",
+            target_arch = "wasm32",
+            target_os = "windows",
+            target_os = "android"
+        )))]
+        let _ = continue_wait;
         let pending_hotkey_macros = Arc::new(Mutex::new(Vec::new()));
         let pending_for_cb = Arc::clone(&pending_hotkey_macros);
         let hotkey_repaint = Arc::new(Mutex::new(None::<egui::Context>));
@@ -510,6 +530,7 @@ impl SqyreApp {
             let _ = (
                 &mut hotkeys,
                 &stop,
+                continue_wait,
                 pending_for_cb,
                 repaint_for_cb,
                 HotkeyCallbacks::default(),
@@ -611,6 +632,7 @@ impl SqyreApp {
             },
             run_session: RunSession {
                 state: run,
+                #[cfg(any(feature = "native-runtime", target_os = "windows"))]
                 continue_wait,
                 macro_hotkeys,
                 action_log,
@@ -637,6 +659,7 @@ impl SqyreApp {
             variables_panel: variables_panel::VariablesPanelUi::default(),
             macro_prompt_builder: MacroPromptBuilderUi::default(),
             macro_yaml_builder: MacroYamlBuilderUi::default(),
+            #[cfg(not(target_arch = "wasm32"))]
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: recording_overlay::RecordingOverlay::new(),
@@ -650,7 +673,9 @@ impl SqyreApp {
             start_when_idle: None,
             macro_list_open: true,
             macro_list_filter: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             tray: tray::SystemTray::default(),
+            #[cfg(not(target_arch = "wasm32"))]
             instance_lock: None,
             pending_delete_macro: None,
             last_viewport_content: None,

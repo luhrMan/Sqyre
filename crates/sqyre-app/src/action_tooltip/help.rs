@@ -275,12 +275,15 @@ pub const DE_BOUNDS_PREVIEW: &str =
     "Bounds overlay the preview edges; they are relative to one monitor.";
 pub const DE_SCREENCAP_INTRO: &str =
     "Set monitor-relative LeftX/TopY/RightX/BottomY (type or screen-record), name the capture, then Save writes the framed preview to images/ScreenCap. New Item creates a catalog item with Name, Tags, Cols/Rows/Stack max, and Mask, using the capture as Original.";
+#[cfg(feature = "native-runtime")]
 pub const DE_SCREENCAP_REF: &str =
     "Optional. Picking a search area or collection cell loads its bounds into LeftX/TopY/RightX/BottomY and suggests a filename.";
 pub const DE_SCREENCAP_NEW_ITEM: &str =
     "Create a catalog item in the selected program using Name, Tags, Cols/Rows/Stack max, and Mask, with the preview screenshot as the Original icon.";
+#[cfg(feature = "native-runtime")]
 pub const DE_PIXELCHECK_INTRO: &str =
     "Select an item, set a search area (reference or inline coords), tune match settings, then inspect the similarity heatmap.";
+#[cfg(feature = "native-runtime")]
 pub const DE_PIXELCHECK_BOUNDS: &str =
     "Bounds overlay the preview edges; relative to one monitor; integers or ${var}.";
 pub const DE_COLLECTION_AREA: &str = "Search area used when capturing this collection.";

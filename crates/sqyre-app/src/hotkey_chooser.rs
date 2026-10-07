@@ -158,17 +158,6 @@ impl SqyreApp {
             + PAD * 2.0;
         let width = width.clamp(MIN_W, MAX_W);
         let anchor = clamp_to_monitor(ctx, cursor_screen_points(ctx), width, height);
-        let ppp = ctx.pixels_per_point().max(0.01);
-        let phys = desktop_cursor_physical().unwrap_or_else(|| {
-            (
-                (anchor.x * ppp).round() as i32,
-                (anchor.y * ppp).round() as i32,
-            )
-        });
-        let phys = (
-            phys.0 + (MENU_OFFSET.x * ppp).round() as i32,
-            phys.1 + (MENU_OFFSET.y * ppp).round() as i32,
-        );
 
         #[cfg(all(
             feature = "native-runtime",
@@ -176,6 +165,17 @@ impl SqyreApp {
             target_os = "linux"
         ))]
         let native = {
+            let ppp = ctx.pixels_per_point().max(0.01);
+            let phys = desktop_cursor_physical().unwrap_or_else(|| {
+                (
+                    (anchor.x * ppp).round() as i32,
+                    (anchor.y * ppp).round() as i32,
+                )
+            });
+            let phys = (
+                phys.0 + (MENU_OFFSET.x * ppp).round() as i32,
+                phys.1 + (MENU_OFFSET.y * ppp).round() as i32,
+            );
             let title = if chord_label.is_empty() {
                 "Choose macro".to_string()
             } else {

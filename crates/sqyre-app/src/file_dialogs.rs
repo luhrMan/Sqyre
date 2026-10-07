@@ -19,6 +19,13 @@ use std::path::{Path, PathBuf};
 
 /// What a pick is for; decides the filter and where the result goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    target_arch = "wasm32",
+    expect(
+        dead_code,
+        reason = "backup / data-folder picks are only requested by desktop Settings"
+    )
+)]
 pub(crate) enum PickPurpose {
     /// PNG for a new icon variant of the selected item.
     IconVariant,
@@ -78,13 +85,13 @@ struct PickState {
     /// Purpose of the pick still open (Android) or just answered (desktop).
     open: Option<PickPurpose>,
     /// Desktop answer waiting for [`take_picked`].
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     done: Option<PathBuf>,
 }
 
 static PICK: Mutex<PickState> = Mutex::new(PickState {
     open: None,
-    #[cfg(not(target_os = "android"))]
+    #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
     done: None,
 });
 

@@ -1,6 +1,7 @@
 //! Embedded brand assets.
 
 /// Freedesktop application id; must match `com.sqyre.app.desktop` for GNOME/Wayland icons.
+#[cfg(not(target_arch = "wasm32"))]
 pub const APP_ID: &str = "com.sqyre.app";
 
 /// Sqyre app icon SVG (crate-local `assets/icons/`).
@@ -29,6 +30,7 @@ pub fn app_icon_rgba(size: u32) -> Option<(Vec<u8>, u32, u32)> {
 }
 
 /// Native window / taskbar icon from the brand SVG.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn app_icon() -> egui::IconData {
     match app_icon_rgba(256) {
         Some((rgba, width, height)) => egui::IconData {

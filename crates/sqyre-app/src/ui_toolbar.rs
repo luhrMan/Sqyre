@@ -146,9 +146,9 @@ fn paint_run_glow(
     rect: egui::Rect,
     color: egui::Color32,
 ) {
-    let pulse = crate::widgets::glow_pulse(ui);
+    let pulse = crate::widgets::controls::glow_pulse(ui);
     let rounding = ui.visuals().widgets.inactive.corner_radius;
-    let halo = crate::widgets::glow_halo_shapes(rect, rounding, color, pulse);
+    let halo = crate::widgets::controls::glow_halo_shapes(rect, rounding, color, pulse);
     ui.painter().set(slot, egui::Shape::Vec(halo));
 }
 

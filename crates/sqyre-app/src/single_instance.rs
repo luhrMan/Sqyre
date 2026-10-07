@@ -42,18 +42,3 @@ mod native {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::{try_acquire, InstanceLock};
-
-#[cfg(target_arch = "wasm32")]
-mod wasm {
-    use std::io;
-
-    #[derive(Debug, Default)]
-    pub struct InstanceLock;
-
-    pub fn try_acquire() -> io::Result<Option<InstanceLock>> {
-        Ok(Some(InstanceLock))
-    }
-}
-
-#[cfg(target_arch = "wasm32")]
-pub use wasm::InstanceLock;

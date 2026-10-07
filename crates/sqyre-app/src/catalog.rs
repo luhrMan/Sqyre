@@ -1,10 +1,15 @@
+#[cfg(feature = "native-runtime")]
 use sqyre_domain::{CoordinateRef, Macro};
 use sqyre_persist::{ensure_general_program, Database, MonitorRect, ProgramCatalog};
+#[cfg(feature = "native-runtime")]
 use sqyre_ports::{
     CollectionArea, CoordinateResolver, IconStore, ItemMeta, MacroLookup, PortError,
 };
+#[cfg(feature = "native-runtime")]
 use std::collections::BTreeMap;
+#[cfg(feature = "native-runtime")]
 use std::path::PathBuf;
+#[cfg(feature = "native-runtime")]
 use std::sync::Arc;
 
 /// Set catalog resolution + DPI scale from the primary monitor.
@@ -111,8 +116,10 @@ pub fn prepare_catalog(catalog: &mut ProgramCatalog, db: &mut Database) -> bool 
     true
 }
 
+#[cfg(feature = "native-runtime")]
 pub struct CatalogResolver<'a>(pub &'a ProgramCatalog);
 
+#[cfg(feature = "native-runtime")]
 impl CoordinateResolver for CatalogResolver<'_> {
     fn resolve_point(&self, r: &CoordinateRef, macro_: &Macro) -> Result<(i32, i32), PortError> {
         self.0.resolve_point(r, macro_)
@@ -149,8 +156,10 @@ impl CoordinateResolver for CatalogResolver<'_> {
     }
 }
 
+#[cfg(feature = "native-runtime")]
 pub struct CatalogIcons<'a>(pub &'a ProgramCatalog);
 
+#[cfg(feature = "native-runtime")]
 impl IconStore for CatalogIcons<'_> {
     fn variant_paths(&self, target: &str) -> Vec<PathBuf> {
         self.0.variant_paths(target)
@@ -185,8 +194,10 @@ impl IconStore for CatalogIcons<'_> {
 }
 
 /// Snapshot of macros available to RunMacro during a run.
+#[cfg(feature = "native-runtime")]
 pub struct SnapshotMacros(pub Arc<BTreeMap<String, Arc<Macro>>>);
 
+#[cfg(feature = "native-runtime")]
 impl MacroLookup for SnapshotMacros {
     fn get(&self, name: &str) -> Option<Arc<Macro>> {
         self.0.get(name).cloned()
@@ -241,6 +252,7 @@ Game:
     }
 
     #[test]
+    #[cfg(feature = "native-runtime")]
     fn catalog_resolver_resolves_point_and_area() {
         let cat = sample_catalog();
         let resolver = CatalogResolver(&cat);
@@ -270,6 +282,7 @@ Game:
     }
 
     #[test]
+    #[cfg(feature = "native-runtime")]
     fn catalog_icons_expose_item_meta() {
         let cat = sample_catalog();
         let icons = CatalogIcons(&cat);
@@ -279,6 +292,7 @@ Game:
     }
 
     #[test]
+    #[cfg(feature = "native-runtime")]
     fn snapshot_macros_lookup() {
         let mut map = BTreeMap::new();
         map.insert("alpha".into(), Arc::new(Macro::new("alpha", 0, vec![])));

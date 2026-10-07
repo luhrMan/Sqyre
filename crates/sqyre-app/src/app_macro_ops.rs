@@ -101,6 +101,7 @@ impl SqyreApp {
     }
 
     /// Set the hotkey tag selection (sorted, deduped). Persists and refreshes bindings.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     pub(crate) fn set_hotkey_tag_filters(&mut self, tags: Vec<String>) {
         let mut tags: Vec<String> = tags
             .into_iter()
@@ -1031,6 +1032,7 @@ impl SqyreApp {
 #[cfg(test)]
 mod tests {
     use super::macro_matches_hotkey_tag;
+    #[cfg(unix)]
     use crate::SqyreApp;
     use sqyre_domain::Macro;
     #[cfg(unix)]

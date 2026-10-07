@@ -344,6 +344,7 @@ impl DataEditor {
         {
             let _ = (
                 catalog,
+                icons,
                 previews,
                 screen_click,
                 active_macro,
@@ -358,7 +359,6 @@ impl DataEditor {
                     EditorTab::PixelCheck.label()
                 ),
             );
-            return;
         }
         #[cfg(feature = "native-runtime")]
         {

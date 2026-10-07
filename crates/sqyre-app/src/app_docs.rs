@@ -14,10 +14,12 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use crate::recording_overlay::RecordingOverlay;
 use crate::run_session::RunSession;
 use crate::settings::SettingsUi;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::tray;
 use crate::tree_state::TreeState;
 use crate::variables_panel;
 use crate::workspace::Workspace;
-use crate::{docs_fixture, tray, SqyreApp};
+use crate::{docs_fixture, SqyreApp};
 use eframe::egui;
 use parking_lot::Mutex;
 use sqyre_hotkeys::{HotkeyService, MacroRecordBridge, NullHotkeys, ScreenClickBridge};
@@ -44,6 +46,7 @@ impl SqyreApp {
         SettingsUi::apply_action_colors(&settings);
 
         let hotkeys: Box<dyn HotkeyService> = Box::new(NullHotkeys::default());
+        #[cfg(any(feature = "native-runtime", target_os = "windows"))]
         let continue_wait =
             sqyre_hotkeys::ContinueWaitBridge::new(sqyre_hotkeys::ContinueSource::Unavailable);
         let screen_click = ScreenClickBridge::new();
@@ -84,6 +87,7 @@ impl SqyreApp {
             },
             run_session: RunSession {
                 state: run,
+                #[cfg(any(feature = "native-runtime", target_os = "windows"))]
                 continue_wait,
                 macro_hotkeys,
                 action_log,
@@ -110,6 +114,7 @@ impl SqyreApp {
             variables_panel: variables_panel::VariablesPanelUi::default(),
             macro_prompt_builder: crate::macro_prompt_builder::MacroPromptBuilderUi::default(),
             macro_yaml_builder: crate::macro_yaml_builder::MacroYamlBuilderUi::default(),
+            #[cfg(not(target_arch = "wasm32"))]
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: RecordingOverlay::new(),
@@ -124,7 +129,9 @@ impl SqyreApp {
             // Match product default so main-window goldens include the Macros sidebar.
             macro_list_open: true,
             macro_list_filter: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             tray: tray::SystemTray::default(),
+            #[cfg(not(target_arch = "wasm32"))]
             instance_lock: None,
             pending_delete_macro: None,
             last_viewport_content: None,

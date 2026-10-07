@@ -8,12 +8,17 @@ use egui::ViewportCommand;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-#[cfg(target_arch = "wasm32")]
-use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+#[cfg_attr(
+    not(any(target_os = "linux", target_os = "windows", target_os = "macos")),
+    expect(
+        dead_code,
+        reason = "no system tray on this platform, so nothing sends commands"
+    )
+)]
 enum TrayCommand {
     SetVisible(bool),
     Quit,
@@ -54,15 +59,9 @@ impl SystemTray {
     }
 
     /// Root winit window (for immediate unmap on quit).
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
     pub fn root_window(&self) -> Option<&Arc<winit::window::Window>> {
         self.root_window.as_ref()
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn application_hidden(&self) -> bool {
-        let _ = self;
-        false
     }
 
     /// Map/unmap the root window the same way as the tray Hide/Show path.
@@ -73,11 +72,6 @@ impl SystemTray {
     #[cfg(not(target_arch = "wasm32"))]
     pub fn set_root_visible(&self, ctx: &Context, visible: bool) {
         set_application_visible(ctx, self.root_window.as_ref(), visible);
-    }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn set_root_visible(&self, ctx: &Context, visible: bool) {
-        let _ = (self, ctx, visible);
     }
 
     /// Apply tray menu actions on the egui/UI thread (`App::logic`, including while hidden).
@@ -113,9 +107,6 @@ impl SystemTray {
             }
         }
     }
-
-    #[cfg(target_arch = "wasm32")]
-    pub fn poll_commands(&self, _ctx: &Context, _frame: &eframe::Frame) {}
 
     fn inactive() -> Self {
         Self {
@@ -207,7 +198,7 @@ impl Drop for SystemTray {
 fn show_window(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
     if let Some(win) = window {
         #[cfg(target_os = "windows")]
-        let _ = win.set_minimized(false);
+        win.set_minimized(false);
         win.set_visible(true);
         win.focus_window();
     }
@@ -221,7 +212,7 @@ fn show_window(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
 fn hide_application(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
     if let Some(win) = window {
         #[cfg(target_os = "windows")]
-        let _ = win.set_minimized(true);
+        win.set_minimized(true);
         // Unmap. Do not resize to 1×1 / move off-screen — on sessions where
         // set_visible is ignored that left a vertical Alt-Tab skeleton.
         win.set_visible(false);
@@ -262,10 +253,12 @@ fn quit_app(ctx: &Context, window: Option<&Arc<winit::window::Window>>) {
     ctx.request_repaint();
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 fn load_tray_rgba(size: u32) -> Result<(Vec<u8>, u32, u32), String> {
     crate::assets::app_icon_rgba(size).ok_or_else(|| "rasterize tray icon from SVG".into())
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "macos"))]
 fn send_tray_command(tx: &Sender<TrayCommand>, wake: &Context, cmd: TrayCommand) {
     if tx.send(cmd).is_ok() {
         wake.request_repaint();
@@ -504,7 +497,10 @@ fn install_inner(
     Err("system tray not supported on this platform".into())
 }
 
-#[cfg(test)]
+#[cfg(all(
+    test,
+    any(target_os = "linux", target_os = "windows", target_os = "macos")
+))]
 mod tests {
     #[test]
     fn tray_icon_rgba_loads() {

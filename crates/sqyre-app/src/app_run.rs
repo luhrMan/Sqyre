@@ -4,6 +4,7 @@ use crate::SqyreApp;
 use eframe::egui;
 
 impl SqyreApp {
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn start_macro(&mut self, ctx: &egui::Context) {
         if self.workspace.macros.is_empty() {
             return;
@@ -85,7 +86,6 @@ impl SqyreApp {
         #[cfg(target_arch = "wasm32")]
         {
             let _ = ctx;
-            return;
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -126,7 +126,6 @@ impl SqyreApp {
                 Some(&self.macro_record_bridge),
                 preview_outline,
                 self.hidden_for_recording,
-                self.settings_ui.settings().hide_app_during_recording,
             );
         }
         #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]

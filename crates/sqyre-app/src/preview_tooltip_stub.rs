@@ -19,16 +19,10 @@ pub struct PreviewTooltipCache;
 
 impl PreviewTooltipCache {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
     pub fn invalidate_entity(&mut self, _name: &str) {}
-
-    pub fn clear(&mut self) {}
-
-    pub fn take_desktop_outline(&mut self) -> Option<(i32, i32, i32, i32)> {
-        None
-    }
 
     pub fn show_for_entity(
         &mut self,
@@ -83,6 +77,10 @@ impl PreviewTooltipCache {
         paint_unavailable_panel(ui, view)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors the native search-area panel signature"
+    )]
     pub fn paint_search_area_panel(
         &mut self,
         ui: &mut egui::Ui,
@@ -94,16 +92,6 @@ impl PreviewTooltipCache {
         view: &mut ImageViewTransform,
     ) -> (egui::Rect, egui::Vec2) {
         (paint_unavailable_panel(ui, view), egui::Vec2::ZERO)
-    }
-
-    pub fn screen_cap_image(
-        &self,
-        _left: i32,
-        _top: i32,
-        _right: i32,
-        _bottom: i32,
-    ) -> Option<std::sync::Arc<image::RgbaImage>> {
-        None
     }
 }
 

@@ -687,6 +687,7 @@ fn atlas_monitor_rects(catalog: &sqyre_persist::ProgramCatalog) -> Vec<(i32, i32
     vec![(0, 0, 1920, 1080)]
 }
 
+#[cfg(feature = "native-runtime")]
 fn layout_monitors_ltr(ox: i32, oy: i32, sizes: &[(i32, i32)]) -> Vec<(i32, i32, i32, i32)> {
     let mut x = ox;
     let mut out = Vec::new();

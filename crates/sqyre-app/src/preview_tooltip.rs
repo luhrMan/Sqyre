@@ -451,12 +451,12 @@ impl PreviewTooltipCache {
             match capture_preview(capturer.as_ref(), coords, max_dim, force, keep_region) {
                 Ok(captured) => {
                     self.failures.remove(key);
-                    return self.finish_texture(ctx, key, caption, coords, captured, keep_region);
+                    self.finish_texture(ctx, key, caption, coords, captured, keep_region)
                 }
                 Err(e) => {
                     let e = e.to_string();
                     self.remember_failure(key, e.clone(), Instant::now(), coords);
-                    return Err(e);
+                    Err(e)
                 }
             }
         }

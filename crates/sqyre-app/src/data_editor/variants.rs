@@ -424,7 +424,6 @@ impl DataEditor {
                 "{} requires the desktop app.",
                 EditorTab::ScreenCap.label()
             ));
-            return;
         }
         #[cfg(feature = "native-runtime")]
         {
@@ -514,7 +513,6 @@ impl DataEditor {
                 "{} requires the desktop app.",
                 EditorTab::ScreenCap.label()
             ));
-            return;
         }
         #[cfg(feature = "native-runtime")]
         {
@@ -623,7 +621,7 @@ impl DataEditor {
         {
             let _ = (catalog, program, collection, rollback_collection);
             self.set_err("Collection capture requires the desktop app.");
-            return Ok(());
+            Ok(())
         }
         #[cfg(feature = "native-runtime")]
         {

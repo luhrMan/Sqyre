@@ -770,7 +770,6 @@ impl SettingsUi {
             ui.label(
                 "Browser editor: macros live in memory. Use Import / Export on the toolbar for db.yaml. Full backups are not available.",
             );
-            return;
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -1091,6 +1090,7 @@ impl SettingsUi {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn choose_sqyre_location(&mut self) {
         let start = sqyre_dir()
             .parent()
@@ -1104,6 +1104,7 @@ impl SettingsUi {
     }
 
     /// Flatpak: portal-pick host `~/.sqyre` (or its parent) so the sandbox can use it.
+    #[cfg(not(target_arch = "wasm32"))]
     fn choose_host_sqyre_location(&mut self) {
         let start = std::env::var_os("HOME")
             .map(PathBuf::from)
@@ -1125,6 +1126,7 @@ impl SettingsUi {
     }
 
     /// Clear a custom data path and reload from the default Flatpak/native location.
+    #[cfg(not(target_arch = "wasm32"))]
     fn reset_sqyre_to_sandbox(
         &mut self,
         db: &mut Database,
@@ -1545,6 +1547,7 @@ impl SettingsUi {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn format_last_backup(unix: i64) -> String {
     if unix <= 0 {
         return "Last backup: never".into();
