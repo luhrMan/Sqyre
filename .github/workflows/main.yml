@@ -261,7 +261,7 @@ jobs:
               sccache --show-stats || true'
 
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-html
           path: |
@@ -390,7 +390,7 @@ jobs:
             "sqyre-v${VERSION}-linux-amd64"
 
       - name: Upload Linux binary artifact (zipped)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: linux-binary-zip
           path: sqyre-v${{ needs.version.outputs.version }}-linux-amd64.zip
@@ -474,7 +474,7 @@ jobs:
             "Sqyre-v${VERSION}-x86_64.AppImage"
 
       - name: Upload Linux AppImage artifact (zipped)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: linux-appimage-zip
           path: Sqyre-v${{ needs.version.outputs.version }}-x86_64.AppImage.zip
@@ -537,7 +537,7 @@ jobs:
           mv "bin/com.sqyre.app.flatpak" "Sqyre-v${VERSION}-x86_64.flatpak"
 
       - name: Upload Flatpak artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: linux-flatpak
           path: Sqyre-v${{ needs.version.outputs.version }}-x86_64.flatpak
@@ -623,7 +623,7 @@ jobs:
             "sqyre-v${VERSION}-windows-amd64.exe"
 
       - name: Upload Windows binary artifact (zipped)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: windows-binary-zip
           path: sqyre-v${{ needs.version.outputs.version }}-windows-amd64.zip
@@ -717,7 +717,7 @@ jobs:
           (cd bin/wasm && zip -9r "../../sqyre-v${VERSION}-wasm.zip" .)
 
       - name: Upload WASM artifact (zipped)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v6
         with:
           name: wasm-editor-zip
           path: sqyre-v${{ needs.version.outputs.version }}-wasm.zip
