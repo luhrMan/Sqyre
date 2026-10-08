@@ -106,7 +106,7 @@ fn probe_screencast(
         };
     }
 
-    if opts.nonblocking_capture {
+    if opts.in_app {
         return CapabilityResult::pending("skipped live ScreenCast session (in-app probe)");
     }
 

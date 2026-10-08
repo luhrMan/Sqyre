@@ -135,12 +135,10 @@ pub struct ProbeOptions {
     pub wait_permissions_secs: u64,
     /// Print human text to stderr instead of JSON-only stdout.
     pub human: bool,
-    /// Do not start a second global hook thread (in-app permissions refresh).
-    pub skip_hotkeys_probe: bool,
-    /// Skip `SelectionOutline` / `SelectionGrab` open (in-app — those hitch the pointer).
-    pub skip_outline_grab: bool,
-    /// Do not block on a portal ScreenCast picker (`shared_capturer` OnceLock).
-    pub nonblocking_capture: bool,
+    /// In-app permissions refresh: never block on a portal picker, start a second hook
+    /// thread, open outline/grab (pointer hitch), grab a portal frame, or enumerate
+    /// windows (multi-source walk). The panel does not read the skipped results.
+    pub in_app: bool,
 }
 
 impl Default for ProbeOptions {
@@ -149,9 +147,7 @@ impl Default for ProbeOptions {
             required: default_required_caps(),
             wait_permissions_secs: 0,
             human: false,
-            skip_hotkeys_probe: false,
-            skip_outline_grab: false,
-            nonblocking_capture: false,
+            in_app: false,
         }
     }
 }
@@ -177,9 +173,9 @@ pub fn run_probe(opts: &ProbeOptions) -> ProbeReport {
 
     let mut caps = BTreeMap::new();
     probe_capture(&session, &mut caps, opts);
-    probe_windows(&mut caps);
+    probe_windows(&mut caps, opts);
     probe_input(&session, &mut caps);
-    if opts.skip_hotkeys_probe {
+    if opts.in_app {
         probe_hotkeys_inferred(&session, &mut caps);
     } else {
         probe_hotkeys(&session, &mut caps);
@@ -358,7 +354,7 @@ fn probe_capture(
     caps.insert(
         "capture.open".into(),
         timed(|| {
-            if opts.nonblocking_capture && sqyre_capture::shared_capturer_open_may_block() {
+            if opts.in_app && sqyre_capture::shared_capturer_open_may_block() {
                 return match sqyre_capture::shared_capturer_if_ready() {
                     Some(Ok(_)) => {
                         cap_log("CAP", "ok", &format!("backend={backend} op=open"));
@@ -412,6 +408,10 @@ fn probe_capture(
         timed(|| {
             if capture_open_pending {
                 return CapabilityResult::pending("waiting for portal ScreenCast permission");
+            }
+            // A portal crop restarts full-desktop frame copies.
+            if opts.in_app {
+                return CapabilityResult::skip("skipped frame grab (in-app probe)");
             }
             let Ok(capturer) = sqyre_capture::shared_capturer() else {
                 return CapabilityResult::fail("capture.open failed");
@@ -527,7 +527,13 @@ fn probe_capture(
     }
 }
 
-fn probe_windows(caps: &mut BTreeMap<String, CapabilityResult>) {
+fn probe_windows(caps: &mut BTreeMap<String, CapabilityResult>, opts: &ProbeOptions) {
+    if opts.in_app {
+        for key in ["windows.list", "windows.active"] {
+            caps.insert(key.into(), CapabilityResult::skip("skipped (in-app probe)"));
+        }
+        return;
+    }
     caps.insert(
         "windows.list".into(),
         timed(|| match sqyre_capture::list_open_windows() {
@@ -731,7 +737,7 @@ fn probe_hotkeys(session: &SessionReport, caps: &mut BTreeMap<String, Capability
 }
 
 fn probe_outline_grab(caps: &mut BTreeMap<String, CapabilityResult>, opts: &ProbeOptions) {
-    if opts.skip_outline_grab {
+    if opts.in_app {
         caps.insert(
             "outline.open".into(),
             CapabilityResult::skip("skipped (in-app probe)"),
@@ -851,10 +857,10 @@ mod tests {
     }
 
     #[test]
-    fn skip_outline_grab_does_not_open_x11() {
+    fn in_app_skips_outline_grab() {
         let mut caps = BTreeMap::new();
         let opts = ProbeOptions {
-            skip_outline_grab: true,
+            in_app: true,
             ..ProbeOptions::default()
         };
         probe_outline_grab(&mut caps, &opts);
@@ -869,7 +875,20 @@ mod tests {
     }
 
     #[test]
-    fn skip_hotkeys_probe_infers_without_starting_hooks() {
+    fn in_app_skips_window_enumeration() {
+        let mut caps = BTreeMap::new();
+        let opts = ProbeOptions {
+            in_app: true,
+            ..ProbeOptions::default()
+        };
+        probe_windows(&mut caps, &opts);
+        for key in ["windows.list", "windows.active"] {
+            assert_eq!(caps.get(key).map(|c| &c.status), Some(&CapStatus::Skip));
+        }
+    }
+
+    #[test]
+    fn in_app_infers_hotkeys_without_starting_hooks() {
         let mut caps = BTreeMap::new();
         let session = SessionReport {
             session_type: "wayland".into(),

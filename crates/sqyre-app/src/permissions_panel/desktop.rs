@@ -122,9 +122,7 @@ impl PermissionsPanel {
         self.rx = Some(rx);
         thread::spawn(move || {
             let opts = ProbeOptions {
-                skip_hotkeys_probe: true,
-                skip_outline_grab: true,
-                nonblocking_capture: true,
+                in_app: true,
                 ..ProbeOptions::default()
             };
             let (inner_tx, inner_rx) = mpsc::sync_channel(1);

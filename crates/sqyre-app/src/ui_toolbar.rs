@@ -163,15 +163,18 @@ fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_e
     }
 }
 
-/// Pulsing halo behind the Run / Stop button, painted into a slot reserved before the button.
+/// Halo behind the Run / Stop button, painted into a slot reserved before the button.
+/// Pulses only when `animate`; otherwise it holds full strength so idle frames need no
+/// repaint.
 #[cfg(not(target_arch = "wasm32"))]
 fn paint_run_glow(
     ui: &egui::Ui,
     slot: egui::layers::ShapeIdx,
     rect: egui::Rect,
     color: egui::Color32,
+    animate: bool,
 ) {
-    let pulse = crate::widgets::controls::glow_pulse(ui);
+    let pulse = crate::widgets::controls::glow_pulse_if(ui, animate);
     let rounding = ui.visuals().widgets.inactive.corner_radius;
     let halo = crate::widgets::controls::glow_halo_shapes(rect, rounding, color, pulse);
     ui.painter().set(slot, egui::Shape::Vec(halo));
@@ -226,7 +229,7 @@ fn paint_run_stop(app: &mut SqyreApp, ui: &mut egui::Ui, running: bool) {
         }
     }
     if let Some(slot) = glow {
-        paint_run_glow(ui, slot, button.rect, color);
+        paint_run_glow(ui, slot, button.rect, color, running || button.hovered());
     }
     if button.clicked() {
         if running {

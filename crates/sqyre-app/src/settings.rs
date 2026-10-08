@@ -1544,7 +1544,7 @@ impl SettingsUi {
             && ui
                 .checkbox(&mut self.settings.run_button_glow, "Glowing Run button")
                 .on_hover_text(
-                    "Softly pulse a green glow around the Run button when a macro is ready to run.",
+                    "Show a green glow around the Run button when a macro is ready to run; it pulses while hovered.",
                 )
                 .changed()
         {

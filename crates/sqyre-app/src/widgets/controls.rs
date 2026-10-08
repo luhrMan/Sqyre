@@ -155,6 +155,15 @@ pub fn glow_pulse(ui: &egui::Ui) -> f32 {
     (t * std::f32::consts::TAU * 0.4).sin().mul_add(0.5, 0.5)
 }
 
+/// [`glow_pulse`] while `animate`, else a steady full glow that schedules no repaints.
+pub fn glow_pulse_if(ui: &egui::Ui, animate: bool) -> f32 {
+    if animate {
+        glow_pulse(ui)
+    } else {
+        1.0
+    }
+}
+
 /// Stacked filled halos around `rect`; paint *under* an opaque body.
 ///
 /// Filled (not concentric `rect_stroke`s) so epaint stroke tessellation cannot
@@ -187,16 +196,14 @@ pub fn glow_halo_shapes(
         .collect()
 }
 
-/// Persist / commit button that pulses a Sqyre-yellow glow while enabled (dirty + valid).
+/// Persist / commit button with a Sqyre-yellow glow while enabled (dirty + valid).
 ///
-/// Disabled state matches a normal `add_enabled(false, …)` button. Animation
-/// cadence follows [`glow_pulse`].
+/// Disabled state matches a normal `add_enabled(false, …)` button. The glow holds
+/// steady and only pulses (see [`glow_pulse`]) while hovered.
 pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
     if !enabled {
         return ui.add_enabled(false, egui::Button::new(label));
     }
-
-    let pulse = glow_pulse(ui);
 
     let visuals = ui.style().visuals.widgets.inactive;
     let rounding = visuals.corner_radius;
@@ -212,6 +219,7 @@ pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egu
     );
 
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let pulse = glow_pulse_if(ui, response.hovered());
     let painter = ui.painter();
 
     painter.extend(glow_halo_shapes(rect, rounding, PRIMARY, pulse));
