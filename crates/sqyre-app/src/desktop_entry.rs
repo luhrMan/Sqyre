@@ -13,9 +13,9 @@ const DESKTOP_TEMPLATE: &str = "\
 [Desktop Entry]
 Type=Application
 Name=Sqyre
-Comment=Your Personal Inventory Manager
+Comment=Desktop macro builder — screen-aware automation
 Categories=Development;Utility;
-Keywords=sqyre;macro;automation;
+Keywords=sqyre;macro;automation;ocr;image-search;macro-recorder;auto-clicker;hotkey;
 Icon=com.sqyre.app
 Exec=sqyre
 Terminal=false

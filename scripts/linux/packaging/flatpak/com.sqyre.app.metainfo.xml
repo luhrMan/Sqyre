@@ -10,8 +10,10 @@
   <name>Sqyre</name>
   <summary>Desktop macro builder with screen-aware automation</summary>
   <developer_name>luhrMan</developer_name>
-  <url type="homepage">https://github.com/luhrMan/Squire</url>
-  <url type="bugtracker">https://github.com/luhrMan/Squire/issues</url>
+  <url type="homepage">https://luhrman.dev/sqyre/</url>
+  <url type="bugtracker">https://github.com/luhrMan/Sqyre/issues</url>
+  <url type="vcs-browser">https://github.com/luhrMan/Sqyre</url>
+  <url type="donation">https://github.com/sponsors/luhrMan</url>
   <description>
     <p>
       Sqyre is a desktop app for building and running macros without writing code.
@@ -43,6 +45,12 @@
     <keyword>automation</keyword>
     <keyword>ocr</keyword>
     <keyword>image search</keyword>
+    <keyword>macro recorder</keyword>
+    <keyword>auto clicker</keyword>
+    <keyword>keyboard</keyword>
+    <keyword>mouse</keyword>
+    <keyword>hotkey</keyword>
+    <keyword>wayland</keyword>
   </keywords>
   <content_rating type="oars-1.1" />
   <releases>

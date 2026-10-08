@@ -5,11 +5,20 @@
 <h1 align="center">Sqyre</h1>
 
 <p align="center">
-  <strong>Desktop macro builder</strong> — automate mouse, keyboard, and screen-aware steps with a visual tree editor.
+  <strong>Free, open-source macro builder and automation tool for Linux and Windows</strong> — automate mouse clicks, keyboard input, and screen-aware steps (image search, OCR, pixel detection) with a visual, no-code tree editor.
 </p>
 
 <p align="center">
-  <a href="https://github.com/luhrMan/Squire/releases">Releases</a>
+  <a href="https://luhrman.dev/sqyre/"><img src="https://img.shields.io/badge/website-luhrman.dev%2Fsqyre-5865F2" alt="Sqyre website" /></a>
+  <a href="https://github.com/luhrMan/Sqyre/releases/latest"><img src="https://img.shields.io/github/v/release/luhrMan/Sqyre?label=release" alt="Latest release" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0-blue" alt="GPL-3.0 license" /></a>
+  <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20Web-informational" alt="Platforms: Linux, Windows, Web" />
+</p>
+
+<p align="center">
+  <a href="https://luhrman.dev/sqyre/"><strong>Website</strong></a>
+  ·
+  <a href="https://github.com/luhrMan/Sqyre/releases">Releases</a>
   ·
   <a href="docs/DEVELOPING.md">Developing</a>
   ·
@@ -23,6 +32,8 @@
 ## 📋 Project description
 
 Sqyre is a desktop app for building and running macros **without writing code**. Each macro is a tree of actions: loops and branches for flow control, detection steps when the screen matters, and leaf actions for concrete mouse and keyboard input.
+
+Use it as a macro recorder, auto clicker, keyboard and mouse automation tool, or a no-code alternative to scripting tools like AutoHotkey, with native support for both X11 and Wayland on Linux. Learn more at **[luhrman.dev/sqyre](https://luhrman.dev/sqyre/)**.
 
 Macros, images, masks, and data tables live under **`~/.sqyre/`** (user home on every platform). The catalog of programs, reusable points, search areas, and templates is edited in-app; settings live in `settings.yaml` beside `db.yaml`.
 
@@ -78,7 +89,7 @@ Assets under `docs/images/` are generated from in-memory egui tests (`make docs-
 
 ## 🚀 Quick start
 
-**End users** — grab a build from [GitHub Releases](https://github.com/luhrMan/Squire/releases):
+**End users** — grab a build from [GitHub Releases](https://github.com/luhrMan/Sqyre/releases) (overview and docs at [luhrman.dev/sqyre](https://luhrman.dev/sqyre/)):
 
 1. Download the Linux binary / AppImage / Flatpak, Windows `sqyre.exe`, or the WASM editor zip.
 2. Run the binary (or open the WASM editor in a static file server).
@@ -251,7 +262,7 @@ Sqyre drives mouse, keyboard, and screen capture on your machine. Treat macros a
 - Prefer the Permissions panel on Wayland over blanket compositor workarounds
 - Keep auto-update enabled on release builds so you receive signed updates
 
-Report security-sensitive issues privately to the maintainer via [GitHub](https://github.com/luhrMan/Squire) when possible.
+Report security-sensitive issues privately to the maintainer via [GitHub](https://github.com/luhrMan/Sqyre) when possible.
 
 ---
 

@@ -5,6 +5,7 @@ use crate::linux::session::{LinuxCaptureBackend, LinuxSessionInfo};
 use crate::x11_capture::X11Capturer;
 use image::RgbaImage;
 use sqyre_ports::{DesktopRect, RgbCapture};
+use std::time::Duration;
 
 #[cfg(feature = "portal-capture")]
 use crate::linux::wayland::PortalCapturer;
@@ -124,6 +125,19 @@ impl OsCapturer {
             Inner::X11(_) => {}
             #[cfg(feature = "portal-capture")]
             Inner::Portal(c) => c.release_cpu_frame_cache(),
+        }
+    }
+
+    /// See [`PortalCapturer::release_cpu_frame_cache_if_idle`]; `None` on X11.
+    #[cfg_attr(
+        not(feature = "portal-capture"),
+        expect(unused_variables, reason = "only the portal mirror is idle-released")
+    )]
+    pub fn release_cpu_frame_cache_if_idle(&self, idle: Duration) -> Option<Duration> {
+        match &self.0 {
+            Inner::X11(_) => None,
+            #[cfg(feature = "portal-capture")]
+            Inner::Portal(c) => c.release_cpu_frame_cache_if_idle(idle),
         }
     }
 

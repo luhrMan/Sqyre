@@ -387,6 +387,11 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 }
 
+/// Outside runs, previews / color picks re-enable the portal frame mirror; drop it
+/// after this long without captures so PipeWire frames stop being copied.
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+const IDLE_FRAME_CACHE_RELEASE: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Settings reload, highlighter / log prefs, color sample, recording + macro overlays,
 /// hotkey/key record UI, and repaint pacing.
 pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
@@ -568,6 +573,14 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     let running = app.run_session.state.running.load(Ordering::SeqCst);
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    if !running {
+        if let Some(wait) =
+            sqyre_capture::release_idle_capture_frame_cache(IDLE_FRAME_CACHE_RELEASE)
+        {
+            ctx.request_repaint_after(wait);
+        }
+    }
     let highlight_on = app.settings_ui.settings().highlight_active_action;
     if running && highlight_on {
         ctx.request_repaint_after(std::time::Duration::from_millis(50));

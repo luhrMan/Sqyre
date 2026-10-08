@@ -676,6 +676,29 @@ fn flattened_visible_ids(root: &Action) -> Vec<ActionId> {
     ids
 }
 
+/// Whether the selected macro's tree has a collapsed branch; `None` when it has no branches.
+/// `ui` must be the one later passed to [`show`] so the tree state id matches.
+pub fn any_branch_collapsed(app: &SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
+    let idx = app
+        .workspace
+        .selected_macro
+        .min(app.workspace.macros.len().checked_sub(1)?);
+    let id = ui.make_persistent_id(("macro_tree", idx));
+    let state = TreeViewState::<ActionId>::load(ui, id).unwrap_or_default();
+    // Unset openness matches NodeBuilder::dir default_open(true).
+    let closed = |id: ActionId| !state.is_open(&id).unwrap_or(true);
+    let mut has_branch = false;
+    let mut collapsed = false;
+    app.workspace.macros[idx].root.walk(&mut |action| {
+        if action.is_branch() && !action.id.is_root() {
+            has_branch = true;
+            collapsed |= closed(action.id)
+                || (action.has_else_folder() && closed(ActionId::else_folder(action.id)));
+        }
+    });
+    has_branch.then_some(collapsed)
+}
+
 fn set_all_branches_openness(root: &Action, state: &mut TreeViewState<ActionId>, open: bool) {
     root.walk(&mut |action| {
         if action.is_branch() && !action.id.is_root() {

@@ -531,6 +531,31 @@ pub fn release_capture_frame_cache() {
     }
 }
 
+/// Release the portal CPU frame mirror once no capture has used it for `idle`.
+///
+/// Call outside macro runs only. Returns how long until the next check is due, or
+/// `None` when nothing is buffering (no-op off the Linux portal).
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        unused_variables,
+        reason = "only the Linux portal mirror is idle-released"
+    )
+)]
+pub fn release_idle_capture_frame_cache(idle: std::time::Duration) -> Option<std::time::Duration> {
+    #[cfg(target_os = "linux")]
+    {
+        match shared_capturer_if_ready() {
+            Some(Ok(cap)) => cap.release_cpu_frame_cache_if_idle(idle),
+            _ => None,
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
 /// Current portal CPU frame-cache size in bytes (0 if unused / released / non-portal).
 pub fn capture_frame_cache_bytes() -> usize {
     #[cfg(any(target_os = "linux", target_os = "android"))]

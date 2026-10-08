@@ -30,7 +30,8 @@ default-members = [
 [workspace.package]
 edition = "2021"
 license = "GPL-3.0-only"
-repository = "https://github.com/luhrMan/Squire"
+repository = "https://github.com/luhrMan/Sqyre"
+homepage = "https://luhrman.dev/sqyre/"
 
 # Shared lint policy; every crate opts in with `[lints] workspace = true`.
 # CI enforces these as errors via `make clippy` (`-D warnings`).

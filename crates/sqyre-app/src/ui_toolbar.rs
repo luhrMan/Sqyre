@@ -1,4 +1,4 @@
-//! Window top bar (brand / Data Editor / Settings) and central-panel toolbars: hotkey row, action chrome.
+//! Window top bar (brand / Data Editor / Settings), footer (delay / hotkey / builders), and action chrome.
 
 use crate::macro_meta::collect_all_macro_tags;
 use crate::theme;
@@ -369,35 +369,97 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
         app.apply_hotkey_to_selected(Vec::new(), None);
     }
 
-    let mut trigger = HotkeyTrigger::parse(&app.workspace.macros[idx].hotkey_trigger);
-    let mut trigger_changed = false;
-    if ui
-        .selectable_label(trigger == HotkeyTrigger::Press, "On press")
-        .on_hover_text(crate::action_tooltip::help::META_HOTKEY_PRESS)
-        .clicked()
-    {
-        trigger = HotkeyTrigger::Press;
-        trigger_changed = true;
-    }
-    if ui
-        .selectable_label(trigger == HotkeyTrigger::Release, "On release")
-        .on_hover_text(crate::action_tooltip::help::META_HOTKEY_RELEASE)
-        .clicked()
-    {
-        trigger = HotkeyTrigger::Release;
-        trigger_changed = true;
-    }
-    if trigger_changed {
+    let mut on_press =
+        HotkeyTrigger::parse(&app.workspace.macros[idx].hotkey_trigger) == HotkeyTrigger::Press;
+    let tip = if on_press {
+        crate::action_tooltip::help::META_HOTKEY_PRESS
+    } else {
+        crate::action_tooltip::help::META_HOTKEY_RELEASE
+    };
+    let toggled = ui
+        .add_enabled_ui(!running, |ui| {
+            crate::widgets::icon_toggle(
+                ui,
+                &mut on_press,
+                tip,
+                egui_phosphor::regular::HAND_TAP,
+                egui_phosphor::fill::HAND_TAP,
+            )
+        })
+        .inner
+        .changed();
+    if toggled {
+        let trigger = if on_press {
+            HotkeyTrigger::Press
+        } else {
+            HotkeyTrigger::Release
+        };
         let chord = app.workspace.macros[idx].hotkey.clone();
         app.apply_hotkey_to_selected(chord, Some(trigger));
     }
 }
 
-/// Action chrome (run/stop, add/vars/clipboard/history/expand, delay/hotkey).
+/// Single icon that pops up the AI and YAML Macro Builder entries.
+fn paint_builder_menu(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    let resp = toolbar_icon(
+        ui,
+        egui_phosphor::regular::MAGIC_WAND,
+        "Macro builders",
+        true,
+    );
+    egui::Popup::menu(&resp).show(|ui| {
+        let ai_label = format!("{} AI Macro Builder", egui_phosphor::regular::SPARKLE);
+        if crate::widgets::menu_item(ui, &ai_label, true) {
+            app.macro_prompt_builder.open_builder();
+        }
+        if crate::widgets::menu_item(ui, "{}  YAML Macro Builder", true) {
+            if app.run_session.state.running.load(Ordering::SeqCst) {
+                *app.run_session.state.status.lock() =
+                    "Cannot open YAML Macro Builder while a macro is running.".into();
+            } else {
+                let selected = app.workspace.macros.get(app.workspace.selected_macro);
+                app.macro_yaml_builder.open_builder(selected);
+            }
+        }
+    });
+}
+
+/// Thin full-width footer: delay, hotkey, and macro builder buttons for the selected macro.
+/// Must be shown before the side panel so it spans the whole window width.
+pub fn footer_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    if app.workspace.macros.is_empty() {
+        return;
+    }
+    egui::Panel::bottom("app_footer_bar")
+        .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin::symmetric(8, 1)))
+        .show(ui, |ui| {
+            let running = app.run_session.state.running.load(Ordering::SeqCst);
+            let idx = app
+                .workspace
+                .selected_macro
+                .min(app.workspace.macros.len() - 1);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                // Right-to-left: builder menu rightmost, delay/hotkey fill the rest from the left.
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    paint_builder_menu(app, ui);
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        paint_delay_hotkey(app, ui, idx, running);
+                    });
+                });
+            });
+        });
+}
+
+/// Action chrome (run/stop, add/vars/clipboard/history/expand-or-collapse).
+/// `any_collapsed` comes from [`crate::ui_macro_tree::any_branch_collapsed`].
 /// Returns expand/collapse force.
-pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
+pub fn action_toolbar(
+    app: &mut SqyreApp,
+    ui: &mut egui::Ui,
+    any_collapsed: Option<bool>,
+) -> Option<bool> {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
-    let idx = app.workspace.selected_macro;
     let mut force_openness: Option<bool> = None;
     ui.horizontal_wrapped(|ui| {
         // Tight gap between toolbar icon buttons (scale SPACE_4).
@@ -436,26 +498,6 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         if toolbar_icon_colored(ui, "x", "Variables", true, Some(vars_color)).clicked() {
             app.variables_panel.open = true;
         }
-        if toolbar_icon(
-            ui,
-            egui_phosphor::regular::SPARKLE,
-            "AI Macro Builder",
-            true,
-        )
-        .clicked()
-        {
-            app.macro_prompt_builder.open_builder();
-        }
-        if toolbar_icon(ui, "{}", "YAML Macro Builder", true).clicked() {
-            let running = app.run_session.state.running.load(Ordering::SeqCst);
-            if running {
-                *app.run_session.state.status.lock() =
-                    "Cannot open YAML Macro Builder while a macro is running.".into();
-            } else {
-                let selected = app.workspace.macros.get(app.workspace.selected_macro);
-                app.macro_yaml_builder.open_builder(selected);
-            }
-        }
         crate::widgets::section_separator(ui);
         if toolbar_icon(ui, "📄", "Copy (Ctrl+C)", can_copy && !running).clicked() {
             app.copy_selection(ui.ctx());
@@ -472,28 +514,18 @@ pub fn action_toolbar(app: &mut SqyreApp, ui: &mut egui::Ui) -> Option<bool> {
         if toolbar_icon(ui, "↻", "Redo (Ctrl+Y)", can_redo && !running).clicked() {
             app.redo_tree();
         }
-        if toolbar_icon(
-            ui,
-            egui_phosphor::regular::TREE_VIEW,
-            "Expand all branches",
-            true,
-        )
-        .clicked()
-        {
-            force_openness = Some(true);
+        let expand = any_collapsed.unwrap_or(false);
+        let (glyph, tip) = if expand {
+            (egui_phosphor::regular::TREE_VIEW, "Expand all branches")
+        } else {
+            (
+                egui_phosphor::regular::SQUARE_SPLIT_VERTICAL,
+                "Collapse all branches",
+            )
+        };
+        if toolbar_icon(ui, glyph, tip, any_collapsed.is_some()).clicked() {
+            force_openness = Some(expand);
         }
-        if toolbar_icon(
-            ui,
-            egui_phosphor::regular::SQUARE_SPLIT_VERTICAL,
-            "Collapse all branches",
-            true,
-        )
-        .clicked()
-        {
-            force_openness = Some(false);
-        }
-        crate::widgets::section_separator(ui);
-        paint_delay_hotkey(app, ui, idx, running);
     });
     ui.add_space(theme::SPACE_4);
     force_openness

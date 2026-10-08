@@ -965,9 +965,10 @@ impl eframe::App for SqyreApp {
 }
 
 impl SqyreApp {
-    /// Top bar, macro list and the selected macro, in that order so the top bar spans the width.
+    /// Top bar, footer, macro list and the selected macro, in that order so the bars span the width.
     fn show_panels(&mut self, ui: &mut egui::Ui) {
         ui_toolbar::top_bar(self, ui);
+        ui_toolbar::footer_bar(self, ui);
         ui_macro_list::show(self, ui);
         self.persist_selected_macro();
 
@@ -997,7 +998,8 @@ impl SqyreApp {
             if !ui_toolbar::show_meta_and_hotkey(self, ui) {
                 return;
             }
-            let force_openness = ui_toolbar::action_toolbar(self, ui);
+            let any_collapsed = ui_macro_tree::any_branch_collapsed(self, ui);
+            let force_openness = ui_toolbar::action_toolbar(self, ui, any_collapsed);
             ui_macro_tree::show(self, ui, force_openness);
         });
     }
