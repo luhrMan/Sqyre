@@ -333,11 +333,11 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                                 }
                                 ui.label("X");
                                 let x_resp = ui
-                                    .add(egui::DragValue::new(&mut pt.x).speed(1).suffix(" px"))
+                                    .add(crate::widgets::num_entry(&mut pt.x).speed(1).suffix(" px"))
                                     .on_hover_text("Screen X (physical pixels)");
                                 ui.label("Y");
                                 let y_resp = ui
-                                    .add(egui::DragValue::new(&mut pt.y).speed(1).suffix(" px"))
+                                    .add(crate::widgets::num_entry(&mut pt.y).speed(1).suffix(" px"))
                                     .on_hover_text("Screen Y (physical pixels)");
 
                                 row_hovered = enabled.contains_pointer()

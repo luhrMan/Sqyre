@@ -556,7 +556,7 @@ impl SettingsUi {
                 let mut v = self.settings.worker_threads;
                 if ui
                     .add(
-                        egui::DragValue::new(&mut v)
+                        crate::widgets::num_entry(&mut v)
                             .range(sqyre_persist::MIN_WORKER_THREADS..=max)
                             .speed(1),
                     )
@@ -643,7 +643,7 @@ impl SettingsUi {
                             let mut v = self.settings.while_max_iterations;
                             if ui
                                 .add(
-                                    egui::DragValue::new(&mut v)
+                                    crate::widgets::num_entry(&mut v)
                                         .range(
                                             sqyre_persist::MIN_WHILE_MAX_ITERATIONS
                                                 ..=sqyre_persist::MAX_WHILE_MAX_ITERATIONS,
@@ -668,7 +668,7 @@ impl SettingsUi {
                             let mut v = self.settings.run_macro_max_depth;
                             if ui
                                 .add(
-                                    egui::DragValue::new(&mut v)
+                                    crate::widgets::num_entry(&mut v)
                                         .range(
                                             sqyre_persist::MIN_RUN_MACRO_MAX_DEPTH
                                                 ..=sqyre_persist::MAX_RUN_MACRO_MAX_DEPTH,
@@ -783,7 +783,7 @@ impl SettingsUi {
                             let mut v = self.settings.image_search_close_matches_distance;
                             if ui
                                 .add(
-                                    egui::DragValue::new(&mut v)
+                                    crate::widgets::num_entry(&mut v)
                                         .range(0..=100)
                                         .speed(1)
                                         .suffix(" px"),
@@ -981,7 +981,7 @@ impl SettingsUi {
                 let mut v = self.settings.backup_interval_hours;
                 if ui
                     .add(
-                        egui::DragValue::new(&mut v)
+                        crate::widgets::num_entry(&mut v)
                             .range(MIN_BACKUP_INTERVAL_HOURS..=MAX_BACKUP_INTERVAL_HOURS)
                             .speed(1),
                     )
@@ -1002,7 +1002,7 @@ impl SettingsUi {
                 let mut v = self.settings.backup_max_keep;
                 if ui
                     .add(
-                        egui::DragValue::new(&mut v)
+                        crate::widgets::num_entry(&mut v)
                             .range(MIN_BACKUP_MAX_KEEP..=MAX_BACKUP_MAX_KEEP)
                             .speed(1),
                     )
@@ -1557,7 +1557,7 @@ impl SettingsUi {
                 ui.label("Font size:");
                 let mut v = self.settings.ui_font_size;
                 if ui
-                    .add(egui::DragValue::new(&mut v).range(10..=28).speed(1))
+                    .add(crate::widgets::num_entry(&mut v).range(10..=28).speed(1))
                     .on_hover_text("Base text size for labels, buttons, and form fields.")
                     .changed()
                 {
@@ -1579,7 +1579,7 @@ impl SettingsUi {
                 let mut v = self.settings.ui_scale;
                 if ui
                     .add(
-                        egui::DragValue::new(&mut v)
+                        crate::widgets::num_entry(&mut v)
                             .range(0.5..=2.5)
                             .speed(0.05)
                             .fixed_decimals(1),
