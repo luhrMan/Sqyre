@@ -1,21 +1,22 @@
 //! Numeric entry box: an [`egui::DragValue`] with stacked increment/decrement
-//! steppers at its end, painted with the upper and lower strokes of the Sqyre
-//! "S". The steppers share the field's height, so the row never grows taller.
+//! steppers inside its right end, painted with the upper and lower strokes of
+//! the Sqyre "S". The steppers share the field's rect, so the row never grows.
 
 use crate::assets;
 use crate::theme::{accent_dim, PRIMARY};
 use eframe::egui::{
     self, Atoms, IntoAtoms, Key, Modifiers, Response, Sense, Stroke, TextureHandle, TextureOptions,
-    Ui, Vec2, Widget, WidgetInfo, WidgetType,
+    Ui, Widget, WidgetInfo, WidgetType,
 };
 use std::ops::RangeInclusive;
 
-/// Column width for the stacked steppers (points).
-const STEPPER_W: f32 = 16.0;
+/// Width of the stepper zone inside the entry box and its right inset (points).
+const STEPPER_W: f32 = 12.0;
+const STEPPER_INSET: f32 = 3.0;
 /// Raster size of the cached stepper glyph textures.
 const STEPPER_TEX_PX: u32 = 64;
-/// Inset around the glyph inside each stepper half.
-const GLYPH_PAD: f32 = 1.0;
+/// Vertical inset around the glyph inside the stepper zone.
+const GLYPH_PAD: f32 = 3.0;
 /// Hold-to-repeat: pause before auto-stepping, then delay between steps.
 const REPEAT_DELAY: f64 = 0.45;
 const REPEAT_INTERVAL: f64 = 0.08;
@@ -107,32 +108,26 @@ impl<Num: egui::emath::Numeric> Widget for NumEntry<'_, Num> {
         // The DragValue and the steppers share `v`; it commits to `value` at the
         // end so both borrow phases stay inside the row closure.
         let mut v = *value;
-        let mut response = ui
-            .horizontal(|ui| {
-                let mut dv = egui::DragValue::new(&mut v);
-                if let Some(speed) = speed {
-                    dv = dv.speed(speed);
-                }
-                if let Some(range) = &range_opt {
-                    dv = dv.range(range.clone());
-                }
-                if let Some(prefix) = prefix {
-                    dv = dv.prefix(prefix);
-                }
-                if let Some(suffix) = suffix {
-                    dv = dv.suffix(suffix);
-                }
-                dv = dv.min_decimals(min_decimals);
-                if let Some(max_decimals) = max_decimals {
-                    dv = dv.max_decimals(max_decimals);
-                }
-                let drag = ui.add(dv);
-                // Attach the steppers flush against the entry box.
-                ui.spacing_mut().item_spacing.x = 0.0;
-                let steppers = steppers(ui, &mut v, step, &range, drag.rect.height());
-                drag | steppers
-            })
-            .inner;
+        let mut dv = egui::DragValue::new(&mut v);
+        if let Some(speed) = speed {
+            dv = dv.speed(speed);
+        }
+        if let Some(range) = &range_opt {
+            dv = dv.range(range.clone());
+        }
+        if let Some(prefix) = prefix {
+            dv = dv.prefix(prefix);
+        }
+        if let Some(suffix) = suffix {
+            dv = dv.suffix(suffix);
+        }
+        dv = dv.min_decimals(min_decimals);
+        if let Some(max_decimals) = max_decimals {
+            dv = dv.max_decimals(max_decimals);
+        }
+        let mut response = ui.add(dv);
+        // Steppers overlay the right end of the entry box itself.
+        response |= steppers(ui, &mut v, step, &range, response.rect, response.id);
         if v != *value {
             *value = v;
             response.mark_changed();
@@ -142,7 +137,7 @@ impl<Num: egui::emath::Numeric> Widget for NumEntry<'_, Num> {
 }
 
 /// Rasterized S-stroke glyph for one stepper half, cached per `Context`.
-fn stepper_texture(ui: &Ui, up: bool) -> Option<TextureHandle> {
+pub(crate) fn stepper_texture(ui: &Ui, up: bool) -> Option<TextureHandle> {
     let id = egui::Id::new(("sqyre_num_entry_stepper", up));
     if let Some(tex) = ui.ctx().data_mut(|d| d.get_persisted::<TextureHandle>(id)) {
         return Some(tex);
@@ -232,9 +227,8 @@ fn arrow_step(ui: &Ui, response: &Response, up: bool) -> bool {
     ui.input_mut(|i| i.consume_key(Modifiers::NONE, key))
 }
 
-/// Largest aspect-preserving rect for the glyph inside `zone`, hugging the
-/// left edge so the S sits right against the entry box.
-fn glyph_rect(zone: egui::Rect, tex: &TextureHandle) -> egui::Rect {
+/// Largest aspect-preserving rect for the glyph inside `zone`, centered.
+pub(crate) fn glyph_rect(zone: egui::Rect, tex: &TextureHandle) -> egui::Rect {
     let [tw, th] = tex.size();
     let aspect = tw as f32 / th as f32;
     let zone = zone.shrink2(egui::vec2(0.0, GLYPH_PAD));
@@ -242,28 +236,33 @@ fn glyph_rect(zone: egui::Rect, tex: &TextureHandle) -> egui::Rect {
     if size.x > zone.width() {
         size = egui::vec2(zone.width(), zone.width() / aspect);
     }
-    egui::Rect::from_min_size(
-        egui::pos2(zone.left(), zone.center().y - size.y / 2.0),
-        size,
-    )
+    egui::Rect::from_center_size(zone.center(), size)
 }
 
-/// Stacked increment/decrement buttons, `height` = the entry box height.
+/// Stacked increment/decrement buttons overlaid on the right end of
+/// `drag_rect` — inside the entry box, so the row never grows. `drag_id` is
+/// the DragValue's own id: per-field unique, so sibling steppers don't collide
+/// (`ui.unique_id()` is constant within a Ui, so it can't be used here).
 fn steppers<Num: egui::emath::Numeric>(
     ui: &mut Ui,
     value: &mut Num,
     step: f64,
     range: &RangeInclusive<f64>,
-    height: f32,
+    drag_rect: egui::Rect,
+    drag_id: egui::Id,
 ) -> Response {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(STEPPER_W, height), Sense::hover());
+    let rect = egui::Rect::from_min_max(
+        egui::pos2(
+            drag_rect.right() - STEPPER_W - STEPPER_INSET,
+            drag_rect.top(),
+        ),
+        egui::pos2(drag_rect.right() - STEPPER_INSET, drag_rect.bottom()),
+    );
     let mid = rect.center().y;
     let up_rect = egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), mid));
     let down_rect = egui::Rect::from_min_max(egui::pos2(rect.left(), mid), rect.max);
-    // unique_id, not id(): child Uis of `ui.horizontal` share the same `id`
-    // (a stable per-parent id), so sibling num_entries would collide.
-    let up = ui.interact(up_rect, ui.unique_id().with("increment"), Sense::click());
-    let down = ui.interact(down_rect, ui.unique_id().with("decrement"), Sense::click());
+    let up = ui.interact(up_rect, drag_id.with("increment"), Sense::click());
+    let down = ui.interact(down_rect, drag_id.with("decrement"), Sense::click());
 
     let enabled = ui.is_enabled();
     let mut changed = false;
