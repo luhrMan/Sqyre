@@ -196,8 +196,9 @@ fn step_fires(ui: &Ui, response: &Response) -> bool {
     if response.is_pointer_button_down_on() {
         let now = ui.input(|i| i.time);
         return match ui.ctx().data(|d| d.get_temp::<f64>(response.id)) {
-            // First down frame: step immediately, arm the repeat delay.
+            // First down frame: take focus, step immediately, arm the repeat delay.
             None => {
+                response.request_focus();
                 ui.ctx()
                     .data_mut(|d| d.insert_temp(response.id, now + REPEAT_DELAY));
                 true
@@ -255,8 +256,10 @@ fn steppers<Num: egui::emath::Numeric>(
     let mid = rect.center().y;
     let up_rect = egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), mid));
     let down_rect = egui::Rect::from_min_max(egui::pos2(rect.left(), mid), rect.max);
-    let up = ui.interact(up_rect, ui.id().with("increment"), Sense::click());
-    let down = ui.interact(down_rect, ui.id().with("decrement"), Sense::click());
+    // unique_id, not id(): child Uis of `ui.horizontal` share the same `id`
+    // (a stable per-parent id), so sibling num_entries would collide.
+    let up = ui.interact(up_rect, ui.unique_id().with("increment"), Sense::click());
+    let down = ui.interact(down_rect, ui.unique_id().with("decrement"), Sense::click());
 
     let enabled = ui.is_enabled();
     let mut changed = false;
@@ -366,7 +369,7 @@ mod tests {
     use super::*;
     use egui_kittest::kittest::Queryable;
 
-    fn pointer_click(harness: &mut egui_kittest::Harness<'_, i32>, at: egui::Pos2) {
+    fn pointer_click<T: 'static>(harness: &mut egui_kittest::Harness<'_, T>, at: egui::Pos2) {
         harness.hover_at(at);
         harness.run_steps(2);
         for pressed in [true, false] {
@@ -403,6 +406,33 @@ mod tests {
         pointer_click(&mut h, dec);
         pointer_click(&mut h, dec);
         assert_eq!(*h.state(), 4);
+    }
+
+    #[test]
+    fn sibling_steppers_have_unique_ids() {
+        // Sibling num_entries in one `Ui` must get distinct stepper ids —
+        // otherwise presses on one field can step another (child Uis share a
+        // stable `id`; only `unique_id` differs).
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([300.0, 160.0])
+            .build_ui_state(
+                move |ui, v: &mut [i32; 2]| {
+                    ui.add(num_entry(&mut v[0]).speed(1).range(0..=10));
+                    ui.add(num_entry(&mut v[1]).speed(1).range(0..=10));
+                },
+                [5, 5],
+            );
+        h.run_steps(2);
+        let incs: Vec<egui::Rect> = h
+            .get_all_by_label("Increment")
+            .map(|node| node.rect())
+            .collect();
+        assert_eq!(incs.len(), 2);
+        assert_ne!(incs[0], incs[1]);
+        pointer_click(&mut h, incs[1].center());
+        assert_eq!(*h.state(), [5, 6]);
+        pointer_click(&mut h, incs[0].center());
+        assert_eq!(*h.state(), [6, 6]);
     }
 
     #[test]
