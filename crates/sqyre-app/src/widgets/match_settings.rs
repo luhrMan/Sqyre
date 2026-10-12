@@ -1,7 +1,7 @@
 //! Shared Image Search match controls (tolerance, blur, method).
 
 use crate::action_tooltip::help as h;
-use crate::widgets::{combo_str, drag_field};
+use crate::widgets::{combo_str, drag_field, NumEntry};
 use eframe::egui;
 use sqyre_domain::{
     clamp_match_blur, clamp_match_tolerance, MatchMethod, MAX_MATCH_BLUR,
@@ -18,14 +18,16 @@ fn tolerance_help(method: MatchMethod) -> &'static str {
     }
 }
 
-pub fn configure_match_blur_drag(d: egui::DragValue<'_>) -> egui::DragValue<'_> {
+pub fn configure_match_blur_drag<Num: egui::emath::Numeric>(
+    d: NumEntry<'_, Num>,
+) -> NumEntry<'_, Num> {
     d.speed(1).range(MIN_MATCH_BLUR..=MAX_MATCH_BLUR)
 }
 
-pub fn configure_match_tolerance_drag(
-    d: egui::DragValue<'_>,
+pub fn configure_match_tolerance_drag<Num: egui::emath::Numeric>(
+    d: NumEntry<'_, Num>,
     method: MatchMethod,
-) -> egui::DragValue<'_> {
+) -> NumEntry<'_, Num> {
     if method.is_normed() {
         d.speed(0.01)
             .range(MIN_MATCH_TOLERANCE..=MAX_NORMED_MATCH_TOLERANCE)
