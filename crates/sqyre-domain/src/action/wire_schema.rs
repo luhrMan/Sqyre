@@ -360,6 +360,7 @@ const SAVE_VARIABLE_FIELDS: &[WireField] = &[
 const FOCUS_WINDOW_FIELDS: &[WireField] = &[
     f!("processpath", WireFieldKind::String),
     f!("windowtitle", WireFieldKind::String),
+    f!("previous", WireFieldKind::Bool),
 ];
 
 const RUN_MACRO_FIELDS: &[WireField] = &[f!("macroname", WireFieldKind::String)];

@@ -114,6 +114,9 @@ pub enum ActionKind {
     FocusWindow {
         process_path: String,
         window_title: String,
+        /// Focus the window that held focus before the run's last Focus Window
+        /// instead of `process_path` / `window_title` (kept so the toggle can flip back).
+        previous: bool,
     },
     RunMacro {
         macro_name: String,
@@ -296,6 +299,7 @@ impl ActionKind {
                 destination,
                 ..
             } => format!("Save {variable_name} → {destination}"),
+            Self::FocusWindow { previous: true, .. } => "Focus previous window".into(),
             Self::FocusWindow { window_title, .. } => {
                 if window_title.trim().is_empty() {
                     "Focus window".into()

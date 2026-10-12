@@ -715,6 +715,37 @@ pub fn active_window_is_our_process() -> bool {
     window_is_our_process(&win)
 }
 
+/// Focused window as a Focus Window target ([`sqyre_ports::WindowFocuser::focused`]).
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "android"))]
+pub(crate) fn focused_window_target(
+) -> Result<Option<sqyre_ports::FocusedWindow>, sqyre_ports::AutomationError> {
+    let win =
+        get_active_window().map_err(|e| sqyre_ports::AutomationError::Backend(e.to_string()))?;
+    Ok(win.as_ref().and_then(focus_target_of))
+}
+
+/// `None` for overlay buttons (not app windows) and windows `focus` could not match.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "android",
+    test
+))]
+fn focus_target_of(win: &WindowInfo) -> Option<sqyre_ports::FocusedWindow> {
+    let title = win.title.trim();
+    if title.is_empty() || title_is_overlay_chrome(title) {
+        return None;
+    }
+    let path = [&win.process_path, &win.process_name]
+        .into_iter()
+        .map(|s| s.trim())
+        .find(|s| !s.is_empty())?;
+    Some(sqyre_ports::FocusedWindow {
+        process_path: path.to_string(),
+        window_title: title.to_string(),
+    })
+}
+
 fn title_is_overlay_chrome(title: &str) -> bool {
     let t = title.trim();
     t == OVERLAY_WM_TITLE || t == OVERLAY_TIP_WM_TITLE
@@ -908,12 +939,43 @@ impl sqyre_ports::WindowFocuser for OsWindowFocuser {
     ) -> Result<(), sqyre_ports::AutomationError> {
         Err(sqyre_ports::AutomationError::Unsupported("focus window"))
     }
+
+    fn focused(&self) -> Result<Option<sqyre_ports::FocusedWindow>, sqyre_ports::AutomationError> {
+        Err(sqyre_ports::AutomationError::Unsupported("focused window"))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::WindowInfo;
     use sqyre_ports::DesktopRect;
+
+    fn win(title: &str, name: &str, path: &str) -> WindowInfo {
+        WindowInfo {
+            title: title.into(),
+            process_name: name.into(),
+            process_path: path.into(),
+            icon: None,
+        }
+    }
+
+    #[test]
+    fn focus_target_prefers_path_then_process_name() {
+        let t = crate::focus_target_of(&win(" Doc ", "app", "/usr/bin/app")).unwrap();
+        assert_eq!(t.process_path, "/usr/bin/app");
+        assert_eq!(t.window_title, "Doc");
+        let t = crate::focus_target_of(&win("Doc", "app", "  ")).unwrap();
+        assert_eq!(t.process_path, "app");
+    }
+
+    #[test]
+    fn focus_target_skips_overlay_and_unaddressable_windows() {
+        assert!(
+            crate::focus_target_of(&win(crate::OVERLAY_WM_TITLE, "sqyre", "/bin/sqyre")).is_none()
+        );
+        assert!(crate::focus_target_of(&win("", "app", "/usr/bin/app")).is_none());
+        assert!(crate::focus_target_of(&win("Doc", "", "")).is_none());
+    }
 
     #[test]
     fn release_capture_frame_cache_is_noop_without_shared_capturer() {

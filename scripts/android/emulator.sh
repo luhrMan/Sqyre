@@ -161,9 +161,10 @@ ensure_image() {
 }
 
 # Docker resolves device and mount paths on the host, which the devcontainer cannot see.
-host_has_render_node() {
+# Prints the host render node's group id; fails when there is no render node.
+host_render_gid() {
 	docker run --rm --mount type=bind,source=/dev,target=/hostdev,readonly \
-		--entrypoint test "$DOCKER_IMAGE" -c /hostdev/dri/renderD128
+		--entrypoint stat "$DOCKER_IMAGE" -c %g /hostdev/dri/renderD128 2>/dev/null
 }
 
 wait_container() {
@@ -197,8 +198,9 @@ start_container() {
 	fi
 	if [ "$headless" = 0 ]; then
 		# The render node lets the emulator use -gpu host and scrcpy render with OpenGL.
-		if host_has_render_node; then
-			run+=(--device /dev/dri)
+		local render_gid
+		if render_gid=$(host_render_gid); then
+			run+=(--device /dev/dri --group-add "$render_gid")
 		fi
 		run+=(-e "DISPLAY=${HOST_DISPLAY:-${DISPLAY:-:0}}" -v /tmp/.X11-unix:/tmp/.X11-unix)
 		local xauth=""

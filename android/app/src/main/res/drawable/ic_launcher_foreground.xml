@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Paths and transforms mirror crates/sqyre-app/assets/icons/sqyre.svg; update both together.
-     The 128-unit art is scaled to 64dp inside the 108dp adaptive canvas (66dp safe zone). -->
+     The 128-unit art is scaled so the shield's top corners sit 5dp inside the 72dp circular mask. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="0.5"
-        android:scaleY="0.5"
-        android:translateX="22"
-        android:translateY="22">
+        android:scaleX="0.411"
+        android:scaleY="0.411"
+        android:translateX="27.7"
+        android:translateY="27.7">
         <path
             android:fillColor="#1c1c1d"
             android:pathData="M 15.198575,86.972983 13.214225,68.268115 6.5044571,60.580369 6.8399795,15.224143 C 45.204265,1.3982678 83.568549,1.5795253 121.93283,15.542625 l 0.99698,43.48501 c -5.47344,5.827747 -9.36713,13.075776 -9.51761,27.430313 L 64.372215,122.92107 Z" />

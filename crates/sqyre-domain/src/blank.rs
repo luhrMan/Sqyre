@@ -101,6 +101,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
         "focuswindow" => ActionKind::FocusWindow {
             process_path: String::new(),
             window_title: String::new(),
+            previous: false,
         },
         "runmacro" => ActionKind::RunMacro {
             macro_name: String::new(),

@@ -224,9 +224,18 @@ pub trait ScreenCapturer {
     }
 }
 
+/// A window addressed the same way [`WindowFocuser::focus`] takes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FocusedWindow {
+    pub process_path: String,
+    pub window_title: String,
+}
+
 /// Bring a window to the front by executable path + title.
 pub trait WindowFocuser: Send + Sync {
     fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError>;
+    /// The window that currently has focus, if it can be focused again by [`Self::focus`].
+    fn focused(&self) -> Result<Option<FocusedWindow>, AutomationError>;
 }
 
 /// Catalog item metadata (name, stack size, grid dimensions, tags) for icon lookups.

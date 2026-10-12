@@ -572,6 +572,7 @@ pub(crate) fn show_action_view_tip(
                                                 if let ActionKind::FocusWindow {
                                                     process_path,
                                                     window_title,
+                                                    ..
                                                 } = &action.kind
                                                 {
                                                     crate::icon_cache::paint_leading_process_icon(
@@ -893,6 +894,7 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
             if let ActionKind::FocusWindow {
                 process_path: path,
                 window_title: title,
+                ..
             } = &mut draft.kind
             {
                 *path = process_path;

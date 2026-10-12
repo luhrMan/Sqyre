@@ -251,4 +251,8 @@ impl sqyre_ports::WindowFocuser for OsWindowFocuser {
             other => AutomationError::Backend(other.to_string()),
         })
     }
+
+    fn focused(&self) -> Result<Option<sqyre_ports::FocusedWindow>, AutomationError> {
+        crate::focused_window_target()
+    }
 }

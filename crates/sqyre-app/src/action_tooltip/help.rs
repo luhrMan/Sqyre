@@ -99,6 +99,7 @@ pub const PAUSE_PASS_THROUGH: &str = "Let the continue key also reach the focuse
 
 pub const FOCUS_TITLE: &str = "Window title to match (substring).";
 pub const FOCUS_PROCESS: &str = "Executable path of the process that owns the window.";
+pub const FOCUS_PREVIOUS: &str = "Go back to the window or app that was in front before this macro's last Focus Window step. Running it again switches back.";
 
 // --- Run macro ---
 

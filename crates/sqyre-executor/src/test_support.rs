@@ -397,10 +397,23 @@ impl ContinueKeyWaiter for ImmediateContinueWaiter {
     }
 }
 
-/// Test focuser that records calls.
+/// Test focuser that records calls; `focus` makes that window the `focused` one.
 #[derive(Debug, Default)]
 pub struct RecordingWindowFocuser {
     pub log: std::sync::Mutex<Vec<String>>,
+    pub current: std::sync::Mutex<Option<sqyre_ports::FocusedWindow>>,
+}
+
+impl RecordingWindowFocuser {
+    pub fn focused_on(process_path: &str, window_title: &str) -> Self {
+        Self {
+            current: std::sync::Mutex::new(Some(sqyre_ports::FocusedWindow {
+                process_path: process_path.into(),
+                window_title: window_title.into(),
+            })),
+            ..Self::default()
+        }
+    }
 }
 
 impl WindowFocuser for RecordingWindowFocuser {
@@ -408,6 +421,16 @@ impl WindowFocuser for RecordingWindowFocuser {
         if let Ok(mut g) = self.log.lock() {
             g.push(format!("focus:{process_path}:{window_title}"));
         }
+        if let Ok(mut g) = self.current.lock() {
+            *g = Some(sqyre_ports::FocusedWindow {
+                process_path: process_path.into(),
+                window_title: window_title.into(),
+            });
+        }
         Ok(())
+    }
+
+    fn focused(&self) -> Result<Option<sqyre_ports::FocusedWindow>, AutomationError> {
+        Ok(self.current.lock().ok().and_then(|g| g.clone()))
     }
 }

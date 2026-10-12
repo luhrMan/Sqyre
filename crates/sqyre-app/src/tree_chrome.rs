@@ -246,6 +246,7 @@ pub(crate) fn paint_summary_pill_cell(
         if let ActionKind::FocusWindow {
             process_path,
             window_title,
+            previous: false,
         } = &action.kind
         {
             crate::icon_cache::paint_leading_process_icon(ui, icons, process_path, window_title);

@@ -4,7 +4,7 @@ use super::{atspi_windows, foreign_toplevel, wayland_clients};
 use crate::window_match::{paths_equal, titles_equal};
 use crate::x11_focus;
 use crate::{CaptureError, WindowInfo};
-use sqyre_ports::{AutomationError, WindowFocuser};
+use sqyre_ports::{AutomationError, FocusedWindow, WindowFocuser};
 
 /// Bring a window to the front by executable path + window title.
 #[derive(Debug, Default, Clone, Copy)]
@@ -13,6 +13,10 @@ pub struct OsWindowFocuser;
 impl WindowFocuser for OsWindowFocuser {
     fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError> {
         activate_window(process_path, window_title)
+    }
+
+    fn focused(&self) -> Result<Option<FocusedWindow>, AutomationError> {
+        crate::focused_window_target()
     }
 }
 
