@@ -305,13 +305,6 @@ fn paint_steppers(
         border,
         egui::StrokeKind::Inside,
     );
-    painter.line_segment(
-        [
-            egui::pos2(up_rect.left() + 1.0, up_rect.bottom()),
-            egui::pos2(up_rect.right() - 1.0, up_rect.bottom()),
-        ],
-        border,
-    );
 
     for (zone, resp, up_flag) in [(up_rect, up, true), (down_rect, down, false)] {
         let visuals = ui.style().interact(resp);
@@ -325,16 +318,20 @@ fn paint_steppers(
         } else {
             accent_dim()
         };
-        match stepper_texture(ui, up_flag) {
-            Some(tex) => {
-                painter.image(
-                    tex.id(),
-                    glyph_rect(zone, &tex),
-                    egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
-                    glyph_color,
-                );
+        match (stepper_texture(ui, true), stepper_texture(ui, false)) {
+            (Some(up_tex), Some(down_tex)) => {
+                // Both SVGs share the whole-S viewBox: painted into one rect
+                // they compose the icon's S, so the buttons look like it.
+                let glyph = glyph_rect(rect.shrink(GLYPH_PAD), &up_tex);
+                let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+                let (tex, color) = if up_flag {
+                    (&up_tex, glyph_color)
+                } else {
+                    (&down_tex, glyph_color)
+                };
+                painter.image(tex.id(), glyph, uv, color);
             }
-            None => {
+            _ => {
                 // Rasterize fallback: plain chevron strokes.
                 let c = zone.shrink(GLYPH_PAD * 2.0).center();
                 let s = 3.0;
