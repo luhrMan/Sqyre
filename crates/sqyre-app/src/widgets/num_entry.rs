@@ -15,7 +15,7 @@ const STEPPER_W: f32 = 16.0;
 /// Raster size of the cached stepper glyph textures.
 const STEPPER_TEX_PX: u32 = 64;
 /// Inset around the glyph inside each stepper half.
-const GLYPH_PAD: f32 = 2.0;
+const GLYPH_PAD: f32 = 1.0;
 /// Hold-to-repeat: pause before auto-stepping, then delay between steps.
 const REPEAT_DELAY: f64 = 0.45;
 const REPEAT_INTERVAL: f64 = 0.08;
@@ -292,25 +292,8 @@ fn paint_steppers(
 ) {
     let enabled = ui.is_enabled();
     let painter = ui.painter();
-    // Attached to the field's right edge: only the outer corners are rounded,
-    // matching the theme's widget rounding.
-    let mut rounding = ui.visuals().widgets.inactive.corner_radius;
-    rounding.nw = 0;
-    rounding.sw = 0;
-    let border = Stroke::new(1.0, ui.visuals().widgets.inactive.bg_stroke.color);
-    painter.rect(
-        rect,
-        rounding,
-        ui.visuals().widgets.inactive.bg_fill,
-        border,
-        egui::StrokeKind::Inside,
-    );
 
     for (zone, resp, up_flag) in [(up_rect, up, true), (down_rect, down, false)] {
-        let visuals = ui.style().interact(resp);
-        if enabled && (resp.hovered() || resp.is_pointer_button_down_on()) {
-            painter.rect_filled(zone.intersect(rect), rounding, visuals.bg_fill);
-        }
         let glyph_color = if !enabled {
             ui.visuals().weak_text_color()
         } else if resp.hovered() || resp.is_pointer_button_down_on() || resp.has_focus() {
@@ -322,7 +305,7 @@ fn paint_steppers(
             (Some(up_tex), Some(down_tex)) => {
                 // Both SVGs share the whole-S viewBox: painted into one rect
                 // they compose the icon's S, so the buttons look like it.
-                let glyph = glyph_rect(rect.shrink(GLYPH_PAD), &up_tex);
+                let glyph = glyph_rect(rect, &up_tex);
                 let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
                 let (tex, color) = if up_flag {
                     (&up_tex, glyph_color)
