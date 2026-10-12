@@ -2,6 +2,7 @@
 
 use crate::action_tooltip::help;
 use crate::pickers::fuzzy_match_fold;
+use crate::widgets::num_entry::{num_entry, NumEntry};
 use eframe::egui;
 use std::hash::Hash;
 
@@ -50,13 +51,13 @@ pub fn fill_row<R>(
     .inner
 }
 
-/// Labeled DragValue (no `.prefix`); configure speed/range via `configure`.
+/// Labeled numeric entry (no `.prefix`); configure speed/range/etc via `configure`.
 pub fn drag_field<Num: egui::emath::Numeric>(
     ui: &mut egui::Ui,
     label: &str,
     help_text: &str,
     value: &mut Num,
-    configure: impl FnOnce(egui::DragValue<'_>) -> egui::DragValue<'_>,
+    configure: impl FnOnce(NumEntry<'_, Num>) -> NumEntry<'_, Num>,
 ) {
     drag_field_enabled(ui, label, help_text, value, true, configure);
 }
@@ -67,11 +68,11 @@ pub fn drag_field_enabled<Num: egui::emath::Numeric>(
     help_text: &str,
     value: &mut Num,
     enabled: bool,
-    configure: impl FnOnce(egui::DragValue<'_>) -> egui::DragValue<'_>,
+    configure: impl FnOnce(NumEntry<'_, Num>) -> NumEntry<'_, Num>,
 ) {
     super::wrap_unit(ui, |ui| {
         help::label(ui, label, help_text);
-        ui.add_enabled(enabled, configure(egui::DragValue::new(value)));
+        ui.add_enabled(enabled, configure(num_entry(value)));
     });
 }
 

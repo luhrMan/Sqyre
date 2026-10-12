@@ -245,7 +245,7 @@ impl DataEditor {
                     help::label(ui, "Interval", help::DE_OVERLAY_GATE_INTERVAL);
                     help::tip(
                         ui.add(
-                            egui::DragValue::new(&mut self.form_overlay_gate_interval_ms)
+                            crate::widgets::num_entry(&mut self.form_overlay_gate_interval_ms)
                                 .speed(50)
                                 .range(MIN_OVERLAY_GATE_INTERVAL_MS..=MAX_OVERLAY_GATE_INTERVAL_MS)
                                 .suffix(" ms"),
@@ -261,7 +261,7 @@ impl DataEditor {
                 help::label(ui, "Size", help::DE_OVERLAY_SIZE);
                 help::tip(
                     ui.add(
-                        egui::DragValue::new(&mut self.form_overlay_size)
+                        crate::widgets::num_entry(&mut self.form_overlay_size)
                             .speed(1)
                             .range(MIN_OVERLAY_BUTTON_SIZE..=MAX_OVERLAY_BUTTON_SIZE),
                     ),

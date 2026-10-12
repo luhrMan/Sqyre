@@ -8,6 +8,7 @@ pub mod empty_state;
 pub mod fields;
 pub mod headers;
 pub mod match_settings;
+pub mod num_entry;
 pub mod scroll;
 pub mod sections;
 pub mod tags;
@@ -40,6 +41,7 @@ pub use fields::{
 };
 pub use headers::{heading_with_count, heading_with_count_and, title_with_count};
 pub use match_settings::configure_match_blur_drag;
+pub use num_entry::{num_entry, NumEntry};
 pub use scroll::{
     dialog_scroll, enable_dense_row_extend, scroll_both, scroll_vertical, SCROLL_SOURCE_NO_DRAG,
 };

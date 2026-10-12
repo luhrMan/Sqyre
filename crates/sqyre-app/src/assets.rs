@@ -6,12 +6,18 @@ pub const APP_ID: &str = "com.sqyre.app";
 /// Sqyre app icon SVG (crate-local `assets/icons/`).
 pub const APP_ICON_SVG: &[u8] = include_bytes!("../assets/icons/sqyre.svg");
 
-/// Rasterize the brand SVG to unpremultiplied RGBA at `size`×`size`.
-pub fn app_icon_rgba(size: u32) -> Option<(Vec<u8>, u32, u32)> {
+/// Upper stroke of the brand "S" — increment glyph on numeric entry steppers.
+pub const STEPPER_UP_SVG: &[u8] = include_bytes!("../assets/icons/sqyre-stepper-up.svg");
+
+/// Lower stroke of the brand "S" — decrement glyph on numeric entry steppers.
+pub const STEPPER_DOWN_SVG: &[u8] = include_bytes!("../assets/icons/sqyre-stepper-down.svg");
+
+/// Rasterize an SVG to unpremultiplied RGBA fitted inside `size`×`size`.
+pub fn svg_rgba(svg: &[u8], size: u32) -> Option<(Vec<u8>, u32, u32)> {
     if size == 0 {
         return None;
     }
-    let tree = resvg::usvg::Tree::from_data(APP_ICON_SVG, &resvg::usvg::Options::default()).ok()?;
+    let tree = resvg::usvg::Tree::from_data(svg, &resvg::usvg::Options::default()).ok()?;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(size, size)?;
     let svg_w = tree.size().width();
     let svg_h = tree.size().height();
@@ -26,6 +32,11 @@ pub fn app_icon_rgba(size: u32) -> Option<(Vec<u8>, u32, u32)> {
     let mut rgba = pixmap.take();
     unpremultiply_rgba(&mut rgba);
     Some((rgba, size, size))
+}
+
+/// Rasterize the brand SVG to unpremultiplied RGBA at `size`×`size`.
+pub fn app_icon_rgba(size: u32) -> Option<(Vec<u8>, u32, u32)> {
+    svg_rgba(APP_ICON_SVG, size)
 }
 
 /// Native window / taskbar icon from the brand SVG.

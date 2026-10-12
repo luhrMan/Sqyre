@@ -72,7 +72,11 @@ fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
     ui.color_edit_button_srgba(color);
     let mut alpha = color.a();
     if ui
-        .add(egui::DragValue::new(&mut alpha).range(0..=255).prefix("α "))
+        .add(
+            crate::widgets::num_entry(&mut alpha)
+                .range(0..=255)
+                .prefix("α "),
+        )
         .changed()
     {
         *color = egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha);
@@ -162,7 +166,7 @@ impl DataEditor {
         ui.horizontal(|ui| {
             ui.label("Monitor");
             ui.add(
-                egui::DragValue::new(&mut self.form_monitor)
+                crate::widgets::num_entry(&mut self.form_monitor)
                     .speed(1)
                     .range(1..=8),
             );
