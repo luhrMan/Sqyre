@@ -60,8 +60,28 @@ fn pure_i32(s: &str) -> Option<i32> {
     t.parse().ok()
 }
 
+/// Paint the Sqyre-S stepper glyph on a preview chip button (`up` = upper
+/// stroke for increment, `false` = lower stroke for decrement).
+fn paint_s_glyph(ui: &egui::Ui, button: egui::Rect, up: bool, resp: &egui::Response) {
+    let Some(tex) = crate::widgets::num_entry::stepper_texture(ui, up) else {
+        return;
+    };
+    let color = if resp.hovered() || resp.is_pointer_button_down_on() || resp.has_focus() {
+        theme::PRIMARY
+    } else {
+        crate::theme::accent_dim()
+    };
+    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
+    ui.painter().image(
+        tex.id(),
+        crate::widgets::num_entry::glyph_rect(button.shrink(4.0), &tex),
+        uv,
+        color,
+    );
+}
+
 /// Coord chip overlaid on a preview edge: sizes to text, Sqyre yellow border,
-/// and when the value is a pure integer: drag-to-adjust + −/+ steppers.
+/// and when the value is a pure integer: drag-to-adjust + S-stroke steppers.
 #[expect(
     clippy::too_many_arguments,
     reason = "chip overlays one preview edge with edit + validation"
@@ -152,12 +172,13 @@ pub(crate) fn paint_preview_coord_chip(
     if let (Some(minus), Some(n)) = (minus_rect, pure) {
         let resp = ui.place(
             minus,
-            egui::Button::new("−")
+            egui::Button::new("")
                 .fill(fill)
                 .stroke(egui::Stroke::new(1.0, theme::PRIMARY))
                 .corner_radius(radius)
                 .min_size(minus.size()),
         );
+        paint_s_glyph(ui, minus, false, &resp);
         if resp.clicked() {
             *value = (n.saturating_sub(1)).to_string();
         }
@@ -167,12 +188,13 @@ pub(crate) fn paint_preview_coord_chip(
     if let (Some(plus), Some(n)) = (plus_rect, pure) {
         let resp = ui.place(
             plus,
-            egui::Button::new("+")
+            egui::Button::new("")
                 .fill(fill)
                 .stroke(egui::Stroke::new(1.0, theme::PRIMARY))
                 .corner_radius(radius)
                 .min_size(plus.size()),
         );
+        paint_s_glyph(ui, plus, true, &resp);
         if resp.clicked() {
             *value = (n.saturating_add(1)).to_string();
         }
