@@ -232,16 +232,20 @@ fn arrow_step(ui: &Ui, response: &Response, up: bool) -> bool {
     ui.input_mut(|i| i.consume_key(Modifiers::NONE, key))
 }
 
-/// Largest aspect-preserving rect for the glyph inside `zone`.
+/// Largest aspect-preserving rect for the glyph inside `zone`, hugging the
+/// left edge so the S sits right against the entry box.
 fn glyph_rect(zone: egui::Rect, tex: &TextureHandle) -> egui::Rect {
     let [tw, th] = tex.size();
     let aspect = tw as f32 / th as f32;
-    let zone = zone.shrink(GLYPH_PAD);
+    let zone = zone.shrink2(egui::vec2(0.0, GLYPH_PAD));
     let mut size = egui::vec2(zone.height() * aspect, zone.height());
     if size.x > zone.width() {
         size = egui::vec2(zone.width(), zone.width() / aspect);
     }
-    egui::Rect::from_center_size(zone.center(), size)
+    egui::Rect::from_min_size(
+        egui::pos2(zone.left(), zone.center().y - size.y / 2.0),
+        size,
+    )
 }
 
 /// Stacked increment/decrement buttons, `height` = the entry box height.
