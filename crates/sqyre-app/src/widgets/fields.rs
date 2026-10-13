@@ -5,6 +5,7 @@ use crate::pickers::fuzzy_match_fold;
 use crate::widgets::num_entry::{num_entry, NumEntry};
 use eframe::egui;
 use std::hash::Hash;
+use std::ops::RangeInclusive;
 
 /// Standard single-line text edit width.
 pub const W_TEXT: f32 = 220.0;
@@ -26,6 +27,50 @@ pub fn text_field_width(
         help::label(ui, label, help_text);
         ui.add(egui::TextEdit::singleline(value).desired_width(width));
     });
+}
+
+/// Labeled integer-capable text field (see [`num_text_edit`]).
+pub fn num_text_field(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut String,
+    range: RangeInclusive<i32>,
+) {
+    num_text_field_width(ui, label, help_text, value, W_TEXT, range);
+}
+
+/// [`num_text_field`] with an explicit width.
+pub fn num_text_field_width(
+    ui: &mut egui::Ui,
+    label: &str,
+    help_text: &str,
+    value: &mut String,
+    width: f32,
+    range: RangeInclusive<i32>,
+) {
+    super::wrap_unit(ui, |ui| {
+        help::label(ui, label, help_text);
+        num_text_edit(ui, value, width, range);
+    });
+}
+
+/// [`egui::TextEdit`] with the S-stroke stepper column reserved on its right
+/// edge — the same steppers [`num_entry`] fields get. Steppers appear only
+/// while `value` parses as a pure integer; steps clamp to `range`.
+pub fn num_text_edit(
+    ui: &mut egui::Ui,
+    value: &mut String,
+    width: f32,
+    range: RangeInclusive<i32>,
+) -> egui::Response {
+    let resp = ui.add(
+        egui::TextEdit::singleline(value)
+            .desired_width(width)
+            .margin(crate::widgets::num_entry::TEXT_STEPPER_MARGIN),
+    );
+    crate::widgets::num_entry::string_steppers(ui, resp.id, resp.rect, value, range);
+    resp
 }
 
 /// One row whose `fill` content (e.g. a `desired_width(f32::INFINITY)` field)
@@ -477,5 +522,54 @@ mod tests {
             );
         })
         .drop_without_applying_deltas();
+    }
+
+    /// String fields get the same S-stroke steppers as `num_entry`: active
+    /// while the text is a pure integer, steps clamped to range.
+    #[test]
+    fn num_text_edit_steps_and_clamps_integers() {
+        use egui_kittest::kittest::Queryable;
+
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([200.0, 60.0])
+            .build_ui_state(
+                |ui, v: &mut String| {
+                    num_text_edit(ui, v, 80.0, 1..=9);
+                },
+                "8".to_owned(),
+            );
+        h.run_steps(2);
+        h.get_by_label("Increment").click();
+        h.run_steps(2);
+        assert_eq!(h.state().as_str(), "9");
+        h.get_by_label("Increment").click();
+        h.run_steps(2);
+        assert_eq!(h.state().as_str(), "9", "clamped at range end");
+        h.get_by_label("Decrement").click();
+        h.run_steps(2);
+        assert_eq!(h.state().as_str(), "8");
+    }
+
+    /// `${var}`/text content isn't steppable — no zones are registered.
+    #[test]
+    fn num_text_edit_hides_steppers_for_non_integers() {
+        use egui_kittest::kittest::Queryable;
+
+        for value in ["${x}", "abc", ""] {
+            let mut h = egui_kittest::Harness::builder()
+                .with_size([200.0, 60.0])
+                .build_ui_state(
+                    |ui, v: &mut String| {
+                        num_text_edit(ui, v, 80.0, 1..=9);
+                    },
+                    value.to_owned(),
+                );
+            h.run_steps(2);
+            assert_eq!(
+                h.query_all_by_label("Increment").count(),
+                0,
+                "steppers shown for {value:?}"
+            );
+        }
     }
 }

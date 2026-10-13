@@ -393,8 +393,20 @@ fn var_ref_text_edit(
         egui::TextEdit::singleline(value)
             .id(id)
             .desired_width(desired_width)
+            .margin(crate::widgets::num_entry::TEXT_STEPPER_MARGIN)
             .show(ui)
     };
+    if multiline.is_none() {
+        // Same S-stroke column as `num_entry`; appears only while the text is
+        // a pure integer (`${var}`/expression content gets plain text editing).
+        crate::widgets::num_entry::string_steppers(
+            ui,
+            id,
+            output.response.rect,
+            value,
+            i32::MIN..=i32::MAX,
+        );
+    }
 
     let cursor_char = output.cursor_range.map(|r| r.primary.index.0);
     show_var_ref_autocomplete(

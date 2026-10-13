@@ -135,12 +135,17 @@ impl DataEditor {
         .submitted;
         ui.add_space(crate::theme::SPACE_4);
         crate::widgets::wrapped_row(ui, |ui| {
-            for (label, help_text, value) in [
-                ("Cols", help::DE_COLS, &mut self.form_cols),
-                ("Rows", help::DE_ROWS, &mut self.form_rows),
-                ("Stack max", help::DE_STACK_MAX, &mut self.form_stack_max),
+            for (label, help_text, value, range) in [
+                ("Cols", help::DE_COLS, &mut self.form_cols, 1..=i32::MAX),
+                ("Rows", help::DE_ROWS, &mut self.form_rows, 1..=i32::MAX),
+                (
+                    "Stack max",
+                    help::DE_STACK_MAX,
+                    &mut self.form_stack_max,
+                    0..=i32::MAX,
+                ),
             ] {
-                crate::widgets::text_field_width(ui, label, help_text, value, 80.0);
+                crate::widgets::num_text_field_width(ui, label, help_text, value, 80.0, range);
             }
         });
         ui.add_space(crate::theme::SPACE_4);

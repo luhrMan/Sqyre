@@ -385,12 +385,13 @@ impl VariablesPanelUi {
                 }
             }
         });
-        crate::widgets::text_field_width(
+        crate::widgets::num_text_field_width(
             ui,
             "Initial",
             help::VAR_INITIAL,
             &mut edit.initial_value,
             220.0,
+            i32::MIN..=i32::MAX,
         );
         crate::widgets::text_field_width(
             ui,

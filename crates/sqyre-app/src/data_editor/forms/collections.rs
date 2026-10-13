@@ -85,12 +85,12 @@ impl DataEditor {
         }
         help::label(ui, "Rows", help::DE_COLLECTION_ROWS);
         help::tip(
-            ui.add(egui::TextEdit::singleline(&mut self.form_rows).desired_width(80.0)),
+            crate::widgets::num_text_edit(ui, &mut self.form_rows, 80.0, 1..=i32::MAX),
             help::DE_COLLECTION_ROWS,
         );
         help::label(ui, "Cols", help::DE_COLLECTION_COLS);
         help::tip(
-            ui.add(egui::TextEdit::singleline(&mut self.form_cols).desired_width(80.0)),
+            crate::widgets::num_text_edit(ui, &mut self.form_cols, 80.0, 1..=i32::MAX),
             help::DE_COLLECTION_COLS,
         );
         if let (Some(prog), Some(col_name)) =
