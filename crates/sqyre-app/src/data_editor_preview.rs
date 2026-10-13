@@ -60,23 +60,9 @@ fn pure_i32(s: &str) -> Option<i32> {
     t.parse().ok()
 }
 
-/// Paint the Sqyre-S stepper glyph on a preview chip button (`up` = upper
-/// stroke for increment, `false` = lower stroke for decrement).
-fn paint_s_glyph(ui: &egui::Ui, button: egui::Rect, up: bool) {
-    let Some(tex) = crate::widgets::num_entry::stepper_texture(ui, up) else {
-        return;
-    };
-    let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
-    ui.painter().image(
-        tex.id(),
-        crate::widgets::num_entry::glyph_rect(button.shrink(4.0), &tex),
-        uv,
-        theme::PRIMARY,
-    );
-}
-
 /// Coord chip overlaid on a preview edge: sizes to text, Sqyre yellow border,
-/// and when the value is a pure integer: drag-to-adjust + S-stroke steppers.
+/// and when the value is a pure integer: drag-to-adjust + a stacked S-stroke
+/// stepper column on the right, same as [`crate::widgets::num_entry`].
 #[expect(
     clippy::too_many_arguments,
     reason = "chip overlays one preview edge with edit + validation"
@@ -115,7 +101,7 @@ pub(crate) fn paint_preview_coord_chip(
             .layout_no_wrap(measure.to_owned(), font.clone(), egui::Color32::WHITE);
     let edit_w = (galley.size().x + PAD_X * 2.0 + if focused { 8.0 } else { 0.0 }).max(MIN_EDIT_W);
     let total_w = if has_steppers {
-        STEP_W + GAP + edit_w + GAP + STEP_W
+        edit_w + GAP + STEP_W
     } else {
         edit_w
     };
@@ -139,19 +125,13 @@ pub(crate) fn paint_preview_coord_chip(
     };
     let group = egui::Rect::from_center_size(center, size);
 
-    let (minus_rect, edit_rect, plus_rect) = if has_steppers {
-        let minus = egui::Rect::from_min_size(group.min, egui::vec2(STEP_W, CHIP_H));
-        let edit = egui::Rect::from_min_size(
-            egui::pos2(minus.right() + GAP, group.top()),
-            egui::vec2(edit_w, CHIP_H),
-        );
-        let plus = egui::Rect::from_min_size(
-            egui::pos2(edit.right() + GAP, group.top()),
-            egui::vec2(STEP_W, CHIP_H),
-        );
-        (Some(minus), edit, Some(plus))
+    let (edit_rect, step_rect) = if has_steppers {
+        let edit = egui::Rect::from_min_size(group.min, egui::vec2(edit_w, CHIP_H));
+        let step =
+            egui::Rect::from_min_max(egui::pos2(group.right() - STEP_W, group.top()), group.max);
+        (edit, Some(step))
     } else {
-        (None, group, None)
+        (group, None)
     };
 
     let fill = theme::preview_scrim();
@@ -162,39 +142,32 @@ pub(crate) fn paint_preview_coord_chip(
     ui.painter()
         .rect_stroke(edit_rect, radius, border, egui::StrokeKind::Outside);
 
-    // Use `place` (not `put`) so overlay chips do not advance the form cursor
-    // into the preview — widgets after the panel must stay below it.
-    if let (Some(minus), Some(n)) = (minus_rect, pure) {
-        let resp = ui.place(
-            minus,
-            egui::Button::new("")
-                .fill(fill)
-                .stroke(egui::Stroke::new(1.0, theme::PRIMARY))
-                .corner_radius(radius)
-                .min_size(minus.size()),
-        );
-        paint_s_glyph(ui, minus, false);
-        if resp.clicked() {
-            *value = (n.saturating_sub(1)).to_string();
-        }
-        resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, "Decrement"));
-        resp.on_hover_text("Decrement");
-    }
-    if let (Some(plus), Some(n)) = (plus_rect, pure) {
-        let resp = ui.place(
-            plus,
-            egui::Button::new("")
-                .fill(fill)
-                .stroke(egui::Stroke::new(1.0, theme::PRIMARY))
-                .corner_radius(radius)
-                .min_size(plus.size()),
-        );
-        paint_s_glyph(ui, plus, true);
-        if resp.clicked() {
+    // Use `interact` (not `place`) so overlay chips do not advance the form
+    // cursor into the preview — widgets after the panel must stay below it.
+    if let (Some(step), Some(n)) = (step_rect, pure) {
+        ui.painter().rect_filled(step, radius, fill);
+        let mid = step.center().y;
+        let up_rect = egui::Rect::from_min_max(step.min, egui::pos2(step.right(), mid));
+        let down_rect = egui::Rect::from_min_max(egui::pos2(step.left(), mid), step.max);
+        let up = ui
+            .interact(up_rect, id.with("increment"), egui::Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let down = ui
+            .interact(down_rect, id.with("decrement"), egui::Sense::click())
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        if up.clicked() {
             *value = (n.saturating_add(1)).to_string();
         }
-        resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, "Increment"));
-        resp.on_hover_text("Increment");
+        if down.clicked() {
+            *value = (n.saturating_sub(1)).to_string();
+        }
+        crate::widgets::num_entry::paint_steppers(ui, step, up_rect, down_rect, &up, &down);
+        ui.painter().rect_stroke(
+            step,
+            radius,
+            egui::Stroke::new(1.0, theme::PRIMARY),
+            egui::StrokeKind::Inside,
+        );
     }
 
     let show_overlay = !focused && !value.is_empty() && sqyre_varref::contains(value.as_str());
@@ -1017,5 +990,51 @@ mod tests {
             "total 100×60 px · cell 50×30 px"
         );
         assert_eq!(collection_cell_pixel_size(100, 60, 3, 2), Some((50, 20)));
+    }
+
+    /// Chip −/+ live in one column at the chip's right edge — increment over
+    /// decrement — matching the `num_entry` steppers elsewhere in the app.
+    #[test]
+    fn chip_steppers_stack_at_the_right_edge() {
+        use egui_kittest::kittest::Queryable;
+
+        let preview = egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(160.0, 60.0));
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([240.0, 120.0])
+            .build_ui_state(
+                move |ui, v: &mut String| {
+                    paint_preview_coord_chip(
+                        ui,
+                        preview,
+                        CardinalEdge::Top,
+                        "left",
+                        v,
+                        &KnownVariableNames::default(),
+                        true,
+                        &EntryValidation::default(),
+                        "",
+                    );
+                },
+                "960".to_owned(),
+            );
+        h.run_steps(2);
+        let inc = h.get_by_label("Increment").rect();
+        let dec = h.get_by_label("Decrement").rect();
+        // Stacked in a shared column on the right half of the chip.
+        assert!((inc.left() - dec.left()).abs() < 0.5, "{inc:?} vs {dec:?}");
+        assert!(
+            (inc.right() - dec.right()).abs() < 0.5,
+            "{inc:?} vs {dec:?}"
+        );
+        assert!((inc.bottom() - dec.top()).abs() < 0.5, "{inc:?} vs {dec:?}");
+        assert!(inc.left() > preview.center().x, "{inc:?} not on the right");
+        // Top half increments, bottom half decrements.
+        h.get_by_label("Increment").click();
+        h.run_steps(2);
+        assert_eq!(h.state().as_str(), "961");
+        h.get_by_label("Decrement").click();
+        h.get_by_label("Decrement").click();
+        h.run_steps(2);
+        assert_eq!(h.state().as_str(), "959");
     }
 }

@@ -299,7 +299,8 @@ fn steppers<Num: egui::emath::Numeric>(
 }
 
 /// Paint the stepper column: hover wash + S-stroke glyphs at full opacity.
-fn paint_steppers(
+/// Shared by [`num_entry`] fields and the image-preview coord chips.
+pub(crate) fn paint_steppers(
     ui: &Ui,
     rect: egui::Rect,
     up_rect: egui::Rect,
