@@ -51,15 +51,6 @@ pub(crate) enum CardinalEdge {
     Right,
 }
 
-/// Pure integer literal (no `${var}` / expressions) — enables drag + steppers.
-fn pure_i32(s: &str) -> Option<i32> {
-    let t = s.trim();
-    if t.is_empty() || sqyre_varref::contains(t) {
-        return None;
-    }
-    t.parse().ok()
-}
-
 /// Coord chip overlaid on a preview edge: sizes to text, Sqyre yellow border,
 /// and when the value is a pure integer: drag-to-adjust + a stacked S-stroke
 /// stepper column on the right, same as [`crate::widgets::num_entry`].
@@ -87,7 +78,7 @@ pub(crate) fn paint_preview_coord_chip(
 
     let id = ui.id().with(("preview_coord", placeholder));
     let focused = ui.memory(|m| m.has_focus(id));
-    let pure = pure_i32(value);
+    let pure = crate::widgets::num_entry::pure_i32(value);
     let has_steppers = pure.is_some();
 
     let font = egui::TextStyle::Body.resolve(ui.style());

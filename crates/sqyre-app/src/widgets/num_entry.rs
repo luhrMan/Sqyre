@@ -144,6 +144,68 @@ impl<Num: egui::emath::Numeric> Widget for NumEntry<'_, Num> {
     }
 }
 
+/// Pure integer literal (no `${var}` / expressions) — string fields can only
+/// step while the text is a plain number.
+pub(crate) fn pure_i32(s: &str) -> Option<i32> {
+    let t = s.trim();
+    if t.is_empty() || sqyre_varref::contains(t) {
+        return None;
+    }
+    t.parse().ok()
+}
+
+/// Text margin reserving the stepper column inside a string field's
+/// [`egui::TextEdit`] (egui's default is `Margin::symmetric(4, 2)`).
+pub(crate) const TEXT_STEPPER_MARGIN: egui::Margin = egui::Margin {
+    left: 4,
+    right: 4 + STEPPER_W as i8 + STEPPER_INSET as i8,
+    top: 2,
+    bottom: 2,
+};
+
+/// Stacked S-stroke steppers inside `rect`'s right edge for a string field —
+/// same column as the `DragValue` steppers. Active only while `value` is a
+/// pure integer (see [`pure_i32`]); steps clamp to `range`. `field_id` is the
+/// field's own id so sibling fields get distinct steppers.
+pub(crate) fn string_steppers(
+    ui: &mut Ui,
+    field_id: egui::Id,
+    rect: egui::Rect,
+    value: &mut String,
+    range: RangeInclusive<i32>,
+) {
+    let Some(n) = pure_i32(value) else {
+        return;
+    };
+    let zone = egui::Rect::from_min_max(
+        egui::pos2(rect.right() - STEPPER_W - STEPPER_INSET, rect.top()),
+        egui::pos2(rect.right() - STEPPER_INSET, rect.bottom()),
+    );
+    let mid = zone.center().y;
+    let up_rect = egui::Rect::from_min_max(zone.min, egui::pos2(zone.right(), mid));
+    let down_rect = egui::Rect::from_min_max(egui::pos2(zone.left(), mid), zone.max);
+    let up = ui
+        .interact(up_rect, field_id.with("increment"), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let down = ui
+        .interact(down_rect, field_id.with("decrement"), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+
+    let mut step = |delta: i32| {
+        *value = n
+            .saturating_add(delta)
+            .clamp(*range.start(), *range.end())
+            .to_string();
+    };
+    if step_fires(ui, &up) || arrow_step(ui, &up, true) {
+        step(1);
+    }
+    if step_fires(ui, &down) || arrow_step(ui, &down, false) {
+        step(-1);
+    }
+    paint_steppers(ui, zone, up_rect, down_rect, &up, &down);
+}
+
 /// Rasterized S-stroke glyph for one stepper half, cached per `Context`.
 pub(crate) fn stepper_texture(ui: &Ui, up: bool) -> Option<TextureHandle> {
     let id = egui::Id::new(("sqyre_num_entry_stepper", up));
