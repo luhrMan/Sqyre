@@ -271,8 +271,12 @@ fn steppers<Num: egui::emath::Numeric>(
     let mid = rect.center().y;
     let up_rect = egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), mid));
     let down_rect = egui::Rect::from_min_max(egui::pos2(rect.left(), mid), rect.max);
-    let up = ui.interact(up_rect, drag_id.with("increment"), Sense::click());
-    let down = ui.interact(down_rect, drag_id.with("decrement"), Sense::click());
+    let up = ui
+        .interact(up_rect, drag_id.with("increment"), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let down = ui
+        .interact(down_rect, drag_id.with("decrement"), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     let enabled = ui.is_enabled();
     let mut changed = false;
@@ -344,7 +348,14 @@ fn paint_steppers(
             }
         }
         if resp.has_focus() {
-            crate::widgets::controls::paint_keyboard_focus_ring(ui, zone, resp);
+            // Tight inside ring — the shared focus-ring helper expands and
+            // strokes 2pt, which overwhelms the 12pt stepper column.
+            painter.rect_stroke(
+                zone.shrink(0.5),
+                egui::CornerRadius::same(2),
+                Stroke::new(1.0, PRIMARY),
+                egui::StrokeKind::Inside,
+            );
         }
         resp.clone()
             .on_hover_text(if up_flag { "Increment" } else { "Decrement" });
