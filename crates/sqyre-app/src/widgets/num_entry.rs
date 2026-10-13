@@ -264,18 +264,21 @@ fn apply_step<Num: egui::emath::Numeric>(
 /// State is `(press_time, ticks_fired)` in ctx temp data. `now < press` can
 /// only mean the clock restarted mid-hold; treat it as a fresh press.
 pub(crate) fn step_fires(ui: &Ui, response: &Response) -> f64 {
-    if !response.is_pointer_button_down_on() {
+    let state = ui.ctx().data(|d| d.get_temp::<(f64, u64)>(response.id));
+    // egui stops reporting a held press as down-on a click-only widget once it
+    // passes `Options::max_click_duration` (a press that old can't become a
+    // click), which would kill the repeat under a second in. Once a press has
+    // latched onto this half, follow the primary button itself until release.
+    let down = response.is_pointer_button_down_on()
+        || (state.is_some() && ui.input(|i| i.pointer.primary_down()));
+    if !down {
         ui.ctx().data_mut(|d| d.remove::<(f64, u64)>(response.id));
         // Space/Enter or AccessKit activation (pointer release is ignored —
         // the press already stepped once).
         return f64::from(response.clicked() && !response.clicked_by(egui::PointerButton::Primary));
     }
     let now = ui.input(|i| i.time);
-    let Some((press, ticks)) = ui
-        .ctx()
-        .data(|d| d.get_temp::<(f64, u64)>(response.id))
-        .filter(|(press, _)| *press <= now)
-    else {
+    let Some((press, ticks)) = state.filter(|(press, _)| *press <= now) else {
         // First down frame: take focus, step once, arm the repeat — and
         // schedule the frame it fires on, or a still hold never repeats.
         response.request_focus();
@@ -562,8 +565,17 @@ mod tests {
         h.input_mut().time = Some(0.7);
         h.run_steps(1);
         assert_eq!(*h.state(), 16, "step amounts must grow linearly");
+        // Past egui's max_click_duration (0.8 s) `is_pointer_button_down_on`
+        // goes false for a click-only widget — the hold must outlive it.
+        h.input_mut().time = Some(0.9);
+        h.run_steps(1);
+        assert_eq!(*h.state(), 27, "the hold must survive egui's click timeout");
+        // held 1.2 → ticks 7..=10 fire ×7+×8+×9+×10.
+        h.input_mut().time = Some(1.2);
+        h.run_steps(1);
+        assert_eq!(*h.state(), 61, "repeats must keep accelerating");
         // Release is not another step.
-        h.input_mut().time = Some(0.8);
+        h.input_mut().time = Some(1.3);
         h.input_mut().events.push(egui::Event::PointerButton {
             pos: inc,
             button: egui::PointerButton::Primary,
@@ -571,7 +583,7 @@ mod tests {
             modifiers: Modifiers::NONE,
         });
         h.run_steps(2);
-        assert_eq!(*h.state(), 16);
+        assert_eq!(*h.state(), 61);
     }
 
     #[test]
