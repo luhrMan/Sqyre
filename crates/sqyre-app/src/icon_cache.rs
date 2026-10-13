@@ -270,6 +270,21 @@ impl IconCache {
         self.missing.remove(target);
     }
 
+    /// Drop cached textures and sticky misses for every variant of an item.
+    ///
+    /// Item renames can reuse a destination path that previously held another
+    /// item's texture, so invalidate by filename even after the old file has
+    /// already been moved or deleted.
+    pub fn invalidate_item(&mut self, catalog: &ProgramCatalog, program: &str, item: &str) {
+        let icons_dir = catalog.icons_dir(program);
+        self.textures
+            .retain(|path, _| !is_item_icon_path(path, &icons_dir, item));
+        #[cfg(not(target_arch = "wasm32"))]
+        self.pending
+            .retain(|path, _| !is_item_icon_path(path, &icons_dir, item));
+        self.invalidate_target(&format!("{program}{PROGRAM_DELIMITER}{item}"));
+    }
+
     fn insert_process_icon(
         &mut self,
         ctx: &egui::Context,
@@ -349,6 +364,21 @@ impl IconCache {
             None
         }
     }
+}
+
+fn is_item_icon_path(path: &Path, icons_dir: &Path, item: &str) -> bool {
+    if path.parent() != Some(icons_dir) {
+        return false;
+    }
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let legacy = format!("{item}.png");
+    let variant_prefix = format!("{item}{PROGRAM_DELIMITER}");
+    name == legacy
+        || name
+            .strip_prefix(&variant_prefix)
+            .is_some_and(|variant| variant.ends_with(".png"))
 }
 
 fn stable_variant_index(target: &str, count: usize) -> usize {

@@ -604,7 +604,7 @@ impl DataEditor {
                     })
                 }
             }
-            EditorTab::Items => self.update_item(catalog, macros, &new_name, overwrite),
+            EditorTab::Items => self.update_item(catalog, icons, macros, &new_name, overwrite),
             EditorTab::Points => self.update_point(
                 catalog,
                 macros,
@@ -658,6 +658,7 @@ impl DataEditor {
     pub(crate) fn update_item(
         &mut self,
         catalog: &mut ProgramCatalog,
+        icons: &mut IconCache,
         macros: &mut [Macro],
         new_name: &str,
         overwrite: bool,
@@ -686,6 +687,8 @@ impl DataEditor {
                     }
                 }
                 merge_fs_warning(&mut fs_warn, catalog.rename_item(&prog, &old, new_name)?);
+                icons.invalidate_item(catalog, &prog, &old);
+                icons.invalidate_item(catalog, &prog, new_name);
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::Item, &prog, &old, new_name);
                 }
@@ -935,6 +938,7 @@ impl DataEditor {
             db,
             macros,
             catalog,
+            icons,
             settings,
             ..
         } = env;
@@ -981,6 +985,7 @@ impl DataEditor {
                     return;
                 };
                 catalog.delete_item(&prog, &name).inspect(|_| {
+                    icons.invalidate_item(catalog, &prog, &name);
                     self.selected_entity = None;
                     self.reset_item_form();
                 })
