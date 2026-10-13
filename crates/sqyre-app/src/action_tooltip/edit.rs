@@ -14,7 +14,8 @@ use crate::tree_chrome;
 use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{
     combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
-    searchable_combo, searchable_combo_with, text_field, wrap_unit, wrapped_row, W_TEXT, W_VAR,
+    num_text_field, searchable_combo, searchable_combo_with, text_field, wrap_unit, wrapped_row,
+    W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
@@ -666,8 +667,20 @@ pub fn paint_edit_fields(
                 });
                 tip_wrapped_section(ui, |ui| {
                     text_field(ui, "In atlas", h::NAV_IN_ATLAS, &mut data.inputs.atlas);
-                    text_field(ui, "In row", h::NAV_IN_ROW, &mut data.inputs.row);
-                    text_field(ui, "In col", h::NAV_IN_COL, &mut data.inputs.col);
+                    num_text_field(
+                        ui,
+                        "In row",
+                        h::NAV_IN_ROW,
+                        &mut data.inputs.row,
+                        1..=i32::MAX,
+                    );
+                    num_text_field(
+                        ui,
+                        "In col",
+                        h::NAV_IN_COL,
+                        &mut data.inputs.col,
+                        1..=i32::MAX,
+                    );
                     text_field(
                         ui,
                         "In collection",
