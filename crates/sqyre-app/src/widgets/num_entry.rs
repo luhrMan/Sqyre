@@ -1,18 +1,20 @@
 //! Numeric entry box: an [`egui::DragValue`] with stacked increment/decrement
 //! steppers inside its right end, painted with the upper and lower strokes of
-//! the Sqyre "S". The steppers share the field's rect, so the row never grows.
+//! the Sqyre "S". The steppers share the field's rect, so the row never grows
+//! taller; a trailing spacer atom keeps the value text clear of the glyphs.
 
 use crate::assets;
 use crate::theme::{accent_dim, PRIMARY};
 use eframe::egui::{
-    self, Atoms, IntoAtoms, Key, Modifiers, Response, Sense, Stroke, TextureHandle, TextureOptions,
-    Ui, Widget, WidgetInfo, WidgetType,
+    self, Atom, Atoms, IntoAtoms, Key, Modifiers, Response, Sense, Stroke, TextureHandle,
+    TextureOptions, Ui, Widget, WidgetInfo, WidgetType,
 };
 use std::ops::RangeInclusive;
 
-/// Width of the stepper zone inside the entry box and its right inset (points).
+/// Width of the stepper zone inside the entry box (points).
 const STEPPER_W: f32 = 12.0;
-const STEPPER_INSET: f32 = 3.0;
+/// Gap between the stepper zone and the field's right edge (points).
+const STEPPER_INSET: f32 = 1.0;
 /// Raster size of the cached stepper glyph textures.
 const STEPPER_TEX_PX: u32 = 64;
 /// Vertical inset around the glyph inside the stepper zone.
@@ -118,9 +120,15 @@ impl<Num: egui::emath::Numeric> Widget for NumEntry<'_, Num> {
         if let Some(prefix) = prefix {
             dv = dv.prefix(prefix);
         }
-        if let Some(suffix) = suffix {
-            dv = dv.suffix(suffix);
-        }
+        // Reserve the stepper column as an empty trailing atom so the value
+        // text always ends left of the glyphs — the box keeps this width even
+        // when the text is short.
+        let mut suffix = suffix.unwrap_or_default();
+        suffix.push_right(Atom::custom(
+            egui::Id::new("sqyre_num_entry_stepper_zone"),
+            egui::vec2(STEPPER_W + STEPPER_INSET, 0.0),
+        ));
+        dv = dv.suffix(suffix);
         dv = dv.min_decimals(min_decimals);
         if let Some(max_decimals) = max_decimals {
             dv = dv.max_decimals(max_decimals);
@@ -239,10 +247,12 @@ pub(crate) fn glyph_rect(zone: egui::Rect, tex: &TextureHandle) -> egui::Rect {
     egui::Rect::from_center_size(zone.center(), size)
 }
 
-/// Stacked increment/decrement buttons overlaid on the right end of
-/// `drag_rect` — inside the entry box, so the row never grows. `drag_id` is
-/// the DragValue's own id: per-field unique, so sibling steppers don't collide
-/// (`ui.unique_id()` is constant within a Ui, so it can't be used here).
+/// Stacked increment/decrement buttons flush against the right edge of
+/// `drag_rect` — inside the entry box, so the row never grows taller. The
+/// zone is reserved by a trailing atom, so value text can't run under it.
+/// `drag_id` is the DragValue's own id: per-field unique, so sibling steppers
+/// don't collide (`ui.unique_id()` is constant within a Ui, so it can't be
+/// used here).
 fn steppers<Num: egui::emath::Numeric>(
     ui: &mut Ui,
     value: &mut Num,
@@ -284,7 +294,7 @@ fn steppers<Num: egui::emath::Numeric>(
     response
 }
 
-/// Paint the stepper column: attached button chrome + S-stroke glyphs.
+/// Paint the stepper column: hover wash + S-stroke glyphs at full opacity.
 fn paint_steppers(
     ui: &Ui,
     rect: egui::Rect,
@@ -297,12 +307,13 @@ fn paint_steppers(
     let painter = ui.painter();
 
     for (zone, resp, up_flag) in [(up_rect, up, true), (down_rect, down, false)] {
-        let glyph_color = if !enabled {
-            ui.visuals().weak_text_color()
-        } else if resp.hovered() || resp.is_pointer_button_down_on() || resp.has_focus() {
+        if enabled && (resp.hovered() || resp.is_pointer_button_down_on() || resp.has_focus()) {
+            painter.rect_filled(zone, 2.0, accent_dim());
+        }
+        let glyph_color = if enabled {
             PRIMARY
         } else {
-            accent_dim()
+            ui.visuals().weak_text_color()
         };
         match (stepper_texture(ui, true), stepper_texture(ui, false)) {
             (Some(up_tex), Some(down_tex)) => {
@@ -432,6 +443,20 @@ mod tests {
             pointer_click(&mut h, dec);
         }
         assert_eq!(*h.state(), 0);
+    }
+
+    /// Steppers hug the field's right edge, with the value text kept clear
+    /// by the reserved trailing space inside the box.
+    #[test]
+    fn steppers_hug_the_entry_right_edge() {
+        let mut h = harness(0..=10);
+        h.run_steps(2);
+        let field = h.get_by_role(egui::accesskit::Role::SpinButton).rect();
+        let inc = h.get_by_label("Increment").rect();
+        assert!(
+            (field.right() - STEPPER_INSET - inc.right()).abs() < 0.5,
+            "increment zone {inc:?} not flush with field right edge {field:?}"
+        );
     }
 
     #[test]
