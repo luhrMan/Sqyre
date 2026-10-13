@@ -62,21 +62,16 @@ fn pure_i32(s: &str) -> Option<i32> {
 
 /// Paint the Sqyre-S stepper glyph on a preview chip button (`up` = upper
 /// stroke for increment, `false` = lower stroke for decrement).
-fn paint_s_glyph(ui: &egui::Ui, button: egui::Rect, up: bool, resp: &egui::Response) {
+fn paint_s_glyph(ui: &egui::Ui, button: egui::Rect, up: bool) {
     let Some(tex) = crate::widgets::num_entry::stepper_texture(ui, up) else {
         return;
-    };
-    let color = if resp.hovered() || resp.is_pointer_button_down_on() || resp.has_focus() {
-        theme::PRIMARY
-    } else {
-        crate::theme::accent_dim()
     };
     let uv = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0));
     ui.painter().image(
         tex.id(),
         crate::widgets::num_entry::glyph_rect(button.shrink(4.0), &tex),
         uv,
-        color,
+        theme::PRIMARY,
     );
 }
 
@@ -178,7 +173,7 @@ pub(crate) fn paint_preview_coord_chip(
                 .corner_radius(radius)
                 .min_size(minus.size()),
         );
-        paint_s_glyph(ui, minus, false, &resp);
+        paint_s_glyph(ui, minus, false);
         if resp.clicked() {
             *value = (n.saturating_sub(1)).to_string();
         }
@@ -194,7 +189,7 @@ pub(crate) fn paint_preview_coord_chip(
                 .corner_radius(radius)
                 .min_size(plus.size()),
         );
-        paint_s_glyph(ui, plus, true, &resp);
+        paint_s_glyph(ui, plus, true);
         if resp.clicked() {
             *value = (n.saturating_add(1)).to_string();
         }
