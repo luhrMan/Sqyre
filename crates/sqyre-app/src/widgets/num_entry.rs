@@ -191,17 +191,19 @@ pub(crate) fn string_steppers(
         .interact(down_rect, field_id.with("decrement"), Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
 
-    let mut step = |delta: i32| {
+    let mut step = |mult: f64| {
         *value = n
-            .saturating_add(delta)
+            .saturating_add(mult as i32)
             .clamp(*range.start(), *range.end())
             .to_string();
     };
-    if step_fires(ui, &up) || arrow_step(ui, &up, true) {
-        step(1);
+    let m = step_fires(ui, &up) + f64::from(arrow_step(ui, &up, true));
+    if m > 0.0 {
+        step(m);
     }
-    if step_fires(ui, &down) || arrow_step(ui, &down, false) {
-        step(-1);
+    let m = step_fires(ui, &down) + f64::from(arrow_step(ui, &down, false));
+    if m > 0.0 {
+        step(-m);
     }
     paint_steppers(ui, zone, up_rect, down_rect, &up, &down);
 }
@@ -254,42 +256,59 @@ fn apply_step<Num: egui::emath::Numeric>(
     true
 }
 
-/// Press → one step now, then repeat after [`REPEAT_DELAY`]; keyboard /
-/// AccessKit activation → one step. Returns `true` when a step should be
-/// applied this frame.
-fn step_fires(ui: &Ui, response: &Response) -> bool {
-    if response.is_pointer_button_down_on() {
-        let now = ui.input(|i| i.time);
-        return match ui.ctx().data(|d| d.get_temp::<f64>(response.id)) {
-            // First down frame: take focus, step immediately, arm the repeat delay.
-            None => {
-                response.request_focus();
-                ui.ctx()
-                    .data_mut(|d| d.insert_temp(response.id, now + REPEAT_DELAY));
-                true
-            }
-            Some(next) if now >= next => {
-                ui.ctx()
-                    .data_mut(|d| d.insert_temp(response.id, now + REPEAT_INTERVAL));
-                true
-            }
-            Some(next) => {
-                ui.ctx()
-                    .request_repaint_after(std::time::Duration::from_secs_f64(
-                        (next - now).max(0.0),
-                    ));
-                false
-            }
-        };
+/// Press → one step now; hold past [`REPEAT_DELAY`] → another step every
+/// [`REPEAT_INTERVAL`], each tick's amount growing linearly (tick *k* → ×k).
+/// Keyboard / AccessKit activation → one step. Returns the total step
+/// multiplier to apply this frame (0 for none).
+///
+/// State is `(press_time, ticks_fired)` in ctx temp data. `now < press` can
+/// only mean the clock restarted mid-hold; treat it as a fresh press.
+pub(crate) fn step_fires(ui: &Ui, response: &Response) -> f64 {
+    if !response.is_pointer_button_down_on() {
+        ui.ctx().data_mut(|d| d.remove::<(f64, u64)>(response.id));
+        // Space/Enter or AccessKit activation (pointer release is ignored —
+        // the press already stepped once).
+        return f64::from(response.clicked() && !response.clicked_by(egui::PointerButton::Primary));
     }
-    ui.ctx().data_mut(|d| d.remove::<f64>(response.id));
-    // Space/Enter or AccessKit activation (pointer release is ignored — the
-    // press already stepped once).
-    response.clicked() && !response.clicked_by(egui::PointerButton::Primary)
+    let now = ui.input(|i| i.time);
+    let Some((press, ticks)) = ui
+        .ctx()
+        .data(|d| d.get_temp::<(f64, u64)>(response.id))
+        .filter(|(press, _)| *press <= now)
+    else {
+        // First down frame: take focus, step once, arm the repeat — and
+        // schedule the frame it fires on, or a still hold never repeats.
+        response.request_focus();
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(response.id, (now, 0u64)));
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs_f64(REPEAT_DELAY));
+        return 1.0;
+    };
+    let held = now - press;
+    let due = if held < REPEAT_DELAY {
+        0
+    } else {
+        1 + ((held - REPEAT_DELAY) / REPEAT_INTERVAL) as u64
+    };
+    if due <= ticks {
+        // Wake for the next owed tick: press + DELAY + ticks * INTERVAL.
+        let until = (REPEAT_DELAY + ticks as f64 * REPEAT_INTERVAL - held).max(0.0);
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs_f64(until));
+        return 0.0;
+    }
+    // Each owed tick fires its own linearly growing amount (k = tick index).
+    let total = (ticks + 1..=due).sum::<u64>() as f64;
+    ui.ctx()
+        .data_mut(|d| d.insert_temp(response.id, (press, due)));
+    ui.ctx()
+        .request_repaint_after(std::time::Duration::from_secs_f64(REPEAT_INTERVAL));
+    total
 }
 
 /// Arrow keys on a focused stepper half (mirrors the DragValue's own ↑/↓).
-fn arrow_step(ui: &Ui, response: &Response, up: bool) -> bool {
+pub(crate) fn arrow_step(ui: &Ui, response: &Response, up: bool) -> bool {
     if !response.has_focus() {
         return false;
     }
@@ -343,11 +362,13 @@ fn steppers<Num: egui::emath::Numeric>(
     let enabled = ui.is_enabled();
     let mut changed = false;
     if enabled {
-        if step_fires(ui, &up) || arrow_step(ui, &up, true) {
-            changed |= apply_step(ui, value, 1.0, step, range);
+        let m = step_fires(ui, &up) + f64::from(arrow_step(ui, &up, true));
+        if m > 0.0 {
+            changed |= apply_step(ui, value, m, step, range);
         }
-        if step_fires(ui, &down) || arrow_step(ui, &down, false) {
-            changed |= apply_step(ui, value, -1.0, step, range);
+        let m = step_fires(ui, &down) + f64::from(arrow_step(ui, &down, false));
+        if m > 0.0 {
+            changed |= apply_step(ui, value, -m, step, range);
         }
     }
 
@@ -501,6 +522,56 @@ mod tests {
         assert_eq!(*h.state(), [5, 6]);
         pointer_click(&mut h, incs[0].center());
         assert_eq!(*h.state(), [6, 6]);
+    }
+
+    /// Holding a stepper keeps stepping: after [`REPEAT_DELAY`] each
+    /// [`REPEAT_INTERVAL`] tick fires a linearly growing amount, and every
+    /// held frame schedules the next tick's repaint — a still hold otherwise
+    /// produces no frames and never repeats.
+    #[test]
+    fn holding_a_stepper_repeats_with_growing_steps() {
+        let mut h = harness(0..=1000);
+        h.run_steps(2);
+        let inc = h.get_by_label("Increment").rect().center();
+        h.hover_at(inc);
+        h.run_steps(2);
+        // Press, no release.
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: inc,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        });
+        h.input_mut().time = Some(0.0);
+        h.run_steps(1);
+        assert_eq!(*h.state(), 6, "press steps once");
+        let repaint = h.output().viewport_output[&egui::ViewportId::ROOT].repaint_delay;
+        assert!(
+            repaint < std::time::Duration::MAX,
+            "a still hold must keep scheduling repaints or it never repeats"
+        );
+        // Still inside the delay: nothing owed yet.
+        h.input_mut().time = Some(0.4);
+        h.run_steps(1);
+        assert_eq!(*h.state(), 6);
+        // held 0.5 → tick 1 fires ×1.
+        h.input_mut().time = Some(0.5);
+        h.run_steps(1);
+        assert_eq!(*h.state(), 7);
+        // held 0.7 → ticks 2..=4 fire ×2+×3+×4.
+        h.input_mut().time = Some(0.7);
+        h.run_steps(1);
+        assert_eq!(*h.state(), 16, "step amounts must grow linearly");
+        // Release is not another step.
+        h.input_mut().time = Some(0.8);
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: inc,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        h.run_steps(2);
+        assert_eq!(*h.state(), 16);
     }
 
     #[test]

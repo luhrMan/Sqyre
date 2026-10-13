@@ -140,17 +140,20 @@ pub(crate) fn paint_preview_coord_chip(
         let mid = step.center().y;
         let up_rect = egui::Rect::from_min_max(step.min, egui::pos2(step.right(), mid));
         let down_rect = egui::Rect::from_min_max(egui::pos2(step.left(), mid), step.max);
+        use crate::widgets::num_entry::{arrow_step, step_fires};
         let up = ui
             .interact(up_rect, id.with("increment"), egui::Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         let down = ui
             .interact(down_rect, id.with("decrement"), egui::Sense::click())
             .on_hover_cursor(egui::CursorIcon::PointingHand);
-        if up.clicked() {
-            *value = (n.saturating_add(1)).to_string();
+        let m = step_fires(ui, &up) + f64::from(arrow_step(ui, &up, true));
+        if m > 0.0 {
+            *value = n.saturating_add(m as i32).to_string();
         }
-        if down.clicked() {
-            *value = (n.saturating_sub(1)).to_string();
+        let m = step_fires(ui, &down) + f64::from(arrow_step(ui, &down, false));
+        if m > 0.0 {
+            *value = n.saturating_sub(m as i32).to_string();
         }
         crate::widgets::num_entry::paint_steppers(ui, step, up_rect, down_rect, &up, &down);
         ui.painter().rect_stroke(
