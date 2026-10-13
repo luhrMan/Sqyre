@@ -95,6 +95,27 @@ impl OsCapturer {
         }
     }
 
+    /// Search-area capture; the token is unique per call — neither backend reads
+    /// its frame identity inside the pixel copy's lock yet, so retries always
+    /// re-match (no stale reuse).
+    pub fn capture_search_area_rgb_ref(
+        &self,
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+        fresh: bool,
+    ) -> Result<(RgbCapture, DesktopRect, u64), CaptureError> {
+        let vb = self.virtual_bounds_ref().ok();
+        let rect = sqyre_ports::clamp_search_rect(left, top, right, bottom, vb)?;
+        let img = if fresh {
+            self.capture_rect_rgb_fresh_ref(rect)?
+        } else {
+            self.capture_rect_rgb_ref(rect)?
+        };
+        Ok((img, rect, sqyre_ports::unique_frame_token()))
+    }
+
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         match &self.0 {
             Inner::X11(c) => c.virtual_bounds_ref(),

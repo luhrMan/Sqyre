@@ -2,7 +2,7 @@
 
 use super::common::{
     apply_detection_hits, capture_search_buf, close_matches_distance, run_detection_shell,
-    sort_hits, DetectionCtx, DetectionExtras, DetectionHit,
+    sort_hits, DetectionCtx, DetectionExtras, DetectionHit, FrameMemo,
 };
 use crate::backends::{CollectionArea, DesktopRect, ItemMeta};
 use crate::error::{ExecError, FlowSignal, Result, SearchError};
@@ -15,8 +15,8 @@ use sqyre_domain::{
     ItemSortInfo, ItemSortThen, Macro, MatchMethod, PROGRAM_DELIMITER,
 };
 use sqyre_match::{
-    blur_image_owned, cluster_points, find_template_matches_preblurred_with_prepared,
-    prepare_search, search_blur_kernel, ImageBuf, MatchError, Point, SearchPrep,
+    blur_image_owned, cluster_points, find_peaks_for_method, match_template_with_prepared,
+    prepare_search, search_blur_kernel, ImageBuf, MatchError, MatchMap, Point, SearchPrep,
 };
 use sqyre_ports::{highlight_clear, highlight_fill};
 use sqyre_vision::{
@@ -74,9 +74,14 @@ pub(crate) fn execute_image_search(
     let wait = &detection.wait;
     let macro_name = macro_.name.clone();
     let result = (|| {
+        let mut memo = FrameMemo::new();
+        let params = MatchParams {
+            tolerance: *tolerance,
+            blur: *blur,
+            match_method: *match_method,
+        };
         // Log wait intent once before the shared shell arms retries.
-        let results0 =
-            capture_and_match(exec, &ctx, *tolerance, *blur, *match_method, false, macro_)?;
+        let results0 = capture_and_match(exec, &ctx, &params, false, &mut memo, macro_)?;
         if wait.wait_until_found_active() && results0.is_empty() {
             exec.log(
                 action_id,
@@ -104,15 +109,7 @@ pub(crate) fn execute_image_search(
                 if let Some(first) = initial.take() {
                     return Ok(first);
                 }
-                capture_and_match(
-                    exec,
-                    &ctx,
-                    *tolerance,
-                    *blur,
-                    *match_method,
-                    force_fresh,
-                    macro_,
-                )
+                capture_and_match(exec, &ctx, &params, force_fresh, &mut memo, macro_)
             },
             |results| !results.is_empty(),
             |exec, macro_, results, pass| apply_detection_hits(exec, &ctx, results, macro_, pass),
@@ -168,19 +165,33 @@ struct VariantMatchOutcome {
     /// Mask bytes (kept as Arc until logging builds a preview ImageBuf).
     mask_bytes: Option<Arc<Vec<u8>>>,
     matches: std::result::Result<Vec<Point>, SearchError>,
+    /// Top correlation score across the map (min for SQDIFF*), regardless of
+    /// whether it crossed `threshold` — logged so a near-miss is diagnosable.
+    best_score: Option<f32>,
     match_ms: f64,
     placements: usize,
+}
+
+/// Match knobs fixed for one Image Search action (grouped to keep the call narrow).
+struct MatchParams {
+    tolerance: f64,
+    blur: i32,
+    match_method: MatchMethod,
 }
 
 fn capture_and_match(
     exec: &mut Executor<'_>,
     ctx: &DetectionCtx<'_>,
-    tolerance: f64,
-    blur: i32,
-    match_method: MatchMethod,
+    params: &MatchParams,
     force_fresh: bool,
+    memo: &mut FrameMemo<Vec<DetectionHit>>,
     macro_: &Macro,
 ) -> Result<Vec<DetectionHit>> {
+    let &MatchParams {
+        tolerance,
+        blur,
+        match_method,
+    } = params;
     let action_id = ctx.action_id;
     let label = ctx.label;
     let targets = ctx.targets;
@@ -195,7 +206,7 @@ fn capture_and_match(
 
     let fresh = exec.take_capture_fresh(force_fresh);
     let capture_started = Instant::now();
-    let Some((search, origin)) = capture_search_buf(
+    let Some((search, origin, frame_token)) = capture_search_buf(
         exec,
         ctx,
         macro_,
@@ -213,6 +224,15 @@ fn capture_and_match(
     ) else {
         return Ok(Vec::new());
     };
+    if let Some(hits) = memo.get(frame_token, origin) {
+        exec.log_verbose(action_id, || {
+            format!(
+                "{label}: frame unchanged (token {frame_token:#x}); reusing {} hit(s)",
+                hits.len()
+            )
+        });
+        return Ok(hits.clone());
+    }
     exec.log_image(action_id, "1. Capture (search area)", &search);
     let kernel = search_blur_kernel(blur);
     let want_pipeline = exec.log_images_enabled();
@@ -448,7 +468,7 @@ fn capture_and_match(
         );
         return Err(FlowSignal::Stopped.into());
     }
-    let outcomes = merge_variant_outcomes(outcomes, close_dist);
+    let outcomes = merge_variant_outcomes(outcomes, close_dist, method);
 
     let mut out = Vec::new();
     for outcome in outcomes {
@@ -524,9 +544,13 @@ fn capture_and_match(
         exec.log(
             action_id,
             format!(
-                "{label}: {variant_label} → {} match(es) in {:.0}ms",
+                "{label}: {variant_label} → {} match(es) in {:.0}ms{}",
                 matches.len(),
-                outcome.match_ms
+                outcome.match_ms,
+                match outcome.best_score {
+                    Some(s) => format!(" · best {s:.3} vs threshold {threshold:.3}"),
+                    None => String::new(),
+                },
             ),
         );
 
@@ -669,6 +693,7 @@ fn capture_and_match(
         })
         .collect();
     sort_hits(&mut hits, order);
+    memo.put(frame_token, origin, hits.clone());
     Ok(hits)
 }
 
@@ -847,7 +872,7 @@ fn match_one_variant(
     };
 
     let t0 = Instant::now();
-    let matches = get_cached_prepared_template(
+    let (matches, best_score) = match get_cached_prepared_template(
         &variant.path,
         ctx.kernel,
         template_blurred.as_ref(),
@@ -857,27 +882,26 @@ fn match_one_variant(
     )
     .map_err(|e| SearchError::Template(format!("prepare {:?}: {e}", variant.path)))
     .and_then(|prepared| {
-        find_template_matches_preblurred_with_prepared(
-            search_img,
-            template_blurred.as_ref(),
-            &prepared,
-            ctx.threshold,
-            ctx.close_dist,
-            ctx.method,
-            prep,
-        )
-        .map_err(SearchError::from)
-    });
-    let matches = match matches {
-        Err(SearchError::Match(MatchError::TemplateTooLarge { .. })) => Ok(Vec::new()),
-        Ok(mut pts) => {
+        match_template_with_prepared(search_img, template_blurred.as_ref(), &prepared, prep)
+            .map_err(SearchError::from)
+    }) {
+        Err(SearchError::Match(MatchError::TemplateTooLarge { .. })) => (Ok(Vec::new()), None),
+        Err(e) => (Err(e), None),
+        Ok(map) => {
+            let mut pts = find_peaks_for_method(&map, ctx.threshold, ctx.close_dist, ctx.method);
+            // The best score is only logged on a miss; on a hit the extra
+            // full-map scan would be wasted.
+            let best = if pts.is_empty() {
+                compute_best_score(&map, ctx.method)
+            } else {
+                None
+            };
             for p in &mut pts {
                 p.x += ox;
                 p.y += oy;
             }
-            Ok(pts)
+            (Ok(pts), best)
         }
-        other => other,
     };
     let match_ms = t0.elapsed().as_secs_f64() * 1000.0;
 
@@ -891,8 +915,20 @@ fn match_one_variant(
         template_blurred,
         mask_bytes,
         matches,
+        best_score,
         match_ms,
         placements: 1,
+    }
+}
+
+/// Top score in the correlation map per the method's polarity (max for
+/// CCOEFF*/CCORR*, min for SQDIFF*). `None` when no finite score exists.
+fn compute_best_score(map: &MatchMap, method: MatchMethod) -> Option<f32> {
+    let finite = map.scores.iter().copied().filter(|s| s.is_finite());
+    if method.higher_is_better() {
+        finite.reduce(f32::max)
+    } else {
+        finite.reduce(f32::min)
     }
 }
 
@@ -911,6 +947,7 @@ fn skipped_outcome(
         template_blurred: Arc::new(ImageBuf::new(1, 1, 3, 0)),
         mask_bytes: None,
         matches,
+        best_score: None,
         match_ms: 0.0,
         placements: 1,
     }
@@ -973,7 +1010,9 @@ fn crop_placement(
 fn merge_variant_outcomes(
     outcomes: Vec<VariantMatchOutcome>,
     close_dist: i32,
+    method: MatchMethod,
 ) -> Vec<VariantMatchOutcome> {
+    let higher = method.higher_is_better();
     let mut order: Vec<(String, String)> = Vec::new();
     let mut map: HashMap<(String, String), VariantMatchOutcome> = HashMap::new();
     for o in outcomes {
@@ -981,6 +1020,11 @@ fn merge_variant_outcomes(
         if let Some(acc) = map.get_mut(&key) {
             acc.placements += o.placements;
             acc.match_ms += o.match_ms;
+            acc.best_score = match (acc.best_score, o.best_score) {
+                (Some(a), Some(b)) if higher => Some(a.max(b)),
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            };
             if acc.tmpl_w == 0 && o.tmpl_w > 0 {
                 acc.tmpl_w = o.tmpl_w;
                 acc.tmpl_h = o.tmpl_h;

@@ -226,8 +226,9 @@ impl FrameStore {
     }
 
     /// Latest frame. After an idle gap the cached frame is stale, so this waits up to
-    /// `timeout` for the next one.
-    pub fn latest(&self, timeout: Duration) -> Result<Frame, AndroidError> {
+    /// `timeout` for the next one. The returned `u64` is the frame's generation —
+    /// equal values identify byte-identical pixels for search-result reuse.
+    pub fn latest(&self, timeout: Duration) -> Result<(u64, Frame), AndroidError> {
         let now = Instant::now();
         let mut s = self.state.lock();
         if !s.demand_active(now) {
@@ -238,16 +239,18 @@ impl FrameStore {
             return Err(e);
         }
         if let Some(f) = &s.frame {
-            return Ok(f.clone());
+            return Ok((s.generation, f.clone()));
         }
         self.wait_until(&mut s, now + timeout, |s| s.frame.is_some());
         s.frame
             .clone()
+            .map(|f| (s.generation, f))
             .ok_or_else(|| s.projection_error().unwrap_or(AndroidError::NoFrame))
     }
 
     /// A frame published after this call, or the latest one if none arrives within `timeout`.
-    pub fn fresh(&self, timeout: Duration) -> Result<Frame, AndroidError> {
+    /// The returned `u64` is the frame's generation (see [`Self::latest`]).
+    pub fn fresh(&self, timeout: Duration) -> Result<(u64, Frame), AndroidError> {
         let now = Instant::now();
         let mut s = self.state.lock();
         s.demand_at = Some(now);
@@ -258,6 +261,7 @@ impl FrameStore {
         self.wait_until(&mut s, now + timeout, |s| s.generation > generation);
         s.frame
             .clone()
+            .map(|f| (s.generation, f))
             .ok_or_else(|| s.projection_error().unwrap_or(AndroidError::NoFrame))
     }
 
@@ -395,7 +399,7 @@ mod tests {
         ));
         assert!(store.wants_frames());
         store.publish(layout, &src).expect("publish");
-        assert_eq!(store.latest(Duration::ZERO).expect("frame").width(), 3);
+        assert_eq!(store.latest(Duration::ZERO).expect("frame").1.width(), 3);
         assert_eq!(store.cached_bytes(), 3 * 2 * 4);
         store.release();
         assert_eq!(store.cached_bytes(), 0);
@@ -441,7 +445,7 @@ mod tests {
                 store.publish(layout, &src).expect("publish");
             })
         };
-        let frame = store.fresh(Duration::from_secs(5)).expect("fresh frame");
+        let frame = store.fresh(Duration::from_secs(5)).expect("fresh frame").1;
         assert_eq!(frame.height(), 2);
         publisher.join().expect("publisher");
     }

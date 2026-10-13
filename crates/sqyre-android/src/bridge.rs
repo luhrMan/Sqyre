@@ -261,6 +261,21 @@ pub fn open_accessibility_settings() -> Result<(), AndroidError> {
     })
 }
 
+/// Mirror the macro status line into the projection foreground notification, so
+/// progress stays visible in the shade while Sqyre is backgrounded.
+pub fn set_run_status(text: &str) -> Result<(), AndroidError> {
+    with_bridge(|env, class| {
+        let text = env.new_string(text)?;
+        env.call_static_method(
+            class,
+            "setRunStatus",
+            "(Ljava/lang/String;)V",
+            &[(&text).into()],
+        )?
+        .v()
+    })
+}
+
 /// False when the user blocked Sqyre's notifications, which hides Stop and Continue.
 pub fn notifications_enabled() -> Result<bool, AndroidError> {
     with_bridge(|env, class| {

@@ -72,6 +72,26 @@ impl OsCapturer {
         self.capture_rect_rgb_ref(rect).map(|rgb| (rgb, true))
     }
 
+    /// Search-area capture; GDI grabs live pixels every call, so the token is
+    /// unique per call and retries always re-match (no stale reuse).
+    pub fn capture_search_area_rgb_ref(
+        &self,
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+        fresh: bool,
+    ) -> Result<(RgbCapture, DesktopRect, u64), CaptureError> {
+        let vb = self.virtual_bounds_ref().ok();
+        let rect = sqyre_ports::clamp_search_rect(left, top, right, bottom, vb)?;
+        let img = if fresh {
+            self.capture_rect_rgb_fresh_ref(rect)?
+        } else {
+            self.capture_rect_rgb_ref(rect)?
+        };
+        Ok((img, rect, sqyre_ports::unique_frame_token()))
+    }
+
     /// No CPU frame mirror on GDI — no-op.
     pub fn release_cpu_frame_cache(&self) {}
 

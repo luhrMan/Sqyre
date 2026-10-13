@@ -176,6 +176,15 @@ mod native_run {
         }
     }
 
+    /// Mirror a run status line into the projection notification so it stays
+    /// visible in the shade while Sqyre is backgrounded.
+    #[cfg(target_os = "android")]
+    fn mirror_run_status(msg: &str) {
+        if let Err(e) = sqyre_android::bridge::set_run_status(msg) {
+            crate::log::warn(format_args!("run status notification: {e}"));
+        }
+    }
+
     impl SqyreApp {
         pub(crate) fn start_macro_by_name(&mut self, name: &str, ctx: &egui::Context) {
             if self.run_session.state.running.load(Ordering::SeqCst) {
@@ -266,7 +275,10 @@ mod native_run {
             };
             let ctx = ctx.clone();
             running.store(true, Ordering::SeqCst);
-            *status.lock() = format!("Running {}…", macro_.name);
+            let running_msg = format!("Running {}…", macro_.name);
+            *status.lock() = running_msg.clone();
+            #[cfg(target_os = "android")]
+            mirror_run_status(&running_msg);
             let running_macro_slot = self.macro_overlay.running_macro_slot();
             self.macro_overlay
                 .set_running_macro(Some(macro_.name.clone()));
@@ -287,6 +299,7 @@ mod native_run {
                     running_macro: running_macro_slot,
                     ctx: ctx.clone(),
                 };
+                sqyre_capture::mark_site("run:worker:begin");
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let mut automation = os_automation().map_err(|e| format!("automation: {e}"))?;
                     let capturer_arc = shared_capturer().map_err(|e| format!("capture: {e}"))?;
@@ -306,6 +319,7 @@ mod native_run {
                         stop: &stop_flag,
                     };
                     let vars_dir = variables_path();
+                    sqyre_capture::mark_site("run:worker:exec");
                     execute_macro_with(
                         &mut macro_,
                         ExecDeps {
@@ -331,6 +345,7 @@ mod native_run {
                     )
                     .map_err(|e| e.to_string())
                 }));
+                sqyre_capture::mark_site("run:worker:exec-done");
 
                 crate::mem_diag::sample("pre_clear");
                 sqyre_vision::clear_search_cache();
@@ -356,7 +371,9 @@ mod native_run {
                         "Crashed (see crash.log).".into()
                     }
                 };
-                *status.lock() = msg;
+                *status.lock() = msg.clone();
+                #[cfg(target_os = "android")]
+                mirror_run_status(&msg);
                 let done = status.lock().clone().replace(' ', "_");
                 sqyre_capture::note(&format!("overlay: run done status={done}"));
             });

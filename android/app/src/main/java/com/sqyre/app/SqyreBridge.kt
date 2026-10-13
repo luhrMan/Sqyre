@@ -248,6 +248,16 @@ object SqyreBridge {
         )
     }
 
+    /** Mirror the macro status line into the projection notification while Sqyre is hidden. */
+    @JvmStatic
+    fun setRunStatus(text: String) {
+        try {
+            ProjectionService.updateStatus(text)
+        } catch (e: Exception) {
+            Log.w(TAG, "setRunStatus failed", e)
+        }
+    }
+
     /** False when the user blocked Sqyre's notifications (that hides Stop / Continue). */
     @JvmStatic
     fun notificationsEnabled(): Boolean =

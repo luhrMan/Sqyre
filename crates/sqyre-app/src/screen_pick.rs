@@ -260,7 +260,7 @@ fn settled_frame() -> Result<Frame, String> {
     let deadline = Instant::now() + FRAME_WAIT;
     loop {
         match frames().fresh(Duration::from_millis(250)) {
-            Ok(frame) => return Ok(frame),
+            Ok((_, frame)) => return Ok(frame),
             Err(AndroidError::NoFrame) if Instant::now() < deadline => {}
             Err(e) => return Err(format!("Could not take the screen: {e}.")),
         }

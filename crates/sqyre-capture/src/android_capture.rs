@@ -29,22 +29,43 @@ impl OsCapturer {
     }
 
     pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
-        to_rgba(&latest()?, rect)
+        to_rgba(&latest_frame()?.1, rect)
     }
 
     pub fn capture_rect_fresh_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
-        to_rgba(&fresh()?, rect)
+        to_rgba(&fresh_frame()?.1, rect)
     }
 
     pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
-        to_rgb(&latest()?, rect)
+        to_rgb(&latest_frame()?.1, rect)
     }
 
     pub fn capture_rect_rgb_fresh_ref(
         &self,
         rect: DesktopRect,
     ) -> Result<RgbCapture, CaptureError> {
-        to_rgb(&fresh()?, rect)
+        to_rgb(&fresh_frame()?.1, rect)
+    }
+
+    /// Search-area capture returning the frame's store generation as its token:
+    /// a repeated token means byte-identical pixels, so detection can reuse the
+    /// previous result instead of re-matching a static screen.
+    pub fn capture_search_area_rgb_ref(
+        &self,
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+        fresh: bool,
+    ) -> Result<(RgbCapture, DesktopRect, u64), CaptureError> {
+        let vb = self.virtual_bounds_ref().ok();
+        let rect = sqyre_ports::clamp_search_rect(left, top, right, bottom, vb)?;
+        let (generation, frame) = if fresh {
+            fresh_frame()?
+        } else {
+            latest_frame()?
+        };
+        Ok((to_rgb(&frame, rect)?, rect, generation))
     }
 
     /// Crop the backdrop (last screen seen while Sqyre was hidden) for editor previews.
@@ -88,16 +109,46 @@ impl OsCapturer {
     }
 }
 
-fn latest() -> Result<Frame, CaptureError> {
-    frames()
+fn latest_frame() -> Result<(u64, Frame), CaptureError> {
+    crate::mark_site("cap:latest:req");
+    let t = std::time::Instant::now();
+    let r = frames()
         .latest(FRAME_WAIT)
-        .map_err(start_projection_on_error)
+        .map_err(start_projection_on_error);
+    crate::mark_site(if r.is_ok() {
+        "cap:latest:ok"
+    } else {
+        "cap:latest:err"
+    });
+    if t.elapsed() > Duration::from_millis(400) {
+        crate::note(&format!(
+            "cap: latest slow elapsed={}ms ok={}",
+            t.elapsed().as_millis(),
+            r.is_ok()
+        ));
+    }
+    r
 }
 
-fn fresh() -> Result<Frame, CaptureError> {
-    frames()
+fn fresh_frame() -> Result<(u64, Frame), CaptureError> {
+    crate::mark_site("cap:fresh:req");
+    let t = std::time::Instant::now();
+    let r = frames()
         .fresh(FRAME_WAIT)
-        .map_err(start_projection_on_error)
+        .map_err(start_projection_on_error);
+    crate::mark_site(if r.is_ok() {
+        "cap:fresh:ok"
+    } else {
+        "cap:fresh:err"
+    });
+    if t.elapsed() > Duration::from_millis(400) {
+        crate::note(&format!(
+            "cap: fresh slow elapsed={}ms ok={}",
+            t.elapsed().as_millis(),
+            r.is_ok()
+        ));
+    }
+    r
 }
 
 /// Not-started projections ask the shell for consent; the caller retries on `NotReady`.

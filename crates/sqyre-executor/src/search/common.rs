@@ -65,6 +65,9 @@ impl<'a> DetectionCtx<'a> {
 /// input so caching backends (portal) request a newer frame. Clean nested image
 /// searches and OCR / find-pixel one-shots crop the cache.
 ///
+/// The returned `u64` is the capture's frame-identity token: equal tokens for the
+/// same rect mean byte-identical pixels, so a [`FrameMemo`] can reuse results.
+///
 /// `on_resolved` runs after a successful resolve but before capture, so callers can
 /// log action-specific detail (e.g. targets, dimensions) using the resolved rect.
 pub(super) fn capture_search_buf(
@@ -73,7 +76,7 @@ pub(super) fn capture_search_buf(
     macro_: &Macro,
     fresh: bool,
     on_resolved: impl FnOnce(&mut Executor<'_>, i32, i32, i32, i32),
-) -> Option<(ImageBuf, DesktopRect)> {
+) -> Option<(ImageBuf, DesktopRect, u64)> {
     let action_id = ctx.action_id;
     let label = ctx.label;
     let Some(resolver) = exec.deps.resolver else {
@@ -101,7 +104,7 @@ pub(super) fn capture_search_buf(
     on_resolved(exec, lx, ty, rx, by);
 
     let capture_started = Instant::now();
-    let (img, origin) = match exec
+    let (img, origin, frame_token) = match exec
         .deps
         .capturer
         .as_mut()
@@ -125,7 +128,36 @@ pub(super) fn capture_search_buf(
             capture_checksum(&buf.data)
         )
     });
-    Some((buf, origin))
+    Some((buf, origin, frame_token))
+}
+
+/// Last detection result keyed by the captured frame's identity token + area.
+///
+/// One entry suffices: the wait/repeat shell retries the same search area, so a
+/// repeated capture with the same token for the same rect has byte-identical
+/// pixels and re-running a deterministic match cannot produce different hits.
+/// The memo lets those retries on a static screen poll cheaply instead of
+/// re-matching the whole capture every interval.
+pub(super) struct FrameMemo<T> {
+    last: Option<(u64, DesktopRect, T)>,
+}
+
+impl<T> FrameMemo<T> {
+    pub(super) fn new() -> Self {
+        Self { last: None }
+    }
+
+    /// The stored result when `token` + `rect` match the capture it came from.
+    pub(super) fn get(&self, token: u64, rect: DesktopRect) -> Option<&T> {
+        self.last
+            .as_ref()
+            .filter(|(t, r, _)| *t == token && *r == rect)
+            .map(|(_, _, v)| v)
+    }
+
+    pub(super) fn put(&mut self, token: u64, rect: DesktopRect, value: T) {
+        self.last = Some((token, rect, value));
+    }
 }
 
 fn capture_checksum(bytes: &[u8]) -> u64 {

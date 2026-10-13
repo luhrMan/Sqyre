@@ -2,7 +2,7 @@
 
 use super::common::{
     apply_detection_hits, capture_search_buf, close_matches_distance, run_detection_shell,
-    sort_hits, DetectionCtx, DetectionHit,
+    sort_hits, DetectionCtx, DetectionHit, FrameMemo,
 };
 use crate::error::{ExecError, Result};
 use crate::run::Executor;
@@ -29,6 +29,7 @@ pub(crate) fn execute_find_pixel(
     let action_id = action.id;
     let label = action_type_label(action.type_key());
     let ctx = DetectionCtx::new(action_id, label, search_area, &[], detection);
+    let mut memo = FrameMemo::new();
     run_detection_shell(
         exec,
         macro_,
@@ -41,6 +42,7 @@ pub(crate) fn execute_find_pixel(
                 *color_tolerance,
                 macro_,
                 fresh,
+                &mut memo,
             ))
         },
         |hits| !hits.is_empty(),
@@ -78,12 +80,24 @@ fn try_find_pixels(
     color_tolerance: i32,
     macro_: &Macro,
     fresh: bool,
+    memo: &mut FrameMemo<Vec<DetectionHit>>,
 ) -> Vec<DetectionHit> {
     let action_id = ctx.action_id;
-    let Some((buf, origin)) = capture_search_buf(exec, ctx, macro_, fresh, |_, _, _, _, _| {})
+    let Some((buf, origin, frame_token)) =
+        capture_search_buf(exec, ctx, macro_, fresh, |_, _, _, _, _| {})
     else {
         return Vec::new();
     };
+    if let Some(hits) = memo.get(frame_token, origin) {
+        let label = ctx.label;
+        exec.log_verbose(action_id, || {
+            format!(
+                "{label}: frame unchanged (token {frame_token:#x}); reusing {} hit(s)",
+                hits.len()
+            )
+        });
+        return hits.clone();
+    }
     let scan_started = Instant::now();
     let clustered = find_pixels_clustered(
         &buf,
@@ -97,5 +111,6 @@ fn try_find_pixels(
         .map(|p| DetectionHit::plain(p.x + origin.x, p.y + origin.y, ""))
         .collect();
     sort_hits(&mut hits, &ctx.branch.order);
+    memo.put(frame_token, origin, hits.clone());
     hits
 }

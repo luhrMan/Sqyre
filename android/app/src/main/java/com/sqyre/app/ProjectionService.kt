@@ -20,6 +20,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
+import java.lang.ref.WeakReference
 
 /**
  * Foreground service holding the MediaProjection session.
@@ -41,6 +42,18 @@ class ProjectionService : Service() {
         var running = false
             private set
 
+        @Volatile
+        private var statusText: String = ""
+
+        @Volatile
+        private var instance: WeakReference<ProjectionService> = WeakReference(null)
+
+        /** Mirror a macro status line into the ongoing notification; no-op when not running. */
+        fun updateStatus(text: String) {
+            statusText = text
+            instance.get()?.postNotification()
+        }
+
         fun start(context: Context, resultCode: Int, data: Intent) {
             val intent = Intent(context, ProjectionService::class.java)
                 .putExtra(EXTRA_RESULT_CODE, resultCode)
@@ -57,6 +70,13 @@ class ProjectionService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onCreate() {
+        super.onCreate()
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, getString(R.string.projection_channel), NotificationManager.IMPORTANCE_LOW),
+        )
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP_MACRO -> {
@@ -70,6 +90,7 @@ class ProjectionService : Service() {
         }
         // Android 14+: the foreground type must be active before getMediaProjection.
         startForeground(NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+        instance = WeakReference(this)
         if (projection != null) return START_NOT_STICKY
         val data = intent?.let { resultData(it) }
         val resultCode = intent?.getIntExtra(EXTRA_RESULT_CODE, 0) ?: 0
@@ -176,6 +197,8 @@ class ProjectionService : Service() {
     /** Idempotent; also reports consent tokens that failed before the projection started. */
     private fun teardown() {
         running = false
+        instance.clear()
+        statusText = ""
         display?.release()
         display = null
         reader?.close()
@@ -188,14 +211,14 @@ class ProjectionService : Service() {
         SqyreBridge.nativeOnProjectionStopped()
     }
 
+    private fun postNotification() {
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
+    }
+
     private fun notification(): Notification {
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, getString(R.string.projection_channel), NotificationManager.IMPORTANCE_LOW),
-        )
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
-            .setContentText(getString(R.string.projection_running))
+            .setContentText(statusText.ifEmpty { getString(R.string.projection_running) })
             .setSmallIcon(R.drawable.ic_notification)
             .setOngoing(true)
             .addAction(action(R.string.projection_continue, ACTION_CONTINUE_MACRO, 1))
