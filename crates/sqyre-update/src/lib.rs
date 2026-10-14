@@ -344,7 +344,11 @@ fn sha256_hex_file(path: &Path) -> Result<String, UpdateError> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 /// Query GitHub for the latest release and compare against `current` (embedded `SQYRE_VERSION`).

@@ -329,7 +329,7 @@ fn extract_backup_to_staging(zip_path: &Path, staging: &Path) -> Result<()> {
     let mut expanded_total = 0usize;
     for i in 0..archive.len() {
         let mut entry = archive.by_index(i)?;
-        let name = entry.name().to_string();
+        let name = entry.name()?.into_owned();
         if name.ends_with('/') {
             let dir = safe_extract_path(staging, name.trim_end_matches('/'))?;
             fs::create_dir_all(dir)?;
@@ -604,6 +604,7 @@ mod tests {
             assert_eq!(fs::read(data.join("images/icons/a.png")).unwrap(), b"png");
             assert!(!ZipArchive::new(File::open(&path)?)?
                 .file_names()
+                .filter_map(|n| n.ok())
                 .any(|n| n == "crash.log"));
             Ok(())
         })
@@ -867,7 +868,10 @@ programs: {}
         crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
             let path = create_backup()?;
             let archive = ZipArchive::new(File::open(&path)?)?;
-            let names: Vec<_> = archive.file_names().map(str::to_owned).collect();
+            let names: Vec<_> = archive
+                .file_names()
+                .map(|n| n.map(|n| n.into_owned()))
+                .collect::<std::result::Result<_, _>>()?;
             assert!(names.iter().any(|n| n == "images/real.png"));
             assert!(!names.iter().any(|n| n == "images/link.png"));
             Ok(())

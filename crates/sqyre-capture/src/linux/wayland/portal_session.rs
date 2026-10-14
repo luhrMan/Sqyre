@@ -66,16 +66,13 @@ pub(super) struct PwSetup {
 /// Holds portal DBus session open for the lifetime of the PipeWire loop.
 pub(super) enum PortalHold {
     Combined {
-        _remote: ashpd::desktop::remote_desktop::RemoteDesktop<'static>,
-        _screencast: ashpd::desktop::screencast::Screencast<'static>,
-        _session: ashpd::desktop::Session<
-            'static,
-            ashpd::desktop::remote_desktop::RemoteDesktop<'static>,
-        >,
+        _remote: ashpd::desktop::remote_desktop::RemoteDesktop,
+        _screencast: ashpd::desktop::screencast::Screencast,
+        _session: ashpd::desktop::Session<ashpd::desktop::remote_desktop::RemoteDesktop>,
     },
     ScreenCastOnly {
-        _proxy: ashpd::desktop::screencast::Screencast<'static>,
-        _session: ashpd::desktop::Session<'static, ashpd::desktop::screencast::Screencast<'static>>,
+        _proxy: ashpd::desktop::screencast::Screencast,
+        _session: ashpd::desktop::Session<ashpd::desktop::screencast::Screencast>,
     },
 }
 
@@ -472,7 +469,7 @@ async fn register_portal_app() {
 }
 
 async fn cursor_mode(
-    proxy: &ashpd::desktop::screencast::Screencast<'_>,
+    proxy: &ashpd::desktop::screencast::Screencast,
 ) -> ashpd::desktop::screencast::CursorMode {
     use ashpd::desktop::screencast::CursorMode;
     let available = proxy.available_cursor_modes().await;
@@ -491,7 +488,7 @@ async fn cursor_mode(
 }
 
 async fn source_types(
-    proxy: &ashpd::desktop::screencast::Screencast<'_>,
+    proxy: &ashpd::desktop::screencast::Screencast,
 ) -> enumflags2::BitFlags<ashpd::desktop::screencast::SourceType> {
     use ashpd::desktop::screencast::SourceType;
     match proxy.available_source_types().await {
@@ -530,8 +527,10 @@ pub(super) async fn open_portal_session() -> Result<(PortalHold, PwSetup), Captu
 async fn open_combined_session_with_token(
     restore_token: Option<&str>,
 ) -> Result<(PortalHold, PwSetup), CaptureError> {
-    use ashpd::desktop::remote_desktop::{DeviceType, RemoteDesktop};
-    use ashpd::desktop::screencast::Screencast;
+    use ashpd::desktop::remote_desktop::{
+        ConnectToEISOptions, DeviceType, RemoteDesktop, SelectDevicesOptions, StartOptions,
+    };
+    use ashpd::desktop::screencast::{Screencast, SelectSourcesOptions};
     use ashpd::desktop::PersistMode;
 
     let remote = match RemoteDesktop::new().await {
@@ -551,7 +550,7 @@ async fn open_combined_session_with_token(
     let types = source_types(&proxy).await;
     let cursor = cursor_mode(&proxy).await;
     let session = remote
-        .create_session()
+        .create_session(ashpd::desktop::CreateSessionOptions::default())
         .await
         .map_err(portal_err("create_session"))?;
     if restore_token.is_some() {
@@ -560,18 +559,26 @@ async fn open_combined_session_with_token(
     remote
         .select_devices(
             &session,
-            DeviceType::Keyboard | DeviceType::Pointer,
-            restore_token,
-            PersistMode::ExplicitlyRevoked,
+            SelectDevicesOptions::default()
+                .set_devices(DeviceType::Keyboard | DeviceType::Pointer)
+                .set_restore_token(restore_token)
+                .set_persist_mode(PersistMode::ExplicitlyRevoked),
         )
         .await
         .map_err(portal_err("select_devices"))?;
     proxy
-        .select_sources(&session, cursor, types, true, None, PersistMode::DoNot)
+        .select_sources(
+            &session,
+            SelectSourcesOptions::default()
+                .set_cursor_mode(cursor)
+                .set_sources(types)
+                .set_multiple(true)
+                .set_persist_mode(PersistMode::DoNot),
+        )
         .await
         .map_err(portal_err("select_sources"))?;
     let response = remote
-        .start(&session, None)
+        .start(&session, None, StartOptions::default())
         .await
         .map_err(portal_err("start"))?
         .response()
@@ -580,7 +587,7 @@ async fn open_combined_session_with_token(
     let has_input = response.devices().contains(DeviceType::Keyboard)
         || response.devices().contains(DeviceType::Pointer);
     REMOTE_DESKTOP_GRANTED.store(has_input, Ordering::SeqCst);
-    let streams_meta = response.streams().unwrap_or(&[]);
+    let streams_meta = response.streams();
     if streams_meta.is_empty() {
         return Err(CaptureError::Message(
             "portal ScreenCast returned no streams".into(),
@@ -597,7 +604,10 @@ async fn open_combined_session_with_token(
         ),
     );
     let eis_fd = if has_input {
-        match remote.connect_to_eis(&session).await {
+        match remote
+            .connect_to_eis(&session, ConnectToEISOptions::default())
+            .await
+        {
             Ok(fd) => {
                 cap_log("INPUT", "eis", "ConnectToEIS fd");
                 Some(fd)
@@ -627,23 +637,20 @@ async fn open_combined_session_with_token(
 
 enum PortalSessionKind {
     Combined {
-        remote: ashpd::desktop::remote_desktop::RemoteDesktop<'static>,
-        session: ashpd::desktop::Session<
-            'static,
-            ashpd::desktop::remote_desktop::RemoteDesktop<'static>,
-        >,
+        remote: ashpd::desktop::remote_desktop::RemoteDesktop,
+        session: ashpd::desktop::Session<ashpd::desktop::remote_desktop::RemoteDesktop>,
     },
     ScreenCast {
-        session: ashpd::desktop::Session<'static, ashpd::desktop::screencast::Screencast<'static>>,
+        session: ashpd::desktop::Session<ashpd::desktop::screencast::Screencast>,
     },
 }
 
 async fn finish_pipewire_setup(
     streams_meta: &[ashpd::desktop::screencast::Stream],
-    proxy: ashpd::desktop::screencast::Screencast<'static>,
+    proxy: ashpd::desktop::screencast::Screencast,
     kind: PortalSessionKind,
 ) -> Result<(PortalHold, PwSetup), CaptureError> {
-    use ashpd::desktop::screencast::Stream;
+    use ashpd::desktop::screencast::{OpenPipeWireRemoteOptions, Stream};
 
     let mut streams: Vec<PwStreamSetup> = streams_meta
         .iter()
@@ -691,17 +698,16 @@ async fn finish_pipewire_setup(
         .filter(|r| r.w > 0 && r.h > 0)
         .reduce(union_rect)
         .unwrap_or_default();
-    let fd =
-        match &kind {
-            PortalSessionKind::Combined { session, .. } => proxy
-                .open_pipe_wire_remote(session)
-                .await
-                .map_err(portal_err("open_pipe_wire_remote"))?,
-            PortalSessionKind::ScreenCast { session } => proxy
-                .open_pipe_wire_remote(session)
-                .await
-                .map_err(portal_err("open_pipe_wire_remote"))?,
-        };
+    let fd = match &kind {
+        PortalSessionKind::Combined { session, .. } => proxy
+            .open_pipe_wire_remote(session, OpenPipeWireRemoteOptions::default())
+            .await
+            .map_err(portal_err("open_pipe_wire_remote"))?,
+        PortalSessionKind::ScreenCast { session } => proxy
+            .open_pipe_wire_remote(session, OpenPipeWireRemoteOptions::default())
+            .await
+            .map_err(portal_err("open_pipe_wire_remote"))?,
+    };
     let hold = match kind {
         PortalSessionKind::Combined { remote, session } => PortalHold::Combined {
             _remote: remote,
@@ -727,7 +733,7 @@ async fn finish_pipewire_setup(
 async fn open_screencast_only_with_token(
     restore_token: Option<&str>,
 ) -> Result<(PortalHold, PwSetup), CaptureError> {
-    use ashpd::desktop::screencast::Screencast;
+    use ashpd::desktop::screencast::{Screencast, SelectSourcesOptions, StartCastOptions};
     use ashpd::desktop::PersistMode;
 
     let proxy = Screencast::new()
@@ -736,7 +742,7 @@ async fn open_screencast_only_with_token(
     let types = source_types(&proxy).await;
     let cursor = cursor_mode(&proxy).await;
     let session = proxy
-        .create_session()
+        .create_session(ashpd::desktop::CreateSessionOptions::default())
         .await
         .map_err(portal_err("create_session"))?;
     if restore_token.is_some() {
@@ -745,16 +751,17 @@ async fn open_screencast_only_with_token(
     proxy
         .select_sources(
             &session,
-            cursor,
-            types,
-            true,
-            restore_token,
-            PersistMode::ExplicitlyRevoked,
+            SelectSourcesOptions::default()
+                .set_cursor_mode(cursor)
+                .set_sources(types)
+                .set_multiple(true)
+                .set_restore_token(restore_token)
+                .set_persist_mode(PersistMode::ExplicitlyRevoked),
         )
         .await
         .map_err(portal_err("select_sources"))?;
     let response = proxy
-        .start(&session, None)
+        .start(&session, None, StartCastOptions::default())
         .await
         .map_err(portal_err("start"))?
         .response()

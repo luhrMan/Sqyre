@@ -233,7 +233,11 @@ fn sha256_hex_file(path: &Path) -> Result<String, PortError> {
         }
         hasher.update(&buf[..n]);
     }
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 fn download_english_tessdata(dest_dir: &Path) -> Result<(), PortError> {
