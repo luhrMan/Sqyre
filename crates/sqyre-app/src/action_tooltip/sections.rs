@@ -2,12 +2,13 @@
 //!
 //! # Conventions
 //!
-//! - [`tip_wrapped_section`] — compact labeled fields, combos, checkboxes, DragValues.
-//!   Each label + control pair is one [`crate::widgets::wrap_unit`] so wrapping never
-//!   splits it; shared field helpers already do this.
+//! - [`tip_wrapped_section`] — compact labeled fields, combos, checkboxes, numeric
+//!   entries ([`crate::widgets::num_entry`]). Each label + control pair is one
+//!   [`crate::widgets::wrap_unit`] so wrapping never splits it; shared field
+//!   helpers already do this.
 //! - [`tip_section`] — multiline editors, icon grids, previews, repeatable list editors.
 //! - [`tip_advanced`] — collapsed-by-default “Advanced” header; fill with tip_* sections.
-//! - Field labels use `help::label` + control (not `DragValue.prefix`).
+//! - Field labels use `help::label` + control (not `NumEntry.prefix`).
 //! - Do not nest `ui.group` inside a tip section; list headers + rows (optional light
 //!   per-item frame only for multi-line list items).
 

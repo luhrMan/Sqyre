@@ -184,7 +184,7 @@ fn delay_row(ui: &mut egui::Ui, label: &str, value: &mut i32) -> bool {
     ui.horizontal(|ui| {
         ui.label(label);
         let resp = ui.add(
-            egui::DragValue::new(value)
+            crate::widgets::num_entry(value)
                 .range(DELAY_MIN..=DELAY_MAX)
                 .speed(1),
         );

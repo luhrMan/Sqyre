@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Upper stroke of the Sqyre "S" (sqyre.svg path1048576 subpath from
+     feature/android-port), used as the increment glyph on numeric entry
+     steppers. The viewBox covers the whole S so the up/down halves compose
+     the icon when painted into the same rect. -->
+<svg
+   width="46.75"
+   height="84"
+   viewBox="40.5 20.25 46.75 84"
+   version="1.1"
+   xmlns="http://www.w3.org/2000/svg"><g
+     transform="matrix(1.0973354,0,0,1.0188785,-20.52961,-10.923955)"><path
+       style="fill:#dc9d2e;stroke:none"
+       d="M 102.02019,71.89654 c -15.427314,7.32611 -57.60343,31.408898 9.14816,76.201828 0.59091,-10.03752 -8.85901,-16.004 -15.974005,-21.81528 -17.498204,-14.28046 -16.561768,-36.127718 6.825845,-45.456685 0.28607,0.04859 13.91221,5.906437 17.30925,13.969738 1.67665,3.979784 1.68291,7.943257 1.07648,8.789197 -1.25182,1.74619 -5.02331,3.11818 -4.99094,4.18969 2.34813,2.82188 11.44641,9.72898 12.58745,9.92071 -0.50903,-6.24026 0.74484,-12.49029 0.20173,-18.716016 C 126.46242,85.03254 114.09785,76.96368 102.02008,71.89654"
+       transform="matrix(0.75853797,0,0,0.75853797,-0.35524606,-23.405601)" /></g></svg>

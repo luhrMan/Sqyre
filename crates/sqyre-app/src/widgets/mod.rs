@@ -8,6 +8,7 @@ pub mod empty_state;
 pub mod fields;
 pub mod headers;
 pub mod match_settings;
+pub mod num_entry;
 pub mod scroll;
 pub mod sections;
 pub mod tags;
@@ -34,11 +35,13 @@ pub use dialogs::{
 pub use empty_state::{empty_state, list_vacancy, list_vacancy_copy, EmptyStateAction};
 pub use fields::{
     combo_condition_operator, combo_enum, combo_str, combo_str_labeled, drag_field,
-    drag_field_enabled, fill_row, searchable_combo, searchable_combo_width, searchable_combo_with,
-    text_field, text_field_width, W_TEXT, W_VAR,
+    drag_field_enabled, fill_row, num_text_edit, num_text_field, num_text_field_width,
+    searchable_combo, searchable_combo_width, searchable_combo_with, text_field, text_field_width,
+    W_TEXT, W_VAR,
 };
 pub use headers::{heading_with_count, heading_with_count_and, title_with_count};
 pub use match_settings::configure_match_blur_drag;
+pub use num_entry::{num_entry, NumEntry};
 pub use scroll::{
     dialog_scroll, enable_dense_row_extend, scroll_both, scroll_vertical, SCROLL_SOURCE_NO_DRAG,
 };
