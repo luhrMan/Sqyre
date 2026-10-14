@@ -138,7 +138,7 @@ Exit: create a macro, add an image search, run it, and stop it on a phone-sized 
 - **Toolchain:** the devcontainer carries JDK 17, the SDK, NDK r27, Gradle, `cargo-ndk`, CMake and Ninja.
 - **Features:** `ANDROID_FEATURES` defaults to `native-runtime,overlay-buttons`; set it empty for an editor-only APK without the OCR build.
 - **Stripping:** Gradle reads `ANDROID_NDK_HOME` and its `source.properties` so AGP strips `libsqyre_app.so` with the NDK `cargo-ndk` linked against.
-- **Releases:** `ANDROID_PROFILE=release make android` builds an unsigned release APK. Signing and a store listing are out of scope.
+- **Releases:** CI builds and signs `sqyre-v<version>-android-arm64.apk` on each release (`build-android` in `.github/workflows/main.yml`, arm64-v8a only). It needs the `SQYRE_ANDROID_KEYSTORE` (base64 `.jks` — encode with `base64 -w0 release.keystore`), `SQYRE_ANDROID_KEYSTORE_PASSWORD`, `SQYRE_ANDROID_KEY_ALIAS` and `SQYRE_ANDROID_KEY_PASSWORD` secrets — the release fails without them, like `SQYRE_UPDATE_SIGNING_KEY`. Locally `ANDROID_PROFILE=release make android` signs when `ANDROID_KEYSTORE_FILE` (+ `ANDROID_KEYSTORE_PASSWORD`/`_ALIAS`/`_KEY_PASSWORD`) is set and stays unsigned otherwise. A store listing is out of scope.
 - **Renderer:** eframe is pinned to Glow (GLES) on Android. wgpu would pick Vulkan, which crashes the emulator's SwiftShader host renderer.
 
 ## Emulator
@@ -165,7 +165,7 @@ Build the APK first with `make android`; it includes the x86_64 library by defau
 ## Tests
 
 - **Desktop:** `make fmt`, `make check` and `make test`. The pure `sqyre-android` modules (frame packing, frame store, gesture planning, status codes, app-list parsing, document picks, notification handlers) and the crop kernels in `sqyre-capture` run here.
-- **Android compile:** `make android-check` in the devcontainer checks the editor and runtime `sqyre-app` plus `sqyre-capture` and `sqyre-input`. `sqyre-probe` checks desktop sessions and is not built for Android. It builds the OCR libraries on first run.
+- **Android compile:** `make android-check` — in the devcontainer and the CI `test` job — checks the editor and runtime `sqyre-app` plus `sqyre-capture` and `sqyre-input`. `sqyre-probe` checks desktop sessions and is not built for Android. It builds the OCR libraries on first run.
 - **Device or emulator:** by hand, at each phase's exit criteria, with `make android-emulator` or `make android-emulator-headless` plus `scripts/android/emulator.sh screenshot`. Emulators are not in CI yet.
 
 ## Out of scope
