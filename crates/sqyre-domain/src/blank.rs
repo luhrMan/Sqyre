@@ -2,8 +2,9 @@
 
 use crate::{
     action_type_table, Action, ActionId, ActionKind, ConditionBlock, CoordinateRef,
-    DetectionBranch, ListColumn, LoopJumpMode, MatchMethod, PressState, ScalarValue,
-    VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    DetectionBranch, ListColumn, LoopJumpMode, MatchMethod, MouseButton, PressState, ScalarValue,
+    VariableAssignment, CELL_COORDINATES, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
+    DEFAULT_SMOOTH_LOW, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE, PROGRAM_DELIMITER,
 };
 
 /// One picker entry: label, type key, category, and a fresh blank [`Action`].
@@ -68,6 +69,34 @@ macro_rules! test_action {
     };
 }
 
+/// `General~<name>` ref for a seeded well-known point ([`GENERAL_PROGRAM`]).
+fn general_point_ref(name: &str) -> CoordinateRef {
+    CoordinateRef(format!("{GENERAL_PROGRAM}{PROGRAM_DELIMITER}{name}"))
+}
+
+/// Starter child for actions that produce screen coordinates: follow each
+/// hit / cell with the cursor ([`Move`] to `point`).
+fn move_children(point: CoordinateRef) -> Vec<Action> {
+    vec![Action {
+        id: ActionId::new(),
+        kind: ActionKind::Move {
+            point,
+            smooth: true,
+            smooth_low: DEFAULT_SMOOTH_LOW,
+            smooth_high: DEFAULT_SMOOTH_HIGH,
+            smooth_delay_ms: DEFAULT_SMOOTH_DELAY_MS,
+        },
+    }]
+}
+
+/// Detection branch whose child moves to each hit ([`IMAGE_SEARCH_REFERENCE`]).
+fn detection_with_move() -> DetectionBranch {
+    DetectionBranch {
+        subactions: move_children(general_point_ref(IMAGE_SEARCH_REFERENCE)),
+        ..DetectionBranch::default()
+    }
+}
+
 /// Default [`ActionKind`] for a wire type key (Add Action / taxonomy blanks).
 pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
     Some(match action_type.trim().to_ascii_lowercase().as_str() {
@@ -79,7 +108,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
             smooth_delay_ms: DEFAULT_SMOOTH_DELAY_MS,
         },
         "click" => ActionKind::Click {
-            button: "left".into(),
+            button: MouseButton::Left,
             state: PressState::Tap,
         },
         "key" => ActionKind::Key {
@@ -135,7 +164,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
             sort_by: Default::default(),
             sort_then: Default::default(),
             tag_priority: Vec::new(),
-            detection: DetectionBranch::default(),
+            detection: detection_with_move(),
         },
         "ocr" => ActionKind::Ocr {
             name: String::new(),
@@ -148,14 +177,14 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
             grayscale: false,
             threshold_otsu: false,
             threshold_invert: false,
-            detection: DetectionBranch::default(),
+            detection: detection_with_move(),
         },
         "findpixel" => ActionKind::FindPixel {
             name: String::new(),
             search_area: CoordinateRef::default(),
             target_color: "ffffff".into(),
             color_tolerance: 0,
-            detection: DetectionBranch::default(),
+            detection: detection_with_move(),
         },
         "setvariable" => ActionKind::SetVariable {
             assignments: vec![VariableAssignment::default()],
@@ -170,7 +199,7 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
         "foreachcell" => ActionKind::ForEachCell {
             name: String::new(),
             cells: CoordinateRef::default(),
-            subactions: Vec::new(),
+            subactions: move_children(general_point_ref(CELL_COORDINATES)),
         },
         "savevariable" => ActionKind::SaveVariable {
             variable_name: String::new(),
@@ -241,6 +270,44 @@ mod tests {
                 assert!((smooth_low - DEFAULT_SMOOTH_LOW).abs() < f64::EPSILON);
             }
             other => panic!("expected Move, got {other:?}"),
+        }
+    }
+
+    /// Seeded children: a single `Move` to `General~<point_name>`.
+    fn assert_seeded_move(subactions: &[Action], point_name: &str) {
+        assert_eq!(subactions.len(), 1, "expected one seeded Move child");
+        match &subactions[0].kind {
+            ActionKind::Move { point, .. } => assert_eq!(
+                point.as_str(),
+                format!("{GENERAL_PROGRAM}{PROGRAM_DELIMITER}{point_name}")
+            ),
+            other => panic!("expected seeded Move child, got {other:?}"),
+        }
+        assert!(!subactions[0].id.is_root());
+    }
+
+    #[test]
+    fn blank_detection_kinds_seed_move_to_match() {
+        for key in ["imagesearch", "ocr", "findpixel"] {
+            let a = blank_action(key).unwrap();
+            let subs = match &a.kind {
+                ActionKind::ImageSearch { detection, .. }
+                | ActionKind::Ocr { detection, .. }
+                | ActionKind::FindPixel { detection, .. } => &detection.subactions,
+                other => panic!("expected detection kind for {key}, got {other:?}"),
+            };
+            assert_seeded_move(subs, IMAGE_SEARCH_REFERENCE);
+        }
+    }
+
+    #[test]
+    fn blank_foreachcell_seeds_move_to_cell() {
+        let a = blank_action("foreachcell").unwrap();
+        match &a.kind {
+            ActionKind::ForEachCell { subactions, .. } => {
+                assert_seeded_move(subactions, CELL_COORDINATES);
+            }
+            other => panic!("expected ForEachCell, got {other:?}"),
         }
     }
 

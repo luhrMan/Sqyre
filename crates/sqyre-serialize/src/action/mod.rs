@@ -209,6 +209,14 @@ mod tests {
         }
     }
 
+    /// Plain encode drops `uid` by design and decode mints fresh ids, so
+    /// normalize nested ids before comparing kinds (blank templates may carry
+    /// seeded child actions).
+    fn kind_ignoring_ids(mut a: Action) -> ActionKind {
+        a.walk_mut(&mut |n| n.id = ActionId::root());
+        a.kind
+    }
+
     #[test]
     fn blank_action_kinds_roundtrip_encode_decode() {
         use sqyre_domain::{action_templates, ACTION_KIND_COUNT};
@@ -232,7 +240,8 @@ mod tests {
             let reencoded = action_to_map(&decoded).unwrap();
             let redecoded = action_from_map(&reencoded).unwrap();
             assert_eq!(
-                decoded.kind, redecoded.kind,
+                kind_ignoring_ids(decoded),
+                kind_ignoring_ids(redecoded),
                 "encode/decode not idempotent for {}",
                 tmpl.action_type
             );
@@ -579,7 +588,7 @@ waittilfoundseconds: 0.25
             prop_assert_eq!(decoded.type_key(), tmpl.action_type);
             let reencoded = action_to_map(&decoded).expect("re-encode");
             let redecoded = action_from_map(&reencoded).expect("re-decode");
-            prop_assert_eq!(&decoded.kind, &redecoded.kind);
+            prop_assert_eq!(kind_ignoring_ids(decoded), kind_ignoring_ids(redecoded));
         }
     }
 }
