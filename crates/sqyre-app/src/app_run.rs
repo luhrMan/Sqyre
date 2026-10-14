@@ -3,6 +3,32 @@
 use crate::SqyreApp;
 use eframe::egui;
 
+/// Android consent-gate state for [`PendingProjectionRun`].
+///
+/// MediaProjection consent cannot be persisted or reused (single-use tokens since
+/// Android 14's `MEDIA_PROJECTION_PREVENTS_REUSING_CONSENT`), so a run that reads
+/// the screen parks here while a modal explains and fires the system dialog.
+#[cfg(all(target_os = "android", feature = "native-runtime"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProjectionGate {
+    /// The modal is explaining; the system dialog has not been fired yet.
+    Ask,
+    /// The consent dialog was fired — waiting for Running (grant) or Stopped.
+    Waiting,
+    /// The dialog was dismissed without consent; offer a retry.
+    Denied,
+}
+
+/// A macro that reads the screen, queued while MediaProjection consent is
+/// requested. `ui_overlays::show_projection_run_gate` paints the modal and calls
+/// `start_macro_by_name` once the projection reports Running.
+#[cfg(all(target_os = "android", feature = "native-runtime"))]
+#[derive(Debug)]
+pub(crate) struct PendingProjectionRun {
+    pub macro_name: String,
+    pub state: ProjectionGate,
+}
+
 impl SqyreApp {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn start_macro(&mut self, ctx: &egui::Context) {
@@ -230,6 +256,20 @@ mod native_run {
                 sqyre_capture::note(&format!(
                     "overlay: start skipped invalid-macro name={name} err={e}"
                 ));
+                ctx.request_repaint();
+                return;
+            }
+            // Screen-reading runs park behind the consent gate instead of firing
+            // the system dialog mid-run once the first capture asks.
+            #[cfg(target_os = "android")]
+            if sqyre_android::frames().projection() != sqyre_android::Projection::Running
+                && self.workspace.macros[idx].uses_screen_capture(&self.workspace.macros)
+            {
+                self.pending_projection_run = Some(PendingProjectionRun {
+                    macro_name: self.workspace.macros[idx].name.clone(),
+                    state: ProjectionGate::Ask,
+                });
+                sqyre_capture::event_log("SQYRE_OVERLAY", &[("start", "gate"), ("name", name)]);
                 ctx.request_repaint();
                 return;
             }

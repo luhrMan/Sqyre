@@ -421,6 +421,9 @@ pub struct SqyreApp {
     /// Android: still of the previous app to place a recorded point or search area on.
     #[cfg(all(target_os = "android", feature = "native-runtime"))]
     screen_pick: crate::screen_pick::ScreenPick,
+    /// Android: a screen-reading run parked behind the consent modal.
+    #[cfg(all(target_os = "android", feature = "native-runtime"))]
+    pub(crate) pending_projection_run: Option<app_run::PendingProjectionRun>,
     /// Always-on-top floating buttons that start macros.
     #[cfg(feature = "native-runtime")]
     macro_overlay: sqyre_overlay::MacroOverlay,
@@ -687,6 +690,8 @@ impl SqyreApp {
             recording_overlay: recording_overlay::RecordingOverlay::new(),
             #[cfg(all(target_os = "android", feature = "native-runtime"))]
             screen_pick: Default::default(),
+            #[cfg(all(target_os = "android", feature = "native-runtime"))]
+            pending_projection_run: None,
             #[cfg(feature = "native-runtime")]
             macro_overlay: sqyre_overlay::MacroOverlay::new(),
             #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
