@@ -842,45 +842,96 @@ mod tests {
         assert!(log.iter().any(|e| e.contains("f9")));
     }
 
-    #[test]
-    fn focus_window_uses_focuser() {
-        use crate::test_support::RecordingWindowFocuser;
-
-        let focuser = RecordingWindowFocuser::default();
-        let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
+    fn focus(path: &str, title: &str) -> Action {
+        Action {
             id: ActionId::new(),
             kind: ActionKind::FocusWindow {
-                process_path: "/usr/bin/app".into(),
-                window_title: "Title".into(),
+                process_path: path.into(),
+                window_title: title.into(),
+                previous: false,
             },
-        }]);
+        }
+    }
+
+    fn focus_previous() -> Action {
+        Action {
+            id: ActionId::new(),
+            kind: ActionKind::FocusWindow {
+                process_path: String::new(),
+                window_title: String::new(),
+                previous: true,
+            },
+        }
+    }
+
+    fn run_focus(
+        focuser: &crate::test_support::RecordingWindowFocuser,
+        actions: Vec<Action>,
+    ) -> crate::error::Result<()> {
+        let mut backend = RecordingBackend::default();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.root = root_loop(actions);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: Some(&focuser),
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-            },
+            ExecDeps::new(&mut backend).window_focuser(focuser),
+        )
+    }
+
+    #[test]
+    fn focus_window_uses_focuser() {
+        let focuser = crate::test_support::RecordingWindowFocuser::default();
+        run_focus(&focuser, vec![focus("/usr/bin/app", "Title")]).unwrap();
+        let log = focuser.log.lock().unwrap();
+        assert_eq!(log.as_slice(), ["focus:/usr/bin/app:Title"]);
+    }
+
+    #[test]
+    fn focus_previous_returns_to_window_before_last_focus_and_alternates() {
+        let focuser = crate::test_support::RecordingWindowFocuser::focused_on("/bin/editor", "Doc");
+        run_focus(
+            &focuser,
+            vec![
+                focus("/bin/game", "Game"),
+                focus_previous(),
+                focus_previous(),
+            ],
         )
         .unwrap();
         let log = focuser.log.lock().unwrap();
-        assert_eq!(log.as_slice(), ["focus:/usr/bin/app:Title"]);
+        assert_eq!(
+            log.as_slice(),
+            [
+                "focus:/bin/game:Game",
+                "focus:/bin/editor:Doc",
+                "focus:/bin/game:Game"
+            ]
+        );
+    }
+
+    #[test]
+    fn focus_already_focused_window_keeps_previous() {
+        let focuser = crate::test_support::RecordingWindowFocuser::focused_on("/bin/editor", "Doc");
+        run_focus(
+            &focuser,
+            vec![
+                focus("/bin/game", "Game"),
+                focus("/bin/game", "Game"),
+                focus_previous(),
+            ],
+        )
+        .unwrap();
+        let log = focuser.log.lock().unwrap();
+        assert_eq!(
+            log.last().map(String::as_str),
+            Some("focus:/bin/editor:Doc")
+        );
+    }
+
+    #[test]
+    fn focus_previous_without_earlier_focus_fails() {
+        let focuser = crate::test_support::RecordingWindowFocuser::focused_on("/bin/editor", "Doc");
+        let err = run_focus(&focuser, vec![focus_previous()]).unwrap_err();
+        assert!(err.to_string().contains("no previous window"), "{err}");
+        assert!(focuser.log.lock().unwrap().is_empty());
     }
 }

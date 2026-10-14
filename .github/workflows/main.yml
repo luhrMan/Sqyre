@@ -1,5 +1,6 @@
 # CI on push/PR to main. Daily release at 23:00 UTC when main has changed.
-# Releases: Linux binary + AppImage + Flatpak, Windows .exe (MinGW cross), WASM editor zip.
+# Releases: Linux binary + AppImage + Flatpak, Windows .exe (MinGW cross), WASM editor zip,
+# signed Android APK (arm64).
 # Release tag / artifact names: vYYYY.MM.DD (e.g. v2026.03.03); HHMM suffix if that tag exists.
 #
 # Caching (share what can be shared):
@@ -258,6 +259,7 @@ jobs:
               COVERAGE_REPORT_JSON=/workspace/target/coverage/summary.json make coverage-floors
               make smoke
               make wasm-check
+              make android-check
               sccache --show-stats || true'
 
       - name: Upload coverage artifact
@@ -722,6 +724,146 @@ jobs:
           name: wasm-editor-zip
           path: sqyre-v${{ needs.version.outputs.version }}-wasm.zip
 
+  # Signed arm64 release APK. Needs the SQYRE_ANDROID_* secrets; the release fails
+  # without them, same as SQYRE_UPDATE_SIGNING_KEY.
+  build-android:
+    if: |
+      always() && !cancelled() &&
+      needs.version.result == 'success' &&
+      needs.version.outputs.should_release == 'true' &&
+      needs.cargo-registry.result == 'success' &&
+      needs.linux-image.result == 'success'
+    needs: [version, cargo-registry, linux-image]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      version: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+
+      - name: Write VERSION
+        run: echo "${{ needs.version.outputs.version }}" > VERSION
+
+      - name: Decode Android release keystore
+        env:
+          SQYRE_ANDROID_KEYSTORE: ${{ secrets.SQYRE_ANDROID_KEYSTORE }}
+          SQYRE_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SQYRE_ANDROID_KEYSTORE_PASSWORD }}
+          SQYRE_ANDROID_KEY_ALIAS: ${{ secrets.SQYRE_ANDROID_KEY_ALIAS }}
+          SQYRE_ANDROID_KEY_PASSWORD: ${{ secrets.SQYRE_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for var in SQYRE_ANDROID_KEYSTORE SQYRE_ANDROID_KEYSTORE_PASSWORD SQYRE_ANDROID_KEY_ALIAS SQYRE_ANDROID_KEY_PASSWORD; do
+            if [ -z "${!var}" ]; then
+              echo "$var secret is required to publish a signed APK" >&2
+              exit 1
+            fi
+          done
+          mkdir -p bin
+          echo "$SQYRE_ANDROID_KEYSTORE" | base64 -d > bin/android-release.keystore
+          test -s bin/android-release.keystore
+
+      # linux-image already built/pushed; pull or rebuild from Buildx cache (fork PRs).
+      - name: Ensure Linux build image
+        uses: ./.github/actions/ensure-linux-image
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          push: "false"
+
+      - name: Cache Cargo registry (shared)
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.CARGO_HOME_DIR }}
+          key: ${{ runner.os }}-cargo-reg-v3-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-reg-v3-
+            ${{ runner.os }}-cargo-reg-
+
+      - name: Cache Cargo target (Android)
+        uses: actions/cache@v6
+        with:
+          path: |
+            ${{ env.CARGO_TARGET_DIR_HOST }}/aarch64-linux-android
+            ${{ env.CARGO_TARGET_DIR_HOST }}/android
+          key: ${{ runner.os }}-cargo-target-android-v1-${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-target-android-v1-
+            ${{ runner.os }}-cargo-target-android-
+
+      - name: Cache sccache (Linux)
+        uses: actions/cache@v6
+        with:
+          path: .cache/sccache-linux
+          key: ${{ runner.os }}-sccache-linux-v1-${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
+          restore-keys: |
+            ${{ runner.os }}-sccache-linux-v1-
+            ${{ runner.os }}-sccache-linux-
+
+      - name: Cache Gradle
+        uses: actions/cache@v6
+        with:
+          path: .cache/gradle
+          key: ${{ runner.os }}-gradle-v1-${{ hashFiles('android/**') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-v1-
+
+      - name: Cache tessdata
+        uses: actions/cache@v6
+        with:
+          path: assets/tessdata
+          key: tessdata-eng-v2
+
+      - name: Prepare Cargo cache dirs
+        run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}" .cache/sccache-linux .cache/gradle
+
+      - name: Build and sign Android APK
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SQYRE_ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEYSTORE_ALIAS: ${{ secrets.SQYRE_ANDROID_KEY_ALIAS }}
+          ANDROID_KEYSTORE_KEY_PASSWORD: ${{ secrets.SQYRE_ANDROID_KEY_PASSWORD }}
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" \
+            -v ${{ github.workspace }}:/workspace -w /workspace \
+            -e HOME=/tmp \
+            -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
+            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
+            -e RUSTUP_HOME=/usr/local/rustup \
+            -e PATH=/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
+            -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper \
+            -e SCCACHE_DIR=/workspace/.cache/sccache-linux \
+            -e SCCACHE_CACHE_SIZE=10G \
+            -e GRADLE_USER_HOME=/workspace/.cache/gradle \
+            -e RELEASE_VERSION="${{ needs.version.outputs.version }}" \
+            -e ANDROID_PROFILE=release \
+            -e ANDROID_ABIS=arm64-v8a \
+            -e ANDROID_KEYSTORE_FILE=/workspace/bin/android-release.keystore \
+            -e ANDROID_KEYSTORE_PASSWORD \
+            -e ANDROID_KEYSTORE_ALIAS \
+            -e ANDROID_KEYSTORE_KEY_PASSWORD \
+            sqyre-linux-build \
+            bash -c 'set -euo pipefail
+              make android
+              test -f bin/sqyre-release.apk
+              apksigner="$(ls -d /opt/android-sdk/build-tools/* | sort -V | tail -n1)/apksigner"
+              "$apksigner" verify bin/sqyre-release.apk
+              sccache --show-stats || true'
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f bin/android-release.keystore
+
+      - name: Rename APK for release
+        run: cp bin/sqyre-release.apk "sqyre-v${{ needs.version.outputs.version }}-android-arm64.apk"
+
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: android-apk
+          path: sqyre-v${{ needs.version.outputs.version }}-android-arm64.apk
+
   release:
     if: |
       always() && !cancelled() &&
@@ -731,8 +873,9 @@ jobs:
       needs.build-appimage.result == 'success' &&
       needs.build-flatpak.result == 'success' &&
       needs.build-windows.result == 'success' &&
-      needs.build-wasm.result == 'success'
-    needs: [version, build-linux, build-appimage, build-flatpak, build-windows, build-wasm]
+      needs.build-wasm.result == 'success' &&
+      needs.build-android.result == 'success'
+    needs: [version, build-linux, build-appimage, build-flatpak, build-windows, build-wasm, build-android]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -749,6 +892,12 @@ jobs:
           name: linux-flatpak
           path: artifacts/linux-flatpak
 
+      - name: Download Android APK artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: android-apk
+          path: artifacts/android-apk
+
       - name: Assemble release files and SHA256SUMS
         run: |
           set -euo pipefail
@@ -758,6 +907,7 @@ jobs:
           cp artifacts/linux-flatpak/*.flatpak release/
           cp artifacts/windows-binary-zip/*.zip release/
           cp artifacts/wasm-editor-zip/*.zip release/
+          cp artifacts/android-apk/*.apk release/
           (cd release && sha256sum * > SHA256SUMS)
           cat release/SHA256SUMS
 

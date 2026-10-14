@@ -7,6 +7,7 @@
   "workspaceFolder": "/workspace",
   "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
   "mounts": [
+    "source=sqyre-vscode-home,target=/home/vscode,type=volume",
     "source=sqyre-cargo-home,target=/home/vscode/.cargo,type=volume"
   ],
   "runArgs": [
@@ -22,7 +23,9 @@
     "CARGO_HOME": "/home/vscode/.cargo",
     "RUSTUP_HOME": "/usr/local/rustup",
     "CARGO_TARGET_DIR": "/workspace/target",
-    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
+    "HOST_DISPLAY": "${localEnv:DISPLAY}",
+    "HOST_XAUTHORITY": "${localEnv:XAUTHORITY}"
   },
   "customizations": {
     "vscode": {

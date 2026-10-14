@@ -2,7 +2,7 @@
 
 use crate::window_match::{paths_equal, pick_matching_icon, titles_equal};
 use crate::{CaptureError, ProcessIcon, WindowInfo, PROCESS_ICON_TARGET_PX};
-use sqyre_ports::{AutomationError, WindowFocuser};
+use sqyre_ports::{AutomationError, FocusedWindow, WindowFocuser};
 use std::collections::HashSet;
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
@@ -36,6 +36,10 @@ pub struct OsWindowFocuser;
 impl WindowFocuser for OsWindowFocuser {
     fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError> {
         activate_window(process_path, window_title)
+    }
+
+    fn focused(&self) -> Result<Option<FocusedWindow>, AutomationError> {
+        crate::focused_window_target()
     }
 }
 

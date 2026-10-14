@@ -50,6 +50,10 @@ fn settings_checkbox_toggles_highlight_active_action() {
     );
 
     harness
+        .get_by_role_and_label(eframe::egui::accesskit::Role::Button, "Macros")
+        .click();
+    harness.run();
+    harness
         .get_by_label("Highlight the currently executing action")
         .click();
     harness.run();

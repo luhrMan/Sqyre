@@ -2,7 +2,7 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.95, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
+Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.95, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), JDK 17 + Android SDK/NDK + Gradle + **cargo-ndk** + CMake/Ninja (for `make android` and its Leptonica/Tesseract cross-build), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
 
@@ -37,6 +37,9 @@ make flatpak    # fmt + check, then bin/com.sqyre.app.flatpak (Linux; Docker fal
 make windows    # fmt + check, then bin/sqyre.exe (Docker MinGW cross / native on Windows)
 make macos      # fmt + check, then bin/sqyre (macOS host)
 make wasm       # fmt + check, then bin/wasm/ GUI-only browser editor (Trunk)
+make android-check  # cargo ndk check (editor + runtime) for arm64-v8a (devcontainer)
+make android    # fmt + check, then bin/sqyre-debug.apk (devcontainer; see ANDROID.md)
+make android-emulator  # boot an x86_64 emulator (needs /dev/kvm), install and launch the APK
 make tessdata   # download eng.traineddata into assets/tessdata/
 make release-bundle  # portable bin/sqyre-bundle/ (dist/LTO shipping; no check gate — see scripts/linux/packaging/PACKAGING.md)
 make dev            # fast prototype of release-bundle → bin/sqyre-dev/ ([profile.proto], no LTO)
@@ -96,6 +99,9 @@ Build caches (all gitignored):
 | `windows` | `bin/sqyre.exe` (Docker MinGW cross on Linux; native on Windows) |
 | `macos` | `bin/sqyre` (release; macOS host only) |
 | `wasm` | GUI-only browser editor → `bin/wasm/` (Trunk; no Run/capture/OCR) |
+| `android-check` | `cargo ndk check` of `sqyre-app` (editor and `native-runtime,overlay-buttons`) and the Android backends for `arm64-v8a`; cross-builds OCR libs into `target/android/ocr` on first run |
+| `android` | Sideload APK with bundled `eng.traineddata` → `bin/sqyre-debug.apk` (`ANDROID_FEATURES` default `native-runtime,overlay-buttons`, empty = editor only; `ANDROID_PROFILE`, `ANDROID_ABIS`; [ANDROID.md](./ANDROID.md)) |
+| `android-emulator` / `android-emulator-headless` / `android-emulator-stop` | x86_64 API 35 emulator (window or headless) that installs and launches `bin/sqyre-debug.apk`; needs `/dev/kvm` and an APK that includes x86_64, which `make android` builds by default ([ANDROID.md](./ANDROID.md#emulator)) |
 | `tessdata` | Tesseract trained data via `scripts/download-tessdata.sh` |
 
 Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` / `make flatpak` / `make release` / `make windows` to stamp package names and embed `SQYRE_VERSION` in the binary for auto-update checks (Flatpak disables in-app self-replace — use `flatpak update`). Local builds without either default to `0.0.0-dev` (update checks disabled).

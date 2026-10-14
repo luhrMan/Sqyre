@@ -9,6 +9,7 @@ use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+#[cfg(not(target_arch = "wasm32"))]
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::Duration;
 
@@ -22,6 +23,7 @@ fn icon_texture_options() -> TextureOptions {
     TextureOptions::LINEAR.with_mipmap_mode(Some(egui::TextureFilter::Linear))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 enum PendingDecode {
     Ready(ColorImage),
     Failed,
@@ -31,6 +33,7 @@ enum PendingDecode {
 pub struct IconCache {
     textures: HashMap<PathBuf, TextureHandle>,
     /// Background PNG decodes (native); uploaded on the UI thread when ready.
+    #[cfg(not(target_arch = "wasm32"))]
     pending: HashMap<PathBuf, Receiver<PendingDecode>>,
     /// Remember targets that failed so we do not spam disk/read errors.
     missing: HashMap<String, ()>,
@@ -64,8 +67,12 @@ impl IconCache {
             Some(t) => Some(t),
             None => {
                 // Do not sticky-miss while a decode is still in flight.
-                let paths = demo_icons::merged_variant_paths(catalog, target);
-                let waiting = paths.iter().any(|p| self.pending.contains_key(p.as_path()));
+                #[cfg(not(target_arch = "wasm32"))]
+                let waiting = demo_icons::merged_variant_paths(catalog, target)
+                    .iter()
+                    .any(|p| self.pending.contains_key(p.as_path()));
+                #[cfg(target_arch = "wasm32")]
+                let waiting = false;
                 if !waiting {
                     self.missing.insert(target.to_string(), ());
                 } else {
@@ -250,6 +257,7 @@ impl IconCache {
     /// Drop a cached texture so the next load re-reads from disk / demo store.
     pub fn invalidate_path(&mut self, path: &Path) {
         self.textures.remove(path);
+        #[cfg(not(target_arch = "wasm32"))]
         self.pending.remove(path);
     }
 
@@ -260,6 +268,21 @@ impl IconCache {
     /// would keep showing the fallback until restart.
     pub fn invalidate_target(&mut self, target: &str) {
         self.missing.remove(target);
+    }
+
+    /// Drop cached textures and sticky misses for every variant of an item.
+    ///
+    /// Item renames can reuse a destination path that previously held another
+    /// item's texture, so invalidate by filename even after the old file has
+    /// already been moved or deleted.
+    pub fn invalidate_item(&mut self, catalog: &ProgramCatalog, program: &str, item: &str) {
+        let icons_dir = catalog.icons_dir(program);
+        self.textures
+            .retain(|path, _| !is_item_icon_path(path, &icons_dir, item));
+        #[cfg(not(target_arch = "wasm32"))]
+        self.pending
+            .retain(|path, _| !is_item_icon_path(path, &icons_dir, item));
+        self.invalidate_target(&format!("{program}{PROGRAM_DELIMITER}{item}"));
     }
 
     fn insert_process_icon(
@@ -281,6 +304,7 @@ impl IconCache {
         if let Some(t) = self.textures.get(path) {
             return Some(t.clone());
         }
+        #[cfg(not(target_arch = "wasm32"))]
         if let Some(rx) = self.pending.get(path) {
             match rx.try_recv() {
                 Ok(PendingDecode::Ready(color)) => {
@@ -310,7 +334,7 @@ impl IconCache {
         {
             let tex = load_texture(ctx, path)?;
             self.textures.insert(path.to_path_buf(), tex.clone());
-            return Some(tex);
+            Some(tex)
         }
 
         #[cfg(not(target_arch = "wasm32"))]
@@ -340,6 +364,21 @@ impl IconCache {
             None
         }
     }
+}
+
+fn is_item_icon_path(path: &Path, icons_dir: &Path, item: &str) -> bool {
+    if path.parent() != Some(icons_dir) {
+        return false;
+    }
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let legacy = format!("{item}.png");
+    let variant_prefix = format!("{item}{PROGRAM_DELIMITER}");
+    name == legacy
+        || name
+            .strip_prefix(&variant_prefix)
+            .is_some_and(|variant| variant.ends_with(".png"))
 }
 
 fn stable_variant_index(target: &str, count: usize) -> usize {

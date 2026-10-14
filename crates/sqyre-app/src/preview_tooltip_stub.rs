@@ -19,16 +19,10 @@ pub struct PreviewTooltipCache;
 
 impl PreviewTooltipCache {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
     pub fn invalidate_entity(&mut self, _name: &str) {}
-
-    pub fn clear(&mut self) {}
-
-    pub fn take_desktop_outline(&mut self) -> Option<(i32, i32, i32, i32)> {
-        None
-    }
 
     pub fn show_for_entity(
         &mut self,
@@ -83,6 +77,10 @@ impl PreviewTooltipCache {
         paint_unavailable_panel(ui, view)
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "mirrors the native search-area panel signature"
+    )]
     pub fn paint_search_area_panel(
         &mut self,
         ui: &mut egui::Ui,
@@ -95,16 +93,6 @@ impl PreviewTooltipCache {
     ) -> (egui::Rect, egui::Vec2) {
         (paint_unavailable_panel(ui, view), egui::Vec2::ZERO)
     }
-
-    pub fn screen_cap_image(
-        &self,
-        _left: i32,
-        _top: i32,
-        _right: i32,
-        _bottom: i32,
-    ) -> Option<std::sync::Arc<image::RgbaImage>> {
-        None
-    }
 }
 
 fn paint_unavailable_panel(ui: &mut egui::Ui, _view: &mut ImageViewTransform) -> egui::Rect {
@@ -112,12 +100,12 @@ fn paint_unavailable_panel(ui: &mut egui::Ui, _view: &mut ImageViewTransform) ->
     let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
-    ui.painter().text(
-        rect.center(),
-        egui::Align2::CENTER_CENTER,
+    crate::data_editor_preview::paint_preview_message(
+        ui,
+        rect,
         UNAVAILABLE,
-        egui::TextStyle::Small.resolve(ui.style()),
         crate::theme::error_fg(),
+        crate::data_editor_preview::PREVIEW_CHIP_INSET,
     );
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
     rect

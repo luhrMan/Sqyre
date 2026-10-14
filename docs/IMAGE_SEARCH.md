@@ -69,7 +69,7 @@ That keeps large icons from losing their slots to overlapping footprints.
 
 ## Variants and early exit
 
-Variants of one item are tried **in order** (Original, then named alts). With **variant exit early** enabled in User Settings (the default), as soon as one variant hits on a given search, remaining variants for **that** search stop. Disable the setting to try every variant on every search.
+Variants of one item are tried **in order** (Original, then named alts). With **Stop at the first matching icon variant** enabled in User Settings → Macros → Image Search (the default), as soon as one variant hits on a given search, remaining variants for **that** search stop. Disable the setting to try every variant on every search.
 
 Early exit is **per placement** on collections, and **per full-frame search** on desktop regions. Finding Original in one cell does **not** skip Alt on another cell.
 

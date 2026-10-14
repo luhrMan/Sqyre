@@ -26,7 +26,8 @@ pub const DEFAULT_PLAY_FINISH_SOUND: bool = true;
 pub const DEFAULT_PLAY_UI_SOUNDS: bool = true;
 pub const DEFAULT_SOUND_VOLUME: f32 = 0.25;
 pub const DEFAULT_UI_FONT_SIZE: i32 = 12;
-pub const DEFAULT_UI_SCALE: f32 = 1.5;
+/// Multiplier on the display's own scale (DPI / density), not absolute pixels per point.
+pub const DEFAULT_UI_SCALE: f32 = 1.0;
 pub const DEFAULT_COMPACT_PROGRAM_HEADERS: bool = true;
 pub const DEFAULT_WINDOW_BORDER: bool = true;
 pub const DEFAULT_RUN_BUTTON_GLOW: bool = true;
@@ -494,6 +495,9 @@ pub struct UserSettings {
     /// In catalog lists, programs with a process icon omit the name (icon + child count only).
     #[serde(default = "default_compact_program_headers")]
     pub compact_program_headers: bool,
+    /// Data Editor lists keep program headers that have no entries for the current tab.
+    #[serde(default)]
+    pub show_empty_program_headers: bool,
     /// Gold border just inside the main window edge.
     #[serde(default = "default_window_border")]
     pub window_border: bool,
@@ -581,6 +585,9 @@ pub struct UserSettings {
     /// Applied at process start (`build_global`); changing it needs a restart.
     #[serde(default = "default_worker_threads")]
     pub worker_threads: i32,
+    /// First-start permissions popup was confirmed; later launches skip it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub permissions_intro_done: bool,
 }
 
 fn default_hide_recording() -> bool {
@@ -653,6 +660,7 @@ impl Default for UserSettings {
             save_meta_images: false,
             highlight_active_action: false,
             compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
+            show_empty_program_headers: false,
             window_border: DEFAULT_WINDOW_BORDER,
             run_button_glow: DEFAULT_RUN_BUTTON_GLOW,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
@@ -683,6 +691,7 @@ impl Default for UserSettings {
             macro_list_width: DEFAULT_MACRO_LIST_WIDTH,
             last_selected_macro: String::new(),
             worker_threads: default_worker_threads(),
+            permissions_intro_done: false,
         }
     }
 }
@@ -691,7 +700,7 @@ impl UserSettings {
     pub fn load_default() -> Result<Self> {
         #[cfg(target_arch = "wasm32")]
         {
-            return Ok(Self::default());
+            Ok(Self::default())
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -722,7 +731,7 @@ impl UserSettings {
         #[cfg(target_arch = "wasm32")]
         {
             let _ = self;
-            return Ok(());
+            Ok(())
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -1072,11 +1081,13 @@ mod tests {
         let mut s = UserSettings {
             save_meta_images: true,
             highlight_active_action: true,
+            show_empty_program_headers: true,
             image_search_close_matches_distance: 25,
             image_search_variant_exit_early: false,
             ui_scale: 1.2,
             hotkey_tag_filters: vec!["combat".into()],
             last_selected_macro: "farm loop".into(),
+            permissions_intro_done: true,
             ..Default::default()
         };
         s.action_colors.detection = "#aabbcc".into();
@@ -1125,6 +1136,7 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
         assert_eq!(loaded.hotkey_tag_filters, vec!["combat".to_string()]);
         assert_eq!(loaded.last_selected_macro, "farm loop");
+        assert!(loaded.permissions_intro_done);
         assert!(!loaded.hotkey_tags_while_focused);
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON

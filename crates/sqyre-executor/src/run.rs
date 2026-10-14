@@ -14,7 +14,8 @@ use sqyre_domain::{
     MatchMode, MouseButton, PressState, ScalarValue,
 };
 use sqyre_ports::{
-    clear_highlights, highlight_cursor, ActionHighlighter, ActionLogger, RuntimeVarSink,
+    clear_highlights, highlight_cursor, ActionHighlighter, ActionLogger, FocusedWindow,
+    RuntimeVarSink,
 };
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -41,6 +42,8 @@ pub struct Executor<'a> {
     /// nested searches without intervening input reuse the cache (fast) while
     /// post-click nested searches still get a fresh frame.
     capture_dirty: bool,
+    /// Window that had focus before the last Focus Window switched away from it.
+    pub(crate) previous_focus: Option<FocusedWindow>,
 }
 
 /// Hard default for nested RunMacro depth when callers omit a custom budget.
@@ -60,6 +63,7 @@ impl<'a> Executor<'a> {
             published_vars_revision: None,
             // First capture of the run should not reuse a pre-run portal cache.
             capture_dirty: true,
+            previous_focus: None,
         }
     }
 
@@ -412,6 +416,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         run_macro_stack: vec![macro_.name.clone()],
         published_vars_revision: None,
         capture_dirty: true,
+        previous_focus: None,
     };
     macro_.init_runtime_variables();
     let monitor_sizes = match exec.deps.capturer.as_mut() {
@@ -631,7 +636,8 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::FocusWindow {
             process_path,
             window_title,
-        } => execute_focus_window(exec, action.id, process_path, window_title),
+            previous,
+        } => execute_focus_window(exec, action.id, process_path, window_title, *previous),
         ActionKind::SaveVariable {
             variable_name,
             destination,
@@ -1075,6 +1081,7 @@ mod tests {
             run_macro_stack: Vec::new(),
             published_vars_revision: None,
             capture_dirty: true,
+            previous_focus: None,
         };
         let err = exec.interruptible_sleep(1000).unwrap_err();
         assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));

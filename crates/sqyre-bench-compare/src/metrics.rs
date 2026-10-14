@@ -117,6 +117,12 @@ fn duration_ns(d: Duration) -> u64 {
     d.as_nanos() as u64
 }
 
+#[cfg(not(unix))]
+fn cpu_times() -> (Duration, Duration) {
+    (Duration::ZERO, Duration::ZERO)
+}
+
+#[cfg(unix)]
 fn cpu_times() -> (Duration, Duration) {
     // SAFETY: `getrusage` gets a valid out-pointer to a zeroed `rusage`; `assume_init` runs
     // only on success, and an all-zero `rusage` is a valid value regardless.
@@ -133,6 +139,7 @@ fn cpu_times() -> (Duration, Duration) {
     }
 }
 
+#[cfg(unix)]
 fn timeval_to_duration(tv: libc::timeval) -> Duration {
     let secs = tv.tv_sec.max(0) as u64;
     let micros = tv.tv_usec.max(0) as u32;

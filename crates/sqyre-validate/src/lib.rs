@@ -765,9 +765,11 @@ fn validate_action_with(
                 ));
             }
         }
+        ActionKind::FocusWindow { previous: true, .. } => {}
         ActionKind::FocusWindow {
             process_path,
             window_title,
+            previous: false,
         } => {
             if process_path.trim().is_empty() {
                 return Err(ValidateError::Message(
@@ -982,6 +984,20 @@ mod tests {
         assert!(validate_action(&root, None).is_ok());
         let err = validate_action_tree(&root, None).unwrap_err();
         assert!(err.to_string().contains("key:"), "{err}");
+    }
+
+    #[test]
+    fn validate_action_focus_window_previous_needs_no_target() {
+        let focus = |previous| Action {
+            id: ActionId::new(),
+            kind: ActionKind::FocusWindow {
+                process_path: String::new(),
+                window_title: String::new(),
+                previous,
+            },
+        };
+        assert!(validate_action(&focus(false), None).is_err());
+        assert!(validate_action(&focus(true), None).is_ok());
     }
 
     #[test]

@@ -5,6 +5,7 @@ use crate::linux::session::{LinuxCaptureBackend, LinuxSessionInfo};
 use crate::x11_capture::X11Capturer;
 use image::RgbaImage;
 use sqyre_ports::{DesktopRect, RgbCapture};
+use std::time::Duration;
 
 #[cfg(feature = "portal-capture")]
 use crate::linux::wayland::PortalCapturer;
@@ -94,6 +95,27 @@ impl OsCapturer {
         }
     }
 
+    /// Search-area capture; the token is unique per call — neither backend reads
+    /// its frame identity inside the pixel copy's lock yet, so retries always
+    /// re-match (no stale reuse).
+    pub fn capture_search_area_rgb_ref(
+        &self,
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+        fresh: bool,
+    ) -> Result<(RgbCapture, DesktopRect, u64), CaptureError> {
+        let vb = self.virtual_bounds_ref().ok();
+        let rect = sqyre_ports::clamp_search_rect(left, top, right, bottom, vb)?;
+        let img = if fresh {
+            self.capture_rect_rgb_fresh_ref(rect)?
+        } else {
+            self.capture_rect_rgb_ref(rect)?
+        };
+        Ok((img, rect, sqyre_ports::unique_frame_token()))
+    }
+
     pub fn virtual_bounds_ref(&self) -> Result<DesktopRect, CaptureError> {
         match &self.0 {
             Inner::X11(c) => c.virtual_bounds_ref(),
@@ -124,6 +146,19 @@ impl OsCapturer {
             Inner::X11(_) => {}
             #[cfg(feature = "portal-capture")]
             Inner::Portal(c) => c.release_cpu_frame_cache(),
+        }
+    }
+
+    /// See [`PortalCapturer::release_cpu_frame_cache_if_idle`]; `None` on X11.
+    #[cfg_attr(
+        not(feature = "portal-capture"),
+        expect(unused_variables, reason = "only the portal mirror is idle-released")
+    )]
+    pub fn release_cpu_frame_cache_if_idle(&self, idle: Duration) -> Option<Duration> {
+        match &self.0 {
+            Inner::X11(_) => None,
+            #[cfg(feature = "portal-capture")]
+            Inner::Portal(c) => c.release_cpu_frame_cache_if_idle(idle),
         }
     }
 

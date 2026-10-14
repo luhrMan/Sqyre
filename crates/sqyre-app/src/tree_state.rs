@@ -2,6 +2,7 @@
 
 use crate::action_tooltip::TooltipState;
 use crate::tree_history::TreeHistory;
+use crate::tree_swipe::SwipeSettle;
 use eframe::egui;
 use sqyre_domain::{collect_known_variable_names, ActionId, KnownVariableNames, Macro};
 use sqyre_ui_model::SummaryPill;
@@ -14,6 +15,8 @@ pub enum TreeDragMode {
     Idle,
     Reorder,
     Scroll,
+    /// Horizontal swipe on an action row: right deletes, left opens the editor.
+    Swipe(ActionId),
 }
 
 pub(crate) struct TreeState {
@@ -32,7 +35,13 @@ pub(crate) struct TreeState {
     pub(crate) last_exec_follow: Option<ActionId>,
     /// Prior-frame icon/pill rects; used to decide reorder vs drag-scroll.
     pub(crate) drag_handles: Vec<egui::Rect>,
-    /// Active pointer gesture on the macro tree (idle / reorder / drag-scroll).
+    /// Prior-frame tree row rects; swipe target lookup.
+    pub(crate) swipe_rows: Vec<(ActionId, egui::Rect)>,
+    /// Finger travel (x) of the active swipe; egui drops `press_origin` on release.
+    pub(crate) swipe_dx: f32,
+    /// Row easing back (cancel / edit) or sliding out (delete) after a swipe.
+    pub(crate) swipe_settle: Option<SwipeSettle>,
+    /// Active pointer gesture on the macro tree (idle / reorder / drag-scroll / swipe).
     pub(crate) drag_mode: TreeDragMode,
     /// Vertical coast velocity after a drag-scroll release (points/sec).
     pub(crate) scroll_vel: f32,
@@ -55,6 +64,9 @@ impl Default for TreeState {
             exec_fully_expanded: false,
             last_exec_follow: None,
             drag_handles: Vec::new(),
+            swipe_rows: Vec::new(),
+            swipe_dx: 0.0,
+            swipe_settle: None,
             drag_mode: TreeDragMode::Idle,
             scroll_vel: 0.0,
             tooltip: TooltipState::Hidden,

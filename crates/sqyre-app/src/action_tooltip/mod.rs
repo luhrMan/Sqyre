@@ -212,6 +212,7 @@ impl TooltipState {
     }
 
     /// Apply a hex color from the Find Pixel screen dropper onto the draft.
+    #[cfg(feature = "native-runtime")]
     pub fn apply_recorded_color(&mut self, recorded: String) {
         let Self::Edit(edit) = self else {
             return;
@@ -571,6 +572,7 @@ pub(crate) fn show_action_view_tip(
                                                 if let ActionKind::FocusWindow {
                                                     process_path,
                                                     window_title,
+                                                    ..
                                                 } = &action.kind
                                                 {
                                                     crate::icon_cache::paint_leading_process_icon(
@@ -892,6 +894,7 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
             if let ActionKind::FocusWindow {
                 process_path: path,
                 window_title: title,
+                ..
             } = &mut draft.kind
             {
                 *path = process_path;
@@ -1063,6 +1066,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "native-runtime")]
     fn apply_recorded_color_updates_find_pixel_draft() {
         let child = Action {
             id: ActionId::new(),

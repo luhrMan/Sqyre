@@ -291,6 +291,8 @@ enum ActionKindWire {
             skip_serializing_if = "String::is_empty"
         )]
         window_title: String,
+        #[serde(default, skip_serializing_if = "is_false")]
+        previous: bool,
     },
     RunMacro {
         #[serde(rename = "type")]
@@ -531,10 +533,12 @@ impl From<ActionKindWire> for ActionKind {
             ActionKindWire::FocusWindow {
                 process_path,
                 window_title,
+                previous,
                 ..
             } => Self::FocusWindow {
                 process_path,
                 window_title,
+                previous,
             },
             ActionKindWire::RunMacro { macro_name, .. } => Self::RunMacro { macro_name },
             ActionKindWire::NavigateSelect { data, .. } => Self::NavigateSelect(data),
@@ -829,6 +833,8 @@ enum ActionKindWireRef<'a> {
         process_path: &'a str,
         #[serde(rename = "windowtitle", default, skip_serializing_if = "str::is_empty")]
         window_title: &'a str,
+        #[serde(default, skip_serializing_if = "is_false")]
+        previous: bool,
     },
     RunMacro {
         #[serde(rename = "type")]
@@ -1046,10 +1052,12 @@ impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
             ActionKind::FocusWindow {
                 process_path,
                 window_title,
+                previous,
             } => Self::FocusWindow {
                 type_: TagFocusWindow::Tag,
                 process_path,
                 window_title,
+                previous: *previous,
             },
             ActionKind::RunMacro { macro_name } => Self::RunMacro {
                 type_: TagRunMacro::Tag,

@@ -14,7 +14,7 @@ use sqyre_persist::{
 };
 use sqyre_validate::validate_entity_name;
 
-fn play_ui_add_sound(settings: &UserSettings) {
+pub(super) fn play_ui_add_sound(settings: &UserSettings) {
     #[cfg(not(target_arch = "wasm32"))]
     crate::sound::play_add_sound_if(settings.play_ui_sounds, settings.sound_volume);
     #[cfg(target_arch = "wasm32")]
@@ -57,31 +57,32 @@ fn set_program_identity(
         &prev_path,
         &process_path,
         &window_title,
+        None,
     );
     Ok(())
 }
 
 /// Save the Running-program OS icon under `images/process/{program}.png`.
 ///
-/// Uses picker/OS-retained RGBA first; otherwise asks the OS again while the
+/// Uses `known_icon`, then picker/OS-retained RGBA; otherwise asks the OS again while the
 /// window may still be open. Empty binding is cleared by [`set_process_binding`].
 /// When the process path changes and no fresh icon is available, drop any stale PNG.
-fn persist_running_program_icon(
+pub(super) fn persist_running_program_icon(
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     program: &str,
     prev_process_path: &str,
     process_path: &str,
     window_title: &str,
+    known_icon: Option<ProcessIcon>,
 ) {
     let path = process_path.trim();
     if path.is_empty() {
         return;
     }
     let path_changed = prev_process_path.trim() != path;
-    let icon = icons
-        .process_icon_bytes(path)
-        .cloned()
+    let icon = known_icon
+        .or_else(|| icons.process_icon_bytes(path).cloned())
         .or_else(|| fetch_process_icon(path, window_title));
     let Some(icon) = icon else {
         if path_changed {
@@ -603,7 +604,7 @@ impl DataEditor {
                     })
                 }
             }
-            EditorTab::Items => self.update_item(catalog, macros, &new_name, overwrite),
+            EditorTab::Items => self.update_item(catalog, icons, macros, &new_name, overwrite),
             EditorTab::Points => self.update_point(
                 catalog,
                 macros,
@@ -657,6 +658,7 @@ impl DataEditor {
     pub(crate) fn update_item(
         &mut self,
         catalog: &mut ProgramCatalog,
+        icons: &mut IconCache,
         macros: &mut [Macro],
         new_name: &str,
         overwrite: bool,
@@ -685,6 +687,8 @@ impl DataEditor {
                     }
                 }
                 merge_fs_warning(&mut fs_warn, catalog.rename_item(&prog, &old, new_name)?);
+                icons.invalidate_item(catalog, &prog, &old);
+                icons.invalidate_item(catalog, &prog, new_name);
                 for m in macros.iter_mut() {
                     m.rename_program_entity(ProgramEntityKind::Item, &prog, &old, new_name);
                 }
@@ -934,6 +938,7 @@ impl DataEditor {
             db,
             macros,
             catalog,
+            icons,
             settings,
             ..
         } = env;
@@ -980,6 +985,7 @@ impl DataEditor {
                     return;
                 };
                 catalog.delete_item(&prog, &name).inspect(|_| {
+                    icons.invalidate_item(catalog, &prog, &name);
                     self.selected_entity = None;
                     self.reset_item_form();
                 })

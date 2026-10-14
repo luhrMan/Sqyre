@@ -77,6 +77,8 @@ struct FrameSlot {
     /// Cleared after a macro so the full-desktop RGBA buffer can be released;
     /// re-enabled when a capture waits for a frame.
     buffering: bool,
+    /// Last capture that needed the CPU mirror (buffering enable or cache crop).
+    last_demand: Instant,
 }
 
 struct FrameCache {
@@ -96,6 +98,21 @@ fn shrink_cpu_frame_cache(cache: &mut FrameCache) {
     cache.height = 0;
     cache.stride = 0;
     cache.ready = false;
+}
+
+fn release_slot_cache(slot: &mut FrameSlot) {
+    slot.buffering = false;
+    let before = slot.cache.pixels.len();
+    shrink_cpu_frame_cache(&mut slot.cache);
+    if before > 0 {
+        cap_log("PORTAL", "cache", &format!("release_kib={}", before / 1024));
+    }
+}
+
+/// Time left before an idle buffering mirror should be released (zero = now).
+fn idle_release_remaining(slot: &FrameSlot, idle: Duration, now: Instant) -> Option<Duration> {
+    slot.buffering
+        .then(|| idle.saturating_sub(now.saturating_duration_since(slot.last_demand)))
 }
 
 enum PwThreadMsg {
@@ -131,6 +148,7 @@ impl PortalCapturer {
                 region_gen: Vec::new(),
                 region_copy_at: Vec::new(),
                 buffering: true,
+                last_demand: Instant::now(),
             }),
             Condvar::new(),
         ));
@@ -184,13 +202,16 @@ impl PortalCapturer {
         );
         drop(slot);
 
-        Ok(Self {
+        let capturer = Self {
             frame,
             shutdown,
             quit_tx: Mutex::new(Some(msg_tx)),
             thread: Mutex::new(Some(handle)),
             kick: Mutex::new(None),
-        })
+        };
+        // Every PipeWire frame otherwise runs a parallel full-desktop copy while idle.
+        capturer.release_cpu_frame_cache();
+        Ok(capturer)
     }
 
     /// Wait until a PipeWire stream that overlaps `rect` copies a frame newer than
@@ -452,6 +473,7 @@ impl PortalCapturer {
     fn ensure_frame_for_crop(&self, rect: DesktopRect) -> Result<(), CaptureError> {
         let min_gen = {
             let mut slot = self.frame.0.lock();
+            slot.last_demand = Instant::now();
             if slot.cache.ready {
                 return Ok(());
             }
@@ -528,6 +550,7 @@ impl PortalCapturer {
     fn enable_cpu_frame_buffering(&self) {
         let mut slot = self.frame.0.lock();
         slot.buffering = true;
+        slot.last_demand = Instant::now();
     }
 
     /// Drop the full-desktop RGBA CPU cache and pause further copies until the next
@@ -536,13 +559,20 @@ impl PortalCapturer {
     /// only the Rust mirror is released. Image Search (`*_fresh`) and OCR / Find
     /// Pixel cache crops both recover automatically.
     pub fn release_cpu_frame_cache(&self) {
+        release_slot_cache(&mut self.frame.0.lock());
+    }
+
+    /// [`Self::release_cpu_frame_cache`] once no capture has needed the mirror for
+    /// `idle`. Returns how long until the next check is due, or `None` when the
+    /// mirror is not buffering.
+    pub fn release_cpu_frame_cache_if_idle(&self, idle: Duration) -> Option<Duration> {
         let mut slot = self.frame.0.lock();
-        slot.buffering = false;
-        let before = slot.cache.pixels.len();
-        shrink_cpu_frame_cache(&mut slot.cache);
-        if before > 0 {
-            cap_log("PORTAL", "cache", &format!("release_kib={}", before / 1024));
+        let remaining = idle_release_remaining(&slot, idle, Instant::now())?;
+        if remaining.is_zero() {
+            release_slot_cache(&mut slot);
+            return None;
         }
+        Some(remaining)
     }
 
     /// Bytes currently held in the CPU frame cache (0 when released / not yet filled).
@@ -1550,6 +1580,7 @@ mod tests {
             region_gen: Vec::new(),
             region_copy_at: Vec::new(),
             buffering: true,
+            last_demand: Instant::now(),
         }
     }
 
@@ -1735,6 +1766,27 @@ mod tests {
         slot.cache.ready = true;
         assert_eq!(slot.cache.pixels.len(), 64 * 48 * 4);
         assert!(slot.buffering);
+    }
+
+    #[test]
+    fn idle_release_waits_for_quiet_period_while_buffering() {
+        let mut slot = empty_slot(0);
+        let idle = Duration::from_secs(10);
+        let t0 = slot.last_demand;
+        assert_eq!(
+            idle_release_remaining(&slot, idle, t0 + Duration::from_secs(4)),
+            Some(Duration::from_secs(6))
+        );
+        assert_eq!(
+            idle_release_remaining(&slot, idle, t0 + Duration::from_secs(11)),
+            Some(Duration::ZERO)
+        );
+        release_slot_cache(&mut slot);
+        assert!(!slot.buffering);
+        assert_eq!(
+            idle_release_remaining(&slot, idle, t0 + Duration::from_secs(11)),
+            None
+        );
     }
 
     #[test]

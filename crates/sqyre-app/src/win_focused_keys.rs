@@ -117,8 +117,8 @@ fn poll_async_pressed_keys() -> HashSet<&'static str> {
     for &vk in RECORD_VKS {
         // SAFETY: GetAsyncKeyState is process-safe; high bit means currently down.
         if (unsafe { GetAsyncKeyState(vk as i32) }) < 0 {
-            let extended = matches!(vk, 0x0D) && false; // plain Enter; num_enter via extended hook only
-            if let Some(name) = sqyre_hotkeys::vk_key_name(vk, extended) {
+            // Never extended: plain Enter; num_enter via extended hook only.
+            if let Some(name) = sqyre_hotkeys::vk_key_name(vk, false) {
                 pressed.insert(name);
             }
         }
@@ -139,6 +139,7 @@ fn win_logo_down() -> (bool, bool) {
     // SAFETY: GetAsyncKeyState is process-safe; high bit means currently down.
     // Parens required: `unsafe { … } < 0` is parsed as a type, not a comparison.
     let left = (unsafe { GetAsyncKeyState(i32::from(VK_LWIN.0)) }) < 0;
+    // SAFETY: same as above.
     let right = (unsafe { GetAsyncKeyState(i32::from(VK_RWIN.0)) }) < 0;
     (left, right)
 }

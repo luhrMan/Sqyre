@@ -262,49 +262,55 @@ pub fn paint_edit_fields(
         ActionKind::FocusWindow {
             process_path,
             window_title,
+            previous,
         } => {
+            tip_wrapped_section(ui, |ui| {
+                help::tip(ui.checkbox(previous, "Previous window"), h::FOCUS_PREVIOUS);
+            });
             // Stack vertically; path wraps so long executables stay inside the tip.
-            tip_section(ui, |ui| {
-                crate::widgets::text_field_width(
-                    ui,
-                    "Window title",
-                    h::FOCUS_TITLE,
-                    window_title,
-                    f32::INFINITY,
-                );
-                let mut pick = false;
-                ui.horizontal(|ui| {
-                    help::label(ui, "Process path", h::FOCUS_PROCESS);
-                    crate::icon_cache::paint_leading_process_icon(
+            if !*previous {
+                tip_section(ui, |ui| {
+                    crate::widgets::text_field_width(
                         ui,
-                        icons,
-                        process_path,
+                        "Window title",
+                        h::FOCUS_TITLE,
                         window_title,
+                        f32::INFINITY,
                     );
-                    if pick_icon_btn(ui).clicked() {
-                        pick = true;
+                    let mut pick = false;
+                    ui.horizontal(|ui| {
+                        help::label(ui, "Process path", h::FOCUS_PROCESS);
+                        crate::icon_cache::paint_leading_process_icon(
+                            ui,
+                            icons,
+                            process_path,
+                            window_title,
+                        );
+                        if pick_icon_btn(ui).clicked() {
+                            pick = true;
+                        }
+                    });
+                    // Paths never contain newlines; disable Return so Enter doesn't
+                    // insert one. Multiline still wraps soft-breaks for display.
+                    if process_path.contains(['\n', '\r']) {
+                        process_path.retain(|c| c != '\n' && c != '\r');
+                    }
+                    let path_rows = path_wrap_rows(crate::widgets::visible_width(ui), process_path);
+                    help::tip(
+                        ui.add(
+                            egui::TextEdit::multiline(process_path)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(path_rows)
+                                .return_key(None)
+                                .hint_text("/path/to/app"),
+                        ),
+                        h::FOCUS_PROCESS,
+                    );
+                    if pick {
+                        *picker = pickers::open_window_picker(process_path, window_title);
                     }
                 });
-                // Paths never contain newlines; disable Return so Enter doesn't
-                // insert one. Multiline still wraps soft-breaks for display.
-                if process_path.contains(['\n', '\r']) {
-                    process_path.retain(|c| c != '\n' && c != '\r');
-                }
-                let path_rows = path_wrap_rows(crate::widgets::visible_width(ui), process_path);
-                help::tip(
-                    ui.add(
-                        egui::TextEdit::multiline(process_path)
-                            .desired_width(f32::INFINITY)
-                            .desired_rows(path_rows)
-                            .return_key(None)
-                            .hint_text("/path/to/app"),
-                    ),
-                    h::FOCUS_PROCESS,
-                );
-                if pick {
-                    *picker = pickers::open_window_picker(process_path, window_title);
-                }
-            });
+            }
         }
         ActionKind::RunMacro { macro_name } => {
             tip_wrapped_section(ui, |ui| {

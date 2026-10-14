@@ -1,5 +1,6 @@
 //! User Settings window.
 
+use crate::file_dialogs::PickPurpose;
 use crate::status_banner::StatusBanner;
 use eframe::egui::{self, Color32};
 use sqyre_domain::Macro;
@@ -41,6 +42,7 @@ enum PendingConfirm {
 enum SettingsSection {
     #[default]
     General,
+    Macros,
     Sound,
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     Permissions,
@@ -54,6 +56,7 @@ impl SettingsSection {
     fn label(self) -> &'static str {
         match self {
             Self::General => "General",
+            Self::Macros => "Macros",
             Self::Sound => "Sound",
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             Self::Permissions => "Permissions",
@@ -67,11 +70,10 @@ impl SettingsSection {
     fn subtitle(self) -> &'static str {
         match self {
             Self::General => "Application and behavior options.",
+            Self::Macros => "How macros run, record, respond to hotkeys, and search the screen.",
             Self::Sound => "Cue sounds for macros and UI actions.",
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
-            Self::Permissions => {
-                "Desktop access for capture, recording, hotkeys, and macro playback."
-            }
+            Self::Permissions => "Access Sqyre needs for capture, input, and macro playback.",
             Self::Data => {
                 "Data folder location and zip backups of macros, settings, images, and variables."
             }
@@ -84,6 +86,7 @@ impl SettingsSection {
     fn visible(self, q: &str) -> bool {
         match self {
             Self::General => section_visible(q, SECTION_GENERAL, GENERAL_SETTINGS),
+            Self::Macros => section_visible(q, SECTION_MACROS, MACROS_SETTINGS),
             Self::Sound => section_visible(q, SECTION_SOUND, SOUND_SETTINGS),
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             Self::Permissions => section_visible(q, SECTION_PERMISSIONS, PERMISSIONS_SETTINGS),
@@ -94,9 +97,21 @@ impl SettingsSection {
         }
     }
 
+    fn is_permissions(self) -> bool {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        {
+            self == Self::Permissions
+        }
+        #[cfg(not(all(not(target_arch = "wasm32"), feature = "native-runtime")))]
+        {
+            false
+        }
+    }
+
     fn all() -> impl Iterator<Item = Self> {
         [
             Self::General,
+            Self::Macros,
             Self::Sound,
             #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
             Self::Permissions,
@@ -157,6 +172,24 @@ impl SettingsUi {
         &mut self.settings
     }
 
+    /// Background permission checks behind the missing-permission badge.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    pub fn tick_permissions(&mut self, ctx: &egui::Context) {
+        self.permissions.tick(ctx);
+    }
+
+    /// At least one permission in Settings → Permissions needs the user's action.
+    pub fn permissions_missing(&self) -> bool {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        {
+            self.permissions.has_missing()
+        }
+        #[cfg(not(all(not(target_arch = "wasm32"), feature = "native-runtime")))]
+        {
+            false
+        }
+    }
+
     pub fn save_settings(&mut self) -> Result<(), String> {
         self.settings.save_default().map_err(|e| e.to_string())
     }
@@ -196,7 +229,8 @@ impl SettingsUi {
         } else {
             DEFAULT_UI_SCALE
         };
-        ctx.set_pixels_per_point(scale);
+        // Multiplies the OS scale (monitor DPI, Android density, browser pixel ratio).
+        ctx.set_zoom_factor(scale);
 
         crate::theme::apply(ctx);
 
@@ -406,19 +440,26 @@ impl SettingsUi {
             }
         }
 
-        const SIDEBAR_W: f32 = 132.0;
         let crate::widgets::SplitView {
             left: mut left_ui,
             right: mut right_ui,
             splitter,
-        } = crate::widgets::split_view(ui, body_rect, SIDEBAR_W);
+        } = crate::widgets::split_view(ui, body_rect, sidebar_width(ui));
 
+        let permissions_missing = self.permissions_missing();
         for section in visible_sections.iter().copied() {
-            if left_ui
-                .selectable_label(self.active_section == section, section.label())
-                .on_hover_text("↑↓ to switch sections")
-                .clicked()
-            {
+            let warn = permissions_missing && section.is_permissions();
+            let response =
+                left_ui.selectable_label(self.active_section == section, section.label());
+            if warn {
+                crate::widgets::warn_badge(&mut left_ui, response.rect);
+            }
+            let tip = if warn {
+                "A permission is missing. ↑↓ to switch sections"
+            } else {
+                "↑↓ to switch sections"
+            };
+            if response.on_hover_text(tip).clicked() {
                 self.active_section = section;
             }
         }
@@ -444,6 +485,7 @@ impl SettingsUi {
                     crate::widgets::section_separator(ui);
                     let section_hit = match section {
                         SettingsSection::General => query_matches(&q, SECTION_GENERAL),
+                        SettingsSection::Macros => query_matches(&q, SECTION_MACROS),
                         SettingsSection::Sound => query_matches(&q, SECTION_SOUND),
                         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
                         SettingsSection::Permissions => query_matches(&q, SECTION_PERMISSIONS),
@@ -454,6 +496,7 @@ impl SettingsUi {
                     };
                     match section {
                         SettingsSection::General => self.draw_general(ui, &q, section_hit),
+                        SettingsSection::Macros => self.draw_macros(ui, &q, section_hit),
                         SettingsSection::Sound => self.draw_sound(ui, &q, section_hit),
                         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
                         SettingsSection::Permissions => {
@@ -505,60 +548,6 @@ impl SettingsUi {
             });
         }
 
-        if setting_visible(q, section_hit, SETTING_HIGHLIGHT_ACTION)
-            && ui
-                .checkbox(
-                    &mut self.settings.highlight_active_action,
-                    "Highlight the currently executing action",
-                )
-                .on_hover_text("Scroll and tint the tree row of the action running now.")
-                .changed()
-        {
-            self.mark_dirty();
-        }
-
-        if setting_visible(q, section_hit, SETTING_HIDE_WHILE_RECORDING)
-            && ui
-                .checkbox(
-                    &mut self.settings.hide_app_during_recording,
-                    "Hide Sqyre while recording points and search areas",
-                )
-                .on_hover_text(
-                    "When enabled, Sqyre windows are hidden before the desktop snapshot used by recording.",
-                )
-                .changed()
-        {
-            self.mark_dirty();
-        }
-
-        if setting_visible(q, section_hit, SETTING_RELEASE_HELD)
-            && ui
-                .checkbox(
-                    &mut self.settings.release_held_inputs_on_end,
-                    "Release held keys and buttons when a macro ends",
-                )
-                .on_hover_text(
-                    "When enabled, any key or mouse button still held from Down/hold actions is released when the macro finishes, stops, or errors.",
-                )
-                .changed()
-        {
-            self.mark_dirty();
-        }
-
-        if setting_visible(q, section_hit, SETTING_HOTKEY_TAGS_FOCUSED)
-            && ui
-                .checkbox(
-                    &mut self.settings.hotkey_tags_while_focused,
-                    "Select hotkey tags while a Program is focused",
-                )
-                .on_hover_text(
-                    "When enabled, focusing a Program that has macro tags sets the hotkey tag selection to those tags; otherwise hotkeys turn off. When disabled, tag selection is manual only (macro list headers).",
-                )
-                .changed()
-        {
-            self.mark_dirty();
-        }
-
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
         if setting_visible(q, section_hit, SETTING_WORKER_THREADS) {
             ui.horizontal(|ui| {
@@ -588,21 +577,66 @@ impl SettingsUi {
                     .weak(),
             );
         }
+    }
 
-        let show_while = setting_visible(q, section_hit, SETTING_WHILE_BUDGET);
-        let show_depth = setting_visible(q, section_hit, SETTING_RUN_MACRO_DEPTH);
-        let show_distance = setting_visible(q, section_hit, SETTING_IMAGE_SEARCH_DISTANCE);
-        if show_while || show_depth || show_distance {
-            // Expand when the query specifically hits an Advanced knob (not bare section browse).
-            let hit_advanced = query_matches(q, SETTING_WHILE_BUDGET)
-                || query_matches(q, SETTING_RUN_MACRO_DEPTH)
-                || query_matches(q, SETTING_IMAGE_SEARCH_DISTANCE);
-            let open = hit_advanced.then_some(true);
-            egui::CollapsingHeader::new("Advanced")
-                .default_open(false)
-                .open(open)
-                .id_salt("settings_general_advanced")
-                .show(ui, |ui| {
+    fn draw_macros(&mut self, ui: &mut egui::Ui, q: &str, section_hit: bool) {
+        let mut first = true;
+        self.draw_macro_playback(ui, q, section_hit, &mut first);
+        self.draw_macro_recording(ui, q, section_hit, &mut first);
+        self.draw_macro_hotkeys(ui, q, section_hit, &mut first);
+        self.draw_macro_image_search(ui, q, section_hit, &mut first);
+    }
+
+    fn draw_macro_playback(
+        &mut self,
+        ui: &mut egui::Ui,
+        q: &str,
+        section_hit: bool,
+        first: &mut bool,
+    ) {
+        let hit = section_hit || query_matches(q, SUBSECTION_PLAYBACK);
+        let show_highlight = setting_visible(q, hit, SETTING_HIGHLIGHT_ACTION);
+        let show_release = setting_visible(q, hit, SETTING_RELEASE_HELD);
+        let show_while = setting_visible(q, hit, SETTING_WHILE_BUDGET);
+        let show_depth = setting_visible(q, hit, SETTING_RUN_MACRO_DEPTH);
+        if !(show_highlight || show_release || show_while || show_depth) {
+            return;
+        }
+        subsection_heading(ui, first, "Playback");
+
+        if show_highlight
+            && ui
+                .checkbox(
+                    &mut self.settings.highlight_active_action,
+                    "Highlight the currently executing action",
+                )
+                .on_hover_text("Scroll and tint the tree row of the action running now.")
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if show_release
+            && ui
+                .checkbox(
+                    &mut self.settings.release_held_inputs_on_end,
+                    "Release held keys and buttons when a macro ends",
+                )
+                .on_hover_text(
+                    "When enabled, any key or mouse button still held from Down/hold actions is released when the macro finishes, stops, or errors.",
+                )
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if show_while || show_depth {
+            advanced_header(
+                ui,
+                "settings_macros_playback_advanced",
+                q,
+                &[SETTING_WHILE_BUDGET, SETTING_RUN_MACRO_DEPTH],
+                |ui| {
                     if show_while {
                         ui.horizontal(|ui| {
                             ui.label("Stop endless loops after:");
@@ -651,9 +685,100 @@ impl SettingsUi {
                             }
                         });
                     }
+                },
+            );
+        }
+    }
 
-                    if show_distance {
-                        ui.horizontal(|ui| {
+    fn draw_macro_recording(
+        &mut self,
+        ui: &mut egui::Ui,
+        q: &str,
+        section_hit: bool,
+        first: &mut bool,
+    ) {
+        let hit = section_hit || query_matches(q, SUBSECTION_RECORDING);
+        if !setting_visible(q, hit, SETTING_HIDE_WHILE_RECORDING) {
+            return;
+        }
+        subsection_heading(ui, first, "Recording");
+        if ui
+            .checkbox(
+                &mut self.settings.hide_app_during_recording,
+                "Hide Sqyre while recording points and search areas",
+            )
+            .on_hover_text(
+                "When enabled, Sqyre windows are hidden before the desktop snapshot used by recording.",
+            )
+            .changed()
+        {
+            self.mark_dirty();
+        }
+    }
+
+    fn draw_macro_hotkeys(
+        &mut self,
+        ui: &mut egui::Ui,
+        q: &str,
+        section_hit: bool,
+        first: &mut bool,
+    ) {
+        let hit = section_hit || query_matches(q, SUBSECTION_HOTKEYS);
+        if !setting_visible(q, hit, SETTING_HOTKEY_TAGS_FOCUSED) {
+            return;
+        }
+        subsection_heading(ui, first, "Hotkeys");
+        if ui
+            .checkbox(
+                &mut self.settings.hotkey_tags_while_focused,
+                "Select hotkey tags while a Program is focused",
+            )
+            .on_hover_text(
+                "When enabled, focusing a Program that has macro tags sets the hotkey tag selection to those tags; otherwise hotkeys turn off. When disabled, tag selection is manual only (macro list headers).",
+            )
+            .changed()
+        {
+            self.mark_dirty();
+        }
+    }
+
+    fn draw_macro_image_search(
+        &mut self,
+        ui: &mut egui::Ui,
+        q: &str,
+        section_hit: bool,
+        first: &mut bool,
+    ) {
+        let hit = section_hit || query_matches(q, SUBSECTION_IMAGE_SEARCH);
+        let show_variant = setting_visible(q, hit, SETTING_VARIANT_EXIT_EARLY);
+        let show_distance = setting_visible(q, hit, SETTING_IMAGE_SEARCH_DISTANCE);
+        if !(show_variant || show_distance) {
+            return;
+        }
+        subsection_heading(ui, first, "Image Search");
+
+        if show_variant
+            && ui
+                .checkbox(
+                    &mut self.settings.image_search_variant_exit_early,
+                    "Stop at the first matching icon variant",
+                )
+                .on_hover_text(
+                    "When enabled, stop trying later icon variants after one hits on the same search (or collection cell). Disable to match every variant.",
+                )
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if show_distance {
+            advanced_header(
+                ui,
+                "settings_macros_image_search_advanced",
+                q,
+                &[SETTING_IMAGE_SEARCH_DISTANCE],
+                |ui| {
+                    ui.horizontal(|ui| {
                             ui.label("Ignore nearby duplicate image matches:");
                             let mut v = self.settings.image_search_close_matches_distance;
                             if ui
@@ -672,22 +797,8 @@ impl SettingsUi {
                                 self.mark_dirty();
                             }
                         });
-                    }
-                });
-        }
-
-        if setting_visible(q, section_hit, SETTING_VARIANT_EXIT_EARLY)
-            && ui
-                .checkbox(
-                    &mut self.settings.image_search_variant_exit_early,
-                    "Image search variant exit early",
-                )
-                .on_hover_text(
-                    "When enabled, stop trying later icon variants after one hits on the same search (or collection cell). Disable to match every variant.",
-                )
-                .changed()
-        {
-            self.mark_dirty();
+                },
+            );
         }
     }
 
@@ -768,7 +879,6 @@ impl SettingsUi {
             ui.label(
                 "Browser editor: macros live in memory. Use Import / Export on the toolbar for db.yaml. Full backups are not available.",
             );
-            return;
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -799,7 +909,9 @@ impl SettingsUi {
                         Err(e) => self.set_err(format!("Open folder failed: {e}")),
                     }
                 }
-                if ui.button("Choose location…").clicked() {
+                if crate::file_dialogs::supported(PickPurpose::SqyreLocation)
+                    && ui.button("Choose location…").clicked()
+                {
                     self.choose_sqyre_location();
                 }
                 if flatpak {
@@ -937,7 +1049,7 @@ impl SettingsUi {
                     self.run_manual_backup();
                 }
                 if ui.button("Restore from backup…").clicked() {
-                    self.choose_restore_backup();
+                    self.request_restore_backup();
                 }
             });
         }
@@ -971,23 +1083,32 @@ impl SettingsUi {
         self.set_ok(format!("Backup saved: {name}"));
     }
 
-    /// Pick a backup zip and open Settings on the restore confirm dialog.
+    /// Pick a backup zip; [`Self::apply_pick`] opens Settings on the restore confirm.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn request_restore_backup(&mut self) {
-        self.choose_restore_backup();
+        let start = backups_dir();
+        let start = if start.exists() { start } else { sqyre_dir() };
+        crate::file_dialogs::request(
+            PickPurpose::RestoreBackup,
+            "Restore from backup",
+            Some(&start),
+        );
+    }
+
+    /// Finish a Settings pick and open Settings on its confirm dialog.
+    pub(crate) fn apply_pick(&mut self, purpose: PickPurpose, path: PathBuf) {
+        match purpose {
+            PickPurpose::RestoreBackup => {
+                self.confirm = Some(PendingConfirm::RestoreBackup { path });
+            }
+            PickPurpose::SqyreLocation | PickPurpose::HostSqyreLocation => {
+                self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(path));
+            }
+            PickPurpose::IconVariant | PickPurpose::MaskImage => return,
+        }
         if self.confirm.is_some() {
             self.open = true;
         }
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    fn choose_restore_backup(&mut self) {
-        let start = backups_dir();
-        let start = if start.exists() { start } else { sqyre_dir() };
-        let Some(path) = crate::file_dialogs::pick_zip("Restore from backup", &start) else {
-            return;
-        };
-        self.confirm = Some(PendingConfirm::RestoreBackup { path });
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -1078,30 +1199,31 @@ impl SettingsUi {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn choose_sqyre_location(&mut self) {
         let start = sqyre_dir()
             .parent()
             .map(PathBuf::from)
             .unwrap_or_else(sqyre_dir);
-        let Some(picked) = crate::file_dialogs::pick_folder("Choose .sqyre location", &start)
-        else {
-            return;
-        };
-        self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(picked));
+        crate::file_dialogs::request(
+            PickPurpose::SqyreLocation,
+            "Choose .sqyre location",
+            Some(&start),
+        );
     }
 
     /// Flatpak: portal-pick host `~/.sqyre` (or its parent) so the sandbox can use it.
+    #[cfg(not(target_arch = "wasm32"))]
     fn choose_host_sqyre_location(&mut self) {
         let start = std::env::var_os("HOME")
             .map(PathBuf::from)
             .filter(|p| !p.as_os_str().is_empty())
             .unwrap_or_else(sqyre_dir);
-        let Some(picked) =
-            crate::file_dialogs::pick_folder("Select host ~/.sqyre (or your Home folder)", &start)
-        else {
-            return;
-        };
-        self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(picked));
+        crate::file_dialogs::request(
+            PickPurpose::HostSqyreLocation,
+            "Select host ~/.sqyre (or your Home folder)",
+            Some(&start),
+        );
     }
 
     fn confirm_sqyre_location(&mut self, new_dir: PathBuf) {
@@ -1113,6 +1235,7 @@ impl SettingsUi {
     }
 
     /// Clear a custom data path and reload from the default Flatpak/native location.
+    #[cfg(not(target_arch = "wasm32"))]
     fn reset_sqyre_to_sandbox(
         &mut self,
         db: &mut Database,
@@ -1394,6 +1517,20 @@ impl SettingsUi {
             self.mark_dirty();
         }
 
+        if setting_visible(q, section_hit, SETTING_EMPTY_HEADERS)
+            && ui
+                .checkbox(
+                    &mut self.settings.show_empty_program_headers,
+                    "Show empty program headers",
+                )
+                .on_hover_text(
+                    "In the Data Editor lists, keep a header for every program even when it has nothing on that tab (for example, no items or no points).",
+                )
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
         if setting_visible(q, section_hit, SETTING_WINDOW_BORDER)
             && ui
                 .checkbox(&mut self.settings.window_border, "Window border")
@@ -1407,7 +1544,7 @@ impl SettingsUi {
             && ui
                 .checkbox(&mut self.settings.run_button_glow, "Glowing Run button")
                 .on_hover_text(
-                    "Softly pulse a green glow around the Run button when a macro is ready to run.",
+                    "Show a green glow around the Run button when a macro is ready to run; it pulses while hovered.",
                 )
                 .changed()
         {
@@ -1448,7 +1585,8 @@ impl SettingsUi {
                             .fixed_decimals(1),
                     )
                     .on_hover_text(
-                        "Scale padding, icons, and other non-text UI elements (1.0 = default).",
+                        "Scale padding, icons, and other non-text UI elements relative to the \
+                         display's own scale (1.0 = default).",
                     )
                     .changed()
                 {
@@ -1532,6 +1670,7 @@ impl SettingsUi {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn format_last_backup(unix: i64) -> String {
     if unix <= 0 {
         return "Last backup: never".into();
@@ -1555,6 +1694,11 @@ fn format_last_backup(unix: i64) -> String {
 // --- Settings search keywords ------------------------------------------------
 
 const SECTION_GENERAL: &[&str] = &["general", "application", "behavior"];
+const SECTION_MACROS: &[&str] = &["macros", "macro"];
+const SUBSECTION_PLAYBACK: &[&str] = &["playback", "running", "execution"];
+const SUBSECTION_RECORDING: &[&str] = &["recording", "record"];
+const SUBSECTION_HOTKEYS: &[&str] = &["hotkeys", "hotkey", "shortcuts"];
+const SUBSECTION_IMAGE_SEARCH: &[&str] = &["image search", "detection"];
 const SECTION_SOUND: &[&str] = &["sound", "audio", "cue"];
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 const SECTION_PERMISSIONS: &[&str] = &[
@@ -1646,6 +1790,7 @@ const SETTING_VARIANT_EXIT_EARLY: &[&str] = &[
     "variants",
     "exit early",
     "early exit",
+    "first match",
     "image search",
     "icon variants",
 ];
@@ -1668,6 +1813,8 @@ const PERMISSIONS_PANEL: &[&str] = &[
     "wayland",
     "evdev",
     "revoke",
+    "accessibility",
+    "notifications",
 ];
 
 const DATA_LOCATION: &[&str] = &[
@@ -1706,6 +1853,7 @@ const SETTING_UPDATE_ACTIONS: &[&str] = &[
 ];
 
 const SETTING_COMPACT_HEADERS: &[&str] = &["compact", "program headers", "icons", "headers"];
+const SETTING_EMPTY_HEADERS: &[&str] = &["empty", "program headers", "headers", "hide"];
 const SETTING_WINDOW_BORDER: &[&str] = &["window border", "border", "outline"];
 const SETTING_RUN_GLOW: &[&str] = &["run button", "glow", "pulse", "animation"];
 const SETTING_FONT_SIZE: &[&str] = &["font size", "font", "text size"];
@@ -1715,14 +1863,21 @@ const SETTING_ACTION_COLORS: &[&str] =
 
 const GENERAL_SETTINGS: &[&[&str]] = &[
     SETTING_LOG_META,
-    SETTING_HIGHLIGHT_ACTION,
-    SETTING_HIDE_WHILE_RECORDING,
-    SETTING_RELEASE_HELD,
-    SETTING_HOTKEY_TAGS_FOCUSED,
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     SETTING_WORKER_THREADS,
+];
+const MACROS_SETTINGS: &[&[&str]] = &[
+    SUBSECTION_PLAYBACK,
+    SETTING_HIGHLIGHT_ACTION,
+    SETTING_RELEASE_HELD,
     SETTING_WHILE_BUDGET,
     SETTING_RUN_MACRO_DEPTH,
+    SUBSECTION_RECORDING,
+    SETTING_HIDE_WHILE_RECORDING,
+    SUBSECTION_HOTKEYS,
+    SETTING_HOTKEY_TAGS_FOCUSED,
+    SUBSECTION_IMAGE_SEARCH,
+    SETTING_VARIANT_EXIT_EARLY,
     SETTING_IMAGE_SEARCH_DISTANCE,
 ];
 const SOUND_SETTINGS: &[&[&str]] = &[
@@ -1741,6 +1896,7 @@ const UPDATES_SETTINGS: &[&[&str]] = &[
 ];
 const APPEARANCE_SETTINGS: &[&[&str]] = &[
     SETTING_COMPACT_HEADERS,
+    SETTING_EMPTY_HEADERS,
     SETTING_WINDOW_BORDER,
     SETTING_RUN_GLOW,
     SETTING_FONT_SIZE,
@@ -1762,6 +1918,49 @@ fn section_visible(q: &str, section_keywords: &[&str], settings: &[&[&str]]) -> 
     q.is_empty()
         || query_matches(q, section_keywords)
         || settings.iter().any(|kw| query_matches(q, kw))
+}
+
+/// Fits the widest section label, leaving the same gap between the label and the
+/// splitter line as between the window edge and the label (never less than the
+/// label plus the pane's own inset, so it cannot wrap).
+fn sidebar_width(ui: &egui::Ui) -> f32 {
+    let label_w = SettingsSection::all()
+        .map(|s| {
+            egui::WidgetText::from(s.label())
+                .into_galley(ui, None, f32::INFINITY, egui::TextStyle::Button)
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    let pad = ui.spacing().button_padding.x;
+    let button_w = label_w + 2.0 * pad;
+    let edge_gap = ui.spacing().window_margin.leftf() + pad;
+    let balanced = pad + label_w + edge_gap - crate::theme::PANEL_SPLITTER_W / 2.0;
+    balanced.max(button_w + crate::widgets::sections::PANE_PAD)
+}
+
+/// Bold title for a group of settings within a section page.
+fn subsection_heading(ui: &mut egui::Ui, first: &mut bool, title: &str) {
+    if !std::mem::take(first) {
+        ui.add_space(crate::theme::SPACE_12);
+    }
+    ui.label(egui::RichText::new(title).strong());
+}
+
+/// Collapsed "Advanced" group, forced open while a non-empty query names one of its knobs.
+fn advanced_header(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    q: &str,
+    knobs: &[&[&str]],
+    add_contents: impl FnOnce(&mut egui::Ui),
+) {
+    let force_open = !q.is_empty() && knobs.iter().any(|kw| query_matches(q, kw));
+    egui::CollapsingHeader::new("Advanced")
+        .default_open(false)
+        .open(force_open.then_some(true))
+        .id_salt(id_salt)
+        .show(ui, add_contents);
 }
 
 fn appearance_section_visible(q: &str) -> bool {
@@ -1787,6 +1986,7 @@ mod tests {
     #[test]
     fn empty_query_shows_every_section() {
         assert!(section_visible("", SECTION_GENERAL, GENERAL_SETTINGS));
+        assert!(section_visible("", SECTION_MACROS, MACROS_SETTINGS));
         assert!(section_visible("", SECTION_SOUND, SOUND_SETTINGS));
         assert!(appearance_section_visible(""));
     }
@@ -1823,6 +2023,31 @@ mod tests {
     #[test]
     fn section_title_reveals_all_settings_in_section() {
         assert!(setting_visible("general", true, SETTING_LOG_META));
-        assert!(setting_visible("general", true, SETTING_WHILE_BUDGET));
+        assert!(setting_visible("macros", true, SETTING_WHILE_BUDGET));
+    }
+
+    #[test]
+    fn image_search_matches_macros_not_general() {
+        assert!(section_visible(
+            "image search",
+            SECTION_MACROS,
+            MACROS_SETTINGS
+        ));
+        assert!(!section_visible(
+            "image search",
+            SECTION_GENERAL,
+            GENERAL_SETTINGS
+        ));
+    }
+
+    #[test]
+    fn subsection_title_reveals_its_settings() {
+        assert!(query_matches("playback", SUBSECTION_PLAYBACK));
+        assert!(setting_visible("playback", true, SETTING_RUN_MACRO_DEPTH));
+        assert!(!setting_visible(
+            "playback",
+            false,
+            SETTING_VARIANT_EXIT_EARLY
+        ));
     }
 }

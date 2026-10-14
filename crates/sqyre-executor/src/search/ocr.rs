@@ -2,7 +2,7 @@
 
 use super::common::{
     apply_detection_hits, capture_search_buf, run_detection_shell, sort_hits, DetectionCtx,
-    DetectionHit,
+    DetectionHit, FrameMemo,
 };
 use crate::error::{ExecError, Result};
 use crate::log_draw::draw_rect_rgb;
@@ -52,7 +52,8 @@ pub(crate) fn execute_ocr(
     };
     let ctx = DetectionCtx::new(action_id, label, search_area, &targets, detection);
 
-    let attempt0 = ocr_attempt(exec, &ctx, &ocr_params, macro_, false);
+    let mut memo = FrameMemo::new();
+    let attempt0 = ocr_attempt(exec, &ctx, &ocr_params, macro_, false, &mut memo);
     if wait.wait_until_found_active() && attempt0.hits.is_empty() {
         exec.log(
             action_id,
@@ -80,7 +81,14 @@ pub(crate) fn execute_ocr(
             if let Some(first) = initial.take() {
                 return Ok(first);
             }
-            Ok(ocr_attempt(exec, &ctx, &ocr_params, macro_, fresh))
+            Ok(ocr_attempt(
+                exec,
+                &ctx,
+                &ocr_params,
+                macro_,
+                fresh,
+                &mut memo,
+            ))
         },
         |attempt| !attempt.hits.is_empty(),
         |exec, macro_, attempt, pass| {
@@ -126,8 +134,9 @@ fn ocr_attempt(
     params: &OcrRunParams<'_>,
     macro_: &Macro,
     fresh: bool,
+    memo: &mut FrameMemo<OcrAttempt>,
 ) -> OcrAttempt {
-    match run_ocr_once(exec, ctx, params, macro_, fresh) {
+    match run_ocr_once(exec, ctx, params, macro_, fresh, memo) {
         Some(a) => a,
         None => OcrAttempt {
             text: None,
@@ -142,6 +151,7 @@ fn run_ocr_once(
     params: &OcrRunParams<'_>,
     macro_: &Macro,
     fresh: bool,
+    memo: &mut FrameMemo<OcrAttempt>,
 ) -> Option<OcrAttempt> {
     let action_id = ctx.action_id;
     let label = ctx.label;
@@ -150,16 +160,23 @@ fn run_ocr_once(
         return None;
     };
 
-    let (rgb, origin) = capture_search_buf(exec, ctx, macro_, fresh, |exec, lx, ty, rx, by| {
-        exec.log(
-            action_id,
-            format!(
-                "{label}: searching {:?} in {} X1:{lx} Y1:{ty} X2:{rx} Y2:{by}",
-                params.target,
-                ctx.search_area.display_label()
-            ),
-        );
-    })?;
+    let (rgb, origin, frame_token) =
+        capture_search_buf(exec, ctx, macro_, fresh, |exec, lx, ty, rx, by| {
+            exec.log(
+                action_id,
+                format!(
+                    "{label}: searching {:?} in {} X1:{lx} Y1:{ty} X2:{rx} Y2:{by}",
+                    params.target,
+                    ctx.search_area.display_label()
+                ),
+            );
+        })?;
+    if let Some(attempt) = memo.get(frame_token, origin) {
+        exec.log_verbose(action_id, || {
+            format!("{label}: frame unchanged (token {frame_token:#x}); reusing OCR result")
+        });
+        return Some(attempt.clone());
+    }
     let search_center_x = origin.x + origin.w / 2;
     let search_center_y = origin.y + origin.h / 2;
     exec.log_image(action_id, "Capture (raw)", &rgb);
@@ -321,6 +338,7 @@ fn run_ocr_once(
         text: Some(recognized.text),
         hits,
     };
+    memo.put(frame_token, origin, attempt.clone());
     Some(attempt)
 }
 

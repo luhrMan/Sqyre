@@ -142,6 +142,7 @@ pub fn add_variant(
 }
 
 /// Write `img` as a new variant PNG. The first variant is always named `Original`.
+#[cfg(any(test, feature = "native-runtime"))]
 pub fn add_variant_image(
     catalog: &ProgramCatalog,
     program: &str,

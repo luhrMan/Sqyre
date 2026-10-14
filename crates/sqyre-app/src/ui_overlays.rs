@@ -279,6 +279,183 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
             .unwrap_or_else(|| ctx.content_rect().center());
         app.insert_blank_action(action, anchor);
     }
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    show_permissions_intro(app, ctx);
+    #[cfg(all(
+        not(target_arch = "wasm32"),
+        feature = "native-runtime",
+        target_os = "android"
+    ))]
+    show_projection_run_gate(app, ctx);
+}
+
+/// How often the consent gate repaints while it waits on the system dialog.
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    feature = "native-runtime",
+    target_os = "android"
+))]
+const PROJECTION_GATE_POLL: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// Android: a screen-reading macro was asked to run without MediaProjection
+/// consent. The modal explains, fires the system dialog on Continue, and the
+/// queued run starts itself once the projection reports `Running`.
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    feature = "native-runtime",
+    target_os = "android"
+))]
+fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
+    use crate::app_run::ProjectionGate;
+    use sqyre_android::{bridge, frames, Projection};
+
+    // Consent can also arrive from another surface (Settings → Permissions, the
+    // first-start popup); grant starts the queued run regardless of gate state.
+    if frames().projection() == Projection::Running {
+        if let Some(pending) = app.pending_projection_run.take() {
+            app.start_macro_by_name(&pending.macro_name, ctx);
+        }
+        return;
+    }
+    let Some(pending) = app.pending_projection_run.as_mut() else {
+        return;
+    };
+    if !app
+        .workspace
+        .macros
+        .iter()
+        .any(|m| m.name.eq_ignore_ascii_case(&pending.macro_name))
+    {
+        app.pending_projection_run = None;
+        return;
+    }
+    if pending.state == ProjectionGate::Waiting && frames().projection() == Projection::Stopped {
+        pending.state = ProjectionGate::Denied;
+    }
+    let macro_name = pending.macro_name.clone();
+    let state = pending.state;
+    ctx.request_repaint_after(PROJECTION_GATE_POLL);
+
+    let id = egui::Id::new("sqyre_projection_run_gate");
+    let bounds = crate::widgets::dialog_constrain_rect(ctx);
+    let frame = egui::Frame::popup(&ctx.global_style());
+    let margin = frame.total_margin().sum();
+    let body_w = (bounds.width() - margin.x).clamp(0.0, 440.0);
+    let mut request = false;
+    let mut cancel = false;
+    egui::Modal::new(id)
+        .area(
+            egui::Modal::default_area(id)
+                .pivot(egui::Align2::CENTER_CENTER)
+                .fixed_pos(bounds.center())
+                .constrain_to(bounds),
+        )
+        .frame(frame)
+        .show(ctx, |ui| {
+            ui.set_width(body_w);
+            ui.label(
+                egui::RichText::new("Screen recording needed")
+                    .strong()
+                    .heading(),
+            );
+            match state {
+                ProjectionGate::Ask => {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "\"{macro_name}\" reads the screen — image search, OCR, and \
+                             find pixel can't see it without recording."
+                        ))
+                        .weak(),
+                    );
+                    ui.label(
+                        egui::RichText::new(
+                            "Android will ask to record the screen. The macro starts right \
+                             after it is allowed.",
+                        )
+                        .weak()
+                        .small(),
+                    );
+                    ui.add_space(crate::theme::SPACE_8);
+                    ui.horizontal(|ui| {
+                        request = ui
+                            .button("Continue")
+                            .on_hover_text("Show Android's screen recording prompt.")
+                            .clicked();
+                        cancel =
+                            crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked();
+                    });
+                }
+                ProjectionGate::Waiting => {
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.weak("Waiting for Android's screen recording prompt…");
+                    });
+                    cancel = crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked();
+                }
+                ProjectionGate::Denied => {
+                    ui.label(
+                        egui::RichText::new("Screen recording was declined.")
+                            .color(crate::theme::warn_fg()),
+                    );
+                    ui.label(
+                        egui::RichText::new(format!("\"{macro_name}\" cannot run without it."))
+                            .weak()
+                            .small(),
+                    );
+                    ui.add_space(crate::theme::SPACE_8);
+                    ui.horizontal(|ui| {
+                        request = ui
+                            .button("Try again")
+                            .on_hover_text("Show Android's screen recording prompt again.")
+                            .clicked();
+                        cancel =
+                            crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked();
+                    });
+                }
+            }
+        });
+
+    if cancel {
+        *app.run_session.state.status.lock() = format!("Cancelled — \"{macro_name}\" was not run.");
+        app.pending_projection_run = None;
+        return;
+    }
+    if request {
+        frames().rearm();
+        match bridge::request_projection() {
+            Ok(()) => {
+                if let Some(pending) = app.pending_projection_run.as_mut() {
+                    pending.state = ProjectionGate::Waiting;
+                }
+            }
+            Err(e) => {
+                crate::log::warn(format_args!("projection run gate: {e}"));
+            }
+        }
+    }
+}
+
+/// First-start permissions popup. Confirming saves the flag; once every prompt has been
+/// shown the deferred startup work (portal probe on Linux, hotkeys) resumes.
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+fn show_permissions_intro(app: &mut SqyreApp, ctx: &egui::Context) {
+    let Some(intro) = app.permissions_intro.as_mut() else {
+        return;
+    };
+    if intro.show(ctx) {
+        app.settings_ui.settings_mut().permissions_intro_done = true;
+        if let Err(e) = app.settings_ui.save_settings() {
+            crate::log::warn(format!("save settings after permissions intro: {e}"));
+        }
+    }
+    if !intro.finished() {
+        return;
+    }
+    app.permissions_intro = None;
+    // Linux starts hotkeys from `poll_deferred_capture_probe`, after the portal picker.
+    #[cfg(not(target_os = "linux"))]
+    app.start_deferred_hotkeys();
+    ctx.request_repaint();
 }
 
 /// Open portal ScreenCast after the window is up (startup must not block on the picker).
@@ -295,7 +472,7 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
     use std::sync::mpsc::TryRecvError;
     use std::time::Duration;
 
-    if app.portal_probe.finished {
+    if app.portal_probe.finished || app.permissions_intro.is_some() {
         return;
     }
 
@@ -362,6 +539,11 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 }
 
+/// Outside runs, previews / color picks re-enable the portal frame mirror; drop it
+/// after this long without captures so PipeWire frames stop being copied.
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+const IDLE_FRAME_CACHE_RELEASE: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Settings reload, highlighter / log prefs, color sample, recording + macro overlays,
 /// hotkey/key record UI, and repaint pacing.
 pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
@@ -375,6 +557,10 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         target_os = "linux"
     ))]
     poll_deferred_capture_probe(app, ctx);
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    if app.permissions_intro.is_none() {
+        app.settings_ui.tick_permissions(ctx);
+    }
 
     crate::widgets::sync_viewport_window_scale(
         ctx,
@@ -539,6 +725,14 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 
     let running = app.run_session.state.running.load(Ordering::SeqCst);
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    if !running {
+        if let Some(wait) =
+            sqyre_capture::release_idle_capture_frame_cache(IDLE_FRAME_CACHE_RELEASE)
+        {
+            ctx.request_repaint_after(wait);
+        }
+    }
     let highlight_on = app.settings_ui.settings().highlight_active_action;
     if running && highlight_on {
         ctx.request_repaint_after(std::time::Duration::from_millis(50));

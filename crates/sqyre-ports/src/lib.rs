@@ -28,6 +28,14 @@ pub use runtime_vars::{RuntimeVarSink, SharedRuntimeVars};
 
 use image::RgbaImage;
 use rayon::prelude::*;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+/// Fallback frame-identity token for backends with no frame counter: every call
+/// is a new value, so equal tokens always mean identical pixels (never dedups).
+pub fn unique_frame_token() -> u64 {
+    static NEXT: AtomicU64 = AtomicU64::new(1);
+    NEXT.fetch_add(1, Ordering::Relaxed)
+}
 
 /// Mouse move options.
 #[derive(Debug, Clone, Copy, Default)]
@@ -205,6 +213,12 @@ pub trait ScreenCapturer {
     /// `fresh` waits for a newer compositor frame on caching backends when the
     /// screen was dirtied by input, or on wait/repeat retries. Clean nested image
     /// searches crop the latest cache.
+    ///
+    /// The third return value is a frame-identity token: two captures that report
+    /// the same token for the same rect carry byte-identical pixels, so a
+    /// detection result computed for one can be reused for the other without
+    /// re-matching. Backends without a frame counter return a unique token per
+    /// call (see [`unique_frame_token`]) and never dedup.
     fn capture_search_area_rgb(
         &mut self,
         left: i32,
@@ -212,7 +226,7 @@ pub trait ScreenCapturer {
         right: i32,
         bottom: i32,
         fresh: bool,
-    ) -> Result<(RgbCapture, DesktopRect), CaptureError> {
+    ) -> Result<(RgbCapture, DesktopRect, u64), CaptureError> {
         let vb = self.virtual_bounds().ok();
         let rect = clamp_search_rect(left, top, right, bottom, vb)?;
         let img = if fresh {
@@ -220,13 +234,22 @@ pub trait ScreenCapturer {
         } else {
             self.capture_rect_rgb(rect)?
         };
-        Ok((img, rect))
+        Ok((img, rect, unique_frame_token()))
     }
+}
+
+/// A window addressed the same way [`WindowFocuser::focus`] takes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FocusedWindow {
+    pub process_path: String,
+    pub window_title: String,
 }
 
 /// Bring a window to the front by executable path + title.
 pub trait WindowFocuser: Send + Sync {
     fn focus(&self, process_path: &str, window_title: &str) -> Result<(), AutomationError>;
+    /// The window that currently has focus, if it can be focused again by [`Self::focus`].
+    fn focused(&self) -> Result<Option<FocusedWindow>, AutomationError>;
 }
 
 /// Catalog item metadata (name, stack size, grid dimensions, tags) for icon lookups.

@@ -18,6 +18,7 @@ members = [
     "crates/sqyre-update",
     "crates/sqyre-overlay",
     "crates/sqyre-app",
+    "crates/sqyre-android",
     "crates/sqyre-probe",
     "crates/sqyre-bench-compare",
 ]
@@ -29,7 +30,8 @@ default-members = [
 [workspace.package]
 edition = "2021"
 license = "GPL-3.0-only"
-repository = "https://github.com/luhrMan/Squire"
+repository = "https://github.com/luhrMan/Sqyre"
+homepage = "https://luhrman.dev/sqyre/"
 
 # Shared lint policy; every crate opts in with `[lints] workspace = true`.
 # CI enforces these as errors via `make clippy` (`-D warnings`).
@@ -88,6 +90,7 @@ arboard = { version = "3", default-features = false }
 x11 = { version = "2", features = ["xlib", "xinerama", "xfixes", "xrandr"] }
 rdev = { version = "0.5", features = ["unstable_grab"] }
 parking_lot = "0.12"
+jni = { version = "0.21", default-features = false }
 # async-io (not default tokio): avoid forcing zbus/tokio, which panics accesskit's async-io thread.
 ksni = { version = "0.3", default-features = false, features = ["blocking", "async-io"] }
 tray-icon = { version = "0.25", default-features = false }

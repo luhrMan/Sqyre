@@ -120,6 +120,8 @@ impl HotkeyService for OsHotkeys {
                     let mouse =
                         unsafe { SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), None, 0) }
                             .map_err(|e| {
+                                // SAFETY: `key` was just installed above and is not yet
+                                // stored, so nothing else unhooks it.
                                 let _ = unsafe { UnhookWindowsHookEx(key) };
                                 HotkeyError::Install(format!("WH_MOUSE_LL: {e}"))
                             })?;
@@ -145,6 +147,7 @@ impl HotkeyService for OsHotkeys {
                     if ret.0 == 0 || ret.0 == -1 {
                         break;
                     }
+                    // SAFETY: `msg` was filled by the successful GetMessageW above.
                     unsafe {
                         let _ = TranslateMessage(&msg);
                         DispatchMessageW(&msg);
@@ -199,6 +202,7 @@ fn unhook_all() {
         let _ = unsafe { UnhookWindowsHookEx(key) };
     }
     if !mouse.0.is_null() {
+        // SAFETY: hook installed by this process.
         let _ = unsafe { UnhookWindowsHookEx(mouse) };
     }
 }

@@ -59,6 +59,13 @@ impl YamlValidateReport {
     }
 }
 
+#[cfg_attr(
+    target_os = "android",
+    expect(
+        clippy::missing_const_for_thread_local,
+        reason = "false positive on Android's OS-key TLS expansion; the initializer is already const"
+    )
+)]
 fn with_compiled_schema<R>(f: impl FnOnce(&jsonschema::Validator) -> R) -> R {
     // `jsonschema` without resolve features uses `Rc` (not Sync) — thread_local
     // keeps a compiled schema per thread and works on wasm32.

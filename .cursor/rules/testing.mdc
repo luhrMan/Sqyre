@@ -15,4 +15,4 @@ alwaysApply: false
 - **Perf budgets.** `perf_budget_secs` in `sqyre-match` is a coarse wall-clock guard (debug ×10); never loosen it. Measure real regressions with `make bench-baseline-save` / `bench-baseline-diff`.
 - **Doctests.** nextest skips them; keep doc examples ` ```text ` or `no_run` unless `cargo test --doc` runs them.
 - **Windows CI** tests only `sqyre-domain`, `-varref`, `-serialize`, `-validate`, `-persist`; keep those free of Linux-only assumptions.
-- Benches stay local-only (`make bench`, `make bench-compare`); `clippy --all-targets` keeps them compiling.
+- Benches stay local-only (`make bench`, `make bench-compare`); `clippy --all-targets` keeps them compiling. Measurement rules (run alone, no gaming, cache independence, no `RUSTFLAGS`): `search-timing-consistency` → Measuring.

@@ -10,6 +10,8 @@ mod overlay;
 mod persist;
 #[cfg(feature = "native-runtime")]
 mod pixel_check;
+#[cfg(feature = "native-runtime")]
+mod running_programs;
 mod variants;
 
 use crate::data_editor_preview::variant_display_label;
@@ -298,6 +300,9 @@ pub struct DataEditor {
     /// Cached heatmap + MatchMap for the current inputs.
     #[cfg(feature = "native-runtime")]
     pixel_check_cache: Option<pixel_check::PixelCheckCache>,
+    /// Background open-window fetch for Programs "Add running".
+    #[cfg(feature = "native-runtime")]
+    running_programs_pending: Option<running_programs::RunningProgramsRx>,
 }
 
 pub(super) struct CollectionCapturePending {
@@ -398,6 +403,8 @@ impl Default for DataEditor {
             pixel_check_pending: None,
             #[cfg(feature = "native-runtime")]
             pixel_check_cache: None,
+            #[cfg(feature = "native-runtime")]
+            running_programs_pending: None,
         }
     }
 }
@@ -708,6 +715,8 @@ impl DataEditor {
         self.poll_collection_capture(ctx, env.catalog, env.icons);
         #[cfg(feature = "native-runtime")]
         self.poll_pixel_check(ctx, env.catalog, previews);
+        #[cfg(feature = "native-runtime")]
+        self.poll_running_programs(env);
     }
 
     fn poll_form_picker(
@@ -1071,6 +1080,22 @@ impl DataEditor {
                         .clicked()
                     {
                         self.on_new(env);
+                    }
+                    #[cfg(feature = "native-runtime")]
+                    if matches!(self.tab, EditorTab::Programs) {
+                        let pending = self.add_running_programs_pending();
+                        let label = if pending { "Adding…" } else { "Add running" };
+                        if ui
+                            .add_enabled(!pending, egui::Button::new(label))
+                            .on_hover_text(
+                                "Add every program with an open window (the same list as \
+                                 Select…), named after its process. Programs already in \
+                                 the list are skipped.",
+                            )
+                            .clicked()
+                        {
+                            self.start_add_running_programs();
+                        }
                     }
                     let dirty = self.is_dirty(env.catalog, env.settings);
                     let valid = self.form_valid(env.macros.get(selected_macro));

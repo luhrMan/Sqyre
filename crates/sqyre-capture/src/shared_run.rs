@@ -8,7 +8,8 @@
 ///
 /// `$capturer` must implement `open() -> Result<Self, ::sqyre_ports::CaptureError>` and the
 /// `capture_rect_ref` / `capture_rect_rgb_ref` / `capture_rect_rgb_fresh_ref` /
-/// `virtual_bounds_ref` / `monitor_sizes_ref` / `monitor_rects_ref` methods used below.
+/// `capture_search_area_rgb_ref` / `virtual_bounds_ref` / `monitor_sizes_ref` /
+/// `monitor_rects_ref` methods used below.
 #[macro_export]
 macro_rules! define_shared_run_capturer {
     () => {
@@ -146,6 +147,20 @@ macro_rules! __impl_screen_capturer_forward {
                 rect: ::sqyre_ports::DesktopRect,
             ) -> Result<::sqyre_ports::RgbCapture, ::sqyre_ports::CaptureError> {
                 self $(.$field)? .capture_rect_rgb_fresh_ref(rect)
+            }
+
+            fn capture_search_area_rgb(
+                &mut self,
+                left: i32,
+                top: i32,
+                right: i32,
+                bottom: i32,
+                fresh: bool,
+            ) -> Result<
+                (::sqyre_ports::RgbCapture, ::sqyre_ports::DesktopRect, u64),
+                ::sqyre_ports::CaptureError,
+            > {
+                self $(.$field)? .capture_search_area_rgb_ref(left, top, right, bottom, fresh)
             }
 
             fn virtual_bounds(

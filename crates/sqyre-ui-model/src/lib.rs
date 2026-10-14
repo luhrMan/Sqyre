@@ -403,6 +403,7 @@ mod tests {
             kind: ActionKind::FocusWindow {
                 process_path: String::new(),
                 window_title: String::new(),
+                previous: false,
             },
         };
         let params = focus.display_params();
@@ -420,6 +421,20 @@ mod tests {
                 .map(|p| p.value.as_str()),
             Some(EMPTY_NOT_SET)
         );
+
+        let previous = Action {
+            id: ActionId::new(),
+            kind: ActionKind::FocusWindow {
+                process_path: String::new(),
+                window_title: String::new(),
+                previous: true,
+            },
+        };
+        assert!(previous
+            .display_params()
+            .iter()
+            .any(|p| p.label == "Window" && p.value == "previous"));
+        assert_eq!(previous.kind.display_name(), "Focus previous window");
 
         let run = Action {
             id: ActionId::new(),
@@ -495,6 +510,7 @@ mod tests {
                 ActionKind::FocusWindow {
                     process_path: String::new(),
                     window_title: String::new(),
+                    previous: false,
                 },
                 "👁",
             ),

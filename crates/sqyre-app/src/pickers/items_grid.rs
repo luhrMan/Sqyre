@@ -73,6 +73,8 @@ pub fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Con
 /// scroll it into view (data editor tab switch).
 ///
 /// `item_menu` fills the right-click menu of each item cell.
+///
+/// Programs with no items are skipped unless `show_empty_programs` is set.
 #[expect(
     clippy::too_many_arguments,
     reason = "accordion grid: selection mode plus optional program click / item menu"
@@ -87,6 +89,7 @@ pub fn paint_items_icon_grid(
     selected_program: Option<&str>,
     clicked_program: &mut Option<String>,
     compact_program_headers: bool,
+    show_empty_programs: bool,
     mut scroll_to_selected_program: Option<&mut bool>,
     item_sort: sqyre_domain::CatalogItemSort,
     tag_priority: &[String],
@@ -111,7 +114,10 @@ pub fn paint_items_icon_grid(
             })
             .map(|(name, _)| name.clone())
             .collect();
-        if items.is_empty() {
+        let keep_empty = show_empty_programs
+            && pdata.items.is_empty()
+            && (q.is_empty() || fuzzy_match_fold(&q, prog));
+        if items.is_empty() && !keep_empty {
             continue;
         }
         let infos: Vec<sqyre_domain::ItemSortInfo> = items

@@ -21,6 +21,11 @@ mod desktop_entry;
 #[cfg(feature = "native-runtime")]
 mod diag;
 pub mod docs_fixture;
+#[cfg(any(
+    test,
+    target_os = "windows",
+    all(target_os = "linux", feature = "native-runtime")
+))]
 mod egui_keys;
 mod file_dialogs;
 mod focus_nav;
@@ -54,6 +59,8 @@ mod overlay_icons {
 mod overlay_visibility;
 mod paint_ctx;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+mod permissions_intro;
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod permissions_panel;
 mod pickers;
 #[cfg(feature = "native-runtime")]
@@ -68,18 +75,23 @@ mod recorded_action;
 #[cfg(feature = "native-runtime")]
 mod recording_overlay;
 mod run_session;
+#[cfg(all(target_os = "android", feature = "native-runtime"))]
+mod screen_pick;
 mod settings;
+#[cfg(not(target_arch = "wasm32"))]
 mod single_instance;
 #[cfg(not(target_arch = "wasm32"))]
 mod sound;
 mod status_banner;
 pub mod theme;
+#[cfg(not(target_arch = "wasm32"))]
 mod tray;
 mod tree_chrome;
 mod tree_clipboard;
 mod tree_dnd;
 mod tree_history;
 mod tree_state;
+mod tree_swipe;
 mod ui_macro_list;
 mod ui_macro_tree;
 mod ui_overlays;
@@ -145,6 +157,74 @@ fn apply_worker_thread_pool(worker_threads: i32) {
 /// Launch the desktop shell (single-instance lock, tray, fonts).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run() -> eframe::Result<()> {
+    run_with(native_options())
+}
+
+/// Android entry point, called by `android-activity` on its main thread.
+#[cfg(target_os = "android")]
+#[no_mangle]
+fn android_main(app: winit::platform::android::activity::AndroidApp) {
+    if let Some(home) = app.internal_data_path() {
+        // MainActivity extracts the APK's eng.traineddata here before Rust starts.
+        #[cfg(feature = "native-runtime")]
+        sqyre_vision::set_tessdata_dir(home.join("tessdata"));
+        sqyre_persist::set_home_dir(home);
+    }
+    let mut options = native_options();
+    options.android_app = Some(app);
+    if let Err(e) = run_with(options) {
+        crate::log::warn(format!("eframe exited with error: {e}"));
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn native_options() -> eframe::NativeOptions {
+    let options = eframe::NativeOptions {
+        viewport: {
+            let builder = egui::ViewportBuilder::default()
+                .with_inner_size([960.0, 640.0])
+                .with_min_inner_size([100.0, 100.0])
+                .with_title("Sqyre")
+                .with_app_id(assets::APP_ID)
+                .with_icon(assets::app_icon());
+            // wgpu deferred overlay viewports inherit transparency from the root GL/VK config.
+            #[cfg(target_os = "linux")]
+            let builder = builder.with_transparent(true);
+            builder
+        },
+        // wgpu's DX12 HWND swapchain has no per-pixel alpha; glow + DWM blur-behind
+        // is required for deferred overlay button transparency (egui#3632).
+        // Linux Wayland: glow cannot create transparent deferred viewports; wgpu does.
+        #[cfg(target_os = "windows")]
+        renderer: eframe::Renderer::Glow,
+        #[cfg(target_os = "linux")]
+        renderer: eframe::Renderer::Wgpu,
+        // GLES works on every device; wgpu picks Vulkan, which crashes the emulator's
+        // SwiftShader host renderer and is unreliable on older phone drivers.
+        #[cfg(target_os = "android")]
+        renderer: eframe::Renderer::Glow,
+        ..Default::default()
+    };
+    // Native Wayland: winit's set_visible / set_outer_position are no-ops, so tray-hide
+    // cannot unmap the root window (the old 1×1 off-screen hack left an Alt-Tab skeleton)
+    // and X11 window-type / SKIP_TASKBAR hints never apply to overlay viewports.
+    // Prefer XWayland whenever DISPLAY is available (normal GNOME/Plasma/Cosmic sessions).
+    #[cfg(target_os = "linux")]
+    let mut options = options;
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("DISPLAY").is_some() {
+        options.event_loop_builder = Some(Box::new(|builder| {
+            use winit::platform::x11::EventLoopBuilderExtX11 as _;
+            builder.with_x11();
+        }));
+        #[cfg(feature = "native-runtime")]
+        sqyre_capture::note("ui: X11/XWayland event loop (tray hide + overlay Alt-Tab)");
+    }
+    options
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn run_with(options: eframe::NativeOptions) -> eframe::Result<()> {
     let _ = sqyre_persist::initialize_directories();
     #[cfg(feature = "native-runtime")]
     {
@@ -175,41 +255,6 @@ pub fn run() -> eframe::Result<()> {
         }
     };
 
-    let mut options = eframe::NativeOptions {
-        viewport: {
-            let builder = egui::ViewportBuilder::default()
-                .with_inner_size([960.0, 640.0])
-                .with_min_inner_size([100.0, 100.0])
-                .with_title("Sqyre")
-                .with_app_id(assets::APP_ID)
-                .with_icon(assets::app_icon());
-            // wgpu deferred overlay viewports inherit transparency from the root GL/VK config.
-            #[cfg(target_os = "linux")]
-            let builder = builder.with_transparent(true);
-            builder
-        },
-        // wgpu's DX12 HWND swapchain has no per-pixel alpha; glow + DWM blur-behind
-        // is required for deferred overlay button transparency (egui#3632).
-        // Linux Wayland: glow cannot create transparent deferred viewports; wgpu does.
-        #[cfg(target_os = "windows")]
-        renderer: eframe::Renderer::Glow,
-        #[cfg(target_os = "linux")]
-        renderer: eframe::Renderer::Wgpu,
-        ..Default::default()
-    };
-    // Native Wayland: winit's set_visible / set_outer_position are no-ops, so tray-hide
-    // cannot unmap the root window (the old 1×1 off-screen hack left an Alt-Tab skeleton)
-    // and X11 window-type / SKIP_TASKBAR hints never apply to overlay viewports.
-    // Prefer XWayland whenever DISPLAY is available (normal GNOME/Plasma/Cosmic sessions).
-    #[cfg(target_os = "linux")]
-    if std::env::var_os("DISPLAY").is_some() {
-        options.event_loop_builder = Some(Box::new(|builder| {
-            use winit::platform::x11::EventLoopBuilderExtX11 as _;
-            builder.with_x11();
-        }));
-        #[cfg(feature = "native-runtime")]
-        sqyre_capture::note("ui: X11/XWayland event loop (tray hide + overlay Alt-Tab)");
-    }
     let result = eframe::run_native(
         assets::APP_ID,
         options,
@@ -269,6 +314,20 @@ fn install_x11_secondary_error_hook() {
     }));
 }
 
+/// Hold hotkeys back while the first-start permissions popup is up, and on Wayland until
+/// the deferred ScreenCast picker has closed.
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+fn defer_hotkeys_at_startup(intro_pending: bool) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        intro_pending || sqyre_capture::shared_capturer_open_may_block()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        intro_pending
+    }
+}
+
 /// Sync macros/catalog into `db` and write `db.yaml`. The single database-save
 /// implementation shared by [`SqyreApp::persist_database`] and
 /// [`SqyreApp::persist_database_for_editor`] so the two call sites cannot drift.
@@ -291,6 +350,7 @@ pub(crate) struct BackgroundTasks {
     /// In-flight automatic backup.
     pub backup: Option<std::sync::mpsc::Receiver<Result<std::path::PathBuf, String>>>,
     /// Find Pixel color sample taken off the UI thread.
+    #[cfg(feature = "native-runtime")]
     pub pixel_sample: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
 }
 
@@ -312,9 +372,6 @@ pub(crate) struct PortalProbe {
     /// Do not start portal ScreenCast before this instant, so the first frames
     /// stay responsive.
     not_before: Option<std::time::Instant>,
-    /// Wayland: start evdev after the ScreenCast picker so device fds do not
-    /// steal clicks.
-    hotkeys_deferred: Option<HotkeyCallbacks>,
 }
 
 #[cfg(all(
@@ -356,10 +413,17 @@ pub struct SqyreApp {
     macro_prompt_builder: MacroPromptBuilderUi,
     macro_yaml_builder: MacroYamlBuilderUi,
     /// Window was hidden because a point/search-area recording is armed.
+    #[cfg(not(target_arch = "wasm32"))]
     hidden_for_recording: bool,
     /// Outline windows for live search-area selection rect.
     #[cfg(feature = "native-runtime")]
     recording_overlay: crate::recording_overlay::RecordingOverlay,
+    /// Android: still of the previous app to place a recorded point or search area on.
+    #[cfg(all(target_os = "android", feature = "native-runtime"))]
+    screen_pick: crate::screen_pick::ScreenPick,
+    /// Android: a screen-reading run parked behind the consent modal.
+    #[cfg(all(target_os = "android", feature = "native-runtime"))]
+    pub(crate) pending_projection_run: Option<app_run::PendingProjectionRun>,
     /// Always-on-top floating buttons that start macros.
     #[cfg(feature = "native-runtime")]
     macro_overlay: sqyre_overlay::MacroOverlay,
@@ -377,8 +441,10 @@ pub struct SqyreApp {
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
     macro_list_filter: String,
+    #[cfg(not(target_arch = "wasm32"))]
     tray: tray::SystemTray,
     /// Process-wide single-instance lock (held for the app lifetime).
+    #[cfg(not(target_arch = "wasm32"))]
     instance_lock: Option<single_instance::InstanceLock>,
     /// Confirm dialog for deleting the selected macro.
     pending_delete_macro: Option<String>,
@@ -402,6 +468,13 @@ pub struct SqyreApp {
         target_os = "linux"
     ))]
     pub(crate) portal_probe: PortalProbe,
+    /// Hotkeys not started yet: until the first-start permissions popup is confirmed,
+    /// and on Wayland until after the ScreenCast picker (evdev fds would steal its clicks).
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    pub(crate) hotkeys_deferred: Option<HotkeyCallbacks>,
+    /// First-start permissions popup; `None` once confirmed and every prompt was shown.
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    pub(crate) permissions_intro: Option<permissions_intro::PermissionsIntro>,
     /// Background update check / download (native only).
     #[cfg(not(target_arch = "wasm32"))]
     update: update::UpdateManager,
@@ -424,6 +497,24 @@ impl SqyreApp {
         screen_click.set_absolute_pos(sqyre_capture::portal_cursor_position);
         let run = RunState::default();
         let stop = run.stop.clone();
+        #[cfg(target_os = "android")]
+        {
+            sqyre_android::set_stop_handler({
+                let stop = stop.clone();
+                Arc::new(move || stop.request_stop())
+            });
+            sqyre_android::set_continue_handler({
+                let continue_wait = continue_wait.clone();
+                Arc::new(move || continue_wait.signal_continue())
+            });
+        }
+        #[cfg(not(any(
+            feature = "native-runtime",
+            target_arch = "wasm32",
+            target_os = "windows",
+            target_os = "android"
+        )))]
+        let _ = continue_wait;
         let pending_hotkey_macros = Arc::new(Mutex::new(Vec::new()));
         let pending_for_cb = Arc::clone(&pending_hotkey_macros);
         let hotkey_repaint = Arc::new(Mutex::new(None::<egui::Context>));
@@ -443,12 +534,11 @@ impl SqyreApp {
                 crate::hotkey_wake::queue_macro_hotkey(&pending_for_cb, &repaint_for_cb, name);
             }),
         };
-        #[cfg(all(
-            not(target_arch = "wasm32"),
-            feature = "native-runtime",
-            target_os = "linux"
-        ))]
-        let hotkeys_deferred = if sqyre_capture::shared_capturer_open_may_block() {
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        let permissions_intro =
+            (!settings.permissions_intro_done).then(permissions_intro::PermissionsIntro::new);
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        let hotkeys_deferred = if defer_hotkeys_at_startup(permissions_intro.is_some()) {
             Some(hotkey_callbacks)
         } else {
             if let Err(e) = hotkeys.start(hotkey_callbacks) {
@@ -456,10 +546,7 @@ impl SqyreApp {
             }
             None
         };
-        #[cfg(all(
-            not(target_arch = "wasm32"),
-            not(all(feature = "native-runtime", target_os = "linux"))
-        ))]
+        #[cfg(all(not(target_arch = "wasm32"), not(feature = "native-runtime")))]
         if let Err(e) = hotkeys.start(hotkey_callbacks) {
             crate::log::warn(format!("failed to start global hotkeys: {e}"));
         }
@@ -468,6 +555,7 @@ impl SqyreApp {
             let _ = (
                 &mut hotkeys,
                 &stop,
+                continue_wait,
                 pending_for_cb,
                 repaint_for_cb,
                 HotkeyCallbacks::default(),
@@ -569,6 +657,7 @@ impl SqyreApp {
             },
             run_session: RunSession {
                 state: run,
+                #[cfg(any(feature = "native-runtime", target_os = "windows"))]
                 continue_wait,
                 macro_hotkeys,
                 action_log,
@@ -595,9 +684,14 @@ impl SqyreApp {
             variables_panel: variables_panel::VariablesPanelUi::default(),
             macro_prompt_builder: MacroPromptBuilderUi::default(),
             macro_yaml_builder: MacroYamlBuilderUi::default(),
+            #[cfg(not(target_arch = "wasm32"))]
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: recording_overlay::RecordingOverlay::new(),
+            #[cfg(all(target_os = "android", feature = "native-runtime"))]
+            screen_pick: Default::default(),
+            #[cfg(all(target_os = "android", feature = "native-runtime"))]
+            pending_projection_run: None,
             #[cfg(feature = "native-runtime")]
             macro_overlay: sqyre_overlay::MacroOverlay::new(),
             #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
@@ -608,7 +702,9 @@ impl SqyreApp {
             start_when_idle: None,
             macro_list_open: true,
             macro_list_filter: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             tray: tray::SystemTray::default(),
+            #[cfg(not(target_arch = "wasm32"))]
             instance_lock: None,
             pending_delete_macro: None,
             last_viewport_content: None,
@@ -621,10 +717,11 @@ impl SqyreApp {
                 feature = "native-runtime",
                 target_os = "linux"
             ))]
-            portal_probe: PortalProbe {
-                hotkeys_deferred,
-                ..PortalProbe::default()
-            },
+            portal_probe: PortalProbe::default(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            hotkeys_deferred,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            permissions_intro,
             #[cfg(not(target_arch = "wasm32"))]
             update: update::UpdateManager::default(),
         };
@@ -636,13 +733,9 @@ impl SqyreApp {
         app
     }
 
-    #[cfg(all(
-        not(target_arch = "wasm32"),
-        feature = "native-runtime",
-        target_os = "linux"
-    ))]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     pub(crate) fn start_deferred_hotkeys(&mut self) {
-        let Some(callbacks) = self.portal_probe.hotkeys_deferred.take() else {
+        let Some(callbacks) = self.hotkeys_deferred.take() else {
             return;
         };
         if let Err(e) = self.hotkeys.start(callbacks) {
@@ -718,6 +811,34 @@ impl SqyreApp {
         app.bind_hotkey_repaint(cc.egui_ctx.clone());
         app
     }
+
+    /// Route a finished [`file_dialogs::request`] to the panel that asked for it.
+    fn apply_picked_file(&mut self, ctx: &egui::Context) {
+        if file_dialogs::pending() {
+            ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        }
+        let Some(picked) = file_dialogs::take_picked() else {
+            return;
+        };
+        match picked.purpose {
+            file_dialogs::PickPurpose::IconVariant => self.data_editor.add_picked_variant(
+                &self.workspace.catalog,
+                &mut self.icon_cache,
+                self.settings_ui.settings(),
+                picked.path,
+            ),
+            file_dialogs::PickPurpose::MaskImage => self.data_editor.upload_mask_image(
+                &self.workspace.catalog,
+                &mut self.icon_cache,
+                picked.path,
+            ),
+            purpose @ (file_dialogs::PickPurpose::RestoreBackup
+            | file_dialogs::PickPurpose::SqyreLocation
+            | file_dialogs::PickPurpose::HostSqyreLocation) => {
+                self.settings_ui.apply_pick(purpose, picked.path);
+            }
+        }
+    }
 }
 
 impl eframe::App for SqyreApp {
@@ -747,6 +868,7 @@ impl eframe::App for SqyreApp {
         }
         self.poll_hotkey_chooser_escape(ctx);
         self.start_deferred_pick(ctx);
+        self.apply_picked_file(ctx);
         // Unmap as soon as the WM asks to close so portal/tray/wgpu teardown
         // is not user-visible (Drop alone was finishing in <1s while the window
         // stayed up for ~2s afterward).
@@ -759,6 +881,19 @@ impl eframe::App for SqyreApp {
             }
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
+    }
+
+    // egui-winit fills safe-area insets only on iOS.
+    #[cfg(target_os = "android")]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        let px = sqyre_android::insets().get();
+        let ppp = ctx.pixels_per_point();
+        raw_input.safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 {
+            left: f32::from(px.left) / ppp,
+            right: f32::from(px.right) / ppp,
+            top: f32::from(px.top) / ppp,
+            bottom: f32::from(px.bottom) / ppp,
+        }));
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
@@ -790,9 +925,55 @@ impl eframe::App for SqyreApp {
         // The root viewport is transparent; translucent panel separators sit in
         // gaps between panel fills and would show the desktop through them.
         ui.painter()
-            .rect_filled(ui.ctx().content_rect(), 0.0, ui.visuals().panel_fill);
+            .rect_filled(ui.ctx().viewport_rect(), 0.0, ui.visuals().panel_fill);
 
+        // The root Ui spans the whole viewport, including Android's system bars.
+        let content = ui.ctx().content_rect();
+        ui.scope_builder(egui::UiBuilder::new().max_rect(content), |ui| {
+            self.show_panels(ui);
+        });
+
+        // After tips/panels paint so tooltip preview outlines apply this frame.
+        self.sync_recording_overlay(ui.ctx());
+
+        if self.settings_ui.settings().window_border {
+            paint_window_border(ui.ctx());
+        }
+
+        // Modal sits above painted Sqyre chrome; skip shortcuts/palette while open.
+        if self.macro_yaml_builder.is_open() || self.macro_prompt_builder.is_open() {
+            return;
+        }
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        if self.permissions_intro.is_some() {
+            return;
+        }
+        ui_overlays::handle_shortcuts(self, ui);
+        ui_overlays::show_command_palette(self, ui.ctx());
+    }
+
+    /// Fully transparent clear so deferred overlay viewports (`with_transparent(true)`)
+    /// don't paint eframe's default dark plate behind the gold chrome.
+    ///
+    /// On wasm there are no transparent OS overlay windows — an opaque clear keeps a
+    /// panic/blank frame from looking like the page body color bleeding through.
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        #[cfg(target_arch = "wasm32")]
+        {
+            egui::Rgba::from(egui::Color32::from_rgb(0x1a, 0x1a, 0x1a)).to_array()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            [0.0, 0.0, 0.0, 0.0]
+        }
+    }
+}
+
+impl SqyreApp {
+    /// Top bar, footer, macro list and the selected macro, in that order so the bars span the width.
+    fn show_panels(&mut self, ui: &mut egui::Ui) {
         ui_toolbar::top_bar(self, ui);
+        ui_toolbar::footer_bar(self, ui);
         ui_macro_list::show(self, ui);
         self.persist_selected_macro();
 
@@ -822,39 +1003,10 @@ impl eframe::App for SqyreApp {
             if !ui_toolbar::show_meta_and_hotkey(self, ui) {
                 return;
             }
-            let force_openness = ui_toolbar::action_toolbar(self, ui);
+            let any_collapsed = ui_macro_tree::any_branch_collapsed(self, ui);
+            let force_openness = ui_toolbar::action_toolbar(self, ui, any_collapsed);
             ui_macro_tree::show(self, ui, force_openness);
         });
-
-        // After tips/panels paint so tooltip preview outlines apply this frame.
-        self.sync_recording_overlay(ui.ctx());
-
-        if self.settings_ui.settings().window_border {
-            paint_window_border(ui.ctx());
-        }
-
-        // Modal sits above painted Sqyre chrome; skip shortcuts/palette while open.
-        if self.macro_yaml_builder.is_open() || self.macro_prompt_builder.is_open() {
-            return;
-        }
-        ui_overlays::handle_shortcuts(self, ui);
-        ui_overlays::show_command_palette(self, ui.ctx());
-    }
-
-    /// Fully transparent clear so deferred overlay viewports (`with_transparent(true)`)
-    /// don't paint eframe's default dark plate behind the gold chrome.
-    ///
-    /// On wasm there are no transparent OS overlay windows — an opaque clear keeps a
-    /// panic/blank frame from looking like the page body color bleeding through.
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        #[cfg(target_arch = "wasm32")]
-        {
-            egui::Rgba::from(egui::Color32::from_rgb(0x1a, 0x1a, 0x1a)).to_array()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            [0.0, 0.0, 0.0, 0.0]
-        }
     }
 }
 

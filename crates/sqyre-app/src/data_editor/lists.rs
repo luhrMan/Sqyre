@@ -207,6 +207,7 @@ impl DataEditor {
                         self.selected_program.as_deref(),
                         &mut clicked_program,
                         settings.compact_program_headers,
+                        settings.show_empty_program_headers,
                         Some(&mut scroll_to),
                         *items_list_sort.borrow(),
                         &items_tag_priority.borrow(),
@@ -247,6 +248,9 @@ impl DataEditor {
                     let program_names = self.list_cache.program_names.clone();
                     for prog in &program_names {
                         let entities = self.entity_names(catalog, prog);
+                        if entities.is_empty() && !settings.show_empty_program_headers {
+                            continue;
+                        }
                         let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
                         let any_entity = entities
                             .iter()
@@ -332,6 +336,12 @@ impl DataEditor {
                             .get(prog)
                             .map(|p| p.collections.values().cloned().collect())
                             .unwrap_or_default();
+                        if search_areas.is_empty()
+                            && collections.is_empty()
+                            && !settings.show_empty_program_headers
+                        {
+                            continue;
+                        }
                         let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
                         let any_sa = search_areas
                             .iter()
@@ -463,6 +473,9 @@ impl DataEditor {
                             crate::macro_meta::cmp_display_name(a.display_name(), b.display_name())
                                 .then_with(|| a.id.cmp(&b.id))
                         });
+                        if buttons.is_empty() && !settings.show_empty_program_headers {
+                            continue;
+                        }
                         let prog_match = q.is_empty() || pickers::fuzzy_match_fold(q, prog);
                         let any_btn = buttons.iter().any(|b| {
                             q.is_empty()

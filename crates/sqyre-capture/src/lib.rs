@@ -1,11 +1,14 @@
 //! Screen capture in absolute virtual-desktop coordinates.
 
+#[cfg(target_os = "android")]
+mod android_capture;
 mod diag;
 mod error;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod grab_stub;
 #[cfg(target_os = "linux")]
 pub mod linux;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 mod outline_geometry;
 mod outline_rect;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
@@ -23,6 +26,7 @@ mod win_focus;
 mod win_grab;
 #[cfg(target_os = "windows")]
 mod win_outline;
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 mod window_match;
 #[cfg(target_os = "linux")]
 mod x11_capture;
@@ -53,8 +57,8 @@ pub use linux::{
 };
 pub use outline_rect::OutlineRect;
 pub use pixel_convert::{
-    strip_rgba_row_to_rgb, swizzle_row_to_rgba, zpixmap_to_rgb, zpixmap_to_rgba, RgbaSrcFormat,
-    PARALLEL_ROW_GATE,
+    crop_packed_rgba, crop_packed_rgba_to_rgb, strip_rgba_row_to_rgb, swizzle_row_to_rgba,
+    zpixmap_to_rgb, zpixmap_to_rgba, RgbaSrcFormat, PARALLEL_ROW_GATE,
 };
 pub use selection_grab::GrabPoll;
 pub use stub::{NullCapturer, SolidCapturer};
@@ -63,6 +67,12 @@ pub use stub::{NullCapturer, SolidCapturer};
 pub use win_capture::{
     reset_shared_capturer, shared_capturer, shared_capturer_if_ready, shared_capturer_is_opening,
     shared_capturer_open_superseded, OsCapturer, SharedRunCapturer,
+};
+
+#[cfg(target_os = "android")]
+pub use android_capture::{
+    reset_shared_capturer, shared_capturer, shared_capturer_if_ready, shared_capturer_is_opening,
+    shared_capturer_open_superseded, OsCapturer, OsWindowFocuser, SharedRunCapturer,
 };
 
 #[cfg(all(target_os = "linux", feature = "portal-capture"))]
@@ -114,36 +124,36 @@ pub use outline_stub::SelectionOutline;
 pub use grab_stub::SelectionGrab;
 
 /// macOS / other: capture not implemented yet.
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub type OsCapturer = NullCapturer;
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn shared_capturer() -> Result<std::sync::Arc<OsCapturer>, CaptureError> {
     Err(CaptureError::UnsupportedPlatform)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn shared_capturer_if_ready() -> Option<Result<std::sync::Arc<OsCapturer>, CaptureError>> {
     None
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn shared_capturer_is_opening() -> bool {
     false
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn reset_shared_capturer() {}
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn shared_capturer_open_superseded() -> bool {
     false
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub struct SharedRunCapturer(pub std::sync::Arc<OsCapturer>);
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 impl sqyre_ports::ScreenCapturer for SharedRunCapturer {
     fn capture_monitor(
         &mut self,
@@ -223,6 +233,7 @@ pub const PROCESS_ICON_TARGET_PX: u32 = 48;
 ///
 /// Linux: `_NET_WM_ICON` from a matching open window, then freedesktop theme icons.
 /// Windows: icon resource from the executable (works even when the app is not running).
+/// Android: launcher icon of the app package.
 /// Other platforms: always `None`.
 #[cfg(target_os = "linux")]
 pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIcon> {
@@ -242,7 +253,12 @@ pub fn process_icon(process_path: &str, window_title: &str) -> Option<ProcessIco
     win_focus::process_icon(process_path, window_title)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(target_os = "android")]
+pub fn process_icon(process_path: &str, _window_title: &str) -> Option<ProcessIcon> {
+    android_capture::process_icon(process_path)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn process_icon(_process_path: &str, _window_title: &str) -> Option<ProcessIcon> {
     None
 }
@@ -506,7 +522,7 @@ pub fn nudge_portal_capture_after_ui_hide() {}
 /// Stops further frame copies until the next capture wait so the full-desktop RGBA
 /// buffer does not keep RSS elevated while idle. Streams stay connected.
 pub fn release_capture_frame_cache() {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         let Some(Ok(cap)) = shared_capturer_if_ready() else {
             return;
@@ -515,16 +531,41 @@ pub fn release_capture_frame_cache() {
     }
 }
 
+/// Release the portal CPU frame mirror once no capture has used it for `idle`.
+///
+/// Call outside macro runs only. Returns how long until the next check is due, or
+/// `None` when nothing is buffering (no-op off the Linux portal).
+#[cfg_attr(
+    not(target_os = "linux"),
+    expect(
+        unused_variables,
+        reason = "only the Linux portal mirror is idle-released"
+    )
+)]
+pub fn release_idle_capture_frame_cache(idle: std::time::Duration) -> Option<std::time::Duration> {
+    #[cfg(target_os = "linux")]
+    {
+        match shared_capturer_if_ready() {
+            Some(Ok(cap)) => cap.release_cpu_frame_cache_if_idle(idle),
+            _ => None,
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
 /// Current portal CPU frame-cache size in bytes (0 if unused / released / non-portal).
 pub fn capture_frame_cache_bytes() -> usize {
-    #[cfg(target_os = "linux")]
+    #[cfg(any(target_os = "linux", target_os = "android"))]
     {
         match shared_capturer_if_ready() {
             Some(Ok(cap)) => cap.cpu_frame_cache_bytes(),
             _ => 0,
         }
     }
-    #[cfg(not(target_os = "linux"))]
+    #[cfg(not(any(target_os = "linux", target_os = "android")))]
     {
         0
     }
@@ -595,7 +636,12 @@ pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     win_focus::list_open_windows()
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(target_os = "android")]
+pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
+    android_capture::list_open_windows()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn list_open_windows() -> Result<Vec<WindowInfo>, CaptureError> {
     Err(CaptureError::UnsupportedPlatform)
 }
@@ -611,7 +657,12 @@ pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
     win_focus::get_active_window()
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(target_os = "android")]
+pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
+    android_capture::get_active_window()
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
     Err(CaptureError::UnsupportedPlatform)
 }
@@ -662,6 +713,37 @@ pub fn active_window_is_our_process() -> bool {
         return false;
     };
     window_is_our_process(&win)
+}
+
+/// Focused window as a Focus Window target ([`sqyre_ports::WindowFocuser::focused`]).
+#[cfg(any(target_os = "linux", target_os = "windows", target_os = "android"))]
+pub(crate) fn focused_window_target(
+) -> Result<Option<sqyre_ports::FocusedWindow>, sqyre_ports::AutomationError> {
+    let win =
+        get_active_window().map_err(|e| sqyre_ports::AutomationError::Backend(e.to_string()))?;
+    Ok(win.as_ref().and_then(focus_target_of))
+}
+
+/// `None` for overlay buttons (not app windows) and windows `focus` could not match.
+#[cfg(any(
+    target_os = "linux",
+    target_os = "windows",
+    target_os = "android",
+    test
+))]
+fn focus_target_of(win: &WindowInfo) -> Option<sqyre_ports::FocusedWindow> {
+    let title = win.title.trim();
+    if title.is_empty() || title_is_overlay_chrome(title) {
+        return None;
+    }
+    let path = [&win.process_path, &win.process_name]
+        .into_iter()
+        .map(|s| s.trim())
+        .find(|s| !s.is_empty())?;
+    Some(sqyre_ports::FocusedWindow {
+        process_path: path.to_string(),
+        window_title: title.to_string(),
+    })
 }
 
 fn title_is_overlay_chrome(title: &str) -> bool {
@@ -844,11 +926,11 @@ pub fn window_matches_binding(win: &WindowInfo, process_path: &str, window_title
 }
 
 /// Stub focuser when OS window activation is not implemented.
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OsWindowFocuser;
 
-#[cfg(not(any(target_os = "linux", target_os = "windows")))]
+#[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "android")))]
 impl sqyre_ports::WindowFocuser for OsWindowFocuser {
     fn focus(
         &self,
@@ -857,12 +939,43 @@ impl sqyre_ports::WindowFocuser for OsWindowFocuser {
     ) -> Result<(), sqyre_ports::AutomationError> {
         Err(sqyre_ports::AutomationError::Unsupported("focus window"))
     }
+
+    fn focused(&self) -> Result<Option<sqyre_ports::FocusedWindow>, sqyre_ports::AutomationError> {
+        Err(sqyre_ports::AutomationError::Unsupported("focused window"))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::WindowInfo;
     use sqyre_ports::DesktopRect;
+
+    fn win(title: &str, name: &str, path: &str) -> WindowInfo {
+        WindowInfo {
+            title: title.into(),
+            process_name: name.into(),
+            process_path: path.into(),
+            icon: None,
+        }
+    }
+
+    #[test]
+    fn focus_target_prefers_path_then_process_name() {
+        let t = crate::focus_target_of(&win(" Doc ", "app", "/usr/bin/app")).unwrap();
+        assert_eq!(t.process_path, "/usr/bin/app");
+        assert_eq!(t.window_title, "Doc");
+        let t = crate::focus_target_of(&win("Doc", "app", "  ")).unwrap();
+        assert_eq!(t.process_path, "app");
+    }
+
+    #[test]
+    fn focus_target_skips_overlay_and_unaddressable_windows() {
+        assert!(
+            crate::focus_target_of(&win(crate::OVERLAY_WM_TITLE, "sqyre", "/bin/sqyre")).is_none()
+        );
+        assert!(crate::focus_target_of(&win("", "app", "/usr/bin/app")).is_none());
+        assert!(crate::focus_target_of(&win("Doc", "", "")).is_none());
+    }
 
     #[test]
     fn release_capture_frame_cache_is_noop_without_shared_capturer() {

@@ -4,7 +4,7 @@
 .PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat dev windows macos test doctest smoke bench \
 	bench-compare bench-compare-rust bench-compare-go bench-baseline-save bench-baseline-diff \
 	coverage coverage-floors check check-fmt fmt clippy deny machete \
-	clean-sweep release-gate run tessdata appimage flatpak install-desktop docs-media wasm wasm-check help
+	clean-sweep release-gate run tessdata appimage flatpak install-desktop docs-media wasm wasm-check android android-check android-emulator android-emulator-headless android-emulator-stop help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
@@ -92,6 +92,7 @@ help:
 	@echo "  bench-compare-rust / bench-compare-go - one side only"
 	@echo "  bench-baseline-save / bench-baseline-diff - Rust before/after (BENCH_BASELINE=name)"
 	@echo "  wasm-check   - cargo check sqyre-app for wasm32 (no Trunk / no full wasm build)"
+	@echo "  android-check - cargo ndk check editor + runtime sqyre-app for arm64-v8a (devcontainer)"
 	@echo "  check-fmt    - cargo fmt --check"
 	@echo "  fmt          - cargo fmt --all (write)"
 	@echo "  clippy       - cargo clippy --workspace --all-targets (-D warnings; + portal-capture on Linux)"
@@ -110,6 +111,13 @@ help:
 	@echo "                 (RELEASE_VERSION=…; SQYRE_APPIMAGE_FORCE_NATIVE=1)"
 	@echo "  install-desktop - install .desktop + icon for GNOME/Wayland (Linux dev builds)"
 	@echo "  wasm         - fmt + check, then GUI-only WASM editor -> $(BIN)/wasm/ (requires Trunk)"
+	@echo "  android      - fmt + check, then sideload APK -> $(BIN)/sqyre-debug.apk"
+	@echo "                 (arm64-v8a + x86_64; ANDROID_ABIS=…; ANDROID_FEATURES=…; ANDROID_PROFILE=release;"
+	@echo "                 see docs/ANDROID.md)"
+	@echo "  android-emulator - boot an x86_64 emulator (KVM), install + launch the APK, open scrcpy"
+	@echo "                 (Docker fallback without the SDK)"
+	@echo "  android-emulator-headless - same without a window (scripts/android/emulator.sh screenshot|adb)"
+	@echo "  android-emulator-stop - shut the emulator down"
 
 $(BIN):
 	mkdir -p $(BIN)
@@ -252,6 +260,22 @@ wasm-check:
 	@rustup target list --installed | grep -q wasm32-unknown-unknown \
 		|| rustup target add wasm32-unknown-unknown
 	$(CARGO) check -p sqyre-app --target wasm32-unknown-unknown --no-default-features $(CARGO_FLAGS)
+
+# Compile-only Android check (devcontainer): editor and runtime sqyre-app, platform crates.
+android-check:
+	@CARGO_FLAGS="$(CARGO_FLAGS)" bash scripts/android/check.sh
+
+android: release-gate
+	@bash scripts/android/build-apk.sh
+
+android-emulator:
+	@bash scripts/android/emulator.sh start
+
+android-emulator-headless:
+	@bash scripts/android/emulator.sh start --headless
+
+android-emulator-stop:
+	@bash scripts/android/emulator.sh stop
 
 check-fmt:
 	$(CARGO) fmt --all -- --check

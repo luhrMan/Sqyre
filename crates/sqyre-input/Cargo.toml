@@ -3,7 +3,7 @@ name = "sqyre-input"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
-description = "OS AutomationBackend (rustautogui lite + arboard)"
+description = "OS AutomationBackend (rustautogui lite + arboard on desktop; accessibility gestures on Android)"
 
 [lints]
 workspace = true
@@ -13,8 +13,13 @@ default = []
 
 [dependencies]
 sqyre-ports = { path = "../sqyre-ports" }
+
+[target.'cfg(not(target_os = "android"))'.dependencies]
 rustautogui = { workspace = true }
 arboard = { workspace = true }
+
+[target.'cfg(target_os = "android")'.dependencies]
+sqyre-android = { path = "../sqyre-android" }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { workspace = true, features = [

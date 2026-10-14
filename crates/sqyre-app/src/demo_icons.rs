@@ -37,12 +37,14 @@ fn item_index() -> &'static Mutex<HashMap<String, Vec<PathBuf>>> {
 }
 
 /// Serializes tests that mutate the global demo-icon store.
+#[cfg(test)]
 fn test_lock() -> &'static Mutex<()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
 /// Run `f` while holding the demo-icon store lock (tests that seed / clear).
+#[cfg(test)]
 pub(crate) fn with_exclusive<R>(f: impl FnOnce() -> R) -> R {
     let _guard = test_lock().lock().unwrap_or_else(|e| e.into_inner());
     f()
@@ -63,6 +65,7 @@ pub fn item_variant_path(program: &str, item: &str, variant: &str) -> PathBuf {
     }
 }
 
+#[cfg(test)]
 pub fn item_icon_path(program: &str, item: &str) -> PathBuf {
     item_variant_path(program, item, "")
 }
@@ -121,6 +124,7 @@ pub fn variant_paths_for_target(target: &str) -> Vec<PathBuf> {
 }
 
 /// Path used for `program~item` when a demo icon was registered (primary / first).
+#[cfg(test)]
 pub fn path_for_item_target(target: &str) -> Option<PathBuf> {
     variant_paths_for_target(target).into_iter().next()
 }

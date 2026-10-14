@@ -99,6 +99,7 @@ pub const PAUSE_PASS_THROUGH: &str = "Let the continue key also reach the focuse
 
 pub const FOCUS_TITLE: &str = "Window title to match (substring).";
 pub const FOCUS_PROCESS: &str = "Executable path of the process that owns the window.";
+pub const FOCUS_PREVIOUS: &str = "Go back to the window or app that was in front before this macro's last Focus Window step. Running it again switches back.";
 
 // --- Run macro ---
 
@@ -253,7 +254,7 @@ pub const DE_NAME: &str =
 pub const DE_RUNNING_PROGRAM: &str =
     "Process and window title that must own focus for this program's overlay buttons to show.";
 pub const DE_PROGRAM_MACRO_TAGS: &str =
-    "When Settings → while focused is on, these tags become the hotkey selection while this program owns focus. Same labels as macro tags.";
+    "When Settings → Macros → Hotkeys → while focused is on, these tags become the hotkey selection while this program owns focus. Same labels as macro tags.";
 pub const DE_COLS: &str =
     "Grid columns this item occupies in a collection. Image Search uses this footprint (0 = 1).";
 pub const DE_ROWS: &str =
@@ -275,12 +276,15 @@ pub const DE_BOUNDS_PREVIEW: &str =
     "Bounds overlay the preview edges; they are relative to one monitor.";
 pub const DE_SCREENCAP_INTRO: &str =
     "Set monitor-relative LeftX/TopY/RightX/BottomY (type or screen-record), name the capture, then Save writes the framed preview to images/ScreenCap. New Item creates a catalog item with Name, Tags, Cols/Rows/Stack max, and Mask, using the capture as Original.";
+#[cfg(feature = "native-runtime")]
 pub const DE_SCREENCAP_REF: &str =
     "Optional. Picking a search area or collection cell loads its bounds into LeftX/TopY/RightX/BottomY and suggests a filename.";
 pub const DE_SCREENCAP_NEW_ITEM: &str =
     "Create a catalog item in the selected program using Name, Tags, Cols/Rows/Stack max, and Mask, with the preview screenshot as the Original icon.";
+#[cfg(feature = "native-runtime")]
 pub const DE_PIXELCHECK_INTRO: &str =
     "Select an item, set a search area (reference or inline coords), tune match settings, then inspect the similarity heatmap.";
+#[cfg(feature = "native-runtime")]
 pub const DE_PIXELCHECK_BOUNDS: &str =
     "Bounds overlay the preview edges; relative to one monitor; integers or ${var}.";
 pub const DE_COLLECTION_AREA: &str = "Search area used when capturing this collection.";
@@ -341,6 +345,8 @@ pub const VAR_TAB_BUILTINS: &str = "Names set automatically by the runtime or ce
 pub const META_NAME: &str = "Display name of this macro (must be unique).";
 pub const META_TAGS: &str =
     "Labels that group macros in the list. Use each tag's Hotkeys key icon to include that group in the hotkey filter; none are active until a key is filled.";
-pub const META_HOTKEY_PRESS: &str = "Fire when the hotkey is pressed.";
-pub const META_HOTKEY_RELEASE: &str = "Fire when the hotkey is released.";
+pub const META_HOTKEY_PRESS: &str =
+    "Runs when the hotkey is pressed. Click to run on release instead.";
+pub const META_HOTKEY_RELEASE: &str =
+    "Runs when the hotkey is released. Click to run on press instead.";
 pub const META_HOTKEY_CLEAR: &str = "Remove the global hotkey from this macro.";

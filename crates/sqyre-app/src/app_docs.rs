@@ -14,10 +14,12 @@ use crate::preview_tooltip::PreviewTooltipCache;
 use crate::recording_overlay::RecordingOverlay;
 use crate::run_session::RunSession;
 use crate::settings::SettingsUi;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::tray;
 use crate::tree_state::TreeState;
 use crate::variables_panel;
 use crate::workspace::Workspace;
-use crate::{docs_fixture, tray, SqyreApp};
+use crate::{docs_fixture, SqyreApp};
 use eframe::egui;
 use parking_lot::Mutex;
 use sqyre_hotkeys::{HotkeyService, MacroRecordBridge, NullHotkeys, ScreenClickBridge};
@@ -29,9 +31,8 @@ use std::sync::Arc;
 
 impl SqyreApp {
     pub fn for_docs() -> Self {
-        // Keep docs/screenshot/kittest harnesses at 1.0 PPP. Product default scale
-        // may be higher for desktop readability, but AccessKit pointer clicks and
-        // golden PNGs assume unscaled coordinates.
+        // Keep docs/screenshot/kittest harnesses at 1.0 PPP: AccessKit pointer clicks
+        // and golden PNGs assume unscaled coordinates.
         let settings = UserSettings {
             ui_scale: 1.0,
             // Headless kittest/docs must not touch Pulse, GitHub, or portal ScreenCast.
@@ -45,7 +46,9 @@ impl SqyreApp {
         SettingsUi::apply_action_colors(&settings);
 
         let hotkeys: Box<dyn HotkeyService> = Box::new(NullHotkeys::default());
-        let continue_wait = sqyre_hotkeys::ContinueWaitBridge::new(false);
+        #[cfg(any(feature = "native-runtime", target_os = "windows"))]
+        let continue_wait =
+            sqyre_hotkeys::ContinueWaitBridge::new(sqyre_hotkeys::ContinueSource::Unavailable);
         let screen_click = ScreenClickBridge::new();
         let macro_hotkeys = sqyre_hotkeys::MacroHotkeyBridge::new();
         let run = RunState::default();
@@ -84,6 +87,7 @@ impl SqyreApp {
             },
             run_session: RunSession {
                 state: run,
+                #[cfg(any(feature = "native-runtime", target_os = "windows"))]
                 continue_wait,
                 macro_hotkeys,
                 action_log,
@@ -110,9 +114,14 @@ impl SqyreApp {
             variables_panel: variables_panel::VariablesPanelUi::default(),
             macro_prompt_builder: crate::macro_prompt_builder::MacroPromptBuilderUi::default(),
             macro_yaml_builder: crate::macro_yaml_builder::MacroYamlBuilderUi::default(),
+            #[cfg(not(target_arch = "wasm32"))]
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: RecordingOverlay::new(),
+            #[cfg(all(target_os = "android", feature = "native-runtime"))]
+            screen_pick: Default::default(),
+            #[cfg(all(target_os = "android", feature = "native-runtime"))]
+            pending_projection_run: None,
             #[cfg(feature = "native-runtime")]
             macro_overlay: MacroOverlay::new(),
             #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
@@ -124,7 +133,9 @@ impl SqyreApp {
             // Match product default so main-window goldens include the Macros sidebar.
             macro_list_open: true,
             macro_list_filter: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
             tray: tray::SystemTray::default(),
+            #[cfg(not(target_arch = "wasm32"))]
             instance_lock: None,
             pending_delete_macro: None,
             last_viewport_content: None,
@@ -141,6 +152,10 @@ impl SqyreApp {
                 target_os = "linux"
             ))]
             portal_probe: crate::PortalProbe::finished(),
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            hotkeys_deferred: None,
+            #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+            permissions_intro: None,
         };
         if let Some(m) = app.workspace.macros.first() {
             app.workspace.macro_meta.sync_selection(0, m);

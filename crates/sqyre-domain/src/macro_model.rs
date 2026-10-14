@@ -1,6 +1,6 @@
 //! Macro aggregate.
 
-use crate::{root_loop, Action, VariableDecl, VariableStore};
+use crate::{root_loop, Action, ActionKind, VariableDecl, VariableStore};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_KEYBOARD_DELAY: i32 = 25;
@@ -103,6 +103,38 @@ impl Macro {
             _ => HOTKEY_TRIGGER_PRESS.to_string(),
         }
     }
+
+    /// True when the action tree reads the screen — an Image Search, OCR, or
+    /// Find Pixel action — directly or through `Run Macro` references resolved
+    /// against `macros` (matched case-insensitively). Cycles and missing targets
+    /// are cut like the executor's run stack.
+    pub fn uses_screen_capture<'a>(&'a self, macros: &'a [Macro]) -> bool {
+        fn rec<'a>(macro_: &'a Macro, macros: &'a [Macro], stack: &mut Vec<String>) -> bool {
+            let mut needs_screen = false;
+            let mut run_names = Vec::new();
+            macro_.root.walk(&mut |action| match &action.kind {
+                ActionKind::RunMacro { macro_name } => run_names.push(macro_name.clone()),
+                kind if kind.is_detection() => needs_screen = true,
+                _ => {}
+            });
+            needs_screen
+                || run_names.into_iter().any(|name| {
+                    let name = name.trim();
+                    if name.is_empty() || stack.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                        return false;
+                    }
+                    let Some(target) = macros.iter().find(|m| m.name.eq_ignore_ascii_case(name))
+                    else {
+                        return false;
+                    };
+                    stack.push(target.name.clone());
+                    let found = rec(target, macros, stack);
+                    stack.pop();
+                    found
+                })
+        }
+        rec(self, macros, &mut vec![self.name.clone()])
+    }
 }
 
 #[cfg(test)]
@@ -129,5 +161,64 @@ mod tests {
         assert_eq!(m.variable_decls[0].initial_value, "2");
         assert!(m.remove_variable_decl("COUNT"));
         assert!(m.variable_decls.is_empty());
+    }
+
+    fn find_pixel(name: &str) -> Action {
+        Action {
+            id: crate::ActionId::new(),
+            kind: ActionKind::FindPixel {
+                name: name.into(),
+                search_area: Default::default(),
+                target_color: "#fff".into(),
+                color_tolerance: 0,
+                detection: Default::default(),
+            },
+        }
+    }
+
+    fn run_macro(name: &str) -> Action {
+        Action {
+            id: crate::ActionId::new(),
+            kind: ActionKind::RunMacro {
+                macro_name: name.into(),
+            },
+        }
+    }
+
+    fn push(macro_: &mut Macro, action: Action) {
+        macro_
+            .root
+            .children_mut()
+            .expect("root children")
+            .push(action);
+    }
+
+    #[test]
+    fn uses_screen_capture_flags_detection_steps() {
+        let mut m = Macro::new("m", 0, vec![]);
+        assert!(!m.uses_screen_capture(&[]));
+        push(&mut m, run_macro("other"));
+        assert!(!m.uses_screen_capture(&[]));
+        push(&mut m, find_pixel("p"));
+        assert!(m.uses_screen_capture(&[]));
+    }
+
+    #[test]
+    fn uses_screen_capture_follows_run_macro() {
+        let mut caller = Macro::new("caller", 0, vec![]);
+        push(&mut caller, run_macro("helper"));
+        let mut helper = Macro::new("helper", 0, vec![]);
+        push(&mut helper, find_pixel("p"));
+        let macros = vec![caller.clone(), helper];
+        assert!(caller.uses_screen_capture(&macros));
+    }
+
+    #[test]
+    fn uses_screen_capture_cuts_cycles_and_missing_targets() {
+        let mut a = Macro::new("a", 0, vec![]);
+        push(&mut a, run_macro("a"));
+        push(&mut a, run_macro("missing"));
+        let macros = vec![a.clone()];
+        assert!(!a.uses_screen_capture(&macros));
     }
 }

@@ -521,6 +521,30 @@ searcharea: Game~Arena
     }
 
     #[test]
+    fn focus_window_previous_roundtrip() {
+        let value: Value = serde_yaml::from_str("type: focuswindow\nprevious: true\n").unwrap();
+        let action = action_from_map(value.as_mapping().unwrap()).unwrap();
+        assert_eq!(
+            action.kind,
+            ActionKind::FocusWindow {
+                process_path: String::new(),
+                window_title: String::new(),
+                previous: true,
+            }
+        );
+        let map = action_to_map(&action).unwrap();
+        assert_eq!(
+            map.get(Value::String("previous".into()))
+                .and_then(|v| v.as_bool()),
+            Some(true)
+        );
+        assert_eq!(action_from_map(&map).unwrap().kind, action.kind);
+
+        let named = action_to_map(&sqyre_domain::blank_action("focuswindow").unwrap()).unwrap();
+        assert!(named.get(Value::String("previous".into())).is_none());
+    }
+
+    #[test]
     fn image_search_wait_seconds_accepts_float_yaml() {
         let yaml = r#"
 type: imagesearch

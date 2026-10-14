@@ -419,9 +419,13 @@ impl ActionKindDisplay for ActionKind {
                 params.push(DisplayParam::new("Destination", destination.as_str()));
                 params.push(DisplayParam::new("Mode", mode));
             }
+            Self::FocusWindow { previous: true, .. } => {
+                params.push(DisplayParam::new("Window", "previous"));
+            }
             Self::FocusWindow {
                 process_path,
                 window_title,
+                previous: false,
             } => {
                 let title = if window_title.is_empty() {
                     EMPTY_NOT_SET

@@ -1,16 +1,21 @@
 //! Runtime adapters shared by macro execution (OCR, continue-wait, stop-watch).
 
 use parking_lot::Mutex;
-use sqyre_hotkeys::{ContinueWaitBridge, HotkeyError, MacroHotkeyBridge, StopFlag};
+use sqyre_hotkeys::StopFlag;
+#[cfg(feature = "native-runtime")]
+use sqyre_hotkeys::{ContinueWaitBridge, HotkeyError, MacroHotkeyBridge};
+#[cfg(feature = "native-runtime")]
 use sqyre_ports::PortError;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+#[cfg(feature = "native-runtime")]
 pub(crate) struct BridgeContinueWait {
     pub(crate) continue_wait: ContinueWaitBridge,
     pub(crate) macro_hotkeys: MacroHotkeyBridge,
 }
 
+#[cfg(feature = "native-runtime")]
 fn to_port_error(e: HotkeyError) -> PortError {
     match e {
         HotkeyError::Stopped => PortError::Stopped,

@@ -3,7 +3,34 @@
 use crate::SqyreApp;
 use eframe::egui;
 
+/// Android consent-gate state for [`PendingProjectionRun`].
+///
+/// MediaProjection consent cannot be persisted or reused (single-use tokens since
+/// Android 14's `MEDIA_PROJECTION_PREVENTS_REUSING_CONSENT`), so a run that reads
+/// the screen parks here while a modal explains and fires the system dialog.
+#[cfg(all(target_os = "android", feature = "native-runtime"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProjectionGate {
+    /// The modal is explaining; the system dialog has not been fired yet.
+    Ask,
+    /// The consent dialog was fired — waiting for Running (grant) or Stopped.
+    Waiting,
+    /// The dialog was dismissed without consent; offer a retry.
+    Denied,
+}
+
+/// A macro that reads the screen, queued while MediaProjection consent is
+/// requested. `ui_overlays::show_projection_run_gate` paints the modal and calls
+/// `start_macro_by_name` once the projection reports Running.
+#[cfg(all(target_os = "android", feature = "native-runtime"))]
+#[derive(Debug)]
+pub(crate) struct PendingProjectionRun {
+    pub macro_name: String,
+    pub state: ProjectionGate,
+}
+
 impl SqyreApp {
+    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn start_macro(&mut self, ctx: &egui::Context) {
         if self.workspace.macros.is_empty() {
             return;
@@ -85,11 +112,12 @@ impl SqyreApp {
         #[cfg(target_arch = "wasm32")]
         {
             let _ = ctx;
-            return;
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let should_hide = self.settings_ui.settings().hide_app_during_recording
+            // Android has one window; hiding it leaves a black screen with nothing to pick on.
+            let should_hide = !cfg!(target_os = "android")
+                && self.settings_ui.settings().hide_app_during_recording
                 && (self.screen_click.is_armed() || self.macro_record_bridge.is_armed());
             if should_hide && !self.hidden_for_recording {
                 self.hidden_for_recording = true;
@@ -126,8 +154,9 @@ impl SqyreApp {
                 Some(&self.macro_record_bridge),
                 preview_outline,
                 self.hidden_for_recording,
-                self.settings_ui.settings().hide_app_during_recording,
             );
+            #[cfg(target_os = "android")]
+            self.screen_pick.sync(ctx, &self.screen_click);
         }
         #[cfg(any(target_arch = "wasm32", not(feature = "native-runtime")))]
         let _ = ctx;
@@ -170,6 +199,15 @@ mod native_run {
             self.running.store(false, Ordering::SeqCst);
             *self.running_macro.lock() = None;
             self.ctx.request_repaint();
+        }
+    }
+
+    /// Mirror a run status line into the projection notification so it stays
+    /// visible in the shade while Sqyre is backgrounded.
+    #[cfg(target_os = "android")]
+    fn mirror_run_status(msg: &str) {
+        if let Err(e) = sqyre_android::bridge::set_run_status(msg) {
+            crate::log::warn(format_args!("run status notification: {e}"));
         }
     }
 
@@ -221,6 +259,20 @@ mod native_run {
                 ctx.request_repaint();
                 return;
             }
+            // Screen-reading runs park behind the consent gate instead of firing
+            // the system dialog mid-run once the first capture asks.
+            #[cfg(target_os = "android")]
+            if sqyre_android::frames().projection() != sqyre_android::Projection::Running
+                && self.workspace.macros[idx].uses_screen_capture(&self.workspace.macros)
+            {
+                self.pending_projection_run = Some(PendingProjectionRun {
+                    macro_name: self.workspace.macros[idx].name.clone(),
+                    state: ProjectionGate::Ask,
+                });
+                sqyre_capture::event_log("SQYRE_OVERLAY", &[("start", "gate"), ("name", name)]);
+                ctx.request_repaint();
+                return;
+            }
             // Show the running macro's tree so highlight overlays have matching rows.
             self.workspace.selected_macro = idx;
             let mut macro_ = self.workspace.macros[idx].clone();
@@ -263,7 +315,10 @@ mod native_run {
             };
             let ctx = ctx.clone();
             running.store(true, Ordering::SeqCst);
-            *status.lock() = format!("Running {}…", macro_.name);
+            let running_msg = format!("Running {}…", macro_.name);
+            *status.lock() = running_msg.clone();
+            #[cfg(target_os = "android")]
+            mirror_run_status(&running_msg);
             let running_macro_slot = self.macro_overlay.running_macro_slot();
             self.macro_overlay
                 .set_running_macro(Some(macro_.name.clone()));
@@ -274,6 +329,9 @@ mod native_run {
             // Must run on the UI thread: winit's SetCapture/ReleaseCapture are
             // thread-affine. Doing this only on the worker never clears Start-click capture.
             sqyre_input::prepare_for_automation();
+            // A screen recording the user stopped may be requested again by this run.
+            #[cfg(target_os = "android")]
+            sqyre_android::frames().rearm();
 
             thread::spawn(move || {
                 let _clear_running = RunningClearOnDrop {
@@ -281,6 +339,7 @@ mod native_run {
                     running_macro: running_macro_slot,
                     ctx: ctx.clone(),
                 };
+                sqyre_capture::mark_site("run:worker:begin");
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                     let mut automation = os_automation().map_err(|e| format!("automation: {e}"))?;
                     let capturer_arc = shared_capturer().map_err(|e| format!("capture: {e}"))?;
@@ -300,6 +359,7 @@ mod native_run {
                         stop: &stop_flag,
                     };
                     let vars_dir = variables_path();
+                    sqyre_capture::mark_site("run:worker:exec");
                     execute_macro_with(
                         &mut macro_,
                         ExecDeps {
@@ -325,6 +385,7 @@ mod native_run {
                     )
                     .map_err(|e| e.to_string())
                 }));
+                sqyre_capture::mark_site("run:worker:exec-done");
 
                 crate::mem_diag::sample("pre_clear");
                 sqyre_vision::clear_search_cache();
@@ -350,7 +411,9 @@ mod native_run {
                         "Crashed (see crash.log).".into()
                     }
                 };
-                *status.lock() = msg;
+                *status.lock() = msg.clone();
+                #[cfg(target_os = "android")]
+                mirror_run_status(&msg);
                 let done = status.lock().clone().replace(' ', "_");
                 sqyre_capture::note(&format!("overlay: run done status={done}"));
             });
