@@ -7,7 +7,7 @@
 
 use crate::macro_hotkeys::{MacroHotkeyBinding, MacroHotkeyBridge, ShortcutEdge};
 use crate::system_shortcuts::SystemShortcutsStatus;
-use ashpd::desktop::global_shortcuts::{GlobalShortcuts, NewShortcut};
+use ashpd::desktop::global_shortcuts::{BindShortcutsOptions, GlobalShortcuts, NewShortcut};
 use ashpd::desktop::{ResponseError, Session};
 use futures_util::{stream, StreamExt};
 use parking_lot::Mutex;
@@ -151,14 +151,16 @@ impl Run {
 
     async fn bind_and_listen(
         self,
-        proxy: &GlobalShortcuts<'static>,
+        proxy: &GlobalShortcuts,
         bridge: &MacroHotkeyBridge,
         on_fire: &dyn Fn(String),
         bindings: &[MacroHotkeyBinding],
     ) -> Result<Outcome, ashpd::Error> {
         let activated = proxy.receive_activated().await?;
         let deactivated = proxy.receive_deactivated().await?;
-        let session = proxy.create_session().await?;
+        let session = proxy
+            .create_session(ashpd::desktop::CreateSessionOptions::default())
+            .await?;
         let shortcuts: Vec<NewShortcut> = bindings
             .iter()
             .map(|b| {
@@ -168,7 +170,7 @@ impl Run {
             .collect();
         self.set_status(SystemShortcutsStatus::Waiting);
         let response = proxy
-            .bind_shortcuts(&session, &shortcuts, None)
+            .bind_shortcuts(&session, &shortcuts, None, BindShortcutsOptions::default())
             .await?
             .response();
         let bound = match response {
@@ -241,8 +243,8 @@ impl Run {
 }
 
 async fn configure(
-    proxy: &GlobalShortcuts<'static>,
-    session: &Session<'static, GlobalShortcuts<'static>>,
+    proxy: &GlobalShortcuts,
+    session: &Session<GlobalShortcuts>,
 ) -> ashpd::zbus::Result<()> {
     let options: HashMap<&str, ashpd::zvariant::Value<'_>> = HashMap::new();
     proxy

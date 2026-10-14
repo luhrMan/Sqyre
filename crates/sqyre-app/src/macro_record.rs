@@ -10,12 +10,12 @@ use crate::tree_chrome::{self, RowAction, RowHighlight, RowInteraction};
 use eframe::egui;
 use sqyre_domain::{
     collect_known_variable_names, root_loop, Action, ActionId, ActionKind, CoordinateRef, Macro,
-    MouseButton, PressState, ScalarValue, PROGRAM_DELIMITER,
+    MouseButton, PressState, ScalarValue, GENERAL_PROGRAM, PROGRAM_DELIMITER, TEMPORARY_PROGRAM,
 };
 use sqyre_hotkeys::{
     MacroHotkeyBridge, MacroRecordBridge, MacroRecordEvent, RecordMouseButton, ScreenClickBridge,
 };
-use sqyre_persist::{ProgramCatalog, ProgramPoint, GENERAL_PROGRAM, TEMPORARY_PROGRAM};
+use sqyre_persist::{ProgramCatalog, ProgramPoint};
 use sqyre_ui_model::SummaryPill;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};

@@ -4,7 +4,8 @@ use sqyre_capture::{
     get_active_window, note, window_is_our_process, window_is_transient_shell_focus,
     window_matches_binding, window_matches_program, WindowInfo,
 };
-use sqyre_persist::{ProgramCatalog, GENERAL_PROGRAM};
+use sqyre_domain::GENERAL_PROGRAM;
+use sqyre_persist::ProgramCatalog;
 use std::time::{Duration, Instant};
 
 /// Throttle OS focus queries.

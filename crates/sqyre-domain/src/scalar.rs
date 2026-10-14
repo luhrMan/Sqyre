@@ -117,6 +117,21 @@ impl ScalarValue {
 /// Delimiter between program and entity in coordinate / target refs.
 pub const PROGRAM_DELIMITER: &str = "~";
 
+/// Seeded `General` program holding well-known Points, Search Areas, and Collections.
+pub const GENERAL_PROGRAM: &str = "General";
+
+/// Scratch program for macro-recording temp points; overwritten each recording.
+pub const TEMPORARY_PROGRAM: &str = "temporary";
+
+/// `General` point that resolves to detection match coordinates (`${foundX}` / `${foundY}`).
+pub const IMAGE_SEARCH_REFERENCE: &str = "Image Search Reference";
+
+/// `General` point that resolves to the ForEachCell center (`${CellX}` / `${CellY}`).
+pub const CELL_COORDINATES: &str = "Cell Coordinates";
+
+/// `General` search area that resolves to the current ForEachCell bounds.
+pub const CELL_BOUNDS: &str = "Cell Bounds";
+
 /// Variant suffix from an icon path stem relative to `item`.
 ///
 /// `Item.png` → `""`; `Item~Blue.png` → `"Blue"`. Stems that do not follow the

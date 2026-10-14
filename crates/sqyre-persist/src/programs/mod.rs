@@ -10,10 +10,7 @@ mod util;
 
 pub use mutate::{merge_fs_warning, FsWarn};
 
-pub use seed_general::{
-    ensure_general_program, CELL_BOUNDS, CELL_COORDINATES, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
-    TEMPORARY_PROGRAM,
-};
+pub use seed_general::ensure_general_program;
 pub use types::{
     MonitorRect, ProgramAtlas, ProgramCatalog, ProgramCollection, ProgramData, ProgramItem,
     ProgramMask, ProgramPoint, ProgramSearchArea,
@@ -184,7 +181,7 @@ impl ProgramCatalog {
 mod tests {
     use super::*;
     use serde_yaml::Mapping;
-    use sqyre_domain::{CoordinateRef, Macro, ScalarValue};
+    use sqyre_domain::{CoordinateRef, Macro, ScalarValue, TEMPORARY_PROGRAM};
 
     #[test]
     fn parses_points_and_resolves() {

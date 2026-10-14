@@ -306,7 +306,7 @@ Game:
         let mut cat = ProgramCatalog::default();
         cat.set_resolution_key("1920x1080");
         assert!(ensure_general_program_seeded(&mut cat));
-        assert!(cat.get(sqyre_persist::GENERAL_PROGRAM).is_some());
+        assert!(cat.get(sqyre_domain::GENERAL_PROGRAM).is_some());
         assert!(!ensure_general_program_seeded(&mut cat));
     }
 }

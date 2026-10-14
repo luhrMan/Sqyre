@@ -115,7 +115,9 @@ fn probe_screencast(
     let result = match block_on_timeout(Duration::from_secs(4), || {
         pollster::block_on(async {
             let proxy = Screencast::new().await?;
-            let _session = proxy.create_session().await?;
+            let _session = proxy
+                .create_session(ashpd::desktop::CreateSessionOptions::default())
+                .await?;
             Ok::<(), ashpd::Error>(())
         })
     }) {

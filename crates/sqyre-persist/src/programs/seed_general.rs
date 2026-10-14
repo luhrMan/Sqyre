@@ -2,21 +2,9 @@
 
 use super::{MonitorRect, ProgramCatalog, ProgramCollection, ProgramPoint, ProgramSearchArea};
 use crate::Result;
-use sqyre_domain::ScalarValue;
-
-pub const GENERAL_PROGRAM: &str = "General";
-
-/// Scratch program for macro-recording temp points; overwritten each recording.
-pub const TEMPORARY_PROGRAM: &str = "temporary";
-
-/// Point that resolves to Image Search match coordinates (`foundX` / `foundY`).
-pub const IMAGE_SEARCH_REFERENCE: &str = "Image Search Reference";
-
-/// Point that resolves to ForEachCell center (`CellX` / `CellY`).
-pub const CELL_COORDINATES: &str = "Cell Coordinates";
-
-/// Search area that resolves to the current ForEachCell bounds.
-pub const CELL_BOUNDS: &str = "Cell Bounds";
+use sqyre_domain::{
+    ScalarValue, CELL_BOUNDS, CELL_COORDINATES, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
+};
 
 /// Create/update the `General` program with one search area + 2×2 Collection
 /// per monitor (quadrants / halves via cell ranges), and per-monitor corner / center /

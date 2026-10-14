@@ -24,7 +24,6 @@ pub use programs::{
     absolute_area_to_relative, absolute_point_to_relative, ensure_general_program,
     merge_fs_warning, monitor_slot_for_point, FsWarn, MonitorRect, ProgramAtlas, ProgramCatalog,
     ProgramCollection, ProgramData, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea,
-    CELL_BOUNDS, CELL_COORDINATES, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE, TEMPORARY_PROGRAM,
 };
 pub use settings::{
     available_worker_threads, default_overlay_position, default_worker_threads, move_dir,

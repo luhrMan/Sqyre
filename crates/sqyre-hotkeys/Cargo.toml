@@ -25,7 +25,7 @@ web-time = { workspace = true }
 [target.'cfg(target_os = "linux")'.dependencies]
 evdev-rs = "0.6"
 epoll = "4.4"
-ashpd = { version = "0.11", default-features = false, features = ["async-std"], optional = true }
+ashpd = { version = "0.13", default-features = false, features = ["async-io", "global_shortcuts"], optional = true }
 pollster = { version = "1.0", optional = true }
 futures-util = { version = "0.3", default-features = false, features = ["std"], optional = true }
 async-io = { version = "2", optional = true }
