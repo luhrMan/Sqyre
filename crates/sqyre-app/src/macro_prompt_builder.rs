@@ -936,10 +936,10 @@ pub(crate) fn unique_macro_name(base: &str, existing: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{root_loop, Action, ActionId, ActionKind, ScalarValue, WIRE_TYPE_KEYS};
-    use sqyre_persist::{
-        ensure_general_program, ProgramItem, ProgramPoint, ProgramSearchArea, GENERAL_PROGRAM,
+    use sqyre_domain::{
+        root_loop, Action, ActionId, ActionKind, ScalarValue, GENERAL_PROGRAM, WIRE_TYPE_KEYS,
     };
+    use sqyre_persist::{ensure_general_program, ProgramItem, ProgramPoint, ProgramSearchArea};
 
     fn demo_catalog() -> ProgramCatalog {
         let mut cat = ProgramCatalog::default();

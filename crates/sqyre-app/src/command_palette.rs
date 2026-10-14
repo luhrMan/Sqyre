@@ -959,7 +959,8 @@ impl SqyreApp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_persist::{ProgramData, ProgramItem, TEMPORARY_PROGRAM};
+    use sqyre_domain::TEMPORARY_PROGRAM;
+    use sqyre_persist::{ProgramData, ProgramItem};
     use std::collections::BTreeMap;
 
     fn sources<'a>(

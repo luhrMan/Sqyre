@@ -1,6 +1,7 @@
 //! Shared parsing / naming helpers for the data editor.
 
-use sqyre_persist::{ProgramCatalog, TEMPORARY_PROGRAM};
+use sqyre_domain::TEMPORARY_PROGRAM;
+use sqyre_persist::ProgramCatalog;
 use web_time::{SystemTime, UNIX_EPOCH};
 
 /// Recording scratch program — omitted from Data Editor lists and selectors.
@@ -225,11 +226,10 @@ mod tests {
     fn editor_lists_omit_temporary_program() {
         let mut cat = ProgramCatalog::default();
         cat.create_program("Game").unwrap();
-        cat.create_program(sqyre_persist::TEMPORARY_PROGRAM)
-            .unwrap();
+        cat.create_program(TEMPORARY_PROGRAM).unwrap();
         let names: Vec<_> = editor_program_names(&cat).map(|s| s.as_str()).collect();
         assert_eq!(names, ["Game"]);
-        assert!(!is_editor_listed_program(sqyre_persist::TEMPORARY_PROGRAM));
+        assert!(!is_editor_listed_program(TEMPORARY_PROGRAM));
         assert!(is_editor_listed_program("Game"));
     }
 

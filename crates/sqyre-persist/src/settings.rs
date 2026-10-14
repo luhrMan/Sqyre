@@ -243,7 +243,7 @@ pub struct OverlayButtonConfig {
     /// Stable id used for the deferred viewport hash.
     pub id: String,
     /// Catalog program this button belongs to (shown when that program is focused).
-    /// [`crate::GENERAL_PROGRAM`] buttons ignore focus and stay on screen when enabled.
+    /// [`sqyre_domain::GENERAL_PROGRAM`] buttons ignore focus and stay on screen when enabled.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub program: String,
     /// When false the button is not drawn (except live Data Editor preview).
@@ -544,7 +544,7 @@ pub struct UserSettings {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub action_defaults: std::collections::BTreeMap<String, serde_yaml::Mapping>,
     /// User-configured overlay buttons (per-program; enabled buttons for
-    /// [`crate::GENERAL_PROGRAM`] always show, others when that program is focused).
+    /// [`sqyre_domain::GENERAL_PROGRAM`] always show, others when that program is focused).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overlay_buttons: Vec<OverlayButtonConfig>,
     /// Automatically zip the data directory on a schedule.
