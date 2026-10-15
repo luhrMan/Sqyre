@@ -22,7 +22,6 @@ class MainActivity : NativeActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         SqyreBridge.attach(this)
-        Tessdata.install(this)
         super.onCreate(savedInstanceState)
         reportInsets()
     }

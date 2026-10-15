@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Build the sideloadable Android APK: Rust cdylib via cargo-ndk, then the Gradle shell.
 #
-# Needs ANDROID_HOME, ANDROID_NDK_HOME, cargo-ndk, gradle, JDK 17, cmake (all in the
-# devcontainer). The runtime build cross-compiles Leptonica + Tesseract first
-# (scripts/android/build-ocr.sh) and ships assets/tessdata/eng.traineddata.
+# Needs ANDROID_HOME, ANDROID_NDK_HOME, cargo-ndk, gradle, JDK 17 (all in the
+# devcontainer). The ocrs ONNX models are embedded into libsqyre_app.so via
+# include_bytes! (assets/ocr-models/, see scripts/download-ocr-models.sh).
 #
 # Env:
 #   ANDROID_FEATURES  sqyre-app features (default: native-runtime,overlay-buttons;
@@ -43,18 +43,13 @@ for abi in $ABIS; do
 	ndk_targets+=(-t "$abi")
 done
 
+# OCR models are embedded at compile time — required for cargo ndk.
+model_dir="$REPO_ROOT/assets/ocr-models"
+[ -f "$model_dir/text-detection.onnx" ] && [ -f "$model_dir/text-recognition.onnx" ] ||
+	bash "$REPO_ROOT/scripts/download-ocr-models.sh"
+
 ASSETS="$REPO_ROOT/android/app/src/main/assets"
 rm -rf "$ASSETS"
-case ",$FEATURES," in
-*,native-runtime,*)
-	# shellcheck source=scripts/android/ocr-env.sh
-	. "$_here/ocr-env.sh"
-	tessdata="$REPO_ROOT/assets/tessdata/eng.traineddata"
-	[ -f "$tessdata" ] || bash "$REPO_ROOT/scripts/download-tessdata.sh"
-	mkdir -p "$ASSETS/tessdata"
-	cp "$tessdata" "$ASSETS/tessdata/"
-	;;
-esac
 
 JNI_LIBS="$REPO_ROOT/android/app/src/main/jniLibs"
 rm -rf "$JNI_LIBS"
