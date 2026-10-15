@@ -200,7 +200,7 @@ fn ocr_preprocess(iterations: u64) -> SectionResult {
         "ocr_preprocess",
         iterations,
         start,
-        Some("320x80 gray+blur+otsu (no Tesseract)".into()),
+        Some("320x80 gray+blur+otsu (no inference)".into()),
     )
 }
 

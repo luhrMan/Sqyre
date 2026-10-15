@@ -65,6 +65,34 @@ lto = false
 inherits = "release"
 codegen-units = 1
 
+# OCR inference must stay optimized even in debug builds: `make android`
+# defaults to a debug APK and unoptimized rten kernels take minutes per frame
+# on ARM. Also keeps debug `bin/sqyre` OCR usable.
+[profile.dev.package.ocrs]
+opt-level = 3
+[profile.dev.package.rten]
+opt-level = 3
+[profile.dev.package.rten-base]
+opt-level = 3
+[profile.dev.package.rten-gemm]
+opt-level = 3
+[profile.dev.package.rten-imageproc]
+opt-level = 3
+[profile.dev.package.rten-model-file]
+opt-level = 3
+[profile.dev.package.rten-onnx]
+opt-level = 3
+[profile.dev.package.rten-parallel]
+opt-level = 3
+[profile.dev.package.rten-shape-inference]
+opt-level = 3
+[profile.dev.package.rten-simd]
+opt-level = 3
+[profile.dev.package.rten-tensor]
+opt-level = 3
+[profile.dev.package.rten-vecmath]
+opt-level = 3
+
 [workspace.dependencies]
 purecv = { version = "0.10.0", default-features = false, features = ["std", "parallel", "simd"] }
 eframe = "0.36"
@@ -103,5 +131,8 @@ web-time = "1"
 # Blocking HTTPS with rustls+ring (MinGW-friendly; avoids aws-lc-sys).
 ureq = { version = "3", default-features = false, features = ["rustls"] }
 sha2 = "0.11"
+# OCR engine: pure-Rust NN pipeline on the rten runtime; models are ONNX files.
+ocrs = { version = "0.13", default-features = false, features = ["onnx"] }
+rten = { version = "0.26", features = ["onnx_format"] }
 log = "0.4"
 jsonschema = { version = "0.58", default-features = false }

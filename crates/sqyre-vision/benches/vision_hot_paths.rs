@@ -1,4 +1,4 @@
-//! Find-pixel scan and OCR preprocess benches (no Tesseract).
+//! Find-pixel scan and OCR preprocess benches (no model inference).
 //!
 //! Run: `cargo bench -p sqyre-vision` or `make bench`.
 

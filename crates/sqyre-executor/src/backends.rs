@@ -12,10 +12,10 @@ pub trait OcrEngine: Send + Sync {
     fn recognize(&self, image: &ImageBuf) -> Result<sqyre_vision::OcrRecognition, PortError>;
 }
 
-/// Tesseract-backed engine (native only; not available on wasm32).
+/// ocrs-backed engine (native only; not available on wasm32).
 #[cfg(not(target_arch = "wasm32"))]
-impl OcrEngine for sqyre_vision::LeptessOcr {
+impl OcrEngine for sqyre_vision::OcrsEngine {
     fn recognize(&self, image: &ImageBuf) -> Result<sqyre_vision::OcrRecognition, PortError> {
-        sqyre_vision::LeptessOcr::recognize(self, image)
+        sqyre_vision::OcrsEngine::recognize(self, image)
     }
 }

@@ -1,4 +1,4 @@
-//! OCR preprocess goldens (no Tesseract): stable dims + FNV-1a of the output buffer.
+//! OCR preprocess goldens (no model inference): stable dims + FNV-1a of the output buffer.
 //!
 //! Refresh expected files with `SQYRE_UPDATE_VISION_GOLDENS=1 cargo test -p sqyre-vision --test preprocess_golden`.
 

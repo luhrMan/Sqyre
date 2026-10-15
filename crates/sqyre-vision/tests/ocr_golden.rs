@@ -1,26 +1,12 @@
-//! OCR golden: recognize a rendered "Submit" image when tessdata is available.
+//! OCR golden: recognize a rendered "Submit" image with the embedded ocrs models.
 //!
 //! Update expected text with `SQYRE_UPDATE_OCR_GOLDENS=1 cargo test -p sqyre-vision --test ocr_golden`.
 
 #![cfg(not(target_arch = "wasm32"))]
 
 use image::{Rgb, RgbImage};
-use sqyre_vision::{preprocess_for_ocr, recognize_image, rgba_to_rgb_buf, OcrPreprocessOptions};
+use sqyre_vision::{preprocess_for_ocr, rgba_to_rgb_buf, OcrPreprocessOptions, OcrsEngine};
 use std::path::PathBuf;
-
-fn tessdata_or_skip() -> Option<String> {
-    if let Ok(p) = std::env::var("SQYRE_TESSDATA") {
-        let eng = std::path::Path::new(&p).join("eng.traineddata");
-        if eng.is_file() {
-            return Some(p);
-        }
-    }
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/tessdata");
-    if repo.join("eng.traineddata").is_file() {
-        return Some(repo.to_string_lossy().into_owned());
-    }
-    None
-}
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ocr")
@@ -94,14 +80,6 @@ fn ocr_submit_golden() {
         render_submit_png(&png_path);
     }
 
-    let Some(tessdata) = tessdata_or_skip() else {
-        eprintln!(
-            "skipping ocr_submit_golden: tessdata not found (fixture ensured at {})",
-            png_path.display()
-        );
-        return;
-    };
-
     let rgba = image::open(&png_path).unwrap().to_rgba8();
     let rgb = rgba_to_rgb_buf(&rgba);
     let opts = OcrPreprocessOptions {
@@ -116,7 +94,8 @@ fn ocr_submit_golden() {
         resize_scale: 1.0,
     };
     let (pre, _scale) = preprocess_for_ocr(&rgb, opts).expect("preprocess");
-    let result = recognize_image(&pre, &tessdata).expect("recognize");
+    let engine = OcrsEngine::new().expect("engine");
+    let result = engine.recognize(&pre).expect("recognize");
     let normalized: String = result
         .text
         .chars()

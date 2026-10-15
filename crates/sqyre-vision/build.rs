@@ -1,4 +1,5 @@
-//! Emit workspace root so runtime tessdata fallback does not hard-code `../` depth.
+//! Emit workspace root so `include_bytes!` can find `assets/ocr-models/`
+//! without hard-coding `../` depth.
 
 use std::env;
 use std::fs;
@@ -14,7 +15,7 @@ fn main() {
     );
     println!(
         "cargo:rerun-if-changed={}",
-        root.join("assets/tessdata").display()
+        root.join("assets/ocr-models").display()
     );
 }
 
