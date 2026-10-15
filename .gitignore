@@ -37,6 +37,7 @@ scripts/linux/packaging/appimage/.AppImageBuilder.*.yml
 scripts/linux/packaging/flatpak/build-dir/
 scripts/linux/packaging/flatpak/repo/
 scripts/linux/packaging/flatpak/.flatpak-builder/
+scripts/linux/packaging/flatpak/.flatpak-xdg/
 scripts/linux/packaging/flatpak/.com.sqyre.app.*.yml
 
 # Android shell build outputs (cargo-ndk + Gradle)
