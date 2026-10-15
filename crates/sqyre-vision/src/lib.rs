@@ -14,13 +14,10 @@ pub use image_util::{
     rgb_to_grayscale, rgba_to_rgb_buf,
 };
 pub use ocr_boxes::{
-    find_target_in_boxes, find_target_occurrences, parse_tsv_word_boxes, text_from_ocr_boxes,
-    OcrRecognition, OcrWordBox,
+    find_target_in_boxes, find_target_occurrences, text_from_ocr_boxes, OcrRecognition, OcrWordBox,
 };
 #[cfg(not(target_arch = "wasm32"))]
-pub use ocr_engine::{
-    ensure_english_tessdata, recognize_image, set_tessdata_dir, shared_leptess, LeptessOcr,
-};
+pub use ocr_engine::{shared_ocrs, OcrsEngine};
 pub use ocr_preprocess::{
     preprocess_for_ocr, preprocess_for_ocr_with_steps, OcrPreprocessOptions, OcrPreprocessStep,
 };

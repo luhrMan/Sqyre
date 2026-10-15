@@ -12,8 +12,8 @@ pub struct OcrWordBox {
 
 /// Recognized page text plus word boxes in image coordinates.
 ///
-/// Platform-agnostic (unlike [`crate::LeptessOcr`], which needs Tesseract and is
-/// native-only) so it can be the shared OCR result type on every target, wasm included.
+/// Platform-agnostic (unlike [`crate::OcrsEngine`], which is native-only) so it
+/// can be the shared OCR result type on every target, wasm included.
 #[derive(Debug, Clone, Default)]
 pub struct OcrRecognition {
     pub text: String,
@@ -127,52 +127,6 @@ fn union_center(boxes: &[&OcrWordBox]) -> (i32, i32) {
         max_y = max_y.max(b.bottom);
     }
     ((min_x + max_x) / 2, (min_y + max_y) / 2)
-}
-
-/// Parse Tesseract TSV (level 5 = word) into word boxes.
-pub fn parse_tsv_word_boxes(tsv: &str) -> Vec<OcrWordBox> {
-    let mut out = Vec::new();
-    for (i, line) in tsv.lines().enumerate() {
-        if i == 0 && line.starts_with("level") {
-            continue;
-        }
-        let cols: Vec<&str> = line.split('\t').collect();
-        if cols.len() < 12 {
-            continue;
-        }
-        let Ok(level) = cols[0].parse::<i32>() else {
-            continue;
-        };
-        // RIL_WORD == 5
-        if level != 5 {
-            continue;
-        }
-        let Ok(left) = cols[6].parse::<i32>() else {
-            continue;
-        };
-        let Ok(top) = cols[7].parse::<i32>() else {
-            continue;
-        };
-        let Ok(width) = cols[8].parse::<i32>() else {
-            continue;
-        };
-        let Ok(height) = cols[9].parse::<i32>() else {
-            continue;
-        };
-        let word = cols[11..].join("\t");
-        let word = word.trim();
-        if word.is_empty() {
-            continue;
-        }
-        out.push(OcrWordBox {
-            word: word.to_string(),
-            left,
-            top,
-            right: left + width,
-            bottom: top + height,
-        });
-    }
-    out
 }
 
 #[cfg(test)]
@@ -294,19 +248,5 @@ mod tests {
             },
         ];
         assert_eq!(text_from_ocr_boxes(&boxes), "Hello World");
-    }
-
-    #[test]
-    fn parse_tsv_words() {
-        let tsv = "\
-level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext
-5\t1\t1\t1\t1\t1\t10\t20\t30\t15\t90\tHi
-5\t1\t1\t1\t1\t2\t50\t20\t40\t15\t88\tThere
-";
-        let boxes = parse_tsv_word_boxes(tsv);
-        assert_eq!(boxes.len(), 2);
-        assert_eq!(boxes[0].word, "Hi");
-        assert_eq!(boxes[0].right, 40);
-        assert_eq!(text_from_ocr_boxes(&boxes), "Hi There");
     }
 }

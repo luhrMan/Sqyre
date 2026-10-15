@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
     )
 )]
 pub(crate) enum PickPurpose {
-    /// PNG for a new icon variant of the selected item.
+    /// Image for a new icon variant of the selected item (stored as PNG).
     IconVariant,
     /// Raster image for the selected mask.
     MaskImage,
@@ -42,8 +42,7 @@ pub(crate) enum PickPurpose {
 impl PickPurpose {
     fn kind(self) -> PickKind {
         match self {
-            Self::IconVariant => PickKind::Png,
-            Self::MaskImage => PickKind::Image,
+            Self::IconVariant | Self::MaskImage => PickKind::Image,
             Self::RestoreBackup => PickKind::Zip,
             Self::SqyreLocation | Self::HostSqyreLocation => PickKind::Folder,
         }
@@ -52,7 +51,6 @@ impl PickPurpose {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PickKind {
-    Png,
     Image,
     Zip,
     Folder,
@@ -65,7 +63,6 @@ impl PickKind {
     )]
     fn mime_types(self) -> &'static [&'static str] {
         match self {
-            Self::Png => &["image/png"],
             Self::Image => &["image/png", "image/jpeg", "image/bmp"],
             Self::Zip => &["application/zip"],
             Self::Folder => &[],
@@ -99,7 +96,7 @@ static PICK: Mutex<PickState> = Mutex::new(PickState {
 pub(crate) fn supported(purpose: PickPurpose) -> bool {
     match purpose.kind() {
         PickKind::Folder => !cfg!(any(target_arch = "wasm32", target_os = "android")),
-        PickKind::Png | PickKind::Image | PickKind::Zip => !cfg!(target_arch = "wasm32"),
+        PickKind::Image | PickKind::Zip => !cfg!(target_arch = "wasm32"),
     }
 }
 
@@ -143,7 +140,6 @@ mod platform {
             dialog = dialog.set_directory(start);
         }
         let picked = match purpose.kind() {
-            PickKind::Png => dialog.add_filter("PNG", &["png"]).pick_file(),
             PickKind::Image => dialog
                 .add_filter("Images", &["png", "jpg", "jpeg", "bmp"])
                 .pick_file(),
@@ -221,12 +217,11 @@ mod tests {
 
     #[test]
     fn purposes_map_to_filters() {
-        assert_eq!(PickPurpose::IconVariant.kind(), PickKind::Png);
+        assert_eq!(PickPurpose::IconVariant.kind(), PickKind::Image);
         assert_eq!(PickPurpose::MaskImage.kind(), PickKind::Image);
         assert_eq!(PickPurpose::RestoreBackup.kind(), PickKind::Zip);
         assert_eq!(PickPurpose::SqyreLocation.kind(), PickKind::Folder);
         assert_eq!(PickPurpose::HostSqyreLocation.kind(), PickKind::Folder);
-        assert_eq!(PickKind::Png.mime_types(), ["image/png"]);
         assert!(PickKind::Image.mime_types().contains(&"image/jpeg"));
         assert_eq!(PickKind::Zip.mime_types(), ["application/zip"]);
     }

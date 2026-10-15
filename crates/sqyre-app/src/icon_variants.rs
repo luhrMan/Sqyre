@@ -1,5 +1,6 @@
 //! Icon variant filesystem helpers.
 
+use crate::data_editor::helpers::copy_image_as_png;
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 #[cfg(feature = "native-runtime")]
@@ -10,6 +11,7 @@ use thiserror::Error;
 pub use sqyre_domain::variant_name_from_path;
 
 const MAX_VARIANTS: usize = 100;
+#[cfg(test)]
 const PNG_SIGNATURE: [u8; 8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
 
 #[derive(Debug, Clone, Error)]
@@ -39,6 +41,7 @@ pub fn variant_names(catalog: &ProgramCatalog, program: &str, item: &str) -> Vec
     names
 }
 
+#[cfg(test)]
 pub fn validate_png_file(path: &Path) -> Result<(), String> {
     if path.as_os_str().is_empty() {
         return Err("file path cannot be empty".into());
@@ -134,9 +137,8 @@ pub fn add_variant(
     variant_name: &str,
     source: &Path,
 ) -> Result<String, AddVariantError> {
-    validate_png_file(source).map_err(AddVariantError::Other)?;
     let (name, dest) = prepare_new_variant(catalog, program, item, variant_name)?;
-    std::fs::copy(source, &dest).map_err(|e| AddVariantError::Other(format!("copy file: {e}")))?;
+    copy_image_as_png(source, &dest).map_err(AddVariantError::Other)?;
     invalidate_item_templates(catalog, program, item);
     Ok(name)
 }
@@ -166,12 +168,11 @@ pub fn overwrite_variant(
     if program.is_empty() || item.is_empty() || variant_name.is_empty() {
         return Err("program name, item name, and variant name cannot be empty".into());
     }
-    validate_png_file(source)?;
     let name = sanitize_variant_name(variant_name)?;
     let dest_dir = catalog.icons_dir(program);
     std::fs::create_dir_all(&dest_dir).map_err(|e| format!("create icons dir: {e}"))?;
     let dest = variant_path(catalog, program, item, &name);
-    std::fs::copy(source, &dest).map_err(|e| format!("copy file: {e}"))?;
+    copy_image_as_png(source, &dest)?;
     invalidate_item_templates(catalog, program, item);
     Ok(())
 }
@@ -233,6 +234,38 @@ mod tests {
         let name = add_variant(&cat, "Prog", "Sword", "ignored", &src).unwrap();
         assert_eq!(name, "Original");
         assert!(variant_path(&cat, "Prog", "Sword", "Original").is_file());
+    }
+
+    #[test]
+    fn add_variant_converts_jpeg_source_to_png() {
+        let dir = tempdir().unwrap();
+        let cat = catalog_with_icons(dir.path());
+        let src = dir.path().join("src.jpg");
+        image::RgbImage::from_pixel(2, 2, image::Rgb([10, 20, 30]))
+            .save(&src)
+            .unwrap();
+        let name = add_variant(&cat, "Prog", "Sword", "ignored", &src).unwrap();
+        assert_eq!(name, "Original");
+        let path = variant_path(&cat, "Prog", "Sword", "Original");
+        assert!(validate_png_file(&path).is_ok());
+    }
+
+    #[test]
+    fn overwrite_variant_converts_jpeg_source_to_png() {
+        let dir = tempdir().unwrap();
+        let cat = catalog_with_icons(dir.path());
+        let icons = cat.icons_dir("Prog");
+        std::fs::create_dir_all(&icons).unwrap();
+        let src = dir.path().join("src.png");
+        std::fs::write(&src, PNG_SIGNATURE).unwrap();
+        add_variant(&cat, "Prog", "Sword", "ignored", &src).unwrap();
+        let jpg = dir.path().join("new.jpg");
+        image::RgbImage::from_pixel(2, 2, image::Rgb([40, 50, 60]))
+            .save(&jpg)
+            .unwrap();
+        overwrite_variant(&cat, "Prog", "Sword", "Original", &jpg).unwrap();
+        let path = variant_path(&cat, "Prog", "Sword", "Original");
+        assert!(validate_png_file(&path).is_ok());
     }
 
     #[test]

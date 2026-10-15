@@ -12,8 +12,9 @@ notes.md
 /db.yaml.bak
 /crates/sqyre-persist/examples/convert_db.rs
 
-# OCR trained data (downloaded; not committed)
+# OCR model data (downloaded; not committed)
 /assets/tessdata/eng.traineddata
+/assets/ocr-models/*.onnx
 
 # Build outputs
 /bin/

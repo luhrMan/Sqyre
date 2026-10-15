@@ -19,8 +19,9 @@ done
 ndk=(cargo ndk "${ndk_targets[@]}" --platform "$MIN_SDK" check)
 
 cd "$REPO_ROOT"
+# OCR models are embedded via include_bytes! — required at compile time.
+[ -f assets/ocr-models/text-detection.onnx ] && [ -f assets/ocr-models/text-recognition.onnx ] ||
+	bash scripts/download-ocr-models.sh
 "${ndk[@]}" -p sqyre-app --lib --no-default-features "${extra[@]}"
-# shellcheck source=scripts/android/ocr-env.sh
-. "$_here/ocr-env.sh"
 "${ndk[@]}" -p sqyre-app --lib --no-default-features --features native-runtime,overlay-buttons "${extra[@]}"
 "${ndk[@]}" -p sqyre-capture -p sqyre-input "${extra[@]}"

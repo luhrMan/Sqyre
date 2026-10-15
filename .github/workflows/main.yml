@@ -9,7 +9,7 @@
 # - Linux sccache (.cache/sccache-linux): rustc outputs across profiles (clippy/test/cov/wasm)
 # - Windows sccache (.cache/sccache-windows): MinGW cross only — not shared with Linux
 # - Linux/Windows Docker images: content-hash tags on GHCR; Buildx layers as fallback
-# - tessdata: shared keys across runs
+# - OCR models (assets/ocr-models): shared keys across runs
 # Criterion benches (`make bench`) are local-only; Linux tests run `make wasm-check`.
 # Linux `test` runs coverage (instrumented nextest) instead of a separate `make test`.
 
@@ -195,16 +195,16 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           push: "false"
 
-      - name: Cache tessdata
-        id: tessdata-test
+      - name: Cache OCR models
+        id: ocr-models-test
         uses: actions/cache@v6
         with:
-          path: assets/tessdata
-          key: tessdata-eng-v2
+          path: assets/ocr-models
+          key: ocr-models-v1
 
-      - name: Download tessdata
-        if: steps.tessdata-test.outputs.cache-hit != 'true'
-        run: ./scripts/download-tessdata.sh
+      - name: Download OCR models
+        if: steps.ocr-models-test.outputs.cache-hit != 'true'
+        run: ./scripts/download-ocr-models.sh
 
       - name: Cache Cargo registry (shared)
         uses: actions/cache@v6
@@ -423,16 +423,16 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           push: "false"
 
-      - name: Cache tessdata
-        id: tessdata-appimage
+      - name: Cache OCR models
+        id: ocr-models-appimage
         uses: actions/cache@v6
         with:
-          path: assets/tessdata
-          key: tessdata-eng-v2
+          path: assets/ocr-models
+          key: ocr-models-v1
 
-      - name: Download tessdata
-        if: steps.tessdata-appimage.outputs.cache-hit != 'true'
-        run: ./scripts/download-tessdata.sh
+      - name: Download OCR models
+        if: steps.ocr-models-appimage.outputs.cache-hit != 'true'
+        run: ./scripts/download-ocr-models.sh
 
       - name: Download Linux binary artifact
         uses: actions/download-artifact@v8
@@ -504,16 +504,16 @@ jobs:
       - name: Write VERSION
         run: echo "${{ needs.version.outputs.version }}" > VERSION
 
-      - name: Cache tessdata
-        id: tessdata-flatpak
+      - name: Cache OCR models
+        id: ocr-models-flatpak
         uses: actions/cache@v6
         with:
-          path: assets/tessdata
-          key: tessdata-eng-v2
+          path: assets/ocr-models
+          key: ocr-models-v1
 
-      - name: Download tessdata
-        if: steps.tessdata-flatpak.outputs.cache-hit != 'true'
-        run: ./scripts/download-tessdata.sh
+      - name: Download OCR models
+        if: steps.ocr-models-flatpak.outputs.cache-hit != 'true'
+        run: ./scripts/download-ocr-models.sh
 
       - name: Ensure app icon PNG
         run: |
@@ -810,11 +810,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-v1-
 
-      - name: Cache tessdata
+      - name: Cache OCR models
         uses: actions/cache@v6
         with:
-          path: assets/tessdata
-          key: tessdata-eng-v2
+          path: assets/ocr-models
+          key: ocr-models-v1
 
       - name: Prepare Cargo cache dirs
         run: mkdir -p "${{ env.CARGO_HOME_DIR }}" "${{ env.CARGO_TARGET_DIR_HOST }}" .cache/sccache-linux .cache/gradle

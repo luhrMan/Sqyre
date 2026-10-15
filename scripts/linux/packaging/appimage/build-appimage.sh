@@ -209,10 +209,11 @@ run_docker() {
     docker build -f "$DOCKERFILE" -t "$IMAGE" "$REPO_ROOT"
   fi
 
-  # Ensure tessdata exists so the recipe can bundle it.
-  if [ ! -f "$REPO_ROOT/assets/tessdata/eng.traineddata" ]; then
-    echo "Downloading eng.traineddata…"
-    "$REPO_ROOT/scripts/download-tessdata.sh"
+  # Ensure OCR models exist so the recipe can bundle them.
+  if [ ! -f "$REPO_ROOT/assets/ocr-models/text-detection.onnx" ] ||
+    [ ! -f "$REPO_ROOT/assets/ocr-models/text-recognition.onnx" ]; then
+    echo "Downloading OCR models…"
+    "$REPO_ROOT/scripts/download-ocr-models.sh"
   fi
 
   # Share crates with host/CI: prefer caller CARGO_HOME when it lives in-repo

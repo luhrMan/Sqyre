@@ -18,10 +18,8 @@ sqyre-domain = { path = "../sqyre-domain" }
 sqyre-ports = { path = "../sqyre-ports" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-leptess = "0.14"
-dirs = { workspace = true }
-ureq = { workspace = true }
-sha2 = { workspace = true }
+ocrs = { workspace = true }
+rten = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

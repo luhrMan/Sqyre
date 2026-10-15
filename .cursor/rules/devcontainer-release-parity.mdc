@@ -6,13 +6,13 @@ alwaysApply: false
 
 # Devcontainer release-build parity
 
-Whenever a **build or packaging requirement** changes (Makefile targets, Dockerfiles under `scripts/`, CI release jobs, native libs, linkers, tessdata, cargo features for release binaries), update [`.devcontainer/`](.devcontainer/) so the container can still produce every release artifact that is meant to be built from Linux.
+Whenever a **build or packaging requirement** changes (Makefile targets, Dockerfiles under `scripts/`, CI release jobs, native libs, linkers, OCR models, cargo features for release binaries), update [`.devcontainer/`](.devcontainer/) so the container can still produce every release artifact that is meant to be built from Linux.
 
 ## Releases the container must support
 
 | Target | How |
 |--------|-----|
-| `make` / `make release` | Native in-container (Rust + system Tesseract/X11) |
+| `make` / `make release` | Native in-container (Rust + X11) |
 | `make appimage` | Native AppImage tools in the image, or Docker fallback |
 | `make flatpak` | Native `flatpak-builder` when bwrap/userns work; else privileged Flatpak builder image via **host Docker socket** |
 | `make windows` | Docker MinGW cross (`scripts/windows/`) via **host Docker socket** |

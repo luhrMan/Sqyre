@@ -9,7 +9,7 @@ Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux bin
 | `Cargo.toml` | Workspace manifest |
 | `crates/*` | Library + app crates |
 | `crates/sqyre-app/assets/icons/` | Brand icons (embedded by the app) |
-| `assets/tessdata/` | Optional local OCR trained data |
+| `assets/ocr-models/` | ocrs ONNX models, embedded at compile time (`make ocr-models`) |
 
 ## Crates
 
@@ -23,7 +23,7 @@ Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux bin
 | `sqyre-persist` | `~/.sqyre/db.yaml` + program catalog + user settings / backups |
 | `sqyre-executor` | Injected automation / capture / match / coords |
 | `sqyre-match` | All six OpenCV `TM_*` methods + mask + peak/dedup |
-| `sqyre-vision` | RGB load, match façade, find-pixel, OCR preprocess / Tesseract |
+| `sqyre-vision` | RGB load, match façade, find-pixel, OCR preprocess / ocrs |
 | `sqyre-input` | `AutomationBackend` (rustautogui lite + arboard) |
 | `sqyre-capture` | `ScreenCapturer` / focus / selection outline (`OsCapturer`, `OsWindowFocuser`: Linux X11, Windows GDI, macOS stub) |
 | `sqyre-hotkeys` | Esc stop / failsafe / macro hotkeys (`hooks` feature; stub default) |
@@ -33,7 +33,7 @@ Cargo workspace at the repo root (egui + PureCV). Shipped CI releases: Linux bin
 
 ## Develop
 
-Requires **Rust ≥ 1.95** (egui 0.36 / PureCV). The repo pins `1.95.0` via [`rust-toolchain.toml`](../rust-toolchain.toml); the `.devcontainer` and Windows cross image match that plus clang/Tesseract for OCR.
+Requires **Rust ≥ 1.95** (egui 0.36 / PureCV). The repo pins `1.95.0` via [`rust-toolchain.toml`](../rust-toolchain.toml); the `.devcontainer` and Windows cross image match that; OCR is pure-Rust ocrs — no Tesseract/leptonica system libs.
 
 Linux automation/capture need X11 (`libx11-dev`, `libxtst-dev`, `libxinerama-dev`, `libxfixes-dev`). Windows uses GDI capture plus Win32 focus, selection outline, and low-level hotkey hooks (`windows` crate). macOS capture/focus remain stubbed.
 
@@ -82,4 +82,4 @@ Host binary: `./bin/sqyre` after `make`, or `./target/debug/sqyre` from cargo. E
 
 Still improving: Wayland, macOS capture / window focus / releases. Windows ships without an MSI.
 
-OCR uses Tesseract (`leptess`). Override with `SQYRE_TESSDATA` if needed (dev fallback: `assets/tessdata`). Missing data is downloaded on native startup into `~/.sqyre/tessdata` (or `%APPDATA%\sqyre\tessdata` on Windows).
+OCR uses [ocrs](https://github.com/robertknight/ocrs). The ONNX models are embedded via `include_bytes!` from `assets/ocr-models/` (`make ocr-models`); `SQYRE_OCR_MODELS=<dir>` overrides them with a directory of model files.

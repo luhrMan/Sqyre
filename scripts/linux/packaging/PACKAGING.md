@@ -15,7 +15,7 @@ App entrypoint: `sqyre-app` → binary name `sqyre`. App ID: `com.sqyre.app`.
 
 ### Prerequisites
 
-- Rust ≥ 1.92, clang, Tesseract/Leptonica, X11 link deps (same as [DEVELOPING.md](../../../docs/DEVELOPING.md))
+- Rust ≥ 1.95, clang, X11 link deps (same as [DEVELOPING.md](../../../docs/DEVELOPING.md))
 - [appimage-builder](https://appimage-builder.readthedocs.io/en/stable/intro/install.html), plus `patchelf` and `squashfs-tools`
 
 The **dev container** installs these. PureCV needs **no OpenCV**.
@@ -41,15 +41,15 @@ Cargo uses workspace **`[profile.dist]`** (`codegen-units = 1` on top of thin LT
 
 On hosts without `/dev/fuse`, use `APPIMAGE_EXTRACT_AND_RUN=1` (zstd extract is ~sub-second; xz was multi-second). The AppDir binary is stripped (`strip --strip-unneeded`) before packing.
 
-### Tesseract data
+### OCR models
 
-The recipe copies `eng.traineddata` from `assets/tessdata/` or host `/usr/share/tessdata/` when present, and sets `TESSDATA_PREFIX` / `SQYRE_TESSDATA` at runtime.
+The recipe requires `assets/ocr-models/text-detection.onnx` + `text-recognition.onnx` (run `make ocr-models`) — they are embedded into the binary via `include_bytes!`, so nothing model-related is installed into the AppDir.
 
 ---
 
 ## Flatpak (Flathub-ready)
 
-Manifest: [`flatpak/com.sqyre.app.yml`](flatpak/com.sqyre.app.yml) — Freedesktop **25.08**, Rust SDK extension, leptonica + tesseract modules, `portal-capture` build. AppStream: [`com.sqyre.app.metainfo.xml`](flatpak/com.sqyre.app.metainfo.xml).
+Manifest: [`flatpak/com.sqyre.app.yml`](flatpak/com.sqyre.app.yml) — Freedesktop **25.08**, Rust SDK extension, `portal-capture` build. AppStream: [`com.sqyre.app.metainfo.xml`](flatpak/com.sqyre.app.metainfo.xml).
 
 ### Prerequisites
 
@@ -64,7 +64,7 @@ If native tools work but bubblewrap cannot create user namespaces (common in
 Devcontainers), or tools are missing, `build-flatpak.sh` falls back to Docker
 (`ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08`, `--privileged`,
 host UID). Builds pass `--disable-rofiles-fuse` so they work without `/dev/fuse`,
-and `--ccache` for leptonica/tesseract. Parallelism defaults to **~50% of
+and `--ccache`. Parallelism defaults to **~50% of
 `nproc`** (`flatpak-builder --jobs`, plus ninja/cargo `-j` via
 `FLATPAK_BUILDER_N_JOBS`); override with `SQYRE_FLATPAK_JOBS=N`. Docker builds
 persist Flatpak user data under
@@ -83,9 +83,9 @@ make flatpak
 
 Output: **`bin/com.sqyre.app.flatpak`**.
 
-Rebuilds reuse `.flatpak-builder` module cache for leptonica, tesseract, and
-the offline `cargo-vendor` tree; only the `sqyre` module (local dir sources)
-always recompiles. Keep that state dir around for faster iteration.
+Rebuilds reuse `.flatpak-builder` module cache for the offline
+`cargo-vendor` tree; only the `sqyre` module (local dir sources) always
+recompiles. Keep that state dir around for faster iteration.
 
 ```bash
 flatpak install --user bin/com.sqyre.app.flatpak
@@ -111,7 +111,6 @@ Regenerate and commit whenever `Cargo.lock` changes.
 - **No `--filesystem=home`** — Flatpak data is separate from AppImage/native `~/.sqyre`.
 - **`--persist=.sqyre`** — required because Sqyre writes `$HOME/.sqyre` (not XDG). Maps to host `~/.var/app/com.sqyre.app/.sqyre`; without it Flatpak uses a tmpfs and every quit resets macros/settings/portal tokens.
 - **Finish-args** (see comments in the YAML): X11 + Wayland, Pulse (`--socket=pulseaudio` + read-only `xdg-config/pulse` for the host cookie — cpal’s pure-Rust Pulse client needs it), DRI, `--device=input` (Wayland hotkeys), Notifications, StatusNotifierWatcher (tray), host AT-SPI (`xdg-run/at-spi` + `org.a11y.Bus` for GNOME Wayland window list); ScreenCast/RemoteDesktop via portals. Cue audio falls back to runtime ALSA→libpulse inside Flatpak if Pulse host open fails. Tray uses `ksni` with `disable_dbus_name` under Flatpak (no `--own-name=org.kde.*`).
-- **Tesseract/Leptonica** install into `/app/lib` (`CMAKE_INSTALL_LIBDIR=lib` / `--libdir`) — `/app/lib64` is not on Flatpak’s runtime linker path.
 - **Do not** ship a private `libpipewire` that shadows SPA plugins (same rule as AppImage).
 - **In-app auto-update** is disabled under Flatpak (`FLATPAK_ID`); use `flatpak update`.
 
@@ -123,7 +122,7 @@ Treat launch as insufficient. After install on a graphical session, run `sqyre-p
 
 ## Bundled release (portable directory)
 
-Self-contained **`bin/sqyre-bundle/`** with Tesseract/Leptonica `.so` files and `tessdata/eng.traineddata`. The binary uses `$ORIGIN/lib` rpath so it runs without a system `libtesseract`.
+Self-contained **`bin/sqyre-bundle/`** with its linked `.so` deps; the OCR models are embedded in the binary. The binary uses `$ORIGIN/lib` rpath.
 
 ```bash
 make release-bundle
@@ -159,8 +158,8 @@ Requires **patchelf** (installed in the devcontainer). Build on the target glibc
 
 | Format | Command | Main requirement |
 |--------|---------|------------------|
-| **Bundled dir** | `make release-bundle` | Rust + Tesseract dev libs + patchelf |
+| **Bundled dir** | `make release-bundle` | Rust + patchelf |
 | **Dev bundle** | `make dev` | Same layout as bundled dir; `--release` (no LTO) → `bin/sqyre-dev/` |
 | **Bundled + dhat** | `make release-bundle-dhat` | Same; `dhat-heap` for allocation profiles (not shipping) |
-| **AppImage** | `make appimage` | Rust + Tesseract on host + appimage-builder |
+| **AppImage** | `make appimage` | Rust + appimage-builder |
 | **Flatpak** | `make flatpak` | flatpak-builder + Freedesktop 25.08 (+ Docker privileged fallback) |

@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Build a portable Linux release directory with Tesseract/Leptonica bundled.
+# Build a portable Linux release directory.
 #
 # Output layout (under bin/<bundle-name>/):
-#   sqyre          — release binary ($ORIGIN/lib rpath)
-#   lib/           — libtesseract, libleptonica, and transitive .so deps
-#   tessdata/      — eng.traineddata
+#   sqyre          — release binary ($ORIGIN/lib rpath; OCR models embedded)
+#   lib/           — linked .so deps (walked via ldd)
 #
 # Env overrides:
 #   SQYRE_BUNDLE_NAME     — directory under bin/ (default: sqyre-bundle)
@@ -42,7 +41,6 @@ CARGO_PROFILE="${SQYRE_CARGO_PROFILE:-dist}"
 BUNDLE_NAME="${SQYRE_BUNDLE_NAME:-sqyre-bundle}"
 BUNDLE_DIR="$REPO_ROOT/bin/$BUNDLE_NAME"
 LIB_DIR="$BUNDLE_DIR/lib"
-TESS_DIR="$BUNDLE_DIR/tessdata"
 BINARY_SRC="$TARGET_DIR/$CARGO_PROFILE/sqyre"
 BINARY_DST="$BUNDLE_DIR/sqyre"
 
@@ -56,6 +54,12 @@ if [ -z "${RUSTUP_HOME:-}" ] && [ -d "$REPO_ROOT/.rustup-home" ]; then
 fi
 
 SQYRE_APP_FEATURES="${SQYRE_APP_FEATURES:---features portal-capture}"
+
+# OCR models are embedded via include_bytes! — required at compile time.
+if [ ! -f "$REPO_ROOT/assets/ocr-models/text-detection.onnx" ] ||
+  [ ! -f "$REPO_ROOT/assets/ocr-models/text-recognition.onnx" ]; then
+  "$REPO_ROOT/scripts/download-ocr-models.sh"
+fi
 
 if [ "${SQYRE_BUNDLE_SKIP_BUILD:-}" != "1" ]; then
   echo "Building $CARGO_PROFILE binary ($SQYRE_APP_FEATURES)…"
@@ -73,7 +77,7 @@ if [ ! -x "$BINARY_SRC" ]; then
 fi
 
 rm -rf "$BUNDLE_DIR"
-mkdir -p "$LIB_DIR" "$TESS_DIR"
+mkdir -p "$LIB_DIR"
 
 cp -f "$BINARY_SRC" "$BINARY_DST"
 chmod 755 "$BINARY_DST"
@@ -145,53 +149,9 @@ add_deps_from() {
 
 add_deps_from "$BINARY_DST"
 
-# Explicit OCR stack (ldd may not walk indirect deps on all distros).
-for pattern in libtesseract libleptonica liblept; do
-  for libdir in /usr/lib64 /usr/lib/x86_64-linux-gnu /usr/lib; do
-    shopt -s nullglob
-    for lib in "$libdir/$pattern.so"*; do
-      [ -f "$lib" ] || [ -L "$lib" ] || continue
-      copy_lib_family "$(readlink -f "$lib")"
-      add_deps_from "$(readlink -f "$lib")"
-    done
-    shopt -u nullglob
-  done
-done
-
-# Image/archive deps Tesseract often pulls (same list as AppImage recipe).
-for dep in libjpeg libpng libtiff libjbig libwebp libdeflate libgif libarchive libbz2 libzstd liblz4 libcurl libnghttp2 libssh2 libpsl libidn2 libunistring libbrotlidec libbrotlicommon libgomp; do
-  for libdir in /usr/lib64 /usr/lib/x86_64-linux-gnu /usr/lib; do
-    shopt -s nullglob
-    for lib in "$libdir/$dep.so"*; do
-      [ -f "$lib" ] || [ -L "$lib" ] || continue
-      copy_lib_family "$(readlink -f "$lib")"
-    done
-    shopt -u nullglob
-  done
-done
-
 patchelf --force-rpath --set-rpath '$ORIGIN/lib' "$BINARY_DST"
 
-# Bundle English tessdata.
-eng=""
-for d in "$REPO_ROOT/assets/tessdata" /usr/share/tesseract-ocr/*/tessdata /usr/share/tessdata /usr/local/share/tessdata; do
-  if [ -f "$d/eng.traineddata" ]; then
-    eng="$d/eng.traineddata"
-    break
-  fi
-done
-if [ -z "$eng" ]; then
-  echo "eng.traineddata not found; downloading…"
-  "$REPO_ROOT/scripts/download-tessdata.sh"
-  eng="$REPO_ROOT/assets/tessdata/eng.traineddata"
-fi
-if [ ! -f "$eng" ]; then
-  echo "ERROR: eng.traineddata not found; run: make tessdata" >&2
-  exit 1
-fi
-cp -f "$eng" "$TESS_DIR/"
-
-# Transitive deps (e.g. libtesseract → liblept) do not inherit the
+# Transitive deps do not inherit the
 # executable RUNPATH; each bundled .so needs $ORIGIN so its NEEDED chain
 # resolves inside lib/.
 is_elf_shared() {
@@ -234,7 +194,7 @@ fi
 echo "Bundled release: $BUNDLE_DIR"
 echo "  sqyre     $(du -h "$BINARY_DST" | cut -f1)"
 echo "  lib/      $(find "$LIB_DIR" -maxdepth 1 -type f -o -type l | wc -l) shared objects"
-echo "  tessdata/ eng.traineddata ($(du -h "$TESS_DIR/eng.traineddata" | cut -f1))"
+echo "  (ocrs models embedded in the binary)"
 echo ""
 case "$SQYRE_APP_FEATURES" in
   *dhat-heap*)

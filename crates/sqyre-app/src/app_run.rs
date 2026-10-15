@@ -180,7 +180,7 @@ mod native_run {
     use sqyre_domain::Macro;
     use sqyre_executor::{execute_macro_with, ExecDeps, OcrEngine};
     use sqyre_persist::variables_path;
-    use sqyre_vision::shared_leptess;
+    use sqyre_vision::shared_ocrs;
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
@@ -347,7 +347,7 @@ mod native_run {
                     let resolver = CatalogResolver(&catalog);
                     let icons = CatalogIcons(&catalog);
                     let focuser = OsWindowFocuser;
-                    let ocr_engine = shared_leptess()
+                    let ocr_engine = shared_ocrs()
                         .map_err(|e| {
                             crate::log::warn(format_args!("{e}"));
                             e

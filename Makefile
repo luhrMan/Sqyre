@@ -4,7 +4,7 @@
 .PHONY: all sqyre probe overlay-sandbox release release-bundle release-bundle-dhat dev windows macos test doctest smoke bench \
 	bench-compare bench-compare-rust bench-compare-go bench-baseline-save bench-baseline-diff \
 	coverage coverage-floors check check-fmt fmt clippy deny machete \
-	clean-sweep release-gate run tessdata appimage flatpak install-desktop docs-media wasm wasm-check android android-check android-emulator android-emulator-headless android-emulator-stop help
+	clean-sweep release-gate run ocr-models appimage flatpak install-desktop docs-media wasm wasm-check android android-check android-emulator android-emulator-headless android-emulator-stop help
 
 ROOT := $(abspath .)
 BIN := $(abspath bin)
@@ -70,6 +70,17 @@ ifeq ($(origin CARGO_BUILD_JOBS),undefined)
   export CARGO_BUILD_JOBS := $(shell [ "$(HOST_CPUS)" -ge 16 ] 2>/dev/null && echo 16 || echo 4)
 endif
 
+# OCR models are embedded into the binary via include_bytes! — a compile-time
+# input. Any target that compiles sqyre-vision needs them; the file prereq
+# skips the download script entirely when both models are already present.
+# Separate file targets (not a `&:` grouped rule — unsupported before GNU make
+# 4.3, e.g. macOS' make 3.81). The script downloads both and locks on a mkdir,
+# so concurrent `make -j` runs of the two rules serialize safely.
+OCR_MODELS := $(ROOT)/assets/ocr-models/text-detection.onnx $(ROOT)/assets/ocr-models/text-recognition.onnx
+
+$(OCR_MODELS):
+	./scripts/download-ocr-models.sh
+
 all: sqyre
 
 help:
@@ -78,7 +89,7 @@ help:
 	@echo "  probe        - cargo build (debug) -> $(BIN)/sqyre-probe$(BIN_EXT)"
 	@echo "  overlay-sandbox - overlay buttons only (fast; no sqyre-app)"
 	@echo "  release      - fmt + check, then cargo build --release (thin LTO) -> $(BIN)/sqyre$(BIN_EXT)"
-	@echo "  release-bundle - Linux: dist profile + bundled Tesseract -> $(BIN)/sqyre-bundle/ (shipping)"
+	@echo "  release-bundle - Linux: dist profile + OCR embedded -> $(BIN)/sqyre-bundle/ (shipping)"
 	@echo "  dev          - Linux: fast release-bundle prototype -> $(BIN)/sqyre-dev/ (no LTO / no check gate)"
 	@echo "  release-bundle-dhat - same + dhat-heap profiler -> $(BIN)/sqyre-bundle-dhat/ (local leak hunts)"
 	@echo "  windows      - fmt + check, then Windows release -> $(BIN)/sqyre.exe"
@@ -104,7 +115,7 @@ help:
 	@echo "  coverage-floors - line-coverage gates for pure crates (see scripts/coverage-floors.json)"
 	@echo "  clean-sweep  - cargo-sweep target dirs down to SWEEP_MAXSIZE ($(SWEEP_MAXSIZE))"
 	@echo "  run          - cargo run -p sqyre-app"
-	@echo "  tessdata     - scripts/download-tessdata.sh"
+	@echo "  ocr-models   - scripts/download-ocr-models.sh"
 	@echo "  docs-media   - regenerate docs/images screenshots"
 	@echo "  appimage     - fmt + check, then AppImage -> $(BIN)/ (Docker fallback if tools missing)"
 	@echo "  flatpak      - fmt + check, then Flatpak bundle -> $(BIN)/com.sqyre.app.flatpak"
@@ -128,6 +139,9 @@ else
   SQYRE_APP_FEATURES :=
 endif
 
+sqyre probe release dev release-bundle release-bundle-dhat test doctest coverage bench run \
+	windows macos appimage flatpak clippy: $(OCR_MODELS)
+
 sqyre: $(BIN)
 	$(CARGO) build -p sqyre-app $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/debug/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
@@ -150,7 +164,7 @@ release: release-gate $(BIN)
 	$(CARGO) build -p sqyre-app --release $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
 	cp -f $(TARGET_DIR)/release/sqyre$(BIN_EXT) $(BIN)/sqyre$(BIN_EXT)
 
-# Portable Linux directory with libtesseract/leptonica + tessdata (needs patchelf).
+# Portable Linux directory with bundled .so deps (needs patchelf).
 # Skips release-gate (clippy/deny): local packaging only; run `make check` before shipping.
 release-bundle: $(BIN)
 	@if [ "$(HOST_OS)" != "linux" ]; then \
@@ -369,8 +383,8 @@ coverage-floors:
 run:
 	$(CARGO) run -p sqyre-app $(CARGO_FLAGS)
 
-tessdata:
-	./scripts/download-tessdata.sh
+ocr-models:
+	./scripts/download-ocr-models.sh
 
 docs-media:
 	./scripts/generate-docs-media.sh
