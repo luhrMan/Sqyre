@@ -65,9 +65,10 @@ lto = false
 inherits = "release"
 codegen-units = 1
 
-# OCR inference must stay optimized even in debug builds: `make android`
-# defaults to a debug APK and unoptimized rten kernels take minutes per frame
-# on ARM. Also keeps debug `bin/sqyre` OCR usable.
+# OCR inference and template matching must stay optimized even in debug builds:
+# `make android` defaults to a debug APK and unoptimized match kernels take
+# minutes per frame on ARM (multi-second image search). Also keeps debug
+# `bin/sqyre` search/OCR usable.
 [profile.dev.package.ocrs]
 opt-level = 3
 [profile.dev.package.rten]
@@ -91,6 +92,26 @@ opt-level = 3
 [profile.dev.package.rten-tensor]
 opt-level = 3
 [profile.dev.package.rten-vecmath]
+opt-level = 3
+
+# Image-search / pixel-scan hot path: match kernel, FFT, SIMD dispatch, blur,
+# icon decode, and the per-frame RGBA→RGB/crop copies. Same rationale as the
+# ocrs overrides — debug builds stay usable on weak CPUs.
+[profile.dev.package.pulp]
+opt-level = 3
+[profile.dev.package.purecv]
+opt-level = 3
+[profile.dev.package.rustfft]
+opt-level = 3
+[profile.dev.package.image]
+opt-level = 3
+[profile.dev.package.sqyre-match]
+opt-level = 3
+[profile.dev.package.sqyre-vision]
+opt-level = 3
+[profile.dev.package.sqyre-capture]
+opt-level = 3
+[profile.dev.package.sqyre-android]
 opt-level = 3
 
 [workspace.dependencies]
