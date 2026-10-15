@@ -1,4 +1,4 @@
-# Rust Sqyre workspace (egui / PureCV / Tesseract) + AppImage / Flatpak packaging tools.
+# Rust Sqyre workspace (egui / PureCV / ocrs) + AppImage / Flatpak packaging tools.
 # Also used as the Linux AppImage Docker build image (make appimage fallback / CI).
 # Docker CLI comes from the docker-outside-of-docker feature (host daemon via socket)
 # so `make windows`, nested AppImage builds, and Flatpak Docker fallbacks work inside
@@ -14,9 +14,8 @@ ARG RUST_VERSION=1.95.0
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl ca-certificates git \
     build-essential pkg-config \
-    # leptess / bindgen
+    # bindgen (pipewire / libspa sys crates)
     clang libclang-dev \
-    tesseract-ocr tesseract-ocr-eng libtesseract-dev libleptonica-dev \
     # egui / eframe / winit
     libx11-dev libxkbcommon-dev libxkbcommon-x11-dev \
     libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
@@ -72,8 +71,7 @@ RUN set -eux \
  && chmod 755 /usr/local/bin/sccache-rustc-wrapper \
  && sccache --version
 
-# Android APK (`make android` / `make android-check`): JDK 17, SDK, NDK, Gradle, cargo-ndk;
-# CMake + Ninja cross-build Leptonica/Tesseract (scripts/android/build-ocr.sh).
+# Android APK (`make android` / `make android-check`): JDK 17, SDK, NDK, Gradle, cargo-ndk.
 ARG ANDROID_CMDLINE_TOOLS=11076708
 ARG ANDROID_PLATFORM=35
 # AGP 8.7 builds with build-tools 34 unless the Gradle file pins another.
@@ -85,7 +83,7 @@ ENV ANDROID_HOME=/opt/android-sdk \
     JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 \
     PATH="/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:${PATH}"
 RUN set -eux \
- && apt-get update && apt-get install -y --no-install-recommends openjdk-17-jdk-headless unzip cmake ninja-build \
+ && apt-get update && apt-get install -y --no-install-recommends openjdk-17-jdk-headless unzip \
  && rm -rf /var/lib/apt/lists/* \
  && mkdir -p "${ANDROID_HOME}/cmdline-tools" \
  && curl -fsSL -o /tmp/cmdline-tools.zip \

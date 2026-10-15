@@ -22,7 +22,7 @@
       keyboard input.
     </p>
     <p>
-      Image Search, OCR, and Find Pixel use PureCV and Tesseract. On Wayland,
+      Image Search, OCR, and Find Pixel use PureCV and ocrs. On Wayland,
       capture and synthetic input go through xdg-desktop-portal (ScreenCast /
       RemoteDesktop) and PipeWire where the session supports them.
     </p>

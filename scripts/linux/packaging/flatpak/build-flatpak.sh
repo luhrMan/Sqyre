@@ -87,10 +87,11 @@ ensure_writable_packaging_dirs() {
   done
 }
 
-ensure_tessdata() {
-  if [ ! -f "$REPO_ROOT/assets/tessdata/eng.traineddata" ]; then
-    echo "Downloading eng.traineddata…"
-    "$REPO_ROOT/scripts/download-tessdata.sh"
+ensure_ocr_models() {
+  if [ ! -f "$REPO_ROOT/assets/ocr-models/text-detection.onnx" ] ||
+    [ ! -f "$REPO_ROOT/assets/ocr-models/text-recognition.onnx" ]; then
+    echo "Downloading OCR models…"
+    "$REPO_ROOT/scripts/download-ocr-models.sh"
   fi
 }
 
@@ -135,7 +136,7 @@ ensure_runtimes() {
 }
 
 run_native() {
-  ensure_tessdata
+  ensure_ocr_models
   ensure_icon
   ensure_cargo_sources
   ensure_writable_packaging_dirs
@@ -157,7 +158,7 @@ run_native() {
   # --disable-rofiles-fuse: required when /dev/fuse is missing (typical
   # Devcontainer / nested Docker). Without it flatpak-builder fails with
   # "fuse: device not found" / "rofiles … not initialized".
-  # --ccache: speeds leptonica/tesseract rebuilds when module cache misses.
+  # --ccache: speeds rebuilds when the module cache misses.
   # --jobs: ~50% of nproc (see flatpak_build_jobs); sets FLATPAK_BUILDER_N_JOBS
   # for make/ninja/cargo in the manifest.
   (
@@ -192,7 +193,7 @@ run_docker() {
   # Privileged Flathub CI image (bwrap + flatpak-builder).
   IMAGE="${SQYRE_FLATPAK_IMAGE:-ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-25.08}"
 
-  ensure_tessdata
+  ensure_ocr_models
   ensure_icon
   ensure_cargo_sources
 

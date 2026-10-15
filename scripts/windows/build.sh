@@ -133,11 +133,21 @@ ensure_windows_cross_image() {
     fi
   fi
 
-  echo "Building Docker image $image (MinGW Tesseract + sccache; slow once)…"
+  echo "Building Docker image $image (MinGW + sccache; slow once)…"
   docker build -f "$dockerfile" -t "$image" "$SCRIPT_DIR"
 }
 
+# OCR models are embedded via include_bytes! — required at compile time.
+ensure_ocr_models() {
+  if [ ! -f "$REPO_ROOT/assets/ocr-models/text-detection.onnx" ] ||
+    [ ! -f "$REPO_ROOT/assets/ocr-models/text-recognition.onnx" ]; then
+    echo "Downloading OCR models…"
+    "$REPO_ROOT/scripts/download-ocr-models.sh"
+  fi
+}
+
 run_native() {
+  ensure_ocr_models
   local target_dir="${CARGO_TARGET_DIR:-$REPO_ROOT/target}"
   local cargo_incremental="${CARGO_INCREMENTAL:-1}"
   local profile="${SQYRE_CARGO_PROFILE:-dist}"
@@ -168,6 +178,7 @@ run_native() {
 }
 
 run_docker() {
+  ensure_ocr_models
   check_target_writable
   if ! have_cmd docker; then
     echo "Windows cross-build needs Docker on non-Windows hosts." >&2

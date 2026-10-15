@@ -1,9 +1,7 @@
 #!/usr/bin/env bash
-# Download eng.traineddata for local OCR fallback (see assets/tessdata/).
-# The file is gitignored; run this after clone or when missing.
-#
-# URL and SHA-256 must match ENG_TRAINEDDATA_URL / ENG_TRAINEDDATA_SHA256 in
-# crates/sqyre-vision/src/ocr_engine.rs, which verifies its own runtime download.
+# Download eng.traineddata — used only by the Go comparison harness
+# (scripts/bench-compare/run-go.sh); Sqyre itself OCRs via ocrs ONNX models
+# (scripts/download-ocr-models.sh). The file is gitignored.
 set -euo pipefail
 _here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/lib/repo-root.sh
