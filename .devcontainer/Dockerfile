@@ -1,4 +1,13 @@
 # Rust Sqyre workspace (egui / PureCV / ocrs) + AppImage / Flatpak packaging tools.
+#
+# Multi-stage:
+#   base    — everything needed for Linux builds/tests/packaging except the
+#             Android toolchain. This is the slim CI image (sqyre-linux-build)
+#             pulled by the test/build-linux/build-appimage/build-wasm jobs.
+#   android — base + JDK/SDK/NDK/Gradle/cargo-ndk + emulator/scrcpy. This is the
+#             devcontainer image (devcontainer.json builds the last stage) and
+#             the CI image for check-android/build-android (sqyre-android-build).
+#
 # Also used as the Linux AppImage Docker build image (make appimage fallback / CI).
 # Docker CLI comes from the docker-outside-of-docker feature (host daemon via socket)
 # so `make windows`, nested AppImage builds, and Flatpak Docker fallbacks work inside
@@ -6,7 +15,7 @@
 # image when the container itself cannot run flatpak-builder natively).
 # Trunk + wasm32-unknown-unknown support `make wasm` (GUI-only browser editor).
 # Build and test in-container; run the GUI binary on the host (needs X11).
-FROM ubuntu:24.04
+FROM ubuntu:24.04 AS base
 
 ARG DEBIAN_FRONTEND=noninteractive
 ARG RUST_VERSION=1.95.0
@@ -71,7 +80,37 @@ RUN set -eux \
  && chmod 755 /usr/local/bin/sccache-rustc-wrapper \
  && sccache --version
 
-# Android APK (`make android` / `make android-check`): JDK 17, SDK, NDK, Gradle, cargo-ndk.
+ARG USERNAME=vscode
+ARG USER_UID=1000
+ARG USER_GID=1000
+RUN groupadd --gid "${USER_GID}" "${USERNAME}" \
+    || groupmod -n "${USER_GID}" "$(getent group "${USER_GID}" | cut -d: -f1)" \
+    && useradd -s /bin/bash --uid "${USER_UID}" --gid "${USER_GID}" -m "${USERNAME}" \
+    || usermod -l "${USERNAME}" -d "/home/${USERNAME}" -m "$(getent passwd "${USER_UID}" | cut -d: -f1)" \
+    && usermod -g "${USER_GID}" "${USERNAME}" \
+    && echo "${USERNAME} ALL=(root) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" \
+    && chmod 0440 "/etc/sudoers.d/${USERNAME}"
+
+USER ${USERNAME}
+WORKDIR /workspace
+ENV CARGO_HOME=/home/${USERNAME}/.cargo \
+    RUSTUP_HOME=/usr/local/rustup \
+    PATH="/usr/local/cargo/bin:${PATH}"
+
+# Android APK (`make android` / `make android-check`): JDK 17, SDK, NDK, Gradle,
+# cargo-ndk, plus the x86_64 emulator and scrcpy for `make android-emulator`.
+# CI pulls this only for check-android / build-android; devcontainers get it
+# automatically as the Dockerfile's last stage.
+FROM base AS android
+
+ARG USERNAME=vscode
+USER root
+
+# Installs in this stage must land in the system toolchain: base's final ENV
+# sets CARGO_HOME to the vscode user's ~/.cargo, which is not on the CI
+# PATH (docker run mounts use /usr/local/cargo/bin). Restored at the end.
+ENV CARGO_HOME=/usr/local/cargo
+
 ARG ANDROID_CMDLINE_TOOLS=11076708
 ARG ANDROID_PLATFORM=35
 # AGP 8.7 builds with build-tools 34 unless the Gradle file pins another.
@@ -135,19 +174,6 @@ RUN set -eux \
 ENV PATH="/opt/scrcpy:${PATH}" \
     ADB=/opt/android-sdk/platform-tools/adb
 
-ARG USERNAME=vscode
-ARG USER_UID=1000
-ARG USER_GID=1000
-RUN groupadd --gid "${USER_GID}" "${USERNAME}" \
-    || groupmod -n "${USERNAME}" "$(getent group "${USER_GID}" | cut -d: -f1)" \
-    && useradd -s /bin/bash --uid "${USER_UID}" --gid "${USER_GID}" -m "${USERNAME}" \
-    || usermod -l "${USERNAME}" -d "/home/${USERNAME}" -m "$(getent passwd "${USER_UID}" | cut -d: -f1)" \
-    && usermod -g "${USER_GID}" "${USERNAME}" \
-    && echo "${USERNAME} ALL=(root) NOPASSWD:ALL" > "/etc/sudoers.d/${USERNAME}" \
-    && chmod 0440 "/etc/sudoers.d/${USERNAME}"
-
+# Back to the vscode user's cargo home for interactive devcontainer use.
+ENV CARGO_HOME=/home/${USERNAME}/.cargo
 USER ${USERNAME}
-WORKDIR /workspace
-ENV CARGO_HOME=/home/${USERNAME}/.cargo \
-    RUSTUP_HOME=/usr/local/rustup \
-    PATH="/usr/local/cargo/bin:${PATH}"

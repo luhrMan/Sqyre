@@ -33,7 +33,8 @@ runs:
       run: |
         set -euo pipefail
         o=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-        n=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+        n=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+        n="${n#*/}"
         hash=$(sha256sum \
           scripts/windows/Dockerfile \
           scripts/windows/build-mingw-deps.sh \
@@ -45,9 +46,6 @@ runs:
         echo "remote_image=ghcr.io/${o}/${n}-windows-cross:${hash}" >> "$GITHUB_OUTPUT"
         echo "remote_latest=ghcr.io/${o}/${n}-windows-cross:latest" >> "$GITHUB_OUTPUT"
         echo "hash=${hash}" >> "$GITHUB_OUTPUT"
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v4
 
     - name: Log in to GitHub Container Registry
       uses: docker/login-action@v4
@@ -71,6 +69,11 @@ runs:
           echo "hit=false" >> "$GITHUB_OUTPUT"
           echo "No runnable image at $remote; will build"
         fi
+
+    # Buildx is only needed on the build path — pull hits skip its setup time.
+    - name: Set up Docker Buildx
+      if: steps.pull.outputs.hit != 'true'
+      uses: docker/setup-buildx-action@v4
 
     - name: Build Windows cross image (publish Buildx caches)
       if: steps.pull.outputs.hit != 'true' && inputs.push == 'true'

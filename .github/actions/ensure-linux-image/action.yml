@@ -1,7 +1,10 @@
 name: Ensure Linux build image
 description: >
-  Pull a content-addressed sqyre Linux build image from GHCR, or build it with
-  Buildx layer caches and optionally push it for other jobs/runs to reuse.
+  Pull a content-addressed sqyre build image from GHCR, or build it with Buildx
+  layer caches and optionally push it for other jobs/runs to reuse.
+  .devcontainer/Dockerfile is multi-stage: `base` is the slim image
+  (sqyre-linux-build, no Android toolchain); `android` layers SDK/NDK/Gradle/
+  emulator/scrcpy on top (sqyre-android-build).
 inputs:
   github-token:
     description: Token for GHCR login (pass secrets.GITHUB_TOKEN)
@@ -10,6 +13,10 @@ inputs:
     description: Local image tag to load/tag
     required: false
     default: sqyre-linux-build:latest
+  target:
+    description: Dockerfile stage to build (base = slim; android = base + SDK/NDK/emulator)
+    required: false
+    default: base
   push:
     description: Push runnable image tags to GHCR on cache miss
     required: false
@@ -33,17 +40,46 @@ runs:
       run: |
         set -euo pipefail
         o=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-        n=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
+        n=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+        n="${n#*/}"
         # Dockerfile has no COPY from build context — hash the Dockerfile only.
+        # One hash covers both stages: an android-layer change also bumps the
+        # slim tag, which just yields a cached rebuild + tag move (same digest).
         hash=$(sha256sum .devcontainer/Dockerfile | cut -c1-16)
-        echo "local_tag=${{ inputs.local-tag }}" >> "$GITHUB_OUTPUT"
-        echo "buildcache=ghcr.io/${o}/${n}-buildcache:linux" >> "$GITHUB_OUTPUT"
-        echo "remote_image=ghcr.io/${o}/${n}-linux-build:${hash}" >> "$GITHUB_OUTPUT"
-        echo "remote_latest=ghcr.io/${o}/${n}-linux-build:latest" >> "$GITHUB_OUTPUT"
-        echo "hash=${hash}" >> "$GITHUB_OUTPUT"
-
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v4
+        target="${{ inputs.target }}"
+        case "$target" in
+          android) repo_suffix="android-build"; cache_tag="android"; scope="sqyre-android" ;;
+          *)       repo_suffix="linux-build";   cache_tag="linux";   scope="sqyre-linux"; target="base" ;;
+        esac
+        buildcache="ghcr.io/${o}/${n}-buildcache:${cache_tag}"
+        remote_image="ghcr.io/${o}/${n}-${repo_suffix}:${hash}"
+        remote_latest="ghcr.io/${o}/${n}-${repo_suffix}:latest"
+        # cache-from: own variant first. The android stage builds `FROM base`, so
+        # it also imports the slim variant's buildcache + gha scope (the runnable
+        # linux-build tag is not a Buildx cache manifest and cannot be a source).
+        cache_from="type=registry,ref=${buildcache}"
+        if [ "$target" = "android" ]; then
+          cache_from="${cache_from}"$'\n'"type=registry,ref=ghcr.io/${o}/${n}-buildcache:linux"
+          cache_from="${cache_from}"$'\n'"type=gha,scope=sqyre-linux"
+        fi
+        cache_from="${cache_from}"$'\n'"type=gha,scope=${scope}"
+        {
+          echo "local_tag=${{ inputs.local-tag }}"
+          echo "target=${target}"
+          echo "remote_image=${remote_image}"
+          echo "remote_latest=${remote_latest}"
+          echo "hash=${hash}"
+          echo "cache_from<<EOF"
+          echo "${cache_from}"
+          echo "EOF"
+          echo "cache_to_push<<EOF"
+          echo "type=gha,mode=max,scope=${scope}"
+          echo "type=registry,ref=${buildcache},mode=max"
+          echo "EOF"
+          echo "cache_to_nopush<<EOF"
+          echo "type=gha,mode=max,scope=${scope}"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Log in to GitHub Container Registry
       uses: docker/login-action@v4
@@ -52,7 +88,7 @@ runs:
         username: ${{ github.actor }}
         password: ${{ inputs.github-token }}
 
-    - name: Pull content-addressed Linux image
+    - name: Pull content-addressed image
       id: pull
       shell: bash
       run: |
@@ -68,35 +104,36 @@ runs:
           echo "No runnable image at $remote; will build"
         fi
 
-    - name: Build Linux image (publish Buildx caches)
+    # Buildx is only needed on the build path — pull hits skip its setup time.
+    - name: Set up Docker Buildx
+      if: steps.pull.outputs.hit != 'true'
+      uses: docker/setup-buildx-action@v4
+
+    - name: Build image (publish Buildx caches)
       if: steps.pull.outputs.hit != 'true' && inputs.push == 'true'
       uses: docker/build-push-action@v7
       with:
         context: .devcontainer
         file: .devcontainer/Dockerfile
+        target: ${{ steps.meta.outputs.target }}
         load: true
         tags: ${{ steps.meta.outputs.local_tag }}
-        cache-from: |
-          type=registry,ref=${{ steps.meta.outputs.buildcache }}
-          type=gha,scope=sqyre-linux
-        cache-to: |
-          type=gha,mode=max,scope=sqyre-linux
-          type=registry,ref=${{ steps.meta.outputs.buildcache }},mode=max
+        cache-from: ${{ steps.meta.outputs.cache_from }}
+        cache-to: ${{ steps.meta.outputs.cache_to_push }}
 
-    - name: Build Linux image (GHA Buildx cache only)
+    - name: Build image (GHA Buildx cache only)
       if: steps.pull.outputs.hit != 'true' && inputs.push != 'true'
       uses: docker/build-push-action@v7
       with:
         context: .devcontainer
         file: .devcontainer/Dockerfile
+        target: ${{ steps.meta.outputs.target }}
         load: true
         tags: ${{ steps.meta.outputs.local_tag }}
-        cache-from: |
-          type=registry,ref=${{ steps.meta.outputs.buildcache }}
-          type=gha,scope=sqyre-linux
-        cache-to: type=gha,mode=max,scope=sqyre-linux
+        cache-from: ${{ steps.meta.outputs.cache_from }}
+        cache-to: ${{ steps.meta.outputs.cache_to_nopush }}
 
-    - name: Push runnable Linux image to GHCR
+    - name: Push runnable image to GHCR
       if: steps.pull.outputs.hit != 'true' && inputs.push == 'true'
       shell: bash
       run: |
