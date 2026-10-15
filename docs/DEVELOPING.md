@@ -134,7 +134,7 @@ Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make rel
 
 ### CI and GitHub Releases
 
-Push/PR to `main` runs Linux quality checks, an instrumented coverage/test pass (`make coverage` + floors), `make smoke` / `sqyre --version`, and `make wasm-check`, plus a Windows job that tests OS-agnostic crates (`sqyre-domain`, `sqyre-varref`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`) — **not** a GitHub Release. Capture, hotkeys, and GPU UI tests stay Linux-only. Criterion benches (`make bench`) and the comparative harness (`make bench-compare`, baseline save/diff) are local-only.
+Push/PR to `main` runs a `check` job (fmt/clippy/deny/machete, doctests, `make smoke`, `make wasm-check`, and a `cargo-sources.json` ↔ `Cargo.lock` drift check), a parallel `test` job running instrumented coverage (`make coverage` + floors), an `android-check` job on the Android image, and a Windows job that tests OS-agnostic crates (`sqyre-domain`, `sqyre-varref`, `sqyre-serialize`, `sqyre-validate`, `sqyre-persist`) — **not** a GitHub Release. Capture, hotkeys, and GPU UI tests stay Linux-only. Criterion benches (`make bench`) and the comparative harness (`make bench-compare`, baseline save/diff) are local-only.
 
 Releases come from [`.github/workflows/main.yml`](../.github/workflows/main.yml) on **schedule** or **manual dispatch** only:
 
@@ -143,7 +143,9 @@ Releases come from [`.github/workflows/main.yml`](../.github/workflows/main.yml)
 | Cron | Daily at **23:00 UTC** (`0 23 * * *`) |
 | Manual | Actions → **Build and Release** → Run workflow, or `gh workflow run "Build and Release" --ref main` |
 
-The `version` job sets `should_release=true` only when there is no prior `v*` tag, or `main` has changed since the latest `v*` tag **excluding** `docs/**` and `*.md`. Docs-only / markdown-only changes do not publish. If nothing releasable changed, release jobs are skipped.
+The `version` job sets `should_release=true` only when there is no prior `v*` tag, or the released ref (`main` on schedule, the dispatched ref on manual runs) has changed since the latest `v*` tag **excluding** `docs/**` and `*.md`. It also fails fast if `crates/sqyre-update/update_pubkey.hex` is unconfigured, before any build job spins up. Docs-only / markdown-only changes do not publish. If nothing releasable changed, release jobs are skipped.
+
+Release build jobs set `SQYRE_SKIP_GATE=1` so `make android` / `make wasm` skip `release-gate` (fmt + check) — the `check` job already gated the exact same commit, and `release` itself requires `check` to succeed.
 
 **Tag shape:** `vYYYY.MM.DD` (UTC date). If that tag already exists, CI uses `vYYYY.MM.DD.HHMM`.
 
@@ -157,7 +159,7 @@ To configure signing (maintainer, once):
 
 1. Generate a keypair (32-byte seed as hex), e.g. with Python `nacl` / `cryptography`, or any Ed25519 tool that can emit raw keys.
 2. Write the **public** key as 64 lowercase hex characters into `crates/sqyre-update/update_pubkey.hex` and commit it.
-3. Store the **private** seed hex as GitHub Actions secret `SQYRE_UPDATE_SIGNING_KEY` (never commit it). CI runs `sign_update_sums` during the release job.
+3. Store the **private** seed hex as GitHub Actions secret `SQYRE_UPDATE_SIGNING_KEY` (never commit it). `build-linux` compiles `sign_update_sums` in the build container and uploads it as an artifact; the `release` job downloads and runs it — no second checkout/toolchain.
 
 Until `update_pubkey.hex` is configured (not `UNCONFIGURED`), auto-update checks fail closed on signature setup.
 
@@ -166,14 +168,15 @@ CI caches (shared where possible):
 | Cache | Shared by | Notes |
 |-------|-----------|--------|
 | Cargo registry (`.cache/cargo`) | All Linux jobs | One key on `Cargo.lock`; warmed once per run via `cargo-registry` |
-| Cargo `target/` | Per triple | `linux` / `windows-gnu` / `wasm32` / macOS — not cross-shareable |
-| Linux sccache (`.cache/sccache-linux`) | `test`, `build-linux`, `build-wasm` | rustc outputs across clippy / coverage / release / wasm |
-| Linux build image | `test`, `build-linux`, `build-wasm` | Content-hash tag on GHCR + Buildx layers; built once per run |
+| Cargo `target/` | Per triple | `linux` / `windows-gnu` / `wasm32` / `android` — not cross-shareable |
+| sccache (`.cache/sccache-{linux,windows}`) | Rolling per run+job | Entries accumulate across commits; restore prefers the same lockfile/image epoch |
+| Linux build image (`base` stage) | `check`, `test`, `build-linux` (+AppImage), `build-wasm` | Slim: no Android toolchain. Content-hash tag on GHCR + Buildx layers |
+| Android build image (`android` stage) | `check-android`, `build-android` | `base` + SDK/NDK/Gradle/emulator/scrcpy; builds on the base image's pushed layers |
 | Windows cross image | `build-windows` (+ local `make windows`) | Content-hash tag on GHCR + Buildx layers |
-| Windows sccache | `build-windows` | Separate from Cargo target and Linux sccache |
-| OCR models / Homebrew | Across runs | Stable keys |
+| Flatpak runtimes + builder state | `build-flatpak` | Rolling, keyed on the manifest epoch |
+| OCR models / Trunk tools / AppImage runtime / Gradle / rustup toolchains | Across runs | Keyed on the inputs that pin their versions |
 
-Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>` and `…-windows-cross:<scripts-hash>` (also `:latest`).
+Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>`, `…-android-build:<dockerfile-hash>`, and `…-windows-cross:<scripts-hash>` (also `:latest`). `.devcontainer/Dockerfile` is multi-stage — `docker build` without `--target` produces the full `android` image (what the devcontainer uses); CI builds `--target base` or `--target android` explicitly.
 
 ---
 
@@ -181,7 +184,7 @@ Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>
 
 | Resource | Purpose |
 |----------|---------|
-| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Rust + AppImage/Flatpak tools + Trunk/wasm32 |
+| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Multi-stage: `base` = Rust + AppImage/Flatpak tools + Trunk/wasm32; `android` = base + SDK/NDK/Gradle/emulator/scrcpy (devcontainer image) |
 | [.devcontainer/devcontainer.json](../.devcontainer/devcontainer.json) | Docker-outside-of-Docker (CLI + host socket) for `make windows` / packaging fallbacks |
 | [scripts/windows/Dockerfile](../scripts/windows/Dockerfile) | MinGW cross image for `make windows` on Linux |
 | [crates/sqyre-app/assets/icons/](../crates/sqyre-app/assets/icons/) | Brand icons (embedded SVG) |
