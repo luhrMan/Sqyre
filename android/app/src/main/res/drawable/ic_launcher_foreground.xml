@@ -2,18 +2,20 @@
 <!-- Path and nested transforms mirror crates/sqyre-app/assets/icons/sqyre.svg
      (the gold #dc9d2e "S" letterform only — the shield and ornate border are
      dropped). The outer group scales the 128-unit art so the S's bounding box
-     (x 41.2..86.8, y 20.8..103.7, center 64,62.3) fills the adaptive icon's
-     66dp safe circle, centered at 54,54. Update both files together. -->
+     (x 41.2..86.8, y 20.8..103.7, center 64,62.3) sits centered at 54,54 with
+     ~30dp of vertical art scaled to 54dp — inside the adaptive icon's 66dp
+     safe circle, matching neighboring launcher's centered glyphs. Update both
+     files together. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
     <group
-        android:scaleX="0.7958"
-        android:scaleY="0.7958"
-        android:translateX="3.067"
-        android:translateY="4.451">
+        android:scaleX="0.65114"
+        android:scaleY="0.65114"
+        android:translateX="12.328"
+        android:translateY="13.460">
         <group
             android:scaleX="1.0973354"
             android:scaleY="1.0188785"
