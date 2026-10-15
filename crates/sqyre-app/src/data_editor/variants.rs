@@ -135,7 +135,7 @@ impl DataEditor {
         );
     }
 
-    /// Finish [`Self::request_variant_pick`] with the chosen PNG.
+    /// Finish [`Self::request_variant_pick`] with the chosen image.
     pub(crate) fn add_picked_variant(
         &mut self,
         catalog: &ProgramCatalog,
