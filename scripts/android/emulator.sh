@@ -157,7 +157,9 @@ start_local() {
 ensure_image() {
 	docker image inspect "$DOCKER_IMAGE" >/dev/null 2>&1 && return 0
 	echo "Building $DOCKER_IMAGE from .devcontainer/Dockerfile"
-	docker build -f "$REPO_ROOT/.devcontainer/Dockerfile" -t "$DOCKER_IMAGE" "$REPO_ROOT"
+	# `android` stage: base + SDK/NDK/emulator/scrcpy.
+	# Context is .devcontainer (not the whole repo) — the Dockerfile has no COPY.
+	docker build --target android -f "$REPO_ROOT/.devcontainer/Dockerfile" -t "$DOCKER_IMAGE" "$REPO_ROOT/.devcontainer"
 }
 
 # Docker resolves device and mount paths on the host, which the devcontainer cannot see.

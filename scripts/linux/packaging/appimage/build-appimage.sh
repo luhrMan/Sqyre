@@ -206,7 +206,9 @@ run_docker() {
 
   if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
     echo "Building Docker image $IMAGE (one-time)…"
-    docker build -f "$DOCKERFILE" -t "$IMAGE" "$REPO_ROOT"
+    # `base` stage: slim image without the Android toolchain layers.
+    # Context is .devcontainer (not the whole repo) — the Dockerfile has no COPY.
+    docker build --target base -f "$DOCKERFILE" -t "$IMAGE" "$REPO_ROOT/.devcontainer"
   fi
 
   # Ensure OCR models exist so the recipe can bundle them.
