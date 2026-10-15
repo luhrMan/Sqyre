@@ -156,9 +156,15 @@ overlay-sandbox: $(BIN)
 	cp -f $(TARGET_DIR)/debug/overlay_sandbox$(BIN_EXT) $(BIN)/overlay_sandbox$(BIN_EXT)
 
 # Sequential fmt → check so release/packaging stays gated under make -j.
+# SQYRE_SKIP_GATE=1 skips it: CI release builds set it because the check job
+# already gated the exact same commit on push.
 release-gate:
+ifeq ($(SQYRE_SKIP_GATE),)
 	$(MAKE) fmt
 	$(MAKE) check
+else
+	@echo "release-gate: skipped (SQYRE_SKIP_GATE set)"
+endif
 
 release: release-gate $(BIN)
 	$(CARGO) build -p sqyre-app --release $(SQYRE_APP_FEATURES) $(CARGO_FLAGS)
