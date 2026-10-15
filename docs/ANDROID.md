@@ -2,7 +2,7 @@
 
 A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, executor and detection as desktop. Android provides new backends for the existing `sqyre-ports` traits. When the OS cannot do something, the call fails with `AutomationError::Unsupported`, so a desktop macro never silently does something else.
 
-**Status:** `make android` builds a runtime APK (`native-runtime,overlay-buttons`, Tesseract linked statically, `eng.traineddata` bundled) and `make android-check` compiles both the editor and runtime surfaces. Capture, input, focus, OCR, the app picker, the notification Stop/Continue actions and document picks are in the tree. None of it has been exercised on a device yet; the phases below say what each one still has to prove.
+**Status:** `make android` builds a runtime APK (`native-runtime,overlay-buttons`, ocrs ONNX models bundled) and `make android-check` compiles both the editor and runtime surfaces. Capture, input, focus, OCR, the app picker, the notification Stop/Continue actions and document picks are in the tree. None of it has been exercised on a device yet; the phases below say what each one still has to prove.
 
 ## Parity contract
 
@@ -10,7 +10,7 @@ A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, exe
 |---------|------------|
 | Macro YAML, variables, flow (loop, while, if, for-each, run macro, wait) | Same executor |
 | Image search, find pixel | Same `sqyre-match` / `sqyre-vision`, once a frame exists |
-| OCR | Same Tesseract (`leptess`) and `eng.traineddata`. Leptonica and Tesseract are static NDK builds; the APK's `tessdata` asset is copied to app storage on launch |
+| OCR | Same ocrs engine as the desktop; the ONNX models are embedded into `libsqyre_app.so` at compile time |
 | Capture | `MediaProjection` frames at the real display size. That frame is the whole virtual desktop: one monitor at (0, 0) |
 | Move | Records the point. There is no hover |
 | Left click | Tap at the last point. Down then up with a move in between is a swipe. A long hold keeps its duration |
@@ -41,7 +41,7 @@ executor (unchanged)
   AutomationBackend  → sqyre_input::OsAutomation      (crates/sqyre-input/src/android.rs)
   ScreenCapturer     → sqyre_capture::OsCapturer      (crates/sqyre-capture/src/android_capture.rs)
   WindowFocuser      → sqyre_capture::OsWindowFocuser (same file)
-  OcrEngine          → existing LeptessOcr
+  OcrEngine          → existing OcrsEngine
 
 crates/sqyre-android (the only JNI boundary)
   FrameStore         latest projection frame + projection state (pure, host-tested)
@@ -84,7 +84,7 @@ Desktop, Android and WASM share one async path in `crates/sqyre-app/src/file_dia
 
 ### OCR
 
-`scripts/android/build-ocr.sh` downloads pinned Leptonica and Tesseract sources (SHA-256 checked) and builds static libraries per ABI into `target/android/ocr/<abi>` with CMake, Ninja and the NDK toolchain file. A finished ABI is skipped on later runs. `scripts/android/ocr-env.sh` points the `leptonica-sys` / `tesseract-sys` build scripts at those `.pc` files and adds the static C++ runtime to the link. `build-apk.sh` copies `assets/tessdata` (running `make tessdata`'s download if missing) into the APK; `Tessdata.install` extracts it to `files/tessdata` and `sqyre_vision::set_tessdata_dir` makes discovery look there first.
+OCR is pure Rust via [ocrs](https://github.com/robertknight/ocrs) — no NDK C libraries to cross-build. The two ONNX models are embedded into `libsqyre_app.so` via `include_bytes!` (`assets/ocr-models/`, fetched by `make ocr-models` / `build-apk.sh` if missing) — nothing is extracted or downloaded at runtime.
 
 ## Phases
 
@@ -135,8 +135,8 @@ Exit: create a macro, add an image search, run it, and stop it on a phone-sized 
 
 - **SDK levels:** min SDK 29, target and compile SDK 35.
 - **Activity:** one `singleTask` `NativeActivity` subclass.
-- **Toolchain:** the devcontainer carries JDK 17, the SDK, NDK r27, Gradle, `cargo-ndk`, CMake and Ninja.
-- **Features:** `ANDROID_FEATURES` defaults to `native-runtime,overlay-buttons`; set it empty for an editor-only APK without the OCR build.
+- **Toolchain:** the devcontainer carries JDK 17, the SDK, NDK r27, Gradle and `cargo-ndk` (OCR is pure-Rust ocrs — no C/C++ deps to build).
+- **Features:** `ANDROID_FEATURES` defaults to `native-runtime,overlay-buttons`; set it empty for an editor-only APK without the runtime build.
 - **Stripping:** Gradle reads `ANDROID_NDK_HOME` and its `source.properties` so AGP strips `libsqyre_app.so` with the NDK `cargo-ndk` linked against.
 - **Releases:** CI builds and signs `sqyre-v<version>-android-arm64.apk` on each release (`build-android` in `.github/workflows/main.yml`, arm64-v8a only). It needs the `SQYRE_ANDROID_KEYSTORE` (base64 `.jks` — encode with `base64 -w0 release.keystore`), `SQYRE_ANDROID_KEYSTORE_PASSWORD`, `SQYRE_ANDROID_KEY_ALIAS` and `SQYRE_ANDROID_KEY_PASSWORD` secrets — the release fails without them, like `SQYRE_UPDATE_SIGNING_KEY`. Locally `ANDROID_PROFILE=release make android` signs when `ANDROID_KEYSTORE_FILE` (+ `ANDROID_KEYSTORE_PASSWORD`/`_ALIAS`/`_KEY_PASSWORD`) is set and stays unsigned otherwise. A store listing is out of scope.
 - **Renderer:** eframe is pinned to Glow (GLES) on Android. wgpu would pick Vulkan, which crashes the emulator's SwiftShader host renderer.
@@ -165,13 +165,13 @@ Build the APK first with `make android`; it includes the x86_64 library by defau
 ## Tests
 
 - **Desktop:** `make fmt`, `make check` and `make test`. The pure `sqyre-android` modules (frame packing, frame store, gesture planning, status codes, app-list parsing, document picks, notification handlers) and the crop kernels in `sqyre-capture` run here.
-- **Android compile:** `make android-check` — in the devcontainer and the CI `test` job — checks the editor and runtime `sqyre-app` plus `sqyre-capture` and `sqyre-input`. `sqyre-probe` checks desktop sessions and is not built for Android. It builds the OCR libraries on first run.
+- **Android compile:** `make android-check` — in the devcontainer and the CI `test` job — checks the editor and runtime `sqyre-app` plus `sqyre-capture` and `sqyre-input`. `sqyre-probe` checks desktop sessions and is not built for Android. It fetches the embedded OCR models on first run.
 - **Device or emulator:** by hand, at each phase's exit criteria, with `make android-emulator` or `make android-emulator-headless` plus `scripts/android/emulator.sh screenshot`. Emulators are not in CI yet.
 
 ## Out of scope
 
 - iOS
 - A Play Store build
-- ML Kit or any OCR engine other than Tesseract
+- ML Kit or any OCR engine other than ocrs
 - Remapping desktop key names onto Back, Home, or volume keys
 - An Android-specific macro YAML schema

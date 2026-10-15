@@ -2,7 +2,7 @@
 
 ## Dev container (recommended)
 
-Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.95, clang, Tesseract/Leptonica, X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), JDK 17 + Android SDK/NDK + Gradle + **cargo-ndk** + CMake/Ninja (for `make android` and its Leptonica/Tesseract cross-build), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
+Open the repository in the dev container (`.devcontainer/`). It includes Rust 1.95, clang (pipewire bindgen), X11 link deps, AppImage packaging tools (`appimage-builder`, squashfs-tools), **flatpak** + **flatpak-builder**, **Trunk** + `wasm32-unknown-unknown` (for `make wasm`), JDK 17 + Android SDK/NDK + Gradle + **cargo-ndk** (for `make android`), and the **Docker CLI** (host daemon via socket) so `make windows`, AppImage Docker fallbacks, and Flatpak Docker fallbacks work inside the container. Native Flatpak builds still need host user namespaces / `bwrap`; otherwise use the privileged Flatpak builder image via Docker.
 
 Nested `docker run -v` mounts use the host path via `LOCAL_WORKSPACE_FOLDER` (`${localWorkspaceFolder}`). Rebuild the container after pulling that change so the env var is set.
 
@@ -25,7 +25,7 @@ make run        # cargo run -p sqyre-app
 make check      # fmt --check + clippy (-D warnings) + cargo deny
 make machete    # unused crate deps
 make test       # cargo nextest (falls back to cargo test)
-make bench      # criterion: match, vision (no Tesseract), serialize (not in CI)
+make bench      # criterion: match, vision (no OCR), serialize (not in CI)
 make bench-compare  # Rust+Go hot-path CPU/RSS/I/O compare + baseline diffs (local)
 make wasm-check # cargo check -p sqyre-app --target wasm32-unknown-unknown --no-default-features
 make coverage   # llvm-cov HTML + lcov under target/coverage/
@@ -40,7 +40,7 @@ make wasm       # fmt + check, then bin/wasm/ GUI-only browser editor (Trunk)
 make android-check  # cargo ndk check (editor + runtime) for arm64-v8a (devcontainer)
 make android    # fmt + check, then bin/sqyre-debug.apk (devcontainer; see ANDROID.md)
 make android-emulator  # boot an x86_64 emulator (needs /dev/kvm), install and launch the APK
-make tessdata   # download eng.traineddata into assets/tessdata/
+make ocr-models # fetch the ocrs ONNX models embedded into the binary at compile time
 make release-bundle  # portable bin/sqyre-bundle/ (dist/LTO shipping; no check gate — see scripts/linux/packaging/PACKAGING.md)
 make dev            # fast prototype of release-bundle → bin/sqyre-dev/ ([profile.proto], no LTO)
 make release-bundle-dhat  # same + dhat-heap → bin/sqyre-bundle-dhat/ (leak hunts; not for shipping)
@@ -93,31 +93,24 @@ Build caches (all gitignored):
 | `docs-media` | Regenerate `docs/images/` screenshots |
 | `appimage` | `bin/Sqyre-*.AppImage` |
 | `flatpak` | `bin/com.sqyre.app.flatpak` |
-| `release-bundle` | `bin/sqyre-bundle/` (portable Linux + Tesseract; dist/LTO; no check gate) |
+| `release-bundle` | `bin/sqyre-bundle/` (portable Linux; dist/LTO; no check gate) |
 | `dev` | `bin/sqyre-dev/` (same layout; `--release` / no LTO; fast prototyping) |
 | `release-bundle-dhat` | `bin/sqyre-bundle-dhat/` (same + `dhat-heap`; local leak hunts only) |
 | `windows` | `bin/sqyre.exe` (Docker MinGW cross on Linux; native on Windows) |
 | `macos` | `bin/sqyre` (release; macOS host only) |
 | `wasm` | GUI-only browser editor → `bin/wasm/` (Trunk; no Run/capture/OCR) |
-| `android-check` | `cargo ndk check` of `sqyre-app` (editor and `native-runtime,overlay-buttons`) and the Android backends for `arm64-v8a`; cross-builds OCR libs into `target/android/ocr` on first run |
-| `android` | Sideload APK with bundled `eng.traineddata` → `bin/sqyre-debug.apk` (`ANDROID_FEATURES` default `native-runtime,overlay-buttons`, empty = editor only; `ANDROID_PROFILE`, `ANDROID_ABIS`; [ANDROID.md](./ANDROID.md)) |
+| `android-check` | `cargo ndk check` of `sqyre-app` (editor and `native-runtime,overlay-buttons`) and the Android backends for `arm64-v8a` |
+| `android` | Sideload APK → `bin/sqyre-debug.apk` (`ANDROID_FEATURES` default `native-runtime,overlay-buttons`, empty = editor only; `ANDROID_PROFILE`, `ANDROID_ABIS`; [ANDROID.md](./ANDROID.md)) |
 | `android-emulator` / `android-emulator-headless` / `android-emulator-stop` | x86_64 API 35 emulator (window or headless) that installs and launches `bin/sqyre-debug.apk`; needs `/dev/kvm` and an APK that includes x86_64, which `make android` builds by default ([ANDROID.md](./ANDROID.md#emulator)) |
-| `tessdata` | Tesseract trained data via `scripts/download-tessdata.sh` |
+| `ocr-models` | ocrs detection/recognition ONNX models via `scripts/download-ocr-models.sh` |
 
 Set `CARGO_FLAGS` for extra cargo args. Set `RELEASE_VERSION` (or write a `VERSION` file) before `make appimage` / `make flatpak` / `make release` / `make windows` to stamp package names and embed `SQYRE_VERSION` in the binary for auto-update checks (Flatpak disables in-app self-replace — use `flatpak update`). Local builds without either default to `0.0.0-dev` (update checks disabled).
 
-### OCR data (`eng.traineddata`)
+### OCR models (`assets/ocr-models/`)
 
-On native startup Sqyre resolves Tesseract English data, then **downloads** it if nothing usable is found:
+OCR runs on [ocrs](https://github.com/robertknight/ocrs) (pure Rust, RTen runtime) with two ONNX models — `text-detection.onnx` + `text-recognition.onnx` (~12 MB). They are **embedded into the binary at compile time** via `include_bytes!`, so `assets/ocr-models/` must be populated before any target that compiles `sqyre-vision` — `make` targets that need it fetch them automatically (file prerequisite on `assets/ocr-models/*.onnx`; `make ocr-models` runs the download script directly, SHA-256 verified).
 
-| Platform | Auto-download location |
-|----------|------------------------|
-| Windows | `%APPDATA%\sqyre\tessdata\eng.traineddata` |
-| Linux / macOS | `~/.sqyre/tessdata/eng.traineddata` |
-
-Discovery order (earlier entries win): `SQYRE_TESSDATA`, platform system paths (and beside `sqyre.exe` on Windows), workspace `assets/tessdata` (dev), then the auto-download path above.
-
-`make tessdata` still fills `assets/tessdata/` for packaging / CI. A failed download is a non-fatal warning in the app and on stderr; OCR actions stay unavailable until data can be found.
+`SQYRE_OCR_MODELS=<dir>` overrides the embedded pair with a directory containing both files — for testing different weights without a rebuild.
 
 ### WASM editor (`make wasm`)
 
@@ -178,7 +171,7 @@ CI caches (shared where possible):
 | Linux build image | `test`, `build-linux`, `build-wasm` | Content-hash tag on GHCR + Buildx layers; built once per run |
 | Windows cross image | `build-windows` (+ local `make windows`) | Content-hash tag on GHCR + Buildx layers |
 | Windows sccache | `build-windows` | Separate from Cargo target and Linux sccache |
-| tessdata / Homebrew | Across runs | Stable keys |
+| OCR models / Homebrew | Across runs | Stable keys |
 
 Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>` and `…-windows-cross:<scripts-hash>` (also `:latest`).
 
@@ -188,19 +181,19 @@ Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>
 
 | Resource | Purpose |
 |----------|---------|
-| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Rust + Tesseract + AppImage/Flatpak tools + Trunk/wasm32 |
+| [.devcontainer/Dockerfile](../.devcontainer/Dockerfile) | Rust + AppImage/Flatpak tools + Trunk/wasm32 |
 | [.devcontainer/devcontainer.json](../.devcontainer/devcontainer.json) | Docker-outside-of-Docker (CLI + host socket) for `make windows` / packaging fallbacks |
 | [scripts/windows/Dockerfile](../scripts/windows/Dockerfile) | MinGW cross image for `make windows` on Linux |
 | [crates/sqyre-app/assets/icons/](../crates/sqyre-app/assets/icons/) | Brand icons (embedded SVG) |
-| [assets/tessdata/](../assets/tessdata/) | Optional local `eng.traineddata` fallback |
+| [assets/ocr-models/](../assets/ocr-models/) | ocrs ONNX models embedded at compile time (`make ocr-models`, gitignored) |
 
-OCR uses system tessdata when available, or `SQYRE_TESSDATA` / `assets/tessdata` when developing. If none are found, startup downloads `eng.traineddata` into the user data path (see above).
+OCR models are embedded at compile time from `assets/ocr-models/`; `SQYRE_OCR_MODELS` overrides them with a directory (see above).
 
 ---
 
 ## Manual setup (without dev container)
 
-Prefer the container when possible. Needs **Rust ≥ 1.92**, clang, Tesseract/Leptonica, and X11 libs (`libx11-dev`, `libxtst-dev`, …). See [RUST.md](./RUST.md).
+Prefer the container when possible. Needs **Rust ≥ 1.95**, clang, and X11 libs (`libx11-dev`, `libxtst-dev`, …). See [RUST.md](./RUST.md).
 
 ```bash
 make            # or: cargo build -p sqyre-app

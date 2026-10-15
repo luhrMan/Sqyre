@@ -46,7 +46,7 @@ Macros, images, masks, and data tables live under **`~/.sqyre/`** (user home on 
 | **macOS** | Capture/focus and releases not shipped yet |
 | **WASM** | Browser editor zip for editing macros (no Run / capture / OCR) |
 
-**Stack:** [egui](https://github.com/emilk/egui) · PureCV · Tesseract (`leptess`).
+**Stack:** [egui](https://github.com/emilk/egui) · PureCV · [ocrs](https://github.com/robertknight/ocrs).
 
 ---
 
@@ -57,7 +57,7 @@ Macros, images, masks, and data tables live under **`~/.sqyre/`** (user home on 
 | Category | Actions |
 |----------|---------|
 | **Mouse & keyboard** | Move, click, key, type |
-| **Detection** | Image search (PureCV; multi-variant icons), OCR (Tesseract), find pixel — optional wait-until-found |
+| **Detection** | Image search (PureCV; multi-variant icons), OCR (ocrs), find pixel — optional wait-until-found |
 | **Variables** | Set (values + expressions), save to file or clipboard |
 | **Control flow** | Loop, while, break/continue, for each row, if |
 | **Wait** | Wait, Pause |
@@ -95,7 +95,7 @@ Assets under `docs/images/` are generated from in-memory egui tests (`make docs-
 2. Run the binary (or open the WASM editor in a static file server).
 3. Create a macro — the root is always a **loop** — add actions from the picker or command palette, then **Run** from the toolbar, a hotkey, or an overlay button.
 
-**Developers** — open the repo in the **dev container** (Rust, Tesseract/Leptonica, and X11 link deps are preinstalled), then:
+**Developers** — open the repo in the **dev container** (Rust and X11 link deps are preinstalled), then:
 
 ```bash
 make            # → ./bin/sqyre (debug)
@@ -140,9 +140,9 @@ make wasm            # → bin/wasm/ (Trunk)
 | AppImage | `make appimage` |
 | Flatpak | `make flatpak` |
 | WASM editor | `make wasm` → `bin/wasm/` |
-| Tesseract data (dev fallback) | `make tessdata` |
+| ocrs ONNX models (compile-time embed) | `make ocr-models` |
 
-Override cargo args with `CARGO_FLAGS=...`. Manual host setup (Rust ≥ 1.92, clang, Tesseract/Leptonica, X11 libs) is documented in [docs/DEVELOPING.md](docs/DEVELOPING.md) and [docs/RUST.md](docs/RUST.md).
+Override cargo args with `CARGO_FLAGS=...`. Manual host setup (Rust ≥ 1.95, clang, X11 libs) is documented in [docs/DEVELOPING.md](docs/DEVELOPING.md) and [docs/RUST.md](docs/RUST.md).
 
 ---
 
@@ -156,7 +156,6 @@ Override cargo args with `CARGO_FLAGS=...`. Manual host setup (Rust ≥ 1.92, cl
 | `db.yaml` | Macro database |
 | `settings.yaml` | User preferences |
 | `~/.config/sqyre/data_dir` | Optional pointer if you relocate the data directory (Linux/macOS) |
-| `%APPDATA%\sqyre\tessdata\` | Windows auto-download location for OCR trained data |
 
 Relocate the data dir from **Settings** (or set `sqyre_dir` in `settings.yaml`). The XDG pointer keeps the next launch pointed at the new location.
 
@@ -178,11 +177,11 @@ Most options are edited under **Settings** in the app. Notable areas:
 
 | Variable | Purpose |
 |----------|---------|
-| `SQYRE_TESSDATA` | Directory containing Tesseract `eng.traineddata` |
+| `SQYRE_OCR_MODELS` | Directory containing `text-detection.onnx` + `text-recognition.onnx` |
 | `SQYRE_DIAG=1` | Write diagnostic timeline to `diag.log` under the data dir |
 | `RELEASE_VERSION` / `VERSION` file | Stamp release builds for auto-update (maintainers) |
 
-OCR discovers tessdata in this order: `SQYRE_TESSDATA`, system paths (and beside `sqyre.exe` on Windows), workspace `assets/tessdata` (dev), then auto-download into the user data path.
+The ocrs ONNX models are embedded into the binary at compile time (`include_bytes!` from `assets/ocr-models/`); `SQYRE_OCR_MODELS` overrides them with a directory containing both files — useful for testing different weights without a rebuild.
 
 ---
 
