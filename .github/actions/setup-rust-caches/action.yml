@@ -1,0 +1,114 @@
+name: Setup Rust caches
+description: >
+  Shared cache prelude for Rust jobs: Cargo registry, per-triple target/, and
+  rolling sccache, with optional OCR models. All keyed on a caller-provided
+  lock-hash (hashFiles of Cargo.lock + the image pins that define the epoch).
+  actions/cache post-saves run at job end, so the sccache entry is always saved
+  under this run's unique key — restores prefer the same lock-hash epoch, then
+  any epoch, then the broad family prefix.
+inputs:
+  lock-hash:
+    description: Cache epoch — e.g. hashFiles('Cargo.lock', '.devcontainer/Dockerfile')
+    required: true
+  ocr:
+    description: Cache + download OCR models into assets/ocr-models ("true"/"false")
+    required: false
+    default: "false"
+  registry:
+    description: Restore the shared Cargo registry cache ("true"/"false")
+    required: false
+    default: "true"
+  target-key-prefix:
+    description: Full key prefix for the target cache, e.g. cargo-target-linux-v3
+    required: false
+    default: ""
+  target-family:
+    description: Broad restore prefix, e.g. cargo-target-linux — keep family-scoped so a restore can't pick up another triple's snapshot
+    required: false
+    default: ""
+  target-paths:
+    description: Multiline paths to cache; empty skips the target cache
+    required: false
+    default: ""
+  sccache-key-prefix:
+    description: Full key prefix, e.g. sccache-linux-v1 — empty skips sccache
+    required: false
+    default: ""
+  sccache-family:
+    description: Broadest restore prefix, e.g. sccache-linux
+    required: false
+    default: ""
+  sccache-path:
+    description: Host-side sccache dir, e.g. .cache/sccache-linux
+    required: false
+    default: ""
+  extra-dirs:
+    description: Space-separated extra directories to mkdir (e.g. .cache/gradle)
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Cache OCR models
+      id: ocr
+      if: inputs.ocr == 'true'
+      uses: actions/cache@v6
+      with:
+        path: assets/ocr-models
+        key: ocr-models-v1-${{ hashFiles('scripts/download-ocr-models.sh') }}
+        restore-keys: |
+          ocr-models-v1-
+
+    - name: Download OCR models
+      if: inputs.ocr == 'true' && steps.ocr.outputs.cache-hit != 'true'
+      shell: bash
+      run: ./scripts/download-ocr-models.sh
+
+    - name: Cache Cargo registry (shared)
+      if: inputs.registry == 'true'
+      uses: actions/cache@v6
+      with:
+        path: ${{ env.CARGO_HOME_DIR }}
+        key: ${{ runner.os }}-cargo-reg-v3-${{ hashFiles('Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-reg-v3-
+          ${{ runner.os }}-cargo-reg-
+
+    - name: Cache Cargo target
+      if: inputs.target-paths != ''
+      uses: actions/cache@v6
+      with:
+        path: ${{ inputs.target-paths }}
+        key: ${{ runner.os }}-${{ inputs.target-key-prefix }}-${{ inputs.lock-hash }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.target-key-prefix }}-
+          ${{ runner.os }}-${{ inputs.target-family }}-
+
+    # Rolling key: actions/cache restores nothing under this unique key, then
+    # post-saves a fresh entry at job end — entries accumulate across commits.
+    - name: Cache sccache
+      if: inputs.sccache-path != ''
+      uses: actions/cache@v6
+      with:
+        path: ${{ inputs.sccache-path }}
+        key: ${{ runner.os }}-${{ inputs.sccache-key-prefix }}-${{ inputs.lock-hash }}-${{ github.run_id }}-${{ github.job }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.sccache-key-prefix }}-${{ inputs.lock-hash }}-
+          ${{ runner.os }}-${{ inputs.sccache-key-prefix }}-
+          ${{ runner.os }}-${{ inputs.sccache-family }}-
+
+    - name: Prepare cache dirs
+      shell: bash
+      run: |
+        set -euo pipefail
+        dirs=("${{ env.CARGO_HOME_DIR }}")
+        for d in ${{ inputs.sccache-path }} ${{ inputs.extra-dirs }}; do
+          [ -n "$d" ] && dirs+=("$d")
+        done
+        # target-paths is multiline; take its first entry's top dir.
+        if [ -n "${{ inputs.target-paths }}" ]; then
+          first="${{ inputs.target-paths }}"
+          first="${first%%$'\n'*}"
+          dirs+=("${first%%/*}")
+        fi
+        mkdir -p "${dirs[@]}"
