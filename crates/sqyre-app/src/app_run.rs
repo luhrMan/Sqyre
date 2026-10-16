@@ -401,7 +401,9 @@ mod native_run {
                         }
                         "Finished.".into()
                     }
-                    Ok(Err(e)) => format!("Error: {e}"),
+                    Ok(Err(e)) => {
+                        format!("Error: {}", crate::status_banner::user_error_detail(&e))
+                    }
                     Err(_) => {
                         sqyre_capture::note("overlay: run worker panicked; cleared running");
                         sqyre_capture::event_log(

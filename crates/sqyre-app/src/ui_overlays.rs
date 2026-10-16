@@ -501,7 +501,10 @@ fn poll_deferred_capture_probe(app: &mut SqyreApp, ctx: &egui::Context) {
         std::thread::spawn(move || {
             let result = match sqyre_capture::shared_capturer() {
                 Ok(_) => Ok(()),
-                Err(e) => Err(format!("Screen capture unavailable: {e}")),
+                Err(e) => Err(format!(
+                    "Screen capture unavailable: {}",
+                    crate::status_banner::user_error_detail(&e)
+                )),
             };
             let _ = tx.send(result);
         });
@@ -615,12 +618,12 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                 }
                 Ok(Err(e)) => {
                     app.tasks.pixel_sample = None;
-                    crate::log::warn(format!("sample pixel color: {e}"));
+                    note_pixel_sample_failure(app, &e.to_string());
                 }
                 Err(TryRecvError::Empty) => ctx.request_repaint(),
                 Err(TryRecvError::Disconnected) => {
                     app.tasks.pixel_sample = None;
-                    crate::log::warn("sample pixel color: capture failed");
+                    note_pixel_sample_failure(app, "capture worker stopped");
                 }
             }
         }
@@ -636,7 +639,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                             app.tasks.pixel_sample = Some(rx);
                             ctx.request_repaint();
                         }
-                        Err(e) => crate::log::warn(format!("sample pixel color: {e}")),
+                        Err(e) => note_pixel_sample_failure(app, &e.to_string()),
                     }
                 }
                 #[cfg(not(target_os = "linux"))]
@@ -645,7 +648,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                         app.tasks.pixel_sample = Some(rx);
                         ctx.request_repaint();
                     }
-                    Err(e) => crate::log::warn(format!("sample pixel color: {e}")),
+                    Err(e) => note_pixel_sample_failure(app, &e.to_string()),
                 }
             }
         }
@@ -657,7 +660,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
                 app.tree.tooltip.apply_recorded_color(hex.clone());
                 app.add_action_picker.apply_recorded_color(hex);
             }
-            Err(e) => crate::log::warn(format!("sample pixel color: {e}")),
+            Err(e) => note_pixel_sample_failure(app, &e.to_string()),
         }
     }
     app.update_recording_visibility(ctx);
@@ -770,6 +773,20 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     }
 }
 
+/// Pixel dropper failed: keep the diagnostic log line, and surface it where the
+/// sample was going (edit dialogs) plus the toolbar status line.
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+fn note_pixel_sample_failure(app: &mut SqyreApp, detail: &str) {
+    crate::log::warn(format!("sample pixel color: {detail}"));
+    let msg = format!(
+        "Pixel sample failed: {}",
+        crate::status_banner::user_error_detail(detail)
+    );
+    app.tree.tooltip.note_recorded_color_error(msg.clone());
+    app.add_action_picker.note_recorded_color_error(msg.clone());
+    *app.run_session.state.status.lock() = msg;
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
     use std::sync::mpsc;
@@ -783,14 +800,23 @@ fn poll_scheduled_backup(app: &mut SqyreApp, ctx: &egui::Context) {
                 app.settings_ui.note_backup_success(&path);
             }
             Ok(Err(e)) => {
-                crate::log::warn(format!("automatic backup failed: {e}"));
+                app.settings_ui.note_backup_failure(&e);
+                *app.run_session.state.status.lock() = format!(
+                    "Automatic backup failed: {}",
+                    crate::status_banner::user_error_detail(&e)
+                );
             }
             Err(mpsc::TryRecvError::Empty) => {
                 app.tasks.backup = Some(rx);
                 ctx.request_repaint_after(std::time::Duration::from_millis(250));
                 return;
             }
-            Err(mpsc::TryRecvError::Disconnected) => {}
+            Err(mpsc::TryRecvError::Disconnected) => {
+                app.settings_ui
+                    .note_backup_failure("backup worker stopped unexpectedly");
+                *app.run_session.state.status.lock() =
+                    "Automatic backup failed (worker stopped).".to_string();
+            }
         }
     }
 

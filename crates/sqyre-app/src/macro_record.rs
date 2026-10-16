@@ -6,6 +6,7 @@ use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
 use crate::paint_ctx::{CatalogPaint, RecordBridges, TipUiCtx, VarTheme};
 use crate::preview_tooltip::PreviewTooltipCache;
+use crate::status_banner::StatusBanner;
 use crate::tree_chrome::{self, RowAction, RowHighlight, RowInteraction};
 use eframe::egui;
 use sqyre_domain::{
@@ -78,7 +79,7 @@ pub(crate) struct ReviewState {
     /// Synthetic macro whose root children are the recorded actions.
     draft: Macro,
     points: Vec<TempPoint>,
-    status: String,
+    status: StatusBanner,
     tooltip: TooltipState,
     pills_cache: HashMap<ActionId, (u64, Vec<SummaryPill>)>,
     paint_revision: u64,
@@ -166,7 +167,7 @@ impl MacroRecordUi {
                             ..Macro::new("Recorded", 0, Vec::new())
                         },
                         points,
-                        status: String::new(),
+                        status: StatusBanner::default(),
                         tooltip: TooltipState::default(),
                         pills_cache: HashMap::new(),
                         paint_revision: 0,
@@ -388,7 +389,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
             let action_count = draft.root.children().len();
             crate::widgets::heading_with_count(ui, "Actions", action_count);
             // Leave room for Copy/Close (+ status) so the list grows with the window.
-            let footer_reserve = if status.is_empty() { 40.0 } else { 60.0 };
+            let footer_reserve = if status.is_set() { 60.0 } else { 40.0 };
             let actions_h = (ui.available_height() - footer_reserve).max(80.0);
             let actions_w = crate::widgets::visible_width(ui);
             crate::pickers::dialog_scroll(actions_w, actions_h)
@@ -426,9 +427,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                     close = true;
                 }
             });
-            if !status.is_empty() {
-                ui.colored_label(crate::theme::ok_fg(), status.as_str());
-            }
+            status.paint(ui);
             // Esc closes when no text field is capturing keys.
             if !close
                 && !ui.ctx().text_edit_focused()
@@ -510,10 +509,13 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
         }
         match replace_temporary_points(catalog, points) {
             Ok(n) => {
-                *status = format!("Saved {n} point(s) into “{TEMPORARY_PROGRAM}”");
+                status.set_ok(format!("Saved {n} point(s) into “{TEMPORARY_PROGRAM}”"));
                 catalog_changed = true;
             }
-            Err(e) => *status = format!("Save points failed: {e}"),
+            Err(e) => status.set_err(format!(
+                "Save points failed: {}",
+                crate::status_banner::user_error_detail(&e)
+            )),
         }
     }
 
@@ -522,7 +524,10 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
             sync_move_refs_to_points(kids, points);
         }
         if let Err(e) = replace_temporary_points(catalog, points) {
-            *status = format!("Copy failed (points): {e}");
+            status.set_err(format!(
+                "Copy failed (points): {}",
+                crate::status_banner::user_error_detail(&e)
+            ));
             return ReviewFrame::Continue { catalog_changed };
         }
         catalog_changed = true;
@@ -530,15 +535,18 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
         let maps = match actions_to_clipboard(actions) {
             Ok(m) => m,
             Err(e) => {
-                *status = format!("Copy failed: {e}");
+                status.set_err(format!(
+                    "Copy failed: {}",
+                    crate::status_banner::user_error_detail(&e)
+                ));
                 return ReviewFrame::Continue { catalog_changed };
             }
         };
         let yaml = actions_to_yaml_text(actions).unwrap_or_default();
-        *status = format!(
+        status.set_ok(format!(
             "Copied {} action(s) — paste into the macro tree",
             maps.len()
-        );
+        ));
         return ReviewFrame::Copied(MacroRecordCopy { maps, yaml });
     }
 
@@ -1159,7 +1167,6 @@ fn show_temp_point_marker(ctx: &egui::Context, index: usize, pt: &TempPoint, col
                     stroke,
                 );
             });
-        ui.ctx().request_repaint();
     });
 }
 

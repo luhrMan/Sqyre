@@ -362,11 +362,14 @@ pub fn searchable_combo_with(
                     .ctx()
                     .data(|d| d.get_temp::<String>(search_id))
                     .unwrap_or_default();
+                // `desired_width(INFINITY)` fills the popup without advancing its
+                // min_size — `available_width()` here ratchets the combo wider and
+                // never shrinks back.
                 let search_resp = ui.add(
                     egui::TextEdit::singleline(&mut search)
                         .id(search_id)
                         .hint_text("Search…")
-                        .desired_width(ui.available_width()),
+                        .desired_width(f32::INFINITY),
                 );
                 let already_focused = ui
                     .ctx()

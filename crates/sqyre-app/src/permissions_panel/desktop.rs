@@ -319,7 +319,10 @@ fn apply_system_shortcuts_status(item: &mut PermissionItem, status: SystemShortc
         ),
         SystemShortcutsStatus::Failed(e) => (
             PermissionEligibility::Needed,
-            format!("Desktop shortcuts failed ({e}). Hotkeys fall back to input devices."),
+            format!(
+                "Desktop shortcuts failed ({}). Hotkeys fall back to input devices.",
+                crate::status_banner::user_error_detail(&e)
+            ),
         ),
     };
     item.eligibility = eligibility;

@@ -269,7 +269,7 @@ fn paint_color_swatch(ui: &mut egui::Ui, hex: &str) -> Option<egui::Response> {
         rect,
         3.0,
         fill,
-        Stroke::new(1.0, Color32::from_gray(80)),
+        crate::theme::inner_stroke(),
         egui::StrokeKind::Outside,
     );
     Some(resp)
@@ -291,14 +291,15 @@ fn paint_target_thumb(
             size.x,
             size.y,
             3.0,
-            Some(Color32::from_black_alpha(20)),
+            Some(crate::theme::frame_fill()),
         );
     } else {
+        let chrome = ui.visuals().widgets.noninteractive;
         ui.painter().rect(
             slot_rect,
             3.0,
-            Color32::from_gray(80),
-            Stroke::new(1.0, Color32::from_gray(120)),
+            chrome.weak_bg_fill,
+            chrome.bg_stroke,
             egui::StrokeKind::Outside,
         );
     }
@@ -325,7 +326,8 @@ fn paint_image_search_extras(
     else {
         return false;
     };
-    let targets = sorted_image_search_targets(
+    let targets = cached_sorted_image_search_targets(
+        ui.ctx(),
         catalog,
         targets,
         target_tags,
@@ -393,8 +395,15 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         return;
     }
 
-    let display =
-        sorted_image_search_targets(catalog, targets, &[], *sort_by, *sort_then, tag_priority);
+    let display = cached_sorted_image_search_targets(
+        ui.ctx(),
+        catalog,
+        targets,
+        &[],
+        *sort_by,
+        *sort_then,
+        tag_priority,
+    );
 
     if !target_tags.is_empty() {
         crate::widgets::title_with_count(
@@ -534,6 +543,52 @@ pub(crate) fn image_search_tip_tag_groups(
         });
     }
     groups
+}
+
+/// `sorted_image_search_targets` memoized on `(inputs, catalog generation)`.
+///
+/// Tree rows repaint every frame and `sorted_image_search_targets` expands tag
+/// filters against the whole catalog each call — a hotspot for jank on large
+/// catalogs. Identical inputs share one entry; catalog mutations invalidate it.
+pub(crate) fn cached_sorted_image_search_targets(
+    ctx: &egui::Context,
+    catalog: &ProgramCatalog,
+    targets: &[String],
+    target_tags: &[String],
+    sort_by: sqyre_domain::ItemSortBy,
+    sort_then: sqyre_domain::ItemSortThen,
+    tag_priority: &[String],
+) -> Vec<String> {
+    let sig = egui::Id::new((
+        "sorted_image_search_targets",
+        targets,
+        target_tags,
+        tag_priority,
+        sort_by.as_str(),
+        sort_then.as_str(),
+    ));
+    let gen = catalog.generation();
+    let cache_id = egui::Id::new("sorted_image_search_targets_cache");
+    ctx.data_mut(|d| {
+        let map = d.get_persisted_mut_or_insert_with::<HashMap<egui::Id, (u64, Vec<String>)>>(
+            cache_id,
+            HashMap::new,
+        );
+        map.retain(|_, (g, _)| *g == gen);
+        if let Some((_, cached)) = map.get(&sig) {
+            return cached.clone();
+        }
+        let sorted = sorted_image_search_targets(
+            catalog,
+            targets,
+            target_tags,
+            sort_by,
+            sort_then,
+            tag_priority,
+        );
+        map.insert(sig, (gen, sorted.clone()));
+        sorted
+    })
 }
 
 /// Display / search order for Image Search targets (explicit + tag expansion).

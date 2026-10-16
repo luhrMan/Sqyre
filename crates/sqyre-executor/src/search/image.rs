@@ -164,6 +164,9 @@ struct VariantMatchOutcome {
     template_blurred: Arc<ImageBuf>,
     /// Mask bytes (kept as Arc until logging builds a preview ImageBuf).
     mask_bytes: Option<Arc<Vec<u8>>>,
+    /// A mask was configured for the target but the file could not be read —
+    /// the match ran unmasked and the log should say so.
+    mask_missing: bool,
     matches: std::result::Result<Vec<Point>, SearchError>,
     /// Top correlation score across the map (min for SQDIFF*), regardless of
     /// whether it crossed `threshold` — logged so a near-miss is diagnosable.
@@ -471,6 +474,7 @@ fn capture_and_match(
     let outcomes = merge_variant_outcomes(outcomes, close_dist, method);
 
     let mut out = Vec::new();
+    let mut mask_warned: HashSet<String> = HashSet::new();
     for outcome in outcomes {
         let variant_label = variant_log_label(&outcome.target, &outcome.variant_name);
 
@@ -479,6 +483,16 @@ fn capture_and_match(
                 exec.log(action_id, format!("{label}: {e}"));
             }
             continue;
+        }
+
+        if outcome.mask_missing && mask_warned.insert(outcome.target.clone()) {
+            exec.log(
+                action_id,
+                format!(
+                    "{label}: mask image missing or unreadable for {} — searching unmasked",
+                    outcome.target
+                ),
+            );
         }
 
         exec.log(
@@ -864,6 +878,7 @@ fn match_one_variant(
         .mask_path
         .as_ref()
         .and_then(|p| get_cached_image_mask(p, tmpl_h, tmpl_w));
+    let mask_missing = target.mask_path.is_some() && mask_bytes.is_none();
 
     let template_raw = if ctx.want_pipeline {
         load_rgb_image(&variant.path).ok()
@@ -914,6 +929,7 @@ fn match_one_variant(
         template_raw,
         template_blurred,
         mask_bytes,
+        mask_missing,
         matches,
         best_score,
         match_ms,
@@ -946,6 +962,7 @@ fn skipped_outcome(
         template_raw: None,
         template_blurred: Arc::new(ImageBuf::new(1, 1, 3, 0)),
         mask_bytes: None,
+        mask_missing: false,
         matches,
         best_score: None,
         match_ms: 0.0,
@@ -1032,6 +1049,7 @@ fn merge_variant_outcomes(
                 acc.template_blurred = o.template_blurred;
                 acc.mask_bytes = o.mask_bytes;
             }
+            acc.mask_missing |= o.mask_missing;
             match (&mut acc.matches, o.matches) {
                 (Ok(dst), Ok(src)) => dst.extend(src),
                 (Ok(_), Err(_)) => {}

@@ -552,6 +552,29 @@ fn show_var_ref_autocomplete(
     }
 }
 
+/// Click-to-edit overlay over a painted var chip/readout: keyboard-focusable,
+/// with a focus ring and AccessKit metadata (reads as the text field it opens).
+fn click_to_edit_hit(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    id: egui::Id,
+    label: &str,
+    value: &str,
+) -> egui::Response {
+    let resp = ui.interact(rect, id, Sense::click());
+    crate::widgets::controls::paint_keyboard_focus_ring(ui, rect, &resp);
+    let enabled = ui.is_enabled();
+    let text = if label.is_empty() {
+        value.to_string()
+    } else {
+        format!("{label}: {value}")
+    };
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, enabled, text.clone())
+    });
+    resp
+}
+
 /// Variable-name field that becomes a nested chip when unfocused.
 pub fn var_name_text_edit(
     ui: &mut egui::Ui,
@@ -569,11 +592,13 @@ pub fn var_name_text_edit(
         let focused = ui.memory(|m| m.has_focus(id));
         if should_show_var_name_overlay(value, focused) {
             let resp = paint_nested_var_chip(ui, value, known, is_dark);
-            let resp = ui.interact(
+            let resp = click_to_edit_hit(
+                ui,
                 resp.rect
                     .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
                 id.with("overlay_hit"),
-                Sense::click(),
+                label,
+                value,
             );
             if resp.clicked() {
                 ui.memory_mut(|m| m.request_focus(id));
@@ -674,11 +699,13 @@ pub fn validated_var_ref_edit(
             let resp = outer_frame(ui, Color32::TRANSPARENT, |ui| {
                 paint_var_ref_content(ui, value, known, is_dark, plain_fg);
             });
-            let resp = ui.interact(
+            let resp = click_to_edit_hit(
+                ui,
                 resp.rect
                     .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
                 id.with("overlay_hit"),
-                Sense::click(),
+                label,
+                value,
             );
             if resp.clicked() {
                 ui.memory_mut(|m| m.request_focus(id));
@@ -725,11 +752,7 @@ pub fn validated_var_ref_multiline_edit(
                 paint_var_ref_content(ui, line, known, is_dark, plain_fg);
             }
         });
-        if resp.clicked()
-            || ui
-                .interact(resp.rect, id.with("overlay_hit"), Sense::click())
-                .clicked()
-        {
+        if click_to_edit_hit(ui, resp.rect, id.with("overlay_hit"), label, value).clicked() {
             ui.memory_mut(|m| m.request_focus(id));
         }
     } else {

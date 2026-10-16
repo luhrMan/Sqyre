@@ -153,10 +153,22 @@ impl EditorTab {
 
 #[derive(Debug, Clone)]
 pub(crate) enum PendingConfirm {
-    Delete { label: String },
-    Overwrite { kind: &'static str, name: String },
-    DeleteVariant { variant: String },
-    OverwriteVariant { variant: String, source: PathBuf },
+    Delete {
+        label: String,
+    },
+    Overwrite {
+        kind: &'static str,
+        name: String,
+    },
+    DeleteVariant {
+        variant: String,
+    },
+    OverwriteVariant {
+        variant: String,
+        source: PathBuf,
+    },
+    /// Remove the mask PNG for the selected mask entity (shape settings stay).
+    DeleteMaskImage,
 }
 
 #[derive(Debug, Clone)]
@@ -1024,7 +1036,10 @@ impl DataEditor {
         if split_resp.drag_stopped() {
             env.settings.clamp();
             if let Err(e) = env.settings.save_default() {
-                self.set_err(format!("Failed to save data editor layout: {e}"));
+                self.set_err(format!(
+                    "Failed to save data editor layout: {}",
+                    crate::status_banner::user_error_detail(&e)
+                ));
             }
         }
 
@@ -1158,6 +1173,11 @@ impl DataEditor {
             PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => {
                 ("Delete", "Delete", crate::widgets::ConfirmKind::Destructive)
             }
+            PendingConfirm::DeleteMaskImage => (
+                "Remove Image",
+                "Remove",
+                crate::widgets::ConfirmKind::Destructive,
+            ),
             PendingConfirm::Overwrite { .. } | PendingConfirm::OverwriteVariant { .. } => (
                 "Overwrite",
                 "Overwrite",
@@ -1192,6 +1212,12 @@ impl DataEditor {
                         variant_display_label(variant)
                     ));
                 }
+                PendingConfirm::DeleteMaskImage => {
+                    let name = self.selected_entity.as_deref().unwrap_or_default();
+                    ui.label(format!(
+                        "Remove the mask image for “{name}”? Searches fall back to the shape settings. This cannot be undone."
+                    ));
+                }
             }
             match crate::widgets::confirm_cancel_row(ui, confirm_label, kind) {
                 crate::widgets::ConfirmCancel::Cancel => {
@@ -1213,6 +1239,10 @@ impl DataEditor {
                     PendingConfirm::OverwriteVariant { variant, source } => {
                         self.confirm = None;
                         self.overwrite_icon_variant(env.catalog, env.icons, &variant, &source);
+                    }
+                    PendingConfirm::DeleteMaskImage => {
+                        self.confirm = None;
+                        self.remove_mask_image(env.catalog, env.icons);
                     }
                 },
                 crate::widgets::ConfirmCancel::None => {}
@@ -1344,7 +1374,11 @@ impl DataEditor {
                 Ok(Err(e)) => {
                     self.pixel_check_pending = None;
                     self.pixel_check.paused = true;
-                    self.set_err(format!("{}: {e}", EditorTab::PixelCheck.label()));
+                    self.set_err(format!(
+                        "{}: {}",
+                        EditorTab::PixelCheck.label(),
+                        crate::status_banner::user_error_detail(&e)
+                    ));
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
                     ctx.request_repaint();
