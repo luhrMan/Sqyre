@@ -4,6 +4,11 @@ use crate::ProcessIcon;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// Desktop entries are small; never slurp an oversized file as one.
+const MAX_DESKTOP_FILE_BYTES: u64 = 256 * 1024;
+/// `/proc/pid/environ` can be sizeable; bound the launcher-var scan.
+const MAX_PROC_ENVIRON_BYTES: u64 = 1024 * 1024;
+
 /// `(process_name, process_path)` best-effort from a compositor `app_id`.
 pub(crate) fn resolve_app_id(app_id: &str) -> (String, String) {
     let app_id = app_id.trim();
@@ -91,6 +96,12 @@ fn load_desktop(app_id: &str) -> Option<DesktopFile> {
     None
 }
 
+/// `app_id` is compositor/client-controlled: candidate names must stay a
+/// single safe filename or `dir.join(name)` escapes the applications dir.
+fn is_safe_desktop_file_name(name: &str) -> bool {
+    !name.is_empty() && !name.contains(['/', '\\', '\0']) && name != "." && name != ".."
+}
+
 fn desktop_file_names(app_id: &str) -> Vec<String> {
     let mut names = vec![format!("{app_id}.desktop")];
     if !app_id.ends_with(".desktop") {
@@ -101,6 +112,7 @@ fn desktop_file_names(app_id: &str) -> Vec<String> {
             names.push(format!("{rest}.desktop"));
         }
     }
+    names.retain(|n| is_safe_desktop_file_name(n));
     names
 }
 
@@ -122,7 +134,8 @@ fn desktop_dirs() -> Vec<PathBuf> {
 }
 
 fn parse_desktop_file(path: &Path) -> Option<DesktopFile> {
-    let raw = fs::read_to_string(path).ok()?;
+    let bytes = sqyre_ports::read_file_capped(path, MAX_DESKTOP_FILE_BYTES).ok()?;
+    let raw = String::from_utf8_lossy(&bytes);
     let mut parsed = parse_desktop_entry(&raw)?;
     parsed.app_id = path.file_stem().map(|s| s.to_string_lossy().into_owned());
     Some(parsed)
@@ -410,7 +423,7 @@ pub(crate) fn desktop_icon_for_pid(pid: u32, process_path: &str) -> Option<Proce
 
 fn desktop_file_for_pid(pid: u32, process_path: &str) -> Option<DesktopFile> {
     if let Some(path) = environ_value(pid, "GIO_LAUNCHED_DESKTOP_FILE") {
-        if let Some(parsed) = parse_desktop_file(Path::new(&path)) {
+        if let Some(parsed) = launched_desktop_file(&path) {
             return Some(parsed);
         }
     }
@@ -421,8 +434,32 @@ fn desktop_file_for_pid(pid: u32, process_path: &str) -> Option<DesktopFile> {
     load_desktop(&bin)
 }
 
+/// `GIO_LAUNCHED_DESKTOP_FILE` is set by the launched process, not the OS:
+/// only trust paths that canonicalize inside a real applications dir.
+/// Otherwise a hostile process could point `Icon=` at any local file and the
+/// decoded pixels would end up persisted under `images/process/`.
+fn launched_desktop_file(raw: &str) -> Option<DesktopFile> {
+    let path = Path::new(raw);
+    if !path.is_absolute() || path.extension().and_then(|e| e.to_str()) != Some("desktop") {
+        return None;
+    }
+    let canonical = fs::canonicalize(path).ok()?;
+    let inside_apps_dir = desktop_dirs()
+        .iter()
+        .any(|dir| fs::canonicalize(dir).is_ok_and(|base| canonical.starts_with(base)));
+    if inside_apps_dir {
+        parse_desktop_file(&canonical)
+    } else {
+        None
+    }
+}
+
 fn environ_value(pid: u32, key: &str) -> Option<String> {
-    let raw = fs::read(format!("/proc/{pid}/environ")).ok()?;
+    let raw = sqyre_ports::read_file_capped(
+        Path::new(&format!("/proc/{pid}/environ")),
+        MAX_PROC_ENVIRON_BYTES,
+    )
+    .ok()?;
     let prefix = format!("{key}=");
     raw.split(|b| *b == 0)
         .filter_map(|kv| std::str::from_utf8(kv).ok())
@@ -436,6 +473,11 @@ fn load_named_icon(name: &str) -> Option<ProcessIcon> {
     }
     if Path::new(name).is_absolute() {
         return load_icon_file(Path::new(name));
+    }
+    // Theme lookup joins `name` under icon roots — it must be a simple
+    // filename, not a relative path with separators.
+    if !is_safe_desktop_file_name(name) {
+        return None;
     }
     let png_name = if name.ends_with(".png") {
         name.to_string()
@@ -486,8 +528,8 @@ fn load_icon_file(path: &Path) -> Option<ProcessIcon> {
     if !matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "") {
         return None;
     }
-    let bytes = fs::read(path).ok()?;
-    let img = image::load_from_memory(&bytes).ok()?.into_rgba8();
+    let bytes = sqyre_ports::read_file_capped(path, sqyre_ports::MAX_IMAGE_FILE_BYTES).ok()?;
+    let img = sqyre_ports::decode_image_bounded(&bytes).ok()?.into_rgba8();
     let (w, h) = (img.width(), img.height());
     if w == 0 || h == 0 {
         return None;

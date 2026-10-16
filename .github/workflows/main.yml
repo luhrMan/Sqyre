@@ -1018,7 +1018,7 @@ jobs:
             exit 1
           fi
           chmod +x signer/sign_update_sums
-          signer/sign_update_sums release/SHA256SUMS
+          signer/sign_update_sums "${{ needs.version.outputs.version }}" release/SHA256SUMS
           ls -la release/SHA256SUMS release/SHA256SUMS.sig
 
       - name: Create Release

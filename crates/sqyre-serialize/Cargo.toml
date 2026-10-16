@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 serde_yaml = { workspace = true }
+libyaml-safer = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
 sqyre-domain = { path = "../sqyre-domain" }

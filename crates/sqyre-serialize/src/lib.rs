@@ -5,11 +5,14 @@
 
 mod action;
 mod macro_codec;
+mod yaml_guard;
 
 pub use action::{action_from_map, action_to_map, action_to_map_with_uid};
 pub use macro_codec::{
     decode_macro_from_map, decode_macro_from_yaml, encode_macro_to_map, encode_macro_to_yaml,
+    MAX_MACRO_YAML_BYTES,
 };
+pub use yaml_guard::check_yaml_safety;
 
 use serde_yaml::Value;
 use sqyre_domain::WIRE_TYPE_KEYS;

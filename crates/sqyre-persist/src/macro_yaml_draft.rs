@@ -57,6 +57,7 @@ impl MacroYamlBuilderDrafts {
                 text.len()
             )));
         }
+        sqyre_serialize::check_yaml_safety(&text)?;
         Ok(serde_yaml::from_str(&text)?)
     }
 

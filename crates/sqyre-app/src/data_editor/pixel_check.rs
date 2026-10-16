@@ -151,7 +151,9 @@ mod inner {
         if !coords_displayable(left, top, right, bottom) {
             return false;
         }
-        resolve_template(catalog, prog, item, variant).is_file()
+        resolve_template(catalog, prog, item, variant)
+            .map(|p| p.is_file())
+            .unwrap_or(false)
     }
 
     pub(crate) fn fingerprint(
@@ -1048,7 +1050,7 @@ mod inner {
         prog: &str,
         item: &str,
         variant: &str,
-    ) -> PathBuf {
+    ) -> Result<PathBuf, String> {
         variant_path(catalog, prog, item, variant)
     }
 
@@ -1166,7 +1168,12 @@ mod inner {
             ) {
                 return;
             }
-            let template_path = resolve_template(catalog, prog, item, &self.pixel_check.variant);
+            let Ok(template_path) =
+                resolve_template(catalog, prog, item, &self.pixel_check.variant)
+            else {
+                self.stop_pixel_check_compute();
+                return;
+            };
             if !template_path.is_file() {
                 self.stop_pixel_check_compute();
                 return;

@@ -46,7 +46,17 @@ pub fn encode_macro_to_map(macro_: &Macro) -> Result<Mapping> {
     }
 }
 
+/// Reject absurdly large single-macro YAML documents before parsing.
+pub const MAX_MACRO_YAML_BYTES: usize = 4 * 1024 * 1024;
+
 pub fn decode_macro_from_yaml(yaml: &str) -> Result<Macro> {
+    if yaml.len() > MAX_MACRO_YAML_BYTES {
+        return Err(SerializeError::msg(format!(
+            "macro yaml too large ({} bytes; max {MAX_MACRO_YAML_BYTES})",
+            yaml.len()
+        )));
+    }
+    crate::check_yaml_safety(yaml)?;
     let value: Value = serde_yaml::from_str(yaml)?;
     decode_macro_from_map(&value)
 }
@@ -113,6 +123,18 @@ root:
         assert_eq!(m.name, "wait-var");
         assert_eq!(m.variable_decls.len(), 1);
         assert_eq!(m.root.children().len(), 2);
+    }
+
+    #[test]
+    fn rejects_yaml_aliases_and_oversized_input() {
+        let err = decode_macro_from_yaml("a: &x [1]\nb: *x\n")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("aliases"), "{err}");
+
+        let big = format!("name: {}\n", "x".repeat(MAX_MACRO_YAML_BYTES));
+        let err = decode_macro_from_yaml(&big).unwrap_err().to_string();
+        assert!(err.contains("too large"), "{err}");
     }
 
     #[test]
