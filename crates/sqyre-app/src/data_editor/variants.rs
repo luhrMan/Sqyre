@@ -174,9 +174,10 @@ impl DataEditor {
         };
         match icon_variants::add_variant(catalog, &prog, &item, name, source) {
             Ok(added) => {
-                let path = icon_variants::variant_path(catalog, &prog, &item, &added);
+                if let Ok(path) = icon_variants::variant_path(catalog, &prog, &item, &added) {
+                    icons.invalidate_path(&path);
+                }
                 let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
-                icons.invalidate_path(&path);
                 icons.invalidate_target(&target);
                 self.set_ok(format!("Added variant “{added}”."));
                 #[cfg(not(target_arch = "wasm32"))]
@@ -208,9 +209,10 @@ impl DataEditor {
         };
         match icon_variants::overwrite_variant(catalog, &prog, &item, variant, source) {
             Ok(()) => {
-                let path = icon_variants::variant_path(catalog, &prog, &item, variant);
+                if let Ok(path) = icon_variants::variant_path(catalog, &prog, &item, variant) {
+                    icons.invalidate_path(&path);
+                }
                 let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
-                icons.invalidate_path(&path);
                 icons.invalidate_target(&target);
                 self.set_ok(format!("Overwrote variant “{variant}”."));
             }
@@ -241,9 +243,10 @@ impl DataEditor {
         }
         match icon_variants::delete_variant(catalog, &prog, &item, variant) {
             Ok(()) => {
-                let path = icon_variants::variant_path(catalog, &prog, &item, variant);
+                if let Ok(path) = icon_variants::variant_path(catalog, &prog, &item, variant) {
+                    icons.invalidate_path(&path);
+                }
                 let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
-                icons.invalidate_path(&path);
                 icons.invalidate_target(&target);
                 self.set_ok(format!("Deleted variant “{variant}”."));
                 #[cfg(not(target_arch = "wasm32"))]
@@ -562,8 +565,10 @@ impl DataEditor {
             match create_item_with_original(catalog, &prog, item, img.as_ref()) {
                 Ok(name) => {
                     let target = format!("{prog}{PROGRAM_DELIMITER}{name}");
-                    let path = icon_variants::variant_path(catalog, &prog, &name, "Original");
-                    icons.invalidate_path(&path);
+                    if let Ok(path) = icon_variants::variant_path(catalog, &prog, &name, "Original")
+                    {
+                        icons.invalidate_path(&path);
+                    }
                     icons.invalidate_target(&target);
                     if let Err(e) = self.persist(db, macros, catalog) {
                         self.set_err(e);
@@ -746,7 +751,7 @@ mod tests {
         let item = cat.get("Game").unwrap().items.get("Potion").unwrap();
         assert_eq!(item.grid_cols, 1);
         assert_eq!(item.grid_rows, 1);
-        let path = icon_variants::variant_path(&cat, "Game", "Potion", "Original");
+        let path = icon_variants::variant_path(&cat, "Game", "Potion", "Original").unwrap();
         assert!(path.is_file());
         assert!(icon_variants::validate_png_file(&path).is_ok());
     }
@@ -784,6 +789,10 @@ mod tests {
             create_item_with_original(&mut cat, "Game", sample_item("Potion"), &img).unwrap();
         assert_eq!(name, "Potion 2");
         assert!(cat.get("Game").unwrap().items.contains_key("Potion 2"));
-        assert!(icon_variants::variant_path(&cat, "Game", "Potion 2", "Original").is_file());
+        assert!(
+            icon_variants::variant_path(&cat, "Game", "Potion 2", "Original")
+                .unwrap()
+                .is_file()
+        );
     }
 }

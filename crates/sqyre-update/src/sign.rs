@@ -36,6 +36,20 @@ pub fn embedded_verifying_key() -> Result<VerifyingKey, SignError> {
     verifying_key_from_hex(PUBKEY_HEX)
 }
 
+/// Signed payload for a release manifest: a domain separator, the release
+/// version, then the raw `SHA256SUMS` bytes. Binding the version into the
+/// signature means an older legitimately-signed manifest cannot be replayed
+/// under a newer release tag.
+pub fn manifest_message(version: &str, sums: &[u8]) -> Vec<u8> {
+    const DOMAIN: &[u8] = b"sqyre-update-manifest-v1\n";
+    let mut msg = Vec::with_capacity(DOMAIN.len() + version.len() + 1 + sums.len());
+    msg.extend_from_slice(DOMAIN);
+    msg.extend_from_slice(version.as_bytes());
+    msg.push(b'\n');
+    msg.extend_from_slice(sums);
+    msg
+}
+
 /// Verify that `signature` is a valid Ed25519 signature over `message`.
 pub fn verify(message: &[u8], signature: &[u8], key: &VerifyingKey) -> Result<(), SignError> {
     let sig = parse_signature(signature)?;
@@ -104,6 +118,20 @@ mod tests {
             .collect::<String>();
         verify(msg, hex.as_bytes(), &pk).unwrap();
         assert!(verify(b"tampered", sig.to_bytes().as_ref(), &pk).is_err());
+    }
+
+    #[test]
+    fn manifest_binds_version() {
+        let (sk, pk) = ephemeral();
+        let sums = b"abc123  sqyre-linux-amd64.zip\n";
+        let msg = manifest_message("2026.03.03", sums);
+        let sig = sk.sign(&msg);
+        // Same bytes under a different tag must not verify.
+        let replayed = manifest_message("2027.01.01", sums);
+        assert!(verify(&replayed, sig.to_bytes().as_ref(), &pk).is_err());
+        assert!(verify(&msg, sig.to_bytes().as_ref(), &pk).is_ok());
+        // Raw SHA256SUMS bytes alone must not verify either.
+        assert!(verify(sums, sig.to_bytes().as_ref(), &pk).is_err());
     }
 
     #[test]

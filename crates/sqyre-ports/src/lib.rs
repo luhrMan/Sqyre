@@ -6,6 +6,7 @@ mod automation_error;
 mod capture_error;
 mod domain_ports;
 mod highlight;
+mod image_limits;
 mod port_error;
 mod portal_remote;
 mod runtime_vars;
@@ -21,6 +22,10 @@ pub use domain_ports::{
 pub use highlight::{
     clear_highlights, highlight_clear, highlight_cursor, highlight_fill, ActionHighlighter,
     HighlightEvent, HighlightKind, HighlightSnapshot, SharedHighlighter,
+};
+pub use image_limits::{
+    decode_image_bounded, image_decode_limits, read_file_capped, MAX_IMAGE_DECODE_ALLOC,
+    MAX_IMAGE_DECODE_DIM, MAX_IMAGE_FILE_BYTES,
 };
 pub use port_error::PortError;
 pub use portal_remote::PortalRemoteInput;

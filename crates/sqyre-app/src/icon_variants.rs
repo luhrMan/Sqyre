@@ -2,7 +2,7 @@
 
 use crate::data_editor::helpers::copy_image_as_png;
 use sqyre_domain::PROGRAM_DELIMITER;
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::{confined_join, ProgramCatalog};
 #[cfg(feature = "native-runtime")]
 use sqyre_vision::invalidate_search_templates_under;
 use std::path::{Path, PathBuf};
@@ -20,13 +20,21 @@ pub struct VariantExistsError {
     pub variant_name: String,
 }
 
-pub fn variant_path(catalog: &ProgramCatalog, program: &str, item: &str, variant: &str) -> PathBuf {
+/// `Err` when `item`/`variant` from `db.yaml` is not a safe path component —
+/// imported names reach the filesystem here.
+pub fn variant_path(
+    catalog: &ProgramCatalog,
+    program: &str,
+    item: &str,
+    variant: &str,
+) -> Result<PathBuf, String> {
     let dir = catalog.icons_dir(program);
-    if variant.is_empty() {
-        dir.join(format!("{item}.png"))
+    let name = if variant.is_empty() {
+        format!("{item}.png")
     } else {
-        dir.join(format!("{item}{PROGRAM_DELIMITER}{variant}.png"))
-    }
+        format!("{item}{PROGRAM_DELIMITER}{variant}.png")
+    };
+    confined_join(&dir, &name).map_err(|e| format!("unsafe icon path: {e}"))
 }
 
 pub fn variant_names(catalog: &ProgramCatalog, program: &str, item: &str) -> Vec<String> {
@@ -126,7 +134,7 @@ fn prepare_new_variant(
     let dest_dir = catalog.icons_dir(program);
     std::fs::create_dir_all(&dest_dir)
         .map_err(|e| AddVariantError::Other(format!("create icons dir: {e}")))?;
-    let dest = variant_path(catalog, program, item, &name);
+    let dest = variant_path(catalog, program, item, &name).map_err(AddVariantError::Other)?;
     Ok((name, dest))
 }
 
@@ -171,7 +179,7 @@ pub fn overwrite_variant(
     let name = sanitize_variant_name(variant_name)?;
     let dest_dir = catalog.icons_dir(program);
     std::fs::create_dir_all(&dest_dir).map_err(|e| format!("create icons dir: {e}"))?;
-    let dest = variant_path(catalog, program, item, &name);
+    let dest = variant_path(catalog, program, item, &name)?;
     copy_image_as_png(source, &dest)?;
     invalidate_item_templates(catalog, program, item);
     Ok(())
@@ -189,7 +197,7 @@ pub fn delete_variant(
     if variant_name == "Original" {
         return Err("cannot delete the 'Original' variant".into());
     }
-    let path = variant_path(catalog, program, item, variant_name);
+    let path = variant_path(catalog, program, item, variant_name)?;
     match std::fs::remove_file(&path) {
         Ok(()) => {
             invalidate_item_templates(catalog, program, item);
@@ -233,7 +241,9 @@ mod tests {
         // Need a valid enough PNG - signature alone may fail later loads, but validate only checks header
         let name = add_variant(&cat, "Prog", "Sword", "ignored", &src).unwrap();
         assert_eq!(name, "Original");
-        assert!(variant_path(&cat, "Prog", "Sword", "Original").is_file());
+        assert!(variant_path(&cat, "Prog", "Sword", "Original")
+            .unwrap()
+            .is_file());
     }
 
     #[test]
@@ -246,7 +256,7 @@ mod tests {
             .unwrap();
         let name = add_variant(&cat, "Prog", "Sword", "ignored", &src).unwrap();
         assert_eq!(name, "Original");
-        let path = variant_path(&cat, "Prog", "Sword", "Original");
+        let path = variant_path(&cat, "Prog", "Sword", "Original").unwrap();
         assert!(validate_png_file(&path).is_ok());
     }
 
@@ -264,7 +274,7 @@ mod tests {
             .save(&jpg)
             .unwrap();
         overwrite_variant(&cat, "Prog", "Sword", "Original", &jpg).unwrap();
-        let path = variant_path(&cat, "Prog", "Sword", "Original");
+        let path = variant_path(&cat, "Prog", "Sword", "Original").unwrap();
         assert!(validate_png_file(&path).is_ok());
     }
 
@@ -275,8 +285,29 @@ mod tests {
         let img = image::RgbaImage::from_pixel(2, 2, image::Rgba([10, 20, 30, 255]));
         let name = add_variant_image(&cat, "Prog", "Potion", &img).unwrap();
         assert_eq!(name, "Original");
-        let path = variant_path(&cat, "Prog", "Potion", "Original");
+        let path = variant_path(&cat, "Prog", "Potion", "Original").unwrap();
         assert!(path.is_file());
         assert!(validate_png_file(&path).is_ok());
+    }
+
+    #[test]
+    fn variant_path_rejects_traversal_names() {
+        let dir = tempdir().unwrap();
+        let cat = catalog_with_icons(dir.path());
+        assert!(variant_path(&cat, "Prog", "../../escape", "v").is_err());
+        assert!(variant_path(&cat, "Prog", "a/b", "v").is_err());
+        assert!(variant_path(&cat, "Prog", "Item", "../x").is_err());
+        assert!(variant_path(&cat, "Prog", "Item", "/abs").is_err());
+    }
+
+    #[test]
+    fn delete_variant_cannot_remove_outside_icons_dir() {
+        let dir = tempdir().unwrap();
+        let cat = catalog_with_icons(dir.path());
+        let outside = dir.path().join("victim.txt");
+        std::fs::write(&outside, "keep me").unwrap();
+        let err = delete_variant(&cat, "Prog", "victim", "../../victim.txt").unwrap_err();
+        assert!(err.contains("unsafe icon path"), "{err}");
+        assert_eq!(std::fs::read_to_string(&outside).unwrap(), "keep me");
     }
 }

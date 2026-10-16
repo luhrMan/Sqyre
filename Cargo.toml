@@ -125,6 +125,8 @@ rayon = "1.12"
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
+# Event-level pre-parse guard for untrusted YAML (safe Rust libyaml port).
+libyaml-safer = "0.3"
 uuid = { version = "1", features = ["v4", "js"] }
 regex = "1"
 dirs = "7"

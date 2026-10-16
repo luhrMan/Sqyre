@@ -42,7 +42,14 @@ pub fn is_safe_fs_entity_name(name: &str) -> bool {
 }
 
 pub fn validate_entity_name(name: &str) -> Result<()> {
-    let name = name.trim();
+    // Windows strips trailing spaces and periods when creating files, so
+    // "Item " and "Item" alias the same on-disk name. Reject rather than
+    // silently trim: callers join the original string, not this copy.
+    if name != name.trim() {
+        return Err(ValidateError::Message(
+            "name cannot start or end with whitespace".into(),
+        ));
+    }
     if name.is_empty() {
         return Err(ValidateError::EmptyName);
     }
@@ -902,6 +909,18 @@ mod tests {
         assert!(validate_entity_name("LPT9").is_err());
         assert!(validate_entity_name("console").is_ok());
         assert!(validate_entity_name("Item.v2").is_ok());
+    }
+
+    #[test]
+    fn entity_name_rejects_surrounding_whitespace() {
+        // Windows normalizes "Item " → "Item", so a padded name would pass
+        // validation yet alias another entity's file. Reject the raw string.
+        assert!(validate_entity_name("Item ").is_err());
+        assert!(validate_entity_name(" Item").is_err());
+        assert!(validate_entity_name("  ").is_err());
+        assert!(validate_entity_name("Item\t").is_err());
+        assert!(validate_entity_name("Item").is_ok());
+        assert!(validate_entity_name("Item Name").is_ok());
     }
 
     #[test]

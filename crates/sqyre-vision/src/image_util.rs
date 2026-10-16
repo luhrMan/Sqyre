@@ -72,7 +72,9 @@ pub fn gray_to_rgb(img: &ImageBuf) -> ImageBuf {
 }
 
 pub fn load_rgb_image(path: &std::path::Path) -> Result<ImageBuf, PortError> {
-    let img = image::open(path)
+    let bytes = sqyre_ports::read_file_capped(path, sqyre_ports::MAX_IMAGE_FILE_BYTES)
+        .map_err(|e| PortError::Message(format!("load {}: {e}", path.display())))?;
+    let img = sqyre_ports::decode_image_bounded(&bytes)
         .map_err(|e| PortError::Message(format!("load {}: {e}", path.display())))?
         .to_rgb8();
     let w = img.width() as usize;
