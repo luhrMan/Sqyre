@@ -61,8 +61,13 @@ pub fn paint_coord_ref_list(
     let mut did_scroll = false;
     let list_h = popup_scroll_max_height(ui, crate::widgets::FOOTER_RESERVE_SAVE_CANCEL);
     let list_w = crate::widgets::visible_width(ui);
+    let entity_plural = match kind {
+        CoordKind::Point => "points",
+        CoordKind::SearchArea => "search areas",
+    };
     dialog_scroll(list_w, list_h).show(ui, |ui| {
         ui.set_max_width(list_w);
+        let mut visible = 0usize;
         for prog in catalog.program_names() {
             let Some(pdata) = catalog.get(prog) else {
                 continue;
@@ -139,6 +144,7 @@ pub fn paint_coord_ref_list(
             if rows.is_empty() {
                 continue;
             }
+            visible += rows.len();
             rows.sort_by(|a, b| {
                 a.0.to_ascii_lowercase()
                     .cmp(&b.0.to_ascii_lowercase())
@@ -257,6 +263,7 @@ pub fn paint_coord_ref_list(
                 });
             ui.add_space(crate::theme::SPACE_8);
         }
+        crate::widgets::list_vacancy(ui, &q, visible, entity_plural);
     });
     if *scroll_to_selection && !did_scroll {
         // Selection not visible under current filter — don't keep retrying every frame.

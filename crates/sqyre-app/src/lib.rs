@@ -612,7 +612,10 @@ impl SqyreApp {
                     let ocr_warning = match sqyre_vision::shared_ocrs() {
                         Ok(_) => None,
                         Err(e) => {
-                            let warning = format!("OCR unavailable: {e}");
+                            let warning = format!(
+                                "OCR unavailable: {}",
+                                crate::status_banner::user_error_detail(&e)
+                            );
                             crate::log::warn(&warning);
                             Some(warning)
                         }

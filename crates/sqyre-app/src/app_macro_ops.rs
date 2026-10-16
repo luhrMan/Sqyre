@@ -192,7 +192,10 @@ impl SqyreApp {
     /// this also pushes the same failure into the always-visible run status.
     pub(crate) fn report_persist_failure(&mut self, action: &str, err: &str) {
         crate::log::warn(format_args!("{action}: {err}"));
-        *self.run_session.state.status.lock() = format!("{action} failed: {err}");
+        *self.run_session.state.status.lock() = format!(
+            "{action} failed: {}",
+            crate::status_banner::user_error_detail(err)
+        );
     }
 
     pub(crate) fn persist_macro_at(&mut self, idx: usize) -> bool {
@@ -496,8 +499,10 @@ impl SqyreApp {
                 .rename_overlay_form_macro(&old_name, &new_name);
             if let Err(e) = self.settings_ui.save_settings() {
                 crate::log::warn(format_args!("rename macro overlay refs: {e}"));
-                *self.run_session.state.status.lock() =
-                    format!("Rename macro: overlay settings save failed: {e}");
+                *self.run_session.state.status.lock() = format!(
+                    "Rename macro: overlay settings save failed: {}",
+                    crate::status_banner::user_error_detail(&e)
+                );
             }
         }
         if let Some(hist) = self.tree.histories.remove(&old_name) {
@@ -636,7 +641,10 @@ impl SqyreApp {
             }
             Err(e) => {
                 crate::log::warn(format_args!("undo: {e}"));
-                *self.run_session.state.status.lock() = format!("Undo failed: {e}");
+                *self.run_session.state.status.lock() = format!(
+                    "Undo failed: {}",
+                    crate::status_banner::user_error_detail(&e)
+                );
             }
         }
     }
@@ -679,7 +687,10 @@ impl SqyreApp {
             }
             Err(e) => {
                 crate::log::warn(format_args!("redo: {e}"));
-                *self.run_session.state.status.lock() = format!("Redo failed: {e}");
+                *self.run_session.state.status.lock() = format!(
+                    "Redo failed: {}",
+                    crate::status_banner::user_error_detail(&e)
+                );
             }
         }
     }
@@ -814,14 +825,20 @@ impl SqyreApp {
         let map = match sqyre_serialize::action_to_map(action) {
             Ok(m) => m,
             Err(e) => {
-                *self.run_session.state.status.lock() = format!("Copy failed: {e}");
+                *self.run_session.state.status.lock() = format!(
+                    "Copy failed: {}",
+                    crate::status_banner::user_error_detail(&e)
+                );
                 return false;
             }
         };
         // Round-trip through the same nest-depth/type-key decode gates paste
         // uses, so a corrupt map can never land in the clipboard.
         if let Err(e) = sqyre_serialize::action_from_map(&map) {
-            *self.run_session.state.status.lock() = format!("Copy failed: {e}");
+            *self.run_session.state.status.lock() = format!(
+                "Copy failed: {}",
+                crate::status_banner::user_error_detail(&e)
+            );
             return false;
         }
         self.tree.clipboard = Some(vec![map]);
@@ -843,7 +860,10 @@ impl SqyreApp {
         }
         for map in &maps {
             if let Err(e) = sqyre_serialize::action_from_map(map) {
-                *self.run_session.state.status.lock() = format!("Copy failed: {e}");
+                *self.run_session.state.status.lock() = format!(
+                    "Copy failed: {}",
+                    crate::status_banner::user_error_detail(&e)
+                );
                 return false;
             }
         }
@@ -873,7 +893,10 @@ impl SqyreApp {
             let new_action = match sqyre_serialize::action_from_map(map) {
                 Ok(a) => a,
                 Err(e) => {
-                    *self.run_session.state.status.lock() = format!("Paste failed: {e}");
+                    *self.run_session.state.status.lock() = format!(
+                        "Paste failed: {}",
+                        crate::status_banner::user_error_detail(&e)
+                    );
                     return false;
                 }
             };
@@ -885,7 +908,10 @@ impl SqyreApp {
                 &new_action,
                 Some(&self.workspace.macros[idx]),
             ) {
-                *self.run_session.state.status.lock() = format!("Paste failed: {e}");
+                *self.run_session.state.status.lock() = format!(
+                    "Paste failed: {}",
+                    crate::status_banner::user_error_detail(&e)
+                );
                 return false;
             }
             new_actions.push(new_action);

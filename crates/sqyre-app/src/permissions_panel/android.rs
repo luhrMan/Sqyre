@@ -195,7 +195,13 @@ fn accessibility(enabled: Result<bool, AndroidError>) -> Row {
             Status::Needed,
             Some("Turn on Sqyre under Accessibility → Installed apps.".to_string()),
         ),
-        Err(e) => (Status::Unknown, Some(format!("Could not check: {e}"))),
+        Err(e) => (
+            Status::Unknown,
+            Some(format!(
+                "Could not check: {}",
+                crate::status_banner::user_error_detail(&e)
+            )),
+        ),
     };
     Row {
         title: "Accessibility service",
@@ -220,7 +226,13 @@ fn notifications(enabled: Result<bool, AndroidError>) -> Row {
                 "Without them, a running macro can only be stopped from inside Sqyre.".to_string(),
             ),
         ),
-        Err(e) => (Status::Unknown, Some(format!("Could not check: {e}"))),
+        Err(e) => (
+            Status::Unknown,
+            Some(format!(
+                "Could not check: {}",
+                crate::status_banner::user_error_detail(&e)
+            )),
+        ),
     };
     Row {
         title: "Notifications",

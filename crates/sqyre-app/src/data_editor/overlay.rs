@@ -45,7 +45,10 @@ impl DataEditor {
     pub(crate) fn persist_overlay_settings(&mut self, settings: &mut UserSettings) -> bool {
         settings.clamp();
         if let Err(e) = settings.save_default() {
-            self.set_err(format!("Failed to save overlay settings: {e}"));
+            self.set_err(format!(
+                "Failed to save overlay settings: {}",
+                crate::status_banner::user_error_detail(&e)
+            ));
             false
         } else {
             self.clear_status();

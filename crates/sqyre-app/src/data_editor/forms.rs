@@ -586,6 +586,12 @@ impl DataEditor {
                     cache.tmpl_w,
                     cache.tmpl_h,
                 );
+                if cache.mask_missing {
+                    ui.colored_label(
+                        crate::theme::warn_fg(),
+                        "Mask image missing or unreadable — preview ran unmasked.",
+                    );
+                }
             }
             if can_compute {
                 self.request_pixel_check_match(

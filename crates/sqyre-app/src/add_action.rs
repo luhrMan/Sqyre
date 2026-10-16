@@ -190,6 +190,14 @@ impl AddActionPicker {
         crate::recorded_action::apply_recorded_color(&mut edit.draft.kind, recorded);
     }
 
+    /// Surface a dropper/sample failure on the open defaults dialog (no-op otherwise).
+    #[cfg(feature = "native-runtime")]
+    pub fn note_recorded_color_error(&mut self, msg: String) {
+        if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
+            edit.error = Some(msg);
+        }
+    }
+
     /// Draw the picker when open. Returns a freshly constructed blank [`Action`] when
     /// the user picks a tile (caller inserts it into the tree).
     pub fn show(
