@@ -43,10 +43,10 @@ pub const DEFAULT_RELEASE_HELD_INPUTS_ON_END: bool = true;
 pub const DEFAULT_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
 pub const MIN_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
 pub const MAX_DATA_EDITOR_LEFT_FRAC: f32 = 0.75;
-/// Macro list side panel width (points).
-pub const DEFAULT_MACRO_LIST_WIDTH: f32 = 220.0;
-pub const MIN_MACRO_LIST_WIDTH: f32 = 160.0;
-pub const MAX_MACRO_LIST_WIDTH: f32 = 420.0;
+/// Macro list side panel width as a fraction of the window (default = min).
+pub const DEFAULT_MACRO_LIST_FRAC: f32 = 0.15;
+pub const MIN_MACRO_LIST_FRAC: f32 = 0.15;
+pub const MAX_MACRO_LIST_FRAC: f32 = 0.75;
 
 /// Default While budget when a macro sets `max_iterations` ≤ 0.
 pub const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
@@ -572,12 +572,12 @@ pub struct UserSettings {
     /// (cleared when no tagged Program owns focus). When false, filters are manual only.
     #[serde(default)]
     pub hotkey_tags_while_focused: bool,
-    /// Data Editor left list width as a fraction of the editor body (`0.15`–`0.75`).
+    /// Data Editor left list width as a fraction of the editor body (`0.25`–`0.75`).
     #[serde(default = "default_data_editor_left_frac")]
     pub data_editor_left_split: f32,
-    /// Macro list side panel width in points.
-    #[serde(default = "default_macro_list_width")]
-    pub macro_list_width: f32,
+    /// Macro list side panel width as a fraction of the window (`0.25`–`0.75`).
+    #[serde(default = "default_macro_list_frac")]
+    pub macro_list_split: f32,
     /// Name of the macro selected when Sqyre last ran; reselected on startup.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub last_selected_macro: String,
@@ -647,8 +647,8 @@ fn default_auto_update_check() -> bool {
 fn default_data_editor_left_frac() -> f32 {
     DEFAULT_DATA_EDITOR_LEFT_FRAC
 }
-fn default_macro_list_width() -> f32 {
-    DEFAULT_MACRO_LIST_WIDTH
+fn default_macro_list_frac() -> f32 {
+    DEFAULT_MACRO_LIST_FRAC
 }
 fn is_zero_i64(v: &i64) -> bool {
     *v == 0
@@ -688,7 +688,7 @@ impl Default for UserSettings {
             hotkey_tag_filters: Vec::new(),
             hotkey_tags_while_focused: false,
             data_editor_left_split: DEFAULT_DATA_EDITOR_LEFT_FRAC,
-            macro_list_width: DEFAULT_MACRO_LIST_WIDTH,
+            macro_list_split: DEFAULT_MACRO_LIST_FRAC,
             last_selected_macro: String::new(),
             worker_threads: default_worker_threads(),
             permissions_intro_done: false,
@@ -957,12 +957,12 @@ impl UserSettings {
         self.data_editor_left_split = self
             .data_editor_left_split
             .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
-        if !self.macro_list_width.is_finite() || self.macro_list_width <= 0.0 {
-            self.macro_list_width = DEFAULT_MACRO_LIST_WIDTH;
+        if !self.macro_list_split.is_finite() || self.macro_list_split <= 0.0 {
+            self.macro_list_split = DEFAULT_MACRO_LIST_FRAC;
         }
-        self.macro_list_width = self
-            .macro_list_width
-            .clamp(MIN_MACRO_LIST_WIDTH, MAX_MACRO_LIST_WIDTH);
+        self.macro_list_split = self
+            .macro_list_split
+            .clamp(MIN_MACRO_LIST_FRAC, MAX_MACRO_LIST_FRAC);
     }
 
     /// Apply `sqyre_dir` override to the process-wide data directory.
@@ -1154,6 +1154,19 @@ mod tests {
         s.data_editor_left_split = 0.9;
         s.clamp();
         assert!((s.data_editor_left_split - MAX_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn clamp_macro_list_frac() {
+        let mut s = UserSettings {
+            macro_list_split: 0.05,
+            ..Default::default()
+        };
+        s.clamp();
+        assert!((s.macro_list_split - MIN_MACRO_LIST_FRAC).abs() < f32::EPSILON);
+        s.macro_list_split = 0.9;
+        s.clamp();
+        assert!((s.macro_list_split - MAX_MACRO_LIST_FRAC).abs() < f32::EPSILON);
     }
 
     #[test]

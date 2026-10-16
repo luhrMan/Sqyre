@@ -414,13 +414,19 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
     // Local copy: `show_collapsible` borrows `&mut bool` for the whole call,
     // and the content closure also needs `&mut app`.
     let mut open = app.macro_list_open;
-    let list_w = app.settings_ui.settings().macro_list_width.clamp(
-        sqyre_persist::MIN_MACRO_LIST_WIDTH,
-        sqyre_persist::MAX_MACRO_LIST_WIDTH,
+    // Panel size is a fraction of the window body it splits, not absolute points,
+    // so the 15%–75% limits track window resizes.
+    let win_w = ui.max_rect().width().max(1.0);
+    let frac = app.settings_ui.settings().macro_list_split.clamp(
+        sqyre_persist::MIN_MACRO_LIST_FRAC,
+        sqyre_persist::MAX_MACRO_LIST_FRAC,
     );
     egui::Panel::right("macro_list_tags")
-        .default_size(list_w)
-        .size_range(sqyre_persist::MIN_MACRO_LIST_WIDTH..=sqyre_persist::MAX_MACRO_LIST_WIDTH)
+        .default_size(win_w * frac)
+        .size_range(
+            (win_w * sqyre_persist::MIN_MACRO_LIST_FRAC)
+                ..=(win_w * sqyre_persist::MAX_MACRO_LIST_FRAC),
+        )
         // Default side margin is 2px tall, which the window border eats into.
         .frame(
             egui::Frame::side_top_panel(ui.style())
@@ -586,13 +592,13 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
     let panel_id = egui::Id::new("macro_list_tags");
     if !ui.ctx().input(|i| i.pointer.any_down()) {
         if let Some(state) = egui::containers::panel::PanelState::load(ui.ctx(), panel_id) {
-            let w = state.size().x.clamp(
-                sqyre_persist::MIN_MACRO_LIST_WIDTH,
-                sqyre_persist::MAX_MACRO_LIST_WIDTH,
+            let frac = (state.size().x / win_w).clamp(
+                sqyre_persist::MIN_MACRO_LIST_FRAC,
+                sqyre_persist::MAX_MACRO_LIST_FRAC,
             );
-            let cur = app.settings_ui.settings().macro_list_width;
-            if (w - cur).abs() > 0.5 {
-                app.settings_ui.settings_mut().macro_list_width = w;
+            let cur = app.settings_ui.settings().macro_list_split;
+            if (frac - cur).abs() > 0.005 {
+                app.settings_ui.settings_mut().macro_list_split = frac;
                 let _ = app.settings_ui.save_settings();
             }
         }
