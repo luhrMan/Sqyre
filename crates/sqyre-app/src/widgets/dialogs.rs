@@ -263,13 +263,14 @@ pub fn consume_escape(ui: &mut egui::Ui) -> bool {
         && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Escape))
 }
 
-/// Esc → cancel; Enter → save when enabled and no text field wants keys.
+/// Esc → cancel; Enter → save when enabled, this window is on top, and no
+/// focused widget inside it owns the key. Same layering rule as Esc.
 fn poll_save_keys(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
     if consume_escape(ui) {
         SaveCancel::Cancel
     } else if save_enabled
-        && !ui.ctx().egui_wants_keyboard_input()
-        && !ui.ctx().text_edit_focused()
+        && crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
+        && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id())
         && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter))
     {
         SaveCancel::Save
@@ -346,11 +347,16 @@ fn confirm_button(ui: &mut egui::Ui, label: &str, kind: ConfirmKind) -> egui::Re
 
 /// Esc → cancel, Enter → submit for top-level confirm popups.
 ///
-/// Keys are consumed so they do not leak to the UI under the dialog.
+/// Keys are consumed so they do not leak to the UI under the dialog. Enter is
+/// only taken while the confirm is the top window and no focused widget inside
+/// it (e.g. a name field) owns the key.
 pub fn poll_confirm_keys(ui: &mut egui::Ui) -> ConfirmCancel {
     if consume_escape(ui) {
         ConfirmCancel::Cancel
-    } else if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter)) {
+    } else if crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
+        && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id())
+        && ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter))
+    {
         ConfirmCancel::Confirm
     } else {
         ConfirmCancel::None
@@ -562,6 +568,109 @@ mod tests {
             modifiers: Modifiers::NONE,
         });
         assert_eq!(frame(&ctx, esc), (false, true));
+    }
+
+    fn enter_press() -> RawInput {
+        let mut input = RawInput::default();
+        input.events.push(Event::Key {
+            key: Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        });
+        input
+    }
+
+    /// Enter must reach the top window even while a widget in a lower layer
+    /// still holds focus (`egui_wants_keyboard_input` is global and used to
+    /// swallow the keypress for every surface).
+    #[test]
+    fn enter_saves_top_window_despite_background_focus() {
+        let ctx = egui::Context::default();
+        let mut bg_id = None;
+        let mut out = SaveCancel::None;
+        // Two warmup frames so the widgets exist in `prev_pass.widgets`.
+        for _ in 0..2 {
+            ctx.run_ui(RawInput::default(), |ui| {
+                bg_id = Some(ui.button("background").id);
+                let ctx = ui.ctx().clone();
+                egui::Window::new("modal").show(&ctx, |ui| {
+                    out = save_cancel_row(ui, true);
+                });
+            })
+            .drop_without_applying_deltas();
+        }
+        ctx.memory_mut(|m| m.request_focus(bg_id.unwrap()));
+        ctx.run_ui(enter_press(), |ui| {
+            let _ = ui.button("background");
+            let ctx = ui.ctx().clone();
+            egui::Window::new("modal").show(&ctx, |ui| {
+                out = save_cancel_row(ui, true);
+            });
+        })
+        .drop_without_applying_deltas();
+        assert_eq!(out, SaveCancel::Save);
+    }
+
+    /// A focused widget *inside* the window owns Enter (activation/text), so
+    /// the footer must not double-fire.
+    #[test]
+    fn enter_does_not_save_while_widget_in_window_is_focused() {
+        let ctx = egui::Context::default();
+        let mut inside_id = None;
+        let mut out = SaveCancel::None;
+        for _ in 0..2 {
+            ctx.run_ui(RawInput::default(), |ui| {
+                let ctx = ui.ctx().clone();
+                egui::Window::new("modal").show(&ctx, |ui| {
+                    inside_id = Some(ui.button("inside").id);
+                    out = save_cancel_row(ui, true);
+                });
+            })
+            .drop_without_applying_deltas();
+        }
+        ctx.memory_mut(|m| m.request_focus(inside_id.unwrap()));
+        ctx.run_ui(enter_press(), |ui| {
+            let ctx = ui.ctx().clone();
+            egui::Window::new("modal").show(&ctx, |ui| {
+                let _ = ui.button("inside");
+                out = save_cancel_row(ui, true);
+            });
+        })
+        .drop_without_applying_deltas();
+        assert_eq!(out, SaveCancel::None);
+    }
+
+    /// With two overlapping windows, only the top one gets Enter-to-save.
+    #[test]
+    fn enter_saves_only_the_top_window() {
+        fn frame(ctx: &egui::Context, input: RawInput) -> (SaveCancel, SaveCancel) {
+            let mut hits = (SaveCancel::None, SaveCancel::None);
+            ctx.run_ui(input, |ui| {
+                let ctx = ui.ctx().clone();
+                egui::Window::new("lower").show(&ctx, |ui| {
+                    hits.0 = save_cancel_row(ui, true);
+                });
+                egui::Window::new("upper").show(&ctx, |ui| {
+                    hits.1 = save_cancel_row(ui, true);
+                });
+            })
+            .drop_without_applying_deltas();
+            hits
+        }
+
+        let ctx = egui::Context::default();
+        for _ in 0..3 {
+            assert_eq!(
+                frame(&ctx, RawInput::default()),
+                (SaveCancel::None, SaveCancel::None)
+            );
+        }
+        assert_eq!(
+            frame(&ctx, enter_press()),
+            (SaveCancel::None, SaveCancel::Save)
+        );
     }
 
     #[test]

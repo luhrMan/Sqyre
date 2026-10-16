@@ -820,12 +820,12 @@ fn show_edit_window(
             if ui.input(|i| i.key_pressed(Key::Enter))
                 && !ui.input(|i| i.modifiers.shift)
             {
-                // Don't steal Enter while a picker is open, a text field has focus,
-                // or another window is on top (same layering rule as Escape).
+                // Don't steal Enter while a picker is open, a focused widget in
+                // this window owns the key, or another window is on top (same
+                // layering rule as Escape).
                 if matches!(state, TooltipState::Edit(edit) if matches!(edit.picker, ActivePicker::None))
                     && crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
-                    && !ui.ctx().egui_wants_keyboard_input()
-                    && !ui.ctx().text_edit_focused()
+                    && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id())
                 {
                     save = true;
                 }

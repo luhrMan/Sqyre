@@ -1159,6 +1159,7 @@ impl DataEditor {
             && !self.window_picker.is_open()
             && self.overlay_icon_picker_for.is_none()
             && !ui.ctx().any_popup_open()
+            && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id())
             && ui.ctx().top_layer_id() == Some(ui.layer_id())
             && ui
                 .ctx()
