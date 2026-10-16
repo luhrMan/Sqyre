@@ -106,6 +106,11 @@ FROM base AS android
 ARG USERNAME=vscode
 USER root
 
+# Installs in this stage must land in the system toolchain: base's final ENV
+# sets CARGO_HOME to the vscode user's ~/.cargo, which is not on the CI
+# PATH (docker run mounts use /usr/local/cargo/bin). Restored at the end.
+ENV CARGO_HOME=/usr/local/cargo
+
 ARG ANDROID_CMDLINE_TOOLS=11076708
 ARG ANDROID_PLATFORM=35
 # AGP 8.7 builds with build-tools 34 unless the Gradle file pins another.
@@ -169,4 +174,6 @@ RUN set -eux \
 ENV PATH="/opt/scrcpy:${PATH}" \
     ADB=/opt/android-sdk/platform-tools/adb
 
+# Back to the vscode user's cargo home for interactive devcontainer use.
+ENV CARGO_HOME=/home/${USERNAME}/.cargo
 USER ${USERNAME}
