@@ -428,10 +428,9 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                 }
             });
             status.paint(ui);
-            // Esc closes when no text field is capturing keys.
+            // Esc closes when no widget inside the review window owns keys.
             if !close
-                && !ui.ctx().text_edit_focused()
-                && !ui.ctx().egui_wants_keyboard_input()
+                && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id())
                 && crate::widgets::consume_escape(ui)
             {
                 close = true;

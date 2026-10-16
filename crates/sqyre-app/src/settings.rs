@@ -424,9 +424,11 @@ impl SettingsUi {
         }
 
         // ↑↓ move the sidebar selection (like the command palette). Prefer when
-        // search is focused; otherwise only if nothing else wants arrow keys.
+        // search is focused; otherwise only while this is the top surface and
+        // no widget inside it owns arrow keys.
         let allow_section_keys = search_focused
-            || (!ui.ctx().egui_wants_keyboard_input() && !ui.ctx().text_edit_focused());
+            || (crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
+                && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id()));
         if allow_section_keys && !visible_sections.is_empty() {
             let mut idx = visible_sections
                 .iter()
