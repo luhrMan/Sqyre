@@ -500,8 +500,7 @@ fn paint_tag_chips(
                 })
                 .response;
             if enabled && !signed_filters {
-                resp.on_hover_text("Right-click for options. × removes the tag.")
-                    .rect
+                resp.on_hover_text("Right-click for options.").rect
             } else {
                 resp.rect
             }
@@ -512,7 +511,7 @@ fn paint_tag_chips(
             let drag = ui.dnd_drag_source(id, i, paint_chip);
             drag.response
                 .clone()
-                .on_hover_text("Drag to reorder. Right-click for options. × removes the tag.");
+                .on_hover_text("Drag to reorder. Right-click for options.");
             if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
                 let from = *payload;
                 if from != i {
@@ -552,25 +551,6 @@ fn paint_tag_chips(
             }
             rect
         };
-        // A real button next to each chip: clickable, Tab-focusable, and
-        // activated with Enter/Space — the context menu is no longer the only
-        // removal path. Kept outside the drag source so it can't eat drags.
-        if enabled {
-            let tip = format!("Remove tag “{tag}”");
-            let resp = ui
-                .add(
-                    egui::Button::new(egui::RichText::new("×").small().color(fg))
-                        .fill(egui::Color32::TRANSPARENT)
-                        .min_size(egui::vec2(small_h, small_h)),
-                )
-                .on_hover_text(&tip);
-            resp.clone().widget_info(|| {
-                egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip.clone())
-            });
-            if resp.clicked() {
-                remove = Some(tag.clone());
-            }
-        }
         if enabled {
             let menu_id = ui.id().with(("tag_chip_menu", i, tag.as_str()));
             crate::widgets::rect_context_menu(ui, menu_id, chip_rect, |ui| {
