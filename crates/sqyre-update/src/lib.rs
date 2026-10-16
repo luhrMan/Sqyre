@@ -5,8 +5,9 @@
 //! On Windows the install is always written as `sqyre.exe` (even if the running file was a
 //! versioned release name). macOS compiles but returns [`UpdateError::Unsupported`].
 //!
-//! Updates require a `SHA256SUMS` asset plus `SHA256SUMS.sig` (Ed25519 over the
-//! checksums file bytes). The selected zip is size-capped and hash-verified before staging.
+//! Updates require a `SHA256SUMS` asset plus `SHA256SUMS.sig` (Ed25519 over a
+//! version-bound manifest — see [`sign::manifest_message`]). The selected zip is
+//! size-capped and hash-verified before staging.
 
 pub mod sign;
 mod version;
