@@ -83,7 +83,10 @@ impl DataEditor {
             Ok(Ok(list)) => list,
             Ok(Err(e)) => {
                 self.running_programs_pending = None;
-                self.set_err(format!("Could not list running programs: {e}"));
+                self.set_err(format!(
+                    "Could not list running programs: {}",
+                    crate::status_banner::user_error_detail(&e)
+                ));
                 return;
             }
             Err(TryRecvError::Empty) => {
@@ -125,7 +128,11 @@ impl DataEditor {
                     );
                     added += 1;
                 }
-                Err(e) => failed.push(format!("{}: {e}", p.name)),
+                Err(e) => failed.push(format!(
+                    "{}: {}",
+                    p.name,
+                    crate::status_banner::user_error_detail(&e)
+                )),
             }
         }
         if added > 0 {

@@ -220,6 +220,14 @@ impl TooltipState {
         crate::recorded_action::apply_recorded_color(&mut edit.draft.kind, recorded);
     }
 
+    /// Surface a dropper/sample failure on the open edit dialog (no-op otherwise).
+    #[cfg(feature = "native-runtime")]
+    pub fn note_recorded_color_error(&mut self, msg: String) {
+        if let Self::Edit(edit) = self {
+            edit.error = Some(msg);
+        }
+    }
+
     /// Escape handling. Returns `(consumed, discard_ids)` — discard_ids is set when a
     /// provisional new-action edit is fully cancelled.
     pub fn handle_escape(&mut self) -> (bool, Vec<ActionId>) {
@@ -812,10 +820,12 @@ fn show_edit_window(
             if ui.input(|i| i.key_pressed(Key::Enter))
                 && !ui.input(|i| i.modifiers.shift)
             {
-                // Don't steal Enter while a picker is open or a text field has focus.
+                // Don't steal Enter while a picker is open, a focused widget in
+                // this window owns the key, or another window is on top (same
+                // layering rule as Escape).
                 if matches!(state, TooltipState::Edit(edit) if matches!(edit.picker, ActivePicker::None))
-                    && !ui.ctx().egui_wants_keyboard_input()
-                    && !ui.ctx().text_edit_focused()
+                    && crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
+                    && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id())
                 {
                     save = true;
                 }

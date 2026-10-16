@@ -277,7 +277,10 @@ impl SettingsUi {
     pub fn persist(&mut self) {
         self.settings.clamp();
         if let Err(e) = self.settings.save_default() {
-            self.set_err(format!("Failed to save settings: {e}"));
+            self.set_err(format!(
+                "Failed to save settings: {}",
+                crate::status_banner::user_error_detail(&e)
+            ));
             return;
         }
         self.dirty = false;
@@ -421,9 +424,11 @@ impl SettingsUi {
         }
 
         // ↑↓ move the sidebar selection (like the command palette). Prefer when
-        // search is focused; otherwise only if nothing else wants arrow keys.
+        // search is focused; otherwise only while this is the top surface and
+        // no widget inside it owns arrow keys.
         let allow_section_keys = search_focused
-            || (!ui.ctx().egui_wants_keyboard_input() && !ui.ctx().text_edit_focused());
+            || (crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
+                && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id()));
         if allow_section_keys && !visible_sections.is_empty() {
             let mut idx = visible_sections
                 .iter()
@@ -906,7 +911,10 @@ impl SettingsUi {
                 if ui.button("Open .sqyre folder").clicked() {
                     match open_sqyre_dir() {
                         Ok(()) => self.set_ok("Opened data folder."),
-                        Err(e) => self.set_err(format!("Open folder failed: {e}")),
+                        Err(e) => self.set_err(format!(
+                            "Open folder failed: {}",
+                            crate::status_banner::user_error_detail(&e)
+                        )),
                     }
                 }
                 if crate::file_dialogs::supported(PickPurpose::SqyreLocation)
@@ -1061,12 +1069,29 @@ impl SettingsUi {
             Ok(path) => {
                 let keep = self.settings.backup_max_keep.max(1) as usize;
                 if let Err(e) = prune_backups(keep) {
-                    self.set_err(format!("Backup created but prune failed: {e}"));
+                    self.set_err(format!(
+                        "Backup created but prune failed: {}",
+                        crate::status_banner::user_error_detail(&e)
+                    ));
                 }
                 self.note_backup_success(&path);
             }
-            Err(e) => self.set_err(format!("Backup failed: {e}")),
+            Err(e) => self.set_err(format!(
+                "Backup failed: {}",
+                crate::status_banner::user_error_detail(&e)
+            )),
         }
+    }
+
+    /// Record a failed automatic backup in the Settings status line (the log
+    /// keeps the same warning so diagnostics don't regress).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn note_backup_failure(&mut self, err: &str) {
+        crate::log::warn(format_args!("automatic backup failed: {err}"));
+        self.set_err(format!(
+            "Automatic backup failed: {}",
+            crate::status_banner::user_error_detail(err)
+        ));
     }
 
     /// Record a successful backup timestamp and persist settings.
@@ -1372,7 +1397,10 @@ impl SettingsUi {
         catalog: &mut ProgramCatalog,
     ) {
         if let Err(e) = import_backup(&path, mode) {
-            self.set_err(format!("Import failed: {e}"));
+            self.set_err(format!(
+                "Import failed: {}",
+                crate::status_banner::user_error_detail(&e)
+            ));
             return;
         }
 
@@ -1417,7 +1445,10 @@ impl SettingsUi {
                 crate::catalog::apply_main_monitor_resolution(catalog);
                 let _ = crate::catalog::ensure_general_program_seeded(catalog);
                 self.reload_requested = true;
-                self.set_err(format!("Imported archive but failed to load db.yaml: {e}"));
+                self.set_err(format!(
+                    "Imported archive but failed to load db.yaml: {}",
+                    crate::status_banner::user_error_detail(&e)
+                ));
             }
         }
     }
@@ -1444,7 +1475,10 @@ impl SettingsUi {
     ) {
         if move_data && old_dir.exists() {
             if let Err(e) = move_dir(&old_dir, &new_dir) {
-                self.set_err(format!("Move failed: {e}"));
+                self.set_err(format!(
+                    "Move failed: {}",
+                    crate::status_banner::user_error_detail(&e)
+                ));
                 return;
             }
         }
@@ -1489,8 +1523,9 @@ impl SettingsUi {
                 let _ = crate::catalog::ensure_general_program_seeded(catalog);
                 self.reload_requested = true;
                 self.set_err(format!(
-                    "Switched to {} but failed to load db.yaml: {e}",
-                    path.display()
+                    "Switched to {} but failed to load db.yaml: {}",
+                    path.display(),
+                    crate::status_banner::user_error_detail(&e)
                 ));
             }
         }
@@ -1581,7 +1616,7 @@ impl SettingsUi {
                     .add(
                         crate::widgets::num_entry(&mut v)
                             .range(0.5..=2.5)
-                            .speed(0.05)
+                            .speed(0.1)
                             .fixed_decimals(1),
                     )
                     .on_hover_text(

@@ -130,6 +130,27 @@ fn nearest_by_distance(from: Rect, candidates: &[(Id, Rect)]) -> Option<Id> {
         .map(|(id, _)| *id)
 }
 
+/// Does a widget inside `layer` (or one of its popup sublayers) hold keyboard
+/// focus — i.e. own Enter/typing while `layer` is the window on top?
+///
+/// [`egui::Context::egui_wants_keyboard_input`] is global: a widget still
+/// focused in a background layer suppresses Enter handling in the modal above
+/// it even though that widget can't see the key (or fires invisibly under the
+/// modal). Focus only counts when it lives in this layer or one of its
+/// registered sublayers (combo popups, context menus). A stale focused id
+/// with no widget record can't consume the key and doesn't count.
+pub fn focused_in_layer(ctx: &egui::Context, layer: LayerId) -> bool {
+    let Some(focused) = ctx.memory(|m| m.focused()) else {
+        return false;
+    };
+    let Some(focused_layer) =
+        ctx.viewport(|v| v.prev_pass.widgets.get(focused).map(|w| w.layer_id))
+    else {
+        return false;
+    };
+    layer_in_home(ctx, layer, focused_layer)
+}
+
 /// Whether `layer` is the top surface that should handle Esc.
 ///
 /// Tooltip-order layers float above every window, so they always qualify;

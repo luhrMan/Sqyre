@@ -13,16 +13,10 @@ pub use android::PermissionsPanel;
 #[cfg(not(target_os = "android"))]
 pub use desktop::PermissionsPanel;
 
-/// Card around one permission row.
+/// Card around one permission row — shared `section_frame` styling so the
+/// panel matches other framed groups in the app.
 fn row_frame(ui: &egui::Ui) -> egui::Frame {
-    egui::Frame::NONE
-        .fill(crate::theme::overlay_panel_fill())
-        .stroke(egui::Stroke::new(
-            1.0,
-            ui.visuals().widgets.noninteractive.bg_stroke.color,
-        ))
-        .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::same(10))
+    crate::theme::section_frame(ui.style())
 }
 
 /// Row title (hover shows `tip`) with the status right-aligned.

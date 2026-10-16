@@ -800,7 +800,7 @@ fn targets_editor(
         }
     });
     if *sort_by == ItemSortBy::Tags {
-        let suggestions = item_tag_suggestions(catalog, targets, target_tags);
+        let suggestions = item_tag_suggestions(ui.ctx(), catalog, targets, target_tags);
         let draft_id = ui.id().with("image_search_tag_priority_draft");
         let mut draft = ui
             .ctx()
@@ -827,7 +827,8 @@ fn targets_editor(
         let _ = edit;
         ui.ctx().data_mut(|d| d.insert_temp(draft_id, draft));
     }
-    let display = tree_chrome::sorted_image_search_targets(
+    let display = tree_chrome::cached_sorted_image_search_targets(
+        ui.ctx(),
         catalog,
         targets,
         target_tags,
@@ -916,12 +917,14 @@ fn target_sort_infos(
 }
 
 fn item_tag_suggestions(
+    ctx: &egui::Context,
     catalog: &ProgramCatalog,
     targets: &[String],
     target_tags: &[String],
 ) -> Vec<String> {
     let mut tags = Vec::new();
-    for target in tree_chrome::sorted_image_search_targets(
+    for target in tree_chrome::cached_sorted_image_search_targets(
+        ctx,
         catalog,
         targets,
         target_tags,
@@ -1566,9 +1569,10 @@ fn clauses_editor(
         clauses.push(ConditionClause::default());
     }
     let mut remove: Option<usize> = None;
+    let row_ids = crate::widgets::stable_row_ids(ui, "clauses", clauses.len());
     for (i, clause) in clauses.iter_mut().enumerate() {
         // Unique id so each clause's "op" ComboBox is distinct (same label salt).
-        ui.push_id(i, |ui| {
+        ui.push_id(row_ids[i], |ui| {
             let row = ui.horizontal(|ui| {
                 condition_operand_field(
                     ui,
@@ -1597,6 +1601,7 @@ fn clauses_editor(
     }
     if let Some(i) = remove {
         clauses.remove(i);
+        crate::widgets::remove_row_id(ui, "clauses", i);
     }
 }
 
@@ -1611,8 +1616,9 @@ pub(super) fn list_columns_editor(
         sources.push(ListColumn::default());
     }
     let mut remove: Option<usize> = None;
+    let row_ids = crate::widgets::stable_row_ids(ui, "foreach_sources", sources.len());
     for (i, col) in sources.iter_mut().enumerate() {
-        ui.push_id(i, |ui| {
+        ui.push_id(row_ids[i], |ui| {
             if i > 0 {
                 crate::widgets::section_separator(ui);
             }
@@ -1651,6 +1657,7 @@ pub(super) fn list_columns_editor(
     }
     if let Some(i) = remove {
         sources.remove(i);
+        crate::widgets::remove_row_id(ui, "foreach_sources", i);
     }
 }
 
@@ -1666,8 +1673,9 @@ fn assignments_editor(
     }
     let mut remove: Option<usize> = None;
     let can_remove = assignments.len() > 1;
+    let row_ids = crate::widgets::stable_row_ids(ui, "assignments", assignments.len());
     for (i, a) in assignments.iter_mut().enumerate() {
-        ui.push_id(i, |ui| {
+        ui.push_id(row_ids[i], |ui| {
             if i > 0 {
                 crate::widgets::section_separator(ui);
             }
@@ -1697,6 +1705,7 @@ fn assignments_editor(
     }
     if let Some(i) = remove {
         assignments.remove(i);
+        crate::widgets::remove_row_id(ui, "assignments", i);
     }
     if assignments.is_empty() {
         assignments.push(VariableAssignment::default());
