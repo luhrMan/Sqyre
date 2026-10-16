@@ -1,6 +1,6 @@
 //! Removable tag chips with draft entry and completion suggestions.
 
-use eframe::egui::{self, Key, Modifiers, PopupCloseBehavior, RectAlign};
+use eframe::egui::{self, Key, Modifiers, PopupCloseBehavior, RectAlign, Sense};
 
 /// Max height of the tag suggestion dropdown popup.
 const TAG_SUGGEST_POPUP_HEIGHT: f32 = 180.0;
@@ -499,8 +499,8 @@ fn paint_tag_chips(
                     });
                 })
                 .response;
-            if enabled {
-                resp.on_hover_text("Right-click to remove.").rect
+            if enabled && !signed_filters {
+                resp.on_hover_text("Right-click for options.").rect
             } else {
                 resp.rect
             }
@@ -509,6 +509,9 @@ fn paint_tag_chips(
         let chip_rect = if reorderable && enabled {
             let id = ui.id().with(("tag_dnd", i, tag.as_str()));
             let drag = ui.dnd_drag_source(id, i, paint_chip);
+            drag.response
+                .clone()
+                .on_hover_text("Drag to reorder. Right-click for options.");
             if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
                 let from = *payload;
                 if from != i {
@@ -524,7 +527,29 @@ fn paint_tag_chips(
             }
             drag.inner
         } else {
-            paint_chip(ui)
+            let rect = paint_chip(ui);
+            if enabled && signed_filters {
+                // Not a drag source — the chip itself can take a click to flip
+                // the include/exclude sign. Kept off draggable chips: a
+                // click-sense overlay would swallow the press and break reorder.
+                let resp = ui.interact(
+                    rect,
+                    ui.id().with(("tag_chip", i, tag.as_str())),
+                    Sense::click(),
+                );
+                crate::widgets::controls::paint_keyboard_focus_ring(ui, rect, &resp);
+                let info_label = format!("Tag filter {tag} — click to toggle include/exclude");
+                resp.clone().widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, info_label.clone())
+                });
+                if resp.clicked() {
+                    toggle = Some(i);
+                }
+                resp.on_hover_text(
+                    "Click to toggle include/exclude. Right-click for more options.",
+                );
+            }
+            rect
         };
         if enabled {
             let menu_id = ui.id().with(("tag_chip_menu", i, tag.as_str()));

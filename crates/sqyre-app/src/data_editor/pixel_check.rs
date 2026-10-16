@@ -66,6 +66,8 @@ mod inner {
         pub tmpl_h: usize,
         pub summary: MatchSummary,
         pub tolerance_matches: Vec<ToleranceMatch>,
+        /// A mask was configured but unreadable — the preview ran unmasked.
+        pub mask_missing: bool,
         pub heatmap: TextureHandle,
     }
 
@@ -78,6 +80,8 @@ mod inner {
         pub tmpl_h: usize,
         pub summary: MatchSummary,
         pub tolerance_matches: Vec<ToleranceMatch>,
+        /// A mask was configured but unreadable — the preview ran unmasked.
+        pub mask_missing: bool,
         pub heatmap_rgba: Vec<u8>,
     }
 
@@ -298,7 +302,7 @@ mod inner {
         by: i32,
         blur: i32,
         method: MatchMethod,
-    ) -> Result<(MatchMap, usize, usize, usize, usize), String> {
+    ) -> Result<(MatchMap, usize, usize, usize, usize, bool), String> {
         let img = capture_search_area(lx, ty, rx, by)?;
         let image_w = img.width() as usize;
         let image_h = img.height() as usize;
@@ -314,6 +318,7 @@ mod inner {
         let tmpl_w = template_blurred.width;
         let tmpl_h = template_blurred.height;
         let mask_bytes = mask_path.and_then(|p| get_cached_image_mask(p, tmpl_h, tmpl_w));
+        let mask_missing = mask_path.is_some() && mask_bytes.is_none();
         let mask_ref = mask_bytes.as_deref().map(|m| m.as_slice());
         let prepared =
             prepare_template(&template_blurred, mask_ref, method).map_err(|e| e.to_string())?;
@@ -325,7 +330,7 @@ mod inner {
             Some(&search_prep),
         )
         .map_err(|e| e.to_string())?;
-        Ok((map, image_w, image_h, tmpl_w, tmpl_h))
+        Ok((map, image_w, image_h, tmpl_w, tmpl_h, mask_missing))
     }
 
     fn score_passes(score: f32, method: MatchMethod, tolerance: f32) -> bool {
@@ -657,7 +662,7 @@ mod inner {
         let (tx, job_rx) = mpsc::channel();
         thread::spawn(move || {
             let result = (|| {
-                let (map, image_w, image_h, tmpl_w, tmpl_h) = compute_match(
+                let (map, image_w, image_h, tmpl_w, tmpl_h, mask_missing) = compute_match(
                     &template_path,
                     mask_path.as_deref(),
                     lx,
@@ -687,6 +692,7 @@ mod inner {
                     tmpl_h,
                     summary,
                     tolerance_matches,
+                    mask_missing,
                     heatmap_rgba,
                 })
             })();
@@ -713,6 +719,7 @@ mod inner {
             tmpl_h: result.tmpl_h,
             summary: result.summary,
             tolerance_matches: result.tolerance_matches,
+            mask_missing: result.mask_missing,
             heatmap,
         }
     }

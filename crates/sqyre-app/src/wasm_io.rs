@@ -39,12 +39,19 @@ impl SqyreApp {
                         self.refresh_macro_hotkey_bindings();
                     }
                     Err(e) => {
-                        self.workspace.load_error = Some(e.to_string());
-                        *self.run_session.state.status.lock() = format!("Import failed: {e}");
+                        let detail = e.to_string();
+                        self.workspace.load_error = Some(detail.clone());
+                        *self.run_session.state.status.lock() = format!(
+                            "Import failed: {}",
+                            crate::status_banner::user_error_detail(&detail)
+                        );
                     }
                 },
                 Err(e) => {
-                    *self.run_session.state.status.lock() = format!("Import failed: {e}");
+                    *self.run_session.state.status.lock() = format!(
+                        "Import failed: {}",
+                        crate::status_banner::user_error_detail(&e)
+                    );
                 }
             }
         }
@@ -89,7 +96,10 @@ impl SqyreApp {
             }
             Err(e) => {
                 self.workspace.save_error = Some(e.to_string());
-                *self.run_session.state.status.lock() = format!("Export failed: {e}");
+                *self.run_session.state.status.lock() = format!(
+                    "Export failed: {}",
+                    crate::status_banner::user_error_detail(&e)
+                );
             }
         }
     }
