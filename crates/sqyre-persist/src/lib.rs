@@ -49,7 +49,7 @@ pub use settings::{
     MIN_WHILE_MAX_ITERATIONS, MIN_WORKER_THREADS,
 };
 pub use sqyre_domain::resolve_scalar_int;
-pub use sqyre_serialize::{check_yaml_nesting_depth, MAX_YAML_NESTING_DEPTH};
+pub use sqyre_serialize::{check_yaml_nesting_depth, check_yaml_safety, MAX_YAML_NESTING_DEPTH};
 
 use parking_lot::{Mutex, RwLock};
 use serde_yaml::{Mapping, Value};
@@ -319,6 +319,7 @@ impl Database {
                 text.len()
             )));
         }
+        check_yaml_safety(text)?;
         let root: Value = serde_yaml::from_str(text)?;
         check_yaml_nesting_depth(&root)?;
         let mapping = root
@@ -484,6 +485,18 @@ mod tests {
     }
 
     #[test]
+    fn rejects_yaml_aliases_before_expansion() {
+        // Billion-laughs shape: serde_yaml would expand `*x` without bound, so
+        // the event-level guard must reject it before `Value` materialization.
+        let text = "macros:\n  a: &x [1, 2, 3]\n  b: *x\nprograms: {}\n";
+        let err = Database::from_yaml_with_warnings(text).unwrap_err();
+        assert!(
+            err.to_string().contains("aliases"),
+            "expected alias rejection, got {err}"
+        );
+    }
+
+    #[test]
     fn rejects_deeply_nested_yaml() {
         let mut v = Value::Null;
         for _ in 0..=MAX_YAML_NESTING_DEPTH + 1 {
@@ -570,8 +583,10 @@ programs: {}
     #[test]
     fn corrupt_yaml_errors_cleanly() {
         let err = Database::from_yaml("macros: [unterminated").unwrap_err();
+        // The event-level safety scan may report the syntax error before
+        // serde_yaml gets a chance to — either yaml-family error is "clean".
         assert!(
-            matches!(err, PersistError::Yaml(_)),
+            matches!(err, PersistError::Yaml(_) | PersistError::Serialize(_)),
             "expected yaml error, got {err:?}"
         );
     }

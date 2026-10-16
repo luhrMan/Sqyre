@@ -12,6 +12,7 @@ pub mod sign;
 mod version;
 
 pub use sign::{embedded_verifying_key, verify as verify_update_signature, SignError};
+pub use version::strip_v as strip_tag_prefix;
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -401,7 +402,8 @@ pub fn check_latest(current: &str) -> Result<UpdateStatus, UpdateError> {
     assert_allowed_download_url(&sig_asset.browser_download_url)?;
     let sig_bytes = http_get_bytes(&sig_asset.browser_download_url, MAX_CHECKSUMS_SIG_BYTES)?;
     let key = embedded_verifying_key()?;
-    verify_update_signature(sums_text.as_bytes(), &sig_bytes, &key)?;
+    let manifest = sign::manifest_message(strip_v(&release.tag_name), sums_text.as_bytes());
+    verify_update_signature(&manifest, &sig_bytes, &key)?;
 
     let sums = parse_sha256sums(&sums_text);
     let sha256 = sums

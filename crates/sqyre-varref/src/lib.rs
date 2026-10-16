@@ -70,6 +70,18 @@ fn find_all_refs(text: &str) -> Vec<Match> {
     let bytes = text.as_bytes();
     let mut out = Vec::new();
     let mut i = 0;
+    // `}` lookups share one forward-only cursor, so each byte is scanned at
+    // most once and adversarial `${${${…` input stays O(n) instead of O(n²).
+    // `pending_close` caches the earliest `}` at/after the last query: query
+    // positions only move forward, so it stays the earliest close until it is
+    // consumed by a match or escape skip.
+    let mut close_cursor = 0usize;
+    let mut pending_close: Option<usize> = None;
+    macro_rules! close_from {
+        ($from:expr) => {
+            close_from(bytes, $from, &mut close_cursor, &mut pending_close)
+        };
+    }
     while i < bytes.len() {
         // `$${name}` → literal `${name}` (skip entire span; no Match).
         if bytes[i] == b'$'
@@ -78,16 +90,16 @@ fn find_all_refs(text: &str) -> Vec<Match> {
             && i + 2 < bytes.len()
             && bytes[i + 2] == b'{'
         {
-            if let Some(end) = bytes[i + 3..]
-                .iter()
-                .position(|&b| b == b'}')
-                .map(|p| i + 3 + p)
-            {
-                let name = &text[i + 3..end];
-                if is_ref_name(name) {
-                    i = end + 1;
-                    continue;
+            match close_from!(i + 3) {
+                Some(end) => {
+                    let name = &text[i + 3..end];
+                    if is_ref_name(name) {
+                        pending_close = None;
+                        i = end + 1;
+                        continue;
+                    }
                 }
+                None => break,
             }
             i += 2;
             continue;
@@ -103,21 +115,21 @@ fn find_all_refs(text: &str) -> Vec<Match> {
             continue;
         }
         if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
-            if let Some(end) = bytes[i + 2..]
-                .iter()
-                .position(|&b| b == b'}')
-                .map(|p| i + 2 + p)
-            {
-                let name = &text[i + 2..end];
-                if is_ref_name(name) {
-                    out.push(Match {
-                        start: i,
-                        end: end + 1,
-                        name: name.to_string(),
-                    });
-                    i = end + 1;
-                    continue;
+            match close_from!(i + 2) {
+                Some(end) => {
+                    let name = &text[i + 2..end];
+                    if is_ref_name(name) {
+                        out.push(Match {
+                            start: i,
+                            end: end + 1,
+                            name: name.to_string(),
+                        });
+                        pending_close = None;
+                        i = end + 1;
+                        continue;
+                    }
                 }
+                None => break,
             }
             i += 1;
             continue;
@@ -127,41 +139,62 @@ fn find_all_refs(text: &str) -> Vec<Match> {
                 i += 1;
                 continue;
             }
-            if let Some(end) = bytes[i + 1..]
-                .iter()
-                .position(|&b| b == b'}')
-                .map(|p| i + 1 + p)
-            {
-                let name = &text[i + 1..end];
-                if is_ref_name(name) {
-                    out.push(Match {
-                        start: i,
-                        end: end + 1,
-                        name: name.to_string(),
-                    });
-                    i = end + 1;
-                    continue;
+            match close_from!(i + 1) {
+                Some(end) => {
+                    let name = &text[i + 1..end];
+                    if is_ref_name(name) {
+                        out.push(Match {
+                            start: i,
+                            end: end + 1,
+                            name: name.to_string(),
+                        });
+                        pending_close = None;
+                        i = end + 1;
+                        continue;
+                    }
                 }
+                None => break,
             }
         }
         i += 1;
     }
-    // Dollar refs already skip their interior; bare braces that fall inside a
-    // dollar span are dropped by overlap filter for segments/names consistency.
-    drop_overlapping(out)
+    // Matches are emitted in order and non-overlapping by construction (`i`
+    // always jumps past a match end), so no post-pass is needed.
+    out
 }
 
-fn drop_overlapping(matches: Vec<Match>) -> Vec<Match> {
-    let mut filtered = Vec::new();
-    for m in matches {
-        let overlap = filtered
-            .iter()
-            .any(|prev: &Match| m.start >= prev.start && m.end <= prev.end);
-        if !overlap {
-            filtered.push(m);
+/// First `}` at or after `from`, reusing the forward-only `cursor`/`pending`
+/// state so each byte is scanned at most once. `pending` caches the earliest
+/// `}` at/after the last query — query positions only move forward, so it
+/// stays valid until a match or escape skip consumes it (callers clear it).
+fn close_from(
+    bytes: &[u8],
+    from: usize,
+    cursor: &mut usize,
+    pending: &mut Option<usize>,
+) -> Option<usize> {
+    if let Some(c) = *pending {
+        if c >= from {
+            return Some(c);
         }
     }
-    filtered
+    let start = (*cursor).max(from);
+    match bytes[start..]
+        .iter()
+        .position(|&b| b == b'}')
+        .map(|p| start + p)
+    {
+        Some(pos) => {
+            *cursor = pos + 1;
+            *pending = Some(pos);
+            Some(pos)
+        }
+        None => {
+            *cursor = bytes.len();
+            *pending = None;
+            None
+        }
+    }
 }
 
 /// Reports whether `text` contains a `${name}` or `{name}` reference.
@@ -319,6 +352,34 @@ mod tests {
     #[test]
     fn rename_preserves_style() {
         assert_eq!(rename("x=${Old} y={Old}", "old", "new"), "x=${new} y={new}");
+    }
+
+    #[test]
+    fn pathological_unclosed_refs_stay_linear() {
+        // Each `${`/`{` used to rescan the tail for `}` (O(n²)); at these
+        // sizes that would take minutes instead of milliseconds.
+        let mut s = String::with_capacity(2_000_010);
+        for _ in 0..1_000_000 {
+            s.push_str("${");
+        }
+        assert!(!contains(&s));
+        assert!(!contains(&"{".repeat(1_000_000)));
+        assert!(!contains(&"${a".repeat(500_000)));
+        // Still finds real refs inside large inputs.
+        let mut big = "x".repeat(500_000);
+        big.push_str("${real}");
+        assert!(contains(&big));
+        assert_eq!(names(&big), vec!["real".to_string()]);
+    }
+
+    #[test]
+    fn nested_brace_shapes_match_previous_semantics() {
+        // `{b}` inside the unclosed `${a{` span is still a bare ref.
+        assert_eq!(names("${a{b}}"), vec!["b".to_string()]);
+        assert_eq!(names("{a{b}c}"), vec!["b".to_string()]);
+        let mut n = names("${x} and {y}");
+        n.sort();
+        assert_eq!(n, vec!["x", "y"]);
     }
 
     #[test]

@@ -722,6 +722,7 @@ impl UserSettings {
                 text.len()
             )));
         }
+        sqyre_serialize::check_yaml_safety(&text)?;
         let mut s: Self = serde_yaml::from_str(&text)?;
         s.clamp();
         Ok(s)
