@@ -3603,6 +3603,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/libyaml-safer/libyaml-safer-0.3.0.crate",
+        "sha256": "d325b93a27b93b93b7cf4a57d681c5b6a4d8f910e695db989c055eb1e4f657df",
+        "dest": "cargo/vendor/libyaml-safer-0.3.0"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"d325b93a27b93b93b7cf4a57d681c5b6a4d8f910e695db989c055eb1e4f657df\", \"files\": {}}",
+        "dest": "cargo/vendor/libyaml-safer-0.3.0",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/linebender_resource_handle/linebender_resource_handle-0.1.1.crate",
         "sha256": "d4a5ff6bcca6c4867b1c4fd4ef63e4db7436ef363e0ad7531d1558856bae64f4",
         "dest": "cargo/vendor/linebender_resource_handle-0.1.1"

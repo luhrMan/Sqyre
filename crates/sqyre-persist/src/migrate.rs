@@ -277,6 +277,14 @@ pub fn migrate_db_yaml_value(root: &mut Value) -> Result<()> {
 
 /// Parse, migrate, and validate against the current [`Database`] loader.
 pub fn migrate_db_yaml(text: &str) -> Result<String> {
+    if text.len() > crate::MAX_DB_YAML_BYTES {
+        return Err(crate::PersistError::Message(format!(
+            "db.yaml too large ({} bytes; max {})",
+            text.len(),
+            crate::MAX_DB_YAML_BYTES
+        )));
+    }
+    crate::check_yaml_safety(text)?;
     let mut root: Value = serde_yaml::from_str(text)?;
     migrate_db_yaml_value(&mut root)?;
     let out = serde_yaml::to_string(&root)?;

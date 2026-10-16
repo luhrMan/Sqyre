@@ -207,12 +207,13 @@ pub(crate) fn copy_image_as_png(
     src: &std::path::Path,
     dest: &std::path::Path,
 ) -> Result<(), String> {
-    let bytes = std::fs::read(src).map_err(|e| format!("read: {e}"))?;
+    let bytes = sqyre_ports::read_file_capped(src, sqyre_ports::MAX_IMAGE_FILE_BYTES)
+        .map_err(|e| format!("read: {e}"))?;
     if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) {
         std::fs::write(dest, &bytes).map_err(|e| format!("write: {e}"))?;
         return Ok(());
     }
-    let img = image::load_from_memory(&bytes).map_err(|e| format!("decode: {e}"))?;
+    let img = sqyre_ports::decode_image_bounded(&bytes).map_err(|e| format!("decode: {e}"))?;
     img.save(dest).map_err(|e| format!("save png: {e}"))
 }
 
