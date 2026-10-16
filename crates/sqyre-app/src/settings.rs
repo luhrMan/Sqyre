@@ -1614,7 +1614,7 @@ impl SettingsUi {
                     .add(
                         crate::widgets::num_entry(&mut v)
                             .range(0.5..=2.5)
-                            .speed(0.05)
+                            .speed(0.1)
                             .fixed_decimals(1),
                     )
                     .on_hover_text(
