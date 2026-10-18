@@ -929,11 +929,7 @@ jobs:
             exit 1
           fi
           chmod +x signer/sign_update_sums
-<<<<<<< HEAD
           signer/sign_update_sums "${{ needs.gate.outputs.version }}" release/SHA256SUMS
-=======
-          signer/sign_update_sums "${{ needs.version.outputs.version }}" release/SHA256SUMS
->>>>>>> 3df37624f8db263deb4e4ad39cbf652abe1a4824
           ls -la release/SHA256SUMS release/SHA256SUMS.sig
 
       - name: Create Release
