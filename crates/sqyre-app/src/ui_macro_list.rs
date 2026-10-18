@@ -203,12 +203,57 @@ enum MacroRowAction {
     Delete(usize),
 }
 
+/// One-shot keyboard effects targeting the selected row this frame.
+#[derive(Debug, Default, Clone, Copy)]
+struct RowNav {
+    /// Scroll the selected row into view.
+    scroll: bool,
+    /// Move egui focus onto the selected row (Enter from the filter field).
+    focus: bool,
+}
+
+/// Macro indices in painted order — groups render rows only when expanded.
+///
+/// Header ids must match `paint_tag_node` (`ui.make_persistent_id`), or the
+/// open-state lookup always misses and the order silently collapses to empty.
+fn visible_macro_order(ui: &egui::Ui, tree: &TagTreeNode, untagged: &[usize]) -> Vec<usize> {
+    let mut out = Vec::new();
+    for (seg, child) in &tree.children {
+        collect_open_group(ui, seg, child, &mut out);
+    }
+    if group_is_open(ui, UNTAGGED_KEY) {
+        out.extend_from_slice(untagged);
+    }
+    out
+}
+
+fn group_is_open(ui: &egui::Ui, path: &str) -> bool {
+    let id = ui.make_persistent_id(("macro_list_tag", path));
+    egui::collapsing_header::CollapsingState::load(ui.ctx(), id).is_some_and(|s| s.is_open())
+}
+
+fn collect_open_group(ui: &egui::Ui, path: &str, node: &TagTreeNode, out: &mut Vec<usize>) {
+    if !group_is_open(ui, path) {
+        return;
+    }
+    out.extend_from_slice(&node.macros);
+    for (seg, child) in &node.children {
+        let child_path = if path.is_empty() {
+            seg.clone()
+        } else {
+            format!("{path}/{seg}")
+        };
+        collect_open_group(ui, &child_path, child, out);
+    }
+}
+
 fn paint_macro_rows(
     ui: &mut egui::Ui,
     app: &SqyreApp,
     list_w: f32,
     indices: &[usize],
     row_action: &mut Option<MacroRowAction>,
+    nav: &mut RowNav,
 ) {
     for &i in indices {
         let Some(m) = app.workspace.macros.get(i) else {
@@ -227,6 +272,16 @@ fn paint_macro_rows(
         );
         if let Some(err) = validation_err.as_deref() {
             resp = resp.on_hover_text(format!("Validation: {err}"));
+        }
+        if i == app.workspace.selected_macro {
+            if nav.scroll {
+                ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));
+                nav.scroll = false;
+            }
+            if nav.focus {
+                resp.request_focus();
+                nav.focus = false;
+            }
         }
         if resp.clicked() {
             *row_action = Some(MacroRowAction::Select(i));
@@ -253,6 +308,8 @@ struct PaintTagCtx<'a> {
     list_w: f32,
     row_action: &'a mut Option<MacroRowAction>,
     clicked_tag: &'a mut Option<String>,
+    /// One-shot keyboard effects toward the selected row.
+    nav: &'a mut RowNav,
     /// Program icons per tag path (see [`program_tag_icons`]).
     tag_icons: &'a HashMap<String, Vec<TextureHandle>>,
     /// Appearance → compact program headers: icon-only when a tag has program icons.
@@ -366,7 +423,14 @@ fn paint_tag_group(
         })
         .body_unindented(|ui| {
             ui.set_max_width(ctx.list_w);
-            paint_macro_rows(ui, ctx.app, ctx.list_w, &node.macros, ctx.row_action);
+            paint_macro_rows(
+                ui,
+                ctx.app,
+                ctx.list_w,
+                &node.macros,
+                ctx.row_action,
+                ctx.nav,
+            );
             for (seg, child) in &node.children {
                 let child_path = if path.is_empty() {
                     seg.clone()
@@ -387,6 +451,7 @@ fn paint_tag_group(
                             list_w: nested_w,
                             row_action: ctx.row_action,
                             clicked_tag: ctx.clicked_tag,
+                            nav: ctx.nav,
                             tag_icons: ctx.tag_icons,
                             compact: ctx.compact,
                         };
@@ -469,20 +534,31 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             // validation issues are shown on the macro rows and action tree.
             // List-scoped: same color/prefix rules as StatusBanner panel footers.
             if let Some(err) = &app.workspace.load_error {
-                StatusBanner::paint_prefixed_error(ui, PREFIX_LOAD_ERROR, err);
+                StatusBanner::paint_prefixed_error(
+                    ui,
+                    PREFIX_LOAD_ERROR,
+                    &crate::status_banner::user_error_detail(err.as_str()),
+                );
             }
             if let Some(warn) = &app.workspace.platform_warning {
                 StatusBanner::paint_warn(ui, warn);
             }
             if let Some(err) = &app.workspace.save_error {
-                StatusBanner::paint_prefixed_error(ui, PREFIX_SAVE_ERROR, err);
+                StatusBanner::paint_prefixed_error(
+                    ui,
+                    PREFIX_SAVE_ERROR,
+                    &crate::status_banner::user_error_detail(err.as_str()),
+                );
             }
-            ui.add(
-                egui::TextEdit::singleline(&mut app.macro_list_filter)
-                    .desired_width(pane_w)
-                    .hint_text("Search macros or tags…"),
-            )
-            .on_hover_text("Filter by macro name or tag.");
+            let search_resp = ui
+                .add(
+                    egui::TextEdit::singleline(&mut app.macro_list_filter)
+                        .desired_width(pane_w)
+                        .hint_text("Search macros or tags…"),
+                )
+                .on_hover_text(
+                    "Filter by macro name or tag. ↑↓ moves the selection, Enter edits it.",
+                );
             {
                 let label = if app.workspace.hotkey_tag_filters.is_empty() {
                     "Hotkeys: off".to_string()
@@ -521,6 +597,47 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 let compact = app.settings_ui.settings().compact_program_headers;
                 let mut row_action: Option<MacroRowAction> = None;
                 let mut clicked_tag: Option<String> = None;
+                let mut row_nav = RowNav::default();
+
+                // Search-then-navigate: while the filter field owns the keyboard,
+                // ↑↓ move the selection across visible rows, Enter hands focus to
+                // the row, Esc clears the filter (or releases the field).
+                let order = visible_macro_order(ui, &tree, &untagged);
+                if search_resp.has_focus() {
+                    use pickers::ListNavAction;
+                    let nav = pickers::poll_list_nav(ui);
+                    match nav {
+                        ListNavAction::Up | ListNavAction::Down => {
+                            if !order.is_empty() {
+                                let down = nav == ListNavAction::Down;
+                                let next = match order
+                                    .iter()
+                                    .position(|&i| i == app.workspace.selected_macro)
+                                {
+                                    Some(p) if down => (p + 1).min(order.len() - 1),
+                                    Some(p) => p.saturating_sub(1),
+                                    None if down => 0,
+                                    None => order.len() - 1,
+                                };
+                                select_macro_row(app, order[next]);
+                                row_nav.scroll = true;
+                            }
+                        }
+                        ListNavAction::Activate => {
+                            let visible = order.contains(&app.workspace.selected_macro);
+                            row_nav.scroll = visible;
+                            row_nav.focus = visible;
+                        }
+                        ListNavAction::Cancel => {
+                            if !app.macro_list_filter.is_empty() {
+                                app.macro_list_filter.clear();
+                            } else {
+                                search_resp.surrender_focus();
+                            }
+                        }
+                        ListNavAction::None => {}
+                    }
+                }
                 let has_visible = !tree.children.is_empty() || !untagged.is_empty();
                 if !has_visible {
                     if app.workspace.macros.is_empty() {
@@ -544,6 +661,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         list_w,
                         row_action: &mut row_action,
                         clicked_tag: &mut clicked_tag,
+                        nav: &mut row_nav,
                         tag_icons: &tag_icons,
                         compact,
                     };

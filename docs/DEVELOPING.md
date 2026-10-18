@@ -153,7 +153,7 @@ Release build jobs set `SQYRE_SKIP_GATE=1` so `make android` / `make wasm` skip 
 
 Shipped Linux AppImage/Windows builds embed `SQYRE_VERSION` so the in-app updater can compare against GitHub Releases (local `0.0.0-dev` builds skip update checks). Flatpak installs use `flatpak update` instead of in-app self-replace.
 
-**Signed updates:** Releases must publish `SHA256SUMS` and `SHA256SUMS.sig` (Ed25519 over the exact `SHA256SUMS` bytes). The client verifies the signature with the public key in `crates/sqyre-update/update_pubkey.hex` before trusting hashes.
+**Signed updates:** Releases must publish `SHA256SUMS` and `SHA256SUMS.sig` (Ed25519 over a version-bound manifest — `sqyre-update-manifest-v1\n<version>\n<SHA256SUMS bytes>` — so an older signed manifest cannot be replayed under a newer tag). The client verifies the signature with the public key in `crates/sqyre-update/update_pubkey.hex` before trusting hashes.
 
 To configure signing (maintainer, once):
 

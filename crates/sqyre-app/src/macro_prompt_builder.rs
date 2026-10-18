@@ -912,6 +912,10 @@ pub fn prepare_import_macro(raw: &str, existing: &[String]) -> Result<Macro, Str
 }
 
 fn looks_like_db_yaml(yaml: &str) -> bool {
+    // Unsafe input fails the real decode below with the safety error.
+    if sqyre_serialize::check_yaml_safety(yaml).is_err() {
+        return false;
+    }
     let Ok(serde_yaml::Value::Mapping(map)) = serde_yaml::from_str(yaml) else {
         return false;
     };

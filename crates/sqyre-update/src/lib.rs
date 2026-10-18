@@ -5,13 +5,15 @@
 //! On Windows the install is always written as `sqyre.exe` (even if the running file was a
 //! versioned release name). macOS compiles but returns [`UpdateError::Unsupported`].
 //!
-//! Updates require a `SHA256SUMS` asset plus `SHA256SUMS.sig` (Ed25519 over the
-//! checksums file bytes). The selected zip is size-capped and hash-verified before staging.
+//! Updates require a `SHA256SUMS` asset plus `SHA256SUMS.sig` (Ed25519 over a
+//! version-bound manifest — see [`sign::manifest_message`]). The selected zip is
+//! size-capped and hash-verified before staging.
 
 pub mod sign;
 mod version;
 
 pub use sign::{embedded_verifying_key, verify as verify_update_signature, SignError};
+pub use version::strip_v as strip_tag_prefix;
 
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -401,7 +403,8 @@ pub fn check_latest(current: &str) -> Result<UpdateStatus, UpdateError> {
     assert_allowed_download_url(&sig_asset.browser_download_url)?;
     let sig_bytes = http_get_bytes(&sig_asset.browser_download_url, MAX_CHECKSUMS_SIG_BYTES)?;
     let key = embedded_verifying_key()?;
-    verify_update_signature(sums_text.as_bytes(), &sig_bytes, &key)?;
+    let manifest = sign::manifest_message(strip_v(&release.tag_name), sums_text.as_bytes());
+    verify_update_signature(&manifest, &sig_bytes, &key)?;
 
     let sums = parse_sha256sums(&sums_text);
     let sha256 = sums

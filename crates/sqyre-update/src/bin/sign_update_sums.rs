@@ -1,6 +1,9 @@
 //! Sign `SHA256SUMS` for a GitHub release (`SHA256SUMS.sig`, raw 64-byte Ed25519).
 //!
-//! Reads private key hex from `SQYRE_UPDATE_SIGNING_KEY` (never from a repo file).
+//! The signed payload is the version-bound manifest (see
+//! [`sqyre_update::sign::manifest_message`]), so a signature cannot be
+//! replayed under a different release tag. Reads private key hex from
+//! `SQYRE_UPDATE_SIGNING_KEY` (never from a repo file).
 
 use ed25519_dalek::{Signer, SigningKey};
 use std::env;
@@ -10,10 +13,15 @@ use std::process::ExitCode;
 
 fn main() -> ExitCode {
     let mut args = env::args().skip(1);
-    let Some(sums_path) = args.next().map(PathBuf::from) else {
-        eprintln!("usage: sign-update-sums <SHA256SUMS>");
+    let Some(version) = args.next() else {
+        eprintln!("usage: sign-update-sums <version> <SHA256SUMS>");
         return ExitCode::from(2);
     };
+    let Some(sums_path) = args.next().map(PathBuf::from) else {
+        eprintln!("usage: sign-update-sums <version> <SHA256SUMS>");
+        return ExitCode::from(2);
+    };
+    let version = sqyre_update::strip_tag_prefix(version.trim());
     let Ok(key_hex) = env::var("SQYRE_UPDATE_SIGNING_KEY") else {
         eprintln!("SQYRE_UPDATE_SIGNING_KEY is not set");
         return ExitCode::from(1);
@@ -33,6 +41,7 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
+    let msg = sqyre_update::sign::manifest_message(version, &msg);
     let sig = sk.sign(&msg);
     let mut out_path = sums_path.clone();
     if let Some(name) = sums_path.file_name().and_then(|s| s.to_str()) {
