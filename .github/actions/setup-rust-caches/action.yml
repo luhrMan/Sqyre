@@ -1,11 +1,10 @@
 name: Setup Rust caches
 description: >
   Shared cache prelude for Rust jobs: Cargo registry, per-triple target/, and
-  rolling sccache, with optional OCR models. All keyed on a caller-provided
-  lock-hash (hashFiles of Cargo.lock + the image pins that define the epoch).
-  actions/cache post-saves run at job end, so the sccache entry is always saved
-  under this run's unique key — restores prefer the same lock-hash epoch, then
-  any epoch, then the broad family prefix.
+  optional OCR models. All keyed on a caller-provided lock-hash (hashFiles of
+  Cargo.lock + the image pins that define the epoch). sccache is NOT cached
+  here — it uses the GHA cache backend inside the container (see
+  run-in-build-image): per-compilation content-addressed blobs, no save steps.
 inputs:
   lock-hash:
     description: Cache epoch — e.g. hashFiles('Cargo.lock', '.devcontainer/Dockerfile')
@@ -28,18 +27,6 @@ inputs:
     default: ""
   target-paths:
     description: Multiline paths to cache; empty skips the target cache
-    required: false
-    default: ""
-  sccache-key-prefix:
-    description: Full key prefix, e.g. sccache-linux-v1 — empty skips sccache
-    required: false
-    default: ""
-  sccache-family:
-    description: Broadest restore prefix, e.g. sccache-linux
-    required: false
-    default: ""
-  sccache-path:
-    description: Host-side sccache dir, e.g. .cache/sccache-linux
     required: false
     default: ""
   extra-dirs:
@@ -84,25 +71,12 @@ runs:
           ${{ runner.os }}-${{ inputs.target-key-prefix }}-
           ${{ runner.os }}-${{ inputs.target-family }}-
 
-    # Rolling key: actions/cache restores nothing under this unique key, then
-    # post-saves a fresh entry at job end — entries accumulate across commits.
-    - name: Cache sccache
-      if: inputs.sccache-path != ''
-      uses: actions/cache@v6
-      with:
-        path: ${{ inputs.sccache-path }}
-        key: ${{ runner.os }}-${{ inputs.sccache-key-prefix }}-${{ inputs.lock-hash }}-${{ github.run_id }}-${{ github.job }}
-        restore-keys: |
-          ${{ runner.os }}-${{ inputs.sccache-key-prefix }}-${{ inputs.lock-hash }}-
-          ${{ runner.os }}-${{ inputs.sccache-key-prefix }}-
-          ${{ runner.os }}-${{ inputs.sccache-family }}-
-
     - name: Prepare cache dirs
       shell: bash
       run: |
         set -euo pipefail
         dirs=("${{ env.CARGO_HOME_DIR }}")
-        for d in ${{ inputs.sccache-path }} ${{ inputs.extra-dirs }}; do
+        for d in ${{ inputs.extra-dirs }}; do
           [ -n "$d" ] && dirs+=("$d")
         done
         # target-paths is multiline; take its first entry's top dir.

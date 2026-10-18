@@ -3,27 +3,32 @@
 # signed Android APK (arm64).
 # Release tag / artifact names: vYYYY.MM.DD (e.g. v2026.03.03); HHMM suffix if that tag exists.
 #
+# `gate` always runs first and emits `ci` (push/PR, or a release will publish),
+# `should_release`, `version`, `sha`. Downstream jobs gate on those outputs; a
+# failed/skipped need auto-skips its dependents, so no always() plumbing.
+#
 # Caching (share what can be shared):
 # - Cargo registry (.cache/cargo): one key for all Linux jobs — warmed once per run.
 #   Fixed per Cargo.lock: lockfiles fully describe deps, so no write-back needed.
-# - Cargo target/: per triple (linux host / windows-gnu / wasm32 / android)
-#   — not cross-shareable. Fixed per lockfile epoch; deps dominate, workspace
-#   crates rebuild anyway.
-# - sccache (.cache/sccache-{linux,windows}): rolling keys (<epoch>-<run_id>-<job>)
-#   so compile entries accumulate across commits; restore prefers the same
-#   Cargo.lock/Dockerfile epoch, then any epoch.
+# - Cargo target/: per triple/profile (linux debug / linux dist / windows-gnu /
+#   wasm32 / android) — not cross-shareable. Fixed per lockfile epoch; deps
+#   dominate, workspace crates rebuild anyway.
+# - sccache: GHA cache backend (per-compilation content-addressed blobs via
+#   ACTIONS_* passthrough in run-in-build-image + scripts/windows/build.sh).
+#   No save steps; .cache/sccache is only the fallback backend.
 # - Linux/Windows Docker images: content-hash tags on GHCR; Buildx layers as fallback
 # - .devcontainer/Dockerfile is multi-stage: `base` (sqyre-linux-build, slim —
 #   no Android toolchain) for check/test/build-linux/build-wasm; `android`
-#   (sqyre-android-build = base + SDK/NDK/emulator) for check-android/build-android
+#   (sqyre-android-build = base + SDK/NDK/emulator) for check-android/build-android.
+#   The android stage builds `FROM base` inline, so android-image never needs
+#   the published base image.
 # - OCR models (assets/ocr-models): keyed on the pin hashes in the download script
-# - Flatpak runtimes + flatpak-builder state: rolling, keyed on the manifest epoch
-# - Trunk tools (wasm-bindgen/wasm-opt), AppImage type2-runtime, Gradle user home,
+# - Flatpak runtimes + builder state, Gradle user home: weekly-epoch keys —
+#   bounded staleness instead of a multi-GB re-save every run
+# - Trunk tools (wasm-bindgen/wasm-opt), AppImage type2-runtime,
 #   Windows rustup toolchains — keyed on the inputs that pin their versions
 # Shared cache steps live in .github/actions/setup-rust-caches (composite);
-# actions/cache only saves when the key is new, so the rolling sccache entry is
-# post-saved under this run's unique key. Gradle/Flatpak keep explicit
-# restore+save because their paths differ.
+# the container env contract lives in .github/actions/run-in-build-image.
 # Release builds skip release-gate via SQYRE_SKIP_GATE=1 — the check job already
 # gated the same commit; releases on schedule/dispatch reuse that result.
 # Criterion benches (`make bench`) are local-only; Linux `check` runs fmt/clippy/
@@ -47,71 +52,96 @@ on:
     - cron: "0 23 * * *"
   workflow_dispatch:
 
+# Push/PR serialize per ref (new push cancels the old). Release-capable events
+# share one group so a schedule + dispatch can't race the same release tag.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  group: >-
+    ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        && format('{0}-release', github.workflow)
+        || format('{0}-{1}-{2}', github.workflow, github.event_name, github.ref) }}
   cancel-in-progress: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' }}
 
+permissions:
+  contents: read
+
 env:
-  # Shared with docker run mounts (see jobs below).
+  # Shared with docker run mounts (see run-in-build-image).
   CARGO_HOME_DIR: .cache/cargo
   CARGO_TARGET_DIR_HOST: target
+  # Incremental artifacts are useless on fresh CI checkouts and bloat target caches.
+  CARGO_INCREMENTAL: "0"
+  # sccache GHA cache backend; build.sh forwards it (and the ACTIONS_* tokens)
+  # into the Windows cross container, run-in-build-image does the same.
+  SCCACHE_GHA_ENABLED: "on"
   # Push runnable images from non-fork PRs and all other events.
   GHCR_PUSH: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
 
 jobs:
-  version:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+  # Always runs: on push/PR it's a ~15s no-op (should_release=false, ci=true);
+  # on schedule/dispatch it decides whether the day merits a release.
+  gate:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
-      should_release: ${{ steps.check.outputs.should_release }}
-      version: ${{ steps.check.outputs.version }}
-      sha: ${{ steps.check.outputs.sha }}
+      should_release: ${{ steps.decide.outputs.should_release }}
+      ci: ${{ steps.decide.outputs.ci }}
+      version: ${{ steps.decide.outputs.version }}
+      sha: ${{ steps.decide.outputs.sha }}
     steps:
-      # github.sha: main tip on schedule, the dispatched ref on dispatch — the
-      # same tree the build jobs check out via version.outputs.sha.
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          # Tag diff needs history only on release events ('0' = full depth).
+          fetch-depth: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '0' || '1' }}
           ref: ${{ github.sha }}
 
       - name: Decide whether to release
-        id: check
+        id: decide
         run: |
           set -euo pipefail
-          # Latest SemVer-ish / date tag (vYYYY.MM.DD or vYYYY.MM.DD.HHMM).
-          LATEST_TAG="$(git tag -l 'v*' --sort=-version:refname | head -n1 || true)"
-
-          if [ -z "$LATEST_TAG" ]; then
-            echo "No prior release tag; releasing HEAD."
-            SHOULD_RELEASE=true
-          else
-            # Match push paths-ignore: ignore docs-only / markdown-only changes.
-            RELEASABLE="$(git diff --name-only "${LATEST_TAG}..HEAD" \
-              | grep -Ev '(^docs/|\.md$)' || true)"
-            if [ -n "$RELEASABLE" ]; then
-              echo "Releasable changes since ${LATEST_TAG}:"
-              echo "$RELEASABLE"
+          SHOULD_RELEASE=false
+          VERSION=""
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # Latest SemVer-ish / date tag (vYYYY.MM.DD or vYYYY.MM.DD.HHMM).
+            LATEST_TAG="$(git tag -l 'v*' --sort=-version:refname | head -n1 || true)"
+            if [ -z "$LATEST_TAG" ]; then
+              echo "No prior release tag; releasing HEAD."
               SHOULD_RELEASE=true
             else
-              echo "No releasable changes since ${LATEST_TAG}; skipping release."
-              SHOULD_RELEASE=false
+              # Match push paths-ignore: ignore docs-only / markdown-only changes.
+              RELEASABLE="$(git diff --name-only "${LATEST_TAG}..HEAD" \
+                | grep -Ev '(^docs/|\.md$)' || true)"
+              if [ -n "$RELEASABLE" ]; then
+                echo "Releasable changes since ${LATEST_TAG}:"
+                echo "$RELEASABLE"
+                SHOULD_RELEASE=true
+              else
+                echo "No releasable changes since ${LATEST_TAG}; skipping release."
+              fi
+            fi
+            if [ "$SHOULD_RELEASE" = true ]; then
+              VERSION="$(date -u +%Y.%m.%d)"
+              if git rev-parse "refs/tags/v${VERSION}" >/dev/null 2>&1; then
+                VERSION="$(date -u +%Y.%m.%d.%H%M)"
+                echo "Tag v$(date -u +%Y.%m.%d) already exists; using v${VERSION}."
+              fi
             fi
           fi
-
-          VERSION="$(date -u +%Y.%m.%d)"
-          if [ "$SHOULD_RELEASE" = true ] && git rev-parse "refs/tags/v${VERSION}" >/dev/null 2>&1; then
-            VERSION="$(date -u +%Y.%m.%d.%H%M)"
-            echo "Tag v$(date -u +%Y.%m.%d) already exists; using v${VERSION}."
+          # `ci`: run the quality-gate/image jobs — every push/PR, plus release runs.
+          CI=false
+          if [ "${{ github.event_name }}" = "push" ] || [ "${{ github.event_name }}" = "pull_request" ] || [ "$SHOULD_RELEASE" = true ]; then
+            CI=true
           fi
-
-          echo "should_release=${SHOULD_RELEASE}" >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "sha=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          {
+            echo "should_release=${SHOULD_RELEASE}"
+            echo "ci=${CI}"
+            echo "version=${VERSION}"
+            echo "sha=${{ github.sha }}"
+          } >> "$GITHUB_OUTPUT"
 
       # Fail before any build job spins up: releases can't sign update
       # manifests without the configured public key in the tree.
       - name: Verify update public key is configured
-        if: steps.check.outputs.should_release == 'true'
+        if: steps.decide.outputs.should_release == 'true'
         run: |
           set -euo pipefail
           PUBKEY_FILE="crates/sqyre-update/update_pubkey.hex"
@@ -121,21 +151,17 @@ jobs:
             exit 1
           fi
 
-  # Shared gate: push/PR always; release events only when publishing.
-  # `version` is skipped on push/PR — use always() so dependents still run.
+  # Warms the shared Cargo registry cache once per run so N parallel jobs don't
+  # race to save the same fixed key; consumers restore, never save.
   cargo-registry:
-    if: |
-      always() && !cancelled() && (
-        github.event_name == 'push' ||
-        github.event_name == 'pull_request' ||
-        (needs.version.result == 'success' && needs.version.outputs.should_release == 'true')
-      )
-    needs: [version]
+    if: needs.gate.outputs.ci == 'true'
+    needs: [gate]
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.sha || github.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
 
       - name: Cache Cargo registry (shared)
         id: reg
@@ -158,23 +184,17 @@ jobs:
           CARGO_HOME="${{ github.workspace }}/${{ env.CARGO_HOME_DIR }}" cargo fetch --locked
 
   linux-image:
-    if: |
-      always() && !cancelled() && (
-        github.event_name == 'push' ||
-        github.event_name == 'pull_request' ||
-        (needs.version.result == 'success' && needs.version.outputs.should_release == 'true')
-      )
-    needs: [version]
+    if: needs.gate.outputs.ci == 'true'
+    needs: [gate]
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
-    outputs:
-      image: ${{ steps.ensure.outputs.image }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.sha || github.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
 
       - name: Ensure Linux build image
         id: ensure
@@ -184,25 +204,21 @@ jobs:
           target: base
           push: ${{ env.GHCR_PUSH }}
 
-  # Android toolchain image (base + SDK/NDK/Gradle/emulator). Only check-android
-  # and build-android consume it; other jobs pull the slim base image.
+  # Android toolchain image (base + SDK/NDK/Gradle/emulator). The android stage
+  # builds `FROM base` inline in the same Buildx invocation, so this doesn't
+  # need linux-image's published image — runs in parallel from job start.
   android-image:
-    if: |
-      always() && !cancelled() &&
-      needs.linux-image.result == 'success' && (
-        github.event_name == 'push' ||
-        github.event_name == 'pull_request' ||
-        (needs.version.result == 'success' && needs.version.outputs.should_release == 'true')
-      )
-    needs: [version, linux-image]
+    if: needs.gate.outputs.ci == 'true'
+    needs: [gate]
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.sha || github.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
 
       - name: Ensure Android build image
         id: ensure
@@ -218,24 +234,17 @@ jobs:
   # Also gates release events: build jobs skip release-gate (SQYRE_SKIP_GATE),
   # so this is the fmt/clippy guard for schedule/dispatch runs.
   check:
-    if: |
-      always() && !cancelled() &&
-      (
-        github.event_name == 'push' ||
-        github.event_name == 'pull_request' ||
-        (needs.version.result == 'success' && needs.version.outputs.should_release == 'true')
-      ) &&
-      needs.cargo-registry.result == 'success' &&
-      needs.linux-image.result == 'success'
-    needs: [version, cargo-registry, linux-image]
+    if: needs.gate.outputs.ci == 'true'
+    needs: [gate, cargo-registry, linux-image]
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: read
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.version.outputs.sha || github.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
 
       # linux-image already built/pushed; pull or rebuild from Buildx cache (fork PRs).
       - name: Ensure Linux build image
@@ -252,43 +261,27 @@ jobs:
           target-key-prefix: cargo-target-linux-v3
           target-family: cargo-target-linux
           target-paths: target
-          sccache-key-prefix: sccache-linux-v1
-          sccache-family: sccache-linux
-          sccache-path: .cache/sccache-linux
 
       - name: Run Rust quality gates
-        run: |
-          docker run --rm -u "$(id -u):$(id -g)" \
-            -v ${{ github.workspace }}:/workspace -w /workspace \
-            -e HOME=/tmp \
-            -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
-            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
-            -e RUSTUP_HOME=/usr/local/rustup \
-            -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
-            -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper \
-            -e SCCACHE_DIR=/workspace/.cache/sccache-linux \
-            -e SCCACHE_CACHE_SIZE=5G \
-            sqyre-linux-build \
-            bash -c 'set -euo pipefail
-              make check
-              make wasm-check
-              make doctest
-              make smoke
-              # Committed cargo-sources.json must match Cargo.lock (flatpak deps).
-              scripts/linux/packaging/flatpak/check-cargo-sources.sh
-              sccache --show-stats || true'
+        uses: ./.github/actions/run-in-build-image
+        with:
+          script: |
+            make check
+            make wasm-check
+            make doctest
+            make smoke
+            # Committed cargo-sources.json must match Cargo.lock (flatpak deps).
+            scripts/linux/packaging/flatpak/check-cargo-sources.sh
+            sccache --show-stats || true
 
   # Instrumented nextest run = the Linux test pass. No target/ cache: llvm-cov
-  # writes under target/llvm-cov-target and the report is uploaded, so nothing
-  # worth persisting is produced — sccache + registry carry the compile work.
+  # writes under target/llvm-cov-target and the report is uploaded — sccache
+  # (GHA backend, which does cache -Cinstrument-coverage) carries the compiles.
   test:
-    if: |
-      always() && !cancelled() &&
-      (github.event_name == 'push' || github.event_name == 'pull_request') &&
-      needs.cargo-registry.result == 'success' &&
-      needs.linux-image.result == 'success'
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     needs: [cargo-registry, linux-image]
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: read
@@ -307,29 +300,17 @@ jobs:
         with:
           lock-hash: ${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
           ocr: "true"
-          sccache-key-prefix: sccache-linux-v1
-          sccache-family: sccache-linux
-          sccache-path: .cache/sccache-linux
 
       - name: Run tests + coverage
-        run: |
-          docker run --rm -u "$(id -u):$(id -g)" \
-            -v ${{ github.workspace }}:/workspace -w /workspace \
-            -e HOME=/tmp \
-            -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
-            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
-            -e RUSTUP_HOME=/usr/local/rustup \
-            -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
-            -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper \
-            -e SCCACHE_DIR=/workspace/.cache/sccache-linux \
-            -e SCCACHE_CACHE_SIZE=5G \
-            -e WGPU_BACKEND=vulkan \
-            -e VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json \
-            sqyre-linux-build \
-            bash -c 'set -euo pipefail
-              make coverage
-              COVERAGE_REPORT_JSON=/workspace/target/coverage/summary.json make coverage-floors
-              sccache --show-stats || true'
+        uses: ./.github/actions/run-in-build-image
+        with:
+          extra-env: |
+            WGPU_BACKEND=vulkan
+            VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
+          script: |
+            make coverage
+            COVERAGE_REPORT_JSON=/workspace/target/coverage/summary.json make coverage-floors
+            sccache --show-stats || true
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7
@@ -344,13 +325,10 @@ jobs:
   # cargo-ndk checks need the NDK → runs on the fat android image so `test`
   # stays on the slim one. Parallel with test; only gates PR/push.
   check-android:
-    if: |
-      always() && !cancelled() &&
-      (github.event_name == 'push' || github.event_name == 'pull_request') &&
-      needs.cargo-registry.result == 'success' &&
-      needs.android-image.result == 'success'
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     needs: [cargo-registry, android-image]
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: read
@@ -366,7 +344,7 @@ jobs:
           push: "false"
 
       # Same target key as build-android: ndk check artifacts land in
-      # target/aarch64-linux-android/debug; host deps covered by sccache.
+      # target/aarch64-linux-android/debug.
       - name: Setup Rust caches
         uses: ./.github/actions/setup-rust-caches
         with:
@@ -377,32 +355,20 @@ jobs:
           target-paths: |
             target/aarch64-linux-android
             target/android
-          sccache-key-prefix: sccache-linux-v1
-          sccache-family: sccache-linux
-          sccache-path: .cache/sccache-linux
 
       - name: Run Android compile checks
-        run: |
-          docker run --rm -u "$(id -u):$(id -g)" \
-            -v ${{ github.workspace }}:/workspace -w /workspace \
-            -e HOME=/tmp \
-            -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
-            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
-            -e RUSTUP_HOME=/usr/local/rustup \
-            -e PATH=/opt/android-sdk/platform-tools:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
-            -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper \
-            -e SCCACHE_DIR=/workspace/.cache/sccache-linux \
-            -e SCCACHE_CACHE_SIZE=5G \
-            sqyre-android-build \
-            bash -c 'set -euo pipefail
-              make android-check
-              sccache --show-stats || true'
+        uses: ./.github/actions/run-in-build-image
+        with:
+          image: sqyre-android-build
+          path-prefix: /opt/android-sdk/platform-tools
+          script: |
+            make android-check
+            sccache --show-stats || true
 
   test-windows:
-    if: |
-      always() && !cancelled() &&
-      (github.event_name == 'push' || github.event_name == 'pull_request')
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
 
@@ -443,26 +409,22 @@ jobs:
   # sign_update_sums is a pure-Rust bin reused by the release job (same glibc
   # baseline — ubuntu 24.04 image and runner).
   build-linux:
-    if: |
-      always() && !cancelled() &&
-      needs.version.result == 'success' &&
-      needs.version.outputs.should_release == 'true' &&
-      needs.cargo-registry.result == 'success' &&
-      needs.linux-image.result == 'success'
-    needs: [version, cargo-registry, linux-image]
+    if: needs.gate.outputs.should_release == 'true'
+    needs: [gate, cargo-registry, linux-image]
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: read
     outputs:
-      version: ${{ needs.version.outputs.version }}
+      version: ${{ needs.gate.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.version.outputs.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
 
       - name: Write VERSION
-        run: echo "${{ needs.version.outputs.version }}" > VERSION
+        run: echo "${{ needs.gate.outputs.version }}" > VERSION
 
       - name: Ensure Linux build image
         uses: ./.github/actions/ensure-linux-image
@@ -470,19 +432,19 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           push: "false"
 
-      # Direct `cargo build` bypasses the Makefile's OCR prereq — sqyre-vision
-      # include_bytes!s the models, so restore/download them here.
+      # Own family: the debug-profile artifacts in cargo-target-linux (written
+      # by `check`) can't serve a `dist` build — sccache carries dep compiles.
+      # Only target/dist (+ target/release for the signer) is worth persisting.
       - name: Setup Rust caches
         uses: ./.github/actions/setup-rust-caches
         with:
           lock-hash: ${{ hashFiles('Cargo.lock', '.devcontainer/Dockerfile') }}
           ocr: "true"
-          target-key-prefix: cargo-target-linux-v3
-          target-family: cargo-target-linux
-          target-paths: target
-          sccache-key-prefix: sccache-linux-v1
-          sccache-family: sccache-linux
-          sccache-path: .cache/sccache-linux
+          target-key-prefix: cargo-target-linux-dist-v1
+          target-family: cargo-target-linux-dist
+          target-paths: |
+            target/dist
+            target/release
 
       # type2-runtime download is URL+SHA256 pinned inside build-appimage.sh —
       # hashing the script tracks bumps.
@@ -495,58 +457,44 @@ jobs:
             appimage-runtime-v1-
 
       - name: Build Linux binary + update signer
-        run: |
-          VERSION="${{ needs.version.outputs.version }}"
-          docker run --rm -u "$(id -u):$(id -g)" \
-            -v ${{ github.workspace }}:/workspace -w /workspace \
-            -e HOME=/tmp \
-            -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
-            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
-            -e RUSTUP_HOME=/usr/local/rustup \
-            -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
-            -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper \
-            -e SCCACHE_DIR=/workspace/.cache/sccache-linux \
-            -e SCCACHE_CACHE_SIZE=5G \
-            -e RELEASE_VERSION="$VERSION" \
-            sqyre-linux-build \
-            bash -c 'set -euo pipefail
-              cargo build -p sqyre-app --profile dist --features portal-capture
-              out="/workspace/sqyre-v${RELEASE_VERSION}-linux-amd64"
-              cp "${CARGO_TARGET_DIR}/dist/sqyre" "$out"
-              strip --strip-unneeded "$out"
-              # Stage the stripped binary so the AppImage ships it too.
-              cp "$out" "${CARGO_TARGET_DIR}/dist/sqyre"
-              mkdir -p /workspace/bin
-              cargo build -p sqyre-update --release --bin sign_update_sums
-              cp "${CARGO_TARGET_DIR}/release/sign_update_sums" /workspace/bin/
-              sccache --show-stats || true'
+        uses: ./.github/actions/run-in-build-image
+        with:
+          extra-env: |
+            RELEASE_VERSION=${{ needs.gate.outputs.version }}
+          script: |
+            cargo build -p sqyre-app --profile dist --features portal-capture
+            out="/workspace/sqyre-v${RELEASE_VERSION}-linux-amd64"
+            cp "${CARGO_TARGET_DIR}/dist/sqyre" "$out"
+            strip --strip-unneeded "$out"
+            # Stage the stripped binary so the AppImage ships it too.
+            cp "$out" "${CARGO_TARGET_DIR}/dist/sqyre"
+            mkdir -p /workspace/bin
+            cargo build -p sqyre-update --release --bin sign_update_sums
+            cp "${CARGO_TARGET_DIR}/release/sign_update_sums" /workspace/bin/
+            sccache --show-stats || true
 
       - name: Build Linux AppImage
+        uses: ./.github/actions/run-in-build-image
+        with:
+          extra-env: |
+            RELEASE_VERSION=${{ needs.gate.outputs.version }}
+            SQYRE_APPIMAGE_FORCE_NATIVE=1
+            SQYRE_APPIMAGE_SKIP_BUILD=1
+          script: scripts/linux/packaging/appimage/build-appimage.sh
+
+      - name: Rename AppImage
         run: |
-          VERSION="${{ needs.version.outputs.version }}"
-          docker run --rm -u "$(id -u):$(id -g)" \
-            -v ${{ github.workspace }}:/workspace -w /workspace \
-            -e HOME=/tmp \
-            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
-            -e RUSTUP_HOME=/usr/local/rustup \
-            -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
-            -e RELEASE_VERSION="$VERSION" \
-            -e SQYRE_APPIMAGE_FORCE_NATIVE=1 \
-            -e SQYRE_APPIMAGE_SKIP_BUILD=1 \
-            sqyre-linux-build \
-            scripts/linux/packaging/appimage/build-appimage.sh
+          VERSION="${{ needs.gate.outputs.version }}"
           mv "bin/Sqyre-${VERSION}-x86_64.AppImage" \
              "Sqyre-v${VERSION}-x86_64.AppImage"
 
-      - name: Install zip
-        run: command -v zip >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y zip; }
-
+      # zip -9 the bare binary; store-only (-0) for the already-compressed
+      # AppImage (zstd squashfs + runtime). zip is preinstalled on the runner.
       - name: Zip Linux binary + AppImage
         run: |
-          VERSION="${{ needs.version.outputs.version }}"
+          VERSION="${{ needs.gate.outputs.version }}"
           zip -9 "sqyre-v${VERSION}-linux-amd64.zip" \
             "sqyre-v${VERSION}-linux-amd64"
-          # Store only: AppImage is already zstd squashfs + runtime.
           zip -0 "Sqyre-v${VERSION}-x86_64.AppImage.zip" \
             "Sqyre-v${VERSION}-x86_64.AppImage"
 
@@ -554,30 +502,31 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: linux-binary-zip
-          path: sqyre-v${{ needs.version.outputs.version }}-linux-amd64.zip
+          path: sqyre-v${{ needs.gate.outputs.version }}-linux-amd64.zip
+          retention-days: 3
 
       - name: Upload Linux AppImage artifact (zipped)
         uses: actions/upload-artifact@v7
         with:
           name: linux-appimage-zip
-          path: Sqyre-v${{ needs.version.outputs.version }}-x86_64.AppImage.zip
+          path: Sqyre-v${{ needs.gate.outputs.version }}-x86_64.AppImage.zip
+          retention-days: 3
 
       - name: Upload update-signer binary
         uses: actions/upload-artifact@v7
         with:
           name: update-signer-bin
           path: bin/sign_update_sums
+          retention-days: 3
 
-  # Needs only `version`: the flatpak build is offline via the committed
+  # Needs only `gate`: the flatpak build is offline via the committed
   # cargo-sources.json (validated against Cargo.lock by the check job), so it
   # uses neither the host Cargo registry nor the Linux image.
   build-flatpak:
-    if: |
-      always() && !cancelled() &&
-      needs.version.result == 'success' &&
-      needs.version.outputs.should_release == 'true'
-    needs: [version]
+    if: needs.gate.outputs.should_release == 'true'
+    needs: [gate]
     runs-on: ubuntu-24.04
+    timeout-minutes: 120
     permissions:
       contents: read
     container:
@@ -589,14 +538,14 @@ jobs:
       # docker fallback in build-flatpak.sh does the same via docker-home.
       XDG_DATA_HOME: ${{ github.workspace }}/scripts/linux/packaging/flatpak/.flatpak-xdg/share
     outputs:
-      version: ${{ needs.version.outputs.version }}
+      version: ${{ needs.gate.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.version.outputs.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
 
       - name: Write VERSION
-        run: echo "${{ needs.version.outputs.version }}" > VERSION
+        run: echo "${{ needs.gate.outputs.version }}" > VERSION
 
       - name: Setup OCR model cache
         uses: ./.github/actions/setup-rust-caches
@@ -605,15 +554,19 @@ jobs:
           ocr: "true"
           registry: "false"
 
-      # Rolling: flathub runtimes update in place within a runtime-version, so
-      # re-save each run and restore the most recent matching epoch.
+      # Weekly epoch: flathub runtimes update in place within a runtime-version,
+      # so a bounded-stale snapshot beats a multi-GB re-save every release.
+      - name: Cache epoch (weekly)
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
       - name: Restore Flatpak runtimes + builder state
         uses: actions/cache/restore@v6
         with:
           path: |
             scripts/linux/packaging/flatpak/.flatpak-builder
             scripts/linux/packaging/flatpak/.flatpak-xdg
-          key: ${{ runner.os }}-flatpak-25.08-v1-${{ hashFiles('scripts/linux/packaging/flatpak/com.sqyre.app.yml') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-flatpak-25.08-v1-${{ hashFiles('scripts/linux/packaging/flatpak/com.sqyre.app.yml') }}-${{ steps.week.outputs.week }}
           restore-keys: |
             ${{ runner.os }}-flatpak-25.08-v1-${{ hashFiles('scripts/linux/packaging/flatpak/com.sqyre.app.yml') }}-
             ${{ runner.os }}-flatpak-25.08-v1-
@@ -632,20 +585,21 @@ jobs:
 
       - name: Build Flatpak bundle
         env:
-          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_VERSION: ${{ needs.gate.outputs.version }}
           SQYRE_FLATPAK_FORCE_NATIVE: "1"
         run: scripts/linux/packaging/flatpak/build-flatpak.sh
 
       - name: Rename Flatpak bundle
         run: |
-          VERSION="${{ needs.version.outputs.version }}"
+          VERSION="${{ needs.gate.outputs.version }}"
           mv "bin/com.sqyre.app.flatpak" "Sqyre-v${VERSION}-x86_64.flatpak"
 
       - name: Upload Flatpak artifact
         uses: actions/upload-artifact@v7
         with:
           name: linux-flatpak
-          path: Sqyre-v${{ needs.version.outputs.version }}-x86_64.flatpak
+          path: Sqyre-v${{ needs.gate.outputs.version }}-x86_64.flatpak
+          retention-days: 3
 
       - name: Save Flatpak runtimes + builder state
         if: always()
@@ -654,28 +608,25 @@ jobs:
           path: |
             scripts/linux/packaging/flatpak/.flatpak-builder
             scripts/linux/packaging/flatpak/.flatpak-xdg
-          key: ${{ runner.os }}-flatpak-25.08-v1-${{ hashFiles('scripts/linux/packaging/flatpak/com.sqyre.app.yml') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-flatpak-25.08-v1-${{ hashFiles('scripts/linux/packaging/flatpak/com.sqyre.app.yml') }}-${{ steps.week.outputs.week }}
 
   build-windows:
-    if: |
-      always() && !cancelled() &&
-      needs.version.result == 'success' &&
-      needs.version.outputs.should_release == 'true' &&
-      needs.cargo-registry.result == 'success'
-    needs: [version, cargo-registry]
+    if: needs.gate.outputs.should_release == 'true'
+    needs: [gate, cargo-registry]
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: read
     outputs:
-      version: ${{ needs.version.outputs.version }}
+      version: ${{ needs.gate.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.version.outputs.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
 
       - name: Write VERSION
-        run: echo "${{ needs.version.outputs.version }}" > VERSION
+        run: echo "${{ needs.gate.outputs.version }}" > VERSION
 
       - name: Ensure Windows cross image
         uses: ./.github/actions/ensure-windows-image
@@ -689,16 +640,13 @@ jobs:
       - name: Setup Rust caches
         uses: ./.github/actions/setup-rust-caches
         with:
-          lock-hash: ${{ hashFiles('Cargo.lock', 'scripts/windows/Dockerfile', 'scripts/windows/build-mingw-deps.sh', 'scripts/windows/mingw-lld-link.sh', 'scripts/windows/sccache-rustc-wrapper.sh') }}
+          lock-hash: ${{ hashFiles('Cargo.lock', 'scripts/windows/Dockerfile', 'scripts/windows/mingw-lld-link.sh', 'scripts/windows/sccache-rustc-wrapper.sh') }}
           ocr: "true"
           target-key-prefix: cargo-target-windows-gnu-v3
           target-family: cargo-target-windows
           target-paths: |
             target/x86_64-pc-windows-gnu
             target/dist
-          sccache-key-prefix: sccache-windows-v3
-          sccache-family: sccache-windows
-          sccache-path: .cache/sccache-windows
 
       - name: Prepare bin dir
         run: mkdir -p bin
@@ -708,18 +656,15 @@ jobs:
           SQYRE_WINDOWS_IMAGE: sqyre-windows-cross:latest
           SQYRE_WINDOWS_SKIP_PULL: "1"
           SQYRE_WINDOWS_SCCACHE: "1"
-          SCCACHE_CACHE_SIZE: 5G
-          RELEASE_VERSION: ${{ needs.version.outputs.version }}
+          RELEASE_VERSION: ${{ needs.gate.outputs.version }}
           CARGO_HOME: ${{ github.workspace }}/${{ env.CARGO_HOME_DIR }}
           CARGO_TARGET_DIR: ${{ github.workspace }}/${{ env.CARGO_TARGET_DIR_HOST }}
         run: ./scripts/windows/build.sh
 
-      - name: Install zip
-        run: command -v zip >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y zip; }
-
+      # Store-only (-0): the exe is already compressed; zip is preinstalled.
       - name: Zip Windows binary
         run: |
-          VERSION="${{ needs.version.outputs.version }}"
+          VERSION="${{ needs.gate.outputs.version }}"
           cp -f bin/sqyre.exe "sqyre-v${VERSION}-windows-amd64.exe"
           zip -0 "sqyre-v${VERSION}-windows-amd64.zip" \
             "sqyre-v${VERSION}-windows-amd64.exe"
@@ -728,29 +673,26 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: windows-binary-zip
-          path: sqyre-v${{ needs.version.outputs.version }}-windows-amd64.zip
+          path: sqyre-v${{ needs.gate.outputs.version }}-windows-amd64.zip
+          retention-days: 3
 
   build-wasm:
-    if: |
-      always() && !cancelled() &&
-      needs.version.result == 'success' &&
-      needs.version.outputs.should_release == 'true' &&
-      needs.cargo-registry.result == 'success' &&
-      needs.linux-image.result == 'success'
-    needs: [version, cargo-registry, linux-image]
+    if: needs.gate.outputs.should_release == 'true'
+    needs: [gate, cargo-registry, linux-image]
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: read
     outputs:
-      version: ${{ needs.version.outputs.version }}
+      version: ${{ needs.gate.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.version.outputs.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
 
       - name: Write VERSION
-        run: echo "${{ needs.version.outputs.version }}" > VERSION
+        run: echo "${{ needs.gate.outputs.version }}" > VERSION
 
       - name: Ensure Linux build image
         uses: ./.github/actions/ensure-linux-image
@@ -770,9 +712,6 @@ jobs:
           target-paths: |
             target/wasm32-unknown-unknown
             target/dist
-          sccache-key-prefix: sccache-linux-v1
-          sccache-family: sccache-linux
-          sccache-path: .cache/sccache-linux
           extra-dirs: .cache/xdg-tools
 
       # Trunk downloads wasm-bindgen + wasm-opt into XDG_CACHE_HOME on first use;
@@ -786,64 +725,52 @@ jobs:
             ${{ runner.os }}-trunk-tools-v1-
 
       - name: Build WASM editor
-        run: |
-          VERSION="${{ needs.version.outputs.version }}"
-          docker run --rm -u "$(id -u):$(id -g)" \
-            -v ${{ github.workspace }}:/workspace -w /workspace \
-            -e HOME=/tmp \
-            -e XDG_CACHE_HOME=/workspace/.cache/xdg-tools \
-            -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
-            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
-            -e RUSTUP_HOME=/usr/local/rustup \
-            -e PATH=/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
-            -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper \
-            -e SCCACHE_DIR=/workspace/.cache/sccache-linux \
-            -e SCCACHE_CACHE_SIZE=5G \
-            -e RELEASE_VERSION="$VERSION" \
-            -e SQYRE_SKIP_GATE=1 \
-            sqyre-linux-build \
-            bash -c 'set -euo pipefail
-              make wasm
-              test -f bin/wasm/index.html
-              sccache --show-stats || true'
-
-      - name: Install zip
-        run: command -v zip >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y zip; }
+        uses: ./.github/actions/run-in-build-image
+        with:
+          extra-env: |
+            RELEASE_VERSION=${{ needs.gate.outputs.version }}
+            SQYRE_SKIP_GATE=1
+          script: |
+            make wasm
+            test -f bin/wasm/index.html
+            sccache --show-stats || true
 
       - name: Zip WASM editor
         run: |
-          VERSION="${{ needs.version.outputs.version }}"
+          VERSION="${{ needs.gate.outputs.version }}"
           (cd bin/wasm && zip -9r "../../sqyre-v${VERSION}-wasm.zip" .)
 
       - name: Upload WASM artifact (zipped)
         uses: actions/upload-artifact@v7
         with:
           name: wasm-editor-zip
-          path: sqyre-v${{ needs.version.outputs.version }}-wasm.zip
+          path: sqyre-v${{ needs.gate.outputs.version }}-wasm.zip
+          retention-days: 3
 
   # Signed arm64 release APK. Needs the SQYRE_ANDROID_* secrets; the release fails
   # without them, same as SQYRE_UPDATE_SIGNING_KEY.
   build-android:
-    if: |
-      always() && !cancelled() &&
-      needs.version.result == 'success' &&
-      needs.version.outputs.should_release == 'true' &&
-      needs.cargo-registry.result == 'success' &&
-      needs.android-image.result == 'success'
-    needs: [version, cargo-registry, android-image]
+    if: needs.gate.outputs.should_release == 'true'
+    needs: [gate, cargo-registry, android-image]
     runs-on: ubuntu-24.04
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: read
+    env:
+      # Job-level so the composite's bare `-e NAME` passthroughs can see them.
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SQYRE_ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEYSTORE_ALIAS: ${{ secrets.SQYRE_ANDROID_KEY_ALIAS }}
+      ANDROID_KEYSTORE_KEY_PASSWORD: ${{ secrets.SQYRE_ANDROID_KEY_PASSWORD }}
     outputs:
-      version: ${{ needs.version.outputs.version }}
+      version: ${{ needs.gate.outputs.version }}
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: ${{ needs.version.outputs.sha }}
+          ref: ${{ needs.gate.outputs.sha }}
 
       - name: Write VERSION
-        run: echo "${{ needs.version.outputs.version }}" > VERSION
+        run: echo "${{ needs.gate.outputs.version }}" > VERSION
 
       - name: Decode Android release keystore
         env:
@@ -885,87 +812,71 @@ jobs:
             target/aarch64-linux-android
             target/android
             target/release
-          sccache-key-prefix: sccache-linux-v1
-          sccache-family: sccache-linux
-          sccache-path: .cache/sccache-linux
           extra-dirs: .cache/gradle
 
-      # Rolling: Gradle dep/plugin caches accumulate across runs.
+      # Weekly epoch: Gradle dep/plugin caches drift slowly; bounded staleness
+      # beats a multi-GB re-save every release.
+      - name: Cache epoch (weekly)
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
       - name: Restore Gradle
         uses: actions/cache/restore@v6
         with:
           path: .cache/gradle
-          key: ${{ runner.os }}-gradle-v1-${{ hashFiles('android/**') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-gradle-v1-${{ hashFiles('android/**') }}-${{ steps.week.outputs.week }}
           restore-keys: |
             ${{ runner.os }}-gradle-v1-${{ hashFiles('android/**') }}-
             ${{ runner.os }}-gradle-v1-
 
       - name: Build and sign Android APK
-        env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SQYRE_ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEYSTORE_ALIAS: ${{ secrets.SQYRE_ANDROID_KEY_ALIAS }}
-          ANDROID_KEYSTORE_KEY_PASSWORD: ${{ secrets.SQYRE_ANDROID_KEY_PASSWORD }}
-        run: |
-          docker run --rm -u "$(id -u):$(id -g)" \
-            -v ${{ github.workspace }}:/workspace -w /workspace \
-            -e HOME=/tmp \
-            -e CARGO_HOME=/workspace/${{ env.CARGO_HOME_DIR }} \
-            -e CARGO_TARGET_DIR=/workspace/${{ env.CARGO_TARGET_DIR_HOST }} \
-            -e RUSTUP_HOME=/usr/local/rustup \
-            -e PATH=/opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin \
-            -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper \
-            -e SCCACHE_DIR=/workspace/.cache/sccache-linux \
-            -e SCCACHE_CACHE_SIZE=5G \
-            -e GRADLE_USER_HOME=/workspace/.cache/gradle \
-            -e RELEASE_VERSION="${{ needs.version.outputs.version }}" \
-            -e SQYRE_SKIP_GATE=1 \
-            -e ANDROID_PROFILE=release \
-            -e ANDROID_ABIS=arm64-v8a \
-            -e ANDROID_KEYSTORE_FILE=/workspace/bin/android-release.keystore \
-            -e ANDROID_KEYSTORE_PASSWORD \
-            -e ANDROID_KEYSTORE_ALIAS \
-            -e ANDROID_KEYSTORE_KEY_PASSWORD \
-            sqyre-android-build \
-            bash -c 'set -euo pipefail
-              make android
-              test -f bin/sqyre-release.apk
-              apksigner="$(ls -d /opt/android-sdk/build-tools/* | sort -V | tail -n1)/apksigner"
-              "$apksigner" verify bin/sqyre-release.apk
-              sccache --show-stats || true'
+        uses: ./.github/actions/run-in-build-image
+        with:
+          image: sqyre-android-build
+          path-prefix: /opt/gradle/bin:/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools
+          extra-env: |
+            GRADLE_USER_HOME=/workspace/.cache/gradle
+            RELEASE_VERSION=${{ needs.gate.outputs.version }}
+            SQYRE_SKIP_GATE=1
+            ANDROID_PROFILE=release
+            ANDROID_ABIS=arm64-v8a
+            ANDROID_KEYSTORE_FILE=/workspace/bin/android-release.keystore
+            ANDROID_KEYSTORE_PASSWORD
+            ANDROID_KEYSTORE_ALIAS
+            ANDROID_KEYSTORE_KEY_PASSWORD
+          script: |
+            make android
+            test -f bin/sqyre-release.apk
+            apksigner="$(ls -d /opt/android-sdk/build-tools/* | sort -V | tail -n1)/apksigner"
+            "$apksigner" verify bin/sqyre-release.apk
+            sccache --show-stats || true
 
       - name: Remove keystore
         if: always()
         run: rm -f bin/android-release.keystore
 
       - name: Rename APK for release
-        run: cp bin/sqyre-release.apk "sqyre-v${{ needs.version.outputs.version }}-android-arm64.apk"
+        run: cp bin/sqyre-release.apk "sqyre-v${{ needs.gate.outputs.version }}-android-arm64.apk"
 
       - name: Upload Android APK artifact
         uses: actions/upload-artifact@v7
         with:
           name: android-apk
-          path: sqyre-v${{ needs.version.outputs.version }}-android-arm64.apk
+          path: sqyre-v${{ needs.gate.outputs.version }}-android-arm64.apk
+          retention-days: 3
 
       - name: Save Gradle
         if: always()
         uses: actions/cache/save@v6
         with:
           path: .cache/gradle
-          key: ${{ runner.os }}-gradle-v1-${{ hashFiles('android/**') }}-${{ github.run_id }}
+          key: ${{ runner.os }}-gradle-v1-${{ hashFiles('android/**') }}-${{ steps.week.outputs.week }}
 
   release:
-    if: |
-      always() && !cancelled() &&
-      needs.version.result == 'success' &&
-      needs.version.outputs.should_release == 'true' &&
-      needs.build-linux.result == 'success' &&
-      needs.build-flatpak.result == 'success' &&
-      needs.build-windows.result == 'success' &&
-      needs.build-wasm.result == 'success' &&
-      needs.build-android.result == 'success' &&
-      needs.check.result == 'success'
-    needs: [version, check, build-linux, build-flatpak, build-windows, build-wasm, build-android]
+    if: needs.gate.outputs.should_release == 'true'
+    needs: [gate, check, build-linux, build-flatpak, build-windows, build-wasm, build-android]
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: write
     steps:
@@ -1018,14 +929,14 @@ jobs:
             exit 1
           fi
           chmod +x signer/sign_update_sums
-          signer/sign_update_sums release/SHA256SUMS
+          signer/sign_update_sums "${{ needs.gate.outputs.version }}" release/SHA256SUMS
           ls -la release/SHA256SUMS release/SHA256SUMS.sig
 
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: v${{ needs.version.outputs.version }}
-          name: Release v${{ needs.version.outputs.version }}
+          tag_name: v${{ needs.gate.outputs.version }}
+          name: Release v${{ needs.gate.outputs.version }}
           files: release/*
           generate_release_notes: true
         env:
