@@ -13,9 +13,11 @@
 # - Cargo target/: per triple/profile (linux debug / linux dist / windows-gnu /
 #   wasm32 / android) — not cross-shareable. Fixed per lockfile epoch; deps
 #   dominate, workspace crates rebuild anyway.
-# - sccache: GHA cache backend (per-compilation content-addressed blobs via
-#   ACTIONS_* passthrough in run-in-build-image + scripts/windows/build.sh).
-#   No save steps; .cache/sccache is only the fallback backend.
+# - sccache: GHA cache backend (per-compilation content-addressed blobs). The
+#   ACTIONS_* cache-service vars only exist in the JS action runtime, so the
+#   gha-runtime-env action exports them to GITHUB_ENV; run-in-build-image and
+#   scripts/windows/build.sh then pass them (and SCCACHE_GHA_ENABLED) into the
+#   containers. No save steps; .cache/sccache is only the fallback backend.
 # - Linux/Windows Docker images: content-hash tags on GHCR; Buildx layers as fallback
 # - .devcontainer/Dockerfile is multi-stage: `base` (sqyre-linux-build, slim —
 #   no Android toolchain) for check/test/build-linux/build-wasm; `android`
@@ -650,6 +652,11 @@ jobs:
 
       - name: Prepare bin dir
         run: mkdir -p bin
+
+      # ACTIONS_* cache vars only exist in the JS action runtime; export them
+      # to GITHUB_ENV so build.sh's `docker run -e` passthroughs can see them.
+      - name: Export GHA cache env
+        uses: ./.github/actions/gha-runtime-env
 
       - name: Build Windows binary
         env:
