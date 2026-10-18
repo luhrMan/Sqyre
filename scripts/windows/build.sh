@@ -229,8 +229,10 @@ run_docker() {
     fi
     # sccache GHA backend (CI): pass the Actions cache service env through so
     # compile blobs go to the per-object GitHub cache, not the mounted dir.
-    if [ -n "${SCCACHE_GHA_ENABLED:-}" ]; then
-      docker_gha_args=(-e SCCACHE_GHA_ENABLED -e ACTIONS_RESULTS_URL -e ACTIONS_RUNTIME_TOKEN)
+    # sccache aborts hard on SCCACHE_GHA_ENABLED without a cache URL, so only
+    # forward it when the gha-runtime-env export actually produced one.
+    if [ -n "${SCCACHE_GHA_ENABLED:-}" ] && { [ -n "${ACTIONS_RESULTS_URL:-}" ] || [ -n "${ACTIONS_CACHE_URL:-}" ]; }; then
+      docker_gha_args=(-e SCCACHE_GHA_ENABLED -e ACTIONS_RESULTS_URL -e ACTIONS_CACHE_URL -e ACTIONS_CACHE_SERVICE_V2 -e ACTIONS_RUNTIME_TOKEN)
     fi
   fi
 

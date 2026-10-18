@@ -1,0 +1,10 @@
+name: Export GHA runtime env
+description: >
+  Copies the Actions cache-service env vars (ACTIONS_RESULTS_URL,
+  ACTIONS_RUNTIME_TOKEN, ...) into GITHUB_ENV so later `run` steps — and
+  `docker run -e` passthroughs for sccache's GHA backend — can see them.
+  The runner only injects these vars into JS action processes, never into
+  shell steps, which is why this has to be a JS action.
+runs:
+  using: node20
+  main: index.js

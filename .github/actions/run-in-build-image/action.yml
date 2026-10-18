@@ -3,10 +3,10 @@ description: >
   docker run wrapper for the sqyre build images: mounts the workspace as the
   invoking uid/gid, injects the shared Rust + sccache environment, and runs a
   bash script under `set -euo pipefail`. sccache stores to the GitHub Actions
-  cache backend (SCCACHE_GHA_ENABLED + ACTIONS_* passthrough): per-compilation
-  content-addressed blobs instead of monolithic cache entries. If the GHA
-  backend can't initialize (e.g. missing tokens), sccache falls back to the
-  mounted local dir — degraded but never broken.
+  cache backend (SCCACHE_GHA_ENABLED + ACTIONS_* passthrough, enabled only
+  when a cache URL reached the step — see gha-runtime-env): per-compilation
+  content-addressed blobs instead of monolithic cache entries. Without a
+  cache URL the container uses the mounted local dir — degraded, never broken.
 inputs:
   image:
     description: Local image tag (sqyre-linux-build / sqyre-android-build)
@@ -28,6 +28,11 @@ inputs:
 runs:
   using: composite
   steps:
+    # ACTIONS_* cache vars only exist in the JS action runtime; this exports
+    # them to GITHUB_ENV so the docker run -e passthroughs below can see them.
+    - name: Export GHA cache env
+      uses: ./.github/actions/gha-runtime-env
+
     - name: Run script in ${{ inputs.image }}
       shell: bash
       env:
@@ -53,13 +58,19 @@ runs:
           -e "PATH=${EXTRA_PATH_PREFIX:+$EXTRA_PATH_PREFIX:}/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin"
           -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper
           # GHA backend is authoritative; SCCACHE_DIR is only the fallback.
-          -e SCCACHE_GHA_ENABLED=on
           -e ACTIONS_RESULTS_URL
+          -e ACTIONS_CACHE_URL
+          -e ACTIONS_CACHE_SERVICE_V2
           -e ACTIONS_RUNTIME_TOKEN
           -e SCCACHE_DIR=/workspace/.cache/sccache
           -e SCCACHE_CACHE_SIZE=2G
           -e CARGO_INCREMENTAL=0
         )
+        # sccache aborts hard on SCCACHE_GHA_ENABLED without a cache URL — only
+        # enable the GHA backend when the export step actually produced one.
+        if [ -n "${ACTIONS_RESULTS_URL:-}" ] || [ -n "${ACTIONS_CACHE_URL:-}" ]; then
+          docker_env+=(-e SCCACHE_GHA_ENABLED=on)
+        fi
         while IFS= read -r line; do
           [ -n "$line" ] && docker_env+=(-e "$line")
         done <<< "$EXTRA_ENV"
