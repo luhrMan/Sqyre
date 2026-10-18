@@ -218,6 +218,7 @@ run_docker() {
   local rustc_wrapper=""
   local cargo_incremental="${CARGO_INCREMENTAL:-1}"
   local docker_incr_args=(-e "CARGO_INCREMENTAL=$cargo_incremental")
+  local docker_gha_args=()
   if [ "${SQYRE_WINDOWS_SCCACHE:-0}" = "1" ]; then
     use_sccache=1
     rustc_wrapper=sccache-rustc-wrapper
@@ -225,6 +226,11 @@ run_docker() {
     docker_incr_args=()
     if [ "${CARGO_INCREMENTAL:-}" = "1" ]; then
       echo "note: CARGO_INCREMENTAL is incompatible with sccache; using sccache only" >&2
+    fi
+    # sccache GHA backend (CI): pass the Actions cache service env through so
+    # compile blobs go to the per-object GitHub cache, not the mounted dir.
+    if [ -n "${SCCACHE_GHA_ENABLED:-}" ]; then
+      docker_gha_args=(-e SCCACHE_GHA_ENABLED -e ACTIONS_RESULTS_URL -e ACTIONS_RUNTIME_TOKEN)
     fi
   fi
 
@@ -291,6 +297,7 @@ run_docker() {
     -e "CARGO_HOME=$cargo_home_in" \
     -e "CARGO_TARGET_DIR=$cargo_target_in" \
     "${docker_incr_args[@]}" \
+    "${docker_gha_args[@]}" \
     -e "RUSTC_WRAPPER=$rustc_wrapper" \
     -e "SCCACHE_DIR=$sccache_in" \
     -e SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-10G}" \

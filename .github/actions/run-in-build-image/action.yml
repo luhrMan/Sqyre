@@ -1,0 +1,71 @@
+name: Run in build image
+description: >
+  docker run wrapper for the sqyre build images: mounts the workspace as the
+  invoking uid/gid, injects the shared Rust + sccache environment, and runs a
+  bash script under `set -euo pipefail`. sccache stores to the GitHub Actions
+  cache backend (SCCACHE_GHA_ENABLED + ACTIONS_* passthrough): per-compilation
+  content-addressed blobs instead of monolithic cache entries. If the GHA
+  backend can't initialize (e.g. missing tokens), sccache falls back to the
+  mounted local dir — degraded but never broken.
+inputs:
+  image:
+    description: Local image tag (sqyre-linux-build / sqyre-android-build)
+    required: false
+    default: sqyre-linux-build
+  path-prefix:
+    description: Extra PATH entries prepended inside the container (e.g. Android SDK dirs)
+    required: false
+    default: ""
+  extra-env:
+    description: >
+      Multiline env vars for the container: KEY=VALUE literals, or bare NAME to
+      pass the runner's env through (use bare names for secrets).
+    required: false
+    default: ""
+  script:
+    description: Bash script to run inside the container (after `set -euo pipefail`)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Run script in ${{ inputs.image }}
+      shell: bash
+      env:
+        EXTRA_ENV: ${{ inputs.extra-env }}
+        EXTRA_PATH_PREFIX: ${{ inputs.path-prefix }}
+        RUN_SCRIPT: ${{ inputs.script }}
+      run: |
+        set -euo pipefail
+        # Script via env + temp file: inputs are interpolated into this script
+        # text, so RUN_SCRIPT content must never be re-expanded by this shell.
+        script_file="$(mktemp)"
+        trap 'rm -f "$script_file"' EXIT
+        {
+          printf 'set -euo pipefail\n'
+          printf '%s\n' "$RUN_SCRIPT"
+        } > "$script_file"
+        docker_env=(
+          -e HOME=/tmp
+          -e XDG_CACHE_HOME=/workspace/.cache/xdg-tools
+          -e "CARGO_HOME=/workspace/${CARGO_HOME_DIR:-.cache/cargo}"
+          -e "CARGO_TARGET_DIR=/workspace/${CARGO_TARGET_DIR_HOST:-target}"
+          -e RUSTUP_HOME=/usr/local/rustup
+          -e "PATH=${EXTRA_PATH_PREFIX:+$EXTRA_PATH_PREFIX:}/usr/local/cargo/bin:/usr/local/bin:/usr/bin:/bin"
+          -e RUSTC_WRAPPER=/usr/local/bin/sccache-rustc-wrapper
+          # GHA backend is authoritative; SCCACHE_DIR is only the fallback.
+          -e SCCACHE_GHA_ENABLED=on
+          -e ACTIONS_RESULTS_URL
+          -e ACTIONS_RUNTIME_TOKEN
+          -e SCCACHE_DIR=/workspace/.cache/sccache
+          -e SCCACHE_CACHE_SIZE=2G
+          -e CARGO_INCREMENTAL=0
+        )
+        while IFS= read -r line; do
+          [ -n "$line" ] && docker_env+=(-e "$line")
+        done <<< "$EXTRA_ENV"
+        docker run --rm -u "$(id -u):$(id -g)" \
+          -v "${GITHUB_WORKSPACE}:/workspace" -w /workspace \
+          -v "${script_file}:/sqyre-ci-run.sh:ro" \
+          "${docker_env[@]}" \
+          "${{ inputs.image }}" \
+          bash /sqyre-ci-run.sh

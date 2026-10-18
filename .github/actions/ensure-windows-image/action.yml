@@ -37,7 +37,6 @@ runs:
         n="${n#*/}"
         hash=$(sha256sum \
           scripts/windows/Dockerfile \
-          scripts/windows/build-mingw-deps.sh \
           scripts/windows/mingw-lld-link.sh \
           scripts/windows/sccache-rustc-wrapper.sh \
           | sha256sum | cut -c1-16)

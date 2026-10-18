@@ -58,8 +58,8 @@ Build caches (all gitignored):
 | `target-dhat/` | Separate release artifacts for `make release-bundle-dhat` (avoids clobbering normal `target/release`). Also swept by `make clean-sweep`. |
 | `.cargo-home/` | Optional workspace-local cargo/rustup install |
 | `.cache/cargo/` | Cargo registry/git cache used by CI and docker AppImage / Windows builds |
-| `.cache/sccache-linux/` | sccache rustc cache for Linux CI (`test` / `build-linux` / `build-wasm`) |
-| `.cache/sccache-windows/` | sccache rustc cache for `make windows` (Linux/CI bind mount) |
+| `.cache/sccache/` | sccache disk fallback in CI containers (primary cache is the GitHub Actions backend) |
+| `.cache/sccache-windows/` | sccache rustc cache for `make windows` (Linux/CI bind mount; GHA backend used in CI) |
 | Docker volumes `sqyre-windows-*` | Windows cross cargo/target/sccache when the repo is on a Docker Desktop Windows path |
 | Dev container volume `sqyre-cargo-home` | Persistent `/home/vscode/.cargo` in the container |
 
@@ -143,7 +143,7 @@ Releases come from [`.github/workflows/main.yml`](../.github/workflows/main.yml)
 | Cron | Daily at **23:00 UTC** (`0 23 * * *`) |
 | Manual | Actions → **Build and Release** → Run workflow, or `gh workflow run "Build and Release" --ref main` |
 
-The `version` job sets `should_release=true` only when there is no prior `v*` tag, or the released ref (`main` on schedule, the dispatched ref on manual runs) has changed since the latest `v*` tag **excluding** `docs/**` and `*.md`. It also fails fast if `crates/sqyre-update/update_pubkey.hex` is unconfigured, before any build job spins up. Docs-only / markdown-only changes do not publish. If nothing releasable changed, release jobs are skipped.
+The `gate` job sets `should_release=true` only when there is no prior `v*` tag, or the released ref (`main` on schedule, the dispatched ref on manual runs) has changed since the latest `v*` tag **excluding** `docs/**` and `*.md`. It also fails fast if `crates/sqyre-update/update_pubkey.hex` is unconfigured, before any build job spins up. Docs-only / markdown-only changes do not publish. If nothing releasable changed, release jobs are skipped.
 
 Release build jobs set `SQYRE_SKIP_GATE=1` so `make android` / `make wasm` skip `release-gate` (fmt + check) — the `check` job already gated the exact same commit, and `release` itself requires `check` to succeed.
 
@@ -169,11 +169,11 @@ CI caches (shared where possible):
 |-------|-----------|--------|
 | Cargo registry (`.cache/cargo`) | All Linux jobs | One key on `Cargo.lock`; warmed once per run via `cargo-registry` |
 | Cargo `target/` | Per triple | `linux` / `windows-gnu` / `wasm32` / `android` — not cross-shareable |
-| sccache (`.cache/sccache-{linux,windows}`) | Rolling per run+job | Entries accumulate across commits; restore prefers the same lockfile/image epoch |
+| sccache | All containerized jobs | GitHub Actions cache backend: per-compilation content-addressed blobs, no save steps; `.cache/sccache` is only the in-container disk fallback |
 | Linux build image (`base` stage) | `check`, `test`, `build-linux` (+AppImage), `build-wasm` | Slim: no Android toolchain. Content-hash tag on GHCR + Buildx layers |
-| Android build image (`android` stage) | `check-android`, `build-android` | `base` + SDK/NDK/Gradle/emulator/scrcpy; builds on the base image's pushed layers |
+| Android build image (`android` stage) | `check-android`, `build-android` | `base` + SDK/NDK/Gradle/emulator/scrcpy; builds `FROM base` inline in one Buildx invocation — no dependency on the pushed base image, so it runs in parallel with `linux-image` |
 | Windows cross image | `build-windows` (+ local `make windows`) | Content-hash tag on GHCR + Buildx layers |
-| Flatpak runtimes + builder state | `build-flatpak` | Rolling, keyed on the manifest epoch |
+| Flatpak runtimes + builder state | `build-flatpak` | Weekly-epoch key on the manifest — bounded staleness instead of a multi-GB re-save every release |
 | OCR models / Trunk tools / AppImage runtime / Gradle / rustup toolchains | Across runs | Keyed on the inputs that pin their versions |
 
 Runnable images are tagged `ghcr.io/<owner>/<repo>-linux-build:<dockerfile-hash>`, `…-android-build:<dockerfile-hash>`, and `…-windows-cross:<scripts-hash>` (also `:latest`). `.devcontainer/Dockerfile` is multi-stage — `docker build` without `--target` produces the full `android` image (what the devcontainer uses); CI builds `--target base` or `--target android` explicitly.
