@@ -7,7 +7,10 @@ use crate::{Result, ValidateError};
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
 use sqyre_domain::macro_document_json_schema;
-use sqyre_serialize::{check_yaml_nesting_depth, decode_macro_from_yaml, MAX_YAML_NESTING_DEPTH};
+use sqyre_serialize::{
+    check_yaml_nesting_depth, check_yaml_safety, decode_macro_from_yaml, MAX_MACRO_YAML_BYTES,
+    MAX_YAML_NESTING_DEPTH,
+};
 use std::cell::OnceCell;
 
 /// One schema / decode / semantic error with a YAML-ish instance path.
@@ -168,12 +171,24 @@ pub fn validate_macro_yaml_schema(value: &YamlValue) -> YamlValidateReport {
     YamlValidateReport { errors }
 }
 
+/// Reject oversized or alias-bearing YAML text before it reaches `serde_yaml`.
+fn check_macro_yaml_text(yaml: &str) -> Result<()> {
+    if yaml.len() > MAX_MACRO_YAML_BYTES {
+        return Err(ValidateError::Message(format!(
+            "YAML document too large ({} bytes; max {MAX_MACRO_YAML_BYTES})",
+            yaml.len()
+        )));
+    }
+    check_yaml_safety(yaml).map_err(|e| ValidateError::Message(format!("YAML safety: {e}")))
+}
+
 /// Schema + decode + semantic validation. Does not uniquify the name.
 pub fn validate_macro_yaml(yaml: &str) -> Result<sqyre_domain::Macro> {
     let trimmed = yaml.trim();
     if trimmed.is_empty() {
         return Err(ValidateError::Message("YAML document is empty".into()));
     }
+    check_macro_yaml_text(trimmed)?;
     let value: YamlValue = serde_yaml::from_str(trimmed)
         .map_err(|e| ValidateError::Message(format!("YAML parse: {e}")))?;
     let report = validate_macro_yaml_schema(&value);
@@ -194,6 +209,15 @@ pub fn report_macro_yaml(yaml: &str) -> YamlValidateReport {
             errors: vec![YamlSchemaError {
                 path: "/".into(),
                 message: "YAML document is empty".into(),
+                layer: YamlValidateLayer::Schema,
+            }],
+        };
+    }
+    if let Err(e) = check_macro_yaml_text(trimmed) {
+        return YamlValidateReport {
+            errors: vec![YamlSchemaError {
+                path: "/".into(),
+                message: e.to_string(),
                 layer: YamlValidateLayer::Schema,
             }],
         };
@@ -283,6 +307,10 @@ pub fn strip_yaml_fences(raw: &str) -> String {
 }
 
 fn looks_like_db_yaml(yaml: &str) -> bool {
+    // Unsafe input fails the real decode below with the safety error.
+    if check_yaml_safety(yaml).is_err() {
+        return false;
+    }
     let Ok(YamlValue::Mapping(map)) = serde_yaml::from_str(yaml) else {
         return false;
     };
@@ -440,7 +468,8 @@ macros:
 
         let parse = report_macro_yaml(":\n  - oops");
         assert!(!parse.is_ok());
-        assert!(parse.summary().contains("YAML parse"));
+        // Safety scan may surface the syntax error before serde_yaml sees it.
+        assert!(parse.summary().contains("yaml parse"), "{parse:?}");
 
         let semantic = report_macro_yaml(
             r#"

@@ -81,15 +81,32 @@ impl DataEditor {
         }
         let on_disk = paths.iter().filter(|p| p.is_file()).count();
         let can_delete = on_disk > 1;
+        // Fixed-height cells so each cell is one correctly-measured wrapping unit
+        // (a nested `ui.vertical` inside `wrap_unit` overflows instead of moving
+        // the whole unit to the next row).
+        const VARIANT_CELL_W: f32 = 112.0;
         ui.horizontal_wrapped(|ui| {
             for path in &paths {
                 let variant = variant_name_from_path(path, item);
                 let is_demo = !path.is_file() && crate::demo_icons::contains(path);
                 let deny = is_demo || !can_delete || variant.is_empty() || variant == "Original";
-                let cell = crate::widgets::wrap_unit(ui, |ui| {
-                    ui.vertical(|ui| {
-                        ui.set_max_width(112.0);
-                        match icons.for_path(ui.ctx(), path) {
+                let tex = icons.for_path(ui.ctx(), path);
+                let small_h = ui.text_style_height(&egui::TextStyle::Small);
+                let gap_y = ui.spacing().item_spacing.y;
+                let img_h = tex
+                    .as_ref()
+                    .map(|t| {
+                        let [tw, th] = t.size();
+                        fit_thumbnail(tw as f32, th as f32).y
+                    })
+                    .unwrap_or_else(|| ui.text_style_height(&egui::TextStyle::Body));
+                let label_rows = 1 + usize::from(is_demo) + usize::from(tex.is_some());
+                let cell_h = img_h + label_rows as f32 * (small_h + gap_y);
+                let cell = ui.allocate_ui_with_layout(
+                    egui::vec2(VARIANT_CELL_W, cell_h),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        match &tex {
                             Some(tex) => {
                                 let [tw, th] = tex.size();
                                 let size = fit_thumbnail(tw as f32, th as f32);
@@ -104,8 +121,8 @@ impl DataEditor {
                         if is_demo {
                             ui.weak("demo");
                         }
-                    });
-                });
+                    },
+                );
                 let menu_id = egui::Id::new(("icon_variant_menu", item, &variant));
                 if crate::widgets::rect_danger_menu(
                     ui,
@@ -174,9 +191,10 @@ impl DataEditor {
         };
         match icon_variants::add_variant(catalog, &prog, &item, name, source) {
             Ok(added) => {
-                let path = icon_variants::variant_path(catalog, &prog, &item, &added);
+                if let Ok(path) = icon_variants::variant_path(catalog, &prog, &item, &added) {
+                    icons.invalidate_path(&path);
+                }
                 let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
-                icons.invalidate_path(&path);
                 icons.invalidate_target(&target);
                 self.set_ok(format!("Added variant “{added}”."));
                 #[cfg(not(target_arch = "wasm32"))]
@@ -208,9 +226,10 @@ impl DataEditor {
         };
         match icon_variants::overwrite_variant(catalog, &prog, &item, variant, source) {
             Ok(()) => {
-                let path = icon_variants::variant_path(catalog, &prog, &item, variant);
+                if let Ok(path) = icon_variants::variant_path(catalog, &prog, &item, variant) {
+                    icons.invalidate_path(&path);
+                }
                 let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
-                icons.invalidate_path(&path);
                 icons.invalidate_target(&target);
                 self.set_ok(format!("Overwrote variant “{variant}”."));
             }
@@ -241,9 +260,10 @@ impl DataEditor {
         }
         match icon_variants::delete_variant(catalog, &prog, &item, variant) {
             Ok(()) => {
-                let path = icon_variants::variant_path(catalog, &prog, &item, variant);
+                if let Ok(path) = icon_variants::variant_path(catalog, &prog, &item, variant) {
+                    icons.invalidate_path(&path);
+                }
                 let target = format!("{prog}{PROGRAM_DELIMITER}{item}");
-                icons.invalidate_path(&path);
                 icons.invalidate_target(&target);
                 self.set_ok(format!("Deleted variant “{variant}”."));
                 #[cfg(not(target_arch = "wasm32"))]
@@ -279,7 +299,10 @@ impl DataEditor {
         let dest = catalog.mask_image_path(&prog, &mask);
         if let Some(parent) = dest.parent() {
             if let Err(e) = std::fs::create_dir_all(parent) {
-                self.set_err(format!("create mask dir: {e}"));
+                self.set_err(format!(
+                    "create mask dir: {}",
+                    crate::status_banner::user_error_detail(&e)
+                ));
                 return;
             }
         }
@@ -562,8 +585,10 @@ impl DataEditor {
             match create_item_with_original(catalog, &prog, item, img.as_ref()) {
                 Ok(name) => {
                     let target = format!("{prog}{PROGRAM_DELIMITER}{name}");
-                    let path = icon_variants::variant_path(catalog, &prog, &name, "Original");
-                    icons.invalidate_path(&path);
+                    if let Ok(path) = icon_variants::variant_path(catalog, &prog, &name, "Original")
+                    {
+                        icons.invalidate_path(&path);
+                    }
                     icons.invalidate_target(&target);
                     if let Err(e) = self.persist(db, macros, catalog) {
                         self.set_err(e);
@@ -746,7 +771,7 @@ mod tests {
         let item = cat.get("Game").unwrap().items.get("Potion").unwrap();
         assert_eq!(item.grid_cols, 1);
         assert_eq!(item.grid_rows, 1);
-        let path = icon_variants::variant_path(&cat, "Game", "Potion", "Original");
+        let path = icon_variants::variant_path(&cat, "Game", "Potion", "Original").unwrap();
         assert!(path.is_file());
         assert!(icon_variants::validate_png_file(&path).is_ok());
     }
@@ -784,6 +809,10 @@ mod tests {
             create_item_with_original(&mut cat, "Game", sample_item("Potion"), &img).unwrap();
         assert_eq!(name, "Potion 2");
         assert!(cat.get("Game").unwrap().items.contains_key("Potion 2"));
-        assert!(icon_variants::variant_path(&cat, "Game", "Potion 2", "Original").is_file());
+        assert!(
+            icon_variants::variant_path(&cat, "Game", "Potion 2", "Original")
+                .unwrap()
+                .is_file()
+        );
     }
 }

@@ -351,9 +351,12 @@ impl IconCache {
             let (tx, rx) = mpsc::channel();
             self.pending.insert(path_buf.clone(), rx);
             std::thread::spawn(move || {
-                let result = match std::fs::read(&path_buf)
-                    .ok()
-                    .and_then(|bytes| decode_png_color(&bytes))
+                let result = match sqyre_ports::read_file_capped(
+                    &path_buf,
+                    sqyre_ports::MAX_IMAGE_FILE_BYTES,
+                )
+                .ok()
+                .and_then(|bytes| decode_png_color(&bytes))
                 {
                     Some(color) => PendingDecode::Ready(color),
                     None => PendingDecode::Failed,
@@ -617,7 +620,7 @@ fn process_seed_key(process_path: &str, window_title: &str, process_name: &str) 
 }
 
 fn load_texture(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
-    if let Ok(bytes) = std::fs::read(path) {
+    if let Ok(bytes) = sqyre_ports::read_file_capped(path, sqyre_ports::MAX_IMAGE_FILE_BYTES) {
         return load_png_bytes(ctx, &path.to_string_lossy(), &bytes);
     }
     let demo = demo_icons::get(path)?;
@@ -627,7 +630,7 @@ fn load_texture(ctx: &egui::Context, path: &Path) -> Option<TextureHandle> {
 }
 
 fn decode_png_color(bytes: &[u8]) -> Option<ColorImage> {
-    let img = image::load_from_memory(bytes).ok()?.into_rgba8();
+    let img = sqyre_ports::decode_image_bounded(bytes).ok()?.into_rgba8();
     let size = [img.width() as usize, img.height() as usize];
     Some(ColorImage::from_rgba_unmultiplied(size, img.as_raw()))
 }

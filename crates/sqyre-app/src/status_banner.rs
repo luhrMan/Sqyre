@@ -5,6 +5,29 @@ pub(crate) const PREFIX_LOAD_ERROR: &str = "Load error";
 /// Prefix for workspace / list-scoped save failures (macro list).
 pub(crate) const PREFIX_SAVE_ERROR: &str = "Save error";
 
+/// Trim an arbitrary error to one short line for status/banner text.
+///
+/// Internal dumps (multi-line serde/schema reports, backend debug strings)
+/// still reach the diagnostic log in full; the UI gets the first non-empty
+/// line, whitespace-collapsed and capped, so banners stay readable.
+pub(crate) fn user_error_detail(e: impl std::fmt::Display) -> String {
+    const MAX_CHARS: usize = 160;
+    let text = e.to_string();
+    let first = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or("unknown error");
+    let collapsed = first.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut chars = collapsed.chars();
+    if collapsed.chars().count() > MAX_CHARS {
+        let cut: String = chars.by_ref().take(MAX_CHARS - 1).collect();
+        format!("{cut}…")
+    } else {
+        collapsed
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub(crate) struct StatusBanner {
     pub(crate) status: Option<String>,

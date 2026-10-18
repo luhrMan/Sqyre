@@ -256,7 +256,7 @@ fn icon_grid_cell(
     let fill = if selected {
         picker_selected_fill()
     } else if resp.hovered() {
-        Color32::from_black_alpha(25)
+        ui.visuals().widgets.hovered.bg_fill
     } else {
         Color32::TRANSPARENT
     };
@@ -270,6 +270,12 @@ fn icon_grid_cell(
             egui::StrokeKind::Outside,
         );
     }
+    crate::widgets::controls::paint_keyboard_focus_ring(ui, body, &resp);
+
+    let (name, _) = item_tooltip_parts(catalog, target);
+    let enabled = ui.is_enabled();
+    resp.clone()
+        .widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, name.clone()));
 
     let tex = icons.for_target_or_fallback(ui.ctx(), catalog, target);
     crate::icon_cache::paint_icon_thumb_at(ui, &tex, body.center(), thumb, thumb, 0.0, None);

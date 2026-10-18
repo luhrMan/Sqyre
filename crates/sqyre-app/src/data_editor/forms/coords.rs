@@ -2,7 +2,7 @@
 //!
 //! Split out of `draw_form`; see `forms.rs` for the tab dispatch.
 
-use super::super::{DataEditor, EditorTab};
+use super::super::{DataEditor, EditorTab, PendingConfirm};
 use super::*;
 
 impl DataEditor {
@@ -196,7 +196,7 @@ impl DataEditor {
                 .on_hover_text("Delete the PNG and use shape geometry instead.")
                 .clicked()
             {
-                self.remove_mask_image(catalog, icons);
+                self.confirm = Some(PendingConfirm::DeleteMaskImage);
             }
             if has_image {
                 help::icon(ui, help::DE_MASK_IMAGE_MODE);

@@ -135,7 +135,15 @@ impl<Num: egui::emath::Numeric> Widget for NumEntry<'_, Num> {
         }
         let mut response = ui.add(dv);
         // Steppers overlay the right end of the entry box itself.
-        response |= steppers(ui, &mut v, step, &range, response.rect, response.id);
+        response |= steppers(
+            ui,
+            &mut v,
+            step,
+            &range,
+            response.rect,
+            response.id,
+            max_decimals,
+        );
         if v != *value {
             *value = v;
             response.mark_changed();
@@ -236,17 +244,29 @@ pub(crate) fn stepper_texture(ui: &Ui, up: bool) -> Option<TextureHandle> {
 
 /// `value += delta * step` clamped to `range`, rounded like [`egui::DragValue`]
 /// does for arrow-key steps. Returns `true` when the value changed.
+///
+/// When `max_decimals` is set, rounding and the step itself are floored at the
+/// display quantum: a step finer than one visible digit is invisible (and on
+/// exact `.5` boundaries can round straight back to the old value — a dead
+/// click), so the effective step is raised to `10^-max_decimals`.
 fn apply_step<Num: egui::emath::Numeric>(
     ui: &Ui,
     value: &mut Num,
     delta: f64,
     step: f64,
     range: &RangeInclusive<f64>,
+    max_decimals: Option<usize>,
 ) -> bool {
     let old = value.to_f64();
-    // Mirror egui's arrow-key step resolution (DragValue::ui).
+    // Mirror egui's arrow-key step resolution (DragValue::ui), including its
+    // clamp of auto_decimals to the displayed precision.
     let aim_rad = ui.input(|i| i.aim_radius() as f64);
-    let auto_decimals = (aim_rad / step.abs()).log10().ceil().clamp(0.0, 15.0) as usize;
+    let mut auto_decimals = (aim_rad / step.abs()).log10().ceil().clamp(0.0, 15.0) as usize;
+    let mut step = step;
+    if let Some(max) = max_decimals {
+        auto_decimals = auto_decimals.min(max);
+        step = step.max(10f64.powi(-(auto_decimals as i32)));
+    }
     let next = egui::emath::round_to_decimals(old + step * delta, auto_decimals)
         .clamp(*range.start(), *range.end());
     if next == old {
@@ -344,6 +364,7 @@ fn steppers<Num: egui::emath::Numeric>(
     range: &RangeInclusive<f64>,
     drag_rect: egui::Rect,
     drag_id: egui::Id,
+    max_decimals: Option<usize>,
 ) -> Response {
     let rect = egui::Rect::from_min_max(
         egui::pos2(
@@ -367,11 +388,11 @@ fn steppers<Num: egui::emath::Numeric>(
     if enabled {
         let m = step_fires(ui, &up) + f64::from(arrow_step(ui, &up, true));
         if m > 0.0 {
-            changed |= apply_step(ui, value, m, step, range);
+            changed |= apply_step(ui, value, m, step, range, max_decimals);
         }
         let m = step_fires(ui, &down) + f64::from(arrow_step(ui, &down, false));
         if m > 0.0 {
-            changed |= apply_step(ui, value, -m, step, range);
+            changed |= apply_step(ui, value, -m, step, range, max_decimals);
         }
     }
 
@@ -584,6 +605,43 @@ mod tests {
         });
         h.run_steps(2);
         assert_eq!(*h.state(), 61);
+    }
+
+    /// A step finer than the displayed precision must still move a visible
+    /// digit: `fixed_decimals(1)` + `speed(0.05)` steps by 0.1, and no click
+    /// can land back on the old value (float `.5` boundaries used to make
+    /// every other click a no-op).
+    #[test]
+    fn sub_decimal_step_moves_a_visible_digit() {
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([300.0, 120.0])
+            .build_ui_state(
+                move |ui, v: &mut f64| {
+                    ui.add(num_entry(v).speed(0.05).fixed_decimals(1).range(0.5..=2.5));
+                },
+                1.0f64,
+            );
+        h.run_steps(2);
+        let inc = h.get_by_label("Increment").rect().center();
+        let dec = h.get_by_label("Decrement").rect().center();
+        for _ in 0..5 {
+            let before = *h.state();
+            pointer_click(&mut h, inc);
+            assert!(
+                *h.state() > before,
+                "increment from {before} must move to a new visible value"
+            );
+        }
+        for _ in 0..10 {
+            let before = *h.state();
+            pointer_click(&mut h, dec);
+            assert!(
+                *h.state() < before,
+                "decrement from {before} must move to a new visible value"
+            );
+        }
+        // Every stored value is a multiple of the display quantum.
+        assert_eq!(*h.state() * 10.0, (*h.state() * 10.0).round());
     }
 
     #[test]

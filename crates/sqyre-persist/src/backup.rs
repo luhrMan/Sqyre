@@ -17,7 +17,7 @@ use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
 use crate::import::{merge_databases_prefer_imported, ImportMode};
-use crate::{db_path, sqyre_dir, Database};
+use crate::{db_path, sqyre_dir, Database, UserSettings};
 
 const BACKUPS_SUBDIR: &str = "backups";
 const BACKUP_PREFIX: &str = "sqyre-backup-";
@@ -351,7 +351,33 @@ fn extract_backup_to_staging(zip_path: &Path, staging: &Path) -> Result<()> {
     let db_text = fs::read_to_string(&db_file)?;
     Database::from_yaml_with_warnings(&db_text)
         .map_err(|e| BackupError::Message(format!("restored db.yaml is invalid: {e}")))?;
+    sanitize_staged_settings(&staging.join(SETTINGS_FILE))?;
     Ok(())
+}
+
+/// `sqyre_dir` is machine-local: an imported archive must not redirect the
+/// data directory (the runtime override + XDG pointer would keep the attack
+/// across restarts). Parse the staged `settings.yaml` — rejecting the restore
+/// when it fails like an invalid db.yaml — and replace the field with the
+/// live install's value, preserving a legitimately relocated data dir.
+fn sanitize_staged_settings(path: &Path) -> Result<()> {
+    if !path.is_file() {
+        return Ok(());
+    }
+    // Staging happens before the live tree is moved aside, so the current
+    // settings are still readable here.
+    let live_dir = UserSettings::load_from_path(crate::settings_path())
+        .map(|s| s.sqyre_dir)
+        .unwrap_or_default();
+    let mut settings = UserSettings::load_from_path(path)
+        .map_err(|e| BackupError::Message(format!("restored settings.yaml is invalid: {e}")))?;
+    if settings.sqyre_dir.trim() == live_dir.trim() {
+        return Ok(());
+    }
+    settings.sqyre_dir = live_dir;
+    settings
+        .save_to_path(path)
+        .map_err(|e| BackupError::Message(format!("failed to sanitize settings.yaml: {e}")))
 }
 
 /// Import a backup archive using [`ImportMode`].
@@ -699,6 +725,76 @@ mod tests {
             let err = restore_backup(&bad_zip).unwrap_err();
             assert!(err.to_string().contains("invalid"), "got {err}");
             assert_eq!(fs::read_to_string(data.join("db.yaml")).unwrap(), original);
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn restore_replaces_sqyre_dir_with_live_value() -> Result<()> {
+        let tmp = tempfile::tempdir().map_err(BackupError::from)?;
+        let data = tmp.path().join(".sqyre");
+        fs::create_dir_all(&data)?;
+        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
+        // A legitimately relocated data dir must survive restore.
+        fs::write(
+            data.join("settings.yaml"),
+            "sqyre_dir: /tmp/live-sqyre-dir\n",
+        )?;
+
+        let zip_path = tmp.path().join("redirect.zip");
+        {
+            let file = File::create(&zip_path)?;
+            let mut zip = ZipWriter::new(file);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            zip.start_file("db.yaml", opts)?;
+            zip.write_all(b"macros: {}\nprograms: {}\n")?;
+            zip.start_file("settings.yaml", opts)?;
+            zip.write_all(b"sqyre_dir: /tmp/evil-sqyre-dir\nbackup_enabled: true\n")?;
+            zip.finish()?;
+        }
+
+        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+            restore_backup(&zip_path)?;
+            let restored = UserSettings::load_from_path(data.join("settings.yaml"))
+                .map_err(|e| BackupError::Message(e.to_string()))?;
+            assert_eq!(restored.sqyre_dir, "/tmp/live-sqyre-dir");
+            Ok(())
+        })?;
+        Ok(())
+    }
+
+    #[test]
+    fn restore_rejects_alias_bomb_settings() -> Result<()> {
+        let tmp = tempfile::tempdir().map_err(BackupError::from)?;
+        let data = tmp.path().join(".sqyre");
+        fs::create_dir_all(&data)?;
+        fs::write(data.join("db.yaml"), "macros: {}\nprograms: {}\n")?;
+        fs::write(data.join("settings.yaml"), "backup_enabled: false\n")?;
+        let original = fs::read_to_string(data.join("settings.yaml")).unwrap();
+
+        let zip_path = tmp.path().join("bomb.zip");
+        {
+            let file = File::create(&zip_path)?;
+            let mut zip = ZipWriter::new(file);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            zip.start_file("db.yaml", opts)?;
+            zip.write_all(b"macros: {}\nprograms: {}\n")?;
+            zip.start_file("settings.yaml", opts)?;
+            zip.write_all(b"a: &x [1, 2, 3]\nb: *x\n")?;
+            zip.finish()?;
+        }
+
+        crate::with_sqyre_dir_override(data.clone(), || -> Result<()> {
+            let err = restore_backup(&zip_path).unwrap_err();
+            assert!(
+                err.to_string().contains("settings.yaml is invalid"),
+                "got {err}"
+            );
+            assert_eq!(
+                fs::read_to_string(data.join("settings.yaml")).unwrap(),
+                original
+            );
             Ok(())
         })?;
         Ok(())
