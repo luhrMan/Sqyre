@@ -14,6 +14,11 @@ use std::time::{Duration, Instant};
 static INPUT_TX: Mutex<Option<Sender<EisCmd>>> = Mutex::new(None);
 pub(super) static PENDING_EIS_FD: Mutex<Option<OwnedFd>> = Mutex::new(None);
 static LAST_ABS: Mutex<Option<(i32, i32)>> = Mutex::new(None);
+/// When [`LAST_ABS`] was last sent. A click soon after trusts it over a
+/// ScreenCast cursor that has not caught up yet.
+static LAST_ABS_AT: Mutex<Option<Instant>> = Mutex::new(None);
+/// How long a click keeps the last warp if it disagrees with the live cursor.
+const RESEAT_TRUST_WARP: Duration = Duration::from_millis(400);
 static PORTAL_CURSOR: Mutex<Option<(i32, i32)>> = Mutex::new(None);
 /// Last click/key/scroll over EIS — ScreenCast may still be catching up.
 static LAST_STAGE_MUTATION: Mutex<Option<Instant>> = Mutex::new(None);
@@ -172,7 +177,7 @@ pub fn portal_input_click(button: &str, down: bool) -> Result<(), AutomationErro
         "center" | "middle" => BTN_MIDDLE,
         _ => BTN_LEFT,
     };
-    let reseat = *LAST_ABS.lock();
+    let (reseat, reseat_src) = click_reseat();
     let pos = reseat
         .map(|(x, y)| format!("{x},{y}"))
         .unwrap_or_else(|| "none".into());
@@ -192,7 +197,7 @@ pub fn portal_input_click(button: &str, down: bool) -> Result<(), AutomationErro
                 "INPUT",
                 "ok",
                 &format!(
-                    "click={edge} button={button} pos={pos} reseat={}",
+                    "click={edge} button={button} pos={pos} reseat={} src={reseat_src}",
                     if reseat.is_some() { "yes" } else { "no" }
                 ),
             );
@@ -262,6 +267,7 @@ fn dispatch_eis(eis: &mut EisInput, cmd: EisCmd) {
             let result = eis.move_to(x, y);
             if result.is_ok() {
                 *LAST_ABS.lock() = Some((x, y));
+                *LAST_ABS_AT.lock() = Some(Instant::now());
             }
             let _ = reply.send(result);
         }
@@ -288,6 +294,7 @@ pub(super) fn stop_eis_thread() {
     REMOTE_DESKTOP_GRANTED.store(false, Ordering::SeqCst);
     *INPUT_TX.lock() = None;
     *LAST_ABS.lock() = None;
+    *LAST_ABS_AT.lock() = None;
     *PORTAL_CURSOR.lock() = None;
     LOGGED_PORTAL_CURSOR.store(false, Ordering::Relaxed);
     LOGGED_CURSOR_META.store(false, Ordering::Relaxed);
@@ -899,6 +906,41 @@ pub(super) fn union_rect(a: DesktopRect, b: DesktopRect) -> DesktopRect {
     }
 }
 
+/// Where a click should re-frame the pointer.
+///
+/// A bare click uses the live cursor. The last Move is used only while
+/// ScreenCast metadata can still be behind that warp, so Move-then-Click
+/// still lands on the target.
+fn click_reseat() -> (Option<(i32, i32)>, &'static str) {
+    let sent = *LAST_ABS.lock();
+    let warp_fresh = LAST_ABS_AT
+        .lock()
+        .is_some_and(|t| t.elapsed() <= RESEAT_TRUST_WARP);
+    let (pos, src) = reseat_target(sent, portal_cursor_position(), warp_fresh);
+    if let Some(pos) = pos {
+        if sent != Some(pos) {
+            // Button-up must not warp back to an older Move. Do not refresh
+            // LAST_ABS_AT: that window is only for a warp ScreenCast has not
+            // echoed yet.
+            *LAST_ABS.lock() = Some(pos);
+        }
+    }
+    (pos, src)
+}
+
+fn reseat_target(
+    sent: Option<(i32, i32)>,
+    live: Option<(i32, i32)>,
+    warp_fresh: bool,
+) -> (Option<(i32, i32)>, &'static str) {
+    match (sent, live) {
+        (Some(sent), Some(live)) if sent != live && warp_fresh => (Some(sent), "warp"),
+        (_, Some(live)) => (Some(live), "cursor"),
+        (Some(sent), None) => (Some(sent), "warp"),
+        (None, None) => (None, "none"),
+    }
+}
+
 fn portal_err(step: &'static str) -> impl Fn(ashpd::Error) -> CaptureError {
     move |e| {
         cap_log("PORTAL", "fail", &format!("step={step} error={e}"));
@@ -927,6 +969,31 @@ mod tests {
         write_restore_token_at(&path, None);
         assert!(read_restore_token_at(&path).is_none());
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn click_reseat_uses_live_cursor_after_an_old_move() {
+        assert_eq!(
+            reseat_target(Some((10, 20)), Some((30, 40)), false),
+            (Some((30, 40)), "cursor")
+        );
+        assert_eq!(
+            reseat_target(Some((10, 20)), Some((30, 40)), true),
+            (Some((10, 20)), "warp")
+        );
+        assert_eq!(
+            reseat_target(Some((10, 20)), Some((10, 20)), false),
+            (Some((10, 20)), "cursor")
+        );
+        assert_eq!(
+            reseat_target(None, Some((5, 6)), false),
+            (Some((5, 6)), "cursor")
+        );
+        assert_eq!(
+            reseat_target(Some((1, 2)), None, false),
+            (Some((1, 2)), "warp")
+        );
+        assert_eq!(reseat_target(None, None, false), (None, "none"));
     }
 
     #[test]
