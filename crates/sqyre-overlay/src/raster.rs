@@ -1,5 +1,6 @@
 //! CPU rasterizer for native X11 overlay buttons (colors, radius, Phosphor icon).
 
+use crate::brand_s;
 use egui_phosphor::Variant;
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::Font;
@@ -61,8 +62,10 @@ pub type ChooserRow = (String, i32, i32, u32, u32);
 
 /// Style + content needed to paint one button face.
 ///
-/// `bg[3] == 0` means no fill: only border / icon / spinner ink are written
-/// (alpha channel marks pixels for XFixes ShapeBounding — not ARGB compositing).
+/// `bg[3] == 0` means no fill: only border / icon / spinner ink are written.
+/// [`rasterize`] (24-bit face) treats any `bg[3] > 0` as opaque and uses alpha
+/// as an XFixes ShapeBounding mask; [`rasterize_argb`] (32-bit face) honors
+/// real translucency.
 #[derive(Debug, Clone)]
 pub struct ButtonPaint {
     pub w: u32,
@@ -474,7 +477,18 @@ fn downsample_box(src: &[u8], sw: u32, sh: u32, factor: u32) -> (u32, u32, Vec<u
 /// Alpha above this is included in the XFixes shape (binary punch-out, not soft glass).
 pub const SHAPE_ALPHA_MIN: u8 = 96;
 
-/// Paint an RGBA8 buffer (row-major, length `w*h*4`).
+/// How glyph / spinner ink lands on the painted face.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum InkMode {
+    /// Opaque face: source-over RGB, alpha forced 255.
+    Fill,
+    /// Punch-out mask: keep RGB, accumulate alpha for the XFixes shape.
+    Mask,
+    /// Premultiplied ARGB face: source-over including alpha.
+    Over,
+}
+
+/// Paint an RGBA8 buffer (row-major, length `w*h*4`) for a 24-bit face.
 ///
 /// With an opaque `bg`, every in-shape pixel is filled (alpha 255). With
 /// `bg[3] == 0`, only chrome ink is written and alpha marks the punch-out mask.
@@ -514,39 +528,86 @@ pub fn rasterize(paint: &ButtonPaint) -> Vec<u8> {
         }
     }
 
-    // Icon (dimmed when busy).
-    let icon_c = if paint.busy {
-        let c = if paint.hovered {
-            paint.icon_hover
-        } else {
-            paint.icon
-        };
-        [c[0], c[1], c[2], ((c[3] as u16 * 90) / 255) as u8]
-    } else if paint.hovered {
+    let mode = if fill_bg {
+        InkMode::Fill
+    } else {
+        InkMode::Mask
+    };
+    stamp_face_ink(&mut rgba, w as u32, h as u32, paint, mode);
+    rgba
+}
+
+/// Paint a premultiplied RGBA8 buffer (row-major, length `w*h*4`) for a
+/// 32-bit ARGB face.
+///
+/// Unlike [`rasterize`], which treats `bg[3]` as a fill/no-fill switch for
+/// opaque windows, this honors translucency: fill and border are composited
+/// by rounded-rect coverage (anti-aliased edge) and ink lands source-over.
+/// Corners outside the edge stay alpha 0 — the painted alpha *is* the shape,
+/// so an ARGB face needs no XFixes Bounding (and cannot overflow past it).
+pub fn rasterize_argb(paint: &ButtonPaint) -> Vec<u8> {
+    let w = paint.w.max(1) as i32;
+    let h = paint.h.max(1) as i32;
+    let mut rgba = vec![0u8; (w * h * 4) as usize];
+
+    let r = paint.corner_radius.clamp(0.0, (w.min(h) as f32) * 0.5);
+    let bw = paint.border_width.max(0.0);
+    let bg_a = paint.bg[3] as f32 / 255.0;
+    let border_a = paint.border[3] as f32 / 255.0;
+    let banded = bw > 0.0 && border_a > 0.0;
+
+    for y in 0..h {
+        for x in 0..w {
+            let d = sd_rounded_rect(x as f32 + 0.5, y as f32 + 0.5, w as f32, h as f32, r);
+            let fill_cov = (0.5 - d).clamp(0.0, 1.0);
+            if fill_cov <= 0.0 {
+                continue;
+            }
+            let band_cov = if banded {
+                (fill_cov - (0.5 - (d + bw)).clamp(0.0, 1.0)).max(0.0)
+            } else {
+                0.0
+            };
+            let a_fill = bg_a * fill_cov;
+            let a_band = border_a * band_cov;
+            let inv = 1.0 - a_band;
+            let i = ((y * w + x) * 4) as usize;
+            rgba[i] =
+                (paint.border[0] as f32 * a_band + paint.bg[0] as f32 * a_fill * inv).round() as u8;
+            rgba[i + 1] =
+                (paint.border[1] as f32 * a_band + paint.bg[1] as f32 * a_fill * inv).round() as u8;
+            rgba[i + 2] =
+                (paint.border[2] as f32 * a_band + paint.bg[2] as f32 * a_fill * inv).round() as u8;
+            rgba[i + 3] = ((a_band + a_fill * inv) * 255.0).round() as u8;
+        }
+    }
+
+    stamp_face_ink(&mut rgba, w as u32, h as u32, paint, InkMode::Over);
+    rgba
+}
+
+/// Icon glyph or busy spinner composited onto the painted face.
+fn stamp_face_ink(rgba: &mut [u8], w: u32, h: u32, paint: &ButtonPaint, mode: InkMode) {
+    // Icon: the busy spinner replaces it outright (no dimmed ghost behind).
+    let icon_c = if paint.hovered {
         paint.icon_hover
     } else {
         paint.icon
     };
-    let mut canvas = Canvas {
-        rgba: &mut rgba,
-        w: w as u32,
-        h: h as u32,
-    };
-    if paint.icon_glyph != '\0' && icon_c[3] > 0 {
+    let mut canvas = Canvas { rgba, w, h };
+    if !paint.busy && paint.icon_glyph != '\0' && icon_c[3] > 0 {
         blit_glyph(
             &mut canvas,
             paint.icon_glyph,
             (w.min(h) as f32 * 0.55).max(8.0),
             icon_c,
-            fill_bg,
+            mode,
         );
     }
 
     if paint.busy {
-        draw_spinner(&mut canvas, paint.busy_phase, paint.icon_hover, fill_bg);
+        draw_spinner(&mut canvas, paint.busy_phase, paint.icon_hover, mode);
     }
-
-    rgba
 }
 
 /// Scanline rectangles for pixels with alpha ≥ [`SHAPE_ALPHA_MIN`].
@@ -613,7 +674,32 @@ fn stamp_ink(dst: &mut [u8], src: [u8; 4], a: f32) {
     dst[3] = dst[3].max((a * 255.0).round().clamp(0.0, 255.0) as u8);
 }
 
-fn blit_glyph(canvas: &mut Canvas<'_>, ch: char, px: f32, color: [u8; 4], fill_bg: bool) {
+/// Source-over ink onto a premultiplied ARGB face (`a` already includes src alpha).
+fn stamp_over(dst: &mut [u8], src: [u8; 4], a: f32) {
+    let sa = a.clamp(0.0, 1.0);
+    if sa < 0.01 {
+        return;
+    }
+    let inv = 1.0 - sa;
+    for i in 0..3 {
+        dst[i] = ((src[i] as f32) * sa + (dst[i] as f32) * inv)
+            .round()
+            .clamp(0.0, 255.0) as u8;
+    }
+    dst[3] = (sa * 255.0 + (dst[3] as f32) * inv)
+        .round()
+        .clamp(0.0, 255.0) as u8;
+}
+
+fn stamp_mode(dst: &mut [u8], src: [u8; 4], a: f32, mode: InkMode) {
+    match mode {
+        InkMode::Fill => blend(dst, src, a),
+        InkMode::Mask => stamp_ink(dst, src, a),
+        InkMode::Over => stamp_over(dst, src, a),
+    }
+}
+
+fn blit_glyph(canvas: &mut Canvas<'_>, ch: char, px: f32, color: [u8; 4], mode: InkMode) {
     let font = phosphor_font();
     let (metrics, bitmap) = font.rasterize(ch, px);
     if metrics.width == 0 || metrics.height == 0 || bitmap.is_empty() {
@@ -632,71 +718,96 @@ fn blit_glyph(canvas: &mut Canvas<'_>, ch: char, px: f32, color: [u8; 4], fill_b
                 continue;
             };
             let a = cover * a_scale;
-            if fill_bg {
-                blend(&mut canvas.rgba[i..i + 4], color, a);
-            } else {
-                stamp_ink(&mut canvas.rgba[i..i + 4], color, a);
-            }
+            stamp_mode(&mut canvas.rgba[i..i + 4], color, a, mode);
         }
     }
 }
 
-fn draw_spinner(canvas: &mut Canvas<'_>, phase: f32, color: [u8; 4], fill_bg: bool) {
-    let (w, h) = (canvas.w, canvas.h);
-    let cx = w as f32 * 0.5;
-    let cy = h as f32 * 0.5;
-    let r = (w.min(h) as f32) * 0.32;
-    let stroke = (r * 0.22).clamp(1.5, 3.0);
-    const TICKS: i32 = 8;
-    for i in 0..TICKS {
-        let a = phase + (i as f32) * (std::f32::consts::TAU / TICKS as f32);
-        let fade = 0.25 + 0.75 * (1.0 - (i as f32) / TICKS as f32);
-        let c = [
-            color[0],
-            color[1],
-            color[2],
-            ((color[3] as f32) * fade).round().clamp(0.0, 255.0) as u8,
-        ];
-        let (dx, dy) = (a.cos(), a.sin());
-        let x0 = cx + dx * (r * 0.45);
-        let y0 = cy + dy * (r * 0.45);
-        let x1 = cx + dx * r;
-        let y1 = cy + dy * r;
-        draw_line(canvas, (x0, y0, x1, y1), stroke, c, fill_bg);
+thread_local! {
+    /// Coverage scratch for [`draw_spinner`] — the host thread repaints every
+    /// busy button on each 50 ms tick; reuse the `w*h` buffer across frames.
+    static SPIN_COV: std::cell::RefCell<Vec<f32>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// S glyph fit on a `w`×`h` face: (scale, cx, cy). Shared by the animated
+/// spinner and the busy shape union so both trace identical ink.
+fn s_fit(w: u32, h: u32) -> (f32, f32, f32) {
+    let scale = (w as f32 / brand_s::GLYPH_W).min(h as f32 / brand_s::GLYPH_H) * brand_s::FACE_FILL;
+    (scale, w as f32 * 0.5, h as f32 * 0.5)
+}
+
+/// Both S strokes' coverage into `cov` (zeroed first, `w*h`), with
+/// `weight(face_px_center, face_py_center)` multiplying each pixel — the
+/// sweep gate dims coverage by traversal position.
+fn s_coverage(cov: &mut Vec<f32>, w: u32, h: u32, weight: impl Fn(f32, f32) -> f32) {
+    let (scale, cx, cy) = s_fit(w, h);
+    cov.clear();
+    cov.resize((w * h) as usize, 0.0);
+    for half in brand_s::halves() {
+        brand_s::rasterize_weighted(
+            cov.as_mut_slice(),
+            w,
+            h,
+            half,
+            |x, y| (cx + x * scale, cy + y * scale),
+            &weight,
+        );
     }
 }
 
-fn draw_line(
-    canvas: &mut Canvas<'_>,
-    (x0, y0, x1, y1): (f32, f32, f32, f32),
-    stroke: f32,
-    color: [u8; 4],
-    fill_bg: bool,
-) {
-    let steps = ((x1 - x0).hypot(y1 - y0) * 2.0).ceil().max(1.0) as i32;
-    let half = stroke * 0.5;
+/// Brand spinner: the two S half-strokes drawn as themselves, gated by a
+/// sweep window — one gap travels down the S's own figure-8 (upper lobe
+/// then lower lobe) and wraps invisibly through the open tips.
+fn draw_spinner(canvas: &mut Canvas<'_>, phase: f32, color: [u8; 4], mode: InkMode) {
+    let (scale, cx, cy) = s_fit(canvas.w, canvas.h);
+    SPIN_COV.with(|cov| {
+        let mut cov = cov.borrow_mut();
+        s_coverage(&mut cov, canvas.w, canvas.h, |px, py| {
+            brand_s::trace_alpha(
+                brand_s::trace_u((px - cx) / scale, (py - cy) / scale),
+                phase,
+            )
+        });
+        stamp_spinner(canvas, cov.as_slice(), color, mode);
+    });
+}
+
+fn stamp_spinner(canvas: &mut Canvas<'_>, cov: &[f32], color: [u8; 4], mode: InkMode) {
     let a_scale = color[3] as f32 / 255.0;
-    for s in 0..=steps {
-        let t = s as f32 / steps as f32;
-        let px = x0 + (x1 - x0) * t;
-        let py = y0 + (y1 - y0) * t;
-        let r0 = half.ceil() as i32;
-        for oy in -r0..=r0 {
-            for ox in -r0..=r0 {
-                if (ox * ox + oy * oy) as f32 > half * half {
-                    continue;
-                }
-                let Some(i) = canvas.index((px as i32) + ox, (py as i32) + oy) else {
-                    continue;
-                };
-                if fill_bg {
-                    blend(&mut canvas.rgba[i..i + 4], color, a_scale);
-                } else {
-                    stamp_ink(&mut canvas.rgba[i..i + 4], color, a_scale);
-                }
-            }
+    for (px, &c) in cov.iter().enumerate() {
+        let a = c.min(1.0) * a_scale;
+        if a < 0.01 {
+            continue;
         }
+        let i = px * 4;
+        stamp_mode(&mut canvas.rgba[i..i + 4], color, a, mode);
     }
+}
+
+/// Union alpha of the busy face across the spinner's whole orbit (border +
+/// S strokes at every position). `ShapeBounding` is applied once per busy
+/// flip — per-frame shape updates regress on XWayland — so the busy frames
+/// must all paint inside a bounding computed from this union, or strokes
+/// clip wherever they leave the first frame's ink.
+pub fn busy_shape_alpha(paint: &ButtonPaint) -> Vec<u8> {
+    // The union over a full sweep is the S *fully drawn*: every traversal
+    // fraction is inked at some phase, so one full-coverage pass replaces
+    // sampling animation frames. Chrome is phase-invariant — rasterize it
+    // once without the icon the busy state suppresses.
+    let mut rgba = rasterize(&ButtonPaint {
+        busy: false,
+        icon_glyph: '\u{0}',
+        ..paint.clone()
+    });
+    let (w, h) = (paint.w.max(1), paint.h.max(1));
+    SPIN_COV.with(|cov| {
+        let mut cov = cov.borrow_mut();
+        s_coverage(&mut cov, w, h, |_, _| 1.0);
+        for (o, &c) in rgba.chunks_exact_mut(4).zip(cov.iter()) {
+            o[3] = o[3].max((c.min(1.0) * 255.0).round() as u8);
+        }
+    });
+    rgba
 }
 
 #[cfg(test)]
@@ -784,6 +895,156 @@ mod tip_tests {
             hover_gold > 20,
             "expected brighter hover border pixels, hover_gold={hover_gold}"
         );
+    }
+
+    #[test]
+    fn busy_s_halves_orbit_with_phase() {
+        let paint = ButtonPaint {
+            w: 48,
+            h: 48,
+            bg: [0, 0, 0, 0],
+            border: [0, 0, 0, 0],
+            border_width: 0.0,
+            corner_radius: 0.0,
+            icon_glyph: '\u{0}',
+            icon: [0, 0, 0, 0],
+            icon_hover: [0xdc, 0x9d, 0x2e, 0xff],
+            hovered: false,
+            busy: true,
+            busy_phase: 0.0,
+        };
+        let split = rasterize(&paint);
+        let crossed = rasterize(&ButtonPaint {
+            busy_phase: 0.5,
+            ..paint.clone()
+        });
+        let ink = |rgba: &[u8]| {
+            rgba.chunks_exact(4)
+                .filter(|p| p[3] >= SHAPE_ALPHA_MIN)
+                .count()
+        };
+        assert!(
+            ink(&split) > 50 && ink(&crossed) > 50,
+            "S strokes must draw"
+        );
+        assert_ne!(split, crossed, "spinner ink should move with phase");
+    }
+
+    #[test]
+    fn busy_replaces_icon_and_shape_covers_orbit() {
+        let paint = ButtonPaint {
+            w: 40,
+            h: 40,
+            bg: [0, 0, 0, 0],
+            border: [0xdc, 0x9d, 0x2e, 0xff],
+            border_width: 1.5,
+            corner_radius: 8.0,
+            icon_glyph: egui_phosphor::regular::PLAY.chars().next().unwrap(),
+            icon: [0xf5, 0xe6, 0xc0, 0xff],
+            icon_hover: [0xdc, 0x9d, 0x2e, 0xff],
+            hovered: false,
+            busy: true,
+            busy_phase: 0.0,
+        };
+        let busy = rasterize(&paint);
+        let idle = rasterize(&ButtonPaint {
+            busy: false,
+            ..paint.clone()
+        });
+        // Cream icon pixels must be gone while busy (gold spinner ink instead).
+        let cream = |rgba: &[u8]| {
+            rgba.chunks_exact(4)
+                .filter(|p| p[0] > 0xd0 && p[1] > 0xb0 && p[2] > 0x80 && p[3] >= SHAPE_ALPHA_MIN)
+                .count()
+        };
+        assert!(cream(&idle) > 20, "idle should paint the icon");
+        assert_eq!(cream(&busy), 0, "icon must not ghost under the spinner");
+
+        // ShapeBounding is applied once per busy flip; it must cover the ink
+        // of every animation frame or strokes clip outside the first frame.
+        let union = busy_shape_alpha(&paint);
+        for k in 0..16 {
+            let frame = rasterize(&ButtonPaint {
+                busy_phase: k as f32 / 16.0,
+                ..paint.clone()
+            });
+            for (u, f) in union.chunks_exact(4).zip(frame.chunks_exact(4)) {
+                if f[3] >= SHAPE_ALPHA_MIN {
+                    assert!(
+                        u[3] >= SHAPE_ALPHA_MIN,
+                        "frame {k} ink clipped by the busy bounding union"
+                    );
+                }
+            }
+        }
+    }
+
+    fn argb_paint(
+        bg: [u8; 4],
+        border: [u8; 4],
+        border_width: f32,
+        corner_radius: f32,
+    ) -> ButtonPaint {
+        ButtonPaint {
+            w: 40,
+            h: 40,
+            bg,
+            border,
+            border_width,
+            corner_radius,
+            icon_glyph: '\u{0}',
+            icon: [0, 0, 0, 0],
+            icon_hover: [0, 0, 0, 0],
+            hovered: false,
+            busy: false,
+            busy_phase: 0.0,
+        }
+    }
+
+    /// Pixel index helper: row `y`, column `x`, RGBA stride.
+    fn px(y: u32, x: u32) -> usize {
+        ((y * 40 + x) * 4) as usize
+    }
+
+    #[test]
+    fn argb_bg_alpha_composites_and_corners_stay_clear() {
+        let paint = argb_paint([0x80, 0x40, 0x20, 128], [0, 0, 0, 0], 0.0, 8.0);
+        let rgba = rasterize_argb(&paint);
+        let center = px(20, 20);
+        // Premultiplied at ~50%: alpha carries through, RGB is scaled.
+        assert_eq!(rgba[center + 3], 128);
+        assert_eq!(rgba[center], 64);
+        // Fully outside the rounded edge stays transparent.
+        assert_eq!(rgba[3], 0);
+        // The AA fringe produces partial alpha between 0 and the fill alpha.
+        let fringe = rgba
+            .chunks_exact(4)
+            .filter(|p| p[3] > 0 && p[3] < 128)
+            .count();
+        assert!(fringe > 0, "rounded edge should anti-alias");
+    }
+
+    #[test]
+    fn argb_border_ring_paints_over_translucent_bg() {
+        let paint = argb_paint([0x10, 0x10, 0x10, 128], [0xdc, 0x9d, 0x2e, 255], 3.0, 6.0);
+        let rgba = rasterize_argb(&paint);
+        // Deep inside the border band: opaque gold.
+        let band = px(1, 20);
+        assert_eq!(rgba[band + 3], 255);
+        assert_eq!(rgba[band], 0xdc);
+        // Interior keeps the translucent bg.
+        let center = px(20, 20);
+        assert_eq!(rgba[center + 3], 128);
+    }
+
+    #[test]
+    fn argb_transparent_bg_leaves_interior_clear() {
+        let paint = argb_paint([0, 0, 0, 0], [0xdc, 0x9d, 0x2e, 255], 2.0, 8.0);
+        let rgba = rasterize_argb(&paint);
+        let center = px(20, 20);
+        assert_eq!(rgba[center + 3], 0, "center must stay clear");
+        let band = px(0, 20);
+        assert!(rgba[band + 3] > 0, "border ring must paint");
     }
 
     #[test]

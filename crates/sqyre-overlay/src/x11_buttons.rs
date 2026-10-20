@@ -24,6 +24,7 @@ use sqyre_capture::{
     event_log, mark_site, note, register_secondary_x_display, unregister_secondary_x_display,
     OVERLAY_TIP_WM_TITLE, OVERLAY_WM_TITLE,
 };
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::os::fd::RawFd;
 use std::os::raw::{c_char, c_int, c_long, c_uint, c_ulong};
@@ -47,8 +48,8 @@ use x11::xlib::{
     XConnectionNumber, XCreateColormap, XCreateFontCursor, XCreateGC, XCreateImage, XCreateWindow,
     XDefaultColormap, XDefaultDepth, XDefaultRootWindow, XDefaultScreen, XDefaultVisual,
     XDefineCursor, XDestroyImage, XDestroyWindow, XDisplayHeight, XDisplayWidth, XEvent, XFlush,
-    XFreeColormap, XFreeCursor, XFreeGC, XGrabPointer, XInternAtom, XMapRaised, XMapWindow,
-    XMatchVisualInfo, XMoveResizeWindow, XNextEvent, XOpenDisplay, XPending, XPutImage,
+    XFreeColormap, XFreeCursor, XFreeGC, XGetSelectionOwner, XGrabPointer, XInternAtom, XMapRaised,
+    XMapWindow, XMatchVisualInfo, XMoveResizeWindow, XNextEvent, XOpenDisplay, XPending, XPutImage,
     XQueryPointer, XRectangle, XSelectInput, XSetWindowAttributes, XSetWindowBackground,
     XStoreName, XSync, XUndefineCursor, XUngrabPointer, XUnmapWindow, XVisualInfo, XWindowChanges,
     ZPixmap,
@@ -76,7 +77,9 @@ pub struct NativeButtonSpec {
     pub y: i32,
     pub w: u32,
     pub h: u32,
-    /// Fill RGBA. Alpha 0 = no fill (Shape punch-out from chrome ink only).
+    /// Fill RGBA. On ARGB faces this is real translucency. On the 24-bit
+    /// fallback alpha 0 = no fill (Shape punch-out from chrome ink only)
+    /// and any alpha > 0 paints opaque.
     pub bg: [u8; 4],
     pub border: [u8; 4],
     pub border_width: f32,
@@ -234,13 +237,43 @@ impl Drop for X11ButtonHost {
 struct LiveButton {
     spec: NativeButtonSpec,
     /// Painted face (`InputOutput`). Empty ShapeInput — clicks go to [`Self::hit`].
+    /// 32-bit ARGB when composited (real translucency); 24-bit + XFixes
+    /// Bounding fallback on bare X11.
     win: Window,
-    /// Invisible full hit target (`InputOnly`). Owns pointer events for the button disk.
+    /// Face paints through a 32-bit ARGB visual ([`HostState::argb`]).
+    argb: bool,
+    /// ARGB colormap owned by `win` (0 on the 24-bit path).
+    face_colormap: c_ulong,
+    /// Invisible full hit target. Transparent ARGB `InputOutput` (a real
+    /// Wayland surface so clicks route over native windows); `InputOnly`
+    /// fallback on servers without a 32-bit visual.
     hit: Window,
+    /// ARGB colormap owned by `hit` (0 when `hit` is `InputOnly`).
+    hit_colormap: c_ulong,
     armed: bool,
     hovered: bool,
     busy_phase: f32,
+    /// Which Bounding the face window currently has, for paint ordering and
+    /// the busy-union cache (see [`FaceBounding`]).
+    face_bounding: Cell<FaceBounding>,
     mapped: bool,
+}
+
+/// Which Bounding the face window currently has.
+///
+/// PutImage into a shaped window is clipped by the current Bounding, so
+/// paint order depends on whether the union is still applied (blit before
+/// shrinking) or smaller chrome is (apply shape before blitting, so the
+/// clipped blit covers ink that grew).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FaceBounding {
+    /// Idle chrome (icon + border ring) or the opaque rounded rect.
+    Chrome,
+    /// Busy orbit-union, valid for the current style/size.
+    BusyUnion,
+    /// Busy orbit-union still applied but invalidated by a spec/geometry
+    /// change — repaint recomputes it if the button is still busy.
+    BusyUnionStale,
 }
 
 struct TipWindow {
@@ -338,6 +371,24 @@ struct HostState {
     arrow_cursor: c_ulong,
     /// Skip Enter/Leave tip logic while mapping/stacking tip (avoids leave↔show loops).
     suppress_crossing: bool,
+    /// 32-bit TrueColor visual for ARGB `InputOutput` windows (hit covers,
+    /// relocate shield, translucent faces). `None` on bare X11, where ARGB
+    /// would paint opaque black.
+    argb: Option<ArgbVisual>,
+    /// GC with depth 32 for PutImage into ARGB faces (`gc` is root-depth and
+    /// would BadMatch). Created on the first ARGB face — a GC's depth comes
+    /// from its creation drawable, and root is 24-bit.
+    argb_gc: *mut x11::xlib::_XGC,
+}
+
+/// 32-bit visual info shared by every ARGB window on this display.
+#[derive(Clone, Copy)]
+struct ArgbVisual {
+    visual: *mut x11::xlib::Visual,
+    depth: c_int,
+    red_mask: u64,
+    green_mask: u64,
+    blue_mask: u64,
 }
 
 fn host_loop(
@@ -391,6 +442,39 @@ fn host_loop(
     // SAFETY: same live host-thread `display`; freed in destroy_all before close.
     let arrow_cursor = unsafe { XCreateFontCursor(display, XC_LEFT_PTR) };
 
+    // `_NET_WM_CM_S<n>` ownership is only an X11-compositor signal: on Wayland
+    // sessions the Wayland compositor composites XWayland windows without
+    // necessarily claiming the X selection, so checking the selection alone
+    // false-negatives on e.g. COSMIC and sends hit covers down the InputOnly
+    // path that swallows presses over native Wayland windows.
+    // SAFETY: `display` is the host-thread open Display; `cm` is nul-terminated.
+    let composited = sqyre_capture::LinuxSessionInfo::detect().has_wayland
+        || unsafe {
+            let cm = std::ffi::CString::new(format!("_NET_WM_CM_S{screen}")).unwrap_or_default();
+            let atom = XInternAtom(display, cm.as_ptr(), True);
+            atom != 0 && XGetSelectionOwner(display, atom) != 0
+        };
+
+    // SAFETY: `display` is the host-thread open Display; zeroed XVisualInfo is a
+    // valid out-param for XMatchVisualInfo.
+    let argb = unsafe {
+        let mut vinfo: XVisualInfo = std::mem::zeroed();
+        if composited
+            && XMatchVisualInfo(display, screen, 32, TrueColor, &mut vinfo) != 0
+            && !vinfo.visual.is_null()
+        {
+            Some(ArgbVisual {
+                visual: vinfo.visual,
+                depth: vinfo.depth,
+                red_mask: (*vinfo.visual).red_mask,
+                green_mask: (*vinfo.visual).green_mask,
+                blue_mask: (*vinfo.visual).blue_mask,
+            })
+        } else {
+            None
+        }
+    };
+
     let mut state = HostState {
         display,
         ptr_display,
@@ -413,6 +497,8 @@ fn host_loop(
         move_cursor,
         arrow_cursor,
         suppress_crossing: false,
+        argb,
+        argb_gc: std::ptr::null_mut(),
     };
 
     note(&format!(
@@ -586,8 +672,8 @@ fn host_loop(
             }
         }
 
-        let any_busy = state.buttons.values().any(|b| b.spec.busy);
-        if any_busy && last_busy_tick.elapsed() >= Duration::from_millis(BUSY_TICK_MS) {
+        let busy_now = state.buttons.values().any(|b| b.spec.busy);
+        if busy_now && last_busy_tick.elapsed() >= Duration::from_millis(BUSY_TICK_MS) {
             last_busy_tick = Instant::now();
             let busy_ids: Vec<String> = state
                 .buttons
@@ -597,7 +683,9 @@ fn host_loop(
                 .collect();
             for id in busy_ids {
                 if let Some(btn) = state.buttons.get_mut(&id) {
-                    btn.busy_phase = (btn.busy_phase + 0.12) % std::f32::consts::TAU;
+                    // 50 ms busy tick → advance the traversal fraction so the
+                    // sweep rate matches egui's `time * SWEEP_PER_SEC`.
+                    btn.busy_phase = (btn.busy_phase + crate::brand_s::SWEEP_PER_SEC * 0.05) % 1.0;
                 }
                 if let Some(btn) = state.buttons.get(&id) {
                     if !btn.mapped {
@@ -614,7 +702,7 @@ fn host_loop(
 
         wait_x_or_timeout(
             state.xfd,
-            if any_busy && !state.relocate_mode && state.drag.is_none() {
+            if busy_now && !state.relocate_mode && state.drag.is_none() {
                 BUSY_TICK_MS
             } else {
                 // Relocate needs a steady poll for Wayland poll-hit press + release.
@@ -666,7 +754,6 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                 || live.spec.icon_hover != spec.icon_hover
                 || live.spec.tip != spec.tip
                 || live.spec.busy != spec.busy;
-            let was_filled = live.spec.bg[3] > 0;
             let win = live.win;
             let hit = live.hit;
             // While relocating, keep the live drag position — app specs may still be stale.
@@ -683,12 +770,20 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                 live.spec.x = keep_x;
                 live.spec.y = keep_y;
             }
-            let filled = live.spec.bg[3] > 0;
+            if geom_changed || style_changed {
+                // The applied union no longer matches the new style/size —
+                // keep the flag so the idle repaint still orders blit-then-
+                // shrink correctly, just marked stale for recompute.
+                if live.face_bounding.get() == FaceBounding::BusyUnion {
+                    live.face_bounding.set(FaceBounding::BusyUnionStale);
+                }
+            }
             let geom_applied = geom_changed && !dragging;
             Some((
-                // Opaque: rounded face Bounding (+ empty Input). Transparent: paint
-                // reapplies chrome Bounding. Hit window keeps the full rounded Input.
-                filled && (geom_applied || radius_changed || !was_filled),
+                // Hit keeps the full rounded Input (paint re-derives the face
+                // Bounding from painted alpha, so style/fill flips need no
+                // separate shape pass).
+                geom_applied || radius_changed,
                 style_changed || geom_applied,
                 live.spec.w,
                 live.spec.h,
@@ -697,15 +792,6 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
         } else {
             // Create here so `spec` is not used after the update arm moves it.
             if let Ok(live) = create_button(state, spec) {
-                if live.spec.bg[3] > 0 {
-                    apply_face_rounded_bounding(
-                        state.display,
-                        live.win,
-                        live.spec.w,
-                        live.spec.h,
-                        live.spec.corner_radius,
-                    );
-                }
                 apply_hit_rounded_input(
                     state.display,
                     live.hit,
@@ -719,10 +805,9 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             }
             None
         };
-        if let Some((need_shape, need_paint, w, h, radius)) = updated {
-            if need_shape {
+        if let Some((need_hit_input, need_paint, w, h, radius)) = updated {
+            if need_hit_input {
                 if let Some(live) = state.buttons.get(&id) {
-                    apply_face_rounded_bounding(state.display, live.win, w, h, radius);
                     apply_hit_rounded_input(state.display, live.hit, w, h, radius);
                 }
             }
@@ -763,6 +848,12 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             unsafe {
                 x_destroy_window(state.display, live.win);
                 x_destroy_window(state.display, live.hit);
+                if live.face_colormap != 0 {
+                    XFreeColormap(state.display, live.face_colormap);
+                }
+                if live.hit_colormap != 0 {
+                    XFreeColormap(state.display, live.hit_colormap);
+                }
             }
         }
     }
@@ -1194,12 +1285,9 @@ fn sync_relocate_shield(state: &mut HostState) {
         // pointer over native Wayland — poll-hit only, click-through.
         // SAFETY: HostState display invariant.
         let created = unsafe {
-            let mut vinfo: XVisualInfo = std::mem::zeroed();
-            let argb =
-                XMatchVisualInfo(state.display, state.screen, 32, TrueColor, &mut vinfo) != 0;
-            let (win, colormap) = if argb {
-                let visual = vinfo.visual;
-                let depth = vinfo.depth;
+            let (win, colormap) = if let Some(av) = state.argb {
+                let visual = av.visual;
+                let depth = av.depth;
                 let colormap = XCreateColormap(state.display, state.root, visual, AllocNone);
                 let mut attrs: XSetWindowAttributes = std::mem::zeroed();
                 attrs.override_redirect = True;
@@ -1283,7 +1371,7 @@ fn sync_relocate_shield(state: &mut HostState) {
                 if state.move_cursor != 0 {
                     XDefineCursor(state.display, win, state.move_cursor);
                 }
-                Some((win, colormap, argb))
+                Some((win, colormap, state.argb.is_some()))
             }
         };
         let Some((win, colormap, argb)) = created else {
@@ -1408,24 +1496,57 @@ unsafe fn query_pointer_root(display: *mut Display) -> Option<(i32, i32, bool)> 
     }
 }
 
-fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton, OverlayError> {
-    // Transparent fill still needs a backing pixel for any unshaped flecks / Expose.
-    let bg_rgb = if spec.bg[3] > 0 {
-        [spec.bg[0], spec.bg[1], spec.bg[2]]
-    } else {
-        [0, 0, 0]
+/// Invisible hit cover for one button: `(window, colormap)`.
+///
+/// Transparent ARGB `InputOutput` matching the relocate shield's pattern.
+/// `InputOnly` gets no Wayland surface under XWayland, so the compositor
+/// routes clicks to it only over other X windows — over native Wayland
+/// windows (COSMIC, GNOME shell surfaces) presses were silently swallowed.
+/// The colormap owns the ARGB visual and is freed when the window dies.
+/// Without a compositing manager (`_NET_WM_CM_S<n>` unclaimed — bare X11)
+/// an ARGB cover would paint black over the face, so keep `InputOnly` there.
+///
+/// # Safety
+/// `state.display` must be the host-thread open Display.
+unsafe fn create_hit_window(state: &HostState, spec: &NativeButtonSpec) -> (Window, c_ulong) {
+    let (w, h) = (spec.w.max(1), spec.h.max(1));
+    // ARGB only pays off under a compositor (`state.argb` — XWayland or
+    // X11 + picom); bare X11 would show the cover as an opaque black box.
+    let Some(av) = state.argb else {
+        // SAFETY: zeroed attrs, all fields set below before use.
+        let mut attrs: XSetWindowAttributes = unsafe { std::mem::zeroed() };
+        attrs.override_redirect = True;
+        attrs.event_mask = button_event_mask(state.relocate_mode);
+        // SAFETY: HostState display invariant.
+        let hit = unsafe {
+            XCreateWindow(
+                state.display,
+                state.root,
+                spec.x,
+                spec.y,
+                w,
+                h,
+                0,
+                0,
+                InputOnly as c_uint,
+                std::ptr::null_mut(),
+                CWOverrideRedirect | CWEventMask,
+                &mut attrs,
+            )
+        };
+        return (hit, 0);
     };
-    let bg_pixel = alloc_color(state, bg_rgb);
-    let w = spec.w.max(1);
-    let h = spec.h.max(1);
-    // SAFETY: HostState display invariant — create/configure/map on this thread's Display.
-    // Face paints chrome; InputOnly hit sits above it (invisible, owns pointer). Putting
-    // face on top + empty ShapeInput used to work until busy-spinner shape churn made the
-    // face eat clicks on XWayland/Mutter with no ButtonPress selected.
-    let (hit, win) = unsafe {
-        let mut hit_attrs: XSetWindowAttributes = std::mem::zeroed();
-        hit_attrs.override_redirect = True;
-        hit_attrs.event_mask = button_event_mask(state.relocate_mode);
+    // SAFETY: HostState display invariant.
+    unsafe {
+        let colormap = XCreateColormap(state.display, state.root, av.visual, AllocNone);
+        // SAFETY: zeroed attrs, all fields set below before use.
+        let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+        attrs.override_redirect = True;
+        attrs.colormap = colormap;
+        attrs.border_pixel = 0;
+        attrs.background_pixel = 0;
+        attrs.backing_store = WhenMapped;
+        attrs.event_mask = button_event_mask(state.relocate_mode);
         let hit = XCreateWindow(
             state.display,
             state.root,
@@ -1434,23 +1555,103 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
             w,
             h,
             0,
-            0,
-            InputOnly as c_uint,
-            std::ptr::null_mut(),
-            CWOverrideRedirect | CWEventMask,
-            &mut hit_attrs,
+            av.depth,
+            InputOutput as c_uint,
+            av.visual,
+            CWOverrideRedirect
+                | CWColormap
+                | CWBorderPixel
+                | CWBackPixel
+                | CWBackingStore
+                | CWEventMask,
+            &mut attrs,
         );
         if hit == 0 {
-            return Err(OverlayError::CreateWindow("button"));
+            if colormap != 0 {
+                XFreeColormap(state.display, colormap);
+            }
+            return (0, 0);
         }
+        // Never painted: ARGB bg 0 keeps the cover invisible with full Bounding.
+        let c_title = std::ffi::CString::new(OVERLAY_WM_TITLE).unwrap_or_default();
+        XStoreName(state.display, hit, c_title.as_ptr());
+        set_net_wm_type_notification(state.display, hit);
+        set_skip_taskbar_state(state.display, state.root, hit);
+        (hit, colormap)
+    }
+}
 
-        let mut face_attrs: XSetWindowAttributes = std::mem::zeroed();
-        face_attrs.background_pixel = bg_pixel;
-        face_attrs.border_pixel = bg_pixel;
-        face_attrs.override_redirect = True;
-        face_attrs.backing_store = WhenMapped;
+/// Painted face window: `(win, argb, colormap)`.
+///
+/// Prefers the 32-bit ARGB visual ([`HostState::argb`]) so `bg` translucency
+/// composites — the painted alpha *is* the shape, no XFixes Bounding needed.
+/// Falls back to the default 24-bit visual (rounded Bounding clips the fill;
+/// the raster treats any `bg[3] > 0` as opaque there).
+///
+/// # Safety
+/// `state.display` must be the host-thread open Display.
+unsafe fn create_face_window(
+    state: &HostState,
+    spec: &NativeButtonSpec,
+) -> Option<(Window, bool, c_ulong)> {
+    let (w, h) = (spec.w.max(1), spec.h.max(1));
+    if let Some(av) = state.argb {
+        // SAFETY: HostState display invariant; `attrs` fields all set below.
+        unsafe {
+            let colormap = XCreateColormap(state.display, state.root, av.visual, AllocNone);
+            let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+            attrs.colormap = colormap;
+            // Transparent backing: a solid bg pixel would square-flash on Expose.
+            attrs.background_pixel = 0;
+            attrs.border_pixel = 0;
+            attrs.override_redirect = True;
+            attrs.backing_store = WhenMapped;
+            attrs.event_mask =
+                ExposureMask | StructureNotifyMask | button_event_mask(state.relocate_mode);
+            let win = XCreateWindow(
+                state.display,
+                state.root,
+                spec.x,
+                spec.y,
+                w,
+                h,
+                0,
+                av.depth,
+                InputOutput as c_uint,
+                av.visual,
+                CWColormap
+                    | CWBackPixel
+                    | CWBorderPixel
+                    | CWOverrideRedirect
+                    | CWBackingStore
+                    | CWEventMask,
+                &mut attrs,
+            );
+            if win != 0 {
+                return Some((win, true, colormap));
+            }
+            if colormap != 0 {
+                XFreeColormap(state.display, colormap);
+            }
+        }
+    }
+    // 24-bit fallback. Transparent fill still needs a backing pixel for any
+    // unshaped flecks / Expose.
+    let bg_rgb = if spec.bg[3] > 0 {
+        [spec.bg[0], spec.bg[1], spec.bg[2]]
+    } else {
+        [0, 0, 0]
+    };
+    let bg_pixel = alloc_color(state, bg_rgb);
+    // SAFETY: HostState display invariant; `attrs` fields all set below.
+    unsafe {
+        let mut attrs: XSetWindowAttributes = std::mem::zeroed();
+        attrs.background_pixel = bg_pixel;
+        attrs.border_pixel = bg_pixel;
+        attrs.override_redirect = True;
+        attrs.backing_store = WhenMapped;
         // Button events as fallback if stacking ever puts face above hit.
-        face_attrs.event_mask =
+        attrs.event_mask =
             ExposureMask | StructureNotifyMask | button_event_mask(state.relocate_mode);
         let win = XCreateWindow(
             state.display,
@@ -1464,20 +1665,51 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
             InputOutput as c_uint,
             XDefaultVisual(state.display, state.screen),
             CWBackPixel | CWBorderPixel | CWOverrideRedirect | CWBackingStore | CWEventMask,
-            &mut face_attrs,
+            &mut attrs,
         );
         if win == 0 {
-            x_destroy_window(state.display, hit);
-            return Err(OverlayError::CreateWindow("button face"));
+            None
+        } else {
+            Some((win, false, 0))
         }
+    }
+}
+
+fn create_button(
+    state: &mut HostState,
+    spec: NativeButtonSpec,
+) -> Result<LiveButton, OverlayError> {
+    // SAFETY: HostState display invariant — create/configure/map on this thread's Display.
+    // Face paints chrome; the transparent hit cover sits above it (invisible, owns
+    // pointer). Putting face on top + empty ShapeInput used to work until
+    // busy-spinner shape churn made the face eat clicks on XWayland/Mutter with
+    // no ButtonPress selected.
+    let (hit, hit_colormap, win, face_argb, face_colormap) = unsafe {
+        let (hit, hit_colormap) = create_hit_window(state, &spec);
+        if hit == 0 {
+            return Err(OverlayError::CreateWindow("button"));
+        }
+        let Some((win, argb, face_colormap)) = create_face_window(state, &spec) else {
+            x_destroy_window(state.display, hit);
+            if hit_colormap != 0 {
+                XFreeColormap(state.display, hit_colormap);
+            }
+            return Err(OverlayError::CreateWindow("button face"));
+        };
         let c_title = std::ffi::CString::new(OVERLAY_WM_TITLE).unwrap_or_default();
         XStoreName(state.display, win, c_title.as_ptr());
         set_net_wm_type_notification(state.display, win);
         set_skip_taskbar_state(state.display, state.root, win);
         apply_empty_input_shape(state.display, win);
         x_select_button_input(state.display, hit, state.relocate_mode);
-        (hit, win)
+        (hit, hit_colormap, win, argb, face_colormap)
     };
+    // PutImage into a 32-bit face needs a depth-32 GC (the root `gc` is 24-bit
+    // and would BadMatch). One GC serves every ARGB face on this screen.
+    if face_argb && state.argb_gc.is_null() {
+        // SAFETY: `win` is a live depth-32 window on the host-thread display.
+        state.argb_gc = unsafe { XCreateGC(state.display, win, 0, std::ptr::null_mut()) };
+    }
     // Do not MapRaised gated buttons until the found-map says so — mapping here
     // then relying on apply_gate_visibility left a visible flash (and ghosts if
     // the mapped flag ever drifted).
@@ -1518,10 +1750,14 @@ fn create_button(state: &HostState, spec: NativeButtonSpec) -> Result<LiveButton
     Ok(LiveButton {
         spec,
         win,
+        argb: face_argb,
+        face_colormap,
         hit,
+        hit_colormap,
         armed: false,
         hovered: false,
         busy_phase: 0.0,
+        face_bounding: Cell::new(FaceBounding::Chrome),
         mapped: map_now,
     })
 }
@@ -1541,11 +1777,49 @@ fn paint_button(state: &HostState, btn: &LiveButton, update_shape: bool) {
         busy: btn.spec.busy,
         busy_phase: btn.busy_phase,
     };
-    let rgba = raster::rasterize(&paint);
-    if update_shape && paint.bg[3] == 0 {
-        apply_face_chrome_bounding(state.display, btn.win, paint.w, paint.h, &rgba);
+    let rgba = if btn.argb {
+        raster::rasterize_argb(&paint)
+    } else {
+        raster::rasterize(&paint)
+    };
+    // ARGB faces carry no Bounding — the painted alpha is the shape, and an
+    // empty ShapeInput already routes clicks to the hit cover.
+    if update_shape && !btn.argb {
+        if paint.busy {
+            // The spinner animates with pixels-only repaints (reapplying
+            // Shape* every frame made the face eat clicks on XWayland), so
+            // the bounding must cover the whole orbit — a single frame's ink
+            // would clip the strokes wherever they leave it. The union is
+            // phase-invariant: apply once per busy stint, not on every
+            // expose/hover repaint.
+            if btn.face_bounding.get() != FaceBounding::BusyUnion {
+                // Grow the bounding BEFORE the blit: PutImage is clipped by
+                // the current bounding, so the ink must land inside the
+                // union that will display it.
+                let alpha = raster::busy_shape_alpha(&paint);
+                apply_face_chrome_bounding(state.display, btn.win, paint.w, paint.h, &alpha);
+                btn.face_bounding.set(FaceBounding::BusyUnion);
+            }
+        } else if btn.face_bounding.get() == FaceBounding::Chrome {
+            // Idle face: derive the Bounding from the painted alpha so the
+            // clip is pixel-exact with the blit. The old integer-circle
+            // XRectangle shape disagreed with the SDF fill at corner rows —
+            // inside-shape gaps showed unpainted flecks past the border ring.
+            // Apply the shape first so the clipped blit below covers ink that
+            // grew since the last frame.
+            apply_face_chrome_bounding(state.display, btn.win, paint.w, paint.h, &rgba);
+        } else {
+            // Union→chrome shrink: overwrite the stale S ink while the union
+            // bounding still covers it, then shrink — otherwise the clipped
+            // PutImage leaves old S pixels in the backing store, which
+            // composite through as a ghost when the shape lags.
+            btn.face_bounding.set(FaceBounding::Chrome);
+            blit_rgba(state, btn.win, paint.w, paint.h, &rgba, false);
+            apply_face_chrome_bounding(state.display, btn.win, paint.w, paint.h, &rgba);
+            return;
+        }
     }
-    blit_rgba(state, btn.win, paint.w, paint.h, &rgba);
+    blit_rgba(state, btn.win, paint.w, paint.h, &rgba, btn.argb);
 }
 
 fn raise_hit_above_face(display: *mut Display, hit: Window, face: Window) {
@@ -1690,6 +1964,8 @@ fn apply_running_busy(state: &mut HostState, running: Option<&str>) {
             became_idle = true;
         }
         btn.spec.busy = want;
+        // face_bounding is left alone: the repaint below reads whether the
+        // union is still applied to order blit-then-shrink correctly.
         btn.armed = false;
         flipped = true;
         let (hit, w, h, radius) = (btn.hit, btn.spec.w, btn.spec.h, btn.spec.corner_radius);
@@ -1781,7 +2057,7 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
     }
     if let Some(tip) = state.tip.as_ref() {
         apply_tip_shape(state.display, tip.win, tip.w, tip.h);
-        blit_rgba(state, tip.win, tip.w, tip.h, &rgba);
+        blit_rgba(state, tip.win, tip.w, tip.h, &rgba, false);
         // Keep tip under button hits. ConfigureWindow can synthesize Leave/Enter —
         // suppress crossing and discard those events before re-enabling tip logic.
         state.suppress_crossing = true;
@@ -1886,7 +2162,7 @@ fn repaint_chooser(state: &mut HostState) {
         return;
     }
     let win = ch.win;
-    blit_rgba(state, win, tw, th, &rgba);
+    blit_rgba(state, win, tw, th, &rgba, false);
     if let Some(ch) = state.chooser.as_mut() {
         ch.rows = rows;
         ch.w = tw;
@@ -1938,7 +2214,7 @@ fn show_chooser(state: &mut HostState, spec: HotkeyChooserSpec) {
         note("overlay-x11: chooser create failed");
         return;
     };
-    blit_rgba(state, win, tw, th, &rgba);
+    blit_rgba(state, win, tw, th, &rgba, false);
     // SAFETY: HostState display invariant.
     unsafe {
         XMapRaised(state.display, win);
@@ -2158,12 +2434,33 @@ fn apply_tip_shape(display: *mut Display, win: Window, w: u32, h: u32) {
     apply_rounded_shape(display, win, w, h, TIP_CORNER_PX);
 }
 
-fn blit_rgba(state: &HostState, win: Window, w: u32, h: u32, rgba: &[u8]) {
+fn blit_rgba(state: &HostState, win: Window, w: u32, h: u32, rgba: &[u8], argb: bool) {
     // SAFETY: HostState display/gc invariant; `win` is a button/tip on this display.
     // `XCreateImage` borrows `packed` until we null `data` and destroy the image.
     unsafe {
-        let visual = XDefaultVisual(state.display, state.screen);
-        let depth = XDefaultDepth(state.display, state.screen);
+        let (visual, depth, gc, alpha_mask) = if argb {
+            let Some(av) = state.argb else {
+                return;
+            };
+            if state.argb_gc.is_null() {
+                return;
+            }
+            // In a 32-bit TrueColor pixel the alpha byte lives in whatever
+            // bits the RGB masks do not claim (top byte in practice).
+            (
+                av.visual,
+                av.depth,
+                state.argb_gc,
+                !(av.red_mask | av.green_mask | av.blue_mask) & 0xFF00_0000,
+            )
+        } else {
+            (
+                XDefaultVisual(state.display, state.screen),
+                XDefaultDepth(state.display, state.screen),
+                state.gc,
+                0,
+            )
+        };
         let (red_mask, green_mask, blue_mask) = if visual.is_null() {
             (0x00FF_0000u64, 0x0000_FF00, 0x0000_00FF)
         } else {
@@ -2173,7 +2470,7 @@ fn blit_rgba(state: &HostState, win: Window, w: u32, h: u32, rgba: &[u8]) {
                 (*visual).blue_mask,
             )
         };
-        let mut packed = pack_truecolor(rgba, w, h, red_mask, green_mask, blue_mask);
+        let mut packed = pack_truecolor(rgba, red_mask, green_mask, blue_mask, alpha_mask);
         let ximage = XCreateImage(
             state.display,
             visual,
@@ -2191,7 +2488,7 @@ fn blit_rgba(state: &HostState, win: Window, w: u32, h: u32, rgba: &[u8]) {
         }
         (*ximage).byte_order = LSBFirst;
         (*ximage).bits_per_pixel = 32;
-        XPutImage(state.display, win, state.gc, ximage, 0, 0, 0, 0, w, h);
+        XPutImage(state.display, win, gc, ximage, 0, 0, 0, 0, w, h);
         (*ximage).data = std::ptr::null_mut();
         XDestroyImage(ximage);
     }
@@ -2199,17 +2496,17 @@ fn blit_rgba(state: &HostState, win: Window, w: u32, h: u32, rgba: &[u8]) {
 
 fn pack_truecolor(
     rgba: &[u8],
-    w: u32,
-    h: u32,
     red_mask: u64,
     green_mask: u64,
     blue_mask: u64,
+    alpha_mask: u64,
 ) -> Vec<u8> {
-    let mut out = Vec::with_capacity((w * h * 4) as usize);
+    let mut out = Vec::with_capacity(rgba.len());
     for px in rgba.chunks_exact(4) {
         let packed = place_channel(px[0], red_mask)
             | place_channel(px[1], green_mask)
-            | place_channel(px[2], blue_mask);
+            | place_channel(px[2], blue_mask)
+            | place_channel(px[3], alpha_mask);
         out.extend_from_slice(&packed.to_le_bytes());
     }
     out
@@ -2271,7 +2568,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 if let Some(tip) = state.tip.as_ref() {
                     let (tw, th, rgba) = raster::rasterize_tip(&tip.text);
                     if tw > 0 && th > 0 && !rgba.is_empty() {
-                        blit_rgba(state, tip.win, tw, th, &rgba);
+                        blit_rgba(state, tip.win, tw, th, &rgba, false);
                     }
                 }
                 continue;
@@ -2543,7 +2840,20 @@ fn destroy_all(state: &mut HostState) {
         unsafe {
             x_destroy_window(state.display, live.win);
             x_destroy_window(state.display, live.hit);
+            if live.face_colormap != 0 {
+                XFreeColormap(state.display, live.face_colormap);
+            }
+            if live.hit_colormap != 0 {
+                XFreeColormap(state.display, live.hit_colormap);
+            }
         }
+    }
+    if !state.argb_gc.is_null() {
+        // SAFETY: created on an ARGB face of this display; freed once here.
+        unsafe {
+            x_free_gc(state.display, state.argb_gc);
+        }
+        state.argb_gc = std::ptr::null_mut();
     }
     if state.move_cursor != 0 {
         // SAFETY: cursor from XCreateFontCursor on this display; not used after.
@@ -2764,17 +3074,6 @@ fn wait_x_or_timeout(xfd: RawFd, timeout_ms: u64) {
     }
 }
 
-/// Opaque face: rounded Bounding + empty Input (hit cover owns clicks).
-fn apply_face_rounded_bounding(display: *mut Display, win: Window, w: u32, h: u32, radius_px: f32) {
-    if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
-        return;
-    }
-    let radius = radius_px.round().max(0.0) as i32;
-    let mut rects = rounded_rect_xrectangles(w as i32, h as i32, radius);
-    apply_shape_region(display, win, SHAPE_BOUNDING, &mut rects);
-    apply_empty_input_shape(display, win);
-}
-
 /// Transparent face: chrome-only Bounding + empty Input (hollow stays clickable via hit).
 fn apply_face_chrome_bounding(display: *mut Display, win: Window, w: u32, h: u32, rgba: &[u8]) {
     if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
@@ -2822,13 +3121,11 @@ fn apply_hit_rounded_input(display: *mut Display, hit: Window, w: u32, h: u32, r
 
 /// Tip / face: no pointer events (visual-only).
 fn apply_empty_input_shape(display: *mut Display, win: Window) {
+    if !xfixes_supported(display) {
+        return;
+    }
     // SAFETY: callers pass the host-thread display and a window created on it.
     unsafe {
-        let mut event_base = 0;
-        let mut error_base = 0;
-        if XFixesQueryExtension(display, &mut event_base, &mut error_base) == 0 {
-            return;
-        }
         let empty = XFixesCreateRegion(display, std::ptr::null_mut(), 0);
         if empty == 0 {
             return;
@@ -2849,27 +3146,46 @@ fn apply_rounded_shape(display: *mut Display, win: Window, w: u32, h: u32, radiu
     apply_empty_input_shape(display, win);
 }
 
+/// Cached XFixes probe — every shape update used to repeat the
+/// `XFixesQueryExtension` + `XFixesQueryVersion` round-trips. Host-thread only.
+fn xfixes_supported(display: *mut Display) -> bool {
+    thread_local! {
+        static CACHED: Cell<Option<bool>> = const { Cell::new(None) };
+    }
+    CACHED.with(|c| {
+        if let Some(ok) = c.get() {
+            return ok;
+        }
+        // SAFETY: callers pass the host-thread display; version out-params are
+        // stack locals. The `x11` binding declares `minor_version` as
+        // `*const c_int` even though the C API writes through it — pass a real
+        // slot (NULL would crash the server call that writes to it).
+        let ok = unsafe {
+            let mut event_base = 0;
+            let mut error_base = 0;
+            if XFixesQueryExtension(display, &mut event_base, &mut error_base) == 0 {
+                false
+            } else {
+                let mut major: c_int = 4;
+                let mut minor: c_int = 0;
+                XFixesQueryVersion(
+                    display,
+                    &mut major,
+                    &mut minor as *mut c_int as *const c_int,
+                ) != 0
+            }
+        };
+        c.set(Some(ok));
+        ok
+    })
+}
+
 fn apply_shape_region(display: *mut Display, win: Window, kind: c_int, rects: &mut [XRectangle]) {
-    if rects.is_empty() {
+    if rects.is_empty() || !xfixes_supported(display) {
         return;
     }
     // SAFETY: callers pass the host-thread display and a window created on it.
     unsafe {
-        let mut event_base = 0;
-        let mut error_base = 0;
-        if XFixesQueryExtension(display, &mut event_base, &mut error_base) == 0 {
-            return;
-        }
-        let mut major: c_int = 4;
-        let mut minor: c_int = 0;
-        if XFixesQueryVersion(
-            display,
-            &mut major,
-            &mut minor as *mut c_int as *const c_int,
-        ) == 0
-        {
-            return;
-        }
         let region = XFixesCreateRegion(display, rects.as_mut_ptr(), rects.len() as c_int);
         if region == 0 {
             return;
