@@ -763,10 +763,7 @@ fn draw_spinner(canvas: &mut Canvas<'_>, phase: f32, color: [u8; 4], mode: InkMo
     SPIN_COV.with(|cov| {
         let mut cov = cov.borrow_mut();
         s_coverage(&mut cov, canvas.w, canvas.h, |px, py| {
-            brand_s::trace_alpha(
-                brand_s::trace_u((px - cx) / scale, (py - cy) / scale),
-                phase,
-            )
+            brand_s::trace_weight((px - cx) / scale, (py - cy) / scale, phase)
         });
         stamp_spinner(canvas, cov.as_slice(), color, mode);
     });

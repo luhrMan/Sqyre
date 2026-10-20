@@ -1,10 +1,10 @@
-//! Brand "S" spinner geometry: the Sqyre shield's S — itself a fat
-//! double-ring "8" — drawn from its real upper/lower stroke outlines,
-//! gated by a sweep window that travels the figure-8 like the icons8
-//! "loading infinity" gap. Each pixel's traversal position is its nearest
-//! point on a fitted vertical lemniscate, so the gap is always a
-//! spatially contiguous wedge sliding around the S — even through the
-//! middle, where the two crescents' strokes cross.
+//! Brand "S" spinner geometry: the Sqyre shield's S drawn from its real
+//! upper/lower stroke outlines, animated as an alternating tip-to-tip
+//! load. Each crescent slides a unit-length loaded window along its own
+//! path: it fills inward from the S's outer tip toward the middle tip,
+//! then drains the same way (the loaded tail slides inward and off the
+//! tip) — while the other crescent runs the opposite half of the cycle,
+//! so one finishing loading hands off to the other.
 //!
 //! The `d` strings are copied verbatim from
 //! `crates/sqyre-app/assets/icons/sqyre-stepper-{up,down}.svg` (which
@@ -13,119 +13,143 @@
 //! transforms and re-centers the result on the shared viewBox
 //! `40.5 20.25 46.75 84` so both halves compose the S at the origin.
 
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
 use std::sync::OnceLock;
 
 /// Glyph-space size of the S viewBox shared by both halves (points).
 pub(crate) const GLYPH_W: f32 = 46.75;
 pub(crate) const GLYPH_H: f32 = 84.0;
 
-/// Spinner sweep rate — full traversals of the S per second. The X11 busy
+/// Spinner rate — full load/drain alternations per second. The X11 busy
 /// tick advances `busy_phase` by `SWEEP_PER_SEC * tick` every 50 ms so egui
 /// callers using `time * SWEEP_PER_SEC` stay in step.
 pub(crate) const SWEEP_PER_SEC: f32 = 0.6;
-
-/// Fraction of the S's own path drawn at once — one gap of `1−TRACE_DRAWN`
-/// sweeps the shape (icons8 "loading infinity": ~24% empty, ~76% inked).
-pub(crate) const TRACE_DRAWN: f32 = 0.76;
 
 /// Fraction of a square button face the S glyph occupies — shared by the
 /// native raster spinner and egui busy chrome so both draw it the same size.
 pub(crate) const FACE_FILL: f32 = 0.80;
 
-/// The traversal field: for each glyph-box pixel, the arc-length fraction
-/// `u ∈ [0,1)` of the nearest point on a vertical Gerono lemniscate fitted
-/// to the glyph. Mapping by *position* — not by which S half drew the ink —
-/// keeps every `u` window a spatially contiguous wedge: the gap sweeps the
-/// 8 smoothly, even through the middle where the two crescents' tips cross.
-struct UField {
+/// The load field: for each glyph-box pixel, each half's normalized path
+/// distance `v ∈ [0,1]` along that stroke from its *outer* tip (the S's
+/// top tip for the upper crescent, bottom tip for the lower), so `v ≈ 1`
+/// is the crescent's free tip in the middle of the S. Non-ink pixels stay
+/// `f32::INFINITY` and are never drawn.
+struct FillField {
     w: u32,
     h: u32,
-    /// Row-major traversal fraction.
-    u: Vec<f32>,
+    up: Vec<f32>,
+    down: Vec<f32>,
 }
 
-/// The glyph-box traversal field, computed once.
-fn u_field() -> &'static UField {
-    static FIELD: OnceLock<UField> = OnceLock::new();
-    FIELD.get_or_init(build_u_field)
+/// The glyph-box load field, computed once.
+fn fill_field() -> &'static FillField {
+    static FIELD: OnceLock<FillField> = OnceLock::new();
+    FIELD.get_or_init(build_fill_field)
 }
 
-/// Vertical Gerono lemniscate fitted to the glyph, arc-length-parametrized:
-/// top → upper-right → center → lower-left → bottom → lower-right → center
-/// → upper-left → top. `ax` reaches the lobes' stroke centerline (~±15 of
-/// the ±23.4 edge) so nearest-point lookups order ink sensibly.
-fn lemniscate() -> &'static [(f32, f32, f32)] {
-    static PTS: OnceLock<Vec<(f32, f32, f32)>> = OnceLock::new();
-    PTS.get_or_init(|| {
-        const N: usize = 256;
-        let (ax, ay) = (GLYPH_W * 0.66, GLYPH_H * 0.5);
-        let mut out = Vec::with_capacity(N);
-        let mut len = 0.0f32;
-        let mut prev = (0.0f32, -ay);
-        for k in 0..N {
-            let t = k as f32 * std::f32::consts::TAU / N as f32;
-            let p = (t.sin() * t.cos() * ax, -t.cos() * ay);
-            len += (p.0 - prev.0).hypot(p.1 - prev.1);
-            out.push((p.0, p.1, len));
-            prev = p;
+fn build_fill_field() -> FillField {
+    let (up, down) = (half_mask(true), half_mask(false));
+    FillField {
+        w: up.w,
+        h: up.h,
+        up: stroke_distances(up, true),
+        down: stroke_distances(down, false),
+    }
+}
+
+/// Normalized path distance along one crescent's ink from its outer tip:
+/// Dijkstra over 8-connected ink pixels (`alpha > 128`), seeded at the
+/// stroke's extreme ink row (topmost for the upper crescent — the S's top
+/// tip — bottommost for the lower). Because distance follows the mask, the
+/// wavefront sweeps the crescent's curve exactly, reaching its free middle
+/// tip last.
+fn stroke_distances(mask: &Mask, top: bool) -> Vec<f32> {
+    let (w, h) = (mask.w as usize, mask.h as usize);
+    let ink = |i: usize| mask.alpha[i] > 128;
+    let rows: Box<dyn Iterator<Item = usize>> = if top {
+        Box::new(0..h)
+    } else {
+        Box::new((0..h).rev())
+    };
+    let mut seed = None;
+    for y in rows {
+        let xs: Vec<usize> = (0..w).filter(|&x| ink(y * w + x)).collect();
+        if !xs.is_empty() {
+            seed = Some(y * w + xs[xs.len() / 2]);
+            break;
         }
-        let total = len + (out[0].0 - prev.0).hypot(out[0].1 - prev.1);
-        for p in &mut out {
-            p.2 /= total;
+    }
+    let seed = seed.expect("S half mask is empty");
+    // Dijkstra with a fixed-point min-heap (f32 isn't Ord).
+    const Q: f32 = 4096.0;
+    let mut dist = vec![f32::INFINITY; w * h];
+    dist[seed] = 0.0;
+    let mut heap = BinaryHeap::new();
+    heap.push(Reverse((0u64, seed)));
+    while let Some(Reverse((qi, i))) = heap.pop() {
+        let d = qi as f32 / Q;
+        if d > dist[i] {
+            continue;
         }
-        out
-    })
-}
-
-fn build_u_field() -> UField {
-    let (w, h) = (half_mask(true).w as usize, half_mask(true).h as usize);
-    let s = h as f32 / GLYPH_H;
-    let pts = lemniscate();
-    let mut u = vec![0.0f32; w * h];
-    for y in 0..h {
-        let gy = (y as f32 + 0.5) / s - GLYPH_H * 0.5;
-        for x in 0..w {
-            let gx = (x as f32 + 0.5) / s - GLYPH_W * 0.5;
-            let mut best = (f32::MAX, 0.0f32);
-            for &p in pts {
-                let d2 = (p.0 - gx).powi(2) + (p.1 - gy).powi(2);
-                if d2 < best.0 {
-                    best = (d2, p.2);
+        let (x, y) = (i % w, i / w);
+        for ny in y.saturating_sub(1)..=(y + 1).min(h - 1) {
+            for nx in x.saturating_sub(1)..=(x + 1).min(w - 1) {
+                let ni = ny * w + nx;
+                if ni == i || !ink(ni) {
+                    continue;
+                }
+                let nd = d + (nx as f32 - x as f32).hypot(ny as f32 - y as f32);
+                if nd < dist[ni] {
+                    dist[ni] = nd;
+                    heap.push(Reverse(((nd * Q) as u64, ni)));
                 }
             }
-            u[y * w + x] = best.1;
         }
     }
-    UField {
-        w: w as u32,
-        h: h as u32,
-        u,
+    let vmax = dist
+        .iter()
+        .copied()
+        .filter(|d| d.is_finite())
+        .fold(0.0f32, f32::max);
+    debug_assert!(vmax > 0.0, "S half has no reachable ink");
+    for d in &mut dist {
+        *d /= vmax;
     }
+    dist
 }
 
-/// Traversal fraction `u ∈ [0,1)` of glyph-space point `(x,y)` — nearest
-/// sample of the fitted figure-8 path (nearest cell; the field is smooth
-/// inside each lobe, and the soft gap edge hides cell granularity).
-pub(crate) fn trace_u(x: f32, y: f32) -> f32 {
-    let f = u_field();
-    let s = f.h as f32 / GLYPH_H;
+/// Cell index of glyph-space point `(x,y)` in a `w`×`h` glyph-box field.
+fn field_cell(w: u32, h: u32, x: f32, y: f32) -> usize {
+    let s = h as f32 / GLYPH_H;
     let px = ((x + GLYPH_W * 0.5) * s - 0.5)
         .round()
-        .clamp(0.0, f.w as f32 - 1.0) as usize;
+        .clamp(0.0, w as f32 - 1.0) as usize;
     let py = ((y + GLYPH_H * 0.5) * s - 0.5)
         .round()
-        .clamp(0.0, f.h as f32 - 1.0) as usize;
-    f.u[py * f.w as usize + px]
+        .clamp(0.0, h as f32 - 1.0) as usize;
+    py * w as usize + px
 }
 
-/// Draw weight ∈ [0,1] at traversal fraction `u`: the path is inked except
-/// inside one traveling gap of `1 − TRACE_DRAWN`, with soft edges. The S's
-/// open tips absorb the wrap — when the gap straddles `u = 0/1` the shape
-/// is fully drawn except where the S is naturally open.
-pub(crate) fn trace_alpha(u: f32, phase: f32) -> f32 {
-    let d = (u - phase).rem_euclid(1.0);
-    const EDGE: f32 = 0.03;
-    (d / EDGE).min((TRACE_DRAWN - d) / EDGE).clamp(0.0, 1.0)
+/// Draw weight of path distance `v` under the loaded window `(z−1, z)`
+/// sliding over `v ∈ [0,2)` with a soft edge: `z < 1` draws the `v < z`
+/// prefix — the stroke filling in from its outer tip — and `z > 1` draws
+/// the `v > z−1` suffix — the loaded tail shrinking toward the inner tip,
+/// which unloads last.
+fn stroke_weight(v: f32, z: f32) -> f32 {
+    const EDGE: f32 = 0.05;
+    ((v - (z - 1.0)) / EDGE).min((z - v) / EDGE).clamp(0.0, 1.0)
+}
+
+/// Draw weight ∈ [0,1] at glyph-space `(x,y)` for sweep `phase`: the upper
+/// crescent fills then drains (window position `z = 2·phase`) while the
+/// lower runs the same cycle offset by half a period.
+pub(crate) fn trace_weight(x: f32, y: f32, phase: f32) -> f32 {
+    let f = fill_field();
+    let i = field_cell(f.w, f.h, x, y);
+    let z_up = (phase * 2.0).rem_euclid(2.0);
+    let z_dn = (z_up + 1.0).rem_euclid(2.0);
+    stroke_weight(f.up[i], z_up).max(stroke_weight(f.down[i], z_dn))
 }
 
 /// `d` attribute of `sqyre-stepper-up.svg`'s path (upper S stroke).
@@ -388,30 +412,93 @@ mod tests {
         }
     }
 
-    #[test]
-    fn trace_u_follows_the_figure8() {
-        // u = arc-length fraction along the fitted vertical lemniscate:
-        // top of the glyph ≈ 0/1, bottom ≈ ½; the upper-right descent is
-        // early, the upper-left ascent late.
-        let top = trace_u(0.0, -GLYPH_H * 0.45);
-        assert!(!(0.06..=0.94).contains(&top), "top → u={top}");
-        let bottom = trace_u(0.0, GLYPH_H * 0.45);
-        assert!((bottom - 0.5).abs() < 0.08, "bottom → u={bottom}");
-        let right_up = trace_u(GLYPH_W * 0.3, -GLYPH_H * 0.25);
-        let left_up = trace_u(-GLYPH_W * 0.3, -GLYPH_H * 0.25);
-        assert!(right_up < 0.3, "upper-right → u={right_up}");
-        assert!(left_up > 0.7, "upper-left → u={left_up}");
+    /// Glyph coords of a stroke's outer tip (`v == 0`, the distance seed)
+    /// or inner tip (max `v`) from a half's load field.
+    fn tip_px(f: &FillField, half: &[f32], inner: bool) -> (f32, f32) {
+        let idx = if inner {
+            half.iter()
+                .enumerate()
+                .filter(|(_, v)| v.is_finite())
+                .max_by(|a, b| a.1.total_cmp(b.1))
+                .map(|(i, _)| i)
+        } else {
+            half.iter().position(|&v| v == 0.0)
+        }
+        .expect("stroke tip");
+        let (x, y) = (idx % f.w as usize, idx / f.w as usize);
+        let s = f.h as f32 / GLYPH_H;
+        (
+            (x as f32 + 0.5) / s - GLYPH_W * 0.5,
+            (y as f32 + 0.5) / s - GLYPH_H * 0.5,
+        )
     }
 
     #[test]
-    fn trace_alpha_leaves_one_traveling_gap() {
-        // The gap is a single `1−TRACE_DRAWN` window; edges are soft but the
-        // middle is fully open/closed.
-        let closed = |u: f32, p: f32| trace_alpha(u, p) < 0.05;
-        // At phase 0, the gap sits at u ∈ (0.76, 1).
-        assert!(closed(0.9, 0.0) && !closed(0.5, 0.0) && !closed(0.1, 0.0));
-        // At phase 0.3 the gap has moved to u ∈ (0.06, 0.3).
-        assert!(closed(0.15, 0.3) && !closed(0.9, 0.3));
+    fn loads_inward_from_the_outer_tips() {
+        // "Tips inward": quarter-cycle — the upper crescent is filling
+        // (outer tip loaded, middle tip still waiting) while the lower
+        // drains (outer tip unloaded, middle tip still inked). The
+        // three-quarter phase swaps the roles.
+        let f = fill_field();
+        let (uo, ui) = (tip_px(f, &f.up, false), tip_px(f, &f.up, true));
+        let (dlo, dli) = (tip_px(f, &f.down, false), tip_px(f, &f.down, true));
+        assert!(trace_weight(uo.0, uo.1, 0.25) > 0.5, "upper outer tip");
+        assert!(
+            trace_weight(ui.0, ui.1, 0.25) < 0.5,
+            "upper inner tip early"
+        );
+        assert!(
+            trace_weight(dlo.0, dlo.1, 0.25) < 0.5,
+            "lower outer tip late"
+        );
+        assert!(
+            trace_weight(dli.0, dli.1, 0.25) > 0.5,
+            "lower inner tip early"
+        );
+        assert!(trace_weight(uo.0, uo.1, 0.75) < 0.5, "upper outer tip late");
+        assert!(trace_weight(ui.0, ui.1, 0.75) > 0.5, "upper inner tip late");
+        assert!(trace_weight(dlo.0, dlo.1, 0.75) > 0.5, "lower outer tip");
+        assert!(trace_weight(dli.0, dli.1, 0.75) < 0.5, "lower inner tip");
+    }
+
+    #[test]
+    fn each_handoff_leaves_one_stroke_full_and_the_other_empty() {
+        // At the half-cycle boundary one crescent is fully loaded and the
+        // other fully drained — the load hands off cleanly, both ways.
+        let (up, down) = (half_mask(true), half_mask(false));
+        let (w, h) = (up.w as usize, up.h as usize);
+        let ms = up.h as f32 / GLYPH_H;
+        for (phase, full_up) in [(0.5f32, true), (0.0f32, false)] {
+            let (mut up_drawn, mut up_n, mut dn_drawn, mut dn_n) = (0usize, 0, 0, 0);
+            for py in 0..h {
+                let gy = (py as f32 + 0.5) / ms - GLYPH_H * 0.5;
+                for px in 0..w {
+                    let i = py * w + px;
+                    let drawn =
+                        trace_weight((px as f32 + 0.5) / ms - GLYPH_W * 0.5, gy, phase) > 0.5;
+                    match (up.alpha[i] > 128, down.alpha[i] > 128) {
+                        (true, false) => {
+                            up_n += 1;
+                            up_drawn += drawn as usize;
+                        }
+                        (false, true) => {
+                            dn_n += 1;
+                            dn_drawn += drawn as usize;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            let (full, empty) = if full_up {
+                (up_drawn as f32 / up_n as f32, dn_drawn as f32 / dn_n as f32)
+            } else {
+                (dn_drawn as f32 / dn_n as f32, up_drawn as f32 / up_n as f32)
+            };
+            assert!(
+                full > 0.9 && empty < 0.1,
+                "phase {phase}: {full:.2} loaded / {empty:.2} drained"
+            );
+        }
     }
 
     #[test]
@@ -431,18 +518,15 @@ mod tests {
     }
 
     #[test]
-    fn trace_gap_sweeps_smoothly_and_stays_a_quarter_open() {
-        // The "incorrect quarters" regression guard: at every phase the open
-        // window is ~1−TRACE_DRAWN of the ink and consecutive frames share
-        // almost all of it — a scrambled u-field would flicker quarters in
-        // and out instead of sliding one window around the S. (The open set
-        // legitimately splits into 2+ regions while the gap straddles the
-        // lemniscate's self-intersection, so this checks temporal smoothness
-        // rather than connectivity.)
+    fn load_alternates_smoothly_and_stays_half_drawn() {
+        // Fill/drain regression guard: at every phase roughly half the S's
+        // ink is loaded (one stroke fills while the other drains), and
+        // consecutive frames share almost all of it — a scrambled field
+        // would flicker instead of sliding the load fronts.
         let (up, down) = (half_mask(true), half_mask(false));
         let (w, h) = (up.w as usize, up.h as usize);
         let ms = up.h as f32 / GLYPH_H;
-        let mut open = vec![false; w * h];
+        let mut drawn = vec![false; w * h];
         let mut prev = vec![false; w * h];
         let ink_px = (0..w * h)
             .filter(|&i| up.alpha[i].max(down.alpha[i]) > 128)
@@ -450,38 +534,37 @@ mod tests {
         let mut min_overlap = f32::MAX;
         for k in 0..64 {
             let phase = k as f32 / 64.0;
-            let mut open_px = 0usize;
+            let mut drawn_px = 0usize;
             for py in 0..h {
                 let gy = (py as f32 + 0.5) / ms - GLYPH_H * 0.5;
                 for px in 0..w {
                     let gx = (px as f32 + 0.5) / ms - GLYPH_W * 0.5;
                     let i = py * w + px;
                     let ink = up.alpha[i].max(down.alpha[i]) > 128;
-                    open[i] = ink && trace_alpha(trace_u(gx, gy), phase) < 0.05;
-                    if open[i] {
-                        open_px += 1;
+                    drawn[i] = ink && trace_weight(gx, gy, phase) > 0.5;
+                    if drawn[i] {
+                        drawn_px += 1;
                     }
                 }
             }
-            let open_frac = open_px as f32 / ink_px as f32;
+            let drawn_frac = drawn_px as f32 / ink_px as f32;
             assert!(
-                (0.15..=0.35).contains(&open_frac),
-                "phase {phase:.3}: gap is {open_frac:.2} of ink, not ~{:.2}",
-                1.0 - TRACE_DRAWN
+                (0.30..=0.70).contains(&drawn_frac),
+                "phase {phase:.3}: {drawn_frac:.2} of ink loaded, expected ~0.5"
             );
             if k > 0 {
-                let same = open
+                let same = drawn
                     .iter()
                     .zip(prev.iter())
                     .filter(|(a, b)| **a && **b)
                     .count();
-                min_overlap = min_overlap.min(same as f32 / open_px.max(1) as f32);
+                min_overlap = min_overlap.min(same as f32 / drawn_px.max(1) as f32);
             }
-            std::mem::swap(&mut open, &mut prev);
+            std::mem::swap(&mut drawn, &mut prev);
         }
         assert!(
-            min_overlap >= 0.75,
-            "gap jumps between frames: min overlap {min_overlap:.2}"
+            min_overlap >= 0.80,
+            "load jumps between frames: min overlap {min_overlap:.2}"
         );
     }
 }
