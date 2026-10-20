@@ -10,6 +10,7 @@ mod image_limits;
 mod port_error;
 mod portal_remote;
 mod runtime_vars;
+mod session_desktop;
 
 pub use action_log::{
     lines_for, ActionLogEntry, ActionLogger, LogImage, SharedActionLog, MAX_ENTRIES_PER_ACTION,
@@ -30,6 +31,7 @@ pub use image_limits::{
 pub use port_error::PortError;
 pub use portal_remote::PortalRemoteInput;
 pub use runtime_vars::{RuntimeVarSink, SharedRuntimeVars};
+pub use session_desktop::{cosmic_desktop_session, desktop_name_is_cosmic};
 
 use image::RgbaImage;
 use rayon::prelude::*;
