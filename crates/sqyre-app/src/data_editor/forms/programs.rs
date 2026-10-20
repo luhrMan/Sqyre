@@ -14,7 +14,7 @@ impl DataEditor {
     ) -> bool {
         let CatalogPaint { catalog, icons, .. } = paint;
         let FormCtx { macros, .. } = ctx;
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if let Some(name) = self.selected_program.as_deref() {
                 crate::icon_cache::paint_program_icon(ui, catalog, icons, name);
             }

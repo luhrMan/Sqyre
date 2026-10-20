@@ -45,31 +45,61 @@ impl DataEditor {
         // ScrollArea ratchets content wider than the viewport once a scrollbar
         // appears, which clips the trailing buttons.
         let row_w = ui.available_width().max(0.0);
-        ui.allocate_ui_with_layout(
-            egui::vec2(row_w, ui.spacing().interact_size.y),
-            egui::Layout::left_to_right(egui::Align::Center),
-            |ui| {
-                ui.label(egui::RichText::new("Icon variants").strong());
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .button(
-                            egui::RichText::new("Add Icon Variant")
-                                .color(crate::theme::MACRO_START),
-                        )
-                        .clicked()
-                    {
-                        self.request_variant_pick();
-                    }
-                    if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
-                        icons.invalidate_target(target);
-                        for path in &paths {
-                            icons.invalidate_path(path);
+        let count = format!("({})", paths.len());
+        let need = crate::widgets::text_width(ui, "Icon variants", egui::TextStyle::Button)
+            + crate::widgets::text_width(ui, &count, egui::TextStyle::Body)
+            + crate::widgets::text_width(ui, "Add Icon Variant", egui::TextStyle::Button)
+            + ui.spacing().button_padding.x * 2.0
+            + 36.0
+            + ui.spacing().item_spacing.x * 4.0
+            + 16.0;
+        if need <= row_w {
+            ui.allocate_ui_with_layout(
+                egui::vec2(row_w, ui.spacing().interact_size.y),
+                egui::Layout::left_to_right(egui::Align::Center),
+                |ui| {
+                    ui.label(egui::RichText::new("Icon variants").strong());
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .button(
+                                egui::RichText::new("Add Icon Variant")
+                                    .color(crate::theme::MACRO_START),
+                            )
+                            .clicked()
+                        {
+                            self.request_variant_pick();
                         }
+                        if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
+                            icons.invalidate_target(target);
+                            for path in &paths {
+                                icons.invalidate_path(path);
+                            }
+                        }
+                        ui.label(egui::RichText::new(&count).weak());
+                    });
+                },
+            );
+        } else {
+            ui.horizontal(|ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                ui.label(egui::RichText::new("Icon variants").strong());
+                ui.label(egui::RichText::new(&count).weak());
+                if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
+                    icons.invalidate_target(target);
+                    for path in &paths {
+                        icons.invalidate_path(path);
                     }
-                    ui.label(egui::RichText::new(format!("({})", paths.len())).weak());
-                });
-            },
-        );
+                }
+                if ui
+                    .button(
+                        egui::RichText::new("Add Icon Variant").color(crate::theme::MACRO_START),
+                    )
+                    .clicked()
+                {
+                    self.request_variant_pick();
+                }
+            });
+        }
         if paths.is_empty() {
             let fallback = icons.for_target_or_fallback(ui.ctx(), catalog, target);
             let [tw, th] = fallback.size();

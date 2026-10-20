@@ -516,17 +516,41 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 }
             };
             let mut new_clicked = false;
-            crate::widgets::heading_with_count_and(ui, "Macros", macro_count, |ui| {
-                // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
-                // (＋, ⧉) render as tofu in egui's default font stack.
-                new_clicked = crate::widgets::icon_button_colored(
-                    ui,
-                    "+",
-                    "New macro",
-                    Some(crate::theme::MACRO_START),
-                )
-                .clicked();
-            });
+            let title_w = crate::widgets::text_width(ui, "Macros", egui::TextStyle::Heading);
+            let count_label = format!("({macro_count})");
+            let count_w = crate::widgets::text_width(ui, &count_label, egui::TextStyle::Body);
+            let header_need = title_w + count_w + 40.0 + ui.spacing().item_spacing.x * 3.0 + 8.0;
+            if header_need <= pane_w {
+                crate::widgets::heading_with_count_and(ui, "Macros", macro_count, |ui| {
+                    // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
+                    // (＋, ⧉) render as tofu in egui's default font stack.
+                    new_clicked = crate::widgets::icon_button_colored(
+                        ui,
+                        "+",
+                        "New macro",
+                        Some(crate::theme::MACRO_START),
+                    )
+                    .clicked();
+                });
+            } else {
+                crate::widgets::show_overflow(ui, "macro_list_header", 1.0, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        ui.add(
+                            egui::Label::new(egui::RichText::new("Macros").heading())
+                                .selectable(false),
+                        );
+                        new_clicked = crate::widgets::icon_button_colored(
+                            ui,
+                            "+",
+                            "New macro",
+                            Some(crate::theme::MACRO_START),
+                        )
+                        .clicked();
+                        ui.label(egui::RichText::new(count_label).weak());
+                    });
+                });
+            }
             if new_clicked {
                 app.create_macro();
             }

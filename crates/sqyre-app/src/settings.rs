@@ -371,34 +371,36 @@ impl SettingsUi {
 
         let has_search = !self.search.is_empty();
         let mut clear_search = false;
-        let search_focused = crate::widgets::fill_row(
-            ui,
-            |ui| {
-                clear_search = has_search && ui.small_button("Clear").clicked();
-            },
-            |ui| {
-                ui.label(egui::RichText::new(
-                    egui_phosphor::regular::MAGNIFYING_GLASS,
-                ))
-                .on_hover_text("Search");
-                // Infinity fill — fixed desired_width(available) ratchets the window.
-                let search_resp = ui.add(
-                    egui::TextEdit::singleline(&mut self.search)
-                        .hint_text("Search settings…")
-                        .desired_width(f32::INFINITY),
-                );
-                crate::pickers::focus_search_once(ui, settings_window_id(), &search_resp);
-                if search_resp.changed() && !self.search.trim().is_empty() {
-                    let q = self.search.trim().to_ascii_lowercase();
-                    if !self.active_section.visible(&q) {
-                        if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
-                            self.active_section = section;
+        let search_focused = crate::widgets::show_overflow(ui, "settings_search", 1.0, |ui| {
+            crate::widgets::fill_row(
+                ui,
+                |ui| {
+                    clear_search = has_search && ui.small_button("Clear").clicked();
+                },
+                |ui| {
+                    ui.label(egui::RichText::new(
+                        egui_phosphor::regular::MAGNIFYING_GLASS,
+                    ))
+                    .on_hover_text("Search");
+                    // Infinity fill — fixed desired_width(available) ratchets the window.
+                    let search_resp = ui.add(
+                        egui::TextEdit::singleline(&mut self.search)
+                            .hint_text("Search settings…")
+                            .desired_width(f32::INFINITY),
+                    );
+                    crate::pickers::focus_search_once(ui, settings_window_id(), &search_resp);
+                    if search_resp.changed() && !self.search.trim().is_empty() {
+                        let q = self.search.trim().to_ascii_lowercase();
+                        if !self.active_section.visible(&q) {
+                            if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
+                                self.active_section = section;
+                            }
                         }
                     }
-                }
-                search_resp.has_focus()
-            },
-        );
+                    search_resp.has_focus()
+                },
+            )
+        });
         if clear_search {
             self.search.clear();
         }
@@ -445,29 +447,37 @@ impl SettingsUi {
             }
         }
 
+        let natural_side = sidebar_width(ui);
+        let side_cap = body_rect.width() * 0.45;
+        let side_w = if side_cap < natural_side {
+            side_cap.max(1.0)
+        } else {
+            natural_side
+        };
         let crate::widgets::SplitView {
             left: mut left_ui,
             right: mut right_ui,
             splitter,
-        } = crate::widgets::split_view(ui, body_rect, sidebar_width(ui));
+        } = crate::widgets::split_view(ui, body_rect, side_w);
 
         let permissions_missing = self.permissions_missing();
-        for section in visible_sections.iter().copied() {
-            let warn = permissions_missing && section.is_permissions();
-            let response =
-                left_ui.selectable_label(self.active_section == section, section.label());
-            if warn {
-                crate::widgets::warn_badge(&mut left_ui, response.rect);
+        crate::widgets::show_overflow(&mut left_ui, "settings_sections", 1.0, |ui| {
+            for section in visible_sections.iter().copied() {
+                let warn = permissions_missing && section.is_permissions();
+                let response = ui.selectable_label(self.active_section == section, section.label());
+                if warn {
+                    crate::widgets::warn_badge(ui, response.rect);
+                }
+                let tip = if warn {
+                    "A permission is missing. ↑↓ to switch sections"
+                } else {
+                    "↑↓ to switch sections"
+                };
+                if response.on_hover_text(tip).clicked() {
+                    self.active_section = section;
+                }
             }
-            let tip = if warn {
-                "A permission is missing. ↑↓ to switch sections"
-            } else {
-                "↑↓ to switch sections"
-            };
-            if response.on_hover_text(tip).clicked() {
-                self.active_section = section;
-            }
-        }
+        });
         ui.painter().vline(
             splitter.center().x,
             splitter.y_range(),

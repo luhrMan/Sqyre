@@ -216,7 +216,7 @@ impl PermissionsPanel {
         }
 
         if (self.running || self.refresh_when_capture_ready) && self.items.is_empty() {
-            ui.spinner();
+            crate::widgets::brand_spinner(ui);
             ui.weak("Probing screen capture, portals, and input access…");
             return;
         }

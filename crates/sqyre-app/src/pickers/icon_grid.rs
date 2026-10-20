@@ -339,7 +339,14 @@ pub fn paint_even_icon_grid(
     // room toward Window max_size, and not width the bar will cover.
     let avail = crate::widgets::visible_content_width(ui);
     let (style, gap) = metrics_for(kind, targets.len(), avail);
-    ui.set_max_width(avail);
+    // A pane narrower than one cell used to clip the cell. Size the row to the
+    // cell so the parent scroll can reach it; wide panes keep the old cap.
+    let row_w = if avail + 0.5 < style.cell {
+        style.cell
+    } else {
+        ui.set_max_width(avail);
+        avail
+    };
     let cols = grid_column_count_for_width(avail, style.cell, gap);
     let old_spacing = ui.spacing().item_spacing;
     ui.spacing_mut().item_spacing = Vec2::splat(gap);
@@ -355,10 +362,10 @@ pub fn paint_even_icon_grid(
             style.cell
         };
         ui.allocate_ui_with_layout(
-            egui::vec2(avail, row_h),
+            egui::vec2(row_w, row_h),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
-                ui.set_max_width(avail);
+                ui.set_max_width(row_w);
                 ui.spacing_mut().item_spacing = Vec2::splat(gap);
                 for (k, target) in targets.iter().enumerate().take(end).skip(i) {
                     let sel = is_selected(target);

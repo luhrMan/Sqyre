@@ -9,9 +9,13 @@ pub mod fields;
 pub mod headers;
 pub mod match_settings;
 pub mod num_entry;
+pub mod overflow;
 mod row_ids;
 pub mod scroll;
 pub mod sections;
+/// Every `brand_spinner` call site today is native-runtime only.
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+mod spinner;
 pub mod tags;
 pub mod wrap;
 
@@ -43,10 +47,14 @@ pub use fields::{
 pub use headers::{heading_with_count, heading_with_count_and, title_with_count};
 pub use match_settings::configure_match_blur_drag;
 pub use num_entry::{num_entry, NumEntry};
+pub use overflow::{overflow_bar, text_width, OverflowItem};
 pub use row_ids::{remove_row_id, stable_row_ids};
 pub use scroll::{
-    dialog_scroll, enable_dense_row_extend, scroll_both, scroll_vertical, SCROLL_SOURCE_NO_DRAG,
+    dialog_scroll, enable_dense_row_extend, scroll_both, scroll_vertical, show_overflow,
+    SCROLL_SOURCE_NO_DRAG,
 };
 pub use sections::{section_separator, split_view, tinted_section, SplitView};
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+pub(crate) use spinner::brand_spinner;
 pub use tags::{tag_chip_editor, TagChipOptions};
 pub use wrap::{wrap_unit, wrapped_row};

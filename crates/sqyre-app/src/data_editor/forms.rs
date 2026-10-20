@@ -483,7 +483,7 @@ impl DataEditor {
             let computing = self.pixel_check_pending.is_some() && can_compute;
             if computing {
                 ui.horizontal(|ui| {
-                    ui.spinner();
+                    crate::widgets::brand_spinner(ui);
                     ui.weak("Computing heatmap…");
                 });
             }

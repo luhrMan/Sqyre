@@ -979,15 +979,19 @@ impl SqyreApp {
 
         egui::CentralPanel::default().show(ui, |ui| {
             #[cfg(target_arch = "wasm32")]
-            ui_toolbar::wasm_editor_note(ui);
+            crate::widgets::show_overflow(ui, "wasm_editor_note", 1.0, |ui| {
+                ui_toolbar::wasm_editor_note(ui);
+            });
             if self.workspace.macros.is_empty() {
-                let clicked = crate::widgets::empty_state(
-                    ui,
-                    "No macros yet",
-                    Some("Create a macro or import a backup to get started."),
-                    Some("New macro"),
-                    Some("Import backup"),
-                );
+                let clicked = crate::widgets::show_overflow(ui, "empty_macros", 1.0, |ui| {
+                    crate::widgets::empty_state(
+                        ui,
+                        "No macros yet",
+                        Some("Create a macro or import a backup to get started."),
+                        Some("New macro"),
+                        Some("Import backup"),
+                    )
+                });
                 match clicked {
                     crate::widgets::EmptyStateAction::Primary => self.create_macro(),
                     crate::widgets::EmptyStateAction::Secondary => {
@@ -1000,11 +1004,20 @@ impl SqyreApp {
                 }
                 return;
             }
-            if !ui_toolbar::show_meta_and_hotkey(self, ui) {
+            // Collapse state shares the tree's parent id — keep this outside the chrome strip.
+            let any_collapsed = ui_macro_tree::any_branch_collapsed(self, ui);
+            let mut force_openness = None;
+            let mut stop = false;
+            crate::widgets::show_overflow(ui, "editor_chrome", 0.7, |ui| {
+                if !ui_toolbar::show_meta_and_hotkey(self, ui) {
+                    stop = true;
+                    return;
+                }
+                force_openness = ui_toolbar::action_toolbar(self, ui, any_collapsed);
+            });
+            if stop {
                 return;
             }
-            let any_collapsed = ui_macro_tree::any_branch_collapsed(self, ui);
-            let force_openness = ui_toolbar::action_toolbar(self, ui, any_collapsed);
             ui_macro_tree::show(self, ui, force_openness);
         });
     }

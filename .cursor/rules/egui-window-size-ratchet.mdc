@@ -69,6 +69,7 @@ Prefer `fill_resize_body`, `dialog_scroll`, `new_child` for absolute panes, and 
 | `visible_width` / `visible_height` / `visible_size` | Layout budget from clip ∩ max_rect |
 | `visible_content_width` | Width minus floating scrollbar overlay (size grids after this, not before) |
 | `popup_scroll_max_height` | Scroll pane height that will not ratchet |
+| `show_overflow` | Paint chrome directly when it fits; scroll only after a measured overflow |
 
 `sqyre-overlay` cannot import `sqyre-app`; keep picker layout local (see `icons.rs`).
 

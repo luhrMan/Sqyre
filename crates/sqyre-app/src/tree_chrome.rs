@@ -657,7 +657,6 @@ pub fn paint_action_row(
     // Match TreeView node height.
     let interact_y = row_height(ui);
     let row_h = action_row_height(action, interact_y);
-    let base_h = default_row_height(interact_y);
 
     // egui_ltreeview remembers a content-based min width, so `available_width` can stay
     // wider than the visible panel after the user shrinks the window. Cap the row to the
@@ -681,15 +680,16 @@ pub fn paint_action_row(
                 let mut content = ui.new_child(
                     egui::UiBuilder::new()
                         .max_rect(content_rect)
-                        .layout(egui::Layout::left_to_right(egui::Align::TOP)),
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
                 );
                 content.set_clip_rect(content_rect.intersect(ui.clip_rect()));
                 content.spacing_mut().item_spacing.x = spacing;
 
-                // Pin the type badge to the standard row band.
+                // Same vertical center as the summary pills. `top_down` packs the
+                // badge to the top of a row that is taller than the icon.
                 content.allocate_ui_with_layout(
-                    Vec2::new(type_badge_side(&content), base_h),
-                    egui::Layout::top_down(egui::Align::Center),
+                    Vec2::new(type_badge_side(&content), row_h),
+                    egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         extend_drag_handle(
                             &mut drag_handle_rect,
@@ -698,76 +698,110 @@ pub fn paint_action_row(
                     },
                 );
 
+                let pills_id = ui.id().with(("action_row_pills", action.id));
+                let pills_overflow = ui
+                    .ctx()
+                    .data(|d| d.get_temp::<bool>(pills_id))
+                    .unwrap_or(false);
                 content.allocate_ui_with_layout(
                     Vec2::new(content.available_width().max(0.0), row_h),
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
-                        ui.spacing_mut().item_spacing.x = spacing;
-                        let pills = {
-                            let rev = paint_revision;
-                            let id = action.id;
-                            let stale = pills_cache
-                                .get(&id)
-                                .map(|(cached_rev, _)| *cached_rev != rev)
-                                .unwrap_or(true);
-                            if stale {
-                                pills_cache.insert(id, (rev, action.tree_summary_pills()));
+                        // Same pills as before when they fit. A row that ran past the
+                        // clip last frame scrolls inside this slot so the tree width
+                        // stays capped (egui_ltreeview ratchets on content min-width).
+                        let mut paint = |ui: &mut egui::Ui| {
+                            ui.spacing_mut().item_spacing.x = spacing;
+                            let pills = {
+                                let rev = paint_revision;
+                                let id = action.id;
+                                let stale = pills_cache
+                                    .get(&id)
+                                    .map(|(cached_rev, _)| *cached_rev != rev)
+                                    .unwrap_or(true);
+                                if stale {
+                                    pills_cache.insert(id, (rev, action.tree_summary_pills()));
+                                }
+                                pills_cache
+                                    .get(&id)
+                                    .map(|(_, p)| p.as_slice())
+                                    .unwrap_or(&[])
+                            };
+                            for pill in pills {
+                                let resp = paint_summary_pill_cell(
+                                    ui,
+                                    action,
+                                    pill,
+                                    catalog,
+                                    icons,
+                                    VarTheme {
+                                        known_vars,
+                                        is_dark,
+                                    },
+                                    row_h,
+                                );
+                                extend_drag_handle(&mut drag_handle_rect, resp.rect);
+                                if resp.hovered() {
+                                    tip_hovered = true;
+                                }
                             }
-                            pills_cache
-                                .get(&id)
-                                .map(|(_, p)| p.as_slice())
-                                .unwrap_or(&[])
-                        };
-                        for pill in pills {
-                            let resp = paint_summary_pill_cell(
-                                ui,
-                                action,
-                                pill,
-                                catalog,
-                                icons,
-                                VarTheme {
-                                    known_vars,
+
+                            if let ActionKind::FindPixel { target_color, .. } = &action.kind {
+                                if let Some(swatch) = paint_color_swatch(ui, target_color) {
+                                    extend_drag_handle(&mut drag_handle_rect, swatch.rect);
+                                }
+                            }
+                            if matches!(action.kind, ActionKind::ImageSearch { .. })
+                                && paint_image_search_extras(
+                                    ui,
+                                    action,
+                                    catalog,
+                                    icons,
                                     is_dark,
-                                },
-                                row_h,
-                            );
-                            extend_drag_handle(&mut drag_handle_rect, resp.rect);
-                            if resp.hovered() {
-                                tip_hovered = true;
-                            }
-                        }
-
-                        if let ActionKind::FindPixel { target_color, .. } = &action.kind {
-                            if let Some(swatch) = paint_color_swatch(ui, target_color) {
-                                extend_drag_handle(&mut drag_handle_rect, swatch.rect);
-                            }
-                        }
-                        if matches!(action.kind, ActionKind::ImageSearch { .. })
-                            && paint_image_search_extras(
-                                ui,
-                                action,
-                                catalog,
-                                icons,
-                                is_dark,
-                                &mut drag_handle_rect,
-                            )
-                        {
-                            tip_hovered = true;
-                        }
-
-                        if let Some(err) = validation_error {
-                            let badge = ui
-                                .label(
-                                    egui::RichText::new("⚠")
-                                        .color(crate::theme::error_fg())
-                                        .strong(),
+                                    &mut drag_handle_rect,
                                 )
-                                .on_hover_text(err);
-                            extend_drag_handle(&mut drag_handle_rect, badge.rect);
-                            if badge.hovered() {
+                            {
                                 tip_hovered = true;
                             }
-                        }
+
+                            if let Some(err) = validation_error {
+                                let badge = ui
+                                    .label(
+                                        egui::RichText::new("⚠")
+                                            .color(crate::theme::error_fg())
+                                            .strong(),
+                                    )
+                                    .on_hover_text(err);
+                                extend_drag_handle(&mut drag_handle_rect, badge.rect);
+                                if badge.hovered() {
+                                    tip_hovered = true;
+                                }
+                            }
+                        };
+                        let overflow_now = if pills_overflow {
+                            let width = ui.available_width().max(1.0);
+                            let out = egui::ScrollArea::horizontal()
+                                .id_salt(pills_id)
+                                .scroll_source(crate::widgets::SCROLL_SOURCE_NO_DRAG)
+                                .auto_shrink([false, false])
+                                .min_scrolled_width(1.0)
+                                .max_width(width)
+                                .max_height(row_h)
+                                .show(ui, |ui| {
+                                    ui.with_layout(
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            crate::widgets::enable_dense_row_extend(ui);
+                                            paint(ui);
+                                        },
+                                    );
+                                });
+                            out.content_size.x > width + 8.0
+                        } else {
+                            paint(ui);
+                            ui.min_rect().right() > ui.max_rect().right() + 8.0
+                        };
+                        ui.ctx().data_mut(|d| d.insert_temp(pills_id, overflow_now));
                     },
                 );
             }

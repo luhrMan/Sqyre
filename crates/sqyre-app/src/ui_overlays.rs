@@ -387,7 +387,7 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                 }
                 ProjectionGate::Waiting => {
                     ui.horizontal(|ui| {
-                        ui.spinner();
+                        crate::widgets::brand_spinner(ui);
                         ui.weak("Waiting for Android's screen recording prompt…");
                     });
                     cancel = crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked();

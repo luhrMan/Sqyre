@@ -352,11 +352,13 @@ impl MacroYamlBuilderUi {
             .bound_name
             .clone()
             .unwrap_or_else(|| "(new macro)".into());
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(bound).strong().heading());
-            if self.is_dirty() {
-                ui.weak("(unapplied changes)");
-            }
+        crate::widgets::show_overflow(ui, "yaml_bound_name", 1.0, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(bound).strong().heading());
+                if self.is_dirty() {
+                    ui.weak("(unapplied changes)");
+                }
+            });
         });
         ui.label(
             egui::RichText::new(
@@ -400,7 +402,11 @@ impl MacroYamlBuilderUi {
             0.0
         };
         let footer_h = button_h + status_h + spacing * 3.0 + crate::theme::SPACE_8;
-        let editor_h = (ui.available_height() - footer_h).max(120.0);
+        let avail = ui.available_height();
+        let room = (avail - footer_h).max(0.0);
+        // Keep the button row on screen. The 120px floor only applies when the
+        // pane is already tall enough for it.
+        let editor_h = if room >= 120.0 { room } else { room.max(40.0) };
 
         let suggestions = collect_runtime_suggestions(macros, catalog);
         let editor_id = egui::Id::new(WINDOW_ID).with("yaml");
@@ -415,54 +421,58 @@ impl MacroYamlBuilderUi {
         }
 
         crate::widgets::section_separator(ui);
-        ui.horizontal_wrapped(|ui| {
-            if ui.button("Validate").clicked() {
-                self.last_report = report_macro_yaml(&self.yaml);
-                self.last_validated_yaml = self.yaml.clone();
-                if self.last_report.is_ok() {
-                    self.set_status("Valid", false);
-                } else {
-                    self.set_status(self.last_report.summary(), true);
-                }
-            }
-            let has_yaml = !self.yaml.trim().is_empty() && self.draft_choice == DraftChoice::None;
-            let existing: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
-            if ui
-                .add_enabled(
-                    has_yaml,
-                    egui::Button::new(
-                        egui::RichText::new("Import as New").color(crate::theme::MACRO_START),
-                    ),
-                )
-                .on_hover_text("Add this YAML as a new macro")
-                .clicked()
-            {
-                match prepare_import_macro_yaml(&self.yaml, &existing) {
-                    Ok(m) => {
-                        *outcome = YamlBuilderOutcome::ImportMacro(Box::new(m));
+        crate::widgets::show_overflow(ui, "yaml_footer", 1.0, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                if ui.button("Validate").clicked() {
+                    self.last_report = report_macro_yaml(&self.yaml);
+                    self.last_validated_yaml = self.yaml.clone();
+                    if self.last_report.is_ok() {
+                        self.set_status("Valid", false);
+                    } else {
+                        self.set_status(self.last_report.summary(), true);
                     }
-                    Err(e) => self.set_status(e.to_string(), true),
                 }
-            }
-            let can_apply = !running && self.bound_name.is_some() && has_yaml && self.is_dirty();
-            if crate::widgets::dirty_action_button(ui, "Apply", can_apply)
-                .on_hover_text("Replace the selected macro with this YAML")
-                .on_disabled_hover_text(if running {
-                    "Cannot apply while a macro is running"
-                } else if self.bound_name.is_none() {
-                    "No macro selected — use Import as New"
-                } else {
-                    "No unapplied changes"
-                })
-                .clicked()
-            {
-                match prepare_macro_yaml(&self.yaml) {
-                    Ok(m) => {
-                        *outcome = YamlBuilderOutcome::ApplyMacro(Box::new(m));
+                let has_yaml =
+                    !self.yaml.trim().is_empty() && self.draft_choice == DraftChoice::None;
+                let existing: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
+                if ui
+                    .add_enabled(
+                        has_yaml,
+                        egui::Button::new(
+                            egui::RichText::new("Import as New").color(crate::theme::MACRO_START),
+                        ),
+                    )
+                    .on_hover_text("Add this YAML as a new macro")
+                    .clicked()
+                {
+                    match prepare_import_macro_yaml(&self.yaml, &existing) {
+                        Ok(m) => {
+                            *outcome = YamlBuilderOutcome::ImportMacro(Box::new(m));
+                        }
+                        Err(e) => self.set_status(e.to_string(), true),
                     }
-                    Err(e) => self.set_status(e.to_string(), true),
                 }
-            }
+                let can_apply =
+                    !running && self.bound_name.is_some() && has_yaml && self.is_dirty();
+                if crate::widgets::dirty_action_button(ui, "Apply", can_apply)
+                    .on_hover_text("Replace the selected macro with this YAML")
+                    .on_disabled_hover_text(if running {
+                        "Cannot apply while a macro is running"
+                    } else if self.bound_name.is_none() {
+                        "No macro selected — use Import as New"
+                    } else {
+                        "No unapplied changes"
+                    })
+                    .clicked()
+                {
+                    match prepare_macro_yaml(&self.yaml) {
+                        Ok(m) => {
+                            *outcome = YamlBuilderOutcome::ApplyMacro(Box::new(m));
+                        }
+                        Err(e) => self.set_status(e.to_string(), true),
+                    }
+                }
+            });
         });
         self.status.paint(ui);
 

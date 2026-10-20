@@ -112,18 +112,31 @@ impl VariablesPanelUi {
                 // Split remaining height between declared list (top) and Runtime/Built-ins.
                 const TAB_CHROME: f32 = 48.0;
                 let avail = ui.available_height();
-                let bottom_h = ((avail - TAB_CHROME) * 0.38).max(100.0);
-                let top_h = (avail - TAB_CHROME - bottom_h).max(120.0);
+                let min_bottom = 100.0;
+                let min_top = 120.0;
+                let need = TAB_CHROME + min_bottom + min_top;
+                let (top_h, bottom_h) = if avail >= need {
+                    let bottom = ((avail - TAB_CHROME) * 0.38).max(min_bottom);
+                    let top = (avail - TAB_CHROME - bottom).max(min_top);
+                    (top, bottom)
+                } else {
+                    let body = (avail - TAB_CHROME).max(1.0);
+                    let bottom = (body * 0.38).max(1.0);
+                    let top = (body - bottom).max(1.0);
+                    (top, bottom)
+                };
 
                 ui.add_enabled_ui(enabled, |ui| {
                     persist |= self.body(ui, macro_, top_h);
                 });
                 crate::widgets::section_separator(ui);
-                ui.horizontal_wrapped(|ui| {
-                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Runtime, "Runtime")
-                        .on_hover_text(help::VAR_TAB_RUNTIME);
-                    ui.selectable_value(&mut self.bottom_tab, BottomTab::Builtins, "Built-ins")
-                        .on_hover_text(help::VAR_TAB_BUILTINS);
+                crate::widgets::show_overflow(ui, "var_tabs", 1.0, |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.selectable_value(&mut self.bottom_tab, BottomTab::Runtime, "Runtime")
+                            .on_hover_text(help::VAR_TAB_RUNTIME);
+                        ui.selectable_value(&mut self.bottom_tab, BottomTab::Builtins, "Built-ins")
+                            .on_hover_text(help::VAR_TAB_BUILTINS);
+                    });
                 });
                 crate::widgets::section_separator(ui);
                 match self.bottom_tab {
@@ -229,11 +242,47 @@ impl VariablesPanelUi {
     fn body(&mut self, ui: &mut egui::Ui, macro_: &mut Macro, max_h: f32) -> bool {
         let mut persist = false;
 
-        ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-            ui.set_max_width(crate::widgets::visible_width(ui));
-            ui.horizontal(|ui| {
-                ui.heading("Declared variables");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let pane = crate::widgets::visible_width(ui);
+        let count = format!("({})", macro_.variable_decls.len());
+        let need = crate::widgets::text_width(ui, "Declared variables", egui::TextStyle::Heading)
+            + crate::widgets::text_width(ui, &count, egui::TextStyle::Body)
+            + crate::widgets::text_width(ui, "+ Add", egui::TextStyle::Button)
+            + ui.spacing().button_padding.x * 2.0
+            + ui.spacing().item_spacing.x * 4.0
+            + 16.0;
+        if need <= pane {
+            ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
+                ui.set_max_width(pane);
+                ui.horizontal(|ui| {
+                    ui.heading("Declared variables");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .button(egui::RichText::new("+ Add").color(crate::theme::MACRO_START))
+                            .clicked()
+                        {
+                            self.editing = Some(EditState {
+                                index: None,
+                                name: String::new(),
+                                type_: VariableType::Auto,
+                                initial_value: String::new(),
+                                description: String::new(),
+                                baseline_name: String::new(),
+                                baseline_type: VariableType::Auto,
+                                baseline_initial: String::new(),
+                                baseline_description: String::new(),
+                            });
+                            self.status_banner.clear();
+                        }
+                        ui.label(egui::RichText::new(&count).weak());
+                    });
+                });
+            });
+        } else {
+            crate::widgets::show_overflow(ui, "var_declared_header", 1.0, |ui| {
+                ui.horizontal(|ui| {
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                    ui.heading("Declared variables");
+                    ui.label(egui::RichText::new(&count).weak());
                     if ui
                         .button(egui::RichText::new("+ Add").color(crate::theme::MACRO_START))
                         .clicked()
@@ -251,12 +300,9 @@ impl VariablesPanelUi {
                         });
                         self.status_banner.clear();
                     }
-                    ui.label(
-                        egui::RichText::new(format!("({})", macro_.variable_decls.len())).weak(),
-                    );
                 });
             });
-        });
+        }
         ui.label(
             "Initial values seed the runtime store at macro start. Action outputs appear in Live runtime while running.",
         );
