@@ -47,6 +47,11 @@ pub struct OverlayIcon {
 /// Default icon when settings store an empty / unknown id.
 pub const DEFAULT_ICON_ID: &str = "play";
 
+/// Repaint cadence for the brand trace spinner (~20 fps): egui callers must
+/// pace with `request_repaint_after(SPINNER_TICK)` — a bare `request_repaint`
+/// can be dropped on an idle window, freezing the animation.
+pub const SPINNER_TICK: std::time::Duration = std::time::Duration::from_millis(50);
+
 const PHOSPHOR_FAMILY: &str = "phosphor";
 
 /// Font for painting Phosphor catalog glyphs (overlay buttons, command palette).
@@ -137,9 +142,9 @@ pub(crate) fn allocate_glyph_hit(
 
 /// Paint glyph chrome into an already-allocated hit rect.
 ///
-/// When `busy`, the glyph is dimmed and a time-based spinner is drawn over it.
-/// Animation frames come from the overlay pointer-wake thread (~50ms) — do not
-/// call `egui::Spinner` (it `request_repaint()`s every frame and thrash-lags games).
+/// When `busy`, the brand trace-spinner replaces the glyph. Animation frames
+/// come from the overlay pointer-wake thread (~50ms) — do not call
+/// `egui::Spinner` (it `request_repaint()`s every frame and thrash-lags games).
 pub(crate) fn paint_glyph_contents(
     ui: &mut egui::Ui,
     icon: &OverlayIcon,
@@ -155,49 +160,128 @@ pub(crate) fn paint_glyph_contents(
 
     paint_overlay_chrome(ui, icon_rect, hovered, style);
 
-    let color = if busy {
-        let c = style.icon;
-        Color32::from_rgba_unmultiplied(c.r(), c.g(), c.b(), (c.a() as u16 * 90 / 255) as u8)
-    } else if hovered {
-        style.icon_hover
-    } else {
-        style.icon
-    };
-    sqyre_ui_theme::paint_text_centered(
-        ui,
-        icon_rect,
-        icon.glyph,
-        glyph_font_id((icon_size * 0.55).round()),
-        color,
-    );
     if busy {
-        paint_busy_spinner(ui, icon_rect, style.icon_hover);
+        // The spinner replaces the icon outright while the macro runs.
+        let spin_rect = egui::Rect::from_center_size(
+            icon_rect.center(),
+            icon_rect.size() * crate::brand_s::FACE_FILL,
+        );
+        paint_trace_spinner(ui, spin_rect, style.icon_hover);
+    } else {
+        let color = if hovered {
+            style.icon_hover
+        } else {
+            style.icon
+        };
+        sqyre_ui_theme::paint_text_centered(
+            ui,
+            icon_rect,
+            icon.glyph,
+            glyph_font_id((icon_size * 0.55).round()),
+            color,
+        );
     }
 }
 
-/// Draw an 8-tick spinner from `ui.input.time` (no per-frame request_repaint).
-fn paint_busy_spinner(ui: &mut egui::Ui, rect: egui::Rect, color: Color32) {
-    let time = ui.input(|i| i.time) as f32;
-    let center = rect.center();
-    let r = (rect.width().min(rect.height()) * 0.32).max(4.0);
-    let stroke_w = (r * 0.22).clamp(1.5, 3.0);
-    const TICKS: i32 = 8;
-    for i in 0..TICKS {
-        let phase =
-            time * std::f32::consts::TAU + (i as f32) * (std::f32::consts::TAU / TICKS as f32);
-        let fade = 0.25 + 0.75 * (1.0 - (i as f32) / TICKS as f32);
-        let c = Color32::from_rgba_unmultiplied(
-            color.r(),
-            color.g(),
-            color.b(),
-            ((color.a() as f32) * fade).round().clamp(0.0, 255.0) as u8,
-        );
-        let dir = egui::vec2(phase.cos(), phase.sin());
-        ui.painter().line_segment(
-            [center + dir * (r * 0.45), center + dir * r],
-            egui::Stroke::new(stroke_w, c),
-        );
+/// Draw the brand trace spinner from `ui.input.time` (no per-frame
+/// request_repaint): the two S half-strokes drawn as themselves, gated by
+/// a sweep window — one gap travels down the S's own figure-8 (upper lobe
+/// then lower lobe) and wraps invisibly through the open tips. `rect` is
+/// where the glyph box goes (letterboxed to keep the S's aspect) — callers
+/// control the margin. Same per-pixel gate as the native raster, so the
+/// frames are identical. Shared with `sqyre-app`'s loading spinner.
+pub fn paint_trace_spinner(ui: &mut egui::Ui, rect: egui::Rect, color: Color32) {
+    let phase = ui.input(|i| i.time) as f32 * crate::brand_s::SWEEP_PER_SEC;
+    let tex = trace_frame_texture(ui, phase);
+    let scale =
+        (rect.width() / crate::brand_s::GLYPH_W).min(rect.height() / crate::brand_s::GLYPH_H);
+    let glyph = egui::Rect::from_center_size(
+        rect.center(),
+        egui::vec2(
+            crate::brand_s::GLYPH_W * scale,
+            crate::brand_s::GLYPH_H * scale,
+        ),
+    );
+    ui.painter().image(
+        tex.id(),
+        glyph,
+        egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+        color,
+    );
+}
+
+/// This frame's S with the sweep window applied per-pixel — the same
+/// coverage math as `raster::draw_spinner`, so egui and native frames
+/// match. Rebuilt once per frame (every spinner in a frame shares `phase`,
+/// which derives from `ui.input.time`) — far cheaper than a mesh that
+/// smears the gap across the ring holes.
+fn trace_frame_texture(ui: &egui::Ui, phase: f32) -> egui::TextureHandle {
+    let id = egui::Id::new("sqyre_overlay_s_trace_frame");
+    let frame = ui.ctx().cumulative_frame_nr();
+    let cached: Option<egui::TextureHandle> = ui.ctx().data_mut(|d| {
+        let tex = d.get_persisted::<egui::TextureHandle>(id)?;
+        (d.get_persisted::<u64>(id.with("frame_nr"))? == frame).then_some(tex)
+    });
+    if let Some(tex) = cached {
+        return tex;
     }
+
+    let (up, down) = (
+        crate::brand_s::half_mask(true),
+        crate::brand_s::half_mask(false),
+    );
+    let (w, h) = (up.w as usize, up.h as usize);
+    let mask_scale = up.h as f32 / crate::brand_s::GLYPH_H;
+    let mut rgba = vec![0u8; w * h * 4];
+    for py in 0..h {
+        let y = (py as f32 + 0.5) / mask_scale - crate::brand_s::GLYPH_H * 0.5;
+        for px in 0..w {
+            let x = (px as f32 + 0.5) / mask_scale - crate::brand_s::GLYPH_W * 0.5;
+            let i = py * w + px;
+            let a = up.alpha[i].max(down.alpha[i]) as f32
+                * crate::brand_s::trace_alpha(crate::brand_s::trace_u(x, y), phase);
+            rgba[i * 4..i * 4 + 4].copy_from_slice(&[0xff, 0xff, 0xff, a.round() as u8]);
+        }
+    }
+    let image = egui::ColorImage::from_rgba_unmultiplied([w, h], &rgba);
+    let opts = egui::TextureOptions::LINEAR;
+    let tex = match ui
+        .ctx()
+        .data_mut(|d| d.get_persisted::<egui::TextureHandle>(id))
+    {
+        Some(mut tex) => {
+            tex.set(image, opts);
+            tex
+        }
+        None => ui.ctx().load_texture("sqyre-overlay-s-trace", image, opts),
+    };
+    ui.ctx().data_mut(|d| {
+        d.insert_persisted(id, tex.clone());
+        d.insert_persisted(id.with("frame_nr"), frame);
+    });
+    tex
+}
+
+/// Alpha coverage of the brand S inside the shield SVG's shared `0 0 128 128`
+/// viewBox, at `res`×`res` — for compositing the shield shell (S erased)
+/// behind an animated S in sqyre-app.
+pub fn s_shield_coverage(res: u32) -> Vec<u8> {
+    // Glyph space is origin-centered on the S; the S's viewBox in shield
+    // space is `40.5 20.25 46.75 84`, so its center sits at (63.875, 62.25).
+    let s = res as f32 / 128.0;
+    let (cx, cy) = (
+        40.5 + crate::brand_s::GLYPH_W * 0.5,
+        20.25 + crate::brand_s::GLYPH_H * 0.5,
+    );
+    let mut cov = vec![0.0f32; (res * res) as usize];
+    for half in crate::brand_s::halves() {
+        crate::brand_s::rasterize_into(&mut cov, res, res, half, |x, y| {
+            ((x + cx) * s, (y + cy) * s)
+        });
+    }
+    cov.iter()
+        .map(|c| (c.clamp(0.0, 1.0) * 255.0).round() as u8)
+        .collect()
 }
 
 /// Compact preview button used in the editor / picker (with selection chrome).

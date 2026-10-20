@@ -10,6 +10,7 @@
     allow(dead_code, reason = "editor builds keep only the icon catalog")
 )]
 
+mod brand_s;
 pub mod icons;
 
 #[cfg(feature = "runtime")]
