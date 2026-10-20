@@ -238,8 +238,8 @@ fn trace_frame_texture(ui: &egui::Ui, phase: f32) -> egui::TextureHandle {
         for px in 0..w {
             let x = (px as f32 + 0.5) / mask_scale - crate::brand_s::GLYPH_W * 0.5;
             let i = py * w + px;
-            let a = up.alpha[i].max(down.alpha[i]) as f32
-                * crate::brand_s::trace_alpha(crate::brand_s::trace_u(x, y), phase);
+            let a =
+                up.alpha[i].max(down.alpha[i]) as f32 * crate::brand_s::trace_weight(x, y, phase);
             rgba[i * 4..i * 4 + 4].copy_from_slice(&[0xff, 0xff, 0xff, a.round() as u8]);
         }
     }
