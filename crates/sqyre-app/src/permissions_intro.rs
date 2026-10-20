@@ -115,7 +115,7 @@ impl PermissionsIntro {
                 confirmed = clicked || enter;
             } else {
                 ui.horizontal(|ui| {
-                    ui.spinner();
+                    crate::widgets::brand_spinner(ui);
                     ui.weak("Waiting for the system prompts…");
                 });
             }

@@ -124,9 +124,12 @@ impl MacroPromptBuilderUi {
         outcome: &mut PromptBuilderOutcome,
     ) {
         let avail_h = ui.available_height();
-        let section_gap = ui.spacing().item_spacing.y * 2.0;
-        // Rough thirds: NL, prompt, import.
-        let third = ((avail_h - section_gap * 2.0) / 3.0).max(120.0);
+        let row = ui.spacing().interact_size.y;
+        let gap = ui.spacing().item_spacing.y;
+        // Headings, hints, two button rows, separators, and a status line sit
+        // outside the three editors. Reserve them so the buttons stay on screen.
+        let chrome = row * 10.0 + gap * 10.0 + 24.0;
+        let third = ((avail_h - chrome) / 3.0).max(40.0);
 
         ui.label(
             egui::RichText::new("Describe the macro")
@@ -134,7 +137,7 @@ impl MacroPromptBuilderUi {
                 .size(ui.style().text_styles[&egui::TextStyle::Heading].size * 0.85),
         );
         ui.small("Type @ for actions, macros, and catalog entities (Program~Name).");
-        let nl_h = (third - 36.0).max(80.0);
+        let nl_h = third;
         crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), nl_h)
             .id_salt("nl_scroll")
             .show(ui, |ui| {
@@ -148,33 +151,35 @@ impl MacroPromptBuilderUi {
             });
 
         ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(
-                    !self.nl_draft.trim().is_empty(),
-                    egui::Button::new("Generate prompt"),
-                )
-                .on_hover_text("Build a schema-aware prompt for an external AI tool")
-                .clicked()
-            {
-                self.generated_prompt = build_prompt(&self.nl_draft, macros, catalog);
-                self.set_status("Prompt generated — copy and paste into any AI tool.", false);
-            }
-            if ui
-                .add_enabled(
-                    !self.generated_prompt.is_empty(),
-                    egui::Button::new("Copy prompt"),
-                )
-                .clicked()
-            {
-                ui.ctx().copy_text(self.generated_prompt.clone());
-                self.set_status("Prompt copied to clipboard.", false);
-            }
+        crate::widgets::show_overflow(ui, "prompt_generate", 1.0, |ui| {
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        !self.nl_draft.trim().is_empty(),
+                        egui::Button::new("Generate prompt"),
+                    )
+                    .on_hover_text("Build a schema-aware prompt for an external AI tool")
+                    .clicked()
+                {
+                    self.generated_prompt = build_prompt(&self.nl_draft, macros, catalog);
+                    self.set_status("Prompt generated — copy and paste into any AI tool.", false);
+                }
+                if ui
+                    .add_enabled(
+                        !self.generated_prompt.is_empty(),
+                        egui::Button::new("Copy prompt"),
+                    )
+                    .clicked()
+                {
+                    ui.ctx().copy_text(self.generated_prompt.clone());
+                    self.set_status("Prompt copied to clipboard.", false);
+                }
+            });
         });
 
         crate::widgets::section_separator(ui);
         ui.label(egui::RichText::new("Generated prompt").strong());
-        let prompt_h = (third - 28.0).max(80.0);
+        let prompt_h = third;
         crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), prompt_h)
             .id_salt("prompt_scroll")
             .show(ui, |ui| {
@@ -192,7 +197,7 @@ impl MacroPromptBuilderUi {
         crate::widgets::section_separator(ui);
         ui.label(egui::RichText::new("Import AI response").strong());
         ui.small("Paste the YAML macro returned by the AI (no markdown fences).");
-        let yaml_h = (third - 56.0).max(80.0);
+        let yaml_h = third;
         crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), yaml_h)
             .id_salt("yaml_scroll")
             .show(ui, |ui| {
@@ -206,40 +211,42 @@ impl MacroPromptBuilderUi {
                 );
             });
 
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(
-                    !self.import_yaml.trim().is_empty(),
-                    egui::Button::new("Validate"),
-                )
-                .clicked()
-            {
-                match prepare_import_macro(&self.import_yaml, &[]) {
-                    Ok(m) => self.set_status(
-                        format!("Valid macro \"{}\" — ready to import.", m.name),
-                        false,
-                    ),
-                    Err(e) => self.set_status(e, true),
-                }
-            }
-            let existing: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
-            if ui
-                .add_enabled(
-                    !self.import_yaml.trim().is_empty(),
-                    egui::Button::new("Import macro"),
-                )
-                .on_hover_text("Decode, validate, and add as a new macro")
-                .clicked()
-            {
-                match prepare_import_macro(&self.import_yaml, &existing) {
-                    Ok(m) => {
-                        self.set_status(format!("Importing \"{}\"…", m.name), false);
-                        self.import_yaml.clear();
-                        *outcome = PromptBuilderOutcome::ImportMacro(Box::new(m));
+        crate::widgets::show_overflow(ui, "prompt_import", 1.0, |ui| {
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        !self.import_yaml.trim().is_empty(),
+                        egui::Button::new("Validate"),
+                    )
+                    .clicked()
+                {
+                    match prepare_import_macro(&self.import_yaml, &[]) {
+                        Ok(m) => self.set_status(
+                            format!("Valid macro \"{}\" — ready to import.", m.name),
+                            false,
+                        ),
+                        Err(e) => self.set_status(e, true),
                     }
-                    Err(e) => self.set_status(e, true),
                 }
-            }
+                let existing: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
+                if ui
+                    .add_enabled(
+                        !self.import_yaml.trim().is_empty(),
+                        egui::Button::new("Import macro"),
+                    )
+                    .on_hover_text("Decode, validate, and add as a new macro")
+                    .clicked()
+                {
+                    match prepare_import_macro(&self.import_yaml, &existing) {
+                        Ok(m) => {
+                            self.set_status(format!("Importing \"{}\"…", m.name), false);
+                            self.import_yaml.clear();
+                            *outcome = PromptBuilderOutcome::ImportMacro(Box::new(m));
+                        }
+                        Err(e) => self.set_status(e, true),
+                    }
+                }
+            });
         });
 
         if let Some(msg) = &self.status {

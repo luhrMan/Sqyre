@@ -92,7 +92,7 @@ impl DataEditor {
             &self.form_right,
             &self.form_bottom,
         );
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.heading("Search Area");
             help::icon(ui, help::DE_AREA_BOUNDS);
             if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {

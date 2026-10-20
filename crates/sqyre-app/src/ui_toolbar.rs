@@ -36,7 +36,11 @@ pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
             egui::Frame::side_top_panel(ui.style())
                 .inner_margin(egui::Margin::symmetric(8, theme::SPACE_4 as i8)),
         )
-        .show(ui, |ui| brand_header(app, ui));
+        .show(ui, |ui| {
+            crate::widgets::show_overflow(ui, "app_top_bar", 1.0, |ui| {
+                brand_header(app, ui);
+            });
+        });
 }
 
 fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
@@ -44,18 +48,76 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
         ui.spacing_mut().item_spacing.x = theme::SPACE_4;
 
         // Brand / command palette (primary affordance), top-left of the window.
-        let tex = app.icon_cache.sqyre_fallback(ui.ctx());
+        // While a macro runs the shield is replaced by the animated S trace —
+        // the same busy spinner the overlay buttons and loading slots show.
+        let running = app.run_session.state.running.load(Ordering::SeqCst);
         let size = egui::vec2(28.0, 28.0);
-        let image = egui::Image::new((tex.id(), size))
-            .fit_to_exact_size(size)
-            .maintain_aspect_ratio(true);
-        let button = egui::Button::image_and_text(image, egui::RichText::new("Sqyre").heading())
-            .frame_when_inactive(false);
-        if ui
-            .add(button)
+        // Pad the hit rect so the hover frame doesn't hug the icon edge.
+        let (hit_rect, icon_resp) = ui.allocate_exact_size(
+            size + egui::Vec2::splat(theme::SPACE_4 * 2.0),
+            egui::Sense::click(),
+        );
+        let icon_rect = egui::Rect::from_center_size(hit_rect.center(), size);
+        let icon_resp = icon_resp
             .on_hover_text("Command palette (Ctrl+K)")
-            .clicked()
-        {
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        // Same hover/press frame a `frame_when_inactive(false)` button draws.
+        let state = icon_resp.widget_state();
+        if !matches!(
+            state,
+            egui::widget_style::WidgetState::Inactive
+                | egui::widget_style::WidgetState::Noninteractive
+        ) {
+            let visuals = ui.visuals().widgets.state(state);
+            ui.painter().rect(
+                hit_rect.expand(visuals.expansion),
+                visuals.corner_radius,
+                visuals.weak_bg_fill,
+                visuals.bg_stroke,
+                egui::StrokeKind::Inside,
+            );
+        }
+        icon_resp.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Sqyre")
+        });
+        if running {
+            // The shield stays; the S inside it becomes the trace spinner —
+            // drawn into a hollow cut by `sqyre_shell` at the S's exact
+            // viewBox region (`40.5 20.25 46.75 84` of the 128×128 shield).
+            let shell = app.icon_cache.sqyre_shell(ui.ctx());
+            ui.painter().image(
+                shell.id(),
+                icon_rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+            let s_rect = egui::Rect::from_min_max(
+                icon_rect.min
+                    + egui::vec2(
+                        icon_rect.width() * (40.5 / 128.0),
+                        icon_rect.height() * (20.25 / 128.0),
+                    ),
+                icon_rect.min
+                    + egui::vec2(
+                        icon_rect.width() * (87.25 / 128.0),
+                        icon_rect.height() * (104.25 / 128.0),
+                    ),
+            );
+            sqyre_overlay::icons::paint_trace_spinner(ui, s_rect, sqyre_ui_theme::PRIMARY);
+            // Pace like the run-glow pulse — a bare request_repaint can be
+            // dropped on an idle window (see hotkey_wake), freezing the icon.
+            ui.ctx()
+                .request_repaint_after(sqyre_overlay::icons::SPINNER_TICK);
+        } else {
+            let tex = app.icon_cache.sqyre_fallback(ui.ctx());
+            ui.painter().image(
+                tex.id(),
+                icon_rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+        if icon_resp.clicked() {
             app.command_palette.open_palette();
         }
 
@@ -441,13 +503,15 @@ pub fn footer_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 .workspace
                 .selected_macro
                 .min(app.workspace.macros.len() - 1);
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = theme::SPACE_4;
-                // Right-to-left: builder menu rightmost, delay/hotkey fill the rest from the left.
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    paint_builder_menu(app, ui);
-                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                        paint_delay_hotkey(app, ui, idx, running);
+            crate::widgets::show_overflow(ui, "app_footer", 1.0, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                    // Right-to-left: builder menu rightmost, delay/hotkey fill the rest from the left.
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        paint_builder_menu(app, ui);
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            paint_delay_hotkey(app, ui, idx, running);
+                        });
                     });
                 });
             });

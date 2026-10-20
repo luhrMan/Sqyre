@@ -13,13 +13,16 @@ pub fn paint_action_edit_header(
     error: Option<&str>,
     save_enabled: bool,
 ) -> SaveCancel {
-    let mut outcome = SaveCancel::None;
-    ui.horizontal(|ui| {
-        tree_chrome::paint_pill_pub(ui, label, pastel);
-        if let Some(text) = subtitle {
-            ui.label(text);
-        }
-        outcome = save_cancel_row(ui, save_enabled);
+    let outcome = crate::widgets::show_overflow(ui, "action_edit_header", 1.0, |ui| {
+        let mut outcome = SaveCancel::None;
+        ui.horizontal(|ui| {
+            tree_chrome::paint_pill_pub(ui, label, pastel);
+            if let Some(text) = subtitle {
+                ui.label(text);
+            }
+            outcome = save_cancel_row(ui, save_enabled);
+        });
+        outcome
     });
     if let Some(err) = error {
         ui.colored_label(crate::theme::error_fg(), err);

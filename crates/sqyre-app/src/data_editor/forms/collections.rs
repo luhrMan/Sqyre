@@ -27,7 +27,7 @@ impl DataEditor {
         });
         let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
         let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.heading("Collection");
             if let Some(area) = collection_area {
                 ui.weak(collection_size_label(area, rows, cols));

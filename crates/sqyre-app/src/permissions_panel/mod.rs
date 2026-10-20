@@ -20,11 +20,18 @@ fn row_frame(ui: &egui::Ui) -> egui::Frame {
 }
 
 /// Row title (hover shows `tip`) with the status right-aligned.
+///
+/// The title wraps in the space left of the status. A nested scroll here sat
+/// inside the settings scroller and collapsed the line to a sliver.
 fn row_header(ui: &mut egui::Ui, title: &str, tip: &str, status: &str, color: Color32) {
-    ui.horizontal(|ui| {
-        ui.label(RichText::new(title).strong()).on_hover_text(tip);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+    crate::widgets::fill_row(
+        ui,
+        |ui| {
             ui.colored_label(color, status);
-        });
-    });
+        },
+        |ui| {
+            ui.add(egui::Label::new(RichText::new(title).strong()).wrap())
+                .on_hover_text(tip);
+        },
+    );
 }

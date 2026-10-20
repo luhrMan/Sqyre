@@ -48,8 +48,14 @@ pub fn label(ui: &mut egui::Ui, text: &str, help: &str) -> egui::Response {
 }
 
 /// Heading with an adjacent `?` help icon when `help` is non-empty.
+///
+/// `ui.heading` wraps to the pane. The icon follows on the same line when it fits.
 pub fn heading(ui: &mut egui::Ui, text: &str, help: &str) {
-    ui.horizontal(|ui| {
+    if help.is_empty() {
+        ui.heading(text);
+        return;
+    }
+    ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
         ui.heading(text);
         icon(ui, help);
