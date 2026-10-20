@@ -9,7 +9,7 @@ use reis::ei::{self, button::ButtonState, keyboard::KeyState};
 use reis::event::{Device, DeviceCapability, EiEvent, EiEventConverter, Region};
 use reis::handshake::EiHandshaker;
 use reis::PendingRequestResult;
-use sqyre_ports::AutomationError;
+use sqyre_ports::{cosmic_desktop_session, AutomationError};
 use std::io::ErrorKind;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd};
 use std::os::unix::net::UnixStream;
@@ -20,9 +20,10 @@ pub(crate) struct EisInput {
     context: ei::Context,
     converter: EiEventConverter,
     devices: Vec<DeviceSlot>,
-    last_serial: u32,
     sequence: u32,
-    start: Instant,
+    /// Absolute warps sent this session. Diagnostic only.
+    move_n: u32,
+    last_move_log: Option<Instant>,
 }
 
 struct DeviceSlot {
@@ -42,15 +43,14 @@ impl EisInput {
             .map_err(|e| CaptureError::Message(format!("EIS context: {e}")))?;
         let resp = handshake_with_timeout(&context, Duration::from_secs(4), stop)?;
         let converter = EiEventConverter::new(&context, resp);
-        let last_serial = converter.connection().serial();
         let _ = context.flush();
         let mut eis = Self {
             context,
             converter,
             devices: Vec::new(),
-            last_serial,
             sequence: 0,
-            start: Instant::now(),
+            move_n: 0,
+            last_move_log: None,
         };
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
@@ -89,8 +89,9 @@ impl EisInput {
             "INPUT",
             if resumed == 0 { "fail" } else { "ok" },
             &format!(
-                "eis devices={} resumed={resumed} regions={regions_s}",
-                eis.devices.len()
+                "eis devices={} resumed={resumed} regions={regions_s} layout={}",
+                eis.devices.len(),
+                if eis.cosmic_layout() { "cosmic" } else { "abs" },
             ),
         );
         if resumed == 0 {
@@ -129,6 +130,9 @@ impl EisInput {
     }
 
     fn on_event(&mut self, ev: EiEvent) {
+        // Compositor replies (pause/resume/region rebuild) explain a warp the
+        // client thought it sent. Rare; not the per-move hot path.
+        cap_log("INPUT", "eis-ev", &event_detail(&ev));
         match ev {
             EiEvent::SeatAdded(e) => {
                 e.seat.bind_capabilities(
@@ -152,7 +156,6 @@ impl EisInput {
                 self.devices.retain(|d| d.device != e.device);
             }
             EiEvent::DeviceResumed(e) => {
-                self.last_serial = e.serial;
                 if let Some(d) = self.devices.iter_mut().find(|d| d.device == e.device) {
                     d.resumed = true;
                     d.emulating = false;
@@ -164,7 +167,6 @@ impl EisInput {
                     d.emulating = false;
                 }
             }
-            EiEvent::KeyboardModifiers(e) => self.last_serial = e.serial,
             _ => {}
         }
     }
@@ -180,25 +182,90 @@ impl EisInput {
             return;
         }
         let proto = self.devices[idx].device.device().clone();
-        proto.start_emulating(self.last_serial, self.sequence);
+        // `last_serial` is the newest serial the compositor has sent. The
+        // converter updates it on every event.
+        proto.start_emulating(self.converter.connection().serial(), self.sequence);
         self.sequence = self.sequence.wrapping_add(1);
         self.devices[idx].emulating = true;
     }
 
-    fn now_us(&self) -> u64 {
-        self.start.elapsed().as_micros() as u64
+    /// End the current emulation sequence so the next warp is a fresh
+    /// `start_emulating`, matching the first move of a new app.
+    fn restart_emulating(&mut self, idx: usize) {
+        if self.devices[idx].emulating {
+            let proto = self.devices[idx].device.device().clone();
+            proto.stop_emulating(self.converter.connection().serial());
+            self.devices[idx].emulating = false;
+        }
+        self.ensure_emulating(idx);
     }
 
-    fn emit_frame(&self, idx: usize) {
+    fn emit_frame(&self, idx: usize) -> bool {
         self.devices[idx]
             .device
             .device()
-            .frame(self.last_serial, self.now_us());
-        let _ = self.context.flush();
+            .frame(self.converter.connection().serial(), monotonic_us());
+        match self.context.flush() {
+            Ok(()) => true,
+            Err(e) => {
+                cap_log("INPUT", "fail", &format!("flush {e}"));
+                false
+            }
+        }
+    }
+
+    fn log_move(&mut self, started: bool, detail: &str) {
+        self.move_n = self.move_n.saturating_add(1);
+        let now = Instant::now();
+        // Smooth moves step many times per gesture. Log the start of each
+        // gesture (a gap, or a fresh emulation) and then at most a few times
+        // a second so a later macro run is visible.
+        let due = self.move_n <= 4
+            || started
+            || self
+                .last_move_log
+                .is_none_or(|t| now.duration_since(t) >= Duration::from_millis(200));
+        if !due {
+            return;
+        }
+        self.last_move_log = Some(now);
+        cap_log("INPUT", "move", &format!("n={} {detail}", self.move_n));
     }
 
     fn missing(cap: DeviceCapability) -> AutomationError {
         AutomationError::Backend(format!("EIS has no resumed {cap:?} device"))
+    }
+
+    /// Cosmic advertises `virtual pointer` and `virtual absolute pointer`.
+    /// The first absolute warp after `start_emulating` moves the cursor.
+    /// Later warps in that same emulation do not, so each warp stops and
+    /// starts emulation again. A smooth move's 1px steps are not sent here;
+    /// the caller warps once to the endpoint.
+    fn cosmic_layout(&self) -> bool {
+        cosmic_desktop_session()
+            || self.devices.iter().any(|d| {
+                d.device
+                    .name()
+                    .is_some_and(|n| n.eq_ignore_ascii_case("virtual absolute pointer"))
+            })
+    }
+
+    /// Start emulation on the relative pointer before an absolute warp.
+    /// Returns `start`, `keep`, or `none`.
+    fn arm_relative_pointer(&mut self) -> &'static str {
+        let Some(idx) = self.devices.iter().position(|d| {
+            d.resumed
+                && d.device.has_capability(DeviceCapability::Pointer)
+                && !d.device.has_capability(DeviceCapability::PointerAbsolute)
+        }) else {
+            return "none";
+        };
+        if self.devices[idx].emulating {
+            return "keep";
+        }
+        self.ensure_emulating(idx);
+        let _ = self.context.flush();
+        "start"
     }
 
     pub(crate) fn move_to(&mut self, x: i32, y: i32) -> Result<(), AutomationError> {
@@ -217,13 +284,37 @@ impl EisInput {
                     "EIS absolute pointer ({x},{y}) outside device regions ({detail})"
                 ))
             })?;
-        self.ensure_emulating(idx);
+        let cosmic = self.cosmic_layout();
+        let rel = if cosmic {
+            self.arm_relative_pointer()
+        } else {
+            "skip"
+        };
+        let started = if cosmic {
+            self.restart_emulating(idx);
+            true
+        } else {
+            let started = !self.devices[idx].emulating;
+            self.ensure_emulating(idx);
+            started
+        };
         let ptr = self.devices[idx]
             .device
             .interface::<ei::PointerAbsolute>()
             .ok_or_else(|| Self::missing(DeviceCapability::PointerAbsolute))?;
         ptr.motion_absolute(lx, ly);
-        self.emit_frame(idx);
+        let flushed = self.emit_frame(idx);
+        let cursor = portal_cursor_label();
+        self.log_move(
+            started,
+            &format!(
+                "kind=abs px={x},{y} logical={lx},{ly} dev={idx} {} emu={} rel={rel} serial={} flush={} cursor={cursor}",
+                device_brief(&self.devices[idx].device),
+                if started { "start" } else { "keep" },
+                self.converter.connection().serial(),
+                if flushed { "ok" } else { "fail" },
+            ),
+        );
         Ok(())
     }
 
@@ -285,7 +376,20 @@ impl EisInput {
             ButtonState::Released
         };
         btn.button(button, state);
-        self.emit_frame(idx);
+        let flushed = self.emit_frame(idx);
+        let edge = if down { "down" } else { "up" };
+        let reseat_s = reseat
+            .map(|(x, y)| format!("{x},{y}"))
+            .unwrap_or_else(|| "none".into());
+        cap_log(
+            "INPUT",
+            "click",
+            &format!(
+                "edge={edge} button={button} reseat={reseat_s} dev={idx} {} flush={}",
+                device_brief(&self.devices[idx].device),
+                if flushed { "ok" } else { "fail" },
+            ),
+        );
         Ok(())
     }
 
@@ -303,7 +407,17 @@ impl EisInput {
         let px = if up { -15.0 } else { 15.0 };
         scroll.scroll_discrete(0, discrete);
         scroll.scroll(0.0, px);
-        self.emit_frame(idx);
+        let flushed = self.emit_frame(idx);
+        cap_log(
+            "INPUT",
+            "scroll",
+            &format!(
+                "dir={} dev={idx} {} flush={}",
+                if up { "up" } else { "down" },
+                device_brief(&self.devices[idx].device),
+                if flushed { "ok" } else { "fail" },
+            ),
+        );
         Ok(())
     }
 
@@ -323,9 +437,101 @@ impl EisInput {
             KeyState::Released
         };
         kb.key(evdev, state);
-        self.emit_frame(idx);
+        let _ = self.emit_frame(idx);
         Ok(())
     }
+}
+
+fn caps_label(device: &Device) -> String {
+    let mut parts = Vec::new();
+    if device.has_capability(DeviceCapability::Pointer) {
+        parts.push("rel");
+    }
+    if device.has_capability(DeviceCapability::PointerAbsolute) {
+        parts.push("abs");
+    }
+    if device.has_capability(DeviceCapability::Button) {
+        parts.push("btn");
+    }
+    if device.has_capability(DeviceCapability::Scroll) {
+        parts.push("scroll");
+    }
+    if device.has_capability(DeviceCapability::Keyboard) {
+        parts.push("key");
+    }
+    if device.has_capability(DeviceCapability::Touch) {
+        parts.push("touch");
+    }
+    if device.has_capability(DeviceCapability::Text) {
+        parts.push("text");
+    }
+    if parts.is_empty() {
+        "none".to_string()
+    } else {
+        parts.join("+")
+    }
+}
+
+fn regions_label(regions: &[Region]) -> String {
+    if regions.is_empty() {
+        return "none".to_string();
+    }
+    regions
+        .iter()
+        .map(|r| format!("{}x{}+{}+{}@{}", r.width, r.height, r.x, r.y, r.scale))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn device_brief(device: &Device) -> String {
+    let name = device.name().unwrap_or("-").replace(' ', "_");
+    format!(
+        "name={name} caps={} regions={}",
+        caps_label(device),
+        regions_label(device.regions())
+    )
+}
+
+fn event_detail(ev: &EiEvent) -> String {
+    match ev {
+        EiEvent::Disconnected(_) => "disconnected".into(),
+        EiEvent::SeatAdded(_) => "seat-added".into(),
+        EiEvent::SeatRemoved(_) => "seat-removed".into(),
+        EiEvent::DeviceAdded(e) => format!("added {}", device_brief(&e.device)),
+        EiEvent::DeviceRemoved(e) => format!("removed {}", device_brief(&e.device)),
+        EiEvent::DevicePaused(e) => {
+            format!("paused serial={} {}", e.serial, device_brief(&e.device))
+        }
+        EiEvent::DeviceResumed(e) => {
+            format!("resumed serial={} {}", e.serial, device_brief(&e.device))
+        }
+        EiEvent::KeyboardModifiers(e) => format!("mods serial={} group={}", e.serial, e.group),
+        EiEvent::Frame(e) => format!("frame serial={}", e.serial),
+        EiEvent::DeviceStartEmulating(e) => {
+            format!("start-emulating serial={} seq={}", e.serial, e.sequence)
+        }
+        EiEvent::DeviceStopEmulating(e) => format!("stop-emulating serial={}", e.serial),
+        EiEvent::PointerMotion(_) => "rel-motion".into(),
+        EiEvent::PointerMotionAbsolute(_) => "abs-motion".into(),
+        EiEvent::Button(_) => "button".into(),
+        EiEvent::ScrollDelta(_) => "scroll-delta".into(),
+        EiEvent::ScrollStop(_) => "scroll-stop".into(),
+        EiEvent::ScrollCancel(_) => "scroll-cancel".into(),
+        EiEvent::ScrollDiscrete(_) => "scroll-discrete".into(),
+        EiEvent::KeyboardKey(_) => "key".into(),
+        EiEvent::TouchDown(_) => "touch-down".into(),
+        EiEvent::TouchUp(_) => "touch-up".into(),
+        EiEvent::TouchMotion(_) => "touch-motion".into(),
+        EiEvent::TouchCancel(_) => "touch-cancel".into(),
+        EiEvent::TextKeysym(_) => "text-keysym".into(),
+        EiEvent::TextUtf8(_) => "text-utf8".into(),
+    }
+}
+
+fn portal_cursor_label() -> String {
+    super::portal_session::portal_cursor_position()
+        .map(|(cx, cy)| format!("{cx},{cy}"))
+        .unwrap_or_else(|| "none".into())
 }
 
 /// Desktop pixel → EIS logical coordinates.
@@ -419,6 +625,23 @@ fn handshake_with_timeout(
     }
 }
 
+/// `ei_device.frame` time, in microseconds of `CLOCK_MONOTONIC`.
+fn monotonic_us() -> u64 {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: `ts` is a valid out-pointer and `CLOCK_MONOTONIC` is always
+    // available on Linux.
+    let rc = unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts) };
+    if rc != 0 {
+        return 0;
+    }
+    let sec = u64::try_from(ts.tv_sec).unwrap_or(0);
+    let nsec = u64::try_from(ts.tv_nsec).unwrap_or(0);
+    sec.saturating_mul(1_000_000) + nsec / 1_000
+}
+
 fn poll_readable_timeout(fd: impl AsFd, timeout: Duration) -> std::io::Result<bool> {
     let mut pfd = libc::pollfd {
         fd: fd.as_fd().as_raw_fd(),
@@ -461,6 +684,22 @@ mod tests {
         assert_eq!(region_coords(&regions, 1440, 960), Ok((720.0, 480.0)));
         assert_eq!(region_coords(&regions, 2879, 0), Ok((1439.5, 0.0)));
         assert!(region_coords(&regions, 2880, 0).is_err());
+    }
+
+    #[test]
+    fn frame_timestamp_tracks_monotonic_clock() {
+        let a = monotonic_us();
+        std::thread::sleep(Duration::from_millis(2));
+        let b = monotonic_us();
+        assert!(b > a);
+        // Not "time since the EIS thread started" (that clock begins at 0).
+        let uptime: f64 = std::fs::read_to_string("/proc/uptime")
+            .ok()
+            .and_then(|s| s.split_whitespace().next().and_then(|n| n.parse().ok()))
+            .unwrap_or(0.0);
+        if uptime > 1.0 {
+            assert!(a > 1_000_000, "frame time {a} is not CLOCK_MONOTONIC");
+        }
     }
 
     #[test]

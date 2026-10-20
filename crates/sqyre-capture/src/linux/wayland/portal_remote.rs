@@ -36,6 +36,10 @@ impl PortalRemoteInput for PortalEisInput {
         portal_input_last_pos()
     }
 
+    fn cursor_pos(&self) -> Option<(i32, i32)> {
+        super::portal_cursor_position()
+    }
+
     fn move_pointer(&self, x: i32, y: i32) -> Result<(), AutomationError> {
         portal_input_move(x, y)
     }

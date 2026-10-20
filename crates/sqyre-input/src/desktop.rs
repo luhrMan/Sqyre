@@ -760,7 +760,7 @@ fn move_mouse_linux(gui: &mut RustAutoGui, x: i32, y: i32, opts: MoveOptions) {
     });
 }
 
-/// Portal EIS smooth move. Start pos is last EIS warp, else X11 query via rustautogui.
+/// Portal EIS smooth move. Start is the live cursor, else the last warp.
 #[cfg(target_os = "linux")]
 fn move_mouse_portal(
     portal: &dyn PortalRemoteInput,
@@ -776,6 +776,10 @@ fn move_mouse_portal(
         }
         return;
     };
+    if start.0 == x && start.1 == y {
+        portal.note(&format!("input move skip already {x},{y}"));
+        return;
+    }
     run_linux_smooth_move(start, (x, y), opts, |px, py| {
         if let Err(e) = portal.move_pointer(px, py) {
             portal.note(&format!("input move: {e}"));
@@ -881,9 +885,13 @@ impl AutomationBackend for OsAutomation {
                     portal.note(&format!("input move skipped: {e}"));
                     return;
                 }
-                if opts.smooth {
+                // Cosmic keeps only the first absolute warp of an emulation
+                // sequence. A smooth path's first step is one pixel, and the
+                // next run then sees last_pos == target and sends nothing.
+                if opts.smooth && !sqyre_ports::cosmic_desktop_session() {
                     let start = portal
-                        .last_pos()
+                        .cursor_pos()
+                        .or_else(|| portal.last_pos())
                         .or_else(|| self.gui.as_mut().and_then(|g| g.get_mouse_position().ok()));
                     move_mouse_portal(portal.as_ref(), start, x, y, opts);
                 } else if let Err(e) = portal.move_pointer(x, y) {
