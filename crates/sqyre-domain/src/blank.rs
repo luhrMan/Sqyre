@@ -54,6 +54,7 @@ pub fn blank_action(action_type: &str) -> Option<Action> {
 }
 
 /// Convenience for tests: wrap a kind with a fresh id.
+#[doc(hidden)]
 pub fn test_action(kind: ActionKind) -> Action {
     Action {
         id: ActionId::new(),
@@ -62,6 +63,7 @@ pub fn test_action(kind: ActionKind) -> Action {
 }
 
 /// `test_action!(ActionKind::Wait { time: ScalarValue::Int(1) })`
+#[doc(hidden)]
 #[macro_export]
 macro_rules! test_action {
     ($kind:expr) => {
