@@ -913,7 +913,7 @@ mod tests {
             },
         ]);
         execute_macro(&mut macro_, &mut backend).unwrap();
-        assert!(backend.log.iter().any(|e| e == "sleep:10"));
+        backend.assert_logged("sleep:10");
         assert_eq!(
             backend
                 .log
@@ -1058,11 +1058,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(
-            !backend.log.iter().any(|e| e == "sleep:250"),
-            "global delay must not run after stop: {:?}",
-            backend.log
-        );
+        backend.assert_not_logged("sleep:250");
     }
 
     #[test]
@@ -1261,8 +1257,8 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(backend.log.iter().any(|e| e == "move:42,99,smooth=false"));
-        assert!(backend.log.iter().any(|e| e == "click:left:down"));
+        backend.assert_logged("move:42,99,smooth=false");
+        backend.assert_logged("click:left:down");
     }
 
     #[test]
@@ -1300,8 +1296,8 @@ mod tests {
             .count();
         assert_eq!(click_down, 1);
         assert_eq!(click_up, 1);
-        assert!(backend.log.iter().any(|e| e == "keydown:a"));
-        assert!(backend.log.iter().any(|e| e == "keyup:a"));
+        backend.assert_logged("keydown:a");
+        backend.assert_logged("keyup:a");
     }
 
     #[test]
@@ -1439,13 +1435,9 @@ mod tests {
             },
         ]);
         execute_macro(&mut macro_, &mut backend).unwrap();
-        assert!(backend.log.iter().any(|e| e == "sleep:7"));
-        assert!(!backend.log.iter().any(|e| e == "sleep:99"));
-        assert!(
-            backend.log.iter().any(|e| e == "sleep:5"),
-            "false condition should run else: {:?}",
-            backend.log
-        );
+        backend.assert_logged("sleep:7");
+        backend.assert_not_logged("sleep:99");
+        backend.assert_logged("sleep:5");
     }
 
     #[test]
@@ -1713,9 +1705,9 @@ mod tests {
             },
         }]);
         execute_macro(&mut macro_, &mut backend).unwrap();
-        assert!(backend.log.iter().any(|e| e == "click:left:down"));
-        assert!(backend.log.iter().any(|e| e == "sleep:3"));
-        assert!(backend.log.iter().any(|e| e == "sleep:5"));
+        backend.assert_logged("click:left:down");
+        backend.assert_logged("sleep:3");
+        backend.assert_logged("sleep:5");
     }
 
     #[test]
@@ -1746,7 +1738,7 @@ mod tests {
             },
         }]);
         execute_macro(&mut macro_, &mut backend).unwrap();
-        assert!(!backend.log.iter().any(|e| e == "sleep:50"));
+        backend.assert_not_logged("sleep:50");
     }
 
     #[test]

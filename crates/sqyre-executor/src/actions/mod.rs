@@ -104,7 +104,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(backend.log.iter().any(|e| e == "clipboard:hello"));
+        backend.assert_logged("clipboard:hello");
         assert_eq!(
             fs::read_to_string(dir.path().join("out.txt")).unwrap(),
             "hello\n"
@@ -260,7 +260,7 @@ mod tests {
             },
         }]);
         execute_macro(&mut macro_, &mut backend).unwrap();
-        assert!(!backend.log.iter().any(|e| e == "sleep:50"));
+        backend.assert_not_logged("sleep:50");
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod tests {
             },
         )
         .unwrap();
-        assert!(backend.log.iter().any(|e| e == "sleep:7"));
+        backend.assert_logged("sleep:7");
     }
 
     #[test]

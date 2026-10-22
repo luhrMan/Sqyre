@@ -7,7 +7,7 @@ use crate::backends::{
 use image::RgbaImage;
 use sqyre_domain::{grid_cell_rect, CoordinateRef, Macro};
 use std::collections::HashMap;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 /// Collection grid metadata for [`FixedResolver`] atlas tests.
@@ -229,6 +229,28 @@ pub struct RecordingBackend {
     pub log: Vec<String>,
 }
 
+impl RecordingBackend {
+    /// True when `event` appears in the recorded log.
+    pub fn has(&self, event: &str) -> bool {
+        self.log.iter().any(|e| e == event)
+    }
+
+    /// Number of occurrences of `event` in the recorded log.
+    pub fn count(&self, event: &str) -> usize {
+        self.log.iter().filter(|e| e.as_str() == event).count()
+    }
+
+    /// Assert `event` was recorded at least once (dumps the log on failure).
+    pub fn assert_logged(&self, event: &str) {
+        assert!(self.has(event), "expected {event} in {:?}", self.log);
+    }
+
+    /// Assert `event` was never recorded (dumps the log on failure).
+    pub fn assert_not_logged(&self, event: &str) {
+        assert!(!self.has(event), "did not expect {event} in {:?}", self.log);
+    }
+}
+
 impl AutomationBackend for RecordingBackend {
     fn milli_sleep(&mut self, ms: i32) {
         self.log.push(format!("sleep:{ms}"));
@@ -267,6 +289,58 @@ impl AutomationBackend for RecordingBackend {
     }
 }
 
+/// Backend wrapper that trips `stop` after `after` `milli_sleep` calls so
+/// wait/retry loops abort; the inner backend's log stays inspectable.
+#[derive(Debug)]
+pub struct StopAfterSleeps {
+    pub inner: RecordingBackend,
+    pub stop: Arc<AtomicBool>,
+    pub sleeps: usize,
+    pub after: usize,
+}
+
+impl StopAfterSleeps {
+    pub fn new(stop: Arc<AtomicBool>, after: usize) -> Self {
+        Self {
+            inner: RecordingBackend::default(),
+            stop,
+            sleeps: 0,
+            after,
+        }
+    }
+}
+
+impl AutomationBackend for StopAfterSleeps {
+    fn milli_sleep(&mut self, ms: i32) {
+        self.inner.milli_sleep(ms);
+        self.sleeps += 1;
+        if self.sleeps >= self.after {
+            self.stop.store(true, Ordering::SeqCst);
+        }
+    }
+    fn move_to(&mut self, x: i32, y: i32, opts: MoveOptions) {
+        self.inner.move_to(x, y, opts);
+    }
+    fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
+        self.inner.click(button, down)
+    }
+    fn scroll(&mut self, up: bool) -> Result<(), AutomationError> {
+        self.inner.scroll(up)
+    }
+    fn key_down(&mut self, key: &str) -> Result<(), AutomationError> {
+        self.inner.key_down(key)
+    }
+    fn key_up(&mut self, key: &str) -> Result<(), AutomationError> {
+        self.inner.key_up(key)
+    }
+    fn type_char(&mut self, ch: char) -> Result<(), AutomationError> {
+        self.inner.type_char(ch)
+    }
+    fn write_clipboard(&mut self, s: &str) -> Result<(), AutomationError> {
+        self.inner.write_clipboard(s)
+    }
+}
+
 /// In-memory capturer for tests.
 #[derive(Debug, Default)]
 pub struct RecordingCapturer {
@@ -279,6 +353,21 @@ pub struct RecordingCapturer {
 }
 
 impl RecordingCapturer {
+    /// True when `event` appears in the recorded log.
+    pub fn has(&self, event: &str) -> bool {
+        self.log.iter().any(|e| e == event)
+    }
+
+    /// True when any recorded event starts with `prefix`.
+    pub fn has_prefix(&self, prefix: &str) -> bool {
+        self.log.iter().any(|e| e.starts_with(prefix))
+    }
+
+    /// Assert `event` was recorded at least once (dumps the log on failure).
+    pub fn assert_logged(&self, event: &str) {
+        assert!(self.has(event), "expected {event} in {:?}", self.log);
+    }
+
     fn take_image(&mut self) -> Result<RgbaImage, crate::CaptureError> {
         if !self.queue.is_empty() {
             return Ok(self.queue.remove(0));
