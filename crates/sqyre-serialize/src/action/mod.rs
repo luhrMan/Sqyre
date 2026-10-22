@@ -99,6 +99,36 @@ mod tests {
     };
 
     #[test]
+    fn action_from_map_restores_wire_uid() {
+        let uid = ActionId::new();
+        let mut m = Mapping::new();
+        m.insert(Value::String("type".into()), Value::String("wait".into()));
+        m.insert(Value::String("time".into()), Value::Number(1.into()));
+        m.insert(
+            Value::String("uid".into()),
+            Value::String(uid.0.to_string()),
+        );
+        let a = action_from_map(&m).unwrap();
+        assert_eq!(a.id, uid);
+    }
+
+    #[test]
+    fn action_from_map_names_root_loop_root_id() {
+        let mut m = Mapping::new();
+        m.insert(Value::String("type".into()), Value::String("loop".into()));
+        m.insert(Value::String("name".into()), Value::String("root".into()));
+        m.insert(Value::String("count".into()), Value::Number(1.into()));
+        let a = action_from_map(&m).unwrap();
+        assert_eq!(a.id, ActionId::root());
+    }
+
+    #[test]
+    fn value_as_mapping_rejects_non_mapping() {
+        let err = value_as_mapping(Value::Null).unwrap_err().to_string();
+        assert!(err.contains("expected mapping"), "{err}");
+    }
+
+    #[test]
     fn action_to_map_with_uid_preserves_nested_uids() {
         let child = Action {
             id: ActionId::new(),
