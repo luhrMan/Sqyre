@@ -629,7 +629,10 @@ mod tests {
         let infos: Vec<_> = expanded
             .iter()
             .map(|t| {
-                let name = t.rsplit_once('~').map(|(_, n)| n).unwrap_or(t);
+                let name = t
+                    .rsplit_once(PROGRAM_DELIMITER)
+                    .map(|(_, n)| n)
+                    .unwrap_or(t);
                 info(t, name, 1, 1, &[])
             })
             .collect();

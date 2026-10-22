@@ -31,7 +31,9 @@ pub type Result<T> = std::result::Result<T, ValidateError>;
 /// under `images/` (programs, items, search areas, masks, collections, icon variants, …).
 pub const FS_FORBIDDEN_FILENAME_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 
-/// True when `name` is safe to use as a single path component under a managed directory.
+/// True when `name` is safe to use as a catalog entity name: a single safe
+/// path component under a managed directory, and free of the `~` catalog
+/// key delimiter.
 ///
 /// Rejects empty/whitespace names, `.` / `..`, Windows/Linux forbidden filename characters,
 /// absolute forms, trailing `.`, reserved Windows device names, and control chars so catalog
@@ -41,7 +43,12 @@ pub fn is_safe_fs_entity_name(name: &str) -> bool {
     validate_entity_name(name).is_ok()
 }
 
-pub fn validate_entity_name(name: &str) -> Result<()> {
+/// Filename-level rules for a single path component under a managed directory:
+/// everything [`validate_entity_name`] checks except the `~` catalog-key
+/// delimiter, which is legal in filenames (icon files are `item~variant.png`).
+/// Use for joining literal filenames; catalog entity names go through
+/// [`validate_entity_name`].
+pub fn validate_fs_component_name(name: &str) -> Result<()> {
     // Windows strips trailing spaces and periods when creating files, so
     // "Item " and "Item" alias the same on-disk name. Reject rather than
     // silently trim: callers join the original string, not this copy.
@@ -80,6 +87,22 @@ pub fn validate_entity_name(name: &str) -> Result<()> {
     if is_windows_reserved_device_name(name) {
         return Err(ValidateError::Message(format!(
             "name {name:?} is a reserved Windows device name"
+        )));
+    }
+    Ok(())
+}
+
+/// Catalog entity name (program, item, search area, mask, collection, variant):
+/// [`validate_fs_component_name`] plus the `~` catalog-key delimiter.
+pub fn validate_entity_name(name: &str) -> Result<()> {
+    validate_fs_component_name(name)?;
+    // `~` separates program~entity (and item~variant) composite catalog keys.
+    // A name containing it makes keys unparseable at split sites and lets
+    // prefix-based program renames corrupt another program's entities.
+    if name.contains(sqyre_domain::PROGRAM_DELIMITER) {
+        return Err(ValidateError::Message(format!(
+            "name cannot contain {:?} (catalog key delimiter)",
+            sqyre_domain::PROGRAM_DELIMITER
         )));
     }
     Ok(())
@@ -984,6 +1007,19 @@ mod tests {
         assert!(validate_entity_name("LPT9").is_err());
         assert!(validate_entity_name("console").is_ok());
         assert!(validate_entity_name("Item.v2").is_ok());
+    }
+
+    #[test]
+    fn entity_name_rejects_program_delimiter() {
+        // `~` joins program~entity keys; a name containing it would misparse
+        // at every split_once(PROGRAM_DELIMITER) site and corrupt prefix
+        // renames (rename "a" → "c" would rewrite "a~b"'s keys).
+        assert!(validate_entity_name("a~b").is_err());
+        assert!(validate_entity_name("~lead").is_err());
+        assert!(validate_entity_name("trail~").is_err());
+        assert!(validate_entity_name("a~b~c").is_err());
+        assert!(validate_entity_name("Item Name").is_ok());
+        assert!(!is_safe_fs_entity_name("a~b"));
     }
 
     #[test]
