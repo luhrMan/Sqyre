@@ -378,11 +378,11 @@ endif
 	@echo "LCOV:        $(TARGET_DIR)/coverage/lcov.info"
 	@echo "JSON:        $(TARGET_DIR)/coverage/summary.json"
 ifdef COVERAGE_FLOORS
-	COVERAGE_REPORT_JSON=$(TARGET_DIR)/coverage/summary.json $(MAKE) coverage-floors
+	COVERAGE_REPORT_LCOV=$(TARGET_DIR)/coverage/lcov.info $(MAKE) coverage-floors
 endif
 
 # Optional floors for pure crates/modules only (not OS crates). Requires cargo-llvm-cov.
-# Set COVERAGE_REPORT_JSON to a prior `llvm-cov report --json` file to skip re-instrumenting.
+# Set COVERAGE_REPORT_LCOV to a prior `llvm-cov report --lcov` file to skip re-instrumenting.
 coverage-floors:
 	./scripts/check-coverage-floors.sh
 
