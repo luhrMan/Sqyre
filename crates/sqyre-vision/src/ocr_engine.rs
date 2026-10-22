@@ -126,12 +126,22 @@ impl OcrsEngine {
     /// override is authoritative — a missing or incomplete dir is an error,
     /// not a silent fallback to the embedded pair.
     pub fn from_env_or_system() -> Result<Self, PortError> {
-        if let Ok(dir) = std::env::var("SQYRE_OCR_MODELS") {
-            if !dir.trim().is_empty() {
-                return Self::from_dir(dir);
-            }
+        Self::from_override_dir(
+            std::env::var("SQYRE_OCR_MODELS")
+                .ok()
+                .filter(|d| !d.trim().is_empty())
+                .as_deref()
+                .map(Path::new),
+        )
+    }
+
+    /// `Some(dir)` loads from `dir` (errors are authoritative); `None` uses
+    /// the embedded models.
+    fn from_override_dir(dir: Option<&Path>) -> Result<Self, PortError> {
+        match dir {
+            Some(dir) => Self::from_dir(dir),
+            None => Self::new(),
         }
-        Self::new()
     }
 
     pub fn recognize(&self, img: &ImageBuf) -> Result<OcrRecognition, PortError> {
@@ -183,19 +193,18 @@ mod tests {
     }
 
     #[test]
-    fn env_override_prefers_model_dir() {
+    fn override_dir_is_attempted_and_errors() {
         // A set SQYRE_OCR_MODELS is authoritative: an empty dir must be
         // attempted (and fail) rather than silently using the embedded pair.
         let dir = tempfile::tempdir().unwrap();
-        let prev = std::env::var_os("SQYRE_OCR_MODELS");
-        std::env::set_var("SQYRE_OCR_MODELS", dir.path());
-        let err = OcrsEngine::from_env_or_system().unwrap_err();
-        match prev {
-            Some(v) => std::env::set_var("SQYRE_OCR_MODELS", v),
-            None => std::env::remove_var("SQYRE_OCR_MODELS"),
-        }
+        let err = OcrsEngine::from_override_dir(Some(dir.path())).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("OCR load"), "{msg}");
         assert!(msg.contains(&dir.path().display().to_string()), "{msg}");
+    }
+
+    #[test]
+    fn no_override_uses_embedded() {
+        assert!(OcrsEngine::from_override_dir(None).is_ok());
     }
 }
