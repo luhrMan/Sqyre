@@ -1542,11 +1542,17 @@ fn list_header(ui: &mut egui::Ui, title: &str, count: usize, add_help: &str) -> 
     ui.horizontal(|ui| {
         ui.label(title);
         ui.label(egui::RichText::new(format!("({count})")).weak());
-        if ui
+        let btn = ui
             .add(egui::Button::new(egui::RichText::new("+").color(theme::MACRO_START)).small())
-            .on_hover_text(add_help)
-            .clicked()
-        {
+            .on_hover_text(add_help);
+        btn.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Button,
+                true,
+                format!("Add {}", title.to_lowercase()),
+            )
+        });
+        if btn.clicked() {
             add = true;
         }
     });

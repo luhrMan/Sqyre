@@ -841,6 +841,13 @@ mod inner {
             ui.id().with("pixel_check_hover"),
             egui::Sense::hover(),
         );
+        hover_resp.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Image,
+                true,
+                "Pixel match map — hover a pixel to inspect its match closeness",
+            )
+        });
         if let Some(pos) = hover_resp.hover_pos() {
             let scale_x = image_size.x / content.width().max(1.0);
             let scale_y = image_size.y / content.height().max(1.0);

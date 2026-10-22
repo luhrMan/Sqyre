@@ -278,6 +278,9 @@ fn command_row(ui: &mut egui::Ui, item: &CommandItem, selected: bool) -> egui::R
     let row_w = ui.available_width().max(content_w);
     let (rect, resp) = ui.allocate_exact_size(egui::vec2(row_w, ROW_H), Sense::click());
     let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, true, item.title.clone())
+    });
     let hovered = resp.hovered();
     let hover_visuals = ui.visuals().widgets.hovered;
     let fill = if selected {
