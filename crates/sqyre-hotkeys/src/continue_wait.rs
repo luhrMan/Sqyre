@@ -530,7 +530,9 @@ mod tests {
         let stop = AtomicBool::new(false);
         let bridge = b.clone();
         let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(30));
+            while !bridge.inner.state.lock().waiting {
+                thread::yield_now();
+            }
             let mut pressed = HashSet::new();
             pressed.insert("f9");
             bridge.on_pressed_keys(&pressed);
@@ -545,7 +547,9 @@ mod tests {
         let stop = AtomicBool::new(false);
         let bridge = b.clone();
         let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(30));
+            while !bridge.inner.state.lock().waiting {
+                thread::yield_now();
+            }
             let mut pressed = HashSet::new();
             pressed.insert("ctrl");
             pressed.insert("a");
@@ -568,8 +572,11 @@ mod tests {
         let b = ContinueWaitBridge::new(ContinueSource::Keys);
         let stop_flag = Arc::new(AtomicBool::new(false));
         let s = Arc::clone(&stop_flag);
+        let bridge = b.clone();
         let handle = thread::spawn(move || {
-            thread::sleep(Duration::from_millis(30));
+            while !bridge.inner.state.lock().waiting {
+                thread::yield_now();
+            }
             s.store(true, Ordering::SeqCst);
         });
         let err = b

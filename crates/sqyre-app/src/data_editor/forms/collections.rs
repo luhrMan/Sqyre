@@ -211,7 +211,7 @@ impl DataEditor {
                 );
             }
             let menu_id = egui::Id::new(("atlas_member_menu", member));
-            if crate::widgets::row_danger_menu(ui, menu_id, label.rect, "Remove") {
+            if crate::widgets::row_danger_menu(ui, menu_id, label.rect, Some(&label), "Remove") {
                 remove_at = Some(i);
             }
         }

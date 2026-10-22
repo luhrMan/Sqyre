@@ -4,15 +4,9 @@ use crate::test_support::RecordingBackend;
 use crate::{execute_macro_with, lines_for, ExecDeps, SharedActionLog};
 use sqyre_serialize::decode_macro_from_yaml;
 
-const PIPELINE_YAML: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/pipeline_wait_click.yaml"
-));
+const PIPELINE_YAML: &str = include_str!("fixtures/pipeline_wait_click.yaml");
 
-const LOOP_IF_YAML: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/tests/fixtures/pipeline_loop_if.yaml"
-));
+const LOOP_IF_YAML: &str = include_str!("fixtures/pipeline_loop_if.yaml");
 
 #[test]
 fn wait_then_click_records_backend_and_logs() {

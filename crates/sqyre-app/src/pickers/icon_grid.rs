@@ -373,7 +373,7 @@ pub fn paint_even_icon_grid(
                         && ops.on_remove.is_some()
                         && ops.is_removable.is_none_or(|pred| pred(target));
                     let cell_id = ui.id().with(("icon_dnd", k, target));
-                    let cell_rect = if reorderable {
+                    let (cell_rect, cell_anchor) = if reorderable {
                         let drag = ui.dnd_drag_source(cell_id, k, |ui| {
                             let (clicked, cell) =
                                 icon_grid_cell(ui, catalog, icons, target, sel, style, row_h);
@@ -397,7 +397,7 @@ pub fn paint_even_icon_grid(
                                 egui::StrokeKind::Outside,
                             );
                         }
-                        drag.inner.rect
+                        (drag.inner.rect, Some(drag.response))
                     } else {
                         let (clicked, cell) =
                             icon_grid_cell(ui, catalog, icons, target, sel, style, row_h);
@@ -406,22 +406,28 @@ pub fn paint_even_icon_grid(
                                 on_cell(k, target);
                             }
                         }
-                        cell.rect
+                        (cell.rect, Some(cell))
                     };
                     if cell_removable || cell_menu.is_some() {
                         let menu_id = cell_id.with("menu");
-                        crate::widgets::rect_context_menu(ui, menu_id, cell_rect, |ui| {
-                            if let Some(menu) = cell_menu.as_mut() {
-                                menu(ui, target);
-                            }
-                            if cell_removable
-                                && crate::widgets::menu_item_danger(ui, "Remove", true)
-                            {
-                                if let Some(on_remove) = ops.on_remove.as_mut() {
-                                    on_remove(k);
+                        crate::widgets::rect_context_menu(
+                            ui,
+                            menu_id,
+                            cell_rect,
+                            cell_anchor.as_ref(),
+                            |ui| {
+                                if let Some(menu) = cell_menu.as_mut() {
+                                    menu(ui, target);
                                 }
-                            }
-                        });
+                                if cell_removable
+                                    && crate::widgets::menu_item_danger(ui, "Remove", true)
+                                {
+                                    if let Some(on_remove) = ops.on_remove.as_mut() {
+                                        on_remove(k);
+                                    }
+                                }
+                            },
+                        );
                     }
                 }
             },

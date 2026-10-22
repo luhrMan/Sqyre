@@ -356,7 +356,7 @@ impl VariablesPanelUi {
                     .response
                     .on_hover_text("Right-click to edit or remove.");
                 let menu_id = egui::Id::new(("declared_var_menu", &d.name));
-                crate::widgets::row_context_menu(ui, menu_id, row.rect, |ui| {
+                crate::widgets::row_context_menu(ui, menu_id, row.rect, Some(&row), |ui| {
                     if crate::widgets::menu_item(ui, "Edit", true) {
                         start_edit = Some(i);
                     }

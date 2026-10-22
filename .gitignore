@@ -13,7 +13,6 @@ notes.md
 /crates/sqyre-persist/examples/convert_db.rs
 
 # OCR model data (downloaded; not committed)
-/assets/tessdata/eng.traineddata
 /assets/ocr-models/*.onnx
 
 # Build outputs

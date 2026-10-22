@@ -835,19 +835,20 @@ pub fn paint_action_row(
         .is_some_and(|p| sense_rect.contains(p) && ui.ctx().layer_id_at(p) == Some(our_layer));
 
     let menu_id = egui::Id::new(("action_row_menu", our_layer, action.id));
-    let action_click = crate::widgets::rect_context_menu(ui, menu_id, sense_rect, |ui| {
-        if crate::widgets::menu_item(ui, "Edit", true) {
-            return RowAction::Edit;
-        }
-        if show_logs && crate::widgets::menu_item(ui, "Logs", true) {
-            return RowAction::Logs;
-        }
-        if crate::widgets::menu_item_danger(ui, "Delete", true) {
-            return RowAction::Delete;
-        }
-        RowAction::None
-    })
-    .unwrap_or_default();
+    let action_click =
+        crate::widgets::rect_context_menu(ui, menu_id, sense_rect, Some(&sense), |ui| {
+            if crate::widgets::menu_item(ui, "Edit", true) {
+                return RowAction::Edit;
+            }
+            if show_logs && crate::widgets::menu_item(ui, "Logs", true) {
+                return RowAction::Logs;
+            }
+            if crate::widgets::menu_item_danger(ui, "Delete", true) {
+                return RowAction::Delete;
+            }
+            RowAction::None
+        })
+        .unwrap_or_default();
 
     let over_row = pointer_in_row && action_click == RowAction::None;
     let primary_clicked = over_row && ui.input(|i| i.pointer.primary_clicked());

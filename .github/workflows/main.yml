@@ -311,7 +311,7 @@ jobs:
             VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json
           script: |
             make coverage
-            COVERAGE_REPORT_JSON=/workspace/target/coverage/summary.json make coverage-floors
+            COVERAGE_REPORT_LCOV=/workspace/target/coverage/lcov.info make coverage-floors
             sccache --show-stats || true
 
       - name: Upload coverage artifact

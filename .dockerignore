@@ -12,7 +12,6 @@ appimage-build
 *.AppImage
 *.zip
 *.exe
-assets/tessdata/*.traineddata
 docs/images
 **/tests/snapshots
 .devcontainer/builds

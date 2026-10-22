@@ -1090,3 +1090,183 @@ impl DataEditor {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_persist::{
+        ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
+    };
+
+    fn catalog_with_program() -> ProgramCatalog {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.create_program("Game").unwrap();
+        cat
+    }
+
+    fn editor(tab: EditorTab, program: &str, entity: &str, form_name: &str) -> DataEditor {
+        DataEditor {
+            tab,
+            selected_program: (!program.is_empty()).then(|| program.to_string()),
+            selected_entity: (!entity.is_empty()).then(|| entity.to_string()),
+            form_name: form_name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn status_warn_appends_message_and_flags_error() {
+        let (msg, is_err) = status_with_fs_warn("Saved.", None);
+        assert_eq!(msg, "Saved.");
+        assert!(!is_err);
+
+        let (msg, is_err) = status_with_fs_warn("Saved.", Some("icons dir locked".into()));
+        assert!(msg.starts_with("Saved."), "{msg}");
+        assert!(msg.contains("Warning: icons dir locked"), "{msg}");
+        assert!(is_err);
+    }
+
+    #[test]
+    fn new_entity_name_defaults_and_uniquifies() {
+        // Blank form name falls back to the kind default.
+        assert_eq!(new_entity_name("", "Item", |_| false), "Item");
+        // Non-blank form name wins over the default.
+        assert_eq!(new_entity_name(" Potion ", "Item", |_| false), "Potion");
+        // Collisions append a counter.
+        assert_eq!(
+            new_entity_name("", "Item", |n| n == "Item" || n == "Item 2"),
+            "Item 3"
+        );
+    }
+
+    #[test]
+    fn would_overwrite_program_rename_onto_existing() {
+        let mut cat = catalog_with_program();
+        cat.create_program("Other").unwrap();
+
+        // Same name — no rename, no overwrite.
+        let e = editor(EditorTab::Programs, "Game", "", "Game");
+        assert!(e.would_overwrite(&cat).is_none());
+        // Rename onto an existing program → confirm.
+        let e = editor(EditorTab::Programs, "Game", "", "Other");
+        assert_eq!(e.would_overwrite(&cat), Some(("Program", "Other".into())));
+        // Rename to a free name → no overwrite.
+        let e = editor(EditorTab::Programs, "Game", "", "Free");
+        assert!(e.would_overwrite(&cat).is_none());
+        // Nothing selected → nothing to overwrite.
+        let e = editor(EditorTab::Programs, "", "", "Game");
+        assert!(e.would_overwrite(&cat).is_none());
+    }
+
+    #[test]
+    fn would_overwrite_item_rename_onto_existing() {
+        let mut cat = catalog_with_program();
+        for name in ["Potion", "Elixir"] {
+            cat.upsert_item(
+                "Game",
+                ProgramItem {
+                    name: name.into(),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        }
+
+        let e = editor(EditorTab::Items, "Game", "Potion", "Elixir");
+        assert_eq!(e.would_overwrite(&cat), Some(("Item", "Elixir".into())));
+        let e = editor(EditorTab::Items, "Game", "Potion", "Ether");
+        assert!(e.would_overwrite(&cat).is_none());
+        // Missing program or entity selection → no check.
+        let e = editor(EditorTab::Items, "", "Potion", "Elixir");
+        assert!(e.would_overwrite(&cat).is_none());
+        let e = editor(EditorTab::Items, "Game", "", "Elixir");
+        assert!(e.would_overwrite(&cat).is_none());
+    }
+
+    #[test]
+    fn would_overwrite_point_checks_active_resolution_bucket() {
+        let mut cat = catalog_with_program();
+        for name in ["Spawn", "Gate"] {
+            cat.upsert_point(
+                "Game",
+                ProgramPoint {
+                    name: name.into(),
+                    monitor: 1,
+                    x: ScalarValue::Int(1),
+                    y: ScalarValue::Int(2),
+                },
+            )
+            .unwrap();
+        }
+
+        let e = editor(EditorTab::Points, "Game", "Spawn", "Gate");
+        assert_eq!(e.would_overwrite(&cat), Some(("Point", "Gate".into())));
+        let e = editor(EditorTab::Points, "Game", "Spawn", "Nowhere");
+        assert!(e.would_overwrite(&cat).is_none());
+    }
+
+    #[test]
+    fn would_overwrite_mask_collection_atlas_tabs() {
+        let mut cat = catalog_with_program();
+        cat.upsert_mask(
+            "Game",
+            ProgramMask {
+                name: "circle".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        cat.upsert_collection(
+            "Game",
+            ProgramCollection {
+                name: "bag".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        cat.upsert_atlas(
+            "Game",
+            sqyre_persist::ProgramAtlas {
+                name: "inv".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let e = editor(EditorTab::Masks, "Game", "other", "circle");
+        assert_eq!(e.would_overwrite(&cat), Some(("Mask", "circle".into())));
+        let e = editor(EditorTab::Collections, "Game", "other", "bag");
+        assert_eq!(e.would_overwrite(&cat), Some(("Collection", "bag".into())));
+        let e = editor(EditorTab::Atlases, "Game", "other", "inv");
+        assert_eq!(e.would_overwrite(&cat), Some(("Atlas", "inv".into())));
+    }
+
+    #[test]
+    fn would_overwrite_skips_search_area_and_tool_tabs() {
+        let mut cat = catalog_with_program();
+        cat.upsert_search_area(
+            "Game",
+            sqyre_persist::ProgramSearchArea {
+                name: "zone".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let e = editor(EditorTab::SearchAreas, "Game", "other", "zone");
+        assert_eq!(
+            e.would_overwrite(&cat),
+            Some(("Search area", "zone".into()))
+        );
+
+        // Tools / Overlay tabs never overwrite catalog entities.
+        for tab in [
+            EditorTab::ScreenCap,
+            EditorTab::PixelCheck,
+            EditorTab::Overlay,
+        ] {
+            let e = editor(tab, "Game", "x", "y");
+            assert!(e.would_overwrite(&cat).is_none(), "{tab:?}");
+        }
+    }
+}

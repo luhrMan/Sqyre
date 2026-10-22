@@ -41,36 +41,54 @@ fn long_pressing(ui: &egui::Ui) -> bool {
     })
 }
 
-/// Show the menu `id` at the pointer, opening it this frame when `open_now`.
+/// Shift+F10 while `anchor` holds keyboard focus — the keyboard equivalent of
+/// a right-click (egui delivers no dedicated Menu-key event).
+fn context_menu_key_pressed(ui: &egui::Ui, anchor: Option<&egui::Response>) -> bool {
+    anchor.is_some_and(|r| r.has_focus())
+        && ui.input(|i| {
+            i.key_pressed(egui::Key::F10)
+                && i.modifiers.shift
+                && !i.modifiers.alt
+                && !i.modifiers.command
+        })
+}
+
+/// Show the menu `id`, opening it this frame when `open_now`: at the pointer
+/// for clicks, or beside `open_at` (the anchor widget's rect) for keyboard.
 /// Closes on any click; returns the contents' result while open.
 pub fn context_menu_popup<R>(
     ui: &egui::Ui,
     id: egui::Id,
     open_now: bool,
+    open_at: Option<egui::Rect>,
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> Option<R> {
-    Popup::new(
-        id,
-        ui.ctx().clone(),
-        PopupAnchor::PointerFixed,
-        ui.layer_id(),
-    )
-    .kind(PopupKind::Menu)
-    .layout(egui::Layout::top_down_justified(egui::Align::Min))
-    .style(menu_style)
-    .open_memory(open_now.then_some(egui::SetOpenCommand::Bool(true)))
-    .show(add_contents)
-    .map(|r| r.inner)
+    let anchor = open_at.map_or(PopupAnchor::PointerFixed, PopupAnchor::ParentRect);
+    Popup::new(id, ui.ctx().clone(), anchor, ui.layer_id())
+        .kind(PopupKind::Menu)
+        .layout(egui::Layout::top_down_justified(egui::Align::Min))
+        .style(menu_style)
+        .open_memory(open_now.then_some(egui::SetOpenCommand::Bool(true)))
+        .show(add_contents)
+        .map(|r| r.inner)
 }
 
 /// Right-click menu for whatever was painted in `rect`.
+///
+/// `anchor` is the focusable response the rect stands for: Shift+F10 while it
+/// has focus opens the menu beside it. Pass `None` when nothing in `rect` can
+/// hold keyboard focus.
 pub fn rect_context_menu<R>(
     ui: &egui::Ui,
     id: egui::Id,
     rect: egui::Rect,
+    anchor: Option<&egui::Response>,
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> Option<R> {
-    context_menu_popup(ui, id, secondary_clicked_in(ui, rect), add_contents)
+    let keyed = context_menu_key_pressed(ui, anchor);
+    let open = secondary_clicked_in(ui, rect) || keyed;
+    let open_at = anchor.filter(|_| keyed).map(|r| r.rect);
+    context_menu_popup(ui, id, open, open_at, add_contents)
 }
 
 /// Right-click menu for a widget, using its rect (works for hover-only rows).
@@ -79,7 +97,13 @@ pub fn response_context_menu<R>(
     resp: &egui::Response,
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> Option<R> {
-    rect_context_menu(ui, resp.id.with("context_menu"), resp.rect, add_contents)
+    rect_context_menu(
+        ui,
+        resp.id.with("context_menu"),
+        resp.rect,
+        Some(resp),
+        add_contents,
+    )
 }
 
 /// Right-click menu stretched to the current row's right edge.
@@ -87,9 +111,16 @@ pub fn row_context_menu<R>(
     ui: &egui::Ui,
     id: egui::Id,
     rect: egui::Rect,
+    anchor: Option<&egui::Response>,
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> Option<R> {
-    rect_context_menu(ui, id, rect.with_max_x(ui.max_rect().right()), add_contents)
+    rect_context_menu(
+        ui,
+        id,
+        rect.with_max_x(ui.max_rect().right()),
+        anchor,
+        add_contents,
+    )
 }
 
 /// Right-click `rect` to open a menu with one destructive entry.
@@ -97,20 +128,37 @@ pub fn rect_danger_menu(
     ui: &egui::Ui,
     id: egui::Id,
     rect: egui::Rect,
+    anchor: Option<&egui::Response>,
     label: &str,
     enabled: bool,
 ) -> bool {
-    rect_context_menu(ui, id, rect, |ui| menu_item_danger(ui, label, enabled)).unwrap_or(false)
+    rect_context_menu(ui, id, rect, anchor, |ui| {
+        menu_item_danger(ui, label, enabled)
+    })
+    .unwrap_or(false)
 }
 
 /// [`rect_danger_menu`] on a widget response.
 pub fn response_danger_menu(ui: &egui::Ui, resp: &egui::Response, label: &str) -> bool {
-    rect_danger_menu(ui, resp.id.with("danger_menu"), resp.rect, label, true)
+    rect_danger_menu(
+        ui,
+        resp.id.with("danger_menu"),
+        resp.rect,
+        Some(resp),
+        label,
+        true,
+    )
 }
 
 /// [`rect_danger_menu`] stretched across the current row.
-pub fn row_danger_menu(ui: &egui::Ui, id: egui::Id, rect: egui::Rect, label: &str) -> bool {
-    row_context_menu(ui, id, rect, |ui| menu_item_danger(ui, label, true)).unwrap_or(false)
+pub fn row_danger_menu(
+    ui: &egui::Ui,
+    id: egui::Id,
+    rect: egui::Rect,
+    anchor: Option<&egui::Response>,
+    label: &str,
+) -> bool {
+    row_context_menu(ui, id, rect, anchor, |ui| menu_item_danger(ui, label, true)).unwrap_or(false)
 }
 
 fn menu_button(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>, enabled: bool) -> bool {
@@ -144,13 +192,34 @@ mod tests {
             .with_size(egui::vec2(400.0, 300.0))
             .build_ui_state(
                 |ui, open: &mut bool| {
-                    *open = rect_context_menu(ui, ui.id().with("menu"), row_rect(), |ui| {
-                        menu_item(ui, "Delete", true)
-                    })
-                    .is_some();
+                    let rect = row_rect();
+                    let anchor = ui.interact(rect, ui.id().with("row"), egui::Sense::click());
+                    *open =
+                        rect_context_menu(ui, ui.id().with("menu"), rect, Some(&anchor), |ui| {
+                            menu_item(ui, "Delete", true)
+                        })
+                        .is_some();
                 },
                 false,
             )
+    }
+
+    fn key_press(
+        harness: &mut egui_kittest::Harness<'_, bool>,
+        key: egui::Key,
+        modifiers: egui::Modifiers,
+    ) {
+        let input = harness.input_mut();
+        // egui tracks InputState::modifiers via ModifiersChanged events —
+        // the modifiers field on the Key event is not enough.
+        input.events.push(egui::Event::ModifiersChanged(modifiers));
+        input.events.push(egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        });
     }
 
     /// Finger down at `pos`: the touch event plus its emulated primary press,
@@ -183,6 +252,26 @@ mod tests {
         // ~0.25 s per step: past the 0.8 s max_click_duration the menu opens.
         harness.run_steps(6);
         assert!(*harness.state(), "long-press must open the menu");
+    }
+
+    #[test]
+    fn shift_f10_opens_the_menu_for_the_focused_row() {
+        let mut harness = harness();
+        harness.run_steps(2);
+        // Shift+F10 with nothing focused does not open the menu.
+        key_press(&mut harness, egui::Key::F10, egui::Modifiers::SHIFT);
+        harness.run_steps(1);
+        assert!(!*harness.state(), "unfocused Shift+F10 must not open");
+        // Tab focuses the row (the only focusable widget), then Shift+F10.
+        key_press(&mut harness, egui::Key::Tab, egui::Modifiers::NONE);
+        harness.run_steps(1);
+        assert!(
+            harness.ctx.memory(|m| m.focused()).is_some(),
+            "Tab should focus the row widget"
+        );
+        key_press(&mut harness, egui::Key::F10, egui::Modifiers::SHIFT);
+        harness.run_steps(1);
+        assert!(*harness.state(), "Shift+F10 on the focused row must open");
     }
 
     #[test]

@@ -228,3 +228,36 @@ fn run_toolbar_button_is_present() {
     harness.run();
     harness.get_by_label("Run");
 }
+
+#[test]
+fn data_editor_new_program_writes_to_catalog() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_programs_for_docs()
+    });
+    harness.run();
+    assert!(
+        harness.state().docs_data_editor_open(),
+        "open_data_editor_programs_for_docs should show the editor window"
+    );
+
+    let click_new = |harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>| {
+        harness.get_by_label("New program").click();
+        harness.run();
+    };
+
+    click_new(&mut harness);
+    assert!(
+        harness.state().docs_catalog().get("New Program").is_some(),
+        "New should create a catalog program"
+    );
+
+    click_new(&mut harness);
+    assert!(
+        harness
+            .state()
+            .docs_catalog()
+            .get("New Program 2")
+            .is_some(),
+        "second New should uniquify the name"
+    );
+}

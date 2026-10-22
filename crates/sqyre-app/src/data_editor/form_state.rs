@@ -574,11 +574,11 @@ impl FormState for OverlayForm {
             || ed.form_overlay_enabled != btn.enabled
             || ed.form_overlay_icon != btn.icon
             || ed.form_overlay_point.trim() != btn.point.trim()
-            || (ed.form_overlay_x - btn.x).abs() > f32::EPSILON
-            || (ed.form_overlay_y - btn.y).abs() > f32::EPSILON
-            || (ed.form_overlay_size - btn.size).abs() > f32::EPSILON
-            || (ed.form_overlay_corner_radius - btn.corner_radius).abs() > f32::EPSILON
-            || (ed.form_overlay_border_width - btn.border_width).abs() > f32::EPSILON
+            || sqyre_domain::f32_changed(ed.form_overlay_x, btn.x)
+            || sqyre_domain::f32_changed(ed.form_overlay_y, btn.y)
+            || sqyre_domain::f32_changed(ed.form_overlay_size, btn.size)
+            || sqyre_domain::f32_changed(ed.form_overlay_corner_radius, btn.corner_radius)
+            || sqyre_domain::f32_changed(ed.form_overlay_border_width, btn.border_width)
             || ed.form_overlay_border != rgba_color(btn.border_rgba())
             || ed.form_overlay_bg != rgba_color(btn.bg_rgba())
             || ed.form_overlay_icon_color != rgba_color(btn.icon_rgba())
@@ -587,7 +587,10 @@ impl FormState for OverlayForm {
             || ed.form_overlay_gate_enabled != btn.visibility_gate.is_active()
             || ed.form_overlay_gate_targets != btn.visibility_gate.targets
             || ed.form_overlay_gate_search_area.trim() != btn.visibility_gate.search_area.trim()
-            || (ed.form_overlay_gate_tolerance - btn.visibility_gate.tolerance).abs() > f64::EPSILON
+            || sqyre_domain::f64_changed(
+                ed.form_overlay_gate_tolerance,
+                btn.visibility_gate.tolerance,
+            )
             || ed.form_overlay_gate_blur != btn.visibility_gate.blur
             || ed.form_overlay_gate_match_method != btn.visibility_gate.match_method
             || ed.form_overlay_gate_interval_ms != btn.visibility_gate.interval_ms
@@ -597,5 +600,190 @@ impl FormState for OverlayForm {
         ed.selected_program.is_some()
             && ed.selected_entity.is_some()
             && !ed.form_overlay_macro.trim().is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_persist::{ProgramItem, ProgramPoint};
+
+    fn catalog() -> ProgramCatalog {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.create_program("Game").unwrap();
+        cat
+    }
+
+    fn editor_on(tab: EditorTab) -> DataEditor {
+        DataEditor {
+            tab,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn valid_tab_rejects_bad_entity_names_everywhere() {
+        let mut ed = editor_on(EditorTab::Items);
+        ed.selected_program = Some("Game".into());
+        ed.form_name = "a/b".into();
+        ed.form_cols = "1".into();
+        ed.form_rows = "1".into();
+        ed.form_stack_max = "0".into();
+        assert!(!valid_tab(EditorTab::Items, &ed, None));
+    }
+
+    #[test]
+    fn programs_form_load_and_dirty() {
+        let mut cat = catalog();
+        let settings = UserSettings::default();
+        cat.set_process_binding("Game", "/bin/game", "Game Window")
+            .unwrap();
+        cat.set_program_tags("Game", vec!["farm".into()]).unwrap();
+
+        let mut ed = editor_on(EditorTab::Programs);
+        ed.selected_program = Some("Game".into());
+        ProgramsForm::load(&mut ed, &cat, &settings);
+        assert_eq!(ed.form_name, "Game");
+        assert_eq!(ed.form_process_path, "/bin/game");
+        assert_eq!(ed.form_window_title, "Game Window");
+        assert_eq!(ed.form_tags, vec!["farm".to_string()]);
+        assert!(!ProgramsForm::is_dirty(&ed, &cat, &settings));
+
+        // Renaming or editing identity fields marks dirty.
+        ed.form_process_path = "/bin/other".into();
+        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+        ed.form_process_path = "/bin/game".into();
+        ed.form_name = "Renamed".into();
+        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+
+        // Unselected + any entered content → dirty (new entity in progress).
+        ed.selected_program = None;
+        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+        ed.form_name.clear();
+        ed.form_process_path.clear();
+        ed.form_window_title.clear();
+        ed.form_tags.clear();
+        assert!(!ProgramsForm::is_dirty(&ed, &cat, &settings));
+        ed.form_name = "New".into();
+        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+    }
+
+    #[test]
+    fn items_form_load_dirty_valid() {
+        let mut cat = catalog();
+        let settings = UserSettings::default();
+        cat.upsert_item(
+            "Game",
+            ProgramItem {
+                name: "Potion".into(),
+                mask: "circle".into(),
+                stack_max: 5,
+                grid_cols: 2,
+                grid_rows: 3,
+                tags: vec!["heal".into()],
+            },
+        )
+        .unwrap();
+
+        let mut ed = editor_on(EditorTab::Items);
+        ed.selected_program = Some("Game".into());
+        ed.selected_entity = Some("Potion".into());
+        ItemsForm::load(&mut ed, &cat, &settings);
+        assert_eq!(ed.form_name, "Potion");
+        assert_eq!(ed.form_cols, "2");
+        assert_eq!(ed.form_rows, "3");
+        assert_eq!(ed.form_stack_max, "5");
+        assert_eq!(ed.form_mask, "circle");
+        assert_eq!(ed.form_tags, vec!["heal".to_string()]);
+        assert!(!ItemsForm::is_dirty(&ed, &cat, &settings));
+        assert!(ItemsForm::is_valid(&ed, None));
+
+        ed.form_cols = "0".into();
+        assert!(ItemsForm::is_dirty(&ed, &cat, &settings));
+        assert!(!ItemsForm::is_valid(&ed, None));
+
+        // Missing entity → dirty forces the form to look edited.
+        ed.selected_entity = Some("ghost".into());
+        assert!(ItemsForm::is_dirty(&ed, &cat, &settings));
+        // Unselected + blank name → clean.
+        ed.selected_program = None;
+        ed.selected_entity = None;
+        ed.form_name.clear();
+        assert!(!ItemsForm::is_dirty(&ed, &cat, &settings));
+    }
+
+    #[test]
+    fn overlay_form_dirty_uses_scale_aware_float_compare() {
+        let cat = catalog();
+        let mut settings = UserSettings::default();
+        let mut btn = sqyre_persist::OverlayButtonConfig::new("b1", "Game");
+        btn.macro_name = "Macro".into();
+        // Load maps an empty icon to the default id, so a blank config icon
+        // would read dirty; set the resolved id to isolate the float checks.
+        btn.icon = crate::overlay_icons::DEFAULT_ICON_ID.into();
+        btn.border_width = 0.25;
+        settings.overlay_buttons.push(btn);
+
+        let mut ed = editor_on(EditorTab::Overlay);
+        ed.selected_program = Some("Game".into());
+        ed.selected_entity = Some("b1".into());
+        OverlayForm::load(&mut ed, &cat, &settings);
+        assert!(!OverlayForm::is_dirty(&ed, &cat, &settings));
+
+        // A real diff below the absolute f32::EPSILON (≈1.19e-7): at 0.25 the
+        // representable spacing is finer, so an absolute threshold reported
+        // clean while the scaled compare still catches the change.
+        ed.form_overlay_border_width += f32::EPSILON / 2.0;
+        assert!(OverlayForm::is_dirty(&ed, &cat, &settings));
+        ed.form_overlay_border_width -= f32::EPSILON / 2.0;
+        assert!(!OverlayForm::is_dirty(&ed, &cat, &settings));
+
+        // Same for the f64 gate tolerance (a 0–1 ratio field): a two-ULP diff
+        // at ~0.9 is smaller than an absolute f64::EPSILON would flag at 1.0.
+        ed.form_overlay_gate_tolerance += f64::EPSILON;
+        assert!(OverlayForm::is_dirty(&ed, &cat, &settings));
+    }
+
+    #[test]
+    fn points_form_load_and_valid() {
+        let mut cat = catalog();
+        let settings = UserSettings::default();
+        cat.upsert_point(
+            "Game",
+            ProgramPoint {
+                name: "Spawn".into(),
+                monitor: 1,
+                x: ScalarValue::Int(10),
+                y: ScalarValue::Int(20),
+            },
+        )
+        .unwrap();
+
+        let mut ed = editor_on(EditorTab::Points);
+        ed.selected_program = Some("Game".into());
+        ed.selected_entity = Some("Spawn".into());
+        PointsForm::load(&mut ed, &cat, &settings);
+        assert_eq!(ed.form_name, "Spawn");
+        assert_eq!(ed.form_x, "10");
+        assert_eq!(ed.form_y, "20");
+        assert!(!PointsForm::is_dirty(&ed, &cat, &settings));
+        assert!(PointsForm::is_valid(&ed, None));
+
+        // Blank coords are invalid.
+        ed.form_x.clear();
+        assert!(!PointsForm::is_valid(&ed, None));
+    }
+
+    #[test]
+    fn dispatch_helpers_route_to_the_tab_form() {
+        let cat = catalog();
+        let settings = UserSettings::default();
+        let mut ed = editor_on(EditorTab::Programs);
+        ed.selected_program = Some("Game".into());
+        load_tab(EditorTab::Programs, &mut ed, &cat, &settings);
+        assert_eq!(ed.form_name, "Game");
+        assert!(!dirty_tab(EditorTab::Programs, &ed, &cat, &settings));
+        assert!(valid_tab(EditorTab::Programs, &ed, None));
     }
 }

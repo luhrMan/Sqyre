@@ -37,7 +37,7 @@ Detection kinds: **Image Search**, **OCR**, **Find Pixel**. Treat them as one pr
 7. **Interruptibility** — sleeps go through `interruptible_sleep`; check `stop_flag` / `check_stopped` on long match work. Never block stop on a search.
 8. **Hit application** — outputs, highlights, and branch children go through `apply_detection_hits` / shared helpers. No kind-specific coordinate side effects.
 
-When adding a search feature: implement once in `common.rs` (or shared match/cache APIs), then wire all three kinds. Divergent behavior needs an explicit comment **and** tests in `search/tests.rs` for each kind affected.
+When adding a search feature: implement once in `common.rs` (or shared match/cache APIs), then wire all three kinds. Divergent behavior needs an explicit comment **and** tests in `search/tests/` for each kind affected.
 
 ## Efficiency (hot path)
 
@@ -58,15 +58,15 @@ Every wait/repeat poll is a full attempt. Minimize work **per attempt** and **ac
 
 ## Measuring
 
-Same machine, release builds, before vs after: `BENCH_BASELINE=x make bench-baseline-save` on the unchanged tree → change → `make bench-baseline-diff` (or `make bench`). Debug runs, single samples, and `perf_budget_secs` tests are not measurements; report median + spread.
+Same machine, release builds, before vs after: `make bench` on the unchanged tree → change → `make bench` again and compare medians. Debug runs, single samples, and `perf_budget_secs` tests are not measurements; report median + spread.
 
 - **Run benches alone.** Never alongside another bench, `make test`, a build, or subagents compiling — they compete for CPU and the numbers are invalid.
 - **Never game the benches.** Do not shrink inputs, cut iterations/sample counts, drop cases, or otherwise edit bench sources to show a speedup; improve the library code. A bench-source change needs its own justification, separate from the optimization.
 - **Suspicious speedups are bugs until proven otherwise.** A large or input-size-independent gain usually means work was skipped. Confirm behavior is unchanged (`make test`, outputs match the old path) before reporting it.
 - **Benches are independent of caches.** `search_cache`, `PreparedTemplate`, and `SearchPrep` reuse must not leak between iterations unless the bench is explicitly measuring the warm path; measure cold and warm separately.
 - **No `RUSTFLAGS` / `target-cpu=native`** when measuring; use the Makefile targets as-is.
-- **Use the existing harness** (`make bench`, `bench-compare`, baseline save/diff); do not write ad-hoc timing loops.
-- **Hot-path refactors are measured too.** Refactors in `sqyre-match`, `sqyre-vision`, or `sqyre-executor/src/search/` need a `bench-baseline-diff` with no regressions, not just passing tests.
+- **Use the existing harness** (`make bench` criterion benches); do not write ad-hoc timing loops.
+- **Hot-path refactors are measured too.** Refactors in `sqyre-match`, `sqyre-vision`, or `sqyre-executor/src/search/` need a before/after `make bench` run with no regressions, not just passing tests.
 
 ## Timing instrumentation
 
@@ -96,7 +96,7 @@ Before landing search-related edits:
 - [ ] No new per-attempt disk load / blur / prepare that the cache should own
 - [ ] `SearchPrep` / `PreparedTemplate` still reused where variants share a frame
 - [ ] Timing step names unchanged (or all call sites + docs updated together)
-- [ ] `search/tests.rs` covers the behavior (wait retry, timeout final search, cache hit) when control flow or caching changes
+- [ ] `search/tests/` covers the behavior (wait retry, timeout final search, cache hit) when control flow or caching changes
 - [ ] Stop/interrupt still responsive during match loops
 
 ## Anti-patterns

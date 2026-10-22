@@ -39,12 +39,15 @@ pub fn layer_shell_available() -> Result<(), CaptureError> {
 
 /// GSR enables native layer-shell overlay UI on these sessions (env-only; no connect).
 pub fn prefers_layer_shell_overlay_session() -> bool {
-    let Some(desktop) = std::env::var("XDG_CURRENT_DESKTOP")
+    std::env::var("XDG_CURRENT_DESKTOP")
         .ok()
-        .filter(|s| !s.is_empty())
-    else {
+        .is_some_and(|d| desktop_prefers_layer_shell(&d))
+}
+
+fn desktop_prefers_layer_shell(desktop: &str) -> bool {
+    if desktop.is_empty() {
         return false;
-    };
+    }
     desktop.contains("Hyprland")
         || desktop.contains("niri")
         || desktop.contains("river")
@@ -73,15 +76,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prefers_layer_shell_overlay_session_from_env() {
-        let prev = std::env::var("XDG_CURRENT_DESKTOP").ok();
-        std::env::set_var("XDG_CURRENT_DESKTOP", "Hyprland");
-        assert!(prefers_layer_shell_overlay_session());
-        std::env::set_var("XDG_CURRENT_DESKTOP", "GNOME");
-        assert!(!prefers_layer_shell_overlay_session());
-        match prev {
-            Some(v) => std::env::set_var("XDG_CURRENT_DESKTOP", v),
-            None => std::env::remove_var("XDG_CURRENT_DESKTOP"),
+    fn desktop_prefers_layer_shell_matches_wlroots_sessions() {
+        for desktop in ["Hyprland", "niri", "river", "sway", "sway:GNOME"] {
+            assert!(desktop_prefers_layer_shell(desktop), "{desktop}");
+        }
+        for desktop in ["", "GNOME", "KDE", "COSMIC", "X-Cinnamon"] {
+            assert!(!desktop_prefers_layer_shell(desktop), "{desktop}");
         }
     }
 }

@@ -1,12 +1,13 @@
 //! Filesystem-safe entity names for catalog paths under `images/`.
 //!
 //! Rules live in [`sqyre_validate::validate_entity_name`] (Windows/Linux forbidden
-//! filename characters, reserved device names, path escape).
+//! filename characters, reserved device names, path escape, `~` delimiter).
 
 use crate::{PersistError, Result};
 use std::path::{Component, Path, PathBuf};
 
-/// Reject names that could escape a managed directory when joined as a path component.
+/// Reject entity names that could escape a managed directory when joined as a
+/// path component, or that contain the `~` catalog-key delimiter.
 pub fn validate_fs_entity_name(name: &str) -> Result<()> {
     sqyre_validate::validate_entity_name(name).map_err(|e| PersistError::Message(e.to_string()))
 }
@@ -16,8 +17,12 @@ pub fn is_safe_fs_entity_name(name: &str) -> bool {
 }
 
 /// Join `name` under `base` only when `name` is a single safe path component.
+///
+/// Filename-level rules: `~` is legal here (icon files are `item~variant.png`).
+/// Catalog entity names are validated via [`validate_fs_entity_name`] upstream.
 pub fn confined_join(base: &Path, name: &str) -> Result<PathBuf> {
-    validate_fs_entity_name(name)?;
+    sqyre_validate::validate_fs_component_name(name)
+        .map_err(|e| PersistError::Message(e.to_string()))?;
     let joined = base.join(name);
     // Defense in depth: joined must stay a direct child of base by components.
     let rel = joined.strip_prefix(base).map_err(|_| {
@@ -55,6 +60,8 @@ mod tests {
     fn confined_join_rejects_escape() {
         let base = Path::new("/tmp/images/icons");
         assert!(confined_join(base, "Demo").is_ok());
+        // `~` is a legal filename char: icon variants are `item~variant.png`.
+        assert!(confined_join(base, "Item~Blue.png").is_ok());
         assert!(confined_join(base, "../etc").is_err());
         assert!(confined_join(base, "a/b").is_err());
         assert!(confined_join(base, "").is_err());

@@ -174,10 +174,25 @@ pub(crate) fn paint_preview_coord_chip(
         ));
         child.set_min_size(inner.size());
         var_pills::paint_var_ref_content(&mut child, value, known, is_dark, plain_fg);
-        ui.interact(edit_rect, id.with("overlay"), egui::Sense::click())
+        let resp = ui.interact(edit_rect, id.with("overlay"), egui::Sense::click());
+        resp.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::TextEdit,
+                true,
+                format!("{placeholder} — click to edit"),
+            )
+        });
+        resp
     } else if let Some(n) = pure.filter(|_| !focused) {
         // Unfocused pure number: drag to adjust, click to edit.
         let resp = ui.interact(edit_rect, id.with("drag"), egui::Sense::click_and_drag());
+        resp.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::DragValue,
+                true,
+                format!("{placeholder} — drag to adjust, click to edit"),
+            )
+        });
         ui.painter().text(
             edit_rect.center(),
             egui::Align2::CENTER_CENTER,

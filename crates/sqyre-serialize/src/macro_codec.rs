@@ -138,6 +138,23 @@ root:
     }
 
     #[test]
+    fn rejects_non_loop_root() {
+        let yaml = r#"
+name: bad-root
+globaldelay: 0
+keyboarddelay: 0
+mousedelay: 0
+hotkey: []
+variables: []
+root:
+  type: wait
+  time: 1
+"#;
+        let err = decode_macro_from_yaml(yaml).unwrap_err().to_string();
+        assert!(err.contains("root must be a loop"), "{err}");
+    }
+
+    #[test]
     fn rejects_unknown_action_type() {
         let yaml = r#"
 name: bad

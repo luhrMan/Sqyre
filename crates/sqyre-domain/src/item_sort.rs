@@ -422,6 +422,62 @@ mod tests {
     }
 
     #[test]
+    fn tag_filter_parse_format_round_trip() {
+        assert_eq!(parse_tag_filter("+rare"), Some((true, "rare".into())));
+        assert_eq!(parse_tag_filter("-trash"), Some((false, "trash".into())));
+        assert_eq!(parse_tag_filter("bare"), Some((true, "bare".into())));
+        assert_eq!(parse_tag_filter(""), None);
+        assert_eq!(parse_tag_filter("   "), None);
+        assert_eq!(parse_tag_filter("+"), None);
+        assert_eq!(parse_tag_filter("-"), None);
+        assert_eq!(format_tag_filter(true, " rare "), "+rare");
+        assert_eq!(format_tag_filter(false, "trash"), "-trash");
+        assert_eq!(tag_filter_name("+weapon"), Some("weapon".into()));
+        assert_eq!(tag_filter_name(""), None);
+    }
+
+    #[test]
+    fn matches_tag_filters_ignores_blank_entries() {
+        let tags = vec!["rare".to_string()];
+        // Blank filters are skipped; an include must remain to match.
+        assert!(!item_matches_tag_filters(&tags, &[" ".into()]));
+        assert!(!item_matches_tag_filters(&tags, &["-rare".into()]));
+        assert!(item_matches_tag_filters(
+            &tags,
+            &[" ".into(), "+rare".into(), "-trash".into()]
+        ));
+    }
+
+    #[test]
+    fn name_desc_and_list_order_thens() {
+        let items = vec![
+            info("P~b", "bravo", 1, 1, &[]),
+            info("P~a", "alpha", 1, 1, &[]),
+            info("P~c", "charlie", 1, 1, &[]),
+        ];
+        assert_eq!(
+            ordered_item_targets(&items, ItemSortBy::Name, ItemSortThen::NameDesc, &[]),
+            vec!["P~c", "P~b", "P~a"]
+        );
+        // ListOrder keeps stored order.
+        assert_eq!(
+            ordered_item_targets(&items, ItemSortBy::Tags, ItemSortThen::ListOrder, &[]),
+            vec!["P~b", "P~a", "P~c"]
+        );
+        // Equal footprints fall through to the Then comparator.
+        let tied = vec![info("P~b", "b", 1, 1, &[]), info("P~a", "a", 1, 1, &[])];
+        assert_eq!(
+            ordered_item_targets(
+                &tied,
+                ItemSortBy::Footprint,
+                ItemSortThen::FootprintSmall,
+                &[]
+            ),
+            vec!["P~a", "P~b"]
+        );
+    }
+
+    #[test]
     fn footprint_then_name() {
         let items = vec![
             info("P~small", "a", 1, 1, &[]),
@@ -573,7 +629,10 @@ mod tests {
         let infos: Vec<_> = expanded
             .iter()
             .map(|t| {
-                let name = t.rsplit_once('~').map(|(_, n)| n).unwrap_or(t);
+                let name = t
+                    .rsplit_once(PROGRAM_DELIMITER)
+                    .map(|(_, n)| n)
+                    .unwrap_or(t);
                 info(t, name, 1, 1, &[])
             })
             .collect();

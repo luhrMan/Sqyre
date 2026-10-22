@@ -556,6 +556,7 @@ impl DataEditor {
                                     let selected = self.selected_program.as_deref()
                                         == Some(prog.as_str())
                                         && self.selected_entity.as_deref() == Some(btn.id.as_str());
+                                    let mut row_anchor = None;
                                     let row = ui.horizontal(|ui| {
                                         let paint = live_preview
                                             .as_ref()
@@ -574,12 +575,14 @@ impl DataEditor {
                                         if thumb.clicked() || label.clicked() {
                                             clicked_overlay = Some((prog.clone(), btn.id.clone()));
                                         }
+                                        row_anchor = Some(label);
                                     });
                                     let menu_id = egui::Id::new(("overlay_row_menu", &btn.id));
                                     crate::widgets::rect_context_menu(
                                         ui,
                                         menu_id,
                                         row.response.rect,
+                                        row_anchor.as_ref(),
                                         |ui| {
                                             let mut enabled = btn.enabled;
                                             if ui
@@ -712,6 +715,13 @@ impl DataEditor {
         self.open = true;
         self.switch_tab(EditorTab::Points, catalog, &settings);
         self.select_entity(program, point, catalog, &settings);
+    }
+
+    /// Open the editor on the Programs tab (docs / interaction harnesses).
+    pub(crate) fn open_programs_for_docs(&mut self, catalog: &ProgramCatalog) {
+        let settings = UserSettings::default();
+        self.open = true;
+        self.switch_tab(EditorTab::Programs, catalog, &settings);
     }
 
     pub(crate) fn select_entity(
@@ -899,4 +909,191 @@ fn compute_entity_names(catalog: &ProgramCatalog, tab: EditorTab, program: &str)
             .then_with(|| a.0.cmp(&b.0))
     });
     keys.into_iter().map(|(k, _)| k).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_domain::{ScalarValue, TEMPORARY_PROGRAM};
+    use sqyre_persist::{
+        ProgramCatalog, ProgramCollection, ProgramItem, ProgramMask, ProgramPoint,
+    };
+
+    fn catalog() -> ProgramCatalog {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.create_program("Game").unwrap();
+        cat
+    }
+
+    #[test]
+    fn tab_collapse_key_unique_per_tab() {
+        let keys: std::collections::HashSet<&'static str> = [
+            EditorTab::Programs,
+            EditorTab::Items,
+            EditorTab::PixelCheck,
+            EditorTab::Points,
+            EditorTab::SearchAreas,
+            EditorTab::Masks,
+            EditorTab::Collections,
+            EditorTab::Atlases,
+            EditorTab::ScreenCap,
+            EditorTab::Overlay,
+        ]
+        .into_iter()
+        .map(tab_collapse_key)
+        .collect();
+        assert_eq!(keys.len(), 10, "collapse keys must be unique per tab");
+    }
+
+    #[test]
+    fn compute_entity_names_sorts_by_display_name() {
+        let mut cat = catalog();
+        // Keys chosen so key order differs from display-name order.
+        for (key, display) in [("zz", "Alpha"), ("aa", "Beta")] {
+            let data = cat.programs_mut().get_mut("Game").unwrap();
+            data.items.insert(
+                key.to_string(),
+                ProgramItem {
+                    name: display.into(),
+                    ..Default::default()
+                },
+            );
+        }
+        let names = compute_entity_names(&cat, EditorTab::Items, "Game");
+        assert_eq!(
+            names,
+            vec!["zz", "aa"],
+            "sorted by display name, keys returned"
+        );
+        // Unknown program → empty.
+        assert!(compute_entity_names(&cat, EditorTab::Items, "Nope").is_empty());
+        // Programs / Overlay tabs list no entities.
+        assert!(compute_entity_names(&cat, EditorTab::Programs, "Game").is_empty());
+        assert!(compute_entity_names(&cat, EditorTab::Overlay, "Game").is_empty());
+    }
+
+    #[test]
+    fn compute_entity_names_falls_back_to_key_when_display_blank() {
+        let mut cat = catalog();
+        // Blank display names are impossible via the validate-upsert path, but
+        // can exist in catalogs loaded from older/edited YAML.
+        cat.programs_mut().get_mut("Game").unwrap().masks.insert(
+            "maskkey".into(),
+            ProgramMask {
+                name: " ".into(),
+                ..Default::default()
+            },
+        );
+        cat.upsert_mask(
+            "Game",
+            ProgramMask {
+                name: "named".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let names = compute_entity_names(&cat, EditorTab::Masks, "Game");
+        assert_eq!(names.len(), 2);
+        assert!(names.contains(&"maskkey".to_string()));
+        assert!(names.contains(&"named".to_string()));
+    }
+
+    #[test]
+    fn compute_entity_names_per_tab() {
+        let mut cat = catalog();
+        cat.upsert_point(
+            "Game",
+            ProgramPoint {
+                name: "Spawn".into(),
+                monitor: 1,
+                x: ScalarValue::Int(1),
+                y: ScalarValue::Int(2),
+            },
+        )
+        .unwrap();
+        cat.upsert_collection(
+            "Game",
+            ProgramCollection {
+                name: "bag".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            compute_entity_names(&cat, EditorTab::Points, "Game"),
+            vec!["Spawn"]
+        );
+        assert_eq!(
+            compute_entity_names(&cat, EditorTab::Collections, "Game"),
+            vec!["bag"]
+        );
+        // PixelCheck shares the items list.
+        assert_eq!(
+            compute_entity_names(&cat, EditorTab::PixelCheck, "Game"),
+            compute_entity_names(&cat, EditorTab::Items, "Game")
+        );
+    }
+
+    #[test]
+    fn list_cache_refreshes_on_generation_and_tab() {
+        let mut cat = catalog();
+        cat.upsert_item(
+            "Game",
+            ProgramItem {
+                name: "Potion".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let mut ed = DataEditor {
+            tab: EditorTab::Items,
+            ..Default::default()
+        };
+
+        assert_eq!(ed.entity_names(&cat, "Game"), vec!["Potion"]);
+        let gen0 = ed.list_cache.catalog_generation;
+
+        // Mutating the catalog bumps generation → cache rebuild sees the new item.
+        cat.upsert_item(
+            "Game",
+            ProgramItem {
+                name: "Elixir".into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let names = ed.entity_names(&cat, "Game");
+        assert_eq!(names, vec!["Elixir", "Potion"]);
+        assert!(ed.list_cache.catalog_generation > gen0);
+
+        // Switching tabs rebuilds the entity view.
+        ed.tab = EditorTab::Masks;
+        assert!(ed.entity_names(&cat, "Game").is_empty());
+        assert_eq!(ed.list_cache.tab, EditorTab::Masks);
+    }
+
+    #[test]
+    fn select_program_and_entity_reject_temporary_program() {
+        let mut cat = catalog();
+        cat.create_program(TEMPORARY_PROGRAM).unwrap();
+        let settings = UserSettings::default();
+        let mut ed = DataEditor::default();
+
+        ed.select_program(TEMPORARY_PROGRAM, &cat, &settings);
+        assert!(ed.selected_program.is_none());
+
+        ed.select_program("Game", &cat, &settings);
+        assert_eq!(ed.selected_program.as_deref(), Some("Game"));
+        // Selecting a program clears the entity selection.
+        ed.selected_entity = Some("old".into());
+        ed.select_program("Game", &cat, &settings);
+        assert!(ed.selected_entity.is_none());
+
+        ed.select_entity(TEMPORARY_PROGRAM, "x", &cat, &settings);
+        assert_eq!(ed.selected_program.as_deref(), Some("Game"));
+
+        ed.select_entity("Game", "Spawn", &cat, &settings);
+        assert_eq!(ed.selected_entity.as_deref(), Some("Spawn"));
+    }
 }

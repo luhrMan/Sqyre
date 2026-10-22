@@ -72,6 +72,38 @@ mod tests {
         assert!(resolve_under_dir(base, "").is_err());
     }
 
+    #[test]
+    fn resolve_under_dir_rejects_nul_component() {
+        let base = Path::new("/tmp/vars");
+        let err = resolve_under_dir(base, "a\0b.txt").unwrap_err().to_string();
+        assert!(err.contains("NUL"), "{err}");
+    }
+
+    #[test]
+    fn resolve_under_dir_allows_curdir_components() {
+        let base = Path::new("/tmp/vars");
+        assert_eq!(
+            resolve_under_dir(base, "./x.txt").unwrap(),
+            base.join("x.txt")
+        );
+        assert_eq!(
+            resolve_under_dir(base, "a/./b.txt").unwrap(),
+            base.join("a").join("b.txt")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_under_dir_walks_real_dirs_without_rejecting() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let base = tmp.path().join("variables");
+        fs::create_dir_all(base.join("sub")).expect("create subdir");
+        assert_eq!(
+            resolve_under_dir(&base, "sub/x.txt").unwrap(),
+            base.join("sub").join("x.txt")
+        );
+    }
+
     #[cfg(unix)]
     #[test]
     fn resolve_under_dir_rejects_symlink_escape() {

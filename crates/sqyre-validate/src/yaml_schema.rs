@@ -275,11 +275,7 @@ pub fn prepare_macro_yaml(raw: &str) -> Result<sqyre_domain::Macro> {
             "Paste a single macro document (with `name:` and `root:`), not a full db.yaml.".into(),
         ));
     }
-    let macro_ = validate_macro_yaml(&yaml)?;
-    if macro_.name.trim().is_empty() {
-        return Err(ValidateError::Message("Macro is missing a name.".into()));
-    }
-    Ok(macro_)
+    validate_macro_yaml(&yaml)
 }
 
 /// Like [`prepare_macro_yaml`] but uniquifies `name` against `existing`.
@@ -352,6 +348,56 @@ mod tests {
             m.root = sqyre_domain::root_loop(vec![action]);
         }
         sqyre_serialize::encode_macro_to_yaml(&m).unwrap()
+    }
+
+    #[test]
+    fn schema_report_flags_nesting_too_deep() {
+        // Build a YAML value nested deeper than MAX_YAML_NESTING_DEPTH.
+        let mut v = YamlValue::Null;
+        for _ in 0..MAX_YAML_NESTING_DEPTH + 10 {
+            v = YamlValue::Sequence(vec![v]);
+        }
+        let report = validate_macro_yaml_schema(&v);
+        assert!(!report.is_ok());
+        assert!(report.errors[0].message.contains("nesting"), "{report:?}");
+    }
+
+    #[test]
+    fn yaml_to_json_handles_u64_and_tagged_values() {
+        // u64::MAX doesn't fit i64 — exercises the as_u64 arm.
+        let big = YamlValue::Number(serde_yaml::Number::from(u64::MAX));
+        assert_eq!(
+            yaml_to_json(&big).unwrap(),
+            JsonValue::Number(u64::MAX.into())
+        );
+        // Tagged values unwrap to their inner value.
+        let tagged: YamlValue = serde_yaml::from_str("!foo 5").unwrap();
+        assert!(matches!(tagged, YamlValue::Tagged(_)), "{tagged:?}");
+        assert_eq!(yaml_to_json(&tagged).unwrap(), JsonValue::Number(5.into()));
+    }
+
+    #[test]
+    fn validate_macro_yaml_rejects_oversized_document() {
+        let big = format!("name: {}\n", "x".repeat(MAX_MACRO_YAML_BYTES));
+        let err = validate_macro_yaml(&big).unwrap_err().to_string();
+        assert!(err.contains("too large"), "{err}");
+    }
+
+    #[test]
+    fn report_flags_decode_layer_for_non_loop_root() {
+        let yaml = r#"
+name: bad-root
+root:
+  type: wait
+  time: 1
+"#;
+        let report = report_macro_yaml(yaml);
+        assert!(!report.is_ok());
+        assert_eq!(
+            report.errors[0].layer,
+            YamlValidateLayer::Decode,
+            "{report:?}"
+        );
     }
 
     #[test]

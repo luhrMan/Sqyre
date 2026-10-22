@@ -31,7 +31,9 @@ pub type Result<T> = std::result::Result<T, ValidateError>;
 /// under `images/` (programs, items, search areas, masks, collections, icon variants, …).
 pub const FS_FORBIDDEN_FILENAME_CHARS: &[char] = &['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
 
-/// True when `name` is safe to use as a single path component under a managed directory.
+/// True when `name` is safe to use as a catalog entity name: a single safe
+/// path component under a managed directory, and free of the `~` catalog
+/// key delimiter.
 ///
 /// Rejects empty/whitespace names, `.` / `..`, Windows/Linux forbidden filename characters,
 /// absolute forms, trailing `.`, reserved Windows device names, and control chars so catalog
@@ -41,7 +43,12 @@ pub fn is_safe_fs_entity_name(name: &str) -> bool {
     validate_entity_name(name).is_ok()
 }
 
-pub fn validate_entity_name(name: &str) -> Result<()> {
+/// Filename-level rules for a single path component under a managed directory:
+/// everything [`validate_entity_name`] checks except the `~` catalog-key
+/// delimiter, which is legal in filenames (icon files are `item~variant.png`).
+/// Use for joining literal filenames; catalog entity names go through
+/// [`validate_entity_name`].
+pub fn validate_fs_component_name(name: &str) -> Result<()> {
     // Windows strips trailing spaces and periods when creating files, so
     // "Item " and "Item" alias the same on-disk name. Reject rather than
     // silently trim: callers join the original string, not this copy.
@@ -80,6 +87,22 @@ pub fn validate_entity_name(name: &str) -> Result<()> {
     if is_windows_reserved_device_name(name) {
         return Err(ValidateError::Message(format!(
             "name {name:?} is a reserved Windows device name"
+        )));
+    }
+    Ok(())
+}
+
+/// Catalog entity name (program, item, search area, mask, collection, variant):
+/// [`validate_fs_component_name`] plus the `~` catalog-key delimiter.
+pub fn validate_entity_name(name: &str) -> Result<()> {
+    validate_fs_component_name(name)?;
+    // `~` separates program~entity (and item~variant) composite catalog keys.
+    // A name containing it makes keys unparseable at split sites and lets
+    // prefix-based program renames corrupt another program's entities.
+    if name.contains(sqyre_domain::PROGRAM_DELIMITER) {
+        return Err(ValidateError::Message(format!(
+            "name cannot contain {:?} (catalog key delimiter)",
+            sqyre_domain::PROGRAM_DELIMITER
         )));
     }
     Ok(())
@@ -869,6 +892,81 @@ mod tests {
     };
 
     #[test]
+    fn parse_int_helpers_reject_empty_and_bad_input() {
+        assert_eq!(
+            parse_positive_i32("").unwrap_err().to_string(),
+            "must be a positive integer"
+        );
+        assert!(parse_positive_i32("abc").is_err());
+        assert!(parse_positive_i32("0").is_err());
+        assert!(parse_positive_i32("-3").is_err());
+        assert_eq!(parse_positive_i32(" 4 ").unwrap(), 4);
+        assert_eq!(
+            parse_non_negative_i32("").unwrap_err().to_string(),
+            "must be a non-negative integer"
+        );
+        assert!(parse_non_negative_i32("x").is_err());
+        assert!(parse_non_negative_i32("-1").is_err());
+        assert_eq!(parse_non_negative_i32("0").unwrap(), 0);
+    }
+
+    #[test]
+    fn search_area_bounds_skips_non_literal_and_rejects_bad_dims() {
+        // Any non-literal coord (empty or ${var}) skips the bounds check.
+        assert!(validate_search_area_literal_bounds("", "0", "10", "10").is_ok());
+        assert!(validate_search_area_literal_bounds("0", "${y}", "10", "10").is_ok());
+        assert!(validate_search_area_literal_bounds("0", "0", "", "10").is_ok());
+        assert!(validate_search_area_literal_bounds("0", "0", "10", " ").is_ok());
+        // Float literals coerce to i32.
+        assert!(validate_search_area_literal_bounds("0.0", "0.0", "10.9", "10.9").is_ok());
+        // Zero-size dims rejected.
+        assert!(validate_search_area_literal_bounds("5", "5", "5", "10").is_err());
+        // Swapped corners normalize before measuring.
+        assert!(validate_search_area_literal_bounds("10", "10", "0", "0").is_ok());
+        // Absurdly large dims rejected.
+        let err = validate_search_area_literal_bounds("0", "0", "70000", "10")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("too large"), "{err}");
+    }
+
+    #[test]
+    fn variable_name_rejects_control_chars() {
+        assert!(validate_variable_name("tab\tname").is_err());
+        assert!(validate_variable_name("new\nline").is_err());
+    }
+
+    #[test]
+    fn looks_like_expression_cases() {
+        assert!(!looks_like_expression(""));
+        assert!(!looks_like_expression("plain_name"));
+        assert!(looks_like_expression("a + b"));
+        assert!(looks_like_expression("${x}"));
+        assert!(looks_like_expression("100%"));
+    }
+
+    #[test]
+    fn unknown_variable_warning_lists_all() {
+        let mut m = Macro::new("t", 0, vec![]);
+        m.upsert_variable(VariableDecl {
+            name: "known".into(),
+            type_: VariableType::Number,
+            initial_value: "1".into(),
+            ..Default::default()
+        });
+        // No macro / empty text → no warning.
+        assert!(unknown_variable_warning("${x}", None).is_empty());
+        assert!(unknown_variable_warning("  ", Some(&m)).is_empty());
+        // Known vars and empty-name refs produce no warning.
+        assert!(unknown_variable_warning("${known}", Some(&m)).is_empty());
+        let w = unknown_variable_warning("${b} ${a} ${a}", Some(&m));
+        assert!(
+            w.contains("unknown variables") && w.contains("a") && w.contains("b"),
+            "{w}"
+        );
+    }
+
+    #[test]
     fn entity_name_rejects_path_escape() {
         assert!(validate_entity_name("Demo").is_ok());
         assert!(validate_entity_name("Item Name").is_ok());
@@ -909,6 +1007,19 @@ mod tests {
         assert!(validate_entity_name("LPT9").is_err());
         assert!(validate_entity_name("console").is_ok());
         assert!(validate_entity_name("Item.v2").is_ok());
+    }
+
+    #[test]
+    fn entity_name_rejects_program_delimiter() {
+        // `~` joins program~entity keys; a name containing it would misparse
+        // at every split_once(PROGRAM_DELIMITER) site and corrupt prefix
+        // renames (rename "a" → "c" would rewrite "a~b"'s keys).
+        assert!(validate_entity_name("a~b").is_err());
+        assert!(validate_entity_name("~lead").is_err());
+        assert!(validate_entity_name("trail~").is_err());
+        assert!(validate_entity_name("a~b~c").is_err());
+        assert!(validate_entity_name("Item Name").is_ok());
+        assert!(!is_safe_fs_entity_name("a~b"));
     }
 
     #[test]
