@@ -743,21 +743,14 @@ struct SpecDelta {
     style: bool,
 }
 
-/// Relative float compare: `f32::EPSILON` is the gap around 1.0 — as an
-/// absolute threshold it misses real differences in values below ~1.0
-/// (e.g. thin border widths), where the representable gap is smaller.
-fn f32_changed(a: f32, b: f32) -> bool {
-    (a - b).abs() > f32::EPSILON * a.abs().max(b.abs())
-}
-
 fn spec_delta(old: &NativeButtonSpec, new: &NativeButtonSpec) -> SpecDelta {
-    let radius = f32_changed(old.corner_radius, new.corner_radius);
+    let radius = sqyre_domain::f32_changed(old.corner_radius, new.corner_radius);
     SpecDelta {
         geom: old.x != new.x || old.y != new.y || old.w != new.w || old.h != new.h,
         radius,
         style: old.bg != new.bg
             || old.border != new.border
-            || f32_changed(old.border_width, new.border_width)
+            || sqyre_domain::f32_changed(old.border_width, new.border_width)
             || radius
             || old.icon_glyph != new.icon_glyph
             || old.icon != new.icon

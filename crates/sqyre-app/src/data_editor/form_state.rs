@@ -574,11 +574,11 @@ impl FormState for OverlayForm {
             || ed.form_overlay_enabled != btn.enabled
             || ed.form_overlay_icon != btn.icon
             || ed.form_overlay_point.trim() != btn.point.trim()
-            || (ed.form_overlay_x - btn.x).abs() > f32::EPSILON
-            || (ed.form_overlay_y - btn.y).abs() > f32::EPSILON
-            || (ed.form_overlay_size - btn.size).abs() > f32::EPSILON
-            || (ed.form_overlay_corner_radius - btn.corner_radius).abs() > f32::EPSILON
-            || (ed.form_overlay_border_width - btn.border_width).abs() > f32::EPSILON
+            || sqyre_domain::f32_changed(ed.form_overlay_x, btn.x)
+            || sqyre_domain::f32_changed(ed.form_overlay_y, btn.y)
+            || sqyre_domain::f32_changed(ed.form_overlay_size, btn.size)
+            || sqyre_domain::f32_changed(ed.form_overlay_corner_radius, btn.corner_radius)
+            || sqyre_domain::f32_changed(ed.form_overlay_border_width, btn.border_width)
             || ed.form_overlay_border != rgba_color(btn.border_rgba())
             || ed.form_overlay_bg != rgba_color(btn.bg_rgba())
             || ed.form_overlay_icon_color != rgba_color(btn.icon_rgba())
@@ -587,7 +587,10 @@ impl FormState for OverlayForm {
             || ed.form_overlay_gate_enabled != btn.visibility_gate.is_active()
             || ed.form_overlay_gate_targets != btn.visibility_gate.targets
             || ed.form_overlay_gate_search_area.trim() != btn.visibility_gate.search_area.trim()
-            || (ed.form_overlay_gate_tolerance - btn.visibility_gate.tolerance).abs() > f64::EPSILON
+            || sqyre_domain::f64_changed(
+                ed.form_overlay_gate_tolerance,
+                btn.visibility_gate.tolerance,
+            )
             || ed.form_overlay_gate_blur != btn.visibility_gate.blur
             || ed.form_overlay_gate_match_method != btn.visibility_gate.match_method
             || ed.form_overlay_gate_interval_ms != btn.visibility_gate.interval_ms
@@ -708,6 +711,38 @@ mod tests {
         ed.selected_entity = None;
         ed.form_name.clear();
         assert!(!ItemsForm::is_dirty(&ed, &cat, &settings));
+    }
+
+    #[test]
+    fn overlay_form_dirty_uses_scale_aware_float_compare() {
+        let cat = catalog();
+        let mut settings = UserSettings::default();
+        let mut btn = sqyre_persist::OverlayButtonConfig::new("b1", "Game");
+        btn.macro_name = "Macro".into();
+        // Load maps an empty icon to the default id, so a blank config icon
+        // would read dirty; set the resolved id to isolate the float checks.
+        btn.icon = crate::overlay_icons::DEFAULT_ICON_ID.into();
+        btn.border_width = 0.25;
+        settings.overlay_buttons.push(btn);
+
+        let mut ed = editor_on(EditorTab::Overlay);
+        ed.selected_program = Some("Game".into());
+        ed.selected_entity = Some("b1".into());
+        OverlayForm::load(&mut ed, &cat, &settings);
+        assert!(!OverlayForm::is_dirty(&ed, &cat, &settings));
+
+        // A real diff below the absolute f32::EPSILON (≈1.19e-7): at 0.25 the
+        // representable spacing is finer, so an absolute threshold reported
+        // clean while the scaled compare still catches the change.
+        ed.form_overlay_border_width += f32::EPSILON / 2.0;
+        assert!(OverlayForm::is_dirty(&ed, &cat, &settings));
+        ed.form_overlay_border_width -= f32::EPSILON / 2.0;
+        assert!(!OverlayForm::is_dirty(&ed, &cat, &settings));
+
+        // Same for the f64 gate tolerance (a 0–1 ratio field): a two-ULP diff
+        // at ~0.9 is smaller than an absolute f64::EPSILON would flag at 1.0.
+        ed.form_overlay_gate_tolerance += f64::EPSILON;
+        assert!(OverlayForm::is_dirty(&ed, &cat, &settings));
     }
 
     #[test]

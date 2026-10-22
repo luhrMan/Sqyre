@@ -117,6 +117,18 @@ impl ScalarValue {
 /// Delimiter between program and entity in coordinate / target refs.
 pub const PROGRAM_DELIMITER: &str = "~";
 
+/// Scale-aware "did this float actually change" compare: `f32::EPSILON` is the
+/// spacing around 1.0, so an absolute threshold misses real diffs in sub-1.0
+/// values (thin border widths, 0–1 ratios) and over-fires on large magnitudes.
+pub fn f32_changed(a: f32, b: f32) -> bool {
+    (a - b).abs() > f32::EPSILON * a.abs().max(b.abs())
+}
+
+/// [`f32_changed`] for `f64` fields (e.g. match-tolerance ratios).
+pub fn f64_changed(a: f64, b: f64) -> bool {
+    (a - b).abs() > f64::EPSILON * a.abs().max(b.abs())
+}
+
 /// Seeded `General` program holding well-known Points, Search Areas, and Collections.
 pub const GENERAL_PROGRAM: &str = "General";
 
@@ -298,6 +310,24 @@ mod tests {
             let de: ScalarValue = serde_yaml::from_value(ser).unwrap();
             assert_eq!(de, v);
         }
+    }
+
+    #[test]
+    fn float_changed_scales_with_magnitude() {
+        assert!(!f32_changed(0.0, 0.0));
+        assert!(!f32_changed(1.0, 1.0));
+        assert!(f32_changed(0.0, f32::EPSILON));
+        // Sub-1.0 values: the spacing there is finer than EPSILON, so a real
+        // diff must still register where an absolute EPSILON check would not.
+        assert!(f32_changed(0.25, 0.25 + f32::EPSILON / 2.0));
+        assert!(!f32_changed(0.25, 0.25 + f32::EPSILON / 8.0));
+        // Large magnitudes: one-ULP noise at 1024 stays clean.
+        assert!(!f32_changed(1024.0, 1024.0 + f32::EPSILON * 1024.0));
+        assert!(f32_changed(1024.0, 1024.0 + f32::EPSILON * 4096.0));
+        // At 0.9 one ULP is EPSILON/2 — below the 0.9·EPSILON threshold — while
+        // two ULPs must register.
+        assert!(f64_changed(0.9, 0.9 + f64::EPSILON));
+        assert!(!f64_changed(0.9, 0.9 + f64::EPSILON / 2.0));
     }
 
     #[test]
