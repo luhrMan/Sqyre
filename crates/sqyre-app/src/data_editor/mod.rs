@@ -2,6 +2,9 @@
 
 const WINDOW_TITLE: &str = "Data Editor";
 
+/// Points per arrow-key press when the pane divider is keyboard-focused.
+const SPLIT_RESIZE_KEY_STEP: f32 = 24.0;
+
 mod form_state;
 mod forms;
 pub(crate) mod helpers;
@@ -200,6 +203,8 @@ pub struct DataEditor {
     items_tag_priority_draft: String,
     /// Width of the left list pane (drag-adjustable).
     left_width: f32,
+    /// Set when the pane divider was moved via arrow keys; persisted on key release.
+    split_key_moved: bool,
     /// Selected program name (all tabs).
     selected_program: Option<String>,
     /// Selected entity within program (items / points / search areas).
@@ -344,6 +349,7 @@ impl Default for DataEditor {
             items_tag_priority: Vec::new(),
             items_tag_priority_draft: String::new(),
             left_width: 0.0,
+            split_key_moved: false,
             selected_program: None,
             selected_entity: None,
             scroll_left_list_to_selection: false,
@@ -1045,6 +1051,15 @@ impl DataEditor {
             ui.id().with("de_split"),
             egui::Sense::click_and_drag(),
         );
+        split_resp.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::ResizeHandle,
+                true,
+                "Pane divider — drag, or press Left/Right arrows while focused, to resize the list and editor panes",
+            )
+        });
+        let split_resp =
+            split_resp.on_hover_text("Drag to resize panes — Left/Right arrows when focused");
         let stroke = if split_resp.hovered() || split_resp.dragged() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             ui.visuals().widgets.active.fg_stroke
@@ -1062,6 +1077,42 @@ impl DataEditor {
                 if avail_w > 1.0 {
                     env.settings.data_editor_left_split = (self.left_width / avail_w)
                         .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
+                }
+            }
+        }
+        // Keyboard equivalent of the drag: arrows nudge the divider while the
+        // splitter holds focus; persist once when the key is released.
+        if split_resp.has_focus() {
+            let dx = if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
+                -SPLIT_RESIZE_KEY_STEP
+            } else if ui.input(|i| i.key_pressed(egui::Key::ArrowRight)) {
+                SPLIT_RESIZE_KEY_STEP
+            } else {
+                0.0
+            };
+            if dx != 0.0 {
+                let next = (self.left_width + dx).clamp(min_left, max_left);
+                if next != self.left_width {
+                    self.left_width = next;
+                    if avail_w > 1.0 {
+                        env.settings.data_editor_left_split = (self.left_width / avail_w)
+                            .clamp(MIN_DATA_EDITOR_LEFT_FRAC, MAX_DATA_EDITOR_LEFT_FRAC);
+                    }
+                    self.split_key_moved = true;
+                }
+            }
+            if self.split_key_moved
+                && ui.input(|i| {
+                    i.key_released(egui::Key::ArrowLeft) || i.key_released(egui::Key::ArrowRight)
+                })
+            {
+                self.split_key_moved = false;
+                env.settings.clamp();
+                if let Err(e) = env.settings.save_default() {
+                    self.set_err(format!(
+                        "Failed to save data editor layout: {}",
+                        crate::status_banner::user_error_detail(&e)
+                    ));
                 }
             }
         }
