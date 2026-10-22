@@ -4,9 +4,12 @@
 //! ([`crate::x11_buttons`]). Clicks are handled there — they do not wait for the
 //! egui ROOT frame (which starved under fullscreen XWayland GameThread on GNOME).
 //!
+//! **Android:** one accessibility-overlay window per button. The host thread
+//! applies focus and image gates after the activity stops drawing.
+//!
 //! **Other OS:** no-op for now (reintroduce per-OS later).
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use crate::icons::{self as overlay_icons};
 use egui::{self};
 use parking_lot::Mutex;
@@ -16,7 +19,7 @@ use sqyre_capture::{
 };
 use sqyre_domain::GENERAL_PROGRAM;
 use sqyre_persist::{OverlayButtonConfig, ProgramCatalog};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 use sqyre_persist::{
     DEFAULT_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE, MIN_OVERLAY_BUTTON_SIZE,
 };
@@ -80,7 +83,11 @@ pub struct MacroOverlay {
     /// Last [`X11ButtonHost::set_relocate_keep_above`] value sent (dedupe).
     #[cfg(target_os = "linux")]
     last_keep_above: Option<bool>,
-    /// Image-gate found map shared with [`crate::x11_buttons`] (Linux).
+    #[cfg(target_os = "android")]
+    android_host: Option<crate::android_buttons::AndroidButtonHost>,
+    #[cfg(target_os = "android")]
+    pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
+    /// Image-gate found map shared with the native button host.
     visibility: Arc<Mutex<HashMap<String, bool>>>,
 }
 
@@ -104,6 +111,10 @@ impl Drop for MacroOverlay {
         self.stop_focus_poller();
         #[cfg(target_os = "linux")]
         if let Some(host) = self.x11_host.take() {
+            host.shutdown();
+        }
+        #[cfg(target_os = "android")]
+        if let Some(host) = self.android_host.take() {
             host.shutdown();
         }
     }
@@ -138,17 +149,21 @@ impl MacroOverlay {
             last_relocate: None,
             #[cfg(target_os = "linux")]
             last_keep_above: None,
+            #[cfg(target_os = "android")]
+            android_host: None,
+            #[cfg(target_os = "android")]
+            pending_moves: Arc::new(Mutex::new(Vec::new())),
             visibility: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
     /// Positions committed by drag-relocate while the Overlay editor tab is open.
     pub fn drain_moves(&self) -> Vec<OverlayButtonMove> {
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "android"))]
         {
             std::mem::take(&mut *self.pending_moves.lock())
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
         {
             Vec::new()
         }
@@ -230,6 +245,10 @@ impl MacroOverlay {
         if let Some(host) = &self.x11_host {
             host.set_visibility_map(map);
         }
+        #[cfg(target_os = "android")]
+        if let Some(host) = &self.android_host {
+            host.set_visibility_map(map);
+        }
     }
 
     /// Enable/disable drag-to-relocate (move cursor + no macro enqueue on click).
@@ -249,7 +268,11 @@ impl MacroOverlay {
                 }
             }
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "android")]
+        if let Some(host) = &self.android_host {
+            host.set_relocate(enabled);
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
         {
             let _ = enabled;
         }
@@ -293,6 +316,10 @@ impl MacroOverlay {
                     host.set_buttons(Vec::new());
                 }
                 self.last_native_specs = Some(Vec::new());
+            }
+            #[cfg(target_os = "android")]
+            if let Some(host) = self.android_host.take() {
+                host.shutdown();
             }
             self.set_relocate_mode(false);
             return;
@@ -414,9 +441,15 @@ impl MacroOverlay {
             }
         }
 
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "android")]
         {
-            let _ = (ctx, pending_macros, specs, relocate, keep_above);
+            let _ = (pending_macros, specs, keep_above);
+            self.sync_android(ctx, buttons, preview, catalog, relocate);
+        }
+
+        #[cfg(not(any(target_os = "linux", target_os = "android")))]
+        {
+            let _ = (ctx, pending_macros, specs, catalog, relocate, keep_above);
         }
     }
 
@@ -443,6 +476,51 @@ impl MacroOverlay {
             Err(e) => {
                 note(&format!("overlay: X11 host failed: {e}"));
             }
+        }
+    }
+
+    /// Push every enabled button. The host thread applies focus and image gates,
+    /// because this sync stops running once the activity is in the background.
+    #[cfg(target_os = "android")]
+    fn sync_android(
+        &mut self,
+        ctx: &egui::Context,
+        buttons: &[OverlayButtonConfig],
+        preview: Option<&OverlayButtonConfig>,
+        catalog: &ProgramCatalog,
+        relocate: bool,
+    ) {
+        let mut native = Vec::new();
+        let ppp = ctx.pixels_per_point();
+        let preview_id = preview.map(|b| b.id.as_str());
+        for btn in buttons {
+            if preview_id == Some(btn.id.as_str()) {
+                continue;
+            }
+            if !btn.enabled || btn.macro_name.trim().is_empty() {
+                continue;
+            }
+            native.push(android_spec(btn, catalog, ppp, relocate));
+        }
+        if let Some(btn) = preview {
+            native.push(android_spec(btn, catalog, ppp, true));
+        }
+        if native.is_empty() {
+            if let Some(host) = self.android_host.take() {
+                host.shutdown();
+            }
+            return;
+        }
+        if self.android_host.is_none() {
+            self.android_host = crate::android_buttons::AndroidButtonHost::start(
+                Arc::clone(&self.pending_moves),
+                Arc::clone(&self.running_macro),
+                Arc::clone(&self.visibility),
+            );
+        }
+        if let Some(host) = &self.android_host {
+            host.set_relocate(relocate);
+            host.set_buttons(native);
         }
     }
 
@@ -685,8 +763,23 @@ fn button_is_busy(btn: &OverlayButtonConfig, running_macro: Option<&str>) -> boo
     btn.macro_name.trim().eq_ignore_ascii_case(running)
 }
 
-#[cfg(target_os = "linux")]
-fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeButtonSpec {
+#[cfg(any(target_os = "linux", target_os = "android"))]
+struct ButtonFace {
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
+    bg: [u8; 4],
+    border: [u8; 4],
+    border_width: f32,
+    corner_radius: f32,
+    icon_glyph: char,
+    icon: [u8; 4],
+    icon_hover: [u8; 4],
+}
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn button_face(btn: &OverlayButtonConfig, ppp: f32) -> ButtonFace {
     let size = if btn.size > 0.0 {
         btn.size
     } else {
@@ -698,9 +791,7 @@ fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeBu
     let glyph = icon.glyph.chars().next().unwrap_or('\u{0}');
     let ppp = ppp.max(0.01);
     let phys = (size * ppp).round().max(1.0);
-    NativeButtonSpec {
-        id: btn.id.clone(),
-        macro_name: btn.macro_name.clone(),
+    ButtonFace {
         x: btn.x.round() as i32,
         y: btn.y.round() as i32,
         w: phys as u32,
@@ -727,10 +818,76 @@ fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeBu
             style.icon_hover.b(),
             style.icon_hover.a(),
         ],
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn spec_from_config(btn: &OverlayButtonConfig, busy: bool, ppp: f32) -> NativeButtonSpec {
+    let face = button_face(btn, ppp);
+    NativeButtonSpec {
+        id: btn.id.clone(),
+        macro_name: btn.macro_name.clone(),
+        x: face.x,
+        y: face.y,
+        w: face.w,
+        h: face.h,
+        bg: face.bg,
+        border: face.border,
+        border_width: face.border_width,
+        corner_radius: face.corner_radius,
+        icon_glyph: face.icon_glyph,
+        icon: face.icon,
+        icon_hover: face.icon_hover,
         tip: btn.macro_name.trim().to_string(),
         busy,
         visibility_gated: btn.visibility_gate.is_active(),
     }
+}
+
+#[cfg(target_os = "android")]
+fn android_spec(
+    btn: &OverlayButtonConfig,
+    catalog: &ProgramCatalog,
+    ppp: f32,
+    ungate: bool,
+) -> crate::button_visibility::AndroidButtonSpec {
+    let mut placed = btn.clone();
+    let (x, y) = btn.resolved_position(catalog);
+    placed.x = x;
+    placed.y = y;
+    let face = button_face(&placed, ppp);
+    let (process_path, window_title) = focus_binding(btn, catalog);
+    crate::button_visibility::AndroidButtonSpec {
+        id: btn.id.clone(),
+        macro_name: btn.macro_name.clone(),
+        program: btn.program.clone(),
+        process_path,
+        window_title,
+        x: face.x,
+        y: face.y,
+        w: face.w,
+        h: face.h,
+        bg: face.bg,
+        border: face.border,
+        border_width: face.border_width,
+        corner_radius: face.corner_radius,
+        icon_glyph: face.icon_glyph,
+        icon: face.icon,
+        icon_hover: face.icon_hover,
+        focus_gated: !ungate && button_is_focus_gated(btn),
+        visibility_gated: !ungate && btn.visibility_gate.is_active(),
+    }
+}
+
+#[cfg(target_os = "android")]
+fn focus_binding(btn: &OverlayButtonConfig, catalog: &ProgramCatalog) -> (String, String) {
+    if let Some(data) = catalog.get(&btn.program) {
+        let path = data.process_path.trim();
+        if !path.is_empty() {
+            return (path.to_string(), data.window_title.clone());
+        }
+    }
+    (String::new(), String::new())
 }
 
 #[cfg(test)]

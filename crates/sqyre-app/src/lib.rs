@@ -504,6 +504,8 @@ impl SqyreApp {
                 let continue_wait = continue_wait.clone();
                 Arc::new(move || continue_wait.signal_continue())
             });
+            #[cfg(feature = "native-runtime")]
+            crate::app_run::install_android_overlay_run();
         }
         #[cfg(not(any(
             feature = "native-runtime",
@@ -863,6 +865,19 @@ impl eframe::App for SqyreApp {
             }
         }
         self.drain_pending_hotkey_macros(ctx);
+        #[cfg(all(target_os = "android", feature = "native-runtime"))]
+        if let Some(name) = crate::app_run::take_android_overlay_started() {
+            if let Some(idx) = self
+                .workspace
+                .macros
+                .iter()
+                .position(|m| m.name.eq_ignore_ascii_case(&name))
+            {
+                self.workspace.selected_macro = idx;
+                self.tree.last_exec_follow = None;
+                self.run_session.logs_image_cache.clear();
+            }
+        }
         if let Some(name) = self.poll_native_hotkey_chooser(ctx) {
             self.start_chosen_macro(name, ctx);
         }
