@@ -264,7 +264,18 @@ pub fn process_icon(process_path: &str) -> Option<ProcessIcon> {
 }
 
 /// App that came to the front last (tracked by the accessibility service).
+///
+/// While Sqyre's activity is started, that package is the foreground app even if an
+/// overlay window also belongs to it. The service ignores its own window events.
 pub fn get_active_window() -> Result<Option<WindowInfo>, CaptureError> {
+    if frames().shell_visible() {
+        return Ok(Some(WindowInfo {
+            title: "Sqyre".into(),
+            process_name: "Sqyre".into(),
+            process_path: crate::ANDROID_APP_PACKAGE.into(),
+            icon: None,
+        }));
+    }
     let app = bridge::foreground_app()
         .map_err(|e| CaptureError::Message(format!("foreground app: {e}")))?;
     Ok(app.as_ref().map(window_info))
