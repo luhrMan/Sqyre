@@ -732,6 +732,50 @@ fn host_loop(
     note("overlay-x11: host thread stopped");
 }
 
+/// What a spec update changed, for the minimal repaint/reshape path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SpecDelta {
+    /// Position or size changed.
+    geom: bool,
+    /// Corner radius changed (input shape needs rebuild even without geometry).
+    radius: bool,
+    /// Any paint-affecting field changed (radius counts — it shapes ink).
+    style: bool,
+}
+
+/// Relative float compare: `f32::EPSILON` is the gap around 1.0 — as an
+/// absolute threshold it misses real differences in values below ~1.0
+/// (e.g. thin border widths), where the representable gap is smaller.
+fn f32_changed(a: f32, b: f32) -> bool {
+    (a - b).abs() > f32::EPSILON * a.abs().max(b.abs())
+}
+
+fn spec_delta(old: &NativeButtonSpec, new: &NativeButtonSpec) -> SpecDelta {
+    let radius = f32_changed(old.corner_radius, new.corner_radius);
+    SpecDelta {
+        geom: old.x != new.x || old.y != new.y || old.w != new.w || old.h != new.h,
+        radius,
+        style: old.bg != new.bg
+            || old.border != new.border
+            || f32_changed(old.border_width, new.border_width)
+            || radius
+            || old.icon_glyph != new.icon_glyph
+            || old.icon != new.icon
+            || old.icon_hover != new.icon_hover
+            || old.tip != new.tip
+            || old.busy != new.busy,
+    }
+}
+
+/// True when `(x, y)` is inside the spec's rect (saturating right/bottom edge).
+/// A zero-dimension spec hits a 1×1 box on purpose: window creation clamps to
+/// `max(1)` too, so the test covers the window that actually exists.
+fn spec_contains(spec: &NativeButtonSpec, x: i32, y: i32) -> bool {
+    let w = spec.w.max(1) as i32;
+    let h = spec.h.max(1) as i32;
+    x >= spec.x && y >= spec.y && x < spec.x.saturating_add(w) && y < spec.y.saturating_add(h)
+}
+
 fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
     let mut keep = std::collections::HashSet::new();
     for spec in specs {
@@ -739,21 +783,10 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
         keep.insert(id.clone());
         let dragging = state.drag.as_ref().is_some_and(|d| d.id == id);
         let updated = if let Some(live) = state.buttons.get_mut(&id) {
-            let geom_changed = live.spec.x != spec.x
-                || live.spec.y != spec.y
-                || live.spec.w != spec.w
-                || live.spec.h != spec.h;
-            let radius_changed =
-                (live.spec.corner_radius - spec.corner_radius).abs() > f32::EPSILON;
-            let style_changed = live.spec.bg != spec.bg
-                || live.spec.border != spec.border
-                || (live.spec.border_width - spec.border_width).abs() > f32::EPSILON
-                || radius_changed
-                || live.spec.icon_glyph != spec.icon_glyph
-                || live.spec.icon != spec.icon
-                || live.spec.icon_hover != spec.icon_hover
-                || live.spec.tip != spec.tip
-                || live.spec.busy != spec.busy;
+            let delta = spec_delta(&live.spec, &spec);
+            let geom_changed = delta.geom;
+            let radius_changed = delta.radius;
+            let style_changed = delta.style;
             let win = live.win;
             let hit = live.hit;
             // While relocating, keep the live drag position — app specs may still be stale.
@@ -1144,14 +1177,7 @@ fn button_id_at_root(state: &HostState, root_x: i32, root_y: i32) -> Option<Stri
         .buttons
         .values()
         .filter(|b| b.mapped)
-        .find(|b| {
-            let w = b.spec.w.max(1) as i32;
-            let h = b.spec.h.max(1) as i32;
-            root_x >= b.spec.x
-                && root_y >= b.spec.y
-                && root_x < b.spec.x.saturating_add(w)
-                && root_y < b.spec.y.saturating_add(h)
-        })
+        .find(|b| spec_contains(&b.spec, root_x, root_y))
         .map(|b| b.spec.id.clone())
 }
 
@@ -3229,4 +3255,159 @@ fn circle_inset(r: i32, y_from_edge: i32) -> i32 {
     let y = y_from_edge.clamp(0, r as i32) as f64;
     let inside = (r * r - y * y).max(0.0).sqrt();
     (r - inside).ceil().max(0.0) as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn spec() -> NativeButtonSpec {
+        NativeButtonSpec {
+            id: "b1".into(),
+            macro_name: "m".into(),
+            x: 100,
+            y: 200,
+            w: 48,
+            h: 48,
+            bg: [10, 20, 30, 200],
+            border: [255, 255, 255, 255],
+            border_width: 2.0,
+            corner_radius: 8.0,
+            icon_glyph: '+',
+            icon: [255, 255, 255, 255],
+            icon_hover: [200, 200, 200, 255],
+            tip: "run m".into(),
+            busy: false,
+            visibility_gated: false,
+        }
+    }
+
+    #[test]
+    fn spec_delta_classifies_changes() {
+        let base = spec();
+        assert_eq!(
+            spec_delta(&base, &base),
+            SpecDelta {
+                geom: false,
+                radius: false,
+                style: false
+            }
+        );
+
+        // Geometry-only move/resize.
+        let moved = NativeButtonSpec {
+            x: base.x + 10,
+            ..base.clone()
+        };
+        let d = spec_delta(&base, &moved);
+        assert!(d.geom && !d.radius && !d.style);
+
+        // Radius is style + radius (input shape depends on it), not geom.
+        let rounded = NativeButtonSpec {
+            corner_radius: base.corner_radius + 4.0,
+            ..base.clone()
+        };
+        let d = spec_delta(&base, &rounded);
+        assert!(d.radius && d.style && !d.geom);
+
+        // Sub-epsilon radius changes do not churn repaints.
+        let near = NativeButtonSpec {
+            corner_radius: base.corner_radius + f32::EPSILON / 2.0,
+            ..base.clone()
+        };
+        assert_eq!(spec_delta(&base, &near), spec_delta(&base, &base));
+
+        // But the compare scales with the value: a sub-EPSILON diff is a real
+        // change for thin widths (absolute EPSILON would have missed it).
+        let thin = NativeButtonSpec {
+            border_width: 0.25,
+            ..base.clone()
+        };
+        let thinner = NativeButtonSpec {
+            border_width: 0.25 + f32::EPSILON / 2.0,
+            ..base.clone()
+        };
+        assert!(spec_delta(&thin, &thinner).style);
+
+        // Paint fields are style-only.
+        let painted = NativeButtonSpec {
+            busy: true,
+            ..base.clone()
+        };
+        let d = spec_delta(&base, &painted);
+        assert!(d.style && !d.geom && !d.radius);
+
+        let tinted = NativeButtonSpec {
+            icon_hover: [1, 2, 3, 4],
+            ..base.clone()
+        };
+        assert!(spec_delta(&base, &tinted).style);
+    }
+
+    #[test]
+    fn spec_contains_rect_edges() {
+        let s = spec(); // (100,200) 48x48
+        assert!(spec_contains(&s, 100, 200));
+        assert!(spec_contains(&s, 147, 247));
+        assert!(!spec_contains(&s, 148, 200)); // right edge exclusive
+        assert!(!spec_contains(&s, 100, 248)); // bottom edge exclusive
+        assert!(!spec_contains(&s, 99, 200));
+        assert!(!spec_contains(&s, 100, 199));
+        // Zero/negative-dim specs still hit a 1px box.
+        let zero = NativeButtonSpec {
+            w: 0,
+            h: 0,
+            ..spec()
+        };
+        assert!(spec_contains(&zero, 100, 200));
+        assert!(!spec_contains(&zero, 101, 200));
+    }
+
+    #[test]
+    fn rounded_rect_strips_cover_full_height() {
+        // Radius 0 → a full-width strip per row.
+        let rects = rounded_rect_xrectangles(10, 4, 0);
+        assert_eq!(rects.len(), 4);
+        assert!(rects.iter().all(|r| r.x == 0 && r.width == 10));
+
+        // Degenerate sizes produce no strips.
+        assert!(rounded_rect_xrectangles(0, 4, 2).is_empty());
+        assert!(rounded_rect_xrectangles(4, 0, 2).is_empty());
+
+        // Radius clamps to half the smaller dimension.
+        let clamped = rounded_rect_xrectangles(8, 6, 100);
+        let r2 = rounded_rect_xrectangles(8, 6, 3);
+        assert_eq!(clamped, r2, "radius clamps at min(w,h)/2");
+
+        // Corner rows are inset; middle rows are full width.
+        let rects = rounded_rect_xrectangles(20, 20, 5);
+        assert_eq!(rects.len(), 20);
+        let corner = rects[0];
+        assert!(corner.x > 0 && corner.width < 20, "top row is inset");
+        let mid = rects[10];
+        assert_eq!((mid.x, mid.width), (0, 20), "middle row is full width");
+        // Symmetric: last row mirrors the first.
+        let last = *rects.last().unwrap();
+        assert_eq!(last.x, corner.x);
+        assert_eq!(last.width, corner.width);
+    }
+
+    #[test]
+    fn circle_inset_monotonic_and_edge_safe() {
+        // `y_from_edge` is the row's distance inward from the circle boundary:
+        // inset grows as the row approaches the far side of the arc.
+        let r = 8;
+        let mut prev = 0;
+        for y in 0..r {
+            let ins = circle_inset(r, y);
+            assert!(ins >= 0);
+            assert!(ins <= r, "inset never exceeds radius");
+            assert!(ins >= prev, "inset non-decreasing away from the edge");
+            prev = ins;
+        }
+        assert_eq!(circle_inset(r, 0), 0, "row on the boundary needs no inset");
+        assert_eq!(circle_inset(r, r), r, "opposite edge is fully inset");
+        // Negative distances clamp to the boundary.
+        assert_eq!(circle_inset(r, -5), 0);
+    }
 }
