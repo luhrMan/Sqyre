@@ -20,7 +20,6 @@ members = [
     "crates/sqyre-app",
     "crates/sqyre-android",
     "crates/sqyre-probe",
-    "crates/sqyre-bench-compare",
 ]
 default-members = [
     "crates/sqyre-match",
