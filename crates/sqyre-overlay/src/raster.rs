@@ -2,32 +2,50 @@
 
 use crate::brand_s;
 use egui_phosphor::Variant;
+#[cfg(target_os = "linux")]
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::Font;
 use std::sync::OnceLock;
 
+#[cfg(target_os = "linux")]
 const TIP_PAD_X: f32 = 11.0;
+#[cfg(target_os = "linux")]
 const TIP_PAD_Y: f32 = 7.0;
+#[cfg(target_os = "linux")]
 const TIP_MAX_TEXT_W: f32 = 280.0;
 /// Logical tip font size; rasterized at [`TIP_SSAA`]× then downsampled.
+#[cfg(target_os = "linux")]
 const TIP_FONT_PX: f32 = 13.0;
+#[cfg(target_os = "linux")]
 const TIP_SSAA: u32 = 2;
 /// Shared with X11 tip window shape.
+#[cfg(target_os = "linux")]
 pub const TIP_CORNER_PX: f32 = 7.0;
+#[cfg(target_os = "linux")]
 const TIP_BORDER_W: f32 = 1.0;
 /// Panel fill `#1c1914` — shared with tip window backing pixel.
+#[cfg(target_os = "linux")]
 pub const TIP_BG_RGB: [u8; 3] = [0x1c, 0x19, 0x14];
 /// Soft gold border.
+#[cfg(target_os = "linux")]
 const TIP_BORDER: [u8; 4] = [0xdc, 0x9d, 0x2e, 0xa0];
 /// Cream text `#f5e6c0`.
+#[cfg(target_os = "linux")]
 const TIP_FG: [u8; 4] = [0xf5, 0xe6, 0xc0, 0xff];
+#[cfg(target_os = "linux")]
 const MENU_ROW_H: f32 = 28.0;
+#[cfg(target_os = "linux")]
 const MENU_PAD_X: f32 = 12.0;
+#[cfg(target_os = "linux")]
 const MENU_PAD_Y: f32 = 8.0;
+#[cfg(target_os = "linux")]
 const MENU_TITLE_H: f32 = 22.0;
+#[cfg(target_os = "linux")]
 const MENU_MAX_W: f32 = 360.0;
+#[cfg(target_os = "linux")]
 const MENU_MIN_W: f32 = 180.0;
 
+#[cfg(target_os = "linux")]
 const UI_FONT_CANDIDATES: &[&str] = &[
     "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
     "/usr/local/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
@@ -58,6 +76,7 @@ impl Canvas<'_> {
 
 /// One selectable chooser row: `(name, x, y, w, h)` in window coordinates.
 /// An empty `name` marks the Cancel row.
+#[cfg(target_os = "linux")]
 pub type ChooserRow = (String, i32, i32, u32, u32);
 
 /// Style + content needed to paint one button face.
@@ -93,6 +112,7 @@ fn phosphor_font() -> &'static Font {
     })
 }
 
+#[cfg(target_os = "linux")]
 fn ui_font() -> &'static Font {
     static FONT: OnceLock<Font> = OnceLock::new();
     FONT.get_or_init(|| {
@@ -113,6 +133,7 @@ fn ui_font() -> &'static Font {
 }
 
 /// Opaque tip panel: `(width, height, rgba)`. Empty text → empty buffer / 0 size.
+#[cfg(target_os = "linux")]
 pub fn rasterize_tip(text: &str) -> (u32, u32, Vec<u8>) {
     let text = text.trim();
     if text.is_empty() {
@@ -196,6 +217,7 @@ pub fn rasterize_tip(text: &str) -> (u32, u32, Vec<u8>) {
 
 /// Opaque hotkey-conflict menu: `(w, h, rgba, row_hits)` in physical pixels.
 /// `hover` / `pressed` are optional row indices (including Cancel).
+#[cfg(target_os = "linux")]
 pub fn rasterize_chooser(
     title: &str,
     names: &[String],
@@ -288,12 +310,14 @@ pub fn rasterize_chooser(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[cfg(target_os = "linux")]
 enum ChipState {
     Idle,
     Hover,
     Pressed,
 }
 
+#[cfg(target_os = "linux")]
 fn row_chip_state(i: usize, hover: Option<usize>, pressed: Option<usize>) -> ChipState {
     if pressed == Some(i) {
         ChipState::Pressed
@@ -304,6 +328,7 @@ fn row_chip_state(i: usize, hover: Option<usize>, pressed: Option<usize>) -> Chi
     }
 }
 
+#[cfg(target_os = "linux")]
 fn fill_row_chip(
     canvas: &mut Canvas<'_>,
     (x, y, rw, rh): (i32, i32, u32, u32),
@@ -350,6 +375,7 @@ fn fill_row_chip(
     }
 }
 
+#[cfg(target_os = "linux")]
 fn draw_line_text(
     canvas: &mut Canvas<'_>,
     font: &Font,
@@ -393,6 +419,7 @@ fn draw_line_text(
     }
 }
 
+#[cfg(target_os = "linux")]
 fn fill_rounded_panel(canvas: &mut Canvas<'_>, corner: f32, border_w: f32) {
     let (w, h) = (canvas.w, canvas.h);
     let r = corner.min((w.min(h) as f32) * 0.5);
@@ -417,6 +444,7 @@ fn fill_rounded_panel(canvas: &mut Canvas<'_>, corner: f32, border_w: f32) {
 }
 
 /// Glyph coverage bitmap (`bw` × `bh`, 8-bit alpha) blitted at `(ox, oy)`.
+#[cfg(target_os = "linux")]
 struct Coverage<'a> {
     bitmap: &'a [u8],
     bw: usize,
@@ -425,6 +453,7 @@ struct Coverage<'a> {
     oy: i32,
 }
 
+#[cfg(target_os = "linux")]
 fn blit_coverage(canvas: &mut Canvas<'_>, cov: Coverage<'_>, color: [u8; 4]) {
     let a_scale = color[3] as f32 / 255.0;
     for gy in 0..cov.bh {
@@ -441,6 +470,7 @@ fn blit_coverage(canvas: &mut Canvas<'_>, cov: Coverage<'_>, color: [u8; 4]) {
     }
 }
 
+#[cfg(target_os = "linux")]
 fn downsample_box(src: &[u8], sw: u32, sh: u32, factor: u32) -> (u32, u32, Vec<u8>) {
     let f = factor.max(1);
     let dw = (sw / f).max(1);
@@ -475,14 +505,17 @@ fn downsample_box(src: &[u8], sw: u32, sh: u32, factor: u32) -> (u32, u32, Vec<u
 }
 
 /// Alpha above this is included in the XFixes shape (binary punch-out, not soft glass).
+#[cfg(target_os = "linux")]
 pub const SHAPE_ALPHA_MIN: u8 = 96;
 
 /// How glyph / spinner ink lands on the painted face.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum InkMode {
     /// Opaque face: source-over RGB, alpha forced 255.
+    #[cfg(target_os = "linux")]
     Fill,
     /// Punch-out mask: keep RGB, accumulate alpha for the XFixes shape.
+    #[cfg(target_os = "linux")]
     Mask,
     /// Premultiplied ARGB face: source-over including alpha.
     Over,
@@ -492,6 +525,7 @@ enum InkMode {
 ///
 /// With an opaque `bg`, every in-shape pixel is filled (alpha 255). With
 /// `bg[3] == 0`, only chrome ink is written and alpha marks the punch-out mask.
+#[cfg(target_os = "linux")]
 pub fn rasterize(paint: &ButtonPaint) -> Vec<u8> {
     let w = paint.w.max(1) as i32;
     let h = paint.h.max(1) as i32;
@@ -611,6 +645,7 @@ fn stamp_face_ink(rgba: &mut [u8], w: u32, h: u32, paint: &ButtonPaint, mode: In
 }
 
 /// Scanline rectangles for pixels with alpha ≥ [`SHAPE_ALPHA_MIN`].
+#[cfg(target_os = "linux")]
 pub fn shape_rects_from_alpha(rgba: &[u8], w: u32, h: u32) -> Vec<(i16, i16, u16, u16)> {
     if w == 0 || h == 0 || rgba.len() < (w * h * 4) as usize {
         return Vec::new();
@@ -647,6 +682,7 @@ fn sd_rounded_rect(px: f32, py: f32, w: f32, h: f32, r: f32) -> f32 {
     len + q[0].min(0.0).max(q[1].min(0.0)) - r
 }
 
+#[cfg(target_os = "linux")]
 fn blend(dst: &mut [u8], src: [u8; 4], a: f32) {
     let a = a.clamp(0.0, 1.0);
     for i in 0..3 {
@@ -656,6 +692,7 @@ fn blend(dst: &mut [u8], src: [u8; 4], a: f32) {
 }
 
 /// Write ink for punch-out windows: keep RGB, accumulate alpha for the shape mask.
+#[cfg(target_os = "linux")]
 fn stamp_ink(dst: &mut [u8], src: [u8; 4], a: f32) {
     let a = a.clamp(0.0, 1.0);
     if a < 0.01 {
@@ -693,7 +730,9 @@ fn stamp_over(dst: &mut [u8], src: [u8; 4], a: f32) {
 
 fn stamp_mode(dst: &mut [u8], src: [u8; 4], a: f32, mode: InkMode) {
     match mode {
+        #[cfg(target_os = "linux")]
         InkMode::Fill => blend(dst, src, a),
+        #[cfg(target_os = "linux")]
         InkMode::Mask => stamp_ink(dst, src, a),
         InkMode::Over => stamp_over(dst, src, a),
     }
@@ -786,6 +825,7 @@ fn stamp_spinner(canvas: &mut Canvas<'_>, cov: &[f32], color: [u8; 4], mode: Ink
 /// flip — per-frame shape updates regress on XWayland — so the busy frames
 /// must all paint inside a bounding computed from this union, or strokes
 /// clip wherever they leave the first frame's ink.
+#[cfg(target_os = "linux")]
 pub fn busy_shape_alpha(paint: &ButtonPaint) -> Vec<u8> {
     // The union over a full sweep is the S *fully drawn*: every traversal
     // fraction is inked at some phase, so one full-coverage pass replaces
