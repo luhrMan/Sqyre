@@ -599,3 +599,156 @@ impl FormState for OverlayForm {
             && !ed.form_overlay_macro.trim().is_empty()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_persist::{ProgramItem, ProgramPoint};
+
+    fn catalog() -> ProgramCatalog {
+        let mut cat = ProgramCatalog::default();
+        cat.set_resolution_key("1920x1080");
+        cat.create_program("Game").unwrap();
+        cat
+    }
+
+    fn editor_on(tab: EditorTab) -> DataEditor {
+        DataEditor {
+            tab,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn valid_tab_rejects_bad_entity_names_everywhere() {
+        let mut ed = editor_on(EditorTab::Items);
+        ed.selected_program = Some("Game".into());
+        ed.form_name = "a/b".into();
+        ed.form_cols = "1".into();
+        ed.form_rows = "1".into();
+        ed.form_stack_max = "0".into();
+        assert!(!valid_tab(EditorTab::Items, &ed, None));
+    }
+
+    #[test]
+    fn programs_form_load_and_dirty() {
+        let mut cat = catalog();
+        let settings = UserSettings::default();
+        cat.set_process_binding("Game", "/bin/game", "Game Window")
+            .unwrap();
+        cat.set_program_tags("Game", vec!["farm".into()]).unwrap();
+
+        let mut ed = editor_on(EditorTab::Programs);
+        ed.selected_program = Some("Game".into());
+        ProgramsForm::load(&mut ed, &cat, &settings);
+        assert_eq!(ed.form_name, "Game");
+        assert_eq!(ed.form_process_path, "/bin/game");
+        assert_eq!(ed.form_window_title, "Game Window");
+        assert_eq!(ed.form_tags, vec!["farm".to_string()]);
+        assert!(!ProgramsForm::is_dirty(&ed, &cat, &settings));
+
+        // Renaming or editing identity fields marks dirty.
+        ed.form_process_path = "/bin/other".into();
+        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+        ed.form_process_path = "/bin/game".into();
+        ed.form_name = "Renamed".into();
+        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+
+        // Unselected + any entered content → dirty (new entity in progress).
+        ed.selected_program = None;
+        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+        ed.form_name.clear();
+        ed.form_process_path.clear();
+        ed.form_window_title.clear();
+        ed.form_tags.clear();
+        assert!(!ProgramsForm::is_dirty(&ed, &cat, &settings));
+        ed.form_name = "New".into();
+        assert!(ProgramsForm::is_dirty(&ed, &cat, &settings));
+    }
+
+    #[test]
+    fn items_form_load_dirty_valid() {
+        let mut cat = catalog();
+        let settings = UserSettings::default();
+        cat.upsert_item(
+            "Game",
+            ProgramItem {
+                name: "Potion".into(),
+                mask: "circle".into(),
+                stack_max: 5,
+                grid_cols: 2,
+                grid_rows: 3,
+                tags: vec!["heal".into()],
+            },
+        )
+        .unwrap();
+
+        let mut ed = editor_on(EditorTab::Items);
+        ed.selected_program = Some("Game".into());
+        ed.selected_entity = Some("Potion".into());
+        ItemsForm::load(&mut ed, &cat, &settings);
+        assert_eq!(ed.form_name, "Potion");
+        assert_eq!(ed.form_cols, "2");
+        assert_eq!(ed.form_rows, "3");
+        assert_eq!(ed.form_stack_max, "5");
+        assert_eq!(ed.form_mask, "circle");
+        assert_eq!(ed.form_tags, vec!["heal".to_string()]);
+        assert!(!ItemsForm::is_dirty(&ed, &cat, &settings));
+        assert!(ItemsForm::is_valid(&ed, None));
+
+        ed.form_cols = "0".into();
+        assert!(ItemsForm::is_dirty(&ed, &cat, &settings));
+        assert!(!ItemsForm::is_valid(&ed, None));
+
+        // Missing entity → dirty forces the form to look edited.
+        ed.selected_entity = Some("ghost".into());
+        assert!(ItemsForm::is_dirty(&ed, &cat, &settings));
+        // Unselected + blank name → clean.
+        ed.selected_program = None;
+        ed.selected_entity = None;
+        ed.form_name.clear();
+        assert!(!ItemsForm::is_dirty(&ed, &cat, &settings));
+    }
+
+    #[test]
+    fn points_form_load_and_valid() {
+        let mut cat = catalog();
+        let settings = UserSettings::default();
+        cat.upsert_point(
+            "Game",
+            ProgramPoint {
+                name: "Spawn".into(),
+                monitor: 1,
+                x: ScalarValue::Int(10),
+                y: ScalarValue::Int(20),
+            },
+        )
+        .unwrap();
+
+        let mut ed = editor_on(EditorTab::Points);
+        ed.selected_program = Some("Game".into());
+        ed.selected_entity = Some("Spawn".into());
+        PointsForm::load(&mut ed, &cat, &settings);
+        assert_eq!(ed.form_name, "Spawn");
+        assert_eq!(ed.form_x, "10");
+        assert_eq!(ed.form_y, "20");
+        assert!(!PointsForm::is_dirty(&ed, &cat, &settings));
+        assert!(PointsForm::is_valid(&ed, None));
+
+        // Blank coords are invalid.
+        ed.form_x.clear();
+        assert!(!PointsForm::is_valid(&ed, None));
+    }
+
+    #[test]
+    fn dispatch_helpers_route_to_the_tab_form() {
+        let cat = catalog();
+        let settings = UserSettings::default();
+        let mut ed = editor_on(EditorTab::Programs);
+        ed.selected_program = Some("Game".into());
+        load_tab(EditorTab::Programs, &mut ed, &cat, &settings);
+        assert_eq!(ed.form_name, "Game");
+        assert!(!dirty_tab(EditorTab::Programs, &ed, &cat, &settings));
+        assert!(valid_tab(EditorTab::Programs, &ed, None));
+    }
+}

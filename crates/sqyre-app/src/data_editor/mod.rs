@@ -135,8 +135,10 @@ impl EditorTab {
         matches!(self, Self::ScreenCap | Self::PixelCheck)
     }
 
-    /// Noun in the delete confirmation (`item “foo”`). `None` when the tab cannot delete.
-    fn delete_subject(self) -> Option<&'static str> {
+    /// Entity noun for this tab (`item “foo”` in the delete confirmation,
+    /// `New item` in the footer button's a11y name). `None` when the tab has
+    /// no creatable/deletable entity kind.
+    fn entity_noun(self) -> Option<&'static str> {
         match self {
             Self::Programs => Some("program"),
             Self::Items => Some("item"),
@@ -1112,15 +1114,25 @@ impl DataEditor {
                     ui.horizontal_wrapped(|ui| {
                         let can_new =
                             !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-                        if ui
-                            .add_enabled(
-                                can_new,
-                                egui::Button::new(
-                                    egui::RichText::new("New").color(crate::theme::MACRO_START),
-                                ),
-                            )
-                            .clicked()
-                        {
+                        let new_resp = ui.add_enabled(
+                            can_new,
+                            egui::Button::new(
+                                egui::RichText::new("New").color(crate::theme::MACRO_START),
+                            ),
+                        );
+                        // Every tab shows the same "New" face; the a11y name
+                        // says which entity it creates (also keeps UI tests
+                        // from matching the wrong "New").
+                        if let Some(noun) = self.tab.entity_noun() {
+                            new_resp.widget_info(|| {
+                                egui::WidgetInfo::labeled(
+                                    egui::WidgetType::Button,
+                                    ui.is_enabled(),
+                                    format!("New {noun}"),
+                                )
+                            });
+                        }
+                        if new_resp.clicked() {
                             self.on_new(env);
                         }
                         #[cfg(feature = "native-runtime")]
@@ -1164,7 +1176,7 @@ impl DataEditor {
 
     /// Ask to delete the selected program / entity (list row right-click → Delete).
     pub(crate) fn request_delete_selected(&mut self) {
-        let Some(subject) = self.tab.delete_subject() else {
+        let Some(subject) = self.tab.entity_noun() else {
             return;
         };
         let name = if self.tab == EditorTab::Programs {

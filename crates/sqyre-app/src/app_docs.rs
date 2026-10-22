@@ -29,6 +29,7 @@ use sqyre_persist::UserSettings;
 use sqyre_ports::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
 
+#[doc(hidden)]
 impl SqyreApp {
     pub fn for_docs() -> Self {
         // Keep docs/screenshot/kittest harnesses at 1.0 PPP: AccessKit pointer clicks
@@ -176,6 +177,16 @@ impl SqyreApp {
         self.settings_ui.open
     }
 
+    /// Whether the data editor window is showing (docs / interaction harnesses).
+    pub fn docs_data_editor_open(&self) -> bool {
+        self.data_editor.open
+    }
+
+    /// Program catalog (docs / interaction harnesses).
+    pub fn docs_catalog(&self) -> &sqyre_persist::ProgramCatalog {
+        &self.workspace.catalog
+    }
+
     /// Whether the command palette is showing (docs / interaction harnesses).
     pub fn docs_command_palette_open(&self) -> bool {
         self.command_palette.is_open()
@@ -184,6 +195,13 @@ impl SqyreApp {
         // Coordinates → Points shows the post-ScreenCap tab strip with filled form data.
         self.data_editor
             .open_points_for_docs("Demo Program", "center", &self.workspace.catalog);
+    }
+
+    /// Open the data editor on the Programs tab (docs / interaction harnesses).
+    /// Unlike Points/SearchAreas, New here does not arm screen-click recording.
+    pub fn open_data_editor_programs_for_docs(&mut self) {
+        self.data_editor
+            .open_programs_for_docs(&self.workspace.catalog);
     }
 
     pub fn select_action(&mut self, id: sqyre_domain::ActionId) {
