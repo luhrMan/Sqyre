@@ -751,10 +751,17 @@ fn title_is_overlay_chrome(title: &str) -> bool {
     t == OVERLAY_WM_TITLE || t == OVERLAY_TIP_WM_TITLE
 }
 
+/// Android application id. Overlay focus treats this package as Sqyre.
+pub const ANDROID_APP_PACKAGE: &str = "com.sqyre.app";
+
 /// True when `win` is owned by this process's executable.
 pub fn window_is_our_process(win: &WindowInfo) -> bool {
     // Overlay chrome uses a fixed WM title; path matching can fail via AT-SPI.
     if title_is_overlay_chrome(&win.title) {
+        return true;
+    }
+    // Android reports the app package, not `current_exe`.
+    if win.process_path.trim() == ANDROID_APP_PACKAGE {
         return true;
     }
     // `current_exe` is unsupported / may panic on wasm32-unknown-unknown.
