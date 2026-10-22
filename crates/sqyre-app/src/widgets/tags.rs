@@ -506,7 +506,7 @@ fn paint_tag_chips(
             }
         };
 
-        let chip_rect = if reorderable && enabled {
+        let (chip_rect, chip_anchor) = if reorderable && enabled {
             let id = ui.id().with(("tag_dnd", i, tag.as_str()));
             let drag = ui.dnd_drag_source(id, i, paint_chip);
             drag.response
@@ -525,10 +525,10 @@ fn paint_tag_chips(
                     egui::StrokeKind::Outside,
                 );
             }
-            drag.inner
+            (drag.inner, Some(drag.response))
         } else {
             let rect = paint_chip(ui);
-            if enabled && signed_filters {
+            let anchor = if enabled && signed_filters {
                 // Not a drag source — the chip itself can take a click to flip
                 // the include/exclude sign. Kept off draggable chips: a
                 // click-sense overlay would swallow the press and break reorder.
@@ -545,15 +545,18 @@ fn paint_tag_chips(
                 if resp.clicked() {
                     toggle = Some(i);
                 }
-                resp.on_hover_text(
+                let resp = resp.on_hover_text(
                     "Click to toggle include/exclude. Right-click for more options.",
                 );
-            }
-            rect
+                Some(resp)
+            } else {
+                None
+            };
+            (rect, anchor)
         };
         if enabled {
             let menu_id = ui.id().with(("tag_chip_menu", i, tag.as_str()));
-            crate::widgets::rect_context_menu(ui, menu_id, chip_rect, |ui| {
+            crate::widgets::rect_context_menu(ui, menu_id, chip_rect, chip_anchor.as_ref(), |ui| {
                 if signed_filters {
                     let flip = if polarity == "+" {
                         "Exclude (−)"

@@ -556,6 +556,7 @@ impl DataEditor {
                                     let selected = self.selected_program.as_deref()
                                         == Some(prog.as_str())
                                         && self.selected_entity.as_deref() == Some(btn.id.as_str());
+                                    let mut row_anchor = None;
                                     let row = ui.horizontal(|ui| {
                                         let paint = live_preview
                                             .as_ref()
@@ -574,12 +575,14 @@ impl DataEditor {
                                         if thumb.clicked() || label.clicked() {
                                             clicked_overlay = Some((prog.clone(), btn.id.clone()));
                                         }
+                                        row_anchor = Some(label);
                                     });
                                     let menu_id = egui::Id::new(("overlay_row_menu", &btn.id));
                                     crate::widgets::rect_context_menu(
                                         ui,
                                         menu_id,
                                         row.response.rect,
+                                        row_anchor.as_ref(),
                                         |ui| {
                                             let mut enabled = btn.enabled;
                                             if ui

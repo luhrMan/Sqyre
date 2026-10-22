@@ -158,6 +158,7 @@ impl DataEditor {
                     ui,
                     menu_id,
                     cell.response.rect,
+                    Some(&cell.response),
                     "Delete",
                     !deny,
                 ) {
