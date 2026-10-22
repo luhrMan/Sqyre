@@ -383,8 +383,11 @@ impl SettingsUi {
                     ))
                     .on_hover_text("Search");
                     // Infinity fill — fixed desired_width(available) ratchets the window.
+                    // Pin the id so focus survives the Clear button appearing and
+                    // disappearing (it is laid out before this field).
                     let search_resp = ui.add(
                         egui::TextEdit::singleline(&mut self.search)
+                            .id(settings_window_id().with("search"))
                             .hint_text("Search settings…")
                             .desired_width(f32::INFINITY),
                     );
@@ -2027,6 +2030,8 @@ fn resolve_sqyre_dir_from_pick(picked: PathBuf) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui_kittest::kittest::Queryable;
+    use sqyre_persist::{Database, ProgramCatalog};
 
     #[test]
     fn empty_query_shows_every_section() {
@@ -2083,6 +2088,103 @@ mod tests {
             SECTION_GENERAL,
             GENERAL_SETTINGS
         ));
+    }
+
+    fn press_key(harness: &mut egui_kittest::Harness<'_, SettingsUi>, key: egui::Key) {
+        for pressed in [true, false] {
+            harness.event(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+    }
+
+    fn search_field<'a>(
+        harness: &'a egui_kittest::Harness<'_, SettingsUi>,
+    ) -> egui_kittest::Node<'a> {
+        harness.get_by_role(egui::accesskit::Role::TextInput)
+    }
+
+    /// The Clear button is inserted ahead of the field when the query crosses
+    /// empty. That must not move the field's id, or the first typed or deleted
+    /// character drops focus.
+    #[test]
+    fn search_keeps_focus_when_query_crosses_empty() {
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(900.0, 700.0))
+            .build_ui_state(
+                |ui, settings: &mut SettingsUi| {
+                    let mut db = Database::default();
+                    let mut macros = Vec::new();
+                    let mut catalog = ProgramCatalog::default();
+                    #[cfg(not(target_arch = "wasm32"))]
+                    let mut update = crate::update::UpdateManager::default();
+                    settings.show(
+                        ui.ctx(),
+                        &mut db,
+                        &mut macros,
+                        &mut catalog,
+                        #[cfg(not(target_arch = "wasm32"))]
+                        &mut update,
+                        None,
+                    );
+                },
+                SettingsUi {
+                    open: true,
+                    ..SettingsUi::default()
+                },
+            );
+        harness.run();
+        assert!(
+            search_field(&harness).is_focused(),
+            "search focuses when Settings opens"
+        );
+
+        search_field(&harness).type_text("q");
+        harness.run();
+        harness.step();
+        let field = search_field(&harness);
+        assert_eq!(field.value().as_deref(), Some("q"));
+        assert!(
+            field.is_focused(),
+            "typing the first character should keep the search field focused"
+        );
+        assert!(harness.query_by_label("Clear").is_some());
+
+        search_field(&harness).type_text("z");
+        harness.run();
+        harness.step();
+        let field = search_field(&harness);
+        assert_eq!(field.value().as_deref(), Some("qz"));
+        assert!(field.is_focused());
+
+        press_key(&mut harness, egui::Key::Backspace);
+        harness.run();
+        harness.step();
+        let field = search_field(&harness);
+        assert_eq!(field.value().as_deref(), Some("q"));
+        assert!(field.is_focused());
+
+        press_key(&mut harness, egui::Key::Backspace);
+        harness.run();
+        harness.step();
+        let field = search_field(&harness);
+        assert_eq!(field.value().as_deref(), Some(""));
+        assert!(
+            field.is_focused(),
+            "deleting back to an empty query should keep the search field focused"
+        );
+        assert!(harness.query_by_label("Clear").is_none());
+
+        search_field(&harness).type_text("a");
+        harness.run();
+        harness.step();
+        let field = search_field(&harness);
+        assert_eq!(field.value().as_deref(), Some("a"));
+        assert!(field.is_focused());
     }
 
     #[test]
