@@ -4118,9 +4118,9 @@ dependencies = [
 
 [[package]]
 name = "purecv"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cec05ed84989b1f43b95d0c58c50946abe0dc3490d0a23a7c53fdd4247530ebf"
+checksum = "cffc2392cb98df4fc6426ecff62e3b2346e3090e81e270ab694c7d54b5003d04"
 dependencies = [
  "log",
  "num-traits",
@@ -5600,7 +5600,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.5",
  "windows-sys 0.61.2",

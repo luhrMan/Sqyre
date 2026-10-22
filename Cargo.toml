@@ -114,7 +114,7 @@ opt-level = 3
 opt-level = 3
 
 [workspace.dependencies]
-purecv = { version = "0.10.0", default-features = false, features = ["std", "parallel", "simd"] }
+purecv = { version = "0.11.0", default-features = false, features = ["std", "parallel", "simd"] }
 eframe = "0.36"
 egui = "0.36"
 egui-phosphor = { version = "0.14", default-features = false, features = ["regular", "fill"] }
