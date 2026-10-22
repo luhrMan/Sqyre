@@ -155,6 +155,6 @@ ureq = { version = "3", default-features = false, features = ["rustls"] }
 sha2 = "0.11"
 # OCR engine: pure-Rust NN pipeline on the rten runtime; models are ONNX files.
 ocrs = { version = "0.13", default-features = false, features = ["onnx"] }
-rten = { version = "0.26", features = ["onnx_format"] }
+rten = { version = "0.27", features = ["onnx_format"] }
 log = "0.4"
 jsonschema = { version = "0.58", default-features = false }
