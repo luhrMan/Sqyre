@@ -28,18 +28,24 @@ class SqyreAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        OverlayWindows.clear(this)
         instance = null
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        OverlayWindows.clear(this)
         instance = null
         super.onDestroy()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        event.packageName?.toString()?.takeIf { it.isNotEmpty() }?.let { foregroundPackage = it }
+        val pkg = event.packageName?.toString()?.takeIf { it.isNotEmpty() } ?: return
+        // Overlay windows belong to this package. Recording them would look like Sqyre
+        // took focus and hide the buttons that just appeared.
+        if (pkg == packageName) return
+        foregroundPackage = pkg
     }
 
     /** Package of the last window that came to the front (empty before the first event). */

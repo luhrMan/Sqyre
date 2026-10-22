@@ -80,6 +80,10 @@ object SqyreBridge {
     /** Answer for [pickDocument] [id]: a readable copy in app cache, or `""` when cancelled. */
     @JvmStatic external fun nativeOnDocumentPicked(id: Int, path: String)
 
+    @JvmStatic external fun nativeOnOverlayClick(id: String)
+
+    @JvmStatic external fun nativeOnOverlayMoved(id: String, x: Int, y: Int)
+
     @JvmStatic
     fun press(x: Int, y: Int, durationMs: Long): Int = guarded("press") {
         val service = SqyreAccessibilityService.instance ?: return@guarded ACCESSIBILITY_OFF
@@ -271,6 +275,41 @@ object SqyreBridge {
                 .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
+    }
+
+    /**
+     * Show or move one overlay button. [rgba] is premultiplied RGBA, `w * h * 4` bytes.
+     * [clickable] is false while the button's macro is running or the editor is relocating.
+     */
+    @JvmStatic
+    fun upsertOverlay(
+        id: String,
+        x: Int,
+        y: Int,
+        w: Int,
+        h: Int,
+        rgba: ByteArray,
+        clickable: Boolean,
+        relocate: Boolean,
+        label: String,
+    ): Int = guarded("upsertOverlay") {
+        val service = SqyreAccessibilityService.instance ?: return@guarded ACCESSIBILITY_OFF
+        if (OverlayWindows.upsert(service, id, x, y, w, h, rgba, clickable, relocate, label)) {
+            OK
+        } else {
+            REJECTED
+        }
+    }
+
+    @JvmStatic
+    fun removeOverlay(id: String): Int = guarded("removeOverlay") {
+        if (OverlayWindows.remove(id)) OK else REJECTED
+    }
+
+    @JvmStatic
+    fun clearOverlays(): Int = guarded("clearOverlays") {
+        OverlayWindows.clear(SqyreAccessibilityService.instance)
+        OK
     }
 
     @JvmStatic

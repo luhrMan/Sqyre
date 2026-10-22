@@ -2,7 +2,7 @@
 
 A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, executor and detection as desktop. Android provides new backends for the existing `sqyre-ports` traits. When the OS cannot do something, the call fails with `AutomationError::Unsupported`, so a desktop macro never silently does something else.
 
-**Status:** `make android` builds a runtime APK (`native-runtime,overlay-buttons`, ocrs ONNX models bundled) and `make android-check` compiles both the editor and runtime surfaces. Capture, input, focus, OCR, the app picker, the notification Stop/Continue actions and document picks are in the tree. None of it has been exercised on a device yet; the phases below say what each one still has to prove.
+**Status:** `make android` builds a runtime APK (`native-runtime,overlay-buttons`, ocrs ONNX models bundled) and `make android-check` compiles both the editor and runtime surfaces. Capture, input, focus, OCR, the app picker, the notification Stop/Continue actions, document picks, and overlay buttons are in the tree. None of it has been exercised on a device yet; the phases below say what each one still has to prove.
 
 ## Parity contract
 
@@ -22,7 +22,7 @@ A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, exe
 | Clipboard | `ClipboardManager` |
 | Focus window | `process_path` is the app package. A non-empty `window_title` must equal the app label. The app is launched with an `Intent`. The window picker lists launchable apps (label as title, package as path, launcher icon as the process icon, saved with the program like desktop icons); the active window is the foreground package seen by the accessibility service |
 | Pause continue-key, macro hotkeys, failsafe chord | The process cannot hear global keys. Stop and Continue are actions on the screen-recording notification (Continue ends a single-key Pause; multi-key Pause waits are `Unsupported`), plus the in-app Stop button |
-| Overlay buttons, tray | Not yet (phase 5) |
+| Overlay buttons | Accessibility-overlay windows (`TYPE_ACCESSIBILITY_OVERLAY`), one per button. A tap runs the macro while Sqyre is in the background. Program focus and image-search gates still apply. The tray is desktop-only |
 | Selection grab, ScreenCap, PixelCheck | Crop or sample the projection frame (phase 5 for the selection UI) |
 | Coordinate previews, desktop outline | Sqyre covers the screen, so previews crop the *backdrop*: the last frame seen while Sqyre was in the background (`MainActivity` reports `onStart`/`onStop` through `nativeOnShellVisible`). There is no on-screen outline; the tooltip preview shows the location |
 | Point and search-area recording | Sqyre cannot see touches in other apps, so recording shows a still of the app used before Sqyre (`screen_pick.rs`). The still is the backdrop; when there is none yet, or on Retake, Sqyre sends itself to the back (`SqyreBridge.showPrevious`), takes one frame of the app that comes to the front, and returns (`SqyreBridge.showShell`). For a point, a tap places it, a drag nudges it, and a loupe magnifies it; for a search area, a drag draws it from corner to corner. Sqyre is never hidden for recording on Android |
@@ -52,7 +52,7 @@ crates/sqyre-android (the only JNI boundary)
 android/ (Kotlin shell; these APIs are not reachable from Rust)
   MainActivity              NativeActivity hosting eframe; screen-recording consent
   ProjectionService         foreground service, MediaProjection → ImageReader → nativeOnFrame
-  SqyreAccessibilityService gestures and text edits
+  SqyreAccessibilityService gestures, text edits, and overlay button windows
   SqyreBridge               static methods Rust calls; status codes
 ```
 
@@ -73,6 +73,12 @@ The shared capturer always opens. The first capture with no projection asks the 
 An accessibility gesture is dispatched whole, so a press cannot stay open while other steps run. Down records the press. Up turns it into one gesture: a tap, a long-press as long as the hold (capped at 60 s), or a swipe if the pointer moved in between. A release with no press is a no-op.
 
 `OsAutomation::new` fails while the accessibility service is off and opens Android's accessibility settings, so Run surfaces the error instead of dropping input.
+
+### Overlay buttons
+
+Each enabled button is a small accessibility-overlay window owned by `SqyreAccessibilityService`, not a `TYPE_APPLICATION_OVERLAY`. From Android 12 an ordinary overlay more opaque than 0.8 does not receive touches unless it is trusted; an accessibility overlay is trusted, and Sqyre already requires that service for taps. The windows are not focusable, and touches outside them pass through, so the game stays the foreground app.
+
+The activity stops drawing while another app is in front, so a host thread (not the egui frame) shows and hides buttons from the foreground package and the image-gate map. A tap starts the macro on that thread. If the macro reads the screen and recording consent is missing, Sqyre comes forward and shows the same consent gate as Run. Busy buttons ignore taps. Drag-to-relocate works while the Overlay editor is open. The projection captures the buttons along with the rest of the screen. There is no hover tip.
 
 ### Stop and Continue
 
@@ -112,11 +118,10 @@ Exit: a macro moves, taps, swipes, long-presses, scrolls, and types into another
 
 ### 5. Launch, overlay, record
 
-Done: Focus Window launches a package, the window picker lists launchable apps, Continue is on the notification, and image/zip picks use the Storage Access Framework. Still to do:
-- overlay buttons as `TYPE_APPLICATION_OVERLAY` windows;
-- recording from accessibility touch events.
+Done: Focus Window launches a package, the window picker lists launchable apps, Continue is on the notification, image/zip picks use the Storage Access Framework, and overlay buttons are accessibility-overlay windows. Still to do:
+- color and macro recording. The accessibility service cannot see another app's touch points (point and search-area recording already use the backdrop still).
 
-Exit: an overlay button runs a macro, Stop on the notification halts it, and Pause ends on Continue.
+Exit: an overlay button runs a macro, Stop on the notification halts it, and Pause ends on Continue. That exit is implemented; it still has to be proven on a device.
 
 ### 6. Touch layout
 

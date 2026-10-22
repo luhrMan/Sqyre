@@ -5301,6 +5301,7 @@ dependencies = [
  "fontdue",
  "libc",
  "parking_lot",
+ "sqyre-android",
  "sqyre-capture",
  "sqyre-domain",
  "sqyre-hotkeys",

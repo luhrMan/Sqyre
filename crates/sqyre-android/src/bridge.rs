@@ -327,6 +327,69 @@ pub fn open_notification_settings() -> Result<(), AndroidError> {
     })
 }
 
+/// Show or replace one overlay button. `rgba` is premultiplied, length `w * h * 4`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one JNI call matches the Kotlin window update"
+)]
+pub fn upsert_overlay(
+    id: &str,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    rgba: &[u8],
+    clickable: bool,
+    relocate: bool,
+    label: &str,
+) -> Result<(), AndroidError> {
+    let code = with_bridge(|env, class| {
+        let id = env.new_string(id)?;
+        let label = env.new_string(label)?;
+        let rgba = env.byte_array_from_slice(rgba)?;
+        env.call_static_method(
+            class,
+            jni_str!("upsertOverlay"),
+            jni_sig!("(Ljava/lang/String;IIII[BZZLjava/lang/String;)I"),
+            &[
+                (&id).into(),
+                JValue::Int(x),
+                JValue::Int(y),
+                JValue::Int(w),
+                JValue::Int(h),
+                (&rgba).into(),
+                JValue::Bool(clickable),
+                JValue::Bool(relocate),
+                (&label).into(),
+            ],
+        )?
+        .i()
+    })?;
+    status::check(code)
+}
+
+pub fn remove_overlay(id: &str) -> Result<(), AndroidError> {
+    let code = with_bridge(|env, class| {
+        let id = env.new_string(id)?;
+        env.call_static_method(
+            class,
+            jni_str!("removeOverlay"),
+            jni_sig!("(Ljava/lang/String;)I"),
+            &[(&id).into()],
+        )?
+        .i()
+    })?;
+    status::check(code)
+}
+
+pub fn clear_overlays() -> Result<(), AndroidError> {
+    let code = with_bridge(|env, class| {
+        env.call_static_method(class, jni_str!("clearOverlays"), jni_sig!("()I"), &[])?
+            .i()
+    })?;
+    status::check(code)
+}
+
 /// Real display size in pixels (same space as projection frames and gestures).
 pub fn display_size() -> Result<(i32, i32), AndroidError> {
     with_bridge(|env, class| {
@@ -517,6 +580,46 @@ pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnDocumentPicked(
         run_native(&mut env, |env| {
             let path: String = path.mutf8_chars(env)?.into();
             picks().complete(id, &path);
+            Ok(())
+        })
+    });
+}
+
+#[no_mangle]
+#[allow(
+    non_snake_case,
+    reason = "JNI symbol names are fixed by the Kotlin class"
+)]
+pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnOverlayClick(
+    mut env: EnvUnowned,
+    _class: JClass,
+    id: JString,
+) {
+    guard("nativeOnOverlayClick", || {
+        run_native(&mut env, |env| {
+            let id: String = id.mutf8_chars(env)?.into();
+            crate::overlay_input::overlay_clicked(&id);
+            Ok(())
+        })
+    });
+}
+
+#[no_mangle]
+#[allow(
+    non_snake_case,
+    reason = "JNI symbol names are fixed by the Kotlin class"
+)]
+pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnOverlayMoved(
+    mut env: EnvUnowned,
+    _class: JClass,
+    id: JString,
+    x: jint,
+    y: jint,
+) {
+    guard("nativeOnOverlayMoved", || {
+        run_native(&mut env, |env| {
+            let id: String = id.mutf8_chars(env)?.into();
+            crate::overlay_input::overlay_moved(&id, x, y);
             Ok(())
         })
     });
