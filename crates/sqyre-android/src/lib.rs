@@ -10,6 +10,7 @@ mod insets;
 pub mod overlay_input;
 mod picks;
 mod pointer;
+mod screenshot;
 pub mod status;
 
 #[cfg(target_os = "android")]
@@ -17,7 +18,7 @@ pub mod bridge;
 
 pub use apps::{parse_app_line, parse_app_list, AppIcon, LaunchableApp};
 pub use error::AndroidError;
-pub use frame::{Frame, FrameLayout, FrameStore, Projection, DEMAND_WINDOW};
+pub use frame::{Frame, FrameLayout, FrameStore, Projection, ShotRequest, DEMAND_WINDOW};
 pub use insets::{InsetStore, Insets};
 pub use overlay_input::{
     clear_overlay_input_handlers, clear_overlay_run_handler, request_overlay_run,
@@ -27,6 +28,7 @@ pub use picks::DocumentPicks;
 pub use pointer::{
     Gesture, PointerError, PointerPlanner, LONG_PRESS_MS, MAX_GESTURE_MS, SCROLL_MS, TAP_MS,
 };
+pub use screenshot::{enter_screenshot_capture, prefer_screenshot, shot_delay, ScreenshotGuard};
 
 use parking_lot::Mutex;
 use std::sync::Arc;

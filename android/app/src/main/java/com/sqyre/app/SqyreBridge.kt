@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Path
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import java.lang.ref.WeakReference
@@ -27,6 +28,8 @@ object SqyreBridge {
     const val NO_FOCUSED_TEXT = 3
     const val APP_NOT_FOUND = 4
     const val TITLE_MISMATCH = 5
+    const val SCREENSHOT_TOO_SOON = 6
+    const val SCREENSHOT_UNAVAILABLE = 7
 
     private const val TAG = "SqyreBridge"
 
@@ -55,6 +58,15 @@ object SqyreBridge {
     @JvmStatic external fun nativeInit()
 
     @JvmStatic external fun nativeOnFrame(
+        buffer: ByteBuffer,
+        width: Int,
+        height: Int,
+        rowStride: Int,
+        pixelStride: Int,
+    )
+
+    /** An accessibility screenshot, in the same RGBA layout as [nativeOnFrame]. */
+    @JvmStatic external fun nativeOnShot(
         buffer: ByteBuffer,
         width: Int,
         height: Int,
@@ -224,6 +236,18 @@ object SqyreBridge {
             return
         }
         act.runOnUiThread { act.pickDocument(id, mimeTypes) }
+    }
+
+    /** API 30+ can capture the screen from the accessibility service. */
+    @JvmStatic
+    fun screenshotSupported(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+
+    /** One display screenshot. Blocks until the bitmap is published or the call fails. */
+    @JvmStatic
+    fun takeScreenshot(): Int = guarded("takeScreenshot") {
+        if (!screenshotSupported()) return@guarded SCREENSHOT_UNAVAILABLE
+        val service = SqyreAccessibilityService.instance ?: return@guarded ACCESSIBILITY_OFF
+        service.captureDisplay()
     }
 
     @JvmStatic

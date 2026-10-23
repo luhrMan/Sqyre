@@ -5,9 +5,10 @@ use eframe::egui;
 
 /// Android consent-gate state for [`PendingProjectionRun`].
 ///
-/// MediaProjection consent cannot be persisted or reused (single-use tokens since
-/// Android 14's `MEDIA_PROJECTION_PREVENTS_REUSING_CONSENT`), so a run that reads
-/// the screen parks here while a modal explains and fires the system dialog.
+/// A detection loop faster than an accessibility screenshot still needs a
+/// MediaProjection token, and that token is single-use since Android 14
+/// (`MEDIA_PROJECTION_PREVENTS_REUSING_CONSENT`). The run parks here while a
+/// modal explains and fires the system dialog.
 #[cfg(all(target_os = "android", feature = "native-runtime"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ProjectionGate {
@@ -19,7 +20,7 @@ pub(crate) enum ProjectionGate {
     Denied,
 }
 
-/// A macro that reads the screen, queued while MediaProjection consent is
+/// A macro with a fast detection loop, queued while MediaProjection consent is
 /// requested. `ui_overlays::show_projection_run_gate` paints the modal and calls
 /// `start_macro_by_name` once the projection reports Running.
 #[cfg(all(target_os = "android", feature = "native-runtime"))]
@@ -259,12 +260,10 @@ mod native_run {
                 ctx.request_repaint();
                 return;
             }
-            // Screen-reading runs park behind the consent gate instead of firing
-            // the system dialog mid-run once the first capture asks.
+            // A loop faster than a screenshot parks behind the consent gate instead
+            // of firing the system dialog mid-run once the first capture asks.
             #[cfg(target_os = "android")]
-            if sqyre_android::frames().projection() != sqyre_android::Projection::Running
-                && self.workspace.macros[idx].uses_screen_capture(&self.workspace.macros)
-            {
+            if needs_projection_consent(&self.workspace.macros[idx], &self.workspace.macros) {
                 self.pending_projection_run = Some(PendingProjectionRun {
                     macro_name: self.workspace.macros[idx].name.clone(),
                     state: ProjectionGate::Ask,
@@ -402,6 +401,8 @@ mod native_run {
                 };
                 sqyre_capture::mark_site("run:worker:begin");
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    #[cfg(target_os = "android")]
+                    let _shots = screenshot_guard(&macro_, &macros);
                     let mut automation = os_automation().map_err(|e| format!("automation: {e}"))?;
                     let capturer_arc = shared_capturer().map_err(|e| format!("capture: {e}"))?;
                     let mut capturer = SharedRunCapturer(capturer_arc);
@@ -481,6 +482,31 @@ mod native_run {
                 sqyre_capture::note(&format!("overlay: run done status={done}"));
             });
         }
+    }
+
+    /// Recording consent when screenshots cannot keep up, or on API 29.
+    #[cfg(target_os = "android")]
+    fn needs_projection_consent(macro_: &Macro, macros: &[Macro]) -> bool {
+        if sqyre_android::frames().projection() == sqyre_android::Projection::Running {
+            return false;
+        }
+        if !sqyre_android::bridge::screenshot_supported().unwrap_or(false) {
+            return macro_.uses_screen_capture(macros);
+        }
+        macro_.needs_fast_capture(macros)
+    }
+
+    /// Arm screenshots for a run whose captures stay at least 333 ms apart.
+    #[cfg(target_os = "android")]
+    fn screenshot_guard(
+        macro_: &Macro,
+        macros: &[Macro],
+    ) -> Option<sqyre_android::ScreenshotGuard> {
+        let use_shots = sqyre_android::bridge::screenshot_supported().unwrap_or(false)
+            && sqyre_android::frames().projection() != sqyre_android::Projection::Running
+            && macro_.uses_screen_capture(macros)
+            && !macro_.needs_fast_capture(macros);
+        use_shots.then(sqyre_android::enter_screenshot_capture)
     }
 
     /// Last macro an overlay button started. Applied to the tree selection on the next frame.
@@ -588,9 +614,7 @@ mod native_run {
             kit.ctx.request_repaint();
             return;
         }
-        if sqyre_android::frames().projection() != sqyre_android::Projection::Running
-            && kit.macros[idx].uses_screen_capture(&kit.macros)
-        {
+        if needs_projection_consent(&kit.macros[idx], &kit.macros) {
             *OVERLAY_PROJECTION.lock() = Some(kit.macros[idx].name.clone());
             if !sqyre_android::frames().shell_visible() {
                 if let Err(e) = sqyre_android::bridge::show_shell() {

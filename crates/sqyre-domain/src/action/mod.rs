@@ -729,6 +729,15 @@ impl Default for ConditionClause {
     }
 }
 
+/// Accessibility screenshots are refused when closer together than this
+/// (AOSP `ACCESSIBILITY_TAKE_SCREENSHOT_REQUEST_INTERVAL_TIMES_MS`).
+/// Keep in step with `MIN_GAP` in `sqyre-android`'s bridge.
+pub const SCREENSHOT_MIN_GAP_MS: i32 = 333;
+
+/// Unset detection poll interval on Android. At or above [`SCREENSHOT_MIN_GAP_MS`],
+/// so a default wait or repeat loop can use screenshots.
+pub const ANDROID_POLL_INTERVAL_MS: i32 = 500;
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WaitTilFoundConfig {
     #[serde(rename = "repeatmode", default)]
@@ -811,6 +820,36 @@ impl WaitTilFoundConfig {
         } else {
             100
         }
+    }
+
+    /// Milliseconds between captures when this config polls.
+    ///
+    /// `None` for a single capture: [`RepeatMode::Once`], or a wait mode whose
+    /// timeout is zero. Wait modes use `min(interval, timeout)`, matching the
+    /// shell (a timeout of 100 ms or less recaptures after the timeout, and a
+    /// longer wait caps its interval to the timeout). Repeat modes sleep the
+    /// interval; the timeout only ends the loop.
+    pub fn capture_gap_ms(&self, default_interval_ms: i32) -> Option<i32> {
+        let interval = self.effective_interval_ms(default_interval_ms).max(1);
+        if self.wait_until_found_active() || self.wait_while_found_active() {
+            let timeout_ms = self
+                .timeout()
+                .expect("active wait has a timeout")
+                .as_millis()
+                .min(i32::MAX as u128) as i32;
+            Some(interval.min(timeout_ms.max(1)))
+        } else if self.is_repeat_while_found() || self.is_repeat_until_found() {
+            Some(interval)
+        } else {
+            None
+        }
+    }
+
+    /// True when the first capture gap is shorter than an accessibility screenshot allows,
+    /// using the Android default poll interval.
+    pub fn needs_fast_capture(&self) -> bool {
+        self.capture_gap_ms(ANDROID_POLL_INTERVAL_MS)
+            .is_some_and(|gap| gap < SCREENSHOT_MIN_GAP_MS)
     }
 }
 
@@ -1546,6 +1585,69 @@ time: 1
         wait.wait_til_found_seconds = 0.0;
         assert!(wait.timeout().is_none());
         assert!(!wait.wait_until_found_active());
+        assert!(wait.capture_gap_ms(ANDROID_POLL_INTERVAL_MS).is_none());
+        assert!(!wait.needs_fast_capture());
+    }
+
+    #[test]
+    fn capture_gap_matches_the_shell_sleep() {
+        let unset = WaitTilFoundConfig {
+            repeat_mode: RepeatMode::WaitUntilFound,
+            wait_til_found_seconds: 2.0,
+            ..Default::default()
+        };
+        assert_eq!(
+            unset.capture_gap_ms(ANDROID_POLL_INTERVAL_MS),
+            Some(ANDROID_POLL_INTERVAL_MS)
+        );
+        assert!(!unset.needs_fast_capture());
+
+        let fast_interval = WaitTilFoundConfig {
+            repeat_mode: RepeatMode::RepeatUntilFound,
+            wait_til_found_interval_ms: 200,
+            ..Default::default()
+        };
+        assert_eq!(
+            fast_interval.capture_gap_ms(ANDROID_POLL_INTERVAL_MS),
+            Some(200)
+        );
+        assert!(fast_interval.needs_fast_capture());
+
+        let capped = WaitTilFoundConfig {
+            repeat_mode: RepeatMode::WaitWhileFound,
+            wait_til_found_seconds: 0.2,
+            ..Default::default()
+        };
+        assert_eq!(capped.capture_gap_ms(ANDROID_POLL_INTERVAL_MS), Some(200));
+        assert!(capped.needs_fast_capture());
+
+        let slow_timeout = WaitTilFoundConfig {
+            repeat_mode: RepeatMode::WaitUntilFound,
+            wait_til_found_seconds: 0.4,
+            ..Default::default()
+        };
+        assert_eq!(
+            slow_timeout.capture_gap_ms(ANDROID_POLL_INTERVAL_MS),
+            Some(400)
+        );
+        assert!(!slow_timeout.needs_fast_capture());
+
+        let at_floor = WaitTilFoundConfig {
+            repeat_mode: RepeatMode::RepeatWhileFound,
+            wait_til_found_interval_ms: SCREENSHOT_MIN_GAP_MS,
+            ..Default::default()
+        };
+        assert!(!at_floor.needs_fast_capture());
+
+        let slow_repeat = WaitTilFoundConfig {
+            repeat_mode: RepeatMode::RepeatUntilFound,
+            ..Default::default()
+        };
+        assert_eq!(
+            slow_repeat.capture_gap_ms(ANDROID_POLL_INTERVAL_MS),
+            Some(ANDROID_POLL_INTERVAL_MS)
+        );
+        assert!(!slow_repeat.needs_fast_capture());
     }
 
     #[test]

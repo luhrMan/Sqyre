@@ -11,7 +11,7 @@ A sideloaded Android build of the Sqyre runner. It uses the same macro YAML, exe
 | Macro YAML, variables, flow (loop, while, if, for-each, run macro, wait) | Same executor |
 | Image search, find pixel | Same `sqyre-match` / `sqyre-vision`, once a frame exists |
 | OCR | Same ocrs engine as the desktop; the ONNX models are embedded into `libsqyre_app.so` at compile time |
-| Capture | `MediaProjection` frames at the real display size. That frame is the whole virtual desktop: one monitor at (0, 0) |
+| Capture | Accessibility screenshots for detections whose gap is at least 333 ms (the unset poll interval is 500 ms). A faster loop uses `MediaProjection` frames at the real display size. That frame is the whole virtual desktop: one monitor at (0, 0). API 29 always uses `MediaProjection` |
 | Move | Records the point. There is no hover |
 | Left click | Tap at the last point. Down then up with a move in between is a swipe. A long hold keeps its duration |
 | Right click | Long-press at the last point (at least 600 ms) |
@@ -64,9 +64,11 @@ winit 0.30 ignores `onDestroy` and cannot create a second event loop in one proc
 
 ### Frames
 
-The shell offers every `ImageReader` frame to Rust. Rust copies a frame only while a capture asked within the last 2 s, so an idle projection costs nothing. The first capture after an idle gap drops the stale frame and waits up to 500 ms for a new one. `capture_rect_rgb` crops straight out of the packed RGBA frame. There is no RGBA round-trip.
+On API 30 and later, a screen-reading run uses `AccessibilityService.takeScreenshot` (`android:canTakeScreenshot`) and does not ask for screen-recording permission. That covers a one-shot Image Search, OCR, or Find Pixel, and a wait, repeat, or until loop whose gap between captures is at least 333 ms. The unset poll interval is 500 ms on Android, so a default loop stays on screenshots. An explicit interval under 333 ms, or a wait timeout that pulls the first sleep under 333 ms, asks for `MediaProjection` before the run. API 29 has no accessibility screenshot, so every screen-reading macro asks. After an upgrade that adds the screenshot capability, turn the accessibility service off and on so Android grants it. Screenshots are about 3 per second; a second call sooner than that waits, and Android 11's one-second cap is retried once.
 
-The shared capturer always opens. The first capture with no projection asks the shell for consent and returns `NotReady::AwaitingProjection`, so search retries until the user answers. A denial, a revoke or the shell tearing down marks the projection stopped, and captures fail with `CaptureError::Projection`. Each new macro run re-arms a stopped projection so the next capture can ask again.
+While recording is already running, every capture reads that stream, including a one-shot beside a fast loop. The shell offers every `ImageReader` frame to Rust. Rust copies a frame only while a capture asked within the last 2 s, so an idle projection costs nothing. The first capture after an idle gap drops the stale frame and waits up to 500 ms for a new one. `capture_rect_rgb` crops straight out of the packed RGBA frame. There is no RGBA round-trip. A screenshot is published into the same store without marking recording as granted.
+
+The shared capturer always opens. A fast loop with no projection asks the shell for consent and returns `NotReady::AwaitingProjection`, so search retries until the user answers. A denial, a revoke or the shell tearing down marks the projection stopped, and captures fail with `CaptureError::Projection`. Each new macro run re-arms a stopped projection so the next capture can ask again. A screenshot failure is that same error and does not open the consent dialog.
 
 ### Input
 
@@ -78,7 +80,7 @@ An accessibility gesture is dispatched whole, so a press cannot stay open while 
 
 Each enabled button is a small accessibility-overlay window owned by `SqyreAccessibilityService`, not a `TYPE_APPLICATION_OVERLAY`. From Android 12 an ordinary overlay more opaque than 0.8 does not receive touches unless it is trusted; an accessibility overlay is trusted, and Sqyre already requires that service for taps. The windows are not focusable, and touches outside them pass through, so the game stays the foreground app.
 
-The activity stops drawing while another app is in front, so a host thread (not the egui frame) shows and hides buttons from the foreground package and the image-gate map. A tap starts the macro on that thread. If the macro reads the screen and recording consent is missing, Sqyre comes forward and shows the same consent gate as Run. While a macro is running, a press stops it when **Overlay buttons stop the running macro** is on (the default, under Settings → Macros → Playback). When that setting is off, a busy button ignores the tap. Drag-to-relocate works while the Overlay editor is open. Image Search, Find Pixel, and OCR include the buttons unless **Overlay buttons appear in detection** is off. While that capture runs, the buttons are hidden and a press cannot stop the macro; the notification Stop still can. There is no hover tip.
+The activity stops drawing while another app is in front, so a host thread (not the egui frame) shows and hides buttons from the foreground package and the image-gate map. A tap starts the macro on that thread. If the macro needs a capture faster than a screenshot and recording consent is missing, Sqyre comes forward and shows the same consent gate as Run. While a macro is running, a press stops it when **Overlay buttons stop the running macro** is on (the default, under Settings → Macros → Playback). When that setting is off, a busy button ignores the tap. Drag-to-relocate works while the Overlay editor is open. Image Search, Find Pixel, and OCR include the buttons unless **Overlay buttons appear in detection** is off. While that capture runs, the buttons are hidden and a press cannot stop the macro; the notification Stop still can. There is no hover tip.
 
 ### Stop and Continue
 

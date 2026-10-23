@@ -1,4 +1,5 @@
-//! Android: MediaProjection frames from the Kotlin shell, plus app launch as focus.
+//! Android: accessibility screenshots or MediaProjection frames from the Kotlin shell,
+//! plus app launch as focus.
 //!
 //! The display is the whole virtual desktop: one monitor at (0, 0) in physical pixels,
 //! the same space accessibility gestures use.
@@ -8,7 +9,9 @@ use crate::{
     PROCESS_ICON_TARGET_PX,
 };
 use image::RgbaImage;
-use sqyre_android::{bridge, frames, AndroidError, Frame, LaunchableApp};
+use sqyre_android::{
+    bridge, frames, prefer_screenshot, AndroidError, Frame, LaunchableApp, Projection,
+};
 use sqyre_ports::{AutomationError, DesktopRect, RgbCapture};
 use std::time::Duration;
 
@@ -29,22 +32,22 @@ impl OsCapturer {
     }
 
     pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
-        to_rgba(&latest_frame()?.1, rect)
+        to_rgba(&load_frame(false)?.1, rect)
     }
 
     pub fn capture_rect_fresh_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
-        to_rgba(&fresh_frame()?.1, rect)
+        to_rgba(&load_frame(true)?.1, rect)
     }
 
     pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
-        to_rgb(&latest_frame()?.1, rect)
+        to_rgb(&load_frame(false)?.1, rect)
     }
 
     pub fn capture_rect_rgb_fresh_ref(
         &self,
         rect: DesktopRect,
     ) -> Result<RgbCapture, CaptureError> {
-        to_rgb(&fresh_frame()?.1, rect)
+        to_rgb(&load_frame(true)?.1, rect)
     }
 
     /// Search-area capture returning the frame's store generation as its token:
@@ -62,11 +65,7 @@ impl OsCapturer {
         let fresh = fresh || crate::detection_omit_needs_fresh_frame();
         let vb = self.virtual_bounds_ref().ok();
         let rect = sqyre_ports::clamp_search_rect(left, top, right, bottom, vb)?;
-        let (generation, frame) = if fresh {
-            fresh_frame()?
-        } else {
-            latest_frame()?
-        };
+        let (generation, frame) = load_frame(fresh)?;
         Ok((to_rgb(&frame, rect)?, rect, generation))
     }
 
@@ -109,6 +108,36 @@ impl OsCapturer {
             .map(|r| (r.w, r.h))
             .collect())
     }
+}
+
+/// Projection stream when recording is up or this thread did not ask for screenshots.
+fn load_frame(fresh: bool) -> Result<(u64, Frame), CaptureError> {
+    if frames().projection() == Projection::Running || !prefer_screenshot() {
+        return if fresh { fresh_frame() } else { latest_frame() };
+    }
+    screenshot_frame(fresh)
+}
+
+/// One accessibility screenshot. A recent cached frame satisfies a non-fresh read.
+/// Failure is a real error: it must not look like consent is still pending.
+fn screenshot_frame(fresh: bool) -> Result<(u64, Frame), CaptureError> {
+    crate::mark_site(if fresh {
+        "cap:shot:fresh"
+    } else {
+        "cap:shot:latest"
+    });
+    let request = frames().begin_shot(fresh);
+    if let Some(hit) = request.cached {
+        return Ok(hit);
+    }
+    bridge::take_screenshot().map_err(shot_error)?;
+    frames()
+        .wait_for_shot(request.generation, FRAME_WAIT)
+        .map_err(shot_error)
+}
+
+fn shot_error(error: AndroidError) -> CaptureError {
+    CaptureError::Projection(error.to_string())
 }
 
 fn latest_frame() -> Result<(u64, Frame), CaptureError> {
