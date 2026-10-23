@@ -615,9 +615,17 @@ impl SettingsUi {
         let hit = section_hit || query_matches(q, SUBSECTION_PLAYBACK);
         let show_highlight = setting_visible(q, hit, SETTING_HIGHLIGHT_ACTION);
         let show_release = setting_visible(q, hit, SETTING_RELEASE_HELD);
+        let show_overlay_stop = setting_visible(q, hit, SETTING_OVERLAY_PRESS_STOPS);
+        let show_overlay_detect = setting_visible(q, hit, SETTING_OVERLAY_IN_DETECTION);
         let show_while = setting_visible(q, hit, SETTING_WHILE_BUDGET);
         let show_depth = setting_visible(q, hit, SETTING_RUN_MACRO_DEPTH);
-        if !(show_highlight || show_release || show_while || show_depth) {
+        if !(show_highlight
+            || show_release
+            || show_overlay_stop
+            || show_overlay_detect
+            || show_while
+            || show_depth)
+        {
             return;
         }
         subsection_heading(ui, first, "Playback");
@@ -642,6 +650,34 @@ impl SettingsUi {
                 )
                 .on_hover_text(
                     "When enabled, any key or mouse button still held from Down/hold actions is released when the macro finishes, stops, or errors.",
+                )
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if show_overlay_stop
+            && ui
+                .checkbox(
+                    &mut self.settings.overlay_press_stops_run,
+                    "Overlay buttons stop the running macro",
+                )
+                .on_hover_text(
+                    "While a macro is running, pressing an overlay button stops it. When off, a busy button lets the click through.",
+                )
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if show_overlay_detect
+            && ui
+                .checkbox(
+                    &mut self.settings.overlay_buttons_in_detection,
+                    "Overlay buttons appear in detection",
+                )
+                .on_hover_text(
+                    "Image Search, Find Pixel, and OCR captures include the buttons. When off, those captures see the screen underneath.",
                 )
                 .changed()
         {
@@ -1785,6 +1821,15 @@ const SETTING_RELEASE_HELD: &[&str] = &[
     "inputs",
     "macro ends",
 ];
+const SETTING_OVERLAY_PRESS_STOPS: &[&str] = &["overlay", "overlay button", "stop macro", "press"];
+const SETTING_OVERLAY_IN_DETECTION: &[&str] = &[
+    "overlay",
+    "overlay button",
+    "detection",
+    "image search",
+    "find pixel",
+    "ocr",
+];
 const SETTING_HOTKEY_TAGS_FOCUSED: &[&str] = &[
     "hotkey",
     "hotkeys",
@@ -1918,6 +1963,8 @@ const MACROS_SETTINGS: &[&[&str]] = &[
     SUBSECTION_PLAYBACK,
     SETTING_HIGHLIGHT_ACTION,
     SETTING_RELEASE_HELD,
+    SETTING_OVERLAY_PRESS_STOPS,
+    SETTING_OVERLAY_IN_DETECTION,
     SETTING_WHILE_BUDGET,
     SETTING_RUN_MACRO_DEPTH,
     SUBSECTION_RECORDING,

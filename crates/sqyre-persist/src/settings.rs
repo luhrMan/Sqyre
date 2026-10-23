@@ -39,6 +39,10 @@ pub const MIN_BACKUP_MAX_KEEP: i32 = 1;
 pub const MAX_BACKUP_MAX_KEEP: i32 = 100;
 pub const DEFAULT_AUTO_UPDATE_CHECK: bool = true;
 pub const DEFAULT_RELEASE_HELD_INPUTS_ON_END: bool = true;
+/// Pressing an overlay button while a macro is running requests stop.
+pub const DEFAULT_OVERLAY_PRESS_STOPS_RUN: bool = true;
+/// Image Search, Find Pixel, and OCR captures include overlay buttons.
+pub const DEFAULT_OVERLAY_BUTTONS_IN_DETECTION: bool = true;
 /// Data Editor left-list width as a fraction of the editor body (default = min).
 pub const DEFAULT_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
 pub const MIN_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
@@ -509,6 +513,12 @@ pub struct UserSettings {
     /// Release keys/buttons still held from Down/hold actions when a macro ends.
     #[serde(default = "default_release_held_inputs_on_end")]
     pub release_held_inputs_on_end: bool,
+    /// Pressing an overlay button while a macro is running requests stop.
+    #[serde(default = "default_overlay_press_stops_run")]
+    pub overlay_press_stops_run: bool,
+    /// When true, Image Search, Find Pixel, and OCR captures include overlay buttons.
+    #[serde(default = "default_overlay_buttons_in_detection")]
+    pub overlay_buttons_in_detection: bool,
     /// Safety budget for While actions with `max_iterations` ≤ 0.
     #[serde(default = "default_while_max_iterations")]
     pub while_max_iterations: i32,
@@ -596,6 +606,12 @@ fn default_hide_recording() -> bool {
 fn default_release_held_inputs_on_end() -> bool {
     DEFAULT_RELEASE_HELD_INPUTS_ON_END
 }
+fn default_overlay_press_stops_run() -> bool {
+    DEFAULT_OVERLAY_PRESS_STOPS_RUN
+}
+fn default_overlay_buttons_in_detection() -> bool {
+    DEFAULT_OVERLAY_BUTTONS_IN_DETECTION
+}
 fn default_while_max_iterations() -> i32 {
     DEFAULT_WHILE_MAX_ITERATIONS
 }
@@ -665,6 +681,8 @@ impl Default for UserSettings {
             run_button_glow: DEFAULT_RUN_BUTTON_GLOW,
             hide_app_during_recording: DEFAULT_HIDE_APP_DURING_RECORDING,
             release_held_inputs_on_end: DEFAULT_RELEASE_HELD_INPUTS_ON_END,
+            overlay_press_stops_run: DEFAULT_OVERLAY_PRESS_STOPS_RUN,
+            overlay_buttons_in_detection: DEFAULT_OVERLAY_BUTTONS_IN_DETECTION,
             while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
             run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
             play_finish_sound: DEFAULT_PLAY_FINISH_SOUND,
@@ -1138,10 +1156,54 @@ mod tests {
         assert_eq!(loaded.hotkey_tag_filters, vec!["combat".to_string()]);
         assert_eq!(loaded.last_selected_macro, "farm loop");
         assert!(loaded.permissions_intro_done);
+        assert!(loaded.overlay_press_stops_run);
+        assert!(loaded.overlay_buttons_in_detection);
         assert!(!loaded.hotkey_tags_while_focused);
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON
         );
+    }
+
+    #[test]
+    fn overlay_press_stops_run_defaults_on_when_absent() {
+        assert!(UserSettings::default().overlay_press_stops_run);
+        let mut value = serde_yaml::to_value(UserSettings::default()).unwrap();
+        value
+            .as_mapping_mut()
+            .unwrap()
+            .remove(serde_yaml::Value::String("overlay_press_stops_run".into()));
+        let settings: UserSettings = serde_yaml::from_value(value).unwrap();
+        assert!(settings.overlay_press_stops_run);
+
+        let off = UserSettings {
+            overlay_press_stops_run: false,
+            ..Default::default()
+        };
+        let back: UserSettings =
+            serde_yaml::from_str(&serde_yaml::to_string(&off).unwrap()).unwrap();
+        assert!(!back.overlay_press_stops_run);
+    }
+
+    #[test]
+    fn overlay_buttons_in_detection_defaults_on_when_absent() {
+        assert!(UserSettings::default().overlay_buttons_in_detection);
+        let mut value = serde_yaml::to_value(UserSettings::default()).unwrap();
+        value
+            .as_mapping_mut()
+            .unwrap()
+            .remove(serde_yaml::Value::String(
+                "overlay_buttons_in_detection".into(),
+            ));
+        let settings: UserSettings = serde_yaml::from_value(value).unwrap();
+        assert!(settings.overlay_buttons_in_detection);
+
+        let off = UserSettings {
+            overlay_buttons_in_detection: false,
+            ..Default::default()
+        };
+        let back: UserSettings =
+            serde_yaml::from_str(&serde_yaml::to_string(&off).unwrap()).unwrap();
+        assert!(!back.overlay_buttons_in_detection);
     }
 
     #[test]

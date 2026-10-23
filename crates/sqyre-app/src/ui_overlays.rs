@@ -20,6 +20,12 @@ use std::sync::atomic::Ordering;
 /// host with `cargo run -p sqyre-overlay --features sandbox --bin overlay_sandbox`.
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
+    app.macro_overlay
+        .set_press_stops_run(app.settings_ui.settings().overlay_press_stops_run);
+    sqyre_capture::set_overlay_buttons_in_detection(
+        app.settings_ui.settings().overlay_buttons_in_detection,
+    );
     app.macro_overlay
         .set_visibility_map(app.overlay_visibility.found_map());
     let moves = app.macro_overlay.drain_moves();

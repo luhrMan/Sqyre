@@ -1,36 +1,36 @@
-//! CPU rasterizer for native X11 overlay buttons (colors, radius, Phosphor icon).
+//! CPU rasterizer for native overlay buttons (colors, radius, Phosphor icon).
 
 use crate::brand_s;
 use egui_phosphor::Variant;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 use fontdue::layout::{CoordinateSystem, Layout, LayoutSettings, TextStyle};
 use fontdue::Font;
 use std::sync::OnceLock;
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const TIP_PAD_X: f32 = 11.0;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const TIP_PAD_Y: f32 = 7.0;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const TIP_MAX_TEXT_W: f32 = 280.0;
 /// Logical tip font size; rasterized at [`TIP_SSAA`]× then downsampled.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const TIP_FONT_PX: f32 = 13.0;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const TIP_SSAA: u32 = 2;
 /// Shared with X11 tip window shape.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub const TIP_CORNER_PX: f32 = 7.0;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const TIP_BORDER_W: f32 = 1.0;
 /// Panel fill `#1c1914` — shared with tip window backing pixel.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub const TIP_BG_RGB: [u8; 3] = [0x1c, 0x19, 0x14];
 /// Soft gold border.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const TIP_BORDER: [u8; 4] = [0xdc, 0x9d, 0x2e, 0xa0];
 /// Cream text `#f5e6c0`.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 const TIP_FG: [u8; 4] = [0xf5, 0xe6, 0xc0, 0xff];
 #[cfg(target_os = "linux")]
 const MENU_ROW_H: f32 = 28.0;
@@ -52,6 +52,11 @@ const UI_FONT_CANDIDATES: &[&str] = &[
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
     "/usr/share/fonts/TTF/DejaVuSans.ttf",
+];
+#[cfg(target_os = "windows")]
+const UI_FONT_CANDIDATES: &[&str] = &[
+    r"C:\Windows\Fonts\segoeui.ttf",
+    r"C:\Windows\Fonts\arial.ttf",
 ];
 
 /// Mutable RGBA8 destination: `rgba` is row-major with length `w * h * 4`.
@@ -112,7 +117,7 @@ fn phosphor_font() -> &'static Font {
     })
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn ui_font() -> &'static Font {
     static FONT: OnceLock<Font> = OnceLock::new();
     FONT.get_or_init(|| {
@@ -133,7 +138,7 @@ fn ui_font() -> &'static Font {
 }
 
 /// Opaque tip panel: `(width, height, rgba)`. Empty text → empty buffer / 0 size.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 pub fn rasterize_tip(text: &str) -> (u32, u32, Vec<u8>) {
     let text = text.trim();
     if text.is_empty() {
@@ -419,7 +424,7 @@ fn draw_line_text(
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn fill_rounded_panel(canvas: &mut Canvas<'_>, corner: f32, border_w: f32) {
     let (w, h) = (canvas.w, canvas.h);
     let r = corner.min((w.min(h) as f32) * 0.5);
@@ -444,7 +449,7 @@ fn fill_rounded_panel(canvas: &mut Canvas<'_>, corner: f32, border_w: f32) {
 }
 
 /// Glyph coverage bitmap (`bw` × `bh`, 8-bit alpha) blitted at `(ox, oy)`.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 struct Coverage<'a> {
     bitmap: &'a [u8],
     bw: usize,
@@ -453,7 +458,7 @@ struct Coverage<'a> {
     oy: i32,
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn blit_coverage(canvas: &mut Canvas<'_>, cov: Coverage<'_>, color: [u8; 4]) {
     let a_scale = color[3] as f32 / 255.0;
     for gy in 0..cov.bh {
@@ -470,7 +475,7 @@ fn blit_coverage(canvas: &mut Canvas<'_>, cov: Coverage<'_>, color: [u8; 4]) {
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn downsample_box(src: &[u8], sw: u32, sh: u32, factor: u32) -> (u32, u32, Vec<u8>) {
     let f = factor.max(1);
     let dw = (sw / f).max(1);
@@ -682,7 +687,7 @@ fn sd_rounded_rect(px: f32, py: f32, w: f32, h: f32, r: f32) -> f32 {
     len + q[0].min(0.0).max(q[1].min(0.0)) - r
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 fn blend(dst: &mut [u8], src: [u8; 4], a: f32) {
     let a = a.clamp(0.0, 1.0);
     for i in 0..3 {
@@ -847,7 +852,7 @@ pub fn busy_shape_alpha(paint: &ButtonPaint) -> Vec<u8> {
     rgba
 }
 
-#[cfg(test)]
+#[cfg(all(test, target_os = "linux"))]
 mod tip_tests {
     use super::*;
 

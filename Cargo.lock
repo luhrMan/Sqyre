@@ -5293,6 +5293,7 @@ dependencies = [
  "sqyre-ui-theme",
  "thiserror 2.0.21",
  "web-time",
+ "windows",
  "x11",
 ]
 

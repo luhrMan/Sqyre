@@ -13,6 +13,7 @@ mod outline_geometry;
 mod outline_rect;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod outline_stub;
+mod overlay_omit;
 mod pixel_convert;
 mod selection_grab;
 #[macro_use]
@@ -56,6 +57,10 @@ pub use linux::{
     OsCapturer, SharedRunCapturer,
 };
 pub use outline_rect::OutlineRect;
+pub use overlay_omit::{
+    detection_omit_guard, detection_omit_needs_fresh_frame, overlay_buttons_in_detection,
+    overlay_capture_omitted, set_overlay_buttons_in_detection, set_overlay_omit_hook,
+};
 pub use pixel_convert::{
     crop_packed_rgba, crop_packed_rgba_to_rgb, strip_rgba_row_to_rgb, swizzle_row_to_rgba,
     zpixmap_to_rgb, zpixmap_to_rgba, RgbaSrcFormat, PARALLEL_ROW_GATE,

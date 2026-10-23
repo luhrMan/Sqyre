@@ -3,7 +3,8 @@
 //! The activity stops drawing while another app is in front, so this thread
 //! shows and hides windows itself from the focus report and the image-gate map.
 //! A tap starts the macro through [`sqyre_android::request_overlay_run`] instead
-//! of waiting for the next egui frame.
+//! of waiting for the next egui frame. While a macro is running and press-to-stop
+//! is on, the same tap calls [`sqyre_android::request_stop`].
 
 use crate::brand_s::SWEEP_PER_SEC;
 use crate::button_visibility::{clamp_origin, shown_buttons, AndroidButtonSpec};
@@ -11,7 +12,8 @@ use crate::raster::{self, ButtonPaint};
 use crate::OverlayButtonMove;
 use parking_lot::Mutex;
 use sqyre_android::{
-    bridge, clear_overlay_input_handlers, overlay_input, request_overlay_run, AndroidError,
+    bridge, clear_overlay_input_handlers, frames, overlay_input, request_overlay_run, request_stop,
+    AndroidError, Projection,
 };
 use sqyre_capture::{get_active_window, note};
 use std::collections::HashMap;
@@ -22,6 +24,20 @@ use std::time::{Duration, Instant};
 
 const IDLE_TICK: Duration = Duration::from_millis(100);
 const BUSY_TICK: Duration = Duration::from_millis(50);
+const OMIT_ACK_WAIT: Duration = Duration::from_millis(500);
+
+struct OmitGate {
+    want: bool,
+    seq: u64,
+    applied: u64,
+}
+
+static OMIT: Mutex<OmitGate> = Mutex::new(OmitGate {
+    want: false,
+    seq: 0,
+    applied: 0,
+});
+static OMIT_WAKE: parking_lot::Condvar = parking_lot::Condvar::new();
 
 #[derive(PartialEq)]
 struct Applied {
@@ -55,6 +71,7 @@ impl AndroidButtonHost {
         pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
         running_macro: Arc<Mutex<Option<String>>>,
         visibility: Arc<Mutex<HashMap<String, bool>>>,
+        press_stops: Arc<AtomicBool>,
     ) -> Option<Self> {
         let specs = Arc::new(Mutex::new(Vec::new()));
         let relocate = Arc::new(AtomicBool::new(false));
@@ -64,15 +81,24 @@ impl AndroidButtonHost {
             Arc::clone(&specs),
             Arc::clone(&running_macro),
             pending_moves,
+            Arc::clone(&press_stops),
         );
         let stop_t = Arc::clone(&stop);
         let specs_t = Arc::clone(&specs);
         let relocate_t = Arc::clone(&relocate);
         let visibility_t = Arc::clone(&visibility);
+        let press_stops_t = Arc::clone(&press_stops);
         let join = match thread::Builder::new()
             .name("sqyre-android-overlay".into())
             .spawn(move || {
-                host_loop(specs_t, relocate_t, running_macro, visibility_t, stop_t);
+                host_loop(
+                    specs_t,
+                    relocate_t,
+                    running_macro,
+                    visibility_t,
+                    press_stops_t,
+                    stop_t,
+                );
             }) {
             Ok(join) => join,
             Err(e) => {
@@ -81,6 +107,7 @@ impl AndroidButtonHost {
                 return None;
             }
         };
+        sqyre_capture::set_overlay_omit_hook(Some(Arc::new(|omit| request_capture_omit(omit))));
         Some(Self {
             specs,
             relocate,
@@ -104,6 +131,14 @@ impl AndroidButtonHost {
 
     pub fn shutdown(&self) {
         self.stop.store(true, Ordering::Relaxed);
+        {
+            let mut gate = OMIT.lock();
+            gate.want = false;
+            gate.seq = gate.seq.wrapping_add(1);
+            gate.applied = gate.seq;
+            OMIT_WAKE.notify_all();
+        }
+        sqyre_capture::set_overlay_omit_hook(None);
         if let Some(join) = self.join.lock().take() {
             let _ = join.join();
         }
@@ -115,6 +150,7 @@ fn install_input_handlers(
     specs: Arc<Mutex<Vec<AndroidButtonSpec>>>,
     running_macro: Arc<Mutex<Option<String>>>,
     pending_moves: Arc<Mutex<Vec<OverlayButtonMove>>>,
+    press_stops: Arc<AtomicBool>,
 ) {
     let specs_click = Arc::clone(&specs);
     let running_click = Arc::clone(&running_macro);
@@ -129,8 +165,15 @@ fn install_input_handlers(
         let Some(name) = name.filter(|n| !n.trim().is_empty()) else {
             return;
         };
-        let busy = running_click
-            .lock()
+        let running = running_click.lock().clone();
+        if running.as_deref().is_some_and(|n| !n.trim().is_empty())
+            && press_stops.load(Ordering::Relaxed)
+        {
+            note(&format!("overlay-android: press-stop id={id} name={name}"));
+            request_stop();
+            return;
+        }
+        let busy = running
             .as_deref()
             .is_some_and(|n| n.eq_ignore_ascii_case(&name));
         if busy {
@@ -165,6 +208,7 @@ fn host_loop(
     relocate: Arc<AtomicBool>,
     running_macro: Arc<Mutex<Option<String>>>,
     visibility: Arc<Mutex<Arc<Mutex<HashMap<String, bool>>>>>,
+    press_stops: Arc<AtomicBool>,
     stop: Arc<AtomicBool>,
 ) {
     note("overlay: using android accessibility button host");
@@ -173,11 +217,16 @@ fn host_loop(
     let mut logged_off = false;
     let mut last_tick = Instant::now();
     while !stop.load(Ordering::Relaxed) {
+        if sync_capture_omit(&mut applied, &mut phases) {
+            park(&stop, IDLE_TICK);
+            continue;
+        }
         let dt = last_tick.elapsed().as_secs_f32().clamp(0.016, 0.5);
         last_tick = Instant::now();
         let any_busy = reconcile(
             &specs,
             relocate.load(Ordering::Relaxed),
+            press_stops.load(Ordering::Relaxed),
             &running_macro,
             &visibility,
             &mut applied,
@@ -186,13 +235,7 @@ fn host_loop(
             dt,
         );
         let slice = if any_busy { BUSY_TICK } else { IDLE_TICK };
-        let deadline = Instant::now() + slice;
-        while Instant::now() < deadline {
-            if stop.load(Ordering::Relaxed) {
-                break;
-            }
-            thread::sleep(Duration::from_millis(20));
-        }
+        park(&stop, slice);
     }
     applied.clear();
     if let Err(e) = bridge::clear_overlays() {
@@ -201,9 +244,74 @@ fn host_loop(
     note("overlay: android button host stopped");
 }
 
+fn request_capture_omit(omit: bool) {
+    let seq = {
+        let mut gate = OMIT.lock();
+        gate.want = omit;
+        gate.seq = gate.seq.wrapping_add(1);
+        OMIT_WAKE.notify_all();
+        gate.seq
+    };
+    let deadline = Instant::now() + OMIT_ACK_WAIT;
+    let mut gate = OMIT.lock();
+    while gate.applied != seq {
+        let now = Instant::now();
+        if now >= deadline {
+            return;
+        }
+        OMIT_WAKE.wait_for(&mut gate, deadline - now);
+    }
+    drop(gate);
+    if omit && frames().projection() == Projection::Running {
+        // `fresh` asks the projection to copy a frame taken after the buttons were cleared.
+        let _ = frames().fresh(OMIT_ACK_WAIT);
+    }
+}
+
+/// Apply a pending omit or restore. `true` means buttons must stay cleared.
+fn sync_capture_omit(
+    applied: &mut HashMap<String, Applied>,
+    phases: &mut HashMap<String, f32>,
+) -> bool {
+    let gate = OMIT.lock();
+    let want = gate.want;
+    if gate.applied == gate.seq {
+        return want;
+    }
+    let seq = gate.seq;
+    drop(gate);
+    if want {
+        if let Err(e) = bridge::clear_overlays() {
+            note(&format!("overlay-android: capture omit clear: {e}"));
+        }
+        applied.clear();
+        phases.clear();
+    }
+    let mut gate = OMIT.lock();
+    if gate.seq == seq {
+        gate.applied = seq;
+        OMIT_WAKE.notify_all();
+    }
+    gate.want
+}
+
+fn park(stop: &AtomicBool, timeout: Duration) {
+    let deadline = Instant::now() + timeout;
+    let mut gate = OMIT.lock();
+    let seq = gate.seq;
+    while !stop.load(Ordering::Relaxed) && gate.seq == seq {
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        OMIT_WAKE.wait_for(&mut gate, deadline - now);
+    }
+}
+
 fn reconcile(
     specs: &Mutex<Vec<AndroidButtonSpec>>,
     relocate: bool,
+    press_stops: bool,
     running_macro: &Mutex<Option<String>>,
     visibility: &Mutex<Arc<Mutex<HashMap<String, bool>>>>,
     applied: &mut HashMap<String, Applied>,
@@ -237,7 +345,7 @@ fn reconcile(
             0.0
         };
         let (x, y) = clamp_origin(spec.x, spec.y, spec.w, spec.h, screen_w, screen_h);
-        let clickable = !busy && !relocate && !spec.macro_name.trim().is_empty();
+        let clickable = (!busy || press_stops) && !relocate && !spec.macro_name.trim().is_empty();
         let stamp = Applied {
             x,
             y,

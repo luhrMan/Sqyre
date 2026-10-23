@@ -58,6 +58,8 @@ impl OsCapturer {
         bottom: i32,
         fresh: bool,
     ) -> Result<(RgbCapture, DesktopRect, u64), CaptureError> {
+        let _omit = crate::detection_omit_guard();
+        let fresh = fresh || crate::detection_omit_needs_fresh_frame();
         let vb = self.virtual_bounds_ref().ok();
         let rect = sqyre_ports::clamp_search_rect(left, top, right, bottom, vb)?;
         let (generation, frame) = if fresh {

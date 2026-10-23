@@ -14,7 +14,7 @@ Single source for platform conventions; other rules and skills link here.
 |--------|--------|
 | Linux X11 | Shipped (`x11_*` in `sqyre-capture`, rdev hotkeys) |
 | Linux Wayland | Shipped. Portal ScreenCast+PipeWire capture and RemoteDesktop EIS input need `portal-capture` (Linux Makefile targets enable it); foreign-toplevel/AT-SPI windows and layer-shell outline/grab always build; evdev hotkeys need `hooks` (`linux/wayland/`, `linux/session.rs`). Per-desktop gaps: `linux-desktop-parity` |
-| Windows | Bare `.exe`: GDI capture, outline, focus, low-level hooks (`win_*`) |
+| Windows | Bare `.exe`: GDI capture, outline, focus, low-level hooks, layered overlay buttons (`win_*`, `sqyre-overlay` `win_buttons`) |
 | macOS | Capture/focus stubbed; `make macos` host-only |
 | wasm32 | GUI-only editor, no runtime (see `wasm-editor`) |
 | Android | MediaProjection capture, accessibility gestures, app-launch focus via `sqyre-android` (only JNI crate); app picker, SAF document picks, notification Stop/Continue, embedded ocrs OCR models, accessibility-overlay macro buttons; no keys, hooks, or folder picks (`docs/ANDROID.md`). `target_os = "android"` is not `linux` but is `unix` |

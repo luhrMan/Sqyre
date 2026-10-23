@@ -727,6 +727,12 @@ impl SqyreApp {
             #[cfg(not(target_arch = "wasm32"))]
             update: update::UpdateManager::default(),
         };
+        #[cfg(all(
+            feature = "native-runtime",
+            any(target_os = "linux", target_os = "windows")
+        ))]
+        app.macro_overlay
+            .set_run_stop(app.run_session.state.stop.clone());
         let last_selected = app.settings_ui.settings().last_selected_macro.clone();
         app.select_macro_by_name(&last_selected);
         app.refresh_macro_hotkey_bindings();

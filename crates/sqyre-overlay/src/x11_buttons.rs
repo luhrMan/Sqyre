@@ -116,6 +116,8 @@ enum HostCmd {
     SetWake(EguiContext),
     ShowChooser(HotkeyChooserSpec),
     HideChooser,
+    /// Unmap every button for a detection grab, then ack. `false` maps them again.
+    SetCaptureOmit(bool, Sender<()>),
     Shutdown,
 }
 
@@ -159,6 +161,8 @@ impl X11ButtonHost {
         running_macro: Arc<Mutex<Option<String>>>,
         pending_chooser: Arc<Mutex<Option<HotkeyChooserResult>>>,
         visibility: Arc<Mutex<HashMap<String, bool>>>,
+        run_stop: Arc<Mutex<sqyre_hotkeys::StopFlag>>,
+        press_stops: Arc<AtomicBool>,
     ) -> Result<Self, OverlayError> {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
@@ -174,9 +178,19 @@ impl X11ButtonHost {
                     pending_chooser,
                     visibility,
                     stop_t,
+                    run_stop,
+                    press_stops,
                 )
             })
             .map_err(|e| OverlayError::ThreadSpawn(e.to_string()))?;
+        let hook_tx = cmd_tx.clone();
+        sqyre_capture::set_overlay_omit_hook(Some(Arc::new(move |omit| {
+            let (ack_tx, ack_rx) = mpsc::channel();
+            if hook_tx.send(HostCmd::SetCaptureOmit(omit, ack_tx)).is_err() {
+                return;
+            }
+            let _ = ack_rx.recv_timeout(Duration::from_millis(500));
+        })));
         Ok(Self {
             cmd_tx,
             stop,
@@ -215,6 +229,7 @@ impl X11ButtonHost {
     pub fn shutdown(&self) {
         self.stop.store(true, Ordering::Relaxed);
         let _ = self.cmd_tx.send(HostCmd::Shutdown);
+        sqyre_capture::set_overlay_omit_hook(None);
         if let Some(join) = self.join.lock().take() {
             // XCloseDisplay / flush under a busy XWayland client can stall for
             // seconds; on process exit abandon the host thread.
@@ -379,6 +394,16 @@ struct HostState {
     /// would BadMatch). Created on the first ARGB face — a GC's depth comes
     /// from its creation drawable, and root is 24-bit.
     argb_gc: *mut x11::xlib::_XGC,
+    /// Worker stop flag. A press during a run calls this without waiting for egui.
+    run_stop: Arc<Mutex<sqyre_hotkeys::StopFlag>>,
+    /// Shared with the app. Mirrored into [`HostState::press_stops`] each poll.
+    press_stops_flag: Arc<AtomicBool>,
+    /// Last loaded value of [`HostState::press_stops_flag`].
+    press_stops: bool,
+    /// Name in the running-macro slot, refreshed before events are drained.
+    running_label: Option<String>,
+    /// Detection grab asked the buttons to leave the screen until it finishes.
+    capture_omit: bool,
 }
 
 /// 32-bit visual info shared by every ARGB window on this display.
@@ -391,6 +416,10 @@ struct ArgbVisual {
     blue_mask: u64,
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "host thread owns the queues, the worker stop flag, and press-to-stop"
+)]
 fn host_loop(
     cmd_rx: Receiver<HostCmd>,
     pending: Arc<Mutex<Vec<String>>>,
@@ -399,6 +428,8 @@ fn host_loop(
     pending_chooser: Arc<Mutex<Option<HotkeyChooserResult>>>,
     visibility: Arc<Mutex<HashMap<String, bool>>>,
     stop: Arc<AtomicBool>,
+    run_stop: Arc<Mutex<sqyre_hotkeys::StopFlag>>,
+    press_stops_flag: Arc<AtomicBool>,
 ) {
     // SAFETY: connects to the default display; pointer is owned by this thread
     // until unregister + x_close_display below (or the early-error path).
@@ -499,6 +530,11 @@ fn host_loop(
         suppress_crossing: false,
         argb,
         argb_gc: std::ptr::null_mut(),
+        run_stop,
+        press_stops: press_stops_flag.load(Ordering::Relaxed),
+        press_stops_flag,
+        running_label: None,
+        capture_omit: false,
     };
 
     note(&format!(
@@ -548,6 +584,11 @@ fn host_loop(
                 }
                 Ok(HostCmd::ShowChooser(spec)) => show_chooser(&mut state, spec),
                 Ok(HostCmd::HideChooser) => hide_chooser(&mut state, None),
+                Ok(HostCmd::SetCaptureOmit(omit, ack)) => {
+                    state.capture_omit = omit;
+                    apply_gate_visibility(&mut state);
+                    let _ = ack.send(());
+                }
                 Ok(HostCmd::Shutdown) => {
                     stop.store(true, Ordering::Relaxed);
                     break;
@@ -564,7 +605,9 @@ fn host_loop(
         }
 
         // Busy must not wait on egui sync — ROOT starves under fullscreen games.
+        sync_press_stops(&mut state);
         let running_now = running_macro.lock().clone();
+        state.running_label = running_now.clone();
         if running_now != last_running {
             apply_running_busy(&mut state, running_now.as_deref());
             last_running = running_now;
@@ -1898,9 +1941,10 @@ fn apply_gate_visibility(state: &mut HostState) {
         // Relocate (Overlay editor open): keep hosted buttons mapped so the user
         // can drag them; do not let the found-map hide them mid-edit. Callers only
         // host the selected program's buttons in this mode.
-        let show = state.relocate_mode
-            || !btn.spec.visibility_gated
-            || found.get(&id).copied().unwrap_or(false);
+        let show = !state.capture_omit
+            && (state.relocate_mode
+                || !btn.spec.visibility_gated
+                || found.get(&id).copied().unwrap_or(false));
         let (hit, face) = (btn.hit, btn.win);
         if show {
             if btn.mapped {
@@ -1962,10 +2006,57 @@ fn apply_gate_visibility(state: &mut HostState) {
     }
 }
 
+/// Copy the press-to-stop flag onto the host and retarget busy hit shapes.
+///
+/// When the setting is on, a busy button stays a hit target so the press can
+/// stop the run. When it is off, the hit shape is emptied so clicks reach the game.
+fn sync_press_stops(state: &mut HostState) {
+    let enabled = state.press_stops_flag.load(Ordering::Relaxed);
+    if enabled == state.press_stops {
+        return;
+    }
+    state.press_stops = enabled;
+    let ids: Vec<String> = state.buttons.keys().cloned().collect();
+    let mut changed = false;
+    for id in ids {
+        let Some(btn) = state.buttons.get(&id) else {
+            continue;
+        };
+        if !btn.spec.busy {
+            continue;
+        }
+        changed = true;
+        let (hit, w, h, radius) = (btn.hit, btn.spec.w, btn.spec.h, btn.spec.corner_radius);
+        apply_busy_hit_shape(state.display, state.press_stops, hit, w, h, radius);
+    }
+    if changed {
+        // SAFETY: HostState display invariant.
+        unsafe {
+            x_flush(state.display);
+        }
+    }
+}
+
+fn apply_busy_hit_shape(
+    display: *mut Display,
+    press_stops: bool,
+    hit: Window,
+    w: u32,
+    h: u32,
+    radius: f32,
+) {
+    if press_stops {
+        apply_hit_rounded_input(display, hit, w, h, radius);
+    } else {
+        apply_empty_input_shape(display, hit);
+    }
+}
+
 /// Apply busy from the shared running-macro slot (not egui sync).
 ///
-/// While busy: empty the hit ShapeInput so macro mouse clicks reach the game.
-/// When cleared: restore hit shape and raise above the game.
+/// While busy and press-to-stop is off, empty the hit ShapeInput so macro mouse
+/// clicks reach the game. When press-to-stop is on, keep the hit so a press can
+/// stop the run. When cleared: restore hit shape and raise above the game.
 fn apply_running_busy(state: &mut HostState, running: Option<&str>) {
     let running = running.map(str::trim).filter(|s| !s.is_empty());
     let mut flipped = false;
@@ -1987,9 +2078,15 @@ fn apply_running_busy(state: &mut HostState, running: Option<&str>) {
         // union is still applied to order blit-then-shrink correctly.
         btn.armed = false;
         flipped = true;
-        let (hit, w, h, radius) = (btn.hit, btn.spec.w, btn.spec.h, btn.spec.corner_radius);
+        let (hit, w, h, radius, press_stops) = (
+            btn.hit,
+            btn.spec.w,
+            btn.spec.h,
+            btn.spec.corner_radius,
+            state.press_stops,
+        );
         if want {
-            apply_empty_input_shape(state.display, hit);
+            apply_busy_hit_shape(state.display, press_stops, hit, w, h, radius);
         } else {
             apply_hit_rounded_input(state.display, hit, w, h, radius);
         }
@@ -2749,6 +2846,17 @@ fn drain_x_events(state: &mut HostState) -> bool {
             };
             if state.relocate_mode {
                 begin_relocate_drag(state, &id, root_x, root_y, "ungrab+poll");
+                continue;
+            }
+            if state.press_stops
+                && state
+                    .running_label
+                    .as_deref()
+                    .is_some_and(|n| !n.trim().is_empty())
+            {
+                mark_site(&format!("overlay-x11:press-stop:{id}"));
+                note(&format!("overlay-x11: press-stop id={id}"));
+                state.run_stop.lock().request_stop();
                 continue;
             }
             // Fire on press. Waiting for ButtonRelease lost clicks when the game
