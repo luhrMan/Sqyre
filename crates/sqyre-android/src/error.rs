@@ -29,6 +29,12 @@ pub enum AndroidError {
     ProjectionStopped,
     #[error("bad screen-recording frame: {0}")]
     BadFrame(&'static str),
+    #[error("the screen changed faster than Android can screenshot")]
+    ScreenshotTooSoon,
+    #[error(
+        "the accessibility service cannot take screenshots yet; turn it off and on in Android Settings > Accessibility"
+    )]
+    ScreenshotUnavailable,
     #[cfg(target_os = "android")]
     #[error("JNI: {0}")]
     Jni(#[from] jni::errors::Error),

@@ -109,32 +109,50 @@ impl Macro {
     /// against `macros` (matched case-insensitively). Cycles and missing targets
     /// are cut like the executor's run stack.
     pub fn uses_screen_capture<'a>(&'a self, macros: &'a [Macro]) -> bool {
-        fn rec<'a>(macro_: &'a Macro, macros: &'a [Macro], stack: &mut Vec<String>) -> bool {
-            let mut needs_screen = false;
+        self.any_reached(macros, ActionKind::is_detection)
+    }
+
+    /// True when a reached detection polls faster than an accessibility screenshot
+    /// ([`crate::SCREENSHOT_MIN_GAP_MS`] at the Android default interval).
+    pub fn needs_fast_capture<'a>(&'a self, macros: &'a [Macro]) -> bool {
+        self.any_reached(macros, detection_needs_fast_capture)
+    }
+
+    fn any_reached<'a>(&'a self, macros: &'a [Macro], pred: fn(&ActionKind) -> bool) -> bool {
+        fn rec<'a>(
+            macro_: &'a Macro,
+            macros: &'a [Macro],
+            stack: &mut Vec<String>,
+            pred: fn(&ActionKind) -> bool,
+        ) -> bool {
+            let mut hit = false;
             let mut run_names = Vec::new();
             macro_.root.walk(&mut |action| match &action.kind {
                 ActionKind::RunMacro { macro_name } => run_names.push(macro_name.clone()),
-                kind if kind.is_detection() => needs_screen = true,
+                kind if pred(kind) => hit = true,
                 _ => {}
             });
-            needs_screen
-                || run_names.into_iter().any(|name| {
-                    let name = name.trim();
-                    if name.is_empty() || stack.iter().any(|n| n.eq_ignore_ascii_case(name)) {
-                        return false;
-                    }
-                    let Some(target) = macros.iter().find(|m| m.name.eq_ignore_ascii_case(name))
-                    else {
-                        return false;
-                    };
-                    stack.push(target.name.clone());
-                    let found = rec(target, macros, stack);
-                    stack.pop();
-                    found
-                })
+            hit || run_names.into_iter().any(|name| {
+                let name = name.trim();
+                if name.is_empty() || stack.iter().any(|n| n.eq_ignore_ascii_case(name)) {
+                    return false;
+                }
+                let Some(target) = macros.iter().find(|m| m.name.eq_ignore_ascii_case(name)) else {
+                    return false;
+                };
+                stack.push(target.name.clone());
+                let found = rec(target, macros, stack, pred);
+                stack.pop();
+                found
+            })
         }
-        rec(self, macros, &mut vec![self.name.clone()])
+        rec(self, macros, &mut vec![self.name.clone()], pred)
     }
+}
+
+fn detection_needs_fast_capture(kind: &ActionKind) -> bool {
+    kind.detection()
+        .is_some_and(|detection| detection.wait.needs_fast_capture())
 }
 
 #[cfg(test)]
@@ -220,5 +238,91 @@ mod tests {
         push(&mut a, run_macro("missing"));
         let macros = vec![a.clone()];
         assert!(!a.uses_screen_capture(&macros));
+        assert!(!a.needs_fast_capture(&macros));
+    }
+
+    fn fast_pixel(interval_ms: i32, seconds: f64, mode: crate::RepeatMode) -> Action {
+        Action {
+            id: crate::ActionId::new(),
+            kind: ActionKind::FindPixel {
+                name: "p".into(),
+                search_area: Default::default(),
+                target_color: "#fff".into(),
+                color_tolerance: 0,
+                detection: crate::DetectionBranch {
+                    wait: crate::WaitTilFoundConfig {
+                        repeat_mode: mode,
+                        wait_til_found_seconds: seconds,
+                        wait_til_found_interval_ms: interval_ms,
+                        max_iterations: 0,
+                    },
+                    ..Default::default()
+                },
+            },
+        }
+    }
+
+    #[test]
+    fn needs_fast_capture_flags_a_sub_screenshot_gap() {
+        let mut once = Macro::new("once", 0, vec![]);
+        push(&mut once, find_pixel("p"));
+        assert!(once.uses_screen_capture(&[]));
+        assert!(!once.needs_fast_capture(&[]));
+
+        let mut slow = Macro::new("slow", 0, vec![]);
+        push(
+            &mut slow,
+            fast_pixel(0, 2.0, crate::RepeatMode::WaitUntilFound),
+        );
+        assert!(!slow.needs_fast_capture(&[]));
+
+        let mut fast = Macro::new("fast", 0, vec![]);
+        push(
+            &mut fast,
+            fast_pixel(200, 2.0, crate::RepeatMode::RepeatUntilFound),
+        );
+        assert!(fast.needs_fast_capture(&[]));
+
+        let mut capped = Macro::new("capped", 0, vec![]);
+        push(
+            &mut capped,
+            fast_pixel(0, 0.2, crate::RepeatMode::WaitUntilFound),
+        );
+        assert!(capped.needs_fast_capture(&[]));
+
+        let mut wide = Macro::new("wide", 0, vec![]);
+        push(
+            &mut wide,
+            fast_pixel(0, 0.4, crate::RepeatMode::WaitWhileFound),
+        );
+        assert!(!wide.needs_fast_capture(&[]));
+    }
+
+    #[test]
+    fn needs_fast_capture_follows_run_macro_and_ignores_a_loop_of_one_shots() {
+        let mut caller = Macro::new("caller", 0, vec![]);
+        push(&mut caller, run_macro("helper"));
+        let mut helper = Macro::new("helper", 0, vec![]);
+        push(
+            &mut helper,
+            fast_pixel(200, 0.0, crate::RepeatMode::RepeatWhileFound),
+        );
+        let macros = vec![caller.clone(), helper];
+        assert!(caller.needs_fast_capture(&macros));
+
+        let mut looped = Macro::new("looped", 0, vec![]);
+        push(
+            &mut looped,
+            Action {
+                id: crate::ActionId::new(),
+                kind: ActionKind::Loop {
+                    name: "n".into(),
+                    count: crate::ScalarValue::Int(3),
+                    subactions: vec![find_pixel("p")],
+                },
+            },
+        );
+        assert!(looped.uses_screen_capture(&[]));
+        assert!(!looped.needs_fast_capture(&[]));
     }
 }

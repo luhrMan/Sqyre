@@ -16,8 +16,17 @@ pub mod icons;
 #[cfg(feature = "runtime")]
 mod macro_overlay;
 
-#[cfg(all(feature = "runtime", target_os = "linux"))]
+#[cfg(all(feature = "runtime", target_os = "android"))]
+mod android_buttons;
+#[cfg(all(feature = "runtime", any(target_os = "android", test)))]
+mod button_visibility;
+#[cfg(all(
+    feature = "runtime",
+    any(target_os = "linux", target_os = "android", target_os = "windows")
+))]
 mod raster;
+#[cfg(all(feature = "runtime", target_os = "windows"))]
+mod win_buttons;
 #[cfg(all(feature = "runtime", target_os = "linux"))]
 mod x11_buttons;
 

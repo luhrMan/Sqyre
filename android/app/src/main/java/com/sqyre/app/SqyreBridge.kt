@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Path
+import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import java.lang.ref.WeakReference
@@ -27,6 +28,8 @@ object SqyreBridge {
     const val NO_FOCUSED_TEXT = 3
     const val APP_NOT_FOUND = 4
     const val TITLE_MISMATCH = 5
+    const val SCREENSHOT_TOO_SOON = 6
+    const val SCREENSHOT_UNAVAILABLE = 7
 
     private const val TAG = "SqyreBridge"
 
@@ -62,6 +65,15 @@ object SqyreBridge {
         pixelStride: Int,
     )
 
+    /** An accessibility screenshot, in the same RGBA layout as [nativeOnFrame]. */
+    @JvmStatic external fun nativeOnShot(
+        buffer: ByteBuffer,
+        width: Int,
+        height: Int,
+        rowStride: Int,
+        pixelStride: Int,
+    )
+
     @JvmStatic external fun nativeOnProjectionStopped()
 
     /** The notification permission dialog from [requestNotifications] closed (or was not needed). */
@@ -79,6 +91,10 @@ object SqyreBridge {
 
     /** Answer for [pickDocument] [id]: a readable copy in app cache, or `""` when cancelled. */
     @JvmStatic external fun nativeOnDocumentPicked(id: Int, path: String)
+
+    @JvmStatic external fun nativeOnOverlayClick(id: String)
+
+    @JvmStatic external fun nativeOnOverlayMoved(id: String, x: Int, y: Int)
 
     @JvmStatic
     fun press(x: Int, y: Int, durationMs: Long): Int = guarded("press") {
@@ -222,6 +238,18 @@ object SqyreBridge {
         act.runOnUiThread { act.pickDocument(id, mimeTypes) }
     }
 
+    /** API 30+ can capture the screen from the accessibility service. */
+    @JvmStatic
+    fun screenshotSupported(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+
+    /** One display screenshot. Blocks until the bitmap is published or the call fails. */
+    @JvmStatic
+    fun takeScreenshot(): Int = guarded("takeScreenshot") {
+        if (!screenshotSupported()) return@guarded SCREENSHOT_UNAVAILABLE
+        val service = SqyreAccessibilityService.instance ?: return@guarded ACCESSIBILITY_OFF
+        service.captureDisplay()
+    }
+
     @JvmStatic
     fun requestProjection() {
         val act = activity.get() ?: return
@@ -271,6 +299,41 @@ object SqyreBridge {
                 .putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
+    }
+
+    /**
+     * Show or move one overlay button. [rgba] is premultiplied RGBA, `w * h * 4` bytes.
+     * [clickable] is false while the button's macro is running or the editor is relocating.
+     */
+    @JvmStatic
+    fun upsertOverlay(
+        id: String,
+        x: Int,
+        y: Int,
+        w: Int,
+        h: Int,
+        rgba: ByteArray,
+        clickable: Boolean,
+        relocate: Boolean,
+        label: String,
+    ): Int = guarded("upsertOverlay") {
+        val service = SqyreAccessibilityService.instance ?: return@guarded ACCESSIBILITY_OFF
+        if (OverlayWindows.upsert(service, id, x, y, w, h, rgba, clickable, relocate, label)) {
+            OK
+        } else {
+            REJECTED
+        }
+    }
+
+    @JvmStatic
+    fun removeOverlay(id: String): Int = guarded("removeOverlay") {
+        if (OverlayWindows.remove(id)) OK else REJECTED
+    }
+
+    @JvmStatic
+    fun clearOverlays(): Int = guarded("clearOverlays") {
+        OverlayWindows.clear(SqyreAccessibilityService.instance)
+        OK
     }
 
     @JvmStatic

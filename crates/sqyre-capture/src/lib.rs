@@ -13,6 +13,7 @@ mod outline_geometry;
 mod outline_rect;
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
 mod outline_stub;
+mod overlay_omit;
 mod pixel_convert;
 mod selection_grab;
 #[macro_use]
@@ -56,6 +57,10 @@ pub use linux::{
     OsCapturer, SharedRunCapturer,
 };
 pub use outline_rect::OutlineRect;
+pub use overlay_omit::{
+    detection_omit_guard, detection_omit_needs_fresh_frame, overlay_buttons_in_detection,
+    overlay_capture_omitted, set_overlay_buttons_in_detection, set_overlay_omit_hook,
+};
 pub use pixel_convert::{
     crop_packed_rgba, crop_packed_rgba_to_rgb, strip_rgba_row_to_rgb, swizzle_row_to_rgba,
     zpixmap_to_rgb, zpixmap_to_rgba, RgbaSrcFormat, PARALLEL_ROW_GATE,
@@ -751,10 +756,17 @@ fn title_is_overlay_chrome(title: &str) -> bool {
     t == OVERLAY_WM_TITLE || t == OVERLAY_TIP_WM_TITLE
 }
 
+/// Android application id. Overlay focus treats this package as Sqyre.
+pub const ANDROID_APP_PACKAGE: &str = "com.sqyre.app";
+
 /// True when `win` is owned by this process's executable.
 pub fn window_is_our_process(win: &WindowInfo) -> bool {
     // Overlay chrome uses a fixed WM title; path matching can fail via AT-SPI.
     if title_is_overlay_chrome(&win.title) {
+        return true;
+    }
+    // Android reports the app package, not `current_exe`.
+    if win.process_path.trim() == ANDROID_APP_PACKAGE {
         return true;
     }
     // `current_exe` is unsupported / may panic on wasm32-unknown-unknown.

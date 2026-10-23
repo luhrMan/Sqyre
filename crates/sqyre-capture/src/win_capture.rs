@@ -10,8 +10,8 @@ use windows::Win32::Foundation::{LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
     EnumDisplayMonitors, GetDC, GetDIBits, GetMonitorInfoW, MonitorFromPoint, ReleaseDC,
-    SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HDC, HGDIOBJ, HMONITOR,
-    MONITORINFO, MONITOR_DEFAULTTOPRIMARY, SRCCOPY,
+    SelectObject, BITMAPINFO, BITMAPINFOHEADER, CAPTUREBLT, DIB_RGB_COLORS, HDC, HGDIOBJ, HMONITOR,
+    MONITORINFO, MONITOR_DEFAULTTOPRIMARY, ROP_CODE, SRCCOPY,
 };
 use windows::Win32::UI::HiDpi::{
     GetDpiForMonitor, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
@@ -53,7 +53,7 @@ impl OsCapturer {
     /// Capture RGB directly (no alpha channel / no second conversion pass).
     pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
         let _guard = self.inner.lock();
-        capture_rect_rgb_gdi(rect)
+        capture_rect_rgb_gdi(rect, false)
     }
 
     /// GDI capture is always synchronous; identical to [`Self::capture_rect_rgb_ref`].
@@ -82,13 +82,12 @@ impl OsCapturer {
         bottom: i32,
         fresh: bool,
     ) -> Result<(RgbCapture, DesktopRect, u64), CaptureError> {
+        let _ = fresh;
+        let _omit = crate::detection_omit_guard();
+        let capture_blt = crate::overlay_buttons_in_detection();
         let vb = self.virtual_bounds_ref().ok();
         let rect = sqyre_ports::clamp_search_rect(left, top, right, bottom, vb)?;
-        let img = if fresh {
-            self.capture_rect_rgb_fresh_ref(rect)?
-        } else {
-            self.capture_rect_rgb_ref(rect)?
-        };
+        let img = capture_rect_rgb_gdi(rect, capture_blt)?;
         Ok((img, rect, sqyre_ports::unique_frame_token()))
     }
 
@@ -137,7 +136,7 @@ fn virtual_screen_metrics() -> Result<DesktopRect, CaptureError> {
 }
 
 fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
-    let (mut bgra, w, h) = capture_rect_bgra(rect)?;
+    let (mut bgra, w, h) = capture_rect_bgra(rect, false)?;
 
     // Sequential BGRA→RGBA: avoid rayon/pulp here. Preview captures can run on the
     // UI thread (glow), and off-thread SIMD pools have hard-crashed some Windows
@@ -153,8 +152,8 @@ fn capture_rect_gdi(rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
 
 /// Capture RGB directly from the GDI BGRA buffer (no RGBA intermediate / no second
 /// allocation pass — mirrors the X11 ZPixmap→RGB path for search/OCR hot paths).
-fn capture_rect_rgb_gdi(rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
-    let (bgra, w, h) = capture_rect_bgra(rect)?;
+fn capture_rect_rgb_gdi(rect: DesktopRect, capture_blt: bool) -> Result<RgbCapture, CaptureError> {
+    let (bgra, w, h) = capture_rect_bgra(rect, capture_blt)?;
     let data = zpixmap_to_rgb(&bgra, w, h, 4, 0).map_err(CaptureError::Message)?;
     Ok(RgbCapture {
         width: w,
@@ -165,7 +164,10 @@ fn capture_rect_rgb_gdi(rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
 
 /// BitBlt the desktop rect into a compatible bitmap and read it back as tightly
 /// packed top-down BGRA via `GetDIBits`. Shared by the RGBA and RGB-direct paths.
-fn capture_rect_bgra(rect: DesktopRect) -> Result<(Vec<u8>, u32, u32), CaptureError> {
+fn capture_rect_bgra(
+    rect: DesktopRect,
+    capture_blt: bool,
+) -> Result<(Vec<u8>, u32, u32), CaptureError> {
     if rect.is_empty() {
         return Err(CaptureError::EmptyRect);
     }
@@ -194,6 +196,11 @@ fn capture_rect_bgra(rect: DesktopRect) -> Result<(Vec<u8>, u32, u32), CaptureEr
         }
 
         let old = SelectObject(mem_dc, HGDIOBJ::from(bitmap));
+        let rop = if capture_blt {
+            ROP_CODE(SRCCOPY.0 | CAPTUREBLT.0)
+        } else {
+            SRCCOPY
+        };
         let blit_ok = BitBlt(
             mem_dc,
             0,
@@ -203,7 +210,7 @@ fn capture_rect_bgra(rect: DesktopRect) -> Result<(Vec<u8>, u32, u32), CaptureEr
             Some(screen_dc),
             rect.x,
             rect.y,
-            SRCCOPY,
+            rop,
         );
         if blit_ok.is_err() {
             SelectObject(mem_dc, old);

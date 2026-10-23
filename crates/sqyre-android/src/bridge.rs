@@ -6,6 +6,7 @@
 
 use crate::frame::FrameLayout;
 use crate::pointer::Gesture;
+use crate::screenshot::shot_delay;
 use crate::{
     frames, insets, parse_app_line, parse_app_list, picks, request_continue, request_stop, status,
     AndroidError, AppIcon, Insets, LaunchableApp,
@@ -15,9 +16,20 @@ use jni::refs::Global;
 use jni::strings::JNIStr;
 use jni::sys::{jboolean, jint};
 use jni::{jni_sig, jni_str, Env, EnvUnowned, JValue, JavaVM, Outcome};
+use parking_lot::Mutex;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::OnceLock;
+use std::time::Instant;
+
+/// Time of the last screenshot that Android accepted.
+static LAST_SHOT: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// Current AOSP minimum gap. Keep in step with `sqyre_domain::SCREENSHOT_MIN_GAP_MS`.
+const MIN_GAP: std::time::Duration = std::time::Duration::from_millis(333);
+
+/// Android 11 refuses a second screenshot for a full second.
+const SLOW_GAP: std::time::Duration = std::time::Duration::from_millis(1000);
 
 struct Bridge {
     vm: JavaVM,
@@ -228,6 +240,49 @@ pub fn pick_document(id: i32, mime_types: &[&str]) -> Result<(), AndroidError> {
     })
 }
 
+/// True on API 30+, where the accessibility service can take a screenshot.
+pub fn screenshot_supported() -> Result<bool, AndroidError> {
+    with_bridge(|env, class| {
+        env.call_static_method(class, jni_str!("screenshotSupported"), jni_sig!("()Z"), &[])?
+            .z()
+    })
+}
+
+/// Take one accessibility screenshot and publish it into the frame store.
+///
+/// Waits out [`MIN_GAP`] since the last accepted shot. A device that still
+/// enforces a one-second cap returns [`AndroidError::ScreenshotTooSoon`]; this
+/// waits out [`SLOW_GAP`] and tries once more.
+pub fn take_screenshot() -> Result<(), AndroidError> {
+    wait_shot_gap(MIN_GAP);
+    match take_screenshot_once() {
+        Err(AndroidError::ScreenshotTooSoon) => {
+            wait_shot_gap(SLOW_GAP);
+            take_screenshot_once()
+        }
+        other => other,
+    }
+}
+
+fn wait_shot_gap(min: std::time::Duration) {
+    let delay = shot_delay(*LAST_SHOT.lock(), Instant::now(), min);
+    if !delay.is_zero() {
+        std::thread::sleep(delay);
+    }
+}
+
+fn take_screenshot_once() -> Result<(), AndroidError> {
+    let code = with_bridge(|env, class| {
+        env.call_static_method(class, jni_str!("takeScreenshot"), jni_sig!("()I"), &[])?
+            .i()
+    })?;
+    let result = status::check(code);
+    if result.is_ok() {
+        *LAST_SHOT.lock() = Some(Instant::now());
+    }
+    result
+}
+
 /// Ask the shell to show the screen-recording consent dialog (no-op while one is pending).
 pub fn request_projection() -> Result<(), AndroidError> {
     with_bridge(|env, class| {
@@ -327,6 +382,69 @@ pub fn open_notification_settings() -> Result<(), AndroidError> {
     })
 }
 
+/// Show or replace one overlay button. `rgba` is premultiplied, length `w * h * 4`.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one JNI call matches the Kotlin window update"
+)]
+pub fn upsert_overlay(
+    id: &str,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    rgba: &[u8],
+    clickable: bool,
+    relocate: bool,
+    label: &str,
+) -> Result<(), AndroidError> {
+    let code = with_bridge(|env, class| {
+        let id = env.new_string(id)?;
+        let label = env.new_string(label)?;
+        let rgba = env.byte_array_from_slice(rgba)?;
+        env.call_static_method(
+            class,
+            jni_str!("upsertOverlay"),
+            jni_sig!("(Ljava/lang/String;IIII[BZZLjava/lang/String;)I"),
+            &[
+                (&id).into(),
+                JValue::Int(x),
+                JValue::Int(y),
+                JValue::Int(w),
+                JValue::Int(h),
+                (&rgba).into(),
+                JValue::Bool(clickable),
+                JValue::Bool(relocate),
+                (&label).into(),
+            ],
+        )?
+        .i()
+    })?;
+    status::check(code)
+}
+
+pub fn remove_overlay(id: &str) -> Result<(), AndroidError> {
+    let code = with_bridge(|env, class| {
+        let id = env.new_string(id)?;
+        env.call_static_method(
+            class,
+            jni_str!("removeOverlay"),
+            jni_sig!("(Ljava/lang/String;)I"),
+            &[(&id).into()],
+        )?
+        .i()
+    })?;
+    status::check(code)
+}
+
+pub fn clear_overlays() -> Result<(), AndroidError> {
+    let code = with_bridge(|env, class| {
+        env.call_static_method(class, jni_str!("clearOverlays"), jni_sig!("()I"), &[])?
+            .i()
+    })?;
+    status::check(code)
+}
+
 /// Real display size in pixels (same space as projection frames and gestures).
 pub fn display_size() -> Result<(i32, i32), AndroidError> {
     with_bridge(|env, class| {
@@ -389,25 +507,72 @@ pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnFrame(
                 frames().mark_running();
                 return Ok(());
             }
-            let ptr = env.get_direct_buffer_address(&buffer)?;
-            let len = env.get_direct_buffer_capacity(&buffer)?;
-            if ptr.is_null() {
-                return Err(AndroidError::BadFrame("null direct buffer"));
-            }
-            // SAFETY: Kotlin keeps the `Image` open until this native returns, so the direct
-            // buffer stays mapped and unchanged for `len` bytes for the whole call.
-            let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
-            frames().publish(
+            publish_direct(
+                env,
+                &buffer,
                 FrameLayout {
                     width,
                     height,
                     row_stride,
                     pixel_stride,
                 },
-                bytes,
+                false,
             )
         })
     });
+}
+
+#[no_mangle]
+#[allow(
+    non_snake_case,
+    reason = "JNI symbol names are fixed by the Kotlin class"
+)]
+pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnShot(
+    mut env: EnvUnowned,
+    _class: JClass,
+    buffer: JByteBuffer,
+    width: jint,
+    height: jint,
+    row_stride: jint,
+    pixel_stride: jint,
+) {
+    guard("nativeOnShot", || {
+        run_native(&mut env, |env| {
+            publish_direct(
+                env,
+                &buffer,
+                FrameLayout {
+                    width,
+                    height,
+                    row_stride,
+                    pixel_stride,
+                },
+                true,
+            )
+        })
+    });
+}
+
+/// Read a direct `ByteBuffer` and store it. `shot` keeps projection state unchanged.
+fn publish_direct(
+    env: &mut Env,
+    buffer: &JByteBuffer,
+    layout: FrameLayout,
+    shot: bool,
+) -> Result<(), AndroidError> {
+    let ptr = env.get_direct_buffer_address(buffer)?;
+    let len = env.get_direct_buffer_capacity(buffer)?;
+    if ptr.is_null() {
+        return Err(AndroidError::BadFrame("null direct buffer"));
+    }
+    // SAFETY: Kotlin keeps the buffer alive until this native returns, so the
+    // direct buffer stays mapped and unchanged for `len` bytes for the whole call.
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    if shot {
+        frames().publish_shot(layout, bytes)
+    } else {
+        frames().publish(layout, bytes)
+    }
 }
 
 #[no_mangle]
@@ -517,6 +682,46 @@ pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnDocumentPicked(
         run_native(&mut env, |env| {
             let path: String = path.mutf8_chars(env)?.into();
             picks().complete(id, &path);
+            Ok(())
+        })
+    });
+}
+
+#[no_mangle]
+#[allow(
+    non_snake_case,
+    reason = "JNI symbol names are fixed by the Kotlin class"
+)]
+pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnOverlayClick(
+    mut env: EnvUnowned,
+    _class: JClass,
+    id: JString,
+) {
+    guard("nativeOnOverlayClick", || {
+        run_native(&mut env, |env| {
+            let id: String = id.mutf8_chars(env)?.into();
+            crate::overlay_input::overlay_clicked(&id);
+            Ok(())
+        })
+    });
+}
+
+#[no_mangle]
+#[allow(
+    non_snake_case,
+    reason = "JNI symbol names are fixed by the Kotlin class"
+)]
+pub extern "system" fn Java_com_sqyre_app_SqyreBridge_nativeOnOverlayMoved(
+    mut env: EnvUnowned,
+    _class: JClass,
+    id: JString,
+    x: jint,
+    y: jint,
+) {
+    guard("nativeOnOverlayMoved", || {
+        run_native(&mut env, |env| {
+            let id: String = id.mutf8_chars(env)?.into();
+            crate::overlay_input::overlay_moved(&id, x, y);
             Ok(())
         })
     });

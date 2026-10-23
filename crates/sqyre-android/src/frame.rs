@@ -77,6 +77,15 @@ fn positive(v: i32) -> Option<usize> {
     usize::try_from(v).ok().filter(|&v| v > 0)
 }
 
+/// What [`FrameStore::begin_shot`] found before a new screenshot is taken.
+#[derive(Debug)]
+pub struct ShotRequest {
+    /// Generation a new shot must pass.
+    pub generation: u64,
+    /// A frame still inside the demand window. `None` when a new shot is required.
+    pub cached: Option<(u64, Frame)>,
+}
+
 /// Whether the shell's MediaProjection session is delivering frames.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Projection {
@@ -163,6 +172,65 @@ impl FrameStore {
         drop(s);
         self.ready.notify_all();
         Ok(())
+    }
+
+    /// Store a screenshot. Unlike [`Self::publish`], this does not mark projection running.
+    pub fn publish_shot(&self, layout: FrameLayout, src: &[u8]) -> Result<(), AndroidError> {
+        let frame = Frame::pack(layout, src)?;
+        let mut s = self.state.lock();
+        if !s.shell_visible {
+            s.backdrop = Some(frame.clone());
+            s.backdrop_generation += 1;
+        }
+        s.frame = Some(frame);
+        s.generation += 1;
+        drop(s);
+        self.ready.notify_all();
+        Ok(())
+    }
+
+    /// Note that a screenshot capture wants a frame.
+    ///
+    /// A cached frame is returned when `fresh` is false and a capture asked recently.
+    /// The generation is the one to wait past when a new shot has to be taken.
+    pub fn begin_shot(&self, fresh: bool) -> ShotRequest {
+        let now = Instant::now();
+        let mut s = self.state.lock();
+        let reusable = s.demand_active(now);
+        if !reusable {
+            s.frame = None;
+        }
+        s.demand_at = Some(now);
+        let cached = if fresh || !reusable {
+            None
+        } else {
+            s.frame.clone().map(|frame| (s.generation, frame))
+        };
+        ShotRequest {
+            generation: s.generation,
+            cached,
+        }
+    }
+
+    /// A frame published after `after`, whether or not a projection is running.
+    pub fn wait_for_shot(
+        &self,
+        after: u64,
+        timeout: Duration,
+    ) -> Result<(u64, Frame), AndroidError> {
+        let deadline = Instant::now() + timeout;
+        let mut s = self.state.lock();
+        while s.generation <= after || s.frame.is_none() {
+            let now = Instant::now();
+            if now >= deadline {
+                return Err(AndroidError::NoFrame);
+            }
+            self.ready.wait_for(&mut s, deadline - now);
+        }
+        s.frame
+            .clone()
+            .map(|frame| (s.generation, frame))
+            .ok_or(AndroidError::NoFrame)
     }
 
     /// The shell's activity was shown or hidden. Hiding keeps frames flowing for
@@ -469,5 +537,57 @@ mod tests {
             Err(AndroidError::ProjectionStopped)
         ));
         stopper.join().expect("stopper");
+    }
+
+    #[test]
+    fn publish_shot_does_not_mark_projection_running() {
+        let store = FrameStore::new();
+        let (layout, src) = padded_plane();
+        store.publish_shot(layout, &src).expect("shot");
+        assert_eq!(store.projection(), Projection::NotStarted);
+        assert!(store.backdrop().is_none());
+
+        store.set_shell_visible(false);
+        store.publish_shot(layout, &src).expect("hidden shot");
+        assert!(store.backdrop().is_some());
+        assert_eq!(store.projection(), Projection::NotStarted);
+
+        store.set_shell_visible(true);
+        let generation = store.backdrop_generation();
+        store.publish_shot(layout, &src).expect("visible shot");
+        assert_eq!(store.backdrop_generation(), generation);
+    }
+
+    #[test]
+    fn begin_shot_reuses_a_recent_frame_unless_fresh() {
+        let store = FrameStore::new();
+        let (layout, src) = padded_plane();
+        let idle = store.begin_shot(false);
+        assert!(idle.cached.is_none());
+        store.publish_shot(layout, &src).expect("shot");
+        let cached = store.begin_shot(false);
+        assert_eq!(cached.cached.expect("cached").1.width(), 3);
+        assert!(store.begin_shot(true).cached.is_none());
+    }
+
+    #[test]
+    fn wait_for_shot_wakes_without_a_projection() {
+        let store = Arc::new(FrameStore::new());
+        let (layout, src) = padded_plane();
+        let request = store.begin_shot(true);
+        let publisher = {
+            let store = Arc::clone(&store);
+            let src = src.clone();
+            std::thread::spawn(move || {
+                store.publish_shot(layout, &src).expect("shot");
+            })
+        };
+        let frame = store
+            .wait_for_shot(request.generation, Duration::from_secs(5))
+            .expect("shot")
+            .1;
+        assert_eq!(frame.height(), 2);
+        assert_eq!(store.projection(), Projection::NotStarted);
+        publisher.join().expect("publisher");
     }
 }

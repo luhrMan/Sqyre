@@ -10,6 +10,8 @@ pub const REJECTED: i32 = 2;
 pub const NO_FOCUSED_TEXT: i32 = 3;
 pub const APP_NOT_FOUND: i32 = 4;
 pub const TITLE_MISMATCH: i32 = 5;
+pub const SCREENSHOT_TOO_SOON: i32 = 6;
+pub const SCREENSHOT_UNAVAILABLE: i32 = 7;
 
 /// Map a Kotlin status code to `Ok` or the matching [`AndroidError`].
 pub fn check(code: i32) -> Result<(), AndroidError> {
@@ -20,6 +22,8 @@ pub fn check(code: i32) -> Result<(), AndroidError> {
         NO_FOCUSED_TEXT => Err(AndroidError::NoFocusedText),
         APP_NOT_FOUND => Err(AndroidError::AppNotFound),
         TITLE_MISMATCH => Err(AndroidError::TitleMismatch),
+        SCREENSHOT_TOO_SOON => Err(AndroidError::ScreenshotTooSoon),
+        SCREENSHOT_UNAVAILABLE => Err(AndroidError::ScreenshotUnavailable),
         other => Err(AndroidError::UnknownStatus(other)),
     }
 }
@@ -47,6 +51,14 @@ mod tests {
         assert!(matches!(
             check(TITLE_MISMATCH),
             Err(AndroidError::TitleMismatch)
+        ));
+        assert!(matches!(
+            check(SCREENSHOT_TOO_SOON),
+            Err(AndroidError::ScreenshotTooSoon)
+        ));
+        assert!(matches!(
+            check(SCREENSHOT_UNAVAILABLE),
+            Err(AndroidError::ScreenshotUnavailable)
         ));
         assert!(matches!(check(42), Err(AndroidError::UnknownStatus(42))));
     }

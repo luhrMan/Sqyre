@@ -20,6 +20,12 @@ use std::sync::atomic::Ordering;
 /// host with `cargo run -p sqyre-overlay --features sandbox --bin overlay_sandbox`.
 #[cfg(all(feature = "native-runtime", feature = "overlay-buttons"))]
 pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
+    app.macro_overlay
+        .set_press_stops_run(app.settings_ui.settings().overlay_press_stops_run);
+    sqyre_capture::set_overlay_buttons_in_detection(
+        app.settings_ui.settings().overlay_buttons_in_detection,
+    );
     app.macro_overlay
         .set_visibility_map(app.overlay_visibility.found_map());
     let moves = app.macro_overlay.drain_moves();
@@ -87,6 +93,8 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         running_macro,
         relocate,
     );
+    #[cfg(target_os = "android")]
+    crate::app_run::refresh_android_overlay_kit(app, ctx);
 }
 
 #[cfg(all(feature = "native-runtime", not(feature = "overlay-buttons")))]
@@ -306,9 +314,17 @@ const PROJECTION_GATE_POLL: std::time::Duration = std::time::Duration::from_mill
     target_os = "android"
 ))]
 fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
-    use crate::app_run::ProjectionGate;
+    use crate::app_run::{PendingProjectionRun, ProjectionGate};
     use sqyre_android::{bridge, frames, Projection};
 
+    if app.pending_projection_run.is_none() {
+        if let Some(macro_name) = crate::app_run::take_android_projection_request() {
+            app.pending_projection_run = Some(PendingProjectionRun {
+                macro_name,
+                state: ProjectionGate::Ask,
+            });
+        }
+    }
     // Consent can also arrive from another surface (Settings → Permissions, the
     // first-start popup); grant starts the queued run regardless of gate state.
     if frames().projection() == Projection::Running {

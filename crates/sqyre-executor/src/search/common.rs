@@ -48,9 +48,21 @@ impl<'a> DetectionCtx<'a> {
             search_area,
             targets,
             branch,
-            wait_interval_ms: 100,
-            repeat_interval_ms: 100,
+            wait_interval_ms: default_poll_interval_ms(),
+            repeat_interval_ms: default_poll_interval_ms(),
         }
+    }
+}
+
+/// Unset `waittilfoundintervalms` poll. Android sits above the screenshot floor.
+fn default_poll_interval_ms() -> i32 {
+    #[cfg(target_os = "android")]
+    {
+        sqyre_domain::ANDROID_POLL_INTERVAL_MS
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        100
     }
 }
 
