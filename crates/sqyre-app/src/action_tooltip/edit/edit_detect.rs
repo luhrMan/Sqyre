@@ -12,13 +12,14 @@ use crate::pickers::ActivePicker;
 use crate::tree_chrome;
 use crate::var_pills;
 use crate::widgets::{
-    configure_match_blur_drag, drag_field, match_settings, text_field, wrap_unit, W_VAR,
+    combo_enum, configure_match_blur_drag, drag_field, match_settings, text_field, wrap_unit, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
     clamp_color_tolerance, clamp_ocr_resize, clamp_ocr_threshold, parse_hex_color, CoordinateRef,
-    DetectionBranch, ItemSortBy, ItemSortThen, Macro, MatchMethod, MAX_COLOR_TOLERANCE,
-    MAX_OCR_RESIZE, MAX_OCR_THRESHOLD, MIN_COLOR_TOLERANCE, MIN_OCR_RESIZE, MIN_OCR_THRESHOLD,
+    DetectionBranch, ItemSortBy, ItemSortThen, Macro, MatchMethod, OcrMatchMode,
+    MAX_COLOR_TOLERANCE, MAX_OCR_RESIZE, MAX_OCR_THRESHOLD, MIN_COLOR_TOLERANCE, MIN_OCR_RESIZE,
+    MIN_OCR_THRESHOLD,
 };
 use sqyre_hotkeys::ScreenClickBridge;
 
@@ -81,6 +82,8 @@ pub(super) struct OcrFields<'a> {
     pub target: &'a mut String,
     pub search_area: &'a mut CoordinateRef,
     pub output_variable: &'a mut String,
+    pub match_mode: &'a mut OcrMatchMode,
+    pub case_sensitive: &'a mut bool,
     pub blur: &'a mut i32,
     pub min_threshold: &'a mut i32,
     pub resize: &'a mut f64,
@@ -161,6 +164,8 @@ pub(super) fn paint_ocr_fields(
         target,
         search_area,
         output_variable,
+        match_mode,
+        case_sensitive,
         blur,
         min_threshold,
         resize,
@@ -188,6 +193,18 @@ pub(super) fn paint_ocr_fields(
             h::OCR_TARGET,
             W_VAR,
             active_macro,
+        );
+        combo_enum(
+            ui,
+            "Match",
+            h::OCR_MATCH,
+            match_mode,
+            &OcrMatchMode::ALL,
+            OcrMatchMode::ui_label,
+        );
+        h::tip(
+            ui.checkbox(case_sensitive, "Case sensitive"),
+            h::OCR_CASE_SENSITIVE,
         );
     });
     tip_wrapped_section(ui, |ui| {

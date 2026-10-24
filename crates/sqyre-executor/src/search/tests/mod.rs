@@ -1,5 +1,4 @@
 use super::common::{run_matches, set_coord_outputs, sort_hits, DetectionCtx, DetectionHit};
-use super::ocr::ocr_target_matched;
 use crate::backends::{DesktopRect, IconStore, ItemMeta};
 use crate::run::{execute_macro_with, ExecDeps};
 use crate::test_support::{
@@ -15,6 +14,7 @@ use sqyre_domain::{
 };
 use sqyre_match::{search_blur_kernel, ImageBuf, DEFAULT_CLOSE_MATCHES_DISTANCE};
 use sqyre_vision::get_cached_blurred_template;
+use sqyre_vision::{ocr_text_matches, OcrMatch};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -199,6 +199,8 @@ fn ocr_action(
             target: target.into(),
             search_area: CoordinateRef("prog~box".into()),
             output_variable: output_variable.into(),
+            match_mode: Default::default(),
+            case_sensitive: false,
             blur: 1,
             min_threshold: 0,
             resize: 1.0,

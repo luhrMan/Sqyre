@@ -200,6 +200,10 @@ pub const IS_BLUR: &str = "Blur radius applied before matching (reduces noise)."
 pub const OCR_TARGET: &str =
     "Text that must appear for the branch to run. Empty = always read once at search center. Multiple occurrences each run the branch.";
 pub const OCR_OUTPUT: &str = "Variable that receives the recognized text.";
+pub const OCR_MATCH: &str =
+    "How the target must match recognized words. Exact = whole words only; Contains = a word may hold the target inside it; Loose fragment = clipped reads still hit; Regex = target is a regular expression.";
+pub const OCR_CASE_SENSITIVE: &str =
+    "Match letter-for-letter casing. Off folds both sides to lowercase.";
 pub const OCR_BLUR: &str = "Blur radius before OCR.";
 pub const OCR_MIN_THRESHOLD: &str =
     "Darkest pixels to keep before reading text (0–255). Raise to drop dim noise.";

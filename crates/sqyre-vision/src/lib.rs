@@ -14,7 +14,8 @@ pub use image_util::{
     rgb_to_grayscale, rgba_to_rgb_buf,
 };
 pub use ocr_boxes::{
-    find_target_in_boxes, find_target_occurrences, text_from_ocr_boxes, OcrRecognition, OcrWordBox,
+    find_target_occurrences, ocr_text_matches, text_from_ocr_boxes, OcrMatch, OcrMatchError,
+    OcrRecognition, OcrWordBox, TargetOccurrence,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use ocr_engine::{shared_ocrs, OcrsEngine};

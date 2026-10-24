@@ -679,6 +679,10 @@ pub(crate) fn is_default_resize(v: &f64) -> bool {
     (*v - 1.0).abs() < f64::EPSILON
 }
 
+pub(crate) fn is_default_ocr_match_mode(v: &crate::OcrMatchMode) -> bool {
+    *v == crate::OcrMatchMode::default()
+}
+
 pub(crate) fn default_ocr_text() -> String {
     "ocrText".into()
 }

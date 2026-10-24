@@ -46,6 +46,10 @@ pub enum ActionKind {
         target: String,
         search_area: CoordinateRef,
         output_variable: String,
+        /// How recognized text must relate to [`target`](Self::Ocr::target).
+        match_mode: crate::OcrMatchMode,
+        /// Match letter-for-letter casing instead of folding to lowercase.
+        case_sensitive: bool,
         blur: i32,
         min_threshold: i32,
         resize: f64,
