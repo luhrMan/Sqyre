@@ -43,6 +43,8 @@ pub const DEFAULT_RELEASE_HELD_INPUTS_ON_END: bool = true;
 pub const DEFAULT_OVERLAY_PRESS_STOPS_RUN: bool = true;
 /// Image Search, Find Pixel, and OCR captures include overlay buttons.
 pub const DEFAULT_OVERLAY_BUTTONS_IN_DETECTION: bool = true;
+/// Overlay buttons stay hidden while the Sqyre window is in front.
+pub const DEFAULT_OVERLAY_BUTTONS_OVER_SQYRE: bool = false;
 /// Data Editor left-list width as a fraction of the editor body (default = min).
 pub const DEFAULT_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
 pub const MIN_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
@@ -252,7 +254,9 @@ pub struct OverlayButtonConfig {
     /// Stable id used for the deferred viewport hash.
     pub id: String,
     /// Catalog program this button belongs to (shown when that program is focused).
-    /// [`sqyre_domain::GENERAL_PROGRAM`] buttons ignore focus and stay on screen when enabled.
+    /// [`sqyre_domain::GENERAL_PROGRAM`] buttons ignore which other app is focused.
+    /// Every button hides while Sqyre is in front unless
+    /// [`UserSettings::overlay_buttons_over_sqyre`] is on.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub program: String,
     /// When false the button is not drawn (except live Data Editor preview).
@@ -527,6 +531,11 @@ pub struct UserSettings {
     /// When true, Image Search, Find Pixel, and OCR captures include overlay buttons.
     #[serde(default = "default_overlay_buttons_in_detection")]
     pub overlay_buttons_in_detection: bool,
+    /// When true, overlay buttons stay on screen while the Sqyre window is in front.
+    /// When false, they hide until another app is focused. Placing a button in the
+    /// Overlay editor still shows that button.
+    #[serde(default = "default_overlay_buttons_over_sqyre")]
+    pub overlay_buttons_over_sqyre: bool,
     /// Safety budget for While actions with `max_iterations` ≤ 0.
     #[serde(default = "default_while_max_iterations")]
     pub while_max_iterations: i32,
@@ -562,7 +571,9 @@ pub struct UserSettings {
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub action_defaults: std::collections::BTreeMap<String, serde_yaml::Mapping>,
     /// User-configured overlay buttons (per-program; enabled buttons for
-    /// [`sqyre_domain::GENERAL_PROGRAM`] always show, others when that program is focused).
+    /// [`sqyre_domain::GENERAL_PROGRAM`] ignore other apps, others show when that
+    /// program is focused). All of them hide while Sqyre is in front unless
+    /// [`Self::overlay_buttons_over_sqyre`] is on.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub overlay_buttons: Vec<OverlayButtonConfig>,
     /// Automatically zip the data directory on a schedule.
@@ -619,6 +630,9 @@ fn default_overlay_press_stops_run() -> bool {
 }
 fn default_overlay_buttons_in_detection() -> bool {
     DEFAULT_OVERLAY_BUTTONS_IN_DETECTION
+}
+fn default_overlay_buttons_over_sqyre() -> bool {
+    DEFAULT_OVERLAY_BUTTONS_OVER_SQYRE
 }
 fn default_action_log_max_entries() -> i32 {
     DEFAULT_ACTION_LOG_MAX_ENTRIES
@@ -695,6 +709,7 @@ impl Default for UserSettings {
             release_held_inputs_on_end: DEFAULT_RELEASE_HELD_INPUTS_ON_END,
             overlay_press_stops_run: DEFAULT_OVERLAY_PRESS_STOPS_RUN,
             overlay_buttons_in_detection: DEFAULT_OVERLAY_BUTTONS_IN_DETECTION,
+            overlay_buttons_over_sqyre: DEFAULT_OVERLAY_BUTTONS_OVER_SQYRE,
             while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
             run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
             play_finish_sound: DEFAULT_PLAY_FINISH_SOUND,
@@ -1176,6 +1191,7 @@ mod tests {
         assert!(loaded.permissions_intro_done);
         assert!(loaded.overlay_press_stops_run);
         assert!(loaded.overlay_buttons_in_detection);
+        assert!(!loaded.overlay_buttons_over_sqyre);
         assert!(!loaded.hotkey_tags_while_focused);
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON
@@ -1222,6 +1238,28 @@ mod tests {
         let back: UserSettings =
             serde_yaml::from_str(&serde_yaml::to_string(&off).unwrap()).unwrap();
         assert!(!back.overlay_buttons_in_detection);
+    }
+
+    #[test]
+    fn overlay_buttons_over_sqyre_defaults_off_when_absent() {
+        assert!(!UserSettings::default().overlay_buttons_over_sqyre);
+        let mut value = serde_yaml::to_value(UserSettings::default()).unwrap();
+        value
+            .as_mapping_mut()
+            .unwrap()
+            .remove(serde_yaml::Value::String(
+                "overlay_buttons_over_sqyre".into(),
+            ));
+        let settings: UserSettings = serde_yaml::from_value(value).unwrap();
+        assert!(!settings.overlay_buttons_over_sqyre);
+
+        let on = UserSettings {
+            overlay_buttons_over_sqyre: true,
+            ..Default::default()
+        };
+        let back: UserSettings =
+            serde_yaml::from_str(&serde_yaml::to_string(&on).unwrap()).unwrap();
+        assert!(back.overlay_buttons_over_sqyre);
     }
 
     #[test]
