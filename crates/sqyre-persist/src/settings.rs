@@ -61,6 +61,11 @@ pub const DEFAULT_RUN_MACRO_MAX_DEPTH: i32 = 32;
 pub const MIN_RUN_MACRO_MAX_DEPTH: i32 = 1;
 pub const MAX_RUN_MACRO_MAX_DEPTH: i32 = 256;
 
+/// Log entries kept per action in the Logs window (oldest dropped).
+pub const DEFAULT_ACTION_LOG_MAX_ENTRIES: i32 = 5_000;
+pub const MIN_ACTION_LOG_MAX_ENTRIES: i32 = 50;
+pub const MAX_ACTION_LOG_MAX_ENTRIES: i32 = 50_000;
+
 /// Soft cap for Rayon / search worker threads (used when the machine has more cores).
 pub const DEFAULT_WORKER_THREADS_CAP: i32 = 16;
 pub const MIN_WORKER_THREADS: i32 = 1;
@@ -494,6 +499,9 @@ impl OverlayButtonConfig {
 pub struct UserSettings {
     #[serde(default)]
     pub save_meta_images: bool,
+    /// Log entries kept per action in the Logs window (oldest dropped).
+    #[serde(default = "default_action_log_max_entries")]
+    pub action_log_max_entries: i32,
     #[serde(default)]
     pub highlight_active_action: bool,
     /// In catalog lists, programs with a process icon omit the name (icon + child count only).
@@ -612,6 +620,9 @@ fn default_overlay_press_stops_run() -> bool {
 fn default_overlay_buttons_in_detection() -> bool {
     DEFAULT_OVERLAY_BUTTONS_IN_DETECTION
 }
+fn default_action_log_max_entries() -> i32 {
+    DEFAULT_ACTION_LOG_MAX_ENTRIES
+}
 fn default_while_max_iterations() -> i32 {
     DEFAULT_WHILE_MAX_ITERATIONS
 }
@@ -674,6 +685,7 @@ impl Default for UserSettings {
     fn default() -> Self {
         Self {
             save_meta_images: false,
+            action_log_max_entries: DEFAULT_ACTION_LOG_MAX_ENTRIES,
             highlight_active_action: false,
             compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
             show_empty_program_headers: false,
@@ -925,6 +937,12 @@ impl UserSettings {
         self.run_macro_max_depth = self
             .run_macro_max_depth
             .clamp(MIN_RUN_MACRO_MAX_DEPTH, MAX_RUN_MACRO_MAX_DEPTH);
+        if self.action_log_max_entries <= 0 {
+            self.action_log_max_entries = DEFAULT_ACTION_LOG_MAX_ENTRIES;
+        }
+        self.action_log_max_entries = self
+            .action_log_max_entries
+            .clamp(MIN_ACTION_LOG_MAX_ENTRIES, MAX_ACTION_LOG_MAX_ENTRIES);
         if self.worker_threads <= 0 {
             self.worker_threads = default_worker_threads();
         }
@@ -1204,6 +1222,36 @@ mod tests {
         let back: UserSettings =
             serde_yaml::from_str(&serde_yaml::to_string(&off).unwrap()).unwrap();
         assert!(!back.overlay_buttons_in_detection);
+    }
+
+    #[test]
+    fn clamp_action_log_max_entries() {
+        let mut s = UserSettings {
+            action_log_max_entries: 0,
+            ..Default::default()
+        };
+        s.clamp();
+        assert_eq!(s.action_log_max_entries, DEFAULT_ACTION_LOG_MAX_ENTRIES);
+        s.action_log_max_entries = 5;
+        s.clamp();
+        assert_eq!(s.action_log_max_entries, MIN_ACTION_LOG_MAX_ENTRIES);
+        s.action_log_max_entries = 999_999;
+        s.clamp();
+        assert_eq!(s.action_log_max_entries, MAX_ACTION_LOG_MAX_ENTRIES);
+    }
+
+    #[test]
+    fn action_log_max_entries_defaults_when_absent() {
+        let mut value = serde_yaml::to_value(UserSettings::default()).unwrap();
+        value
+            .as_mapping_mut()
+            .unwrap()
+            .remove(serde_yaml::Value::String("action_log_max_entries".into()));
+        let settings: UserSettings = serde_yaml::from_value(value).unwrap();
+        assert_eq!(
+            settings.action_log_max_entries,
+            DEFAULT_ACTION_LOG_MAX_ENTRIES
+        );
     }
 
     #[test]

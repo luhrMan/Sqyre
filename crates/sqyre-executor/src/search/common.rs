@@ -429,6 +429,14 @@ pub(super) fn run_detection_shell<T>(
     is_hit: impl Fn(&T) -> bool,
     mut on_outcome: impl FnMut(&mut Executor<'_>, &mut Macro, &T, DetectionPass) -> Result<bool>,
 ) -> Result<()> {
+    // Every capture→match attempt opens a collapsible log section so long
+    // wait/repeat runs don't bury the latest attempt under retries.
+    let mut attempt = 0u32;
+    let mut try_once = |exec: &mut Executor<'_>, macro_: &Macro, fresh: bool| -> Result<T> {
+        attempt += 1;
+        exec.log_section(ctx.action_id, format!("Attempt {attempt}"));
+        try_once(exec, macro_, fresh)
+    };
     let wait = &ctx.branch.wait;
     let wait_interval_ms = ctx.wait_interval_ms;
     let repeat_interval_ms = ctx.repeat_interval_ms;

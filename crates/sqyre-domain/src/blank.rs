@@ -173,6 +173,8 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
             target: "template".into(),
             search_area: CoordinateRef::default(),
             output_variable: String::new(),
+            match_mode: Default::default(),
+            case_sensitive: false,
             blur: 0,
             min_threshold: 0,
             resize: 1.0,

@@ -13,6 +13,8 @@ image = { workspace = true }
 parking_lot = { workspace = true }
 pulp = { workspace = true }
 rayon = { workspace = true }
+regex = { workspace = true }
+thiserror = { workspace = true }
 sqyre-match = { path = "../sqyre-match" }
 sqyre-domain = { path = "../sqyre-domain" }
 sqyre-ports = { path = "../sqyre-ports" }

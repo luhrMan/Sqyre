@@ -116,12 +116,28 @@ fn find_pixel_sets_coords_and_logs() {
         macro_.variables.get("foundY").map(|v| v.as_display()),
         Some("205".into()) // 200 origin + 5
     );
-    let lines = lines_for(&logger.entries_for(find_id));
+    let entries = logger.entries_for(find_id);
+    let lines = lines_for(&entries);
     assert!(
         lines.iter().any(|l| l.contains("found matching pixel")),
         "{lines:?}"
     );
     assert!(capturer.has_prefix("rect:"));
+
+    // Structured find: hit at local (3,5) + origin (100,200) → screen (103,205).
+    let finds: Vec<_> = entries.iter().flat_map(|e| e.finds().to_vec()).collect();
+    assert_eq!(finds.len(), 1, "expected one structured find: {finds:?}");
+    let f = &finds[0];
+    assert_eq!(f.screen, (95, 197, 112, 214));
+    let sqyre_ports::FindContext::Image { rect, .. } = f.context.as_ref().expect("capture context")
+    else {
+        unreachable!()
+    };
+    assert_eq!(*rect, (0, 0, 10, 10), "marker box clamps to image bounds");
+    assert!(
+        entries.iter().any(|e| e.is_image()),
+        "expected capture image entry"
+    );
 }
 
 #[test]

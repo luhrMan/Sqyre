@@ -1017,7 +1017,7 @@ impl SqyreApp {
             self.remove_from_selection(action_id);
             if self.run_session.logs_window == Some(action_id) {
                 self.run_session.logs_window = None;
-                self.run_session.logs_image_cache.clear();
+                self.run_session.logs_state.clear();
             }
         }
         // Drop the undo entry recorded for the provisional insert so Undo is a no-op.
@@ -1046,7 +1046,7 @@ impl SqyreApp {
         self.clear_selected_actions();
         if self.run_session.logs_window == Some(aid) {
             self.run_session.logs_window = None;
-            self.run_session.logs_image_cache.clear();
+            self.run_session.logs_state.clear();
         }
         self.tree.tooltip.cancel();
         self.persist_macro_at(idx);

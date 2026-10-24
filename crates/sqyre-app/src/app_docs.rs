@@ -1,6 +1,6 @@
 //! Docs / screenshot helpers for in-memory demo app state.
 
-use crate::action_logs_ui::LogsImageCache;
+use crate::action_logs_ui::LogsWindowState;
 use crate::add_action::AddActionPicker;
 use crate::app_backends::RunState;
 use crate::data_editor::DataEditor;
@@ -62,6 +62,7 @@ impl SqyreApp {
         let action_log = SharedActionLog::new();
         action_log.set_log_images(settings_ui.settings().save_meta_images);
         action_log.set_log_verbose(settings_ui.settings().save_meta_images);
+        action_log.set_max_entries(settings_ui.settings().action_log_max_entries.max(1) as usize);
         let mut add_action_picker = AddActionPicker::default();
         add_action_picker.load_from_settings(settings_ui.settings());
 
@@ -95,7 +96,7 @@ impl SqyreApp {
                 runtime_vars: SharedRuntimeVars::new(),
                 highlighter,
                 logs_window: None,
-                logs_image_cache: LogsImageCache::default(),
+                logs_state: LogsWindowState::default(),
             },
             tree,
             hotkeys,

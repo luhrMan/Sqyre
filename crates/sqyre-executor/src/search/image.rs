@@ -18,7 +18,7 @@ use sqyre_match::{
     blur_image_owned, cluster_points, find_peaks_for_method, match_template_with_prepared,
     prepare_search, search_blur_kernel, ImageBuf, MatchError, MatchMap, Point, SearchPrep,
 };
-use sqyre_ports::{highlight_clear, highlight_fill};
+use sqyre_ports::{highlight_clear, highlight_fill, FindContext, LogFind};
 use sqyre_vision::{
     get_cached_blurred_template, get_cached_image_mask, get_cached_prepared_template,
     load_rgb_image,
@@ -236,7 +236,7 @@ fn capture_and_match(
         });
         return Ok(hits.clone());
     }
-    exec.log_image(action_id, "1. Capture (search area)", &search);
+    let _ = exec.log_image(action_id, "1. Capture (search area)", &search);
     let kernel = search_blur_kernel(blur);
     let want_pipeline = exec.log_images_enabled();
     // Keep an unblurred copy only for diagnostics overlays / match crops.
@@ -249,7 +249,7 @@ fn capture_and_match(
         }
     };
     if blur > 0 {
-        exec.log_image(
+        let _ = exec.log_image(
             action_id,
             format!("2. Preprocess — blur search (amount={blur})"),
             &search_blurred,
@@ -549,6 +549,7 @@ fn capture_and_match(
                         thumbnail,
                         &steps,
                         vec![format!("Error: {e}")],
+                        vec![],
                     );
                 }
                 continue;
@@ -573,6 +574,7 @@ fn capture_and_match(
         let tw = outcome.tmpl_w as i32;
         let th = outcome.tmpl_h as i32;
 
+        const MAX_LOG_FINDS: usize = 64;
         // Binding the capture here ties the pipeline branch to it actually
         // existing, instead of re-deriving that from `want_pipeline`.
         if let Some(search_raw) = search_raw.as_ref() {
@@ -591,6 +593,8 @@ fn capture_and_match(
             ];
             let mut item_overlay = search_raw.clone();
             const MAX_MATCH_PREVIEWS: usize = 8;
+            // Exclusive-bottom-right local boxes for the find markers.
+            let mut local_boxes: Vec<(i32, i32, i32, i32)> = Vec::new();
             for (mi, mut p) in matches.into_iter().enumerate() {
                 let local_tl_x = p.x;
                 let local_tl_y = p.y;
@@ -602,6 +606,7 @@ fn capture_and_match(
                     local_tl_y + th - 1,
                     [255, 40, 40],
                 );
+                local_boxes.push((local_tl_x, local_tl_y, local_tl_x + tw, local_tl_y + th));
                 if mi < MAX_MATCH_PREVIEWS {
                     if let Some(crop) =
                         crop_match_preview(search_raw, local_tl_x, local_tl_y, tw, th, 12)
@@ -614,14 +619,6 @@ fn capture_and_match(
                 }
                 p.x += half_w;
                 p.y += half_h;
-                let screen_x = origin.x + p.x;
-                let screen_y = origin.y + p.y;
-                details.push(format!(
-                    "Find #{}: center local ({}, {}) → screen ({screen_x}, {screen_y}) · box TL ({local_tl_x}, {local_tl_y}) size {tw}×{th}",
-                    mi + 1,
-                    p.x,
-                    p.y,
-                ));
                 out.push(NamedPoint {
                     name: outcome.target.clone(),
                     variant_name: outcome.variant_name.clone(),
@@ -632,11 +629,16 @@ fn capture_and_match(
                     tmpl_h: th,
                 });
             }
-            let find_count = details.iter().filter(|d| d.starts_with("Find #")).count();
+            let find_count = local_boxes.len();
             if find_count == 0 {
                 details.push("No matches found for this item.".into());
             } else {
                 owned_steps.push(("Where found (all matches)".into(), item_overlay));
+            }
+            if find_count > MAX_LOG_FINDS {
+                details.push(format!(
+                    "Find markers truncated to {MAX_LOG_FINDS} of {find_count} hits."
+                ));
             }
             let summary = if find_count == 0 {
                 format!("0 matches · {:.0}ms", outcome.match_ms)
@@ -654,9 +656,35 @@ fn capture_and_match(
             if let Some(mask) = &mask_preview {
                 steps.push(("3. Mask", mask));
             }
+            // "Where found" is the last owned step — its index in the final vec.
+            let where_step = steps.len() + owned_steps.len().saturating_sub(1);
             for (label, img) in &owned_steps {
                 steps.push((label.as_str(), img));
             }
+
+            let finds: Vec<LogFind> = local_boxes
+                .iter()
+                .take(MAX_LOG_FINDS)
+                .enumerate()
+                .map(|(mi, &(tlx, tly, brx, bry))| LogFind {
+                    label: format!("Find #{}", mi + 1),
+                    detail: Some(variant_label.clone()),
+                    screen: (
+                        origin.x + tlx,
+                        origin.y + tly,
+                        origin.x + brx,
+                        origin.y + bry,
+                    ),
+                    context: Some(FindContext::Step {
+                        step: where_step,
+                        rect: crate::log_draw::scale_rect_for_log(
+                            (tlx, tly, brx, bry),
+                            search_raw.width,
+                            search_raw.height,
+                        ),
+                    }),
+                })
+                .collect();
 
             exec.log_item_pipeline(
                 action_id,
@@ -665,8 +693,42 @@ fn capture_and_match(
                 thumbnail,
                 &steps,
                 details,
+                finds,
             );
         } else {
+            // No pipeline (image logging off / no logger): still emit screen-only
+            // find markers so hits stay hover/click-pinnable in the Logs window.
+            let finds: Vec<LogFind> = matches
+                .iter()
+                .take(MAX_LOG_FINDS)
+                .enumerate()
+                .map(|(mi, p)| LogFind {
+                    label: format!("Find #{}", mi + 1),
+                    detail: Some(variant_label.clone()),
+                    screen: (
+                        origin.x + p.x,
+                        origin.y + p.y,
+                        origin.x + p.x + tw,
+                        origin.y + p.y + th,
+                    ),
+                    context: None,
+                })
+                .collect();
+            if !finds.is_empty() {
+                let truncated = if finds.len() < matches.len() {
+                    format!(" · markers truncated to {MAX_LOG_FINDS}")
+                } else {
+                    String::new()
+                };
+                exec.log_finds(
+                    action_id,
+                    format!(
+                        "{label}: {variant_label} — {} match(es) found{truncated}",
+                        matches.len()
+                    ),
+                    finds,
+                );
+            }
             for mut p in matches {
                 p.x += half_w;
                 p.y += half_h;

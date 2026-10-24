@@ -16,6 +16,7 @@ mod item_sort;
 mod keys;
 mod macro_model;
 mod match_method;
+mod ocr_match;
 mod rename;
 mod scalar;
 mod set_value;
@@ -49,6 +50,7 @@ pub use keys::{
 };
 pub use macro_model::*;
 pub use match_method::MatchMethod;
+pub use ocr_match::OcrMatchMode;
 pub use rename::*;
 pub use scalar::*;
 pub use set_value::{
