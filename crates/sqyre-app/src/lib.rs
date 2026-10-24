@@ -567,6 +567,7 @@ impl SqyreApp {
         let action_log = SharedActionLog::new();
         action_log.set_log_images(settings_ui.settings().save_meta_images);
         action_log.set_log_verbose(settings_ui.settings().save_meta_images);
+        action_log.set_max_entries(settings_ui.settings().action_log_max_entries.max(1) as usize);
         let mut add_action_picker = AddActionPicker::default();
         add_action_picker.load_from_settings(settings_ui.settings());
 
@@ -666,7 +667,7 @@ impl SqyreApp {
                 runtime_vars: SharedRuntimeVars::new(),
                 highlighter,
                 logs_window: None,
-                logs_image_cache: action_logs_ui::LogsImageCache::default(),
+                logs_state: action_logs_ui::LogsWindowState::default(),
             },
             tree: TreeState::default(),
             hotkeys,
@@ -881,7 +882,7 @@ impl eframe::App for SqyreApp {
             {
                 self.workspace.selected_macro = idx;
                 self.tree.last_exec_follow = None;
-                self.run_session.logs_image_cache.clear();
+                self.run_session.logs_state.clear();
             }
         }
         if let Some(name) = self.poll_native_hotkey_chooser(ctx) {

@@ -274,7 +274,7 @@ mod native_run {
             }
             // Show the running macro's tree so highlight overlays have matching rows.
             self.workspace.selected_macro = idx;
-            self.run_session.logs_image_cache.clear();
+            self.run_session.logs_state.clear();
             self.tree.last_exec_follow = None;
             self.launch_macro(ctx, idx);
         }

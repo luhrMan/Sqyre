@@ -13,7 +13,8 @@ mod runtime_vars;
 mod session_desktop;
 
 pub use action_log::{
-    lines_for, ActionLogEntry, ActionLogger, LogImage, SharedActionLog, MAX_ENTRIES_PER_ACTION,
+    lines_for, ActionLogEntry, ActionLogger, FindContext, ImageAnnotation, LogFind, LogImage,
+    SharedActionLog, MAX_ENTRIES_PER_ACTION,
 };
 pub use automation_error::AutomationError;
 pub use capture_error::{CaptureError, NotReady};

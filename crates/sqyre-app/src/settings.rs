@@ -563,6 +563,26 @@ impl SettingsUi {
                     ui,
                     crate::action_tooltip::help::SETTING_LOG_META,
                 );
+                ui.label("Keep at most:");
+                let mut v = self.settings.action_log_max_entries;
+                if ui
+                    .add(
+                        crate::widgets::num_entry(&mut v)
+                            .range(
+                                sqyre_persist::MIN_ACTION_LOG_MAX_ENTRIES
+                                    ..=sqyre_persist::MAX_ACTION_LOG_MAX_ENTRIES,
+                            )
+                            .speed(100)
+                            .suffix(" entries"),
+                    )
+                    .on_hover_text(
+                        "Per-action cap for the Logs window; the oldest entries are dropped past it.",
+                    )
+                    .changed()
+                {
+                    self.settings.action_log_max_entries = v;
+                    self.mark_dirty();
+                }
             });
         }
 
@@ -1809,6 +1829,9 @@ const SETTING_LOG_META: &[&str] = &[
     "ocr",
     "debug frames",
     "memory",
+    "action log",
+    "log entries",
+    "log cap",
 ];
 const SETTING_HIGHLIGHT_ACTION: &[&str] =
     &["highlight", "executing action", "active action", "tint"];

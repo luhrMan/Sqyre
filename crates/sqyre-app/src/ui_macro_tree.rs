@@ -390,11 +390,14 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             break;
         }
     }
-    state.store(ui, id);
-
     if let Some(aid) = open_logs {
         app.run_session.logs_window = Some(aid);
+        // The Logs window follows the primary selected action — select the row
+        // so the window stays on it instead of snapping to prior selection.
+        state.set_selected(vec![aid]);
+        app.set_selected_actions(vec![aid]);
     }
+    state.store(ui, id);
     if let Some(aid) = delete_action {
         if !aid.is_root()
             && !matches!(
@@ -410,7 +413,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             }
             if app.run_session.logs_window == Some(aid) {
                 app.run_session.logs_window = None;
-                app.run_session.logs_image_cache.clear();
+                app.run_session.logs_state.clear();
             }
             if app.tree.tooltip.action_id() == Some(aid) {
                 app.tree.tooltip.cancel();
@@ -607,6 +610,16 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     ) && !ui.input(|i| i.pointer.primary_down())
     {
         app.tree.drag_mode = TreeDragMode::Idle;
+    }
+
+    // The open Logs window follows the primary selected action — clicking the
+    // tree changes which action's logs are shown.
+    if app.run_session.logs_window.is_some() {
+        if let Some(&sel) = app.tree.selected_actions.last() {
+            if app.workspace.macros[idx].root.find_by_id(sel).is_some() {
+                app.run_session.logs_window = Some(sel);
+            }
+        }
     }
 }
 
