@@ -33,23 +33,29 @@ pub struct AndroidButtonSpec {
     pub focus_gated: bool,
     /// Hide unless the image-search found-map says this id is on screen.
     pub visibility_gated: bool,
+    /// Overlay-editor preview: stay up while Sqyre is in front even when
+    /// [`shown_buttons`] is told not to draw over this app.
+    pub editor_pinned: bool,
 }
 
 /// Buttons that should have a window right now.
 ///
 /// `relocate` shows every hosted button so the Overlay editor can drag them.
+/// `show_over_self` keeps buttons up while this app is in front; when it is
+/// false those buttons hide (a pinned editor preview still shows).
 /// A focus-gated button with no active window stays eligible only while its
 /// image gate is on, and still hides until `found` says the template is there.
 pub fn shown_buttons<'a>(
     buttons: &'a [AndroidButtonSpec],
     focus: Option<&WindowInfo>,
     relocate: bool,
+    show_over_self: bool,
     found: &HashMap<String, bool>,
 ) -> Vec<&'a AndroidButtonSpec> {
     let ours = focus.is_some_and(window_is_our_process);
     buttons
         .iter()
-        .filter(|btn| button_is_shown(btn, focus, ours, relocate, found))
+        .filter(|btn| button_is_shown(btn, focus, ours, relocate, show_over_self, found))
         .collect()
 }
 
@@ -58,8 +64,12 @@ fn button_is_shown(
     focus: Option<&WindowInfo>,
     ours: bool,
     relocate: bool,
+    show_over_self: bool,
     found: &HashMap<String, bool>,
 ) -> bool {
+    if !relocate && !btn.editor_pinned && ours && !show_over_self {
+        return false;
+    }
     if !relocate && btn.focus_gated {
         if ours {
             return false;
@@ -120,6 +130,7 @@ mod tests {
             icon_hover: [255, 200, 0, 255],
             focus_gated: gated,
             visibility_gated: false,
+            editor_pinned: false,
         }
     }
 
@@ -143,7 +154,7 @@ mod tests {
         btn.process_path.clear();
         let found = HashMap::new();
         let buttons = [btn];
-        let shown = shown_buttons(&buttons, None, false, &found);
+        let shown = shown_buttons(&buttons, None, false, true, &found);
         assert_eq!(ids(&shown), ["g"]);
     }
 
@@ -155,6 +166,7 @@ mod tests {
             std::slice::from_ref(&btn),
             Some(&win("com.other", "")),
             false,
+            true,
             &found
         )
         .is_empty());
@@ -163,6 +175,7 @@ mod tests {
             &buttons,
             Some(&win("com.example.game", "ignored")),
             false,
+            true,
             &found,
         );
         assert_eq!(ids(&shown), ["g"]);
@@ -177,6 +190,7 @@ mod tests {
             std::slice::from_ref(&btn),
             Some(&win("com.example.game", "Menu")),
             false,
+            true,
             &found
         )
         .is_empty());
@@ -185,6 +199,7 @@ mod tests {
             &buttons,
             Some(&win("com.example.game", "Lobby")),
             false,
+            true,
             &found,
         );
         assert_eq!(ids(&shown), ["g"]);
@@ -195,7 +210,50 @@ mod tests {
         let btn = spec("g", true);
         let found = HashMap::new();
         let ours = win(sqyre_capture::ANDROID_APP_PACKAGE, "Sqyre");
-        assert!(shown_buttons(&[btn], Some(&ours), false, &found).is_empty());
+        assert!(shown_buttons(&[btn], Some(&ours), false, true, &found).is_empty());
+    }
+
+    #[test]
+    fn sqyre_in_front_hides_general_buttons_unless_allowed() {
+        let mut btn = spec("g", false);
+        btn.program.clear();
+        btn.process_path.clear();
+        let found = HashMap::new();
+        let ours = win(sqyre_capture::ANDROID_APP_PACKAGE, "Sqyre");
+        assert!(shown_buttons(
+            std::slice::from_ref(&btn),
+            Some(&ours),
+            false,
+            false,
+            &found
+        )
+        .is_empty());
+        assert_eq!(
+            ids(&shown_buttons(
+                std::slice::from_ref(&btn),
+                Some(&ours),
+                false,
+                true,
+                &found
+            )),
+            ["g"]
+        );
+        btn.editor_pinned = true;
+        assert_eq!(
+            ids(&shown_buttons(
+                std::slice::from_ref(&btn),
+                Some(&ours),
+                false,
+                false,
+                &found
+            )),
+            ["g"]
+        );
+        btn.editor_pinned = false;
+        assert_eq!(
+            ids(&shown_buttons(&[btn], Some(&ours), true, false, &found)),
+            ["g"]
+        );
     }
 
     #[test]
@@ -203,13 +261,14 @@ mod tests {
         let mut btn = spec("g", true);
         btn.visibility_gated = true;
         let mut found = HashMap::new();
-        assert!(shown_buttons(std::slice::from_ref(&btn), None, false, &found).is_empty());
+        assert!(shown_buttons(std::slice::from_ref(&btn), None, false, true, &found).is_empty());
         found.insert("g".into(), true);
         assert_eq!(
             ids(&shown_buttons(
                 std::slice::from_ref(&btn),
                 None,
                 false,
+                true,
                 &found
             )),
             ["g"]
@@ -217,7 +276,7 @@ mod tests {
         found.insert("g".into(), false);
         let ours = win(sqyre_capture::ANDROID_APP_PACKAGE, "Sqyre");
         assert_eq!(
-            ids(&shown_buttons(&[btn], Some(&ours), true, &found)),
+            ids(&shown_buttons(&[btn], Some(&ours), true, false, &found)),
             ["g"]
         );
     }

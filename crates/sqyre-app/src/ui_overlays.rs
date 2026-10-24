@@ -23,6 +23,8 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
     app.macro_overlay
         .set_press_stops_run(app.settings_ui.settings().overlay_press_stops_run);
+    app.macro_overlay
+        .set_show_over_sqyre(app.settings_ui.settings().overlay_buttons_over_sqyre);
     sqyre_capture::set_overlay_buttons_in_detection(
         app.settings_ui.settings().overlay_buttons_in_detection,
     );
