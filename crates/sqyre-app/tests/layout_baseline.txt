@@ -185,12 +185,15 @@ edit_imagesearch_stress|480x360|clipped_h|right|"Please confirm the purchase aft
 edit_imagesearch_stress|480x360|clipped_h|right|Demo Program~Main area
 edit_imagesearch_stress|480x360|clipped_h|right|Left: 100, Top: 100, Right: 900, Bottom: 600
 edit_imagesearch_stress|480x360|clipped_h|right|screenshots
+edit_imagesearch_stress|480x360|ratchet|Window Image Search
 edit_imagesearch_stress|640x480|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
 edit_imagesearch_stress|640x480|clipped_h|right|maintenance
 edit_imagesearch_stress|640x480|overlap|Macro builders ↔ Hotkeys
+edit_imagesearch_stress|640x480|ratchet|Window Image Search
 edit_imagesearch_stress|800x600|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
 edit_imagesearch_stress|800x600|clipped_h|right|long-running-maintenance
 edit_imagesearch_stress|915x412|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_imagesearch_stress|915x412|ratchet|Window Image Search
 edit_imagesearch|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
 edit_imagesearch|1280x720@2.0|clipped_h|right|Demo Program~center
 edit_imagesearch|1280x720@2.0|clipped_h|right|down
@@ -199,6 +202,9 @@ edit_imagesearch|412x915|clipped_h|right|Demo Program~Main area
 edit_imagesearch|412x915|clipped_h|right|Left: 100, Top: 100, Right: 900, Bottom: 600
 edit_imagesearch|480x360|clipped_h|right|Demo Program~Main area
 edit_imagesearch|480x360|clipped_h|right|Left: 100, Top: 100, Right: 900, Bottom: 600
+edit_imagesearch|480x360|ratchet|Window Image Search
+edit_imagesearch|640x480|ratchet|Window Image Search
+edit_imagesearch|915x412|ratchet|Window Image Search
 edit_key|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
 edit_key|1280x720@2.0|clipped_h|right|Demo Program~center
 edit_key|1280x720@2.0|clipped_h|right|down
