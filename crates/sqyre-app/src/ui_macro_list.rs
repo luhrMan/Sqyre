@@ -4,6 +4,7 @@ use crate::icon_cache::{IconCache, PROCESS_ICON_SIDE};
 use crate::pickers;
 use crate::status_banner::{StatusBanner, PREFIX_LOAD_ERROR, PREFIX_SAVE_ERROR};
 use crate::theme::{SPACE_12, SPACE_4, SPACE_8};
+use crate::widgets::elide::{elide_to_width, text_hover_if};
 use crate::widgets::tags::{filters_cover_path, normalize_tag_path};
 use crate::SqyreApp;
 use eframe::egui::{self, TextureHandle};
@@ -46,51 +47,6 @@ impl TagTreeNode {
     }
 }
 
-/// Elide `text` to a single line that fits `max_width`, appending `…` only when needed.
-fn elide_to_width(ui: &egui::Ui, text: &str, max_width: f32, font_id: egui::FontId) -> String {
-    if text.is_empty() {
-        return String::new();
-    }
-    let full = ui
-        .painter()
-        .layout_no_wrap(text.to_owned(), font_id.clone(), egui::Color32::WHITE);
-    if full.size().x <= max_width {
-        return text.to_owned();
-    }
-
-    const ELLIPSIS: char = '…';
-    let ellipsis_w = ui
-        .painter()
-        .layout_no_wrap(ELLIPSIS.to_string(), font_id.clone(), egui::Color32::WHITE)
-        .size()
-        .x;
-    let budget = (max_width - ellipsis_w).max(0.0);
-    if budget <= 0.0 {
-        return ELLIPSIS.to_string();
-    }
-
-    let char_count = text.chars().count();
-    let mut lo = 0usize;
-    let mut hi = char_count;
-    while lo < hi {
-        let mid = (lo + hi).div_ceil(2);
-        let candidate: String = text.chars().take(mid).collect();
-        let w = ui
-            .painter()
-            .layout_no_wrap(candidate, font_id.clone(), egui::Color32::WHITE)
-            .size()
-            .x;
-        if w <= budget {
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-    let mut out: String = text.chars().take(lo).collect();
-    out.push(ELLIPSIS);
-    out
-}
-
 /// Macro name on the first line; hotkey as a weak small hint below when set.
 /// Each line is shown in full when it fits `max_text_width`, otherwise elided with `…`.
 /// When `validation_error` is set, the name is tinted and callers should attach hover text.
@@ -99,7 +55,7 @@ fn macro_list_item_text(
     m: &Macro,
     max_text_width: f32,
     validation_error: Option<&str>,
-) -> egui::WidgetText {
+) -> (egui::WidgetText, bool) {
     let style = ui.style();
     let name_font = egui::FontSelection::Default.resolve(style);
     let name = elide_to_width(ui, &m.name, max_text_width, name_font);
@@ -110,20 +66,24 @@ fn macro_list_item_text(
     };
 
     if m.hotkey.is_empty() {
-        return egui::RichText::new(name).color(name_color).into();
+        return (
+            egui::RichText::new(name.text).color(name_color).into(),
+            name.elided,
+        );
     }
 
     let hotkey_font = egui::TextStyle::Small.resolve(style);
     let hotkey = elide_to_width(ui, &format_hotkey(&m.hotkey), max_text_width, hotkey_font);
+    let elided = name.elided || hotkey.elided;
 
     let mut job = egui::text::LayoutJob::default();
-    egui::RichText::new(name).color(name_color).append_to(
+    egui::RichText::new(name.text).color(name_color).append_to(
         &mut job,
         style,
         egui::FontSelection::Default,
         egui::Align::LEFT,
     );
-    egui::RichText::new(format!("\n{hotkey}"))
+    egui::RichText::new(format!("\n{}", hotkey.text))
         .small()
         .color(style.visuals.weak_text_color())
         .append_to(
@@ -132,7 +92,7 @@ fn macro_list_item_text(
             egui::FontSelection::Default,
             egui::Align::LEFT,
         );
-    job.into()
+    (job.into(), elided)
 }
 
 fn tag_header_label(tag: &str) -> &str {
@@ -264,14 +224,28 @@ fn paint_macro_rows(
         let validation_err = sqyre_validate::validate_macro(m)
             .err()
             .map(|e| e.to_string());
-        let label = macro_list_item_text(ui, m, text_width, validation_err.as_deref());
+        let (label, label_elided) =
+            macro_list_item_text(ui, m, text_width, validation_err.as_deref());
         let mut resp = ui.add(
             egui::Button::selectable(app.workspace.selected_macro == i, label)
                 .wrap_mode(egui::TextWrapMode::Extend)
                 .min_size(egui::vec2(width, 0.0)),
         );
-        if let Some(err) = validation_err.as_deref() {
-            resp = resp.on_hover_text(format!("Validation: {err}"));
+        let full_text = if m.hotkey.is_empty() {
+            m.name.clone()
+        } else {
+            format!("{}\n{}", m.name, format_hotkey(&m.hotkey))
+        };
+        let hover_text = match (label_elided, validation_err.as_deref()) {
+            (true, Some(err)) => Some(format!("{full_text}\n\nValidation: {err}")),
+            (true, None) => Some(full_text.clone()),
+            (false, Some(err)) => Some(format!("Validation: {err}")),
+            (false, None) => None,
+        };
+        if let Some(hover_text) = hover_text {
+            resp = resp.on_hover_text(hover_text);
+        } else {
+            resp = text_hover_if(resp, &full_text, label_elided);
         }
         if i == app.workspace.selected_macro {
             if nav.scroll {
@@ -412,10 +386,11 @@ fn paint_tag_group(
                         let name_budget =
                             (ui.available_width() - count_w - ui.spacing().item_spacing.x).max(0.0);
                         let header_text = elide_to_width(ui, label, name_budget, font);
-                        ui.add(
-                            egui::Label::new(egui::RichText::new(header_text).strong())
+                        let resp = ui.add(
+                            egui::Label::new(egui::RichText::new(header_text.text).strong())
                                 .selectable(false),
                         );
+                        text_hover_if(resp, label, header_text.elided);
                     }
                     ui.label(egui::RichText::new(count_text).weak());
                 });
@@ -597,7 +572,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     format!("Hotkeys: {joined}")
                 };
                 let font = egui::TextStyle::Small.resolve(ui.style());
-                ui.small(elide_to_width(ui, &label, pane_w, font));
+                let display = elide_to_width(ui, &label, pane_w, font);
+                let resp = ui.small(display.text);
+                text_hover_if(resp, &label, display.elided);
             }
             crate::widgets::section_separator(ui);
             let list_h = ui.available_height();

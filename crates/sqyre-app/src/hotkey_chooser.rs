@@ -412,12 +412,20 @@ fn paint_chooser_body(
     ui.add_space(crate::theme::SPACE_4);
     for (i, name) in names.iter().enumerate() {
         let is_sel = i == *selected;
-        let resp = ui.add_sized(
-            [ui.available_width(), ROW_H],
-            egui::Button::new(name.as_str())
-                .selected(is_sel)
-                .wrap_mode(egui::TextWrapMode::Truncate),
+        let width = ui.available_width();
+        let text = crate::widgets::elide::elide_to_width(
+            ui,
+            name,
+            (width - ui.spacing().button_padding.x * 2.0).max(0.0),
+            egui::TextStyle::Button.resolve(ui.style()),
         );
+        let resp = ui.add_sized(
+            [width, ROW_H],
+            egui::Button::new(text.text)
+                .selected(is_sel)
+                .wrap_mode(egui::TextWrapMode::Extend),
+        );
+        let resp = crate::widgets::elide::text_hover_if(resp, name, text.elided);
         if resp.clicked() {
             *picked = Some(name.clone());
         } else if resp.hovered() {

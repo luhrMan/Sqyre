@@ -9,6 +9,7 @@ use crate::theme::{
     paint_galley_centered,
 };
 use crate::var_pills;
+use crate::widgets::elide::{single_line_galley, text_hover_if};
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use sqyre_domain::{
     action_type_label, parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames,
@@ -202,16 +203,42 @@ pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> e
 }
 
 pub(crate) fn paint_pill_pub(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
-    paint_pill(ui, text, fill)
+    paint_pill(ui, text, fill, true)
 }
 
-fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
+pub(crate) fn paint_pill_tip(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
+    let fg = contrast_fg(fill);
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let full = ui.painter().layout_no_wrap(text.to_owned(), font, fg);
+    let pad = Vec2::new(PILL_MARGIN_X as f32 * 2.0, PILL_MARGIN_Y as f32 * 2.0);
+    if full.size().x + pad.x > ui.available_width() {
+        return egui::Frame::new()
+            .fill(fill)
+            .corner_radius(egui::CornerRadius::same(PILL_RADIUS as u8))
+            .inner_margin(egui::Margin::symmetric(PILL_MARGIN_X, PILL_MARGIN_Y))
+            .show(ui, |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(text).color(fg)).wrap())
+            })
+            .response;
+    }
+    paint_pill(ui, text, fill, false)
+}
+
+fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32, show_hover: bool) -> egui::Response {
     // Allocate through the parent layout (unlike Frame::show, which top-aligns in
     // available_rect and ignores Align::Center — that drifted pills below the tree icon).
     let fg = contrast_fg(fill);
     let font = egui::TextStyle::Small.resolve(ui.style());
-    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, fg);
     let pad = Vec2::new(PILL_MARGIN_X as f32 * 2.0, PILL_MARGIN_Y as f32 * 2.0);
+    let max_width = (ui.clip_rect().right() - ui.cursor().left() - pad.x).max(0.0);
+    let full = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), font.clone(), fg);
+    let galley = if full.size().x > max_width {
+        single_line_galley(ui, text, font, fg, max_width)
+    } else {
+        full
+    };
     let size = galley.size() + pad;
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
     ui.painter().rect(
@@ -221,8 +248,10 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
         Stroke::NONE,
         egui::StrokeKind::Inside,
     );
+    let was_elided = galley.elided;
     paint_galley_centered(ui, rect, galley, fg);
-    ui.interact(rect, ui.id().with(("action_pill", text)), Sense::hover())
+    let response = ui.interact(rect, ui.id().with(("action_pill", text)), Sense::hover());
+    text_hover_if(response, text, show_hover && was_elided)
 }
 
 /// Leading program/window icon + summary pill, vertically centered in a `band_h` cell.
@@ -230,6 +259,10 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
 /// `ui.horizontal` alone starts at `interact_size.y`; when the pill is taller, the
 /// parent row grows after the first cell and later cells center lower (wrapped
 /// tooltip rows) or overflow the row clip (tree rows).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "summary pill cell carries rendering context and layout options"
+)]
 pub(crate) fn paint_summary_pill_cell(
     ui: &mut egui::Ui,
     action: &Action,
@@ -238,6 +271,7 @@ pub(crate) fn paint_summary_pill_cell(
     icons: &mut IconCache,
     theme: VarTheme<'_>,
     band_h: f32,
+    view_tip: bool,
 ) -> egui::Response {
     let prev_h = ui.spacing().interact_size.y;
     ui.spacing_mut().interact_size.y = band_h;
@@ -253,7 +287,26 @@ pub(crate) fn paint_summary_pill_cell(
         } else {
             crate::icon_cache::paint_leading_program_icon(ui, catalog, icons, &pill.text);
         }
-        var_pills::paint_summary_pill(ui, action.type_key(), pill, theme.known_vars, theme.is_dark);
+        if view_tip {
+            var_pills::paint_summary_pill_tip(
+                ui,
+                action.type_key(),
+                pill,
+                theme.known_vars,
+                theme.is_dark,
+            )
+        } else {
+            let budget = (ui.clip_rect().right() - ui.cursor().left()).max(0.0);
+            var_pills::paint_summary_pill_limited(
+                ui,
+                action.type_key(),
+                pill,
+                theme.known_vars,
+                theme.is_dark,
+                budget,
+                false,
+            )
+        }
     })
     .response;
     ui.spacing_mut().interact_size.y = prev_h;
@@ -339,7 +392,7 @@ fn paint_image_search_extras(
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
     let prev_gap = ui.spacing().item_spacing.x;
     ui.spacing_mut().item_spacing.x = TARGET_THUMB_GAP;
-    let count_pill = paint_pill(ui, &format!("🔍 {}", targets.len()), pastel);
+    let count_pill = paint_pill(ui, &format!("🔍 {}", targets.len()), pastel, false);
     extend_drag_handle(drag_handle, count_pill.rect);
     if count_pill.hovered() {
         tip_hovered = true;
@@ -364,7 +417,7 @@ fn paint_image_search_extras(
     }
     let hidden = targets.len().saturating_sub(visible);
     if hidden > 0 {
-        let overflow = paint_pill(ui, &format!("+{hidden}"), pastel);
+        let overflow = paint_pill(ui, &format!("+{hidden}"), pastel, false);
         extend_drag_handle(drag_handle, overflow.rect);
         if overflow.hovered() {
             tip_hovered = true;
@@ -404,6 +457,7 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         *sort_then,
         tag_priority,
     );
+    ui.add(egui::Label::new(format!("🔍 {}", targets.len())).wrap());
 
     if !target_tags.is_empty() {
         crate::widgets::title_with_count(
@@ -739,6 +793,7 @@ pub fn paint_action_row(
                                         is_dark,
                                     },
                                     row_h,
+                                    false,
                                 );
                                 extend_drag_handle(&mut drag_handle_rect, resp.rect);
                                 if resp.hovered() {
@@ -1077,7 +1132,7 @@ mod tests {
                                 is_dark: true,
                             };
                             paint_summary_pill_cell(
-                                ui, &action, pill, &catalog, &mut icons, theme, band_h,
+                                ui, &action, pill, &catalog, &mut icons, theme, band_h, false,
                             )
                             .rect
                         })

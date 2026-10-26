@@ -4,6 +4,7 @@ mod action_icons;
 pub mod context_menu;
 pub(crate) mod controls;
 pub mod dialogs;
+pub mod elide;
 pub mod empty_state;
 pub mod fields;
 pub mod headers;

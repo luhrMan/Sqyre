@@ -6,7 +6,7 @@
 mod common;
 
 use common::build_docs_harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 
 #[test]
 fn settings_checkbox_toggles_log_meta_images() {
@@ -152,6 +152,104 @@ fn add_wait_from_picker_increases_tree() {
         before + 1,
         "picking Wait should insert a child under the demo root"
     );
+}
+
+#[test]
+fn data_editor_program_name_tooltip_discloses_elided_text() {
+    let mut harness = build_docs_harness([480.0, 360.0], |app| {
+        app.open_data_editor_programs_for_docs();
+    });
+    harness.run();
+    let (visible, rect) = {
+        let node = harness
+            .query_all_by(|node| {
+                node.label()
+                    .as_deref()
+                    .is_some_and(|label| label.starts_with("Demo P"))
+            })
+            .next()
+            .expect("program label in Data Editor");
+        (
+            node.accesskit_node().label().unwrap().to_string(),
+            node.rect(),
+        )
+    };
+    assert!(
+        visible.ends_with('…'),
+        "program label was not elided: {visible}"
+    );
+    harness.hover_at(rect.center());
+    harness.run_steps(45);
+    harness.get_by_label("Demo Program");
+}
+
+#[test]
+fn long_macro_name_tooltip_discloses_elided_text() {
+    let full_name = "Daily inventory restock and screenshot backup routine";
+    let mut harness = build_docs_harness([480.0, 360.0], |app| {
+        app.apply_stress_fixture_for_docs();
+        app.open_macro_list_for_docs();
+    });
+    harness.run();
+    press_release(&mut harness, egui::pos2(374.0, 206.0));
+
+    let (visible, rect) = {
+        let macro_node = harness
+            .query_all_by(|node| {
+                node.label()
+                    .as_deref()
+                    .is_some_and(|label| label.starts_with("Daily inventory"))
+            })
+            .max_by(|a, b| {
+                (a.rect().width() * a.rect().height())
+                    .total_cmp(&(b.rect().width() * b.rect().height()))
+            })
+            .expect("long macro name in list");
+        (
+            macro_node.accesskit_node().label().unwrap().to_string(),
+            macro_node.rect(),
+        )
+    };
+    assert!(
+        visible
+            .lines()
+            .next()
+            .is_some_and(|line| line.ends_with('…')),
+        "macro label was not elided: {visible}"
+    );
+
+    harness.hover_at(rect.center());
+    harness.run_steps(45);
+    harness.get_by_label(&format!("{full_name}\nctrl + shift + f9"));
+}
+
+#[test]
+fn stress_tree_summary_tooltip_discloses_full_type_text_at_scale_two() {
+    let full_text = "Please confirm the purchase after checking the selected inventory count. Save a screenshot of the updated shop dialog, verify the backup completed, and leave a clear note for the next maintenance run.";
+    let mut harness = build_docs_harness([640.0, 360.0], |app| {
+        app.docs_settings_mut().ui_scale = 2.0;
+        app.apply_stress_fixture_for_docs();
+        app.expand_all_branches_for_docs();
+    });
+    harness.run();
+
+    let elided_pill_rect = harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text)
+                if text.galley.job.text.contains("Please confirm the purchase")
+                    && text.galley.elided =>
+            {
+                Some(text.visual_bounding_rect())
+            }
+            _ => None,
+        })
+        .expect("elided Type summary pill");
+    harness.hover_at(elided_pill_rect.center());
+    harness.run_steps(45);
+    harness.get_by_label(&format!("\"{full_text}\""));
 }
 
 /// Same size as the `command-palette.png` golden, where the first row sits at y≈161.

@@ -1083,7 +1083,14 @@ fn coord_picker_row(
         } else {
             ui.visuals().text_color()
         };
-        let resp = ui.label(egui::RichText::new(display).monospace().color(color));
+        let trailing_width = ui.spacing().interact_size.x * 2.0 + ui.spacing().item_spacing.x * 2.0;
+        let label_width = (ui.available_width() - trailing_width).max(0.0);
+        let resp = ui.add_sized(
+            [label_width, ui.spacing().interact_size.y],
+            egui::Label::new(egui::RichText::new(display).monospace().color(color))
+                .truncate()
+                .show_tooltip_when_elided(false),
+        );
         if !coord.is_empty() {
             attach_coord_hover(ui, &resp, catalog, previews, coord, kind);
         } else if let Some(tip) = var_pills::entry_validation_tip(&validation) {
@@ -1427,31 +1434,46 @@ fn repeat_mode_label(ui: &egui::Ui, mode: RepeatMode) -> egui::WidgetText {
     job.into()
 }
 
+fn repeat_mode_plain(mode: RepeatMode) -> &'static str {
+    match mode {
+        RepeatMode::Once => "Once",
+        RepeatMode::WaitUntilFound => "Wait Until Found",
+        RepeatMode::WaitWhileFound => "Wait While Found",
+        RepeatMode::RepeatUntilFound => "Repeat Until Found",
+        RepeatMode::RepeatWhileFound => "Repeat While Found",
+    }
+}
+
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     wrap_unit(ui, |ui| {
         help::label(ui, "Repeat mode", h::REPEAT_MODE);
-        help::tip(
-            egui::ComboBox::from_id_salt("Repeat mode")
-                .selected_text(repeat_mode_label(ui, wait.repeat_mode))
-                .show_ui(ui, |ui| {
-                    for mode in [
-                        RepeatMode::Once,
-                        RepeatMode::WaitUntilFound,
-                        RepeatMode::WaitWhileFound,
-                        RepeatMode::RepeatUntilFound,
-                        RepeatMode::RepeatWhileFound,
-                    ] {
-                        if ui
-                            .selectable_label(wait.repeat_mode == mode, repeat_mode_label(ui, mode))
-                            .clicked()
-                        {
-                            wait.repeat_mode = mode;
-                        }
+        let selected = repeat_mode_label(ui, wait.repeat_mode);
+        let selected_plain = repeat_mode_plain(wait.repeat_mode);
+        let response = egui::ComboBox::from_id_salt("Repeat mode")
+            .selected_text(selected)
+            .truncate()
+            .show_ui(ui, |ui| {
+                for mode in [
+                    RepeatMode::Once,
+                    RepeatMode::WaitUntilFound,
+                    RepeatMode::WaitWhileFound,
+                    RepeatMode::RepeatUntilFound,
+                    RepeatMode::RepeatWhileFound,
+                ] {
+                    if ui
+                        .selectable_label(wait.repeat_mode == mode, repeat_mode_label(ui, mode))
+                        .clicked()
+                    {
+                        wait.repeat_mode = mode;
                     }
-                })
-                .response,
-            h::REPEAT_MODE,
-        );
+                }
+            })
+            .response;
+        if crate::widgets::elide::combo_text_elided(ui, &response, selected_plain) {
+            response.on_hover_text(format!("{selected_plain}\n\n{}", h::REPEAT_MODE));
+        } else {
+            help::tip(response, h::REPEAT_MODE);
+        }
     });
     // Once → timing off; wait modes → timing only; repeat modes → timing + max iterations.
     let timing_enabled = wait.uses_timing();

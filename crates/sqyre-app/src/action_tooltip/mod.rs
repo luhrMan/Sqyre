@@ -514,7 +514,7 @@ pub(crate) fn show_action_view_tip(
                         .max_height(max_body_h)
                         .vertical_scroll_offset(offset)
                         .show(ui, |ui| {
-                            tree_chrome::paint_pill_pub(ui, label, pastel);
+                            tree_chrome::paint_pill_tip(ui, label, pastel);
                             ui.add_space(crate::theme::SPACE_4);
                             ui.label(egui::RichText::new(description).small().weak());
                             if !summary_pills.is_empty() {
@@ -535,6 +535,7 @@ pub(crate) fn show_action_view_tip(
                                                 is_dark,
                                             },
                                             band_h,
+                                            true,
                                         );
                                     }
                                 });

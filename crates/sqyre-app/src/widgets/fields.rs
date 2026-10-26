@@ -2,6 +2,7 @@
 
 use crate::action_tooltip::help;
 use crate::pickers::fuzzy_match_fold;
+use crate::widgets::elide::{combo_text_elided, text_hover_if};
 use crate::widgets::num_entry::{num_entry, NumEntry};
 use eframe::egui;
 use std::hash::Hash;
@@ -11,6 +12,22 @@ use std::ops::RangeInclusive;
 pub const W_TEXT: f32 = 220.0;
 /// Standard variable / scalar ref edit width.
 pub const W_VAR: f32 = 160.0;
+
+fn selected_text_hover(
+    ui: &egui::Ui,
+    response: egui::Response,
+    selected: &str,
+    help_text: &str,
+) -> egui::Response {
+    if !combo_text_elided(ui, &response, selected) {
+        return response;
+    }
+    if help_text.is_empty() {
+        text_hover_if(response, selected, true)
+    } else {
+        response.on_hover_text(format!("{selected}\n\n{help_text}"))
+    }
+}
 
 pub fn text_field(ui: &mut egui::Ui, label: &str, help_text: &str, value: &mut String) {
     text_field_width(ui, label, help_text, value, W_TEXT);
@@ -139,8 +156,9 @@ pub fn combo_str(
         if !options.contains(&value.as_str()) && !value.is_empty() {
             custom = Some(value.clone());
         }
-        egui::ComboBox::from_id_salt(label)
-            .selected_text(display)
+        let response = egui::ComboBox::from_id_salt(label)
+            .selected_text(display.clone())
+            .truncate()
             .show_ui(ui, |ui| {
                 for opt in options {
                     let text = if opt.is_empty() {
@@ -153,7 +171,9 @@ pub fn combo_str(
                 if let Some(c) = custom {
                     ui.selectable_value(value, c.clone(), c);
                 }
-            });
+            })
+            .response;
+        selected_text_hover(ui, response, &display, help_text);
     });
 }
 
@@ -186,13 +206,17 @@ pub fn combo_enum<T: Copy + PartialEq>(
 ) {
     super::wrap_unit(ui, |ui| {
         help::label(ui, label, help_text);
-        egui::ComboBox::from_id_salt(label)
-            .selected_text(display(*value))
+        let selected = display(*value);
+        let response = egui::ComboBox::from_id_salt(label)
+            .selected_text(selected)
+            .truncate()
             .show_ui(ui, |ui| {
                 for opt in options {
                     ui.selectable_value(value, *opt, display(*opt));
                 }
-            });
+            })
+            .response;
+        selected_text_hover(ui, response, selected, help_text);
     });
 }
 
@@ -233,8 +257,9 @@ pub fn combo_str_labeled(
         if !value.is_empty() && !options.iter().any(|(v, _)| *v == value.as_str()) {
             custom = Some(value.clone());
         }
-        egui::ComboBox::from_id_salt(label)
-            .selected_text(display)
+        let response = egui::ComboBox::from_id_salt(label)
+            .selected_text(display.clone())
+            .truncate()
             .show_ui(ui, |ui| {
                 for &(stored, shown) in options {
                     if ui.selectable_label(current == stored, shown).clicked() {
@@ -244,7 +269,9 @@ pub fn combo_str_labeled(
                 if let Some(c) = custom {
                     ui.selectable_value(value, c.clone(), c);
                 }
-            });
+            })
+            .response;
+        selected_text_hover(ui, response, &display, help_text);
     });
 }
 
@@ -350,7 +377,8 @@ pub fn searchable_combo_with(
                 );
             }
             let mut combo = egui::ComboBox::from_id_salt(&id_salt)
-                .selected_text(display)
+                .selected_text(display.clone())
+                .truncate()
                 .height(searchable_combo_popup_height(ui.ctx()))
                 .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
             if let Some(w) = width {
@@ -453,6 +481,11 @@ pub fn searchable_combo_with(
                 }
             }
 
+            ir.response = text_hover_if(
+                ir.response.clone(),
+                &display,
+                combo_text_elided(ui, &ir.response, &display),
+            );
             if changed {
                 ir.response.mark_changed();
             }

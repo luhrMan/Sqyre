@@ -2,6 +2,7 @@ use crate::icon_cache::IconCache;
 use crate::image_view::{self, ImageViewTransform};
 use crate::theme;
 use crate::var_pills;
+use crate::widgets::elide::single_line_galley;
 use eframe::egui::{self, WidgetInfo, WidgetType};
 use sqyre_domain::{KnownVariableNames, ScalarValue};
 use sqyre_persist::{ProgramCatalog, ProgramSearchArea};
@@ -886,11 +887,25 @@ pub(crate) fn paint_zoomable_atlas_preview(
             painter.rect_filled(rect, 0.0, mon_fill);
             painter.rect_stroke(rect, 0.0, mon_stroke, egui::StrokeKind::Outside);
             let label = format!("Monitor {} — {mw}×{mh}", i + 1);
-            let galley = painter.layout_no_wrap(label, small.clone(), label_color);
+            let galley = single_line_galley(
+                ui,
+                &label,
+                small.clone(),
+                label_color,
+                (rect.width() - 10.0).max(0.0),
+            );
             let chip =
                 egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(10.0, 4.0));
             painter.rect_filled(chip, 3.0, theme::preview_label_dim());
-            painter.galley(chip.min + egui::vec2(5.0, 2.0), galley, label_color);
+            painter.galley(chip.min + egui::vec2(5.0, 2.0), galley.clone(), label_color);
+            if galley.elided {
+                ui.interact(
+                    chip,
+                    resp.id.with(("monitor_label", i)),
+                    egui::Sense::hover(),
+                )
+                .on_hover_text(label);
+            }
         }
 
         let fill = theme::preview_selection_fill();
@@ -916,18 +931,29 @@ pub(crate) fn paint_zoomable_atlas_preview(
             paint_grid_overlay_painter(&painter, rect, node.rows, node.cols);
             // Label with a small dark chip so it stays readable over capture images.
             let label_pos = egui::pos2(rect.left() + 4.0, rect.top() + 4.0);
-            let galley = painter.layout_no_wrap(
-                node.collection.clone(),
+            let label = node.collection.clone();
+            let galley = single_line_galley(
+                ui,
+                &label,
                 small.clone(),
                 egui::Color32::WHITE,
+                (rect.width() - 6.0).max(0.0),
             );
             let chip = egui::Rect::from_min_size(label_pos, galley.size() + egui::vec2(6.0, 2.0));
             painter.rect_filled(chip, 2.0, theme::preview_label_dim());
             painter.galley(
                 label_pos + egui::vec2(3.0, 1.0),
-                galley,
+                galley.clone(),
                 egui::Color32::WHITE,
             );
+            if galley.elided {
+                ui.interact(
+                    chip,
+                    resp.id.with(("collection_label", i)),
+                    egui::Sense::hover(),
+                )
+                .on_hover_text(label);
+            }
 
             for (dir, dest) in layout.neighbor_links(i) {
                 let Some(dest_node) = layout.nodes().get(dest) else {

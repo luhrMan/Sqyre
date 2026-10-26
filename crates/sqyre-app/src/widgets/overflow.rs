@@ -112,8 +112,10 @@ fn combo_bar(
     avail: f32,
 ) -> Option<usize> {
     let mut picked = None;
+    let selected = selected_label(items);
     let resp = egui::ComboBox::from_id_salt((id, "menu"))
-        .selected_text(selected_label(items))
+        .selected_text(selected)
+        .truncate()
         .width(avail.clamp(1.0, 320.0))
         .show_ui(ui, |ui| {
             for (i, item) in items.iter().enumerate() {
@@ -123,8 +125,13 @@ fn combo_bar(
                     }
                 }
             }
-        });
-    resp.response.on_hover_text(hint);
+        })
+        .response;
+    if crate::widgets::elide::combo_text_elided(ui, &resp, selected) {
+        resp.on_hover_text(format!("{selected}\n\n{hint}"));
+    } else {
+        resp.on_hover_text(hint);
+    }
     picked
 }
 

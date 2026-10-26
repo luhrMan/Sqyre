@@ -309,9 +309,12 @@ impl PreviewTooltipCache {
             Err(err) => Err((label.clone(), err)),
         };
         let show_size = matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection);
-        show_preview_hover_ui(response, |ui| match &preview {
-            Ok((tex, cap)) => paint_preview(ui, tex, cap, show_size),
-            Err((cap, err)) => paint_preview_status(ui, cap, err),
+        show_preview_hover_ui(response, |ui| {
+            ui.add(egui::Label::new(label.as_str()).wrap());
+            match &preview {
+                Ok((tex, cap)) => paint_preview(ui, tex, cap, show_size),
+                Err((cap, err)) => paint_preview_status(ui, cap, err),
+            }
         });
     }
 
@@ -1048,7 +1051,7 @@ fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_ima
     // Click sense makes the tip "interactive" so egui keeps it open while the
     // pointer is over the image — needed when a tall tip still overlaps the row.
     ui.add(egui::Image::new((tex.id(), size)).sense(egui::Sense::click()));
-    ui.label(caption);
+    ui.add(egui::Label::new(caption).wrap());
     if show_image_size {
         ui.label(
             egui::RichText::new(format!(
@@ -1071,7 +1074,7 @@ fn paint_preview_status(ui: &mut egui::Ui, caption: &str, err: &str) {
     ui.painter()
         .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
     crate::data_editor_preview::paint_preview_message(ui, rect, err, crate::theme::error_fg(), 0.0);
-    ui.label(caption);
+    ui.add(egui::Label::new(caption).wrap());
 }
 
 fn log_hover_outline_transition(

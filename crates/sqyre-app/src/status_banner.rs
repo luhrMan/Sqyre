@@ -9,9 +9,8 @@ pub(crate) const PREFIX_SAVE_ERROR: &str = "Save error";
 ///
 /// Internal dumps (multi-line serde/schema reports, backend debug strings)
 /// still reach the diagnostic log in full; the UI gets the first non-empty
-/// line, whitespace-collapsed and capped, so banners stay readable.
+/// line and whitespace-collapsed, so banners stay readable.
 pub(crate) fn user_error_detail(e: impl std::fmt::Display) -> String {
-    const MAX_CHARS: usize = 160;
     let text = e.to_string();
     let first = text
         .lines()
@@ -19,13 +18,7 @@ pub(crate) fn user_error_detail(e: impl std::fmt::Display) -> String {
         .find(|l| !l.is_empty())
         .unwrap_or("unknown error");
     let collapsed = first.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut chars = collapsed.chars();
-    if collapsed.chars().count() > MAX_CHARS {
-        let cut: String = chars.by_ref().take(MAX_CHARS - 1).collect();
-        format!("{cut}…")
-    } else {
-        collapsed
-    }
+    collapsed
 }
 
 #[derive(Debug, Clone, Default)]
@@ -69,7 +62,7 @@ impl StatusBanner {
         } else {
             crate::theme::ok_fg()
         };
-        ui.colored_label(color, msg.as_ref());
+        ui.add(egui::Label::new(egui::RichText::new(msg.as_ref()).color(color)).wrap());
     }
 
     /// Paint a prefixed error (`"{prefix}: {detail}"`) with error color.
@@ -119,5 +112,11 @@ mod tests {
             format!("{PREFIX_SAVE_ERROR}: disk full"),
             "Save error: disk full"
         );
+    }
+
+    #[test]
+    fn user_error_detail_keeps_long_first_line() {
+        let long = "x".repeat(200);
+        assert_eq!(user_error_detail(format!("{long}\nsecond line")), long);
     }
 }

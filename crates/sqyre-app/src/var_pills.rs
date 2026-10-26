@@ -12,6 +12,7 @@ use sqyre_validate::EntryValidation;
 use crate::paint_ctx::VarTheme;
 use crate::theme::{contrast_fg, paint_galley_centered, SPACE_2};
 use crate::tree_chrome::rgba_pub;
+use crate::widgets::elide::{single_line_galley, text_hover_if};
 
 const VAR_AC_LIMIT: usize = 12;
 
@@ -242,9 +243,122 @@ pub fn paint_summary_pill(
     known: &KnownVariableNames,
     is_dark: bool,
 ) -> egui::Response {
+    let budget = (ui.clip_rect().right() - ui.cursor().left()).max(0.0);
+    paint_summary_pill_limited(ui, action_type, pill, known, is_dark, budget, true)
+}
+
+pub(crate) fn paint_summary_pill_limited(
+    ui: &mut egui::Ui,
+    action_type: &str,
+    pill: &SummaryPill,
+    known: &KnownVariableNames,
+    is_dark: bool,
+    max_width: f32,
+    show_hover: bool,
+) -> egui::Response {
+    let full = summary_pill_text(pill);
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let full_width = ui
+        .painter()
+        .layout_no_wrap(full.clone(), font, Color32::WHITE)
+        .size()
+        .x
+        + OUTER_MARGIN_X as f32 * 2.0;
+    if full_width > max_width {
+        return paint_flat_summary_pill(
+            ui,
+            &full,
+            action_type,
+            summary_fill(action_type, pill, is_dark),
+            max_width,
+            show_hover,
+        );
+    }
     match &pill.prefix {
         Some(label) => paint_variable_name_pill(ui, label, &pill.text, action_type, known, is_dark),
         None => paint_value_pill(ui, &pill.text, action_type, known, is_dark),
+    }
+}
+
+pub(crate) fn paint_summary_pill_tip(
+    ui: &mut egui::Ui,
+    action_type: &str,
+    pill: &SummaryPill,
+    known: &KnownVariableNames,
+    is_dark: bool,
+) -> egui::Response {
+    let full = summary_pill_text(pill);
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let fill = summary_fill(action_type, pill, is_dark);
+    let full_width = ui
+        .painter()
+        .layout_no_wrap(full.clone(), font.clone(), Color32::WHITE)
+        .size()
+        .x
+        + OUTER_MARGIN_X as f32 * 2.0;
+    if full_width > ui.available_width() {
+        let fg = contrast_fg(fill);
+        return egui::Frame::new()
+            .fill(fill)
+            .corner_radius(egui::CornerRadius::same(OUTER_RADIUS as u8))
+            .inner_margin(egui::Margin::symmetric(OUTER_MARGIN_X, OUTER_MARGIN_Y))
+            .show(ui, |ui| {
+                ui.add(
+                    egui::Label::new(egui::RichText::new(full).color(fg))
+                        .wrap()
+                        .selectable(false),
+                )
+            })
+            .response;
+    }
+    paint_summary_pill(ui, action_type, pill, known, is_dark)
+}
+
+fn summary_pill_text(pill: &SummaryPill) -> String {
+    match &pill.prefix {
+        Some(prefix) => format!("{prefix}: {}", pill.text),
+        None => pill.text.clone(),
+    }
+}
+
+fn summary_fill(action_type: &str, pill: &SummaryPill, is_dark: bool) -> Color32 {
+    if pill.text == sqyre_domain::CoordinateRef::UNSET_LABEL {
+        rgba_pub(action_pastel_color("warning", is_dark))
+    } else {
+        rgba_pub(action_pastel_color(action_type, is_dark))
+    }
+}
+
+fn paint_flat_summary_pill(
+    ui: &mut egui::Ui,
+    full: &str,
+    action_type: &str,
+    fill: Color32,
+    max_width: f32,
+    show_hover: bool,
+) -> egui::Response {
+    let fg = contrast_fg(fill);
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let pad = Vec2::new(OUTER_MARGIN_X as f32 * 2.0, OUTER_MARGIN_Y as f32 * 2.0);
+    let galley = single_line_galley(ui, full, font, fg, (max_width - pad.x).max(0.0));
+    let (rect, _) = ui.allocate_exact_size(galley.size() + pad, Sense::hover());
+    ui.painter().rect(
+        rect,
+        OUTER_RADIUS,
+        fill,
+        Stroke::NONE,
+        egui::StrokeKind::Inside,
+    );
+    paint_galley_centered(ui, rect, galley.clone(), fg);
+    let response = ui.interact(
+        rect,
+        ui.id().with(("summary_flat_pill", action_type, full)),
+        Sense::hover(),
+    );
+    if show_hover {
+        text_hover_if(response, full, galley.elided)
+    } else {
+        response
     }
 }
 
