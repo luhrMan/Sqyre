@@ -129,6 +129,7 @@ pub struct SettingsUi {
     pub open: bool,
     settings: UserSettings,
     dirty: bool,
+    ui_scale_apply_pending: bool,
     active_section: SettingsSection,
     /// Filter query for the settings list (case-insensitive fuzzy match).
     search: String,
@@ -361,7 +362,9 @@ impl SettingsUi {
         }
         if self.dirty {
             self.persist();
-            Self::apply_appearance(ctx, &self.settings);
+            if !self.ui_scale_apply_pending {
+                Self::apply_appearance(ctx, &self.settings);
+            }
         }
     }
 
@@ -1726,14 +1729,20 @@ impl SettingsUi {
                 {
                     self.settings.ui_scale = v;
                     self.mark_dirty();
-                    Self::apply_appearance(ctx, &self.settings);
+                    self.ui_scale_apply_pending = true;
                 }
                 if ui.small_button("Reset").clicked() {
                     self.settings.ui_scale = DEFAULT_UI_SCALE;
                     self.mark_dirty();
+                    self.ui_scale_apply_pending = false;
                     Self::apply_appearance(ctx, &self.settings);
                 }
             });
+        }
+
+        if self.ui_scale_apply_pending && !ctx.input(|i| i.pointer.any_down()) {
+            Self::apply_appearance(ctx, &self.settings);
+            self.ui_scale_apply_pending = false;
         }
 
         let show_colors = setting_visible(q, section_hit, SETTING_ACTION_COLORS)

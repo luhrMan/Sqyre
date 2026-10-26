@@ -261,3 +261,140 @@ fn data_editor_new_program_writes_to_catalog() {
         "second New should uniquify the name"
     );
 }
+
+fn ui_scale_appearance_harness() -> egui_kittest::Harness<'static, sqyre_app::SqyreApp> {
+    let mut harness = build_docs_harness([1280.0, 720.0], |app| {
+        app.docs_settings_mut().ui_scale = 1.4;
+        app.open_settings_appearance_for_docs();
+    });
+    harness.run_steps(3);
+    harness
+}
+
+fn ui_scale_field_rect(harness: &egui_kittest::Harness<'_, sqyre_app::SqyreApp>) -> egui::Rect {
+    harness
+        .query_all_by(|node| {
+            node.label().as_deref() == Some("1.4") || node.value().as_deref() == Some("1.4")
+        })
+        .map(|node| node.rect())
+        .max_by(|a, b| (a.width() * a.height()).total_cmp(&(b.width() * b.height())))
+        .expect("UI scale field")
+}
+
+fn ui_scale_stepper_up(harness: &egui_kittest::Harness<'_, sqyre_app::SqyreApp>) -> egui::Pos2 {
+    let field = ui_scale_field_rect(harness);
+    egui::Rect::from_min_max(
+        egui::pos2(field.right() - 13.0, field.top()),
+        egui::pos2(field.right() - 1.0, field.center().y),
+    )
+    .center()
+}
+
+fn run_at(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>, time: f64) {
+    harness.input_mut().time = Some(time);
+    harness.run_steps(1);
+}
+
+fn primary_button(
+    harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>,
+    pos: egui::Pos2,
+    pressed: bool,
+) {
+    harness.input_mut().events.push(egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    });
+}
+
+fn assert_ui_scale_and_zoom(
+    harness: &egui_kittest::Harness<'_, sqyre_app::SqyreApp>,
+    expected_scale: f32,
+    expected_zoom: f32,
+) {
+    assert!(
+        (harness.state().docs_settings().ui_scale - expected_scale).abs() < 0.001,
+        "expected UI scale {expected_scale}, got {}",
+        harness.state().docs_settings().ui_scale
+    );
+    assert!(
+        (harness.ctx.zoom_factor() - expected_zoom).abs() < 0.001,
+        "expected zoom {expected_zoom}, got {}",
+        harness.ctx.zoom_factor()
+    );
+}
+
+#[test]
+fn ui_scale_zoom_waits_for_pointer_release_after_stepper_exit() {
+    let mut harness = ui_scale_appearance_harness();
+    assert_ui_scale_and_zoom(&harness, 1.4, 1.4);
+
+    let dt = 1.0 / 60.0;
+    let mut time = harness.ctx.input(|input| input.time);
+    let field = ui_scale_field_rect(&harness);
+    let up = egui::pos2(field.right() - 7.0, field.top() + 0.001);
+    harness.hover_at(up);
+    time += dt;
+    run_at(&mut harness, time);
+    primary_button(&mut harness, up, true);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+
+    let outside = egui::pos2(up.x, field.top() - 0.001);
+    harness.hover_at(outside);
+    for _ in 0..60 {
+        time += dt;
+        run_at(&mut harness, time);
+        assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+        assert!(harness.ctx.input(|input| input.pointer.primary_down()));
+    }
+
+    primary_button(&mut harness, outside, false);
+    time += dt;
+    run_at(&mut harness, time);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, 1.5, 1.5);
+    for _ in 0..3 {
+        time += dt;
+        run_at(&mut harness, time);
+        assert_ui_scale_and_zoom(&harness, 1.5, 1.5);
+    }
+}
+
+#[test]
+fn ui_scale_zoom_waits_for_release_during_inside_repeat() {
+    let mut harness = ui_scale_appearance_harness();
+    assert_ui_scale_and_zoom(&harness, 1.4, 1.4);
+
+    let dt = 1.0 / 60.0;
+    let mut time = harness.ctx.input(|input| input.time);
+    let up = ui_scale_stepper_up(&harness);
+    harness.hover_at(up);
+    time += dt;
+    run_at(&mut harness, time);
+    primary_button(&mut harness, up, true);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+
+    for _ in 0..48 {
+        time += dt;
+        run_at(&mut harness, time);
+        assert!(
+            (harness.ctx.zoom_factor() - 1.4).abs() < 0.001,
+            "zoom must not change while the stepper is held"
+        );
+    }
+    let final_scale = harness.state().docs_settings().ui_scale;
+    assert!(final_scale > 1.5);
+
+    primary_button(&mut harness, up, false);
+    time += dt;
+    run_at(&mut harness, time);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, final_scale, final_scale);
+}
