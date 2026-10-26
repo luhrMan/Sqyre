@@ -158,6 +158,20 @@ impl SettingsUi {
         self.search.clear();
     }
 
+    pub fn section_labels_for_docs() -> Vec<&'static str> {
+        SettingsSection::all().map(SettingsSection::label).collect()
+    }
+
+    pub fn open_section_for_docs(&mut self, label: &str) -> bool {
+        let Some(section) = SettingsSection::all().find(|section| section.label() == label) else {
+            return false;
+        };
+        self.open = true;
+        self.active_section = section;
+        self.search.clear();
+        true
+    }
+
     /// Open the settings window (re-arms search focus).
     pub fn request_open(&mut self, ctx: &egui::Context) {
         self.open = true;

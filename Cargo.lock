@@ -5146,6 +5146,7 @@ dependencies = [
  "resvg",
  "rfd",
  "rodio",
+ "serde_json",
  "serde_yaml",
  "skrifa 0.48.0",
  "sqyre-android",

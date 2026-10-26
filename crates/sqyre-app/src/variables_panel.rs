@@ -53,6 +53,15 @@ impl EditState {
 }
 
 impl VariablesPanelUi {
+    pub(crate) fn open_for_docs(&mut self, builtins: bool) {
+        self.open = true;
+        self.bottom_tab = if builtins {
+            BottomTab::Builtins
+        } else {
+            BottomTab::Runtime
+        };
+    }
+
     pub fn sync_macro(&mut self, macro_name: &str) {
         if self.synced_macro == macro_name {
             return;
