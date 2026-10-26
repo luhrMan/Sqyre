@@ -326,7 +326,7 @@ fn assert_ui_scale_and_zoom(
 }
 
 #[test]
-fn ui_scale_zoom_waits_for_pointer_release_after_stepper_exit() {
+fn ui_scale_zoom_waits_for_pointer_release_after_far_stepper_drag() {
     let mut harness = ui_scale_appearance_harness();
     assert_ui_scale_and_zoom(&harness, 1.4, 1.4);
 
@@ -342,9 +342,19 @@ fn ui_scale_zoom_waits_for_pointer_release_after_stepper_exit() {
     run_at(&mut harness, time);
     assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
 
-    let outside = egui::pos2(up.x, field.top() - 0.001);
-    harness.hover_at(outside);
-    for _ in 0..60 {
+    let outside = up + egui::vec2(500.0, 0.0);
+    for offset in [100.0, 200.0, 300.0, 400.0, 500.0] {
+        let pos = up + egui::vec2(offset, 0.0);
+        harness
+            .input_mut()
+            .events
+            .push(egui::Event::PointerMoved(pos));
+        time += dt;
+        run_at(&mut harness, time);
+        assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+        assert!(harness.ctx.input(|input| input.pointer.primary_down()));
+    }
+    for _ in 0..55 {
         time += dt;
         run_at(&mut harness, time);
         assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
@@ -362,6 +372,47 @@ fn ui_scale_zoom_waits_for_pointer_release_after_stepper_exit() {
         run_at(&mut harness, time);
         assert_ui_scale_and_zoom(&harness, 1.5, 1.5);
     }
+}
+
+#[test]
+fn ui_scale_stepper_diagonal_drag_does_not_drag_the_field() {
+    let mut harness = ui_scale_appearance_harness();
+    assert_ui_scale_and_zoom(&harness, 1.4, 1.4);
+
+    let dt = 1.0 / 60.0;
+    let mut time = harness.ctx.input(|input| input.time);
+    let up = ui_scale_stepper_up(&harness);
+    harness.hover_at(up);
+    time += dt;
+    run_at(&mut harness, time);
+    primary_button(&mut harness, up, true);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+
+    for offset in [10.0, 20.0, 30.0, 40.0] {
+        let pos = up + egui::vec2(offset, offset);
+        harness
+            .input_mut()
+            .events
+            .push(egui::Event::PointerMoved(pos));
+        time += dt;
+        run_at(&mut harness, time);
+        assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+    }
+    for _ in 0..60 {
+        time += dt;
+        run_at(&mut harness, time);
+        assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+    }
+
+    let outside = up + egui::vec2(40.0, 40.0);
+    primary_button(&mut harness, outside, false);
+    time += dt;
+    run_at(&mut harness, time);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, 1.5, 1.5);
 }
 
 #[test]

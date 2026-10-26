@@ -193,10 +193,14 @@ pub(crate) fn string_steppers(
     let up_rect = egui::Rect::from_min_max(zone.min, egui::pos2(zone.right(), mid));
     let down_rect = egui::Rect::from_min_max(egui::pos2(zone.left(), mid), zone.max);
     let up = ui
-        .interact(up_rect, field_id.with("increment"), Sense::click())
+        .interact(up_rect, field_id.with("increment"), Sense::click_and_drag())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let down = ui
-        .interact(down_rect, field_id.with("decrement"), Sense::click())
+        .interact(
+            down_rect,
+            field_id.with("decrement"),
+            Sense::click_and_drag(),
+        )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     let mut step = |mult: f64| {
@@ -392,10 +396,14 @@ fn steppers<Num: egui::emath::Numeric>(
     let up_rect = egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), mid));
     let down_rect = egui::Rect::from_min_max(egui::pos2(rect.left(), mid), rect.max);
     let up = ui
-        .interact(up_rect, drag_id.with("increment"), Sense::click())
+        .interact(up_rect, drag_id.with("increment"), Sense::click_and_drag())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let down = ui
-        .interact(down_rect, drag_id.with("decrement"), Sense::click())
+        .interact(
+            down_rect,
+            drag_id.with("decrement"),
+            Sense::click_and_drag(),
+        )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     let enabled = ui.is_enabled();
@@ -687,6 +695,63 @@ mod tests {
         h.input_mut().time = Some(1.3);
         h.run_steps(2);
         assert_eq!(*h.state(), 7, "release must not fire another step");
+    }
+
+    #[test]
+    fn dragging_from_a_stepper_does_not_drag_the_number() {
+        let mut h = harness(0..=1000);
+        h.run_steps(2);
+        let inc = h.get_by_label("Increment").rect().center();
+        h.hover_at(inc);
+        h.run_steps(2);
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: inc,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        });
+        h.input_mut().time = Some(0.0);
+        h.run_steps(1);
+        assert_eq!(*h.state(), 6, "the press should take exactly one step");
+
+        let mut time = 0.0;
+        let dt = 1.0 / 60.0;
+        for offset in [40.0, 80.0, 120.0, 160.0, 200.0] {
+            let pos = inc + egui::vec2(offset, 0.0);
+            h.input_mut().events.push(egui::Event::PointerMoved(pos));
+            time += dt;
+            h.input_mut().time = Some(time);
+            h.run_steps(1);
+            assert_eq!(*h.state(), 6, "dragging must not change the value");
+        }
+        for _ in 0..60 {
+            time += dt;
+            h.input_mut().time = Some(time);
+            h.run_steps(1);
+            assert_eq!(*h.state(), 6, "an outside hold must not repeat");
+        }
+        assert!(h.ctx.input(|i| i.pointer.primary_down()));
+
+        let outside = inc + egui::vec2(200.0, 0.0);
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: outside,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        time += dt;
+        h.input_mut().time = Some(time);
+        h.run_steps(2);
+        assert_eq!(*h.state(), 6, "release after a drag must not add a step");
+    }
+
+    #[test]
+    fn accessibility_activation_steps_without_a_primary_pointer_click() {
+        let mut h = harness(0..=10);
+        h.run_steps(2);
+        h.get_by_label("Increment").click_accesskit();
+        h.run_steps(2);
+        assert_eq!(*h.state(), 6);
     }
 
     /// A step finer than the displayed precision must still move a visible
