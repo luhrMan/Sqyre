@@ -3,7 +3,7 @@
 use crate::action_logs_ui::LogsWindowState;
 use crate::add_action::AddActionPicker;
 use crate::app_backends::RunState;
-use crate::data_editor::DataEditor;
+use crate::data_editor::{DataEditor, EditorTab};
 use crate::hotkey_record::HotkeyRecordUi;
 use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
@@ -22,12 +22,55 @@ use crate::workspace::Workspace;
 use crate::{docs_fixture, SqyreApp};
 use eframe::egui;
 use parking_lot::Mutex;
+use sqyre_domain::{blank_action, Action, ActionKind, Macro};
 use sqyre_hotkeys::{HotkeyService, MacroRecordBridge, NullHotkeys, ScreenClickBridge};
 #[cfg(feature = "native-runtime")]
 use sqyre_overlay::MacroOverlay;
 use sqyre_persist::UserSettings;
 use sqyre_ports::{SharedActionLog, SharedHighlighter, SharedRuntimeVars};
 use std::sync::Arc;
+
+const DOCS_EDITOR_TABS: &[(&str, EditorTab)] = &[
+    ("programs", EditorTab::Programs),
+    ("items", EditorTab::Items),
+    ("masks", EditorTab::Masks),
+    ("screencap", EditorTab::ScreenCap),
+    ("pixelcheck", EditorTab::PixelCheck),
+    ("points", EditorTab::Points),
+    ("searchareas", EditorTab::SearchAreas),
+    ("collections", EditorTab::Collections),
+    ("atlases", EditorTab::Atlases),
+    ("overlay", EditorTab::Overlay),
+];
+
+fn find_action(macro_: &Macro, type_key: &str) -> Option<Action> {
+    let mut found = None;
+    for child in macro_.root.children() {
+        child.walk(&mut |action| {
+            if found.is_none() && action.type_key() == type_key {
+                found = Some(action.clone());
+            }
+        });
+        if found.is_some() {
+            break;
+        }
+    }
+    found
+}
+
+fn walk_actions_mut(action: &mut Action, visit: &mut impl FnMut(&mut Action)) {
+    visit(action);
+    if let Some(children) = action.children_mut() {
+        for child in children {
+            walk_actions_mut(child, visit);
+        }
+    }
+    if let Some(children) = action.else_children_mut() {
+        for child in children {
+            walk_actions_mut(child, visit);
+        }
+    }
+}
 
 #[doc(hidden)]
 impl SqyreApp {
@@ -258,9 +301,179 @@ impl SqyreApp {
         self.settings_ui.open_appearance_for_docs();
     }
 
+    pub fn settings_section_labels_for_docs() -> Vec<&'static str> {
+        SettingsUi::section_labels_for_docs()
+    }
+
+    pub fn open_settings_section_for_docs(&mut self, label: &str) {
+        assert!(
+            self.settings_ui.open_section_for_docs(label),
+            "unknown settings section: {label}"
+        );
+    }
+
+    pub fn data_editor_tab_names_for_docs() -> Vec<&'static str> {
+        DOCS_EDITOR_TABS.iter().map(|(name, _)| *name).collect()
+    }
+
+    pub fn open_data_editor_tab_for_docs(&mut self, name: &str) {
+        let tab = DOCS_EDITOR_TABS
+            .iter()
+            .find(|(tab_name, _)| *tab_name == name)
+            .map(|(_, tab)| *tab)
+            .unwrap_or_else(|| panic!("unknown data editor tab: {name}"));
+        self.data_editor.open_tab_for_docs(
+            tab,
+            &self.workspace.catalog,
+            self.settings_ui.settings(),
+        );
+    }
+
+    pub fn open_variables_panel_for_docs(&mut self, tab: &str) {
+        let builtins = match tab {
+            "runtime" => false,
+            "builtins" => true,
+            _ => panic!("unknown variables panel tab: {tab}"),
+        };
+        self.variables_panel.open_for_docs(builtins);
+    }
+
+    pub fn open_action_editor_for_docs(&mut self, type_key: &str) {
+        let macro_idx = self.workspace.selected_macro;
+        let mut action = find_action(&self.workspace.macros[macro_idx], type_key);
+        if action.is_none() {
+            let blank = blank_action(type_key)
+                .unwrap_or_else(|| panic!("unknown action type key: {type_key}"));
+            let macro_ = &mut self.workspace.macros[macro_idx];
+            if matches!(type_key, "loopjump" | "navigateselect") {
+                let loop_idx = macro_
+                    .root
+                    .children()
+                    .iter()
+                    .position(|child| child.type_key() == "loop");
+                if let Some(loop_idx) = loop_idx {
+                    macro_.root.children_mut().unwrap()[loop_idx]
+                        .children_mut()
+                        .expect("loop action has children")
+                        .push(blank.clone());
+                } else {
+                    let mut parent = blank_action("loop").expect("loop action");
+                    parent
+                        .children_mut()
+                        .expect("loop action has children")
+                        .push(blank.clone());
+                    macro_
+                        .root
+                        .children_mut()
+                        .expect("macro root has children")
+                        .push(parent);
+                }
+            } else {
+                macro_
+                    .root
+                    .children_mut()
+                    .expect("macro root has children")
+                    .push(blank.clone());
+            }
+            action = Some(blank);
+        }
+        self.tree.tooltip.open_edit(
+            action.as_ref().expect("action opened"),
+            egui::pos2(40.0, 80.0),
+        );
+    }
+
+    pub fn apply_stress_fixture_for_docs(&mut self) {
+        let macro_idx = self.workspace.selected_macro;
+        {
+            let macro_ = &mut self.workspace.macros[macro_idx];
+            macro_.name = "Daily inventory restock and screenshot backup routine".into();
+            macro_.tags = [
+                "inventory",
+                "restock",
+                "screenshots",
+                "backup",
+                "nightly",
+                "maintenance",
+                "operations",
+                "long-running-maintenance",
+            ]
+            .map(str::to_owned)
+            .to_vec();
+            if let Some(variable) = macro_.variable_decls.first_mut() {
+                variable.description = "Stores the last verified inventory quantity and the operator who reconciled it before the nightly screenshot archive is written, so the maintenance run can resume safely after an interruption.".into();
+            }
+            walk_actions_mut(&mut macro_.root, &mut |action| match &mut action.kind {
+                ActionKind::ImageSearch { name, .. } => {
+                    *name = "Find the confirm purchase button in the shop dialog".into();
+                }
+                ActionKind::Type { text, .. } => {
+                    *text = "Please confirm the purchase after checking the selected inventory count. Save a screenshot of the updated shop dialog, verify the backup completed, and leave a clear note for the next maintenance run.".into();
+                }
+                _ => {}
+            });
+        }
+        let extra_names = [
+            "Monthly stock reconciliation",
+            "Capture a screenshot of the returns dashboard",
+            "Archive completed purchase records",
+            "Recheck low inventory notifications",
+            "Prepare the next shift handoff",
+            "Nightly backup for the item catalog",
+        ];
+        let extra_tags = [
+            "inventory",
+            "screenshots",
+            "archive",
+            "operations",
+            "maintenance",
+            "backup",
+        ];
+        for index in 0..30 {
+            let mut extra = Macro::new(
+                format!(
+                    "{} {:02}",
+                    extra_names[index % extra_names.len()],
+                    index + 1
+                ),
+                0,
+                Vec::new(),
+            );
+            extra.tags = vec![extra_tags[index % extra_tags.len()].into()];
+            self.workspace.macros.push(extra);
+        }
+        self.workspace
+            .macro_meta
+            .sync_selection(macro_idx, &self.workspace.macros[macro_idx]);
+    }
+
+    pub fn open_logs_window_for_docs(&mut self) {
+        if let Some(action_id) = self.demo_first_action_id() {
+            self.run_session.logs_window = Some(action_id);
+            self.select_action(action_id);
+        }
+    }
+
+    pub fn open_yaml_builder_for_docs(&mut self) {
+        let selected = self.workspace.macros.get(self.workspace.selected_macro);
+        self.macro_yaml_builder.open_builder(selected);
+    }
+
+    pub fn open_ai_builder_for_docs(&mut self) {
+        self.macro_prompt_builder.open_builder();
+    }
+
+    pub fn open_delay_dialog_for_docs(&mut self) {
+        self.workspace.macro_meta.open_delay_for_docs();
+    }
+
     /// Show the macro list panel (docs / interaction harnesses).
     pub fn open_macro_list_for_docs(&mut self) {
         self.macro_list_open = true;
+    }
+
+    pub fn set_macro_list_open_for_docs(&mut self, open: bool) {
+        self.macro_list_open = open;
     }
 
     /// Number of macros currently loaded (docs / interaction harnesses).

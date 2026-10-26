@@ -643,6 +643,21 @@ impl DataEditor {
         }
     }
 
+    pub(crate) fn open_tab_for_docs(
+        &mut self,
+        tab: EditorTab,
+        catalog: &ProgramCatalog,
+        settings: &UserSettings,
+    ) {
+        self.open = true;
+        self.switch_tab(tab, catalog, settings);
+        if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
+            if let Some(name) = editor_program_names(catalog).next() {
+                self.select_program(name, catalog, settings);
+            }
+        }
+    }
+
     /// Open on `tab`, ensure a program is selected, then create a new entity.
     pub(crate) fn open_new(&mut self, tab: EditorTab, env: &mut DataEditorCtx<'_>) {
         self.open_tab(env.ctx, tab, env.catalog, env.settings);

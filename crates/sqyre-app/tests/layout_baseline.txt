@@ -1,0 +1,344 @@
+add_action_picker|1280x720@1.5|clipped_h|right|Break / Continue
+add_action_picker|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+add_action_picker|1280x720@2.0|clipped_h|right|Break / Continue
+add_action_picker|1280x720@2.0|clipped_h|right|Demo Program~center
+add_action_picker|1280x720@2.0|clipped_h|right|down
+add_action_picker|1280x720@2.0|clipped_h|right|🔍 1
+add_action_picker|412x915|clipped_h|right|Break / Continue
+add_action_picker|480x360|clipped_h|right|Pause
+add_action_picker|480x360|clipped_h|right|Wait
+ai_builder|1280x720@1.5|overlap|MultilineTextInput ↔ Copy prompt
+ai_builder|1280x720@1.5|overlap|MultilineTextInput ↔ Generate prompt
+ai_builder|1280x720@1.5|overlap|MultilineTextInput ↔ MultilineTextInput
+ai_builder|1280x720@2.0|clipped_h|right|Demo Program~center
+ai_builder|1280x720@2.0|clipped_h|right|🔍 1
+ai_builder|1280x720@2.0|overlap|MultilineTextInput ↔ Copy prompt
+ai_builder|1280x720@2.0|overlap|MultilineTextInput ↔ Generate prompt
+ai_builder|1280x720@2.0|overlap|MultilineTextInput ↔ MultilineTextInput
+ai_builder|480x360|overlap|MultilineTextInput ↔ Copy prompt
+ai_builder|480x360|overlap|MultilineTextInput ↔ Generate prompt
+ai_builder|480x360|overlap|MultilineTextInput ↔ MultilineTextInput
+ai_builder|640x480|overlap|MultilineTextInput ↔ Copy prompt
+ai_builder|640x480|overlap|MultilineTextInput ↔ Generate prompt
+ai_builder|640x480|overlap|MultilineTextInput ↔ MultilineTextInput
+ai_builder|800x600|overlap|MultilineTextInput ↔ Import macro
+ai_builder|800x600|overlap|MultilineTextInput ↔ Validate
+ai_builder|915x412|overlap|MultilineTextInput ↔ Copy prompt
+ai_builder|915x412|overlap|MultilineTextInput ↔ Generate prompt
+ai_builder|915x412|overlap|MultilineTextInput ↔ MultilineTextInput
+command_palette|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+command_palette|1280x720@2.0|clipped_h|right|Demo Program~center
+command_palette|1280x720@2.0|clipped_h|right|down
+command_palette|1280x720@2.0|clipped_h|right|🔍 1
+data_editor_atlases|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+data_editor_atlases|1280x720@2.0|clipped_h|right|Demo Program~center
+data_editor_atlases|1280x720@2.0|clipped_h|right|down
+data_editor_atlases|412x915|overlap|Expand all ↔ TextInput
+data_editor_collections|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+data_editor_collections|1280x720@2.0|clipped_h|right|Demo Program~center
+data_editor_collections|1280x720@2.0|clipped_h|right|down
+data_editor_collections|412x915|overlap|Expand all ↔ TextInput
+data_editor_collections|412x915|word_split|No collections yet
+data_editor_items|1024x640|clipped_h|right|(1)
+data_editor_items|1280x720@1.5|clipped_h|right|Demo Program
+data_editor_items|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+data_editor_items|1280x720@2.0|clipped_h|right|Demo Program
+data_editor_items|1280x720@2.0|clipped_h|right|Demo Program~center
+data_editor_items|1280x720@2.0|clipped_h|right|down
+data_editor_items|1280x720@2.0|clipped_h|right|🔍 1
+data_editor_items|1280x720|clipped_h|right|(1)
+data_editor_items|1920x1080|clipped_h|right|(1)
+data_editor_items|412x915|clipped_h|right|Demo Program
+data_editor_items|412x915|overlap|Expand all ↔ TextInput
+data_editor_items|480x360|clipped_h|right|Demo Program
+data_editor_items|640x480|clipped_h|right|Demo Program
+data_editor_items|915x412|clipped_h|right|(1)
+data_editor_masks|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+data_editor_masks|1280x720@2.0|clipped_h|right|Demo Program~center
+data_editor_masks|1280x720@2.0|clipped_h|right|down
+data_editor_masks|1280x720@2.0|clipped_h|right|🔍 1
+data_editor_masks|412x915|overlap|Expand all ↔ TextInput
+data_editor_overlay|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+data_editor_overlay|1280x720@2.0|clipped_h|right|Demo Program~center
+data_editor_overlay|1280x720@2.0|clipped_h|right|down
+data_editor_overlay|1280x720@2.0|clipped_h|right|🔍 1
+data_editor_overlay|412x915|overlap|Expand all ↔ TextInput
+data_editor_pixelcheck|1024x640|clipped_h|right|(1)
+data_editor_pixelcheck|1280x720@1.5|clipped_h|right|Demo Program
+data_editor_pixelcheck|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+data_editor_pixelcheck|1280x720@2.0|clipped_h|right|Demo Program
+data_editor_pixelcheck|1280x720@2.0|clipped_h|right|Demo Program~center
+data_editor_pixelcheck|1280x720@2.0|clipped_h|right|down
+data_editor_pixelcheck|1280x720@2.0|clipped_h|right|🔍 1
+data_editor_pixelcheck|1280x720|clipped_h|right|(1)
+data_editor_pixelcheck|1920x1080|clipped_h|right|(1)
+data_editor_pixelcheck|412x915|clipped_h|right|Demo Program
+data_editor_pixelcheck|412x915|overlap|Expand all ↔ TextInput
+data_editor_pixelcheck|480x360|clipped_h|right|Demo Program
+data_editor_pixelcheck|640x480|clipped_h|right|Demo Program
+data_editor_pixelcheck|915x412|clipped_h|right|(1)
+data_editor_points_form|1024x640|clipped_h|right|(1)
+data_editor_points_form|1280x720@1.5|clipped_h|right|Demo Program
+data_editor_points_form|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+data_editor_points_form|1280x720@2.0|clipped_h|right|Demo Program
+data_editor_points_form|1280x720@2.0|clipped_h|right|Demo Program~center
+data_editor_points_form|1280x720@2.0|clipped_h|right|down
+data_editor_points_form|1280x720@2.0|clipped_h|right|🔍 1
+data_editor_points_form|1280x720|clipped_h|right|(1)
+data_editor_points_form|1920x1080|clipped_h|right|(1)
+data_editor_points_form|412x915|clipped_h|right|Demo Program
+data_editor_points_form|412x915|overlap|Expand all ↔ TextInput
+data_editor_points_form|480x360|clipped_h|right|Demo Program
+data_editor_points_form|640x480|clipped_h|right|Demo Program
+data_editor_points_form|915x412|clipped_h|right|(1)
+data_editor_points|1024x640|clipped_h|right|(1)
+data_editor_points|1280x720@1.5|clipped_h|right|Demo Program
+data_editor_points|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+data_editor_points|1280x720@2.0|clipped_h|right|Demo Program
+data_editor_points|1280x720@2.0|clipped_h|right|Demo Program~center
+data_editor_points|1280x720@2.0|clipped_h|right|down
+data_editor_points|1280x720@2.0|clipped_h|right|🔍 1
+data_editor_points|1280x720|clipped_h|right|(1)
+data_editor_points|1920x1080|clipped_h|right|(1)
+data_editor_points|412x915|clipped_h|right|Demo Program
+data_editor_points|412x915|overlap|Expand all ↔ TextInput
+data_editor_points|480x360|clipped_h|right|Demo Program
+data_editor_points|640x480|clipped_h|right|Demo Program
+data_editor_points|915x412|clipped_h|right|(1)
+data_editor_programs|1280x720@1.5|overlap|TextInput ↔ Save
+data_editor_programs|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+data_editor_programs|1280x720@2.0|clipped_h|right|Demo Program~center
+data_editor_programs|1280x720@2.0|clipped_h|right|down
+data_editor_programs|1280x720@2.0|clipped_h|right|🔍 1
+data_editor_programs|1280x720@2.0|overlap|TextInput ↔ Save
+data_editor_programs|412x915|word_split|Demo Program
+data_editor_screencap|1024x640|clipped_h|right|(1)
+data_editor_screencap|1280x720@1.5|clipped_h|right|Demo Program
+data_editor_screencap|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+data_editor_screencap|1280x720@2.0|clipped_h|right|Demo Program
+data_editor_screencap|1280x720@2.0|clipped_h|right|Demo Program~center
+data_editor_screencap|1280x720@2.0|clipped_h|right|down
+data_editor_screencap|1280x720@2.0|clipped_h|right|🔍 1
+data_editor_screencap|1280x720|clipped_h|right|(1)
+data_editor_screencap|1920x1080|clipped_h|right|(1)
+data_editor_screencap|412x915|clipped_h|right|Demo Program
+data_editor_screencap|412x915|overlap|Expand all ↔ TextInput
+data_editor_screencap|480x360|clipped_h|right|Demo Program
+data_editor_screencap|640x480|clipped_h|right|Demo Program
+data_editor_screencap|915x412|clipped_h|right|(1)
+data_editor_searchareas|1024x640|clipped_h|right|(1)
+data_editor_searchareas|1280x720@1.5|clipped_h|right|Demo Program
+data_editor_searchareas|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+data_editor_searchareas|1280x720@2.0|clipped_h|right|Demo Program
+data_editor_searchareas|1280x720@2.0|clipped_h|right|Demo Program~center
+data_editor_searchareas|1280x720@2.0|clipped_h|right|down
+data_editor_searchareas|1280x720@2.0|clipped_h|right|🔍 1
+data_editor_searchareas|1280x720|clipped_h|right|(1)
+data_editor_searchareas|1920x1080|clipped_h|right|(1)
+data_editor_searchareas|412x915|clipped_h|right|Demo Program
+data_editor_searchareas|412x915|overlap|Expand all ↔ TextInput
+data_editor_searchareas|480x360|clipped_h|right|Demo Program
+data_editor_searchareas|640x480|clipped_h|right|Demo Program
+data_editor_searchareas|915x412|clipped_h|right|(1)
+delay_dialog|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+delay_dialog|1280x720@2.0|clipped_h|right|Demo Program~center
+delay_dialog|1280x720@2.0|clipped_h|right|down
+delay_dialog|1280x720@2.0|clipped_h|right|🔍 1
+edit_click|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_click|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_click|1280x720@2.0|clipped_h|right|down
+edit_click|1280x720@2.0|clipped_h|right|🔍 1
+edit_conditional|1280x720@1.5|clipped_h|right|Validation: conditional: add at least one condition clause
+edit_conditional|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_conditional|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_conditional|1280x720@2.0|clipped_h|right|🔍 1
+edit_findpixel|1280x720@1.5|clipped_h|right|General~Image Search Reference
+edit_findpixel|1280x720@1.5|clipped_h|right|Validation: find pixel: set a search area
+edit_findpixel|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_findpixel|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_findpixel|1280x720@2.0|clipped_h|right|🔍 1
+edit_focuswindow|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_focuswindow|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_focuswindow|1280x720@2.0|clipped_h|right|down
+edit_focuswindow|1280x720@2.0|clipped_h|right|🔍 1
+edit_foreachcell|1280x720@1.5|clipped_h|right|Validation: for each cell: select a Collection cell range
+edit_foreachcell|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_foreachcell|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_foreachcell|1280x720@2.0|clipped_h|right|🔍 1
+edit_foreachrow|1280x720@1.5|clipped_h|right|Validation: for each row: add at least one source column
+edit_foreachrow|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_foreachrow|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_imagesearch_stress|1024x640|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_imagesearch_stress|1280x720@1.5|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_imagesearch_stress|1280x720@1.5|clipped_h|right|Find the confirm purchase button in the shop dialog
+edit_imagesearch_stress|1280x720@1.5|overlap|Macro builders ↔ Hotkeys
+edit_imagesearch_stress|1280x720@2.0|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_imagesearch_stress|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_imagesearch_stress|1280x720@2.0|clipped_h|right|Find the confirm purchase button in the shop dialog
+edit_imagesearch_stress|1280x720@2.0|clipped_h|right|down
+edit_imagesearch_stress|412x915|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_imagesearch_stress|412x915|clipped_h|right|Demo Program~Main area
+edit_imagesearch_stress|412x915|clipped_h|right|Find the confirm purchase button in the shop dialog
+edit_imagesearch_stress|412x915|clipped_h|right|Left: 100, Top: 100, Right: 900, Bottom: 600
+edit_imagesearch_stress|412x915|clipped_h|right|restock
+edit_imagesearch_stress|480x360|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_imagesearch_stress|480x360|clipped_h|right|Demo Program~Main area
+edit_imagesearch_stress|480x360|clipped_h|right|Left: 100, Top: 100, Right: 900, Bottom: 600
+edit_imagesearch_stress|480x360|clipped_h|right|screenshots
+edit_imagesearch_stress|640x480|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_imagesearch_stress|640x480|clipped_h|right|maintenance
+edit_imagesearch_stress|640x480|overlap|Macro builders ↔ Hotkeys
+edit_imagesearch_stress|800x600|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_imagesearch_stress|800x600|clipped_h|right|long-running-maintenance
+edit_imagesearch_stress|915x412|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_imagesearch|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_imagesearch|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_imagesearch|1280x720@2.0|clipped_h|right|down
+edit_imagesearch|1280x720@2.0|clipped_h|right|🔍 1
+edit_imagesearch|412x915|clipped_h|right|Demo Program~Main area
+edit_imagesearch|412x915|clipped_h|right|Left: 100, Top: 100, Right: 900, Bottom: 600
+edit_imagesearch|480x360|clipped_h|right|Demo Program~Main area
+edit_imagesearch|480x360|clipped_h|right|Left: 100, Top: 100, Right: 900, Bottom: 600
+edit_key|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_key|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_key|1280x720@2.0|clipped_h|right|down
+edit_key|1280x720@2.0|clipped_h|right|🔍 1
+edit_loopjump|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_loopjump|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_loopjump|1280x720@2.0|clipped_h|right|down
+edit_loopjump|1280x720@2.0|clipped_h|right|🔍 1
+edit_loop|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_loop|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_loop|1280x720@2.0|clipped_h|right|down
+edit_loop|1280x720@2.0|clipped_h|right|🔍 1
+edit_move|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_move|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_move|1280x720@2.0|clipped_h|right|down
+edit_move|1280x720@2.0|clipped_h|right|🔍 1
+edit_move|412x915|clipped_h|right|Demo Program~center
+edit_move|480x360|ratchet|Window Mouse Move
+edit_move|915x412|ratchet|Window Mouse Move
+edit_navigatekey|1280x720@1.5|clipped_h|right|Validation: navigate key: record a chord before saving
+edit_navigatekey|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_navigatekey|1280x720@2.0|clipped_h|right|🔍 1
+edit_navigateselect|1024x640|ratchet|Window Navigate Select
+edit_navigateselect|480x360|ratchet|Window Navigate Select
+edit_navigateselect|640x480|ratchet|Window Navigate Select
+edit_navigateselect|800x600|ratchet|Window Navigate Select
+edit_navigateselect|915x412|ratchet|Window Navigate Select
+edit_ocr|1280x720@1.5|clipped_h|right|General~Image Search Reference
+edit_ocr|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_ocr|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_ocr|480x360|ratchet|Window OCR
+edit_pause|1280x720@1.5|clipped_h|right|Validation: pause: continue key not set
+edit_pause|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_pause|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_pause|1280x720@2.0|clipped_h|right|🔍 1
+edit_runmacro|1280x720@1.5|clipped_h|right|Validation: run macro: choose a macro name
+edit_runmacro|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_runmacro|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_runmacro|1280x720@2.0|clipped_h|right|🔍 1
+edit_savevariable|1280x720@1.5|clipped_h|right|Validation: save variable: choose a variable
+edit_savevariable|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_savevariable|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_savevariable|1280x720@2.0|clipped_h|right|🔍 1
+edit_setvariable|1280x720@1.5|clipped_h|right|Validation: set variable: name cannot be empty
+edit_setvariable|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_setvariable|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_setvariable|1280x720@2.0|clipped_h|right|🔍 1
+edit_setvariable|480x360|clipped_h|right|
+edit_type_stress|1024x640|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_type_stress|1280x720@1.5|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_type_stress|1280x720@1.5|clipped_h|right|Find the confirm purchase button in the shop dialog
+edit_type_stress|1280x720@1.5|overlap|Macro builders ↔ Hotkeys
+edit_type_stress|1280x720@2.0|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_type_stress|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_type_stress|1280x720@2.0|clipped_h|right|Find the confirm purchase button in the shop dialog
+edit_type_stress|1280x720@2.0|clipped_h|right|down
+edit_type_stress|412x915|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_type_stress|412x915|clipped_h|right|Find the confirm purchase button in the shop dialog
+edit_type_stress|412x915|clipped_h|right|restock
+edit_type_stress|480x360|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_type_stress|480x360|clipped_h|right|screenshots
+edit_type_stress|640x480|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_type_stress|640x480|clipped_h|right|maintenance
+edit_type_stress|640x480|overlap|Macro builders ↔ Hotkeys
+edit_type_stress|800x600|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_type_stress|800x600|clipped_h|right|long-running-maintenance
+edit_type_stress|915x412|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+edit_type|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_type|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_type|1280x720@2.0|clipped_h|right|down
+edit_type|1280x720@2.0|clipped_h|right|🔍 1
+edit_wait|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_wait|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_wait|1280x720@2.0|clipped_h|right|down
+edit_wait|1280x720@2.0|clipped_h|right|🔍 1
+edit_while|1280x720@1.5|clipped_h|right|Validation: while: add at least one condition clause
+edit_while|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+edit_while|1280x720@2.0|clipped_h|right|Demo Program~center
+edit_while|1280x720@2.0|clipped_h|right|🔍 1
+logs_window|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+logs_window|1280x720@2.0|clipped_h|right|Demo Program~center
+logs_window|1280x720@2.0|clipped_h|right|down
+logs_window|1280x720@2.0|clipped_h|right|🔍 1
+main_stress|1024x640|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+main_stress|1280x720@1.5|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+main_stress|1280x720@1.5|clipped_h|right|Find the confirm purchase button in the shop dialog
+main_stress|1280x720@1.5|overlap|Macro builders ↔ Hotkeys
+main_stress|1280x720@2.0|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+main_stress|1280x720@2.0|clipped_h|right|Demo Program~center
+main_stress|1280x720@2.0|clipped_h|right|Find the confirm purchase button in the shop dialog
+main_stress|1280x720@2.0|clipped_h|right|down
+main_stress|412x915|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+main_stress|412x915|clipped_h|right|Find the confirm purchase button in the shop dialog
+main_stress|412x915|clipped_h|right|restock
+main_stress|480x360|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+main_stress|480x360|clipped_h|right|screenshots
+main_stress|640x480|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+main_stress|640x480|clipped_h|right|maintenance
+main_stress|640x480|overlap|Macro builders ↔ Hotkeys
+main_stress|800x600|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+main_stress|800x600|clipped_h|right|long-running-maintenance
+main_stress|915x412|clipped_h|right|"Please confirm the purchase after checking the selected inventory count. Save a…
+main|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+main|1280x720@2.0|clipped_h|right|Demo Program~center
+main|1280x720@2.0|clipped_h|right|down
+main|1280x720@2.0|clipped_h|right|🔍 1
+settings_appearance|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+settings_appearance|1280x720@2.0|clipped_h|right|Demo Program~center
+settings_appearance|1280x720@2.0|clipped_h|right|down
+settings_appearance|1280x720@2.0|clipped_h|right|🔍 1
+settings_data|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+settings_data|1280x720@2.0|clipped_h|right|Demo Program~center
+settings_data|1280x720@2.0|clipped_h|right|down
+settings_data|1280x720@2.0|clipped_h|right|🔍 1
+settings_general|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+settings_general|1280x720@2.0|clipped_h|right|Demo Program~center
+settings_general|1280x720@2.0|clipped_h|right|down
+settings_general|1280x720@2.0|clipped_h|right|🔍 1
+settings_macros|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+settings_macros|1280x720@2.0|clipped_h|right|Demo Program~center
+settings_macros|1280x720@2.0|clipped_h|right|down
+settings_macros|1280x720@2.0|clipped_h|right|🔍 1
+settings_permissions|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+settings_permissions|1280x720@2.0|clipped_h|right|Demo Program~center
+settings_permissions|1280x720@2.0|clipped_h|right|down
+settings_permissions|1280x720@2.0|clipped_h|right|🔍 1
+settings_sound|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+settings_sound|1280x720@2.0|clipped_h|right|Demo Program~center
+settings_sound|1280x720@2.0|clipped_h|right|down
+settings_sound|1280x720@2.0|clipped_h|right|🔍 1
+settings_updates|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+settings_updates|1280x720@2.0|clipped_h|right|Demo Program~center
+settings_updates|1280x720@2.0|clipped_h|right|down
+settings_updates|1280x720@2.0|clipped_h|right|🔍 1
+variables_builtins|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+variables_builtins|1280x720@2.0|clipped_h|right|Demo Program~center
+variables_builtins|1280x720@2.0|clipped_h|right|down
+variables_builtins|1280x720@2.0|clipped_h|right|🔍 1
+variables_runtime|1280x720@2.0|clipped_h|right|"Hello, Sqyre!"
+variables_runtime|1280x720@2.0|clipped_h|right|Demo Program~center
+variables_runtime|1280x720@2.0|clipped_h|right|down
+variables_runtime|1280x720@2.0|clipped_h|right|🔍 1
+yaml_builder|1280x720@2.0|clipped_h|right|Demo Program~center

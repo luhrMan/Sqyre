@@ -28,6 +28,10 @@ pub struct MetaMutations {
 }
 
 impl MacroMetaUi {
+    pub(crate) fn open_delay_for_docs(&mut self) {
+        self.delay_open = true;
+    }
+
     /// Refresh draft fields when the selected macro changes.
     pub fn sync_selection(&mut self, idx: usize, m: &Macro) {
         let changed = self.synced_idx != Some(idx) || self.synced_name != m.name;

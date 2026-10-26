@@ -4,9 +4,14 @@
 [test-groups]
 # Serialise GPU-backed egui_kittest tests (screenshots + interaction).
 gpu = { max-threads = 1 }
+layout-audit = { max-threads = 4 }
 
 [[profile.default.overrides]]
 filter = 'test(docs_screenshots) | test(ui_interaction)'
 test-group = 'gpu'
 # Screenshot / lavapipe tests can flake under load; everything else must pass first try.
 retries = 2
+
+[[profile.default.overrides]]
+filter = 'binary(layout_sweep)'
+test-group = 'layout-audit'
