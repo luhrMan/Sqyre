@@ -9,8 +9,11 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
-/// Max entries retained per action (oldest dropped).
-pub const MAX_ENTRIES_PER_ACTION: usize = 5000;
+/// Hard ceiling on entries retained per action (oldest dropped).
+///
+/// The Logs setting chooses a value up to this. A new [`SharedActionLog`]
+/// starts at the ceiling; the app then applies the user's cap.
+pub const MAX_ENTRIES_PER_ACTION: usize = 50_000;
 
 /// A labeled region inside a [`LogImage`] — e.g. every recognized OCR word
 /// box, so the Logs zoom view can tooltip what was seen even outside target
@@ -257,9 +260,11 @@ impl SharedActionLog {
     }
 
     /// Per-action entry cap (from `UserSettings::action_log_max_entries`).
-    /// Shrinking drains the oldest over-cap entries immediately.
+    ///
+    /// Values are clamped to `1..=MAX_ENTRIES_PER_ACTION`. Shrinking drains the
+    /// oldest over-cap entries immediately.
     pub fn set_max_entries(&self, max: usize) {
-        let max = max.max(1);
+        let max = clamped_max_entries(max);
         // Called every frame by the UI sync — skip the lock when unchanged.
         if self.max_entries.swap(max, Ordering::SeqCst) == max {
             return;
@@ -305,6 +310,10 @@ impl SharedActionLog {
             .cloned()
             .unwrap_or_default()
     }
+}
+
+fn clamped_max_entries(max: usize) -> usize {
+    max.clamp(1, MAX_ENTRIES_PER_ACTION)
 }
 
 fn entries_image_bytes(
@@ -541,13 +550,38 @@ mod tests {
     #[test]
     fn caps_entries_per_action() {
         let log = SharedActionLog::new();
+        let cap = 100;
+        log.set_max_entries(cap);
         let id = ActionId::new();
-        for i in 0..(MAX_ENTRIES_PER_ACTION + 50) {
+        let extra = 50;
+        for i in 0..(cap + extra) {
             log.log(id, format!("line-{i}"));
         }
         let lines = lines_for(&log.entries_for(id));
-        assert_eq!(lines.len(), MAX_ENTRIES_PER_ACTION);
-        assert_eq!(lines[0], format!("line-{}", 50));
+        assert_eq!(lines.len(), cap);
+        assert_eq!(lines[0], format!("line-{extra}"));
+    }
+
+    #[test]
+    fn set_max_entries_clamps_to_hard_max() {
+        let log = SharedActionLog::new();
+        assert_eq!(
+            log.max_entries.load(std::sync::atomic::Ordering::SeqCst),
+            MAX_ENTRIES_PER_ACTION
+        );
+        log.set_max_entries(0);
+        assert_eq!(log.max_entries.load(std::sync::atomic::Ordering::SeqCst), 1);
+        log.set_max_entries(100);
+        assert_eq!(
+            log.max_entries.load(std::sync::atomic::Ordering::SeqCst),
+            100
+        );
+        log.set_max_entries(MAX_ENTRIES_PER_ACTION + 1);
+        assert_eq!(
+            log.max_entries.load(std::sync::atomic::Ordering::SeqCst),
+            MAX_ENTRIES_PER_ACTION
+        );
+        assert_eq!(MAX_ENTRIES_PER_ACTION, 50_000);
     }
 
     #[test]

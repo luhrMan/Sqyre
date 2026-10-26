@@ -1276,6 +1276,10 @@ mod tests {
         s.action_log_max_entries = 999_999;
         s.clamp();
         assert_eq!(s.action_log_max_entries, MAX_ACTION_LOG_MAX_ENTRIES);
+        assert_eq!(
+            usize::try_from(MAX_ACTION_LOG_MAX_ENTRIES).unwrap(),
+            sqyre_ports::MAX_ENTRIES_PER_ACTION
+        );
     }
 
     #[test]
