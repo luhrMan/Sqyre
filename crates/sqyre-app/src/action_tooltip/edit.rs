@@ -1085,12 +1085,16 @@ fn coord_picker_row(
         };
         let trailing_width = ui.spacing().interact_size.x * 2.0 + ui.spacing().item_spacing.x * 2.0;
         let label_width = (ui.available_width() - trailing_width).max(0.0);
-        let resp = ui.add_sized(
-            [label_width, ui.spacing().interact_size.y],
-            egui::Label::new(egui::RichText::new(display).monospace().color(color))
-                .truncate()
-                .show_tooltip_when_elided(false),
-        );
+        let resp = ui
+            .scope(|ui| {
+                ui.set_max_width(label_width);
+                ui.add(
+                    egui::Label::new(egui::RichText::new(display).monospace().color(color))
+                        .truncate()
+                        .show_tooltip_when_elided(false),
+                )
+            })
+            .inner;
         if !coord.is_empty() {
             attach_coord_hover(ui, &resp, catalog, previews, coord, kind);
         } else if let Some(tip) = var_pills::entry_validation_tip(&validation) {

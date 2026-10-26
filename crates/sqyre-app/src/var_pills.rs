@@ -268,7 +268,6 @@ pub(crate) fn paint_summary_pill_limited(
         return paint_flat_summary_pill(
             ui,
             &full,
-            action_type,
             summary_fill(action_type, pill, is_dark),
             max_width,
             show_hover,
@@ -332,7 +331,6 @@ fn summary_fill(action_type: &str, pill: &SummaryPill, is_dark: bool) -> Color32
 fn paint_flat_summary_pill(
     ui: &mut egui::Ui,
     full: &str,
-    action_type: &str,
     fill: Color32,
     max_width: f32,
     show_hover: bool,
@@ -341,7 +339,7 @@ fn paint_flat_summary_pill(
     let font = egui::TextStyle::Small.resolve(ui.style());
     let pad = Vec2::new(OUTER_MARGIN_X as f32 * 2.0, OUTER_MARGIN_Y as f32 * 2.0);
     let galley = single_line_galley(ui, full, font, fg, (max_width - pad.x).max(0.0));
-    let (rect, _) = ui.allocate_exact_size(galley.size() + pad, Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(galley.size() + pad, Sense::hover());
     ui.painter().rect(
         rect,
         OUTER_RADIUS,
@@ -350,11 +348,6 @@ fn paint_flat_summary_pill(
         egui::StrokeKind::Inside,
     );
     paint_galley_centered(ui, rect, galley.clone(), fg);
-    let response = ui.interact(
-        rect,
-        ui.id().with(("summary_flat_pill", action_type, full)),
-        Sense::hover(),
-    );
     if show_hover {
         text_hover_if(response, full, galley.elided)
     } else {

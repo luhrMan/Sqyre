@@ -240,7 +240,7 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32, show_hover: bool) ->
         full
     };
     let size = galley.size() + pad;
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
     ui.painter().rect(
         rect,
         PILL_RADIUS,
@@ -250,7 +250,6 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32, show_hover: bool) ->
     );
     let was_elided = galley.elided;
     paint_galley_centered(ui, rect, galley, fg);
-    let response = ui.interact(rect, ui.id().with(("action_pill", text)), Sense::hover());
     text_hover_if(response, text, show_hover && was_elided)
 }
 
