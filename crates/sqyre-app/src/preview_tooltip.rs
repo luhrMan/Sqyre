@@ -188,6 +188,26 @@ impl PreviewTooltipCache {
         self.desktop_outline_hover = Some(desktop_outline_rect(coords));
     }
 
+    /// Whether hovered/pinned rects can be outlined on the real desktop.
+    /// (Always true natively except Android; the WASM stub returns false so the
+    /// Logs window can show a "requires the desktop app" hint.)
+    pub fn desktop_outlines_supported(&self) -> bool {
+        !cfg!(target_os = "android")
+    }
+
+    /// Pin a desktop outline at an absolute `(l,t,r,b)` rect — Logs window find
+    /// markers on click. Re-request each frame while pinned; consumed by
+    /// [`Self::take_desktop_outline`].
+    pub fn request_outline_abs(&mut self, rect: (i32, i32, i32, i32)) {
+        self.desktop_outline = Some(rect);
+    }
+
+    /// Hover variant of [`Self::request_outline_abs`]; wins over the pinned
+    /// request for the frame, same as list-row hovers.
+    pub fn request_outline_abs_hover(&mut self, rect: (i32, i32, i32, i32)) {
+        self.desktop_outline_hover = Some(rect);
+    }
+
     /// Paint an egui hover tooltip for a program entity list row.
     pub fn show_for_entity(
         &mut self,

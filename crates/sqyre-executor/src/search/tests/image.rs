@@ -52,11 +52,13 @@ fn image_search_expands_target_tags_at_runtime() {
         };
         let resolver = SEARCH_FIXED_AREA;
         let close_matches = 8;
+        let logger = SharedActionLog::new();
+        let search_id = ActionId::new();
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.keyboard_delay = 0;
         macro_.mouse_delay = 0;
         macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
+            id: search_id,
             kind: ActionKind::ImageSearch {
                 name: "by-tag".into(),
                 targets: vec![],
@@ -83,7 +85,8 @@ fn image_search_expands_target_tags_at_runtime() {
                 .capturer(&mut capturer)
                 .resolver(&resolver)
                 .icons(&icons)
-                .close_matches_distance(close_matches),
+                .close_matches_distance(close_matches)
+                .logger(&logger),
         )
         .unwrap();
 
@@ -95,6 +98,41 @@ fn image_search_expands_target_tags_at_runtime() {
         assert_eq!(
             macro_.variables.get("ItemName").map(|v| v.as_display()),
             Some("Sword".into())
+        );
+
+        // Structured find: one hit near the stamped template at (12,14),
+        // screen box = local box + origin (100,200).
+        let entries = logger.entries_for(search_id);
+        let (steps, finds) = entries
+            .iter()
+            .find_map(|e| match e {
+                crate::ActionLogEntry::ItemPipeline { steps, finds, .. } => Some((steps, finds)),
+                _ => None,
+            })
+            .expect("pipeline logged");
+        assert_eq!(finds.len(), 1, "expected one structured find: {finds:?}");
+        let f = &finds[0];
+        assert_eq!(f.label, "Find #1");
+        let (sl, st, sr, sb) = f.screen;
+        assert!(
+            (sl - 112).abs() <= 1 && (st - 214).abs() <= 1,
+            "screen box near stamp+origin: {f:?}"
+        );
+        assert_eq!(sr - sl, 10);
+        assert_eq!(sb - st, 10);
+        let sqyre_ports::FindContext::Step { step, rect } =
+            f.context.as_ref().expect("overlay context")
+        else {
+            unreachable!()
+        };
+        assert_eq!(
+            steps[*step].label, "Where found (all matches)",
+            "find context should point at the overlay step"
+        );
+        assert_eq!(
+            *rect,
+            (sl - 100, st - 200, sr - 100, sb - 200),
+            "context rect mirrors the screen box in capture-local space"
         );
     });
 }

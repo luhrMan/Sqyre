@@ -23,6 +23,8 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
     #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
     app.macro_overlay
         .set_press_stops_run(app.settings_ui.settings().overlay_press_stops_run);
+    app.macro_overlay
+        .set_show_over_sqyre(app.settings_ui.settings().overlay_buttons_over_sqyre);
     sqyre_capture::set_overlay_buttons_in_detection(
         app.settings_ui.settings().overlay_buttons_in_detection,
     );
@@ -128,15 +130,22 @@ pub fn show_logs_window(
         return;
     };
     let title = format!("Logs — {}", action_display_name(app, action_id));
-    if crate::action_logs_ui::show_logs_window(
+    let is_running = app.run_session.state.running.load(Ordering::SeqCst);
+    match crate::action_logs_ui::show_logs_window(
         ctx,
         action_id,
         &title,
         &app.run_session.action_log,
-        &mut app.run_session.logs_image_cache,
+        &mut app.run_session.logs_state,
+        &mut app.preview_tooltips,
+        is_running,
         pending_scale,
     ) {
-        app.run_session.logs_window = None;
+        crate::action_logs_ui::LogsNav::Stay => {}
+        crate::action_logs_ui::LogsNav::Close => {
+            app.run_session.logs_window = None;
+            app.run_session.logs_state.clear();
+        }
     }
 }
 
@@ -595,9 +604,9 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     let log_images = app.settings_ui.settings().save_meta_images;
     app.run_session.action_log.set_log_images(log_images);
     app.run_session.action_log.set_log_verbose(log_images);
-    if !log_images && app.run_session.logs_window.take().is_some() {
-        app.run_session.logs_image_cache.clear();
-    }
+    app.run_session
+        .action_log
+        .set_max_entries(app.settings_ui.settings().action_log_max_entries.max(1) as usize);
     if app.settings_ui.reload_requested {
         app.settings_ui.reload_requested = false;
         apply_main_monitor_resolution(&mut app.workspace.catalog);

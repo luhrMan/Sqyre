@@ -72,7 +72,7 @@ pub struct MacroOverlay {
     focus_slot: Arc<Mutex<FocusSlot>>,
     focus_poller: Mutex<Option<(Arc<AtomicBool>, JoinHandle<()>)>>,
     last_focus_err_log: Option<Instant>,
-    last_sync_sig: Option<(usize, bool, bool, usize, usize, bool)>,
+    last_sync_sig: Option<(usize, bool, bool, usize, usize, bool, bool)>,
     /// Shared with the X11 host + run worker so busy does not wait on egui frames.
     running_macro: Arc<Mutex<Option<String>>>,
     #[cfg(target_os = "linux")]
@@ -97,6 +97,8 @@ pub struct MacroOverlay {
     /// When true, a press while a macro is running requests stop.
     #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
     press_stops: Arc<AtomicBool>,
+    /// When false, hide buttons once Sqyre has been the front window.
+    show_over_sqyre: bool,
     #[cfg(target_os = "android")]
     android_host: Option<crate::android_buttons::AndroidButtonHost>,
     #[cfg(target_os = "android")]
@@ -122,6 +124,22 @@ struct FocusSlot {
     last_err_at: Option<Instant>,
     none_since: Option<Instant>,
     our_since: Option<Instant>,
+    /// Sqyre’s main window is in front (past the click-grace when a game was focused).
+    sqyre_focused: bool,
+}
+
+impl FocusSlot {
+    fn idle() -> Self {
+        Self {
+            cached: None,
+            last_foreign: None,
+            last_err: None,
+            last_err_at: None,
+            none_since: None,
+            our_since: None,
+            sqyre_focused: false,
+        }
+    }
 }
 
 impl Default for MacroOverlay {
@@ -151,14 +169,7 @@ impl Drop for MacroOverlay {
 impl MacroOverlay {
     pub fn new() -> Self {
         Self {
-            focus_slot: Arc::new(Mutex::new(FocusSlot {
-                cached: None,
-                last_foreign: None,
-                last_err: None,
-                last_err_at: None,
-                none_since: None,
-                our_since: None,
-            })),
+            focus_slot: Arc::new(Mutex::new(FocusSlot::idle())),
             focus_poller: Mutex::new(None),
             last_focus_err_log: None,
             last_sync_sig: None,
@@ -181,6 +192,7 @@ impl MacroOverlay {
             run_stop: Arc::new(Mutex::new(sqyre_hotkeys::StopFlag::new())),
             #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
             press_stops: Arc::new(AtomicBool::new(true)),
+            show_over_sqyre: false,
             #[cfg(target_os = "android")]
             android_host: None,
             #[cfg(target_os = "android")]
@@ -284,6 +296,11 @@ impl MacroOverlay {
     #[cfg(any(target_os = "linux", target_os = "android", target_os = "windows"))]
     pub fn set_press_stops_run(&self, enabled: bool) {
         self.press_stops.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Keep overlay buttons visible while the Sqyre window is in front.
+    pub fn set_show_over_sqyre(&mut self, enabled: bool) {
+        self.show_over_sqyre = enabled;
     }
 
     /// Shared image-gate found map (X11 host maps/unmaps without waiting for ROOT).
@@ -401,7 +418,8 @@ impl MacroOverlay {
         }
 
         self.ensure_focus_poller(ctx);
-        let (focus, last_foreign) = self.resolve_focus_views();
+        let (focus, last_foreign, sqyre_focused) = self.resolve_focus_views();
+        let hide_over_sqyre = suppress_over_sqyre(self.show_over_sqyre, sqyre_focused, relocate);
         let preview_id = preview.map(|b| b.id.as_str());
         let mut any_gated = false;
         let mut gated_skips = 0usize;
@@ -414,6 +432,9 @@ impl MacroOverlay {
                 continue;
             }
             if !btn.enabled || btn.macro_name.trim().is_empty() {
+                continue;
+            }
+            if hide_over_sqyre {
                 continue;
             }
             let gated = button_is_focus_gated(btn);
@@ -469,6 +490,7 @@ impl MacroOverlay {
             busy_shown,
             gated_skips,
             relocate,
+            hide_over_sqyre,
         );
         if self.last_sync_sig != Some(sig) {
             self.last_sync_sig = Some(sig);
@@ -477,7 +499,7 @@ impl MacroOverlay {
                 .map(|w| format!("{} ({})", w.process_name.trim(), w.process_path.trim()))
                 .unwrap_or_else(|| sqyre_domain::EMPTY_NONE.into());
             note(&format!(
-                "overlay: sync shown={shown} busy={busy_shown} gated={any_gated} skips={gated_skips} preview={} relocate={relocate} keep_above={keep_above} focus={focus_label}",
+                "overlay: sync shown={shown} busy={busy_shown} gated={any_gated} skips={gated_skips} preview={} relocate={relocate} keep_above={keep_above} hide_over_sqyre={hide_over_sqyre} focus={focus_label}",
                 preview.is_some()
             ));
         }
@@ -627,7 +649,9 @@ impl MacroOverlay {
             native.push(android_spec(btn, catalog, ppp, relocate));
         }
         if let Some(btn) = preview {
-            native.push(android_spec(btn, catalog, ppp, true));
+            let mut spec = android_spec(btn, catalog, ppp, true);
+            spec.editor_pinned = true;
+            native.push(spec);
         }
         if native.is_empty() {
             if let Some(host) = self.android_host.take() {
@@ -645,6 +669,7 @@ impl MacroOverlay {
         }
         if let Some(host) = &self.android_host {
             host.set_relocate(relocate);
+            host.set_show_over_sqyre(self.show_over_sqyre);
             host.set_buttons(native);
         }
     }
@@ -681,7 +706,7 @@ impl MacroOverlay {
         self.focus_slot.lock().last_foreign.clone()
     }
 
-    fn resolve_focus_views(&mut self) -> (Option<WindowInfo>, Option<WindowInfo>) {
+    fn resolve_focus_views(&mut self) -> (Option<WindowInfo>, Option<WindowInfo>, bool) {
         let mut g = self.focus_slot.lock();
         if let Some(err) = g.last_err.take() {
             let now = Instant::now();
@@ -694,7 +719,7 @@ impl MacroOverlay {
                 note(&format!("overlay: get_active_window failed: {err}"));
             }
         }
-        (g.cached.clone(), g.last_foreign.clone())
+        (g.cached.clone(), g.last_foreign.clone(), g.sqyre_focused)
     }
 }
 
@@ -712,17 +737,7 @@ fn focus_poll_loop(focus_slot: Arc<Mutex<FocusSlot>>, stop: Arc<AtomicBool>, ctx
             }
             Ok(None) => {
                 let mut g = focus_slot.lock();
-                g.our_since = None;
-                let started = *g.none_since.get_or_insert_with(Instant::now);
-                let repaint = if started.elapsed() >= NONE_HIDE_AFTER {
-                    // Sustained no-focus: hide focus-only overlays, but keep
-                    // last_foreign so image-gated buttons stay on the X11 host
-                    // (fullscreen games often report None for the whole session).
-                    hide_cached_keep_foreign(&mut g)
-                } else {
-                    // Brief None blip (fullscreen flicker) — keep last foreign while gate is live.
-                    hold_last_foreign(&mut g)
-                };
+                let repaint = apply_no_focus(&mut g);
                 g.last_err = None;
                 drop(g);
                 if repaint {
@@ -751,7 +766,8 @@ fn focus_poll_loop(focus_slot: Arc<Mutex<FocusSlot>>, stop: Arc<AtomicBool>, ctx
 /// - Overlay chrome / portal / Steam helper: leave `cached` alone (do not poison
 ///   `last_foreign`, and do not revive a gate already cleared by hide grace).
 /// - Sqyre main UI: keep `last_foreign` briefly (overlay click wake); hide after
-///   [`OUR_HIDE_AFTER`] so alt-tabbing to Sqyre clears gated buttons.
+///   [`OUR_HIDE_AFTER`] so alt-tabbing to Sqyre clears gated buttons. With no
+///   foreign window to hold, mark Sqyre in front immediately.
 /// - Other apps: store as `last_foreign` (identity includes title for shared Wine/Proton exes).
 fn apply_active_focus(g: &mut FocusSlot, active: &WindowInfo) -> bool {
     if window_is_transient_shell_focus(active) {
@@ -765,14 +781,26 @@ fn apply_active_focus(g: &mut FocusSlot, active: &WindowInfo) -> bool {
     if window_is_our_process(active) {
         g.none_since = None;
         let started = *g.our_since.get_or_insert_with(Instant::now);
-        if started.elapsed() >= OUR_HIDE_AFTER {
-            return clear_focus_gate(g);
+        let parked = started.elapsed() >= OUR_HIDE_AFTER;
+        // Clicking a button focuses Sqyre for a moment while a game is still the gate.
+        let cold = g.last_foreign.is_none();
+        if parked || cold {
+            let became = !g.sqyre_focused;
+            g.sqyre_focused = true;
+            if parked {
+                return clear_focus_gate(g) || became;
+            }
+            return became;
         }
         // Brief Sqyre focus (overlay click / macro wake) — keep game gate.
-        return hold_last_foreign(g);
+        let was = g.sqyre_focused;
+        g.sqyre_focused = false;
+        return hold_last_foreign(g) || was;
     }
     g.none_since = None;
     g.our_since = None;
+    let was_sqyre = g.sqyre_focused;
+    g.sqyre_focused = false;
     let key = focus_identity_key(active);
     let prev = g.last_foreign.as_ref().map(focus_identity_key);
     if prev.as_deref() != Some(key.as_str()) {
@@ -783,7 +811,7 @@ fn apply_active_focus(g: &mut FocusSlot, active: &WindowInfo) -> bool {
         // Same identity — refresh fields in case path/title casing changed.
         g.last_foreign = Some(active.clone());
         g.cached = Some(active.clone());
-        false
+        was_sqyre
     }
 }
 
@@ -794,6 +822,31 @@ fn clear_focus_gate(g: &mut FocusSlot) -> bool {
     g.cached = None;
     g.last_foreign = None;
     had
+}
+
+/// No active window. A brief blip keeps the previous gate; a sustained one
+/// drops Sqyre-front tracking so buttons can show over a fullscreen game.
+fn apply_no_focus(g: &mut FocusSlot) -> bool {
+    g.our_since = None;
+    let started = *g.none_since.get_or_insert_with(Instant::now);
+    if started.elapsed() >= NONE_HIDE_AFTER {
+        let was = g.sqyre_focused;
+        g.sqyre_focused = false;
+        // Sustained no-focus: hide focus-only overlays, but keep last_foreign
+        // so image-gated buttons stay on the X11 host (fullscreen games often
+        // report None for the whole session).
+        hide_cached_keep_foreign(g) || was
+    } else if g.sqyre_focused {
+        false
+    } else {
+        // Brief None blip (fullscreen flicker) — keep last foreign while gate is live.
+        hold_last_foreign(g)
+    }
+}
+
+/// Hide buttons while Sqyre is in front, unless the user opted in or is placing them.
+fn suppress_over_sqyre(show_over: bool, sqyre_focused: bool, relocate: bool) -> bool {
+    sqyre_focused && !show_over && !relocate
 }
 
 /// Hide focus-only overlays after sustained None, but keep `last_foreign` so
@@ -1024,6 +1077,7 @@ fn android_spec(
         icon_hover: face.icon_hover,
         focus_gated: !ungate && button_is_focus_gated(btn),
         visibility_gated: !ungate && btn.visibility_gate.is_active(),
+        editor_pinned: false,
     }
 }
 
@@ -1066,14 +1120,7 @@ mod tests {
 
     #[test]
     fn apply_focus_switches_between_shared_proton_titles() {
-        let mut g = FocusSlot {
-            cached: None,
-            last_foreign: None,
-            last_err: None,
-            last_err_at: None,
-            none_since: None,
-            our_since: None,
-        };
+        let mut g = FocusSlot::idle();
         let mist = wine_win("Mistfall Hunter");
         assert!(apply_active_focus(&mut g, &mist));
         assert_eq!(
@@ -1095,14 +1142,7 @@ mod tests {
 
     #[test]
     fn apply_focus_overlay_chrome_keeps_last_foreign() {
-        let mut g = FocusSlot {
-            cached: None,
-            last_foreign: None,
-            last_err: None,
-            last_err_at: None,
-            none_since: None,
-            our_since: None,
-        };
+        let mut g = FocusSlot::idle();
         let mist = wine_win("Mistfall Hunter");
         apply_active_focus(&mut g, &mist);
         let chrome = WindowInfo {
@@ -1120,14 +1160,7 @@ mod tests {
 
     #[test]
     fn apply_focus_steam_helper_keeps_last_foreign() {
-        let mut g = FocusSlot {
-            cached: None,
-            last_foreign: None,
-            last_err: None,
-            last_err_at: None,
-            none_since: None,
-            our_since: None,
-        };
+        let mut g = FocusSlot::idle();
         apply_active_focus(&mut g, &wine_win("Mistfall Hunter"));
         let steam = WindowInfo {
             title: "Steam".into(),
@@ -1149,14 +1182,7 @@ mod tests {
     #[test]
     fn apply_focus_our_main_ui_keeps_last_foreign_for_overlays() {
         let exe = std::env::current_exe().expect("test exe");
-        let mut g = FocusSlot {
-            cached: None,
-            last_foreign: None,
-            last_err: None,
-            last_err_at: None,
-            none_since: None,
-            our_since: None,
-        };
+        let mut g = FocusSlot::idle();
         apply_active_focus(&mut g, &wine_win("Mistfall Hunter"));
         let main = WindowInfo {
             title: "Sqyre".into(),
@@ -1174,19 +1200,13 @@ mod tests {
             g.last_foreign.as_ref().map(|w| w.title.as_str()),
             Some("Mistfall Hunter")
         );
+        assert!(!g.sqyre_focused);
     }
 
     #[test]
     fn hide_grace_clears_last_foreign_so_focus_blips_do_not_resurrect() {
         let exe = std::env::current_exe().expect("test exe");
-        let mut g = FocusSlot {
-            cached: None,
-            last_foreign: None,
-            last_err: None,
-            last_err_at: None,
-            none_since: None,
-            our_since: None,
-        };
+        let mut g = FocusSlot::idle();
         apply_active_focus(&mut g, &wine_win("Mistfall Hunter"));
         let main = WindowInfo {
             title: "Sqyre".into(),
@@ -1197,6 +1217,7 @@ mod tests {
         // Simulate parked on Sqyre past OUR_HIDE_AFTER.
         g.our_since = Some(Instant::now() - OUR_HIDE_AFTER - Duration::from_millis(1));
         assert!(apply_active_focus(&mut g, &main));
+        assert!(g.sqyre_focused);
         assert!(g.cached.is_none());
         assert!(g.last_foreign.is_none());
 
@@ -1208,26 +1229,72 @@ mod tests {
             icon: None,
         };
         assert!(!apply_active_focus(&mut g, &shell));
+        assert!(g.sqyre_focused);
         assert!(g.cached.is_none());
         assert!(g.last_foreign.is_none());
 
         // Fresh Sqyre focus after hide must not flash buttons for 1.5s.
         g.our_since = None;
         assert!(!apply_active_focus(&mut g, &main));
+        assert!(g.sqyre_focused);
         assert!(g.cached.is_none());
         assert!(g.last_foreign.is_none());
     }
 
     #[test]
-    fn none_hide_grace_clears_cached_keeps_last_foreign() {
-        let mut g = FocusSlot {
-            cached: None,
-            last_foreign: None,
-            last_err: None,
-            last_err_at: None,
-            none_since: None,
-            our_since: None,
+    fn sqyre_with_no_foreign_window_is_in_front_immediately() {
+        let exe = std::env::current_exe().expect("test exe");
+        let mut g = FocusSlot::idle();
+        let main = WindowInfo {
+            title: "Sqyre".into(),
+            process_name: "sqyre".into(),
+            process_path: exe.to_string_lossy().into_owned(),
+            icon: None,
         };
+        assert!(apply_active_focus(&mut g, &main));
+        assert!(g.sqyre_focused);
+        assert!(g.last_foreign.is_none());
+        assert!(!apply_active_focus(&mut g, &main));
+
+        assert!(apply_active_focus(&mut g, &wine_win("Mistfall Hunter")));
+        assert!(!g.sqyre_focused);
+        assert_eq!(
+            g.cached.as_ref().map(|w| w.title.as_str()),
+            Some("Mistfall Hunter")
+        );
+    }
+
+    #[test]
+    fn none_focus_keeps_sqyre_front_until_the_grace_elapses() {
+        let mut g = FocusSlot::idle();
+        apply_active_focus(&mut g, &wine_win("Mistfall Hunter"));
+        assert!(!apply_no_focus(&mut g));
+        assert!(!g.sqyre_focused);
+        assert_eq!(
+            g.cached.as_ref().map(|w| w.title.as_str()),
+            Some("Mistfall Hunter")
+        );
+
+        g.sqyre_focused = true;
+        g.none_since = None;
+        assert!(!apply_no_focus(&mut g));
+        assert!(g.sqyre_focused);
+        g.none_since = Some(Instant::now() - NONE_HIDE_AFTER - Duration::from_millis(1));
+        assert!(apply_no_focus(&mut g));
+        assert!(!g.sqyre_focused);
+    }
+
+    #[test]
+    fn suppress_over_sqyre_hides_only_while_sqyre_is_front() {
+        assert!(!suppress_over_sqyre(false, false, false));
+        assert!(suppress_over_sqyre(false, true, false));
+        assert!(!suppress_over_sqyre(true, true, false));
+        assert!(!suppress_over_sqyre(false, true, true));
+    }
+
+    #[test]
+    fn none_hide_grace_clears_cached_keeps_last_foreign() {
+        let mut g = FocusSlot::idle();
         apply_active_focus(&mut g, &wine_win("Mistfall Hunter"));
         g.none_since = Some(Instant::now() - NONE_HIDE_AFTER - Duration::from_millis(1));
         assert!(hide_cached_keep_foreign(&mut g));

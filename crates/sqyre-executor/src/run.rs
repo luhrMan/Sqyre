@@ -216,24 +216,56 @@ impl<'a> Executor<'a> {
         logger.log(action_id, f());
     }
 
+    /// Log a labeled capture. Returns the stored [`LogImage`] (post-downscale)
+    /// so callers can attach it to find contexts.
     pub fn log_image(
         &self,
         action_id: ActionId,
         label: impl Into<String>,
         image: &sqyre_match::ImageBuf,
-    ) {
-        let Some(logger) = self.deps.logger else {
-            return;
-        };
-        if !logger.log_images_enabled() {
-            return;
-        }
-        let Some(image) = crate::log_draw::image_buf_to_log_image(label.into(), image) else {
-            return;
-        };
-        logger.log_image(action_id, &image);
+    ) -> Option<sqyre_ports::LogImage> {
+        self.log_image_annotated(action_id, label, image, Vec::new())
     }
 
+    /// Log a labeled capture carrying in-image annotations (e.g. every OCR
+    /// word box) so the Logs zoom view can click-inspect them.
+    pub fn log_image_annotated(
+        &self,
+        action_id: ActionId,
+        label: impl Into<String>,
+        image: &sqyre_match::ImageBuf,
+        annotations: Vec<sqyre_ports::ImageAnnotation>,
+    ) -> Option<sqyre_ports::LogImage> {
+        let logger = self.deps.logger?;
+        if !logger.log_images_enabled() {
+            return None;
+        }
+        let mut image = crate::log_draw::image_buf_to_log_image(label.into(), image)?;
+        image.annotations = annotations;
+        logger.log_image(action_id, &image);
+        Some(image)
+    }
+
+    /// Log a text line carrying interactive find markers (hover/click "where
+    /// found" in the Logs window).
+    pub fn log_finds(&self, action_id: ActionId, text: String, finds: Vec<sqyre_ports::LogFind>) {
+        if let Some(logger) = self.deps.logger {
+            logger.log_finds(action_id, text, finds);
+        }
+    }
+
+    /// Start a new collapsible section in the action's log — the Logs window
+    /// renders one group per detection attempt.
+    pub fn log_section(&self, action_id: ActionId, label: String) {
+        if let Some(logger) = self.deps.logger {
+            logger.log_section(action_id, label);
+        }
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "pipeline payload: title, summary, images, detail lines, and find markers"
+    )]
     pub fn log_item_pipeline(
         &self,
         action_id: ActionId,
@@ -242,6 +274,7 @@ impl<'a> Executor<'a> {
         thumbnail: &sqyre_match::ImageBuf,
         steps: &[(&str, &sqyre_match::ImageBuf)],
         details: Vec<String>,
+        finds: Vec<sqyre_ports::LogFind>,
     ) {
         let Some(logger) = self.deps.logger else {
             return;
@@ -268,6 +301,7 @@ impl<'a> Executor<'a> {
             &thumbnail,
             &steps,
             details,
+            finds,
         );
     }
 

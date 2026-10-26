@@ -5414,11 +5414,13 @@ dependencies = [
  "parking_lot",
  "pulp",
  "rayon",
+ "regex",
  "rten",
  "sqyre-domain",
  "sqyre-match",
  "sqyre-ports",
  "tempfile",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

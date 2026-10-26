@@ -563,6 +563,26 @@ impl SettingsUi {
                     ui,
                     crate::action_tooltip::help::SETTING_LOG_META,
                 );
+                ui.label("Keep at most:");
+                let mut v = self.settings.action_log_max_entries;
+                if ui
+                    .add(
+                        crate::widgets::num_entry(&mut v)
+                            .range(
+                                sqyre_persist::MIN_ACTION_LOG_MAX_ENTRIES
+                                    ..=sqyre_persist::MAX_ACTION_LOG_MAX_ENTRIES,
+                            )
+                            .speed(100)
+                            .suffix(" entries"),
+                    )
+                    .on_hover_text(
+                        "Per-action cap for the Logs window; the oldest entries are dropped past it.",
+                    )
+                    .changed()
+                {
+                    self.settings.action_log_max_entries = v;
+                    self.mark_dirty();
+                }
             });
         }
 
@@ -617,12 +637,14 @@ impl SettingsUi {
         let show_release = setting_visible(q, hit, SETTING_RELEASE_HELD);
         let show_overlay_stop = setting_visible(q, hit, SETTING_OVERLAY_PRESS_STOPS);
         let show_overlay_detect = setting_visible(q, hit, SETTING_OVERLAY_IN_DETECTION);
+        let show_overlay_over = setting_visible(q, hit, SETTING_OVERLAY_OVER_SQYRE);
         let show_while = setting_visible(q, hit, SETTING_WHILE_BUDGET);
         let show_depth = setting_visible(q, hit, SETTING_RUN_MACRO_DEPTH);
         if !(show_highlight
             || show_release
             || show_overlay_stop
             || show_overlay_detect
+            || show_overlay_over
             || show_while
             || show_depth)
         {
@@ -678,6 +700,20 @@ impl SettingsUi {
                 )
                 .on_hover_text(
                     "Image Search, Find Pixel, and OCR captures include the buttons. When off, those captures see the screen underneath.",
+                )
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if show_overlay_over
+            && ui
+                .checkbox(
+                    &mut self.settings.overlay_buttons_over_sqyre,
+                    "Show overlay buttons over Sqyre",
+                )
+                .on_hover_text(
+                    "When off, buttons hide while the Sqyre window is in front. When on, General buttons stay on top of Sqyre. Buttons for another app still show only while that app is in front. Placing a button in the Overlay editor still shows it.",
                 )
                 .changed()
         {
@@ -1809,6 +1845,9 @@ const SETTING_LOG_META: &[&str] = &[
     "ocr",
     "debug frames",
     "memory",
+    "action log",
+    "log entries",
+    "log cap",
 ];
 const SETTING_HIGHLIGHT_ACTION: &[&str] =
     &["highlight", "executing action", "active action", "tint"];
@@ -1829,6 +1868,14 @@ const SETTING_OVERLAY_IN_DETECTION: &[&str] = &[
     "image search",
     "find pixel",
     "ocr",
+];
+const SETTING_OVERLAY_OVER_SQYRE: &[&str] = &[
+    "overlay",
+    "overlay button",
+    "over sqyre",
+    "on top",
+    "show overlay",
+    "sqyre window",
 ];
 const SETTING_HOTKEY_TAGS_FOCUSED: &[&str] = &[
     "hotkey",
@@ -1965,6 +2012,7 @@ const MACROS_SETTINGS: &[&[&str]] = &[
     SETTING_RELEASE_HELD,
     SETTING_OVERLAY_PRESS_STOPS,
     SETTING_OVERLAY_IN_DETECTION,
+    SETTING_OVERLAY_OVER_SQYRE,
     SETTING_WHILE_BUDGET,
     SETTING_RUN_MACRO_DEPTH,
     SUBSECTION_RECORDING,

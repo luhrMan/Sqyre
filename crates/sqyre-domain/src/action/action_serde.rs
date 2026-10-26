@@ -7,11 +7,11 @@ use super::{
     default_assignments, default_image_blur, default_loop_count, default_ocr_blur,
     default_ocr_text, default_resize, default_target_color, default_true, default_wait_time,
     is_default_image_blur, is_default_item_sort_by, is_default_item_sort_then,
-    is_default_match_method, is_default_ocr_blur, is_default_ocr_text, is_default_resize,
-    is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind, ConditionBlock,
-    CoordinateRef, DetectionBranch, ItemSortBy, ItemSortThen, ListColumn, LoopJumpMode,
-    MatchMethod, MouseButton, NavigateSelectData, PressState, ScalarValue, VariableAssignment,
-    DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    is_default_match_method, is_default_ocr_blur, is_default_ocr_match_mode, is_default_ocr_text,
+    is_default_resize, is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind,
+    ConditionBlock, CoordinateRef, DetectionBranch, ItemSortBy, ItemSortThen, ListColumn,
+    LoopJumpMode, MatchMethod, MouseButton, NavigateSelectData, PressState, ScalarValue,
+    VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
 };
 use serde::{Deserialize, Serialize};
 
@@ -122,6 +122,14 @@ enum ActionKindWire {
             skip_serializing_if = "is_default_ocr_text"
         )]
         output_variable: String,
+        #[serde(
+            rename = "matchmode",
+            default,
+            skip_serializing_if = "is_default_ocr_match_mode"
+        )]
+        match_mode: crate::OcrMatchMode,
+        #[serde(rename = "casesensitive", default, skip_serializing_if = "is_false")]
+        case_sensitive: bool,
         #[serde(
             default = "default_ocr_blur",
             skip_serializing_if = "is_default_ocr_blur"
@@ -408,6 +416,8 @@ impl From<ActionKindWire> for ActionKind {
                 target,
                 search_area,
                 output_variable,
+                match_mode,
+                case_sensitive,
                 mut blur,
                 min_threshold,
                 resize,
@@ -425,6 +435,8 @@ impl From<ActionKindWire> for ActionKind {
                     target,
                     search_area,
                     output_variable,
+                    match_mode,
+                    case_sensitive,
                     blur,
                     min_threshold,
                     resize,
@@ -665,6 +677,14 @@ enum ActionKindWireRef<'a> {
             skip_serializing_if = "is_default_ocr_text"
         )]
         output_variable: &'a str,
+        #[serde(
+            rename = "matchmode",
+            default,
+            skip_serializing_if = "is_default_ocr_match_mode"
+        )]
+        match_mode: crate::OcrMatchMode,
+        #[serde(rename = "casesensitive", default, skip_serializing_if = "is_false")]
+        case_sensitive: bool,
         #[serde(
             default = "default_ocr_blur",
             skip_serializing_if = "is_default_ocr_blur"
@@ -931,6 +951,8 @@ impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
                 target,
                 search_area,
                 output_variable,
+                match_mode,
+                case_sensitive,
                 blur,
                 min_threshold,
                 resize,
@@ -944,6 +966,8 @@ impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
                 target,
                 search_area,
                 output_variable,
+                match_mode: *match_mode,
+                case_sensitive: *case_sensitive,
                 blur: *blur,
                 min_threshold: *min_threshold,
                 resize: *resize,

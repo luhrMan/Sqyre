@@ -2,10 +2,17 @@ use super::*;
 
 #[test]
 fn ocr_empty_target_always_matches() {
-    assert!(ocr_target_matched("", ""));
-    assert!(ocr_target_matched("", "anything"));
-    assert!(ocr_target_matched("Hi", "say Hi there"));
-    assert!(!ocr_target_matched("Hi", "hello"));
+    fn m(target: &str) -> OcrMatch<'_> {
+        OcrMatch {
+            target,
+            mode: sqyre_domain::OcrMatchMode::Contains,
+            case_sensitive: false,
+        }
+    }
+    assert!(ocr_text_matches("", &m("")));
+    assert!(ocr_text_matches("anything", &m("")));
+    assert!(ocr_text_matches("say Hi there", &m("Hi")));
+    assert!(!ocr_text_matches("hello", &m("Hi")));
 }
 
 #[test]
@@ -61,6 +68,8 @@ fn ocr_writes_text_and_target_coords() {
             target: "Submit".into(),
             search_area: CoordinateRef("prog~box".into()),
             output_variable: "ocrText".into(),
+            match_mode: Default::default(),
+            case_sensitive: false,
             blur: 1,
             min_threshold: 0,
             resize: 1.0,
@@ -139,6 +148,33 @@ fn ocr_writes_text_and_target_coords() {
             .any(|l| l.contains("word[") && l.contains("Submit")),
         "expected Submit word in OCR detail: {lines:?}"
     );
+
+    // Structured find: Submit box (50,0)-(110,20) + origin (100,200), resize 1.0.
+    let finds: Vec<_> = entries.iter().flat_map(|e| e.finds().to_vec()).collect();
+    assert_eq!(finds.len(), 1, "expected one structured find: {finds:?}");
+    let f = &finds[0];
+    assert_eq!(f.label, "Find #1 (\"Submit\")");
+    assert_eq!(f.screen, (150, 200, 210, 220));
+    let sqyre_ports::FindContext::Image { rect, .. } = f.context.as_ref().expect("overlay context")
+    else {
+        unreachable!()
+    };
+    assert_eq!(*rect, (20, 0, 20, 10), "box clamps to 20x10 overlay");
+
+    // Every recognized word box rides the overlay as a click-inspectable
+    // annotation — non-target words included.
+    let overlay_img = entries
+        .iter()
+        .find_map(|e| match e {
+            crate::ActionLogEntry::Image(img) if img.label.contains("word boxes") => Some(img),
+            _ => None,
+        })
+        .expect("word boxes image entry");
+    assert_eq!(overlay_img.annotations.len(), 3);
+    assert_eq!(overlay_img.annotations[0].label, "Hello");
+    assert_eq!(overlay_img.annotations[0].screen, (100, 200, 140, 220));
+    assert_eq!(overlay_img.annotations[1].label, "Submit");
+    assert_eq!(overlay_img.annotations[1].screen, (150, 200, 210, 220));
 }
 
 #[test]

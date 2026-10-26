@@ -539,6 +539,8 @@ mod tests {
                     target: String::new(),
                     search_area: CoordinateRef(String::new()),
                     output_variable: String::new(),
+                    match_mode: Default::default(),
+                    case_sensitive: false,
                     blur: 0,
                     min_threshold: 0,
                     resize: 1.0,

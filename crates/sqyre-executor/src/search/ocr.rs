@@ -5,9 +5,11 @@ use super::common::{
     DetectionHit, FrameMemo,
 };
 use crate::error::{ExecError, Result};
-use crate::log_draw::draw_rect_rgb;
+use crate::log_draw::{draw_rect_rgb, scale_rect_for_log};
 use crate::run::Executor;
 use sqyre_domain::{action_type_label, Action, ActionKind, Macro, ScalarValue};
+use sqyre_ports::{FindContext, ImageAnnotation, LogFind};
+use std::sync::Arc;
 use std::time::Instant;
 
 /// OCR branch action: capture → preprocess → recognize → write vars → run children per hit
@@ -21,6 +23,8 @@ pub(crate) fn execute_ocr(
         target,
         search_area,
         output_variable,
+        match_mode,
+        case_sensitive,
         blur,
         min_threshold,
         resize,
@@ -38,6 +42,8 @@ pub(crate) fn execute_ocr(
     let wait = &detection.wait;
     let ocr_params = OcrRunParams {
         target,
+        match_mode: *match_mode,
+        case_sensitive: *case_sensitive,
         blur: *blur,
         min_threshold: *min_threshold,
         resize: *resize,
@@ -100,6 +106,8 @@ pub(crate) fn execute_ocr(
 
 struct OcrRunParams<'a> {
     target: &'a str,
+    match_mode: sqyre_domain::OcrMatchMode,
+    case_sensitive: bool,
     blur: i32,
     min_threshold: i32,
     resize: f64,
@@ -179,7 +187,7 @@ fn run_ocr_once(
     }
     let search_center_x = origin.x + origin.w / 2;
     let search_center_y = origin.y + origin.h / 2;
-    exec.log_image(action_id, "Capture (raw)", &rgb);
+    let _ = exec.log_image(action_id, "Capture (raw)", &rgb);
     let opts = sqyre_vision::OcrPreprocessOptions::from_action_fields(
         params.grayscale,
         params.blur,
@@ -200,7 +208,7 @@ fn run_ocr_once(
         };
     exec.log_timing(action_id, "preprocess", preprocess_started.elapsed());
     for step in &steps {
-        exec.log_image(action_id, &step.label, &step.image);
+        let _ = exec.log_image(action_id, &step.label, &step.image);
     }
     let recognize_started = Instant::now();
     let recognized = match ocr.recognize(&processed) {
@@ -247,7 +255,8 @@ fn run_ocr_once(
         }
     }
 
-    if collect && !recognized.words.is_empty() {
+    let resize_scale = if scale > 0.0 { scale } else { 1.0 };
+    let word_boxes = if collect && !recognized.words.is_empty() {
         let mut overlay = if processed.channels == 1 {
             sqyre_vision::gray_to_rgb(&processed)
         } else {
@@ -263,15 +272,62 @@ fn run_ocr_once(
                 [40, 220, 80],
             );
         }
-        exec.log_image(action_id, format!("{label} word boxes"), &overlay);
-    }
+        // Every recognized word becomes a click-inspectable annotation on the
+        // stored overlay — target finds mark matches, these answer "what did
+        // OCR see here" for the rest.
+        let annotations = recognized
+            .words
+            .iter()
+            .map(|w| ImageAnnotation {
+                rect: scale_rect_for_log(
+                    (w.left, w.top, w.right, w.bottom),
+                    overlay.width,
+                    overlay.height,
+                ),
+                label: w.word.clone(),
+                screen: (
+                    origin.x + (w.left as f64 / resize_scale) as i32,
+                    origin.y + (w.top as f64 / resize_scale) as i32,
+                    origin.x + (w.right as f64 / resize_scale) as i32,
+                    origin.y + (w.bottom as f64 / resize_scale) as i32,
+                ),
+            })
+            .collect();
+        exec.log_image_annotated(
+            action_id,
+            format!("{label} word boxes"),
+            &overlay,
+            annotations,
+        )
+        .map(|img| (Arc::new(img), overlay.width, overlay.height))
+    } else {
+        None
+    };
 
-    let resize_scale = if scale > 0.0 { scale } else { 1.0 };
     let mut hits = if params.target.is_empty() {
         // Empty target always matches once at search-area center.
+        exec.log_finds(
+            action_id,
+            format!(
+                "{label} empty target matches at search center ({search_center_x}, {search_center_y})"
+            ),
+            vec![center_find(search_center_x, search_center_y)],
+        );
         vec![DetectionHit::plain(search_center_x, search_center_y, "")]
     } else {
-        let occurrences = sqyre_vision::find_target_occurrences(&recognized.words, params.target);
+        let ocr_match = sqyre_vision::OcrMatch {
+            target: params.target,
+            mode: params.match_mode,
+            case_sensitive: params.case_sensitive,
+        };
+        let occurrences = match sqyre_vision::find_target_occurrences(&recognized.words, &ocr_match)
+        {
+            Ok(v) => v,
+            Err(e) => {
+                exec.log(action_id, format!("{label}: {e}"));
+                return None;
+            }
+        };
         if occurrences.is_empty() {
             exec.log(
                 action_id,
@@ -281,14 +337,15 @@ fn run_ocr_once(
                 ),
             );
             // Text-contains can still succeed when boxes miss; treat as miss for coords/hits
-            // unless full text contains the target — then one synthetic center hit.
-            if ocr_target_matched(params.target, &recognized.text) {
-                exec.log(
+            // unless full text satisfies the same match options — then one synthetic center hit.
+            if sqyre_vision::ocr_text_matches(&recognized.text, &ocr_match) {
+                exec.log_finds(
                     action_id,
                     format!(
                         "{label} target {:?} in full text but no word-box occurrence; using search center",
                         params.target
                     ),
+                    vec![center_find(search_center_x, search_center_y)],
                 );
                 vec![DetectionHit::plain(
                     search_center_x,
@@ -307,25 +364,47 @@ fn run_ocr_once(
                     occurrences.len()
                 ),
             );
-            if collect {
-                for (bx, by) in &occurrences {
-                    let sx = origin.x + (*bx as f64 / resize_scale) as i32;
-                    let sy = origin.y + (*by as f64 / resize_scale) as i32;
-                    exec.log(
-                        action_id,
-                        format!(
-                            "{label} target {:?} matched at image ({bx}, {by}) → screen ({sx}, {sy}) (scale={resize_scale:.3})",
-                            params.target
+            for (oi, occ) in occurrences.iter().enumerate() {
+                let (bl, bt, br, bb) = occ.rect;
+                let bx = (bl + br) / 2;
+                let by = (bt + bb) / 2;
+                let sx = origin.x + (bx as f64 / resize_scale) as i32;
+                let sy = origin.y + (by as f64 / resize_scale) as i32;
+                exec.log_finds(
+                    action_id,
+                    format!(
+                        "{label} target {:?} matched at image ({bx}, {by}) → screen ({sx}, {sy}) (scale={resize_scale:.3})",
+                        params.target
+                    ),
+                    vec![LogFind {
+                        label: format!("Find #{} ({:?})", oi + 1, params.target),
+                        detail: Some(format!("found {:?}", occ.text)),
+                        screen: (
+                            origin.x + (bl as f64 / resize_scale) as i32,
+                            origin.y + (bt as f64 / resize_scale) as i32,
+                            origin.x + (br as f64 / resize_scale) as i32,
+                            origin.y + (bb as f64 / resize_scale) as i32,
                         ),
-                    );
-                }
+                        context: word_boxes.as_ref().map(|(image, w, h)| {
+                            FindContext::Image {
+                                image: Arc::clone(image),
+                                rect: crate::log_draw::scale_rect_for_log(
+                                    (bl, bt, br, bb),
+                                    *w,
+                                    *h,
+                                ),
+                            }
+                        }),
+                    }],
+                );
             }
             occurrences
                 .into_iter()
-                .map(|(bx, by)| {
+                .map(|occ| {
+                    let (l, t, r, b) = occ.rect;
                     DetectionHit::plain(
-                        origin.x + (bx as f64 / resize_scale) as i32,
-                        origin.y + (by as f64 / resize_scale) as i32,
+                        origin.x + (((l + r) / 2) as f64 / resize_scale) as i32,
+                        origin.y + (((t + b) / 2) as f64 / resize_scale) as i32,
                         params.target,
                     )
                 })
@@ -342,12 +421,14 @@ fn run_ocr_once(
     Some(attempt)
 }
 
-/// Substring match: empty target always matches
-/// (including empty OCR text), so wait-until-found never arms on blank target.
-pub(super) fn ocr_target_matched(target: &str, found_text: &str) -> bool {
-    if target.is_empty() {
-        true
-    } else {
-        found_text.contains(target)
+/// Screen-only find marker for synthetic hits pinned at the search-area center
+/// (empty target, or full-text match with no word boxes to bound).
+fn center_find(sx: i32, sy: i32) -> LogFind {
+    const HALF: i32 = 8;
+    LogFind {
+        label: format!("center ({sx},{sy})"),
+        detail: None,
+        screen: (sx - HALF, sy - HALF, sx + HALF + 1, sy + HALF + 1),
+        context: None,
     }
 }

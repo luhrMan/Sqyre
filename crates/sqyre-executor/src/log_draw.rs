@@ -16,6 +16,48 @@ pub(crate) fn image_buf_to_log_image(label: String, image: &ImageBuf) -> Option<
     LogImage::from_rgba(label, scaled.width as u32, scaled.height as u32, rgba)
 }
 
+/// Scale applied by [`image_buf_to_log_image`]: `1.0` when the image fits under
+/// the log cap, else `LOG_IMAGE_MAX_EDGE / long_edge`. Multiply source-space
+/// rects by this to address pixels inside the stored [`LogImage`].
+pub(crate) fn log_image_scale(width: usize, height: usize) -> f64 {
+    let long = width.max(height).max(1);
+    if long <= LOG_IMAGE_MAX_EDGE {
+        1.0
+    } else {
+        LOG_IMAGE_MAX_EDGE as f64 / long as f64
+    }
+}
+
+/// Rect `(l, t, r, b)` in source pixels → same rect in the stored log image,
+/// clamped to the stored bounds (find markers may extend past the frame).
+pub(crate) fn scale_rect_for_log(
+    rect: (i32, i32, i32, i32),
+    src_w: usize,
+    src_h: usize,
+) -> (i32, i32, i32, i32) {
+    let s = log_image_scale(src_w, src_h);
+    let (l, t, r, b) = rect;
+    let scaled = if (s - 1.0).abs() < f64::EPSILON {
+        (l, t, r, b)
+    } else {
+        (
+            (l as f64 * s).round() as i32,
+            (t as f64 * s).round() as i32,
+            (r as f64 * s).round() as i32,
+            (b as f64 * s).round() as i32,
+        )
+    };
+    let (dl, dt, dr, db) = scaled;
+    let w = ((src_w as f64) * s).round().max(1.0) as i32;
+    let h = ((src_h as f64) * s).round().max(1.0) as i32;
+    (
+        dl.clamp(0, w),
+        dt.clamp(0, h),
+        dr.clamp(0, w),
+        db.clamp(0, h),
+    )
+}
+
 fn downscale_for_log(img: &ImageBuf) -> ImageBuf {
     let long = img.width.max(img.height);
     if long <= LOG_IMAGE_MAX_EDGE {

@@ -66,6 +66,15 @@ impl PreviewTooltipCache {
         }
     }
 
+    /// Browser editor has no live desktop to outline on.
+    pub fn desktop_outlines_supported(&self) -> bool {
+        false
+    }
+
+    pub fn request_outline_abs(&mut self, _rect: (i32, i32, i32, i32)) {}
+
+    pub fn request_outline_abs_hover(&mut self, _rect: (i32, i32, i32, i32)) {}
+
     pub fn paint_point_panel(
         &mut self,
         ui: &mut egui::Ui,

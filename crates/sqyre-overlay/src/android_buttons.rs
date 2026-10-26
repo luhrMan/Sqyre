@@ -55,6 +55,8 @@ struct Applied {
 pub struct AndroidButtonHost {
     specs: Arc<Mutex<Vec<AndroidButtonSpec>>>,
     relocate: Arc<AtomicBool>,
+    /// When false, hide buttons while Sqyre is the foreground app.
+    show_over_sqyre: Arc<AtomicBool>,
     visibility: Arc<Mutex<Arc<Mutex<HashMap<String, bool>>>>>,
     stop: Arc<AtomicBool>,
     join: Mutex<Option<JoinHandle<()>>>,
@@ -75,6 +77,7 @@ impl AndroidButtonHost {
     ) -> Option<Self> {
         let specs = Arc::new(Mutex::new(Vec::new()));
         let relocate = Arc::new(AtomicBool::new(false));
+        let show_over_sqyre = Arc::new(AtomicBool::new(false));
         let visibility = Arc::new(Mutex::new(visibility));
         let stop = Arc::new(AtomicBool::new(false));
         install_input_handlers(
@@ -86,6 +89,7 @@ impl AndroidButtonHost {
         let stop_t = Arc::clone(&stop);
         let specs_t = Arc::clone(&specs);
         let relocate_t = Arc::clone(&relocate);
+        let show_over_t = Arc::clone(&show_over_sqyre);
         let visibility_t = Arc::clone(&visibility);
         let press_stops_t = Arc::clone(&press_stops);
         let join = match thread::Builder::new()
@@ -94,6 +98,7 @@ impl AndroidButtonHost {
                 host_loop(
                     specs_t,
                     relocate_t,
+                    show_over_t,
                     running_macro,
                     visibility_t,
                     press_stops_t,
@@ -111,6 +116,7 @@ impl AndroidButtonHost {
         Some(Self {
             specs,
             relocate,
+            show_over_sqyre,
             visibility,
             stop,
             join: Mutex::new(Some(join)),
@@ -127,6 +133,11 @@ impl AndroidButtonHost {
 
     pub fn set_relocate(&self, enabled: bool) {
         self.relocate.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Keep buttons visible while Sqyre is the foreground app.
+    pub fn set_show_over_sqyre(&self, enabled: bool) {
+        self.show_over_sqyre.store(enabled, Ordering::Relaxed);
     }
 
     pub fn shutdown(&self) {
@@ -206,6 +217,7 @@ fn install_input_handlers(
 fn host_loop(
     specs: Arc<Mutex<Vec<AndroidButtonSpec>>>,
     relocate: Arc<AtomicBool>,
+    show_over_sqyre: Arc<AtomicBool>,
     running_macro: Arc<Mutex<Option<String>>>,
     visibility: Arc<Mutex<Arc<Mutex<HashMap<String, bool>>>>>,
     press_stops: Arc<AtomicBool>,
@@ -226,6 +238,7 @@ fn host_loop(
         let any_busy = reconcile(
             &specs,
             relocate.load(Ordering::Relaxed),
+            show_over_sqyre.load(Ordering::Relaxed),
             press_stops.load(Ordering::Relaxed),
             &running_macro,
             &visibility,
@@ -311,6 +324,7 @@ fn park(stop: &AtomicBool, timeout: Duration) {
 fn reconcile(
     specs: &Mutex<Vec<AndroidButtonSpec>>,
     relocate: bool,
+    show_over_sqyre: bool,
     press_stops: bool,
     running_macro: &Mutex<Option<String>>,
     visibility: &Mutex<Arc<Mutex<HashMap<String, bool>>>>,
@@ -324,7 +338,7 @@ fn reconcile(
     let focus = get_active_window().ok().flatten();
     let map = visibility.lock().clone();
     let found = map.lock().clone();
-    let show = shown_buttons(&specs, focus.as_ref(), relocate, &found);
+    let show = shown_buttons(&specs, focus.as_ref(), relocate, show_over_sqyre, &found);
     let (screen_w, screen_h) = bridge::display_size().unwrap_or((0, 0));
     let mut live = Vec::new();
     let mut any_busy = false;
