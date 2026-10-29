@@ -285,12 +285,7 @@ pub fn tag_chip_editor(
     let mut paint_row = |ui: &mut egui::Ui| {
         ui.set_max_width(wrap_cap);
         if let Some(name) = opts.label_name {
-            crate::action_tooltip::help::label(
-                ui,
-                egui_phosphor::regular::TAG,
-                name,
-                opts.draft_hover.unwrap_or(""),
-            );
+            crate::action_tooltip::help::label(ui, egui_phosphor::regular::TAG, name);
         }
         let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
         paint_tag_chips(
@@ -455,6 +450,28 @@ pub fn tag_chip_editor(
     edit
 }
 
+/// One read-only tag pill — same chrome as the editor chips ([`paint_tag_chips`]):
+/// PRIMARY fill, 6px radius, Small contrast text inside a SPACE_2 margin.
+/// Interaction (hover text, context menu) is the caller's; the returned
+/// response covers the painted pill.
+pub fn tag_pill(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    let fill = crate::theme::PRIMARY;
+    egui::Frame::NONE
+        .fill(fill)
+        .stroke(egui::Stroke::NONE)
+        .corner_radius(egui::CornerRadius::same(6))
+        .inner_margin(egui::Margin::same(crate::theme::SPACE_2 as i8))
+        .show(ui, |ui| {
+            ui.spacing_mut().interact_size.y = ui.text_style_height(&egui::TextStyle::Small);
+            ui.label(
+                egui::RichText::new(label)
+                    .small()
+                    .color(crate::theme::contrast_fg(fill)),
+            );
+        })
+        .response
+}
+
 fn paint_tag_chips(
     ui: &mut egui::Ui,
     tags: &mut Vec<String>,
@@ -509,13 +526,13 @@ fn paint_tag_chips(
         // `available_rect_before_wrap` over-reports space near the pane edge.
         // Wrap when the chip would cross the painted clip instead.
         let row_right = ui.max_rect().right().min(ui.clip_rect().right());
-        if ui.cursor().left() + chip_w > row_right
-            && ui.cursor().left() > ui.max_rect().left() + 0.5
-        {
+        let at_row_start = ui.cursor().left() <= ui.max_rect().left() + 0.5;
+        if ui.cursor().left() + chip_w > row_right && (single_row || !at_row_start) {
             if single_row {
                 // `end_row` can't help inside `ui.horizontal`: a chip painted
                 // anyway would have its label clipped at the row edge. Count
-                // the ones that don't fit and show a `+N` pill instead.
+                // the ones that don't fit and show a `+N` pill instead — even
+                // at row start, where an elided sliver would paint past the clip.
                 overflow += 1;
                 continue;
             }
@@ -646,7 +663,8 @@ fn paint_tag_chips(
                 ui.spacing_mut().interact_size.y = small_h;
                 ui.label(egui::RichText::new(label).small().color(fg));
             });
-            resp.response.on_hover_text(format!("{overflow} more: {hidden}"));
+            resp.response
+                .on_hover_text(format!("{overflow} more: {hidden}"));
         }
     }
     if let Some(i) = toggle {
@@ -839,6 +857,51 @@ mod tests {
         let beta = harness.get_by_label("beta").rect().center();
         pointer_click(&mut harness, beta);
         assert_eq!(harness.state().0, vec!["beta".to_string()]);
+    }
+
+    #[test]
+    fn single_row_chip_at_row_start_overflows_instead_of_sliver() {
+        // single_row: a chip that cannot fit must count toward the `+N` pill —
+        // never paint an elided `b…` sliver. The wrapped-mode escape hatch for
+        // chips at row start must not apply: there is no row below to wrap to.
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size([300.0, 60.0])
+            .build_ui_state(
+                move |ui, tags: &mut Vec<String>| {
+                    let pane =
+                        egui::Rect::from_min_size(egui::pos2(100.0, 8.0), egui::vec2(30.0, 24.0));
+                    let mut row = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                    row.set_clip_rect(egui::Rect::from_min_max(
+                        pane.min,
+                        egui::pos2(120.0, pane.max.y),
+                    ));
+                    row.horizontal(|ui| {
+                        let mut changed = false;
+                        paint_tag_chips(ui, tags, true, false, false, true, &mut changed);
+                    });
+                },
+                vec!["backup".to_string()],
+            );
+        harness.run_steps(3);
+        let texts: Vec<String> = harness
+            .output()
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(t) => Some(t.galley.job.text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            texts.iter().any(|t| t == "+1"),
+            "expected the +1 overflow pill, got {texts:?}"
+        );
+        assert!(
+            !texts
+                .iter()
+                .any(|t| t.contains("backup") || t.contains('…')),
+            "elided chip sliver painted: {texts:?}"
+        );
     }
 
     #[test]

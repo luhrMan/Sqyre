@@ -482,7 +482,7 @@ fn var_ref_text_edit(
     known: &KnownVariableNames,
     desired_width: f32,
     multiline: Option<usize>,
-) {
+) -> egui::Response {
     let ac_id = id.with("var_ac");
     let was_open = ui
         .ctx()
@@ -530,6 +530,7 @@ fn var_ref_text_edit(
             dismiss,
         },
     );
+    output.response.response
 }
 
 /// Keys consumed by the autocomplete popup this frame.
@@ -698,28 +699,34 @@ pub fn var_name_text_edit(
     help: &str,
 ) {
     crate::widgets::wrap_unit(ui, |ui| {
-        crate::action_tooltip::help::label(ui, icon, label, help);
+        crate::action_tooltip::help::label(ui, icon, label);
         let width = resolve_edit_width(ui, desired_width, 0.0);
         let id = ui.id().with(("var_name_edit", label));
         let focused = ui.memory(|m| m.has_focus(id));
         if should_show_var_name_overlay(value, focused) {
             let resp = paint_nested_var_chip(ui, value, known, is_dark);
-            let resp = click_to_edit_hit(
-                ui,
-                resp.rect
-                    .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
-                id.with("overlay_hit"),
-                label,
-                value,
+            let resp = crate::action_tooltip::help::tip(
+                click_to_edit_hit(
+                    ui,
+                    resp.rect
+                        .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
+                    id.with("overlay_hit"),
+                    label,
+                    value,
+                ),
+                help,
             );
             if resp.clicked() {
                 ui.memory_mut(|m| m.request_focus(id));
             }
         } else {
-            ui.add(
-                egui::TextEdit::singleline(value)
-                    .id(id)
-                    .desired_width(width),
+            crate::action_tooltip::help::tip(
+                ui.add(
+                    egui::TextEdit::singleline(value)
+                        .id(id)
+                        .desired_width(width),
+                ),
+                help,
             );
         }
     });
@@ -790,7 +797,7 @@ pub fn validated_var_ref_edit(
         help,
     } = opts;
     crate::widgets::wrap_unit(ui, |ui| {
-        crate::action_tooltip::help::label(ui, icon, label, help);
+        crate::action_tooltip::help::label(ui, icon, label);
         let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
         let id = ui.id().with(("validated_var_ref", label));
         let focused = ui.memory(|m| m.has_focus(id));
@@ -799,19 +806,25 @@ pub fn validated_var_ref_edit(
             let resp = outer_frame(ui, Color32::TRANSPARENT, |ui| {
                 paint_var_ref_content(ui, value, known, is_dark, plain_fg);
             });
-            let resp = click_to_edit_hit(
-                ui,
-                resp.rect
-                    .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
-                id.with("overlay_hit"),
-                label,
-                value,
+            let resp = crate::action_tooltip::help::tip(
+                click_to_edit_hit(
+                    ui,
+                    resp.rect
+                        .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
+                    id.with("overlay_hit"),
+                    label,
+                    value,
+                ),
+                help,
             );
             if resp.clicked() {
                 ui.memory_mut(|m| m.request_focus(id));
             }
         } else {
-            var_ref_text_edit(ui, id, value, known, width, None);
+            crate::action_tooltip::help::tip(
+                var_ref_text_edit(ui, id, value, known, width, None),
+                help,
+            );
         }
         paint_entry_validation_icon(ui, validation);
     });
@@ -841,7 +854,7 @@ pub fn validated_var_ref_multiline_edit(
     // Wrapped row keeps the validation icon from being pushed past the clip.
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = crate::theme::SPACE_2;
-        crate::action_tooltip::help::label(ui, icon, label, help);
+        crate::action_tooltip::help::label(ui, icon, label);
         paint_entry_validation_icon(ui, validation);
     });
     let width = resolve_edit_width(ui, desired_width, 0.0);
@@ -855,11 +868,19 @@ pub fn validated_var_ref_multiline_edit(
                 paint_var_ref_content(ui, line, known, is_dark, plain_fg);
             }
         });
-        if click_to_edit_hit(ui, resp.rect, id.with("overlay_hit"), label, value).clicked() {
+        if crate::action_tooltip::help::tip(
+            click_to_edit_hit(ui, resp.rect, id.with("overlay_hit"), label, value),
+            help,
+        )
+        .clicked()
+        {
             ui.memory_mut(|m| m.request_focus(id));
         }
     } else {
-        var_ref_text_edit(ui, id, value, known, width, Some(rows));
+        crate::action_tooltip::help::tip(
+            var_ref_text_edit(ui, id, value, known, width, Some(rows)),
+            help,
+        );
     }
 }
 

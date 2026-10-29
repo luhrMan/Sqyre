@@ -14,16 +14,13 @@ impl DataEditor {
     ) -> bool {
         let CatalogPaint { catalog, icons, .. } = paint;
         let FormCtx { macros, .. } = ctx;
-        ui.horizontal_wrapped(|ui| {
-            if let Some(name) = self.selected_program.as_deref() {
-                crate::icon_cache::paint_program_icon(ui, catalog, icons, name);
-            }
-            ui.heading("Program");
-        });
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
             let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
-            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w));
+            help::tip(
+                ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
+                help::DE_NAME,
+            );
         });
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
@@ -39,12 +36,7 @@ impl DataEditor {
             )
         };
         ui.horizontal(|ui| {
-            help::label(
-                ui,
-                egui_phosphor::regular::APP_WINDOW,
-                "Running program",
-                help::DE_RUNNING_PROGRAM,
-            );
+            help::label(ui, egui_phosphor::regular::APP_WINDOW, "Running program");
             if !self.form_process_path.trim().is_empty() {
                 let tex = icons
                     .for_process(ui.ctx(), &self.form_process_path, &self.form_window_title)
@@ -64,7 +56,10 @@ impl DataEditor {
                     );
                 }
             }
-            ui.label(egui::RichText::new(bound).monospace());
+            help::tip(
+                ui.label(egui::RichText::new(bound).monospace()),
+                help::DE_RUNNING_PROGRAM,
+            );
         });
         ui.horizontal(|ui| {
             if ui.button("Select…").clicked() {
@@ -105,13 +100,15 @@ impl DataEditor {
         settings: &mut UserSettings,
     ) -> bool {
         let CatalogPaint { catalog, icons, .. } = paint;
-        ui.heading("Item");
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
             let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
-            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w));
+            help::tip(
+                ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
+                help::DE_NAME,
+            );
         });
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
@@ -204,17 +201,20 @@ impl DataEditor {
             );
         };
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::EYE_SLASH, "Mask", help::DE_MASK);
-            searchable_combo_with(
-                ui,
-                "item_mask",
-                &mut current,
-                &masks,
-                sqyre_domain::EMPTY_NONE,
-                Some(sqyre_domain::EMPTY_NONE),
-                None,
-                Some(&mut on_hover),
-                None,
+            help::label(ui, egui_phosphor::regular::EYE_SLASH, "Mask");
+            help::tip(
+                searchable_combo_with(
+                    ui,
+                    "item_mask",
+                    &mut current,
+                    &masks,
+                    sqyre_domain::EMPTY_NONE,
+                    Some(sqyre_domain::EMPTY_NONE),
+                    None,
+                    Some(&mut on_hover),
+                    None,
+                ),
+                help::DE_MASK,
             );
         });
         if current != self.form_mask {

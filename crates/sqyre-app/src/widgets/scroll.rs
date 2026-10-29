@@ -187,7 +187,11 @@ pub fn show_overflow<R>(
             .scroll_source(SCROLL_SOURCE_NO_DRAG)
             .auto_shrink([false, true])
             .min_scrolled_width(1.0)
-            .min_scrolled_height(1.0)
+            // A row-capped parent (ui.horizontal bounds children to the row
+            // height) leaves no room for the H-bar lane: pin the viewport to
+            // the measured content height so the lane lands below the row
+            // instead of clipping it.
+            .min_scrolled_height(remembered.y.min(scroll_h).max(1.0))
             .max_width(scroll_w)
             .max_height(scroll_h)
             .show(ui, |ui| {
@@ -223,6 +227,56 @@ pub fn show_overflow<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A strip inside a fixed-height row (ui.horizontal bounds children to the
+    /// row) must grow downward for the H-bar lane instead of letting the bar
+    /// carve `allocated_width` out of the row and clip the buttons.
+    #[test]
+    fn h_bar_does_not_clip_row_content() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| style.spacing.scroll = crate::theme::scroll_style());
+        let mut clipped = Vec::new();
+        for _ in 0..4 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(240.0, 400.0));
+                let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                pane_ui.set_clip_rect(pane);
+                pane_ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let _ = ui.button("X");
+                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                            show_overflow(ui, "row", 1.0, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                                    for label in [
+                                        "Programs",
+                                        "Items",
+                                        "Coordinates",
+                                        "Tools",
+                                        "Extra1",
+                                        "Extra2",
+                                    ] {
+                                        let resp = ui.button(label);
+                                        // Buttons scrolled past the viewport
+                                        // clip horizontally — expected. Only
+                                        // the vertical extent (the H-bar lane)
+                                        // is checked.
+                                        if resp.interact_rect.is_positive()
+                                            && resp.interact_rect.max.y < resp.rect.max.y
+                                        {
+                                            clipped.push((label, resp.rect, resp.interact_rect));
+                                        }
+                                    }
+                                });
+                            });
+                        });
+                    });
+                });
+            })
+            .drop_without_applying_deltas();
+        }
+        assert!(clipped.is_empty(), "H-bar clipped buttons: {clipped:?}");
+    }
 
     #[test]
     fn overflow_strip_stays_inside_narrow_pane() {

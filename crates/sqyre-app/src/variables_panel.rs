@@ -429,12 +429,7 @@ impl VariablesPanelUi {
             160.0,
         );
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(
-                ui,
-                egui_phosphor::regular::LIST_BULLETS,
-                "Type",
-                help::VAR_TYPE,
-            );
+            help::label(ui, egui_phosphor::regular::LIST_BULLETS, "Type");
             for (label, ty) in [
                 ("auto", VariableType::Auto),
                 ("text", VariableType::Text),

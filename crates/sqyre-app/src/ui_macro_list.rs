@@ -5,7 +5,7 @@ use crate::pickers;
 use crate::status_banner::{StatusBanner, PREFIX_LOAD_ERROR, PREFIX_SAVE_ERROR};
 use crate::theme::SPACE_12;
 use crate::widgets::elide::{elide_to_width, text_hover_if};
-use crate::widgets::tags::{filters_cover_path, normalize_tag_path};
+use crate::widgets::tags::{filters_cover_path, normalize_tag_path, tag_pill};
 use crate::SqyreApp;
 use eframe::egui::{self, TextureHandle};
 use sqyre_domain::Macro;
@@ -444,6 +444,63 @@ fn paint_tag_group(
         });
 }
 
+/// Pinned "Hotkeys:" summary — one pill per selected tag. Pills that cannot
+/// fit whole collapse into a `+N` overflow pill (single-row chip rule); each
+/// pill carries the tag-chip affordance: right-click removes the tag.
+fn paint_hotkey_tag_footer(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    let filters = &app.workspace.hotkey_tag_filters;
+    if filters.is_empty() {
+        ui.small("Hotkeys: off");
+        return;
+    }
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let pill_w = |ui: &egui::Ui, text: &str| {
+        ui.painter()
+            .layout_no_wrap(text.to_string(), font.clone(), egui::Color32::WHITE)
+            .size()
+            .x
+            + crate::theme::SPACE_2 * 2.0
+    };
+    let mut remove: Option<String> = None;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Hotkeys:").small().weak());
+        let row_right = ui.max_rect().right().min(ui.clip_rect().right());
+        let mut overflow = 0usize;
+        for (i, tag) in filters.iter().enumerate() {
+            let label = tag_header_label(tag);
+            if ui.cursor().left() + pill_w(ui, label) > row_right {
+                overflow += 1;
+                continue;
+            }
+            let resp = tag_pill(ui, label).on_hover_text("Right-click for options.");
+            if crate::widgets::rect_danger_menu(
+                ui,
+                ui.id().with(("hotkey_tag_pill", i, tag)),
+                resp.rect,
+                None,
+                "Remove",
+                true,
+            ) {
+                remove = Some(tag.clone());
+            }
+        }
+        if overflow > 0 {
+            let count = format!("+{overflow}");
+            if ui.cursor().left() + pill_w(ui, &count) <= row_right {
+                let hidden = filters[filters.len() - overflow..]
+                    .iter()
+                    .map(|t| tag_header_label(t))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                tag_pill(ui, &count).on_hover_text(format!("{overflow} more: {hidden}"));
+            }
+        }
+    });
+    if let Some(tag) = remove {
+        app.toggle_hotkey_tag_filter(tag);
+    }
+}
+
 fn select_macro_row(app: &mut SqyreApp, i: usize) {
     app.workspace.selected_macro = i;
     app.tree.selected_actions.clear();
@@ -462,18 +519,13 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
         sqyre_persist::MAX_MACRO_LIST_FRAC,
     );
     let panel_id = egui::Id::new("macro_list_tags");
-    // The saved fraction is authoritative across runs: eframe-persisted
-    // PanelState is absolute pixels and can be stale (different window size,
-    // an old session), which would otherwise override `default_size` forever.
-    // Realign it once on the first frame; in-session resizes keep both in sync.
-    // Wait for a real window size — a transient small frame would squash it.
-    let restored_key = panel_id.with("split_restored");
-    if win_w >= 300.0
-        && !ui
-            .ctx()
-            .data_mut(|d| *d.get_temp_mut_or(restored_key, false))
-    {
-        ui.ctx().data_mut(|d| d.insert_temp(restored_key, true));
+    // The saved fraction is authoritative: PanelState is absolute pixels and
+    // egui skips storing it during divider drags and slide animations, so a
+    // stale value (old session, window/WM resize) would otherwise override
+    // `default_size`. Realign every frame — the >1px slack keeps the steady
+    // state write-free — but skip implausibly narrow frames so a transient
+    // small window can't squash the panel.
+    if win_w >= 300.0 {
         if let Some(mut state) = egui::containers::panel::PanelState::load(ui.ctx(), panel_id) {
             let want_w = win_w * frac;
             if (state.size().x - want_w).abs() > 1.0 {
@@ -502,36 +554,25 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             let pane_w = ui.available_width();
             ui.set_max_width(pane_w);
 
-            let macro_count = {
-                let filter = app.macro_list_filter.trim();
-                if filter.is_empty() {
-                    app.workspace.macros.len()
-                } else {
-                    app.workspace
-                        .macros
-                        .iter()
-                        .filter(|m| pickers::query_matches_name_or_tags(filter, &m.name, &m.tags))
-                        .count()
-                }
-            };
-            let title_w = crate::widgets::text_width(ui, "Macros", egui::TextStyle::Heading);
-            let count_label = format!("({macro_count})");
-            let count_w = crate::widgets::text_width(ui, &count_label, egui::TextStyle::Body);
-            let header_need = title_w + count_w + 8.0 + ui.spacing().item_spacing.x;
-            if header_need <= pane_w {
-                crate::widgets::heading_with_count(ui, "Macros", macro_count);
-            } else {
-                crate::widgets::show_overflow(ui, "macro_list_header", 1.0, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                        ui.add(
-                            egui::Label::new(egui::RichText::new("Macros").heading())
-                                .selectable(false),
-                        );
-                        ui.label(egui::RichText::new(count_label).weak());
-                    });
-                });
-            }
+            // Search takes the pane minus the new-macro button on its right.
+            let add_w = crate::widgets::ICON_BTN_SIDE + ui.spacing().item_spacing.x;
+            let search_resp = ui
+                .horizontal(|ui| {
+                    let w = (pane_w - add_w).max(40.0);
+                    let resp = ui.add(
+                        egui::TextEdit::singleline(&mut app.macro_list_filter)
+                            .desired_width(w)
+                            .hint_text("Search macros or tags…"),
+                    );
+                    if crate::widgets::add_button(ui, "New macro", true).clicked() {
+                        app.create_macro();
+                    }
+                    resp
+                })
+                .inner
+                .on_hover_text(
+                    "Filter by macro name or tag. ↑↓ moves the selection, Enter edits it.",
+                );
             // True load failures only (corrupt db / undecodable macros). Per-macro
             // validation issues are shown on the macro rows and action tree.
             // List-scoped: same color/prefix rules as StatusBanner panel footers.
@@ -552,28 +593,11 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     &crate::status_banner::user_error_detail(err.as_str()),
                 );
             }
-            // Search takes the pane minus the new-macro button on its right.
-            let add_w = crate::widgets::ICON_BTN_SIDE + ui.spacing().item_spacing.x;
-            let search_resp = ui
-                .horizontal(|ui| {
-                    let w = (pane_w - add_w).max(40.0);
-                    let resp = ui.add(
-                        egui::TextEdit::singleline(&mut app.macro_list_filter)
-                            .desired_width(w)
-                            .hint_text("Search macros or tags…"),
-                    );
-                    if crate::widgets::add_button(ui, "New macro", true).clicked() {
-                        app.create_macro();
-                    }
-                    resp
-                })
-                .inner
-                .on_hover_text(
-                    "Filter by macro name or tag. ↑↓ moves the selection, Enter edits it.",
-                );
-            // Hotkeys summary is a small footer pinned under the list.
-            let footer_h =
-                ui.text_style_height(&egui::TextStyle::Small) + crate::theme::element_gap(ui);
+            // Hotkeys summary is a small footer pinned under the list; tag pills
+            // add their inner margin above/below the Small text line.
+            let footer_h = ui.text_style_height(&egui::TextStyle::Small)
+                + crate::theme::SPACE_2 * 2.0
+                + crate::theme::element_gap(ui);
             let list_h = (ui.available_height() - footer_h).max(24.0);
             // Exact slot + clipped child: overflow from ScrollArea/collapsing headers
             // must not widen the side panel's persisted size.
@@ -702,31 +726,20 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 }
             });
             ui.add_space(crate::theme::element_gap(ui));
-            {
-                let label = if app.workspace.hotkey_tag_filters.is_empty() {
-                    "Hotkeys: off".to_string()
-                } else {
-                    let joined = app
-                        .workspace
-                        .hotkey_tag_filters
-                        .iter()
-                        .map(|t| tag_header_label(t))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!("Hotkeys: {joined}")
-                };
-                let font = egui::TextStyle::Small.resolve(ui.style());
-                let display = elide_to_width(ui, &label, pane_w, font);
-                let resp = ui.small(display.text);
-                text_hover_if(resp, &label, display.elided);
-            }
+            paint_hotkey_tag_footer(app, ui);
         });
     app.macro_list_open = open;
 
-    // Persist user-resized panel width once the drag ends. Skip implausibly
-    // narrow windows: a transient small frame (startup resize, window manager)
-    // would store an inflated fraction that clamps to the 75% ceiling.
-    if !ui.ctx().input(|i| i.pointer.any_down()) && win_w >= 300.0 {
+    // Persist user-resized panel width only when a divider drag ends. Reading
+    // PanelState on every idle frame would corrupt the fraction: it is absolute
+    // pixels, so window resizes (maximize, tiling, WM startup sizing) change
+    // size.x/win_w without the user touching the divider. "__resize" is egui's
+    // resize-handle id suffix (panel.rs `resize_widget_id`).
+    let divider_released = ui
+        .ctx()
+        .read_response(panel_id.with("__resize"))
+        .is_some_and(|r| r.drag_stopped());
+    if divider_released && win_w >= 300.0 {
         if let Some(state) = egui::containers::panel::PanelState::load(ui.ctx(), panel_id) {
             let frac = (state.size().x / win_w).clamp(
                 sqyre_persist::MIN_MACRO_LIST_FRAC,

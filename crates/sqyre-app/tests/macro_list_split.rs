@@ -69,7 +69,7 @@ fn macro_list_drag_persists_split_to_settings() {
 #[test]
 fn macro_list_stale_panel_state_yields_to_settings() {
     // A stale eframe-persisted PanelState (e.g. saved at a different window
-    // size) must be realigned to the settings fraction on the first frame.
+    // size) must be realigned to the settings fraction.
     let mut h = build_docs_harness([1280.0, 800.0], |app| {
         app.docs_settings_mut().macro_list_split = 0.30;
     });
@@ -82,16 +82,44 @@ fn macro_list_stale_panel_state_yields_to_settings() {
             egui::pos2(right, 700.0),
         ),
     };
-    h.ctx.data_mut(|d| {
-        d.insert_persisted(egui::Id::new(PANEL_ID), stale);
-        // Re-arm the one-shot restore the way a fresh app start sees it.
-        d.insert_temp(egui::Id::new(PANEL_ID).with("split_restored"), false);
-    });
+    h.ctx
+        .data_mut(|d| d.insert_persisted(egui::Id::new(PANEL_ID), stale));
     h.run_ok();
 
     let size = panel_size(&h.ctx).expect("panel state after realign");
     assert!(
         (size.x - 1280.0 * 0.30).abs() < 2.0,
         "stale 900px state should realign to 30%, got {size:?}"
+    );
+}
+
+#[test]
+fn macro_list_window_resize_keeps_saved_split() {
+    // Resizing the window (not the divider) must not rewrite the saved
+    // fraction — PanelState is absolute pixels, so size.x/win_w drifts on
+    // every resize — and the panel should track the fraction at the new size.
+    let mut h = build_docs_harness([1280.0, 800.0], |app| {
+        app.docs_settings_mut().macro_list_split = 0.30;
+    });
+    h.run_ok();
+
+    h.set_size(egui::vec2(800.0, 800.0));
+    h.run_ok();
+
+    let frac = h.state().docs_settings().macro_list_split;
+    assert!(
+        (frac - 0.30).abs() < 0.001,
+        "window resize must not rewrite the saved split, got {frac}"
+    );
+    let size = panel_size(&h.ctx).expect("panel state after resize");
+    assert!(
+        (size.x - 800.0 * 0.30).abs() < 2.0,
+        "panel should track 30% of the resized window, got {size:?}"
+    );
+    let reloaded = sqyre_persist::UserSettings::load_default().unwrap();
+    assert!(
+        (reloaded.macro_list_split - 0.30).abs() < 0.001,
+        "settings file split {} should be unchanged",
+        reloaded.macro_list_split
     );
 }

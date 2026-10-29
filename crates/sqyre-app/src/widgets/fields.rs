@@ -19,14 +19,14 @@ fn selected_text_hover(
     selected: &str,
     help_text: &str,
 ) -> egui::Response {
-    if !combo_text_elided(ui, &response, selected) {
-        return response;
+    if combo_text_elided(ui, &response, selected) {
+        return if help_text.is_empty() {
+            text_hover_if(response, selected, true)
+        } else {
+            response.on_hover_text(format!("{selected}\n\n{help_text}"))
+        };
     }
-    if help_text.is_empty() {
-        text_hover_if(response, selected, true)
-    } else {
-        response.on_hover_text(format!("{selected}\n\n{help_text}"))
-    }
+    help::tip(response, help_text)
 }
 
 pub fn text_field(ui: &mut egui::Ui, icon: &str, label: &str, help_text: &str, value: &mut String) {
@@ -59,8 +59,11 @@ pub fn text_field_width(
     width: f32,
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label, help_text);
-        ui.add(egui::TextEdit::singleline(value).desired_width(width));
+        help::label(ui, icon, label);
+        help::tip(
+            ui.add(egui::TextEdit::singleline(value).desired_width(width)),
+            help_text,
+        );
     });
 }
 
@@ -87,8 +90,8 @@ pub fn num_text_field_width(
     range: RangeInclusive<i32>,
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label, help_text);
-        num_text_edit(ui, value, width, range.clone());
+        help::label(ui, icon, label);
+        help::tip(num_text_edit(ui, value, width, range.clone()), help_text);
     });
 }
 
@@ -158,8 +161,11 @@ pub fn drag_field_enabled<Num: egui::emath::Numeric>(
     configure: impl Fn(NumEntry<'_, Num>) -> NumEntry<'_, Num>,
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label, help_text);
-        ui.add_enabled(enabled, configure(num_entry(value)));
+        help::label(ui, icon, label);
+        help::tip(
+            ui.add_enabled(enabled, configure(num_entry(value))),
+            help_text,
+        );
     });
 }
 
@@ -172,7 +178,7 @@ pub fn combo_str(
     options: &[&str],
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label, help_text);
+        help::label(ui, icon, label);
         let display = if value.is_empty() {
             sqyre_domain::EMPTY_UNSET.to_string()
         } else {
@@ -234,7 +240,7 @@ pub fn combo_enum<T: Copy + PartialEq>(
     display: impl Fn(T) -> &'static str,
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label, help_text);
+        help::label(ui, icon, label);
         let selected = display(*value);
         let response = egui::ComboBox::from_id_salt(label)
             .selected_text(selected)
@@ -263,7 +269,7 @@ pub fn combo_str_labeled(
     empty_default: &str,
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label, help_text);
+        help::label(ui, icon, label);
         let empty_label = options
             .iter()
             .find(|(v, _)| *v == empty_default)

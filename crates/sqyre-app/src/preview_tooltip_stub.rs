@@ -65,11 +65,14 @@ impl PreviewTooltipCache {
         _catalog: &ProgramCatalog,
         coord_ref: &CoordinateRef,
         _kind: PreviewKind,
+        help: &str,
     ) {
         if response.hovered() {
-            response
-                .clone()
-                .on_hover_text(format!("{}\n{UNAVAILABLE}", coord_ref.as_str()));
+            let mut text = format!("{}\n{UNAVAILABLE}", coord_ref.as_str());
+            if !help.is_empty() {
+                text.push_str(&format!("\n{help}"));
+            }
+            response.clone().on_hover_text(text);
         }
     }
 

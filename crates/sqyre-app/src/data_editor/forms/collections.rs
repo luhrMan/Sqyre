@@ -27,18 +27,18 @@ impl DataEditor {
         });
         let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
         let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
-        ui.horizontal_wrapped(|ui| {
-            ui.heading("Collection");
-            if let Some(area) = collection_area {
-                ui.weak(collection_size_label(area, rows, cols));
-            }
-        });
         self.program_selector(ui, catalog, icons, settings);
+        if let Some(area) = collection_area {
+            ui.weak(collection_size_label(area, rows, cols));
+        }
         ui.add_space(crate::theme::element_gap(ui));
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
             let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
-            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w));
+            help::tip(
+                ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
+                help::DE_NAME,
+            );
         });
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
@@ -71,22 +71,20 @@ impl DataEditor {
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::SearchArea);
             };
             crate::widgets::wrap_unit(ui, |ui| {
-                help::label(
-                    ui,
-                    egui_phosphor::regular::CROP,
-                    "Search area",
+                help::label(ui, egui_phosphor::regular::CROP, "Search area");
+                help::tip(
+                    searchable_combo_with(
+                        ui,
+                        "collection_sa",
+                        &mut current,
+                        &areas,
+                        sqyre_domain::EMPTY_NONE,
+                        None,
+                        None,
+                        Some(&mut on_hover),
+                        None,
+                    ),
                     help::DE_COLLECTION_AREA,
-                );
-                searchable_combo_with(
-                    ui,
-                    "collection_sa",
-                    &mut current,
-                    &areas,
-                    sqyre_domain::EMPTY_NONE,
-                    None,
-                    None,
-                    Some(&mut on_hover),
-                    None,
                 );
             });
             if current != self.form_search_area {
@@ -95,24 +93,14 @@ impl DataEditor {
         }
         ui.horizontal_wrapped(|ui| {
             crate::widgets::wrap_unit(ui, |ui| {
-                help::label(
-                    ui,
-                    egui_phosphor::regular::ROWS,
-                    "Rows",
-                    help::DE_COLLECTION_ROWS,
-                );
+                help::label(ui, egui_phosphor::regular::ROWS, "Rows");
                 help::tip(
                     crate::widgets::num_text_edit(ui, &mut self.form_rows, 80.0, 1..=i32::MAX),
                     help::DE_COLLECTION_ROWS,
                 );
             });
             crate::widgets::wrap_unit(ui, |ui| {
-                help::label(
-                    ui,
-                    egui_phosphor::regular::COLUMNS,
-                    "Cols",
-                    help::DE_COLLECTION_COLS,
-                );
+                help::label(ui, egui_phosphor::regular::COLUMNS, "Cols");
                 help::tip(
                     crate::widgets::num_text_edit(ui, &mut self.form_cols, 80.0, 1..=i32::MAX),
                     help::DE_COLLECTION_COLS,
@@ -167,13 +155,15 @@ impl DataEditor {
             previews,
             ..
         } = paint;
-        ui.heading("Atlas");
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
             let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
-            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w));
+            help::tip(
+                ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
+                help::DE_NAME,
+            );
         });
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
@@ -190,12 +180,7 @@ impl DataEditor {
             })
             .unwrap_or_default();
         ui.horizontal(|ui| {
-            help::label(
-                ui,
-                egui_phosphor::regular::STACK,
-                "Collections",
-                help::DE_ATLAS_MEMBERS,
-            );
+            help::label(ui, egui_phosphor::regular::STACK, "Collections");
             let prog = self.selected_program.clone();
             let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
                 if name.is_empty() {
@@ -206,16 +191,19 @@ impl DataEditor {
                 };
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::Collection);
             };
-            searchable_combo_with(
-                ui,
-                "atlas_add_member",
-                &mut self.form_atlas_add,
-                &available,
-                "(add collection)",
-                None,
-                None,
-                Some(&mut on_hover),
-                None,
+            help::tip(
+                searchable_combo_with(
+                    ui,
+                    "atlas_add_member",
+                    &mut self.form_atlas_add,
+                    &available,
+                    "(add collection)",
+                    None,
+                    None,
+                    Some(&mut on_hover),
+                    None,
+                ),
+                help::DE_ATLAS_MEMBERS,
             );
             if crate::widgets::add_button(
                 ui,

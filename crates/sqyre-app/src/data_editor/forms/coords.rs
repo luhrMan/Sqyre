@@ -2,7 +2,7 @@
 //!
 //! Split out of `draw_form`; see `forms.rs` for the tab dispatch.
 
-use super::super::{DataEditor, EditorTab, PendingConfirm};
+use super::super::{DataEditor, PendingConfirm};
 use super::*;
 
 impl DataEditor {
@@ -26,7 +26,6 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        help::heading(ui, "Point", help::DE_POINT_COORDS);
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
         self.paint_name_record_row(
@@ -101,13 +100,10 @@ impl DataEditor {
             &self.form_right,
             &self.form_bottom,
         );
-        ui.horizontal_wrapped(|ui| {
-            help::heading(ui, "Search Area", help::DE_AREA_BOUNDS);
-            if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
-                ui.weak(pixel_size_text(w, h));
-            }
-        });
         self.program_selector(ui, catalog, icons, settings);
+        if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
+            ui.weak(pixel_size_text(w, h));
+        }
         ui.add_space(crate::theme::element_gap(ui));
         self.paint_name_record_row(
             ui,
@@ -180,13 +176,15 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        ui.heading("Mask");
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
             let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
-            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w));
+            help::tip(
+                ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
+                help::DE_NAME,
+            );
         });
         paint_fs_name_hint(ui, &self.form_name);
         let has_image = self
@@ -225,14 +223,15 @@ impl DataEditor {
         if !has_image {
             ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
-                help::label(
-                    ui,
-                    egui_phosphor::regular::SHAPES,
-                    "Shape",
+                help::label(ui, egui_phosphor::regular::SHAPES, "Shape");
+                help::tip(
+                    ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle"),
                     help::DE_MASK_SHAPE,
                 );
-                ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle");
-                ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle");
+                help::tip(
+                    ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle"),
+                    help::DE_MASK_SHAPE,
+                );
             });
             ui.horizontal(|ui| {
                 help::tip(
@@ -365,8 +364,6 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        help::heading(ui, EditorTab::ScreenCap.label(), help::DE_SCREENCAP_INTRO);
-        ui.add_space(crate::theme::element_gap(ui));
         self.program_selector(ui, catalog, icons, settings);
         self.paint_name_record_row(
             ui,
@@ -378,15 +375,14 @@ impl DataEditor {
         ui.add_space(crate::theme::element_gap(ui));
         self.paint_item_param_fields(ui, catalog, icons);
         ui.add_space(crate::theme::element_gap(ui));
-        crate::widgets::wrap_unit(ui, |ui| {
-            help::label(
-                ui,
-                egui_phosphor::regular::FRAME_CORNERS,
-                "Bounds",
-                help::DE_BOUNDS_PREVIEW,
-            );
-            self.paint_monitor_slot(ui);
-        });
+        help::tip(
+            crate::widgets::wrap_unit(ui, |ui| {
+                help::label(ui, egui_phosphor::regular::FRAME_CORNERS, "Bounds");
+                self.paint_monitor_slot(ui);
+            })
+            .response,
+            help::DE_BOUNDS_PREVIEW,
+        );
         let (lx, ty, rx, by) = form_desktop_area(
             catalog,
             self.form_monitor,

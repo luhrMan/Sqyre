@@ -137,13 +137,8 @@ impl DataEditor {
             window.max_size(egui::vec2(constrain.x.min(720.0), constrain.y.min(900.0)))
         };
         window.show(ctx, |ui| {
-            crate::widgets::fill_resize_body(ui, |ui| {
-                crate::action_tooltip::help::label(
-                    ui,
-                    egui_phosphor::regular::SMILEY,
-                    "Icons",
-                    crate::action_tooltip::help::DE_OVERLAY_ICON_PICKER,
-                );
+            let body = crate::widgets::fill_resize_body(ui, |ui| {
+                crate::action_tooltip::help::label(ui, egui_phosphor::regular::SMILEY, "Icons");
                 ui.add_space(crate::theme::element_gap(ui));
                 if let Some(id) = overlay_icons::show_icon_picker_grid(
                     ui,
@@ -154,6 +149,10 @@ impl DataEditor {
                     close = true;
                 }
             });
+            crate::action_tooltip::help::tip(
+                body,
+                crate::action_tooltip::help::DE_OVERLAY_ICON_PICKER,
+            );
             close |= crate::widgets::consume_escape(ui);
         });
         if !open || close {

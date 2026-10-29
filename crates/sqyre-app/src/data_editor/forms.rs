@@ -141,7 +141,7 @@ impl DataEditor {
                 record = crate::widgets::record_icon_button(ui, record_tip, !armed).clicked();
             },
             |ui| {
-                help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+                help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
                 let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
                 help::tip(
                     ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
@@ -163,16 +163,14 @@ impl DataEditor {
 
     fn paint_monitor_slot(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            help::label(
-                ui,
-                egui_phosphor::regular::MONITOR,
-                "Monitor",
+            help::label(ui, egui_phosphor::regular::MONITOR, "Monitor");
+            help::tip(
+                ui.add(
+                    crate::widgets::num_entry(&mut self.form_monitor)
+                        .speed(1)
+                        .range(1..=8),
+                ),
                 help::DE_MONITOR,
-            );
-            ui.add(
-                crate::widgets::num_entry(&mut self.form_monitor)
-                    .speed(1)
-                    .range(1..=8),
             );
         });
     }
@@ -344,10 +342,6 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        #[cfg(feature = "native-runtime")]
-        help::heading(ui, EditorTab::PixelCheck.label(), help::DE_PIXELCHECK_INTRO);
-        #[cfg(not(feature = "native-runtime"))]
-        ui.heading(EditorTab::PixelCheck.label());
         #[cfg(not(feature = "native-runtime"))]
         {
             let _ = (
@@ -389,12 +383,7 @@ impl DataEditor {
             );
             let reference = CoordinateRef(self.form_search_area.clone());
             ui.horizontal(|ui| {
-                help::label(
-                    ui,
-                    egui_phosphor::regular::BOOKMARK,
-                    "Reference",
-                    help::DE_SCREENCAP_REF,
-                );
+                help::label(ui, egui_phosphor::regular::BOOKMARK, "Reference");
                 if let Some(prog) = reference.program() {
                     crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
@@ -405,7 +394,16 @@ impl DataEditor {
                     } else {
                         PreviewKind::SearchArea
                     };
-                    previews.show_for_coordinate_ref(ui, &resp, catalog, &reference, kind);
+                    previews.show_for_coordinate_ref(
+                        ui,
+                        &resp,
+                        catalog,
+                        &reference,
+                        kind,
+                        help::DE_SCREENCAP_REF,
+                    );
+                } else {
+                    help::tip(resp, help::DE_SCREENCAP_REF);
                 }
                 if crate::widgets::icon_button(ui, "☰", "Pick search area or collection cell…")
                     .clicked()
@@ -455,15 +453,14 @@ impl DataEditor {
             ui.collapsing("Advanced", |ui| {
                 match_settings::paint_match_method(ui, &mut self.pixel_check.match_method);
             });
-            crate::widgets::wrap_unit(ui, |ui| {
-                help::label(
-                    ui,
-                    egui_phosphor::regular::FRAME_CORNERS,
-                    "Bounds",
-                    help::DE_PIXELCHECK_BOUNDS,
-                );
-                self.paint_monitor_slot(ui);
-            });
+            help::tip(
+                crate::widgets::wrap_unit(ui, |ui| {
+                    help::label(ui, egui_phosphor::regular::FRAME_CORNERS, "Bounds");
+                    self.paint_monitor_slot(ui);
+                })
+                .response,
+                help::DE_PIXELCHECK_BOUNDS,
+            );
             let (lx, ty, rx, by) = form_desktop_area(
                 catalog,
                 self.form_monitor,

@@ -288,7 +288,8 @@ impl PreviewTooltipCache {
         }
     }
 
-    /// Hover tooltip variant of [`Self::paint_for_coordinate_ref`].
+    /// Hover tooltip variant of [`Self::paint_for_coordinate_ref`]. `help` is the
+    /// labeled field's description, shown under the ref name in the tooltip.
     pub fn show_for_coordinate_ref(
         &mut self,
         ui: &mut egui::Ui,
@@ -296,6 +297,7 @@ impl PreviewTooltipCache {
         catalog: &ProgramCatalog,
         coord_ref: &CoordinateRef,
         kind: PreviewKind,
+        help: &str,
     ) {
         if coord_ref.is_empty() {
             return;
@@ -319,6 +321,9 @@ impl PreviewTooltipCache {
         let show_size = matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection);
         show_preview_hover_ui(response, |ui| {
             ui.add(egui::Label::new(label.as_str()).wrap());
+            if !help.is_empty() {
+                ui.add(egui::Label::new(egui::RichText::new(help).weak()).wrap());
+            }
             match &preview {
                 Ok((tex, cap)) => paint_preview(ui, tex, cap, show_size),
                 Err((cap, err)) => paint_preview_status(ui, cap, err),

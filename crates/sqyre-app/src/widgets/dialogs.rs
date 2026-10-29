@@ -231,11 +231,11 @@ pub fn clamp_row_right_to_clip(ui: &mut egui::Ui) {
 ///
 /// Use with [`fit_dialog_popup`] (not [`fit_dialog_window`]): an outer Window
 /// scroll makes `available_size` track `max_size` and defeats this.
-pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui)) {
+pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui)) -> egui::Response {
     let cap = dialog_constrain_rect(ui.ctx()).size();
     let avail = ui.available_size();
     let size = egui::vec2(avail.x.min(cap.x).max(1.0), avail.y.min(cap.y).max(1.0));
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::hover());
     let mut body = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
@@ -244,6 +244,7 @@ pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui))
     body.set_clip_rect(rect.intersect(ui.clip_rect()));
     body.set_max_size(rect.size());
     add_body(&mut body);
+    resp
 }
 
 /// Keep a floating dialog inside [`dialog_constrain_rect`], scrolling overflow

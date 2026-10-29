@@ -61,18 +61,6 @@ pub(crate) enum EditorSection {
 }
 
 impl EditorSection {
-    fn of(tab: EditorTab) -> Self {
-        match tab {
-            EditorTab::Programs | EditorTab::Overlay => Self::Programs,
-            EditorTab::Items | EditorTab::Masks => Self::Items,
-            EditorTab::Points
-            | EditorTab::SearchAreas
-            | EditorTab::Collections
-            | EditorTab::Atlases => Self::Coordinates,
-            EditorTab::ScreenCap | EditorTab::PixelCheck => Self::Tools,
-        }
-    }
-
     fn default_tab(self) -> EditorTab {
         match self {
             Self::Programs => EditorTab::Programs,
@@ -83,7 +71,7 @@ impl EditorSection {
     }
 
     /// Tabs under this section, in row order. The section button stands in for
-    /// [`Self::default_tab`], which is skipped when expanded. `Some` paints a
+    /// [`Self::default_tab`], so the bar skips that entry. `Some` paints a
     /// caption before that tab ("Advanced" before Collections).
     fn subtabs(self) -> &'static [(Option<&'static str>, EditorTab)] {
         match self {
@@ -142,6 +130,21 @@ impl EditorTab {
             Self::Collections => "Collections",
             Self::Atlases => "Atlases",
             Self::Overlay => "Overlay",
+        }
+    }
+
+    /// Intro blurb for the selected-tab label in the window header — carries
+    /// the help the removed per-form heading used to show. `""` = no tooltip.
+    fn header_tip(self) -> &'static str {
+        use crate::action_tooltip::help;
+        match self {
+            Self::Points => help::DE_POINT_COORDS,
+            Self::SearchAreas => help::DE_AREA_BOUNDS,
+            Self::ScreenCap => help::DE_SCREENCAP_INTRO,
+            #[cfg(feature = "native-runtime")]
+            Self::PixelCheck => help::DE_PIXELCHECK_INTRO,
+            Self::Overlay => help::DE_OVERLAY_INTRO,
+            _ => "",
         }
     }
 
@@ -917,11 +920,19 @@ impl DataEditor {
     /// Title row with section tabs and close; returns true when close was clicked.
     fn ui_header(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) -> bool {
         let mut close = false;
+        let tab_label = self.tab.label();
+        let tab_tip = self.tab.header_tip();
         crate::widgets::fill_row(
             ui,
             |ui| {
                 close =
                     crate::widgets::icon_button(ui, egui_phosphor::regular::X, "Close").clicked();
+                // Right-to-left: the tab label lands left of the close icon —
+                // the selected tab's name in the top right of the header.
+                crate::action_tooltip::help::tip(
+                    ui.label(egui::RichText::new(tab_label).strong()),
+                    tab_tip,
+                );
             },
             |ui| {
                 // Scroll the title + sections only when they exceed the leftover
@@ -938,10 +949,9 @@ impl DataEditor {
         close
     }
 
-    /// Sections in one row; the selected section's remaining tabs expand to its
-    /// right. The section button stands in for its default tab.
+    /// Every section's buttons in one row — the section button stands in for
+    /// its default tab — with separators between the sections.
     fn paint_section_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
-        let section = EditorSection::of(self.tab);
         let mut items = Vec::new();
         let mut targets = Vec::new();
         use egui_phosphor::regular::*;
@@ -954,15 +964,18 @@ impl DataEditor {
             if !sec.is_available() {
                 continue;
             }
+            if !items.is_empty() {
+                items.push(crate::widgets::OverflowItem::Separator);
+                // Separators never register a click; the slot only keeps
+                // `targets` index-aligned with `items`.
+                targets.push(sec.default_tab());
+            }
             items.push(crate::widgets::OverflowItem::Choice {
                 label,
                 icon,
-                selected: section == sec,
+                selected: self.tab == sec.default_tab(),
             });
             targets.push(sec.default_tab());
-            if section != sec {
-                continue;
-            }
             for &(caption, tab) in sec.subtabs() {
                 if tab == sec.default_tab() {
                     continue;
@@ -979,9 +992,7 @@ impl DataEditor {
                 targets.push(tab);
             }
         }
-        if let Some(i) =
-            crate::widgets::overflow_bar(ui, "de_sections", "Data Editor section", &items)
-        {
+        if let Some(i) = crate::widgets::always_bar(ui, &items) {
             let next = targets[i];
             if next != self.tab {
                 self.switch_tab(next, env.catalog, env.settings);

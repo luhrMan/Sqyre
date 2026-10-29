@@ -760,24 +760,22 @@ impl DataEditor {
         let mut current = self.selected_program.clone().unwrap_or_default();
         let before = current.clone();
         ui.horizontal(|ui| {
-            crate::action_tooltip::help::label(
-                ui,
-                egui_phosphor::regular::APP_WINDOW,
-                "Program",
-                crate::action_tooltip::help::DE_PROGRAM,
-            );
+            crate::action_tooltip::help::label(ui, egui_phosphor::regular::APP_WINDOW, "Program");
             let mut option_icon =
                 |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
-            searchable_combo_with(
-                ui,
-                "data_editor_program",
-                &mut current,
-                &names,
-                sqyre_domain::EMPTY_NONE,
-                None,
-                None,
-                None,
-                Some(&mut option_icon),
+            crate::action_tooltip::help::tip(
+                searchable_combo_with(
+                    ui,
+                    "data_editor_program",
+                    &mut current,
+                    &names,
+                    sqyre_domain::EMPTY_NONE,
+                    None,
+                    None,
+                    None,
+                    Some(&mut option_icon),
+                ),
+                crate::action_tooltip::help::DE_PROGRAM,
             );
         });
         if !current.is_empty() && current != before {

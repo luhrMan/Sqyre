@@ -839,11 +839,16 @@ pub fn paint_action_row(
                         };
                         let overflow_now = if pills_overflow {
                             let width = ui.available_width().max(1.0);
-                            let out = egui::ScrollArea::horizontal()
+                            // `both` (not `horizontal`) so the vertical
+                            // min_scrolled floor applies: the H-bar lane is
+                            // carved out of `inner_size` and would clip the
+                            // row's pills/thumbs to `row_h - bar`.
+                            let out = egui::ScrollArea::both()
                                 .id_salt(pills_id)
                                 .scroll_source(crate::widgets::SCROLL_SOURCE_NO_DRAG)
                                 .auto_shrink([false, false])
                                 .min_scrolled_width(1.0)
+                                .min_scrolled_height(row_h)
                                 .max_width(width)
                                 .max_height(row_h)
                                 .show(ui, |ui| {

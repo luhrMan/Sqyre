@@ -264,7 +264,6 @@ pub fn paint_edit_fields(
                         ui,
                         egui_phosphor::regular::KEYBOARD,
                         "Continue keys (one per line)",
-                        h::PAUSE_CONTINUE,
                     );
                     if crate::widgets::record_icon_button(
                         ui,
@@ -306,12 +305,7 @@ pub fn paint_edit_fields(
                     );
                     let mut pick = false;
                     ui.horizontal(|ui| {
-                        help::label(
-                            ui,
-                            egui_phosphor::regular::TERMINAL_WINDOW,
-                            "Process path",
-                            h::FOCUS_PROCESS,
-                        );
+                        help::label(ui, egui_phosphor::regular::TERMINAL_WINDOW, "Process path");
                         crate::icon_cache::paint_leading_process_icon(
                             ui,
                             icons,
@@ -583,33 +577,31 @@ pub fn paint_edit_fields(
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
                 wrap_unit(ui, |ui| {
-                    help::label(
-                        ui,
-                        egui_phosphor::regular::APP_WINDOW,
-                        "Program",
-                        h::NAV_PROGRAM,
-                    );
+                    help::label(ui, egui_phosphor::regular::APP_WINDOW, "Program");
                     let programs: Vec<String> = catalog.program_names().cloned().collect();
                     let mut current = data.program.clone();
                     let mut option_icon =
                         |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
-                    searchable_combo_with(
-                        ui,
-                        "nav_program",
-                        &mut current,
-                        &programs,
-                        sqyre_domain::EMPTY_NONE,
-                        Some(sqyre_domain::EMPTY_NONE),
-                        None,
-                        None,
-                        Some(&mut option_icon),
+                    help::tip(
+                        searchable_combo_with(
+                            ui,
+                            "nav_program",
+                            &mut current,
+                            &programs,
+                            sqyre_domain::EMPTY_NONE,
+                            Some(sqyre_domain::EMPTY_NONE),
+                            None,
+                            None,
+                            Some(&mut option_icon),
+                        ),
+                        h::NAV_PROGRAM,
                     );
                     if current != data.program {
                         data.program = current;
                     }
                 });
                 wrap_unit(ui, |ui| {
-                    help::label(ui, egui_phosphor::regular::IMAGES, "Atlas", h::NAV_ATLAS);
+                    help::label(ui, egui_phosphor::regular::IMAGES, "Atlas");
                     let atlases: Vec<String> = if data.program.trim().is_empty() {
                         Vec::new()
                     } else {
@@ -619,13 +611,16 @@ pub fn paint_edit_fields(
                             .unwrap_or_default()
                     };
                     let mut current = data.atlas.clone();
-                    searchable_combo(
-                        ui,
-                        "nav_atlas",
-                        &mut current,
-                        &atlases,
-                        sqyre_domain::EMPTY_NONE,
-                        None,
+                    help::tip(
+                        searchable_combo(
+                            ui,
+                            "nav_atlas",
+                            &mut current,
+                            &atlases,
+                            sqyre_domain::EMPTY_NONE,
+                            None,
+                        ),
+                        h::NAV_ATLAS,
                     );
                     if current != data.atlas {
                         data.atlas = current;
@@ -1075,12 +1070,15 @@ fn picker_display_row(
 ) -> bool {
     let mut clicked = false;
     wrap_unit(ui, |ui| {
-        help::label(ui, icon, label, help_text);
-        ui.label(if display.is_empty() {
-            sqyre_domain::EMPTY_UNSET
-        } else {
-            display
-        });
+        help::label(ui, icon, label);
+        help::tip(
+            ui.label(if display.is_empty() {
+                sqyre_domain::EMPTY_UNSET
+            } else {
+                display
+            }),
+            help_text,
+        );
         if pick_icon_btn(ui).clicked() {
             clicked = true;
         }
@@ -1184,7 +1182,7 @@ fn coord_picker_row(
     let display = coord.display_label();
     let validation = coord_unset_validation(kind, coord);
     ui.horizontal(|ui| {
-        help::label(ui, icon, label, help_text);
+        help::label(ui, icon, label);
         if let Some(prog) = coord.program() {
             crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
         }
@@ -1208,9 +1206,11 @@ fn coord_picker_row(
             })
             .inner;
         if !coord.is_empty() {
-            attach_coord_hover(ui, &resp, catalog, previews, coord, kind);
+            attach_coord_hover(ui, &resp, catalog, previews, coord, kind, help_text);
         } else if let Some(tip) = var_pills::entry_validation_tip(&validation) {
             let _ = resp.on_hover_text(tip);
+        } else {
+            help::tip(resp, help_text);
         }
         var_pills::paint_entry_validation_icon(ui, &validation);
         if pick_icon_btn(ui).clicked() {
@@ -1248,6 +1248,7 @@ fn attach_coord_hover(
     previews: &mut PreviewTooltipCache,
     coord: &CoordinateRef,
     kind: CoordKind,
+    help: &str,
 ) {
     let preview_kind = if coord.is_collection() {
         PreviewKind::Collection
@@ -1257,7 +1258,7 @@ fn attach_coord_hover(
             CoordKind::SearchArea => PreviewKind::SearchArea,
         }
     };
-    previews.show_for_coordinate_ref(ui, response, catalog, coord, preview_kind);
+    previews.show_for_coordinate_ref(ui, response, catalog, coord, preview_kind, help);
 }
 
 #[expect(
@@ -1374,7 +1375,7 @@ fn string_list_field(
 ) {
     let mut text = values.join("\n");
     if !label.is_empty() {
-        help::label(ui, icon, label, help_text);
+        help::label(ui, icon, label);
     }
     if help::tip(
         ui.add(
@@ -1594,12 +1595,7 @@ fn repeat_mode_plain(mode: RepeatMode) -> &'static str {
 
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     wrap_unit(ui, |ui| {
-        help::label(
-            ui,
-            egui_phosphor::regular::REPEAT,
-            "Repeat mode",
-            h::REPEAT_MODE,
-        );
+        help::label(ui, egui_phosphor::regular::REPEAT, "Repeat mode");
         let selected = repeat_mode_label(ui, wait.repeat_mode);
         let selected_plain = repeat_mode_plain(wait.repeat_mode);
         let response = egui::ComboBox::from_id_salt("Repeat mode")

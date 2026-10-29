@@ -155,17 +155,41 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     app.request_db_import();
                 }
             }
+            // Leftmost of the group: the update banner extends leftward into
+            // the mid gap when an update is pending.
+            #[cfg(not(target_arch = "wasm32"))]
+            show_update_banner(app, ui);
         });
 
         // Selected macro name + tags fill the gap between the brand icon and
         // the right-side buttons; an explicit child rect keeps them clear of
-        // both (the rtl block's bounding box is its widget span).
+        // both (the rtl block's bounding box is its widget span). The name row
+        // stacks above the tags row, so the region is two rows tall — reserve
+        // the *painted* height (remembered like `show_overflow` does): a fixed
+        // estimate under-reserves the TextEdit's frame margin and the tag row's
+        // bottom row of pixels clips.
         let gap = ui.spacing().item_spacing.x;
+        let stack_id = ui.make_persistent_id("name_tag_stack_h");
+        let estimate = ui.spacing().interact_size.y * 2.0
+            + ui.spacing().item_spacing.y
+            + crate::theme::SPACE_4;
+        let stack_h = ui
+            .ctx()
+            .data(|d| d.get_temp::<f32>(stack_id))
+            .unwrap_or(estimate);
         let mid_rect = egui::Rect::from_min_max(
             egui::pos2(hit_rect.right() + gap, ui.max_rect().top()),
-            egui::pos2(right.response.rect.left() - gap, ui.max_rect().bottom()),
+            egui::pos2(
+                right.response.rect.left() - gap,
+                ui.max_rect().top() + stack_h,
+            ),
         );
         if mid_rect.width() > 40.0 {
+            if !app.workspace.macros.is_empty() {
+                // Reserve the stacked rows' height in this header row so the
+                // bar grows instead of clipping the second row.
+                ui.allocate_space(egui::vec2(0.0, stack_h));
+            }
             let mut mid = ui.new_child(
                 egui::UiBuilder::new()
                     .max_rect(mid_rect)
@@ -178,9 +202,12 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     .selected_macro
                     .min(app.workspace.macros.len() - 1);
                 paint_name_and_tags(app, &mut mid, idx, !running);
+                let painted = mid.min_rect().height().max(1.0);
+                if (painted - stack_h).abs() > 0.5 {
+                    ui.ctx().data_mut(|d| d.insert_temp(stack_id, painted));
+                    ui.ctx().request_repaint();
+                }
             }
-            #[cfg(not(target_arch = "wasm32"))]
-            show_update_banner(app, &mut mid);
         }
     });
 }
@@ -198,14 +225,19 @@ fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_e
         .collect();
     let all_tags = collect_all_macro_tags(&app.workspace.macros);
     let m = &mut app.workspace.macros[idx];
-    let meta = app
-        .workspace
-        .macro_meta
-        .paint_name_row(ui, m, &other_names, meta_enabled);
-    let persist_tags = app
-        .workspace
-        .macro_meta
-        .paint_tags_row(ui, m, &all_tags, meta_enabled);
+    let (meta, persist_tags) = ui
+        .vertical(|ui| {
+            let meta = app
+                .workspace
+                .macro_meta
+                .paint_name_row(ui, m, &other_names, meta_enabled);
+            let persist_tags =
+                app.workspace
+                    .macro_meta
+                    .paint_tags_row(ui, m, &all_tags, meta_enabled);
+            (meta, persist_tags)
+        })
+        .inner;
     if persist_tags {
         app.persist_macro_at(idx);
     }

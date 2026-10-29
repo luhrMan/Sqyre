@@ -1,8 +1,8 @@
 //! Concise hover help for action editor fields.
 //!
 //! One short sentence per setting. Empty string means no description.
-//! Field labels are semantic icons ([`label`]) whose tooltip is `name: help`;
-//! standalone help text folds into the owning control via [`tip`].
+//! Field labels are semantic icons ([`label`]) whose tooltip is the field
+//! `name`; the paired widget carries the description via [`tip`].
 
 use eframe::egui;
 
@@ -15,27 +15,16 @@ pub fn tip(resp: egui::Response, help: &str) -> egui::Response {
     }
 }
 
-/// Semantic icon standing in for a field's text label. Hovering shows
-/// `name: help` — the name alone when `help` is empty, so the icon always
-/// identifies the field it labels. The icon's accessible name is `name`.
-pub fn label(ui: &mut egui::Ui, icon: &str, name: &str, help: &str) -> egui::Response {
-    let tip = if help.is_empty() {
-        name.to_string()
-    } else {
-        format!("{name}: {help}")
-    };
+/// Semantic icon standing in for a field's text label. Hovering shows the
+/// field `name` so the icon always identifies what it labels; the field's
+/// description lives on the paired widget via [`tip`]. The icon's accessible
+/// name is `name`.
+pub fn label(ui: &mut egui::Ui, icon: &str, name: &str) -> egui::Response {
     let resp = ui
         .add(egui::Label::new(egui::RichText::new(icon)).sense(egui::Sense::hover()))
-        .on_hover_text(tip);
+        .on_hover_text(name);
     resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, name.to_string()));
     resp
-}
-
-/// Section heading; `help` shows on hover.
-///
-/// `ui.heading` wraps to the pane.
-pub fn heading(ui: &mut egui::Ui, text: &str, help: &str) {
-    tip(ui.heading(text), help);
 }
 
 // --- Shared / common ---

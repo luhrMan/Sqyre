@@ -20,8 +20,6 @@ impl DataEditor {
             ..
         } = paint;
         let FormCtx { macros, .. } = ctx;
-        help::heading(ui, "Overlay Button", help::DE_OVERLAY_INTRO);
-        ui.add_space(crate::theme::element_gap(ui));
         self.program_selector(ui, catalog, icons, settings);
         if self.selected_program.is_none() || self.selected_entity.is_none() {
             return false;
@@ -41,12 +39,7 @@ impl DataEditor {
                 }
             }
             ui.vertical(|ui| {
-                help::label(
-                    ui,
-                    egui_phosphor::regular::SMILEY,
-                    icon.label,
-                    help::DE_OVERLAY_ICON,
-                );
+                help::label(ui, egui_phosphor::regular::SMILEY, icon.label);
             });
         });
         ui.add_space(crate::theme::element_gap(ui));
@@ -54,20 +47,18 @@ impl DataEditor {
         let before = selected.clone();
         let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(
-                ui,
-                egui_phosphor::regular::MAGIC_WAND,
-                "Macro",
+            help::label(ui, egui_phosphor::regular::MAGIC_WAND, "Macro");
+            help::tip(
+                searchable_combo_width(
+                    ui,
+                    "overlay_form_macro",
+                    &mut selected,
+                    &macro_names,
+                    "(pick macro)",
+                    Some(sqyre_domain::EMPTY_NONE),
+                    Some(220.0),
+                ),
                 help::DE_OVERLAY_MACRO,
-            );
-            searchable_combo_width(
-                ui,
-                "overlay_form_macro",
-                &mut selected,
-                &macro_names,
-                "(pick macro)",
-                Some(sqyre_domain::EMPTY_NONE),
-                Some(220.0),
             );
         });
         if selected != before {
@@ -84,12 +75,7 @@ impl DataEditor {
                 point.as_str()
             };
             ui.horizontal(|ui| {
-                help::label(
-                    ui,
-                    egui_phosphor::regular::MAP_PIN,
-                    "Point",
-                    help::DE_OVERLAY_POINT,
-                );
+                help::label(ui, egui_phosphor::regular::MAP_PIN, "Point");
                 if let Some(prog) = point.program() {
                     crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
@@ -101,7 +87,10 @@ impl DataEditor {
                         catalog,
                         &point,
                         PreviewKind::Point,
+                        help::DE_OVERLAY_POINT,
                     );
+                } else {
+                    help::tip(resp, help::DE_OVERLAY_POINT);
                 }
                 if crate::widgets::icon_button(ui, "☰", "Pick point…").clicked() {
                     self.window_picker = ActivePicker::Coord {
@@ -170,12 +159,7 @@ impl DataEditor {
                         area.as_str()
                     };
                     ui.horizontal(|ui| {
-                        help::label(
-                            ui,
-                            egui_phosphor::regular::CROP,
-                            "Search area",
-                            help::DE_OVERLAY_GATE_AREA,
-                        );
+                        help::label(ui, egui_phosphor::regular::CROP, "Search area");
                         if let Some(prog) = area.program() {
                             crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                         }
@@ -187,7 +171,10 @@ impl DataEditor {
                                 catalog,
                                 &area,
                                 PreviewKind::SearchArea,
+                                help::DE_OVERLAY_GATE_AREA,
                             );
+                        } else {
+                            help::tip(resp, help::DE_OVERLAY_GATE_AREA);
                         }
                         if crate::widgets::icon_button(ui, "☰", "Pick search area…").clicked() {
                             self.window_picker = ActivePicker::Coord {
@@ -207,15 +194,16 @@ impl DataEditor {
                 }
                 ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
-                    help::label(
-                        ui,
-                        egui_phosphor::regular::LIST_BULLETS,
-                        "Items",
-                        help::DE_OVERLAY_GATE_ITEMS,
-                    );
-                    ui.label(
-                        egui::RichText::new(format!("({})", self.form_overlay_gate_targets.len()))
+                    help::label(ui, egui_phosphor::regular::LIST_BULLETS, "Items");
+                    help::tip(
+                        ui.label(
+                            egui::RichText::new(format!(
+                                "({})",
+                                self.form_overlay_gate_targets.len()
+                            ))
                             .weak(),
+                        ),
+                        help::DE_OVERLAY_GATE_ITEMS,
                     );
                     if crate::widgets::add_button(ui, "Add / edit gate items", true).clicked() {
                         self.window_picker = pickers::ActivePicker::Items {
@@ -265,12 +253,7 @@ impl DataEditor {
                     );
                 });
                 ui.horizontal(|ui| {
-                    help::label(
-                        ui,
-                        egui_phosphor::regular::TIMER,
-                        "Interval",
-                        help::DE_OVERLAY_GATE_INTERVAL,
-                    );
+                    help::label(ui, egui_phosphor::regular::TIMER, "Interval");
                     help::tip(
                         ui.add(
                             crate::widgets::num_entry(&mut self.form_overlay_gate_interval_ms)
@@ -286,12 +269,7 @@ impl DataEditor {
         ui.add_space(crate::theme::element_gap(ui));
         ui.collapsing("Appearance", |ui| {
             ui.horizontal(|ui| {
-                help::label(
-                    ui,
-                    egui_phosphor::regular::RULER,
-                    "Size",
-                    help::DE_OVERLAY_SIZE,
-                );
+                help::label(ui, egui_phosphor::regular::RULER, "Size");
                 help::tip(
                     ui.add(
                         crate::widgets::num_entry(&mut self.form_overlay_size)
@@ -338,13 +316,11 @@ impl DataEditor {
                 color_alpha_drag(ui, "Icon", &mut self.form_overlay_icon_color);
             });
             ui.horizontal(|ui| {
-                help::label(
-                    ui,
-                    egui_phosphor::regular::HAND_POINTING,
-                    "Icon hover",
+                help::label(ui, egui_phosphor::regular::HAND_POINTING, "Icon hover");
+                help::tip(
+                    ui.color_edit_button_srgba(&mut self.form_overlay_icon_hover),
                     help::DE_OVERLAY_ICON_HOVER,
                 );
-                ui.color_edit_button_srgba(&mut self.form_overlay_icon_hover);
             });
             ui.add_space(crate::theme::element_gap(ui));
             if ui.button("Reset appearance to defaults").clicked() {

@@ -49,7 +49,7 @@ pub use fields::{
 pub use headers::{heading_with_count, title_with_count};
 pub use match_settings::configure_match_blur_drag;
 pub use num_entry::{num_entry, NumEntry};
-pub use overflow::{overflow_bar, text_width, OverflowItem};
+pub use overflow::{always_bar, text_width, OverflowItem};
 pub use row_ids::{remove_row_id, stable_row_ids};
 pub use scroll::{
     dialog_scroll, enable_dense_row_extend, scroll_both, scroll_vertical, show_overflow,
