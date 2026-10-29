@@ -400,9 +400,16 @@ fn paint_image_search_extras(
         .first()
         .map(|target| target_thumb_size(ui, catalog, icons, target).x)
         .unwrap_or(TARGET_THUMB_MAX_H);
+    // `available_width` can include space past the pane's clip (row max_rect
+    // wider than the viewport): count thumbs against the visible width so the
+    // "+N" overflow pill lands inside the clip instead of clipping itself.
+    let visible_w = ui
+        .available_width()
+        .min(ui.clip_rect().right() - ui.cursor().left())
+        .max(0.0);
     let visible = image_search_visible_thumbs(
         targets.len(),
-        ui.available_width(),
+        visible_w,
         thumb_w,
         TARGET_THUMB_GAP,
         overflow_pill_width(ui, targets.len()),
@@ -415,7 +422,11 @@ fn paint_image_search_extras(
         }
     }
     let hidden = targets.len().saturating_sub(visible);
-    if hidden > 0 {
+    // When even the overflow pill can't fit the remaining visible width, skip
+    // it — painting it would clip against the pane edge.
+    if hidden > 0
+        && overflow_pill_width(ui, hidden) <= (ui.clip_rect().right() - ui.cursor().left()).max(0.0)
+    {
         let overflow = paint_pill(ui, &format!("+{hidden}"), pastel, false);
         extend_drag_handle(drag_handle, overflow.rect);
         if overflow.hovered() {

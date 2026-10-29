@@ -199,14 +199,23 @@ pub fn visible_content_width(ui: &egui::Ui) -> f32 {
 
 /// Fill a resizable [`egui::Window`] body without ratcheting its Resize state.
 ///
-/// Allocates exactly the painted window region ([`visible_size`]) and runs
-/// `add_body` in a [`Ui::new_child`] so child `min_size` cannot advance the
-/// parent (unlike [`Ui::scope_builder`], which would push edges off-screen).
+/// Allocates exactly the Resize target — `available_size` is already bounded
+/// by the window's `inner_rect` (`desired_size`), clamped to the dialog
+/// region — and runs `add_body` in a [`Ui::new_child`] so child `min_size`
+/// cannot advance the parent (unlike [`Ui::scope_builder`], which would push
+/// edges off-screen).
+///
+/// Do not bound the body by `clip_rect`: the painted window lags a frame
+/// behind `desired_size` while a dialog settles open, so a clip-bounded body
+/// reports a shrinking `min_size` and the window stair-steps toward its final
+/// size a few points per frame.
 ///
 /// Use with [`fit_dialog_popup`] (not [`fit_dialog_window`]): an outer Window
 /// scroll makes `available_size` track `max_size` and defeats this.
 pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui)) {
-    let size = visible_size(ui).max(egui::vec2(1.0, 1.0));
+    let cap = dialog_constrain_rect(ui.ctx()).size();
+    let avail = ui.available_size();
+    let size = egui::vec2(avail.x.min(cap.x).max(1.0), avail.y.min(cap.y).max(1.0));
     let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
     let mut body = ui.new_child(
         egui::UiBuilder::new()

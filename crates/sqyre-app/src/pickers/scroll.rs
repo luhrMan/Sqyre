@@ -160,6 +160,13 @@ pub fn picker_searchable_scroll_ex(
                         egui_phosphor::regular::MAGNIFYING_GLASS,
                     ))
                     .on_hover_text("Search");
+                    // egui never allocates a TextEdit narrower than 24px
+                    // (`MIN_WIDTH`), so below that the field's rect underlaps
+                    // the trailing buttons. A sliver-wide field is unusable
+                    // anyway — drop it and keep the icon + buttons.
+                    if ui.available_width() < 24.0 {
+                        return;
+                    }
                     // Fill leftover width without a fixed TextEdit min (default ~200)
                     // that would floor the data-editor left pane above the split clamp.
                     let mut edit = egui::TextEdit::singleline(search).desired_width(f32::INFINITY);

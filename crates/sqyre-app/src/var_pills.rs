@@ -844,8 +844,12 @@ pub fn validated_var_ref_multiline_edit(
         validation,
         help,
     } = opts;
-    ui.horizontal(|ui| {
-        crate::action_tooltip::help::label(ui, label, help);
+    // Wrapped row: a long label wraps its text and the icons follow on the
+    // last line. A plain horizontal row would push the ? icon past the clip.
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_2;
+        ui.label(label);
+        crate::action_tooltip::help::icon(ui, help);
         paint_entry_validation_icon(ui, validation);
     });
     let width = resolve_edit_width(ui, desired_width, 0.0);

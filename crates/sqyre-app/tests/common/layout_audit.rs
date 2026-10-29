@@ -151,6 +151,7 @@ pub fn run_scene(scene: &str) {
         }
         let accessibility = inspect_accesskit(
             harness.root(),
+            &harness.ctx,
             scene,
             size_case.label,
             content_rect,
@@ -453,12 +454,14 @@ fn inspect_shape(
 
 fn inspect_accesskit(
     root: egui_kittest::Node<'_>,
+    ctx: &egui::Context,
     scene: &str,
     size_label: &str,
     content_rect: Rect,
     findings: &mut Vec<Finding>,
 ) -> AccessibilitySnapshot {
     let mut collector = AccessKitCollector {
+        ctx,
         scene,
         size_label,
         content_rect,
@@ -515,6 +518,7 @@ fn inspect_accesskit(
 }
 
 struct AccessKitCollector<'a> {
+    ctx: &'a egui::Context,
     scene: &'a str,
     size_label: &'a str,
     content_rect: Rect,
@@ -582,10 +586,16 @@ impl AccessKitCollector<'_> {
             }
 
             if is_interactive(role) && rect.is_positive() {
+                // AccessKit bounds are the raw widget rect, not clipped by the
+                // parent Ui (e.g. a ScrollArea viewport). A scrolled-off widget
+                // then reports a rect that overlaps siblings below the scroll.
+                // `Response::interact_rect` is rect ∩ parent clip — the part that
+                // is actually visible — so use it when it exists.
+                let visible = interact_rect(self.ctx, &node).unwrap_or(rect);
                 self.snapshot.interactive.push(NodeBounds {
                     role,
                     label: label.clone(),
-                    rect,
+                    rect: visible,
                     window_scope,
                 });
             }
@@ -642,6 +652,20 @@ fn collect_windows(root: egui_kittest::Node<'_>) -> Vec<WindowBounds> {
         visit(child, &mut windows);
     }
     windows
+}
+
+/// The clip-intersected rect for the egui widget behind an AccessKit node.
+fn interact_rect(ctx: &egui::Context, node: &egui_kittest::Node<'_>) -> Option<Rect> {
+    // Consumer `NodeId` packs (accesskit id << 64) | tree index, and egui's
+    // accesskit id is the widget `Id` value.
+    let bits = (u128::from(node.accesskit_node().id()) >> 64) as u64;
+    if bits == 0 {
+        return None;
+    }
+    // SAFETY: `bits` came from egui's own `Id::accesskit_id()`, so it is a
+    // non-zero `Id` value produced by egui this frame.
+    let id = unsafe { egui::Id::from_high_entropy_bits(bits) };
+    ctx.read_response(id).map(|response| response.interact_rect)
 }
 
 fn rects_approx_equal(first: Rect, second: Rect) -> bool {

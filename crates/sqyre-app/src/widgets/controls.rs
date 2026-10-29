@@ -70,14 +70,15 @@ fn icon_button_inner(
     response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
 
-/// Small `⚠` over the top-right corner of `rect` (e.g. a button's response rect).
+/// Small `⚠` inside the top-right corner of `rect` (e.g. a button's response
+/// rect). Kept inside the bounds so the glyph is never cut by the row clip.
 ///
 /// Color alone is not enough: callers also change the hover text to say what is wrong.
 pub fn warn_badge(ui: &mut egui::Ui, rect: egui::Rect) {
     let font_id = egui::FontId::proportional(ui.text_style_height(&egui::TextStyle::Small));
     let side = font_id.size;
     let badge = egui::Rect::from_center_size(
-        egui::pos2(rect.right() - side * 0.2, rect.top() + side * 0.3),
+        egui::pos2(rect.right() - side * 0.7, rect.top() + side * 0.5),
         Vec2::splat(side),
     );
     ui.painter()

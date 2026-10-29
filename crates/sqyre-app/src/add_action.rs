@@ -282,9 +282,9 @@ impl AddActionPicker {
             // Content-sized columns (not equal-split) so shrinking the window
             // yields horizontal scroll instead of squashing tiles.
             crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
-                ui.set_max_width(list_w.max(900.0)); // keep tile columns readable; H-scroll when narrow
-                                                     // Horizontal layout assigns leftover viewport width to later
-                                                     // columns; without Extend they wrap letter-by-letter when shrunk.
+                // Bound to the viewport: category columns wrap onto new lines
+                // as atomic units instead of H-scrolling clipped tiles off-screen.
+                ui.set_max_width(list_w);
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 if filtered.is_empty() {
                     crate::widgets::list_vacancy(ui, &q, 0, "actions");
@@ -292,7 +292,7 @@ impl AddActionPicker {
                 }
                 ui.add_space(crate::theme::SPACE_8);
                 let mut flat_i = 0usize;
-                ui.horizontal_top(|ui| {
+                crate::widgets::wrapped_row(ui, |ui| {
                     for category in ACTION_PICKER_CATEGORIES {
                         let cat_tmpls: Vec<&&ActionTemplate> = filtered
                             .iter()
@@ -301,34 +301,40 @@ impl AddActionPicker {
                         if cat_tmpls.is_empty() {
                             continue;
                         }
-                        ui.vertical(|ui| {
-                            ui.strong(*category);
-                            ui.add_space(crate::theme::SPACE_4);
-                            for tmpl in cat_tmpls {
-                                let selected = flat_i == self.selected;
-                                flat_i += 1;
-                                let sample = self
-                                    .prototype_for(tmpl.action_type)
-                                    .unwrap_or_else(|| tmpl.create());
-                                let resp = picker_tile(ui, tmpl, &sample, is_dark);
-                                if selected {
-                                    ui.painter().rect_stroke(
-                                        resp.rect.expand(2.0),
-                                        4.0,
-                                        egui::Stroke::new(1.5, crate::theme::PRIMARY),
-                                        egui::StrokeKind::Outside,
-                                    );
+                        crate::widgets::wrap_unit(ui, |ui| {
+                            ui.vertical(|ui| {
+                                ui.strong(*category);
+                                ui.add_space(crate::theme::SPACE_4);
+                                for tmpl in cat_tmpls {
+                                    let selected = flat_i == self.selected;
+                                    flat_i += 1;
+                                    let sample = self
+                                        .prototype_for(tmpl.action_type)
+                                        .unwrap_or_else(|| tmpl.create());
+                                    let resp = picker_tile(ui, tmpl, &sample, is_dark);
+                                    if selected {
+                                        ui.painter().rect_stroke(
+                                            resp.rect.expand(2.0),
+                                            4.0,
+                                            egui::Stroke::new(1.5, crate::theme::PRIMARY),
+                                            egui::StrokeKind::Outside,
+                                        );
+                                    }
+                                    if resp.secondary_clicked() {
+                                        edit_request = Some((
+                                            tmpl.action_type.to_string(),
+                                            resp.rect.right_top(),
+                                        ));
+                                    } else if resp.clicked() {
+                                        picked = self.create_action(tmpl.action_type);
+                                    } else if resp.hovered() {
+                                        hover_type = Some((
+                                            tmpl.action_type.to_string(),
+                                            resp.rect.right_top(),
+                                        ));
+                                    }
                                 }
-                                if resp.secondary_clicked() {
-                                    edit_request =
-                                        Some((tmpl.action_type.to_string(), resp.rect.right_top()));
-                                } else if resp.clicked() {
-                                    picked = self.create_action(tmpl.action_type);
-                                } else if resp.hovered() {
-                                    hover_type =
-                                        Some((tmpl.action_type.to_string(), resp.rect.right_top()));
-                                }
-                            }
+                            });
                         });
                     }
                 });

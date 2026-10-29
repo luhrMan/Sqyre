@@ -276,8 +276,13 @@ pub fn tag_chip_editor(
         draft_focused,
     );
 
+    // The wrapping rows wrap at `max_rect`, but the pane's clip can be tighter
+    // (left pane cut by the window edge): chips would wrap *past* the clip and
+    // clip their labels. Cap the row to the clip so wraps land inside the pane.
+    let wrap_cap = (ui.clip_rect().right() - ui.cursor().left()).max(20.0);
     let tag_resp = if opts.draft_first {
         ui.horizontal_wrapped(|ui| {
+            ui.set_max_width(wrap_cap);
             let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
             crate::action_tooltip::help::label(ui, "Tags:", opts.draft_hover.unwrap_or(""));
             paint_tag_chips(
@@ -293,6 +298,7 @@ pub fn tag_chip_editor(
         .inner
     } else {
         ui.horizontal_wrapped(|ui| {
+            ui.set_max_width(wrap_cap);
             paint_tag_chips(
                 ui,
                 tags,
@@ -485,8 +491,36 @@ fn paint_tag_chips(
         } else {
             ("", tag.clone())
         };
+        // Scope-based children (Frame/dnd_drag_source) place via `new_child`,
+        // which never triggers the parent's `main_wrap` — and `available_width`
+        // reports the whole row width, not the remainder. A chip that doesn't
+        // fit the remaining cursor span would sit past the row end and clip.
+        let chip_w = ui
+            .painter()
+            .layout_no_wrap(
+                format!("{polarity}{label}"),
+                egui::TextStyle::Small.resolve(ui.style()),
+                egui::Color32::WHITE,
+            )
+            .size()
+            .x
+            + crate::theme::SPACE_2 * 2.0;
+        if chip_w > ui.available_rect_before_wrap().width()
+            && ui.cursor().left() > ui.max_rect().left() + 0.5
+        {
+            ui.end_row();
+        }
         let paint_chip = |ui: &mut egui::Ui| -> egui::Rect {
             // Zero item_spacing keeps polarity + label as one compact pill.
+            // Elide to the row's width: a chip wider than the pane cannot wrap
+            // below itself, so its label would clip the pane edge.
+            let chip_font = egui::TextStyle::Small.resolve(ui.style());
+            let budget = (ui.available_width()
+                - crate::theme::SPACE_2 * 2.0
+                - if signed_filters { 10.0 } else { 0.0 })
+            .max(20.0);
+            let shown =
+                crate::widgets::elide::elide_to_width(ui, label.as_str(), budget, chip_font);
             let resp = chip
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
@@ -495,12 +529,17 @@ fn paint_tag_chips(
                         if signed_filters {
                             ui.label(egui::RichText::new(polarity).small().color(fg).strong());
                         }
-                        ui.label(egui::RichText::new(label.as_str()).small().color(fg));
+                        ui.label(egui::RichText::new(shown.text.clone()).small().color(fg));
                     });
                 })
                 .response;
             if enabled && !signed_filters {
-                resp.on_hover_text("Right-click for options.").rect
+                let tip = if shown.elided {
+                    format!("{label} — right-click for options.")
+                } else {
+                    "Right-click for options.".to_owned()
+                };
+                resp.on_hover_text(tip).rect
             } else {
                 resp.rect
             }

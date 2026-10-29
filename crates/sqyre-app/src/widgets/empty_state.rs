@@ -48,7 +48,23 @@ pub fn empty_state(
     secondary: Option<&str>,
 ) -> EmptyStateAction {
     ui.add_space(SPACE_8);
-    ui.label(egui::RichText::new(title).strong());
+    // A single word wider than the pane (extreme user-dragged splits) wraps
+    // mid-word ("collection/s yet"); truncating reads cleaner there.
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let avail = ui.available_width();
+    let splits_word = title.split_whitespace().any(|w| {
+        ui.painter()
+            .layout_no_wrap(w.to_owned(), font.clone(), egui::Color32::WHITE)
+            .size()
+            .x
+            > avail
+    });
+    let title_label = egui::Label::new(egui::RichText::new(title).strong());
+    if splits_word {
+        ui.add(title_label.truncate());
+    } else {
+        ui.add(title_label);
+    }
     if let Some(body) = body {
         ui.add_space(SPACE_4);
         ui.label(egui::RichText::new(body).weak());
