@@ -176,8 +176,8 @@ pub fn show_active_picker(
                             crate::widgets::TagChipOptions {
                                 enabled: true,
                                 show_add_button: true,
+                                label_name: None,
                                 draft_hover: Some(crate::action_tooltip::help::IS_TARGET_TAGS),
-                                draft_first: false,
                                 reorderable: false,
                                 signed_filters: true,
                             },

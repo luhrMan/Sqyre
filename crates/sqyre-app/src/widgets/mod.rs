@@ -26,8 +26,9 @@ pub use context_menu::{
     response_danger_menu, row_context_menu, row_danger_menu,
 };
 pub use controls::{
-    dirty_action_button, icon_button, icon_button_colored, icon_toggle, mouse_button_picker,
-    press_state_toggle, record_icon_button, warn_badge, ICON_BTN_SIDE, PHOSPHOR_FILL_FAMILY,
+    add_button, dirty_action_button, icon_button, icon_button_colored, icon_toggle,
+    mouse_button_picker, press_state_toggle, record_icon_button, warn_badge, ICON_BTN_SIDE,
+    PHOSPHOR_FILL_FAMILY,
 };
 pub use dialogs::{
     confirm_cancel_row, confirm_choice_row, confirm_window, consume_escape, dialog_constrain_rect,

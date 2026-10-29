@@ -82,19 +82,17 @@ impl DataEditor {
             }
         });
         ui.add_space(crate::theme::element_gap(ui));
-        help::label(
-            ui,
-            egui_phosphor::regular::TAG,
-            "Macro tags",
-            help::DE_PROGRAM_MACRO_TAGS,
-        );
         let macro_tag_completions = crate::macro_meta::collect_all_macro_tags(macros);
         crate::widgets::tag_chip_editor(
             ui,
             &mut self.form_tags,
             &mut self.tag_draft,
             &macro_tag_completions,
-            crate::widgets::TagChipOptions::default(),
+            crate::widgets::TagChipOptions {
+                label_name: Some("Macro tags"),
+                draft_hover: Some(help::DE_PROGRAM_MACRO_TAGS),
+                ..Default::default()
+            },
         )
         .submitted
     }
@@ -132,7 +130,6 @@ impl DataEditor {
         catalog: &ProgramCatalog,
         icons: &mut crate::icon_cache::IconCache,
     ) -> bool {
-        help::label(ui, egui_phosphor::regular::TAG, "Tags", help::DE_TAGS);
         let program_tags = self
             .selected_program
             .as_deref()
@@ -143,7 +140,11 @@ impl DataEditor {
             &mut self.form_tags,
             &mut self.tag_draft,
             &program_tags,
-            crate::widgets::TagChipOptions::default(),
+            crate::widgets::TagChipOptions {
+                label_name: Some("Tags"),
+                draft_hover: Some(help::DE_TAGS),
+                ..Default::default()
+            },
         )
         .submitted;
         ui.add_space(crate::theme::element_gap(ui));

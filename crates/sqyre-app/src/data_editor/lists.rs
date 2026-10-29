@@ -150,10 +150,10 @@ impl DataEditor {
                 crate::widgets::TagChipOptions {
                     enabled: true,
                     show_add_button: true,
+                    label_name: None,
                     draft_hover: Some(
                         "Drag chips to set priority. Unmatched items sort by name after.",
                     ),
-                    draft_first: false,
                     reorderable: true,
                     signed_filters: false,
                 },
@@ -752,7 +752,12 @@ impl DataEditor {
         let mut current = self.selected_program.clone().unwrap_or_default();
         let before = current.clone();
         ui.horizontal(|ui| {
-            ui.label("Program");
+            crate::action_tooltip::help::label(
+                ui,
+                egui_phosphor::regular::APP_WINDOW,
+                "Program",
+                crate::action_tooltip::help::DE_PROGRAM,
+            );
             let mut option_icon =
                 |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
             searchable_combo_with(

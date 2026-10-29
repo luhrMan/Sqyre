@@ -1,10 +1,10 @@
 ---
-description: Keep Sqyre UI sortable, searchable, keyboard-navigable, beginner-friendly, and visually consistent
+description: Keep Sqyre UI sortable, searchable, keyboard-navigable, icon-first, beginner-friendly, and visually consistent
 globs: crates/sqyre-app/**/*.rs, crates/sqyre-overlay/**/*.rs
 alwaysApply: false
 ---
 
-# UI usability (sort / search / navigate / understand / look alike)
+# UI usability (sort / search / navigate / icons / understand / look alike)
 
 Apply when **adding, changing, or reviewing** any user-visible UI in `sqyre-app` or `sqyre-overlay` (desktop, wasm editor, overlays, trays, dialogs, pickers, tooltips). Prefer existing helpers over one-off widgets.
 
@@ -40,9 +40,17 @@ Audience: **casual automation beginners first**. Power-user / technical controls
 - One obvious next step on empty states (“No macros yet — create one”).
 - Avoid requiring the user to know IDs, paths, or enum variant names to complete common tasks.
 
+### Icon-first (glyphs portray, tooltips explain)
+- Portray information with a **simple, recognizable icon** instead of an always-visible text label; the wording it replaces goes in the **hover tooltip**. Applies to field labels, state/type/status indicators, badges, and compact row controls.
+- Use shared glyph sources, not ad-hoc characters: `egui_phosphor::regular::*` (outline) and `PHOSPHOR_FILL_FAMILY` (filled, e.g. toggled state) for icons, `widgets::VectorIcon` for action-type pictures, `warn_badge` for the ⚠ corner marker.
+- Field/row labels: `help::label(ui, glyph, name, help)` — paints the icon, shows `name: help` on hover, and sets the accessible name. Attach extra help to any response with `help::tip(resp, help)`; shared help strings live in `action_tooltip/help.rs`.
+- Icon-only actions: `widgets::icon_button` / `icon_button_colored` / `icon_toggle` — `tip` is both hover text and AccessKit name.
+- Keep **visible text** where the text is the content or an icon would be ambiguous: user-typed names (macros, items, tags), editable values, search/filter fields, empty-state copy, and primary action buttons (Save / Cancel). No clear glyph → short text label + tooltip beats a cryptic icon.
+- Tooltip wording is the plain-language text the icon replaces — same rules as labels below.
+
 ### Understandable
 - Labels and hints use everyday words (macro, item, click, wait) — not crate/type jargon in the UI string.
-- Every non-obvious control gets hover help or a one-line hint.
+- Every non-obvious control gets hover help or a one-line hint; for icon-only info, the tooltip carries the text the icon replaced.
 - Errors and status text say what happened and what to try next in plain language.
 - Progressive disclosure: show the common path first; tuck thresholds, preprocess flags, gate formulas, etc. under Advanced.
 
@@ -58,7 +66,7 @@ Keep surfaces **visually interchangeable**: same control kinds should look and l
 - **Wrapping rows** — multi-field rows use `widgets::wrapped_row` (or `tip_wrapped_section`); every label + control (or icon + pill, thumbnail cell, …) group inside is one `widgets::wrap_unit` so wrapping never splits it. Shared field helpers (`text_field`, `drag_field`, `combo_*`, var-ref edits, `help::label`) already do this. Never nest a bare `ui.horizontal` / `ui.vertical` group in a wrapping row — it overflows instead of wrapping.
 
 ### Accessible (AccessKit is on via eframe defaults)
-- Icon-only buttons use `widgets::icon_button(ui, glyph, tip)`, which sets an AccessKit label. Custom-painted widgets call `response.widget_info(|| WidgetInfo::labeled(..))`; a glyph is not a label (screen readers and `egui_kittest` `get_by_label` depend on it).
+- Icon-only buttons use `widgets::icon_button(ui, glyph, tip)`, which sets an AccessKit label. Non-interactive icon labels/indicators get a name via `help::label` or `widget_info`. Custom-painted widgets call `response.widget_info(|| WidgetInfo::labeled(..))`; a glyph is not a label (screen readers and `egui_kittest` `get_by_label` depend on it).
 - Do not signal state by color alone; pair with icon/text. Text on custom fills uses `contrast_fg(bg)`.
 - Request focus once on open (track a flag), not every frame; keep Tab order = add order.
 
@@ -72,6 +80,7 @@ Keep surfaces **visually interchangeable**: same control kinds should look and l
 - [ ] List/combo: sorted predictably; filter or searchable combo if the set can grow
 - [ ] Empty / no-match states have plain copy
 - [ ] Local ↑↓ / Enter / Esc (or documented why not) without breaking record modes
+- [ ] Info/labels use a clear icon with `name: help` hover text where a glyph fits (`help::label`, `icon_button`, Phosphor / `VectorIcon`); visible text kept where no icon works
 - [ ] Beginner path visible; advanced options collapsed by default
 - [ ] Labels, hints, and errors readable by a non-technical user
 - [ ] Reused `theme::*` tokens/visuals, `widgets::*` (incl. controls), `pickers::*`, `tip_*` / `tip_advanced` (no one-off chrome/colors)

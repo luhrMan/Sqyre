@@ -237,8 +237,10 @@ pub const NAV_KEY_CHORD: &str = "Keys that trigger this branch (one per line).";
 
 pub const DE_NAME: &str =
     "Unique name within this program. Cannot contain < > : \" / \\ | ? * or end with a period.";
+pub const DE_PROGRAM: &str = "Program whose catalog data this form edits.";
 pub const DE_RUNNING_PROGRAM: &str =
     "Process and window title that must own focus for this program's overlay buttons to show.";
+pub const DE_MONITOR: &str = "Monitor slot the bounds read geometry from (1–8).";
 pub const DE_PROGRAM_MACRO_TAGS: &str =
     "When Settings → Macros → Hotkeys → while focused is on, these tags become the hotkey selection while this program owns focus. Same labels as macro tags.";
 pub const DE_COLS: &str =

@@ -131,9 +131,9 @@ impl MacroMetaUi {
             all_tags,
             crate::widgets::TagChipOptions {
                 enabled,
-                show_add_button: false,
+                show_add_button: true,
+                label_name: Some("Tags"),
                 draft_hover: Some(help::META_TAGS),
-                draft_first: true,
                 reorderable: false,
                 signed_filters: false,
             },

@@ -265,10 +265,7 @@ impl VariablesPanelUi {
                 ui.horizontal(|ui| {
                     ui.heading("Declared variables");
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .button(egui::RichText::new("+ Add").color(crate::theme::MACRO_START))
-                            .clicked()
-                        {
+                        if crate::widgets::add_button(ui, "Add variable", true).clicked() {
                             self.editing = Some(EditState {
                                 index: None,
                                 name: String::new(),
@@ -292,10 +289,7 @@ impl VariablesPanelUi {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     ui.heading("Declared variables");
                     ui.label(egui::RichText::new(&count).weak());
-                    if ui
-                        .button(egui::RichText::new("+ Add").color(crate::theme::MACRO_START))
-                        .clicked()
-                    {
+                    if crate::widgets::add_button(ui, "Add variable", true).clicked() {
                         self.editing = Some(EditState {
                             index: None,
                             name: String::new(),

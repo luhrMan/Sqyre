@@ -25,7 +25,15 @@ pub fn paint_action_edit_header(
         outcome
     });
     if let Some(err) = error {
-        ui.colored_label(crate::theme::error_fg(), err);
+        // Wrap to the painted width: inside `fill_resize_body`, `available_width`
+        // reaches toward `max_size`, so a long one-line error would clip right.
+        let w = crate::widgets::visible_width(ui);
+        ui.horizontal(|ui| {
+            ui.set_max_width(w);
+            ui.add(
+                egui::Label::new(egui::RichText::new(err).color(crate::theme::error_fg())).wrap(),
+            );
+        });
     }
     crate::widgets::section_separator(ui);
     outcome

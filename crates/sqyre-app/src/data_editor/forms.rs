@@ -25,7 +25,6 @@ use crate::paint_ctx::CatalogPaint;
 use crate::paint_ctx::VarTheme;
 use crate::pickers;
 use crate::preview_tooltip::PreviewKind;
-use crate::theme;
 use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{match_settings, searchable_combo_width, searchable_combo_with};
 use eframe::egui;
@@ -166,7 +165,12 @@ impl DataEditor {
 
     fn paint_monitor_slot(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label("Monitor");
+            help::label(
+                ui,
+                egui_phosphor::regular::MONITOR,
+                "Monitor",
+                help::DE_MONITOR,
+            );
             ui.add(
                 crate::widgets::num_entry(&mut self.form_monitor)
                     .speed(1)

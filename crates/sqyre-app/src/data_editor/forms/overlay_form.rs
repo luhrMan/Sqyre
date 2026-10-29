@@ -222,10 +222,7 @@ impl DataEditor {
                         egui::RichText::new(format!("({})", self.form_overlay_gate_targets.len()))
                             .weak(),
                     );
-                    if ui
-                        .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
-                        .clicked()
-                    {
+                    if crate::widgets::add_button(ui, "Add / edit gate items", true).clicked() {
                         self.window_picker = pickers::ActivePicker::Items {
                             search: String::new(),
                             staged: self.form_overlay_gate_targets.clone(),

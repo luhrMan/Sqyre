@@ -249,6 +249,19 @@ pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::
     .inner
 }
 
+/// Icon-only add control (`+` in start styling).
+pub fn add_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
+    ui.add_enabled_ui(enabled, |ui| {
+        icon_button_colored(
+            ui,
+            egui_phosphor::regular::PLUS,
+            tip,
+            Some(crate::theme::MACRO_START),
+        )
+    })
+    .inner
+}
+
 /// Visual / keyboard order for [`press_state_toggle`] (top → bottom).
 const PRESS_STATE_ORDER: &[sqyre_domain::PressState] = &[
     sqyre_domain::PressState::Up,

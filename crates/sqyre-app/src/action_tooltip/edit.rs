@@ -872,11 +872,7 @@ fn targets_editor(
                 );
             }
         });
-        if ui
-            .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
-            .on_hover_text(h::IS_ITEMS)
-            .clicked()
-        {
+        if crate::widgets::add_button(ui, h::IS_ITEMS, true).clicked() {
             *picker = ActivePicker::Items {
                 search: String::new(),
                 staged: targets.clone(),
@@ -923,8 +919,8 @@ fn targets_editor(
             crate::widgets::TagChipOptions {
                 enabled: true,
                 show_add_button: true,
+                label_name: None,
                 draft_hover: Some(h::IS_TAG_PRIORITY),
-                draft_first: false,
                 reorderable: true,
                 signed_filters: false,
             },
@@ -1732,16 +1728,8 @@ fn list_header(ui: &mut egui::Ui, title: &str, count: usize, add_help: &str) -> 
     ui.horizontal(|ui| {
         ui.label(title);
         ui.label(egui::RichText::new(format!("({count})")).weak());
-        let btn = ui
-            .add(egui::Button::new(egui::RichText::new("+").color(theme::MACRO_START)).small())
+        let btn = crate::widgets::add_button(ui, &format!("Add {}", title.to_lowercase()), true)
             .on_hover_text(add_help);
-        btn.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::WidgetType::Button,
-                true,
-                format!("Add {}", title.to_lowercase()),
-            )
-        });
         if btn.clicked() {
             add = true;
         }

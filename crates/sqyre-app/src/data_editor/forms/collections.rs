@@ -215,12 +215,12 @@ impl DataEditor {
                 Some(&mut on_hover),
                 None,
             );
-            if ui
-                .add_enabled(
-                    !self.form_atlas_add.trim().is_empty(),
-                    egui::Button::new("Add"),
-                )
-                .clicked()
+            if crate::widgets::add_button(
+                ui,
+                "Add collection",
+                !self.form_atlas_add.trim().is_empty(),
+            )
+            .clicked()
             {
                 let name = self.form_atlas_add.trim().to_string();
                 if !name.is_empty() && !self.form_atlas_members.iter().any(|m| m == &name) {

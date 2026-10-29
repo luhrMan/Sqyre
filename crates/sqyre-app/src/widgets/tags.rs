@@ -280,16 +280,19 @@ pub fn tag_chip_editor(
     // (left pane cut by the window edge): chips would wrap *past* the clip and
     // clip their labels. Cap the row to the clip so wraps land inside the pane.
     let wrap_cap = (ui.clip_rect().right() - ui.cursor().left()).max(20.0);
-    let tag_resp = if opts.draft_first {
-        ui.horizontal_wrapped(|ui| {
+    // icon | entrybox | add | tags — chips wrap after the add button.
+    let tag_resp = ui
+        .horizontal_wrapped(|ui| {
             ui.set_max_width(wrap_cap);
+            if let Some(name) = opts.label_name {
+                crate::action_tooltip::help::label(
+                    ui,
+                    egui_phosphor::regular::TAG,
+                    name,
+                    opts.draft_hover.unwrap_or(""),
+                );
+            }
             let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
-            crate::action_tooltip::help::label(
-                ui,
-                egui_phosphor::regular::TAG,
-                "Tags",
-                opts.draft_hover.unwrap_or(""),
-            );
             paint_tag_chips(
                 ui,
                 tags,
@@ -300,22 +303,7 @@ pub fn tag_chip_editor(
             );
             resp
         })
-        .inner
-    } else {
-        ui.horizontal_wrapped(|ui| {
-            ui.set_max_width(wrap_cap);
-            paint_tag_chips(
-                ui,
-                tags,
-                opts.enabled,
-                opts.reorderable,
-                opts.signed_filters,
-                &mut edit.changed,
-            );
-        });
-        ui.horizontal(|ui| paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags))
-            .inner
-    };
+        .inner;
     if refocus {
         tag_resp.request_focus();
     }
@@ -510,7 +498,11 @@ fn paint_tag_chips(
             .size()
             .x
             + crate::theme::SPACE_2 * 2.0;
-        if chip_w > ui.available_rect_before_wrap().width()
+        // `Frame`/`dnd` children expand `region.max_rect` as they allocate, so
+        // `available_rect_before_wrap` over-reports space near the pane edge.
+        // Wrap when the chip would cross the painted clip instead.
+        let row_right = ui.max_rect().right().min(ui.clip_rect().right());
+        if ui.cursor().left() + chip_w > row_right
             && ui.cursor().left() > ui.max_rect().left() + 0.5
         {
             ui.end_row();
@@ -518,9 +510,12 @@ fn paint_tag_chips(
         let paint_chip = |ui: &mut egui::Ui| -> egui::Rect {
             // Zero item_spacing keeps polarity + label as one compact pill.
             // Elide to the row's width: a chip wider than the pane cannot wrap
-            // below itself, so its label would clip the pane edge.
+            // below itself, so its label would clip the pane edge. Bound by the
+            // clip — `available_width` over-reports past it (see wrap check).
             let chip_font = egui::TextStyle::Small.resolve(ui.style());
-            let budget = (ui.available_width()
+            let row_right = ui.max_rect().right().min(ui.clip_rect().right());
+            let budget = (row_right
+                - ui.cursor().left()
                 - crate::theme::SPACE_2 * 2.0
                 - if signed_filters { 10.0 } else { 0.0 })
             .max(20.0);
@@ -660,13 +655,8 @@ fn paint_tag_draft(
     if let Some(tip) = opts.draft_hover {
         tag_resp = tag_resp.on_hover_text(tip);
     }
-    let add_clicked = opts.show_add_button
-        && ui
-            .add_enabled(
-                opts.enabled,
-                egui::Button::new(egui::RichText::new("Add tag").color(crate::theme::MACRO_START)),
-            )
-            .clicked();
+    let add_clicked =
+        opts.show_add_button && crate::widgets::add_button(ui, "Add tag", opts.enabled).clicked();
     if opts.enabled && add_clicked {
         let added = if opts.signed_filters {
             try_add_signed_tag_filter(tags, draft)
@@ -687,9 +677,10 @@ fn paint_tag_draft(
 pub struct TagChipOptions<'a> {
     pub enabled: bool,
     pub show_add_button: bool,
+    /// Field name for the tag icon ahead of the draft entry; `None` paints no icon.
+    pub label_name: Option<&'a str>,
+    /// Icon tooltip / draft hover text.
     pub draft_hover: Option<&'a str>,
-    /// When true, paint the draft field before the `Tags:` label in the chip row.
-    pub draft_first: bool,
     /// When true, chips can be drag-reordered (tag priority lists).
     pub reorderable: bool,
     /// When true, chips are Image Search `+`/`−` filters with a polarity toggle.
@@ -701,8 +692,8 @@ impl Default for TagChipOptions<'_> {
         Self {
             enabled: true,
             show_add_button: true,
+            label_name: None,
             draft_hover: None,
-            draft_first: false,
             reorderable: false,
             signed_filters: false,
         }
