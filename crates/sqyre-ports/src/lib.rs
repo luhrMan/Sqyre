@@ -4,6 +4,7 @@
 mod action_log;
 mod automation_error;
 mod capture_error;
+mod detection_span;
 mod domain_ports;
 mod highlight;
 mod image_limits;
@@ -18,6 +19,7 @@ pub use action_log::{
 };
 pub use automation_error::AutomationError;
 pub use capture_error::{CaptureError, NotReady};
+pub use detection_span::{overlay_macro_hide_held, set_overlay_macro_hide_hooks, OverlayMacroHide};
 pub use domain_ports::{
     CollectionArea, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup,
 };
