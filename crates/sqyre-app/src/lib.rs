@@ -1053,10 +1053,6 @@ impl SqyreApp {
             if stop {
                 return;
             }
-            // The float chip parks over dead space at the panel's bottom-right:
-            // shrink the tree viewport so no row ever paints underneath it.
-            let float_clear = crate::widgets::float_strip_clearance(ui);
-            ui.set_max_height((ui.available_height() - float_clear).max(60.0));
             ui_macro_tree::show(self, ui, force_openness);
             ui_toolbar::footer_floats(self, ui);
         });
