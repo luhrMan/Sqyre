@@ -84,8 +84,9 @@ impl PermissionsIntro {
             );
             crate::widgets::section_separator(ui);
             // Footer height (button row) stays outside the scroll so Continue is always visible.
-            let footer_h =
-                ui.spacing().interact_size.y + crate::theme::element_gap(ui) + crate::theme::SPACE_8;
+            let footer_h = ui.spacing().interact_size.y
+                + crate::theme::element_gap(ui)
+                + crate::theme::section_gap(ui);
             let scroll_h = (bounds.height() - margin.y - ui.min_rect().height() - footer_h)
                 .max(ui.spacing().interact_size.y);
             egui::ScrollArea::vertical()

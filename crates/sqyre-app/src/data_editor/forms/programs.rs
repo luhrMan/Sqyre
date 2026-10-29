@@ -20,16 +20,11 @@ impl DataEditor {
             }
             ui.heading("Program");
         });
-        help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
-        ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+        crate::widgets::wrap_unit(ui, |ui| {
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+        });
         paint_fs_name_hint(ui, &self.form_name);
-        ui.add_space(crate::theme::element_gap(ui));
-        help::label(
-            ui,
-            egui_phosphor::regular::APP_WINDOW,
-            "Running program",
-            help::DE_RUNNING_PROGRAM,
-        );
         ui.add_space(crate::theme::element_gap(ui));
         let bound = if self.form_process_path.trim().is_empty() {
             sqyre_domain::EMPTY_NONE.to_string()
@@ -43,6 +38,12 @@ impl DataEditor {
             )
         };
         ui.horizontal(|ui| {
+            help::label(
+                ui,
+                egui_phosphor::regular::APP_WINDOW,
+                "Running program",
+                help::DE_RUNNING_PROGRAM,
+            );
             if !self.form_process_path.trim().is_empty() {
                 let tex = icons
                     .for_process(ui.ctx(), &self.form_process_path, &self.form_window_title)
@@ -108,8 +109,10 @@ impl DataEditor {
         ui.heading("Item");
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
-        help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
-        ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+        crate::widgets::wrap_unit(ui, |ui| {
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+        });
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
         let tag_submit = self.paint_item_param_fields(ui, catalog, icons);
@@ -174,7 +177,6 @@ impl DataEditor {
             }
         });
         ui.add_space(crate::theme::element_gap(ui));
-        help::label(ui, egui_phosphor::regular::EYE_SLASH, "Mask", help::DE_MASK);
         let masks: Vec<String> = self
             .selected_program
             .as_deref()
@@ -198,17 +200,20 @@ impl DataEditor {
                 &format!("{prog}~{name}"),
             );
         };
-        searchable_combo_with(
-            ui,
-            "item_mask",
-            &mut current,
-            &masks,
-            sqyre_domain::EMPTY_NONE,
-            Some(sqyre_domain::EMPTY_NONE),
-            None,
-            Some(&mut on_hover),
-            None,
-        );
+        crate::widgets::wrap_unit(ui, |ui| {
+            help::label(ui, egui_phosphor::regular::EYE_SLASH, "Mask", help::DE_MASK);
+            searchable_combo_with(
+                ui,
+                "item_mask",
+                &mut current,
+                &masks,
+                sqyre_domain::EMPTY_NONE,
+                Some(sqyre_domain::EMPTY_NONE),
+                None,
+                Some(&mut on_hover),
+                None,
+            );
+        });
         if current != self.form_mask {
             self.form_mask = current;
         }

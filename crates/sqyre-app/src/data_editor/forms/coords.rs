@@ -165,8 +165,10 @@ impl DataEditor {
         ui.heading("Mask");
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
-        help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
-        ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+        crate::widgets::wrap_unit(ui, |ui| {
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+        });
         paint_fs_name_hint(ui, &self.form_name);
         let has_image = self
             .selected_program
@@ -203,13 +205,13 @@ impl DataEditor {
         });
         if !has_image {
             ui.add_space(crate::theme::element_gap(ui));
-            help::label(
-                ui,
-                egui_phosphor::regular::SHAPES,
-                "Shape",
-                help::DE_MASK_SHAPE,
-            );
             ui.horizontal(|ui| {
+                help::label(
+                    ui,
+                    egui_phosphor::regular::SHAPES,
+                    "Shape",
+                    help::DE_MASK_SHAPE,
+                );
                 ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle");
                 ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle");
             });
@@ -357,13 +359,15 @@ impl DataEditor {
         ui.add_space(crate::theme::element_gap(ui));
         self.paint_item_param_fields(ui, catalog, icons);
         ui.add_space(crate::theme::element_gap(ui));
-        help::label(
-            ui,
-            egui_phosphor::regular::FRAME_CORNERS,
-            "Bounds",
-            help::DE_BOUNDS_PREVIEW,
-        );
-        self.paint_monitor_slot(ui);
+        crate::widgets::wrap_unit(ui, |ui| {
+            help::label(
+                ui,
+                egui_phosphor::regular::FRAME_CORNERS,
+                "Bounds",
+                help::DE_BOUNDS_PREVIEW,
+            );
+            self.paint_monitor_slot(ui);
+        });
         let (lx, ty, rx, by) = form_desktop_area(
             catalog,
             self.form_monitor,

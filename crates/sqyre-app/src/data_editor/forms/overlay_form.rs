@@ -55,24 +55,26 @@ impl DataEditor {
             });
         });
         ui.add_space(crate::theme::element_gap(ui));
-        help::label(
-            ui,
-            egui_phosphor::regular::MAGIC_WAND,
-            "Macro",
-            help::DE_OVERLAY_MACRO,
-        );
         let mut selected = self.form_overlay_macro.clone();
         let before = selected.clone();
         let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
-        searchable_combo_width(
-            ui,
-            "overlay_form_macro",
-            &mut selected,
-            &macro_names,
-            "(pick macro)",
-            Some(sqyre_domain::EMPTY_NONE),
-            Some(220.0),
-        );
+        crate::widgets::wrap_unit(ui, |ui| {
+            help::label(
+                ui,
+                egui_phosphor::regular::MAGIC_WAND,
+                "Macro",
+                help::DE_OVERLAY_MACRO,
+            );
+            searchable_combo_width(
+                ui,
+                "overlay_form_macro",
+                &mut selected,
+                &macro_names,
+                "(pick macro)",
+                Some(sqyre_domain::EMPTY_NONE),
+                Some(220.0),
+            );
+        });
         if selected != before {
             self.form_overlay_macro = selected;
         }

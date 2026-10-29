@@ -35,16 +35,12 @@ impl DataEditor {
         });
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
-        help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
-        ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+        crate::widgets::wrap_unit(ui, |ui| {
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+        });
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
-        help::label(
-            ui,
-            egui_phosphor::regular::CROP,
-            "Search area",
-            help::DE_COLLECTION_AREA,
-        );
         {
             let areas: Vec<String> = self
                 .selected_program
@@ -73,41 +69,55 @@ impl DataEditor {
                 };
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::SearchArea);
             };
-            searchable_combo_with(
-                ui,
-                "collection_sa",
-                &mut current,
-                &areas,
-                sqyre_domain::EMPTY_NONE,
-                None,
-                None,
-                Some(&mut on_hover),
-                None,
-            );
+            crate::widgets::wrap_unit(ui, |ui| {
+                help::label(
+                    ui,
+                    egui_phosphor::regular::CROP,
+                    "Search area",
+                    help::DE_COLLECTION_AREA,
+                );
+                searchable_combo_with(
+                    ui,
+                    "collection_sa",
+                    &mut current,
+                    &areas,
+                    sqyre_domain::EMPTY_NONE,
+                    None,
+                    None,
+                    Some(&mut on_hover),
+                    None,
+                );
+            });
             if current != self.form_search_area {
                 self.form_search_area = current;
             }
         }
-        help::label(
-            ui,
-            egui_phosphor::regular::ROWS,
-            "Rows",
-            help::DE_COLLECTION_ROWS,
-        );
-        help::tip(
-            crate::widgets::num_text_edit(ui, &mut self.form_rows, 80.0, 1..=i32::MAX),
-            help::DE_COLLECTION_ROWS,
-        );
-        help::label(
-            ui,
-            egui_phosphor::regular::COLUMNS,
-            "Cols",
-            help::DE_COLLECTION_COLS,
-        );
-        help::tip(
-            crate::widgets::num_text_edit(ui, &mut self.form_cols, 80.0, 1..=i32::MAX),
-            help::DE_COLLECTION_COLS,
-        );
+        ui.horizontal_wrapped(|ui| {
+            crate::widgets::wrap_unit(ui, |ui| {
+                help::label(
+                    ui,
+                    egui_phosphor::regular::ROWS,
+                    "Rows",
+                    help::DE_COLLECTION_ROWS,
+                );
+                help::tip(
+                    crate::widgets::num_text_edit(ui, &mut self.form_rows, 80.0, 1..=i32::MAX),
+                    help::DE_COLLECTION_ROWS,
+                );
+            });
+            crate::widgets::wrap_unit(ui, |ui| {
+                help::label(
+                    ui,
+                    egui_phosphor::regular::COLUMNS,
+                    "Cols",
+                    help::DE_COLLECTION_COLS,
+                );
+                help::tip(
+                    crate::widgets::num_text_edit(ui, &mut self.form_cols, 80.0, 1..=i32::MAX),
+                    help::DE_COLLECTION_COLS,
+                );
+            });
+        });
         if let (Some(prog), Some(col_name)) =
             (self.selected_program.clone(), self.selected_entity.clone())
         {
@@ -159,16 +169,12 @@ impl DataEditor {
         ui.heading("Atlas");
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
-        help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
-        ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+        crate::widgets::wrap_unit(ui, |ui| {
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+        });
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
-        help::label(
-            ui,
-            egui_phosphor::regular::STACK,
-            "Collections",
-            help::DE_ATLAS_MEMBERS,
-        );
         let available: Vec<String> = self
             .selected_program
             .as_deref()
@@ -182,6 +188,12 @@ impl DataEditor {
             })
             .unwrap_or_default();
         ui.horizontal(|ui| {
+            help::label(
+                ui,
+                egui_phosphor::regular::STACK,
+                "Collections",
+                help::DE_ATLAS_MEMBERS,
+            );
             let prog = self.selected_program.clone();
             let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
                 if name.is_empty() {

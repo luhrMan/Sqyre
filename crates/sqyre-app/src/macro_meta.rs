@@ -56,11 +56,17 @@ impl MacroMetaUi {
     ) -> MetaMutations {
         let mut out = MetaMutations::default();
 
-        help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::META_NAME);
-        let te = egui::TextEdit::singleline(&mut self.name_draft)
-            .desired_width(220.0)
-            .hint_text("Macro name");
-        let resp = ui.add_enabled(enabled, te).on_hover_text(help::META_NAME);
+        let resp = crate::widgets::wrap_unit(ui, |ui| {
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::META_NAME);
+            ui.add_enabled(
+                enabled,
+                egui::TextEdit::singleline(&mut self.name_draft)
+                    .desired_width(220.0)
+                    .hint_text("Macro name"),
+            )
+        })
+        .inner
+        .on_hover_text(help::META_NAME);
         // Commit on Enter, or when focus leaves with a different value.
         let enter = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         let lost_dirty = resp.lost_focus() && self.name_draft.trim() != m.name;

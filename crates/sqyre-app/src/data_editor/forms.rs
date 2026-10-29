@@ -459,13 +459,15 @@ impl DataEditor {
             ui.collapsing("Advanced", |ui| {
                 match_settings::paint_match_method(ui, &mut self.pixel_check.match_method);
             });
-            help::label(
-                ui,
-                egui_phosphor::regular::FRAME_CORNERS,
-                "Bounds",
-                help::DE_PIXELCHECK_BOUNDS,
-            );
-            self.paint_monitor_slot(ui);
+            crate::widgets::wrap_unit(ui, |ui| {
+                help::label(
+                    ui,
+                    egui_phosphor::regular::FRAME_CORNERS,
+                    "Bounds",
+                    help::DE_PIXELCHECK_BOUNDS,
+                );
+                self.paint_monitor_slot(ui);
+            });
             let (lx, ty, rx, by) = form_desktop_area(
                 catalog,
                 self.form_monitor,
