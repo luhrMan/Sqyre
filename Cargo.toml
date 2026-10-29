@@ -157,4 +157,4 @@ sha2 = "0.11"
 ocrs = { version = "0.13", default-features = false, features = ["onnx"] }
 rten = { version = "0.26", features = ["onnx_format"] }
 log = "0.4"
-jsonschema = { version = "0.58", default-features = false }
+jsonschema = { version = "0.60", default-features = false }
