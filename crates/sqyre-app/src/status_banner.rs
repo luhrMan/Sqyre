@@ -55,24 +55,26 @@ impl StatusBanner {
         Self::paint_line(ui, msg, self.status_error);
     }
 
-    /// Paint an ok/err line with the shared status colors (panel footer or list-scoped).
+    /// Paint an ok line, or an error icon whose hover tooltip carries `msg`.
     pub(crate) fn paint_line(ui: &mut egui::Ui, msg: impl AsRef<str>, error: bool) {
-        let color = if error {
-            crate::theme::error_fg()
+        if error {
+            crate::widgets::error_icon(ui, msg.as_ref());
         } else {
-            crate::theme::ok_fg()
-        };
-        ui.add(egui::Label::new(egui::RichText::new(msg.as_ref()).color(color)).wrap());
+            ui.add(
+                egui::Label::new(egui::RichText::new(msg.as_ref()).color(crate::theme::ok_fg()))
+                    .wrap(),
+            );
+        }
     }
 
-    /// Paint a prefixed error (`"{prefix}: {detail}"`) with error color.
+    /// Paint a prefixed error (`"{prefix}: {detail}"`) as an icon + tooltip.
     pub(crate) fn paint_prefixed_error(ui: &mut egui::Ui, prefix: &str, detail: &str) {
         Self::paint_line(ui, format!("{prefix}: {detail}"), true);
     }
 
-    /// Paint a warning advisory with theme warn color.
+    /// Paint a warning advisory as an icon + tooltip.
     pub(crate) fn paint_warn(ui: &mut egui::Ui, msg: impl AsRef<str>) {
-        ui.colored_label(crate::theme::warn_fg(), msg.as_ref());
+        crate::widgets::warn_icon(ui, msg.as_ref());
     }
 }
 

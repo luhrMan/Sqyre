@@ -380,7 +380,13 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                             }
                         }
                     });
-                if ui.button("Save selected points").clicked() {
+                if crate::widgets::icon_button(
+                    ui,
+                    egui_phosphor::regular::FLOPPY_DISK,
+                    "Save selected points",
+                )
+                .clicked()
+                {
                     save_points = true;
                 }
                 crate::widgets::section_separator(ui);

@@ -128,6 +128,24 @@ impl EditorTab {
         }
     }
 
+    /// Semantic glyph for the icon tab face; [`Self::label`] stays the
+    /// tooltip / combo fallback text.
+    fn icon(self) -> &'static str {
+        use egui_phosphor::regular::*;
+        match self {
+            Self::Programs => APP_WINDOW,
+            Self::Items => IMAGE,
+            Self::Masks => SELECTION_INVERSE,
+            Self::ScreenCap => CAMERA,
+            Self::PixelCheck => EYEDROPPER,
+            Self::Points => TARGET,
+            Self::SearchAreas => SELECTION,
+            Self::Collections => GRID_FOUR,
+            Self::Atlases => STACK,
+            Self::Overlay => CURSOR_CLICK,
+        }
+    }
+
     /// Capture / match tools unavailable in the WASM GUI editor.
     /// Called from `switch_tab` under `cfg(target_arch = "wasm32")`.
     #[cfg_attr(
@@ -295,6 +313,8 @@ pub struct DataEditor {
     coord_preview: ImageViewTransform,
     /// `(tab, program, entity)` last shown; reset transform when this changes.
     coord_preview_key: Option<(EditorTab, String, String)>,
+    /// One-frame `force` armed by the preview's floating refresh button.
+    preview_force: bool,
     /// Overlay button id whose icon picker popup is open.
     overlay_icon_picker_for: Option<String>,
     /// Filter text for the overlay icon picker.
@@ -410,6 +430,7 @@ impl Default for DataEditor {
             atlas_preview_key: None,
             coord_preview: ImageViewTransform::default(),
             coord_preview_key: None,
+            preview_force: false,
             overlay_icon_picker_for: None,
             overlay_icon_search: String::new(),
             window_picker: ActivePicker::None,
@@ -904,17 +925,19 @@ impl DataEditor {
         let section = EditorSection::of(self.tab);
         let mut items = Vec::new();
         let mut sections = Vec::new();
-        for (sec, label) in [
-            (EditorSection::Programs, "Programs"),
-            (EditorSection::Items, "Items"),
-            (EditorSection::Coordinates, "Coordinates"),
-            (EditorSection::Tools, "Tools"),
+        use egui_phosphor::regular::*;
+        for (sec, label, icon) in [
+            (EditorSection::Programs, "Programs", APP_WINDOW),
+            (EditorSection::Items, "Items", IMAGES),
+            (EditorSection::Coordinates, "Coordinates", CROSSHAIR),
+            (EditorSection::Tools, "Tools", WRENCH),
         ] {
             if !sec.is_available() {
                 continue;
             }
             items.push(crate::widgets::OverflowItem::Choice {
                 label,
+                icon,
                 selected: section == sec,
             });
             sections.push(sec);
@@ -937,6 +960,7 @@ impl DataEditor {
         let tab = self.tab;
         let choice = |t: EditorTab| crate::widgets::OverflowItem::Choice {
             label: t.label(),
+            icon: t.icon(),
             selected: tab == t,
         };
         let (id, items): (&str, Vec<crate::widgets::OverflowItem<'_>>) = match section {
@@ -1034,14 +1058,7 @@ impl DataEditor {
         let used_h = if short { rem.y.max(min_stack) } else { rem.y };
         let (outer, _) = ui.allocate_exact_size(egui::vec2(rem.x, used_h), egui::Sense::hover());
 
-        let footer_h = (ui.spacing().interact_size.y
-            + ui.spacing().item_spacing.y * 3.0
-            + crate::theme::SPACE_8)
-            .min(used_h * 0.4);
-        let body_h = (used_h - footer_h).max(40.0);
-        let body_rect = egui::Rect::from_min_size(outer.min, egui::vec2(rem.x, body_h));
-        let footer_rect =
-            egui::Rect::from_min_max(egui::pos2(outer.min.x, outer.min.y + body_h), outer.max);
+        let body_rect = egui::Rect::from_min_size(outer.min, egui::vec2(rem.x, used_h.max(40.0)));
 
         let avail_w = body_rect.width();
         let min_left = avail_w * MIN_DATA_EDITOR_LEFT_FRAC;
@@ -1161,83 +1178,67 @@ impl DataEditor {
                     env.settings,
                 );
             };
-            pickers::dialog_scroll(content_w, body_h)
+            // The float chip parks over dead space at the pane's bottom-right:
+            // shrink the viewport so no row ever paints underneath it.
+            let float_clear = crate::widgets::float_strip_clearance(ui);
+            pickers::dialog_scroll(content_w, (body_rect.height() - float_clear).max(40.0))
                 .id_salt("data_editor_form")
                 .show(&mut right_ui, paint_form);
         }
 
-        {
-            let mut footer_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(footer_rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            footer_ui.set_clip_rect(footer_rect.intersect(ui.clip_rect()));
-            footer_ui.set_max_size(footer_rect.size());
-            footer_ui.vertical(|ui| {
-                crate::widgets::section_separator(ui);
-                crate::widgets::show_overflow(ui, "de_footer", 1.0, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        let can_new =
-                            !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-                        let new_resp = ui.add_enabled(
-                            can_new,
-                            egui::Button::new(
-                                egui::RichText::new("New").color(crate::theme::MACRO_START),
-                            ),
-                        );
-                        // Every tab shows the same "New" face; the a11y name
-                        // says which entity it creates (also keeps UI tests
-                        // from matching the wrong "New").
-                        if let Some(noun) = self.tab.entity_noun() {
-                            new_resp.widget_info(|| {
-                                egui::WidgetInfo::labeled(
-                                    egui::WidgetType::Button,
-                                    ui.is_enabled(),
-                                    format!("New {noun}"),
-                                )
-                            });
-                        }
-                        if new_resp.clicked() {
-                            self.on_new(env);
-                        }
-                        #[cfg(feature = "native-runtime")]
-                        if matches!(self.tab, EditorTab::Programs) {
-                            let pending = self.add_running_programs_pending();
-                            let label = if pending { "Adding…" } else { "Add running" };
-                            if ui
-                                .add_enabled(!pending, egui::Button::new(label))
-                                .on_hover_text(
-                                    "Add every program with an open window (the same list as \
-                                 Select…), named after its process. Programs already in \
-                                 the list are skipped.",
-                                )
-                                .clicked()
-                            {
-                                self.start_add_running_programs();
-                            }
-                        }
-                        let dirty = self.is_dirty(env.catalog, env.settings);
-                        let valid = self.form_valid(env.macros.get(selected_macro));
-                        let can_save =
-                            !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-                        let save_enabled = can_save && dirty && valid;
-                        let save_clicked =
-                            crate::widgets::dirty_action_button(ui, "Save", save_enabled).clicked();
-                        // Enter submits when Save is able: this window is in front,
-                        // and no confirm / picker / combo is using the key.
-                        let save_enter = save_enabled
-                            && self.enter_commits_update(ui)
-                            && ui.input_mut(|i| {
-                                i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
-                            });
-                        if save_clicked || save_enter || (tag_submit && save_enabled) {
-                            self.on_update(env, previews);
-                        }
-                    });
-                });
-            });
-        }
+        // Footer chrome floats over the form's bottom-right instead of
+        // reserving a full-width strip.
+        let right_pane = egui::Rect::from_min_max(
+            egui::pos2(split_rect.right(), body_rect.top()),
+            body_rect.max,
+        );
+        crate::widgets::float_bottom_right(ui, right_pane, |ui| {
+            let dirty = self.is_dirty(env.catalog, env.settings);
+            let valid = self.form_valid(env.macros.get(selected_macro));
+            let can_save = !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
+            let save_enabled = can_save && dirty && valid;
+            let save_clicked =
+                crate::widgets::dirty_action_button(ui, "Save", save_enabled).clicked();
+            // Enter submits when Save is able: this window is in front,
+            // and no confirm / picker / combo is using the key.
+            let save_enter = save_enabled
+                && self.enter_commits_update(ui)
+                && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+            if save_clicked || save_enter || (tag_submit && save_enabled) {
+                self.on_update(env, previews);
+            }
+            #[cfg(feature = "native-runtime")]
+            if matches!(self.tab, EditorTab::Programs) {
+                let pending = self.add_running_programs_pending();
+                if ui
+                    .add_enabled_ui(!pending, |ui| {
+                        crate::widgets::icon_button(
+                            ui,
+                            egui_phosphor::regular::DESKTOP,
+                            "Add running programs",
+                        )
+                    })
+                    .inner
+                    .on_hover_text(
+                        "Add every program with an open window (the same list as \
+                     Select…), named after its process. Programs already in \
+                     the list are skipped.",
+                    )
+                    .clicked()
+                {
+                    self.start_add_running_programs();
+                }
+            }
+            let can_new = !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
+            let new_tip = self
+                .tab
+                .entity_noun()
+                .map(|noun| format!("New {noun}"))
+                .unwrap_or_else(|| "New".to_owned());
+            if crate::widgets::add_button(ui, &new_tip, can_new).clicked() {
+                self.on_new(env);
+            }
+        });
     }
 
     /// Ask to delete the selected program / entity (list row right-click → Delete).

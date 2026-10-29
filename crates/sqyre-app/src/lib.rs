@@ -491,7 +491,10 @@ impl SqyreApp {
         let (mut hotkeys, continue_wait, screen_click, macro_record_bridge, macro_hotkeys) =
             default_hotkeys();
         #[cfg(all(feature = "native-runtime", target_os = "linux"))]
-        screen_click.set_absolute_pos(sqyre_capture::portal_cursor_position);
+        {
+            screen_click.set_absolute_pos(sqyre_capture::portal_cursor_position);
+            macro_record_bridge.set_absolute_pos(sqyre_capture::portal_cursor_position);
+        }
         let run = RunState::default();
         let stop = run.stop.clone();
         #[cfg(target_os = "android")]
@@ -995,7 +998,6 @@ impl SqyreApp {
     /// Top bar, footer, macro list and the selected macro, in that order so the bars span the width.
     fn show_panels(&mut self, ui: &mut egui::Ui) {
         ui_toolbar::top_bar(self, ui);
-        ui_toolbar::footer_bar(self, ui);
         ui_macro_list::show(self, ui);
         self.persist_selected_macro();
 
@@ -1040,7 +1042,12 @@ impl SqyreApp {
             if stop {
                 return;
             }
+            // The float chip parks over dead space at the panel's bottom-right:
+            // shrink the tree viewport so no row ever paints underneath it.
+            let float_clear = crate::widgets::float_strip_clearance(ui);
+            ui.set_max_height((ui.available_height() - float_clear).max(60.0));
             ui_macro_tree::show(self, ui, force_openness);
+            ui_toolbar::footer_floats(self, ui);
         });
     }
 }

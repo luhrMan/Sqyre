@@ -543,7 +543,7 @@ pub(crate) fn show_action_view_tip(
                             if let Some((coord_ref, kind)) = coord_preview {
                                 sections::tip_section(ui, |ui| {
                                     previews.paint_for_coordinate_ref(
-                                        ui, catalog, &coord_ref, kind, false,
+                                        ui, catalog, &coord_ref, kind, false, false,
                                     );
                                 });
                             }

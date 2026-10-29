@@ -397,7 +397,13 @@ impl SettingsUi {
             crate::widgets::fill_row(
                 ui,
                 |ui| {
-                    clear_search = has_search && ui.small_button("Clear").clicked();
+                    clear_search = has_search
+                        && crate::widgets::icon_button(
+                            ui,
+                            egui_phosphor::regular::X,
+                            "Clear search",
+                        )
+                        .clicked();
                 },
                 |ui| {
                     ui.label(egui::RichText::new(
@@ -429,7 +435,6 @@ impl SettingsUi {
         if clear_search {
             self.search.clear();
         }
-        crate::widgets::section_separator(ui);
 
         let footer = if self.status_banner.status.is_some() {
             40.0
@@ -2302,7 +2307,7 @@ mod tests {
             field.is_focused(),
             "typing the first character should keep the search field focused"
         );
-        assert!(harness.query_by_label("Clear").is_some());
+        assert!(harness.query_by_label("Clear search").is_some());
 
         search_field(&harness).type_text("z");
         harness.run();
@@ -2327,7 +2332,7 @@ mod tests {
             field.is_focused(),
             "deleting back to an empty query should keep the search field focused"
         );
-        assert!(harness.query_by_label("Clear").is_none());
+        assert!(harness.query_by_label("Clear search").is_none());
 
         search_field(&harness).type_text("a");
         harness.run();

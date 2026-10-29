@@ -383,6 +383,9 @@ pub fn show_active_picker(
                     }
                     let mut opts = PickerScrollOpts::list(ui).with_hint(Some("Search windows…"));
                     let mut trailing = |ui: &mut egui::Ui| {
+                        if let Some(err) = load_error.as_ref() {
+                            crate::widgets::error_icon(ui, err.as_str());
+                        }
                         let tip = if loading { "Refreshing…" } else { "Refresh" };
                         refresh_clicked = ui
                             .add_enabled_ui(!loading, |ui| {
@@ -396,9 +399,6 @@ pub fn show_active_picker(
                         picker_searchable_scroll_ex(ui, search, opts, Some(focus_id), |ui, q| {
                             if loading {
                                 ui.label("Loading windows…");
-                            }
-                            if let Some(err) = load_error.as_ref() {
-                                ui.colored_label(crate::theme::error_fg(), err.as_str());
                             }
                             let mut visible = 0usize;
                             for w in windows.iter() {

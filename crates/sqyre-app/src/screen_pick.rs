@@ -143,7 +143,7 @@ impl ScreenPick {
             State::Failed(message) => {
                 let message = message.clone();
                 paint_bar(ctx, |ui| {
-                    ui.colored_label(theme::error_fg(), message);
+                    crate::widgets::error_icon(ui, &message);
                     let mut choice = cancel_row(ui);
                     if ui.button("Try again").clicked() {
                         choice = Choice::Retake;

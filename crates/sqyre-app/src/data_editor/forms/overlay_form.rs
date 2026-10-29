@@ -23,12 +23,7 @@ impl DataEditor {
         help::heading(ui, "Overlay Button", help::DE_OVERLAY_INTRO);
         ui.add_space(crate::theme::element_gap(ui));
         self.program_selector(ui, catalog, icons, settings);
-        if self.selected_program.is_none() {
-            ui.weak("Select a program, then New to add a button.");
-            return false;
-        }
-        if self.selected_entity.is_none() {
-            ui.weak("Select a button from the list, or click New.");
+        if self.selected_program.is_none() || self.selected_entity.is_none() {
             return false;
         }
         ui.add_space(crate::theme::element_gap(ui));

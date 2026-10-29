@@ -44,8 +44,17 @@ impl DataEditor {
             form_coord_literal(&self.form_y),
         );
         self.sync_coord_preview_view();
-        let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
+        let force = std::mem::take(&mut self.preview_force);
         let rect = previews.paint_point_panel(ui, x, y, force, &mut self.coord_preview);
+        if paint_preview_floaters(
+            ui,
+            rect,
+            true,
+            Some(&mut self.coord_preview),
+            "Fit image in viewport",
+        ) {
+            self.preview_force = true;
+        }
         paint_coord_chips(
             ui,
             rect,
@@ -109,9 +118,18 @@ impl DataEditor {
         );
         self.paint_monitor_slot(ui);
         self.sync_coord_preview_view();
-        let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
+        let force = std::mem::take(&mut self.preview_force);
         let (rect, preview_image_size) =
             previews.paint_search_area_panel(ui, lx, ty, rx, by, force, &mut self.coord_preview);
+        if paint_preview_floaters(
+            ui,
+            rect,
+            true,
+            Some(&mut self.coord_preview),
+            "Fit image in viewport",
+        ) {
+            self.preview_force = true;
+        }
         paint_search_area_preview_sizes(ui, rect, lx, ty, rx, by, preview_image_size);
         paint_coord_chips(
             ui,
@@ -380,19 +398,14 @@ impl DataEditor {
             ui.weak(pixel_size_text(w, h));
         }
         self.sync_coord_preview_view();
-        let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
-        // Keep Save + path hint below the preview (panel fills remaining height).
+        let force = std::mem::take(&mut self.preview_force);
+        // Keep the button row below the preview (panel fills remaining height);
+        // the `Saves to …` path lives on the Save button's tooltip.
         let path_hint = format!("Saves to {}", screen_cap_path().display());
         let spacing = ui.spacing().item_spacing.y;
-        let path_font = egui::TextStyle::Body.resolve(ui.style());
         let wrap_w = crate::widgets::visible_width(ui);
-        let path_h = ui.fonts_mut(|f| {
-            f.layout(path_hint.clone(), path_font, egui::Color32::WHITE, wrap_w)
-                .size()
-                .y
-        });
-        // spacing + 8px gap + spacing + button + spacing + path (+ 1px slack).
-        let footer_h = spacing * 3.0 + 8.0 + ui.spacing().interact_size.y + path_h + 1.0;
+        // spacing + 8px gap + spacing + button (+ 1px slack).
+        let footer_h = spacing * 2.0 + 8.0 + ui.spacing().interact_size.y + 1.0;
         let preview_h = (ui.available_height() - footer_h).max(120.0);
         ui.allocate_ui_with_layout(
             egui::vec2(wrap_w, preview_h),
@@ -408,6 +421,15 @@ impl DataEditor {
                     force,
                     &mut self.coord_preview,
                 );
+                if paint_preview_floaters(
+                    ui,
+                    rect,
+                    true,
+                    Some(&mut self.coord_preview),
+                    "Fit image in viewport",
+                ) {
+                    self.preview_force = true;
+                }
                 paint_search_area_preview_sizes(ui, rect, lx, ty, rx, by, preview_image_size);
                 paint_coord_chips(
                     ui,
@@ -447,11 +469,16 @@ impl DataEditor {
         ui.add_space(crate::theme::element_gap(ui));
         let saving = self.screen_cap_pending.is_some();
         ui.horizontal(|ui| {
+            let save_tip = if saving {
+                "Saving…".to_owned()
+            } else {
+                path_hint.clone()
+            };
             if ui
-                .add_enabled(
-                    !saving,
-                    egui::Button::new(if saving { "Saving…" } else { "Save" }),
-                )
+                .add_enabled_ui(!saving, |ui| {
+                    crate::widgets::icon_button(ui, egui_phosphor::regular::FLOPPY_DISK, &save_tip)
+                })
+                .inner
                 .clicked()
             {
                 self.save_screen_cap(catalog, previews);
@@ -470,6 +497,5 @@ impl DataEditor {
                 self.screen_cap_new_item = true;
             }
         });
-        ui.weak(path_hint);
     }
 }

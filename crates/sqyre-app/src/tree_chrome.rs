@@ -830,13 +830,7 @@ pub fn paint_action_row(
                             }
 
                             if let Some(err) = validation_error {
-                                let badge = ui
-                                    .label(
-                                        egui::RichText::new("⚠")
-                                            .color(crate::theme::error_fg())
-                                            .strong(),
-                                    )
-                                    .on_hover_text(err);
+                                let badge = crate::widgets::error_icon(ui, err);
                                 extend_drag_handle(&mut drag_handle_rect, badge.rect);
                                 if badge.hovered() {
                                     tip_hovered = true;

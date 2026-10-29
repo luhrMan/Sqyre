@@ -247,6 +247,9 @@ fn paint_macro_rows(
         } else {
             resp = text_hover_if(resp, &full_text, label_elided);
         }
+        if validation_err.is_some() {
+            crate::widgets::error_badge(ui, resp.rect);
+        }
         if i == app.workspace.selected_macro {
             if nav.scroll {
                 ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));

@@ -16,7 +16,7 @@ use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::{
     area_size_from_opts, catalog_search_area_pixel_size, collection_size_label, paint_disk_preview,
-    paint_preview_coord_chip, paint_preview_toolbar, paint_search_area_preview_sizes,
+    paint_preview_coord_chip, paint_preview_floaters, paint_search_area_preview_sizes,
     paint_zoomable_atlas_preview, paint_zoomable_collection_preview, pixel_size_text,
     show_file_hover, CardinalEdge,
 };
@@ -62,7 +62,7 @@ fn paint_fs_name_hint(ui: &mut egui::Ui, name: &str) {
         return;
     }
     if let Err(e) = validate_entity_name(name) {
-        ui.colored_label(crate::theme::error_fg(), e.to_string());
+        crate::widgets::error_icon(ui, &e.to_string());
     }
 }
 
@@ -362,9 +362,9 @@ impl DataEditor {
                 is_dark,
                 settings,
             );
-            ui.colored_label(
-                crate::theme::error_fg(),
-                format!(
+            crate::widgets::error_icon(
+                ui,
+                &format!(
                     "{} requires the desktop app.",
                     EditorTab::PixelCheck.label()
                 ),
@@ -380,7 +380,6 @@ impl DataEditor {
             ui.add_space(crate::theme::element_gap(ui));
             if self.selected_entity.is_none() {
                 self.stop_pixel_check_compute();
-                ui.weak("Select an item from the list.");
                 return;
             }
             self.paint_name_record_row(
@@ -391,11 +390,6 @@ impl DataEditor {
                 ScreenClickBridge::arm_search_area,
             );
             let reference = CoordinateRef(self.form_search_area.clone());
-            let display = if reference.is_empty() {
-                "(optional — seed coords from a search area or cell)"
-            } else {
-                reference.as_str()
-            };
             ui.horizontal(|ui| {
                 help::label(
                     ui,
@@ -406,7 +400,7 @@ impl DataEditor {
                 if let Some(prog) = reference.program() {
                     crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
-                let resp = ui.monospace(display);
+                let resp = ui.monospace(reference.as_str());
                 if !reference.is_empty() {
                     let kind = if reference.is_collection() {
                         PreviewKind::Collection
@@ -504,7 +498,7 @@ impl DataEditor {
                 self.stop_pixel_check_compute();
             }
             self.sync_coord_preview_view();
-            let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
+            let force = std::mem::take(&mut self.preview_force);
             let computing = self.pixel_check_pending.is_some() && can_compute;
             if computing {
                 ui.horizontal(|ui| {
@@ -529,6 +523,15 @@ impl DataEditor {
                         force,
                         &mut self.coord_preview,
                     );
+                    if paint_preview_floaters(
+                        ui,
+                        rect,
+                        true,
+                        Some(&mut self.coord_preview),
+                        "Fit image in viewport",
+                    ) {
+                        self.preview_force = true;
+                    }
                     if let Some(cache) = &self.pixel_check_cache {
                         let inputs = super::pixel_check::inputs_key(
                             self.selected_program.as_deref().unwrap_or(""),
@@ -612,8 +615,8 @@ impl DataEditor {
                     cache.tmpl_h,
                 );
                 if cache.mask_missing {
-                    ui.colored_label(
-                        crate::theme::warn_fg(),
+                    crate::widgets::warn_icon(
+                        ui,
                         "Mask image missing or unreadable — preview ran unmasked.",
                     );
                 }

@@ -26,9 +26,9 @@ pub use context_menu::{
     response_danger_menu, row_context_menu, row_danger_menu,
 };
 pub use controls::{
-    add_button, dirty_action_button, icon_button, icon_button_colored, icon_toggle,
-    mouse_button_picker, press_state_toggle, record_icon_button, warn_badge, ICON_BTN_SIDE,
-    PHOSPHOR_FILL_FAMILY,
+    add_button, dirty_action_button, error_badge, error_icon, icon_button, icon_button_colored,
+    icon_toggle, mouse_button_picker, press_state_toggle, record_icon_button, warn_badge,
+    warn_icon, ICON_BTN_SIDE, PHOSPHOR_FILL_FAMILY,
 };
 pub use dialogs::{
     confirm_cancel_row, confirm_choice_row, confirm_window, consume_escape, dialog_constrain_rect,
@@ -55,7 +55,10 @@ pub use scroll::{
     dialog_scroll, enable_dense_row_extend, scroll_both, scroll_vertical, show_overflow,
     SCROLL_SOURCE_NO_DRAG,
 };
-pub use sections::{section_separator, split_view, tinted_section, SplitView};
+pub use sections::{
+    float_bottom_right, float_strip_clearance, section_separator, split_view, tinted_section,
+    SplitView,
+};
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 pub(crate) use spinner::brand_spinner;
 pub use tags::{tag_chip_editor, TagChipOptions};

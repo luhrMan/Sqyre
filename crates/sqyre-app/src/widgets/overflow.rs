@@ -15,8 +15,13 @@ pub fn text_width(ui: &egui::Ui, text: &str, style: egui::TextStyle) -> f32 {
 pub enum OverflowItem<'a> {
     /// Non-interactive caption (for example "Basic" / "Advanced").
     Caption(&'a str),
-    /// Clickable section or tab.
-    Choice { label: &'a str, selected: bool },
+    /// Clickable section or tab. Paints `icon` only — `label` stays the
+    /// tooltip, the AccessKit name, and the text inside the combo fallback.
+    Choice {
+        label: &'a str,
+        icon: &'a str,
+        selected: bool,
+    },
 }
 
 /// Selectable labels when they fit on one line; a combo menu when they do not.
@@ -61,7 +66,6 @@ pub fn overflow_bar(
 
 fn items_width(ui: &egui::Ui, items: &[OverflowItem<'_>]) -> f32 {
     let gap = ui.spacing().item_spacing.x;
-    let pad = ui.spacing().button_padding.x * 2.0 + 4.0;
     let mut w = 0.0;
     for (i, item) in items.iter().enumerate() {
         if i > 0 {
@@ -75,8 +79,11 @@ fn items_width(ui: &egui::Ui, items: &[OverflowItem<'_>]) -> f32 {
                 }
                 w += text_width(ui, text, egui::TextStyle::Small);
             }
-            OverflowItem::Choice { label, .. } => {
-                w += text_width(ui, label, egui::TextStyle::Button) + pad;
+            OverflowItem::Choice { .. } => {
+                w += ui
+                    .text_style_height(&egui::TextStyle::Button)
+                    .max(crate::widgets::ICON_BTN_SIDE)
+                    + 4.0;
             }
         }
     }
@@ -90,6 +97,7 @@ fn selected_label<'a>(items: &[OverflowItem<'a>]) -> &'a str {
             OverflowItem::Choice {
                 label,
                 selected: true,
+                ..
             } => Some(*label),
             _ => None,
         })
@@ -119,7 +127,10 @@ fn combo_bar(
         .width(avail.clamp(1.0, 320.0))
         .show_ui(ui, |ui| {
             for (i, item) in items.iter().enumerate() {
-                if let OverflowItem::Choice { label, selected } = item {
+                if let OverflowItem::Choice {
+                    label, selected, ..
+                } = item
+                {
                     if ui.selectable_label(*selected, *label).clicked() {
                         picked = Some(i);
                     }
@@ -135,6 +146,39 @@ fn combo_bar(
     picked
 }
 
+/// Icon-only tab face: the `selectable_label` selection chrome around a glyph.
+/// `label` is the AccessKit name and hover text.
+fn paint_icon_choice(
+    ui: &mut egui::Ui,
+    glyph: &str,
+    label: &str,
+    selected: bool,
+) -> egui::Response {
+    let side = ui
+        .text_style_height(&egui::TextStyle::Button)
+        .max(crate::widgets::ICON_BTN_SIDE);
+    let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(side), egui::Sense::click());
+    let visuals = ui.style().interact_selectable(&response, selected);
+    ui.painter().rect(
+        rect.expand(visuals.expansion),
+        visuals.corner_radius,
+        visuals.bg_fill,
+        visuals.fg_stroke,
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        rect.center(),
+        egui::Align2::CENTER_CENTER,
+        glyph,
+        egui::TextStyle::Button.resolve(ui.style()),
+        visuals.fg_stroke.color,
+    );
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), selected, label)
+    });
+    response.on_hover_text(label)
+}
+
 fn paint_items(ui: &mut egui::Ui, items: &[OverflowItem<'_>]) -> Option<usize> {
     let mut picked = None;
     for (i, item) in items.iter().enumerate() {
@@ -145,8 +189,12 @@ fn paint_items(ui: &mut egui::Ui, items: &[OverflowItem<'_>]) -> Option<usize> {
                 }
                 ui.label(egui::RichText::new(*text).weak().small());
             }
-            OverflowItem::Choice { label, selected } => {
-                if ui.selectable_label(*selected, *label).clicked() {
+            OverflowItem::Choice {
+                label,
+                icon,
+                selected,
+            } => {
+                if paint_icon_choice(ui, icon, label, *selected).clicked() {
                     picked = Some(i);
                 }
             }
@@ -165,18 +213,22 @@ mod tests {
         [
             OverflowItem::Choice {
                 label: "Programs",
+                icon: egui_phosphor::regular::APP_WINDOW,
                 selected: true,
             },
             OverflowItem::Choice {
                 label: "Items",
+                icon: egui_phosphor::regular::IMAGES,
                 selected: false,
             },
             OverflowItem::Choice {
                 label: "Coordinates",
+                icon: egui_phosphor::regular::CROSSHAIR,
                 selected: false,
             },
             OverflowItem::Choice {
                 label: "Tools",
+                icon: egui_phosphor::regular::WRENCH,
                 selected: false,
             },
         ]
@@ -185,7 +237,7 @@ mod tests {
     #[test]
     fn narrow_bar_becomes_a_menu() {
         let mut harness = egui_kittest::Harness::builder()
-            .with_size(egui::vec2(140.0, 320.0))
+            .with_size(egui::vec2(80.0, 320.0))
             .build_ui_state(
                 |ui, picked: &mut Option<usize>| {
                     if let Some(i) =

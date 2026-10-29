@@ -91,6 +91,34 @@ pub fn section_separator(ui: &mut egui::Ui) -> egui::Response {
     response
 }
 
+/// Bottom inset [`float_bottom_right`] keeps clear of a pane's edge; scroll
+/// viewports under a float chip shrink by this much so no row paints under it.
+pub fn float_strip_clearance(ui: &egui::Ui) -> f32 {
+    ui.spacing().interact_size.y + SPACE_4 + 16.0
+}
+
+/// Floating control strip pinned inside `rect`'s bottom-right corner — replaces
+/// a reserved footer row without consuming layout height. `add_contents` paints
+/// right-to-left inside a window-frame chip (first widget at the right edge).
+pub fn float_bottom_right(ui: &mut egui::Ui, rect: Rect, add_contents: impl FnOnce(&mut egui::Ui)) {
+    // Clear the floating-scrollbar rail so the chip never sits on the bars.
+    let inset = SPACE_4 + 10.0;
+    let strip_h = ui.spacing().interact_size.y + SPACE_4;
+    let strip = Rect::from_min_max(
+        egui::pos2(rect.left(), rect.bottom() - strip_h - inset),
+        rect.max - egui::vec2(inset, inset),
+    );
+    let mut child = ui.new_child(
+        UiBuilder::new()
+            .max_rect(strip)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    child.spacing_mut().item_spacing.x = crate::theme::element_gap(&child);
+    egui::Frame::window(ui.style())
+        .inner_margin(egui::Margin::symmetric(SPACE_4 as i8, 2))
+        .show(&mut child, add_contents);
+}
+
 /// Faint [`frame_fill`] behind `add_contents` so grouped rows read as one block.
 ///
 /// The tint extends [`TINT_PAD`] past the content on each side (into frame

@@ -263,7 +263,10 @@ impl VariablesPanelUi {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                 ui.set_max_width(pane);
                 ui.horizontal(|ui| {
-                    ui.heading("Declared variables");
+                    crate::action_tooltip::help::tip(
+                        ui.heading("Declared variables"),
+                        crate::action_tooltip::help::VARS_DECLARED,
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if crate::widgets::add_button(ui, "Add variable", true).clicked() {
                             self.editing = Some(EditState {
@@ -287,7 +290,10 @@ impl VariablesPanelUi {
             crate::widgets::show_overflow(ui, "var_declared_header", 1.0, |ui| {
                 ui.horizontal(|ui| {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                    ui.heading("Declared variables");
+                    crate::action_tooltip::help::tip(
+                        ui.heading("Declared variables"),
+                        crate::action_tooltip::help::VARS_DECLARED,
+                    );
                     ui.label(egui::RichText::new(&count).weak());
                     if crate::widgets::add_button(ui, "Add variable", true).clicked() {
                         self.editing = Some(EditState {
@@ -306,9 +312,6 @@ impl VariablesPanelUi {
                 });
             });
         }
-        ui.label(
-            "Initial values seed the runtime store at macro start. Action outputs appear in Live runtime while running.",
-        );
         ui.add(
             egui::TextEdit::singleline(&mut self.declared_filter)
                 .desired_width(f32::INFINITY)

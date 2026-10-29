@@ -249,12 +249,11 @@ impl MacroPromptBuilderUi {
         });
 
         if let Some(msg) = &self.status {
-            let color = if self.status_error {
-                crate::theme::error_fg()
+            if self.status_error {
+                crate::widgets::error_icon(ui, msg);
             } else {
-                crate::theme::ok_fg()
-            };
-            ui.colored_label(color, msg);
+                ui.colored_label(crate::theme::ok_fg(), msg);
+            }
         }
     }
 

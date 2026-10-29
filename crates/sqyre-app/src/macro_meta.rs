@@ -14,7 +14,7 @@ pub struct MacroMetaUi {
     tag_draft: String,
     delay_open: bool,
     /// Hotkey controls expanded beside the key toggle; kept across macro switches.
-    hotkey_open: bool,
+    pub(crate) hotkey_open: bool,
     /// Selection identity used to refresh drafts when the user switches macros.
     synced_name: String,
     synced_idx: Option<usize>,
@@ -58,12 +58,16 @@ impl MacroMetaUi {
 
         let resp = crate::widgets::wrap_unit(ui, |ui| {
             help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::META_NAME);
-            ui.add_enabled(
+            let edit = ui.add_enabled(
                 enabled,
                 egui::TextEdit::singleline(&mut self.name_draft)
                     .desired_width(220.0)
                     .hint_text("Macro name"),
-            )
+            );
+            if let Some(err) = &self.name_error {
+                crate::widgets::error_icon(ui, err);
+            }
+            edit
         })
         .inner
         .on_hover_text(help::META_NAME);
@@ -87,10 +91,6 @@ impl MacroMetaUi {
                 }
             }
         }
-        if let Some(err) = &self.name_error {
-            ui.colored_label(crate::theme::error_fg(), err);
-        }
-
         out
     }
 

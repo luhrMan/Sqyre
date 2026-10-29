@@ -288,10 +288,13 @@ pub const DE_MASK_IMAGE_MODE: &str =
     "Image mask mode — shape fields are hidden while a PNG is on disk.";
 pub const DE_MASK_INVERSE: &str = "When on, only the shape region is kept; the rest is masked out.";
 pub const DE_PREVIEW_ZOOM: &str = "Scroll to zoom; drag to pan when zoomed.";
+/// Declared Variables section (Variables panel).
+pub const VARS_DECLARED: &str =
+    "Initial values seed the runtime store at macro start. Action outputs appear in Live runtime while running.";
 pub const DE_COLLECTION_CELL_ZOOM: &str =
     "Scroll to zoom; drag to pan when zoomed; click/drag selects cells at 100%.";
 pub const DE_OVERLAY_INTRO: &str =
-    "General buttons stay on screen when enabled. Other programs show only while their bound process and window title own focus (bind a window on the Programs tab). The selected button is previewed on screen while you edit.";
+    "General buttons stay on screen when enabled. Other programs show only while their bound process and window title own focus (bind a window on the Programs tab). The selected button is previewed on screen while you edit. Select a program, then New to add a button; pick it in the list to edit.";
 pub const DE_OVERLAY_MACRO: &str =
     "Macro launched when the overlay button is clicked (also used as the button name).";
 pub const DE_OVERLAY_ENABLED: &str =

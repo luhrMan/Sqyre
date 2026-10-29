@@ -249,6 +249,9 @@ impl PreviewTooltipCache {
     }
 
     /// Screen capture preview for a macro coordinate ref (action tooltips).
+    /// `interactive` is whether the host surface accepts hover: the edit window
+    /// does, so errors collapse to an icon + tooltip; the view tip is a
+    /// non-interactive [`egui::Area`] where hover never fires, so it keeps text.
     pub fn paint_for_coordinate_ref(
         &mut self,
         ui: &mut egui::Ui,
@@ -256,6 +259,7 @@ impl PreviewTooltipCache {
         coord_ref: &CoordinateRef,
         kind: PreviewKind,
         force: bool,
+        interactive: bool,
     ) {
         let macro_ = Macro::new("", 0, vec![]);
         let preview = match ref_preview_spec(catalog, &macro_, coord_ref, kind) {
@@ -275,7 +279,11 @@ impl PreviewTooltipCache {
                 matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection),
             ),
             Err(err) => {
-                ui.colored_label(crate::theme::error_fg(), err);
+                if interactive {
+                    crate::widgets::error_icon(ui, err.as_str());
+                } else {
+                    ui.colored_label(crate::theme::error_fg(), err);
+                }
             }
         }
     }
@@ -1066,6 +1074,10 @@ fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_ima
 
 /// Status line while capture is pending/failed. Reserves the display footprint so
 /// the tip does not grow under the cursor when the texture arrives.
+///
+/// This lives inside a hover tip — a non-interactive surface where a nested
+/// hover tooltip can never fire — so the error stays as centered visible text
+/// rather than collapsing to an icon like interactive surfaces do.
 fn paint_preview_status(ui: &mut egui::Ui, caption: &str, err: &str) {
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(DISPLAY_MAX_W, DISPLAY_MAX_H),
@@ -1073,8 +1085,34 @@ fn paint_preview_status(ui: &mut egui::Ui, caption: &str, err: &str) {
     );
     ui.painter()
         .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
-    crate::data_editor_preview::paint_preview_message(ui, rect, err, crate::theme::error_fg(), 0.0);
+    paint_preview_message(ui, rect, err, crate::theme::error_fg(), 0.0);
     ui.add(egui::Label::new(caption).wrap());
+}
+
+/// Centered status/error text inside a preview placeholder, word-wrapped to
+/// `rect` minus `side_inset` per side (never narrower than a readable minimum).
+fn paint_preview_message(
+    ui: &egui::Ui,
+    rect: egui::Rect,
+    text: &str,
+    color: egui::Color32,
+    side_inset: f32,
+) {
+    const MIN_WRAP_W: f32 = 120.0;
+    const EDGE_PAD: f32 = 8.0;
+    let max_w = (rect.width() - EDGE_PAD * 2.0).max(1.0);
+    let wrap_w = (rect.width() - side_inset * 2.0).max(MIN_WRAP_W).min(max_w);
+    let mut job = egui::text::LayoutJob::simple(
+        text.to_owned(),
+        egui::TextStyle::Small.resolve(ui.style()),
+        color,
+        wrap_w,
+    );
+    job.halign = egui::Align::Center;
+    let painter = ui.painter_at(rect);
+    let galley = painter.layout_job(job);
+    let pos = egui::pos2(rect.center().x, rect.center().y - galley.size().y * 0.5);
+    painter.galley(pos, galley, color);
 }
 
 fn log_hover_outline_transition(
@@ -1157,17 +1195,20 @@ fn paint_preview_panel_placeholder(
     _view: &mut ImageViewTransform,
 ) -> egui::Rect {
     let desired = panel_viewport_size(ui);
-    let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
-    crate::data_editor_preview::paint_preview_message(
+    crate::theme::paint_text_centered(
         ui,
         rect,
-        err,
+        egui_phosphor::regular::X_CIRCLE,
+        egui::FontId::proportional(ui.text_style_height(&egui::TextStyle::Heading)),
         crate::theme::error_fg(),
-        crate::data_editor_preview::PREVIEW_CHIP_INSET,
     );
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
+    let enabled = ui.is_enabled();
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, err));
+    resp.on_hover_text(err);
     rect
 }
 

@@ -726,27 +726,12 @@ pub fn var_name_text_edit(
 }
 
 /// Trailing error/warning icon. Errors take priority.
-///
-/// Uses Phosphor glyphs (Proportional fallback) — emoji ✕/⚠ often render as
-/// missing-glyph tofu with the Ubuntu/Hack chain.
 pub fn paint_entry_validation_icon(ui: &mut egui::Ui, v: &EntryValidation) {
-    let (glyph, color, tip) = if !v.error.is_empty() {
-        (
-            egui_phosphor::regular::X_CIRCLE,
-            crate::theme::error_fg(),
-            v.error.as_str(),
-        )
+    if !v.error.is_empty() {
+        crate::widgets::error_icon(ui, v.error.as_str());
     } else if !v.warning.is_empty() {
-        (
-            egui_phosphor::regular::WARNING,
-            crate::theme::warn_fg(),
-            v.warning.as_str(),
-        )
-    } else {
-        return;
-    };
-    ui.add(egui::Label::new(egui::RichText::new(glyph).color(color)).sense(Sense::hover()))
-        .on_hover_text(tip);
+        crate::widgets::warn_icon(ui, v.warning.as_str());
+    }
 }
 
 /// Stroke color for compact validated chips (error > warning > none).

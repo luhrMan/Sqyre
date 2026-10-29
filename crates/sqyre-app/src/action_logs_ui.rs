@@ -1161,7 +1161,7 @@ fn show_labeled_image(
                 state.inspect = None;
             }
         } else {
-            ui.colored_label(crate::theme::error_fg(), "(image unavailable)");
+            crate::widgets::error_icon(ui, "Image unavailable");
         }
     });
 }

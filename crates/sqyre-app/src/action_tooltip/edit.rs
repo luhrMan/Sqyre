@@ -1104,7 +1104,7 @@ fn paint_coord_preview(
             force = true;
         }
     });
-    previews.paint_for_coordinate_ref(ui, catalog, coord, kind, force);
+    previews.paint_for_coordinate_ref(ui, catalog, coord, kind, force, true);
 }
 
 fn point_picker_row(

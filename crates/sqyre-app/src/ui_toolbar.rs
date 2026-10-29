@@ -303,36 +303,6 @@ fn paint_run_stop(app: &mut SqyreApp, ui: &mut egui::Ui, running: bool) {
     crate::widgets::section_separator(ui);
 }
 
-/// Delay + hotkey toggles.
-fn paint_delay_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) {
-    app.workspace
-        .macro_meta
-        .paint_delay_button(ui, &app.workspace.macros[idx], !running);
-    let hk_label = {
-        let m = &app.workspace.macros[idx];
-        if m.hotkey.is_empty() {
-            sqyre_domain::EMPTY_NOT_SET.to_string()
-        } else {
-            format_hotkey(&m.hotkey)
-        }
-    };
-    let hotkey_open = crate::widgets::wrap_unit(ui, |ui| {
-        let open = app.workspace.macro_meta.paint_hotkey_toggle(ui);
-        ui.weak(hk_label.as_str());
-        open
-    })
-    .inner;
-    if hotkey_open {
-        crate::widgets::wrap_unit(ui, |ui| {
-            theme::section_frame(ui.style())
-                .inner_margin(egui::Margin::symmetric(theme::SPACE_4 as i8, 1))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| paint_hotkey_controls(app, ui, idx, running));
-                });
-        });
-    }
-}
-
 #[cfg(not(target_arch = "wasm32"))]
 fn show_update_banner(app: &mut SqyreApp, ui: &mut egui::Ui) {
     use crate::update::UpdateState;
@@ -399,19 +369,7 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         }
     }
     if let Err(e) = sqyre_validate::validate_macro(&app.workspace.macros[idx]) {
-        // Truncate to the pane — keep the status on one line and avoid raising
-        // CentralPanel min_size when the message is long. Inside `show_overflow`'s
-        // scroll branch `available_width` reaches past the pane clip, so cap the
-        // label to the visible width or the truncation never engages.
-        let msg = format!("Validation: {e}");
-        ui.horizontal(|ui| {
-            ui.set_max_width(crate::widgets::visible_width(ui));
-            ui.add(
-                egui::Label::new(egui::RichText::new(&msg).color(crate::theme::error_fg()))
-                    .truncate(),
-            )
-            .on_hover_text(&msg);
-        });
+        crate::widgets::error_icon(ui, &format!("Validation: {e}"));
     }
     // Selection / length may have changed after rename.
     let idx = app
@@ -495,33 +453,42 @@ fn paint_builder_menu(app: &mut SqyreApp, ui: &mut egui::Ui) {
     });
 }
 
-/// Thin full-width footer: delay, hotkey, and macro builder buttons for the selected macro.
-/// Must be shown before the side panel so it spans the whole window width.
-pub fn footer_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
+/// Floating delay / hotkey / builder buttons pinned to the central panel's
+/// bottom-right corner. Replaces the old reserved footer strip.
+pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
     if app.workspace.macros.is_empty() {
         return;
     }
-    egui::Panel::bottom("app_footer_bar")
-        .frame(egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin::symmetric(8, 1)))
-        .show(ui, |ui| {
-            let running = app.run_session.state.running.load(Ordering::SeqCst);
-            let idx = app
-                .workspace
-                .selected_macro
-                .min(app.workspace.macros.len() - 1);
-            crate::widgets::show_overflow(ui, "app_footer", 1.0, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme::element_gap(ui);
-                    // Right-to-left: builder menu rightmost, delay/hotkey fill the rest from the left.
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        paint_builder_menu(app, ui);
-                        ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                            paint_delay_hotkey(app, ui, idx, running);
-                        });
-                    });
+    let running = app.run_session.state.running.load(Ordering::SeqCst);
+    let idx = app
+        .workspace
+        .selected_macro
+        .min(app.workspace.macros.len() - 1);
+    crate::widgets::float_bottom_right(ui, ui.clip_rect(), |ui| {
+        // Right-to-left: builder menu rightmost; then hotkey controls, chord,
+        // key toggle, delay — the same left-to-right order the footer strip had.
+        paint_builder_menu(app, ui);
+        if app.workspace.macro_meta.hotkey_open {
+            theme::section_frame(ui.style())
+                .inner_margin(egui::Margin::symmetric(theme::SPACE_4 as i8, 1))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| paint_hotkey_controls(app, ui, idx, running));
                 });
-            });
-        });
+        }
+        let hk_label = {
+            let m = &app.workspace.macros[idx];
+            if m.hotkey.is_empty() {
+                sqyre_domain::EMPTY_NOT_SET.to_string()
+            } else {
+                format_hotkey(&m.hotkey)
+            }
+        };
+        ui.weak(hk_label);
+        app.workspace.macro_meta.paint_hotkey_toggle(ui);
+        app.workspace
+            .macro_meta
+            .paint_delay_button(ui, &app.workspace.macros[idx], !running);
+    });
 }
 
 /// Action chrome (run/stop, add/vars/clipboard/history/expand-or-collapse).

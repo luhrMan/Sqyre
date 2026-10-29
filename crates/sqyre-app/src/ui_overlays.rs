@@ -418,10 +418,7 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                     cancel = crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked();
                 }
                 ProjectionGate::Denied => {
-                    ui.label(
-                        egui::RichText::new("Screen recording was declined.")
-                            .color(crate::theme::warn_fg()),
-                    );
+                    crate::widgets::warn_icon(ui, "Screen recording was declined.");
                     ui.label(
                         egui::RichText::new(format!("\"{macro_name}\" cannot run without it."))
                             .weak()

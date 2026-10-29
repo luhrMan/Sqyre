@@ -26,6 +26,14 @@ impl Status {
             Self::Unknown => crate::theme::error_fg(),
         }
     }
+
+    fn glyph(self) -> &'static str {
+        match self {
+            Self::Granted => egui_phosphor::regular::CHECK_CIRCLE,
+            Self::Needed => egui_phosphor::regular::WARNING,
+            Self::Unknown => egui_phosphor::regular::X_CIRCLE,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -136,12 +144,13 @@ fn paint_row(ui: &mut egui::Ui, row: &Row) -> Option<Fix> {
             row.title,
             row.summary,
             row.status.label(),
+            row.status.glyph(),
             row.status.color(),
         );
         ui.label(RichText::new(row.summary).weak().small());
         if let Some(detail) = &row.detail {
             ui.add_space(crate::theme::element_gap(ui));
-            ui.label(RichText::new(detail).small().color(crate::theme::warn_fg()));
+            crate::widgets::warn_icon(ui, detail);
         }
         ui.add_space(crate::theme::element_gap(ui));
         let b = &row.button;

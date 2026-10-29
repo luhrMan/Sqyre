@@ -19,15 +19,23 @@ fn row_frame(ui: &egui::Ui) -> egui::Frame {
     crate::theme::section_frame(ui.style())
 }
 
-/// Row title (hover shows `tip`) with the status right-aligned.
+/// Row title (hover shows `tip`) with the status icon right-aligned; the status
+/// word it replaces rides in the icon's hover tooltip.
 ///
 /// The title wraps in the space left of the status. A nested scroll here sat
 /// inside the settings scroller and collapsed the line to a sliver.
-fn row_header(ui: &mut egui::Ui, title: &str, tip: &str, status: &str, color: Color32) {
+fn row_header(
+    ui: &mut egui::Ui,
+    title: &str,
+    tip: &str,
+    status: &str,
+    glyph: &'static str,
+    color: Color32,
+) {
     crate::widgets::fill_row(
         ui,
         |ui| {
-            ui.colored_label(color, status);
+            crate::widgets::controls::status_icon(ui, glyph, color, status);
         },
         |ui| {
             ui.add(egui::Label::new(RichText::new(title).strong()).wrap())

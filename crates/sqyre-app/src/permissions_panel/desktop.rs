@@ -211,7 +211,7 @@ impl PermissionsPanel {
         ui.add_space(crate::theme::section_gap(ui));
 
         if let Some(err) = &self.error {
-            ui.colored_label(crate::theme::error_fg(), err);
+            crate::widgets::error_icon(ui, err);
             ui.add_space(crate::theme::element_gap(ui));
         }
 
@@ -376,12 +376,13 @@ fn paint_permission_row(
                 item.title,
                 item.tooltip.as_deref().unwrap_or(item.summary),
                 item.eligibility.label(),
+                eligibility_glyph(item.eligibility),
                 eligibility_color(item.eligibility),
             );
             ui.label(RichText::new(item.summary).weak().small());
             if let Some(detail) = &item.detail {
                 ui.add_space(crate::theme::element_gap(ui));
-                ui.label(RichText::new(detail).small().color(crate::theme::warn_fg()));
+                crate::widgets::warn_icon(ui, detail);
             }
             for step in &item.setup_steps {
                 ui.label(RichText::new(format!("• {step}")).small());
@@ -454,6 +455,16 @@ fn eligibility_color(status: PermissionEligibility) -> Color32 {
         PermissionEligibility::Checking => crate::theme::PRIMARY,
         PermissionEligibility::NotRequired => Color32::from_gray(140),
         PermissionEligibility::Unavailable => crate::theme::error_fg(),
+    }
+}
+
+fn eligibility_glyph(status: PermissionEligibility) -> &'static str {
+    match status {
+        PermissionEligibility::Granted => egui_phosphor::regular::CHECK_CIRCLE,
+        PermissionEligibility::Needed => egui_phosphor::regular::WARNING,
+        PermissionEligibility::Checking => egui_phosphor::regular::CLOCK,
+        PermissionEligibility::NotRequired => egui_phosphor::regular::MINUS_CIRCLE,
+        PermissionEligibility::Unavailable => egui_phosphor::regular::X_CIRCLE,
     }
 }
 
