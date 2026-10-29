@@ -140,10 +140,11 @@ impl DataEditor {
             crate::widgets::fill_resize_body(ui, |ui| {
                 crate::action_tooltip::help::label(
                     ui,
+                    egui_phosphor::regular::SMILEY,
                     "Icons",
                     crate::action_tooltip::help::DE_OVERLAY_ICON_PICKER,
                 );
-                ui.add_space(crate::theme::SPACE_4);
+                ui.add_space(crate::theme::element_gap(ui));
                 if let Some(id) = overlay_icons::show_icon_picker_grid(
                     ui,
                     &current,

@@ -10,7 +10,7 @@ use sqyre_persist::{
     backups_dir, create_backup, import_backup, list_backups, open_sqyre_dir, prune_backups,
 };
 use sqyre_persist::{
-    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ImportMode, ProgramCatalog,
+    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ImportMode, ProgramCatalog, UiDensity,
     UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
 };
 #[cfg(not(target_arch = "wasm32"))]
@@ -273,6 +273,11 @@ impl SettingsUi {
         // (including horizontal), instead of fully dormant until hover.
         style.spacing.scroll = crate::theme::scroll_style();
         ctx.set_global_style(style);
+        let d = settings.ui_density;
+        crate::theme::set_density(
+            ctx,
+            crate::theme::DensityGaps::new(d.section_gap(), d.element_gap()),
+        );
     }
 
     /// Load action-color overrides from settings into the domain map.
@@ -543,7 +548,7 @@ impl SettingsUi {
                             if setting_visible(&q, section_hit, DATA_LOCATION)
                                 && setting_visible(&q, section_hit, DATA_BACKUP)
                             {
-                                ui.add_space(crate::theme::SPACE_12);
+                                ui.add_space(crate::theme::section_gap(ui));
                             }
                             self.draw_backup(ui, db, macros, catalog, &q, section_hit);
                         }
@@ -570,16 +575,14 @@ impl SettingsUi {
     fn draw_general(&mut self, ui: &mut egui::Ui, q: &str, section_hit: bool) {
         if setting_visible(q, section_hit, SETTING_LOG_META) {
             ui.horizontal(|ui| {
-                if ui
-                    .checkbox(&mut self.settings.save_meta_images, "Log Meta Images")
-                    .changed()
+                if crate::action_tooltip::help::tip(
+                    ui.checkbox(&mut self.settings.save_meta_images, "Log Meta Images"),
+                    crate::action_tooltip::help::SETTING_LOG_META,
+                )
+                .changed()
                 {
                     self.mark_dirty();
                 }
-                crate::action_tooltip::help::icon(
-                    ui,
-                    crate::action_tooltip::help::SETTING_LOG_META,
-                );
                 ui.label("Keep at most:");
                 let mut v = self.settings.action_log_max_entries;
                 if ui
@@ -998,7 +1001,7 @@ impl SettingsUi {
 
             let flatpak = sqyre_update::is_flatpak_install();
             if flatpak {
-                ui.add_space(crate::theme::SPACE_4);
+                ui.add_space(crate::theme::element_gap(ui));
                 ui.label(
                     egui::RichText::new(
                         "Flatpak keeps a private data copy by default. To share macros \
@@ -1130,7 +1133,7 @@ impl SettingsUi {
                 }
             });
 
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.label(
                 egui::RichText::new(format!("Backups folder: {}", backups_dir().display()))
                     .weak()
@@ -1153,7 +1156,7 @@ impl SettingsUi {
                 }
             }
 
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
                 if ui.button("Back up now").clicked() {
                     self.run_manual_backup();
@@ -1279,7 +1282,7 @@ impl SettingsUi {
         }
 
         if setting_visible(q, section_hit, SETTING_UPDATE_ACTIONS) {
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
                 let busy = update.is_busy();
                 if ui
@@ -1305,7 +1308,7 @@ impl SettingsUi {
                 }
             });
 
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             let status = match &update.state {
                 UpdateState::Idle => "Update status: idle".to_string(),
                 UpdateState::Unavailable { reason } => reason.clone(),
@@ -1689,7 +1692,7 @@ impl SettingsUi {
         }
 
         if setting_visible(q, section_hit, SETTING_FONT_SIZE) {
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
                 ui.label("Font size:");
                 let mut v = self.settings.ui_font_size;
@@ -1745,12 +1748,37 @@ impl SettingsUi {
             self.ui_scale_apply_pending = false;
         }
 
+        if setting_visible(q, section_hit, SETTING_SPACING) {
+            ui.horizontal(|ui| {
+                ui.label("Spacing:");
+                let mut density = self.settings.ui_density;
+                egui::ComboBox::from_id_salt("settings_ui_density")
+                    .selected_text(density.label())
+                    .show_ui(ui, |ui| {
+                        for d in UiDensity::ALL {
+                            ui.selectable_value(&mut density, d, d.label());
+                        }
+                    })
+                    .response
+                    .on_hover_text(
+                        "Space between sections and elements. Compact: 4px gaps. \
+                         Normal: 8px between sections, 4px inside. \
+                         Spaced: 12px between sections, 8px inside.",
+                    );
+                if density != self.settings.ui_density {
+                    self.settings.ui_density = density;
+                    self.mark_dirty();
+                    Self::apply_appearance(ctx, &self.settings);
+                }
+            });
+        }
+
         let show_colors = setting_visible(q, section_hit, SETTING_ACTION_COLORS)
             || ACTION_COLOR_CATEGORIES
                 .iter()
                 .any(|&(_, label)| setting_visible(q, false, &[label]));
         if show_colors {
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.label(egui::RichText::new("Macro tree action colors").strong());
 
             let is_dark = ui.visuals().dark_mode;
@@ -2021,6 +2049,9 @@ const SETTING_WINDOW_BORDER: &[&str] = &["window border", "border", "outline"];
 const SETTING_RUN_GLOW: &[&str] = &["run button", "glow", "pulse", "animation"];
 const SETTING_FONT_SIZE: &[&str] = &["font size", "font", "text size"];
 const SETTING_UI_SCALE: &[&str] = &["ui scale", "scale", "padding"];
+const SETTING_SPACING: &[&str] = &[
+    "spacing", "density", "padding", "margin", "gap", "compact", "spaced",
+];
 const SETTING_ACTION_COLORS: &[&str] =
     &["action colors", "macro tree", "colors", "colour", "pastel"];
 
@@ -2067,6 +2098,7 @@ const APPEARANCE_SETTINGS: &[&[&str]] = &[
     SETTING_RUN_GLOW,
     SETTING_FONT_SIZE,
     SETTING_UI_SCALE,
+    SETTING_SPACING,
     SETTING_ACTION_COLORS,
 ];
 
@@ -2108,7 +2140,7 @@ fn sidebar_width(ui: &egui::Ui) -> f32 {
 /// Bold title for a group of settings within a section page.
 fn subsection_heading(ui: &mut egui::Ui, first: &mut bool, title: &str) {
     if !std::mem::take(first) {
-        ui.add_space(crate::theme::SPACE_12);
+        ui.add_space(crate::theme::section_gap(ui));
     }
     ui.label(egui::RichText::new(title).strong());
 }

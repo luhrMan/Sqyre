@@ -39,7 +39,6 @@ impl DataEditor {
         item: &str,
     ) {
         let paths = crate::demo_icons::merged_variant_paths(catalog, target);
-        ui.add_space(crate::theme::SPACE_8);
         crate::widgets::section_separator(ui);
         // Cap to the visible row width — `set_min_width(available_width)` inside a
         // ScrollArea ratchets content wider than the viewport once a scrollbar
@@ -166,7 +165,7 @@ impl DataEditor {
                         variant: variant.clone(),
                     });
                 }
-                ui.add_space(crate::theme::SPACE_8);
+                ui.add_space(crate::theme::element_gap(ui));
             }
         });
     }

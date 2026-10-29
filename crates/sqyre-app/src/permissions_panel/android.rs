@@ -103,14 +103,14 @@ impl PermissionsPanel {
                 .weak()
                 .small(),
         );
-        ui.add_space(crate::theme::SPACE_8);
+        ui.add_space(crate::theme::section_gap(ui));
 
         let mut clicked = None;
         for row in std::iter::once(&recording).chain(&self.system_rows) {
             if let Some(fix) = paint_row(ui, row) {
                 clicked = Some(fix);
             }
-            ui.add_space(crate::theme::SPACE_12);
+            ui.add_space(crate::theme::section_gap(ui));
         }
         if let Some(fix) = clicked {
             let result = match fix {
@@ -140,10 +140,10 @@ fn paint_row(ui: &mut egui::Ui, row: &Row) -> Option<Fix> {
         );
         ui.label(RichText::new(row.summary).weak().small());
         if let Some(detail) = &row.detail {
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.label(RichText::new(detail).small().color(crate::theme::warn_fg()));
         }
-        ui.add_space(crate::theme::SPACE_8);
+        ui.add_space(crate::theme::element_gap(ui));
         let b = &row.button;
         if ui
             .add_enabled(b.enabled, egui::Button::new(b.label))

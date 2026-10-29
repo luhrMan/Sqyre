@@ -20,14 +20,16 @@ pub fn paint_collection_cell_picker(
 ) {
     ui.horizontal(|ui| {
         crate::icon_cache::paint_program_icon(ui, catalog, icons, &pick.program);
-        ui.label(
-            egui::RichText::new(format!(
-                "Select cells — {}~{}",
-                pick.program, pick.collection
-            ))
-            .strong(),
+        crate::action_tooltip::help::tip(
+            ui.label(
+                egui::RichText::new(format!(
+                    "Select cells — {}~{}",
+                    pick.program, pick.collection
+                ))
+                .strong(),
+            ),
+            crate::action_tooltip::help::DE_COLLECTION_CELL_ZOOM,
         );
-        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_COLLECTION_CELL_ZOOM);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             if ui
                 .add_enabled(

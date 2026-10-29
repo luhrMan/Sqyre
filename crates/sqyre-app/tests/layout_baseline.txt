@@ -1,6 +1,4 @@
 edit_imagesearch|412x915|clipped_h|right|Left: 100, Top: 100, Right: 900, Bottom: 600
 edit_imagesearch|480x360|clipped_h|right|Left: 100, Top: 100, Right: 900, Bottom: 600
-edit_imagesearch_stress|412x915|clipped_h|right|Left: 100, Top: 100, Right: 900, Bottom: 600
-edit_imagesearch_stress|480x360|clipped_h|right|Left: 100, Top: 100, Right: 900, Bottom: 600
 edit_move|480x360|ratchet|Window Mouse Move
 edit_move|915x412|ratchet|Window Mouse Move

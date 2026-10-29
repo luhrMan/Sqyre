@@ -515,10 +515,10 @@ pub(crate) fn show_action_view_tip(
                         .vertical_scroll_offset(offset)
                         .show(ui, |ui| {
                             tree_chrome::paint_pill_tip(ui, label, pastel);
-                            ui.add_space(crate::theme::SPACE_4);
+                            ui.add_space(crate::theme::element_gap(ui));
                             ui.label(egui::RichText::new(description).small().weak());
                             if !summary_pills.is_empty() {
-                                ui.add_space(crate::theme::SPACE_4);
+                                ui.add_space(crate::theme::section_gap(ui));
                                 sections::tip_wrapped_section(ui, |ui| {
                                     ui.spacing_mut().item_spacing =
                                         Vec2::splat(crate::theme::SPACE_2);

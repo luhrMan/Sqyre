@@ -139,21 +139,31 @@ pub fn show_overflow<R>(
 
     let size_id = ui.make_persistent_id(id).with("overflow_size");
     let flag_id = size_id.with("on");
+    // `natural_id` holds the size content measured without the scroll wrapper.
+    // The scroll branch reports `content_size` under scroll constraints, which
+    // can be smaller than the natural size (content re-wraps); comparing that
+    // against the pane clears the flag while the unwrapped content still
+    // overflows — a scroll/no-scroll oscillation that discards every pass.
+    let natural_id = size_id.with("natural");
     let remembered = ui
         .ctx()
         .data(|d| d.get_temp::<egui::Vec2>(size_id))
         .unwrap_or(egui::Vec2::ZERO);
+    let natural = ui
+        .ctx()
+        .data(|d| d.get_temp::<egui::Vec2>(natural_id))
+        .unwrap_or(remembered);
     let was_overflow = ui
         .ctx()
         .data(|d| d.get_temp::<bool>(flag_id))
         .unwrap_or(false);
     // Enter only past the slop so a full-width row does not flicker into a bar.
-    // Leave as soon as the content fits, or the slop would keep the bar forever.
+    // Leave when the natural size fits the pane again.
     let width_over = |size: f32, slop: f32| w.is_finite() && size > w + slop;
     let height_over = |size: f32, slop: f32| max_h.is_finite() && size > max_h + slop;
     let overflow = remembered.x > 0.0
         && if was_overflow {
-            width_over(remembered.x, 0.0) || height_over(remembered.y, 0.0)
+            width_over(natural.x, 0.0) || height_over(natural.y, 0.0)
         } else {
             width_over(remembered.x, OVERFLOW_SLOP) || height_over(remembered.y, OVERFLOW_SLOP)
         };
@@ -185,11 +195,7 @@ pub fn show_overflow<R>(
                 add_contents(ui)
             });
         let size = out.content_size;
-        let still = width_over(size.x, 0.0) || height_over(size.y, 0.0);
-        ui.ctx().data_mut(|d| {
-            d.insert_temp(size_id, size);
-            d.insert_temp(flag_id, still);
-        });
+        ui.ctx().data_mut(|d| d.insert_temp(size_id, size));
         out.inner
     } else {
         // Cursor advance, not `min_rect`: a central panel expands `min_rect` to
@@ -204,6 +210,7 @@ pub fn show_overflow<R>(
         let overflows_now = width_over(size.x, OVERFLOW_SLOP) || height_over(size.y, OVERFLOW_SLOP);
         ui.ctx().data_mut(|d| {
             d.insert_temp(size_id, size);
+            d.insert_temp(natural_id, size);
             d.insert_temp(flag_id, overflows_now);
         });
         if overflows_now {

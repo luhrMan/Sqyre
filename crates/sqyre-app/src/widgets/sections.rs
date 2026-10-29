@@ -6,8 +6,6 @@ use crate::theme::{frame_fill, PANEL_SPLITTER_W, SPACE_2, SPACE_4};
 
 /// [`egui::UiStack`] tag on a [`split_view`] pane; value is the pane's separator span.
 const PANE_TAG: &str = "sqyre_split_pane";
-/// Vertical room a separator claims (matches `egui::Separator` default spacing).
-const SEPARATOR_SPACING: f32 = 6.0;
 /// Content inset from the splitter line, so text and widgets never touch it.
 pub const PANE_PAD: f32 = SPACE_4;
 /// How far a [`tinted_section`] fill reaches past its content on each side.
@@ -64,6 +62,9 @@ fn pane(ui: &mut egui::Ui, content: Rect, span: Rangef) -> egui::Ui {
 /// ancestor (panel, window, card, popup) through its inner margin, or a
 /// [`split_view`] pane up to the splitter line.
 ///
+/// The line sits centered in a [`section_gap`] margin on each side — never add
+/// `add_space` around it; the gap already matches the inter-section gap.
+///
 /// In horizontal layouts this is a normal vertical [`egui::Separator`].
 pub fn section_separator(ui: &mut egui::Ui) -> egui::Response {
     if ui.layout().main_dir().is_horizontal() {
@@ -72,8 +73,8 @@ pub fn section_separator(ui: &mut egui::Ui) -> egui::Response {
     let Some(span) = section_span(ui) else {
         return ui.separator();
     };
-    let (rect, response) =
-        ui.allocate_exact_size(egui::vec2(0.0, SEPARATOR_SPACING), Sense::hover());
+    let slot = crate::theme::section_gap(ui) * 2.0 + 1.0;
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(0.0, slot), Sense::hover());
     // Test the full line, not the zero-width slot: a horizontally scrolled
     // viewport clips the slot's x even while most of the line is on screen.
     let line = Rect::from_x_y_ranges(span, rect.y_range());

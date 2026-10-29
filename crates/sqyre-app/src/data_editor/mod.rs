@@ -891,7 +891,7 @@ impl DataEditor {
                 crate::widgets::show_overflow(ui, "de_header_main", 1.0, |ui| {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new(WINDOW_TITLE).strong());
-                        ui.add_space(crate::theme::SPACE_12);
+                        ui.add_space(crate::theme::element_gap(ui));
                         self.paint_section_bar(ui, env);
                     });
                 });

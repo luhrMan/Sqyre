@@ -34,12 +34,17 @@ impl DataEditor {
             }
         });
         self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(crate::theme::SPACE_4);
-        help::label(ui, "Name", help::DE_NAME);
+        ui.add_space(crate::theme::element_gap(ui));
+        help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
         ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
         paint_fs_name_hint(ui, &self.form_name);
-        ui.add_space(crate::theme::SPACE_4);
-        help::label(ui, "Search area", help::DE_COLLECTION_AREA);
+        ui.add_space(crate::theme::element_gap(ui));
+        help::label(
+            ui,
+            egui_phosphor::regular::CROP,
+            "Search area",
+            help::DE_COLLECTION_AREA,
+        );
         {
             let areas: Vec<String> = self
                 .selected_program
@@ -83,12 +88,22 @@ impl DataEditor {
                 self.form_search_area = current;
             }
         }
-        help::label(ui, "Rows", help::DE_COLLECTION_ROWS);
+        help::label(
+            ui,
+            egui_phosphor::regular::ROWS,
+            "Rows",
+            help::DE_COLLECTION_ROWS,
+        );
         help::tip(
             crate::widgets::num_text_edit(ui, &mut self.form_rows, 80.0, 1..=i32::MAX),
             help::DE_COLLECTION_ROWS,
         );
-        help::label(ui, "Cols", help::DE_COLLECTION_COLS);
+        help::label(
+            ui,
+            egui_phosphor::regular::COLUMNS,
+            "Cols",
+            help::DE_COLLECTION_COLS,
+        );
         help::tip(
             crate::widgets::num_text_edit(ui, &mut self.form_cols, 80.0, 1..=i32::MAX),
             help::DE_COLLECTION_COLS,
@@ -143,12 +158,17 @@ impl DataEditor {
         } = paint;
         ui.heading("Atlas");
         self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(crate::theme::SPACE_4);
-        help::label(ui, "Name", help::DE_NAME);
+        ui.add_space(crate::theme::element_gap(ui));
+        help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
         ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
         paint_fs_name_hint(ui, &self.form_name);
-        ui.add_space(crate::theme::SPACE_4);
-        help::label(ui, "Collections", help::DE_ATLAS_MEMBERS);
+        ui.add_space(crate::theme::element_gap(ui));
+        help::label(
+            ui,
+            egui_phosphor::regular::STACK,
+            "Collections",
+            help::DE_ATLAS_MEMBERS,
+        );
         let available: Vec<String> = self
             .selected_program
             .as_deref()

@@ -409,7 +409,7 @@ fn paint_chooser_body(
         .small()
         .weak(),
     );
-    ui.add_space(crate::theme::SPACE_4);
+    ui.add_space(crate::theme::element_gap(ui));
     for (i, name) in names.iter().enumerate() {
         let is_sel = i == *selected;
         let width = ui.available_width();
@@ -432,7 +432,7 @@ fn paint_chooser_body(
             *selected = i;
         }
     }
-    ui.add_space(crate::theme::SPACE_8);
+    ui.add_space(crate::theme::element_gap(ui));
     // Esc already handled by `poll_list_nav` above; button-only footer.
     if crate::widgets::dismiss_row(ui, false) {
         *dismiss = true;

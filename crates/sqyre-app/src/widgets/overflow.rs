@@ -71,7 +71,7 @@ fn items_width(ui: &egui::Ui, items: &[OverflowItem<'_>]) -> f32 {
             OverflowItem::Caption(text) => {
                 if i > 0 {
                     // `add_space` plus the gap the layout inserts before the caption.
-                    w += crate::theme::SPACE_12 + gap;
+                    w += crate::theme::element_gap(ui) + gap;
                 }
                 w += text_width(ui, text, egui::TextStyle::Small);
             }
@@ -141,7 +141,7 @@ fn paint_items(ui: &mut egui::Ui, items: &[OverflowItem<'_>]) -> Option<usize> {
         match item {
             OverflowItem::Caption(text) => {
                 if i > 0 {
-                    ui.add_space(crate::theme::SPACE_12);
+                    ui.add_space(crate::theme::element_gap(ui));
                 }
                 ui.label(egui::RichText::new(*text).weak().small());
             }

@@ -91,6 +91,7 @@ pub fn paint_edit_fields(
             tip_wrapped_section(ui, |ui| {
                 scalar_field(
                     ui,
+                    egui_phosphor::regular::TIMER,
                     "Time (ms)",
                     h::WAIT_TIME,
                     time,
@@ -107,7 +108,7 @@ pub fn paint_edit_fields(
                 // ScrollArea's unbounded height and ratchets the tip to the screen.
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing =
-                        egui::vec2(crate::theme::SPACE_8, crate::theme::SPACE_8);
+                        egui::Vec2::splat(crate::theme::element_gap(ui));
                     help::tip(
                         crate::widgets::mouse_button_picker(ui, button),
                         h::CLICK_BUTTON,
@@ -131,6 +132,7 @@ pub fn paint_edit_fields(
                 wrap_unit(ui, |ui| {
                     var_ref_field(
                         ui,
+                        egui_phosphor::regular::KEY,
                         "Key",
                         key,
                         VarTheme {
@@ -163,6 +165,7 @@ pub fn paint_edit_fields(
             tip_wrapped_section(ui, |ui| {
                 var_ref_field(
                     ui,
+                    egui_phosphor::regular::KEYBOARD,
                     "Text",
                     text,
                     VarTheme {
@@ -173,9 +176,14 @@ pub fn paint_edit_fields(
                     W_VAR,
                     active_macro,
                 );
-                drag_field(ui, "Delay ms", h::TYPE_DELAY, delay_ms, |d| {
-                    d.speed(1).range(MIN_TYPE_DELAY_MS..=MAX_TYPE_DELAY_MS)
-                });
+                drag_field(
+                    ui,
+                    egui_phosphor::regular::TIMER,
+                    "Delay ms",
+                    h::TYPE_DELAY,
+                    delay_ms,
+                    |d| d.speed(1).range(MIN_TYPE_DELAY_MS..=MAX_TYPE_DELAY_MS),
+                );
             });
         }
         ActionKind::Move {
@@ -203,14 +211,25 @@ pub fn paint_edit_fields(
             });
             tip_advanced(ui, |ui| {
                 tip_wrapped_section(ui, |ui| {
-                    drag_field(ui, "Smooth low", h::MOVE_SMOOTH_LOW, smooth_low, |d| {
-                        d.speed(0.01).range(0.0..=1.0)
-                    });
-                    drag_field(ui, "Smooth high", h::MOVE_SMOOTH_HIGH, smooth_high, |d| {
-                        d.speed(0.01).range(0.0..=1.0)
-                    });
                     drag_field(
                         ui,
+                        egui_phosphor::regular::TIMER,
+                        "Smooth low",
+                        h::MOVE_SMOOTH_LOW,
+                        smooth_low,
+                        |d| d.speed(0.01).range(0.0..=1.0),
+                    );
+                    drag_field(
+                        ui,
+                        egui_phosphor::regular::TIMER,
+                        "Smooth high",
+                        h::MOVE_SMOOTH_HIGH,
+                        smooth_high,
+                        |d| d.speed(0.01).range(0.0..=1.0),
+                    );
+                    drag_field(
+                        ui,
+                        egui_phosphor::regular::TIMER,
                         "Smooth delay ms",
                         h::MOVE_SMOOTH_DELAY,
                         smooth_delay_ms,
@@ -227,6 +246,7 @@ pub fn paint_edit_fields(
             tip_section(ui, |ui| {
                 var_ref_field(
                     ui,
+                    egui_phosphor::regular::CHAT_TEXT,
                     "Message",
                     message,
                     VarTheme {
@@ -240,7 +260,12 @@ pub fn paint_edit_fields(
             });
             tip_section(ui, |ui| {
                 ui.horizontal(|ui| {
-                    help::label(ui, "Continue keys (one per line)", h::PAUSE_CONTINUE);
+                    help::label(
+                        ui,
+                        egui_phosphor::regular::KEYBOARD,
+                        "Continue keys (one per line)",
+                        h::PAUSE_CONTINUE,
+                    );
                     if crate::widgets::record_icon_button(
                         ui,
                         "Record continue chord",
@@ -251,7 +276,7 @@ pub fn paint_edit_fields(
                         hotkey_record.open(macro_hotkeys);
                     }
                 });
-                string_list_field(ui, "", continue_key, h::PAUSE_CONTINUE);
+                string_list_field(ui, "", "", continue_key, h::PAUSE_CONTINUE);
             });
             tip_wrapped_section(ui, |ui| {
                 help::tip(
@@ -273,6 +298,7 @@ pub fn paint_edit_fields(
                 tip_section(ui, |ui| {
                     crate::widgets::text_field_width(
                         ui,
+                        egui_phosphor::regular::APP_WINDOW,
                         "Window title",
                         h::FOCUS_TITLE,
                         window_title,
@@ -280,7 +306,12 @@ pub fn paint_edit_fields(
                     );
                     let mut pick = false;
                     ui.horizontal(|ui| {
-                        help::label(ui, "Process path", h::FOCUS_PROCESS);
+                        help::label(
+                            ui,
+                            egui_phosphor::regular::TERMINAL_WINDOW,
+                            "Process path",
+                            h::FOCUS_PROCESS,
+                        );
                         crate::icon_cache::paint_leading_process_icon(
                             ui,
                             icons,
@@ -315,7 +346,13 @@ pub fn paint_edit_fields(
         }
         ActionKind::RunMacro { macro_name } => {
             tip_wrapped_section(ui, |ui| {
-                if picker_display_row(ui, "Macro", h::RUN_MACRO, macro_name.as_str()) {
+                if picker_display_row(
+                    ui,
+                    egui_phosphor::regular::MAGIC_WAND,
+                    "Macro",
+                    h::RUN_MACRO,
+                    macro_name.as_str(),
+                ) {
                     *picker = ActivePicker::Macro {
                         search: String::new(),
                         value: macro_name.clone(),
@@ -338,6 +375,7 @@ pub fn paint_edit_fields(
             tip_wrapped_section(ui, |ui| {
                 var_pills::var_name_text_edit(
                     ui,
+                    egui_phosphor::regular::BRACKETS_CURLY,
                     "Variable",
                     variable_name,
                     known_vars,
@@ -347,6 +385,7 @@ pub fn paint_edit_fields(
                 );
                 var_ref_field(
                     ui,
+                    egui_phosphor::regular::FOLDER,
                     "Destination",
                     destination,
                     VarTheme {
@@ -410,7 +449,7 @@ pub fn paint_edit_fields(
         }
         ActionKind::ForEachCell { name, cells, .. } => {
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Name", h::NAME, name);
+                text_field(ui, egui_phosphor::regular::TEXT_T, "Name", h::NAME, name);
             });
             tip_section(ui, |ui| {
                 cells_picker_row(
@@ -544,7 +583,12 @@ pub fn paint_edit_fields(
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
                 wrap_unit(ui, |ui| {
-                    help::label(ui, "Program", h::NAV_PROGRAM);
+                    help::label(
+                        ui,
+                        egui_phosphor::regular::APP_WINDOW,
+                        "Program",
+                        h::NAV_PROGRAM,
+                    );
                     let programs: Vec<String> = catalog.program_names().cloned().collect();
                     let mut current = data.program.clone();
                     let mut option_icon =
@@ -565,7 +609,7 @@ pub fn paint_edit_fields(
                     }
                 });
                 wrap_unit(ui, |ui| {
-                    help::label(ui, "Atlas", h::NAV_ATLAS);
+                    help::label(ui, egui_phosphor::regular::IMAGES, "Atlas", h::NAV_ATLAS);
                     let atlases: Vec<String> = if data.program.trim().is_empty() {
                         Vec::new()
                     } else {
@@ -589,22 +633,48 @@ pub fn paint_edit_fields(
                 });
             });
             tip_section(ui, |ui| {
-                string_list_field(ui, "Chord up", &mut data.chords.up, h::NAV_CHORD_UP);
-                string_list_field(ui, "Chord down", &mut data.chords.down, h::NAV_CHORD_DOWN);
-                string_list_field(ui, "Chord left", &mut data.chords.left, h::NAV_CHORD_LEFT);
                 string_list_field(
                     ui,
+                    egui_phosphor::regular::ARROW_UP,
+                    "Chord up",
+                    &mut data.chords.up,
+                    h::NAV_CHORD_UP,
+                );
+                string_list_field(
+                    ui,
+                    egui_phosphor::regular::ARROW_DOWN,
+                    "Chord down",
+                    &mut data.chords.down,
+                    h::NAV_CHORD_DOWN,
+                );
+                string_list_field(
+                    ui,
+                    egui_phosphor::regular::ARROW_LEFT,
+                    "Chord left",
+                    &mut data.chords.left,
+                    h::NAV_CHORD_LEFT,
+                );
+                string_list_field(
+                    ui,
+                    egui_phosphor::regular::ARROW_RIGHT,
                     "Chord right",
                     &mut data.chords.right,
                     h::NAV_CHORD_RIGHT,
                 );
                 string_list_field(
                     ui,
+                    egui_phosphor::regular::CHECK,
                     "Chord select",
                     &mut data.chords.select,
                     h::NAV_CHORD_SELECT,
                 );
-                string_list_field(ui, "Chord back", &mut data.chords.back, h::NAV_CHORD_BACK);
+                string_list_field(
+                    ui,
+                    egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
+                    "Chord back",
+                    &mut data.chords.back,
+                    h::NAV_CHORD_BACK,
+                );
             });
             tip_section(ui, |ui| {
                 ui.label(
@@ -645,6 +715,7 @@ pub fn paint_edit_fields(
                 tip_wrapped_section(ui, |ui| {
                     combo_enum(
                         ui,
+                        egui_phosphor::regular::MOUSE,
                         "Select device",
                         h::NAV_SELECT_DEVICE,
                         &mut data.select.device,
@@ -653,15 +724,23 @@ pub fn paint_edit_fields(
                     );
                     combo_enum(
                         ui,
+                        egui_phosphor::regular::MOUSE,
                         "Select button",
                         h::NAV_SELECT_BUTTON,
                         &mut data.select.button,
                         MouseButton::ALL,
                         MouseButton::label,
                     );
-                    text_field(ui, "Select key", h::NAV_SELECT_KEY, &mut data.select.key);
+                    text_field(
+                        ui,
+                        egui_phosphor::regular::KEY,
+                        "Select key",
+                        h::NAV_SELECT_KEY,
+                        &mut data.select.key,
+                    );
                     combo_enum(
                         ui,
+                        egui_phosphor::regular::HAND_POINTING,
                         "Select press mode",
                         h::NAV_SELECT_PRESS,
                         &mut data.select.press_mode,
@@ -670,9 +749,16 @@ pub fn paint_edit_fields(
                     );
                 });
                 tip_wrapped_section(ui, |ui| {
-                    text_field(ui, "In atlas", h::NAV_IN_ATLAS, &mut data.inputs.atlas);
+                    text_field(
+                        ui,
+                        egui_phosphor::regular::IMAGES,
+                        "In atlas",
+                        h::NAV_IN_ATLAS,
+                        &mut data.inputs.atlas,
+                    );
                     num_text_field(
                         ui,
+                        egui_phosphor::regular::ROWS,
                         "In row",
                         h::NAV_IN_ROW,
                         &mut data.inputs.row,
@@ -680,6 +766,7 @@ pub fn paint_edit_fields(
                     );
                     num_text_field(
                         ui,
+                        egui_phosphor::regular::COLUMNS,
                         "In col",
                         h::NAV_IN_COL,
                         &mut data.inputs.col,
@@ -687,6 +774,7 @@ pub fn paint_edit_fields(
                     );
                     text_field(
                         ui,
+                        egui_phosphor::regular::GRID_FOUR,
                         "In collection",
                         h::NAV_IN_COLLECTION,
                         &mut data.inputs.collection,
@@ -695,30 +783,35 @@ pub fn paint_edit_fields(
                 tip_wrapped_section(ui, |ui| {
                     text_field(
                         ui,
+                        egui_phosphor::regular::BRACKETS_CURLY,
                         "Output ref",
                         h::NAV_OUT_REF,
                         &mut data.outputs.output_ref,
                     );
                     text_field(
                         ui,
+                        egui_phosphor::regular::IMAGES,
                         "Output atlas",
                         h::NAV_OUT_ATLAS,
                         &mut data.outputs.output_atlas,
                     );
                     text_field(
                         ui,
+                        egui_phosphor::regular::ROWS,
                         "Output row",
                         h::NAV_OUT_ROW,
                         &mut data.outputs.output_row,
                     );
                     text_field(
                         ui,
+                        egui_phosphor::regular::COLUMNS,
                         "Output col",
                         h::NAV_OUT_COL,
                         &mut data.outputs.output_col,
                     );
                     text_field(
                         ui,
+                        egui_phosphor::regular::GRID_FOUR,
                         "Output collection",
                         h::NAV_OUT_COLLECTION,
                         &mut data.outputs.output_collection,
@@ -733,14 +826,20 @@ pub fn paint_edit_fields(
             subactions: _,
         } => {
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Name", h::NAME, name);
+                text_field(ui, egui_phosphor::regular::TEXT_T, "Name", h::NAME, name);
                 help::tip(
                     ui.checkbox(exit, "Exit Navigate Select after branch"),
                     h::NAV_KEY_EXIT,
                 );
             });
             tip_section(ui, |ui| {
-                string_list_field(ui, "Chord", chord, h::NAV_KEY_CHORD);
+                string_list_field(
+                    ui,
+                    egui_phosphor::regular::KEYBOARD,
+                    "Chord",
+                    chord,
+                    h::NAV_KEY_CHORD,
+                );
             });
         }
     }
@@ -786,6 +885,7 @@ fn targets_editor(
         }
         combo_enum(
             ui,
+            egui_phosphor::regular::SORT_ASCENDING,
             "Sort by",
             h::IS_SEARCH_SORTING,
             sort_by,
@@ -795,6 +895,7 @@ fn targets_editor(
         if *sort_by != ItemSortBy::Manual {
             combo_enum(
                 ui,
+                egui_phosphor::regular::ARROWS_DOWN_UP,
                 "Then",
                 h::IS_SORT_THEN,
                 sort_then,
@@ -967,11 +1068,17 @@ fn path_wrap_rows(available_width: f32, path: &str) -> usize {
     len.div_ceil(chars_per_line).clamp(1, 4)
 }
 
-/// Label + read-only value + pick button. Returns true when pick was clicked.
-fn picker_display_row(ui: &mut egui::Ui, label: &str, help_text: &str, display: &str) -> bool {
+/// Icon label + read-only value + pick button. Returns true when pick was clicked.
+fn picker_display_row(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    help_text: &str,
+    display: &str,
+) -> bool {
     let mut clicked = false;
     wrap_unit(ui, |ui| {
-        help::label(ui, label, help_text);
+        help::label(ui, icon, label, help_text);
         ui.label(if display.is_empty() {
             sqyre_domain::EMPTY_UNSET
         } else {
@@ -1012,6 +1119,7 @@ fn point_picker_row(
 ) {
     coord_picker_row(
         ui,
+        egui_phosphor::regular::MAP_PIN,
         "Point",
         h::MOVE_POINT,
         paint,
@@ -1029,6 +1137,7 @@ fn search_area_picker_row(
 ) {
     coord_picker_row(
         ui,
+        egui_phosphor::regular::CROP,
         "Search area",
         h::SEARCH_AREA,
         paint,
@@ -1046,6 +1155,7 @@ fn cells_picker_row(
 ) {
     coord_picker_row(
         ui,
+        egui_phosphor::regular::GRID_FOUR,
         "Cells",
         h::FOREACH_CELLS,
         paint,
@@ -1055,8 +1165,13 @@ fn cells_picker_row(
     );
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "coord picker row: icon, label, help, paint context, and picker state"
+)]
 fn coord_picker_row(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     paint: &mut CatalogPaint<'_>,
@@ -1072,7 +1187,7 @@ fn coord_picker_row(
     let display = coord.display_label();
     let validation = coord_unset_validation(kind, coord);
     ui.horizontal(|ui| {
-        help::label(ui, label, help_text);
+        help::label(ui, icon, label, help_text);
         if let Some(prog) = coord.program() {
             crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
         }
@@ -1148,8 +1263,13 @@ fn attach_coord_hover(
     previews.show_for_coordinate_ref(ui, response, catalog, coord, preview_kind);
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "field editor: icon, label, help, value, and shared var theme context"
+)]
 pub(super) fn scalar_field(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut ScalarValue,
@@ -1171,6 +1291,7 @@ pub(super) fn scalar_field(
         VarFieldOpts {
             desired_width: W_VAR,
             validation: &validation,
+            icon,
             help: help_text,
         },
     );
@@ -1181,8 +1302,13 @@ pub(super) fn scalar_field(
 
 /// Condition L/R operands: plain text (including spaces) is allowed; only
 /// arithmetic-looking values are expression-checked — same rules as Set value.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "field editor: icon, label, help, value, and shared var theme context"
+)]
 fn condition_operand_field(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut ScalarValue,
@@ -1204,6 +1330,7 @@ fn condition_operand_field(
         VarFieldOpts {
             desired_width: W_VAR,
             validation: &validation,
+            icon,
             help: help_text,
         },
     );
@@ -1212,8 +1339,13 @@ fn condition_operand_field(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "var-ref editor: icon, label, theme, help, width, and validation context"
+)]
 pub(super) fn var_ref_field(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     value: &mut String,
     theme: VarTheme<'_>,
@@ -1230,15 +1362,22 @@ pub(super) fn var_ref_field(
         VarFieldOpts {
             desired_width,
             validation: &validation,
+            icon,
             help: help_text,
         },
     );
 }
 
-fn string_list_field(ui: &mut egui::Ui, label: &str, values: &mut Vec<String>, help_text: &str) {
+fn string_list_field(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    values: &mut Vec<String>,
+    help_text: &str,
+) {
     let mut text = values.join("\n");
     if !label.is_empty() {
-        help::label(ui, label, help_text);
+        help::label(ui, icon, label, help_text);
     }
     if help::tip(
         ui.add(
@@ -1266,6 +1405,7 @@ fn set_value_edit_text(value: &ScalarValue) -> String {
 
 fn yaml_value_field(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     value: &mut ScalarValue,
     known_vars: &KnownVariableNames,
@@ -1278,7 +1418,7 @@ fn yaml_value_field(
     // Expression builder toolbar.
     let mut insert: Option<String> = None;
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
+        ui.spacing_mut().item_spacing.x = crate::theme::element_gap(ui);
         ui.menu_button("f(x)", |ui| {
             for f in EXPRESSION_FUNCTIONS {
                 if ui.button(format!("{f}( )")).clicked() {
@@ -1320,6 +1460,7 @@ fn yaml_value_field(
         VarFieldOpts {
             desired_width: f32::INFINITY,
             validation: &validation,
+            icon,
             help: h::SET_VALUE,
         },
     );
@@ -1354,7 +1495,13 @@ pub(super) fn condition_editor(
     extra: impl FnOnce(&mut egui::Ui),
 ) {
     tip_wrapped_section(ui, |ui| {
-        text_field(ui, "Name", h::NAME, &mut condition.name);
+        text_field(
+            ui,
+            egui_phosphor::regular::TEXT_T,
+            "Name",
+            h::NAME,
+            &mut condition.name,
+        );
         let mut all = condition.match_mode != MatchMode::Any;
         if help::tip(
             ui.checkbox(&mut all, "Match all (uncheck = any)"),
@@ -1450,7 +1597,12 @@ fn repeat_mode_plain(mode: RepeatMode) -> &'static str {
 
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     wrap_unit(ui, |ui| {
-        help::label(ui, "Repeat mode", h::REPEAT_MODE);
+        help::label(
+            ui,
+            egui_phosphor::regular::REPEAT,
+            "Repeat mode",
+            h::REPEAT_MODE,
+        );
         let selected = repeat_mode_label(ui, wait.repeat_mode);
         let selected_plain = repeat_mode_plain(wait.repeat_mode);
         let response = egui::ComboBox::from_id_salt("Repeat mode")
@@ -1484,6 +1636,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     let max_enabled = wait.uses_max_iterations();
     drag_field_enabled(
         ui,
+        egui_phosphor::regular::CLOCK,
         "Wait seconds",
         h::WAIT_SECONDS,
         &mut wait.wait_til_found_seconds,
@@ -1492,6 +1645,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     );
     drag_field_enabled(
         ui,
+        egui_phosphor::regular::TIMER,
         "Interval ms",
         h::WAIT_INTERVAL,
         &mut wait.wait_til_found_interval_ms,
@@ -1503,6 +1657,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     );
     drag_field_enabled(
         ui,
+        egui_phosphor::regular::REPEAT,
         "Max iterations",
         h::WAIT_MAX_ITER,
         &mut wait.max_iterations,
@@ -1519,6 +1674,7 @@ fn coords_editor(
 ) {
     var_pills::var_name_text_edit(
         ui,
+        egui_phosphor::regular::CROSSHAIR,
         "Output X",
         &mut coords.output_x_variable,
         known_vars,
@@ -1528,6 +1684,7 @@ fn coords_editor(
     );
     var_pills::var_name_text_edit(
         ui,
+        egui_phosphor::regular::CROSSHAIR,
         "Output Y",
         &mut coords.output_y_variable,
         known_vars,
@@ -1540,6 +1697,7 @@ fn coords_editor(
 fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
     combo_enum(
         ui,
+        egui_phosphor::regular::SQUARES_FOUR,
         "Grouping",
         h::ORDER_GROUPING,
         &mut order.grouping,
@@ -1548,6 +1706,7 @@ fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
     );
     combo_str_labeled(
         ui,
+        egui_phosphor::regular::ARROWS_LEFT_RIGHT,
         "Horizontal",
         h::ORDER_HORIZONTAL,
         &mut order.horizontal,
@@ -1556,6 +1715,7 @@ fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
     );
     combo_str_labeled(
         ui,
+        egui_phosphor::regular::ARROWS_DOWN_UP,
         "Vertical",
         h::ORDER_VERTICAL,
         &mut order.vertical,
@@ -1619,6 +1779,7 @@ fn clauses_editor(
             let row = ui.horizontal(|ui| {
                 condition_operand_field(
                     ui,
+                    egui_phosphor::regular::FUNCTION,
                     "L",
                     h::CLAUSE_LEFT,
                     &mut clause.left,
@@ -1626,9 +1787,16 @@ fn clauses_editor(
                     is_dark,
                     active_macro,
                 );
-                combo_condition_operator(ui, "op", h::CLAUSE_OP, &mut clause.operator);
+                combo_condition_operator(
+                    ui,
+                    egui_phosphor::regular::EQUALS,
+                    "op",
+                    h::CLAUSE_OP,
+                    &mut clause.operator,
+                );
                 condition_operand_field(
                     ui,
+                    egui_phosphor::regular::FUNCTION,
                     "R",
                     h::CLAUSE_RIGHT,
                     &mut clause.right,
@@ -1668,6 +1836,7 @@ pub(super) fn list_columns_editor(
             let frame = theme::section_frame(ui.style()).show(ui, |ui| {
                 var_ref_field(
                     ui,
+                    egui_phosphor::regular::LIST_BULLETS,
                     "Source",
                     &mut col.source,
                     VarTheme {
@@ -1680,6 +1849,7 @@ pub(super) fn list_columns_editor(
                 );
                 var_pills::var_name_text_edit(
                     ui,
+                    egui_phosphor::regular::BRACKETS_CURLY,
                     "Output var",
                     &mut col.output_var,
                     known_vars,
@@ -1725,6 +1895,7 @@ fn assignments_editor(
             let frame = theme::section_frame(ui.style()).show(ui, |ui| {
                 var_pills::var_name_text_edit(
                     ui,
+                    egui_phosphor::regular::BRACKETS_CURLY,
                     "Variable",
                     &mut a.variable_name,
                     known_vars,
@@ -1734,6 +1905,7 @@ fn assignments_editor(
                 );
                 yaml_value_field(
                     ui,
+                    egui_phosphor::regular::FUNCTION,
                     "Value (text, ${ref}, or expression)",
                     &mut a.value,
                     known_vars,

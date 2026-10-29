@@ -70,33 +70,15 @@ pub fn section_frame(style: &egui::Style) -> egui::Frame {
         .inner_margin(egui::Margin::same(8))
 }
 
-/// Full-width framed card, then vertical `gap` after it.
-pub fn framed_section(ui: &mut egui::Ui, gap: f32, add_contents: impl FnOnce(&mut egui::Ui)) {
+/// Full-width framed card, then a [`super::section_gap`] gap after it.
+pub fn framed_section(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
     // Cap width *inside* the frame. Measuring outside and then applying
     // `set_max_width` ignores inner_margin/stroke, so the right border clips.
     section_frame(ui.style()).show(ui, |ui| {
         ui.set_max_width(crate::widgets::visible_width(ui));
         add_contents(ui);
     });
-    ui.add_space(gap);
-}
-
-/// [`framed_section`] with a strong title, optional weak subtitle, and separator.
-pub fn titled_section(
-    ui: &mut egui::Ui,
-    title: &str,
-    subtitle: &str,
-    gap: f32,
-    add_contents: impl FnOnce(&mut egui::Ui),
-) {
-    framed_section(ui, gap, |ui| {
-        ui.label(egui::RichText::new(title).strong().heading());
-        if !subtitle.is_empty() {
-            ui.label(egui::RichText::new(subtitle).weak());
-        }
-        crate::widgets::section_separator(ui);
-        add_contents(ui);
-    });
+    ui.add_space(super::section_gap(ui));
 }
 
 #[cfg(test)]

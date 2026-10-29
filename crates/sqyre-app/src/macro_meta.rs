@@ -56,7 +56,7 @@ impl MacroMetaUi {
     ) -> MetaMutations {
         let mut out = MetaMutations::default();
 
-        help::label(ui, "Name:", help::META_NAME);
+        help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::META_NAME);
         let te = egui::TextEdit::singleline(&mut self.name_draft)
             .desired_width(220.0)
             .hint_text("Macro name");

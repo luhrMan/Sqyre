@@ -45,7 +45,7 @@ pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
 
 fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+        ui.spacing_mut().item_spacing.x = theme::element_gap(ui);
 
         // Brand / command palette (primary affordance), top-left of the window.
         // While a macro runs the shield is replaced by the animated S trace —
@@ -318,7 +318,7 @@ fn paint_delay_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running
     };
     let hotkey_open = crate::widgets::wrap_unit(ui, |ui| {
         let open = app.workspace.macro_meta.paint_hotkey_toggle(ui);
-        ui.weak(hk_label);
+        ui.weak(hk_label.as_str());
         open
     })
     .inner;
@@ -505,7 +505,7 @@ pub fn footer_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 .min(app.workspace.macros.len() - 1);
             crate::widgets::show_overflow(ui, "app_footer", 1.0, |ui| {
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+                    ui.spacing_mut().item_spacing.x = theme::element_gap(ui);
                     // Right-to-left: builder menu rightmost, delay/hotkey fill the rest from the left.
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         paint_builder_menu(app, ui);
@@ -530,7 +530,7 @@ pub fn action_toolbar(
     let mut force_openness: Option<bool> = None;
     ui.horizontal_wrapped(|ui| {
         // Tight gap between toolbar icon buttons (scale SPACE_4).
-        ui.spacing_mut().item_spacing.x = theme::SPACE_4;
+        ui.spacing_mut().item_spacing.x = theme::element_gap(ui);
         #[cfg(not(target_arch = "wasm32"))]
         paint_run_stop(app, ui, running);
         let can_copy = app.can_copy_selection();
@@ -594,6 +594,6 @@ pub fn action_toolbar(
             force_openness = Some(expand);
         }
     });
-    ui.add_space(theme::SPACE_4);
+    ui.add_space(theme::element_gap(ui));
     force_openness
 }

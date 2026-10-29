@@ -208,11 +208,11 @@ impl PermissionsPanel {
             .weak()
             .small(),
         );
-        ui.add_space(crate::theme::SPACE_8);
+        ui.add_space(crate::theme::section_gap(ui));
 
         if let Some(err) = &self.error {
             ui.colored_label(crate::theme::error_fg(), err);
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
         }
 
         if (self.running || self.refresh_when_capture_ready) && self.items.is_empty() {
@@ -249,7 +249,7 @@ impl PermissionsPanel {
                 }
                 PermissionRowAction::None => {}
             }
-            ui.add_space(crate::theme::SPACE_12);
+            ui.add_space(crate::theme::section_gap(ui));
         }
     }
 }
@@ -380,14 +380,14 @@ fn paint_permission_row(
             );
             ui.label(RichText::new(item.summary).weak().small());
             if let Some(detail) = &item.detail {
-                ui.add_space(crate::theme::SPACE_4);
+                ui.add_space(crate::theme::element_gap(ui));
                 ui.label(RichText::new(detail).small().color(crate::theme::warn_fg()));
             }
             for step in &item.setup_steps {
                 ui.label(RichText::new(format!("• {step}")).small());
             }
             if let Some(cmd) = &item.copy_command {
-                ui.add_space(crate::theme::SPACE_4);
+                ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
                     ui.monospace(cmd);
                     if ui.button("Copy").clicked() {
@@ -401,7 +401,7 @@ fn paint_permission_row(
                 .then(system_shortcuts_button)
                 .flatten();
             if share_screen || revoke || shortcuts.is_some() {
-                ui.add_space(crate::theme::SPACE_8);
+                ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
                     if let Some(label) = shortcuts {
                         if ui

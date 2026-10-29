@@ -15,12 +15,9 @@
 use crate::theme;
 use eframe::egui;
 
-/// Vertical gap between consecutive tip sections.
-const SECTION_GAP: f32 = crate::theme::SPACE_4;
-
 /// Sqyre-framed section (full-width vertical content).
 pub fn tip_section(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
-    theme::framed_section(ui, SECTION_GAP, add_contents);
+    theme::framed_section(ui, add_contents);
 }
 
 /// Framed section whose children flow left-to-right and wrap.
@@ -68,5 +65,5 @@ pub fn tip_advanced(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui))
             .data_mut(|d| d.insert_temp(edit_tip_refit_id(), true));
         ui.ctx().request_repaint();
     }
-    ui.add_space(SECTION_GAP);
+    ui.add_space(theme::section_gap(ui));
 }

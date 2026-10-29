@@ -683,8 +683,13 @@ fn click_to_edit_hit(
 }
 
 /// Variable-name field that becomes a nested chip when unfocused.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "var-name editor: icon, label, theme, width, and help text"
+)]
 pub fn var_name_text_edit(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     value: &mut String,
     known: &KnownVariableNames,
@@ -693,7 +698,7 @@ pub fn var_name_text_edit(
     help: &str,
 ) {
     crate::widgets::wrap_unit(ui, |ui| {
-        crate::action_tooltip::help::label(ui, label, help);
+        crate::action_tooltip::help::label(ui, icon, label, help);
         let width = resolve_edit_width(ui, desired_width, 0.0);
         let id = ui.id().with(("var_name_edit", label));
         let focused = ui.memory(|m| m.has_focus(id));
@@ -774,7 +779,9 @@ pub struct VarFieldOpts<'a> {
     /// Finite width, or [`f32::INFINITY`] to fill the remaining row.
     pub desired_width: f32,
     pub validation: &'a EntryValidation,
-    /// Hover text on the label; empty for none.
+    /// Phosphor glyph for the field icon.
+    pub icon: &'a str,
+    /// Description appended to the icon's `name:` tooltip; empty for none.
     pub help: &'a str,
 }
 
@@ -794,10 +801,11 @@ pub fn validated_var_ref_edit(
     let VarFieldOpts {
         desired_width,
         validation,
+        icon,
         help,
     } = opts;
     crate::widgets::wrap_unit(ui, |ui| {
-        crate::action_tooltip::help::label(ui, label, help);
+        crate::action_tooltip::help::label(ui, icon, label, help);
         let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
         let id = ui.id().with(("validated_var_ref", label));
         let focused = ui.memory(|m| m.has_focus(id));
@@ -842,14 +850,13 @@ pub fn validated_var_ref_multiline_edit(
     let VarFieldOpts {
         desired_width,
         validation,
+        icon,
         help,
     } = opts;
-    // Wrapped row: a long label wraps its text and the icons follow on the
-    // last line. A plain horizontal row would push the ? icon past the clip.
+    // Wrapped row keeps the validation icon from being pushed past the clip.
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = crate::theme::SPACE_2;
-        ui.label(label);
-        crate::action_tooltip::help::icon(ui, help);
+        crate::action_tooltip::help::label(ui, icon, label, help);
         paint_entry_validation_icon(ui, validation);
     });
     let width = resolve_edit_width(ui, desired_width, 0.0);

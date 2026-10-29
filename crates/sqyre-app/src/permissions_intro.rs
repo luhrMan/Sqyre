@@ -84,7 +84,8 @@ impl PermissionsIntro {
             );
             crate::widgets::section_separator(ui);
             // Footer height (button row) stays outside the scroll so Continue is always visible.
-            let footer_h = ui.spacing().interact_size.y + crate::theme::SPACE_8 * 2.0;
+            let footer_h =
+                ui.spacing().interact_size.y + crate::theme::element_gap(ui) + crate::theme::SPACE_8;
             let scroll_h = (bounds.height() - margin.y - ui.min_rect().height() - footer_h)
                 .max(ui.spacing().interact_size.y);
             egui::ScrollArea::vertical()
@@ -93,11 +94,11 @@ impl PermissionsIntro {
                 .show(ui, |ui| {
                     for item in &self.items {
                         paint_item(ui, ctx, item);
-                        ui.add_space(crate::theme::SPACE_8);
+                        ui.add_space(crate::theme::element_gap(ui));
                     }
                     if let Some(note) = self.note {
                         ui.label(RichText::new(note).weak().small());
-                        ui.add_space(crate::theme::SPACE_8);
+                        ui.add_space(crate::theme::element_gap(ui));
                     }
                     ui.label(
                         RichText::new("You can review these any time in Settings → Permissions.")
@@ -105,7 +106,7 @@ impl PermissionsIntro {
                             .small(),
                     );
                 });
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
             if self.showing() {
                 let clicked = ui
                     .button("Continue")

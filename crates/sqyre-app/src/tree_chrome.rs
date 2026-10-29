@@ -496,7 +496,7 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
                     .inner_margin(egui::Margin::same(crate::theme::SPACE_4 as i8))
                     .show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
+                            ui.spacing_mut().item_spacing.x = crate::theme::element_gap(ui);
                             ui.label(egui::RichText::new(group.polarity_label()).small().strong());
                             ui.label(egui::RichText::new(group.name.as_str()).small());
                         });
@@ -524,7 +524,7 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         if display.is_empty() {
             return;
         }
-        ui.add_space(crate::theme::SPACE_4);
+        ui.add_space(crate::theme::element_gap(ui));
     }
 
     crate::widgets::title_with_count(
@@ -1526,13 +1526,13 @@ mod tests {
                 ui.label(
                     egui::RichText::new("View tip size evidence (~50% of viewport)").heading(),
                 );
-                ui.add_space(crate::theme::SPACE_8);
+                ui.add_space(crate::theme::element_gap(ui));
                 egui::Frame::popup(ui.style())
                     .inner_margin(egui::Margin::symmetric(10, 8))
                     .show(ui, |ui| {
                         ui.set_width(tip_w);
                         paint_pill_pub(ui, "Image Search", Color32::from_rgb(180, 140, 90));
-                        ui.add_space(crate::theme::SPACE_4);
+                        ui.add_space(crate::theme::element_gap(ui));
                         ui.label(
                             egui::RichText::new(
                                 "Search the screen for catalog Images (optional tag filters).",
@@ -1540,7 +1540,7 @@ mod tests {
                             .small()
                             .weak(),
                         );
-                        ui.add_space(crate::theme::SPACE_8);
+                        ui.add_space(crate::theme::element_gap(ui));
                         ui.label(
                             egui::RichText::new(format!(
                                 "tip width ≈ {tip_w:.0}pt (was fixed 340pt)"
@@ -1548,7 +1548,7 @@ mod tests {
                             .small()
                             .strong(),
                         );
-                        ui.add_space(crate::theme::SPACE_8);
+                        ui.add_space(crate::theme::element_gap(ui));
                         paint_image_search_tooltip_thumbs_pub(ui, &action, &catalog, &mut icons);
                     });
             });
@@ -1578,9 +1578,9 @@ mod tests {
             .wgpu()
             .build_ui(|ui| {
                 ui.label(egui::RichText::new("View tip width: before vs after").heading());
-                ui.add_space(crate::theme::SPACE_12);
+                ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = crate::theme::SPACE_12;
+                    ui.spacing_mut().item_spacing.x = crate::theme::element_gap(ui);
                     for (label, w) in [("old fixed max", 340.0_f32), ("new 50% viewport", 600.0)] {
                         egui::Frame::popup(ui.style())
                             .inner_margin(egui::Margin::symmetric(10, 8))
@@ -1588,7 +1588,7 @@ mod tests {
                                 ui.set_width(w);
                                 ui.label(egui::RichText::new(label).strong());
                                 ui.label(egui::RichText::new(format!("{w:.0}pt wide")).small());
-                                ui.add_space(crate::theme::SPACE_8);
+                                ui.add_space(crate::theme::element_gap(ui));
                                 ui.label(
                                     "Tags and Items stay readable when the tip can grow with the window.",
                                 );

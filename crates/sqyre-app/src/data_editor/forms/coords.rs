@@ -28,7 +28,7 @@ impl DataEditor {
         } = ctx;
         help::heading(ui, "Point", help::DE_POINT_COORDS);
         self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(crate::theme::SPACE_4);
+        ui.add_space(crate::theme::element_gap(ui));
         self.paint_name_record_row(
             ui,
             screen_click,
@@ -93,14 +93,13 @@ impl DataEditor {
             &self.form_bottom,
         );
         ui.horizontal_wrapped(|ui| {
-            ui.heading("Search Area");
-            help::icon(ui, help::DE_AREA_BOUNDS);
+            help::heading(ui, "Search Area", help::DE_AREA_BOUNDS);
             if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
                 ui.weak(pixel_size_text(w, h));
             }
         });
         self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(crate::theme::SPACE_4);
+        ui.add_space(crate::theme::element_gap(ui));
         self.paint_name_record_row(
             ui,
             screen_click,
@@ -165,8 +164,8 @@ impl DataEditor {
         } = ctx;
         ui.heading("Mask");
         self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(crate::theme::SPACE_4);
-        help::label(ui, "Name", help::DE_NAME);
+        ui.add_space(crate::theme::element_gap(ui));
+        help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
         ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
         paint_fs_name_hint(ui, &self.form_name);
         let has_image = self
@@ -193,30 +192,37 @@ impl DataEditor {
                         egui::RichText::new("Remove Image").color(crate::theme::MACRO_STOP),
                     ),
                 )
-                .on_hover_text("Delete the PNG and use shape geometry instead.")
+                .on_hover_text(format!(
+                    "Delete the PNG and use shape geometry instead. {}",
+                    help::DE_MASK_IMAGE_MODE
+                ))
                 .clicked()
             {
                 self.confirm = Some(PendingConfirm::DeleteMaskImage);
             }
-            if has_image {
-                help::icon(ui, help::DE_MASK_IMAGE_MODE);
-            }
         });
         if !has_image {
-            ui.add_space(crate::theme::SPACE_4);
-            help::label(ui, "Shape", help::DE_MASK_SHAPE);
+            ui.add_space(crate::theme::element_gap(ui));
+            help::label(
+                ui,
+                egui_phosphor::regular::SHAPES,
+                "Shape",
+                help::DE_MASK_SHAPE,
+            );
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle");
                 ui.selectable_value(&mut self.form_shape, "circle".into(), "Circle");
             });
             ui.horizontal(|ui| {
-                ui.checkbox(
-                    &mut self.form_inverse,
-                    "Inverse (shape included, rest excluded)",
+                help::tip(
+                    ui.checkbox(
+                        &mut self.form_inverse,
+                        "Inverse (shape included, rest excluded)",
+                    ),
+                    help::DE_MASK_INVERSE,
                 );
-                help::icon(ui, help::DE_MASK_INVERSE);
             });
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             let cx = validate_numeric_expression(&self.form_center_x, active_macro);
             var_pills::validated_var_ref_edit(
                 ui,
@@ -229,6 +235,7 @@ impl DataEditor {
                 VarFieldOpts {
                     desired_width: f32::INFINITY,
                     validation: &cx,
+                    icon: egui_phosphor::regular::CROSSHAIR,
                     help: "Horizontal center of the shape (0–100%).",
                 },
             );
@@ -244,6 +251,7 @@ impl DataEditor {
                 VarFieldOpts {
                     desired_width: f32::INFINITY,
                     validation: &cy,
+                    icon: egui_phosphor::regular::CROSSHAIR,
                     help: "Vertical center of the shape (0–100%).",
                 },
             );
@@ -260,6 +268,7 @@ impl DataEditor {
                     VarFieldOpts {
                         desired_width: f32::INFINITY,
                         validation: &radius,
+                        icon: egui_phosphor::regular::CIRCLE,
                         help: "Circle radius as a percent of the search area.",
                     },
                 );
@@ -276,6 +285,7 @@ impl DataEditor {
                     VarFieldOpts {
                         desired_width: f32::INFINITY,
                         validation: &base,
+                        icon: egui_phosphor::regular::ARROWS_LEFT_RIGHT,
                         help: "Rectangle width as a percent of the search area.",
                     },
                 );
@@ -291,6 +301,7 @@ impl DataEditor {
                     VarFieldOpts {
                         desired_width: f32::INFINITY,
                         validation: &height,
+                        icon: egui_phosphor::regular::ARROWS_DOWN_UP,
                         help: "Rectangle height as a percent of the search area.",
                     },
                 );
@@ -334,7 +345,7 @@ impl DataEditor {
             ..
         } = ctx;
         help::heading(ui, EditorTab::ScreenCap.label(), help::DE_SCREENCAP_INTRO);
-        ui.add_space(crate::theme::SPACE_4);
+        ui.add_space(crate::theme::element_gap(ui));
         self.program_selector(ui, catalog, icons, settings);
         self.paint_name_record_row(
             ui,
@@ -343,10 +354,15 @@ impl DataEditor {
             "Recording… click two corners.",
             ScreenClickBridge::arm_search_area,
         );
-        ui.add_space(crate::theme::SPACE_4);
+        ui.add_space(crate::theme::element_gap(ui));
         self.paint_item_param_fields(ui, catalog, icons);
-        ui.add_space(crate::theme::SPACE_4);
-        help::label(ui, "Bounds", help::DE_BOUNDS_PREVIEW);
+        ui.add_space(crate::theme::element_gap(ui));
+        help::label(
+            ui,
+            egui_phosphor::regular::FRAME_CORNERS,
+            "Bounds",
+            help::DE_BOUNDS_PREVIEW,
+        );
         self.paint_monitor_slot(ui);
         let (lx, ty, rx, by) = form_desktop_area(
             catalog,
@@ -424,7 +440,7 @@ impl DataEditor {
                 );
             },
         );
-        ui.add_space(crate::theme::SPACE_8);
+        ui.add_space(crate::theme::element_gap(ui));
         let saving = self.screen_cap_pending.is_some();
         ui.horizontal(|ui| {
             if ui

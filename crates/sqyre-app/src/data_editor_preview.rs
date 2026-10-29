@@ -12,14 +12,13 @@ pub(crate) fn paint_preview_toolbar(
     ui: &mut egui::Ui,
     view: Option<&mut ImageViewTransform>,
 ) -> bool {
-    ui.add_space(crate::theme::SPACE_8);
     crate::widgets::section_separator(ui);
     let mut force = false;
     let show_zoom_hint = view.is_some();
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Preview").strong());
+        let label = ui.label(egui::RichText::new("Preview").strong());
         if show_zoom_hint {
-            crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
+            crate::action_tooltip::help::tip(label, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
         }
         if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
             force = true;
@@ -457,7 +456,6 @@ pub(crate) fn paint_disk_preview(
     grid: Option<(i32, i32)>,
     replace_clicked: Option<&mut bool>,
 ) {
-    ui.add_space(crate::theme::SPACE_8);
     crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).strong());
@@ -510,11 +508,12 @@ pub(crate) fn paint_zoomable_collection_preview(
     replace_clicked: &mut bool,
     capturing: bool,
 ) {
-    ui.add_space(crate::theme::SPACE_8);
     crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Collection image").strong());
-        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
+        crate::action_tooltip::help::tip(
+            ui.label(egui::RichText::new("Collection image").strong()),
+            crate::action_tooltip::help::DE_PREVIEW_ZOOM,
+        );
         if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
             icons.invalidate_path(path);
         }
@@ -769,11 +768,12 @@ pub(crate) fn paint_zoomable_atlas_preview(
 ) {
     use sqyre_domain::{AtlasLayout, AtlasNode, CoordinateRef, Macro, NavDir};
 
-    ui.add_space(crate::theme::SPACE_8);
     crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Atlas plane").strong());
-        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_ATLAS_PLANE);
+        crate::action_tooltip::help::tip(
+            ui.label(egui::RichText::new("Atlas plane").strong()),
+            crate::action_tooltip::help::DE_ATLAS_PLANE,
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             const FIT_TIP: &str = "Fit plane in viewport";
             let enabled = view.needs_reset_button();

@@ -127,6 +127,7 @@ impl DataEditor {
             let mut sort = *items_list_sort.borrow();
             crate::widgets::combo_enum(
                 ui,
+                egui_phosphor::regular::SORT_ASCENDING,
                 "Sort",
                 "Order of items in this list. Tags uses the priority list below.",
                 &mut sort,

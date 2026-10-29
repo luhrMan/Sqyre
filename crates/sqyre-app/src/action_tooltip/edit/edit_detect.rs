@@ -32,7 +32,7 @@ fn detection_primary_header(
     search_area: &mut CoordinateRef,
 ) {
     tip_wrapped_section(ui, |ui| {
-        text_field(ui, "Name", h::NAME, name);
+        text_field(ui, egui_phosphor::regular::TEXT_T, "Name", h::NAME, name);
     });
     search_area_section(ui, paint, search_area, picker);
 }
@@ -178,6 +178,7 @@ pub(super) fn paint_ocr_fields(
     tip_wrapped_section(ui, |ui| {
         var_pills::var_name_text_edit(
             ui,
+            egui_phosphor::regular::BRACKETS_CURLY,
             "Output variable",
             output_variable,
             theme.known_vars,
@@ -187,6 +188,7 @@ pub(super) fn paint_ocr_fields(
         );
         var_ref_field(
             ui,
+            egui_phosphor::regular::TEXT_T,
             "Target",
             target,
             theme,
@@ -196,6 +198,7 @@ pub(super) fn paint_ocr_fields(
         );
         combo_enum(
             ui,
+            egui_phosphor::regular::EQUALS,
             "Match",
             h::OCR_MATCH,
             match_mode,
@@ -209,10 +212,18 @@ pub(super) fn paint_ocr_fields(
     });
     tip_wrapped_section(ui, |ui| {
         *blur = sqyre_domain::clamp_match_blur(*blur);
-        drag_field(ui, "Blur", h::OCR_BLUR, blur, configure_match_blur_drag);
+        drag_field(
+            ui,
+            egui_phosphor::regular::DROP,
+            "Blur",
+            h::OCR_BLUR,
+            blur,
+            configure_match_blur_drag,
+        );
         *min_threshold = clamp_ocr_threshold(*min_threshold);
         drag_field(
             ui,
+            egui_phosphor::regular::FADERS,
             "Min threshold",
             h::OCR_MIN_THRESHOLD,
             min_threshold,
@@ -223,9 +234,14 @@ pub(super) fn paint_ocr_fields(
         detection_advanced_fields(ui, theme, detection);
         tip_wrapped_section(ui, |ui| {
             *resize = clamp_ocr_resize(*resize);
-            drag_field(ui, "Resize", h::OCR_RESIZE, resize, |d| {
-                d.speed(0.01).range(MIN_OCR_RESIZE..=MAX_OCR_RESIZE)
-            });
+            drag_field(
+                ui,
+                egui_phosphor::regular::ARROWS_OUT,
+                "Resize",
+                h::OCR_RESIZE,
+                resize,
+                |d| d.speed(0.01).range(MIN_OCR_RESIZE..=MAX_OCR_RESIZE),
+            );
             h::tip(ui.checkbox(grayscale, "Grayscale"), h::OCR_GRAYSCALE);
             h::tip(
                 ui.checkbox(threshold_otsu, "Auto black/white cutoff"),
@@ -260,6 +276,7 @@ pub(super) fn paint_find_pixel_fields(
         wrap_unit(ui, |ui| {
             var_ref_field(
                 ui,
+                egui_phosphor::regular::EYEDROPPER,
                 "Target color",
                 target_color,
                 theme,
@@ -291,6 +308,7 @@ pub(super) fn paint_find_pixel_fields(
         *color_tolerance = clamp_color_tolerance(*color_tolerance);
         drag_field(
             ui,
+            egui_phosphor::regular::FADERS,
             "Color tolerance",
             h::PIXEL_TOLERANCE,
             color_tolerance,

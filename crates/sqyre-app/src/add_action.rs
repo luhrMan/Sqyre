@@ -279,9 +279,10 @@ impl AddActionPicker {
             });
             ui.horizontal_wrapped(|ui| {
                 ui.weak(HOVER_DELAY_HINT);
-                ui.add_space(crate::theme::SPACE_8);
+                ui.add_space(crate::theme::element_gap(ui));
                 crate::widgets::combo_enum(
                     ui,
+                    egui_phosphor::regular::SORT_ASCENDING,
                     "Sort",
                     "Order of tiles in this picker.",
                     &mut self.sort,
@@ -301,7 +302,7 @@ impl AddActionPicker {
                     crate::widgets::list_vacancy(ui, &q, 0, "actions");
                     return;
                 }
-                ui.add_space(crate::theme::SPACE_8);
+                ui.add_space(crate::theme::element_gap(ui));
                 // Uniform tile width: wrapped rows land as an aligned grid
                 // instead of ragged content-sized chips.
                 let font = egui::TextStyle::Small.resolve(ui.style());

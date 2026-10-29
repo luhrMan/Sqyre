@@ -28,7 +28,7 @@ pub use programs::{
 pub use settings::{
     available_worker_threads, default_overlay_position, default_worker_threads, move_dir,
     open_path_in_file_manager, open_sqyre_dir, settings_path, ActionColorPrefs,
-    OverlayButtonConfig, OverlayVisibilityGate, OverlayVisibilityMode, UserSettings,
+    OverlayButtonConfig, OverlayVisibilityGate, OverlayVisibilityMode, UiDensity, UserSettings,
     DEFAULT_ACTION_LOG_MAX_ENTRIES, DEFAULT_AUTO_UPDATE_CHECK, DEFAULT_BACKUP_INTERVAL_HOURS,
     DEFAULT_BACKUP_MAX_KEEP, DEFAULT_DATA_EDITOR_LEFT_FRAC, DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
     DEFAULT_HIDE_APP_DURING_RECORDING, DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE,

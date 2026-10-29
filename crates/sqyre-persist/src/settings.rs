@@ -191,6 +191,50 @@ pub enum OverlayVisibilityMode {
     ShowWhenFound,
 }
 
+/// UI density: how much vertical space separates sections and elements.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiDensity {
+    /// Uniform 4 pt gaps.
+    Compact,
+    /// 8 pt between sections, 4 pt between elements inside a section.
+    #[default]
+    Normal,
+    /// 12 pt between sections, 8 pt between elements inside a section.
+    Spaced,
+}
+
+impl UiDensity {
+    /// All selectable values, in dropdown order.
+    pub const ALL: [Self; 3] = [Self::Compact, Self::Normal, Self::Spaced];
+
+    /// Gap between sections (framed cards, separator breaks, subsection heads).
+    pub fn section_gap(self) -> f32 {
+        match self {
+            Self::Compact => 4.0,
+            Self::Normal => 8.0,
+            Self::Spaced => 12.0,
+        }
+    }
+
+    /// Gap between element groups inside a section (field rows, buttons, items).
+    pub fn element_gap(self) -> f32 {
+        match self {
+            Self::Compact | Self::Normal => 4.0,
+            Self::Spaced => 8.0,
+        }
+    }
+
+    /// Dropdown display name.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Compact => "Compact",
+            Self::Normal => "Normal",
+            Self::Spaced => "Spaced",
+        }
+    }
+}
+
 /// Per-button image-search gate that can hide an overlay until a template is found.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OverlayVisibilityGate {
@@ -565,6 +609,9 @@ pub struct UserSettings {
     pub ui_font_size: i32,
     #[serde(default = "default_ui_scale")]
     pub ui_scale: f32,
+    /// Section/element spacing preset (Settings → Appearance → Spacing).
+    #[serde(default)]
+    pub ui_density: UiDensity,
     #[serde(default)]
     pub action_colors: ActionColorPrefs,
     /// Per-action-type blank templates for the Add Action picker (YAML action maps).
@@ -721,6 +768,7 @@ impl Default for UserSettings {
             sqyre_dir: String::new(),
             ui_font_size: DEFAULT_UI_FONT_SIZE,
             ui_scale: DEFAULT_UI_SCALE,
+            ui_density: UiDensity::default(),
             action_colors: ActionColorPrefs::default(),
             action_defaults: std::collections::BTreeMap::new(),
             overlay_buttons: Vec::new(),
@@ -1138,6 +1186,7 @@ mod tests {
             image_search_close_matches_distance: 25,
             image_search_variant_exit_early: false,
             ui_scale: 1.2,
+            ui_density: UiDensity::Spaced,
             hotkey_tag_filters: vec!["combat".into()],
             last_selected_macro: "farm loop".into(),
             permissions_intro_done: true,
@@ -1188,6 +1237,7 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].icon_color, "#abcdef");
         assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
         assert_eq!(loaded.hotkey_tag_filters, vec!["combat".to_string()]);
+        assert_eq!(loaded.ui_density, UiDensity::Spaced);
         assert_eq!(loaded.last_selected_macro, "farm loop");
         assert!(loaded.permissions_intro_done);
         assert!(loaded.overlay_press_stops_run);
@@ -1196,6 +1246,29 @@ mod tests {
         assert!(!loaded.hotkey_tags_while_focused);
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON
+        );
+    }
+
+    #[test]
+    fn ui_density_defaults_normal_and_maps_to_gap_tiers() {
+        assert_eq!(UiDensity::default(), UiDensity::Normal);
+        let mut value = serde_yaml::to_value(UserSettings::default()).unwrap();
+        value
+            .as_mapping_mut()
+            .unwrap()
+            .remove(serde_yaml::Value::String("ui_density".into()));
+        let settings: UserSettings = serde_yaml::from_value(value).unwrap();
+        assert_eq!(settings.ui_density, UiDensity::Normal);
+        // Section gaps scale 4/8/12; element gaps stay tight until Spaced.
+        assert_eq!(UiDensity::Compact.section_gap(), 4.0);
+        assert_eq!(UiDensity::Normal.section_gap(), 8.0);
+        assert_eq!(UiDensity::Spaced.section_gap(), 12.0);
+        assert_eq!(UiDensity::Compact.element_gap(), 4.0);
+        assert_eq!(UiDensity::Normal.element_gap(), 4.0);
+        assert_eq!(UiDensity::Spaced.element_gap(), 8.0);
+        assert_eq!(
+            UiDensity::ALL.map(|d| d.label()),
+            ["Compact", "Normal", "Spaced"]
         );
     }
 

@@ -71,13 +71,15 @@ fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
     ui.label(label);
     ui.color_edit_button_srgba(color);
     let mut alpha = color.a();
-    if ui
-        .add(
+    if help::tip(
+        ui.add(
             crate::widgets::num_entry(&mut alpha)
                 .range(0..=255)
                 .prefix("α "),
-        )
-        .changed()
+        ),
+        help::DE_OVERLAY_ALPHA_NONE,
+    )
+    .changed()
     {
         *color = egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha);
     }
@@ -140,7 +142,7 @@ impl DataEditor {
                 record = crate::widgets::record_icon_button(ui, record_tip, !armed).clicked();
             },
             |ui| {
-                help::label(ui, "Name", help::DE_NAME);
+                help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
                 help::tip(
                     ui.add(
                         egui::TextEdit::singleline(&mut self.form_name)
@@ -371,7 +373,7 @@ impl DataEditor {
             use crate::widgets::match_settings;
             use sqyre_domain::CoordinateRef;
 
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             if self.selected_entity.is_none() {
                 self.stop_pixel_check_compute();
                 ui.weak("Select an item from the list.");
@@ -391,7 +393,12 @@ impl DataEditor {
                 reference.as_str()
             };
             ui.horizontal(|ui| {
-                help::label(ui, "Reference", help::DE_SCREENCAP_REF);
+                help::label(
+                    ui,
+                    egui_phosphor::regular::BOOKMARK,
+                    "Reference",
+                    help::DE_SCREENCAP_REF,
+                );
                 if let Some(prog) = reference.program() {
                     crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
@@ -416,7 +423,7 @@ impl DataEditor {
                     };
                 }
             });
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             if let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
@@ -425,7 +432,14 @@ impl DataEditor {
                 if !variants.is_empty() {
                     let mut label = variant_display_label(&self.pixel_check.variant).to_string();
                     let labels: Vec<&str> = variants.iter().map(|(_, l)| l.as_str()).collect();
-                    crate::widgets::combo_str(ui, "Variant", "", &mut label, &labels);
+                    crate::widgets::combo_str(
+                        ui,
+                        egui_phosphor::regular::STACK,
+                        "Variant",
+                        "",
+                        &mut label,
+                        &labels,
+                    );
                     if let Some((name, _)) = variants.iter().find(|(_, l)| l == &label) {
                         if name != &self.pixel_check.variant {
                             self.pixel_check.variant = name.clone();
@@ -434,7 +448,7 @@ impl DataEditor {
                     }
                 }
             }
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             match_settings::paint_match_settings(
                 ui,
                 &mut self.pixel_check.tolerance,
@@ -445,7 +459,12 @@ impl DataEditor {
             ui.collapsing("Advanced", |ui| {
                 match_settings::paint_match_method(ui, &mut self.pixel_check.match_method);
             });
-            help::label(ui, "Bounds", help::DE_PIXELCHECK_BOUNDS);
+            help::label(
+                ui,
+                egui_phosphor::regular::FRAME_CORNERS,
+                "Bounds",
+                help::DE_PIXELCHECK_BOUNDS,
+            );
             self.paint_monitor_slot(ui);
             let (lx, ty, rx, by) = form_desktop_area(
                 catalog,

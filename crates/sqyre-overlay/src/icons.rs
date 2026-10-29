@@ -403,7 +403,7 @@ pub fn show_icon_picker_grid(
             );
         });
     });
-    ui.add_space(4.0);
+    ui.add_space(sqyre_ui_theme::element_gap(ui));
 
     let query = search.trim().to_ascii_lowercase();
     let icons: Vec<&OverlayIcon> = if query.is_empty() {
@@ -420,7 +420,7 @@ pub fn show_icon_picker_grid(
         ui.weak("No matching icons.");
         return None;
     }
-    ui.add_space(4.0);
+    ui.add_space(sqyre_ui_theme::element_gap(ui));
 
     let mut picked = None;
     let rem = ui.available_size();

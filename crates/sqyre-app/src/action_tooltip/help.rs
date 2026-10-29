@@ -1,7 +1,8 @@
 //! Concise hover help for action editor fields.
 //!
-//! One short sentence per setting. Empty string means no tip.
-//! Prefer a `?` icon ([`icon`] / [`label`]) over inline weak helper paragraphs.
+//! One short sentence per setting. Empty string means no description.
+//! Field labels are semantic icons ([`label`]) whose tooltip is `name: help`;
+//! standalone help text folds into the owning control via [`tip`].
 
 use eframe::egui;
 
@@ -14,52 +15,27 @@ pub fn tip(resp: egui::Response, help: &str) -> egui::Response {
     }
 }
 
-/// Small `?` that shows `help` on hover. Draws nothing when `help` is empty.
-pub fn icon(ui: &mut egui::Ui, help: &str) -> Option<egui::Response> {
-    if help.is_empty() {
-        return None;
-    }
-    let size = ui.text_style_height(&egui::TextStyle::Small);
-    Some(
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(egui_phosphor::regular::QUESTION)
-                    .weak()
-                    .size(size),
-            )
-            .sense(egui::Sense::hover()),
-        )
-        .on_hover_text(help),
-    )
+/// Semantic icon standing in for a field's text label. Hovering shows
+/// `name: help` — the name alone when `help` is empty, so the icon always
+/// identifies the field it labels. The icon's accessible name is `name`.
+pub fn label(ui: &mut egui::Ui, icon: &str, name: &str, help: &str) -> egui::Response {
+    let tip = if help.is_empty() {
+        name.to_string()
+    } else {
+        format!("{name}: {help}")
+    };
+    let resp = ui
+        .add(egui::Label::new(egui::RichText::new(icon)).sense(egui::Sense::hover()))
+        .on_hover_text(tip);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, name.to_string()));
+    resp
 }
 
-/// Label with an adjacent `?` help icon when `help` is non-empty.
-pub fn label(ui: &mut egui::Ui, text: &str, help: &str) -> egui::Response {
-    if help.is_empty() {
-        return ui.label(text);
-    }
-    crate::widgets::wrap_unit(ui, |ui| {
-        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_2;
-        let resp = ui.label(text);
-        icon(ui, help);
-        resp
-    })
-    .inner
-}
-
-/// Heading with an adjacent `?` help icon when `help` is non-empty.
+/// Section heading; `help` shows on hover.
 ///
-/// `ui.heading` wraps to the pane. The icon follows on the same line when it fits.
+/// `ui.heading` wraps to the pane.
 pub fn heading(ui: &mut egui::Ui, text: &str, help: &str) {
-    if help.is_empty() {
-        ui.heading(text);
-        return;
-    }
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
-        ui.heading(text);
-        icon(ui, help);
-    });
+    tip(ui.heading(text), help);
 }
 
 // --- Shared / common ---

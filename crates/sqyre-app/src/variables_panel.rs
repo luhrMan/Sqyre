@@ -233,7 +233,7 @@ impl VariablesPanelUi {
             )
             .weak(),
         );
-        ui.add_space(crate::theme::SPACE_4);
+        ui.add_space(crate::theme::element_gap(ui));
         let catalog = builtin_variable_catalog(num_monitors);
         let list_h = (max_h - 28.0).max(60.0);
         let list_w = crate::widgets::visible_width(ui);
@@ -423,9 +423,21 @@ impl VariablesPanelUi {
     fn edit_form(&mut self, ui: &mut egui::Ui, macro_: &mut Macro, mut edit: EditState) -> bool {
         let mut persist = false;
 
-        crate::widgets::text_field_width(ui, "Name", help::VAR_NAME, &mut edit.name, 160.0);
+        crate::widgets::text_field_width(
+            ui,
+            egui_phosphor::regular::TEXT_T,
+            "Name",
+            help::VAR_NAME,
+            &mut edit.name,
+            160.0,
+        );
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, "Type", help::VAR_TYPE);
+            help::label(
+                ui,
+                egui_phosphor::regular::LIST_BULLETS,
+                "Type",
+                help::VAR_TYPE,
+            );
             for (label, ty) in [
                 ("auto", VariableType::Auto),
                 ("text", VariableType::Text),
@@ -442,6 +454,7 @@ impl VariablesPanelUi {
         });
         crate::widgets::num_text_field_width(
             ui,
+            egui_phosphor::regular::FUNCTION,
             "Initial",
             help::VAR_INITIAL,
             &mut edit.initial_value,
@@ -450,6 +463,7 @@ impl VariablesPanelUi {
         );
         crate::widgets::text_field_width(
             ui,
+            egui_phosphor::regular::CHAT_TEXT,
             "Description",
             help::VAR_DESC,
             &mut edit.description,

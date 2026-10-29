@@ -21,7 +21,7 @@ impl DataEditor {
         } = paint;
         let FormCtx { macros, .. } = ctx;
         help::heading(ui, "Overlay Button", help::DE_OVERLAY_INTRO);
-        ui.add_space(crate::theme::SPACE_8);
+        ui.add_space(crate::theme::element_gap(ui));
         self.program_selector(ui, catalog, icons, settings);
         if self.selected_program.is_none() {
             ui.weak("Select a program, then New to add a button.");
@@ -31,7 +31,7 @@ impl DataEditor {
             ui.weak("Select a button from the list, or click New.");
             return false;
         }
-        ui.add_space(crate::theme::SPACE_8);
+        ui.add_space(crate::theme::element_gap(ui));
         ui.horizontal(|ui| {
             let icon = overlay_icons::resolve(&self.form_overlay_icon);
             let mut preview_cfg = OverlayButtonConfig::new("preview", "");
@@ -46,11 +46,21 @@ impl DataEditor {
                 }
             }
             ui.vertical(|ui| {
-                help::label(ui, icon.label, help::DE_OVERLAY_ICON);
+                help::label(
+                    ui,
+                    egui_phosphor::regular::SMILEY,
+                    icon.label,
+                    help::DE_OVERLAY_ICON,
+                );
             });
         });
-        ui.add_space(crate::theme::SPACE_8);
-        help::label(ui, "Macro", help::DE_OVERLAY_MACRO);
+        ui.add_space(crate::theme::element_gap(ui));
+        help::label(
+            ui,
+            egui_phosphor::regular::MAGIC_WAND,
+            "Macro",
+            help::DE_OVERLAY_MACRO,
+        );
         let mut selected = self.form_overlay_macro.clone();
         let before = selected.clone();
         let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
@@ -66,7 +76,7 @@ impl DataEditor {
         if selected != before {
             self.form_overlay_macro = selected;
         }
-        ui.add_space(crate::theme::SPACE_4);
+        ui.add_space(crate::theme::element_gap(ui));
         {
             use crate::pickers::{ActivePicker, CoordKind};
             use sqyre_domain::CoordinateRef;
@@ -77,7 +87,12 @@ impl DataEditor {
                 point.as_str()
             };
             ui.horizontal(|ui| {
-                help::label(ui, "Point", help::DE_OVERLAY_POINT);
+                help::label(
+                    ui,
+                    egui_phosphor::regular::MAP_PIN,
+                    "Point",
+                    help::DE_OVERLAY_POINT,
+                );
                 if let Some(prog) = point.program() {
                     crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
@@ -110,12 +125,13 @@ impl DataEditor {
                 }
             });
         }
-        ui.add_space(crate::theme::SPACE_4);
+        ui.add_space(crate::theme::element_gap(ui));
         let point_set = !self.form_overlay_point.trim().is_empty();
         ui.add_enabled_ui(!point_set, |ui| {
             crate::widgets::wrapped_row(ui, |ui| {
                 crate::widgets::drag_field(
                     ui,
+                    egui_phosphor::regular::CROSSHAIR,
                     "X",
                     help::DE_OVERLAY_X,
                     &mut self.form_overlay_x,
@@ -123,6 +139,7 @@ impl DataEditor {
                 );
                 crate::widgets::drag_field(
                     ui,
+                    egui_phosphor::regular::CROSSHAIR,
                     "Y",
                     help::DE_OVERLAY_Y,
                     &mut self.form_overlay_y,
@@ -138,11 +155,13 @@ impl DataEditor {
             let (rx, ry) = loc.resolved_position(catalog);
             ui.weak(format!("Position from point → ({rx:.0}, {ry:.0})"));
         }
-        ui.add_space(crate::theme::SPACE_8);
+        ui.add_space(crate::theme::element_gap(ui));
         ui.collapsing("Show only when image found", |ui| {
             ui.horizontal(|ui| {
-                ui.checkbox(&mut self.form_overlay_gate_enabled, "Enabled");
-                help::icon(ui, help::DE_OVERLAY_GATE);
+                help::tip(
+                    ui.checkbox(&mut self.form_overlay_gate_enabled, "Enabled"),
+                    help::DE_OVERLAY_GATE,
+                );
             });
             ui.add_enabled_ui(self.form_overlay_gate_enabled, |ui| {
                 {
@@ -154,7 +173,12 @@ impl DataEditor {
                         area.as_str()
                     };
                     ui.horizontal(|ui| {
-                        help::label(ui, "Search area", help::DE_OVERLAY_GATE_AREA);
+                        help::label(
+                            ui,
+                            egui_phosphor::regular::CROP,
+                            "Search area",
+                            help::DE_OVERLAY_GATE_AREA,
+                        );
                         if let Some(prog) = area.program() {
                             crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                         }
@@ -184,9 +208,14 @@ impl DataEditor {
                         }
                     });
                 }
-                ui.add_space(crate::theme::SPACE_4);
+                ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
-                    help::label(ui, "Items", help::DE_OVERLAY_GATE_ITEMS);
+                    help::label(
+                        ui,
+                        egui_phosphor::regular::LIST_BULLETS,
+                        "Items",
+                        help::DE_OVERLAY_GATE_ITEMS,
+                    );
                     ui.label(
                         egui::RichText::new(format!("({})", self.form_overlay_gate_targets.len()))
                             .weak(),
@@ -227,7 +256,7 @@ impl DataEditor {
                         self.form_overlay_gate_targets.remove(i);
                     }
                 }
-                ui.add_space(crate::theme::SPACE_4);
+                ui.add_space(crate::theme::element_gap(ui));
                 match_settings::paint_match_settings(
                     ui,
                     &mut self.form_overlay_gate_tolerance,
@@ -242,7 +271,12 @@ impl DataEditor {
                     );
                 });
                 ui.horizontal(|ui| {
-                    help::label(ui, "Interval", help::DE_OVERLAY_GATE_INTERVAL);
+                    help::label(
+                        ui,
+                        egui_phosphor::regular::TIMER,
+                        "Interval",
+                        help::DE_OVERLAY_GATE_INTERVAL,
+                    );
                     help::tip(
                         ui.add(
                             crate::widgets::num_entry(&mut self.form_overlay_gate_interval_ms)
@@ -255,10 +289,15 @@ impl DataEditor {
                 });
             });
         });
-        ui.add_space(crate::theme::SPACE_8);
+        ui.add_space(crate::theme::element_gap(ui));
         ui.collapsing("Appearance", |ui| {
             ui.horizontal(|ui| {
-                help::label(ui, "Size", help::DE_OVERLAY_SIZE);
+                help::label(
+                    ui,
+                    egui_phosphor::regular::RULER,
+                    "Size",
+                    help::DE_OVERLAY_SIZE,
+                );
                 help::tip(
                     ui.add(
                         crate::widgets::num_entry(&mut self.form_overlay_size)
@@ -271,6 +310,7 @@ impl DataEditor {
             crate::widgets::wrapped_row(ui, |ui| {
                 crate::widgets::drag_field(
                     ui,
+                    egui_phosphor::regular::CIRCLE,
                     "Corner radius",
                     help::DE_OVERLAY_RADIUS,
                     &mut self.form_overlay_corner_radius,
@@ -282,6 +322,7 @@ impl DataEditor {
                 );
                 crate::widgets::drag_field(
                     ui,
+                    egui_phosphor::regular::FRAME_CORNERS,
                     "Border width",
                     help::DE_OVERLAY_BORDER,
                     &mut self.form_overlay_border_width,
@@ -292,22 +333,26 @@ impl DataEditor {
                     },
                 );
             });
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
                 color_alpha_drag(ui, "Border", &mut self.form_overlay_border);
             });
             ui.horizontal(|ui| {
                 color_alpha_drag(ui, "Background", &mut self.form_overlay_bg);
-                help::icon(ui, help::DE_OVERLAY_ALPHA_NONE);
             });
             ui.horizontal(|ui| {
                 color_alpha_drag(ui, "Icon", &mut self.form_overlay_icon_color);
             });
             ui.horizontal(|ui| {
-                help::label(ui, "Icon hover", help::DE_OVERLAY_ICON_HOVER);
+                help::label(
+                    ui,
+                    egui_phosphor::regular::HAND_POINTING,
+                    "Icon hover",
+                    help::DE_OVERLAY_ICON_HOVER,
+                );
                 ui.color_edit_button_srgba(&mut self.form_overlay_icon_hover);
             });
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             if ui.button("Reset appearance to defaults").clicked() {
                 self.reset_overlay_style_form();
             }

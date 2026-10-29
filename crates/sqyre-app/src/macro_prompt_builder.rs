@@ -159,7 +159,7 @@ impl MacroPromptBuilderUi {
             NL_ROWS,
         );
 
-        ui.add_space(4.0);
+        ui.add_space(crate::theme::element_gap(ui));
         crate::widgets::show_overflow(ui, "prompt_generate", 1.0, |ui| {
             ui.horizontal(|ui| {
                 if ui

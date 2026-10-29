@@ -284,7 +284,12 @@ pub fn tag_chip_editor(
         ui.horizontal_wrapped(|ui| {
             ui.set_max_width(wrap_cap);
             let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
-            crate::action_tooltip::help::label(ui, "Tags:", opts.draft_hover.unwrap_or(""));
+            crate::action_tooltip::help::label(
+                ui,
+                egui_phosphor::regular::TAG,
+                "Tags",
+                opts.draft_hover.unwrap_or(""),
+            );
             paint_tag_chips(
                 ui,
                 tags,

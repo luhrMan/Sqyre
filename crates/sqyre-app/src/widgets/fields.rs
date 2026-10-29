@@ -29,19 +29,20 @@ fn selected_text_hover(
     }
 }
 
-pub fn text_field(ui: &mut egui::Ui, label: &str, help_text: &str, value: &mut String) {
-    text_field_width(ui, label, help_text, value, W_TEXT);
+pub fn text_field(ui: &mut egui::Ui, icon: &str, label: &str, help_text: &str, value: &mut String) {
+    text_field_width(ui, icon, label, help_text, value, W_TEXT);
 }
 
 pub fn text_field_width(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut String,
     width: f32,
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, label, help_text);
+        help::label(ui, icon, label, help_text);
         ui.add(egui::TextEdit::singleline(value).desired_width(width));
     });
 }
@@ -49,17 +50,19 @@ pub fn text_field_width(
 /// Labeled integer-capable text field (see [`num_text_edit`]).
 pub fn num_text_field(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut String,
     range: RangeInclusive<i32>,
 ) {
-    num_text_field_width(ui, label, help_text, value, W_TEXT, range);
+    num_text_field_width(ui, icon, label, help_text, value, W_TEXT, range);
 }
 
 /// [`num_text_field`] with an explicit width.
 pub fn num_text_field_width(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut String,
@@ -67,8 +70,8 @@ pub fn num_text_field_width(
     range: RangeInclusive<i32>,
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, label, help_text);
-        num_text_edit(ui, value, width, range);
+        help::label(ui, icon, label, help_text);
+        num_text_edit(ui, value, width, range.clone());
     });
 }
 
@@ -116,37 +119,40 @@ pub fn fill_row<R>(
 /// Labeled numeric entry (no `.prefix`); configure speed/range/etc via `configure`.
 pub fn drag_field<Num: egui::emath::Numeric>(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut Num,
-    configure: impl FnOnce(NumEntry<'_, Num>) -> NumEntry<'_, Num>,
+    configure: impl Fn(NumEntry<'_, Num>) -> NumEntry<'_, Num>,
 ) {
-    drag_field_enabled(ui, label, help_text, value, true, configure);
+    drag_field_enabled(ui, icon, label, help_text, value, true, configure);
 }
 
 pub fn drag_field_enabled<Num: egui::emath::Numeric>(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut Num,
     enabled: bool,
-    configure: impl FnOnce(NumEntry<'_, Num>) -> NumEntry<'_, Num>,
+    configure: impl Fn(NumEntry<'_, Num>) -> NumEntry<'_, Num>,
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, label, help_text);
+        help::label(ui, icon, label, help_text);
         ui.add_enabled(enabled, configure(num_entry(value)));
     });
 }
 
 pub fn combo_str(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut String,
     options: &[&str],
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, label, help_text);
+        help::label(ui, icon, label, help_text);
         let display = if value.is_empty() {
             sqyre_domain::EMPTY_UNSET.to_string()
         } else {
@@ -179,6 +185,7 @@ pub fn combo_str(
 
 pub fn combo_condition_operator(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut sqyre_domain::ConditionOperator,
@@ -187,6 +194,7 @@ pub fn combo_condition_operator(
 
     combo_enum(
         ui,
+        icon,
         label,
         help_text,
         value,
@@ -198,6 +206,7 @@ pub fn combo_condition_operator(
 /// ComboBox over a closed set of copyable enum values.
 pub fn combo_enum<T: Copy + PartialEq>(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut T,
@@ -205,7 +214,7 @@ pub fn combo_enum<T: Copy + PartialEq>(
     display: impl Fn(T) -> &'static str,
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, label, help_text);
+        help::label(ui, icon, label, help_text);
         let selected = display(*value);
         let response = egui::ComboBox::from_id_salt(label)
             .selected_text(selected)
@@ -226,6 +235,7 @@ pub fn combo_enum<T: Copy + PartialEq>(
 /// `empty_default` / its label without writing into `value` until the user picks.
 pub fn combo_str_labeled(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut String,
@@ -233,7 +243,7 @@ pub fn combo_str_labeled(
     empty_default: &str,
 ) {
     super::wrap_unit(ui, |ui| {
-        help::label(ui, label, help_text);
+        help::label(ui, icon, label, help_text);
         let empty_label = options
             .iter()
             .find(|(v, _)| *v == empty_default)

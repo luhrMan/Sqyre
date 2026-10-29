@@ -3,7 +3,7 @@
 use crate::icon_cache::{IconCache, PROCESS_ICON_SIDE};
 use crate::pickers;
 use crate::status_banner::{StatusBanner, PREFIX_LOAD_ERROR, PREFIX_SAVE_ERROR};
-use crate::theme::{SPACE_12, SPACE_4, SPACE_8};
+use crate::theme::SPACE_12;
 use crate::widgets::elide::{elide_to_width, text_hover_if};
 use crate::widgets::tags::{filters_cover_path, normalize_tag_path};
 use crate::SqyreApp;
@@ -299,9 +299,7 @@ fn paint_tag_node(
     is_first_root: bool,
 ) {
     if !is_first_root {
-        ui.add_space(SPACE_8);
         crate::widgets::section_separator(ui);
-        ui.add_space(SPACE_4);
     }
 
     let id = ui.make_persistent_id(("macro_list_tag", path));
@@ -413,7 +411,7 @@ fn paint_tag_group(
                     format!("{path}/{seg}")
                 };
                 // Nested headers: no root separators; slight indent without expand_to_include_x.
-                ui.add_space(SPACE_4);
+                ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
                     ui.add_space(SPACE_12);
                     // Item spacing sits between the indent and the column; leaving it
