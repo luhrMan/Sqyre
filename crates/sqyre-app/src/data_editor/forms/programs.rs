@@ -22,7 +22,8 @@ impl DataEditor {
         });
         crate::widgets::wrap_unit(ui, |ui| {
             help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
-            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+            let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
+            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w));
         });
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
@@ -109,7 +110,8 @@ impl DataEditor {
         ui.add_space(crate::theme::element_gap(ui));
         crate::widgets::wrap_unit(ui, |ui| {
             help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
-            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(f32::INFINITY));
+            let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
+            ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w));
         });
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(crate::theme::element_gap(ui));

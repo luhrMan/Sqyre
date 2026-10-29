@@ -142,11 +142,9 @@ impl DataEditor {
             },
             |ui| {
                 help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::DE_NAME);
+                let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
                 help::tip(
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name)
-                            .desired_width(f32::INFINITY),
-                    ),
+                    ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
                     help::DE_NAME,
                 );
             },

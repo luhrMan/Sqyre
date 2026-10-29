@@ -33,6 +33,23 @@ pub fn text_field(ui: &mut egui::Ui, icon: &str, label: &str, help_text: &str, v
     text_field_width(ui, icon, label, help_text, value, W_TEXT);
 }
 
+/// Width for a content-sized Name edit: hugs the text (or `hint` while empty),
+/// grows as the text fills, and stops at the row's visible width — the
+/// singleline scrolls inside the box past that.
+pub fn name_edit_width(ui: &egui::Ui, text: &str, hint: &str) -> f32 {
+    let shown = if text.trim().is_empty() { hint } else { text };
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let text_w = ui
+        .painter()
+        .layout_no_wrap(shown.to_owned(), font, egui::Color32::WHITE)
+        .size()
+        .x;
+    // TextEdit margin (8) + frame stroke (~2) + caret/selection slop.
+    let w = text_w + 18.0;
+    let min = ui.spacing().interact_size.y * 4.0;
+    w.clamp(min, super::visible_width(ui).max(min))
+}
+
 pub fn text_field_width(
     ui: &mut egui::Ui,
     icon: &str,

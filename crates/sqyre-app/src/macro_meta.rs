@@ -58,10 +58,11 @@ impl MacroMetaUi {
 
         let resp = crate::widgets::wrap_unit(ui, |ui| {
             help::label(ui, egui_phosphor::regular::TEXT_T, "Name", help::META_NAME);
+            let name_w = crate::widgets::name_edit_width(ui, &self.name_draft, "Macro name");
             let edit = ui.add_enabled(
                 enabled,
                 egui::TextEdit::singleline(&mut self.name_draft)
-                    .desired_width(220.0)
+                    .desired_width(name_w)
                     .hint_text("Macro name"),
             );
             if let Some(err) = &self.name_error {

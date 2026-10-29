@@ -1378,7 +1378,8 @@ impl DataEditor {
         let mut cancel = false;
         let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", pending_scale, |ui| {
             ui.label("Variant name");
-            ui.add(egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(220.0));
+            let name_w = crate::widgets::name_edit_width(ui, &self.variant_name_draft, "");
+            ui.add(egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(name_w));
             match crate::widgets::confirm_cancel_row(
                 ui,
                 "Add",

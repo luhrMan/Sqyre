@@ -324,8 +324,9 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                                 if enabled.changed() && pt.save {
                                     pt.link_to = None;
                                 }
+                                let name_w = crate::widgets::name_edit_width(ui, &pt.name, "");
                                 let name = ui.add(
-                                    egui::TextEdit::singleline(&mut pt.name).desired_width(120.0),
+                                    egui::TextEdit::singleline(&mut pt.name).desired_width(name_w),
                                 );
                                 // Editing the name after linking drops the link so refs
                                 // follow temporary~name again.
