@@ -142,7 +142,7 @@ make wasm            # → bin/wasm/ (Trunk)
 | WASM editor | `make wasm` → `bin/wasm/` |
 | ocrs ONNX models (compile-time embed) | `make ocr-models` |
 
-Override cargo args with `CARGO_FLAGS=...`. Manual host setup (Rust ≥ 1.95, clang, X11 libs) is documented in [docs/DEVELOPING.md](docs/DEVELOPING.md) and [docs/RUST.md](docs/RUST.md).
+Override cargo args with `CARGO_FLAGS=...`. Manual host setup (Rust ≥ 1.96, clang, X11 libs) is documented in [docs/DEVELOPING.md](docs/DEVELOPING.md) and [docs/RUST.md](docs/RUST.md).
 
 ---
 

@@ -4,7 +4,7 @@
 FROM debian:trixie-slim
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG RUST_VERSION=1.95.0
+ARG RUST_VERSION=1.96.1
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl git \

@@ -177,7 +177,7 @@ jobs:
 
       - name: Install Rust toolchain
         if: steps.reg.outputs.cache-hit != 'true'
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.96.1
 
       - name: Fetch crate sources
         if: steps.reg.outputs.cache-hit != 'true'
@@ -385,7 +385,7 @@ jobs:
             ${{ runner.os }}-rustup-v1-
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.95.0
+        uses: dtolnay/rust-toolchain@1.96.1
 
       - name: Cache Cargo
         uses: actions/cache@v6
