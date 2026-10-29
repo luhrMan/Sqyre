@@ -332,7 +332,7 @@ fn paint_save_cancel_row(
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         // First in RTL = rightmost → Save on the right, Cancel on its left.
         let save = crate::widgets::dirty_action_button(ui, "Save", save_enabled);
-        let cancel = ui.button("Cancel");
+        let cancel = crate::widgets::cancel_icon_button(ui, "Cancel");
         save_rect = save.rect;
         cancel_rect = cancel.rect;
         // Prefer Cancel if both somehow click in one frame (matches prior).
@@ -400,7 +400,7 @@ pub fn poll_confirm_keys(ui: &mut egui::Ui) -> ConfirmCancel {
 pub fn dismiss_row(ui: &mut egui::Ui, esc_dismisses: bool) -> bool {
     let mut cancel = false;
     ui.horizontal(|ui| {
-        if ui.button("Cancel").clicked() {
+        if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
             cancel = true;
         }
     });
@@ -421,7 +421,7 @@ pub fn confirm_cancel_row(
 ) -> ConfirmCancel {
     let mut out = ConfirmCancel::None;
     ui.horizontal(|ui| {
-        if ui.button("Cancel").clicked() {
+        if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
             out = ConfirmCancel::Cancel;
         }
         if confirm_button(ui, confirm_label, kind).clicked() {
@@ -453,7 +453,7 @@ pub fn confirm_choice_row(
 ) -> ConfirmChoice {
     let mut out = ConfirmChoice::None;
     ui.horizontal(|ui| {
-        if ui.button("Cancel").clicked() {
+        if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
             out = ConfirmChoice::Cancel;
         }
         for (i, (label, kind)) in choices.iter().enumerate() {

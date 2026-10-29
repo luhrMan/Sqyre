@@ -107,8 +107,6 @@ pub fn paint_edit_fields(
                 // mouse/slider — not `with_layout(… Align::Center)`, which fills
                 // ScrollArea's unbounded height and ratchets the tip to the screen.
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing =
-                        egui::Vec2::splat(crate::theme::element_gap(ui));
                     help::tip(
                         crate::widgets::mouse_button_picker(ui, button),
                         h::CLICK_BUTTON,
@@ -672,14 +670,14 @@ pub fn paint_edit_fields(
                 );
             });
             tip_section(ui, |ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "Nav Key children: nest Navigate Key actions under this node in the tree.",
-                    )
-                    .small()
-                    .weak(),
-                )
-                .on_hover_text(h::NAV_KEY_CHILDREN);
+                help::tip(
+                    help::label(
+                        ui,
+                        egui_phosphor::regular::TREE_STRUCTURE,
+                        "Nav Key children",
+                    ),
+                    h::NAV_KEY_CHILDREN,
+                );
             });
             tip_advanced(ui, |ui| {
                 tip_wrapped_section(ui, |ui| {
@@ -1416,7 +1414,6 @@ fn yaml_value_field(
     // Expression builder toolbar.
     let mut insert: Option<String> = None;
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = crate::theme::element_gap(ui);
         ui.menu_button("f(x)", |ui| {
             for f in EXPRESSION_FUNCTIONS {
                 if ui.button(format!("{f}( )")).clicked() {

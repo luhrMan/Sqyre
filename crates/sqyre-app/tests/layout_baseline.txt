@@ -1,26 +1,16 @@
-data_editor_collections|1280x720@1.5|clipped_h|right|
-data_editor_collections|1280x720@2.0|clipped_h|right|
-data_editor_collections|412x915|clipped_h|right|Advanced
-data_editor_collections|480x360|clipped_h|right|
+data_editor_collections|480x360|clipped_h|right|
 data_editor_masks|1280x720@1.5|overlap|TextInput ↔ New mask
 data_editor_masks|1280x720@1.5|overlap|TextInput ↔ Save
 data_editor_masks|1280x720@2.0|overlap|TextInput ↔ New mask
 data_editor_masks|1280x720@2.0|overlap|TextInput ↔ Save
-data_editor_overlay|412x915|clipped_h|right|Advanced
-data_editor_pixelcheck|1280x720@1.5|clipped_h|right|
-data_editor_pixelcheck|1280x720@2.0|clipped_h|right|
-data_editor_pixelcheck|412x915|clipped_h|right|Advanced
-data_editor_pixelcheck|480x360|clipped_h|right|
-data_editor_programs|412x915|clipped_h|right|Advanced
-data_editor_screencap|1280x720@1.5|clipped_h|right|
+data_editor_pixelcheck|480x360|clipped_h|right|
+data_editor_programs|412x915|clipped_h|right|
 data_editor_screencap|1280x720@1.5|overlap|TextInput ↔ New
 data_editor_screencap|1280x720@1.5|overlap|TextInput ↔ Save
-data_editor_screencap|1280x720@2.0|clipped_h|right|
 data_editor_screencap|1280x720@2.0|overlap|TextInput ↔ New
 data_editor_screencap|1280x720@2.0|overlap|TextInput ↔ Save
-data_editor_screencap|412x915|clipped_h|right|Advanced
-data_editor_screencap|480x360|clipped_h|right|
-data_editor_searchareas|412x915|clipped_h|right|Advanced
+data_editor_screencap|480x360|clipped_h|right|
+data_editor_searchareas|412x915|clipped_h|right|
 settings_appearance|1024x640|clipped_h|right|Reset
 settings_appearance|1280x720|clipped_h|right|Reset
 settings_appearance|1920x1080|clipped_h|right|Reset

@@ -727,6 +727,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             });
             ui.add_space(crate::theme::element_gap(ui));
             paint_hotkey_tag_footer(app, ui);
+            ui.add_space(crate::theme::element_gap(ui));
         });
     app.macro_list_open = open;
 

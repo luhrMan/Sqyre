@@ -496,7 +496,6 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
                     .inner_margin(egui::Margin::same(crate::theme::SPACE_4 as i8))
                     .show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing.x = crate::theme::element_gap(ui);
                             ui.label(egui::RichText::new(group.polarity_label()).small().strong());
                             ui.label(egui::RichText::new(group.name.as_str()).small());
                         });

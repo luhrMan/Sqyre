@@ -53,6 +53,8 @@ pub const MAX_DATA_EDITOR_LEFT_FRAC: f32 = 0.75;
 pub const DEFAULT_MACRO_LIST_FRAC: f32 = 0.30;
 pub const MIN_MACRO_LIST_FRAC: f32 = 0.15;
 pub const MAX_MACRO_LIST_FRAC: f32 = 0.75;
+/// Narrow viewports auto-switch to Compact spacing unless the user opts out.
+pub const DEFAULT_AUTO_COMPACT_DENSITY: bool = true;
 
 /// Default While budget when a macro sets `max_iterations` ≤ 0.
 pub const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
@@ -615,6 +617,10 @@ pub struct UserSettings {
     /// Section/element spacing preset (Settings → Appearance → Spacing).
     #[serde(default)]
     pub ui_density: UiDensity,
+    /// Switch to Compact spacing automatically on narrow viewports (phones,
+    /// small windows). Disable to keep the chosen density at all sizes.
+    #[serde(default = "default_auto_compact_density")]
+    pub auto_compact_density: bool,
     #[serde(default)]
     pub action_colors: ActionColorPrefs,
     /// Per-action-type blank templates for the Add Action picker (YAML action maps).
@@ -741,6 +747,9 @@ fn default_data_editor_left_frac() -> f32 {
 fn default_macro_list_frac() -> f32 {
     DEFAULT_MACRO_LIST_FRAC
 }
+fn default_auto_compact_density() -> bool {
+    DEFAULT_AUTO_COMPACT_DENSITY
+}
 fn is_zero_i64(v: &i64) -> bool {
     *v == 0
 }
@@ -773,6 +782,7 @@ impl Default for UserSettings {
             ui_font_size: DEFAULT_UI_FONT_SIZE,
             ui_scale: DEFAULT_UI_SCALE,
             ui_density: UiDensity::default(),
+            auto_compact_density: DEFAULT_AUTO_COMPACT_DENSITY,
             action_colors: ActionColorPrefs::default(),
             action_defaults: std::collections::BTreeMap::new(),
             overlay_buttons: Vec::new(),

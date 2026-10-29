@@ -218,11 +218,7 @@ pub fn show_logs_window(
                     visible.iter().map(|&i| entries[i].clone()).collect();
                 ui.ctx().copy_text(lines_for(&filtered).join("\n"));
             }
-            if ui
-                .button("Clear logs")
-                .on_hover_text("Clear this action's log entries")
-                .clicked()
-            {
+            if crate::widgets::cancel_icon_button(ui, "Clear this action's log entries").clicked() {
                 action_log.clear_for(action_id);
             }
             if ui

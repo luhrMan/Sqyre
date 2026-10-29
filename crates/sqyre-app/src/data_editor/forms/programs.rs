@@ -24,53 +24,70 @@ impl DataEditor {
         });
         paint_fs_name_hint(ui, &self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
-        let bound = if self.form_process_path.trim().is_empty() {
+        let title = self.form_window_title.trim().to_string();
+        let path = self.form_process_path.trim().to_string();
+        // Program name is the window title when bound; the path falls back to
+        // being the name, with the folder glyph tooltip carrying the full path.
+        let name = if path.is_empty() {
             sqyre_domain::EMPTY_NONE.to_string()
-        } else if self.form_window_title.trim().is_empty() {
-            self.form_process_path.clone()
+        } else if title.is_empty() {
+            path.clone()
         } else {
-            format!(
-                "{}  —  {}",
-                self.form_window_title.trim(),
-                self.form_process_path.trim()
-            )
+            title
         };
+        let has_bound = !path.is_empty() || !name.is_empty();
         ui.horizontal(|ui| {
             help::label(ui, crate::model_icons::PROGRAM, "Running program");
-            if !self.form_process_path.trim().is_empty() {
+            // The icon IS the selector — click the program's own icon (or the
+            // window glyph when unbound) to pick a window.
+            let icon_side = crate::icon_cache::PROCESS_ICON_SIDE * 1.25;
+            let pick = if !path.is_empty() {
                 let tex = icons
                     .for_process(ui.ctx(), &self.form_process_path, &self.form_window_title)
                     .or_else(|| {
                         let prog = self.selected_program.as_deref()?;
                         let bound = catalog.get(prog)?;
-                        if bound.process_path.trim() != self.form_process_path.trim() {
+                        if bound.process_path.trim() != path {
                             return None;
                         }
                         icons.for_path(ui.ctx(), &catalog.process_icon_path(prog))
                     });
-                if let Some(tex) = tex {
-                    crate::icon_cache::paint_process_icon(
-                        ui,
-                        &tex,
-                        crate::icon_cache::PROCESS_ICON_SIDE * 1.25,
-                    );
+                match tex {
+                    Some(tex) => ui
+                        .add(egui::Button::image(egui::Image::new((
+                            tex.id(),
+                            egui::Vec2::splat(icon_side),
+                        ))))
+                        .on_hover_text("Pick window…"),
+                    None => {
+                        crate::widgets::icon_button(ui, crate::model_icons::WINDOW, "Pick window…")
+                    }
                 }
-            }
-            help::tip(
-                ui.label(egui::RichText::new(bound).monospace()),
-                help::DE_RUNNING_PROGRAM,
-            );
-        });
-        ui.horizontal(|ui| {
-            if crate::widgets::icon_button(ui, crate::model_icons::WINDOW, "Pick window…").clicked()
-            {
+            } else {
+                crate::widgets::icon_button(ui, crate::model_icons::WINDOW, "Pick window…")
+            };
+            if pick.clicked() {
                 self.window_picker =
                     pickers::open_window_picker(&self.form_process_path, &self.form_window_title);
             }
+            help::tip(
+                ui.label(egui::RichText::new(name).monospace()),
+                help::DE_RUNNING_PROGRAM,
+            );
+            if !path.is_empty() {
+                help::tip(
+                    ui.label(egui::RichText::new(egui_phosphor::regular::FOLDER).weak()),
+                    &path,
+                );
+            }
             if ui
                 .add_enabled(
-                    !self.form_process_path.is_empty() || !self.form_window_title.is_empty(),
-                    egui::Button::new("Clear"),
+                    has_bound,
+                    crate::widgets::IconButton::new(
+                        egui_phosphor::regular::X,
+                        "Clear",
+                        has_bound.then_some(crate::theme::MACRO_STOP),
+                    ),
                 )
                 .clicked()
             {

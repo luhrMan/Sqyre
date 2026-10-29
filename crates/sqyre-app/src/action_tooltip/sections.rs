@@ -47,12 +47,7 @@ pub(crate) fn take_edit_tip_refit(ctx: &egui::Context) -> bool {
 /// (or hidden) widgets resize the window instead of only scrolling.
 pub fn tip_advanced(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
     let id = ui.make_persistent_id(ADVANCED_ID_SALT);
-    let response = egui::CollapsingHeader::new("Advanced")
-        .default_open(false)
-        .id_salt(ADVANCED_ID_SALT)
-        .show(ui, |ui| {
-            add_contents(ui);
-        });
+    let response = crate::widgets::advanced_section(ui, ADVANCED_ID_SALT, add_contents);
     // `changed` is set when the open state toggles (click or `.open(…)`).
     if response.header_response.changed() {
         let open =

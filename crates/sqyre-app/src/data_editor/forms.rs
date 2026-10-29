@@ -137,7 +137,16 @@ impl DataEditor {
         crate::widgets::fill_row(
             ui,
             |ui| {
-                cancel = armed && ui.button("Cancel").clicked();
+                cancel = ui
+                    .add_enabled(
+                        armed,
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::X,
+                            "Cancel",
+                            armed.then_some(crate::theme::MACRO_STOP),
+                        ),
+                    )
+                    .clicked();
                 record = crate::widgets::record_icon_button(ui, record_tip, !armed).clicked();
             },
             |ui| {
@@ -454,7 +463,7 @@ impl DataEditor {
                 &mut self.pixel_check.match_method,
                 false,
             );
-            ui.collapsing("Advanced", |ui| {
+            crate::widgets::advanced_section(ui, "de_pixelcheck_match", |ui| {
                 match_settings::paint_match_method(ui, &mut self.pixel_check.match_method);
             });
             help::tip(

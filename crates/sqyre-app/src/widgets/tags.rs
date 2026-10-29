@@ -450,26 +450,34 @@ pub fn tag_chip_editor(
     edit
 }
 
+/// Allocate + paint a Small-text pill: `fill` rounded rect, `SPACE_2` padding,
+/// ink optically centered with [`crate::theme::paint_galley_centered`] (galley
+/// line boxes sit high — centering the mesh like `paint_pill`/`paint_keycap`
+/// keeps the text visually centered). No `Frame`: frame children inherit the
+/// parent layout, which mis-centers inside `ui.horizontal`.
+fn paint_tag_pill_fill(ui: &mut egui::Ui, text: &str, fill: egui::Color32) -> egui::Response {
+    let fg = crate::theme::contrast_fg(fill);
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        egui::TextStyle::Small.resolve(ui.style()),
+        fg,
+    );
+    let pad = crate::theme::SPACE_2 * 2.0;
+    let (rect, response) =
+        ui.allocate_exact_size(galley.size() + egui::vec2(pad, pad), Sense::hover());
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect_filled(rect, 6.0, fill);
+        crate::theme::paint_galley_centered(ui, rect, galley, fg);
+    }
+    response
+}
+
 /// One read-only tag pill — same chrome as the editor chips ([`paint_tag_chips`]):
 /// PRIMARY fill, 6px radius, Small contrast text inside a SPACE_2 margin.
 /// Interaction (hover text, context menu) is the caller's; the returned
 /// response covers the painted pill.
 pub fn tag_pill(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    let fill = crate::theme::PRIMARY;
-    egui::Frame::NONE
-        .fill(fill)
-        .stroke(egui::Stroke::NONE)
-        .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::same(crate::theme::SPACE_2 as i8))
-        .show(ui, |ui| {
-            ui.spacing_mut().interact_size.y = ui.text_style_height(&egui::TextStyle::Small);
-            ui.label(
-                egui::RichText::new(label)
-                    .small()
-                    .color(crate::theme::contrast_fg(fill)),
-            );
-        })
-        .response
+    paint_tag_pill_fill(ui, label, crate::theme::PRIMARY)
 }
 
 fn paint_tag_chips(
@@ -485,18 +493,11 @@ fn paint_tag_chips(
     let mut pending_reorder: Option<(usize, usize)> = None;
     let mut toggle: Option<usize> = None;
     let mut overflow: usize = 0;
-    let small_h = ui.text_style_height(&egui::TextStyle::Small);
     let fill = if enabled {
         crate::theme::PRIMARY
     } else {
         crate::theme::PRIMARY.gamma_multiply(0.5)
     };
-    let fg = crate::theme::contrast_fg(crate::theme::PRIMARY);
-    let chip = egui::Frame::NONE
-        .fill(fill)
-        .stroke(egui::Stroke::NONE)
-        .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::same(crate::theme::SPACE_2 as i8));
 
     for (i, tag) in tags.iter().enumerate() {
         let (polarity, label) = if signed_filters {
@@ -539,7 +540,6 @@ fn paint_tag_chips(
             ui.end_row();
         }
         let paint_chip = |ui: &mut egui::Ui| -> egui::Rect {
-            // Zero item_spacing keeps polarity + label as one compact pill.
             // Elide to the row's width: a chip wider than the pane cannot wrap
             // below itself, so its label would clip the pane edge. Bound by the
             // clip — `available_width` over-reports past it (see wrap check).
@@ -552,18 +552,7 @@ fn paint_tag_chips(
             .max(20.0);
             let shown =
                 crate::widgets::elide::elide_to_width(ui, label.as_str(), budget, chip_font);
-            let resp = chip
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    ui.spacing_mut().interact_size.y = small_h;
-                    ui.horizontal(|ui| {
-                        if signed_filters {
-                            ui.label(egui::RichText::new(polarity).small().color(fg).strong());
-                        }
-                        ui.label(egui::RichText::new(shown.text.clone()).small().color(fg));
-                    });
-                })
-                .response;
+            let resp = paint_tag_pill_fill(ui, &format!("{polarity}{}", shown.text), fill);
             if enabled && !signed_filters {
                 let tip = if shown.elided {
                     format!("{label} — right-click for options.")
@@ -658,12 +647,7 @@ fn paint_tag_chips(
             + crate::theme::SPACE_2 * 2.0;
         let row_right = ui.max_rect().right().min(ui.clip_rect().right());
         if ui.cursor().left() + chip_w <= row_right {
-            let resp = chip.show(ui, |ui| {
-                ui.spacing_mut().item_spacing.x = 0.0;
-                ui.spacing_mut().interact_size.y = small_h;
-                ui.label(egui::RichText::new(label).small().color(fg));
-            });
-            resp.response
+            paint_tag_pill_fill(ui, &label, fill)
                 .on_hover_text(format!("{overflow} more: {hidden}"));
         }
     }

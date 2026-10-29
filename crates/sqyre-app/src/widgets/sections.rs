@@ -91,6 +91,59 @@ pub fn section_separator(ui: &mut egui::Ui) -> egui::Response {
     response
 }
 
+/// Collapsed-by-default disclosure group — the one shared chrome for hiding
+/// secondary or expert options so every surface looks and behaves alike.
+///
+/// For the standard expert bucket use [`advanced_section`]; pass a feature
+/// name ("Appearance", …) when a whole optional group is being hidden.
+/// `id_salt` keeps open state stable per call site.
+pub fn collapsible_section<R>(
+    ui: &mut egui::Ui,
+    title: &str,
+    id_salt: &str,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::CollapsingResponse<R> {
+    collapsible_header(title, id_salt).show(ui, add_contents)
+}
+
+/// The header [`collapsible_section`] uses, for callers that need
+/// `.open(…)` / `.show_unindented(…)` before showing.
+pub fn collapsible_header(title: &str, id_salt: &str) -> egui::CollapsingHeader {
+    egui::CollapsingHeader::new(title)
+        .default_open(false)
+        .id_salt(id_salt)
+}
+
+/// Standard "Advanced" disclosure — collapsed by default. Every form/tooltip
+/// puts its expert fields behind this instead of ad-hoc collapses.
+pub fn advanced_section<R>(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::CollapsingResponse<R> {
+    collapsible_section(ui, "Advanced", id_salt, add_contents)
+}
+
+/// Window chrome row: `trailing` controls pinned right, `bar` (title +
+/// navigation) in a left scroll overflow that never loses buttons. Shared by
+/// full-pane windows like the Data Editor.
+pub fn window_header(
+    ui: &mut egui::Ui,
+    overflow_id: &str,
+    trailing: impl FnOnce(&mut egui::Ui),
+    bar: impl FnOnce(&mut egui::Ui),
+) {
+    crate::widgets::fill_row(
+        ui,
+        |ui| trailing(ui),
+        |ui| {
+            crate::widgets::show_overflow(ui, overflow_id, 1.0, |ui| {
+                ui.horizontal(bar);
+            });
+        },
+    );
+}
+
 /// Floating control strip pinned inside `rect`'s bottom-right corner — replaces
 /// a reserved footer row without consuming layout height. `add_contents` paints
 /// right-to-left inside a window-frame chip (first widget at the right edge).
@@ -107,7 +160,6 @@ pub fn float_bottom_right(ui: &mut egui::Ui, rect: Rect, add_contents: impl FnOn
             .max_rect(strip)
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
-    child.spacing_mut().item_spacing.x = crate::theme::element_gap(&child);
     egui::Frame::window(ui.style())
         .inner_margin(egui::Margin::symmetric(SPACE_4 as i8, 2))
         .show(&mut child, add_contents);

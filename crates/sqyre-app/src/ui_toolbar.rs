@@ -42,8 +42,6 @@ pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
 
 fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = theme::element_gap(ui);
-
         // Brand / command palette (primary affordance), top-left of the window.
         // While a macro runs the shield is replaced by the animated S trace —
         // the same busy spinner the overlay buttons and loading slots show.
@@ -531,8 +529,6 @@ pub fn action_toolbar(
     let running = app.run_session.state.running.load(Ordering::SeqCst);
     let mut force_openness: Option<bool> = None;
     ui.horizontal_wrapped(|ui| {
-        // Tight gap between toolbar icon buttons (scale SPACE_4).
-        ui.spacing_mut().item_spacing.x = theme::element_gap(ui);
         #[cfg(not(target_arch = "wasm32"))]
         paint_run_stop(app, ui, running);
         let can_copy = app.can_copy_selection();

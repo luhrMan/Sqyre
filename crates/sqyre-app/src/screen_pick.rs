@@ -433,7 +433,9 @@ fn paint_bar(ctx: &egui::Context, add: impl FnOnce(&mut egui::Ui) -> Choice) -> 
 }
 
 fn cancel_row(ui: &mut egui::Ui) -> Choice {
-    if crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked() {
+    if crate::widgets::consume_escape(ui)
+        || crate::widgets::cancel_icon_button(ui, "Cancel").clicked()
+    {
         Choice::Cancel
     } else {
         Choice::None

@@ -932,6 +932,8 @@ impl eframe::App for SqyreApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         focus_nav::lock_to_window(ui.ctx());
+        // Re-fit spacing when the viewport crosses the auto-compact threshold.
+        SettingsUi::sync_density(ui.ctx(), self.settings_ui.settings());
         self.take_pending_db_import();
         // Poll background tasks before floating windows so Settings sees fresh update state.
         ui_overlays::sync_frame_state(self, ui.ctx());

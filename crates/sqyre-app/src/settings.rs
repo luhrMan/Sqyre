@@ -273,11 +273,65 @@ impl SettingsUi {
         // (including horizontal), instead of fully dormant until hover.
         style.spacing.scroll = crate::theme::scroll_style();
         ctx.set_global_style(style);
-        let d = settings.ui_density;
-        crate::theme::set_density(
-            ctx,
-            crate::theme::DensityGaps::new(d.section_gap(), d.element_gap()),
-        );
+        Self::apply_spacing(ctx, settings);
+    }
+
+    /// Viewport width (points) at or below which auto-compact kicks in.
+    const AUTO_COMPACT_WIDTH: f32 = 480.0;
+
+    /// Density for the current viewport: the chosen one, or Compact when the
+    /// window is narrow and `auto_compact_density` is on. Gap tokens stay in
+    /// points — they do not scale with resolution.
+    fn effective_density(ctx: &egui::Context, settings: &UserSettings) -> UiDensity {
+        Self::density_for(
+            settings.ui_density,
+            settings.auto_compact_density,
+            ctx.content_rect().width(),
+        )
+    }
+
+    /// Density after the narrow-viewport auto-compact rule.
+    fn density_for(density: UiDensity, auto_compact: bool, viewport_width: f32) -> UiDensity {
+        if auto_compact && viewport_width <= Self::AUTO_COMPACT_WIDTH {
+            UiDensity::Compact
+        } else {
+            density
+        }
+    }
+
+    fn effective_gaps(ctx: &egui::Context, settings: &UserSettings) -> crate::theme::DensityGaps {
+        let d = Self::effective_density(ctx, settings);
+        crate::theme::DensityGaps::new(d.section_gap(), d.element_gap())
+    }
+
+    /// Push the effective gaps into the egui `Spacing` (one place, instead of
+    /// per-row `spacing_mut` overrides) and into [`crate::theme::set_density`].
+    ///
+    /// Only *gaps* follow density — point sizes (hit areas, icon buttons, card
+    /// dimensions) stay fixed, with `interact_size` kept at egui's defaults so
+    /// tree/list rows don't inflate. `text_edit_width` narrows under Compact
+    /// so single-line fields fit phone-width panes instead of clipping.
+    fn apply_spacing(ctx: &egui::Context, settings: &UserSettings) {
+        let d = Self::effective_density(ctx, settings);
+        let gaps = crate::theme::DensityGaps::new(d.section_gap(), d.element_gap());
+        let mut style = (*ctx.global_style()).clone();
+        // egui's 8pt default doubled the app's 4pt element-gap convention.
+        style.spacing.item_spacing = egui::vec2(gaps.element, gaps.element);
+        style.spacing.text_edit_width = if d == UiDensity::Compact {
+            200.0
+        } else {
+            280.0
+        };
+        ctx.set_global_style(style);
+        crate::theme::set_density(ctx, gaps);
+    }
+
+    /// Keep the applied gaps in sync with the viewport size — cheap no-op until
+    /// the window crosses [`Self::AUTO_COMPACT_WIDTH`]. Runs each frame.
+    pub fn sync_density(ctx: &egui::Context, settings: &UserSettings) {
+        if crate::theme::density(ctx) != Self::effective_gaps(ctx, settings) {
+            Self::apply_spacing(ctx, settings);
+        }
     }
 
     /// Load action-color overrides from settings into the domain map.
@@ -398,12 +452,7 @@ impl SettingsUi {
                 ui,
                 |ui| {
                     clear_search = has_search
-                        && crate::widgets::icon_button(
-                            ui,
-                            egui_phosphor::regular::X,
-                            "Clear search",
-                        )
-                        .clicked();
+                        && crate::widgets::cancel_icon_button(ui, "Clear search").clicked();
                 },
                 |ui| {
                     ui.label(egui::RichText::new(
@@ -1793,6 +1842,17 @@ impl SettingsUi {
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
+                if ui
+                    .checkbox(&mut self.settings.auto_compact_density, "Auto-compact")
+                    .on_hover_text(
+                        "Switch to Compact spacing automatically when the window \
+                         is narrow (phones, small windows).",
+                    )
+                    .changed()
+                {
+                    self.mark_dirty();
+                    Self::apply_appearance(ctx, &self.settings);
+                }
             });
         }
 
@@ -2189,10 +2249,8 @@ fn advanced_header(
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
     let force_open = !q.is_empty() && knobs.iter().any(|kw| query_matches(q, kw));
-    egui::CollapsingHeader::new("Advanced")
-        .default_open(false)
+    crate::widgets::collapsible_header("Advanced", id_salt)
         .open(force_open.then_some(true))
-        .id_salt(id_salt)
         .show(ui, add_contents);
 }
 
@@ -2224,6 +2282,16 @@ mod tests {
         assert!(section_visible("", SECTION_MACROS, MACROS_SETTINGS));
         assert!(section_visible("", SECTION_SOUND, SOUND_SETTINGS));
         assert!(appearance_section_visible(""));
+    }
+
+    #[test]
+    fn narrow_viewport_compacts_only_when_enabled() {
+        use UiDensity::*;
+        assert_eq!(SettingsUi::density_for(Spaced, true, 360.0), Compact);
+        assert_eq!(SettingsUi::density_for(Spaced, false, 360.0), Spaced);
+        assert_eq!(SettingsUi::density_for(Spaced, true, 960.0), Spaced);
+        // Compact is idempotent — already-compact users see no change.
+        assert_eq!(SettingsUi::density_for(Compact, true, 360.0), Compact);
     }
 
     #[test]

@@ -406,8 +406,8 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                             .button("Continue")
                             .on_hover_text("Show Android's screen recording prompt.")
                             .clicked();
-                        cancel =
-                            crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked();
+                        cancel = crate::widgets::consume_escape(ui)
+                            || crate::widgets::cancel_icon_button(ui, "Cancel").clicked();
                     });
                 }
                 ProjectionGate::Waiting => {
@@ -415,7 +415,8 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                         crate::widgets::brand_spinner(ui);
                         ui.weak("Waiting for Android's screen recording prompt…");
                     });
-                    cancel = crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked();
+                    cancel = crate::widgets::consume_escape(ui)
+                        || crate::widgets::cancel_icon_button(ui, "Cancel").clicked();
                 }
                 ProjectionGate::Denied => {
                     crate::widgets::warn_icon(ui, "Screen recording was declined.");
@@ -430,8 +431,8 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                             .button("Try again")
                             .on_hover_text("Show Android's screen recording prompt again.")
                             .clicked();
-                        cancel =
-                            crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked();
+                        cancel = crate::widgets::consume_escape(ui)
+                            || crate::widgets::cancel_icon_button(ui, "Cancel").clicked();
                     });
                 }
             }

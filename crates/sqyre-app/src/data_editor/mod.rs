@@ -922,8 +922,9 @@ impl DataEditor {
         let mut close = false;
         let tab_label = self.tab.label();
         let tab_tip = self.tab.header_tip();
-        crate::widgets::fill_row(
+        crate::widgets::window_header(
             ui,
+            "de_header_main",
             |ui| {
                 close =
                     crate::widgets::icon_button(ui, egui_phosphor::regular::X, "Close").clicked();
@@ -935,15 +936,9 @@ impl DataEditor {
                 );
             },
             |ui| {
-                // Scroll the title + sections only when they exceed the leftover
-                // width. A fitting row paints the same widgets as a plain horizontal.
-                crate::widgets::show_overflow(ui, "de_header_main", 1.0, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(WINDOW_TITLE).strong());
-                        ui.add_space(crate::theme::element_gap(ui));
-                        self.paint_section_bar(ui, env);
-                    });
-                });
+                ui.label(egui::RichText::new(WINDOW_TITLE).strong());
+                ui.add_space(crate::theme::element_gap(ui));
+                self.paint_section_bar(ui, env);
             },
         );
         close
