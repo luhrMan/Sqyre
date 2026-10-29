@@ -11,6 +11,8 @@ mod assets;
 mod catalog;
 mod chord_record;
 #[cfg(feature = "native-runtime")]
+mod click_fx;
+#[cfg(feature = "native-runtime")]
 mod collection_capture;
 mod command_palette;
 mod data_editor;
@@ -415,6 +417,9 @@ pub struct SqyreApp {
     /// Outline windows for live search-area selection rect.
     #[cfg(feature = "native-runtime")]
     recording_overlay: crate::recording_overlay::RecordingOverlay,
+    /// Gold square flash where automated clicks land (Settings → Macros).
+    #[cfg(feature = "native-runtime")]
+    click_fx_overlay: click_fx::ClickFxOverlay,
     /// Android: still of the previous app to place a recorded point or search area on.
     #[cfg(all(target_os = "android", feature = "native-runtime"))]
     screen_pick: crate::screen_pick::ScreenPick,
@@ -669,6 +674,7 @@ impl SqyreApp {
                 action_log,
                 runtime_vars: SharedRuntimeVars::new(),
                 highlighter,
+                click_fx: sqyre_ports::SharedClickFx::new(),
                 logs_window: None,
                 logs_state: action_logs_ui::LogsWindowState::default(),
             },
@@ -694,6 +700,8 @@ impl SqyreApp {
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: recording_overlay::RecordingOverlay::new(),
+            #[cfg(feature = "native-runtime")]
+            click_fx_overlay: click_fx::ClickFxOverlay::new(),
             #[cfg(all(target_os = "android", feature = "native-runtime"))]
             screen_pick: Default::default(),
             #[cfg(all(target_os = "android", feature = "native-runtime"))]
@@ -960,6 +968,9 @@ impl eframe::App for SqyreApp {
 
         // After tips/panels paint so tooltip preview outlines apply this frame.
         self.sync_recording_overlay(ui.ctx());
+        #[cfg(feature = "native-runtime")]
+        self.click_fx_overlay
+            .sync(ui.ctx(), &self.run_session.click_fx);
 
         if self.settings_ui.settings().window_border {
             paint_window_border(ui.ctx());
@@ -1127,6 +1138,15 @@ impl Drop for SqyreApp {
                 &format!("recording_overlay_ms={}", t.elapsed().as_millis()),
             );
             sqyre_capture::mark_site("app:drop:after_recording_overlay");
+
+            let t = web_time::Instant::now();
+            self.click_fx_overlay = click_fx::ClickFxOverlay::new();
+            sqyre_capture::cap_log(
+                "APP",
+                "drop",
+                &format!("click_fx_ms={}", t.elapsed().as_millis()),
+            );
+            sqyre_capture::mark_site("app:drop:after_click_fx");
 
             let t = web_time::Instant::now();
             self.preview_tooltips = preview_tooltip::PreviewTooltipCache::new();

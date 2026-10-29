@@ -138,6 +138,7 @@ impl SqyreApp {
                 action_log,
                 runtime_vars: SharedRuntimeVars::new(),
                 highlighter,
+                click_fx: sqyre_ports::SharedClickFx::new(),
                 logs_window: None,
                 logs_state: LogsWindowState::default(),
             },
@@ -163,6 +164,8 @@ impl SqyreApp {
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: RecordingOverlay::new(),
+            #[cfg(feature = "native-runtime")]
+            click_fx_overlay: crate::click_fx::ClickFxOverlay::new(),
             #[cfg(all(target_os = "android", feature = "native-runtime"))]
             screen_pick: Default::default(),
             #[cfg(all(target_os = "android", feature = "native-runtime"))]

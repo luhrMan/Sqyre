@@ -659,6 +659,7 @@ impl SettingsUi {
     ) {
         let hit = section_hit || query_matches(q, SUBSECTION_PLAYBACK);
         let show_highlight = setting_visible(q, hit, SETTING_HIGHLIGHT_ACTION);
+        let show_click_fx = setting_visible(q, hit, SETTING_CLICK_FX);
         let show_release = setting_visible(q, hit, SETTING_RELEASE_HELD);
         let show_overlay_stop = setting_visible(q, hit, SETTING_OVERLAY_PRESS_STOPS);
         let show_overlay_detect = setting_visible(q, hit, SETTING_OVERLAY_IN_DETECTION);
@@ -666,6 +667,7 @@ impl SettingsUi {
         let show_while = setting_visible(q, hit, SETTING_WHILE_BUDGET);
         let show_depth = setting_visible(q, hit, SETTING_RUN_MACRO_DEPTH);
         if !(show_highlight
+            || show_click_fx
             || show_release
             || show_overlay_stop
             || show_overlay_detect
@@ -684,6 +686,20 @@ impl SettingsUi {
                     "Highlight the currently executing action",
                 )
                 .on_hover_text("Scroll and tint the tree row of the action running now.")
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if show_click_fx
+            && ui
+                .checkbox(
+                    &mut self.settings.click_effect,
+                    "Flash a marker where clicks land",
+                )
+                .on_hover_text(
+                    "During a run, a shrinking gold square briefly appears around each mouse press on the desktop (Click actions and Navigate selects).",
+                )
                 .changed()
         {
             self.mark_dirty();
@@ -1907,6 +1923,14 @@ const SETTING_LOG_META: &[&str] = &[
 ];
 const SETTING_HIGHLIGHT_ACTION: &[&str] =
     &["highlight", "executing action", "active action", "tint"];
+const SETTING_CLICK_FX: &[&str] = &[
+    "click effect",
+    "click",
+    "flash",
+    "marker",
+    "cursor",
+    "clicks land",
+];
 const SETTING_HIDE_WHILE_RECORDING: &[&str] =
     &["hide", "recording", "points", "search areas", "snapshot"];
 const SETTING_RELEASE_HELD: &[&str] = &[
@@ -2068,6 +2092,7 @@ const GENERAL_SETTINGS: &[&[&str]] = &[
 const MACROS_SETTINGS: &[&[&str]] = &[
     SUBSECTION_PLAYBACK,
     SETTING_HIGHLIGHT_ACTION,
+    SETTING_CLICK_FX,
     SETTING_RELEASE_HELD,
     SETTING_OVERLAY_PRESS_STOPS,
     SETTING_OVERLAY_IN_DETECTION,

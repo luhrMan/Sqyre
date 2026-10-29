@@ -14,8 +14,8 @@ use sqyre_domain::{
     MatchMode, MouseButton, PressState, ScalarValue,
 };
 use sqyre_ports::{
-    clear_highlights, highlight_cursor, ActionHighlighter, ActionLogger, FocusedWindow,
-    RuntimeVarSink,
+    clear_highlights, highlight_cursor, ActionHighlighter, ActionLogger, ClickFxSink,
+    FocusedWindow, RuntimeVarSink,
 };
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -44,6 +44,9 @@ pub struct Executor<'a> {
     capture_dirty: bool,
     /// Window that had focus before the last Focus Window switched away from it.
     pub(crate) previous_focus: Option<FocusedWindow>,
+    /// Last pointer target this run commanded. Click-effect positions prefer it
+    /// over a live query — compositor cursor metadata can lag a just-sent move.
+    last_pointer: Option<(i32, i32)>,
 }
 
 /// Hard default for nested RunMacro depth when callers omit a custom budget.
@@ -64,6 +67,7 @@ impl<'a> Executor<'a> {
             // First capture of the run should not reuse a pre-run portal cache.
             capture_dirty: true,
             previous_focus: None,
+            last_pointer: None,
         }
     }
 
@@ -82,10 +86,18 @@ impl<'a> Executor<'a> {
         }
     }
 
+    /// Move the pointer and remember the target so presses can report where they
+    /// landed even when the backend cannot read the cursor back.
+    pub(crate) fn move_pointer_to(&mut self, x: i32, y: i32, opts: MoveOptions) {
+        self.deps.automation.move_to(x, y, opts);
+        self.last_pointer = Some((x, y));
+    }
+
     pub(crate) fn input_click_down(&mut self, button: &str) -> Result<()> {
         self.mark_capture_dirty();
         self.deps.automation.click(button, true)?;
         self.held_buttons.insert(button.to_string());
+        self.emit_click_fx();
         Ok(())
     }
 
@@ -105,6 +117,21 @@ impl<'a> Executor<'a> {
             self.interruptible_sleep(hold_ms)?;
         }
         self.input_click_up(button)
+    }
+
+    /// Report where a press landed so the shell can flash the click marker.
+    /// Prefers the run's commanded pointer target; falls back to a live backend
+    /// read for presses with no preceding move.
+    fn emit_click_fx(&mut self) {
+        let Some(sink) = self.deps.click_fx else {
+            return;
+        };
+        let pos = self
+            .last_pointer
+            .or_else(|| self.deps.automation.cursor_position());
+        if let Some((x, y)) = pos {
+            sink.click_at(x, y);
+        }
     }
 
     pub(crate) fn input_key_down(&mut self, key: &str) -> Result<()> {
@@ -347,6 +374,8 @@ pub struct ExecDeps<'a> {
     pub highlighter: Option<&'a dyn ActionHighlighter>,
     pub runtime_vars: Option<&'a dyn RuntimeVarSink>,
     pub variables_dir: Option<&'a Path>,
+    /// Receives each mouse-press position for the desktop click-effect flash.
+    pub click_fx: Option<&'a dyn ClickFxSink>,
 }
 
 impl<'a> ExecDeps<'a> {
@@ -371,6 +400,7 @@ impl<'a> ExecDeps<'a> {
             highlighter: None,
             runtime_vars: None,
             variables_dir: None,
+            click_fx: None,
         }
     }
 
@@ -433,6 +463,11 @@ impl<'a> ExecDeps<'a> {
         self.variant_exit_early = enabled;
         self
     }
+
+    pub fn click_fx(mut self, s: &'a dyn ClickFxSink) -> Self {
+        self.click_fx = Some(s);
+        self
+    }
 }
 
 /// Run a macro from a clean runtime variable store.
@@ -451,6 +486,7 @@ pub fn execute_macro_with(macro_: &mut Macro, deps: ExecDeps<'_>) -> Result<()> 
         published_vars_revision: None,
         capture_dirty: true,
         previous_focus: None,
+        last_pointer: None,
     };
     macro_.init_runtime_variables();
     let monitor_sizes = match exec.deps.capturer.as_mut() {
@@ -650,7 +686,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
             };
             exec.log(action.id, format!("Move → ({x}, {y}) [{}]", point.as_str()));
             exec.mark_capture_dirty();
-            exec.deps.automation.move_to(
+            exec.move_pointer_to(
                 x,
                 y,
                 MoveOptions {
@@ -993,6 +1029,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -1041,6 +1078,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -1089,6 +1127,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -1112,6 +1151,7 @@ mod tests {
             published_vars_revision: None,
             capture_dirty: true,
             previous_focus: None,
+            last_pointer: None,
         };
         let err = exec.interruptible_sleep(1000).unwrap_err();
         assert!(matches!(err, ExecError::Flow(FlowSignal::Stopped)));
@@ -1227,6 +1267,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -1288,11 +1329,109 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
         backend.assert_logged("move:42,99,smooth=false");
         backend.assert_logged("click:left:down");
+    }
+
+    #[test]
+    fn click_reports_pointer_target_to_sink_once_per_press() {
+        let mut backend = RecordingBackend::default();
+        let resolver = RUN_RESOLVER;
+        let fx = sqyre_ports::SharedClickFx::new();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.mouse_delay = 0;
+        macro_.root = root_loop(vec![
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::Move {
+                    point: CoordinateRef("Prog~Spot".into()),
+                    smooth: false,
+                    smooth_low: 0.05,
+                    smooth_high: 0.2,
+                    smooth_delay_ms: 1,
+                },
+            },
+            Action {
+                id: ActionId::new(),
+                kind: ActionKind::Click {
+                    button: "left".into(),
+                    state: PressState::Tap,
+                },
+            },
+        ]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                close_matches_distance: 0,
+                variant_exit_early: true,
+                release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
+                resolver: Some(&resolver),
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+                click_fx: Some(&fx),
+            },
+        )
+        .unwrap();
+        assert_eq!(fx.drain(), vec![(42, 99)]);
+    }
+
+    #[test]
+    fn click_without_move_uses_backend_cursor_position() {
+        let mut backend = RecordingBackend {
+            pos: Some((5, 6)),
+            ..RecordingBackend::default()
+        };
+        let fx = sqyre_ports::SharedClickFx::new();
+        let mut macro_ = Macro::new("t", 0, vec![]);
+        macro_.root = root_loop(vec![Action {
+            id: ActionId::new(),
+            kind: ActionKind::Click {
+                button: "left".into(),
+                state: PressState::Down,
+            },
+        }]);
+        execute_macro_with(
+            &mut macro_,
+            ExecDeps {
+                automation: &mut backend,
+                capturer: None,
+                close_matches_distance: 0,
+                variant_exit_early: true,
+                release_held_inputs: true,
+                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
+                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
+                resolver: None,
+                icons: None,
+                macros: None,
+                continue_waiter: None,
+                window_focuser: None,
+                ocr: None,
+                stop_flag: None,
+                logger: None,
+                highlighter: None,
+                runtime_vars: None,
+                variables_dir: None,
+                click_fx: Some(&fx),
+            },
+        )
+        .unwrap();
+        assert_eq!(fx.drain(), vec![(5, 6)]);
     }
 
     #[test]
@@ -1377,6 +1516,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -1711,6 +1851,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();

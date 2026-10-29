@@ -598,6 +598,11 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     if app.run_session.highlighter.is_enabled() != highlight_on {
         app.run_session.highlighter.set_enabled(highlight_on);
     }
+    // Keep click-effect enable flag in sync with the preference.
+    let click_fx_on = app.settings_ui.settings().click_effect;
+    if app.run_session.click_fx.is_enabled() != click_fx_on {
+        app.run_session.click_fx.set_enabled(click_fx_on);
+    }
     let log_images = app.settings_ui.settings().save_meta_images;
     app.run_session.action_log.set_log_images(log_images);
     app.run_session.action_log.set_log_verbose(log_images);
@@ -759,7 +764,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         }
     }
     let highlight_on = app.settings_ui.settings().highlight_active_action;
-    if running && highlight_on {
+    if running && (highlight_on || app.settings_ui.settings().click_effect) {
         ctx.request_repaint_after(std::time::Duration::from_millis(50));
     } else if running {
         // Keep ROOT coarse while a macro runs.

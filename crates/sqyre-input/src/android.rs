@@ -54,6 +54,11 @@ impl AutomationBackend for OsAutomation {
         self.pointer.move_to(x, y);
     }
 
+    /// Last move target; a touch screen has no hovering pointer to query.
+    fn cursor_position(&mut self) -> Option<(i32, i32)> {
+        self.pointer.position()
+    }
+
     fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
         match self
             .pointer

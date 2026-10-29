@@ -292,6 +292,7 @@ mod native_run {
                 action_log: self.run_session.action_log.clone(),
                 runtime_vars: self.run_session.runtime_vars.clone(),
                 highlighter: self.run_session.highlighter.clone(),
+                click_fx: self.run_session.click_fx.clone(),
                 continue_wait: self.run_session.continue_wait.clone(),
                 macro_hotkeys: self.run_session.macro_hotkeys.clone(),
                 running_macro: self.macro_overlay.running_macro_slot(),
@@ -318,6 +319,7 @@ mod native_run {
         action_log: sqyre_ports::SharedActionLog,
         runtime_vars: sqyre_ports::SharedRuntimeVars,
         highlighter: sqyre_ports::SharedHighlighter,
+        click_fx: sqyre_ports::SharedClickFx,
         continue_wait: sqyre_hotkeys::ContinueWaitBridge,
         macro_hotkeys: sqyre_hotkeys::MacroHotkeyBridge,
         running_macro: Arc<parking_lot::Mutex<Option<String>>>,
@@ -343,6 +345,7 @@ mod native_run {
                 action_log,
                 runtime_vars,
                 highlighter,
+                click_fx,
                 continue_wait,
                 macro_hotkeys,
                 running_macro,
@@ -358,6 +361,7 @@ mod native_run {
             action_log.clear();
             runtime_vars.clear();
             highlighter.clear_all();
+            click_fx.clear();
             let macro_lookup = {
                 let map: BTreeMap<String, Arc<Macro>> = macros
                     .iter()
@@ -447,6 +451,7 @@ mod native_run {
                             highlighter: Some(&highlighter),
                             runtime_vars: Some(&runtime_vars),
                             variables_dir: Some(vars_dir.as_path()),
+                            click_fx: Some(&click_fx),
                         },
                     )
                     .map_err(|e| e.to_string())
@@ -532,6 +537,7 @@ mod native_run {
         action_log: sqyre_ports::SharedActionLog,
         runtime_vars: sqyre_ports::SharedRuntimeVars,
         highlighter: sqyre_ports::SharedHighlighter,
+        click_fx: sqyre_ports::SharedClickFx,
         continue_wait: sqyre_hotkeys::ContinueWaitBridge,
         macro_hotkeys: sqyre_hotkeys::MacroHotkeyBridge,
         running_macro: Arc<parking_lot::Mutex<Option<String>>>,
@@ -562,6 +568,7 @@ mod native_run {
             action_log: app.run_session.action_log.clone(),
             runtime_vars: app.run_session.runtime_vars.clone(),
             highlighter: app.run_session.highlighter.clone(),
+            click_fx: app.run_session.click_fx.clone(),
             continue_wait: app.run_session.continue_wait.clone(),
             macro_hotkeys: app.run_session.macro_hotkeys.clone(),
             running_macro: app.macro_overlay.running_macro_slot(),
@@ -640,6 +647,7 @@ mod native_run {
             action_log: kit.action_log.clone(),
             runtime_vars: kit.runtime_vars.clone(),
             highlighter: kit.highlighter.clone(),
+            click_fx: kit.click_fx.clone(),
             continue_wait: kit.continue_wait.clone(),
             macro_hotkeys: kit.macro_hotkeys.clone(),
             running_macro: Arc::clone(&kit.running_macro),

@@ -552,6 +552,9 @@ pub struct UserSettings {
     pub action_log_max_entries: i32,
     #[serde(default)]
     pub highlight_active_action: bool,
+    /// Flash a marker on the desktop where each automated mouse press lands.
+    #[serde(default)]
+    pub click_effect: bool,
     /// In catalog lists, programs with a process icon omit the name (icon + child count only).
     #[serde(default = "default_compact_program_headers")]
     pub compact_program_headers: bool,
@@ -748,6 +751,7 @@ impl Default for UserSettings {
             save_meta_images: false,
             action_log_max_entries: DEFAULT_ACTION_LOG_MAX_ENTRIES,
             highlight_active_action: false,
+            click_effect: false,
             compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
             show_empty_program_headers: false,
             window_border: DEFAULT_WINDOW_BORDER,
@@ -1334,6 +1338,26 @@ mod tests {
         let back: UserSettings =
             serde_yaml::from_str(&serde_yaml::to_string(&on).unwrap()).unwrap();
         assert!(back.overlay_buttons_over_sqyre);
+    }
+
+    #[test]
+    fn click_effect_defaults_off_when_absent() {
+        assert!(!UserSettings::default().click_effect);
+        let mut value = serde_yaml::to_value(UserSettings::default()).unwrap();
+        value
+            .as_mapping_mut()
+            .unwrap()
+            .remove(serde_yaml::Value::String("click_effect".into()));
+        let settings: UserSettings = serde_yaml::from_value(value).unwrap();
+        assert!(!settings.click_effect);
+
+        let on = UserSettings {
+            click_effect: true,
+            ..Default::default()
+        };
+        let back: UserSettings =
+            serde_yaml::from_str(&serde_yaml::to_string(&on).unwrap()).unwrap();
+        assert!(back.click_effect);
     }
 
     #[test]
