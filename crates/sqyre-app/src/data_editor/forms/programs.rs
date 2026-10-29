@@ -36,7 +36,7 @@ impl DataEditor {
             )
         };
         ui.horizontal(|ui| {
-            help::label(ui, egui_phosphor::regular::APP_WINDOW, "Running program");
+            help::label(ui, crate::model_icons::PROGRAM, "Running program");
             if !self.form_process_path.trim().is_empty() {
                 let tex = icons
                     .for_process(ui.ctx(), &self.form_process_path, &self.form_window_title)
@@ -62,7 +62,8 @@ impl DataEditor {
             );
         });
         ui.horizontal(|ui| {
-            if ui.button("Select…").clicked() {
+            if crate::widgets::icon_button(ui, crate::model_icons::WINDOW, "Pick window…").clicked()
+            {
                 self.window_picker =
                     pickers::open_window_picker(&self.form_process_path, &self.form_window_title);
             }
@@ -201,7 +202,7 @@ impl DataEditor {
             );
         };
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::EYE_SLASH, "Mask");
+            help::label(ui, crate::model_icons::MASK, "Mask");
             help::tip(
                 searchable_combo_with(
                     ui,

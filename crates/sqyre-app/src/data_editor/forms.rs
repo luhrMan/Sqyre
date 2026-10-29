@@ -383,7 +383,7 @@ impl DataEditor {
             );
             let reference = CoordinateRef(self.form_search_area.clone());
             ui.horizontal(|ui| {
-                help::label(ui, egui_phosphor::regular::BOOKMARK, "Reference");
+                help::label(ui, crate::model_icons::SEARCH_AREA, "Reference");
                 if let Some(prog) = reference.program() {
                     crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
@@ -405,8 +405,12 @@ impl DataEditor {
                 } else {
                     help::tip(resp, help::DE_SCREENCAP_REF);
                 }
-                if crate::widgets::icon_button(ui, "☰", "Pick search area or collection cell…")
-                    .clicked()
+                if crate::widgets::icon_button(
+                    ui,
+                    crate::model_icons::SEARCH_AREA,
+                    "Pick search area or collection cell…",
+                )
+                .clicked()
                 {
                     self.window_picker = ActivePicker::Coord {
                         kind: CoordKind::SearchArea,

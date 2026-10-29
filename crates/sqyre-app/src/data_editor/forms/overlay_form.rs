@@ -47,7 +47,7 @@ impl DataEditor {
         let before = selected.clone();
         let macro_names: Vec<String> = macros.iter().map(|m| m.name.clone()).collect();
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::MAGIC_WAND, "Macro");
+            help::label(ui, crate::model_icons::MACRO, "Macro");
             help::tip(
                 searchable_combo_width(
                     ui,
@@ -75,7 +75,7 @@ impl DataEditor {
                 point.as_str()
             };
             ui.horizontal(|ui| {
-                help::label(ui, egui_phosphor::regular::MAP_PIN, "Point");
+                help::label(ui, crate::model_icons::POINT, "Point");
                 if let Some(prog) = point.program() {
                     crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
@@ -92,7 +92,9 @@ impl DataEditor {
                 } else {
                     help::tip(resp, help::DE_OVERLAY_POINT);
                 }
-                if crate::widgets::icon_button(ui, "☰", "Pick point…").clicked() {
+                if crate::widgets::icon_button(ui, crate::model_icons::POINT, "Pick point…")
+                    .clicked()
+                {
                     self.window_picker = ActivePicker::Coord {
                         kind: CoordKind::Point,
                         search: String::new(),
@@ -159,7 +161,7 @@ impl DataEditor {
                         area.as_str()
                     };
                     ui.horizontal(|ui| {
-                        help::label(ui, egui_phosphor::regular::CROP, "Search area");
+                        help::label(ui, crate::model_icons::SEARCH_AREA, "Search area");
                         if let Some(prog) = area.program() {
                             crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                         }
@@ -176,7 +178,13 @@ impl DataEditor {
                         } else {
                             help::tip(resp, help::DE_OVERLAY_GATE_AREA);
                         }
-                        if crate::widgets::icon_button(ui, "☰", "Pick search area…").clicked() {
+                        if crate::widgets::icon_button(
+                            ui,
+                            crate::model_icons::SEARCH_AREA,
+                            "Pick search area…",
+                        )
+                        .clicked()
+                        {
                             self.window_picker = ActivePicker::Coord {
                                 kind: CoordKind::SearchArea,
                                 search: String::new(),
@@ -194,7 +202,7 @@ impl DataEditor {
                 }
                 ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
-                    help::label(ui, egui_phosphor::regular::LIST_BULLETS, "Items");
+                    help::label(ui, crate::model_icons::ITEM, "Items");
                     help::tip(
                         ui.label(
                             egui::RichText::new(format!(
@@ -205,7 +213,13 @@ impl DataEditor {
                         ),
                         help::DE_OVERLAY_GATE_ITEMS,
                     );
-                    if crate::widgets::add_button(ui, "Add / edit gate items", true).clicked() {
+                    if crate::widgets::icon_button(
+                        ui,
+                        crate::model_icons::ITEM,
+                        "Add / edit gate items",
+                    )
+                    .clicked()
+                    {
                         self.window_picker = pickers::ActivePicker::Items {
                             search: String::new(),
                             staged: self.form_overlay_gate_targets.clone(),

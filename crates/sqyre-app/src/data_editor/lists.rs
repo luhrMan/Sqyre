@@ -760,7 +760,7 @@ impl DataEditor {
         let mut current = self.selected_program.clone().unwrap_or_default();
         let before = current.clone();
         ui.horizontal(|ui| {
-            crate::action_tooltip::help::label(ui, egui_phosphor::regular::APP_WINDOW, "Program");
+            crate::action_tooltip::help::label(ui, crate::model_icons::PROGRAM, "Program");
             let mut option_icon =
                 |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
             crate::action_tooltip::help::tip(

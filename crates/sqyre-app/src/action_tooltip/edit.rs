@@ -297,7 +297,7 @@ pub fn paint_edit_fields(
                 tip_section(ui, |ui| {
                     crate::widgets::text_field_width(
                         ui,
-                        egui_phosphor::regular::APP_WINDOW,
+                        crate::model_icons::WINDOW,
                         "Window title",
                         h::FOCUS_TITLE,
                         window_title,
@@ -312,7 +312,7 @@ pub fn paint_edit_fields(
                             process_path,
                             window_title,
                         );
-                        if pick_icon_btn(ui).clicked() {
+                        if pick_icon_btn(ui, crate::model_icons::WINDOW).clicked() {
                             pick = true;
                         }
                     });
@@ -342,7 +342,7 @@ pub fn paint_edit_fields(
             tip_wrapped_section(ui, |ui| {
                 if picker_display_row(
                     ui,
-                    egui_phosphor::regular::MAGIC_WAND,
+                    crate::model_icons::MACRO,
                     "Macro",
                     h::RUN_MACRO,
                     macro_name.as_str(),
@@ -577,7 +577,7 @@ pub fn paint_edit_fields(
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
                 wrap_unit(ui, |ui| {
-                    help::label(ui, egui_phosphor::regular::APP_WINDOW, "Program");
+                    help::label(ui, crate::model_icons::PROGRAM, "Program");
                     let programs: Vec<String> = catalog.program_names().cloned().collect();
                     let mut current = data.program.clone();
                     let mut option_icon =
@@ -601,7 +601,7 @@ pub fn paint_edit_fields(
                     }
                 });
                 wrap_unit(ui, |ui| {
-                    help::label(ui, egui_phosphor::regular::IMAGES, "Atlas");
+                    help::label(ui, crate::model_icons::ATLAS, "Atlas");
                     let atlases: Vec<String> = if data.program.trim().is_empty() {
                         Vec::new()
                     } else {
@@ -746,7 +746,7 @@ pub fn paint_edit_fields(
                 tip_wrapped_section(ui, |ui| {
                     text_field(
                         ui,
-                        egui_phosphor::regular::IMAGES,
+                        crate::model_icons::ATLAS,
                         "In atlas",
                         h::NAV_IN_ATLAS,
                         &mut data.inputs.atlas,
@@ -769,7 +769,7 @@ pub fn paint_edit_fields(
                     );
                     text_field(
                         ui,
-                        egui_phosphor::regular::GRID_FOUR,
+                        crate::model_icons::COLLECTION,
                         "In collection",
                         h::NAV_IN_COLLECTION,
                         &mut data.inputs.collection,
@@ -785,7 +785,7 @@ pub fn paint_edit_fields(
                     );
                     text_field(
                         ui,
-                        egui_phosphor::regular::IMAGES,
+                        crate::model_icons::ATLAS,
                         "Output atlas",
                         h::NAV_OUT_ATLAS,
                         &mut data.outputs.output_atlas,
@@ -806,7 +806,7 @@ pub fn paint_edit_fields(
                     );
                     text_field(
                         ui,
-                        egui_phosphor::regular::GRID_FOUR,
+                        crate::model_icons::COLLECTION,
                         "Output collection",
                         h::NAV_OUT_COLLECTION,
                         &mut data.outputs.output_collection,
@@ -867,7 +867,7 @@ fn targets_editor(
                 );
             }
         });
-        if crate::widgets::add_button(ui, h::IS_ITEMS, true).clicked() {
+        if crate::widgets::icon_button(ui, crate::model_icons::ITEM, h::IS_ITEMS).clicked() {
             *picker = ActivePicker::Items {
                 search: String::new(),
                 staged: targets.clone(),
@@ -1047,8 +1047,8 @@ fn item_tag_suggestions(
     tags
 }
 
-fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {
-    crate::widgets::icon_button(ui, "☰", "Pick…")
+fn pick_icon_btn(ui: &mut egui::Ui, icon: &str) -> egui::Response {
+    crate::widgets::icon_button(ui, icon, "Pick…")
 }
 
 /// Soft-wrap row count for a process path in the Focus Window tip.
@@ -1079,7 +1079,7 @@ fn picker_display_row(
             }),
             help_text,
         );
-        if pick_icon_btn(ui).clicked() {
+        if pick_icon_btn(ui, icon).clicked() {
             clicked = true;
         }
     });
@@ -1114,7 +1114,7 @@ fn point_picker_row(
 ) {
     coord_picker_row(
         ui,
-        egui_phosphor::regular::MAP_PIN,
+        crate::model_icons::POINT,
         "Point",
         h::MOVE_POINT,
         paint,
@@ -1132,7 +1132,7 @@ fn search_area_picker_row(
 ) {
     coord_picker_row(
         ui,
-        egui_phosphor::regular::CROP,
+        crate::model_icons::SEARCH_AREA,
         "Search area",
         h::SEARCH_AREA,
         paint,
@@ -1150,7 +1150,7 @@ fn cells_picker_row(
 ) {
     coord_picker_row(
         ui,
-        egui_phosphor::regular::GRID_FOUR,
+        crate::model_icons::COLLECTION,
         "Cells",
         h::FOREACH_CELLS,
         paint,
@@ -1213,7 +1213,7 @@ fn coord_picker_row(
             help::tip(resp, help_text);
         }
         var_pills::paint_entry_validation_icon(ui, &validation);
-        if pick_icon_btn(ui).clicked() {
+        if pick_icon_btn(ui, icon).clicked() {
             *picker = ActivePicker::Coord {
                 kind,
                 search: String::new(),

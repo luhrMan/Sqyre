@@ -71,7 +71,7 @@ impl DataEditor {
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::SearchArea);
             };
             crate::widgets::wrap_unit(ui, |ui| {
-                help::label(ui, egui_phosphor::regular::CROP, "Search area");
+                help::label(ui, crate::model_icons::SEARCH_AREA, "Search area");
                 help::tip(
                     searchable_combo_with(
                         ui,
@@ -180,7 +180,7 @@ impl DataEditor {
             })
             .unwrap_or_default();
         ui.horizontal(|ui| {
-            help::label(ui, egui_phosphor::regular::STACK, "Collections");
+            help::label(ui, crate::model_icons::COLLECTION, "Collections");
             let prog = self.selected_program.clone();
             let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
                 if name.is_empty() {
