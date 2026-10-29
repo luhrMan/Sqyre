@@ -123,6 +123,9 @@ pub fn fill_row<R>(
     fill: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
     ui.horizontal(|ui| {
+        // A reserved floating-scrollbar lane shrinks the scroll clip but not
+        // max_rect — bound the row to the clip so `trailing` cannot land in it.
+        super::clamp_row_right_to_clip(ui);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             trailing(ui);
             ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), fill)

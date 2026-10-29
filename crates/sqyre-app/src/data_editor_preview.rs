@@ -76,11 +76,10 @@ pub(crate) fn paint_preview_floaters(
         }
         if let Some(view) = view {
             let enabled = view.needs_reset_button();
-            let resp = ui
-                .add_enabled_ui(enabled, |ui| {
-                    crate::widgets::icon_button(ui, egui_phosphor::regular::CORNERS_IN, fit_tip)
-                })
-                .inner;
+            let resp = ui.add_enabled(
+                enabled,
+                crate::widgets::IconButton::new(egui_phosphor::regular::CORNERS_IN, fit_tip, None),
+            );
             if resp.clicked() {
                 view.reset();
             }

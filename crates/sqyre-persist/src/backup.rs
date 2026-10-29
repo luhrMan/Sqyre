@@ -13,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use parking_lot::Mutex;
 
 use thiserror::Error;
+use zip::read::ZipReadOptions;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
 
@@ -326,9 +327,19 @@ fn extract_backup_to_staging(zip_path: &Path, staging: &Path) -> Result<()> {
     let file = File::open(zip_path)?;
     let mut archive = ZipArchive::new(file)?;
     reject_if_too_many_entries(archive.len())?;
+    // Declared-size pre-check; copy_with_expanded_limit still bounds the actual
+    // bytes written in case entries under-declare.
+    if let Some(size) = archive.decompressed_size() {
+        if size > MAX_EXPANDED_BYTES as u128 {
+            return Err(BackupError::Message(format!(
+                "backup expanded size exceeds limit ({size} bytes; max {MAX_EXPANDED_BYTES})"
+            )));
+        }
+    }
     let mut expanded_total = 0usize;
     for i in 0..archive.len() {
-        let mut entry = archive.by_index(i)?;
+        let mut entry = archive
+            .by_index_with_options(i, ZipReadOptions::new().enforce_header_consistency(true))?;
         let name = entry.name()?.into_owned();
         if name.ends_with('/') {
             let dir = safe_extract_path(staging, name.trim_end_matches('/'))?;

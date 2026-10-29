@@ -52,11 +52,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
     let scroll_to = follow.filter(|id| app.tree.last_exec_follow != Some(*id));
     let mut scrolled_follow = false;
     let mut swipe_done: Option<(ActionId, SwipeAction)> = None;
-    // Floating bars allocate 0 by default and cover the row chrome; reserve
-    // bar_width so logs/delete stay clear when the scrollbar appears.
     let actions = ui
         .scope(|ui| {
-            ui.spacing_mut().scroll.floating_allocated_width = ui.spacing().scroll.bar_width;
             // Custom drag-scroll below (DnD handle vs content); disable egui drag.
             // Vertical only: action rows clip to the visible pane width, so an H-bar
             // would only reflect egui_ltreeview's min_width ratchet (see new_child

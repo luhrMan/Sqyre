@@ -342,16 +342,15 @@ fn paint_tag_group(
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let mut hotkeys_on = covered;
                 let hotkey_resp = ui
-                    .add_enabled_ui(!parent_covered, |ui| {
-                        crate::widgets::icon_toggle(
-                            ui,
+                    .add_enabled(
+                        !parent_covered,
+                        crate::widgets::IconToggle::new(
                             &mut hotkeys_on,
                             "Hotkeys",
                             egui_phosphor::regular::KEY,
                             egui_phosphor::fill::KEY,
-                        )
-                    })
-                    .inner
+                        ),
+                    )
                     .on_hover_text(hover)
                     .on_disabled_hover_text(hover);
                 if hotkey_resp.changed() {
@@ -515,23 +514,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         .count()
                 }
             };
-            let mut new_clicked = false;
             let title_w = crate::widgets::text_width(ui, "Macros", egui::TextStyle::Heading);
             let count_label = format!("({macro_count})");
             let count_w = crate::widgets::text_width(ui, &count_label, egui::TextStyle::Body);
-            let header_need = title_w + count_w + 40.0 + ui.spacing().item_spacing.x * 3.0 + 8.0;
+            let header_need = title_w + count_w + 8.0 + ui.spacing().item_spacing.x;
             if header_need <= pane_w {
-                crate::widgets::heading_with_count_and(ui, "Macros", macro_count, |ui| {
-                    // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
-                    // (＋, ⧉) render as tofu in egui's default font stack.
-                    new_clicked = crate::widgets::icon_button_colored(
-                        ui,
-                        "+",
-                        "New macro",
-                        Some(crate::theme::MACRO_START),
-                    )
-                    .clicked();
-                });
+                crate::widgets::heading_with_count(ui, "Macros", macro_count);
             } else {
                 crate::widgets::show_overflow(ui, "macro_list_header", 1.0, |ui| {
                     ui.horizontal(|ui| {
@@ -540,19 +528,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                             egui::Label::new(egui::RichText::new("Macros").heading())
                                 .selectable(false),
                         );
-                        new_clicked = crate::widgets::icon_button_colored(
-                            ui,
-                            "+",
-                            "New macro",
-                            Some(crate::theme::MACRO_START),
-                        )
-                        .clicked();
                         ui.label(egui::RichText::new(count_label).weak());
                     });
                 });
-            }
-            if new_clicked {
-                app.create_macro();
             }
             // True load failures only (corrupt db / undecodable macros). Per-macro
             // validation issues are shown on the macro rows and action tree.
@@ -574,35 +552,29 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     &crate::status_banner::user_error_detail(err.as_str()),
                 );
             }
+            // Search takes the pane minus the new-macro button on its right.
+            let add_w = crate::widgets::ICON_BTN_SIDE + ui.spacing().item_spacing.x;
             let search_resp = ui
-                .add(
-                    egui::TextEdit::singleline(&mut app.macro_list_filter)
-                        .desired_width(pane_w)
-                        .hint_text("Search macros or tags…"),
-                )
+                .horizontal(|ui| {
+                    let w = (pane_w - add_w).max(40.0);
+                    let resp = ui.add(
+                        egui::TextEdit::singleline(&mut app.macro_list_filter)
+                            .desired_width(w)
+                            .hint_text("Search macros or tags…"),
+                    );
+                    if crate::widgets::add_button(ui, "New macro", true).clicked() {
+                        app.create_macro();
+                    }
+                    resp
+                })
+                .inner
                 .on_hover_text(
                     "Filter by macro name or tag. ↑↓ moves the selection, Enter edits it.",
                 );
-            {
-                let label = if app.workspace.hotkey_tag_filters.is_empty() {
-                    "Hotkeys: off".to_string()
-                } else {
-                    let joined = app
-                        .workspace
-                        .hotkey_tag_filters
-                        .iter()
-                        .map(|t| tag_header_label(t))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!("Hotkeys: {joined}")
-                };
-                let font = egui::TextStyle::Small.resolve(ui.style());
-                let display = elide_to_width(ui, &label, pane_w, font);
-                let resp = ui.small(display.text);
-                text_hover_if(resp, &label, display.elided);
-            }
-            crate::widgets::section_separator(ui);
-            let list_h = ui.available_height();
+            // Hotkeys summary is a small footer pinned under the list.
+            let footer_h =
+                ui.text_style_height(&egui::TextStyle::Small) + crate::theme::element_gap(ui);
+            let list_h = (ui.available_height() - footer_h).max(24.0);
             // Exact slot + clipped child: overflow from ScrollArea/collapsing headers
             // must not widen the side panel's persisted size.
             let (list_rect, _) =
@@ -729,6 +701,25 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     None => {}
                 }
             });
+            ui.add_space(crate::theme::element_gap(ui));
+            {
+                let label = if app.workspace.hotkey_tag_filters.is_empty() {
+                    "Hotkeys: off".to_string()
+                } else {
+                    let joined = app
+                        .workspace
+                        .hotkey_tag_filters
+                        .iter()
+                        .map(|t| tag_header_label(t))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!("Hotkeys: {joined}")
+                };
+                let font = egui::TextStyle::Small.resolve(ui.style());
+                let display = elide_to_width(ui, &label, pane_w, font);
+                let resp = ui.small(display.text);
+                text_hover_if(resp, &label, display.elided);
+            }
         });
     app.macro_list_open = open;
 

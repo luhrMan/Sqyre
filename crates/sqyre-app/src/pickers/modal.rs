@@ -180,6 +180,7 @@ pub fn show_active_picker(
                                 draft_hover: Some(crate::action_tooltip::help::IS_TARGET_TAGS),
                                 reorderable: false,
                                 signed_filters: true,
+                                single_row: false,
                             },
                         );
                         ui.ctx().data_mut(|d| d.insert_temp(draft_id, draft));
@@ -388,10 +389,7 @@ pub fn show_active_picker(
                         }
                         let tip = if loading { "Refreshing…" } else { "Refresh" };
                         refresh_clicked = ui
-                            .add_enabled_ui(!loading, |ui| {
-                                crate::widgets::icon_button(ui, "↻", tip)
-                            })
-                            .inner
+                            .add_enabled(!loading, crate::widgets::IconButton::new("↻", tip, None))
                             .clicked();
                     };
                     opts.trailing = Some(&mut trailing);

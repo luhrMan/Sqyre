@@ -91,12 +91,6 @@ pub fn section_separator(ui: &mut egui::Ui) -> egui::Response {
     response
 }
 
-/// Bottom inset [`float_bottom_right`] keeps clear of a pane's edge; scroll
-/// viewports under a float chip shrink by this much so no row paints under it.
-pub fn float_strip_clearance(ui: &egui::Ui) -> f32 {
-    ui.spacing().interact_size.y + SPACE_4 + 16.0
-}
-
 /// Floating control strip pinned inside `rect`'s bottom-right corner — replaces
 /// a reserved footer row without consuming layout height. `add_contents` paints
 /// right-to-left inside a window-frame chip (first widget at the right edge).

@@ -137,6 +137,7 @@ impl MacroMetaUi {
                 draft_hover: Some(help::META_TAGS),
                 reorderable: false,
                 signed_filters: false,
+                single_row: true,
             },
         )
         .changed

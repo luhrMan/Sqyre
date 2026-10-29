@@ -26,7 +26,7 @@ use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::status_banner::StatusBanner;
 use eframe::egui;
-use helpers::{editor_program_names, is_editor_listed_program, overlay_hex_or_empty, rgba_color};
+use helpers::{default_editor_program, is_editor_listed_program, overlay_hex_or_empty, rgba_color};
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
@@ -79,6 +79,23 @@ impl EditorSection {
             Self::Items => EditorTab::Items,
             Self::Coordinates => EditorTab::Points,
             Self::Tools => EditorTab::ScreenCap,
+        }
+    }
+
+    /// Tabs under this section, in row order. The section button stands in for
+    /// [`Self::default_tab`], which is skipped when expanded. `Some` paints a
+    /// caption before that tab ("Advanced" before Collections).
+    fn subtabs(self) -> &'static [(Option<&'static str>, EditorTab)] {
+        match self {
+            Self::Programs => &[(None, EditorTab::Programs), (None, EditorTab::Overlay)],
+            Self::Items => &[(None, EditorTab::Items), (None, EditorTab::Masks)],
+            Self::Coordinates => &[
+                (None, EditorTab::Points),
+                (None, EditorTab::SearchAreas),
+                (Some("Advanced"), EditorTab::Collections),
+                (None, EditorTab::Atlases),
+            ],
+            Self::Tools => &[(None, EditorTab::ScreenCap), (None, EditorTab::PixelCheck)],
         }
     }
 
@@ -658,8 +675,8 @@ impl DataEditor {
         self.request_open(ctx);
         self.switch_tab(tab, catalog, settings);
         if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
-            if let Some(name) = editor_program_names(catalog).next() {
-                self.select_program(name, catalog, settings);
+            if let Some(name) = default_editor_program(catalog) {
+                self.select_program(&name, catalog, settings);
             }
         }
     }
@@ -673,8 +690,8 @@ impl DataEditor {
         self.open = true;
         self.switch_tab(tab, catalog, settings);
         if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
-            if let Some(name) = editor_program_names(catalog).next() {
-                self.select_program(name, catalog, settings);
+            if let Some(name) = default_editor_program(catalog) {
+                self.select_program(&name, catalog, settings);
             }
         }
     }
@@ -921,10 +938,12 @@ impl DataEditor {
         close
     }
 
+    /// Sections in one row; the selected section's remaining tabs expand to its
+    /// right. The section button stands in for its default tab.
     fn paint_section_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
         let section = EditorSection::of(self.tab);
         let mut items = Vec::new();
-        let mut sections = Vec::new();
+        let mut targets = Vec::new();
         use egui_phosphor::regular::*;
         for (sec, label, icon) in [
             (EditorSection::Programs, "Programs", APP_WINDOW),
@@ -940,76 +959,33 @@ impl DataEditor {
                 icon,
                 selected: section == sec,
             });
-            sections.push(sec);
+            targets.push(sec.default_tab());
+            if section != sec {
+                continue;
+            }
+            for &(caption, tab) in sec.subtabs() {
+                if tab == sec.default_tab() {
+                    continue;
+                }
+                if let Some(caption) = caption {
+                    items.push(crate::widgets::OverflowItem::Caption(caption));
+                    targets.push(tab);
+                }
+                items.push(crate::widgets::OverflowItem::Choice {
+                    label: tab.label(),
+                    icon: tab.icon(),
+                    selected: self.tab == tab,
+                });
+                targets.push(tab);
+            }
         }
         if let Some(i) =
             crate::widgets::overflow_bar(ui, "de_sections", "Data Editor section", &items)
         {
-            let sec = sections[i];
-            if section != sec {
-                self.switch_tab(sec.default_tab(), env.catalog, env.settings);
+            let next = targets[i];
+            if next != self.tab {
+                self.switch_tab(next, env.catalog, env.settings);
             }
-        }
-    }
-
-    fn paint_subtabs(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
-        let section = EditorSection::of(self.tab);
-        if !section.is_available() {
-            return;
-        }
-        let tab = self.tab;
-        let choice = |t: EditorTab| crate::widgets::OverflowItem::Choice {
-            label: t.label(),
-            icon: t.icon(),
-            selected: tab == t,
-        };
-        let (id, items): (&str, Vec<crate::widgets::OverflowItem<'_>>) = match section {
-            EditorSection::Programs => (
-                "de_sub_programs",
-                vec![choice(EditorTab::Programs), choice(EditorTab::Overlay)],
-            ),
-            EditorSection::Items => (
-                "de_sub_items",
-                vec![choice(EditorTab::Items), choice(EditorTab::Masks)],
-            ),
-            EditorSection::Coordinates => (
-                "de_sub_coords",
-                vec![
-                    crate::widgets::OverflowItem::Caption("Basic"),
-                    choice(EditorTab::Points),
-                    choice(EditorTab::SearchAreas),
-                    crate::widgets::OverflowItem::Caption("Advanced"),
-                    choice(EditorTab::Collections),
-                    choice(EditorTab::Atlases),
-                ],
-            ),
-            EditorSection::Tools => (
-                "de_sub_tools",
-                vec![choice(EditorTab::ScreenCap), choice(EditorTab::PixelCheck)],
-            ),
-        };
-        if let Some(i) = crate::widgets::overflow_bar(ui, id, "Data Editor tab", &items) {
-            if let Some(next) = Self::subtab_at(section, i) {
-                if next != self.tab {
-                    self.switch_tab(next, env.catalog, env.settings);
-                }
-            }
-        }
-    }
-
-    fn subtab_at(section: EditorSection, index: usize) -> Option<EditorTab> {
-        match (section, index) {
-            (EditorSection::Programs, 0) => Some(EditorTab::Programs),
-            (EditorSection::Programs, 1) => Some(EditorTab::Overlay),
-            (EditorSection::Items, 0) => Some(EditorTab::Items),
-            (EditorSection::Items, 1) => Some(EditorTab::Masks),
-            (EditorSection::Coordinates, 1) => Some(EditorTab::Points),
-            (EditorSection::Coordinates, 2) => Some(EditorTab::SearchAreas),
-            (EditorSection::Coordinates, 4) => Some(EditorTab::Collections),
-            (EditorSection::Coordinates, 5) => Some(EditorTab::Atlases),
-            (EditorSection::Tools, 0) => Some(EditorTab::ScreenCap),
-            (EditorSection::Tools, 1) => Some(EditorTab::PixelCheck),
-            _ => None,
         }
     }
 
@@ -1042,7 +1018,6 @@ impl DataEditor {
         previews: &mut PreviewTooltipCache,
         short: bool,
     ) {
-        self.paint_subtabs(ui, env);
         crate::widgets::section_separator(ui);
 
         if let Some(msg) = env.screen_click.status_label() {
@@ -1161,9 +1136,10 @@ impl DataEditor {
         {
             let content_w = right_ui.max_rect().width();
             let paint_form = |ui: &mut egui::Ui| {
-                // Cap soft-wrap to the pane; dialog_scroll (both axes) still H-scrolls
-                // when a hard min-width (preview row, fixed fields) exceeds the viewport.
-                ui.set_max_width(content_w);
+                // Cap soft-wrap to the painted clip (the reserved scrollbar
+                // lane insets it past `max_rect`); dialog_scroll (both axes)
+                // still H-scrolls when a hard min-width exceeds the viewport.
+                crate::widgets::clamp_row_right_to_clip(ui);
                 let macros: &[Macro] = env.macros;
                 tag_submit = self.draw_form(
                     ui,
@@ -1178,10 +1154,9 @@ impl DataEditor {
                     env.settings,
                 );
             };
-            // The float chip parks over dead space at the pane's bottom-right:
-            // shrink the viewport so no row ever paints underneath it.
-            let float_clear = crate::widgets::float_strip_clearance(ui);
-            pickers::dialog_scroll(content_w, (body_rect.height() - float_clear).max(40.0))
+            // The footer chip floats over the pane's bottom-right corner; the
+            // form scrolls beneath it — no strip is reserved (see baseline).
+            pickers::dialog_scroll(content_w, body_rect.height().max(40.0))
                 .id_salt("data_editor_form")
                 .show(&mut right_ui, paint_form);
         }
@@ -1210,15 +1185,7 @@ impl DataEditor {
             #[cfg(feature = "native-runtime")]
             if matches!(self.tab, EditorTab::Programs) {
                 let pending = self.add_running_programs_pending();
-                if ui
-                    .add_enabled_ui(!pending, |ui| {
-                        crate::widgets::icon_button(
-                            ui,
-                            egui_phosphor::regular::DESKTOP,
-                            "Add running programs",
-                        )
-                    })
-                    .inner
+                if crate::widgets::add_button(ui, "Add running programs", !pending)
                     .on_hover_text(
                         "Add every program with an open window (the same list as \
                      Select…), named after its process. Programs already in \

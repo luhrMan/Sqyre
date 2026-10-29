@@ -21,10 +21,7 @@ fn toolbar_icon_colored(
     enabled: bool,
     color: Option<Color32>,
 ) -> egui::Response {
-    ui.add_enabled_ui(enabled, |ui| {
-        crate::widgets::icon_button_colored(ui, glyph, tip, color)
-    })
-    .inner
+    ui.add_enabled(enabled, crate::widgets::IconButton::new(glyph, tip, color))
 }
 
 /// Full-width window header above the macro list and central panel:
@@ -121,11 +118,9 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.command_palette.open_palette();
         }
 
-        #[cfg(not(target_arch = "wasm32"))]
-        show_update_banner(app, ui);
-
-        // Right-to-left: first added is rightmost.
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        // Right-to-left: first added is rightmost. Painted before the middle
+        // zone so its left edge bounds where the name/tag editor may reach.
+        let right = ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let (list_glyph, list_tip) = if app.macro_list_open {
                 ("▷", "Hide macro list")
             } else {
@@ -160,31 +155,33 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     app.request_db_import();
                 }
             }
-
-            // Leftover width between the brand and the right-side buttons.
-            let status = app.run_session.state.status.lock().clone();
-            if !status.is_empty() {
-                ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
-                    // Hover shows the elided text on desktop; touch screens have no
-                    // hover, so a tap opens the full message.
-                    let resp = ui.add(
-                        egui::Label::new(&status)
-                            .truncate()
-                            .selectable(false)
-                            .sense(egui::Sense::click()),
-                    );
-                    let width = crate::widgets::dialog_constrain_rect(ui.ctx())
-                        .width()
-                        .min(420.0);
-                    egui::Popup::from_toggle_button_response(&resp)
-                        .width(width)
-                        .show(|ui| {
-                            ui.set_max_width(width);
-                            ui.add(egui::Label::new(&status).wrap());
-                        });
-                });
-            }
         });
+
+        // Selected macro name + tags fill the gap between the brand icon and
+        // the right-side buttons; an explicit child rect keeps them clear of
+        // both (the rtl block's bounding box is its widget span).
+        let gap = ui.spacing().item_spacing.x;
+        let mid_rect = egui::Rect::from_min_max(
+            egui::pos2(hit_rect.right() + gap, ui.max_rect().top()),
+            egui::pos2(right.response.rect.left() - gap, ui.max_rect().bottom()),
+        );
+        if mid_rect.width() > 40.0 {
+            let mut mid = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(mid_rect)
+                    .layout(egui::Layout::left_to_right(egui::Align::Center)),
+            );
+            mid.set_clip_rect(mid_rect);
+            if !app.workspace.macros.is_empty() {
+                let idx = app
+                    .workspace
+                    .selected_macro
+                    .min(app.workspace.macros.len() - 1);
+                paint_name_and_tags(app, &mut mid, idx, !running);
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            show_update_banner(app, &mut mid);
+        }
     });
 }
 
@@ -200,23 +197,15 @@ fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_e
         .map(|m| m.name.clone())
         .collect();
     let all_tags = collect_all_macro_tags(&app.workspace.macros);
-    let (meta, persist_tags) = ui
-        .vertical(|ui| {
-            let m = &mut app.workspace.macros[idx];
-            let meta = ui
-                .horizontal(|ui| {
-                    app.workspace
-                        .macro_meta
-                        .paint_name_row(ui, m, &other_names, meta_enabled)
-                })
-                .inner;
-            let persist_tags =
-                app.workspace
-                    .macro_meta
-                    .paint_tags_row(ui, m, &all_tags, meta_enabled);
-            (meta, persist_tags)
-        })
-        .inner;
+    let m = &mut app.workspace.macros[idx];
+    let meta = app
+        .workspace
+        .macro_meta
+        .paint_name_row(ui, m, &other_names, meta_enabled);
+    let persist_tags = app
+        .workspace
+        .macro_meta
+        .paint_tags_row(ui, m, &all_tags, meta_enabled);
     if persist_tags {
         app.persist_macro_at(idx);
     }
@@ -355,7 +344,6 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         .min(app.workspace.macros.len() - 1);
     app.workspace.selected_macro = idx;
     let meta_enabled = !running;
-    paint_name_and_tags(app, ui, idx, meta_enabled);
     let idx = app.workspace.selected_macro;
     {
         let pending = app.pending_viewport_scale;
@@ -406,16 +394,15 @@ fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, runn
         crate::action_tooltip::help::META_HOTKEY_RELEASE
     };
     let toggled = ui
-        .add_enabled_ui(!running, |ui| {
-            crate::widgets::icon_toggle(
-                ui,
+        .add_enabled(
+            !running,
+            crate::widgets::IconToggle::new(
                 &mut on_press,
                 tip,
                 egui_phosphor::regular::HAND_TAP,
                 egui_phosphor::fill::HAND_TAP,
-            )
-        })
-        .inner
+            ),
+        )
         .changed();
     if toggled {
         let trigger = if on_press {
@@ -488,6 +475,16 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
         app.workspace
             .macro_meta
             .paint_delay_button(ui, &app.workspace.macros[idx], !running);
+        // Leftmost: running status as a hoverable icon (was the header label).
+        let status = app.run_session.state.status.lock().clone();
+        if !status.is_empty() {
+            crate::widgets::controls::status_icon(
+                ui,
+                egui_phosphor::regular::INFO,
+                sqyre_ui_theme::PRIMARY,
+                &status,
+            );
+        }
     });
 }
 

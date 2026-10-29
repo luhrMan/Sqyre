@@ -15,9 +15,8 @@ fn count_row(
     // Justified layout fills the parent without raising min_size above it.
     // `allocate_ui(available_width)` would claim that width as min_size and
     // ratchet Windows toward max_size (see `crate::widgets::visible_width`).
-    let row_w = crate::widgets::visible_width(ui);
     ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
-        ui.set_max_width(row_w);
+        crate::widgets::clamp_row_right_to_clip(ui);
         ui.horizontal(|ui| {
             let resp = add_title(ui);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -49,24 +48,9 @@ pub fn title_with_count(
 
 /// Heading on the left, `(count)` right-aligned across the panel.
 pub fn heading_with_count(ui: &mut egui::Ui, title: &str, count: usize) -> egui::Response {
-    heading_with_count_and(ui, title, count, |_| {})
-}
-
-/// [`heading_with_count`] with extra widgets (e.g. a "New" button) right after the title.
-pub fn heading_with_count_and(
-    ui: &mut egui::Ui,
-    title: &str,
-    count: usize,
-    after_title: impl FnOnce(&mut egui::Ui),
-) -> egui::Response {
     count_row(
         ui,
-        |ui| {
-            let resp =
-                ui.add(egui::Label::new(egui::RichText::new(title).heading()).selectable(false));
-            after_title(ui);
-            resp
-        },
+        |ui| ui.add(egui::Label::new(egui::RichText::new(title).heading()).selectable(false)),
         count,
     )
 }

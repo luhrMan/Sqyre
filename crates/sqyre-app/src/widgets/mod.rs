@@ -26,18 +26,18 @@ pub use context_menu::{
     response_danger_menu, row_context_menu, row_danger_menu,
 };
 pub use controls::{
-    add_button, dirty_action_button, error_badge, error_icon, icon_button, icon_button_colored,
-    icon_toggle, mouse_button_picker, press_state_toggle, record_icon_button, warn_badge,
-    warn_icon, ICON_BTN_SIDE, PHOSPHOR_FILL_FAMILY,
+    add_button, dirty_action_button, error_badge, error_icon, icon_button, icon_toggle,
+    mouse_button_picker, press_state_toggle, record_icon_button, warn_badge, warn_icon, IconButton,
+    IconToggle, ICON_BTN_SIDE, PHOSPHOR_FILL_FAMILY,
 };
 pub use dialogs::{
-    confirm_cancel_row, confirm_choice_row, confirm_window, consume_escape, dialog_constrain_rect,
-    dismiss_row, fill_resize_body, fit_dialog_popup, fit_dialog_window,
-    floating_scrollbar_overlay_width, save_cancel_row, sync_viewport_window_scale,
-    visible_content_width, visible_height, visible_width, ConfirmCancel, ConfirmChoice,
-    ConfirmKind, SaveCancel, ViewportScaleEvent, FLOATER_MIN_COMPACT, FLOATER_MIN_EDITOR,
-    FLOATER_MIN_MODAL, FLOATER_MIN_PALETTE, FLOATER_MIN_PANEL, FLOATER_MIN_PICKER,
-    FOOTER_RESERVE_SAVE_CANCEL,
+    clamp_row_right_to_clip, confirm_cancel_row, confirm_choice_row, confirm_window,
+    consume_escape, dialog_constrain_rect, dismiss_row, fill_resize_body, fit_dialog_popup,
+    fit_dialog_window, floating_scrollbar_overlay_width, save_cancel_row,
+    sync_viewport_window_scale, visible_content_width, visible_height, visible_width,
+    ConfirmCancel, ConfirmChoice, ConfirmKind, SaveCancel, ViewportScaleEvent, FLOATER_MIN_COMPACT,
+    FLOATER_MIN_EDITOR, FLOATER_MIN_MODAL, FLOATER_MIN_PALETTE, FLOATER_MIN_PANEL,
+    FLOATER_MIN_PICKER, FOOTER_RESERVE_SAVE_CANCEL,
 };
 pub use empty_state::{empty_state, list_vacancy, list_vacancy_copy, EmptyStateAction};
 pub use fields::{
@@ -46,7 +46,7 @@ pub use fields::{
     num_text_field_width, searchable_combo, searchable_combo_width, searchable_combo_with,
     text_field, text_field_width, W_TEXT, W_VAR,
 };
-pub use headers::{heading_with_count, heading_with_count_and, title_with_count};
+pub use headers::{heading_with_count, title_with_count};
 pub use match_settings::configure_match_blur_drag;
 pub use num_entry::{num_entry, NumEntry};
 pub use overflow::{overflow_bar, text_width, OverflowItem};
@@ -55,10 +55,7 @@ pub use scroll::{
     dialog_scroll, enable_dense_row_extend, scroll_both, scroll_vertical, show_overflow,
     SCROLL_SOURCE_NO_DRAG,
 };
-pub use sections::{
-    float_bottom_right, float_strip_clearance, section_separator, split_view, tinted_section,
-    SplitView,
-};
+pub use sections::{float_bottom_right, section_separator, split_view, tinted_section, SplitView};
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 pub(crate) use spinner::brand_spinner;
 pub use tags::{tag_chip_editor, TagChipOptions};

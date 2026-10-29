@@ -178,11 +178,13 @@ pub fn visible_height(ui: &egui::Ui) -> f32 {
     visible_size(ui).y
 }
 
-/// Right-edge width covered by a floating vertical scrollbar.
+/// Right-edge width still covered by a floating vertical scrollbar.
 ///
-/// egui's default `floating_allocated_width` is 0, so the bar overlays content
-/// without shrinking `available_width`. Subtract this when sizing columns or
-/// anchoring chrome to the visible right edge.
+/// [`crate::theme::scroll_style`] reserves the full lane
+/// (`floating_allocated_width = bar_width`), so this is 0 under the app style —
+/// egui already insets the content clip past the bar. egui's default style
+/// leaves `bar_width` uncovered, so this stays nonzero in bare test contexts.
+/// Subtract when sizing columns or anchoring chrome to the visible right edge.
 pub fn floating_scrollbar_overlay_width(ui: &egui::Ui) -> f32 {
     let scroll = &ui.spacing().scroll;
     if scroll.floating {
@@ -195,6 +197,23 @@ pub fn floating_scrollbar_overlay_width(ui: &egui::Ui) -> f32 {
 /// [`visible_width`] minus [`floating_scrollbar_overlay_width`] (at least 1px).
 pub fn visible_content_width(ui: &egui::Ui) -> f32 {
     (visible_width(ui) - floating_scrollbar_overlay_width(ui)).max(1.0)
+}
+
+/// Shrink this row's `max_width` so its right edge lands on the painted clip.
+///
+/// Inside [`super::dialog_scroll`] the reserved scrollbar lane
+/// ([`crate::theme::scroll_style`]) insets the content clip but not
+/// `max_rect`, so `Layout::right_to_left` controls anchored at
+/// `max_rect().right()` land under/past the bar. `set_max_width` anchors at
+/// the cursor, so the bound is `clip.right - cursor.left` — call after any
+/// left-side content, immediately before the right-aligned widgets.
+pub fn clamp_row_right_to_clip(ui: &mut egui::Ui) {
+    // Clip is the paint bound, max_rect the layout bound — take the tighter of
+    // the two. In a scroll pane the clip is narrower (scrollbar lane); in bare
+    // test contexts the clip is wider, where `set_max_width` to the clip would
+    // expand the row past its pane.
+    let right = ui.max_rect().right().min(ui.clip_rect().right());
+    ui.set_max_width((right - ui.cursor().min.x).max(1.0));
 }
 
 /// Fill a resizable [`egui::Window`] body without ratcheting its Resize state.

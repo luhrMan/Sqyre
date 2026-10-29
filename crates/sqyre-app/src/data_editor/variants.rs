@@ -59,6 +59,7 @@ impl DataEditor {
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     ui.label(egui::RichText::new("Icon variants").strong());
+                    crate::widgets::clamp_row_right_to_clip(ui);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if crate::widgets::add_button(ui, "Add Icon Variant", true).clicked() {
                             self.request_variant_pick();

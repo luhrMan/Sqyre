@@ -518,8 +518,10 @@ impl SettingsUi {
             crate::pickers::dialog_scroll(content_w, body_h)
                 .id_salt("user_settings_content")
                 .show(&mut right_ui, |ui| {
-                    // Soft-wrap to pane width; both-axis scroll covers hard min overflows.
-                    ui.set_max_width(content_w);
+                    // Soft-wrap to the painted clip (the reserved scrollbar
+                    // lane insets it past `max_rect`); both-axis scroll covers
+                    // hard min-width overflows.
+                    crate::widgets::clamp_row_right_to_clip(ui);
                     if visible_sections.is_empty() {
                         crate::widgets::list_vacancy(ui, &q, 0, "settings");
                         return;
@@ -1811,6 +1813,9 @@ impl SettingsUi {
                 }
                 ui.horizontal_wrapped(|ui| {
                     ui.label(label);
+                    // Reserved scrollbar lane insets the clip, not max_rect —
+                    // keep the right-aligned controls inside it.
+                    crate::widgets::clamp_row_right_to_clip(ui);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui.button("Reset").clicked() {
                             self.settings.action_colors.set(key, String::new());

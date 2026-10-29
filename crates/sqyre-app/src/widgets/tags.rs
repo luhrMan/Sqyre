@@ -280,30 +280,35 @@ pub fn tag_chip_editor(
     // (left pane cut by the window edge): chips would wrap *past* the clip and
     // clip their labels. Cap the row to the clip so wraps land inside the pane.
     let wrap_cap = (ui.clip_rect().right() - ui.cursor().left()).max(20.0);
-    // icon | entrybox | add | tags — chips wrap after the add button.
-    let tag_resp = ui
-        .horizontal_wrapped(|ui| {
-            ui.set_max_width(wrap_cap);
-            if let Some(name) = opts.label_name {
-                crate::action_tooltip::help::label(
-                    ui,
-                    egui_phosphor::regular::TAG,
-                    name,
-                    opts.draft_hover.unwrap_or(""),
-                );
-            }
-            let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
-            paint_tag_chips(
+    // icon | entrybox | add | tags — chips wrap after the add button, except
+    // `single_row` contexts (top bar) where overflow clips at the pane edge.
+    let mut paint_row = |ui: &mut egui::Ui| {
+        ui.set_max_width(wrap_cap);
+        if let Some(name) = opts.label_name {
+            crate::action_tooltip::help::label(
                 ui,
-                tags,
-                opts.enabled,
-                opts.reorderable,
-                opts.signed_filters,
-                &mut edit.changed,
+                egui_phosphor::regular::TAG,
+                name,
+                opts.draft_hover.unwrap_or(""),
             );
-            resp
-        })
-        .inner;
+        }
+        let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
+        paint_tag_chips(
+            ui,
+            tags,
+            opts.enabled,
+            opts.reorderable,
+            opts.signed_filters,
+            opts.single_row,
+            &mut edit.changed,
+        );
+        resp
+    };
+    let tag_resp = if opts.single_row {
+        ui.horizontal(|ui| paint_row(ui)).inner
+    } else {
+        ui.horizontal_wrapped(|ui| paint_row(ui)).inner
+    };
     if refocus {
         tag_resp.request_focus();
     }
@@ -456,11 +461,13 @@ fn paint_tag_chips(
     enabled: bool,
     reorderable: bool,
     signed_filters: bool,
+    single_row: bool,
     changed: &mut bool,
 ) {
     let mut remove: Option<String> = None;
     let mut pending_reorder: Option<(usize, usize)> = None;
     let mut toggle: Option<usize> = None;
+    let mut overflow: usize = 0;
     let small_h = ui.text_style_height(&egui::TextStyle::Small);
     let fill = if enabled {
         crate::theme::PRIMARY
@@ -505,6 +512,13 @@ fn paint_tag_chips(
         if ui.cursor().left() + chip_w > row_right
             && ui.cursor().left() > ui.max_rect().left() + 0.5
         {
+            if single_row {
+                // `end_row` can't help inside `ui.horizontal`: a chip painted
+                // anyway would have its label clipped at the row edge. Count
+                // the ones that don't fit and show a `+N` pill instead.
+                overflow += 1;
+                continue;
+            }
             ui.end_row();
         }
         let paint_chip = |ui: &mut egui::Ui| -> egui::Rect {
@@ -612,6 +626,29 @@ fn paint_tag_chips(
             });
         }
     }
+    if overflow > 0 {
+        let label = format!("+{overflow}");
+        let hidden = tags[tags.len() - overflow..].join(", ");
+        let chip_w = ui
+            .painter()
+            .layout_no_wrap(
+                label.clone(),
+                egui::TextStyle::Small.resolve(ui.style()),
+                egui::Color32::WHITE,
+            )
+            .size()
+            .x
+            + crate::theme::SPACE_2 * 2.0;
+        let row_right = ui.max_rect().right().min(ui.clip_rect().right());
+        if ui.cursor().left() + chip_w <= row_right {
+            let resp = chip.show(ui, |ui| {
+                ui.spacing_mut().item_spacing.x = 0.0;
+                ui.spacing_mut().interact_size.y = small_h;
+                ui.label(egui::RichText::new(label).small().color(fg));
+            });
+            resp.response.on_hover_text(format!("{overflow} more: {hidden}"));
+        }
+    }
     if let Some(i) = toggle {
         if toggle_signed_tag_filter(tags, i) {
             *changed = true;
@@ -685,6 +722,9 @@ pub struct TagChipOptions<'a> {
     pub reorderable: bool,
     /// When true, chips are Image Search `+`/`−` filters with a polarity toggle.
     pub signed_filters: bool,
+    /// When true, keep one horizontal row (top-bar editor); chips past the
+    /// pane edge clip instead of wrapping onto extra rows.
+    pub single_row: bool,
 }
 
 impl Default for TagChipOptions<'_> {
@@ -696,6 +736,7 @@ impl Default for TagChipOptions<'_> {
             draft_hover: None,
             reorderable: false,
             signed_filters: false,
+            single_row: false,
         }
     }
 }

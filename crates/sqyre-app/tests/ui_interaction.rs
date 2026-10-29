@@ -197,12 +197,26 @@ fn long_macro_name_tooltip_discloses_elided_text() {
     // Expand the "inventory" tag group so its rows render. Locate the chevron
     // by node geometry — the panel width (and thus the click point) depends on
     // the persisted split, so a fixed coordinate is fragile.
-    let panel_left =
-        egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new("macro_list_tags"))
-            .map(|s| s.outer_rect.min.x as f64)
-            .unwrap_or(0.0);
+    // The header label may elide ("invent…"), and the top bar's tag chips can
+    // carry the same tag text — match the prefix and require the node to sit
+    // below the app_top_bar strip, i.e. inside the macro list.
+    let bar_rect =
+        egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new("app_top_bar"))
+            .map(|s| s.outer_rect)
+            .unwrap_or(egui::Rect::NOTHING);
+    let below_bar = |bb: egui::accesskit::Rect| {
+        !bar_rect.contains(egui::pos2(
+            ((bb.x0 + bb.x1) / 2.0) as f32,
+            ((bb.y0 + bb.y1) / 2.0) as f32,
+        ))
+    };
     let inventory_header = harness
-        .query_all_by(|node| node.value().as_deref() == Some("inventory"))
+        .query_all_by(|node| {
+            node.value()
+                .as_deref()
+                .is_some_and(|v| v.starts_with("invent"))
+                && node.bounding_box().is_some_and(&below_bar)
+        })
         .map(|node| node.rect())
         .max_by(|a, b| a.min.x.total_cmp(&b.min.x))
         .expect("inventory tag group header");
@@ -211,10 +225,11 @@ fn long_macro_name_tooltip_discloses_elided_text() {
             matches!(node.role(), egui::accesskit::Role::Unknown)
                 && node.bounding_box().is_some_and(|bb| {
                     let row = inventory_header;
-                    bb.x0 >= panel_left
+                    bb.x0 >= bar_rect.min.x as f64
                         && bb.x1 <= row.min.x as f64
                         && (bb.y0 + bb.y1) / 2.0 > row.min.y as f64
                         && (bb.y0 + bb.y1) / 2.0 < row.max.y as f64
+                        && below_bar(bb)
                 })
         })
         .next()

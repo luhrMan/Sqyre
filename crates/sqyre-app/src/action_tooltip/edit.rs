@@ -923,6 +923,7 @@ fn targets_editor(
                 draft_hover: Some(h::IS_TAG_PRIORITY),
                 reorderable: true,
                 signed_filters: false,
+                single_row: false,
             },
         );
         let _ = edit;

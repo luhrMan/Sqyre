@@ -476,24 +476,24 @@ impl DataEditor {
                 path_hint.clone()
             };
             if ui
-                .add_enabled_ui(!saving, |ui| {
-                    crate::widgets::icon_button(ui, egui_phosphor::regular::FLOPPY_DISK, &save_tip)
-                })
-                .inner
+                .add_enabled(
+                    !saving,
+                    crate::widgets::IconButton::new(
+                        egui_phosphor::regular::FLOPPY_DISK,
+                        &save_tip,
+                        None,
+                    ),
+                )
                 .clicked()
             {
                 self.save_screen_cap(catalog, previews);
                 ui.ctx().request_repaint();
             }
-            if ui
-                .add_enabled(
-                    !saving,
-                    egui::Button::new(
-                        egui::RichText::new("New Item").color(crate::theme::MACRO_START),
-                    ),
-                )
-                .on_hover_text(help::DE_SCREENCAP_NEW_ITEM)
-                .clicked()
+            if help::tip(
+                crate::widgets::add_button(ui, "New item", !saving),
+                help::DE_SCREENCAP_NEW_ITEM,
+            )
+            .clicked()
             {
                 self.screen_cap_new_item = true;
             }

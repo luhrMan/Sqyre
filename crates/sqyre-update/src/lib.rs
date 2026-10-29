@@ -621,7 +621,10 @@ fn extract_single_file(zip_path: &Path, out_dir: &Path) -> Result<PathBuf, Updat
     let mut chosen = None;
     for i in 0..archive.len() {
         let entry = archive
-            .by_index(i)
+            .by_index_with_options(
+                i,
+                zip::read::ZipReadOptions::new().enforce_header_consistency(true),
+            )
             .map_err(|e| UpdateError::Zip(e.to_string()))?;
         if entry.is_dir() {
             continue;
@@ -644,7 +647,10 @@ fn extract_single_file(zip_path: &Path, out_dir: &Path) -> Result<PathBuf, Updat
     let out_path = out_dir.join(out_name);
     {
         let mut entry = archive
-            .by_index(idx)
+            .by_index_with_options(
+                idx,
+                zip::read::ZipReadOptions::new().enforce_header_consistency(true),
+            )
             .map_err(|e| UpdateError::Zip(e.to_string()))?;
         let mut out = File::create(&out_path)?;
         io::copy(&mut entry, &mut out)?;

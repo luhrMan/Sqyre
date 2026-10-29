@@ -43,16 +43,6 @@ pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response 
     icon_button_inner(ui, glyph, tip, None)
 }
 
-/// Like [`icon_button`], with an optional fixed glyph color (e.g. record ●).
-pub fn icon_button_colored(
-    ui: &mut egui::Ui,
-    glyph: &str,
-    tip: &str,
-    color: Option<Color32>,
-) -> egui::Response {
-    icon_button_inner(ui, glyph, tip, color)
-}
-
 fn icon_button_inner(
     ui: &mut egui::Ui,
     glyph: &str,
@@ -68,6 +58,28 @@ fn icon_button_inner(
     paint_keyboard_focus_ring(ui, rect, &response);
     response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tip));
     response.on_hover_text(tip).on_disabled_hover_text(tip)
+}
+
+/// [`icon_button`] / [`icon_button_colored`] as a [`egui::Widget`] — the form
+/// [`egui::Ui::add_enabled`] requires. (`add_enabled_ui` wraps content in a
+/// scope child that owns the rest of a wrapping row, so a single disabled icon
+/// could never move to the next row and painted past the clip.)
+pub struct IconButton<'a> {
+    pub glyph: &'a str,
+    pub tip: &'a str,
+    pub color: Option<Color32>,
+}
+
+impl<'a> IconButton<'a> {
+    pub fn new(glyph: &'a str, tip: &'a str, color: Option<Color32>) -> Self {
+        Self { glyph, tip, color }
+    }
+}
+
+impl egui::Widget for IconButton<'_> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        icon_button_inner(ui, self.glyph, self.tip, self.color)
+    }
 }
 
 /// Small glyph badge inside the top-right corner of `rect` (e.g. a button's
@@ -187,6 +199,42 @@ pub fn icon_toggle(
     response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
 
+/// [`icon_toggle`] as a [`egui::Widget`] — see [`IconButton`].
+pub struct IconToggle<'a> {
+    pub selected: &'a mut bool,
+    pub tip: &'a str,
+    pub outline_glyph: &'a str,
+    pub filled_glyph: &'a str,
+}
+
+impl<'a> IconToggle<'a> {
+    pub fn new(
+        selected: &'a mut bool,
+        tip: &'a str,
+        outline_glyph: &'a str,
+        filled_glyph: &'a str,
+    ) -> Self {
+        Self {
+            selected,
+            tip,
+            outline_glyph,
+            filled_glyph,
+        }
+    }
+}
+
+impl egui::Widget for IconToggle<'_> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        icon_toggle(
+            ui,
+            self.selected,
+            self.tip,
+            self.outline_glyph,
+            self.filled_glyph,
+        )
+    }
+}
+
 /// Repaint interval for pulsing glows (~20 fps; the pulse is slow enough to stay smooth).
 const GLOW_FRAME: std::time::Duration = std::time::Duration::from_millis(50);
 
@@ -257,9 +305,7 @@ pub fn glow_halo_shapes(
 pub fn dirty_action_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
     let glyph = egui_phosphor::regular::FLOPPY_DISK;
     if !enabled {
-        return ui
-            .add_enabled_ui(false, |ui| icon_button(ui, glyph, tip))
-            .inner;
+        return ui.add_enabled(false, IconButton::new(glyph, tip, None));
     }
 
     let visuals = ui.style().visuals.widgets.inactive;
@@ -299,23 +345,19 @@ pub fn dirty_action_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui:
 
 /// Icon-only record control (danger styling).
 pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled_ui(enabled, |ui| {
-        icon_button_colored(ui, "●", tip, Some(MACRO_STOP))
-    })
-    .inner
+    ui.add_enabled(enabled, IconButton::new("●", tip, Some(MACRO_STOP)))
 }
 
 /// Icon-only add control (`+` in start styling).
 pub fn add_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled_ui(enabled, |ui| {
-        icon_button_colored(
-            ui,
+    ui.add_enabled(
+        enabled,
+        IconButton::new(
             egui_phosphor::regular::PLUS,
             tip,
             Some(crate::theme::MACRO_START),
-        )
-    })
-    .inner
+        ),
+    )
 }
 
 /// Visual / keyboard order for [`press_state_toggle`] (top → bottom).
@@ -707,6 +749,28 @@ mod tests {
         assert_eq!(cycle_index(4, 3, 1), 0);
         assert_eq!(cycle_index(4, 0, -1), 3);
         assert_eq!(cycle_index(3, 1, -1), 0);
+    }
+
+    /// A disabled `IconButton` added via `Ui::add_enabled` must still wrap like a
+    /// normal widget inside `horizontal_wrapped` — a scope child (e.g.
+    /// `add_enabled_ui`) owns the rest of the row and paints past the clip.
+    #[test]
+    fn disabled_icon_button_wraps_in_wrapped_row() {
+        let ctx = egui::Context::default();
+        run_ui(&ctx, RawInput::default(), |ui| {
+            let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(50.0, 300.0));
+            let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+            pane_ui.horizontal_wrapped(|ui| {
+                for _ in 0..4 {
+                    ui.add_enabled(false, IconButton::new("↻", "icon", None));
+                }
+            });
+            assert!(
+                pane_ui.min_rect().width() <= 50.0 + 0.5,
+                "disabled icons overflowed a wrapped row: {:?}",
+                pane_ui.min_rect()
+            );
+        });
     }
 
     #[test]

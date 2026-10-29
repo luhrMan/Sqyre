@@ -1,6 +1,6 @@
 //! Left entity list + program selector (cached against catalog generation).
 
-use super::helpers::{editor_program_names, is_editor_listed_program};
+use super::helpers::{default_editor_program, editor_program_names, is_editor_listed_program};
 use super::{DataEditor, EditorTab, ListCache};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::show_file_hover;
@@ -156,6 +156,7 @@ impl DataEditor {
                     ),
                     reorderable: true,
                     signed_filters: false,
+                    single_row: false,
                 },
             );
         };
@@ -748,6 +749,13 @@ impl DataEditor {
         settings: &UserSettings,
     ) {
         self.ensure_list_cache(catalog);
+        // The dropdown offers no "(none)": default to General (first listed
+        // otherwise) until the user picks a program; the choice then persists.
+        if self.selected_program.is_none() {
+            if let Some(name) = default_editor_program(catalog) {
+                self.select_program(&name, catalog, settings);
+            }
+        }
         let names = self.list_cache.program_names.clone();
         let mut current = self.selected_program.clone().unwrap_or_default();
         let before = current.clone();
@@ -772,15 +780,8 @@ impl DataEditor {
                 Some(&mut option_icon),
             );
         });
-        if current != before {
-            if current.is_empty() {
-                self.selected_program = None;
-                self.selected_entity = None;
-                self.reset_item_form();
-                self.form_name.clear();
-            } else {
-                self.select_program(&current, catalog, settings);
-            }
+        if !current.is_empty() && current != before {
+            self.select_program(&current, catalog, settings);
         }
     }
 }

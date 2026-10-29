@@ -189,6 +189,9 @@ impl PermissionsPanel {
             {
                 ui.weak("Checking…");
             }
+            // The scroll clip is inset by the reserved scrollbar lane, but
+            // max_rect is not — clamp before right-aligning Refresh.
+            crate::widgets::clamp_row_right_to_clip(ui);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
                     .add_enabled(!self.running, egui::Button::new("Refresh"))
