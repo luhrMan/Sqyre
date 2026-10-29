@@ -438,7 +438,8 @@ pub(crate) fn paint_collection_preview_sizes(
     paint_preview_size_badge(ui, viewport, &lines);
 }
 
-/// Top-left size labels on a framed preview (avoids coord chips on the edges).
+/// Top-right size labels on a framed preview (top-left holds the floating
+/// refresh/fit buttons; edge centers hold the coord chips).
 fn paint_preview_size_badge(ui: &egui::Ui, viewport: egui::Rect, lines: &[String]) {
     if lines.is_empty() || viewport.width() <= 0.0 || viewport.height() <= 0.0 {
         return;
@@ -446,12 +447,12 @@ fn paint_preview_size_badge(ui: &egui::Ui, viewport: egui::Rect, lines: &[String
     let font = egui::TextStyle::Small.resolve(ui.style());
     let painter = ui.painter();
     let mut y = viewport.top() + 6.0;
-    let x = viewport.left() + 6.0;
     let fill = theme::preview_scrim();
     for line in lines {
         let galley = painter.layout_no_wrap(line.clone(), font.clone(), egui::Color32::WHITE);
         let pad = egui::vec2(4.0, 2.0);
-        let rect = egui::Rect::from_min_size(egui::pos2(x, y), galley.size() + pad * 2.0);
+        let size = galley.size() + pad * 2.0;
+        let rect = egui::Rect::from_min_size(egui::pos2(viewport.right() - 6.0 - size.x, y), size);
         if !viewport.intersects(rect) {
             continue;
         }
