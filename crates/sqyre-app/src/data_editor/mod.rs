@@ -70,9 +70,8 @@ impl EditorSection {
         }
     }
 
-    /// Tabs under this section, in row order. The section button stands in for
-    /// [`Self::default_tab`], so the bar skips that entry. `Some` paints a
-    /// caption before that tab ("Advanced" before Collections).
+    /// Tabs under this section, in row order. `Some` paints a caption before
+    /// that tab ("Advanced" before Collections).
     fn subtabs(self) -> &'static [(Option<&'static str>, EditorTab)] {
         match self {
             Self::Programs => &[(None, EditorTab::Programs), (None, EditorTab::Overlay)],
@@ -950,17 +949,17 @@ impl DataEditor {
         close
     }
 
-    /// Every section's buttons in one row — the section button stands in for
-    /// its default tab — with separators between the sections.
+    /// Every section's subtab buttons in one row — the subsection buttons are
+    /// self-explanatory, so there are no section-level icons — with separators
+    /// between the sections.
     fn paint_section_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
         let mut items = Vec::new();
         let mut targets = Vec::new();
-        use egui_phosphor::regular::*;
-        for (sec, label, icon) in [
-            (EditorSection::Programs, "Programs", APP_WINDOW),
-            (EditorSection::Items, "Items", IMAGES),
-            (EditorSection::Coordinates, "Coordinates", CROSSHAIR),
-            (EditorSection::Tools, "Tools", WRENCH),
+        for sec in [
+            EditorSection::Programs,
+            EditorSection::Items,
+            EditorSection::Coordinates,
+            EditorSection::Tools,
         ] {
             if !sec.is_available() {
                 continue;
@@ -971,16 +970,7 @@ impl DataEditor {
                 // `targets` index-aligned with `items`.
                 targets.push(sec.default_tab());
             }
-            items.push(crate::widgets::OverflowItem::Choice {
-                label,
-                icon,
-                selected: self.tab == sec.default_tab(),
-            });
-            targets.push(sec.default_tab());
             for &(caption, tab) in sec.subtabs() {
-                if tab == sec.default_tab() {
-                    continue;
-                }
                 if let Some(caption) = caption {
                     items.push(crate::widgets::OverflowItem::Caption(caption));
                     targets.push(tab);
