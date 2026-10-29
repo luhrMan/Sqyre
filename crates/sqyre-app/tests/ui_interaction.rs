@@ -157,6 +157,9 @@ fn add_wait_from_picker_increases_tree() {
 #[test]
 fn data_editor_program_name_tooltip_discloses_elided_text() {
     let mut harness = build_docs_harness([480.0, 360.0], |app| {
+        // Elision needs a narrow list pane; pin the split to the minimum
+        // instead of relying on the global default.
+        app.docs_settings_mut().data_editor_left_split = sqyre_persist::MIN_DATA_EDITOR_LEFT_FRAC;
         app.open_data_editor_programs_for_docs();
     });
     harness.run();
@@ -191,7 +194,33 @@ fn long_macro_name_tooltip_discloses_elided_text() {
         app.open_macro_list_for_docs();
     });
     harness.run();
-    press_release(&mut harness, egui::pos2(374.0, 206.0));
+    // Expand the "inventory" tag group so its rows render. Locate the chevron
+    // by node geometry — the panel width (and thus the click point) depends on
+    // the persisted split, so a fixed coordinate is fragile.
+    let panel_left =
+        egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new("macro_list_tags"))
+            .map(|s| s.outer_rect.min.x as f64)
+            .unwrap_or(0.0);
+    let inventory_header = harness
+        .query_all_by(|node| node.value().as_deref() == Some("inventory"))
+        .map(|node| node.rect())
+        .max_by(|a, b| a.min.x.total_cmp(&b.min.x))
+        .expect("inventory tag group header");
+    harness
+        .query_all_by(|node| {
+            matches!(node.role(), egui::accesskit::Role::Unknown)
+                && node.bounding_box().is_some_and(|bb| {
+                    let row = inventory_header;
+                    bb.x0 >= panel_left
+                        && bb.x1 <= row.min.x as f64
+                        && (bb.y0 + bb.y1) / 2.0 > row.min.y as f64
+                        && (bb.y0 + bb.y1) / 2.0 < row.max.y as f64
+                })
+        })
+        .next()
+        .expect("inventory group chevron")
+        .click();
+    harness.run();
 
     let (visible, rect) = {
         let macro_node = harness

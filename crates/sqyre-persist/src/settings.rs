@@ -45,12 +45,12 @@ pub const DEFAULT_OVERLAY_PRESS_STOPS_RUN: bool = true;
 pub const DEFAULT_OVERLAY_BUTTONS_IN_DETECTION: bool = true;
 /// Overlay buttons stay hidden while the Sqyre window is in front.
 pub const DEFAULT_OVERLAY_BUTTONS_OVER_SQYRE: bool = false;
-/// Data Editor left-list width as a fraction of the editor body (default = min).
-pub const DEFAULT_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
+/// Data Editor left-list width as a fraction of the editor body.
+pub const DEFAULT_DATA_EDITOR_LEFT_FRAC: f32 = 0.30;
 pub const MIN_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
 pub const MAX_DATA_EDITOR_LEFT_FRAC: f32 = 0.75;
-/// Macro list side panel width as a fraction of the window (default = min).
-pub const DEFAULT_MACRO_LIST_FRAC: f32 = 0.15;
+/// Macro list side panel width as a fraction of the window.
+pub const DEFAULT_MACRO_LIST_FRAC: f32 = 0.30;
 pub const MIN_MACRO_LIST_FRAC: f32 = 0.15;
 pub const MAX_MACRO_LIST_FRAC: f32 = 0.75;
 
@@ -601,10 +601,10 @@ pub struct UserSettings {
     /// (cleared when no tagged Program owns focus). When false, filters are manual only.
     #[serde(default)]
     pub hotkey_tags_while_focused: bool,
-    /// Data Editor left list width as a fraction of the editor body (`0.25`–`0.75`).
+    /// Data Editor left list width as a fraction of the editor body (`0.15`–`0.75`).
     #[serde(default = "default_data_editor_left_frac")]
     pub data_editor_left_split: f32,
-    /// Macro list side panel width as a fraction of the window (`0.25`–`0.75`).
+    /// Macro list side panel width as a fraction of the window (`0.15`–`0.75`).
     #[serde(default = "default_macro_list_frac")]
     pub macro_list_split: f32,
     /// Name of the macro selected when Sqyre last ran; reselected on startup.
@@ -781,8 +781,9 @@ impl UserSettings {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            // Keep runtime override + XDG pointer in sync before resolving settings_path().
-            self.apply_sqyre_dir_override();
+            // The runtime override is set by whoever relocated the data dir
+            // (settings UI, pointer file at load, tests); an empty `sqyre_dir`
+            // must not clear it or saves would leak to the real ~/.sqyre.
             write_data_dir_pointer(&self.sqyre_dir)?;
             self.save_to_path(settings_path())
         }

@@ -461,6 +461,30 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
         sqyre_persist::MIN_MACRO_LIST_FRAC,
         sqyre_persist::MAX_MACRO_LIST_FRAC,
     );
+    let panel_id = egui::Id::new("macro_list_tags");
+    // The saved fraction is authoritative across runs: eframe-persisted
+    // PanelState is absolute pixels and can be stale (different window size,
+    // an old session), which would otherwise override `default_size` forever.
+    // Realign it once on the first frame; in-session resizes keep both in sync.
+    // Wait for a real window size — a transient small frame would squash it.
+    let restored_key = panel_id.with("split_restored");
+    if win_w >= 300.0
+        && !ui
+            .ctx()
+            .data_mut(|d| *d.get_temp_mut_or(restored_key, false))
+    {
+        ui.ctx().data_mut(|d| d.insert_temp(restored_key, true));
+        if let Some(mut state) = egui::containers::panel::PanelState::load(ui.ctx(), panel_id) {
+            let want_w = win_w * frac;
+            if (state.size().x - want_w).abs() > 1.0 {
+                state.outer_rect = egui::Rect::from_min_size(
+                    state.outer_rect.min,
+                    egui::vec2(want_w, state.outer_rect.height()),
+                );
+                ui.ctx().data_mut(|d| d.insert_persisted(panel_id, state));
+            }
+        }
+    }
     egui::Panel::right("macro_list_tags")
         .default_size(win_w * frac)
         .size_range(
@@ -707,9 +731,10 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
         });
     app.macro_list_open = open;
 
-    // Persist user-resized panel width once the drag ends.
-    let panel_id = egui::Id::new("macro_list_tags");
-    if !ui.ctx().input(|i| i.pointer.any_down()) {
+    // Persist user-resized panel width once the drag ends. Skip implausibly
+    // narrow windows: a transient small frame (startup resize, window manager)
+    // would store an inflated fraction that clamps to the 75% ceiling.
+    if !ui.ctx().input(|i| i.pointer.any_down()) && win_w >= 300.0 {
         if let Some(state) = egui::containers::panel::PanelState::load(ui.ctx(), panel_id) {
             let frac = (state.size().x / win_w).clamp(
                 sqyre_persist::MIN_MACRO_LIST_FRAC,
