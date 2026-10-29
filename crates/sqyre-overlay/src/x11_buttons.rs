@@ -964,7 +964,7 @@ fn set_relocate_mode(state: &mut HostState, enabled: bool) {
         let mut newly = 0usize;
         let raise = state.relocate_keep_above;
         for btn in state.buttons.values_mut() {
-            if btn.mapped {
+            if btn.mapped || state.capture_omit {
                 continue;
             }
             // SAFETY: HostState display invariant; face+hit created on this display.
@@ -1775,14 +1775,17 @@ fn create_button(
     // Do not MapRaised gated buttons until the found-map says so — mapping here
     // then relying on apply_gate_visibility left a visible flash (and ghosts if
     // the mapped flag ever drifted).
-    let map_now = state.relocate_mode
-        || !spec.visibility_gated
-        || state
-            .visibility
-            .lock()
-            .get(&spec.id)
-            .copied()
-            .unwrap_or(false);
+    // Mapping during capture-omit, then unmapping in apply_gate_visibility,
+    // flashes the button while a macro is hiding it.
+    let map_now = !state.capture_omit
+        && (state.relocate_mode
+            || !spec.visibility_gated
+            || state
+                .visibility
+                .lock()
+                .get(&spec.id)
+                .copied()
+                .unwrap_or(false));
     if map_now {
         // MapRaised when relocate keep-above: buttons must sit above the Sqyre
         // editor (same XWayland stack). Plain Map otherwise — raising over a

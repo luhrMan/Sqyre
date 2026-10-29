@@ -379,6 +379,9 @@ mod native_run {
             sqyre_capture::mark_site(&format!("overlay:start:ok:{name}"));
             sqyre_capture::note(&format!("overlay: start ok name={name}"));
             sqyre_capture::event_log("SQYRE_OVERLAY", &[("start", "ok"), ("name", name.as_str())]);
+            // Hide overlay buttons for this whole run when they should not appear
+            // in detection. Per-grab hiding restores between attempts and flickers.
+            let hide_overlay = sqyre_ports::OverlayMacroHide::enter();
 
             // Must run on the UI thread: winit's SetCapture/ReleaseCapture are
             // thread-affine. Doing this only on the worker never clears Start-click capture.
@@ -394,6 +397,7 @@ mod native_run {
             let stop_flag = stop;
             let running_macro_slot = running_macro;
             thread::spawn(move || {
+                let _hide_overlay = hide_overlay;
                 let _clear_running = RunningClearOnDrop {
                     running: Arc::clone(&running),
                     running_macro: running_macro_slot,

@@ -716,7 +716,7 @@ impl SettingsUi {
                     "Overlay buttons appear in detection",
                 )
                 .on_hover_text(
-                    "Image Search, Find Pixel, and OCR captures include the buttons. When off, those captures see the screen underneath.",
+                    "When on, Image Search, Find Pixel, and OCR captures include the buttons. When off, the buttons stay hidden for the whole macro so those captures see the screen underneath.",
                 )
                 .changed()
         {

@@ -1,9 +1,9 @@
 //! Layered topmost buttons on a dedicated thread.
 //!
 //! The window thread owns every HWND. Clicks enqueue a macro or request stop
-//! without waiting for an egui frame. Detection captures exclude the windows
-//! with `WDA_EXCLUDEFROMCAPTURE` when that setting is off, so they stay visible
-//! and clickable while GDI reads the pixels underneath.
+//! without waiting for an egui frame. When overlay buttons are left out of
+//! detection, they are hidden for the whole macro (and excluded from capture
+//! with `WDA_EXCLUDEFROMCAPTURE` until the hide lands).
 
 use crate::brand_s::SWEEP_PER_SEC;
 use crate::raster::{self, ButtonPaint, TIP_CORNER_PX};
@@ -456,8 +456,8 @@ fn apply_visibility(state: &mut HostState) {
         let Some(btn) = state.buttons.get(&id) else {
             continue;
         };
-        let show =
-            relocate || !btn.spec.visibility_gated || found.get(&id).copied().unwrap_or(false);
+        let show = !sqyre_capture::overlay_capture_omitted()
+            && (relocate || !btn.spec.visibility_gated || found.get(&id).copied().unwrap_or(false));
         if show == btn.mapped {
             continue;
         }
