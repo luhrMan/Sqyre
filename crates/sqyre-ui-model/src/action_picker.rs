@@ -1,11 +1,11 @@
-//! Add Action picker column order.
+//! Add Action picker tile order.
 //!
-//! Column labels come from taxonomy [`sqyre_domain::action_color_category`] so the
+//! Category labels come from taxonomy [`sqyre_domain::action_color_category`] so the
 //! picker and Appearance color buckets share one IA (no divergent lookup table).
 
-use sqyre_domain::action_color_category;
+use sqyre_domain::{action_color_category, ActionTemplate};
 
-/// Picker column order (labels match taxonomy `color_category` / Appearance).
+/// Picker category order (labels match taxonomy `color_category` / Appearance).
 pub const ACTION_PICKER_CATEGORIES: &[&str] = &[
     "Mouse & Keyboard",
     "Detection",
@@ -25,12 +25,55 @@ pub fn action_picker_category(action_type: &str) -> &'static str {
     }
 }
 
+/// Tile order for the Add Action picker grid.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ActionPickerSort {
+    /// [`ACTION_PICKER_CATEGORIES`] order; table order within each category.
+    #[default]
+    Category,
+    NameAsc,
+    NameDesc,
+}
+
+impl ActionPickerSort {
+    pub const ALL: &'static [Self] = &[Self::Category, Self::NameAsc, Self::NameDesc];
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Category => "Category",
+            Self::NameAsc => "Name A→Z",
+            Self::NameDesc => "Name Z→A",
+        }
+    }
+}
+
+/// Order filtered picker templates for the flat grid (`sort` semantics above).
+/// Stable: equal keys keep the action-type-table order.
+pub fn ordered_action_templates<'a>(
+    templates: &[&'a ActionTemplate],
+    sort: ActionPickerSort,
+) -> Vec<&'a ActionTemplate> {
+    let mut ordered = templates.to_vec();
+    let name_key = |t: &&ActionTemplate| (t.label.to_ascii_lowercase(), t.action_type);
+    match sort {
+        ActionPickerSort::Category => ordered.sort_by_key(|t| {
+            ACTION_PICKER_CATEGORIES
+                .iter()
+                .position(|c| *c == action_picker_category(t.action_type))
+                .unwrap_or(ACTION_PICKER_CATEGORIES.len())
+        }),
+        ActionPickerSort::NameAsc => ordered.sort_by_key(name_key),
+        ActionPickerSort::NameDesc => ordered.sort_by_key(|t| std::cmp::Reverse(name_key(t))),
+    }
+    ordered
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use sqyre_domain::{
-        action_color_category, action_type_table, ACTION_COLOR_CATEGORIES,
-        ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_WAIT, WIRE_TYPE_KEYS,
+        action_color_category, action_templates, action_type_table, ActionTemplate,
+        ACTION_COLOR_CATEGORIES, ACTION_COLOR_KEY_DEFAULT, ACTION_COLOR_KEY_WAIT, WIRE_TYPE_KEYS,
     };
 
     #[test]
@@ -76,6 +119,47 @@ mod tests {
                 action_color_category(m.type_key),
                 "picker vs taxonomy diverge for {}",
                 m.type_key
+            );
+        }
+    }
+
+    #[test]
+    fn ordered_templates_category_groups_then_keeps_table_order() {
+        let templates = action_templates();
+        let refs: Vec<&ActionTemplate> = templates.iter().collect();
+        let ordered = ordered_action_templates(&refs, ActionPickerSort::Category);
+        assert_eq!(ordered.len(), templates.len());
+        let mut last = 0usize;
+        for t in &ordered {
+            let pos = ACTION_PICKER_CATEGORIES
+                .iter()
+                .position(|c| *c == action_picker_category(t.action_type))
+                .unwrap_or(usize::MAX);
+            assert!(pos >= last, "category order regressed at {}", t.action_type);
+            last = pos;
+        }
+    }
+
+    #[test]
+    fn ordered_templates_name_sorts_by_label() {
+        let templates = action_templates();
+        let refs: Vec<&ActionTemplate> = templates.iter().collect();
+        let asc = ordered_action_templates(&refs, ActionPickerSort::NameAsc);
+        let desc = ordered_action_templates(&refs, ActionPickerSort::NameDesc);
+        for pair in asc.windows(2) {
+            assert!(
+                pair[0].label.to_ascii_lowercase() <= pair[1].label.to_ascii_lowercase(),
+                "A→Z broke at {} → {}",
+                pair[0].label,
+                pair[1].label
+            );
+        }
+        for pair in desc.windows(2) {
+            assert!(
+                pair[0].label.to_ascii_lowercase() >= pair[1].label.to_ascii_lowercase(),
+                "Z→A broke at {} → {}",
+                pair[0].label,
+                pair[1].label
             );
         }
     }
