@@ -6,17 +6,15 @@ use eframe::egui::{
 
 use crate::theme::{accent_dim, paint_galley_centered, paint_text_centered, MACRO_STOP, PRIMARY};
 
-/// Minimum square hit target for icon-only buttons.
-/// Side grows with Button text so glyphs track the Font size setting.
-pub const ICON_BTN_SIDE: f32 = 18.0;
-
 fn icon_btn_font(ui: &egui::Ui) -> egui::FontId {
     egui::TextStyle::Button.resolve(ui.style())
 }
 
-fn icon_btn_side(ui: &egui::Ui) -> f32 {
-    ui.text_style_height(&egui::TextStyle::Button)
-        .max(ICON_BTN_SIDE)
+/// Square side for icon-only buttons — sized like a single-line entry box
+/// (`TextEdit` = Body row height + `symmetric(4,2)` margins) so buttons and
+/// fields sharing a row read at the same height at every Font size.
+pub fn icon_btn_side(ui: &egui::Ui) -> f32 {
+    ui.text_style_height(&egui::TextStyle::Body) + 4.0
 }
 
 /// High-contrast focus ring for custom painted controls (Tab / AccessKit focus).
@@ -801,6 +799,34 @@ mod tests {
                 pane_ui.min_rect()
             );
         });
+    }
+
+    /// Icon buttons share rows with entry boxes — [`icon_btn_side`] must track
+    /// the `TextEdit` height (Body row + 2×2 margin) at every Font size or the
+    /// row reads lopsided.
+    #[test]
+    fn icon_button_matches_text_edit_height() {
+        let ctx = egui::Context::default();
+        for font_px in [10.0f32, 12.0, 14.0, 16.0] {
+            let mut style = (*ctx.global_style()).clone();
+            for ts in [egui::TextStyle::Body, egui::TextStyle::Button] {
+                style
+                    .text_styles
+                    .insert(ts, egui::FontId::proportional(font_px));
+            }
+            ctx.set_global_style(style);
+            let mut s = String::new();
+            run_ui(&ctx, RawInput::default(), |ui| {
+                let btn = icon_button(ui, "↻", "Refresh");
+                let edit = ui.add(egui::TextEdit::singleline(&mut s));
+                assert!(
+                    (btn.rect.height() - edit.rect.height()).abs() < 0.5,
+                    "font={font_px}: icon button {} vs entry box {}",
+                    btn.rect.height(),
+                    edit.rect.height()
+                );
+            });
+        }
     }
 
     #[test]

@@ -38,9 +38,7 @@ pub fn default_row_height(interact_y: f32) -> f32 {
 
 /// Row height including type-badge, summary pills, and icon-button glyphs that track Font size.
 pub fn row_height(ui: &egui::Ui) -> f32 {
-    let btn_h = ui
-        .text_style_height(&egui::TextStyle::Button)
-        .max(crate::widgets::ICON_BTN_SIDE);
+    let btn_h = crate::widgets::icon_btn_side(ui);
     default_row_height(ui.spacing().interact_size.y)
         .max(type_badge_side(ui))
         .max(btn_h)

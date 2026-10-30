@@ -38,27 +38,28 @@ pub fn set_collapsing_openness(
     }
 }
 
-/// Expand-all / collapse-all icon pair for program-header lists.
-/// Keeps Expand left of Collapse in both left-to-right and right-to-left rows.
-pub fn collapse_all_buttons(ui: &mut egui::Ui, mut on_set: impl FnMut(&egui::Context, bool)) {
-    let expand_btn = |ui: &mut egui::Ui| {
-        crate::widgets::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_DOWN, "Expand all")
-    };
-    let collapse_btn = |ui: &mut egui::Ui| {
-        crate::widgets::icon_button(ui, egui_phosphor::regular::CARET_DOUBLE_UP, "Collapse all")
-    };
-    let (expand, collapse) = if ui.layout().prefer_right_to_left() {
-        let collapse = collapse_btn(ui);
-        (expand_btn(ui), collapse)
+/// Expand/collapse-all toggle for program-header lists — one button matching
+/// the macro tree / entity list convention: Expand all while any group is
+/// closed, Collapse all once every group is open.
+pub fn collapse_all_button(
+    ui: &mut egui::Ui,
+    ids: impl IntoIterator<Item = egui::Id>,
+    mut on_set: impl FnMut(&egui::Context, bool),
+) {
+    let any_collapsed = ids.into_iter().any(|id| {
+        !egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
+            .is_open()
+    });
+    let (icon, tip) = if any_collapsed {
+        (egui_phosphor::regular::TREE_VIEW, "Expand all")
     } else {
-        let expand = expand_btn(ui);
-        (expand, collapse_btn(ui))
+        (
+            egui_phosphor::regular::SQUARE_SPLIT_VERTICAL,
+            "Collapse all",
+        )
     };
-    if expand.clicked() {
-        on_set(ui.ctx(), true);
-    }
-    if collapse.clicked() {
-        on_set(ui.ctx(), false);
+    if crate::widgets::icon_button(ui, icon, tip).clicked() {
+        on_set(ui.ctx(), !any_collapsed);
     }
 }
 

@@ -40,16 +40,7 @@ impl DataEditor {
         self.sync_coord_preview_view();
         let force = std::mem::take(&mut self.preview_force);
         let rect = previews.paint_point_panel(ui, x, y, force, &mut self.coord_preview);
-        if paint_preview_floaters(
-            ui,
-            rect,
-            true,
-            Some(&mut self.coord_preview),
-            "Fit image in viewport",
-        ) {
-            self.preview_force = true;
-        }
-        self.paint_record_arm(
+        self.paint_preview_controls(
             ui,
             rect,
             screen_click,
@@ -114,16 +105,7 @@ impl DataEditor {
         let force = std::mem::take(&mut self.preview_force);
         let (rect, preview_image_size) =
             previews.paint_search_area_panel(ui, lx, ty, rx, by, force, &mut self.coord_preview);
-        if paint_preview_floaters(
-            ui,
-            rect,
-            true,
-            Some(&mut self.coord_preview),
-            "Fit image in viewport",
-        ) {
-            self.preview_force = true;
-        }
-        self.paint_record_arm(
+        self.paint_preview_controls(
             ui,
             rect,
             screen_click,
@@ -370,7 +352,6 @@ impl DataEditor {
         ui.add_space(crate::theme::element_gap(ui));
         help::tip(
             crate::widgets::wrap_unit(ui, |ui| {
-                help::label(ui, egui_phosphor::regular::FRAME_CORNERS, "Bounds");
                 self.paint_monitor_slot(ui);
             })
             .response,
@@ -411,16 +392,7 @@ impl DataEditor {
                     force,
                     &mut self.coord_preview,
                 );
-                if paint_preview_floaters(
-                    ui,
-                    rect,
-                    true,
-                    Some(&mut self.coord_preview),
-                    "Fit image in viewport",
-                ) {
-                    self.preview_force = true;
-                }
-                self.paint_record_arm(
+                self.paint_preview_controls(
                     ui,
                     rect,
                     screen_click,

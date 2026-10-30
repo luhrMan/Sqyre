@@ -45,9 +45,7 @@ impl DataEditor {
         // appears, which clips the trailing buttons.
         let row_w = ui.available_width().max(0.0);
         let count = crate::widgets::count_text(paths.len());
-        let icon_side = ui
-            .text_style_height(&egui::TextStyle::Button)
-            .max(crate::widgets::ICON_BTN_SIDE);
+        let icon_side = crate::widgets::icon_btn_side(ui);
         let need = crate::widgets::text_width(ui, "Icon variants", egui::TextStyle::Button)
             + crate::widgets::text_width(ui, &count, egui::TextStyle::Body)
             + icon_side * 2.0

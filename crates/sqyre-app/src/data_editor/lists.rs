@@ -97,8 +97,7 @@ impl DataEditor {
             if !show_collapse_chrome {
                 return;
             }
-            // One toggle, same idea as the macro tree: expand while any group is
-            // closed, collapse once every group is open. Missing state is closed.
+            // Shared single toggle (macro tree / pickers use the same helper).
             let ids: Vec<egui::Id> = match tab {
                 EditorTab::Items | EditorTab::PixelCheck => program_names_for_collapse
                     .iter()
@@ -112,31 +111,22 @@ impl DataEditor {
             if ids.is_empty() {
                 return;
             }
-            let any_collapsed = ids.iter().any(|id| {
-                !egui::collapsing_header::CollapsingState::load(ui.ctx(), *id)
-                    .is_some_and(|state| state.is_open())
-            });
-            let (glyph, tip, open) = if any_collapsed {
-                (egui_phosphor::regular::TREE_VIEW, "Expand all", true)
-            } else {
-                (
-                    egui_phosphor::regular::SQUARE_SPLIT_VERTICAL,
-                    "Collapse all",
-                    false,
-                )
-            };
-            if crate::widgets::icon_button(ui, glyph, tip).clicked() {
-                match tab {
-                    EditorTab::Items | EditorTab::PixelCheck => {
-                        pickers::set_items_icon_grid_openness(
-                            ui.ctx(),
-                            program_names_for_collapse.iter().map(|n| n.as_str()),
-                            open,
-                        );
-                    }
-                    _ => pickers::set_collapsing_openness(ui.ctx(), ids, open),
+            pickers::collapse_all_button(ui, ids.iter().copied(), |ctx, open| match tab {
+                EditorTab::Items | EditorTab::PixelCheck => {
+                    pickers::set_items_icon_grid_openness(
+                        ctx,
+                        program_names_for_collapse.iter().map(|n| n.as_str()),
+                        open,
+                    );
                 }
-            }
+                _ => pickers::set_collapsing_openness(
+                    ctx,
+                    program_names_for_collapse
+                        .iter()
+                        .map(|n| data_editor_list_collapse_id(tab, n)),
+                    open,
+                ),
+            });
         };
         opts.trailing = Some(&mut trailing);
 

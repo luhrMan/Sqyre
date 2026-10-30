@@ -44,9 +44,7 @@ fn paint_icon_choice(
     label: &str,
     selected: bool,
 ) -> egui::Response {
-    let side = ui
-        .text_style_height(&egui::TextStyle::Button)
-        .max(crate::widgets::ICON_BTN_SIDE);
+    let side = crate::widgets::icon_btn_side(ui);
     let (rect, response) = ui.allocate_exact_size(egui::Vec2::splat(side), egui::Sense::click());
     let visuals = ui.style().interact_selectable(&response, selected);
     ui.painter().rect(

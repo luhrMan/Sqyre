@@ -127,20 +127,22 @@ pub fn paint_edit_fields(
         }
         ActionKind::Key { key, state } => {
             tip_wrapped_section(ui, |ui| {
+                var_ref_field(
+                    ui,
+                    egui_phosphor::regular::KEY,
+                    "Key",
+                    key,
+                    VarTheme {
+                        known_vars,
+                        is_dark,
+                    },
+                    h::KEY,
+                    W_VAR,
+                    active_macro,
+                );
+                // Own unit so the button wraps below the field instead of
+                // overflowing the tip's clip on narrow panels.
                 wrap_unit(ui, |ui| {
-                    var_ref_field(
-                        ui,
-                        egui_phosphor::regular::KEY,
-                        "Key",
-                        key,
-                        VarTheme {
-                            known_vars,
-                            is_dark,
-                        },
-                        h::KEY,
-                        W_VAR,
-                        active_macro,
-                    );
                     if crate::widgets::record_icon_button(ui, "Record a key", !key_record.is_open())
                         .clicked()
                     {

@@ -8,21 +8,37 @@ use sqyre_domain::{KnownVariableNames, ScalarValue};
 use sqyre_persist::{ProgramCatalog, ProgramSearchArea};
 use sqyre_validate::EntryValidation;
 
-/// Refresh / fit-view / zoom floats at the image's top-left corner.
-/// Returns `true` on the click frame — callers refresh their texture cache, or
-/// arm a one-frame `force` flag so the capture panel re-reads on the next pass.
-/// `refresh` hides the button for previews with nothing to reload (atlas);
-/// `fit_tip` names the surface ("Fit image in viewport" / "Fit plane in viewport").
+/// Screen-record arm drawn in the preview floater row. `enabled=false` while a
+/// recording is armed — the app is not the click target then; Esc cancels (see
+/// `ScreenClickBridge::status_label`).
+#[derive(Clone, Copy)]
+pub(crate) struct RecordFloater<'a> {
+    pub tip: &'a str,
+    pub enabled: bool,
+}
+
+/// Which floater buttons fired this frame.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct FloaterClicks {
+    /// Refresh — reload the texture / re-capture.
+    pub refresh: bool,
+    /// Record — arm a screen-click recording.
+    pub record: bool,
+}
+
+/// Refresh / fit-view / zoom / record floats on one scrim chip at the image's
+/// top-left corner. `refresh` hides the button for previews with nothing to
+/// reload (atlas); `fit_tip` names the surface ("Fit image in viewport" /
+/// "Fit plane in viewport"); `record` appends the screen-record arm.
 pub(crate) fn paint_preview_floaters(
     ui: &mut egui::Ui,
     rect: egui::Rect,
     refresh: bool,
     view: Option<&mut ImageViewTransform>,
     fit_tip: &str,
-) -> bool {
-    let side = ui
-        .text_style_height(&egui::TextStyle::Button)
-        .max(crate::widgets::ICON_BTN_SIDE);
+    record: Option<RecordFloater>,
+) -> FloaterClicks {
+    let side = crate::widgets::icon_btn_side(ui);
     let gap = crate::theme::element_gap(ui);
     let pad = crate::theme::SPACE_4;
     let zoom_label = view
@@ -30,24 +46,32 @@ pub(crate) fn paint_preview_floaters(
         .filter(|v| v.shows_zoom_label())
         .map(|v| format!("{:.0}%", v.zoom * 100.0));
     let mut row_w = 0.0;
+    let mut items: u32 = 0;
     if refresh {
         row_w += side;
+        items += 1;
     }
     if view.is_some() {
-        row_w += (if refresh { gap } else { 0.0 }) + side;
+        row_w += side;
+        items += 1;
     }
     if let Some(text) = &zoom_label {
-        row_w += gap
-            + ui.fonts_mut(|f| {
-                f.layout_no_wrap(
-                    text.clone(),
-                    egui::TextStyle::Small.resolve(ui.style()),
-                    egui::Color32::WHITE,
-                )
-                .size()
-                .x
-            });
+        row_w += ui.fonts_mut(|f| {
+            f.layout_no_wrap(
+                text.clone(),
+                egui::TextStyle::Small.resolve(ui.style()),
+                egui::Color32::WHITE,
+            )
+            .size()
+            .x
+        });
+        items += 1;
     }
+    if record.is_some() {
+        row_w += side;
+        items += 1;
+    }
+    row_w += gap * items.saturating_sub(1) as f32;
     // Scrim chip keeps the row readable over arbitrary imagery.
     ui.painter().rect_filled(
         egui::Rect::from_min_size(
@@ -66,13 +90,13 @@ pub(crate) fn paint_preview_floaters(
             .layout(egui::Layout::left_to_right(egui::Align::Center)),
     );
     floats.spacing_mut().item_spacing.x = gap;
-    let mut force = false;
+    let mut clicks = FloaterClicks::default();
     floats.horizontal(|ui| {
         if refresh
             && crate::widgets::icon_button(ui, egui_phosphor::regular::ARROW_CLOCKWISE, "Refresh")
                 .clicked()
         {
-            force = true;
+            clicks.refresh = true;
         }
         if let Some(view) = view {
             let enabled = view.needs_reset_button();
@@ -87,42 +111,13 @@ pub(crate) fn paint_preview_floaters(
                 ui.weak(text);
             }
         }
+        if let Some(record) = record {
+            if crate::widgets::record_icon_button(ui, record.tip, record.enabled).clicked() {
+                clicks.record = true;
+            }
+        }
     });
-    force
-}
-
-/// Screen-record arm floated at the image's top-right corner on the same scrim
-/// chip look as [`paint_preview_floaters`]. `enabled=false` while a recording
-/// is armed — the app is not the click target then; Esc cancels (see
-/// `ScreenClickBridge::status_label`). Returns `true` on the click frame.
-pub(crate) fn paint_record_floater(
-    ui: &mut egui::Ui,
-    rect: egui::Rect,
-    tip: &str,
-    enabled: bool,
-) -> bool {
-    let side = ui
-        .text_style_height(&egui::TextStyle::Button)
-        .max(crate::widgets::ICON_BTN_SIDE);
-    let pad = crate::theme::SPACE_4;
-    let chip = egui::Rect::from_min_max(
-        egui::pos2(
-            rect.right() - pad * 0.5 - side - pad,
-            rect.top() + pad * 0.5,
-        ),
-        egui::pos2(
-            rect.right() - pad * 0.5,
-            rect.top() + pad * 0.5 + side + pad,
-        ),
-    );
-    ui.painter()
-        .rect_filled(chip, egui::CornerRadius::same(4), theme::preview_scrim());
-    let mut floats = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(chip.shrink(pad * 0.5))
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    crate::widgets::record_icon_button(&mut floats, tip, enabled).clicked()
+    clicks
 }
 
 #[derive(Clone, Copy)]
@@ -530,7 +525,9 @@ pub(crate) fn paint_disk_preview(
                 paint_grid_overlay(ui, resp.rect, rows, cols);
             }
             if let Some(path) = path {
-                if paint_preview_floaters(ui, resp.rect, true, None, "Fit image in viewport") {
+                if paint_preview_floaters(ui, resp.rect, true, None, "Fit image in viewport", None)
+                    .refresh
+                {
                     icons.invalidate_path(path);
                 }
             }
@@ -637,7 +634,16 @@ pub(crate) fn paint_zoomable_collection_preview(
         paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
-    if paint_preview_floaters(ui, viewport, true, Some(view), "Fit image in viewport") {
+    if paint_preview_floaters(
+        ui,
+        viewport,
+        true,
+        Some(view),
+        "Fit image in viewport",
+        None,
+    )
+    .refresh
+    {
         icons.invalidate_path(path);
     }
     let tex_size = tex.as_ref().map(|t| {
@@ -1004,7 +1010,14 @@ pub(crate) fn paint_zoomable_atlas_preview(
         paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
-    paint_preview_floaters(ui, viewport, false, Some(view), "Fit plane in viewport");
+    paint_preview_floaters(
+        ui,
+        viewport,
+        false,
+        Some(view),
+        "Fit plane in viewport",
+        None,
+    );
 }
 
 #[cfg(test)]

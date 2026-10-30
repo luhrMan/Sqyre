@@ -16,9 +16,9 @@ use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::{
     area_size_from_opts, catalog_search_area_pixel_size, collection_size_label, paint_disk_preview,
-    paint_preview_coord_chip, paint_preview_floaters, paint_record_floater,
-    paint_search_area_preview_sizes, paint_zoomable_atlas_preview,
-    paint_zoomable_collection_preview, pixel_size_text, show_file_hover, CardinalEdge,
+    paint_preview_coord_chip, paint_preview_floaters, paint_search_area_preview_sizes,
+    paint_zoomable_atlas_preview, paint_zoomable_collection_preview, pixel_size_text,
+    show_file_hover, CardinalEdge, RecordFloater,
 };
 #[cfg(feature = "native-runtime")]
 use crate::help_text as ht;
@@ -141,19 +141,34 @@ impl DataEditor {
         }
     }
 
-    /// Arm `screen_click` when the preview's record floater (`rect` top-right)
-    /// is clicked. Cancellation is keyboard-only: the app is not the click
-    /// target while armed, and `status_label` teaches Esc.
-    fn paint_record_arm(
+    /// Preview chrome for a coord panel: refresh / fit / zoom / record on one
+    /// chip at `rect`'s top-left. Refresh re-captures on the next pass; record
+    /// arms `screen_click` (cancellation is keyboard-only — the app is not the
+    /// click target while armed, and `status_label` teaches Esc).
+    fn paint_preview_controls(
         &mut self,
         ui: &mut egui::Ui,
         rect: egui::Rect,
         screen_click: &ScreenClickBridge,
-        record_tip: &str,
-        recording_msg: &str,
+        record_tip: &'static str,
+        recording_msg: &'static str,
         arm: impl FnOnce(&ScreenClickBridge),
     ) {
-        if paint_record_floater(ui, rect, record_tip, !screen_click.is_armed()) {
+        let clicks = paint_preview_floaters(
+            ui,
+            rect,
+            true,
+            Some(&mut self.coord_preview),
+            "Fit image in viewport",
+            Some(RecordFloater {
+                tip: record_tip,
+                enabled: !screen_click.is_armed(),
+            }),
+        );
+        if clicks.refresh {
+            self.preview_force = true;
+        }
+        if clicks.record {
             self.save_after_record = false;
             arm(screen_click);
             self.set_ok(recording_msg);
@@ -452,7 +467,6 @@ impl DataEditor {
             });
             help::tip(
                 crate::widgets::wrap_unit(ui, |ui| {
-                    help::label(ui, egui_phosphor::regular::FRAME_CORNERS, "Bounds");
                     self.paint_monitor_slot(ui);
                 })
                 .response,
@@ -515,16 +529,7 @@ impl DataEditor {
                         force,
                         &mut self.coord_preview,
                     );
-                    if paint_preview_floaters(
-                        ui,
-                        rect,
-                        true,
-                        Some(&mut self.coord_preview),
-                        "Fit image in viewport",
-                    ) {
-                        self.preview_force = true;
-                    }
-                    self.paint_record_arm(
+                    self.paint_preview_controls(
                         ui,
                         rect,
                         screen_click,

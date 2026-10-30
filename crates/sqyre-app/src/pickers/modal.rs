@@ -110,13 +110,19 @@ pub fn show_active_picker(
                     // Selected-count row + optional tag filters + Save/Cancel.
                     opts.footer_reserve = if staged_tags.is_some() { 160.0 } else { 80.0 };
                     let mut trailing = |ui: &mut egui::Ui| {
-                        super::collapse_all_buttons(ui, |ctx, open| {
-                            super::set_items_icon_grid_openness(
-                                ctx,
-                                program_names.iter().map(|n| n.as_str()),
-                                open,
-                            );
-                        });
+                        super::collapse_all_button(
+                            ui,
+                            program_names
+                                .iter()
+                                .map(|n| super::items_icon_grid_collapse_id(n)),
+                            |ctx, open| {
+                                super::set_items_icon_grid_openness(
+                                    ctx,
+                                    program_names.iter().map(|n| n.as_str()),
+                                    open,
+                                );
+                            },
+                        );
                     };
                     opts.trailing = Some(&mut trailing);
                     picker_searchable_scroll_ex(ui, search, opts, Some(focus_id), |ui, q| {
@@ -242,14 +248,20 @@ pub fn show_active_picker(
                         crate::widgets::fill_row(
                             ui,
                             |ui| {
-                                super::collapse_all_buttons(ui, |ctx, open| {
-                                    super::set_coord_list_openness(
-                                        ctx,
-                                        kind,
-                                        program_names.iter().map(|n| n.as_str()),
-                                        open,
-                                    );
-                                });
+                                super::collapse_all_button(
+                                    ui,
+                                    program_names.iter().map(|n| {
+                                        super::coord_list::coord_list_collapse_id(kind, n)
+                                    }),
+                                    |ctx, open| {
+                                        super::set_coord_list_openness(
+                                            ctx,
+                                            kind,
+                                            program_names.iter().map(|n| n.as_str()),
+                                            open,
+                                        );
+                                    },
+                                );
                             },
                             |ui| {
                                 let out = crate::widgets::search_field(
