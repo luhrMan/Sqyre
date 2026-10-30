@@ -468,16 +468,35 @@ fn paint_hotkey_tag_footer(app: &mut SqyreApp, ui: &mut egui::Ui) {
     };
     let mut remove: Option<String> = None;
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Hotkeys:").small().weak());
+        let header = ui.label(egui::RichText::new("Hotkeys:").small().weak());
         let row_right = ui.max_rect().right().min(ui.clip_rect().right());
-        let mut overflow = 0usize;
-        for (i, tag) in filters.iter().enumerate() {
-            let label = tag_header_label(tag);
-            if ui.cursor().left() + pill_w(ui, label) > row_right {
-                overflow += 1;
-                continue;
+        let spacing = ui.spacing().item_spacing.x;
+        let widths: Vec<f32> = filters
+            .iter()
+            .map(|t| pill_w(ui, tag_header_label(t)))
+            .collect();
+        // Room the "+N" marker needs after the last painted pill. Unless all
+        // tags fit, every painted tag must leave this room so hidden tags
+        // always keep a visible affordance.
+        let marker_w = pill_w(ui, &format!("+{}", filters.len())) + spacing;
+        let fits = |reserve: f32| {
+            let mut x = ui.cursor().left();
+            let mut n = 0;
+            for w in &widths {
+                if x + w + reserve > row_right {
+                    break;
+                }
+                n += 1;
+                x += w + spacing;
             }
-            let resp = tag_pill(ui, label).on_hover_text(ht::MLIST_ROW_OPTIONS);
+            n
+        };
+        let mut shown = fits(0.0);
+        if shown < filters.len() {
+            shown = fits(marker_w);
+        }
+        for (i, tag) in filters.iter().enumerate().take(shown) {
+            let resp = tag_pill(ui, tag_header_label(tag)).on_hover_text(ht::MLIST_ROW_OPTIONS);
             if crate::widgets::rect_danger_menu(
                 ui,
                 ui.id().with(("hotkey_tag_pill", i, tag)),
@@ -489,15 +508,19 @@ fn paint_hotkey_tag_footer(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 remove = Some(tag.clone());
             }
         }
+        let overflow = filters.len() - shown;
         if overflow > 0 {
             let count = format!("+{overflow}");
+            let hidden = filters[shown..]
+                .iter()
+                .map(|t| tag_header_label(t))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let tip = format!("{overflow} more: {hidden}");
             if ui.cursor().left() + pill_w(ui, &count) <= row_right {
-                let hidden = filters[filters.len() - overflow..]
-                    .iter()
-                    .map(|t| tag_header_label(t))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                tag_pill(ui, &count).on_hover_text(format!("{overflow} more: {hidden}"));
+                tag_pill(ui, &count).on_hover_text(tip);
+            } else {
+                header.on_hover_text(tip);
             }
         }
     });
@@ -549,9 +572,15 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 ..=(win_w * sqyre_persist::MAX_MACRO_LIST_FRAC),
         )
         // Default side margin is 2px tall, which the window border eats into.
+        // Bottom gets the same 8px as the sides so the pinned Hotkeys footer
+        // reads with real spacing instead of hugging the screen edge.
         .frame(
-            egui::Frame::side_top_panel(ui.style())
-                .inner_margin(egui::Margin::symmetric(8, crate::theme::SPACE_4 as i8)),
+            egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin {
+                left: crate::theme::SPACE_8 as i8,
+                right: crate::theme::SPACE_8 as i8,
+                top: crate::theme::SPACE_4 as i8,
+                bottom: crate::theme::SPACE_8 as i8,
+            }),
         )
         .show_collapsible(ui, &mut open, |ui| {
             // Side panels persist last-frame content width; never let children
@@ -795,6 +824,45 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
 mod tests {
     use super::*;
     use sqyre_domain::Macro;
+
+    /// Tags that would fill the row to the edge must still leave room for the
+    /// "+N" pill — otherwise hidden filters vanish without any affordance.
+    #[test]
+    fn hotkey_tag_footer_keeps_overflow_pill_in_narrow_pane() {
+        let mut app = crate::SqyreApp::for_docs();
+        app.workspace.hotkey_tag_filters = vec!["alpha", "beta", "gamma", "delta", "epsilon"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let ctx = egui::Context::default();
+        let mut plus = None;
+        for _ in 0..3 {
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(120.0, 400.0));
+                let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                pane_ui.set_clip_rect(pane);
+                paint_hotkey_tag_footer(&mut app, &mut pane_ui);
+            });
+            plus = plus.or_else(|| {
+                out.shapes.iter().find_map(|clipped| match &clipped.shape {
+                    egui::Shape::Text(text) if text.galley.job.text.starts_with('+') => {
+                        Some((text.galley.job.text.clone(), clipped.clip_rect))
+                    }
+                    _ => None,
+                })
+            });
+            out.drop_without_applying_deltas();
+        }
+        let (text, clip) = plus.expect("+N overflow pill was not painted");
+        assert!(
+            text[1..].parse::<usize>().is_ok(),
+            "unexpected pill text {text:?}"
+        );
+        assert!(
+            clip.width() >= 110.0,
+            "+N pill painted under a sliver clip: {clip:?}"
+        );
+    }
 
     fn m(name: &str, tags: &[&str]) -> Macro {
         let mut macro_ = Macro::new(name, 0, Vec::new());
