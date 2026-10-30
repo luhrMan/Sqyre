@@ -139,34 +139,22 @@ pub fn show_overflow<R>(
 
     let size_id = ui.make_persistent_id(id).with("overflow_size");
     let flag_id = size_id.with("on");
-    // `natural_id` holds the size content measured without the scroll wrapper.
-    // The scroll branch reports `content_size` under scroll constraints, which
-    // can be smaller than the natural size (content re-wraps); comparing that
-    // against the pane clears the flag while the unwrapped content still
-    // overflows — a scroll/no-scroll oscillation that discards every pass.
-    let natural_id = size_id.with("natural");
+    // `size_id` holds the last pass's measured size — the in-place measurement
+    // while the strip paints unwrapped, and the scroll viewport's
+    // `content_size` once scrolled. Both are a fresh "would it overflow" signal
+    // every frame, so a measurement poisoned by a transient pane (egui's zoom
+    // book-keeping can hand the strip a ~10_000pt pane for a single frame when
+    // `set_zoom_factor` settles) or by content that shrank while scrolled heals
+    // as soon as a scroll pass re-measures — but only if the stay check uses
+    // the same slop as the entry check. A zero-slop stay check latches forever
+    // on a `content_size` that lands a sub-pixel past the pane (`948.6 > 948`).
     let remembered = ui
         .ctx()
         .data(|d| d.get_temp::<egui::Vec2>(size_id))
         .unwrap_or(egui::Vec2::ZERO);
-    let natural = ui
-        .ctx()
-        .data(|d| d.get_temp::<egui::Vec2>(natural_id))
-        .unwrap_or(remembered);
-    let was_overflow = ui
-        .ctx()
-        .data(|d| d.get_temp::<bool>(flag_id))
-        .unwrap_or(false);
-    // Enter only past the slop so a full-width row does not flicker into a bar.
-    // Leave when the natural size fits the pane again.
-    let width_over = |size: f32, slop: f32| w.is_finite() && size > w + slop;
-    let height_over = |size: f32, slop: f32| max_h.is_finite() && size > max_h + slop;
-    let overflow = remembered.x > 0.0
-        && if was_overflow {
-            width_over(natural.x, 0.0) || height_over(natural.y, 0.0)
-        } else {
-            width_over(remembered.x, OVERFLOW_SLOP) || height_over(remembered.y, OVERFLOW_SLOP)
-        };
+    let width_over = |size: f32| w.is_finite() && size > w + OVERFLOW_SLOP;
+    let height_over = |size: f32| max_h.is_finite() && size > max_h + OVERFLOW_SLOP;
+    let overflow = remembered.x > 0.0 && (width_over(remembered.x) || height_over(remembered.y));
 
     if overflow {
         let row = ui.spacing().interact_size.y.max(1.0);
@@ -211,10 +199,9 @@ pub fn show_overflow<R>(
             (ui.min_rect().right() - ui.max_rect().left()).max(0.0),
             (ui.cursor().min.y - y0 - spacing_y).max(0.0),
         );
-        let overflows_now = width_over(size.x, OVERFLOW_SLOP) || height_over(size.y, OVERFLOW_SLOP);
+        let overflows_now = width_over(size.x) || height_over(size.y);
         ui.ctx().data_mut(|d| {
             d.insert_temp(size_id, size);
-            d.insert_temp(natural_id, size);
             d.insert_temp(flag_id, overflows_now);
         });
         if overflows_now {
@@ -227,6 +214,81 @@ pub fn show_overflow<R>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A measurement taken under a transient oversized pane must not keep the
+    /// strip scrolled once the pane shrinks back. egui's `set_zoom_factor`
+    /// book-keeping can produce such a pane for a single frame (`screen_rect`
+    /// scaled from the 10_000pt `InputState` default); the scroll pass's
+    /// `content_size` re-measures under the real pane and must clear it.
+    #[test]
+    fn transient_oversize_pane_does_not_latch_scroll() {
+        let ctx = egui::Context::default();
+        let mut flag_id = None;
+        let mut run = |pane: egui::Vec2| {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, pane);
+                let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                pane_ui.set_clip_rect(pane);
+                // Panels expand `min_rect` to their rect before content runs.
+                pane_ui.expand_to_include_rect(pane);
+                show_overflow(&mut pane_ui, "row", 1.0, |ui| {
+                    ui.horizontal(|ui| {
+                        let _ = ui.button("Fits");
+                    });
+                });
+                flag_id = Some(
+                    pane_ui
+                        .make_persistent_id("row")
+                        .with("overflow_size")
+                        .with("on"),
+                );
+            })
+            .drop_without_applying_deltas();
+        };
+        // One giant transient pane (zoom book-keeping). Its tiny height
+        // overflows the row vertically — the same poisoned measurement the
+        // top bar records on a bogus frame — while the button fits fine at
+        // the real pane below.
+        run(egui::vec2(9_000.0, 10.0));
+        for _ in 0..4 {
+            run(egui::vec2(400.0, 100.0));
+        }
+        let flag = flag_id.and_then(|id| ctx.data(|d| d.get_temp::<bool>(id)));
+        assert_eq!(flag, Some(false), "transient pane latched the strip");
+    }
+
+    /// The reverse: content that really does not fit must keep scrolling once
+    /// the pane settles — the scroll pass keeps reporting an overflowing
+    /// `content_size`.
+    #[test]
+    fn real_overflow_still_scrolls_when_pane_unchanged() {
+        let ctx = egui::Context::default();
+        let mut flag_id = None;
+        for _ in 0..4 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(100.0, 400.0));
+                let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                pane_ui.set_clip_rect(pane);
+                show_overflow(&mut pane_ui, "row", 1.0, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        for label in ["Programs", "Items", "Coordinates", "Tools"] {
+                            let _ = ui.button(label);
+                        }
+                    });
+                });
+                flag_id = Some(
+                    pane_ui
+                        .make_persistent_id("row")
+                        .with("overflow_size")
+                        .with("on"),
+                );
+            })
+            .drop_without_applying_deltas();
+        }
+        let flag = flag_id.and_then(|id| ctx.data(|d| d.get_temp::<bool>(id)));
+        assert_eq!(flag, Some(true), "real overflow did not keep scrolling");
+    }
 
     /// A strip inside a fixed-height row (ui.horizontal bounds children to the
     /// row) must grow downward for the H-bar lane instead of letting the bar
