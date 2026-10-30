@@ -90,7 +90,7 @@ impl PermissionsIntro {
                 + crate::theme::section_gap(ui);
             let scroll_h = (bounds.height() - margin.y - ui.min_rect().height() - footer_h)
                 .max(ui.spacing().interact_size.y);
-            egui::ScrollArea::vertical()
+            crate::widgets::scroll_vertical()
                 .id_salt("sqyre_permissions_intro_body")
                 .max_height(scroll_h)
                 .show(ui, |ui| {
