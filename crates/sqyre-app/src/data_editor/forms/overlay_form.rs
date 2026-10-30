@@ -352,7 +352,7 @@ impl DataEditor {
                 );
             });
             ui.add_space(crate::theme::element_gap(ui));
-            if ui.button("Reset appearance to defaults").clicked() {
+            if ui.small_button("Reset appearance to defaults").clicked() {
                 self.reset_overlay_style_form();
             }
         });

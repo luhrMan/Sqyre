@@ -165,7 +165,7 @@ impl MacroPromptBuilderUi {
                 if ui
                     .add_enabled(
                         !self.nl_draft.trim().is_empty(),
-                        egui::Button::new("Generate prompt"),
+                        egui::Button::new("Generate prompt").small(),
                     )
                     .on_hover_text("Build a schema-aware prompt for an external AI tool")
                     .clicked()
@@ -176,7 +176,7 @@ impl MacroPromptBuilderUi {
                 if ui
                     .add_enabled(
                         !self.generated_prompt.is_empty(),
-                        egui::Button::new("Copy prompt"),
+                        egui::Button::new("Copy prompt").small(),
                     )
                     .clicked()
                 {
@@ -215,7 +215,7 @@ impl MacroPromptBuilderUi {
                 if ui
                     .add_enabled(
                         !self.import_yaml.trim().is_empty(),
-                        egui::Button::new("Validate"),
+                        egui::Button::new("Validate").small(),
                     )
                     .clicked()
                 {
@@ -231,7 +231,7 @@ impl MacroPromptBuilderUi {
                 if ui
                     .add_enabled(
                         !self.import_yaml.trim().is_empty(),
-                        egui::Button::new("Import macro"),
+                        egui::Button::new("Import macro").small(),
                     )
                     .on_hover_text("Decode, validate, and add as a new macro")
                     .clicked()

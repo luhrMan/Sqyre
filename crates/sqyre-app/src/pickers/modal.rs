@@ -483,7 +483,7 @@ pub fn show_active_picker(
                 .and_then(|p| p.sel)
                 .is_some();
             ui.horizontal(|ui| {
-                if in_cell_pick && ui.button("Back").clicked() {
+                if in_cell_pick && ui.small_button("◂ Back").clicked() {
                     back = true;
                 }
                 let save_enabled = if in_cell_pick {

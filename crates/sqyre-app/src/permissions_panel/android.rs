@@ -155,7 +155,7 @@ fn paint_row(ui: &mut egui::Ui, row: &Row) -> Option<Fix> {
         ui.add_space(crate::theme::element_gap(ui));
         let b = &row.button;
         if ui
-            .add_enabled(b.enabled, egui::Button::new(b.label))
+            .add_enabled(b.enabled, egui::Button::new(b.label).small())
             .on_hover_text(b.tip)
             .on_disabled_hover_text(b.tip)
             .clicked()

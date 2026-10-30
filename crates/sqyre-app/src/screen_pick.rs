@@ -145,7 +145,7 @@ impl ScreenPick {
                 paint_bar(ctx, |ui| {
                     crate::widgets::error_icon(ui, &message);
                     let mut choice = cancel_row(ui);
-                    if ui.button("Try again").clicked() {
+                    if ui.small_button("Try again").clicked() {
                         choice = Choice::Retake;
                     }
                     choice

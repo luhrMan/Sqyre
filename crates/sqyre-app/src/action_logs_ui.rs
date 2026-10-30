@@ -221,16 +221,16 @@ pub fn show_logs_window(
             if crate::widgets::cancel_icon_button(ui, "Clear this action's log entries").clicked() {
                 action_log.clear_for(action_id);
             }
-            if ui
-                .selectable_label(state.follow, "Follow")
-                .on_hover_text("Keep scrolled to the newest entries while the macro runs")
-                .clicked()
-            {
-                state.follow = !state.follow;
-            }
+            crate::widgets::icon_toggle(
+                ui,
+                &mut state.follow,
+                "Keep scrolled to the newest entries while the macro runs",
+                egui_phosphor::regular::ARROW_DOWN,
+                egui_phosphor::fill::ARROW_DOWN,
+            );
             ui.weak(&counts);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Close").clicked() {
+                if crate::widgets::cancel_icon_button(ui, "Close").clicked() {
                     nav = LogsNav::Close;
                 }
             });
@@ -759,7 +759,7 @@ fn show_list(
     hovered_now: &mut Option<(usize, usize)>,
 ) {
     if visible.is_empty() {
-        ui.weak("Nothing matches the current filter.");
+        crate::widgets::list_vacancy(ui, &state.search, 0, "entries");
         return;
     }
     let avail_w = ui.available_width().max(120.0);
@@ -1020,7 +1020,7 @@ fn show_item_detail(
 ) {
     let pos = items.iter().position(|&i| i == entry_index);
     ui.horizontal(|ui| {
-        if ui.button("← Back to items").clicked() {
+        if ui.small_button("◂ Back").clicked() {
             state.selected_item = None;
         }
         if let Some(p) = pos {
@@ -1171,7 +1171,7 @@ fn show_zoom_view(
 ) {
     let start_y = ui.cursor().min.y;
     ui.horizontal(|ui| {
-        if ui.button("← Back").clicked() {
+        if ui.small_button("◂ Back").clicked() {
             state.zoom = None;
             state.inspect = None;
             return;
@@ -1184,7 +1184,7 @@ fn show_zoom_view(
             if ui
                 .add_enabled(
                     state.zoom_view.needs_reset_button(),
-                    egui::Button::new("Reset view"),
+                    egui::Button::new("Reset view").small(),
                 )
                 .on_hover_text("Fit image in viewport (0)")
                 .clicked()

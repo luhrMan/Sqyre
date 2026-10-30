@@ -136,7 +136,7 @@ fn paint_item(ui: &mut egui::Ui, ctx: &egui::Context, item: &Item) {
     if let Some(cmd) = item.copy_command {
         ui.horizontal_wrapped(|ui| {
             ui.monospace(cmd);
-            if ui.button("Copy").clicked() {
+            if ui.small_button("Copy").clicked() {
                 ctx.copy_text(cmd.to_string());
             }
         });

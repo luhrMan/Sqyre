@@ -374,7 +374,7 @@ impl MacroYamlBuilderUi {
                 "A saved draft no longer matches the current macro. Choose which to load.",
             );
             ui.horizontal(|ui| {
-                if ui.button("Reload from Tree").clicked() {
+                if ui.small_button("Reload from Tree").clicked() {
                     self.yaml = self.base_yaml.clone();
                     self.draft_choice = DraftChoice::None;
                     self.stale_draft = None;
@@ -382,7 +382,7 @@ impl MacroYamlBuilderUi {
                         self.drafts.remove(name);
                     }
                 }
-                if ui.button("Restore Draft").clicked() {
+                if ui.small_button("Restore Draft").clicked() {
                     if let Some(entry) = self.stale_draft.take() {
                         self.yaml = entry.yaml;
                         self.base_yaml = entry.base_yaml;
@@ -423,7 +423,7 @@ impl MacroYamlBuilderUi {
         crate::widgets::section_separator(ui);
         crate::widgets::show_overflow(ui, "yaml_footer", 1.0, |ui| {
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Validate").clicked() {
+                if ui.small_button("Validate").clicked() {
                     self.last_report = report_macro_yaml(&self.yaml);
                     self.last_validated_yaml = self.yaml.clone();
                     if self.last_report.is_ok() {
@@ -440,7 +440,8 @@ impl MacroYamlBuilderUi {
                         has_yaml,
                         egui::Button::new(
                             egui::RichText::new("Import as New").color(crate::theme::MACRO_START),
-                        ),
+                        )
+                        .small(),
                     )
                     .on_hover_text("Add this YAML as a new macro")
                     .clicked()

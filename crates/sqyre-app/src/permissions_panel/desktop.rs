@@ -194,7 +194,7 @@ impl PermissionsPanel {
             crate::widgets::clamp_row_right_to_clip(ui);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .add_enabled(!self.running, egui::Button::new("Refresh"))
+                    .add_enabled(!self.running, egui::Button::new("Refresh").small())
                     .on_hover_text(
                         "Re-run capability checks (portal dialogs may appear on Wayland).",
                     )
@@ -225,7 +225,16 @@ impl PermissionsPanel {
         }
 
         if self.items.is_empty() && !self.running {
-            ui.weak("No permission data yet — click Refresh.");
+            let action = crate::widgets::empty_state(
+                ui,
+                "No permission data yet",
+                Some("Refresh runs checks for screen capture, portals, and input access."),
+                Some("Refresh"),
+                None,
+            );
+            if action == crate::widgets::EmptyStateAction::Primary {
+                self.refresh(ctx);
+            }
             return;
         }
 
@@ -394,7 +403,7 @@ fn paint_permission_row(
                 ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
                     ui.monospace(cmd);
-                    if ui.button("Copy").clicked() {
+                    if ui.small_button("Copy").clicked() {
                         ctx.copy_text(cmd.clone());
                     }
                 });
@@ -426,7 +435,7 @@ fn paint_permission_row(
                         };
                         let enabled = !sqyre_capture::shared_capturer_is_opening();
                         if ui
-                            .add_enabled(enabled, egui::Button::new(label))
+                            .add_enabled(enabled, egui::Button::new(label).small())
                             .on_hover_text(
                                 "Open the desktop portal picker to choose which screens Sqyre can capture.",
                             )

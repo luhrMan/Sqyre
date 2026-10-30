@@ -429,10 +429,10 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
 
             crate::widgets::section_separator(ui);
             ui.horizontal(|ui| {
-                if ui.button("Copy").clicked() {
+                if ui.small_button("Copy").clicked() {
                     copy = true;
                 }
-                if ui.button("Close").clicked() {
+                if crate::widgets::cancel_icon_button(ui, "Close").clicked() {
                     close = true;
                 }
             });

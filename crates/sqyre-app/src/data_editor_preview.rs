@@ -480,7 +480,7 @@ pub(crate) fn paint_disk_preview(
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).strong());
         if let Some(flag) = replace_clicked {
-            if ui.button("Replace Image").clicked() {
+            if ui.small_button("Replace Image").clicked() {
                 *flag = true;
             }
         }
@@ -541,7 +541,8 @@ pub(crate) fn paint_zoomable_collection_preview(
                     "Capturing…"
                 } else {
                     "Replace Image"
-                }),
+                })
+                .small(),
             )
             .clicked()
         {

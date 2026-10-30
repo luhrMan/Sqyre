@@ -189,7 +189,7 @@ impl DataEditor {
             if ui
                 .add_enabled(
                     self.selected_program.is_some() && self.selected_entity.is_some(),
-                    egui::Button::new("Upload Image"),
+                    egui::Button::new("Upload Image").small(),
                 )
                 .on_hover_text("Replace this mask with a PNG from disk.")
                 .clicked()
@@ -201,7 +201,8 @@ impl DataEditor {
                     has_image,
                     egui::Button::new(
                         egui::RichText::new("Remove Image").color(crate::theme::MACRO_STOP),
-                    ),
+                    )
+                    .small(),
                 )
                 .on_hover_text(format!(
                     "Delete the PNG and use shape geometry instead. {}",

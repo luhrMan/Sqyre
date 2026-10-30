@@ -1068,7 +1068,7 @@ impl SettingsUi {
             }
 
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Open .sqyre folder").clicked() {
+                if ui.small_button("Open .sqyre folder").clicked() {
                     match open_sqyre_dir() {
                         Ok(()) => self.set_ok("Opened data folder."),
                         Err(e) => self.set_err(format!(
@@ -1078,13 +1078,13 @@ impl SettingsUi {
                     }
                 }
                 if crate::file_dialogs::supported(PickPurpose::SqyreLocation)
-                    && ui.button("Choose location…").clicked()
+                    && ui.small_button("Choose location…").clicked()
                 {
                     self.choose_sqyre_location();
                 }
                 if flatpak {
                     if ui
-                        .button("Use host ~/.sqyre…")
+                        .small_button("Use host ~/.sqyre…")
                         .on_hover_text(
                             "Opens a folder picker (portal grant). Select your host \
                              ~/.sqyre folder, or its parent (Home). For a permanent \
@@ -1213,10 +1213,10 @@ impl SettingsUi {
 
             ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
-                if ui.button("Back up now").clicked() {
+                if ui.small_button("Back up now").clicked() {
                     self.run_manual_backup();
                 }
-                if ui.button("Restore from backup…").clicked() {
+                if ui.small_button("Restore from backup…").clicked() {
                     self.request_restore_backup();
                 }
             });
@@ -1341,7 +1341,7 @@ impl SettingsUi {
             ui.horizontal(|ui| {
                 let busy = update.is_busy();
                 if ui
-                    .add_enabled(!busy, egui::Button::new("Check now"))
+                    .add_enabled(!busy, egui::Button::new("Check now").small())
                     .on_hover_text("Query GitHub Releases for a newer build.")
                     .clicked()
                 {
@@ -1351,12 +1351,12 @@ impl SettingsUi {
                 match &update.state {
                     UpdateState::Available { .. }
                         if ui
-                            .add_enabled(!busy, egui::Button::new("Download & install"))
+                            .add_enabled(!busy, egui::Button::new("Download & install").small())
                             .clicked() =>
                     {
                         update.start_download();
                     }
-                    UpdateState::Ready { .. } if ui.button("Restart to finish").clicked() => {
+                    UpdateState::Ready { .. } if ui.small_button("Restart to finish").clicked() => {
                         self.restart_requested = true;
                     }
                     _ => {}
@@ -1860,7 +1860,7 @@ impl SettingsUi {
                     // keep the right-aligned controls inside it.
                     crate::widgets::clamp_row_right_to_clip(ui);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Reset").clicked() {
+                        if ui.small_button("Reset").clicked() {
                             self.settings.action_colors.set(key, String::new());
                             clear_custom_action_color(key);
                             self.mark_dirty();
@@ -1900,7 +1900,7 @@ impl SettingsUi {
             }
 
             if setting_visible(q, section_hit, SETTING_ACTION_COLORS)
-                && ui.button("Reset all action colors").clicked()
+                && ui.small_button("Reset all action colors").clicked()
             {
                 self.settings.action_colors.clear_all();
                 clear_all_custom_action_colors();
