@@ -65,16 +65,7 @@ impl DataEditor {
                 self.window_picker =
                     pickers::open_window_picker(&self.form_process_path, &self.form_window_title);
             }
-            help::tip(
-                ui.label(egui::RichText::new(name).monospace()),
-                help::DE_RUNNING_PROGRAM,
-            );
-            if !path.is_empty() {
-                help::tip(
-                    ui.label(egui::RichText::new(egui_phosphor::regular::FOLDER).weak()),
-                    &path,
-                );
-            }
+            // Clear sits next to the picker it empties, not at the row's far end.
             if ui
                 .add_enabled(
                     has_bound,
@@ -88,6 +79,16 @@ impl DataEditor {
             {
                 self.form_process_path.clear();
                 self.form_window_title.clear();
+            }
+            help::tip(
+                ui.label(egui::RichText::new(name).monospace()),
+                help::DE_RUNNING_PROGRAM,
+            );
+            if !path.is_empty() {
+                help::tip(
+                    ui.label(egui::RichText::new(egui_phosphor::regular::FOLDER).weak()),
+                    &path,
+                );
             }
         });
         ui.add_space(crate::theme::element_gap(ui));

@@ -1179,16 +1179,6 @@ impl DataEditor {
             if save_clicked || save_enter || (tag_submit && save_enabled) {
                 self.on_update(env, previews);
             }
-            #[cfg(feature = "native-runtime")]
-            if matches!(self.tab, EditorTab::Programs) {
-                let pending = self.add_running_programs_pending();
-                if crate::widgets::add_button(ui, "Add running programs", !pending)
-                    .on_hover_text(ht::ED_ADD_ALL_PROGRAMS)
-                    .clicked()
-                {
-                    self.start_add_running_programs();
-                }
-            }
             let can_new = !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
             let new_tip = self
                 .tab

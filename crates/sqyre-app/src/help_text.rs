@@ -42,10 +42,10 @@ pub const ED_REC_CAPTURE: &str = "Two clicks: opposite corners of the capture re
 /// Record floater on the pixel-check preview — arm a two-click area capture.
 #[cfg(not(target_arch = "wasm32"))]
 pub const ED_REC_SEARCH: &str = "Two clicks: opposite corners of the search area";
-/// "Add running programs" toolbar button.
+/// "Add running programs" icon right of the programs search bar.
 #[cfg(not(target_arch = "wasm32"))]
 pub const ED_ADD_ALL_PROGRAMS: &str =
-    "Add every program with an open window (the same list as Select…), named after its process. Programs already in the list are skipped.";
+    "Add every program with an open window that has an icon, named after its process. Programs already in the list are skipped.";
 
 // --- Prompt builder ---
 

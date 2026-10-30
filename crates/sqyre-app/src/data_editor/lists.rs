@@ -72,7 +72,28 @@ impl DataEditor {
         let mut scroll_to = std::mem::take(&mut self.scroll_left_list_to_selection);
         let mut did_scroll = false;
 
+        #[cfg(feature = "native-runtime")]
+        let mut wants_add_running = false;
+        #[cfg(feature = "native-runtime")]
+        let running_pending = self.add_running_programs_pending();
         let mut trailing = |ui: &mut egui::Ui| {
+            #[cfg(feature = "native-runtime")]
+            if matches!(tab, EditorTab::Programs) {
+                if ui
+                    .add_enabled(
+                        !running_pending,
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::PERSON_SIMPLE_RUN,
+                            ht::ED_ADD_ALL_PROGRAMS,
+                            Some(crate::theme::MACRO_START),
+                        ),
+                    )
+                    .clicked()
+                {
+                    wants_add_running = true;
+                }
+                return;
+            }
             if !show_collapse_chrome {
                 return;
             }
@@ -613,6 +634,10 @@ impl DataEditor {
         self.items_list_sort = items_list_sort.into_inner();
         self.items_tag_priority = items_tag_priority.into_inner();
         self.items_tag_priority_draft = items_tag_priority_draft.into_inner();
+        #[cfg(feature = "native-runtime")]
+        if wants_add_running {
+            self.start_add_running_programs();
+        }
         // Re-arm after filter edits so a newly-visible selection can scroll into view.
         self.scroll_left_list_to_selection = search_changed && self.selected_program.is_some();
 

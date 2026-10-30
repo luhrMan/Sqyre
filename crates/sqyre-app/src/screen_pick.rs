@@ -399,7 +399,7 @@ fn paint_pick(
             {
                 choice = Choice::Retake;
             }
-            match crate::widgets::save_cancel_row(ui, can_save) {
+            match crate::widgets::save_row(ui, can_save) {
                 crate::widgets::SaveCancel::Save => choice = Choice::Save,
                 crate::widgets::SaveCancel::Cancel => choice = Choice::Cancel,
                 crate::widgets::SaveCancel::None => {}
@@ -433,10 +433,10 @@ fn paint_bar(ctx: &egui::Context, add: impl FnOnce(&mut egui::Ui) -> Choice) -> 
         .inner
 }
 
+/// Esc is the cancel — the pick already tells the user (record floater tip /
+/// capture hint) and the bar has no window chrome to repeat it on.
 fn cancel_row(ui: &mut egui::Ui) -> Choice {
-    if crate::widgets::consume_escape(ui)
-        || crate::widgets::cancel_icon_button(ui, "Cancel").clicked()
-    {
+    if crate::widgets::consume_escape(ui) {
         Choice::Cancel
     } else {
         Choice::None

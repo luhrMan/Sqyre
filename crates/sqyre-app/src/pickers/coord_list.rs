@@ -59,7 +59,7 @@ pub fn paint_coord_ref_list(
     };
     let current_ref = CoordinateRef(current.clone());
     let mut did_scroll = false;
-    let list_h = popup_scroll_max_height(ui, crate::widgets::FOOTER_RESERVE_SAVE_CANCEL);
+    let list_h = popup_scroll_max_height(ui, crate::widgets::FOOTER_RESERVE_ACTION);
     let list_w = crate::widgets::visible_width(ui);
     let entity_plural = match kind {
         CoordKind::Point => "points",

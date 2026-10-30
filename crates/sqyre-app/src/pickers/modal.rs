@@ -82,6 +82,7 @@ pub fn show_active_picker(
     )
     .show(ctx, |ui| {
         crate::widgets::fill_resize_body(ui, |ui| {
+            let body_rect = ui.max_rect();
             // Local Esc/Enter/↑↓ before body widgets.
             let nav = poll_list_nav(ui);
             if nav == ListNavAction::Cancel {
@@ -227,7 +228,13 @@ pub fn show_active_picker(
                     scroll_to_selection,
                 } => {
                     if let Some(pick) = cell_pick.as_mut() {
-                        paint_collection_cell_picker(ui, paint.catalog, paint.icons, pick);
+                        paint_collection_cell_picker(
+                            ui,
+                            paint.catalog,
+                            paint.icons,
+                            pick,
+                            &mut back,
+                        );
                     } else {
                         let kind = *kind;
                         let program_names: Vec<String> =
@@ -476,27 +483,23 @@ pub fn show_active_picker(
                 ActivePicker::None => {}
             }
 
-            crate::widgets::section_separator(ui);
+            // Save floats over the list's bottom-right corner; Esc (and ◂ Back
+            // in the cell-picker header) covers cancel — no painted repeat.
             let cell_has_sel = picker
                 .cell_pick_mut()
                 .and_then(|c| c.as_ref())
                 .and_then(|p| p.sel)
                 .is_some();
-            ui.horizontal(|ui| {
-                if in_cell_pick && ui.small_button("◂ Back").clicked() {
-                    back = true;
-                }
-                let save_enabled = if in_cell_pick {
-                    cell_has_sel
-                } else if let ActivePicker::Window { process_path, .. } = picker {
-                    !process_path.trim().is_empty()
-                } else {
-                    true
-                };
-                match crate::widgets::save_cancel_row(ui, save_enabled) {
-                    crate::widgets::SaveCancel::Cancel => cancel = true,
-                    crate::widgets::SaveCancel::Save => save = true,
-                    crate::widgets::SaveCancel::None => {}
+            let save_enabled = if in_cell_pick {
+                cell_has_sel
+            } else if let ActivePicker::Window { process_path, .. } = picker {
+                !process_path.trim().is_empty()
+            } else {
+                true
+            };
+            crate::widgets::float_bottom_right(ui, body_rect, |ui| {
+                if crate::widgets::dirty_action_button(ui, "Save", save_enabled).clicked() {
+                    save = true;
                 }
             });
         });

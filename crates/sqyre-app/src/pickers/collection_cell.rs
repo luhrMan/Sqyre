@@ -12,14 +12,18 @@ fn fit_panel(w: f32, h: f32) -> Vec2 {
 }
 
 /// Interactive collection image + rows×cols overlay; click/drag selects cells.
-/// Wheel zooms at cursor; when zoomed, drag pans.
+/// Wheel zooms at cursor; when zoomed, drag pans. `back` is set by ◂ Back.
 pub fn paint_collection_cell_picker(
     ui: &mut egui::Ui,
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
     pick: &mut CollectionCellPick,
+    back: &mut bool,
 ) {
     ui.horizontal(|ui| {
+        if ui.small_button("◂ Back").clicked() {
+            *back = true;
+        }
         crate::icon_cache::paint_program_icon(ui, catalog, icons, &pick.program);
         crate::action_tooltip::help::tip(
             ui.label(

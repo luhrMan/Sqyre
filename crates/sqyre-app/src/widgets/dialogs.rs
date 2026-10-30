@@ -21,8 +21,8 @@ pub const FLOATER_MIN_EDITOR: [f32; 2] = [520.0, 280.0];
 pub const FLOATER_MIN_PICKER: [f32; 2] = [400.0, 280.0];
 /// Command palette floor.
 pub const FLOATER_MIN_PALETTE: [f32; 2] = [400.0, 200.0];
-/// Space reserved below a picker scroll for a Save/Cancel footer row.
-pub const FOOTER_RESERVE_SAVE_CANCEL: f32 = 52.0;
+/// Space reserved below a picker scroll for the floating Save chip / action row.
+pub const FOOTER_RESERVE_ACTION: f32 = 52.0;
 
 /// Old/new [`egui::Context::content_rect`] for one frame after an OS window resize.
 ///
@@ -308,45 +308,31 @@ fn poll_save_keys(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
     }
 }
 
-/// Right-aligned footer: **Cancel left, Save right**.
+/// Right-aligned **Save** action. Esc is the only cancel — every surface that
+/// uses this row also has a window ✕ / ◂ Back, so no painted Cancel repeats it.
 ///
-/// Sole Save/Cancel footer (audit D1 / P1-9). Uses `right_to_left` and allocates
-/// **Save first** so it sits on the right; Cancel is allocated next (to Save's
-/// left). Do not add a second helper (`save_cancel_row_ltr` or similar) or reverse
-/// the allocation order — that flips the visual order.
-///
-/// Save glows while `save_enabled` (dirty pending work). `Esc` cancels; `Enter`
-/// saves only when `save_enabled` and egui is not routing keys to a text field.
-pub fn save_cancel_row(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
-    paint_save_cancel_row(ui, save_enabled).0
+/// Uses `right_to_left` so Save sits on the right. Save glows while
+/// `save_enabled` (dirty pending work). `Esc` cancels; `Enter` saves only when
+/// `save_enabled` and egui is not routing keys to a text field.
+pub fn save_row(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
+    paint_save_row(ui, save_enabled).0
 }
 
-/// Shared paint path for [`save_cancel_row`]; also returns Cancel/Save rects for tests.
-fn paint_save_cancel_row(
-    ui: &mut egui::Ui,
-    save_enabled: bool,
-) -> (SaveCancel, egui::Rect, egui::Rect) {
+/// Shared paint path for [`save_row`]; also returns the Save rect for tests.
+fn paint_save_row(ui: &mut egui::Ui, save_enabled: bool) -> (SaveCancel, egui::Rect) {
     let mut out = SaveCancel::None;
-    let mut cancel_rect = egui::Rect::NOTHING;
     let mut save_rect = egui::Rect::NOTHING;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        // First in RTL = rightmost → Save on the right, Cancel on its left.
         let save = crate::widgets::dirty_action_button(ui, "Save", save_enabled);
-        let cancel = crate::widgets::cancel_icon_button(ui, "Cancel");
         save_rect = save.rect;
-        cancel_rect = cancel.rect;
-        // Prefer Cancel if both somehow click in one frame (matches prior).
         if save.clicked() {
             out = SaveCancel::Save;
-        }
-        if cancel.clicked() {
-            out = SaveCancel::Cancel;
         }
     });
     if out == SaveCancel::None {
         out = poll_save_keys(ui, save_enabled);
     }
-    (out, cancel_rect, save_rect)
+    (out, save_rect)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -510,29 +496,29 @@ mod tests {
     use egui::{Event, Key, Modifiers, RawInput};
 
     #[test]
-    fn save_cancel_row_places_cancel_left_of_save() {
+    fn save_row_places_save_at_right_edge() {
         let ctx = egui::Context::default();
-        let mut cancel_min_x = f32::NAN;
-        let mut save_min_x = f32::NAN;
+        let mut save_max_x = f32::NAN;
+        let mut content_max_x = f32::NAN;
         ctx.run_ui(RawInput::default(), |ui| {
             ui.set_width(320.0);
-            let (outcome, cancel_rect, save_rect) = paint_save_cancel_row(ui, true);
+            let (outcome, save_rect) = paint_save_row(ui, true);
             assert_eq!(outcome, SaveCancel::None);
-            cancel_min_x = cancel_rect.min.x;
-            save_min_x = save_rect.min.x;
+            save_max_x = save_rect.max.x;
+            content_max_x = ui.max_rect().max.x;
         })
         .drop_without_applying_deltas();
         assert!(
-            cancel_min_x < save_min_x,
-            "Cancel ({cancel_min_x}) must be left of Save ({save_min_x})"
+            save_max_x >= content_max_x - 1.0,
+            "Save ({save_max_x}) must be right-aligned (content max {content_max_x})"
         );
     }
 
     #[test]
-    fn save_cancel_row_esc_cancels_enter_saves_when_enabled() {
+    fn save_row_esc_cancels_enter_saves_when_enabled() {
         let ctx = egui::Context::default();
         ctx.run_ui(RawInput::default(), |ui| {
-            assert_eq!(save_cancel_row(ui, false), SaveCancel::None);
+            assert_eq!(save_row(ui, false), SaveCancel::None);
         })
         .drop_without_applying_deltas();
 
@@ -545,7 +531,7 @@ mod tests {
             modifiers: Modifiers::NONE,
         });
         ctx.run_ui(esc, |ui| {
-            assert_eq!(save_cancel_row(ui, true), SaveCancel::Cancel);
+            assert_eq!(save_row(ui, true), SaveCancel::Cancel);
         })
         .drop_without_applying_deltas();
 
@@ -558,8 +544,8 @@ mod tests {
             modifiers: Modifiers::NONE,
         });
         ctx.run_ui(enter, |ui| {
-            assert_eq!(save_cancel_row(ui, true), SaveCancel::Save);
-            assert_eq!(save_cancel_row(ui, false), SaveCancel::None);
+            assert_eq!(save_row(ui, true), SaveCancel::Save);
+            assert_eq!(save_row(ui, false), SaveCancel::None);
         })
         .drop_without_applying_deltas();
     }
@@ -625,7 +611,7 @@ mod tests {
                 bg_id = Some(ui.button("background").id);
                 let ctx = ui.ctx().clone();
                 egui::Window::new("modal").show(&ctx, |ui| {
-                    out = save_cancel_row(ui, true);
+                    out = save_row(ui, true);
                 });
             })
             .drop_without_applying_deltas();
@@ -635,7 +621,7 @@ mod tests {
             let _ = ui.button("background");
             let ctx = ui.ctx().clone();
             egui::Window::new("modal").show(&ctx, |ui| {
-                out = save_cancel_row(ui, true);
+                out = save_row(ui, true);
             });
         })
         .drop_without_applying_deltas();
@@ -654,7 +640,7 @@ mod tests {
                 let ctx = ui.ctx().clone();
                 egui::Window::new("modal").show(&ctx, |ui| {
                     inside_id = Some(ui.button("inside").id);
-                    out = save_cancel_row(ui, true);
+                    out = save_row(ui, true);
                 });
             })
             .drop_without_applying_deltas();
@@ -664,7 +650,7 @@ mod tests {
             let ctx = ui.ctx().clone();
             egui::Window::new("modal").show(&ctx, |ui| {
                 let _ = ui.button("inside");
-                out = save_cancel_row(ui, true);
+                out = save_row(ui, true);
             });
         })
         .drop_without_applying_deltas();
@@ -679,10 +665,10 @@ mod tests {
             ctx.run_ui(input, |ui| {
                 let ctx = ui.ctx().clone();
                 egui::Window::new("lower").show(&ctx, |ui| {
-                    hits.0 = save_cancel_row(ui, true);
+                    hits.0 = save_row(ui, true);
                 });
                 egui::Window::new("upper").show(&ctx, |ui| {
-                    hits.1 = save_cancel_row(ui, true);
+                    hits.1 = save_row(ui, true);
                 });
             })
             .drop_without_applying_deltas();
@@ -710,6 +696,6 @@ mod tests {
         assert_eq!(FLOATER_MIN_PICKER, [400.0, 280.0]);
         assert_eq!(FLOATER_MIN_PALETTE, [400.0, 200.0]);
         assert_eq!(FLOATER_MIN_EDITOR, [520.0, 280.0]);
-        assert_eq!(FOOTER_RESERVE_SAVE_CANCEL, 52.0);
+        assert_eq!(FOOTER_RESERVE_ACTION, 52.0);
     }
 }

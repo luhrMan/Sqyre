@@ -213,7 +213,7 @@ impl VariablesPanelUi {
                     || value.to_ascii_lowercase().contains(&q)
             })
             .collect();
-        let list_h = (max_h - crate::widgets::FOOTER_RESERVE_SAVE_CANCEL).max(60.0);
+        let list_h = (max_h - crate::widgets::FOOTER_RESERVE_ACTION).max(60.0);
         let list_w = crate::widgets::visible_width(ui);
         // Dense name=value rows: Extend so long values H-scroll instead of wrap/clip.
         crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
@@ -475,7 +475,7 @@ impl VariablesPanelUi {
             crate::widgets::TextFieldOpts { width: 280.0 },
         );
 
-        match crate::widgets::save_cancel_row(ui, edit.save_enabled()) {
+        match crate::widgets::save_row(ui, edit.save_enabled()) {
             crate::widgets::SaveCancel::Cancel => {
                 self.editing = None;
                 self.status_banner.clear();
