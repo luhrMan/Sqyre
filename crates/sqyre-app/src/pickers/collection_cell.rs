@@ -1,5 +1,6 @@
 use super::types::CollectionCellPick;
 use crate::data_editor_preview::paint_grid_overlay_painter;
+use crate::help_text as ht;
 use crate::icon_cache::IconCache;
 use crate::image_view::{self};
 use crate::theme::{cell_selection_fill, cell_selection_stroke};
@@ -36,7 +37,7 @@ pub fn paint_collection_cell_picker(
                     pick.view.needs_reset_button(),
                     egui::Button::new("Reset view"),
                 )
-                .on_hover_text("Fit image in viewport")
+                .on_hover_text(ht::PICK_FIT_VIEW)
                 .clicked()
             {
                 pick.reset_view();

@@ -4,6 +4,7 @@ use super::helpers::{default_editor_program, editor_program_names, is_editor_lis
 use super::{DataEditor, EditorTab, ListCache};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::show_file_hover;
+use crate::help_text as ht;
 use crate::icon_cache::IconCache;
 use crate::overlay_icons;
 use crate::pickers::{self, PickerScrollOpts};
@@ -571,8 +572,7 @@ impl DataEditor {
                                         }
                                         let mut label = ui.selectable_label(selected, name);
                                         if !btn.enabled {
-                                            label = label
-                                                .on_hover_text("Disabled — right-click to enable.");
+                                            label = label.on_hover_text(ht::ED_ROW_DISABLED);
                                         }
                                         if thumb.clicked() || label.clicked() {
                                             clicked_overlay = Some((prog.clone(), btn.id.clone()));

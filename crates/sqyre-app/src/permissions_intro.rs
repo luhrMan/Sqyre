@@ -1,6 +1,7 @@
 //! First-start popup: explains each permission this platform needs, then requests them
 //! all once the user clicks Continue. Nothing prompts while it is showing.
 
+use crate::help_text as ht;
 use eframe::egui::{self, Key, Modifiers, RichText};
 
 /// Popup body width on wide windows; narrower windows use the dialog bounds instead.
@@ -111,7 +112,7 @@ impl PermissionsIntro {
             if self.showing() {
                 let clicked = ui
                     .button("Continue")
-                    .on_hover_text("Show the system permission prompts now.")
+                    .on_hover_text(ht::PERM_SHOW_PROMPTS)
                     .clicked();
                 let enter = ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::Enter));
                 confirmed = clicked || enter;

@@ -31,6 +31,7 @@ pub mod docs_fixture;
 mod egui_keys;
 mod file_dialogs;
 mod focus_nav;
+mod help_text;
 mod hotkey_chooser;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod hotkey_focus_tags;

@@ -2,6 +2,7 @@
 //! keyboard navigation, follow-while-running, and hover/click "where found"
 //! find markers that highlight detections in logged images and on the desktop.
 
+use crate::help_text as ht;
 use crate::image_view::{self, ImageViewTransform};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::theme::selection_stroke;
@@ -211,7 +212,7 @@ pub fn show_logs_window(
         ui.horizontal(|ui| {
             if ui
                 .button("Copy text")
-                .on_hover_text("Copy the filtered log lines")
+                .on_hover_text(ht::LOGS_COPY_FILTERED)
                 .clicked()
             {
                 let filtered: Vec<ActionLogEntry> =
@@ -984,7 +985,7 @@ fn show_item_card(
                     if resp.clicked() {
                         state.selected_item = Some(entry_index);
                     }
-                    resp.on_hover_text("Click to view processing steps and where it was found");
+                    resp.on_hover_text(ht::LOGS_ITEM_STEPS);
                 }
                 if ui
                     .small_button(if selected { "Open ▸" } else { "Inspect ▸" })
@@ -1026,7 +1027,7 @@ fn show_item_detail(
         if let Some(p) = pos {
             if ui
                 .small_button("◂ Prev")
-                .on_hover_text("Previous item (←)")
+                .on_hover_text(ht::LOGS_PREV_ITEM)
                 .clicked()
             {
                 state.selected_item = step_item(items, Some(entry_index), -1);
@@ -1034,7 +1035,7 @@ fn show_item_detail(
             ui.weak(format!("{}/{}", p + 1, items.len()));
             if ui
                 .small_button("Next ▸")
-                .on_hover_text("Next item (→)")
+                .on_hover_text(ht::LOGS_NEXT_ITEM)
                 .clicked()
             {
                 state.selected_item = step_item(items, Some(entry_index), 1);
@@ -1145,8 +1146,7 @@ fn show_labeled_image(
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
-            resp.clone()
-                .on_hover_text("Click to zoom — wheel zooms, drag pans");
+            resp.clone().on_hover_text(ht::LOGS_ZOOM_TIP);
             if resp.clicked() {
                 state.zoom = Some(ZoomedImage {
                     key,
@@ -1186,7 +1186,7 @@ fn show_zoom_view(
                     state.zoom_view.needs_reset_button(),
                     egui::Button::new("Reset view").small(),
                 )
-                .on_hover_text("Fit image in viewport (0)")
+                .on_hover_text(ht::LOGS_FIT_VIEW)
                 .clicked()
             {
                 state.zoom_view.reset();

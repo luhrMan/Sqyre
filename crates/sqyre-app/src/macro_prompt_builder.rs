@@ -1,6 +1,7 @@
 //! Local AI Macro Builder: NL editor with `@` autocomplete, prompt copy, YAML import.
 
 use crate::data_editor::helpers::is_editor_listed_program;
+use crate::help_text as ht;
 use eframe::egui::{
     self, text::CCursor, text_edit::TextEditState, Key, Modifiers, PopupCloseBehavior, RectAlign,
 };
@@ -167,7 +168,7 @@ impl MacroPromptBuilderUi {
                         !self.nl_draft.trim().is_empty(),
                         egui::Button::new("Generate prompt").small(),
                     )
-                    .on_hover_text("Build a schema-aware prompt for an external AI tool")
+                    .on_hover_text(ht::PROMPT_GENERATE)
                     .clicked()
                 {
                     self.generated_prompt = build_prompt(&self.nl_draft, macros, catalog);
@@ -233,7 +234,7 @@ impl MacroPromptBuilderUi {
                         !self.import_yaml.trim().is_empty(),
                         egui::Button::new("Import macro").small(),
                     )
-                    .on_hover_text("Decode, validate, and add as a new macro")
+                    .on_hover_text(ht::PROMPT_IMPORT)
                     .clicked()
                 {
                     match prepare_import_macro(&self.import_yaml, &existing) {

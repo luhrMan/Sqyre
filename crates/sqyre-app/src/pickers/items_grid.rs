@@ -1,6 +1,7 @@
 use super::icon_grid::{paint_even_icon_grid, IconCellMenu, IconGridKind, IconGridOps};
 use super::query::{fuzzy_match_fold, query_matches_name_or_tags};
 use super::scroll::maybe_scroll_to;
+use crate::help_text as ht;
 use crate::icon_cache::IconCache;
 use eframe::egui;
 use sqyre_domain::PROGRAM_DELIMITER;
@@ -198,9 +199,7 @@ pub fn paint_items_icon_grid(
                     ui.horizontal(|ui| {
                         if ui
                             .small_button(all_label)
-                            .on_hover_text(
-                                "Select all visible items, or deselect all if all visible are selected",
-                            )
+                            .on_hover_text(ht::PICK_SELECT_ALL)
                             .clicked()
                         {
                             toggle_select_all_filtered(selected, &targets);

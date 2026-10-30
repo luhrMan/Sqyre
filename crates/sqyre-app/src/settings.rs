@@ -1,6 +1,7 @@
 //! User Settings window.
 
 use crate::file_dialogs::PickPurpose;
+use crate::help_text as ht;
 use crate::status_banner::StatusBanner;
 use eframe::egui::{self, Color32};
 use sqyre_domain::Macro;
@@ -634,9 +635,7 @@ impl SettingsUi {
                             .speed(100)
                             .suffix(" entries"),
                     )
-                    .on_hover_text(
-                        "Per-action cap for the Logs window; the oldest entries are dropped past it.",
-                    )
+                    .on_hover_text(ht::SET_LOG_CAP)
                     .changed()
                 {
                     self.settings.action_log_max_entries = v;
@@ -719,7 +718,7 @@ impl SettingsUi {
                     &mut self.settings.highlight_active_action,
                     "Highlight the currently executing action",
                 )
-                .on_hover_text("Scroll and tint the tree row of the action running now.")
+                .on_hover_text(ht::SET_RUN_ROW_HL)
                 .changed()
         {
             self.mark_dirty();
@@ -731,9 +730,7 @@ impl SettingsUi {
                     &mut self.settings.click_effect,
                     "Flash a marker where clicks land",
                 )
-                .on_hover_text(
-                    "During a run, a shrinking gold square briefly appears around each mouse press on the desktop (Click actions and Navigate selects).",
-                )
+                .on_hover_text(ht::SET_CLICK_MARKER)
                 .changed()
         {
             self.mark_dirty();
@@ -745,9 +742,7 @@ impl SettingsUi {
                     &mut self.settings.release_held_inputs_on_end,
                     "Release held keys and buttons when a macro ends",
                 )
-                .on_hover_text(
-                    "When enabled, any key or mouse button still held from Down/hold actions is released when the macro finishes, stops, or errors.",
-                )
+                .on_hover_text(ht::SET_RELEASE_KEYS)
                 .changed()
         {
             self.mark_dirty();
@@ -759,9 +754,7 @@ impl SettingsUi {
                     &mut self.settings.overlay_press_stops_run,
                     "Overlay buttons stop the running macro",
                 )
-                .on_hover_text(
-                    "While a macro is running, pressing an overlay button stops it. When off, a busy button lets the click through.",
-                )
+                .on_hover_text(ht::SET_OVL_STOP)
                 .changed()
         {
             self.mark_dirty();
@@ -773,9 +766,7 @@ impl SettingsUi {
                     &mut self.settings.overlay_buttons_in_detection,
                     "Overlay buttons appear in detection",
                 )
-                .on_hover_text(
-                    "When on, Image Search, Find Pixel, and OCR captures include the buttons. When off, the buttons stay hidden for the whole macro so those captures see the screen underneath.",
-                )
+                .on_hover_text(ht::SET_CAPTURE_BUTTONS)
                 .changed()
         {
             self.mark_dirty();
@@ -787,9 +778,7 @@ impl SettingsUi {
                     &mut self.settings.overlay_buttons_over_sqyre,
                     "Show overlay buttons over Sqyre",
                 )
-                .on_hover_text(
-                    "When off, buttons hide while the Sqyre window is in front. When on, General buttons stay on top of Sqyre. Buttons for another app still show only while that app is in front. Placing a button in the Overlay editor still shows it.",
-                )
+                .on_hover_text(ht::SET_BUTTONS_FRONT)
                 .changed()
         {
             self.mark_dirty();
@@ -816,9 +805,7 @@ impl SettingsUi {
                                         .speed(1000)
                                         .suffix(" iterations"),
                                 )
-                                .on_hover_text(
-                                    "While safety budget: used when a While action has max_iterations ≤ 0. Prevents runaway loops.",
-                                )
+                                .on_hover_text(ht::SET_WHILE_BUDGET)
                                 .changed()
                             {
                                 self.settings.while_max_iterations = v;
@@ -840,9 +827,7 @@ impl SettingsUi {
                                         )
                                         .speed(1),
                                 )
-                                .on_hover_text(
-                                    "Maximum nested Run Macro calls (including the top-level macro). Cycles are always rejected.",
-                                )
+                                .on_hover_text(ht::SET_RUN_DEPTH)
                                 .changed()
                             {
                                 self.settings.run_macro_max_depth = v;
@@ -872,9 +857,7 @@ impl SettingsUi {
                 &mut self.settings.hide_app_during_recording,
                 "Hide Sqyre while recording points and search areas",
             )
-            .on_hover_text(
-                "When enabled, Sqyre windows are hidden before the desktop snapshot used by recording.",
-            )
+            .on_hover_text(ht::SET_HIDE_ON_RECORD)
             .changed()
         {
             self.mark_dirty();
@@ -898,9 +881,7 @@ impl SettingsUi {
                 &mut self.settings.hotkey_tags_while_focused,
                 "Select hotkey tags while a Program is focused",
             )
-            .on_hover_text(
-                "When enabled, focusing a Program that has macro tags sets the hotkey tag selection to those tags; otherwise hotkeys turn off. When disabled, tag selection is manual only (macro list headers).",
-            )
+            .on_hover_text(ht::SET_HOTKEY_TAGS)
             .changed()
         {
             self.mark_dirty();
@@ -928,9 +909,7 @@ impl SettingsUi {
                     &mut self.settings.image_search_variant_exit_early,
                     "Stop at the first matching icon variant",
                 )
-                .on_hover_text(
-                    "When enabled, stop trying later icon variants after one hits on the same search (or collection cell). Disable to match every variant.",
-                )
+                .on_hover_text(ht::SET_VARIANT_STOP)
                 .changed()
         {
             self.mark_dirty();
@@ -944,24 +923,22 @@ impl SettingsUi {
                 &[SETTING_IMAGE_SEARCH_DISTANCE],
                 |ui| {
                     ui.horizontal(|ui| {
-                            ui.label("Ignore nearby duplicate image matches:");
-                            let mut v = self.settings.image_search_close_matches_distance;
-                            if ui
-                                .add(
-                                    crate::widgets::num_entry(&mut v)
-                                        .range(0..=100)
-                                        .speed(1)
-                                        .suffix(" px"),
-                                )
-                                .on_hover_text(
-                                    "Image search close-match distance: ignore duplicate matches within this many pixels.",
-                                )
-                                .changed()
-                            {
-                                self.settings.image_search_close_matches_distance = v;
-                                self.mark_dirty();
-                            }
-                        });
+                        ui.label("Ignore nearby duplicate image matches:");
+                        let mut v = self.settings.image_search_close_matches_distance;
+                        if ui
+                            .add(
+                                crate::widgets::num_entry(&mut v)
+                                    .range(0..=100)
+                                    .speed(1)
+                                    .suffix(" px"),
+                            )
+                            .on_hover_text(ht::SET_DEDUP_PX)
+                            .changed()
+                        {
+                            self.settings.image_search_close_matches_distance = v;
+                            self.mark_dirty();
+                        }
+                    });
                 },
             );
         }
@@ -988,9 +965,7 @@ impl SettingsUi {
                     &mut self.settings.play_finish_sound,
                     "Play a sound when a macro finishes",
                 )
-                .on_hover_text(
-                    "Plays a short cue when a top-level macro run completes successfully.",
-                )
+                .on_hover_text(ht::SET_FINISH_CUE)
                 .changed()
         {
             self.mark_dirty();
@@ -1002,9 +977,7 @@ impl SettingsUi {
                     &mut self.settings.play_ui_sounds,
                     "Play sounds when adding or deleting",
                 )
-                .on_hover_text(
-                    "Plays short cues when macros, actions, or data-editor entities are added or deleted.",
-                )
+                .on_hover_text(ht::SET_ADD_DEL_CUES)
                 .changed()
         {
             self.mark_dirty();
@@ -1016,7 +989,7 @@ impl SettingsUi {
                 let mut pct = (self.settings.sound_volume * 100.0).round() as i32;
                 if ui
                     .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
-                    .on_hover_text("Volume for finish and add/delete cue sounds.")
+                    .on_hover_text(ht::SET_CUE_VOLUME)
                     .changed()
                 {
                     self.settings.sound_volume = pct as f32 / 100.0;
@@ -1085,23 +1058,15 @@ impl SettingsUi {
                 if flatpak {
                     if ui
                         .small_button("Use host ~/.sqyre…")
-                        .on_hover_text(
-                            "Opens a folder picker (portal grant). Select your host \
-                             ~/.sqyre folder, or its parent (Home). For a permanent \
-                             Flatpak permission you can also run:\n\
-                             flatpak override --user --filesystem=~/.sqyre:create com.sqyre.app",
-                        )
+                        .on_hover_text(ht::SET_HOST_FOLDER)
                         .clicked()
                     {
                         self.choose_host_sqyre_location();
                     }
                     if !self.settings.sqyre_dir.trim().is_empty()
                         && ui
-                            .button("Use Flatpak sandbox")
-                            .on_hover_text(
-                                "Clear the custom path and return to the private \
-                                 Flatpak data directory (~/.var/app/com.sqyre.app/.sqyre).",
-                            )
+                            .small_button("Use Flatpak sandbox")
+                            .on_hover_text(ht::SET_FLATPAK_RESET)
                             .clicked()
                     {
                         self.reset_sqyre_to_sandbox(db, macros, catalog);
@@ -1132,13 +1097,8 @@ impl SettingsUi {
             let _ = (db, macros, catalog);
 
             if ui
-                .checkbox(
-                    &mut self.settings.backup_enabled,
-                    "Automatic backups",
-                )
-                .on_hover_text(
-                    "Periodically zip the data directory into the backups folder when Sqyre is running.",
-                )
+                .checkbox(&mut self.settings.backup_enabled, "Automatic backups")
+                .on_hover_text(ht::SET_AUTO_BACKUP)
                 .changed()
             {
                 self.mark_dirty();
@@ -1153,7 +1113,7 @@ impl SettingsUi {
                             .range(MIN_BACKUP_INTERVAL_HOURS..=MAX_BACKUP_INTERVAL_HOURS)
                             .speed(1),
                     )
-                    .on_hover_text("Hours between automatic backups while Sqyre is open.")
+                    .on_hover_text(ht::SET_BACKUP_HOURS)
                     .changed()
                 {
                     self.settings.backup_interval_hours = v;
@@ -1174,9 +1134,7 @@ impl SettingsUi {
                             .range(MIN_BACKUP_MAX_KEEP..=MAX_BACKUP_MAX_KEEP)
                             .speed(1),
                     )
-                    .on_hover_text(
-                        "Oldest managed sqyre-backup-*.zip files are deleted beyond this count.",
-                    )
+                    .on_hover_text(ht::SET_BACKUP_KEEP)
                     .changed()
                 {
                     self.settings.backup_max_keep = v;
@@ -1328,9 +1286,7 @@ impl SettingsUi {
                     &mut self.settings.auto_update_check,
                     "Check for updates on startup",
                 )
-                .on_hover_text(
-                    "Queries GitHub Releases for a newer Sqyre build when the app starts.",
-                )
+                .on_hover_text(ht::SET_UPDATE_CHECK)
                 .changed()
         {
             self.mark_dirty();
@@ -1342,7 +1298,7 @@ impl SettingsUi {
                 let busy = update.is_busy();
                 if ui
                     .add_enabled(!busy, egui::Button::new("Check now").small())
-                    .on_hover_text("Query GitHub Releases for a newer build.")
+                    .on_hover_text(ht::SET_UPDATE_NOW)
                     .clicked()
                 {
                     update.start_check();
@@ -1704,9 +1660,7 @@ impl SettingsUi {
                     &mut self.settings.compact_program_headers,
                     "Compact program headers with icons",
                 )
-                .on_hover_text(
-                    "When a program has a process icon, list headers show only the icon with the child count on the right (name on hover). Macro list tag headers attached to a program's Macro tags do the same.",
-                )
+                .on_hover_text(ht::SET_ICON_HEADERS)
                 .changed()
         {
             self.mark_dirty();
@@ -1718,9 +1672,7 @@ impl SettingsUi {
                     &mut self.settings.show_empty_program_headers,
                     "Show empty program headers",
                 )
-                .on_hover_text(
-                    "In the Data Editor lists, keep a header for every program even when it has nothing on that tab (for example, no items or no points).",
-                )
+                .on_hover_text(ht::SET_KEEP_HEADERS)
                 .changed()
         {
             self.mark_dirty();
@@ -1729,7 +1681,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_WINDOW_BORDER)
             && ui
                 .checkbox(&mut self.settings.window_border, "Window border")
-                .on_hover_text("Show a thin gold outline around the edge of the main window.")
+                .on_hover_text(ht::SET_WIN_OUTLINE)
                 .changed()
         {
             self.mark_dirty();
@@ -1738,9 +1690,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_RUN_GLOW)
             && ui
                 .checkbox(&mut self.settings.run_button_glow, "Glowing Run button")
-                .on_hover_text(
-                    "Show a green glow around the Run button when a macro is ready to run; it pulses while hovered.",
-                )
+                .on_hover_text(ht::SET_RUN_GLOW)
                 .changed()
         {
             self.mark_dirty();
@@ -1753,7 +1703,7 @@ impl SettingsUi {
                 let mut v = self.settings.ui_font_size;
                 if ui
                     .add(crate::widgets::num_entry(&mut v).range(10..=28).speed(1))
-                    .on_hover_text("Base text size for labels, buttons, and form fields.")
+                    .on_hover_text(ht::SET_FONT_SIZE)
                     .changed()
                 {
                     self.settings.ui_font_size = v;
@@ -1779,10 +1729,7 @@ impl SettingsUi {
                             .speed(0.1)
                             .fixed_decimals(1),
                     )
-                    .on_hover_text(
-                        "Scale padding, icons, and other non-text UI elements relative to the \
-                         display's own scale (1.0 = default).",
-                    )
+                    .on_hover_text(ht::SET_UI_SCALE)
                     .changed()
                 {
                     self.settings.ui_scale = v;
@@ -1815,11 +1762,7 @@ impl SettingsUi {
                         }
                     })
                     .response
-                    .on_hover_text(
-                        "Space between sections and elements. Compact: 4px gaps. \
-                         Normal: 8px between sections, 4px inside. \
-                         Spaced: 12px between sections, 8px inside.",
-                    );
+                    .on_hover_text(ht::SET_DENSITY);
                 if density != self.settings.ui_density {
                     self.settings.ui_density = density;
                     self.mark_dirty();
@@ -1827,10 +1770,7 @@ impl SettingsUi {
                 }
                 if ui
                     .checkbox(&mut self.settings.auto_compact_density, "Auto-compact")
-                    .on_hover_text(
-                        "Switch to Compact spacing automatically when the window \
-                         is narrow (phones, small windows).",
-                    )
+                    .on_hover_text(ht::SET_AUTO_COMPACT)
                     .changed()
                 {
                     self.mark_dirty();

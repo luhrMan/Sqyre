@@ -1,5 +1,6 @@
 //! Removable tag chips with draft entry and completion suggestions.
 
+use crate::help_text as ht;
 use eframe::egui::{self, Key, Modifiers, PopupCloseBehavior, RectAlign, Sense};
 
 /// Max height of the tag suggestion dropdown popup.
@@ -568,9 +569,7 @@ fn paint_tag_chips(
         let (chip_rect, chip_anchor) = if reorderable && enabled {
             let id = ui.id().with(("tag_dnd", i, tag.as_str()));
             let drag = ui.dnd_drag_source(id, i, paint_chip);
-            drag.response
-                .clone()
-                .on_hover_text("Drag to reorder. Right-click for options.");
+            drag.response.clone().on_hover_text(ht::TAG_CHIP_ORDER);
             if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
                 let from = *payload;
                 if from != i {
@@ -604,9 +603,7 @@ fn paint_tag_chips(
                 if resp.clicked() {
                     toggle = Some(i);
                 }
-                let resp = resp.on_hover_text(
-                    "Click to toggle include/exclude. Right-click for more options.",
-                );
+                let resp = resp.on_hover_text(ht::TAG_CHIP_TOGGLE);
                 Some(resp)
             } else {
                 None

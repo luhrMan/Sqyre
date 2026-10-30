@@ -4,6 +4,7 @@
 
 use super::super::{DataEditor, PendingConfirm};
 use super::*;
+use crate::help_text as ht;
 
 impl DataEditor {
     pub(super) fn draw_points_form(
@@ -191,7 +192,7 @@ impl DataEditor {
                     self.selected_program.is_some() && self.selected_entity.is_some(),
                     egui::Button::new("Upload Image").small(),
                 )
-                .on_hover_text("Replace this mask with a PNG from disk.")
+                .on_hover_text(ht::ED_UPLOAD_IMAGE)
                 .clicked()
             {
                 self.request_mask_image_pick();

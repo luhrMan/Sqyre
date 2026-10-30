@@ -18,6 +18,7 @@ mod running_programs;
 mod variants;
 
 use crate::data_editor_preview::variant_display_label;
+use crate::help_text as ht;
 use crate::icon_cache::IconCache;
 use crate::image_view::ImageViewTransform;
 use crate::overlay_icons;
@@ -1062,8 +1063,7 @@ impl DataEditor {
                 "Pane divider — drag, or press Left/Right arrows while focused, to resize the list and editor panes",
             )
         });
-        let split_resp =
-            split_resp.on_hover_text("Drag to resize panes — Left/Right arrows when focused");
+        let split_resp = split_resp.on_hover_text(ht::ED_RESIZE_PANES);
         let stroke = if split_resp.hovered() || split_resp.dragged() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             ui.visuals().widgets.active.fg_stroke
@@ -1183,11 +1183,7 @@ impl DataEditor {
             if matches!(self.tab, EditorTab::Programs) {
                 let pending = self.add_running_programs_pending();
                 if crate::widgets::add_button(ui, "Add running programs", !pending)
-                    .on_hover_text(
-                        "Add every program with an open window (the same list as \
-                     Select…), named after its process. Programs already in \
-                     the list are skipped.",
-                    )
+                    .on_hover_text(ht::ED_ADD_ALL_PROGRAMS)
                     .clicked()
                 {
                     self.start_add_running_programs();

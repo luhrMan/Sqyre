@@ -1,5 +1,6 @@
 //! Window top bar (brand / Data Editor / Settings), footer (delay / hotkey / builders), and action chrome.
 
+use crate::help_text as ht;
 use crate::macro_meta::collect_all_macro_tags;
 use crate::theme;
 use crate::SqyreApp;
@@ -54,7 +55,7 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
         );
         let icon_rect = egui::Rect::from_center_size(hit_rect.center(), size);
         let icon_resp = icon_resp
-            .on_hover_text("Command palette (Ctrl+K)")
+            .on_hover_text(ht::TB_PALETTE)
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         // Same hover/press frame a `frame_when_inactive(false)` button draws.
         let state = icon_resp.widget_state();

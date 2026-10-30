@@ -4,6 +4,7 @@ mod context;
 mod highlight;
 
 use crate::data_editor::helpers::is_editor_listed_program;
+use crate::help_text as ht;
 use crate::status_banner::StatusBanner;
 use context::{
     enter_edit, find_yaml_context, shift_lines, Completion, EnterEdit, EntityKind, YamlContext,
@@ -443,7 +444,7 @@ impl MacroYamlBuilderUi {
                         )
                         .small(),
                     )
-                    .on_hover_text("Add this YAML as a new macro")
+                    .on_hover_text(ht::YAML_IMPORT_NEW)
                     .clicked()
                 {
                     match prepare_import_macro_yaml(&self.yaml, &existing) {
@@ -456,7 +457,7 @@ impl MacroYamlBuilderUi {
                 let can_apply =
                     !running && self.bound_name.is_some() && has_yaml && self.is_dirty();
                 if crate::widgets::dirty_action_button(ui, "Apply", can_apply)
-                    .on_hover_text("Replace the selected macro with this YAML")
+                    .on_hover_text(ht::YAML_IMPORT_REPLACE)
                     .on_disabled_hover_text(if running {
                         "Cannot apply while a macro is running"
                     } else if self.bound_name.is_none() {

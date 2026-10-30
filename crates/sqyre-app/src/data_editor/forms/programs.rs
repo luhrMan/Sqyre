@@ -4,6 +4,7 @@
 
 use super::super::DataEditor;
 use super::*;
+use crate::help_text as ht;
 
 impl DataEditor {
     pub(super) fn draw_programs_form(
@@ -50,7 +51,7 @@ impl DataEditor {
                             tex.id(),
                             egui::Vec2::splat(icon_side),
                         ))))
-                        .on_hover_text("Pick window…"),
+                        .on_hover_text(ht::ED_PICK_WINDOW),
                     None => {
                         crate::widgets::icon_button(ui, crate::model_icons::WINDOW, "Pick window…")
                     }

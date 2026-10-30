@@ -1,6 +1,7 @@
 //! Macro recording: capture moves/clicks/keys/waits until Esc, then review/copy.
 
 use crate::action_tooltip::{self, TooltipState};
+use crate::help_text as ht;
 use crate::hotkey_record::HotkeyRecordUi;
 use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
@@ -322,7 +323,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                             ui.horizontal(|ui| {
                                 let enabled = ui
                                     .checkbox(&mut pt.save, "")
-                                    .on_hover_text("Save into catalog on Copy / Save selected");
+                                    .on_hover_text(ht::REC_SAVE_CATALOG);
                                 if enabled.changed() && pt.save {
                                     pt.link_to = None;
                                 }
@@ -338,11 +339,11 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                                 ui.label("X");
                                 let x_resp = ui
                                     .add(crate::widgets::num_entry(&mut pt.x).speed(1).suffix(" px"))
-                                    .on_hover_text("Screen X (physical pixels)");
+                                    .on_hover_text(ht::REC_SCREEN_X);
                                 ui.label("Y");
                                 let y_resp = ui
                                     .add(crate::widgets::num_entry(&mut pt.y).speed(1).suffix(" px"))
-                                    .on_hover_text("Screen Y (physical pixels)");
+                                    .on_hover_text(ht::REC_SCREEN_Y);
 
                                 row_hovered = enabled.contains_pointer()
                                     || name.contains_pointer()

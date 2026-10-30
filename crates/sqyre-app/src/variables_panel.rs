@@ -1,6 +1,7 @@
 //! Macro variable declarations panel.
 
 use crate::action_tooltip::help;
+use crate::help_text as ht;
 use crate::status_banner::StatusBanner;
 use eframe::egui;
 use sqyre_domain::{builtin_variable_catalog, Macro, VariableDecl, VariableType};
@@ -370,7 +371,7 @@ impl VariablesPanelUi {
                         }
                     })
                     .response
-                    .on_hover_text("Right-click to edit or remove.");
+                    .on_hover_text(ht::VARS_ROW_MENU);
                 let menu_id = egui::Id::new(("declared_var_menu", &d.name));
                 crate::widgets::row_context_menu(ui, menu_id, row.rect, Some(&row), |ui| {
                     if crate::widgets::menu_item(ui, "Edit", true) {

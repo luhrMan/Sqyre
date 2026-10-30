@@ -324,6 +324,7 @@ const PROJECTION_GATE_POLL: std::time::Duration = std::time::Duration::from_mill
 ))]
 fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
     use crate::app_run::{PendingProjectionRun, ProjectionGate};
+    use crate::help_text as ht;
     use sqyre_android::{bridge, frames, Projection};
 
     if app.pending_projection_run.is_none() {
@@ -404,7 +405,7 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                     ui.horizontal(|ui| {
                         request = ui
                             .button("Continue")
-                            .on_hover_text("Show Android's screen recording prompt.")
+                            .on_hover_text(ht::OVL_REC_PROMPT)
                             .clicked();
                         cancel = crate::widgets::consume_escape(ui)
                             || crate::widgets::cancel_icon_button(ui, "Cancel").clicked();
@@ -428,8 +429,8 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                     ui.add_space(crate::theme::element_gap(ui));
                     ui.horizontal(|ui| {
                         request = ui
-                            .button("Try again")
-                            .on_hover_text("Show Android's screen recording prompt again.")
+                            .small_button("Try again")
+                            .on_hover_text(ht::OVL_REC_PROMPT_AGAIN)
                             .clicked();
                         cancel = crate::widgets::consume_escape(ui)
                             || crate::widgets::cancel_icon_button(ui, "Cancel").clicked();

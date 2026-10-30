@@ -5,6 +5,7 @@
 //! still is the projection backdrop (last frame seen while Sqyre was hidden); Retake
 //! sends Sqyre to the back, captures the app that comes to the front, and returns.
 
+use crate::help_text as ht;
 use crate::theme;
 use eframe::egui::{self, Color32, ColorImage, Order, Pos2, Rect, TextureHandle, TextureOptions};
 use sqyre_android::{bridge, frames, AndroidError, Frame, Projection};
@@ -392,8 +393,8 @@ fn paint_pick(
         let mut choice = Choice::None;
         ui.horizontal(|ui| {
             if ui
-                .button("Retake")
-                .on_hover_text("Switch to the previous app and take a new picture of it")
+                .small_button("Retake")
+                .on_hover_text(ht::PICK_RETAKE_APP)
                 .clicked()
             {
                 choice = Choice::Retake;

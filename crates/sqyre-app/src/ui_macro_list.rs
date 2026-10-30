@@ -1,5 +1,6 @@
 //! Left macro list panel and delete confirmation.
 
+use crate::help_text as ht;
 use crate::icon_cache::{IconCache, PROCESS_ICON_SIDE};
 use crate::pickers;
 use crate::status_banner::{StatusBanner, PREFIX_LOAD_ERROR, PREFIX_SAVE_ERROR};
@@ -476,7 +477,7 @@ fn paint_hotkey_tag_footer(app: &mut SqyreApp, ui: &mut egui::Ui) {
                 overflow += 1;
                 continue;
             }
-            let resp = tag_pill(ui, label).on_hover_text("Right-click for options.");
+            let resp = tag_pill(ui, label).on_hover_text(ht::MLIST_ROW_OPTIONS);
             if crate::widgets::rect_danger_menu(
                 ui,
                 ui.id().with(("hotkey_tag_pill", i, tag)),
@@ -579,7 +580,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     .response
                 },
             )
-            .on_hover_text("Filter by macro name or tag. ↑↓ moves the selection, Enter edits it.");
+            .on_hover_text(ht::MLIST_SEARCH_TIP);
             if create_macro {
                 app.create_macro();
             }

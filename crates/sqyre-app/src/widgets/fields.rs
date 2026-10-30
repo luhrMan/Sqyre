@@ -1,6 +1,7 @@
 //! Labeled form field helpers shared by action edit, variables, and data editor.
 
 use crate::action_tooltip::help;
+use crate::help_text as ht;
 use crate::pickers::fuzzy_match_fold;
 use crate::widgets::elide::{combo_text_elided, text_hover_if};
 use crate::widgets::num_entry::{num_entry, NumEntry};
@@ -237,7 +238,7 @@ pub fn search_field(
             .label(egui::RichText::new(
                 egui_phosphor::regular::MAGNIFYING_GLASS,
             ))
-            .on_hover_text("Search");
+            .on_hover_text(ht::FIELD_SEARCH);
         icon.widget_info(|| {
             egui::WidgetInfo::labeled(egui::WidgetType::Label, true, "Search".to_owned())
         });
