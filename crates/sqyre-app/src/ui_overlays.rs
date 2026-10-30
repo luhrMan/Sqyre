@@ -930,6 +930,8 @@ pub fn handle_shortcuts(app: &mut SqyreApp, ui: &mut egui::Ui) {
             app.command_palette.toggle();
             return;
         }
+        // Ctrl+`+`/`=`/`-`/`0` edit the persisted UI scale setting.
+        app.settings_ui.handle_zoom_keys(ui.ctx());
     }
 
     let running = app.run_session.state.running.load(Ordering::SeqCst);

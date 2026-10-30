@@ -591,3 +591,49 @@ fn ui_scale_zoom_waits_for_release_during_inside_repeat() {
     run_at(&mut harness, time);
     assert_ui_scale_and_zoom(&harness, final_scale, final_scale);
 }
+
+/// Ctrl+`+`/`-`/`0` edit the persisted `ui_scale` (and apply it immediately),
+/// not just egui's transient zoom factor.
+#[test]
+fn ctrl_zoom_keys_edit_ui_scale_setting() {
+    let mut harness = build_docs_harness([1000.0, 500.0], |_| {});
+    harness.run_steps(4);
+    assert_ui_scale_and_zoom(&harness, 1.0, 1.0);
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Plus);
+    harness.run_steps(2);
+    assert_ui_scale_and_zoom(&harness, 1.1, 1.1);
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Minus);
+    harness.run_steps(2);
+    assert_ui_scale_and_zoom(&harness, 1.0, 1.0);
+
+    // Ctrl+`=` is the no-shift alias for zoom in.
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Equals);
+    harness.run_steps(2);
+    assert_ui_scale_and_zoom(&harness, 1.1, 1.1);
+
+    harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Num0);
+    harness.run_steps(2);
+    assert_ui_scale_and_zoom(&harness, 1.0, 1.0);
+}
+
+/// Zoom keys stop at the persisted UI scale bounds instead of egui's
+/// built-in 0.2–5.0 range.
+#[test]
+fn ctrl_zoom_keys_clamp_to_ui_scale_range() {
+    let mut harness = build_docs_harness([1000.0, 500.0], |_| {});
+    harness.run_steps(4);
+
+    for _ in 0..6 {
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Minus);
+        harness.run_steps(2);
+    }
+    assert_ui_scale_and_zoom(&harness, 0.5, 0.5);
+
+    for _ in 0..21 {
+        harness.key_press_modifiers(egui::Modifiers::COMMAND, egui::Key::Plus);
+        harness.run_steps(2);
+    }
+    assert_ui_scale_and_zoom(&harness, 2.5, 2.5);
+}

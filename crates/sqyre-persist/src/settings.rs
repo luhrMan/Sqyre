@@ -28,6 +28,8 @@ pub const DEFAULT_SOUND_VOLUME: f32 = 0.25;
 pub const DEFAULT_UI_FONT_SIZE: i32 = 12;
 /// Multiplier on the display's own scale (DPI / density), not absolute pixels per point.
 pub const DEFAULT_UI_SCALE: f32 = 1.0;
+pub const MIN_UI_SCALE: f32 = 0.5;
+pub const MAX_UI_SCALE: f32 = 2.5;
 pub const DEFAULT_COMPACT_PROGRAM_HEADERS: bool = true;
 pub const DEFAULT_WINDOW_BORDER: bool = true;
 pub const DEFAULT_RUN_BUTTON_GLOW: bool = true;
@@ -998,7 +1000,7 @@ impl UserSettings {
         if self.ui_scale <= 0.0 {
             self.ui_scale = DEFAULT_UI_SCALE;
         }
-        self.ui_scale = ((self.ui_scale * 10.0).round() / 10.0).clamp(0.5, 2.5);
+        self.ui_scale = ((self.ui_scale * 10.0).round() / 10.0).clamp(MIN_UI_SCALE, MAX_UI_SCALE);
         if !self.sound_volume.is_finite() {
             self.sound_volume = DEFAULT_SOUND_VOLUME;
         }

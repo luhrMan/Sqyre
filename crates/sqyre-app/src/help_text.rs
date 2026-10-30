@@ -239,7 +239,7 @@ pub const SET_RUN_GLOW: &str =
 pub const SET_FONT_SIZE: &str = "Base text size for labels, buttons, and form fields.";
 /// UI scale.
 pub const SET_UI_SCALE: &str =
-    "Scale padding, icons, and other non-text UI elements relative to the display's own scale (1.0 = default).";
+    "Scale padding, icons, and other non-text UI elements relative to the display's own scale (1.0 = default). Ctrl+`+`/`-` adjusts it anywhere; Ctrl+`0` resets.";
 /// Spacing density.
 pub const SET_DENSITY: &str =
     "Space between sections and elements. Compact: 4px gaps. Normal: 8px between sections, 4px inside. Spaced: 12px between sections, 8px inside.";

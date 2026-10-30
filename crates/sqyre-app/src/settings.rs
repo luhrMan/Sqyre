@@ -12,7 +12,7 @@ use sqyre_persist::{
 };
 use sqyre_persist::{
     move_dir, set_sqyre_dir_override, sqyre_dir, Database, ImportMode, ProgramCatalog, UiDensity,
-    UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+    UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE, MAX_UI_SCALE, MIN_UI_SCALE,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use sqyre_persist::{
@@ -245,6 +245,9 @@ impl SettingsUi {
         } else {
             DEFAULT_UI_SCALE
         };
+        // Ctrl+`+`/`-`/`0` edit `ui_scale` via `handle_zoom_keys`; egui's
+        // built-in keyboard zoom would bypass the persisted setting.
+        ctx.options_mut(|o| o.zoom_with_keyboard = false);
         // Multiplies the OS scale (monitor DPI, Android density, browser pixel ratio).
         ctx.set_zoom_factor(scale);
 
@@ -275,6 +278,39 @@ impl SettingsUi {
         style.spacing.scroll = crate::theme::scroll_style();
         ctx.set_global_style(style);
         Self::apply_spacing(ctx, settings);
+    }
+
+    /// Browser-style Ctrl+`+`/`=`/`-`/`0`: edits and persists `ui_scale`
+    /// (egui's own `zoom_with_keyboard` is off — it would bypass the setting).
+    /// `persist` (not `mark_dirty`) so the change lands even with the
+    /// Settings window closed.
+    pub fn handle_zoom_keys(&mut self, ctx: &egui::Context) {
+        use egui::gui_zoom::kb_shortcuts;
+        let mut scale = self.settings.ui_scale;
+        if !ctx.input_mut(|i| {
+            if i.consume_shortcut(&kb_shortcuts::ZOOM_RESET) {
+                scale = DEFAULT_UI_SCALE;
+            } else {
+                let up = i.consume_shortcut(&kb_shortcuts::ZOOM_IN)
+                    || i.consume_shortcut(&kb_shortcuts::ZOOM_IN_SECONDARY);
+                let down = i.consume_shortcut(&kb_shortcuts::ZOOM_OUT);
+                match (up, down) {
+                    (true, false) => scale += 0.1,
+                    (false, true) => scale -= 0.1,
+                    _ => return false,
+                }
+            }
+            true
+        }) {
+            return;
+        }
+        let scale = ((scale * 10.0).round() / 10.0).clamp(MIN_UI_SCALE, MAX_UI_SCALE);
+        if scale == self.settings.ui_scale {
+            return;
+        }
+        self.settings.ui_scale = scale;
+        self.persist();
+        Self::apply_appearance(ctx, &self.settings);
     }
 
     /// Viewport width (points) at or below which auto-compact kicks in.
@@ -1725,7 +1761,7 @@ impl SettingsUi {
                 if ui
                     .add(
                         crate::widgets::num_entry(&mut v)
-                            .range(0.5..=2.5)
+                            .range(MIN_UI_SCALE..=MAX_UI_SCALE)
                             .speed(0.1)
                             .fixed_decimals(1),
                     )
