@@ -33,6 +33,15 @@ pub const ED_PICK_WINDOW: &str = "Pick window…";
 pub const ED_ROW_DISABLED: &str = "Disabled — right-click to enable.";
 /// Split-pane divider.
 pub const ED_RESIZE_PANES: &str = "Drag to resize panes — Left/Right arrows when focused";
+/// Record floater on the point preview — arm a one-click X/Y capture.
+pub const ED_REC_POINT: &str = "Click on screen to capture X/Y";
+/// Record floater on the search-area preview — arm a two-click area capture.
+pub const ED_REC_AREA: &str = "Two clicks: opposite corners of the area";
+/// Record floater on the capture-region preview — arm a two-click capture.
+pub const ED_REC_CAPTURE: &str = "Two clicks: opposite corners of the capture region";
+/// Record floater on the pixel-check preview — arm a two-click area capture.
+#[cfg(not(target_arch = "wasm32"))]
+pub const ED_REC_SEARCH: &str = "Two clicks: opposite corners of the search area";
 /// "Add running programs" toolbar button.
 #[cfg(not(target_arch = "wasm32"))]
 pub const ED_ADD_ALL_PROGRAMS: &str =

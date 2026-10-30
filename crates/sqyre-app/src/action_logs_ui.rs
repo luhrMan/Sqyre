@@ -1184,9 +1184,12 @@ fn show_zoom_view(
             if ui
                 .add_enabled(
                     state.zoom_view.needs_reset_button(),
-                    egui::Button::new("Reset view").small(),
+                    crate::widgets::IconButton::new(
+                        egui_phosphor::regular::CORNERS_IN,
+                        ht::LOGS_FIT_VIEW,
+                        None,
+                    ),
                 )
-                .on_hover_text(ht::LOGS_FIT_VIEW)
                 .clicked()
             {
                 state.zoom_view.reset();

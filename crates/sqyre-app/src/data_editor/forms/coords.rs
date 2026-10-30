@@ -29,13 +29,7 @@ impl DataEditor {
         } = ctx;
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
-        self.paint_name_record_row(
-            ui,
-            screen_click,
-            "Click on screen to capture X/Y",
-            "Recording… left-click to capture.",
-            ScreenClickBridge::arm_point,
-        );
+        paint_name_field(ui, &mut self.form_name);
         self.paint_monitor_slot(ui);
         let (x, y) = form_absolute_xy(
             catalog,
@@ -55,6 +49,14 @@ impl DataEditor {
         ) {
             self.preview_force = true;
         }
+        self.paint_record_arm(
+            ui,
+            rect,
+            screen_click,
+            ht::ED_REC_POINT,
+            "Recording… left-click to capture.",
+            ScreenClickBridge::arm_point,
+        );
         paint_coord_chips(
             ui,
             rect,
@@ -106,13 +108,7 @@ impl DataEditor {
             ui.weak(pixel_size_text(w, h));
         }
         ui.add_space(crate::theme::element_gap(ui));
-        self.paint_name_record_row(
-            ui,
-            screen_click,
-            "Two clicks: opposite corners of the area",
-            "Recording… click two corners.",
-            ScreenClickBridge::arm_search_area,
-        );
+        paint_name_field(ui, &mut self.form_name);
         self.paint_monitor_slot(ui);
         self.sync_coord_preview_view();
         let force = std::mem::take(&mut self.preview_force);
@@ -127,6 +123,14 @@ impl DataEditor {
         ) {
             self.preview_force = true;
         }
+        self.paint_record_arm(
+            ui,
+            rect,
+            screen_click,
+            ht::ED_REC_AREA,
+            "Recording… click two corners.",
+            ScreenClickBridge::arm_search_area,
+        );
         paint_search_area_preview_sizes(ui, rect, lx, ty, rx, by, preview_image_size);
         paint_coord_chips(
             ui,
@@ -360,13 +364,7 @@ impl DataEditor {
             ..
         } = ctx;
         self.program_selector(ui, catalog, icons, settings);
-        self.paint_name_record_row(
-            ui,
-            screen_click,
-            "Two clicks: opposite corners of the capture region",
-            "Recording… click two corners.",
-            ScreenClickBridge::arm_search_area,
-        );
+        paint_name_field(ui, &mut self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
         self.paint_item_param_fields(ui, catalog, icons);
         ui.add_space(crate::theme::element_gap(ui));
@@ -422,6 +420,14 @@ impl DataEditor {
                 ) {
                     self.preview_force = true;
                 }
+                self.paint_record_arm(
+                    ui,
+                    rect,
+                    screen_click,
+                    ht::ED_REC_CAPTURE,
+                    "Recording… click two corners.",
+                    ScreenClickBridge::arm_search_area,
+                );
                 paint_search_area_preview_sizes(ui, rect, lx, ty, rx, by, preview_image_size);
                 paint_coord_chips(
                     ui,

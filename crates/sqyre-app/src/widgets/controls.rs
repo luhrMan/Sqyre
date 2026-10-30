@@ -36,7 +36,9 @@ pub(crate) fn paint_keyboard_focus_ring(
     );
 }
 
-/// Frameless icon-only button with optically centered glyph.
+/// Icon-only button with optically centered glyph. A subtle frame separates it
+/// from decorative [`crate::action_tooltip::help::label`] glyphs: at rest a
+/// faint fill + hairline, on hover the standard interactive chrome.
 ///
 /// `tip` is the AccessKit name and hover text (required for actionable icons).
 pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
@@ -59,7 +61,16 @@ fn icon_button_inner(
     let font_id = icon_btn_font(ui);
     let desired = Vec2::splat(icon_btn_side(ui));
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
-    let fg = color.unwrap_or_else(|| ui.style().interact(&response).text_color());
+    let visuals = ui.style().interact(&response);
+    ui.painter()
+        .rect_filled(rect, CornerRadius::same(4), visuals.weak_bg_fill);
+    ui.painter().rect_stroke(
+        rect,
+        CornerRadius::same(4),
+        visuals.bg_stroke,
+        egui::StrokeKind::Inside,
+    );
+    let fg = color.unwrap_or(visuals.text_color());
     paint_text_centered(ui, rect, glyph, font_id, fg);
     paint_keyboard_focus_ring(ui, rect, &response);
     response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, tip));
@@ -191,6 +202,19 @@ pub fn icon_toggle(
     } else {
         icon_btn_font(ui)
     };
+    let body_fill = if *selected {
+        visuals.bg_fill
+    } else {
+        visuals.weak_bg_fill
+    };
+    ui.painter()
+        .rect_filled(rect, CornerRadius::same(4), body_fill);
+    ui.painter().rect_stroke(
+        rect,
+        CornerRadius::same(4),
+        visuals.bg_stroke,
+        egui::StrokeKind::Inside,
+    );
     let fg = if *selected {
         PRIMARY
     } else if enabled {

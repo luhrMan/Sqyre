@@ -16,10 +16,12 @@ use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::{
     area_size_from_opts, catalog_search_area_pixel_size, collection_size_label, paint_disk_preview,
-    paint_preview_coord_chip, paint_preview_floaters, paint_search_area_preview_sizes,
-    paint_zoomable_atlas_preview, paint_zoomable_collection_preview, pixel_size_text,
-    show_file_hover, CardinalEdge,
+    paint_preview_coord_chip, paint_preview_floaters, paint_record_floater,
+    paint_search_area_preview_sizes, paint_zoomable_atlas_preview,
+    paint_zoomable_collection_preview, pixel_size_text, show_file_hover, CardinalEdge,
 };
+#[cfg(feature = "native-runtime")]
+use crate::help_text as ht;
 use crate::overlay_icons;
 use crate::paint_ctx::CatalogPaint;
 use crate::paint_ctx::VarTheme;
@@ -139,45 +141,23 @@ impl DataEditor {
         }
     }
 
-    /// Name field + optional screen-record arm/cancel controls.
-    fn paint_name_record_row(
+    /// Arm `screen_click` when the preview's record floater (`rect` top-right)
+    /// is clicked. Cancellation is keyboard-only: the app is not the click
+    /// target while armed, and `status_label` teaches Esc.
+    fn paint_record_arm(
         &mut self,
         ui: &mut egui::Ui,
+        rect: egui::Rect,
         screen_click: &ScreenClickBridge,
         record_tip: &str,
         recording_msg: &str,
         arm: impl FnOnce(&ScreenClickBridge),
     ) {
-        let armed = screen_click.is_armed();
-        let mut record = false;
-        let mut cancel = false;
-        crate::widgets::fill_row(
-            ui,
-            |ui| {
-                cancel = ui
-                    .add_enabled(
-                        armed,
-                        crate::widgets::IconButton::new(
-                            egui_phosphor::regular::X,
-                            "Cancel",
-                            armed.then_some(crate::theme::MACRO_STOP),
-                        ),
-                    )
-                    .clicked();
-                record = crate::widgets::record_icon_button(ui, record_tip, !armed).clicked();
-            },
-            |ui| name_field_body(ui, &mut self.form_name),
-        );
-        if cancel {
-            self.save_after_record = false;
-            screen_click.disarm();
-        }
-        if record {
+        if paint_record_floater(ui, rect, record_tip, !screen_click.is_armed()) {
             self.save_after_record = false;
             arm(screen_click);
             self.set_ok(recording_msg);
         }
-        paint_fs_name_hint(ui, &self.form_name);
     }
 
     fn paint_monitor_slot(&mut self, ui: &mut egui::Ui) {
@@ -393,13 +373,7 @@ impl DataEditor {
                 self.stop_pixel_check_compute();
                 return;
             }
-            self.paint_name_record_row(
-                ui,
-                screen_click,
-                "Two clicks: opposite corners of the search area",
-                "Recording… click two corners.",
-                ScreenClickBridge::arm_search_area,
-            );
+            paint_name_field(ui, &mut self.form_name);
             let reference = CoordinateRef(self.form_search_area.clone());
             ui.horizontal(|ui| {
                 help::label(ui, crate::model_icons::SEARCH_AREA, "Reference");
@@ -550,6 +524,14 @@ impl DataEditor {
                     ) {
                         self.preview_force = true;
                     }
+                    self.paint_record_arm(
+                        ui,
+                        rect,
+                        screen_click,
+                        ht::ED_REC_SEARCH,
+                        "Recording… click two corners.",
+                        ScreenClickBridge::arm_search_area,
+                    );
                     if let Some(cache) = &self.pixel_check_cache {
                         let inputs = super::pixel_check::inputs_key(
                             self.selected_program.as_deref().unwrap_or(""),

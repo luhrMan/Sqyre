@@ -91,6 +91,40 @@ pub(crate) fn paint_preview_floaters(
     force
 }
 
+/// Screen-record arm floated at the image's top-right corner on the same scrim
+/// chip look as [`paint_preview_floaters`]. `enabled=false` while a recording
+/// is armed — the app is not the click target then; Esc cancels (see
+/// `ScreenClickBridge::status_label`). Returns `true` on the click frame.
+pub(crate) fn paint_record_floater(
+    ui: &mut egui::Ui,
+    rect: egui::Rect,
+    tip: &str,
+    enabled: bool,
+) -> bool {
+    let side = ui
+        .text_style_height(&egui::TextStyle::Button)
+        .max(crate::widgets::ICON_BTN_SIDE);
+    let pad = crate::theme::SPACE_4;
+    let chip = egui::Rect::from_min_max(
+        egui::pos2(
+            rect.right() - pad * 0.5 - side - pad,
+            rect.top() + pad * 0.5,
+        ),
+        egui::pos2(
+            rect.right() - pad * 0.5,
+            rect.top() + pad * 0.5 + side + pad,
+        ),
+    );
+    ui.painter()
+        .rect_filled(chip, egui::CornerRadius::same(4), theme::preview_scrim());
+    let mut floats = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(chip.shrink(pad * 0.5))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    crate::widgets::record_icon_button(&mut floats, tip, enabled).clicked()
+}
+
 #[derive(Clone, Copy)]
 pub(crate) enum CardinalEdge {
     Top,

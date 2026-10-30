@@ -52,12 +52,14 @@ impl DataEditor {
                             egui::Vec2::splat(icon_side),
                         ))))
                         .on_hover_text(ht::ED_PICK_WINDOW),
-                    None => {
-                        crate::widgets::icon_button(ui, crate::model_icons::WINDOW, "Pick window…")
-                    }
+                    None => crate::widgets::icon_button(
+                        ui,
+                        crate::model_icons::WINDOW,
+                        ht::ED_PICK_WINDOW,
+                    ),
                 }
             } else {
-                crate::widgets::icon_button(ui, crate::model_icons::WINDOW, "Pick window…")
+                crate::widgets::icon_button(ui, crate::model_icons::WINDOW, ht::ED_PICK_WINDOW)
             };
             if pick.clicked() {
                 self.window_picker =

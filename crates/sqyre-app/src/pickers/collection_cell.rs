@@ -35,9 +35,12 @@ pub fn paint_collection_cell_picker(
             if ui
                 .add_enabled(
                     pick.view.needs_reset_button(),
-                    egui::Button::new("Reset view"),
+                    crate::widgets::IconButton::new(
+                        egui_phosphor::regular::CORNERS_IN,
+                        ht::PICK_FIT_VIEW,
+                        None,
+                    ),
                 )
-                .on_hover_text(ht::PICK_FIT_VIEW)
                 .clicked()
             {
                 pick.reset_view();

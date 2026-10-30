@@ -4,7 +4,7 @@ use super::types::{
 use crate::icon_cache::IconCache;
 use crate::image_view;
 use crate::theme::{picker_drop_stroke, picker_selected_fill, picker_selected_stroke};
-use eframe::egui::{self, Color32, Sense, Vec2};
+use eframe::egui::{self, Sense, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
 use sqyre_persist::ProgramCatalog;
 
@@ -258,7 +258,7 @@ fn icon_grid_cell(
     } else if resp.hovered() {
         ui.visuals().widgets.hovered.bg_fill
     } else {
-        Color32::TRANSPARENT
+        ui.visuals().widgets.inactive.weak_bg_fill
     };
     let body = rect;
     ui.painter().rect_filled(body, rounding, fill);
@@ -268,6 +268,14 @@ fn icon_grid_cell(
             rounding,
             egui::Stroke::new(2.0, picker_selected_stroke()),
             egui::StrokeKind::Outside,
+        );
+    } else {
+        // Slight button look: the cell is a control, not a static thumbnail.
+        ui.painter().rect_stroke(
+            body,
+            rounding,
+            ui.visuals().widgets.inactive.bg_stroke,
+            egui::StrokeKind::Inside,
         );
     }
     crate::widgets::controls::paint_keyboard_focus_ring(ui, body, &resp);
