@@ -1,5 +1,6 @@
 //! User Settings → Permissions: background probe + status rows.
 
+use crate::help_text as ht;
 use eframe::egui::{self, Color32, RichText};
 use sqyre_hotkeys::{
     open_system_shortcuts, system_shortcuts_configurable, system_shortcuts_status,
@@ -189,12 +190,13 @@ impl PermissionsPanel {
             {
                 ui.weak("Checking…");
             }
+            // The scroll clip is inset by the reserved scrollbar lane, but
+            // max_rect is not — clamp before right-aligning Refresh.
+            crate::widgets::clamp_row_right_to_clip(ui);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .add_enabled(!self.running, egui::Button::new("Refresh"))
-                    .on_hover_text(
-                        "Re-run capability checks (portal dialogs may appear on Wayland).",
-                    )
+                    .add_enabled(!self.running, egui::Button::new("Refresh").small())
+                    .on_hover_text(ht::PERM_REFRESH)
                     .clicked()
                 {
                     self.refresh(ctx);
@@ -208,11 +210,11 @@ impl PermissionsPanel {
             .weak()
             .small(),
         );
-        ui.add_space(crate::theme::SPACE_8);
+        ui.add_space(crate::theme::section_gap(ui));
 
         if let Some(err) = &self.error {
-            ui.colored_label(crate::theme::error_fg(), err);
-            ui.add_space(crate::theme::SPACE_8);
+            crate::widgets::error_icon(ui, err);
+            ui.add_space(crate::theme::element_gap(ui));
         }
 
         if (self.running || self.refresh_when_capture_ready) && self.items.is_empty() {
@@ -222,7 +224,16 @@ impl PermissionsPanel {
         }
 
         if self.items.is_empty() && !self.running {
-            ui.weak("No permission data yet — click Refresh.");
+            let action = crate::widgets::empty_state(
+                ui,
+                "No permission data yet",
+                Some("Refresh runs checks for screen capture, portals, and input access."),
+                Some("Refresh"),
+                None,
+            );
+            if action == crate::widgets::EmptyStateAction::Primary {
+                self.refresh(ctx);
+            }
             return;
         }
 
@@ -249,7 +260,7 @@ impl PermissionsPanel {
                 }
                 PermissionRowAction::None => {}
             }
-            ui.add_space(crate::theme::SPACE_12);
+            ui.add_space(crate::theme::section_gap(ui));
         }
     }
 }
@@ -371,79 +382,74 @@ fn paint_permission_row(
     let mut action = PermissionRowAction::None;
     let portal_session = sqyre_capture::shared_capturer_open_may_block();
     super::row_frame(ui).show(ui, |ui| {
-            super::row_header(
-                ui,
-                item.title,
-                item.tooltip.as_deref().unwrap_or(item.summary),
-                item.eligibility.label(),
-                eligibility_color(item.eligibility),
-            );
-            ui.label(RichText::new(item.summary).weak().small());
-            if let Some(detail) = &item.detail {
-                ui.add_space(crate::theme::SPACE_4);
-                ui.label(RichText::new(detail).small().color(crate::theme::warn_fg()));
-            }
-            for step in &item.setup_steps {
-                ui.label(RichText::new(format!("• {step}")).small());
-            }
-            if let Some(cmd) = &item.copy_command {
-                ui.add_space(crate::theme::SPACE_4);
-                ui.horizontal(|ui| {
-                    ui.monospace(cmd);
-                    if ui.button("Copy").clicked() {
-                        ctx.copy_text(cmd.clone());
-                    }
-                });
-            }
-            let share_screen = item.id == "screen_recording" && portal_session;
-            let revoke = item.portal_grant_revocable() && portal_session;
-            let shortcuts = (item.id == "global_shortcuts")
-                .then(system_shortcuts_button)
-                .flatten();
-            if share_screen || revoke || shortcuts.is_some() {
-                ui.add_space(crate::theme::SPACE_8);
-                ui.horizontal(|ui| {
-                    if let Some(label) = shortcuts {
-                        if ui
-                            .button(label)
-                            .on_hover_text(
-                                "Open your desktop's shortcut settings to choose the keys that run your macros.",
-                            )
-                            .clicked()
-                        {
-                            action = PermissionRowAction::SystemShortcuts;
-                        }
-                    }
-                    if share_screen {
-                        let label = if item.eligibility == PermissionEligibility::Granted {
-                            "Change shared screen"
-                        } else {
-                            "Share screen"
-                        };
-                        let enabled = !sqyre_capture::shared_capturer_is_opening();
-                        if ui
-                            .add_enabled(enabled, egui::Button::new(label))
-                            .on_hover_text(
-                                "Open the desktop portal picker to choose which screens Sqyre can capture.",
-                            )
-                            .clicked()
-                        {
-                            action = PermissionRowAction::ShareScreen;
-                        }
-                    }
-                    if revoke
-                        && ui
-                            .button("Revoke")
-                            .on_hover_text(
-                                "Stop capturing and forget the saved portal grant. Sqyre will ask again the next time it needs screen access.",
-                            )
-                            .clicked()
+        super::row_header(
+            ui,
+            item.title,
+            item.tooltip.as_deref().unwrap_or(item.summary),
+            item.eligibility.label(),
+            eligibility_glyph(item.eligibility),
+            eligibility_color(item.eligibility),
+        );
+        ui.label(RichText::new(item.summary).weak().small());
+        if let Some(detail) = &item.detail {
+            ui.add_space(crate::theme::element_gap(ui));
+            crate::widgets::warn_icon(ui, detail);
+        }
+        for step in &item.setup_steps {
+            ui.label(RichText::new(format!("• {step}")).small());
+        }
+        if let Some(cmd) = &item.copy_command {
+            ui.add_space(crate::theme::element_gap(ui));
+            ui.horizontal(|ui| {
+                ui.monospace(cmd);
+                if ui.small_button("Copy").clicked() {
+                    ctx.copy_text(cmd.clone());
+                }
+            });
+        }
+        let share_screen = item.id == "screen_recording" && portal_session;
+        let revoke = item.portal_grant_revocable() && portal_session;
+        let shortcuts = (item.id == "global_shortcuts")
+            .then(system_shortcuts_button)
+            .flatten();
+        if share_screen || revoke || shortcuts.is_some() {
+            ui.add_space(crate::theme::element_gap(ui));
+            ui.horizontal(|ui| {
+                if let Some(label) = shortcuts {
+                    if ui
+                        .button(label)
+                        .on_hover_text(ht::PERM_SHORTCUT_SETTINGS)
+                        .clicked()
                     {
-                        action = PermissionRowAction::Revoke;
+                        action = PermissionRowAction::SystemShortcuts;
                     }
-                });
-            }
-        });
+                }
+                if share_screen {
+                    let label = if item.eligibility == PermissionEligibility::Granted {
+                        "Change shared screen"
+                    } else {
+                        "Share screen"
+                    };
+                    let enabled = !sqyre_capture::shared_capturer_is_opening();
+                    if ui
+                        .add_enabled(enabled, egui::Button::new(label).small())
+                        .on_hover_text(ht::PERM_PORTAL_PICKER)
+                        .clicked()
+                    {
+                        action = PermissionRowAction::ShareScreen;
+                    }
+                }
+                if revoke
+                    && ui
+                        .button("Revoke")
+                        .on_hover_text(ht::PERM_FORGET_GRANT)
+                        .clicked()
+                {
+                    action = PermissionRowAction::Revoke;
+                }
+            });
+        }
+    });
     action
 }
 
@@ -454,6 +460,16 @@ fn eligibility_color(status: PermissionEligibility) -> Color32 {
         PermissionEligibility::Checking => crate::theme::PRIMARY,
         PermissionEligibility::NotRequired => Color32::from_gray(140),
         PermissionEligibility::Unavailable => crate::theme::error_fg(),
+    }
+}
+
+fn eligibility_glyph(status: PermissionEligibility) -> &'static str {
+    match status {
+        PermissionEligibility::Granted => egui_phosphor::regular::CHECK_CIRCLE,
+        PermissionEligibility::Needed => egui_phosphor::regular::WARNING,
+        PermissionEligibility::Checking => egui_phosphor::regular::CLOCK,
+        PermissionEligibility::NotRequired => egui_phosphor::regular::MINUS_CIRCLE,
+        PermissionEligibility::Unavailable => egui_phosphor::regular::X_CIRCLE,
     }
 }
 

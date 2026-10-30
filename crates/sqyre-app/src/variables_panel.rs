@@ -1,6 +1,7 @@
 //! Macro variable declarations panel.
 
 use crate::action_tooltip::help;
+use crate::help_text as ht;
 use crate::status_banner::StatusBanner;
 use eframe::egui;
 use sqyre_domain::{builtin_variable_catalog, Macro, VariableDecl, VariableType};
@@ -53,6 +54,15 @@ impl EditState {
 }
 
 impl VariablesPanelUi {
+    pub(crate) fn open_for_docs(&mut self, builtins: bool) {
+        self.open = true;
+        self.bottom_tab = if builtins {
+            BottomTab::Builtins
+        } else {
+            BottomTab::Runtime
+        };
+    }
+
     pub fn sync_macro(&mut self, macro_name: &str) {
         if self.synced_macro == macro_name {
             return;
@@ -184,10 +194,15 @@ impl VariablesPanelUi {
             let _ = crate::widgets::empty_state(ui, title, body, None, None);
             return;
         }
-        ui.add(
-            egui::TextEdit::singleline(&mut self.runtime_filter)
-                .desired_width(f32::INFINITY)
-                .hint_text("Filter runtime variables…"),
+        crate::widgets::search_field(
+            ui,
+            &mut self.runtime_filter,
+            crate::widgets::SearchFieldOpts {
+                hint: "Filter runtime variables…",
+                focus_id: None,
+                clearable: true,
+                stable_id: Some(egui::Id::new("runtime_vars_filter")),
+            },
         );
         let q = self.runtime_filter.trim().to_ascii_lowercase();
         let filtered: Vec<_> = snap
@@ -224,7 +239,7 @@ impl VariablesPanelUi {
             )
             .weak(),
         );
-        ui.add_space(crate::theme::SPACE_4);
+        ui.add_space(crate::theme::element_gap(ui));
         let catalog = builtin_variable_catalog(num_monitors);
         let list_h = (max_h - 28.0).max(60.0);
         let list_w = crate::widgets::visible_width(ui);
@@ -243,7 +258,7 @@ impl VariablesPanelUi {
         let mut persist = false;
 
         let pane = crate::widgets::visible_width(ui);
-        let count = format!("({})", macro_.variable_decls.len());
+        let count = crate::widgets::count_text(macro_.variable_decls.len());
         let need = crate::widgets::text_width(ui, "Declared variables", egui::TextStyle::Heading)
             + crate::widgets::text_width(ui, &count, egui::TextStyle::Body)
             + crate::widgets::text_width(ui, "+ Add", egui::TextStyle::Button)
@@ -254,12 +269,12 @@ impl VariablesPanelUi {
             ui.with_layout(egui::Layout::top_down_justified(egui::Align::LEFT), |ui| {
                 ui.set_max_width(pane);
                 ui.horizontal(|ui| {
-                    ui.heading("Declared variables");
+                    crate::action_tooltip::help::tip(
+                        ui.heading("Declared variables"),
+                        crate::action_tooltip::help::VARS_DECLARED,
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .button(egui::RichText::new("+ Add").color(crate::theme::MACRO_START))
-                            .clicked()
-                        {
+                        if crate::widgets::add_button(ui, "Add variable", true).clicked() {
                             self.editing = Some(EditState {
                                 index: None,
                                 name: String::new(),
@@ -273,7 +288,7 @@ impl VariablesPanelUi {
                             });
                             self.status_banner.clear();
                         }
-                        ui.label(egui::RichText::new(&count).weak());
+                        crate::widgets::count_suffix(ui, macro_.variable_decls.len());
                     });
                 });
             });
@@ -281,12 +296,12 @@ impl VariablesPanelUi {
             crate::widgets::show_overflow(ui, "var_declared_header", 1.0, |ui| {
                 ui.horizontal(|ui| {
                     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                    ui.heading("Declared variables");
-                    ui.label(egui::RichText::new(&count).weak());
-                    if ui
-                        .button(egui::RichText::new("+ Add").color(crate::theme::MACRO_START))
-                        .clicked()
-                    {
+                    crate::action_tooltip::help::tip(
+                        ui.heading("Declared variables"),
+                        crate::action_tooltip::help::VARS_DECLARED,
+                    );
+                    crate::widgets::count_suffix(ui, macro_.variable_decls.len());
+                    if crate::widgets::add_button(ui, "Add variable", true).clicked() {
                         self.editing = Some(EditState {
                             index: None,
                             name: String::new(),
@@ -303,13 +318,15 @@ impl VariablesPanelUi {
                 });
             });
         }
-        ui.label(
-            "Initial values seed the runtime store at macro start. Action outputs appear in Live runtime while running.",
-        );
-        ui.add(
-            egui::TextEdit::singleline(&mut self.declared_filter)
-                .desired_width(f32::INFINITY)
-                .hint_text("Filter declared variables…"),
+        crate::widgets::search_field(
+            ui,
+            &mut self.declared_filter,
+            crate::widgets::SearchFieldOpts {
+                hint: "Filter declared variables…",
+                focus_id: None,
+                clearable: true,
+                stable_id: Some(egui::Id::new("declared_vars_filter")),
+            },
         );
         crate::widgets::section_separator(ui);
 
@@ -354,7 +371,7 @@ impl VariablesPanelUi {
                         }
                     })
                     .response
-                    .on_hover_text("Right-click to edit or remove.");
+                    .on_hover_text(ht::VARS_ROW_MENU);
                 let menu_id = egui::Id::new(("declared_var_menu", &d.name));
                 crate::widgets::row_context_menu(ui, menu_id, row.rect, Some(&row), |ui| {
                     if crate::widgets::menu_item(ui, "Edit", true) {
@@ -414,9 +431,16 @@ impl VariablesPanelUi {
     fn edit_form(&mut self, ui: &mut egui::Ui, macro_: &mut Macro, mut edit: EditState) -> bool {
         let mut persist = false;
 
-        crate::widgets::text_field_width(ui, "Name", help::VAR_NAME, &mut edit.name, 160.0);
+        crate::widgets::text_field_opts(
+            ui,
+            egui_phosphor::regular::TEXT_T,
+            "Name",
+            help::VAR_NAME,
+            &mut edit.name,
+            crate::widgets::TextFieldOpts { width: 160.0 },
+        );
         crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, "Type", help::VAR_TYPE);
+            help::label(ui, egui_phosphor::regular::LIST_BULLETS, "Type");
             for (label, ty) in [
                 ("auto", VariableType::Auto),
                 ("text", VariableType::Text),
@@ -431,20 +455,24 @@ impl VariablesPanelUi {
                 }
             }
         });
-        crate::widgets::num_text_field_width(
+        crate::widgets::num_text_field_opts(
             ui,
+            egui_phosphor::regular::FUNCTION,
             "Initial",
             help::VAR_INITIAL,
             &mut edit.initial_value,
-            220.0,
-            i32::MIN..=i32::MAX,
+            crate::widgets::NumFieldOpts {
+                width: 220.0,
+                range: i32::MIN..=i32::MAX,
+            },
         );
-        crate::widgets::text_field_width(
+        crate::widgets::text_field_opts(
             ui,
+            egui_phosphor::regular::CHAT_TEXT,
             "Description",
             help::VAR_DESC,
             &mut edit.description,
-            280.0,
+            crate::widgets::TextFieldOpts { width: 280.0 },
         );
 
         match crate::widgets::save_cancel_row(ui, edit.save_enabled()) {

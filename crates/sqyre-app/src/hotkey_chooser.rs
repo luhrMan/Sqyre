@@ -409,22 +409,30 @@ fn paint_chooser_body(
         .small()
         .weak(),
     );
-    ui.add_space(crate::theme::SPACE_4);
+    ui.add_space(crate::theme::element_gap(ui));
     for (i, name) in names.iter().enumerate() {
         let is_sel = i == *selected;
-        let resp = ui.add_sized(
-            [ui.available_width(), ROW_H],
-            egui::Button::new(name.as_str())
-                .selected(is_sel)
-                .wrap_mode(egui::TextWrapMode::Truncate),
+        let width = ui.available_width();
+        let text = crate::widgets::elide::elide_to_width(
+            ui,
+            name,
+            (width - ui.spacing().button_padding.x * 2.0).max(0.0),
+            egui::TextStyle::Button.resolve(ui.style()),
         );
+        let resp = ui.add_sized(
+            [width, ROW_H],
+            egui::Button::new(text.text)
+                .selected(is_sel)
+                .wrap_mode(egui::TextWrapMode::Extend),
+        );
+        let resp = crate::widgets::elide::text_hover_if(resp, name, text.elided);
         if resp.clicked() {
             *picked = Some(name.clone());
         } else if resp.hovered() {
             *selected = i;
         }
     }
-    ui.add_space(crate::theme::SPACE_8);
+    ui.add_space(crate::theme::element_gap(ui));
     // Esc already handled by `poll_list_nav` above; button-only footer.
     if crate::widgets::dismiss_row(ui, false) {
         *dismiss = true;

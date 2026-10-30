@@ -16,7 +16,7 @@ use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::{
     area_size_from_opts, catalog_search_area_pixel_size, collection_size_label, paint_disk_preview,
-    paint_preview_coord_chip, paint_preview_toolbar, paint_search_area_preview_sizes,
+    paint_preview_coord_chip, paint_preview_floaters, paint_search_area_preview_sizes,
     paint_zoomable_atlas_preview, paint_zoomable_collection_preview, pixel_size_text,
     show_file_hover, CardinalEdge,
 };
@@ -25,9 +25,8 @@ use crate::paint_ctx::CatalogPaint;
 use crate::paint_ctx::VarTheme;
 use crate::pickers;
 use crate::preview_tooltip::PreviewKind;
-use crate::theme;
 use crate::var_pills::{self, VarFieldOpts};
-use crate::widgets::{match_settings, searchable_combo_width, searchable_combo_with};
+use crate::widgets::{match_settings, searchable_combo, SearchableComboOpts};
 use eframe::egui;
 use sqyre_domain::{
     collect_known_variable_names, CoordinateRef, KnownVariableNames, Macro, PROGRAM_DELIMITER,
@@ -63,21 +62,40 @@ fn paint_fs_name_hint(ui: &mut egui::Ui, name: &str) {
         return;
     }
     if let Err(e) = validate_entity_name(name) {
-        ui.colored_label(crate::theme::error_fg(), e.to_string());
+        crate::widgets::error_icon(ui, &e.to_string());
     }
+}
+
+/// Name label + content-sized edit + `DE_NAME` tip — the body of every
+/// catalog-entity Name row. Standalone rows go through [`paint_name_field`].
+fn name_field_body(ui: &mut egui::Ui, name: &mut String) {
+    help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
+    let name_w = crate::widgets::name_edit_width(ui, name, "");
+    help::tip(
+        ui.add(egui::TextEdit::singleline(name).desired_width(name_w)),
+        help::DE_NAME,
+    );
+}
+
+/// [`name_field_body`] as a standalone unit plus the name-validation hint line.
+fn paint_name_field(ui: &mut egui::Ui, name: &mut String) {
+    crate::widgets::wrap_unit(ui, |ui| name_field_body(ui, name));
+    paint_fs_name_hint(ui, name);
 }
 
 fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
     ui.label(label);
     ui.color_edit_button_srgba(color);
     let mut alpha = color.a();
-    if ui
-        .add(
+    if help::tip(
+        ui.add(
             crate::widgets::num_entry(&mut alpha)
                 .range(0..=255)
                 .prefix("α "),
-        )
-        .changed()
+        ),
+        help::DE_OVERLAY_ALPHA_NONE,
+    )
+    .changed()
     {
         *color = egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha);
     }
@@ -136,19 +154,19 @@ impl DataEditor {
         crate::widgets::fill_row(
             ui,
             |ui| {
-                cancel = armed && ui.button("Cancel").clicked();
+                cancel = ui
+                    .add_enabled(
+                        armed,
+                        crate::widgets::IconButton::new(
+                            egui_phosphor::regular::X,
+                            "Cancel",
+                            armed.then_some(crate::theme::MACRO_STOP),
+                        ),
+                    )
+                    .clicked();
                 record = crate::widgets::record_icon_button(ui, record_tip, !armed).clicked();
             },
-            |ui| {
-                help::label(ui, "Name", help::DE_NAME);
-                help::tip(
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name)
-                            .desired_width(f32::INFINITY),
-                    ),
-                    help::DE_NAME,
-                );
-            },
+            |ui| name_field_body(ui, &mut self.form_name),
         );
         if cancel {
             self.save_after_record = false;
@@ -164,11 +182,14 @@ impl DataEditor {
 
     fn paint_monitor_slot(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label("Monitor");
-            ui.add(
-                crate::widgets::num_entry(&mut self.form_monitor)
-                    .speed(1)
-                    .range(1..=8),
+            help::label(ui, egui_phosphor::regular::MONITOR, "Monitor");
+            help::tip(
+                ui.add(
+                    crate::widgets::num_entry(&mut self.form_monitor)
+                        .speed(1)
+                        .range(1..=8),
+                ),
+                help::DE_MONITOR,
             );
         });
     }
@@ -340,10 +361,6 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        #[cfg(feature = "native-runtime")]
-        help::heading(ui, EditorTab::PixelCheck.label(), help::DE_PIXELCHECK_INTRO);
-        #[cfg(not(feature = "native-runtime"))]
-        ui.heading(EditorTab::PixelCheck.label());
         #[cfg(not(feature = "native-runtime"))]
         {
             let _ = (
@@ -356,9 +373,9 @@ impl DataEditor {
                 is_dark,
                 settings,
             );
-            ui.colored_label(
-                crate::theme::error_fg(),
-                format!(
+            crate::widgets::error_icon(
+                ui,
+                &format!(
                     "{} requires the desktop app.",
                     EditorTab::PixelCheck.label()
                 ),
@@ -371,10 +388,9 @@ impl DataEditor {
             use crate::widgets::match_settings;
             use sqyre_domain::CoordinateRef;
 
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             if self.selected_entity.is_none() {
                 self.stop_pixel_check_compute();
-                ui.weak("Select an item from the list.");
                 return;
             }
             self.paint_name_record_row(
@@ -385,27 +401,35 @@ impl DataEditor {
                 ScreenClickBridge::arm_search_area,
             );
             let reference = CoordinateRef(self.form_search_area.clone());
-            let display = if reference.is_empty() {
-                "(optional — seed coords from a search area or cell)"
-            } else {
-                reference.as_str()
-            };
             ui.horizontal(|ui| {
-                help::label(ui, "Reference", help::DE_SCREENCAP_REF);
+                help::label(ui, crate::model_icons::SEARCH_AREA, "Reference");
                 if let Some(prog) = reference.program() {
                     crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
-                let resp = ui.monospace(display);
+                let resp = ui.monospace(reference.as_str());
                 if !reference.is_empty() {
                     let kind = if reference.is_collection() {
                         PreviewKind::Collection
                     } else {
                         PreviewKind::SearchArea
                     };
-                    previews.show_for_coordinate_ref(ui, &resp, catalog, &reference, kind);
+                    previews.show_for_coordinate_ref(
+                        ui,
+                        &resp,
+                        catalog,
+                        &reference,
+                        kind,
+                        help::DE_SCREENCAP_REF,
+                    );
+                } else {
+                    help::tip(resp, help::DE_SCREENCAP_REF);
                 }
-                if crate::widgets::icon_button(ui, "☰", "Pick search area or collection cell…")
-                    .clicked()
+                if crate::widgets::icon_button(
+                    ui,
+                    crate::model_icons::SEARCH_AREA,
+                    "Pick search area or collection cell…",
+                )
+                .clicked()
                 {
                     self.window_picker = ActivePicker::Coord {
                         kind: CoordKind::SearchArea,
@@ -416,7 +440,7 @@ impl DataEditor {
                     };
                 }
             });
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             if let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
@@ -425,7 +449,14 @@ impl DataEditor {
                 if !variants.is_empty() {
                     let mut label = variant_display_label(&self.pixel_check.variant).to_string();
                     let labels: Vec<&str> = variants.iter().map(|(_, l)| l.as_str()).collect();
-                    crate::widgets::combo_str(ui, "Variant", "", &mut label, &labels);
+                    crate::widgets::combo_str(
+                        ui,
+                        egui_phosphor::regular::STACK,
+                        "Variant",
+                        "",
+                        &mut label,
+                        &labels,
+                    );
                     if let Some((name, _)) = variants.iter().find(|(_, l)| l == &label) {
                         if name != &self.pixel_check.variant {
                             self.pixel_check.variant = name.clone();
@@ -434,7 +465,7 @@ impl DataEditor {
                     }
                 }
             }
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             match_settings::paint_match_settings(
                 ui,
                 &mut self.pixel_check.tolerance,
@@ -442,11 +473,17 @@ impl DataEditor {
                 &mut self.pixel_check.match_method,
                 false,
             );
-            ui.collapsing("Advanced", |ui| {
+            crate::widgets::advanced_section(ui, "de_pixelcheck_match", |ui| {
                 match_settings::paint_match_method(ui, &mut self.pixel_check.match_method);
             });
-            help::label(ui, "Bounds", help::DE_PIXELCHECK_BOUNDS);
-            self.paint_monitor_slot(ui);
+            help::tip(
+                crate::widgets::wrap_unit(ui, |ui| {
+                    help::label(ui, egui_phosphor::regular::FRAME_CORNERS, "Bounds");
+                    self.paint_monitor_slot(ui);
+                })
+                .response,
+                help::DE_PIXELCHECK_BOUNDS,
+            );
             let (lx, ty, rx, by) = form_desktop_area(
                 catalog,
                 self.form_monitor,
@@ -479,7 +516,7 @@ impl DataEditor {
                 self.stop_pixel_check_compute();
             }
             self.sync_coord_preview_view();
-            let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
+            let force = std::mem::take(&mut self.preview_force);
             let computing = self.pixel_check_pending.is_some() && can_compute;
             if computing {
                 ui.horizontal(|ui| {
@@ -504,6 +541,15 @@ impl DataEditor {
                         force,
                         &mut self.coord_preview,
                     );
+                    if paint_preview_floaters(
+                        ui,
+                        rect,
+                        true,
+                        Some(&mut self.coord_preview),
+                        "Fit image in viewport",
+                    ) {
+                        self.preview_force = true;
+                    }
                     if let Some(cache) = &self.pixel_check_cache {
                         let inputs = super::pixel_check::inputs_key(
                             self.selected_program.as_deref().unwrap_or(""),
@@ -587,8 +633,8 @@ impl DataEditor {
                     cache.tmpl_h,
                 );
                 if cache.mask_missing {
-                    ui.colored_label(
-                        crate::theme::warn_fg(),
+                    crate::widgets::warn_icon(
+                        ui,
                         "Mask image missing or unreadable — preview ran unmasked.",
                     );
                 }

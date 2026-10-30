@@ -923,6 +923,23 @@ impl AutomationBackend for OsAutomation {
         }
     }
 
+    fn cursor_position(&mut self) -> Option<(i32, i32)> {
+        #[cfg(target_os = "linux")]
+        if let Some(portal) = self.portal.as_ref() {
+            return portal.cursor_pos().or_else(|| portal.last_pos());
+        }
+        #[cfg(target_os = "windows")]
+        return {
+            use windows::Win32::Foundation::POINT;
+            use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+            let mut pt = POINT::default();
+            // SAFETY: writes into a stack-local POINT.
+            unsafe { GetCursorPos(&mut pt) }.ok().map(|_| (pt.x, pt.y))
+        };
+        #[cfg(not(target_os = "windows"))]
+        self.gui.as_mut().and_then(|g| g.get_mouse_position().ok())
+    }
+
     fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
         let canonical = canonical_button(button);
         #[cfg(target_os = "linux")]

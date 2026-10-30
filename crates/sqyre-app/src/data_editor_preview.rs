@@ -2,42 +2,90 @@ use crate::icon_cache::IconCache;
 use crate::image_view::{self, ImageViewTransform};
 use crate::theme;
 use crate::var_pills;
-use eframe::egui::{self, WidgetInfo, WidgetType};
+use crate::widgets::elide::single_line_galley;
+use eframe::egui;
 use sqyre_domain::{KnownVariableNames, ScalarValue};
 use sqyre_persist::{ProgramCatalog, ProgramSearchArea};
 use sqyre_validate::EntryValidation;
 
-pub(crate) fn paint_preview_toolbar(
+/// Refresh / fit-view / zoom floats at the image's top-left corner.
+/// Returns `true` on the click frame — callers refresh their texture cache, or
+/// arm a one-frame `force` flag so the capture panel re-reads on the next pass.
+/// `refresh` hides the button for previews with nothing to reload (atlas);
+/// `fit_tip` names the surface ("Fit image in viewport" / "Fit plane in viewport").
+pub(crate) fn paint_preview_floaters(
     ui: &mut egui::Ui,
+    rect: egui::Rect,
+    refresh: bool,
     view: Option<&mut ImageViewTransform>,
+    fit_tip: &str,
 ) -> bool {
-    ui.add_space(crate::theme::SPACE_8);
-    crate::widgets::section_separator(ui);
+    let side = ui
+        .text_style_height(&egui::TextStyle::Button)
+        .max(crate::widgets::ICON_BTN_SIDE);
+    let gap = crate::theme::element_gap(ui);
+    let pad = crate::theme::SPACE_4;
+    let zoom_label = view
+        .as_deref()
+        .filter(|v| v.shows_zoom_label())
+        .map(|v| format!("{:.0}%", v.zoom * 100.0));
+    let mut row_w = 0.0;
+    if refresh {
+        row_w += side;
+    }
+    if view.is_some() {
+        row_w += (if refresh { gap } else { 0.0 }) + side;
+    }
+    if let Some(text) = &zoom_label {
+        row_w += gap
+            + ui.fonts_mut(|f| {
+                f.layout_no_wrap(
+                    text.clone(),
+                    egui::TextStyle::Small.resolve(ui.style()),
+                    egui::Color32::WHITE,
+                )
+                .size()
+                .x
+            });
+    }
+    // Scrim chip keeps the row readable over arbitrary imagery.
+    ui.painter().rect_filled(
+        egui::Rect::from_min_size(
+            rect.min + egui::vec2(pad * 0.5, pad * 0.5),
+            egui::vec2(row_w + pad, side + pad),
+        ),
+        egui::CornerRadius::same(4),
+        theme::preview_scrim(),
+    );
+    let mut floats = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(egui::Rect::from_min_size(
+                rect.min + egui::vec2(pad, pad),
+                egui::vec2((rect.width() - pad * 2.0).max(side), side),
+            ))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    floats.spacing_mut().item_spacing.x = gap;
     let mut force = false;
-    let show_zoom_hint = view.is_some();
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Preview").strong());
-        if show_zoom_hint {
-            crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
-        }
-        if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
+    floats.horizontal(|ui| {
+        if refresh
+            && crate::widgets::icon_button(ui, egui_phosphor::regular::ARROW_CLOCKWISE, "Refresh")
+                .clicked()
+        {
             force = true;
         }
         if let Some(view) = view {
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                const FIT_TIP: &str = "Fit image in viewport";
-                let enabled = view.needs_reset_button();
-                let resp = ui
-                    .add_enabled(enabled, egui::Button::new("Reset view"))
-                    .on_hover_text(FIT_TIP);
-                resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, FIT_TIP));
-                if resp.clicked() {
-                    view.reset();
-                }
-                if view.shows_zoom_label() {
-                    ui.weak(format!("{:.0}%", view.zoom * 100.0));
-                }
-            });
+            let enabled = view.needs_reset_button();
+            let resp = ui.add_enabled(
+                enabled,
+                crate::widgets::IconButton::new(egui_phosphor::regular::CORNERS_IN, fit_tip, None),
+            );
+            if resp.clicked() {
+                view.reset();
+            }
+            if let Some(text) = &zoom_label {
+                ui.weak(text);
+            }
         }
     });
     force
@@ -168,7 +216,7 @@ pub(crate) fn paint_preview_coord_chip(
     let inner = edit_rect.shrink(3.0);
 
     let resp = if show_overlay {
-        let plain_fg = egui::Color32::from_gray(230);
+        let plain_fg = theme::preview_plain_fg();
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(
             egui::Layout::centered_and_justified(egui::Direction::TopDown),
         ));
@@ -198,7 +246,7 @@ pub(crate) fn paint_preview_coord_chip(
             egui::Align2::CENTER_CENTER,
             n.to_string(),
             font,
-            egui::Color32::from_gray(230),
+            theme::preview_plain_fg(),
         );
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
@@ -390,7 +438,8 @@ pub(crate) fn paint_collection_preview_sizes(
     paint_preview_size_badge(ui, viewport, &lines);
 }
 
-/// Top-left size labels on a framed preview (avoids coord chips on the edges).
+/// Top-right size labels on a framed preview (top-left holds the floating
+/// refresh/fit buttons; edge centers hold the coord chips).
 fn paint_preview_size_badge(ui: &egui::Ui, viewport: egui::Rect, lines: &[String]) {
     if lines.is_empty() || viewport.width() <= 0.0 || viewport.height() <= 0.0 {
         return;
@@ -398,12 +447,12 @@ fn paint_preview_size_badge(ui: &egui::Ui, viewport: egui::Rect, lines: &[String
     let font = egui::TextStyle::Small.resolve(ui.style());
     let painter = ui.painter();
     let mut y = viewport.top() + 6.0;
-    let x = viewport.left() + 6.0;
     let fill = theme::preview_scrim();
     for line in lines {
         let galley = painter.layout_no_wrap(line.clone(), font.clone(), egui::Color32::WHITE);
         let pad = egui::vec2(4.0, 2.0);
-        let rect = egui::Rect::from_min_size(egui::pos2(x, y), galley.size() + pad * 2.0);
+        let size = galley.size() + pad * 2.0;
+        let rect = egui::Rect::from_min_size(egui::pos2(viewport.right() - 6.0 - size.x, y), size);
         if !viewport.intersects(rect) {
             continue;
         }
@@ -411,35 +460,6 @@ fn paint_preview_size_badge(ui: &egui::Ui, viewport: egui::Rect, lines: &[String
         painter.galley(rect.min + pad, galley, egui::Color32::WHITE);
         y += rect.height() + 2.0;
     }
-}
-
-/// Horizontal inset that keeps placeholder text clear of left/right coord chips.
-pub(crate) const PREVIEW_CHIP_INSET: f32 = 100.0;
-
-/// Centered status/error text inside a preview placeholder, word-wrapped to
-/// `rect` minus `side_inset` per side (never narrower than a readable minimum).
-pub(crate) fn paint_preview_message(
-    ui: &egui::Ui,
-    rect: egui::Rect,
-    text: &str,
-    color: egui::Color32,
-    side_inset: f32,
-) {
-    const MIN_WRAP_W: f32 = 120.0;
-    const EDGE_PAD: f32 = 8.0;
-    let max_w = (rect.width() - EDGE_PAD * 2.0).max(1.0);
-    let wrap_w = (rect.width() - side_inset * 2.0).max(MIN_WRAP_W).min(max_w);
-    let mut job = egui::text::LayoutJob::simple(
-        text.to_owned(),
-        egui::TextStyle::Small.resolve(ui.style()),
-        color,
-        wrap_w,
-    );
-    job.halign = egui::Align::Center;
-    let painter = ui.painter_at(rect);
-    let galley = painter.layout_job(job);
-    let pos = egui::pos2(rect.center().x, rect.center().y - galley.size().y * 0.5);
-    painter.galley(pos, galley, color);
 }
 
 /// 1px dim gold border around a Data Editor image preview.
@@ -456,17 +476,11 @@ pub(crate) fn paint_disk_preview(
     grid: Option<(i32, i32)>,
     replace_clicked: Option<&mut bool>,
 ) {
-    ui.add_space(crate::theme::SPACE_8);
     crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(title).strong());
-        if let Some(path) = path {
-            if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
-                icons.invalidate_path(path);
-            }
-        }
         if let Some(flag) = replace_clicked {
-            if ui.button("Replace Image").clicked() {
+            if ui.small_button("Replace Image").clicked() {
                 *flag = true;
             }
         }
@@ -480,6 +494,11 @@ pub(crate) fn paint_disk_preview(
             paint_preview_frame(ui.painter(), resp.rect);
             if let Some((rows, cols)) = grid {
                 paint_grid_overlay(ui, resp.rect, rows, cols);
+            }
+            if let Some(path) = path {
+                if paint_preview_floaters(ui, resp.rect, true, None, "Fit image in viewport") {
+                    icons.invalidate_path(path);
+                }
             }
             if let Some(path) = path {
                 if path.is_file() {
@@ -509,14 +528,12 @@ pub(crate) fn paint_zoomable_collection_preview(
     replace_clicked: &mut bool,
     capturing: bool,
 ) {
-    ui.add_space(crate::theme::SPACE_8);
     crate::widgets::section_separator(ui);
     ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Collection image").strong());
-        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_PREVIEW_ZOOM);
-        if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
-            icons.invalidate_path(path);
-        }
+        crate::action_tooltip::help::tip(
+            ui.label(egui::RichText::new("Collection image").strong()),
+            crate::action_tooltip::help::DE_PREVIEW_ZOOM,
+        );
         if ui
             .add_enabled(
                 !capturing,
@@ -524,26 +541,13 @@ pub(crate) fn paint_zoomable_collection_preview(
                     "Capturing…"
                 } else {
                     "Replace Image"
-                }),
+                })
+                .small(),
             )
             .clicked()
         {
             *replace_clicked = true;
         }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            const FIT_TIP: &str = "Fit image in viewport";
-            let enabled = view.needs_reset_button();
-            let resp = ui
-                .add_enabled(enabled, egui::Button::new("Reset view"))
-                .on_hover_text(FIT_TIP);
-            resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, FIT_TIP));
-            if resp.clicked() {
-                view.reset();
-            }
-            if view.shows_zoom_label() {
-                ui.weak(format!("{:.0}%", view.zoom * 100.0));
-            }
-        });
     });
 
     let tex = icons.for_path(ui.ctx(), path);
@@ -586,19 +590,22 @@ pub(crate) fn paint_zoomable_collection_preview(
                 egui::Color32::WHITE,
             );
         } else {
-            painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(40));
+            painter.rect_filled(viewport, 0.0, theme::preview_unavailable_fill());
             painter.text(
                 viewport.center(),
                 egui::Align2::CENTER_CENTER,
                 "No image on disk",
                 body_font,
-                egui::Color32::LIGHT_GRAY,
+                theme::preview_unavailable_fg(),
             );
         }
         paint_grid_overlay_painter(&painter, content, rows, cols);
         paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
+    if paint_preview_floaters(ui, viewport, true, Some(view), "Fit image in viewport") {
+        icons.invalidate_path(path);
+    }
     let tex_size = tex.as_ref().map(|t| {
         let [tw, th] = t.size();
         egui::vec2(tw as f32, th as f32)
@@ -768,26 +775,11 @@ pub(crate) fn paint_zoomable_atlas_preview(
 ) {
     use sqyre_domain::{AtlasLayout, AtlasNode, CoordinateRef, Macro, NavDir};
 
-    ui.add_space(crate::theme::SPACE_8);
     crate::widgets::section_separator(ui);
-    ui.horizontal(|ui| {
-        ui.label(egui::RichText::new("Atlas plane").strong());
-        crate::action_tooltip::help::icon(ui, crate::action_tooltip::help::DE_ATLAS_PLANE);
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            const FIT_TIP: &str = "Fit plane in viewport";
-            let enabled = view.needs_reset_button();
-            let resp = ui
-                .add_enabled(enabled, egui::Button::new("Reset view"))
-                .on_hover_text(FIT_TIP);
-            resp.widget_info(|| WidgetInfo::labeled(WidgetType::Button, enabled, FIT_TIP));
-            if resp.clicked() {
-                view.reset();
-            }
-            if view.shows_zoom_label() {
-                ui.weak(format!("{:.0}%", view.zoom * 100.0));
-            }
-        });
-    });
+    crate::action_tooltip::help::tip(
+        ui.label(egui::RichText::new("Atlas plane").strong()),
+        crate::action_tooltip::help::DE_ATLAS_PLANE,
+    );
 
     let empty_macro = Macro::new("", 0, vec![]);
     let mut nodes = Vec::new();
@@ -818,10 +810,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
     }
 
     if !unresolved.is_empty() {
-        ui.colored_label(
-            theme::warn_fg(),
-            format!("Unresolved: {}", unresolved.join(", ")),
-        );
+        crate::widgets::warn_icon(ui, &format!("Unresolved: {}", unresolved.join(", ")));
     }
     if nodes.is_empty() {
         ui.weak("No resolvable Collections to preview.");
@@ -872,12 +861,12 @@ pub(crate) fn paint_zoomable_atlas_preview(
     let small = egui::TextStyle::Small.resolve(ui.style());
     {
         let painter = ui.painter_at(viewport);
-        painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(22));
+        painter.rect_filled(viewport, 0.0, theme::preview_monitor_bg());
 
         // One rectangle per monitor with identity + size label.
-        let mon_fill = egui::Color32::from_gray(36);
-        let mon_stroke = egui::Stroke::new(1.5, egui::Color32::from_gray(90));
-        let label_color = egui::Color32::from_gray(200);
+        let mon_fill = theme::preview_monitor_fill();
+        let mon_stroke = theme::preview_monitor_stroke();
+        let label_color = theme::preview_monitor_label();
         for (i, &(mx, my, mw, mh)) in monitors.iter().enumerate() {
             let rect = egui::Rect::from_min_max(
                 to_screen(mx, my),
@@ -886,11 +875,25 @@ pub(crate) fn paint_zoomable_atlas_preview(
             painter.rect_filled(rect, 0.0, mon_fill);
             painter.rect_stroke(rect, 0.0, mon_stroke, egui::StrokeKind::Outside);
             let label = format!("Monitor {} — {mw}×{mh}", i + 1);
-            let galley = painter.layout_no_wrap(label, small.clone(), label_color);
+            let galley = single_line_galley(
+                ui,
+                &label,
+                small.clone(),
+                label_color,
+                (rect.width() - 10.0).max(0.0),
+            );
             let chip =
                 egui::Rect::from_center_size(rect.center(), galley.size() + egui::vec2(10.0, 4.0));
             painter.rect_filled(chip, 3.0, theme::preview_label_dim());
-            painter.galley(chip.min + egui::vec2(5.0, 2.0), galley, label_color);
+            painter.galley(chip.min + egui::vec2(5.0, 2.0), galley.clone(), label_color);
+            if galley.elided {
+                ui.interact(
+                    chip,
+                    resp.id.with(("monitor_label", i)),
+                    egui::Sense::hover(),
+                )
+                .on_hover_text(label);
+            }
         }
 
         let fill = theme::preview_selection_fill();
@@ -916,18 +919,29 @@ pub(crate) fn paint_zoomable_atlas_preview(
             paint_grid_overlay_painter(&painter, rect, node.rows, node.cols);
             // Label with a small dark chip so it stays readable over capture images.
             let label_pos = egui::pos2(rect.left() + 4.0, rect.top() + 4.0);
-            let galley = painter.layout_no_wrap(
-                node.collection.clone(),
+            let label = node.collection.clone();
+            let galley = single_line_galley(
+                ui,
+                &label,
                 small.clone(),
-                egui::Color32::WHITE,
+                theme::preview_label_fg(),
+                (rect.width() - 6.0).max(0.0),
             );
             let chip = egui::Rect::from_min_size(label_pos, galley.size() + egui::vec2(6.0, 2.0));
             painter.rect_filled(chip, 2.0, theme::preview_label_dim());
             painter.galley(
                 label_pos + egui::vec2(3.0, 1.0),
-                galley,
-                egui::Color32::WHITE,
+                galley.clone(),
+                theme::preview_label_fg(),
             );
+            if galley.elided {
+                ui.interact(
+                    chip,
+                    resp.id.with(("collection_label", i)),
+                    egui::Sense::hover(),
+                )
+                .on_hover_text(label);
+            }
 
             for (dir, dest) in layout.neighbor_links(i) {
                 let Some(dest_node) = layout.nodes().get(dest) else {
@@ -956,6 +970,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
         paint_preview_frame(&painter, viewport);
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, view);
+    paint_preview_floaters(ui, viewport, false, Some(view), "Fit plane in viewport");
 }
 
 #[cfg(test)]

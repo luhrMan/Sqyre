@@ -6,7 +6,7 @@ use crate::overlay_icons;
 use crate::pickers::fuzzy_match_fold;
 use crate::widgets::VectorIcon;
 use crate::SqyreApp;
-use eframe::egui::{self, Color32, CornerRadius, Key, Modifiers, Sense};
+use eframe::egui::{self, Color32, CornerRadius, Sense};
 use sqyre_domain::{action_type_table, Macro};
 use sqyre_persist::{OverlayButtonConfig, ProgramCatalog};
 use sqyre_ui_model::action_picker_category;
@@ -171,33 +171,27 @@ impl CommandPaletteUi {
         .min_width(width)
         .max_width(width)
         .show(ctx, |ui| {
-            let esc = crate::widgets::consume_escape(ui);
-            let (enter, down, up) = ui.input_mut(|i| {
-                (
-                    i.consume_key(Modifiers::NONE, Key::Enter),
-                    i.consume_key(Modifiers::NONE, Key::ArrowDown),
-                    i.consume_key(Modifiers::NONE, Key::ArrowUp),
-                )
-            });
-            if esc {
+            let nav = crate::pickers::poll_list_nav(ui);
+            if nav == crate::pickers::ListNavAction::Cancel {
                 close = true;
                 return;
             }
 
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(
-                    egui_phosphor::regular::MAGNIFYING_GLASS,
-                ));
-                let edit = egui::TextEdit::singleline(&mut self.query)
-                    .hint_text("Add action, open macro, new item…")
-                    .desired_width(f32::INFINITY);
-                let resp = ui.add(edit);
-                if self.focus_search {
-                    resp.request_focus();
-                    self.focus_search = false;
-                }
-                query_changed = resp.changed();
-            });
+            let search_out = crate::widgets::search_field(
+                ui,
+                &mut self.query,
+                crate::widgets::SearchFieldOpts {
+                    hint: "Add action, open macro, new item…",
+                    focus_id: None,
+                    clearable: false,
+                    stable_id: None,
+                },
+            );
+            if self.focus_search {
+                search_out.response.request_focus();
+                self.focus_search = false;
+            }
+            query_changed = search_out.changed;
             crate::widgets::section_separator(ui);
 
             let filtered = filter_ranked(&self.query, commands);
@@ -209,18 +203,13 @@ impl CommandPaletteUi {
                 crate::widgets::list_vacancy(ui, &self.query, 0, "commands");
                 return;
             }
-            if down {
-                self.selected = (self.selected + 1).min(filtered.len() - 1);
-                self.scroll_selected = true;
-            } else if up {
-                self.selected = self.selected.saturating_sub(1);
-                self.scroll_selected = true;
-            }
-            self.selected = self.selected.min(filtered.len() - 1);
-
-            if enter {
+            let before = self.selected;
+            if crate::pickers::apply_list_nav(&mut self.selected, filtered.len(), nav) {
                 run = Some(filtered[self.selected].kind.clone());
                 return;
+            }
+            if self.selected != before {
+                self.scroll_selected = true;
             }
 
             let row_pitch = ROW_H + ui.spacing().item_spacing.y;
@@ -372,34 +361,36 @@ pub(crate) fn collect_commands(src: CommandSources<'_>) -> Vec<CommandItem> {
 struct CatalogKind {
     tab: EditorTab,
     new_title: Option<&'static str>,
+    /// Canonical model glyph ([`crate::model_icons`]) — same icon as the tab.
     icon: &'static str,
     open_keys: &'static [&'static str],
 }
 
 fn catalog_kinds() -> &'static [CatalogKind] {
+    use crate::model_icons as mi;
     &[
         CatalogKind {
             tab: EditorTab::Programs,
             new_title: Some("New Program"),
-            icon: "app-window",
+            icon: mi::PROGRAM,
             open_keys: &["program", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Items,
             new_title: Some("New Item"),
-            icon: "image",
+            icon: mi::ITEM,
             open_keys: &["item", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Masks,
             new_title: Some("New Mask"),
-            icon: "circle-dashed",
+            icon: mi::MASK,
             open_keys: &["mask", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::ScreenCap,
             new_title: None,
-            icon: "camera",
+            icon: egui_phosphor::regular::CAMERA,
             open_keys: &[
                 "screencap",
                 "screen",
@@ -412,37 +403,37 @@ fn catalog_kinds() -> &'static [CatalogKind] {
         CatalogKind {
             tab: EditorTab::PixelCheck,
             new_title: None,
-            icon: "crosshair",
+            icon: egui_phosphor::regular::EYEDROPPER,
             open_keys: &["pixelcheck", "pixel", "match", "heatmap", "tools", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Points,
             new_title: Some("New Point"),
-            icon: "map-pin",
+            icon: mi::POINT,
             open_keys: &["point", "coordinate", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::SearchAreas,
             new_title: Some("New Search Area"),
-            icon: "selection",
+            icon: mi::SEARCH_AREA,
             open_keys: &["search", "area", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Collections,
             new_title: Some("New Collection"),
-            icon: "grid-four",
+            icon: mi::COLLECTION,
             open_keys: &["collection", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Atlases,
             new_title: Some("New Atlas"),
-            icon: "stack",
+            icon: mi::ATLAS,
             open_keys: &["atlas", "model", "goto"],
         },
         CatalogKind {
             tab: EditorTab::Overlay,
             new_title: Some("New Overlay Button"),
-            icon: "square",
+            icon: mi::OVERLAY,
             open_keys: &["overlay", "button", "model", "tools", "goto"],
         },
     ]
@@ -474,7 +465,7 @@ fn push_nav(out: &mut Vec<CommandItem>, has_macros: bool) {
         out.push(item(
             &format!("Open {}", kind.tab.label()),
             "Go to",
-            ph(kind.icon),
+            CommandIcon::Glyph(kind.icon),
             CommandKind::OpenEditorTab { tab: kind.tab },
             kind.open_keys,
         ));
@@ -574,7 +565,7 @@ fn push_catalog_entities(
         out.push(CommandItem {
             title: name.clone(),
             hint: "Program".into(),
-            icon: ph("folder"),
+            icon: CommandIcon::Glyph(crate::model_icons::PROGRAM),
             kind: CommandKind::OpenProgram { name: name.clone() },
             keywords: vec!["program".into(), "goto".into()],
         });
@@ -586,7 +577,7 @@ fn push_catalog_entities(
             name,
             EditorTab::Items,
             "Item",
-            ph("image"),
+            CommandIcon::Glyph(crate::model_icons::ITEM),
             prog.items.iter().map(|(k, it)| {
                 let display = nonempty_or(it.name.as_str(), k);
                 (k.clone(), display, it.tags.clone())
@@ -599,7 +590,7 @@ fn push_catalog_entities(
                 name,
                 EditorTab::Points,
                 "Point",
-                ph("map-pin"),
+                CommandIcon::Glyph(crate::model_icons::POINT),
                 points
                     .iter()
                     .map(|(k, pt)| (k.clone(), nonempty_or(pt.name.as_str(), k), Vec::new())),
@@ -615,7 +606,7 @@ fn push_catalog_entities(
                 name,
                 EditorTab::SearchAreas,
                 "Search Area",
-                ph("selection"),
+                CommandIcon::Glyph(crate::model_icons::SEARCH_AREA),
                 areas
                     .iter()
                     .map(|(k, sa)| (k.clone(), nonempty_or(sa.name.as_str(), k), Vec::new())),
@@ -626,7 +617,7 @@ fn push_catalog_entities(
             name,
             EditorTab::Masks,
             "Mask",
-            ph("circle-dashed"),
+            CommandIcon::Glyph(crate::model_icons::MASK),
             prog.masks
                 .iter()
                 .map(|(k, m)| (k.clone(), nonempty_or(m.name.as_str(), k), Vec::new())),
@@ -636,7 +627,7 @@ fn push_catalog_entities(
             name,
             EditorTab::Collections,
             "Collection",
-            ph("grid-four"),
+            CommandIcon::Glyph(crate::model_icons::COLLECTION),
             prog.collections
                 .iter()
                 .map(|(k, c)| (k.clone(), nonempty_or(c.name.as_str(), k), Vec::new())),
@@ -646,7 +637,7 @@ fn push_catalog_entities(
             name,
             EditorTab::Atlases,
             "Atlas",
-            ph("stack"),
+            CommandIcon::Glyph(crate::model_icons::ATLAS),
             prog.atlases
                 .iter()
                 .map(|(k, a)| (k.clone(), nonempty_or(a.name.as_str(), k), Vec::new())),
@@ -662,7 +653,7 @@ fn push_catalog_entities(
         out.push(CommandItem {
             title,
             hint: format!("Overlay · {program}"),
-            icon: ph("square"),
+            icon: CommandIcon::Glyph(overlay_icons::resolve(&btn.icon).glyph),
             kind: CommandKind::OpenCatalogEntity {
                 tab: EditorTab::Overlay,
                 program: btn.program.clone(),

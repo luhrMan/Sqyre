@@ -16,6 +16,7 @@ pub(super) fn paint_loop_jump(ui: &mut egui::Ui, mode: &mut LoopJumpMode) {
         let mut mode_s = mode.as_str().to_string();
         combo_str_labeled(
             ui,
+            egui_phosphor::regular::ARROWS_DOWN_UP,
             "Mode",
             h::LOOP_JUMP_MODE,
             &mut mode_s,
@@ -37,6 +38,7 @@ pub(super) fn paint_loop(
     tip_wrapped_section(ui, |ui| {
         scalar_field(
             ui,
+            egui_phosphor::regular::REPEAT,
             "Count",
             h::LOOP_COUNT,
             count,
@@ -44,7 +46,7 @@ pub(super) fn paint_loop(
             is_dark,
             active_macro,
         );
-        text_field(ui, "Name", h::NAME, name);
+        text_field(ui, egui_phosphor::regular::TEXT_T, "Name", h::NAME, name);
     });
 }
 
@@ -59,6 +61,7 @@ pub(super) fn paint_while(
     condition_editor(ui, condition, known_vars, is_dark, active_macro, |ui| {
         drag_field(
             ui,
+            egui_phosphor::regular::REPEAT,
             "Max iterations",
             h::MAX_ITERATIONS,
             max_iterations,
@@ -101,9 +104,10 @@ pub(super) fn paint_foreach_row(
         end_row,
     } = fields;
     tip_wrapped_section(ui, |ui| {
-        text_field(ui, "Name", h::NAME, name);
+        text_field(ui, egui_phosphor::regular::TEXT_T, "Name", h::NAME, name);
         scalar_field(
             ui,
+            egui_phosphor::regular::ARROW_UP,
             "Start row",
             h::FOREACH_START,
             start_row,
@@ -113,6 +117,7 @@ pub(super) fn paint_foreach_row(
         );
         scalar_field(
             ui,
+            egui_phosphor::regular::ARROW_DOWN,
             "End row",
             h::FOREACH_END,
             end_row,

@@ -193,10 +193,14 @@ pub(crate) fn string_steppers(
     let up_rect = egui::Rect::from_min_max(zone.min, egui::pos2(zone.right(), mid));
     let down_rect = egui::Rect::from_min_max(egui::pos2(zone.left(), mid), zone.max);
     let up = ui
-        .interact(up_rect, field_id.with("increment"), Sense::click())
+        .interact(up_rect, field_id.with("increment"), Sense::click_and_drag())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let down = ui
-        .interact(down_rect, field_id.with("decrement"), Sense::click())
+        .interact(
+            down_rect,
+            field_id.with("decrement"),
+            Sense::click_and_drag(),
+        )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     let mut step = |mult: f64| {
@@ -277,9 +281,10 @@ fn apply_step<Num: egui::emath::Numeric>(
 }
 
 /// Press → one step now; hold past [`REPEAT_DELAY`] → another step every
-/// [`REPEAT_INTERVAL`], each tick's amount growing linearly (tick *k* → ×k).
-/// Keyboard / AccessKit activation → one step. Returns the total step
-/// multiplier to apply this frame (0 for none).
+/// [`REPEAT_INTERVAL`] while the pointer stays in the pressed half, with each
+/// tick's amount growing linearly (tick *k* → ×k). Repeats pause outside the
+/// half and resume without catching up. Keyboard / AccessKit activation → one
+/// step. Returns the total step multiplier to apply this frame (0 for none).
 ///
 /// State is `(press_time, ticks_fired)` in ctx temp data. `now < press` can
 /// only mean the clock restarted mid-hold; treat it as a fresh press.
@@ -309,6 +314,20 @@ pub(crate) fn step_fires(ui: &Ui, response: &Response) -> f64 {
         return 1.0;
     };
     let held = now - press;
+    let pointer_inside = ui.input(|i| {
+        i.pointer
+            .latest_pos()
+            .is_some_and(|pos| response.rect.contains(pos))
+    });
+    if !pointer_inside {
+        let next_tick = REPEAT_DELAY + ticks as f64 * REPEAT_INTERVAL;
+        let held = held.min(next_tick - REPEAT_INTERVAL);
+        ui.ctx()
+            .data_mut(|d| d.insert_temp(response.id, (now - held, ticks)));
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs_f64(REPEAT_INTERVAL));
+        return 0.0;
+    }
     let due = if held < REPEAT_DELAY {
         0
     } else {
@@ -377,10 +396,14 @@ fn steppers<Num: egui::emath::Numeric>(
     let up_rect = egui::Rect::from_min_max(rect.min, egui::pos2(rect.right(), mid));
     let down_rect = egui::Rect::from_min_max(egui::pos2(rect.left(), mid), rect.max);
     let up = ui
-        .interact(up_rect, drag_id.with("increment"), Sense::click())
+        .interact(up_rect, drag_id.with("increment"), Sense::click_and_drag())
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let down = ui
-        .interact(down_rect, drag_id.with("decrement"), Sense::click())
+        .interact(
+            down_rect,
+            drag_id.with("decrement"),
+            Sense::click_and_drag(),
+        )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
 
     let enabled = ui.is_enabled();
@@ -605,6 +628,130 @@ mod tests {
         });
         h.run_steps(2);
         assert_eq!(*h.state(), 61);
+    }
+
+    #[test]
+    fn holding_a_stepper_pauses_repeats_outside_the_pressed_half() {
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([300.0, 120.0])
+            .build_ui_state(
+                |ui, value: &mut i32| {
+                    let response = ui.add_sized([12.0, 20.0], egui::Button::new("Increment"));
+                    let multiplier = step_fires(ui, &response);
+                    if multiplier > 0.0 {
+                        *value += multiplier as i32;
+                    }
+                },
+                5,
+            );
+        h.run_steps(2);
+        let inc_rect = h.get_by_label("Increment").rect();
+        let inc = inc_rect.center();
+        let outside = egui::pos2(0.0, 0.0);
+        h.hover_at(inc);
+        h.run_steps(2);
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: inc,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        });
+        h.input_mut().time = Some(0.0);
+        h.run_steps(1);
+        assert_eq!(*h.state(), 6, "press steps once");
+
+        h.hover_at(outside);
+        h.input_mut().time = Some(1.0);
+        h.run_steps(1);
+        assert_eq!(
+            *h.state(),
+            6,
+            "a held pointer outside the stepper must not repeat"
+        );
+
+        h.hover_at(inc);
+        h.input_mut().time = Some(1.0);
+        h.run_steps(1);
+        assert_eq!(
+            *h.state(),
+            6,
+            "re-entering must not immediately catch up missed ticks"
+        );
+
+        h.input_mut().time = Some(1.0 + REPEAT_INTERVAL + 0.001);
+        h.run_steps(1);
+        assert_eq!(
+            *h.state(),
+            7,
+            "one interval after re-entering must fire exactly one tick"
+        );
+
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: inc,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        h.input_mut().time = Some(1.3);
+        h.run_steps(2);
+        assert_eq!(*h.state(), 7, "release must not fire another step");
+    }
+
+    #[test]
+    fn dragging_from_a_stepper_does_not_drag_the_number() {
+        let mut h = harness(0..=1000);
+        h.run_steps(2);
+        let inc = h.get_by_label("Increment").rect().center();
+        h.hover_at(inc);
+        h.run_steps(2);
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: inc,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: Modifiers::NONE,
+        });
+        h.input_mut().time = Some(0.0);
+        h.run_steps(1);
+        assert_eq!(*h.state(), 6, "the press should take exactly one step");
+
+        let mut time = 0.0;
+        let dt = 1.0 / 60.0;
+        for offset in [40.0, 80.0, 120.0, 160.0, 200.0] {
+            let pos = inc + egui::vec2(offset, 0.0);
+            h.input_mut().events.push(egui::Event::PointerMoved(pos));
+            time += dt;
+            h.input_mut().time = Some(time);
+            h.run_steps(1);
+            assert_eq!(*h.state(), 6, "dragging must not change the value");
+        }
+        for _ in 0..60 {
+            time += dt;
+            h.input_mut().time = Some(time);
+            h.run_steps(1);
+            assert_eq!(*h.state(), 6, "an outside hold must not repeat");
+        }
+        assert!(h.ctx.input(|i| i.pointer.primary_down()));
+
+        let outside = inc + egui::vec2(200.0, 0.0);
+        h.input_mut().events.push(egui::Event::PointerButton {
+            pos: outside,
+            button: egui::PointerButton::Primary,
+            pressed: false,
+            modifiers: Modifiers::NONE,
+        });
+        time += dt;
+        h.input_mut().time = Some(time);
+        h.run_steps(2);
+        assert_eq!(*h.state(), 6, "release after a drag must not add a step");
+    }
+
+    #[test]
+    fn accessibility_activation_steps_without_a_primary_pointer_click() {
+        let mut h = harness(0..=10);
+        h.run_steps(2);
+        h.get_by_label("Increment").click_accesskit();
+        h.run_steps(2);
+        assert_eq!(*h.state(), 6);
     }
 
     /// A step finer than the displayed precision must still move a visible

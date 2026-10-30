@@ -45,14 +45,16 @@ pub const DEFAULT_OVERLAY_PRESS_STOPS_RUN: bool = true;
 pub const DEFAULT_OVERLAY_BUTTONS_IN_DETECTION: bool = true;
 /// Overlay buttons stay hidden while the Sqyre window is in front.
 pub const DEFAULT_OVERLAY_BUTTONS_OVER_SQYRE: bool = false;
-/// Data Editor left-list width as a fraction of the editor body (default = min).
-pub const DEFAULT_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
+/// Data Editor left-list width as a fraction of the editor body.
+pub const DEFAULT_DATA_EDITOR_LEFT_FRAC: f32 = 0.30;
 pub const MIN_DATA_EDITOR_LEFT_FRAC: f32 = 0.15;
 pub const MAX_DATA_EDITOR_LEFT_FRAC: f32 = 0.75;
-/// Macro list side panel width as a fraction of the window (default = min).
-pub const DEFAULT_MACRO_LIST_FRAC: f32 = 0.15;
+/// Macro list side panel width as a fraction of the window.
+pub const DEFAULT_MACRO_LIST_FRAC: f32 = 0.30;
 pub const MIN_MACRO_LIST_FRAC: f32 = 0.15;
 pub const MAX_MACRO_LIST_FRAC: f32 = 0.75;
+/// Narrow viewports auto-switch to Compact spacing unless the user opts out.
+pub const DEFAULT_AUTO_COMPACT_DENSITY: bool = true;
 
 /// Default While budget when a macro sets `max_iterations` ≤ 0.
 pub const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
@@ -189,6 +191,50 @@ pub enum OverlayVisibilityMode {
     Off,
     /// Show the button only while a template match is found in the search area.
     ShowWhenFound,
+}
+
+/// UI density: how much vertical space separates sections and elements.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiDensity {
+    /// Uniform 4 pt gaps.
+    Compact,
+    /// 8 pt between sections, 4 pt between elements inside a section.
+    #[default]
+    Normal,
+    /// 12 pt between sections, 8 pt between elements inside a section.
+    Spaced,
+}
+
+impl UiDensity {
+    /// All selectable values, in dropdown order.
+    pub const ALL: [Self; 3] = [Self::Compact, Self::Normal, Self::Spaced];
+
+    /// Gap between sections (framed cards, separator breaks, subsection heads).
+    pub fn section_gap(self) -> f32 {
+        match self {
+            Self::Compact => 4.0,
+            Self::Normal => 8.0,
+            Self::Spaced => 12.0,
+        }
+    }
+
+    /// Gap between element groups inside a section (field rows, buttons, items).
+    pub fn element_gap(self) -> f32 {
+        match self {
+            Self::Compact | Self::Normal => 4.0,
+            Self::Spaced => 8.0,
+        }
+    }
+
+    /// Dropdown display name.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Compact => "Compact",
+            Self::Normal => "Normal",
+            Self::Spaced => "Spaced",
+        }
+    }
 }
 
 /// Per-button image-search gate that can hide an overlay until a template is found.
@@ -508,6 +554,9 @@ pub struct UserSettings {
     pub action_log_max_entries: i32,
     #[serde(default)]
     pub highlight_active_action: bool,
+    /// Flash a marker on the desktop where each automated mouse press lands.
+    #[serde(default)]
+    pub click_effect: bool,
     /// In catalog lists, programs with a process icon omit the name (icon + child count only).
     #[serde(default = "default_compact_program_headers")]
     pub compact_program_headers: bool,
@@ -565,6 +614,13 @@ pub struct UserSettings {
     pub ui_font_size: i32,
     #[serde(default = "default_ui_scale")]
     pub ui_scale: f32,
+    /// Section/element spacing preset (Settings → Appearance → Spacing).
+    #[serde(default)]
+    pub ui_density: UiDensity,
+    /// Switch to Compact spacing automatically on narrow viewports (phones,
+    /// small windows). Disable to keep the chosen density at all sizes.
+    #[serde(default = "default_auto_compact_density")]
+    pub auto_compact_density: bool,
     #[serde(default)]
     pub action_colors: ActionColorPrefs,
     /// Per-action-type blank templates for the Add Action picker (YAML action maps).
@@ -601,10 +657,10 @@ pub struct UserSettings {
     /// (cleared when no tagged Program owns focus). When false, filters are manual only.
     #[serde(default)]
     pub hotkey_tags_while_focused: bool,
-    /// Data Editor left list width as a fraction of the editor body (`0.25`–`0.75`).
+    /// Data Editor left list width as a fraction of the editor body (`0.15`–`0.75`).
     #[serde(default = "default_data_editor_left_frac")]
     pub data_editor_left_split: f32,
-    /// Macro list side panel width as a fraction of the window (`0.25`–`0.75`).
+    /// Macro list side panel width as a fraction of the window (`0.15`–`0.75`).
     #[serde(default = "default_macro_list_frac")]
     pub macro_list_split: f32,
     /// Name of the macro selected when Sqyre last ran; reselected on startup.
@@ -691,6 +747,9 @@ fn default_data_editor_left_frac() -> f32 {
 fn default_macro_list_frac() -> f32 {
     DEFAULT_MACRO_LIST_FRAC
 }
+fn default_auto_compact_density() -> bool {
+    DEFAULT_AUTO_COMPACT_DENSITY
+}
 fn is_zero_i64(v: &i64) -> bool {
     *v == 0
 }
@@ -701,6 +760,7 @@ impl Default for UserSettings {
             save_meta_images: false,
             action_log_max_entries: DEFAULT_ACTION_LOG_MAX_ENTRIES,
             highlight_active_action: false,
+            click_effect: false,
             compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
             show_empty_program_headers: false,
             window_border: DEFAULT_WINDOW_BORDER,
@@ -721,6 +781,8 @@ impl Default for UserSettings {
             sqyre_dir: String::new(),
             ui_font_size: DEFAULT_UI_FONT_SIZE,
             ui_scale: DEFAULT_UI_SCALE,
+            ui_density: UiDensity::default(),
+            auto_compact_density: DEFAULT_AUTO_COMPACT_DENSITY,
             action_colors: ActionColorPrefs::default(),
             action_defaults: std::collections::BTreeMap::new(),
             overlay_buttons: Vec::new(),
@@ -781,8 +843,9 @@ impl UserSettings {
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
-            // Keep runtime override + XDG pointer in sync before resolving settings_path().
-            self.apply_sqyre_dir_override();
+            // The runtime override is set by whoever relocated the data dir
+            // (settings UI, pointer file at load, tests); an empty `sqyre_dir`
+            // must not clear it or saves would leak to the real ~/.sqyre.
             write_data_dir_pointer(&self.sqyre_dir)?;
             self.save_to_path(settings_path())
         }
@@ -1137,6 +1200,7 @@ mod tests {
             image_search_close_matches_distance: 25,
             image_search_variant_exit_early: false,
             ui_scale: 1.2,
+            ui_density: UiDensity::Spaced,
             hotkey_tag_filters: vec!["combat".into()],
             last_selected_macro: "farm loop".into(),
             permissions_intro_done: true,
@@ -1187,6 +1251,7 @@ mod tests {
         assert_eq!(loaded.overlay_buttons[0].icon_color, "#abcdef");
         assert_eq!(loaded.overlay_buttons[0].icon_hover_color, "#fedcba");
         assert_eq!(loaded.hotkey_tag_filters, vec!["combat".to_string()]);
+        assert_eq!(loaded.ui_density, UiDensity::Spaced);
         assert_eq!(loaded.last_selected_macro, "farm loop");
         assert!(loaded.permissions_intro_done);
         assert!(loaded.overlay_press_stops_run);
@@ -1195,6 +1260,29 @@ mod tests {
         assert!(!loaded.hotkey_tags_while_focused);
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON
+        );
+    }
+
+    #[test]
+    fn ui_density_defaults_normal_and_maps_to_gap_tiers() {
+        assert_eq!(UiDensity::default(), UiDensity::Normal);
+        let mut value = serde_yaml::to_value(UserSettings::default()).unwrap();
+        value
+            .as_mapping_mut()
+            .unwrap()
+            .remove(serde_yaml::Value::String("ui_density".into()));
+        let settings: UserSettings = serde_yaml::from_value(value).unwrap();
+        assert_eq!(settings.ui_density, UiDensity::Normal);
+        // Section gaps scale 4/8/12; element gaps stay tight until Spaced.
+        assert_eq!(UiDensity::Compact.section_gap(), 4.0);
+        assert_eq!(UiDensity::Normal.section_gap(), 8.0);
+        assert_eq!(UiDensity::Spaced.section_gap(), 12.0);
+        assert_eq!(UiDensity::Compact.element_gap(), 4.0);
+        assert_eq!(UiDensity::Normal.element_gap(), 4.0);
+        assert_eq!(UiDensity::Spaced.element_gap(), 8.0);
+        assert_eq!(
+            UiDensity::ALL.map(|d| d.label()),
+            ["Compact", "Normal", "Spaced"]
         );
     }
 
@@ -1260,6 +1348,26 @@ mod tests {
         let back: UserSettings =
             serde_yaml::from_str(&serde_yaml::to_string(&on).unwrap()).unwrap();
         assert!(back.overlay_buttons_over_sqyre);
+    }
+
+    #[test]
+    fn click_effect_defaults_off_when_absent() {
+        assert!(!UserSettings::default().click_effect);
+        let mut value = serde_yaml::to_value(UserSettings::default()).unwrap();
+        value
+            .as_mapping_mut()
+            .unwrap()
+            .remove(serde_yaml::Value::String("click_effect".into()));
+        let settings: UserSettings = serde_yaml::from_value(value).unwrap();
+        assert!(!settings.click_effect);
+
+        let on = UserSettings {
+            click_effect: true,
+            ..Default::default()
+        };
+        let back: UserSettings =
+            serde_yaml::from_str(&serde_yaml::to_string(&on).unwrap()).unwrap();
+        assert!(back.click_effect);
     }
 
     #[test]

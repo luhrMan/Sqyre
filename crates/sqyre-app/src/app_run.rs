@@ -292,6 +292,7 @@ mod native_run {
                 action_log: self.run_session.action_log.clone(),
                 runtime_vars: self.run_session.runtime_vars.clone(),
                 highlighter: self.run_session.highlighter.clone(),
+                click_fx: self.run_session.click_fx.clone(),
                 continue_wait: self.run_session.continue_wait.clone(),
                 macro_hotkeys: self.run_session.macro_hotkeys.clone(),
                 running_macro: self.macro_overlay.running_macro_slot(),
@@ -318,6 +319,7 @@ mod native_run {
         action_log: sqyre_ports::SharedActionLog,
         runtime_vars: sqyre_ports::SharedRuntimeVars,
         highlighter: sqyre_ports::SharedHighlighter,
+        click_fx: sqyre_ports::SharedClickFx,
         continue_wait: sqyre_hotkeys::ContinueWaitBridge,
         macro_hotkeys: sqyre_hotkeys::MacroHotkeyBridge,
         running_macro: Arc<parking_lot::Mutex<Option<String>>>,
@@ -343,6 +345,7 @@ mod native_run {
                 action_log,
                 runtime_vars,
                 highlighter,
+                click_fx,
                 continue_wait,
                 macro_hotkeys,
                 running_macro,
@@ -358,6 +361,7 @@ mod native_run {
             action_log.clear();
             runtime_vars.clear();
             highlighter.clear_all();
+            click_fx.clear();
             let macro_lookup = {
                 let map: BTreeMap<String, Arc<Macro>> = macros
                     .iter()
@@ -379,6 +383,9 @@ mod native_run {
             sqyre_capture::mark_site(&format!("overlay:start:ok:{name}"));
             sqyre_capture::note(&format!("overlay: start ok name={name}"));
             sqyre_capture::event_log("SQYRE_OVERLAY", &[("start", "ok"), ("name", name.as_str())]);
+            // Hide overlay buttons for this whole run when they should not appear
+            // in detection. Per-grab hiding restores between attempts and flickers.
+            let hide_overlay = sqyre_ports::OverlayMacroHide::enter();
 
             // Must run on the UI thread: winit's SetCapture/ReleaseCapture are
             // thread-affine. Doing this only on the worker never clears Start-click capture.
@@ -394,6 +401,7 @@ mod native_run {
             let stop_flag = stop;
             let running_macro_slot = running_macro;
             thread::spawn(move || {
+                let _hide_overlay = hide_overlay;
                 let _clear_running = RunningClearOnDrop {
                     running: Arc::clone(&running),
                     running_macro: running_macro_slot,
@@ -443,6 +451,7 @@ mod native_run {
                             highlighter: Some(&highlighter),
                             runtime_vars: Some(&runtime_vars),
                             variables_dir: Some(vars_dir.as_path()),
+                            click_fx: Some(&click_fx),
                         },
                     )
                     .map_err(|e| e.to_string())
@@ -528,6 +537,7 @@ mod native_run {
         action_log: sqyre_ports::SharedActionLog,
         runtime_vars: sqyre_ports::SharedRuntimeVars,
         highlighter: sqyre_ports::SharedHighlighter,
+        click_fx: sqyre_ports::SharedClickFx,
         continue_wait: sqyre_hotkeys::ContinueWaitBridge,
         macro_hotkeys: sqyre_hotkeys::MacroHotkeyBridge,
         running_macro: Arc<parking_lot::Mutex<Option<String>>>,
@@ -558,6 +568,7 @@ mod native_run {
             action_log: app.run_session.action_log.clone(),
             runtime_vars: app.run_session.runtime_vars.clone(),
             highlighter: app.run_session.highlighter.clone(),
+            click_fx: app.run_session.click_fx.clone(),
             continue_wait: app.run_session.continue_wait.clone(),
             macro_hotkeys: app.run_session.macro_hotkeys.clone(),
             running_macro: app.macro_overlay.running_macro_slot(),
@@ -636,6 +647,7 @@ mod native_run {
             action_log: kit.action_log.clone(),
             runtime_vars: kit.runtime_vars.clone(),
             highlighter: kit.highlighter.clone(),
+            click_fx: kit.click_fx.clone(),
             continue_wait: kit.continue_wait.clone(),
             macro_hotkeys: kit.macro_hotkeys.clone(),
             running_macro: Arc::clone(&kit.running_macro),

@@ -12,6 +12,7 @@ use sqyre_validate::EntryValidation;
 use crate::paint_ctx::VarTheme;
 use crate::theme::{contrast_fg, paint_galley_centered, SPACE_2};
 use crate::tree_chrome::rgba_pub;
+use crate::widgets::elide::{single_line_galley, text_hover_if};
 
 const VAR_AC_LIMIT: usize = 12;
 
@@ -242,9 +243,115 @@ pub fn paint_summary_pill(
     known: &KnownVariableNames,
     is_dark: bool,
 ) -> egui::Response {
+    let budget = (ui.clip_rect().right() - ui.cursor().left()).max(0.0);
+    paint_summary_pill_limited(ui, action_type, pill, known, is_dark, budget, true)
+}
+
+pub(crate) fn paint_summary_pill_limited(
+    ui: &mut egui::Ui,
+    action_type: &str,
+    pill: &SummaryPill,
+    known: &KnownVariableNames,
+    is_dark: bool,
+    max_width: f32,
+    show_hover: bool,
+) -> egui::Response {
+    let full = summary_pill_text(pill);
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let full_width = ui
+        .painter()
+        .layout_no_wrap(full.clone(), font, Color32::WHITE)
+        .size()
+        .x
+        + OUTER_MARGIN_X as f32 * 2.0;
+    if full_width > max_width {
+        return paint_flat_summary_pill(
+            ui,
+            &full,
+            summary_fill(action_type, pill, is_dark),
+            max_width,
+            show_hover,
+        );
+    }
     match &pill.prefix {
         Some(label) => paint_variable_name_pill(ui, label, &pill.text, action_type, known, is_dark),
         None => paint_value_pill(ui, &pill.text, action_type, known, is_dark),
+    }
+}
+
+pub(crate) fn paint_summary_pill_tip(
+    ui: &mut egui::Ui,
+    action_type: &str,
+    pill: &SummaryPill,
+    known: &KnownVariableNames,
+    is_dark: bool,
+) -> egui::Response {
+    let full = summary_pill_text(pill);
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let fill = summary_fill(action_type, pill, is_dark);
+    let full_width = ui
+        .painter()
+        .layout_no_wrap(full.clone(), font.clone(), Color32::WHITE)
+        .size()
+        .x
+        + OUTER_MARGIN_X as f32 * 2.0;
+    if full_width > ui.available_width() {
+        let fg = contrast_fg(fill);
+        return egui::Frame::new()
+            .fill(fill)
+            .corner_radius(egui::CornerRadius::same(OUTER_RADIUS as u8))
+            .inner_margin(egui::Margin::symmetric(OUTER_MARGIN_X, OUTER_MARGIN_Y))
+            .show(ui, |ui| {
+                ui.add(
+                    egui::Label::new(egui::RichText::new(full).color(fg))
+                        .wrap()
+                        .selectable(false),
+                )
+            })
+            .response;
+    }
+    paint_summary_pill(ui, action_type, pill, known, is_dark)
+}
+
+fn summary_pill_text(pill: &SummaryPill) -> String {
+    match &pill.prefix {
+        Some(prefix) => format!("{prefix}: {}", pill.text),
+        None => pill.text.clone(),
+    }
+}
+
+fn summary_fill(action_type: &str, pill: &SummaryPill, is_dark: bool) -> Color32 {
+    if pill.text == sqyre_domain::CoordinateRef::UNSET_LABEL {
+        rgba_pub(action_pastel_color("warning", is_dark))
+    } else {
+        rgba_pub(action_pastel_color(action_type, is_dark))
+    }
+}
+
+fn paint_flat_summary_pill(
+    ui: &mut egui::Ui,
+    full: &str,
+    fill: Color32,
+    max_width: f32,
+    show_hover: bool,
+) -> egui::Response {
+    let fg = contrast_fg(fill);
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let pad = Vec2::new(OUTER_MARGIN_X as f32 * 2.0, OUTER_MARGIN_Y as f32 * 2.0);
+    let galley = single_line_galley(ui, full, font, fg, (max_width - pad.x).max(0.0));
+    let (rect, response) = ui.allocate_exact_size(galley.size() + pad, Sense::hover());
+    ui.painter().rect(
+        rect,
+        OUTER_RADIUS,
+        fill,
+        Stroke::NONE,
+        egui::StrokeKind::Inside,
+    );
+    paint_galley_centered(ui, rect, galley.clone(), fg);
+    if show_hover {
+        text_hover_if(response, full, galley.elided)
+    } else {
+        response
     }
 }
 
@@ -375,7 +482,7 @@ fn var_ref_text_edit(
     known: &KnownVariableNames,
     desired_width: f32,
     multiline: Option<usize>,
-) {
+) -> egui::Response {
     let ac_id = id.with("var_ac");
     let was_open = ui
         .ctx()
@@ -423,6 +530,7 @@ fn var_ref_text_edit(
             dismiss,
         },
     );
+    output.response.response
 }
 
 /// Keys consumed by the autocomplete popup this frame.
@@ -576,8 +684,13 @@ fn click_to_edit_hit(
 }
 
 /// Variable-name field that becomes a nested chip when unfocused.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "var-name editor: icon, label, theme, width, and help text"
+)]
 pub fn var_name_text_edit(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     value: &mut String,
     known: &KnownVariableNames,
@@ -586,55 +699,46 @@ pub fn var_name_text_edit(
     help: &str,
 ) {
     crate::widgets::wrap_unit(ui, |ui| {
-        crate::action_tooltip::help::label(ui, label, help);
+        crate::action_tooltip::help::label(ui, icon, label);
         let width = resolve_edit_width(ui, desired_width, 0.0);
         let id = ui.id().with(("var_name_edit", label));
         let focused = ui.memory(|m| m.has_focus(id));
         if should_show_var_name_overlay(value, focused) {
             let resp = paint_nested_var_chip(ui, value, known, is_dark);
-            let resp = click_to_edit_hit(
-                ui,
-                resp.rect
-                    .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
-                id.with("overlay_hit"),
-                label,
-                value,
+            let resp = crate::action_tooltip::help::tip(
+                click_to_edit_hit(
+                    ui,
+                    resp.rect
+                        .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
+                    id.with("overlay_hit"),
+                    label,
+                    value,
+                ),
+                help,
             );
             if resp.clicked() {
                 ui.memory_mut(|m| m.request_focus(id));
             }
         } else {
-            ui.add(
-                egui::TextEdit::singleline(value)
-                    .id(id)
-                    .desired_width(width),
+            crate::action_tooltip::help::tip(
+                ui.add(
+                    egui::TextEdit::singleline(value)
+                        .id(id)
+                        .desired_width(width),
+                ),
+                help,
             );
         }
     });
 }
 
 /// Trailing error/warning icon. Errors take priority.
-///
-/// Uses Phosphor glyphs (Proportional fallback) — emoji ✕/⚠ often render as
-/// missing-glyph tofu with the Ubuntu/Hack chain.
 pub fn paint_entry_validation_icon(ui: &mut egui::Ui, v: &EntryValidation) {
-    let (glyph, color, tip) = if !v.error.is_empty() {
-        (
-            egui_phosphor::regular::X_CIRCLE,
-            crate::theme::error_fg(),
-            v.error.as_str(),
-        )
+    if !v.error.is_empty() {
+        crate::widgets::error_icon(ui, v.error.as_str());
     } else if !v.warning.is_empty() {
-        (
-            egui_phosphor::regular::WARNING,
-            crate::theme::warn_fg(),
-            v.warning.as_str(),
-        )
-    } else {
-        return;
-    };
-    ui.add(egui::Label::new(egui::RichText::new(glyph).color(color)).sense(Sense::hover()))
-        .on_hover_text(tip);
+        crate::widgets::warn_icon(ui, v.warning.as_str());
+    }
 }
 
 /// Stroke color for compact validated chips (error > warning > none).
@@ -667,7 +771,9 @@ pub struct VarFieldOpts<'a> {
     /// Finite width, or [`f32::INFINITY`] to fill the remaining row.
     pub desired_width: f32,
     pub validation: &'a EntryValidation,
-    /// Hover text on the label; empty for none.
+    /// Phosphor glyph for the field icon.
+    pub icon: &'a str,
+    /// Description appended to the icon's `name:` tooltip; empty for none.
     pub help: &'a str,
 }
 
@@ -687,10 +793,11 @@ pub fn validated_var_ref_edit(
     let VarFieldOpts {
         desired_width,
         validation,
+        icon,
         help,
     } = opts;
     crate::widgets::wrap_unit(ui, |ui| {
-        crate::action_tooltip::help::label(ui, label, help);
+        crate::action_tooltip::help::label(ui, icon, label);
         let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
         let id = ui.id().with(("validated_var_ref", label));
         let focused = ui.memory(|m| m.has_focus(id));
@@ -699,19 +806,25 @@ pub fn validated_var_ref_edit(
             let resp = outer_frame(ui, Color32::TRANSPARENT, |ui| {
                 paint_var_ref_content(ui, value, known, is_dark, plain_fg);
             });
-            let resp = click_to_edit_hit(
-                ui,
-                resp.rect
-                    .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
-                id.with("overlay_hit"),
-                label,
-                value,
+            let resp = crate::action_tooltip::help::tip(
+                click_to_edit_hit(
+                    ui,
+                    resp.rect
+                        .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
+                    id.with("overlay_hit"),
+                    label,
+                    value,
+                ),
+                help,
             );
             if resp.clicked() {
                 ui.memory_mut(|m| m.request_focus(id));
             }
         } else {
-            var_ref_text_edit(ui, id, value, known, width, None);
+            crate::action_tooltip::help::tip(
+                var_ref_text_edit(ui, id, value, known, width, None),
+                help,
+            );
         }
         paint_entry_validation_icon(ui, validation);
     });
@@ -735,10 +848,13 @@ pub fn validated_var_ref_multiline_edit(
     let VarFieldOpts {
         desired_width,
         validation,
+        icon,
         help,
     } = opts;
-    ui.horizontal(|ui| {
-        crate::action_tooltip::help::label(ui, label, help);
+    // Wrapped row keeps the validation icon from being pushed past the clip.
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_2;
+        crate::action_tooltip::help::label(ui, icon, label);
         paint_entry_validation_icon(ui, validation);
     });
     let width = resolve_edit_width(ui, desired_width, 0.0);
@@ -752,11 +868,19 @@ pub fn validated_var_ref_multiline_edit(
                 paint_var_ref_content(ui, line, known, is_dark, plain_fg);
             }
         });
-        if click_to_edit_hit(ui, resp.rect, id.with("overlay_hit"), label, value).clicked() {
+        if crate::action_tooltip::help::tip(
+            click_to_edit_hit(ui, resp.rect, id.with("overlay_hit"), label, value),
+            help,
+        )
+        .clicked()
+        {
             ui.memory_mut(|m| m.request_focus(id));
         }
     } else {
-        var_ref_text_edit(ui, id, value, known, width, Some(rows));
+        crate::action_tooltip::help::tip(
+            var_ref_text_edit(ui, id, value, known, width, Some(rows)),
+            help,
+        );
     }
 }
 

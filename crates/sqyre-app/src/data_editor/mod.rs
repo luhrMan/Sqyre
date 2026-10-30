@@ -18,6 +18,7 @@ mod running_programs;
 mod variants;
 
 use crate::data_editor_preview::variant_display_label;
+use crate::help_text as ht;
 use crate::icon_cache::IconCache;
 use crate::image_view::ImageViewTransform;
 use crate::overlay_icons;
@@ -26,7 +27,7 @@ use crate::pickers::{self, ActivePicker, PickerResult};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::status_banner::StatusBanner;
 use eframe::egui;
-use helpers::{editor_program_names, is_editor_listed_program, overlay_hex_or_empty, rgba_color};
+use helpers::{default_editor_program, is_editor_listed_program, overlay_hex_or_empty, rgba_color};
 use sqyre_domain::Macro;
 use sqyre_hotkeys::ScreenClickBridge;
 use sqyre_persist::{
@@ -61,24 +62,28 @@ pub(crate) enum EditorSection {
 }
 
 impl EditorSection {
-    fn of(tab: EditorTab) -> Self {
-        match tab {
-            EditorTab::Programs | EditorTab::Overlay => Self::Programs,
-            EditorTab::Items | EditorTab::Masks => Self::Items,
-            EditorTab::Points
-            | EditorTab::SearchAreas
-            | EditorTab::Collections
-            | EditorTab::Atlases => Self::Coordinates,
-            EditorTab::ScreenCap | EditorTab::PixelCheck => Self::Tools,
-        }
-    }
-
     fn default_tab(self) -> EditorTab {
         match self {
             Self::Programs => EditorTab::Programs,
             Self::Items => EditorTab::Items,
             Self::Coordinates => EditorTab::Points,
             Self::Tools => EditorTab::ScreenCap,
+        }
+    }
+
+    /// Tabs under this section, in row order. `Some` paints a caption before
+    /// that tab ("Advanced" before Collections).
+    fn subtabs(self) -> &'static [(Option<&'static str>, EditorTab)] {
+        match self {
+            Self::Programs => &[(None, EditorTab::Programs), (None, EditorTab::Overlay)],
+            Self::Items => &[(None, EditorTab::Items), (None, EditorTab::Masks)],
+            Self::Coordinates => &[
+                (None, EditorTab::Points),
+                (None, EditorTab::SearchAreas),
+                (Some("Advanced"), EditorTab::Collections),
+                (None, EditorTab::Atlases),
+            ],
+            Self::Tools => &[(None, EditorTab::ScreenCap), (None, EditorTab::PixelCheck)],
         }
     }
 
@@ -125,6 +130,40 @@ impl EditorTab {
             Self::Collections => "Collections",
             Self::Atlases => "Atlases",
             Self::Overlay => "Overlay",
+        }
+    }
+
+    /// Intro blurb for the selected-tab label in the window header — carries
+    /// the help the removed per-form heading used to show. `""` = no tooltip.
+    fn header_tip(self) -> &'static str {
+        use crate::action_tooltip::help;
+        match self {
+            Self::Points => help::DE_POINT_COORDS,
+            Self::SearchAreas => help::DE_AREA_BOUNDS,
+            Self::ScreenCap => help::DE_SCREENCAP_INTRO,
+            #[cfg(feature = "native-runtime")]
+            Self::PixelCheck => help::DE_PIXELCHECK_INTRO,
+            Self::Overlay => help::DE_OVERLAY_INTRO,
+            _ => "",
+        }
+    }
+
+    /// Semantic glyph for the icon tab face; [`Self::label`] stays the
+    /// tooltip / combo fallback text. Entity tabs use the canonical
+    /// [`crate::model_icons`] glyph so the same model looks the same app-wide.
+    fn icon(self) -> &'static str {
+        use egui_phosphor::regular::*;
+        match self {
+            Self::Programs => crate::model_icons::PROGRAM,
+            Self::Items => crate::model_icons::ITEM,
+            Self::Masks => crate::model_icons::MASK,
+            Self::ScreenCap => CAMERA,
+            Self::PixelCheck => EYEDROPPER,
+            Self::Points => crate::model_icons::POINT,
+            Self::SearchAreas => crate::model_icons::SEARCH_AREA,
+            Self::Collections => crate::model_icons::COLLECTION,
+            Self::Atlases => crate::model_icons::ATLAS,
+            Self::Overlay => crate::model_icons::OVERLAY,
         }
     }
 
@@ -295,6 +334,8 @@ pub struct DataEditor {
     coord_preview: ImageViewTransform,
     /// `(tab, program, entity)` last shown; reset transform when this changes.
     coord_preview_key: Option<(EditorTab, String, String)>,
+    /// One-frame `force` armed by the preview's floating refresh button.
+    preview_force: bool,
     /// Overlay button id whose icon picker popup is open.
     overlay_icon_picker_for: Option<String>,
     /// Filter text for the overlay icon picker.
@@ -410,6 +451,7 @@ impl Default for DataEditor {
             atlas_preview_key: None,
             coord_preview: ImageViewTransform::default(),
             coord_preview_key: None,
+            preview_force: false,
             overlay_icon_picker_for: None,
             overlay_icon_search: String::new(),
             window_picker: ActivePicker::None,
@@ -637,8 +679,23 @@ impl DataEditor {
         self.request_open(ctx);
         self.switch_tab(tab, catalog, settings);
         if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
-            if let Some(name) = editor_program_names(catalog).next() {
-                self.select_program(name, catalog, settings);
+            if let Some(name) = default_editor_program(catalog) {
+                self.select_program(&name, catalog, settings);
+            }
+        }
+    }
+
+    pub(crate) fn open_tab_for_docs(
+        &mut self,
+        tab: EditorTab,
+        catalog: &ProgramCatalog,
+        settings: &UserSettings,
+    ) {
+        self.open = true;
+        self.switch_tab(tab, catalog, settings);
+        if !matches!(tab, EditorTab::Programs) && self.selected_program.is_none() {
+            if let Some(name) = default_editor_program(catalog) {
+                self.select_program(&name, catalog, settings);
             }
         }
     }
@@ -864,113 +921,69 @@ impl DataEditor {
     /// Title row with section tabs and close; returns true when close was clicked.
     fn ui_header(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) -> bool {
         let mut close = false;
-        crate::widgets::fill_row(
+        let tab_label = self.tab.label();
+        let tab_tip = self.tab.header_tip();
+        crate::widgets::window_header(
             ui,
+            "de_header_main",
             |ui| {
                 close =
                     crate::widgets::icon_button(ui, egui_phosphor::regular::X, "Close").clicked();
+                // Right-to-left: the tab label lands left of the close icon —
+                // the selected tab's name in the top right of the header.
+                crate::action_tooltip::help::tip(
+                    ui.label(egui::RichText::new(tab_label).strong()),
+                    tab_tip,
+                );
             },
             |ui| {
-                // Scroll the title + sections only when they exceed the leftover
-                // width. A fitting row paints the same widgets as a plain horizontal.
-                crate::widgets::show_overflow(ui, "de_header_main", 1.0, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(WINDOW_TITLE).strong());
-                        ui.add_space(crate::theme::SPACE_12);
-                        self.paint_section_bar(ui, env);
-                    });
-                });
+                ui.label(egui::RichText::new(WINDOW_TITLE).strong());
+                ui.add_space(crate::theme::element_gap(ui));
+                self.paint_section_bar(ui, env);
             },
         );
         close
     }
 
+    /// Every section's subtab buttons in one row — the subsection buttons are
+    /// self-explanatory, so there are no section-level icons — with separators
+    /// between the sections.
     fn paint_section_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
-        let section = EditorSection::of(self.tab);
         let mut items = Vec::new();
-        let mut sections = Vec::new();
-        for (sec, label) in [
-            (EditorSection::Programs, "Programs"),
-            (EditorSection::Items, "Items"),
-            (EditorSection::Coordinates, "Coordinates"),
-            (EditorSection::Tools, "Tools"),
+        let mut targets = Vec::new();
+        for sec in [
+            EditorSection::Programs,
+            EditorSection::Items,
+            EditorSection::Coordinates,
+            EditorSection::Tools,
         ] {
             if !sec.is_available() {
                 continue;
             }
-            items.push(crate::widgets::OverflowItem::Choice {
-                label,
-                selected: section == sec,
-            });
-            sections.push(sec);
-        }
-        if let Some(i) =
-            crate::widgets::overflow_bar(ui, "de_sections", "Data Editor section", &items)
-        {
-            let sec = sections[i];
-            if section != sec {
-                self.switch_tab(sec.default_tab(), env.catalog, env.settings);
+            if !items.is_empty() {
+                items.push(crate::widgets::OverflowItem::Separator);
+                // Separators never register a click; the slot only keeps
+                // `targets` index-aligned with `items`.
+                targets.push(sec.default_tab());
             }
-        }
-    }
-
-    fn paint_subtabs(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
-        let section = EditorSection::of(self.tab);
-        if !section.is_available() {
-            return;
-        }
-        let tab = self.tab;
-        let choice = |t: EditorTab| crate::widgets::OverflowItem::Choice {
-            label: t.label(),
-            selected: tab == t,
-        };
-        let (id, items): (&str, Vec<crate::widgets::OverflowItem<'_>>) = match section {
-            EditorSection::Programs => (
-                "de_sub_programs",
-                vec![choice(EditorTab::Programs), choice(EditorTab::Overlay)],
-            ),
-            EditorSection::Items => (
-                "de_sub_items",
-                vec![choice(EditorTab::Items), choice(EditorTab::Masks)],
-            ),
-            EditorSection::Coordinates => (
-                "de_sub_coords",
-                vec![
-                    crate::widgets::OverflowItem::Caption("Basic"),
-                    choice(EditorTab::Points),
-                    choice(EditorTab::SearchAreas),
-                    crate::widgets::OverflowItem::Caption("Advanced"),
-                    choice(EditorTab::Collections),
-                    choice(EditorTab::Atlases),
-                ],
-            ),
-            EditorSection::Tools => (
-                "de_sub_tools",
-                vec![choice(EditorTab::ScreenCap), choice(EditorTab::PixelCheck)],
-            ),
-        };
-        if let Some(i) = crate::widgets::overflow_bar(ui, id, "Data Editor tab", &items) {
-            if let Some(next) = Self::subtab_at(section, i) {
-                if next != self.tab {
-                    self.switch_tab(next, env.catalog, env.settings);
+            for &(caption, tab) in sec.subtabs() {
+                if let Some(caption) = caption {
+                    items.push(crate::widgets::OverflowItem::Caption(caption));
+                    targets.push(tab);
                 }
+                items.push(crate::widgets::OverflowItem::Choice {
+                    label: tab.label(),
+                    icon: tab.icon(),
+                    selected: self.tab == tab,
+                });
+                targets.push(tab);
             }
         }
-    }
-
-    fn subtab_at(section: EditorSection, index: usize) -> Option<EditorTab> {
-        match (section, index) {
-            (EditorSection::Programs, 0) => Some(EditorTab::Programs),
-            (EditorSection::Programs, 1) => Some(EditorTab::Overlay),
-            (EditorSection::Items, 0) => Some(EditorTab::Items),
-            (EditorSection::Items, 1) => Some(EditorTab::Masks),
-            (EditorSection::Coordinates, 1) => Some(EditorTab::Points),
-            (EditorSection::Coordinates, 2) => Some(EditorTab::SearchAreas),
-            (EditorSection::Coordinates, 4) => Some(EditorTab::Collections),
-            (EditorSection::Coordinates, 5) => Some(EditorTab::Atlases),
-            (EditorSection::Tools, 0) => Some(EditorTab::ScreenCap),
-            (EditorSection::Tools, 1) => Some(EditorTab::PixelCheck),
-            _ => None,
+        if let Some(i) = crate::widgets::always_bar(ui, &items) {
+            let next = targets[i];
+            if next != self.tab {
+                self.switch_tab(next, env.catalog, env.settings);
+            }
         }
     }
 
@@ -1003,7 +1016,6 @@ impl DataEditor {
         previews: &mut PreviewTooltipCache,
         short: bool,
     ) {
-        self.paint_subtabs(ui, env);
         crate::widgets::section_separator(ui);
 
         if let Some(msg) = env.screen_click.status_label() {
@@ -1019,14 +1031,7 @@ impl DataEditor {
         let used_h = if short { rem.y.max(min_stack) } else { rem.y };
         let (outer, _) = ui.allocate_exact_size(egui::vec2(rem.x, used_h), egui::Sense::hover());
 
-        let footer_h = (ui.spacing().interact_size.y
-            + ui.spacing().item_spacing.y * 3.0
-            + crate::theme::SPACE_8)
-            .min(used_h * 0.4);
-        let body_h = (used_h - footer_h).max(40.0);
-        let body_rect = egui::Rect::from_min_size(outer.min, egui::vec2(rem.x, body_h));
-        let footer_rect =
-            egui::Rect::from_min_max(egui::pos2(outer.min.x, outer.min.y + body_h), outer.max);
+        let body_rect = egui::Rect::from_min_size(outer.min, egui::vec2(rem.x, used_h.max(40.0)));
 
         let avail_w = body_rect.width();
         let min_left = avail_w * MIN_DATA_EDITOR_LEFT_FRAC;
@@ -1058,8 +1063,7 @@ impl DataEditor {
                 "Pane divider — drag, or press Left/Right arrows while focused, to resize the list and editor panes",
             )
         });
-        let split_resp =
-            split_resp.on_hover_text("Drag to resize panes — Left/Right arrows when focused");
+        let split_resp = split_resp.on_hover_text(ht::ED_RESIZE_PANES);
         let stroke = if split_resp.hovered() || split_resp.dragged() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             ui.visuals().widgets.active.fg_stroke
@@ -1129,9 +1133,10 @@ impl DataEditor {
         {
             let content_w = right_ui.max_rect().width();
             let paint_form = |ui: &mut egui::Ui| {
-                // Cap soft-wrap to the pane; dialog_scroll (both axes) still H-scrolls
-                // when a hard min-width (preview row, fixed fields) exceeds the viewport.
-                ui.set_max_width(content_w);
+                // Cap soft-wrap to the painted clip (the reserved scrollbar
+                // lane insets it past `max_rect`); dialog_scroll (both axes)
+                // still H-scrolls when a hard min-width exceeds the viewport.
+                crate::widgets::clamp_row_right_to_clip(ui);
                 let macros: &[Macro] = env.macros;
                 tag_submit = self.draw_form(
                     ui,
@@ -1146,83 +1151,54 @@ impl DataEditor {
                     env.settings,
                 );
             };
-            pickers::dialog_scroll(content_w, body_h)
+            // The footer chip floats over the pane's bottom-right corner; the
+            // form scrolls beneath it — no strip is reserved (see baseline).
+            pickers::dialog_scroll(content_w, body_rect.height().max(40.0))
                 .id_salt("data_editor_form")
                 .show(&mut right_ui, paint_form);
         }
 
-        {
-            let mut footer_ui = ui.new_child(
-                egui::UiBuilder::new()
-                    .max_rect(footer_rect)
-                    .layout(egui::Layout::top_down(egui::Align::Min)),
-            );
-            footer_ui.set_clip_rect(footer_rect.intersect(ui.clip_rect()));
-            footer_ui.set_max_size(footer_rect.size());
-            footer_ui.vertical(|ui| {
-                crate::widgets::section_separator(ui);
-                crate::widgets::show_overflow(ui, "de_footer", 1.0, |ui| {
-                    ui.horizontal_wrapped(|ui| {
-                        let can_new =
-                            !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-                        let new_resp = ui.add_enabled(
-                            can_new,
-                            egui::Button::new(
-                                egui::RichText::new("New").color(crate::theme::MACRO_START),
-                            ),
-                        );
-                        // Every tab shows the same "New" face; the a11y name
-                        // says which entity it creates (also keeps UI tests
-                        // from matching the wrong "New").
-                        if let Some(noun) = self.tab.entity_noun() {
-                            new_resp.widget_info(|| {
-                                egui::WidgetInfo::labeled(
-                                    egui::WidgetType::Button,
-                                    ui.is_enabled(),
-                                    format!("New {noun}"),
-                                )
-                            });
-                        }
-                        if new_resp.clicked() {
-                            self.on_new(env);
-                        }
-                        #[cfg(feature = "native-runtime")]
-                        if matches!(self.tab, EditorTab::Programs) {
-                            let pending = self.add_running_programs_pending();
-                            let label = if pending { "Adding…" } else { "Add running" };
-                            if ui
-                                .add_enabled(!pending, egui::Button::new(label))
-                                .on_hover_text(
-                                    "Add every program with an open window (the same list as \
-                                 Select…), named after its process. Programs already in \
-                                 the list are skipped.",
-                                )
-                                .clicked()
-                            {
-                                self.start_add_running_programs();
-                            }
-                        }
-                        let dirty = self.is_dirty(env.catalog, env.settings);
-                        let valid = self.form_valid(env.macros.get(selected_macro));
-                        let can_save =
-                            !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-                        let save_enabled = can_save && dirty && valid;
-                        let save_clicked =
-                            crate::widgets::dirty_action_button(ui, "Save", save_enabled).clicked();
-                        // Enter submits when Save is able: this window is in front,
-                        // and no confirm / picker / combo is using the key.
-                        let save_enter = save_enabled
-                            && self.enter_commits_update(ui)
-                            && ui.input_mut(|i| {
-                                i.consume_key(egui::Modifiers::NONE, egui::Key::Enter)
-                            });
-                        if save_clicked || save_enter || (tag_submit && save_enabled) {
-                            self.on_update(env, previews);
-                        }
-                    });
-                });
-            });
-        }
+        // Footer chrome floats over the form's bottom-right instead of
+        // reserving a full-width strip.
+        let right_pane = egui::Rect::from_min_max(
+            egui::pos2(split_rect.right(), body_rect.top()),
+            body_rect.max,
+        );
+        crate::widgets::float_bottom_right(ui, right_pane, |ui| {
+            let dirty = self.is_dirty(env.catalog, env.settings);
+            let valid = self.form_valid(env.macros.get(selected_macro));
+            let can_save = !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
+            let save_enabled = can_save && dirty && valid;
+            let save_clicked =
+                crate::widgets::dirty_action_button(ui, "Save", save_enabled).clicked();
+            // Enter submits when Save is able: this window is in front,
+            // and no confirm / picker / combo is using the key.
+            let save_enter = save_enabled
+                && self.enter_commits_update(ui)
+                && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+            if save_clicked || save_enter || (tag_submit && save_enabled) {
+                self.on_update(env, previews);
+            }
+            #[cfg(feature = "native-runtime")]
+            if matches!(self.tab, EditorTab::Programs) {
+                let pending = self.add_running_programs_pending();
+                if crate::widgets::add_button(ui, "Add running programs", !pending)
+                    .on_hover_text(ht::ED_ADD_ALL_PROGRAMS)
+                    .clicked()
+                {
+                    self.start_add_running_programs();
+                }
+            }
+            let can_new = !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
+            let new_tip = self
+                .tab
+                .entity_noun()
+                .map(|noun| format!("New {noun}"))
+                .unwrap_or_else(|| "New".to_owned());
+            if crate::widgets::add_button(ui, &new_tip, can_new).clicked() {
+                self.on_new(env);
+            }
+        });
     }
 
     /// Ask to delete the selected program / entity (list row right-click → Delete).
@@ -1362,7 +1338,8 @@ impl DataEditor {
         let mut cancel = false;
         let open = crate::widgets::confirm_window(ctx, "Add Icon Variant", pending_scale, |ui| {
             ui.label("Variant name");
-            ui.add(egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(220.0));
+            let name_w = crate::widgets::name_edit_width(ui, &self.variant_name_draft, "");
+            ui.add(egui::TextEdit::singleline(&mut self.variant_name_draft).desired_width(name_w));
             match crate::widgets::confirm_cancel_row(
                 ui,
                 "Add",

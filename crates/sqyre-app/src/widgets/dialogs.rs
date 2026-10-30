@@ -178,11 +178,13 @@ pub fn visible_height(ui: &egui::Ui) -> f32 {
     visible_size(ui).y
 }
 
-/// Right-edge width covered by a floating vertical scrollbar.
+/// Right-edge width still covered by a floating vertical scrollbar.
 ///
-/// egui's default `floating_allocated_width` is 0, so the bar overlays content
-/// without shrinking `available_width`. Subtract this when sizing columns or
-/// anchoring chrome to the visible right edge.
+/// [`crate::theme::scroll_style`] reserves the full lane
+/// (`floating_allocated_width = bar_width`), so this is 0 under the app style —
+/// egui already insets the content clip past the bar. egui's default style
+/// leaves `bar_width` uncovered, so this stays nonzero in bare test contexts.
+/// Subtract when sizing columns or anchoring chrome to the visible right edge.
 pub fn floating_scrollbar_overlay_width(ui: &egui::Ui) -> f32 {
     let scroll = &ui.spacing().scroll;
     if scroll.floating {
@@ -197,17 +199,43 @@ pub fn visible_content_width(ui: &egui::Ui) -> f32 {
     (visible_width(ui) - floating_scrollbar_overlay_width(ui)).max(1.0)
 }
 
+/// Shrink this row's `max_width` so its right edge lands on the painted clip.
+///
+/// Inside [`super::dialog_scroll`] the reserved scrollbar lane
+/// ([`crate::theme::scroll_style`]) insets the content clip but not
+/// `max_rect`, so `Layout::right_to_left` controls anchored at
+/// `max_rect().right()` land under/past the bar. `set_max_width` anchors at
+/// the cursor, so the bound is `clip.right - cursor.left` — call after any
+/// left-side content, immediately before the right-aligned widgets.
+pub fn clamp_row_right_to_clip(ui: &mut egui::Ui) {
+    // Clip is the paint bound, max_rect the layout bound — take the tighter of
+    // the two. In a scroll pane the clip is narrower (scrollbar lane); in bare
+    // test contexts the clip is wider, where `set_max_width` to the clip would
+    // expand the row past its pane.
+    let right = ui.max_rect().right().min(ui.clip_rect().right());
+    ui.set_max_width((right - ui.cursor().min.x).max(1.0));
+}
+
 /// Fill a resizable [`egui::Window`] body without ratcheting its Resize state.
 ///
-/// Allocates exactly the painted window region ([`visible_size`]) and runs
-/// `add_body` in a [`Ui::new_child`] so child `min_size` cannot advance the
-/// parent (unlike [`Ui::scope_builder`], which would push edges off-screen).
+/// Allocates exactly the Resize target — `available_size` is already bounded
+/// by the window's `inner_rect` (`desired_size`), clamped to the dialog
+/// region — and runs `add_body` in a [`Ui::new_child`] so child `min_size`
+/// cannot advance the parent (unlike [`Ui::scope_builder`], which would push
+/// edges off-screen).
+///
+/// Do not bound the body by `clip_rect`: the painted window lags a frame
+/// behind `desired_size` while a dialog settles open, so a clip-bounded body
+/// reports a shrinking `min_size` and the window stair-steps toward its final
+/// size a few points per frame.
 ///
 /// Use with [`fit_dialog_popup`] (not [`fit_dialog_window`]): an outer Window
 /// scroll makes `available_size` track `max_size` and defeats this.
-pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui)) {
-    let size = visible_size(ui).max(egui::vec2(1.0, 1.0));
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui)) -> egui::Response {
+    let cap = dialog_constrain_rect(ui.ctx()).size();
+    let avail = ui.available_size();
+    let size = egui::vec2(avail.x.min(cap.x).max(1.0), avail.y.min(cap.y).max(1.0));
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::hover());
     let mut body = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
@@ -216,6 +244,7 @@ pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui))
     body.set_clip_rect(rect.intersect(ui.clip_rect()));
     body.set_max_size(rect.size());
     add_body(&mut body);
+    resp
 }
 
 /// Keep a floating dialog inside [`dialog_constrain_rect`], scrolling overflow
@@ -303,7 +332,7 @@ fn paint_save_cancel_row(
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         // First in RTL = rightmost → Save on the right, Cancel on its left.
         let save = crate::widgets::dirty_action_button(ui, "Save", save_enabled);
-        let cancel = ui.button("Cancel");
+        let cancel = crate::widgets::cancel_icon_button(ui, "Cancel");
         save_rect = save.rect;
         cancel_rect = cancel.rect;
         // Prefer Cancel if both somehow click in one frame (matches prior).
@@ -371,7 +400,7 @@ pub fn poll_confirm_keys(ui: &mut egui::Ui) -> ConfirmCancel {
 pub fn dismiss_row(ui: &mut egui::Ui, esc_dismisses: bool) -> bool {
     let mut cancel = false;
     ui.horizontal(|ui| {
-        if ui.button("Cancel").clicked() {
+        if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
             cancel = true;
         }
     });
@@ -392,7 +421,7 @@ pub fn confirm_cancel_row(
 ) -> ConfirmCancel {
     let mut out = ConfirmCancel::None;
     ui.horizontal(|ui| {
-        if ui.button("Cancel").clicked() {
+        if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
             out = ConfirmCancel::Cancel;
         }
         if confirm_button(ui, confirm_label, kind).clicked() {
@@ -424,7 +453,7 @@ pub fn confirm_choice_row(
 ) -> ConfirmChoice {
     let mut out = ConfirmChoice::None;
     ui.horizontal(|ui| {
-        if ui.button("Cancel").clicked() {
+        if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
             out = ConfirmChoice::Cancel;
         }
         for (i, (label, kind)) in choices.iter().enumerate() {

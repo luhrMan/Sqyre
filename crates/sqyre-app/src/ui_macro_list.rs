@@ -1,10 +1,12 @@
 //! Left macro list panel and delete confirmation.
 
+use crate::help_text as ht;
 use crate::icon_cache::{IconCache, PROCESS_ICON_SIDE};
 use crate::pickers;
 use crate::status_banner::{StatusBanner, PREFIX_LOAD_ERROR, PREFIX_SAVE_ERROR};
-use crate::theme::{SPACE_12, SPACE_4, SPACE_8};
-use crate::widgets::tags::{filters_cover_path, normalize_tag_path};
+use crate::theme::SPACE_12;
+use crate::widgets::elide::{elide_to_width, text_hover_if};
+use crate::widgets::tags::{filters_cover_path, normalize_tag_path, tag_pill};
 use crate::SqyreApp;
 use eframe::egui::{self, TextureHandle};
 use sqyre_domain::Macro;
@@ -14,6 +16,9 @@ use std::collections::{BTreeMap, HashMap};
 
 /// Empty-string group key for macros with no tags.
 const UNTAGGED_KEY: &str = "";
+/// Horizontal offset for one level of nested tag groups (fixed — density gaps
+/// change row spacing, not tree indentation).
+const NEST_INDENT: f32 = SPACE_12;
 
 /// One node in the `/`-nested tag tree for the macrolist.
 #[derive(Debug, Default)]
@@ -46,51 +51,6 @@ impl TagTreeNode {
     }
 }
 
-/// Elide `text` to a single line that fits `max_width`, appending `…` only when needed.
-fn elide_to_width(ui: &egui::Ui, text: &str, max_width: f32, font_id: egui::FontId) -> String {
-    if text.is_empty() {
-        return String::new();
-    }
-    let full = ui
-        .painter()
-        .layout_no_wrap(text.to_owned(), font_id.clone(), egui::Color32::WHITE);
-    if full.size().x <= max_width {
-        return text.to_owned();
-    }
-
-    const ELLIPSIS: char = '…';
-    let ellipsis_w = ui
-        .painter()
-        .layout_no_wrap(ELLIPSIS.to_string(), font_id.clone(), egui::Color32::WHITE)
-        .size()
-        .x;
-    let budget = (max_width - ellipsis_w).max(0.0);
-    if budget <= 0.0 {
-        return ELLIPSIS.to_string();
-    }
-
-    let char_count = text.chars().count();
-    let mut lo = 0usize;
-    let mut hi = char_count;
-    while lo < hi {
-        let mid = (lo + hi).div_ceil(2);
-        let candidate: String = text.chars().take(mid).collect();
-        let w = ui
-            .painter()
-            .layout_no_wrap(candidate, font_id.clone(), egui::Color32::WHITE)
-            .size()
-            .x;
-        if w <= budget {
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-    let mut out: String = text.chars().take(lo).collect();
-    out.push(ELLIPSIS);
-    out
-}
-
 /// Macro name on the first line; hotkey as a weak small hint below when set.
 /// Each line is shown in full when it fits `max_text_width`, otherwise elided with `…`.
 /// When `validation_error` is set, the name is tinted and callers should attach hover text.
@@ -99,7 +59,7 @@ fn macro_list_item_text(
     m: &Macro,
     max_text_width: f32,
     validation_error: Option<&str>,
-) -> egui::WidgetText {
+) -> (egui::WidgetText, bool) {
     let style = ui.style();
     let name_font = egui::FontSelection::Default.resolve(style);
     let name = elide_to_width(ui, &m.name, max_text_width, name_font);
@@ -110,20 +70,24 @@ fn macro_list_item_text(
     };
 
     if m.hotkey.is_empty() {
-        return egui::RichText::new(name).color(name_color).into();
+        return (
+            egui::RichText::new(name.text).color(name_color).into(),
+            name.elided,
+        );
     }
 
     let hotkey_font = egui::TextStyle::Small.resolve(style);
     let hotkey = elide_to_width(ui, &format_hotkey(&m.hotkey), max_text_width, hotkey_font);
+    let elided = name.elided || hotkey.elided;
 
     let mut job = egui::text::LayoutJob::default();
-    egui::RichText::new(name).color(name_color).append_to(
+    egui::RichText::new(name.text).color(name_color).append_to(
         &mut job,
         style,
         egui::FontSelection::Default,
         egui::Align::LEFT,
     );
-    egui::RichText::new(format!("\n{hotkey}"))
+    egui::RichText::new(format!("\n{}", hotkey.text))
         .small()
         .color(style.visuals.weak_text_color())
         .append_to(
@@ -132,7 +96,7 @@ fn macro_list_item_text(
             egui::FontSelection::Default,
             egui::Align::LEFT,
         );
-    job.into()
+    (job.into(), elided)
 }
 
 fn tag_header_label(tag: &str) -> &str {
@@ -264,14 +228,31 @@ fn paint_macro_rows(
         let validation_err = sqyre_validate::validate_macro(m)
             .err()
             .map(|e| e.to_string());
-        let label = macro_list_item_text(ui, m, text_width, validation_err.as_deref());
+        let (label, label_elided) =
+            macro_list_item_text(ui, m, text_width, validation_err.as_deref());
         let mut resp = ui.add(
             egui::Button::selectable(app.workspace.selected_macro == i, label)
                 .wrap_mode(egui::TextWrapMode::Extend)
                 .min_size(egui::vec2(width, 0.0)),
         );
-        if let Some(err) = validation_err.as_deref() {
-            resp = resp.on_hover_text(format!("Validation: {err}"));
+        let full_text = if m.hotkey.is_empty() {
+            m.name.clone()
+        } else {
+            format!("{}\n{}", m.name, format_hotkey(&m.hotkey))
+        };
+        let hover_text = match (label_elided, validation_err.as_deref()) {
+            (true, Some(err)) => Some(format!("{full_text}\n\nValidation: {err}")),
+            (true, None) => Some(full_text.clone()),
+            (false, Some(err)) => Some(format!("Validation: {err}")),
+            (false, None) => None,
+        };
+        if let Some(hover_text) = hover_text {
+            resp = resp.on_hover_text(hover_text);
+        } else {
+            resp = text_hover_if(resp, &full_text, label_elided);
+        }
+        if validation_err.is_some() {
+            crate::widgets::error_badge(ui, resp.rect);
         }
         if i == app.workspace.selected_macro {
             if nav.scroll {
@@ -325,9 +306,7 @@ fn paint_tag_node(
     is_first_root: bool,
 ) {
     if !is_first_root {
-        ui.add_space(SPACE_8);
         crate::widgets::section_separator(ui);
-        ui.add_space(SPACE_4);
     }
 
     let id = ui.make_persistent_id(("macro_list_tag", path));
@@ -367,16 +346,15 @@ fn paint_tag_group(
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let mut hotkeys_on = covered;
                 let hotkey_resp = ui
-                    .add_enabled_ui(!parent_covered, |ui| {
-                        crate::widgets::icon_toggle(
-                            ui,
+                    .add_enabled(
+                        !parent_covered,
+                        crate::widgets::IconToggle::new(
                             &mut hotkeys_on,
                             "Hotkeys",
                             egui_phosphor::regular::KEY,
                             egui_phosphor::fill::KEY,
-                        )
-                    })
-                    .inner
+                        ),
+                    )
                     .on_hover_text(hover)
                     .on_disabled_hover_text(hover);
                 if hotkey_resp.changed() {
@@ -402,7 +380,7 @@ fn paint_tag_group(
                         }
                     }
                     let font = egui::FontSelection::Default.resolve(ui.style());
-                    let count_text = format!("({count})");
+                    let count_text = crate::widgets::count_text(count);
                     if !hide_name {
                         let count_w = ui
                             .painter()
@@ -412,12 +390,13 @@ fn paint_tag_group(
                         let name_budget =
                             (ui.available_width() - count_w - ui.spacing().item_spacing.x).max(0.0);
                         let header_text = elide_to_width(ui, label, name_budget, font);
-                        ui.add(
-                            egui::Label::new(egui::RichText::new(header_text).strong())
+                        let resp = ui.add(
+                            egui::Label::new(egui::RichText::new(header_text.text).strong())
                                 .selectable(false),
                         );
+                        text_hover_if(resp, label, header_text.elided);
                     }
-                    ui.label(egui::RichText::new(count_text).weak());
+                    crate::widgets::count_suffix(ui, count);
                 });
             });
         })
@@ -438,12 +417,13 @@ fn paint_tag_group(
                     format!("{path}/{seg}")
                 };
                 // Nested headers: no root separators; slight indent without expand_to_include_x.
-                ui.add_space(SPACE_4);
+                ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
-                    ui.add_space(SPACE_12);
+                    ui.add_space(NEST_INDENT);
                     // Item spacing sits between the indent and the column; leaving it
                     // out overflows the viewport and enables horizontal drag-scroll.
-                    let nested_w = (ctx.list_w - SPACE_12 - ui.spacing().item_spacing.x).max(0.0);
+                    let nested_w =
+                        (ctx.list_w - NEST_INDENT - ui.spacing().item_spacing.x).max(0.0);
                     ui.vertical(|ui| {
                         ui.set_max_width(nested_w);
                         let mut nested = PaintTagCtx {
@@ -469,6 +449,63 @@ fn paint_tag_group(
         });
 }
 
+/// Pinned "Hotkeys:" summary — one pill per selected tag. Pills that cannot
+/// fit whole collapse into a `+N` overflow pill (single-row chip rule); each
+/// pill carries the tag-chip affordance: right-click removes the tag.
+fn paint_hotkey_tag_footer(app: &mut SqyreApp, ui: &mut egui::Ui) {
+    let filters = &app.workspace.hotkey_tag_filters;
+    if filters.is_empty() {
+        ui.small("Hotkeys: off");
+        return;
+    }
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let pill_w = |ui: &egui::Ui, text: &str| {
+        ui.painter()
+            .layout_no_wrap(text.to_string(), font.clone(), egui::Color32::WHITE)
+            .size()
+            .x
+            + crate::theme::SPACE_2 * 2.0
+    };
+    let mut remove: Option<String> = None;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new("Hotkeys:").small().weak());
+        let row_right = ui.max_rect().right().min(ui.clip_rect().right());
+        let mut overflow = 0usize;
+        for (i, tag) in filters.iter().enumerate() {
+            let label = tag_header_label(tag);
+            if ui.cursor().left() + pill_w(ui, label) > row_right {
+                overflow += 1;
+                continue;
+            }
+            let resp = tag_pill(ui, label).on_hover_text(ht::MLIST_ROW_OPTIONS);
+            if crate::widgets::rect_danger_menu(
+                ui,
+                ui.id().with(("hotkey_tag_pill", i, tag)),
+                resp.rect,
+                None,
+                "Remove",
+                true,
+            ) {
+                remove = Some(tag.clone());
+            }
+        }
+        if overflow > 0 {
+            let count = format!("+{overflow}");
+            if ui.cursor().left() + pill_w(ui, &count) <= row_right {
+                let hidden = filters[filters.len() - overflow..]
+                    .iter()
+                    .map(|t| tag_header_label(t))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                tag_pill(ui, &count).on_hover_text(format!("{overflow} more: {hidden}"));
+            }
+        }
+    });
+    if let Some(tag) = remove {
+        app.toggle_hotkey_tag_filter(tag);
+    }
+}
+
 fn select_macro_row(app: &mut SqyreApp, i: usize) {
     app.workspace.selected_macro = i;
     app.tree.selected_actions.clear();
@@ -486,6 +523,25 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
         sqyre_persist::MIN_MACRO_LIST_FRAC,
         sqyre_persist::MAX_MACRO_LIST_FRAC,
     );
+    let panel_id = egui::Id::new("macro_list_tags");
+    // The saved fraction is authoritative: PanelState is absolute pixels and
+    // egui skips storing it during divider drags and slide animations, so a
+    // stale value (old session, window/WM resize) would otherwise override
+    // `default_size`. Realign every frame — the >1px slack keeps the steady
+    // state write-free — but skip implausibly narrow frames so a transient
+    // small window can't squash the panel.
+    if win_w >= 300.0 {
+        if let Some(mut state) = egui::containers::panel::PanelState::load(ui.ctx(), panel_id) {
+            let want_w = win_w * frac;
+            if (state.size().x - want_w).abs() > 1.0 {
+                state.outer_rect = egui::Rect::from_min_size(
+                    state.outer_rect.min,
+                    egui::vec2(want_w, state.outer_rect.height()),
+                );
+                ui.ctx().data_mut(|d| d.insert_persisted(panel_id, state));
+            }
+        }
+    }
     egui::Panel::right("macro_list_tags")
         .default_size(win_w * frac)
         .size_range(
@@ -503,55 +559,29 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             let pane_w = ui.available_width();
             ui.set_max_width(pane_w);
 
-            let macro_count = {
-                let filter = app.macro_list_filter.trim();
-                if filter.is_empty() {
-                    app.workspace.macros.len()
-                } else {
-                    app.workspace
-                        .macros
-                        .iter()
-                        .filter(|m| pickers::query_matches_name_or_tags(filter, &m.name, &m.tags))
-                        .count()
-                }
-            };
-            let mut new_clicked = false;
-            let title_w = crate::widgets::text_width(ui, "Macros", egui::TextStyle::Heading);
-            let count_label = format!("({macro_count})");
-            let count_w = crate::widgets::text_width(ui, &count_label, egui::TextStyle::Body);
-            let header_need = title_w + count_w + 40.0 + ui.spacing().item_spacing.x * 3.0 + 8.0;
-            if header_need <= pane_w {
-                crate::widgets::heading_with_count_and(ui, "Macros", macro_count, |ui| {
-                    // Use ASCII / NotoEmoji glyphs only — fullwidth/math symbols
-                    // (＋, ⧉) render as tofu in egui's default font stack.
-                    new_clicked = crate::widgets::icon_button_colored(
+            // Search takes the pane minus the new-macro button on its right.
+            let mut create_macro = false;
+            let search_resp = crate::widgets::fill_row(
+                ui,
+                |ui| {
+                    create_macro = crate::widgets::add_button(ui, "New macro", true).clicked();
+                },
+                |ui| {
+                    crate::widgets::search_field(
                         ui,
-                        "+",
-                        "New macro",
-                        Some(crate::theme::MACRO_START),
+                        &mut app.macro_list_filter,
+                        crate::widgets::SearchFieldOpts {
+                            hint: "Search macros or tags…",
+                            focus_id: None,
+                            clearable: true,
+                            stable_id: Some(egui::Id::new("macro_list_search")),
+                        },
                     )
-                    .clicked();
-                });
-            } else {
-                crate::widgets::show_overflow(ui, "macro_list_header", 1.0, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                        ui.add(
-                            egui::Label::new(egui::RichText::new("Macros").heading())
-                                .selectable(false),
-                        );
-                        new_clicked = crate::widgets::icon_button_colored(
-                            ui,
-                            "+",
-                            "New macro",
-                            Some(crate::theme::MACRO_START),
-                        )
-                        .clicked();
-                        ui.label(egui::RichText::new(count_label).weak());
-                    });
-                });
-            }
-            if new_clicked {
+                    .response
+                },
+            )
+            .on_hover_text(ht::MLIST_SEARCH_TIP);
+            if create_macro {
                 app.create_macro();
             }
             // True load failures only (corrupt db / undecodable macros). Per-macro
@@ -574,33 +604,12 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     &crate::status_banner::user_error_detail(err.as_str()),
                 );
             }
-            let search_resp = ui
-                .add(
-                    egui::TextEdit::singleline(&mut app.macro_list_filter)
-                        .desired_width(pane_w)
-                        .hint_text("Search macros or tags…"),
-                )
-                .on_hover_text(
-                    "Filter by macro name or tag. ↑↓ moves the selection, Enter edits it.",
-                );
-            {
-                let label = if app.workspace.hotkey_tag_filters.is_empty() {
-                    "Hotkeys: off".to_string()
-                } else {
-                    let joined = app
-                        .workspace
-                        .hotkey_tag_filters
-                        .iter()
-                        .map(|t| tag_header_label(t))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!("Hotkeys: {joined}")
-                };
-                let font = egui::TextStyle::Small.resolve(ui.style());
-                ui.small(elide_to_width(ui, &label, pane_w, font));
-            }
-            crate::widgets::section_separator(ui);
-            let list_h = ui.available_height();
+            // Hotkeys summary is a small footer pinned under the list; tag pills
+            // add their inner margin above/below the Small text line.
+            let footer_h = ui.text_style_height(&egui::TextStyle::Small)
+                + crate::theme::SPACE_2 * 2.0
+                + crate::theme::element_gap(ui);
+            let list_h = (ui.available_height() - footer_h).max(24.0);
             // Exact slot + clipped child: overflow from ScrollArea/collapsing headers
             // must not widen the side panel's persisted size.
             let (list_rect, _) =
@@ -727,12 +736,22 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     None => {}
                 }
             });
+            ui.add_space(crate::theme::element_gap(ui));
+            paint_hotkey_tag_footer(app, ui);
+            ui.add_space(crate::theme::element_gap(ui));
         });
     app.macro_list_open = open;
 
-    // Persist user-resized panel width once the drag ends.
-    let panel_id = egui::Id::new("macro_list_tags");
-    if !ui.ctx().input(|i| i.pointer.any_down()) {
+    // Persist user-resized panel width only when a divider drag ends. Reading
+    // PanelState on every idle frame would corrupt the fraction: it is absolute
+    // pixels, so window resizes (maximize, tiling, WM startup sizing) change
+    // size.x/win_w without the user touching the divider. "__resize" is egui's
+    // resize-handle id suffix (panel.rs `resize_widget_id`).
+    let divider_released = ui
+        .ctx()
+        .read_response(panel_id.with("__resize"))
+        .is_some_and(|r| r.drag_stopped());
+    if divider_released && win_w >= 300.0 {
         if let Some(state) = egui::containers::panel::PanelState::load(ui.ctx(), panel_id) {
             let frac = (state.size().x / win_w).clamp(
                 sqyre_persist::MIN_MACRO_LIST_FRAC,

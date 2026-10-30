@@ -43,14 +43,10 @@ pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response 
     icon_button_inner(ui, glyph, tip, None)
 }
 
-/// Like [`icon_button`], with an optional fixed glyph color (e.g. record ●).
-pub fn icon_button_colored(
-    ui: &mut egui::Ui,
-    glyph: &str,
-    tip: &str,
-    color: Option<Color32>,
-) -> egui::Response {
-    icon_button_inner(ui, glyph, tip, color)
+/// Red `✕` — the one cancel/clear affordance app-wide (dismiss a dialog, clear
+/// a field, abort an armed picker). `tip` names what is cancelled or cleared.
+pub fn cancel_icon_button(ui: &mut egui::Ui, tip: &str) -> egui::Response {
+    icon_button_inner(ui, egui_phosphor::regular::X, tip, Some(MACRO_STOP))
 }
 
 fn icon_button_inner(
@@ -70,19 +66,94 @@ fn icon_button_inner(
     response.on_hover_text(tip).on_disabled_hover_text(tip)
 }
 
-/// Small `⚠` over the top-right corner of `rect` (e.g. a button's response rect).
+/// [`icon_button`] / [`cancel_icon_button`] as a [`egui::Widget`] — the form
+/// [`egui::Ui::add_enabled`] requires. (`add_enabled_ui` wraps content in a
+/// scope child that owns the rest of a wrapping row, so a single disabled icon
+/// could never move to the next row and painted past the clip.)
+pub struct IconButton<'a> {
+    pub glyph: &'a str,
+    pub tip: &'a str,
+    pub color: Option<Color32>,
+}
+
+impl<'a> IconButton<'a> {
+    pub fn new(glyph: &'a str, tip: &'a str, color: Option<Color32>) -> Self {
+        Self { glyph, tip, color }
+    }
+}
+
+impl egui::Widget for IconButton<'_> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        icon_button_inner(ui, self.glyph, self.tip, self.color)
+    }
+}
+
+/// Small glyph badge inside the top-right corner of `rect` (e.g. a button's
+/// response rect). Sized to a fraction of the host so it reads as a badge,
+/// never covers the control; kept inside the bounds so the glyph is never cut
+/// by the row clip.
 ///
 /// Color alone is not enough: callers also change the hover text to say what is wrong.
-pub fn warn_badge(ui: &mut egui::Ui, rect: egui::Rect) {
-    let font_id = egui::FontId::proportional(ui.text_style_height(&egui::TextStyle::Small));
-    let side = font_id.size;
+fn corner_badge(ui: &mut egui::Ui, rect: egui::Rect, glyph: &str, color: Color32) {
+    let font_h = ui.text_style_height(&egui::TextStyle::Small);
+    let side = (rect.height() * 0.45).min(font_h).max(6.0);
+    let font_id = egui::FontId::proportional(side);
     let badge = egui::Rect::from_center_size(
-        egui::pos2(rect.right() - side * 0.2, rect.top() + side * 0.3),
+        egui::pos2(rect.right() - side * 0.7, rect.top() + side * 0.5),
         Vec2::splat(side),
     );
     ui.painter()
         .circle_filled(badge.center(), side * 0.55, ui.visuals().panel_fill);
-    paint_text_centered(ui, badge, "⚠", font_id, crate::theme::warn_fg());
+    paint_text_centered(ui, badge, glyph, font_id, color);
+}
+
+/// `⚠` corner badge for warnings on a host widget.
+pub fn warn_badge(ui: &mut egui::Ui, rect: egui::Rect) {
+    corner_badge(ui, rect, "⚠", crate::theme::warn_fg());
+}
+
+/// `⊗` corner badge for errors on a host widget.
+pub fn error_badge(ui: &mut egui::Ui, rect: egui::Rect) {
+    corner_badge(
+        ui,
+        rect,
+        egui_phosphor::regular::X_CIRCLE,
+        crate::theme::error_fg(),
+    );
+}
+
+/// Severity glyph with the message it replaces in the hover tooltip / AccessKit
+/// name — the icon-first replacement for an always-visible status line. `tip`
+/// is required: an unexplained icon is dead chrome.
+///
+/// Uses Phosphor glyphs (Proportional fallback) — emoji ✕/⚠ often render as
+/// missing-glyph tofu with the Ubuntu/Hack chain.
+pub fn status_icon(ui: &mut egui::Ui, glyph: &str, color: Color32, tip: &str) -> egui::Response {
+    let enabled = ui.is_enabled();
+    let resp =
+        ui.add(egui::Label::new(egui::RichText::new(glyph).color(color)).sense(Sense::hover()));
+    resp.widget_info(|| WidgetInfo::labeled(WidgetType::Label, enabled, tip));
+    resp.on_hover_text(tip)
+}
+
+/// `⊗` error marker — hover shows the error text.
+pub fn error_icon(ui: &mut egui::Ui, tip: &str) -> egui::Response {
+    status_icon(
+        ui,
+        egui_phosphor::regular::X_CIRCLE,
+        crate::theme::error_fg(),
+        tip,
+    )
+}
+
+/// `⚠` warning marker — hover shows the warning text.
+pub fn warn_icon(ui: &mut egui::Ui, tip: &str) -> egui::Response {
+    status_icon(
+        ui,
+        egui_phosphor::regular::WARNING,
+        crate::theme::warn_fg(),
+        tip,
+    )
 }
 
 /// Named font family for Phosphor Fill (outline Regular stays on Proportional).
@@ -132,6 +203,42 @@ pub fn icon_toggle(
     let selected_now = *selected;
     response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, enabled, selected_now, tip));
     response.on_hover_text(tip).on_disabled_hover_text(tip)
+}
+
+/// [`icon_toggle`] as a [`egui::Widget`] — see [`IconButton`].
+pub struct IconToggle<'a> {
+    pub selected: &'a mut bool,
+    pub tip: &'a str,
+    pub outline_glyph: &'a str,
+    pub filled_glyph: &'a str,
+}
+
+impl<'a> IconToggle<'a> {
+    pub fn new(
+        selected: &'a mut bool,
+        tip: &'a str,
+        outline_glyph: &'a str,
+        filled_glyph: &'a str,
+    ) -> Self {
+        Self {
+            selected,
+            tip,
+            outline_glyph,
+            filled_glyph,
+        }
+    }
+}
+
+impl egui::Widget for IconToggle<'_> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        icon_toggle(
+            ui,
+            self.selected,
+            self.tip,
+            self.outline_glyph,
+            self.filled_glyph,
+        )
+    }
 }
 
 /// Repaint interval for pulsing glows (~20 fps; the pulse is slow enough to stay smooth).
@@ -196,23 +303,25 @@ pub fn glow_halo_shapes(
         .collect()
 }
 
-/// Persist / commit button with a Sqyre-yellow glow while enabled (dirty + valid).
+/// Persist / commit button (floppy-disk glyph) with a Sqyre-yellow glow while
+/// enabled (dirty + valid). `tip` is the AccessKit name and hover text.
 ///
-/// Disabled state matches a normal `add_enabled(false, …)` button. The glow holds
-/// steady and only pulses (see [`glow_pulse`]) while hovered.
-pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egui::Response {
+/// Disabled state matches a normal `add_enabled(false, …)` icon button. The glow
+/// holds steady and only pulses (see [`glow_pulse`]) while hovered.
+pub fn dirty_action_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
+    let glyph = egui_phosphor::regular::FLOPPY_DISK;
     if !enabled {
-        return ui.add_enabled(false, egui::Button::new(label));
+        return ui.add_enabled(false, IconButton::new(glyph, tip, None));
     }
 
     let visuals = ui.style().visuals.widgets.inactive;
     let rounding = visuals.corner_radius;
     let base_fill = visuals.weak_bg_fill;
     let pad = ui.spacing().button_padding;
-    let font_id = egui::TextStyle::Button.resolve(ui.style());
+    let font_id = icon_btn_font(ui);
     let galley = ui
         .painter()
-        .layout_no_wrap(label.to_owned(), font_id, PRIMARY);
+        .layout_no_wrap(glyph.to_owned(), font_id, PRIMARY);
     let size = Vec2::new(
         galley.size().x + 2.0 * pad.x,
         (galley.size().y + 2.0 * pad.y).max(ui.spacing().interact_size.y),
@@ -236,16 +345,25 @@ pub fn dirty_action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> egu
     painter.rect(rect, rounding, fill, stroke, egui::StrokeKind::Inside);
     paint_galley_centered(ui, rect, galley, PRIMARY);
     paint_keyboard_focus_ring(ui, rect, &response);
-    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, label));
-    response
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tip));
+    response.on_hover_text(tip)
 }
 
 /// Icon-only record control (danger styling).
 pub fn record_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
-    ui.add_enabled_ui(enabled, |ui| {
-        icon_button_colored(ui, "●", tip, Some(MACRO_STOP))
-    })
-    .inner
+    ui.add_enabled(enabled, IconButton::new("●", tip, Some(MACRO_STOP)))
+}
+
+/// Icon-only add control (`+` in start styling).
+pub fn add_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
+    ui.add_enabled(
+        enabled,
+        IconButton::new(
+            egui_phosphor::regular::PLUS,
+            tip,
+            Some(crate::theme::MACRO_START),
+        ),
+    )
 }
 
 /// Visual / keyboard order for [`press_state_toggle`] (top → bottom).
@@ -637,6 +755,28 @@ mod tests {
         assert_eq!(cycle_index(4, 3, 1), 0);
         assert_eq!(cycle_index(4, 0, -1), 3);
         assert_eq!(cycle_index(3, 1, -1), 0);
+    }
+
+    /// A disabled `IconButton` added via `Ui::add_enabled` must still wrap like a
+    /// normal widget inside `horizontal_wrapped` — a scope child (e.g.
+    /// `add_enabled_ui`) owns the rest of the row and paints past the clip.
+    #[test]
+    fn disabled_icon_button_wraps_in_wrapped_row() {
+        let ctx = egui::Context::default();
+        run_ui(&ctx, RawInput::default(), |ui| {
+            let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(50.0, 300.0));
+            let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+            pane_ui.horizontal_wrapped(|ui| {
+                for _ in 0..4 {
+                    ui.add_enabled(false, IconButton::new("↻", "icon", None));
+                }
+            });
+            assert!(
+                pane_ui.min_rect().width() <= 50.0 + 0.5,
+                "disabled icons overflowed a wrapped row: {:?}",
+                pane_ui.min_rect()
+            );
+        });
     }
 
     #[test]

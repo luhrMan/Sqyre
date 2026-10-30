@@ -11,6 +11,8 @@ mod assets;
 mod catalog;
 mod chord_record;
 #[cfg(feature = "native-runtime")]
+mod click_fx;
+#[cfg(feature = "native-runtime")]
 mod collection_capture;
 mod command_palette;
 mod data_editor;
@@ -29,6 +31,7 @@ pub mod docs_fixture;
 mod egui_keys;
 mod file_dialogs;
 mod focus_nav;
+mod help_text;
 mod hotkey_chooser;
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 mod hotkey_focus_tags;
@@ -48,6 +51,7 @@ mod macro_record;
 mod macro_yaml_builder;
 #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
 mod mem_diag;
+mod model_icons;
 /// Phosphor overlay icon catalog + paint helpers (lives in `sqyre-overlay`).
 mod overlay_icons {
     pub use sqyre_overlay::{
@@ -415,6 +419,9 @@ pub struct SqyreApp {
     /// Outline windows for live search-area selection rect.
     #[cfg(feature = "native-runtime")]
     recording_overlay: crate::recording_overlay::RecordingOverlay,
+    /// Gold square flash where automated clicks land (Settings → Macros).
+    #[cfg(feature = "native-runtime")]
+    click_fx_overlay: click_fx::ClickFxOverlay,
     /// Android: still of the previous app to place a recorded point or search area on.
     #[cfg(all(target_os = "android", feature = "native-runtime"))]
     screen_pick: crate::screen_pick::ScreenPick,
@@ -491,7 +498,10 @@ impl SqyreApp {
         let (mut hotkeys, continue_wait, screen_click, macro_record_bridge, macro_hotkeys) =
             default_hotkeys();
         #[cfg(all(feature = "native-runtime", target_os = "linux"))]
-        screen_click.set_absolute_pos(sqyre_capture::portal_cursor_position);
+        {
+            screen_click.set_absolute_pos(sqyre_capture::portal_cursor_position);
+            macro_record_bridge.set_absolute_pos(sqyre_capture::portal_cursor_position);
+        }
         let run = RunState::default();
         let stop = run.stop.clone();
         #[cfg(target_os = "android")]
@@ -666,6 +676,7 @@ impl SqyreApp {
                 action_log,
                 runtime_vars: SharedRuntimeVars::new(),
                 highlighter,
+                click_fx: sqyre_ports::SharedClickFx::new(),
                 logs_window: None,
                 logs_state: action_logs_ui::LogsWindowState::default(),
             },
@@ -691,6 +702,8 @@ impl SqyreApp {
             hidden_for_recording: false,
             #[cfg(feature = "native-runtime")]
             recording_overlay: recording_overlay::RecordingOverlay::new(),
+            #[cfg(feature = "native-runtime")]
+            click_fx_overlay: click_fx::ClickFxOverlay::new(),
             #[cfg(all(target_os = "android", feature = "native-runtime"))]
             screen_pick: Default::default(),
             #[cfg(all(target_os = "android", feature = "native-runtime"))]
@@ -920,6 +933,8 @@ impl eframe::App for SqyreApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         focus_nav::lock_to_window(ui.ctx());
+        // Re-fit spacing when the viewport crosses the auto-compact threshold.
+        SettingsUi::sync_density(ui.ctx(), self.settings_ui.settings());
         self.take_pending_db_import();
         // Poll background tasks before floating windows so Settings sees fresh update state.
         ui_overlays::sync_frame_state(self, ui.ctx());
@@ -957,6 +972,9 @@ impl eframe::App for SqyreApp {
 
         // After tips/panels paint so tooltip preview outlines apply this frame.
         self.sync_recording_overlay(ui.ctx());
+        #[cfg(feature = "native-runtime")]
+        self.click_fx_overlay
+            .sync(ui.ctx(), &self.run_session.click_fx);
 
         if self.settings_ui.settings().window_border {
             paint_window_border(ui.ctx());
@@ -982,7 +1000,7 @@ impl eframe::App for SqyreApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         #[cfg(target_arch = "wasm32")]
         {
-            egui::Rgba::from(egui::Color32::from_rgb(0x1a, 0x1a, 0x1a)).to_array()
+            egui::Rgba::from(crate::theme::window_clear_color()).to_array()
         }
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -995,7 +1013,6 @@ impl SqyreApp {
     /// Top bar, footer, macro list and the selected macro, in that order so the bars span the width.
     fn show_panels(&mut self, ui: &mut egui::Ui) {
         ui_toolbar::top_bar(self, ui);
-        ui_toolbar::footer_bar(self, ui);
         ui_macro_list::show(self, ui);
         self.persist_selected_macro();
 
@@ -1041,6 +1058,7 @@ impl SqyreApp {
                 return;
             }
             ui_macro_tree::show(self, ui, force_openness);
+            ui_toolbar::footer_floats(self, ui);
         });
     }
 }
@@ -1120,6 +1138,15 @@ impl Drop for SqyreApp {
                 &format!("recording_overlay_ms={}", t.elapsed().as_millis()),
             );
             sqyre_capture::mark_site("app:drop:after_recording_overlay");
+
+            let t = web_time::Instant::now();
+            self.click_fx_overlay = click_fx::ClickFxOverlay::new();
+            sqyre_capture::cap_log(
+                "APP",
+                "drop",
+                &format!("click_fx_ms={}", t.elapsed().as_millis()),
+            );
+            sqyre_capture::mark_site("app:drop:after_click_fx");
 
             let t = web_time::Instant::now();
             self.preview_tooltips = preview_tooltip::PreviewTooltipCache::new();

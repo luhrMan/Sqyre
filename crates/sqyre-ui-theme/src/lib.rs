@@ -20,6 +20,59 @@ pub const SPACE_12: f32 = 12.0;
 /// Not part of the spacing scale — kept fixed so drag targets stay usable.
 pub const PANEL_SPLITTER_W: f32 = 6.0;
 
+/// Resolved section/element gap pair for a UI density (Settings → Appearance →
+/// Spacing). `sqyre_persist::UiDensity` maps onto these values; ui-theme cannot
+/// see sqyre-persist, so they live here as plain `f32`s.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DensityGaps {
+    /// Gap between sections: framed cards, separator margins, subsection heads.
+    pub section: f32,
+    /// Gap between element groups inside a section (field rows, buttons, items).
+    pub element: f32,
+}
+
+impl DensityGaps {
+    /// `UiDensity::Normal` — default before [`set_density`] runs on the context.
+    pub const NORMAL: Self = Self::new(8.0, 4.0);
+
+    pub const fn new(section: f32, element: f32) -> Self {
+        Self { section, element }
+    }
+}
+
+impl Default for DensityGaps {
+    fn default() -> Self {
+        Self::NORMAL
+    }
+}
+
+fn density_id() -> egui::Id {
+    egui::Id::new("sqyre_ui_density")
+}
+
+/// Store the active density gaps on this egui context.
+pub fn set_density(ctx: &egui::Context, gaps: DensityGaps) {
+    ctx.data_mut(|d| d.insert_temp(density_id(), gaps));
+}
+
+/// Active density gaps ([`DensityGaps::NORMAL`] before `set_density` runs).
+pub fn density(ctx: &egui::Context) -> DensityGaps {
+    ctx.data(|d| d.get_temp::<DensityGaps>(density_id()))
+        .unwrap_or_default()
+}
+
+/// Vertical gap between sections: framed cards, section separators, subsection
+/// headings, and page-level blocks.
+pub fn section_gap(ui: &egui::Ui) -> f32 {
+    density(ui.ctx()).section
+}
+
+/// Gap between element groups inside a section (labeled field rows, button
+/// rows, list items). Also the horizontal gap between elements.
+pub fn element_gap(ui: &egui::Ui) -> f32 {
+    density(ui.ctx()).element
+}
+
 /// Sqyre gold/yellow primary (`#dc9d2e`).
 pub const PRIMARY: Color32 = Color32::from_rgb(0xdc, 0x9d, 0x2e);
 
@@ -170,5 +223,14 @@ mod tests {
     #[test]
     fn panel_splitter_width_is_fixed() {
         assert_eq!(PANEL_SPLITTER_W, 6.0);
+    }
+
+    #[test]
+    fn density_defaults_to_normal_and_round_trips() {
+        let ctx = egui::Context::default();
+        assert_eq!(density(&ctx), DensityGaps::NORMAL);
+        let spaced = DensityGaps::new(12.0, 8.0);
+        set_density(&ctx, spaced);
+        assert_eq!(density(&ctx), spaced);
     }
 }

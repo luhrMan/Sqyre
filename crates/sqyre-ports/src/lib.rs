@@ -4,6 +4,8 @@
 mod action_log;
 mod automation_error;
 mod capture_error;
+mod click_fx;
+mod detection_span;
 mod domain_ports;
 mod highlight;
 mod image_limits;
@@ -18,6 +20,8 @@ pub use action_log::{
 };
 pub use automation_error::AutomationError;
 pub use capture_error::{CaptureError, NotReady};
+pub use click_fx::{ClickFxSink, SharedClickFx};
+pub use detection_span::{overlay_macro_hide_held, set_overlay_macro_hide_hooks, OverlayMacroHide};
 pub use domain_ports::{
     CollectionArea, ContinueKeyWaiter, CoordinateResolver, IconStore, MacroLookup,
 };
@@ -153,6 +157,9 @@ pub fn clamp_search_rect(
 pub trait AutomationBackend {
     fn milli_sleep(&mut self, ms: i32);
     fn move_to(&mut self, x: i32, y: i32, opts: MoveOptions);
+    /// Cursor position in virtual-desktop pixels; `None` when the backend cannot
+    /// read it. Used for click-effect feedback on presses with no prior move.
+    fn cursor_position(&mut self) -> Option<(i32, i32)>;
     fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError>;
     fn scroll(&mut self, up: bool) -> Result<(), AutomationError>;
     fn key_down(&mut self, key: &str) -> Result<(), AutomationError>;

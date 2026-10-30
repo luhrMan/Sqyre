@@ -9,6 +9,7 @@ use crate::theme::{
     paint_galley_centered,
 };
 use crate::var_pills;
+use crate::widgets::elide::{single_line_galley, text_hover_if};
 use eframe::egui::{self, Color32, Sense, Stroke, Vec2};
 use sqyre_domain::{
     action_type_label, parse_hex_color, Action, ActionId, ActionKind, KnownVariableNames,
@@ -202,18 +203,44 @@ pub fn paint_action_icon(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> e
 }
 
 pub(crate) fn paint_pill_pub(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
-    paint_pill(ui, text, fill)
+    paint_pill(ui, text, fill, true)
 }
 
-fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
+pub(crate) fn paint_pill_tip(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
+    let fg = contrast_fg(fill);
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let full = ui.painter().layout_no_wrap(text.to_owned(), font, fg);
+    let pad = Vec2::new(PILL_MARGIN_X as f32 * 2.0, PILL_MARGIN_Y as f32 * 2.0);
+    if full.size().x + pad.x > ui.available_width() {
+        return egui::Frame::new()
+            .fill(fill)
+            .corner_radius(egui::CornerRadius::same(PILL_RADIUS as u8))
+            .inner_margin(egui::Margin::symmetric(PILL_MARGIN_X, PILL_MARGIN_Y))
+            .show(ui, |ui| {
+                ui.add(egui::Label::new(egui::RichText::new(text).color(fg)).wrap())
+            })
+            .response;
+    }
+    paint_pill(ui, text, fill, false)
+}
+
+fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32, show_hover: bool) -> egui::Response {
     // Allocate through the parent layout (unlike Frame::show, which top-aligns in
     // available_rect and ignores Align::Center — that drifted pills below the tree icon).
     let fg = contrast_fg(fill);
     let font = egui::TextStyle::Small.resolve(ui.style());
-    let galley = ui.painter().layout_no_wrap(text.to_owned(), font, fg);
     let pad = Vec2::new(PILL_MARGIN_X as f32 * 2.0, PILL_MARGIN_Y as f32 * 2.0);
+    let max_width = (ui.clip_rect().right() - ui.cursor().left() - pad.x).max(0.0);
+    let full = ui
+        .painter()
+        .layout_no_wrap(text.to_owned(), font.clone(), fg);
+    let galley = if full.size().x > max_width {
+        single_line_galley(ui, text, font, fg, max_width)
+    } else {
+        full
+    };
     let size = galley.size() + pad;
-    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
     ui.painter().rect(
         rect,
         PILL_RADIUS,
@@ -221,8 +248,9 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
         Stroke::NONE,
         egui::StrokeKind::Inside,
     );
+    let was_elided = galley.elided;
     paint_galley_centered(ui, rect, galley, fg);
-    ui.interact(rect, ui.id().with(("action_pill", text)), Sense::hover())
+    text_hover_if(response, text, show_hover && was_elided)
 }
 
 /// Leading program/window icon + summary pill, vertically centered in a `band_h` cell.
@@ -230,6 +258,10 @@ fn paint_pill(ui: &mut egui::Ui, text: &str, fill: Color32) -> egui::Response {
 /// `ui.horizontal` alone starts at `interact_size.y`; when the pill is taller, the
 /// parent row grows after the first cell and later cells center lower (wrapped
 /// tooltip rows) or overflow the row clip (tree rows).
+#[expect(
+    clippy::too_many_arguments,
+    reason = "summary pill cell carries rendering context and layout options"
+)]
 pub(crate) fn paint_summary_pill_cell(
     ui: &mut egui::Ui,
     action: &Action,
@@ -238,6 +270,7 @@ pub(crate) fn paint_summary_pill_cell(
     icons: &mut IconCache,
     theme: VarTheme<'_>,
     band_h: f32,
+    view_tip: bool,
 ) -> egui::Response {
     let prev_h = ui.spacing().interact_size.y;
     ui.spacing_mut().interact_size.y = band_h;
@@ -253,7 +286,26 @@ pub(crate) fn paint_summary_pill_cell(
         } else {
             crate::icon_cache::paint_leading_program_icon(ui, catalog, icons, &pill.text);
         }
-        var_pills::paint_summary_pill(ui, action.type_key(), pill, theme.known_vars, theme.is_dark);
+        if view_tip {
+            var_pills::paint_summary_pill_tip(
+                ui,
+                action.type_key(),
+                pill,
+                theme.known_vars,
+                theme.is_dark,
+            )
+        } else {
+            let budget = (ui.clip_rect().right() - ui.cursor().left()).max(0.0);
+            var_pills::paint_summary_pill_limited(
+                ui,
+                action.type_key(),
+                pill,
+                theme.known_vars,
+                theme.is_dark,
+                budget,
+                false,
+            )
+        }
     })
     .response;
     ui.spacing_mut().interact_size.y = prev_h;
@@ -339,7 +391,7 @@ fn paint_image_search_extras(
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
     let prev_gap = ui.spacing().item_spacing.x;
     ui.spacing_mut().item_spacing.x = TARGET_THUMB_GAP;
-    let count_pill = paint_pill(ui, &format!("🔍 {}", targets.len()), pastel);
+    let count_pill = paint_pill(ui, &format!("🔍 {}", targets.len()), pastel, false);
     extend_drag_handle(drag_handle, count_pill.rect);
     if count_pill.hovered() {
         tip_hovered = true;
@@ -348,9 +400,16 @@ fn paint_image_search_extras(
         .first()
         .map(|target| target_thumb_size(ui, catalog, icons, target).x)
         .unwrap_or(TARGET_THUMB_MAX_H);
+    // `available_width` can include space past the pane's clip (row max_rect
+    // wider than the viewport): count thumbs against the visible width so the
+    // "+N" overflow pill lands inside the clip instead of clipping itself.
+    let visible_w = ui
+        .available_width()
+        .min(ui.clip_rect().right() - ui.cursor().left())
+        .max(0.0);
     let visible = image_search_visible_thumbs(
         targets.len(),
-        ui.available_width(),
+        visible_w,
         thumb_w,
         TARGET_THUMB_GAP,
         overflow_pill_width(ui, targets.len()),
@@ -363,8 +422,12 @@ fn paint_image_search_extras(
         }
     }
     let hidden = targets.len().saturating_sub(visible);
-    if hidden > 0 {
-        let overflow = paint_pill(ui, &format!("+{hidden}"), pastel);
+    // When even the overflow pill can't fit the remaining visible width, skip
+    // it — painting it would clip against the pane edge.
+    if hidden > 0
+        && overflow_pill_width(ui, hidden) <= (ui.clip_rect().right() - ui.cursor().left()).max(0.0)
+    {
+        let overflow = paint_pill(ui, &format!("+{hidden}"), pastel, false);
         extend_drag_handle(drag_handle, overflow.rect);
         if overflow.hovered() {
             tip_hovered = true;
@@ -404,6 +467,7 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         *sort_then,
         tag_priority,
     );
+    ui.add(egui::Label::new(format!("🔍 {}", targets.len())).wrap());
 
     if !target_tags.is_empty() {
         crate::widgets::title_with_count(
@@ -432,7 +496,6 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
                     .inner_margin(egui::Margin::same(crate::theme::SPACE_4 as i8))
                     .show(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
                             ui.label(egui::RichText::new(group.polarity_label()).small().strong());
                             ui.label(egui::RichText::new(group.name.as_str()).small());
                         });
@@ -460,7 +523,7 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
         if display.is_empty() {
             return;
         }
-        ui.add_space(crate::theme::SPACE_4);
+        ui.add_space(crate::theme::element_gap(ui));
     }
 
     crate::widgets::title_with_count(
@@ -739,6 +802,7 @@ pub fn paint_action_row(
                                         is_dark,
                                     },
                                     row_h,
+                                    false,
                                 );
                                 extend_drag_handle(&mut drag_handle_rect, resp.rect);
                                 if resp.hovered() {
@@ -765,13 +829,7 @@ pub fn paint_action_row(
                             }
 
                             if let Some(err) = validation_error {
-                                let badge = ui
-                                    .label(
-                                        egui::RichText::new("⚠")
-                                            .color(crate::theme::error_fg())
-                                            .strong(),
-                                    )
-                                    .on_hover_text(err);
+                                let badge = crate::widgets::error_icon(ui, err);
                                 extend_drag_handle(&mut drag_handle_rect, badge.rect);
                                 if badge.hovered() {
                                     tip_hovered = true;
@@ -780,11 +838,16 @@ pub fn paint_action_row(
                         };
                         let overflow_now = if pills_overflow {
                             let width = ui.available_width().max(1.0);
-                            let out = egui::ScrollArea::horizontal()
+                            // `both` (not `horizontal`) so the vertical
+                            // min_scrolled floor applies: the H-bar lane is
+                            // carved out of `inner_size` and would clip the
+                            // row's pills/thumbs to `row_h - bar`.
+                            let out = egui::ScrollArea::both()
                                 .id_salt(pills_id)
                                 .scroll_source(crate::widgets::SCROLL_SOURCE_NO_DRAG)
                                 .auto_shrink([false, false])
                                 .min_scrolled_width(1.0)
+                                .min_scrolled_height(row_h)
                                 .max_width(width)
                                 .max_height(row_h)
                                 .show(ui, |ui| {
@@ -1077,7 +1140,7 @@ mod tests {
                                 is_dark: true,
                             };
                             paint_summary_pill_cell(
-                                ui, &action, pill, &catalog, &mut icons, theme, band_h,
+                                ui, &action, pill, &catalog, &mut icons, theme, band_h, false,
                             )
                             .rect
                         })
@@ -1461,13 +1524,13 @@ mod tests {
                 ui.label(
                     egui::RichText::new("View tip size evidence (~50% of viewport)").heading(),
                 );
-                ui.add_space(crate::theme::SPACE_8);
+                ui.add_space(crate::theme::element_gap(ui));
                 egui::Frame::popup(ui.style())
                     .inner_margin(egui::Margin::symmetric(10, 8))
                     .show(ui, |ui| {
                         ui.set_width(tip_w);
                         paint_pill_pub(ui, "Image Search", Color32::from_rgb(180, 140, 90));
-                        ui.add_space(crate::theme::SPACE_4);
+                        ui.add_space(crate::theme::element_gap(ui));
                         ui.label(
                             egui::RichText::new(
                                 "Search the screen for catalog Images (optional tag filters).",
@@ -1475,7 +1538,7 @@ mod tests {
                             .small()
                             .weak(),
                         );
-                        ui.add_space(crate::theme::SPACE_8);
+                        ui.add_space(crate::theme::element_gap(ui));
                         ui.label(
                             egui::RichText::new(format!(
                                 "tip width ≈ {tip_w:.0}pt (was fixed 340pt)"
@@ -1483,7 +1546,7 @@ mod tests {
                             .small()
                             .strong(),
                         );
-                        ui.add_space(crate::theme::SPACE_8);
+                        ui.add_space(crate::theme::element_gap(ui));
                         paint_image_search_tooltip_thumbs_pub(ui, &action, &catalog, &mut icons);
                     });
             });
@@ -1513,9 +1576,9 @@ mod tests {
             .wgpu()
             .build_ui(|ui| {
                 ui.label(egui::RichText::new("View tip width: before vs after").heading());
-                ui.add_space(crate::theme::SPACE_12);
+                ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = crate::theme::SPACE_12;
+                    ui.spacing_mut().item_spacing.x = crate::theme::element_gap(ui);
                     for (label, w) in [("old fixed max", 340.0_f32), ("new 50% viewport", 600.0)] {
                         egui::Frame::popup(ui.style())
                             .inner_margin(egui::Margin::symmetric(10, 8))
@@ -1523,7 +1586,7 @@ mod tests {
                                 ui.set_width(w);
                                 ui.label(egui::RichText::new(label).strong());
                                 ui.label(egui::RichText::new(format!("{w:.0}pt wide")).small());
-                                ui.add_space(crate::theme::SPACE_8);
+                                ui.add_space(crate::theme::element_gap(ui));
                                 ui.label(
                                     "Tags and Items stay readable when the tip can grow with the window.",
                                 );

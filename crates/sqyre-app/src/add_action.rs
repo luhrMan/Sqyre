@@ -19,7 +19,7 @@ use sqyre_domain::{
 use sqyre_persist::UserSettings;
 use sqyre_serialize::{action_from_map, action_to_map};
 use sqyre_ui_model::{
-    action_icon_glyph, action_pastel_color, action_picker_category, ACTION_PICKER_CATEGORIES,
+    action_icon_glyph, action_pastel_color, ordered_action_templates, ActionPickerSort,
 };
 use sqyre_validate::validate_action_persist;
 use std::collections::HashMap;
@@ -32,7 +32,7 @@ const DEFAULTS_HOVER_DELAY: Duration = Duration::from_secs(1);
 /// Keep in sync with [`DEFAULTS_HOVER_DELAY`] (asserted in tests).
 const HOVER_DELAY_HINT: &str = "Hover ~1s to preview defaults · Right-click to edit";
 
-/// Modal state for the categorized blank-action picker.
+/// Modal state for the blank-action picker grid.
 #[derive(Debug, Default)]
 pub struct AddActionPicker {
     pub open: bool,
@@ -46,6 +46,8 @@ pub struct AddActionPicker {
     filter: String,
     /// Index into the filtered flat tile list for ↑↓ / Enter.
     selected: usize,
+    /// Grid tile order (kept across opens).
+    sort: ActionPickerSort,
 }
 
 #[derive(Debug, Clone)]
@@ -92,7 +94,7 @@ impl AddActionPicker {
         self.filter.clear();
         self.selected = 0;
         // Re-arm search focus for this open.
-        // (consumed in `show` via pickers::focus_search_once)
+        // (consumed in `show` via widgets::focus_search_once)
     }
 
     pub fn load_from_settings(&mut self, settings: &UserSettings) {
@@ -255,88 +257,99 @@ impl AddActionPicker {
                         || pickers::fuzzy_match_fold(&q, &label)
                 })
                 .collect();
-            if pickers::apply_list_nav(&mut self.selected, filtered.len(), nav) {
-                if let Some(t) = filtered.get(self.selected) {
+            let ordered = ordered_action_templates(&filtered, self.sort);
+            if pickers::apply_list_nav(&mut self.selected, ordered.len(), nav) {
+                if let Some(t) = ordered.get(self.selected) {
                     picked = self.create_action(t.action_type);
                 }
             }
 
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(
-                    egui_phosphor::regular::MAGNIFYING_GLASS,
-                ));
-                let edit = egui::TextEdit::singleline(&mut self.filter)
-                    .hint_text("Search actions…")
-                    .desired_width(f32::INFINITY);
-                let resp = ui.add(edit);
-                pickers::focus_search_once(ui, focus_id, &resp);
-                if resp.changed() {
-                    self.selected = 0;
-                }
+            let search_out = crate::widgets::search_field(
+                ui,
+                &mut self.filter,
+                crate::widgets::SearchFieldOpts {
+                    hint: "Search actions…",
+                    focus_id: Some(focus_id),
+                    clearable: false,
+                    stable_id: None,
+                },
+            );
+            if search_out.changed {
+                self.selected = 0;
+            }
+            ui.horizontal_wrapped(|ui| {
+                ui.weak(HOVER_DELAY_HINT);
+                ui.add_space(crate::theme::element_gap(ui));
+                crate::widgets::combo_enum(
+                    ui,
+                    egui_phosphor::regular::SORT_ASCENDING,
+                    "Sort",
+                    "Order of tiles in this picker.",
+                    &mut self.sort,
+                    ActionPickerSort::ALL,
+                    ActionPickerSort::label,
+                );
             });
-            ui.weak(HOVER_DELAY_HINT);
             crate::widgets::section_separator(ui);
 
             let list_h = pickers::popup_scroll_max_height(ui, 0.0);
             let list_w = crate::widgets::visible_width(ui);
-            // Content-sized columns (not equal-split) so shrinking the window
-            // yields horizontal scroll instead of squashing tiles.
             crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
-                ui.set_max_width(list_w.max(900.0)); // keep tile columns readable; H-scroll when narrow
-                                                     // Horizontal layout assigns leftover viewport width to later
-                                                     // columns; without Extend they wrap letter-by-letter when shrunk.
+                // Bound to the viewport so rows wrap instead of clipping off-screen.
+                ui.set_max_width(list_w);
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                if filtered.is_empty() {
+                if ordered.is_empty() {
                     crate::widgets::list_vacancy(ui, &q, 0, "actions");
                     return;
                 }
-                ui.add_space(crate::theme::SPACE_8);
-                let mut flat_i = 0usize;
-                ui.horizontal_top(|ui| {
-                    for category in ACTION_PICKER_CATEGORIES {
-                        let cat_tmpls: Vec<&&ActionTemplate> = filtered
-                            .iter()
-                            .filter(|t| action_picker_category(t.action_type) == *category)
-                            .collect();
-                        if cat_tmpls.is_empty() {
-                            continue;
+                ui.add_space(crate::theme::element_gap(ui));
+                // Uniform tile width: wrapped rows land as an aligned grid
+                // instead of ragged content-sized chips.
+                let font = egui::TextStyle::Small.resolve(ui.style());
+                let icon_side = crate::widgets::action_icon_side(font.size);
+                let lead = icon_side + font.size * 0.5;
+                let tile_w = ordered
+                    .iter()
+                    .map(|t| {
+                        ui.painter()
+                            .layout_no_wrap(t.label.to_string(), font.clone(), Color32::WHITE)
+                            .size()
+                            .x
+                    })
+                    .fold(0.0f32, f32::max)
+                    + lead
+                    + PICKER_TILE_PAD_X * 2.0;
+                ui.horizontal_wrapped(|ui| {
+                    for (flat_i, tmpl) in ordered.iter().enumerate() {
+                        let selected = flat_i == self.selected;
+                        let sample = self
+                            .prototype_for(tmpl.action_type)
+                            .unwrap_or_else(|| tmpl.create());
+                        let resp = picker_tile(ui, tmpl, &sample, is_dark, tile_w);
+                        if selected {
+                            ui.painter().rect_stroke(
+                                resp.rect.expand(2.0),
+                                4.0,
+                                egui::Stroke::new(1.5, crate::theme::PRIMARY),
+                                egui::StrokeKind::Outside,
+                            );
                         }
-                        ui.vertical(|ui| {
-                            ui.strong(*category);
-                            ui.add_space(crate::theme::SPACE_4);
-                            for tmpl in cat_tmpls {
-                                let selected = flat_i == self.selected;
-                                flat_i += 1;
-                                let sample = self
-                                    .prototype_for(tmpl.action_type)
-                                    .unwrap_or_else(|| tmpl.create());
-                                let resp = picker_tile(ui, tmpl, &sample, is_dark);
-                                if selected {
-                                    ui.painter().rect_stroke(
-                                        resp.rect.expand(2.0),
-                                        4.0,
-                                        egui::Stroke::new(1.5, crate::theme::PRIMARY),
-                                        egui::StrokeKind::Outside,
-                                    );
-                                }
-                                if resp.secondary_clicked() {
-                                    edit_request =
-                                        Some((tmpl.action_type.to_string(), resp.rect.right_top()));
-                                } else if resp.clicked() {
-                                    picked = self.create_action(tmpl.action_type);
-                                } else if resp.hovered() {
-                                    hover_type =
-                                        Some((tmpl.action_type.to_string(), resp.rect.right_top()));
-                                }
-                            }
-                        });
+                        if resp.secondary_clicked() {
+                            edit_request =
+                                Some((tmpl.action_type.to_string(), resp.rect.right_top()));
+                        } else if resp.clicked() {
+                            picked = self.create_action(tmpl.action_type);
+                        } else if resp.hovered() {
+                            hover_type =
+                                Some((tmpl.action_type.to_string(), resp.rect.right_top()));
+                        }
                     }
                 });
             });
         });
 
         if !open || dismiss {
-            pickers::reset_focus_search(ctx, egui::Id::new("Add Action"));
+            crate::widgets::reset_focus_search(ctx, egui::Id::new("Add Action"));
             open = false;
         }
         if let Some((ty, anchor)) = edit_request {
@@ -616,6 +629,7 @@ fn picker_tile(
     tmpl: &ActionTemplate,
     sample: &Action,
     is_dark: bool,
+    width: f32,
 ) -> egui::Response {
     let pastel = action_pastel_color(tmpl.action_type, is_dark);
     let fill = Color32::from_rgba_unmultiplied(pastel[0], pastel[1], pastel[2], pastel[3]);
@@ -627,9 +641,12 @@ fn picker_tile(
     let galley = ui
         .painter()
         .layout_no_wrap(tmpl.label.to_string(), font, fg);
-    // Hug the label: content + pad is both the size and the floor.
+    // Uniform grid width (content + pad is the floor).
     let content = Vec2::new(galley.size().x, galley.size().y.max(icon_side));
-    let desired = content + Vec2::new(lead + PICKER_TILE_PAD_X * 2.0, PICKER_TILE_PAD_Y * 2.0);
+    let desired = Vec2::new(
+        width.max(content.x + lead + PICKER_TILE_PAD_X * 2.0),
+        content.y + PICKER_TILE_PAD_Y * 2.0,
+    );
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
 
     let visuals = ui.style().interact(&response);

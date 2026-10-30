@@ -1,16 +1,16 @@
 ---
-description: Keep Sqyre UI sortable, searchable, keyboard-navigable, beginner-friendly, and visually consistent
+description: Keep Sqyre UI sortable, searchable, keyboard-navigable, icon-first, beginner-friendly, and visually consistent
 globs: crates/sqyre-app/**/*.rs, crates/sqyre-overlay/**/*.rs
 alwaysApply: false
 ---
 
-# UI usability (sort / search / navigate / understand / look alike)
+# UI usability (sort / search / navigate / icons / understand / look alike)
 
 Apply when **adding, changing, or reviewing** any user-visible UI in `sqyre-app` or `sqyre-overlay` (desktop, wasm editor, overlays, trays, dialogs, pickers, tooltips). Prefer existing helpers over one-off widgets.
 
 **Agent behavior:** if a change or existing panel violates these principles, **warn and suggest** a concrete fix — do not refuse the work or invent large refactors unless asked. When touching a list/panel, briefly audit neighbors in the same surface.
 
-Audience: **casual automation beginners first**. Power-user / technical controls go behind a collapsed **Advanced** (or equivalent) section when possible — prefer [`tip_advanced`](crates/sqyre-app/src/action_tooltip/sections.rs).
+Audience: **casual automation beginners first**. Power-user / technical controls go behind a collapsed **Advanced** section when possible — `widgets::advanced_section` / `widgets::collapsible_section` ([`tip_advanced`](crates/sqyre-app/src/action_tooltip/sections.rs) wraps the same helper inside action tooltips).
 
 ## Principles
 
@@ -21,7 +21,7 @@ Audience: **casual automation beginners first**. Power-user / technical controls
 
 ### Searchable
 - Any list that can grow beyond ~a screenful needs a **filter field** with `hint_text` (what to type) and case-insensitive match on the labels users see.
-- Prefer `widgets::searchable_combo` / `searchable_combo_with` for growing dropdowns; for free lists mirror the macro-list filter (`ui_macro_list.rs`) or the command-palette query.
+- Filter rows are **always** `widgets::search_field` (magnifier + fill-width field + optional clear ✕, stable edit id via `SearchFieldOpts`); never hand-roll an icon+`TextEdit` row. Growing dropdowns use `widgets::searchable_combo` with `SearchableComboOpts`.
 - Empty / no-match bodies: `widgets::list_vacancy` / `empty_state` — never a blank void.
 
 ### Navigable (local first)
@@ -40,11 +40,20 @@ Audience: **casual automation beginners first**. Power-user / technical controls
 - One obvious next step on empty states (“No macros yet — create one”).
 - Avoid requiring the user to know IDs, paths, or enum variant names to complete common tasks.
 
+### Icon-first (glyphs portray, tooltips explain)
+- Portray information with a **simple, recognizable icon** instead of an always-visible text label; the wording it replaces goes in the **hover tooltip**. Applies to field labels, state/type/status indicators, badges, and compact row controls.
+- Use shared glyph sources, not ad-hoc characters: `egui_phosphor::regular::*` (outline) and `PHOSPHOR_FILL_FAMILY` (filled, e.g. toggled state) for icons, `widgets::VectorIcon` for action-type pictures, `warn_badge` for the ⚠ corner marker.
+- Field/row labels: `help::label(ui, glyph, name)` — paints the icon, shows `name` on hover, and sets the accessible name. Attach extra help to any response with `help::tip(resp, help)`; shared help strings live in `action_tooltip/help.rs` (`h::`, action-editor fields) and `help_text.rs` (`ht::`, window/panel/picker chrome).
+- Icon-only actions: `widgets::icon_button` / `cancel_icon_button` / `record_icon_button` / `icon_toggle` / `IconButton::new` (colored/enabled variants) — `tip` is both hover text and AccessKit name.
+- Keep **visible text** where the text is the content or an icon would be ambiguous: user-typed names (macros, items, tags), editable values, search/filter fields, empty-state copy, and primary action buttons (Save / Cancel). No clear glyph → short text label + tooltip beats a cryptic icon.
+- Tooltip wording is the plain-language text the icon replaces — same rules as labels below.
+
 ### Understandable
 - Labels and hints use everyday words (macro, item, click, wait) — not crate/type jargon in the UI string.
-- Every non-obvious control gets hover help or a one-line hint.
+- Every non-obvious control gets hover help or a one-line hint; for icon-only info, the tooltip carries the text the icon replaced.
 - Errors and status text say what happened and what to try next in plain language.
-- Progressive disclosure: show the common path first; tuck thresholds, preprocess flags, gate formulas, etc. under Advanced.
+- Progressive disclosure: show the common path first; tuck thresholds, preprocess flags, gate formulas, expert geometry, etc. under `widgets::advanced_section` (tooltips use `tip_advanced`, which wraps it). Optional *feature* groups use `widgets::collapsible_section` with the feature name — never raw `ui.collapsing`, never an Advanced nested inside another disclosure.
+- Static explanatory prose does not get rendered inline — it lives in the hover tooltip of a compact `help::label` (icon + short name). `.weak()` text is for live values (counts, resolved positions), not documentation.
 
 ### Consistent rendering (look alike / refactorable)
 Keep surfaces **visually interchangeable**: same control kinds should look and lay out the same so refactors stay safe and screenshots/docs stay reliable.
@@ -54,11 +63,16 @@ Keep surfaces **visually interchangeable**: same control kinds should look and l
 - **Stable geometry** — prefer shared widths (`W_TEXT`, `W_VAR`), `fit_dialog_window` / `fit_dialog_popup` / `fill_resize_body`, and `dialog_scroll`. Obey [egui-window-size-ratchet](egui-window-size-ratchet.mdc); do not invent per-panel size math that drifts.
 - **Match the nearest sibling** — new rows, toolbars, lists, and confirm footers should mirror an adjacent panel of the same kind (same icon size, gap, weak-count suffix, Save/Cancel row). Visual novelty needs an explicit product ask.
 - **Extract on repeat** — if the same layout appears twice, lift it into `widgets` / `theme` / `tip_*` instead of diverging copies (easier refactors, fewer look bugs).
-- **Predictable density** — reuse existing section gaps and `horizontal_wrapped` patterns from tip sections; do not mix dense custom grids next to standard framed sections without cause.
+- **Predictable density** — vertical gaps use only the two density tiers from `sqyre_ui_theme` / `theme`: `section_gap(ui)` between sections (framed cards, `section_separator` margins — never `add_space` around it — subsection heads) and `element_gap(ui)` between element groups inside a section (and horizontal element gaps). They scale with Settings → Appearance → Spacing; do not reintroduce `add_space(SPACE_*)` for inter-block gaps. Reuse `horizontal_wrapped`/`wrapped_row` patterns from tip sections; do not mix dense custom grids next to standard framed sections without cause.
+- **Gaps flex, sizes don't** — density only changes *gaps*. Point sizes (hit areas, `ICON_BTN_SIDE`, card dims, `interact_size`) stay at egui defaults — never floor `interact_size` globally (it inflates every tree/list row). Narrow viewports adapt via auto-compact gaps + narrower `text_edit_width`, not by scaling spacing to resolution.
+- **Button family** — pick by role, not by convenience: `dirty_action_button` for the primary save/apply, `add_button` for create, `icon_button`/`icon_toggle` for glyph actions (tip = tooltip + AccessKit name), `cancel_icon_button` for **every** cancel/clear/dismiss action (red ✕ — never a text "Cancel"/"Clear" button), `small_button`/`Button::small()` for inline utility and `◂`/`▸` nav rows, `dismiss_row` for footer dismissals, and raw `ui.button` only inside menus and choice rows (Delete / Overwrite / Copy). Enabled-gated icon buttons go through `ui.add_enabled(on, IconButton::new(glyph, tip, color_when_on))`; enabled-gated text utilities use `add_enabled(on, Button::new(..).small())`. Keep the `fields.rs` helper (`text_field`, `drag_field`, `combo_*`, `searchable_combo`, `search_field`) for labeled inputs — variants go through `TextFieldOpts`/`NumFieldOpts`/`SearchFieldOpts`/`SearchableComboOpts`/`VarFieldOpts`, never a `_width`-style suffix.
+- **Frames in horizontal rows** — `egui::Frame::show` children inherit the parent layout: inside `ui.horizontal`/`right_to_left` content centers in the whole *remaining* height, so labels land at the bottom of an over-tall pill. Either wrap frame content in `ui.vertical` (see `tag_pill`) or allocate manually like `tree_chrome::paint_pill`.
+- **Enum pickers** — ≤3 short options: `selectable_value` toggle pills (like mask Shape); more: `combo_enum`/`searchable_combo`.
+- **Tooltip sourcing** — static explanation strings live in a registry: `action_tooltip/help.rs` (`h::`) for action-editor field help, `help_text.rs` (`ht::`) for everything else (windows, panels, pickers, shared widgets). Attach via `help::tip`/`help::label` or `on_hover_text(ht::CONST)`; `on_hover_text` with an inline string is reserved for dynamic/composed values (paths, counts, live previews). Do not hand-write static hover strings — the registries keep wording consistent and auditable.
 - **Wrapping rows** — multi-field rows use `widgets::wrapped_row` (or `tip_wrapped_section`); every label + control (or icon + pill, thumbnail cell, …) group inside is one `widgets::wrap_unit` so wrapping never splits it. Shared field helpers (`text_field`, `drag_field`, `combo_*`, var-ref edits, `help::label`) already do this. Never nest a bare `ui.horizontal` / `ui.vertical` group in a wrapping row — it overflows instead of wrapping.
 
 ### Accessible (AccessKit is on via eframe defaults)
-- Icon-only buttons use `widgets::icon_button(ui, glyph, tip)`, which sets an AccessKit label. Custom-painted widgets call `response.widget_info(|| WidgetInfo::labeled(..))`; a glyph is not a label (screen readers and `egui_kittest` `get_by_label` depend on it).
+- Icon-only buttons use `widgets::icon_button(ui, glyph, tip)`, which sets an AccessKit label. Non-interactive icon labels/indicators get a name via `help::label` or `widget_info`. Custom-painted widgets call `response.widget_info(|| WidgetInfo::labeled(..))`; a glyph is not a label (screen readers and `egui_kittest` `get_by_label` depend on it).
 - Do not signal state by color alone; pair with icon/text. Text on custom fills uses `contrast_fg(bg)`.
 - Request focus once on open (track a flag), not every frame; keep Tab order = add order.
 
@@ -72,6 +86,7 @@ Keep surfaces **visually interchangeable**: same control kinds should look and l
 - [ ] List/combo: sorted predictably; filter or searchable combo if the set can grow
 - [ ] Empty / no-match states have plain copy
 - [ ] Local ↑↓ / Enter / Esc (or documented why not) without breaking record modes
+- [ ] Info/labels use a clear icon with `name: help` hover text where a glyph fits (`help::label`, `icon_button`, Phosphor / `VectorIcon`); visible text kept where no icon works
 - [ ] Beginner path visible; advanced options collapsed by default
 - [ ] Labels, hints, and errors readable by a non-technical user
 - [ ] Reused `theme::*` tokens/visuals, `widgets::*` (incl. controls), `pickers::*`, `tip_*` / `tip_advanced` (no one-off chrome/colors)

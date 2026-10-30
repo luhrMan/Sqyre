@@ -1,5 +1,6 @@
 //! Removable tag chips with draft entry and completion suggestions.
 
+use crate::help_text as ht;
 use eframe::egui::{self, Key, Modifiers, PopupCloseBehavior, RectAlign, Sense};
 
 /// Max height of the tag suggestion dropdown popup.
@@ -276,34 +277,33 @@ pub fn tag_chip_editor(
         draft_focused,
     );
 
-    let tag_resp = if opts.draft_first {
-        ui.horizontal_wrapped(|ui| {
-            let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
-            crate::action_tooltip::help::label(ui, "Tags:", opts.draft_hover.unwrap_or(""));
-            paint_tag_chips(
-                ui,
-                tags,
-                opts.enabled,
-                opts.reorderable,
-                opts.signed_filters,
-                &mut edit.changed,
-            );
-            resp
-        })
-        .inner
+    // The wrapping rows wrap at `max_rect`, but the pane's clip can be tighter
+    // (left pane cut by the window edge): chips would wrap *past* the clip and
+    // clip their labels. Cap the row to the clip so wraps land inside the pane.
+    let wrap_cap = (ui.clip_rect().right() - ui.cursor().left()).max(20.0);
+    // icon | entrybox | add | tags — chips wrap after the add button, except
+    // `single_row` contexts (top bar) where overflow clips at the pane edge.
+    let mut paint_row = |ui: &mut egui::Ui| {
+        ui.set_max_width(wrap_cap);
+        if let Some(name) = opts.label_name {
+            crate::action_tooltip::help::label(ui, egui_phosphor::regular::TAG, name);
+        }
+        let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
+        paint_tag_chips(
+            ui,
+            tags,
+            opts.enabled,
+            opts.reorderable,
+            opts.signed_filters,
+            opts.single_row,
+            &mut edit.changed,
+        );
+        resp
+    };
+    let tag_resp = if opts.single_row {
+        ui.horizontal(|ui| paint_row(ui)).inner
     } else {
-        ui.horizontal_wrapped(|ui| {
-            paint_tag_chips(
-                ui,
-                tags,
-                opts.enabled,
-                opts.reorderable,
-                opts.signed_filters,
-                &mut edit.changed,
-            );
-        });
-        ui.horizontal(|ui| paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags))
-            .inner
+        ui.horizontal_wrapped(|ui| paint_row(ui)).inner
     };
     if refocus {
         tag_resp.request_focus();
@@ -451,29 +451,54 @@ pub fn tag_chip_editor(
     edit
 }
 
+/// Allocate + paint a Small-text pill: `fill` rounded rect, `SPACE_2` padding,
+/// ink optically centered with [`crate::theme::paint_galley_centered`] (galley
+/// line boxes sit high — centering the mesh like `paint_pill`/`paint_keycap`
+/// keeps the text visually centered). No `Frame`: frame children inherit the
+/// parent layout, which mis-centers inside `ui.horizontal`.
+fn paint_tag_pill_fill(ui: &mut egui::Ui, text: &str, fill: egui::Color32) -> egui::Response {
+    let fg = crate::theme::contrast_fg(fill);
+    let galley = ui.painter().layout_no_wrap(
+        text.to_owned(),
+        egui::TextStyle::Small.resolve(ui.style()),
+        fg,
+    );
+    let pad = crate::theme::SPACE_2 * 2.0;
+    let (rect, response) =
+        ui.allocate_exact_size(galley.size() + egui::vec2(pad, pad), Sense::hover());
+    if ui.is_rect_visible(rect) {
+        ui.painter().rect_filled(rect, 6.0, fill);
+        crate::theme::paint_galley_centered(ui, rect, galley, fg);
+    }
+    response
+}
+
+/// One read-only tag pill — same chrome as the editor chips ([`paint_tag_chips`]):
+/// PRIMARY fill, 6px radius, Small contrast text inside a SPACE_2 margin.
+/// Interaction (hover text, context menu) is the caller's; the returned
+/// response covers the painted pill.
+pub fn tag_pill(ui: &mut egui::Ui, label: &str) -> egui::Response {
+    paint_tag_pill_fill(ui, label, crate::theme::PRIMARY)
+}
+
 fn paint_tag_chips(
     ui: &mut egui::Ui,
     tags: &mut Vec<String>,
     enabled: bool,
     reorderable: bool,
     signed_filters: bool,
+    single_row: bool,
     changed: &mut bool,
 ) {
     let mut remove: Option<String> = None;
     let mut pending_reorder: Option<(usize, usize)> = None;
     let mut toggle: Option<usize> = None;
-    let small_h = ui.text_style_height(&egui::TextStyle::Small);
+    let mut overflow: usize = 0;
     let fill = if enabled {
         crate::theme::PRIMARY
     } else {
         crate::theme::PRIMARY.gamma_multiply(0.5)
     };
-    let fg = crate::theme::contrast_fg(crate::theme::PRIMARY);
-    let chip = egui::Frame::NONE
-        .fill(fill)
-        .stroke(egui::Stroke::NONE)
-        .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::same(crate::theme::SPACE_2 as i8));
 
     for (i, tag) in tags.iter().enumerate() {
         let (polarity, label) = if signed_filters {
@@ -485,22 +510,57 @@ fn paint_tag_chips(
         } else {
             ("", tag.clone())
         };
+        // Scope-based children (Frame/dnd_drag_source) place via `new_child`,
+        // which never triggers the parent's `main_wrap` — and `available_width`
+        // reports the whole row width, not the remainder. A chip that doesn't
+        // fit the remaining cursor span would sit past the row end and clip.
+        let chip_w = ui
+            .painter()
+            .layout_no_wrap(
+                format!("{polarity}{label}"),
+                egui::TextStyle::Small.resolve(ui.style()),
+                egui::Color32::WHITE,
+            )
+            .size()
+            .x
+            + crate::theme::SPACE_2 * 2.0;
+        // `Frame`/`dnd` children expand `region.max_rect` as they allocate, so
+        // `available_rect_before_wrap` over-reports space near the pane edge.
+        // Wrap when the chip would cross the painted clip instead.
+        let row_right = ui.max_rect().right().min(ui.clip_rect().right());
+        let at_row_start = ui.cursor().left() <= ui.max_rect().left() + 0.5;
+        if ui.cursor().left() + chip_w > row_right && (single_row || !at_row_start) {
+            if single_row {
+                // `end_row` can't help inside `ui.horizontal`: a chip painted
+                // anyway would have its label clipped at the row edge. Count
+                // the ones that don't fit and show a `+N` pill instead — even
+                // at row start, where an elided sliver would paint past the clip.
+                overflow += 1;
+                continue;
+            }
+            ui.end_row();
+        }
         let paint_chip = |ui: &mut egui::Ui| -> egui::Rect {
-            // Zero item_spacing keeps polarity + label as one compact pill.
-            let resp = chip
-                .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing.x = 0.0;
-                    ui.spacing_mut().interact_size.y = small_h;
-                    ui.horizontal(|ui| {
-                        if signed_filters {
-                            ui.label(egui::RichText::new(polarity).small().color(fg).strong());
-                        }
-                        ui.label(egui::RichText::new(label.as_str()).small().color(fg));
-                    });
-                })
-                .response;
+            // Elide to the row's width: a chip wider than the pane cannot wrap
+            // below itself, so its label would clip the pane edge. Bound by the
+            // clip — `available_width` over-reports past it (see wrap check).
+            let chip_font = egui::TextStyle::Small.resolve(ui.style());
+            let row_right = ui.max_rect().right().min(ui.clip_rect().right());
+            let budget = (row_right
+                - ui.cursor().left()
+                - crate::theme::SPACE_2 * 2.0
+                - if signed_filters { 10.0 } else { 0.0 })
+            .max(20.0);
+            let shown =
+                crate::widgets::elide::elide_to_width(ui, label.as_str(), budget, chip_font);
+            let resp = paint_tag_pill_fill(ui, &format!("{polarity}{}", shown.text), fill);
             if enabled && !signed_filters {
-                resp.on_hover_text("Right-click for options.").rect
+                let tip = if shown.elided {
+                    format!("{label} — right-click for options.")
+                } else {
+                    "Right-click for options.".to_owned()
+                };
+                resp.on_hover_text(tip).rect
             } else {
                 resp.rect
             }
@@ -509,9 +569,7 @@ fn paint_tag_chips(
         let (chip_rect, chip_anchor) = if reorderable && enabled {
             let id = ui.id().with(("tag_dnd", i, tag.as_str()));
             let drag = ui.dnd_drag_source(id, i, paint_chip);
-            drag.response
-                .clone()
-                .on_hover_text("Drag to reorder. Right-click for options.");
+            drag.response.clone().on_hover_text(ht::TAG_CHIP_ORDER);
             if let Some(payload) = drag.response.dnd_release_payload::<usize>() {
                 let from = *payload;
                 if from != i {
@@ -545,9 +603,7 @@ fn paint_tag_chips(
                 if resp.clicked() {
                     toggle = Some(i);
                 }
-                let resp = resp.on_hover_text(
-                    "Click to toggle include/exclude. Right-click for more options.",
-                );
+                let resp = resp.on_hover_text(ht::TAG_CHIP_TOGGLE);
                 Some(resp)
             } else {
                 None
@@ -571,6 +627,25 @@ fn paint_tag_chips(
                     remove = Some(tag.clone());
                 }
             });
+        }
+    }
+    if overflow > 0 {
+        let label = format!("+{overflow}");
+        let hidden = tags[tags.len() - overflow..].join(", ");
+        let chip_w = ui
+            .painter()
+            .layout_no_wrap(
+                label.clone(),
+                egui::TextStyle::Small.resolve(ui.style()),
+                egui::Color32::WHITE,
+            )
+            .size()
+            .x
+            + crate::theme::SPACE_2 * 2.0;
+        let row_right = ui.max_rect().right().min(ui.clip_rect().right());
+        if ui.cursor().left() + chip_w <= row_right {
+            paint_tag_pill_fill(ui, &label, fill)
+                .on_hover_text(format!("{overflow} more: {hidden}"));
         }
     }
     if let Some(i) = toggle {
@@ -616,13 +691,8 @@ fn paint_tag_draft(
     if let Some(tip) = opts.draft_hover {
         tag_resp = tag_resp.on_hover_text(tip);
     }
-    let add_clicked = opts.show_add_button
-        && ui
-            .add_enabled(
-                opts.enabled,
-                egui::Button::new(egui::RichText::new("Add tag").color(crate::theme::MACRO_START)),
-            )
-            .clicked();
+    let add_clicked =
+        opts.show_add_button && crate::widgets::add_button(ui, "Add tag", opts.enabled).clicked();
     if opts.enabled && add_clicked {
         let added = if opts.signed_filters {
             try_add_signed_tag_filter(tags, draft)
@@ -643,13 +713,17 @@ fn paint_tag_draft(
 pub struct TagChipOptions<'a> {
     pub enabled: bool,
     pub show_add_button: bool,
+    /// Field name for the tag icon ahead of the draft entry; `None` paints no icon.
+    pub label_name: Option<&'a str>,
+    /// Icon tooltip / draft hover text.
     pub draft_hover: Option<&'a str>,
-    /// When true, paint the draft field before the `Tags:` label in the chip row.
-    pub draft_first: bool,
     /// When true, chips can be drag-reordered (tag priority lists).
     pub reorderable: bool,
     /// When true, chips are Image Search `+`/`−` filters with a polarity toggle.
     pub signed_filters: bool,
+    /// When true, keep one horizontal row (top-bar editor); chips past the
+    /// pane edge clip instead of wrapping onto extra rows.
+    pub single_row: bool,
 }
 
 impl Default for TagChipOptions<'_> {
@@ -657,10 +731,11 @@ impl Default for TagChipOptions<'_> {
         Self {
             enabled: true,
             show_add_button: true,
+            label_name: None,
             draft_hover: None,
-            draft_first: false,
             reorderable: false,
             signed_filters: false,
+            single_row: false,
         }
     }
 }
@@ -763,6 +838,51 @@ mod tests {
         let beta = harness.get_by_label("beta").rect().center();
         pointer_click(&mut harness, beta);
         assert_eq!(harness.state().0, vec!["beta".to_string()]);
+    }
+
+    #[test]
+    fn single_row_chip_at_row_start_overflows_instead_of_sliver() {
+        // single_row: a chip that cannot fit must count toward the `+N` pill —
+        // never paint an elided `b…` sliver. The wrapped-mode escape hatch for
+        // chips at row start must not apply: there is no row below to wrap to.
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size([300.0, 60.0])
+            .build_ui_state(
+                move |ui, tags: &mut Vec<String>| {
+                    let pane =
+                        egui::Rect::from_min_size(egui::pos2(100.0, 8.0), egui::vec2(30.0, 24.0));
+                    let mut row = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                    row.set_clip_rect(egui::Rect::from_min_max(
+                        pane.min,
+                        egui::pos2(120.0, pane.max.y),
+                    ));
+                    row.horizontal(|ui| {
+                        let mut changed = false;
+                        paint_tag_chips(ui, tags, true, false, false, true, &mut changed);
+                    });
+                },
+                vec!["backup".to_string()],
+            );
+        harness.run_steps(3);
+        let texts: Vec<String> = harness
+            .output()
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(t) => Some(t.galley.job.text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            texts.iter().any(|t| t == "+1"),
+            "expected the +1 overflow pill, got {texts:?}"
+        );
+        assert!(
+            !texts
+                .iter()
+                .any(|t| t.contains("backup") || t.contains('…')),
+            "elided chip sliver painted: {texts:?}"
+        );
     }
 
     #[test]

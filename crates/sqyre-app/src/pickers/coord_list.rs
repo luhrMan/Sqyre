@@ -261,7 +261,7 @@ pub fn paint_coord_ref_list(
                         }
                     }
                 });
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
         }
         crate::widgets::list_vacancy(ui, &q, visible, entity_plural);
     });

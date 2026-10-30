@@ -324,6 +324,7 @@ const PROJECTION_GATE_POLL: std::time::Duration = std::time::Duration::from_mill
 ))]
 fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
     use crate::app_run::{PendingProjectionRun, ProjectionGate};
+    use crate::help_text as ht;
     use sqyre_android::{bridge, frames, Projection};
 
     if app.pending_projection_run.is_none() {
@@ -400,14 +401,14 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                         .weak()
                         .small(),
                     );
-                    ui.add_space(crate::theme::SPACE_8);
+                    ui.add_space(crate::theme::element_gap(ui));
                     ui.horizontal(|ui| {
                         request = ui
                             .button("Continue")
-                            .on_hover_text("Show Android's screen recording prompt.")
+                            .on_hover_text(ht::OVL_REC_PROMPT)
                             .clicked();
-                        cancel =
-                            crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked();
+                        cancel = crate::widgets::consume_escape(ui)
+                            || crate::widgets::cancel_icon_button(ui, "Cancel").clicked();
                     });
                 }
                 ProjectionGate::Waiting => {
@@ -415,26 +416,24 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                         crate::widgets::brand_spinner(ui);
                         ui.weak("Waiting for Android's screen recording prompt…");
                     });
-                    cancel = crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked();
+                    cancel = crate::widgets::consume_escape(ui)
+                        || crate::widgets::cancel_icon_button(ui, "Cancel").clicked();
                 }
                 ProjectionGate::Denied => {
-                    ui.label(
-                        egui::RichText::new("Screen recording was declined.")
-                            .color(crate::theme::warn_fg()),
-                    );
+                    crate::widgets::warn_icon(ui, "Screen recording was declined.");
                     ui.label(
                         egui::RichText::new(format!("\"{macro_name}\" cannot run without it."))
                             .weak()
                             .small(),
                     );
-                    ui.add_space(crate::theme::SPACE_8);
+                    ui.add_space(crate::theme::element_gap(ui));
                     ui.horizontal(|ui| {
                         request = ui
-                            .button("Try again")
-                            .on_hover_text("Show Android's screen recording prompt again.")
+                            .small_button("Try again")
+                            .on_hover_text(ht::OVL_REC_PROMPT_AGAIN)
                             .clicked();
-                        cancel =
-                            crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked();
+                        cancel = crate::widgets::consume_escape(ui)
+                            || crate::widgets::cancel_icon_button(ui, "Cancel").clicked();
                     });
                 }
             }
@@ -601,6 +600,11 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
     if app.run_session.highlighter.is_enabled() != highlight_on {
         app.run_session.highlighter.set_enabled(highlight_on);
     }
+    // Keep click-effect enable flag in sync with the preference.
+    let click_fx_on = app.settings_ui.settings().click_effect;
+    if app.run_session.click_fx.is_enabled() != click_fx_on {
+        app.run_session.click_fx.set_enabled(click_fx_on);
+    }
     let log_images = app.settings_ui.settings().save_meta_images;
     app.run_session.action_log.set_log_images(log_images);
     app.run_session.action_log.set_log_verbose(log_images);
@@ -762,7 +766,7 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
         }
     }
     let highlight_on = app.settings_ui.settings().highlight_active_action;
-    if running && highlight_on {
+    if running && (highlight_on || app.settings_ui.settings().click_effect) {
         ctx.request_repaint_after(std::time::Duration::from_millis(50));
     } else if running {
         // Keep ROOT coarse while a macro runs.

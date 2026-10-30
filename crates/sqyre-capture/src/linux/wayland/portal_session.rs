@@ -910,7 +910,9 @@ pub(super) fn union_rect(a: DesktopRect, b: DesktopRect) -> DesktopRect {
 ///
 /// A bare click uses the live cursor. The last Move is used only while
 /// ScreenCast metadata can still be behind that warp, so Move-then-Click
-/// still lands on the target.
+/// still lands on the target. A stale warp is never a click target: without
+/// live metadata the button applies at the seat pointer, which is the real
+/// cursor — warping to an old Move would click the wrong spot.
 fn click_reseat() -> (Option<(i32, i32)>, &'static str) {
     let sent = *LAST_ABS.lock();
     let warp_fresh = LAST_ABS_AT
@@ -936,8 +938,8 @@ fn reseat_target(
     match (sent, live) {
         (Some(sent), Some(live)) if sent != live && warp_fresh => (Some(sent), "warp"),
         (_, Some(live)) => (Some(live), "cursor"),
-        (Some(sent), None) => (Some(sent), "warp"),
-        (None, None) => (None, "none"),
+        (Some(sent), None) if warp_fresh => (Some(sent), "warp"),
+        _ => (None, "none"),
     }
 }
 
@@ -990,9 +992,11 @@ mod tests {
             (Some((5, 6)), "cursor")
         );
         assert_eq!(
-            reseat_target(Some((1, 2)), None, false),
+            reseat_target(Some((1, 2)), None, true),
             (Some((1, 2)), "warp")
         );
+        // A stale warp must not move the pointer when no live cursor is known.
+        assert_eq!(reseat_target(Some((1, 2)), None, false), (None, "none"));
         assert_eq!(reseat_target(None, None, false), (None, "none"));
     }
 

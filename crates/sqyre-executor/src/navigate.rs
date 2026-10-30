@@ -492,7 +492,7 @@ fn move_to_cell(
         ))
     })?;
     exec.mark_capture_dirty();
-    exec.deps.automation.move_to(
+    exec.move_pointer_to(
         x,
         y,
         MoveOptions {
@@ -623,6 +623,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -723,6 +724,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -819,6 +821,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -883,6 +886,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
     }

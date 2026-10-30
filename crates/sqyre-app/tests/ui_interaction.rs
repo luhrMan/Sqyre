@@ -6,7 +6,7 @@
 mod common;
 
 use common::build_docs_harness;
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 
 #[test]
 fn settings_checkbox_toggles_log_meta_images() {
@@ -154,6 +154,148 @@ fn add_wait_from_picker_increases_tree() {
     );
 }
 
+#[test]
+fn data_editor_program_name_tooltip_discloses_elided_text() {
+    let mut harness = build_docs_harness([480.0, 360.0], |app| {
+        // Elision needs a narrow list pane; pin the split to the minimum
+        // instead of relying on the global default.
+        app.docs_settings_mut().data_editor_left_split = sqyre_persist::MIN_DATA_EDITOR_LEFT_FRAC;
+        app.open_data_editor_programs_for_docs();
+    });
+    harness.run();
+    let (visible, rect) = {
+        let node = harness
+            .query_all_by(|node| {
+                node.label()
+                    .as_deref()
+                    .is_some_and(|label| label.starts_with("Demo P"))
+            })
+            .next()
+            .expect("program label in Data Editor");
+        (
+            node.accesskit_node().label().unwrap().to_string(),
+            node.rect(),
+        )
+    };
+    assert!(
+        visible.ends_with('…'),
+        "program label was not elided: {visible}"
+    );
+    harness.hover_at(rect.center());
+    harness.run_steps(45);
+    harness.get_by_label("Demo Program");
+}
+
+#[test]
+fn long_macro_name_tooltip_discloses_elided_text() {
+    let full_name = "Daily inventory restock and screenshot backup routine";
+    let mut harness = build_docs_harness([480.0, 360.0], |app| {
+        app.apply_stress_fixture_for_docs();
+        app.open_macro_list_for_docs();
+    });
+    harness.run();
+    // Expand the "inventory" tag group so its rows render. Locate the chevron
+    // by node geometry — the panel width (and thus the click point) depends on
+    // the persisted split, so a fixed coordinate is fragile.
+    // The header label may elide ("invent…"), and the top bar's tag chips can
+    // carry the same tag text — match the prefix and require the node to sit
+    // below the app_top_bar strip, i.e. inside the macro list.
+    let bar_rect =
+        egui::containers::panel::PanelState::load(&harness.ctx, egui::Id::new("app_top_bar"))
+            .map(|s| s.outer_rect)
+            .unwrap_or(egui::Rect::NOTHING);
+    let below_bar = |bb: egui::accesskit::Rect| {
+        !bar_rect.contains(egui::pos2(
+            ((bb.x0 + bb.x1) / 2.0) as f32,
+            ((bb.y0 + bb.y1) / 2.0) as f32,
+        ))
+    };
+    let inventory_header = harness
+        .query_all_by(|node| {
+            node.value()
+                .as_deref()
+                .is_some_and(|v| v.starts_with("invent"))
+                && node.bounding_box().is_some_and(&below_bar)
+        })
+        .map(|node| node.rect())
+        .max_by(|a, b| a.min.x.total_cmp(&b.min.x))
+        .expect("inventory tag group header");
+    harness
+        .query_all_by(|node| {
+            matches!(node.role(), egui::accesskit::Role::Unknown)
+                && node.bounding_box().is_some_and(|bb| {
+                    let row = inventory_header;
+                    bb.x0 >= bar_rect.min.x as f64
+                        && bb.x1 <= row.min.x as f64
+                        && (bb.y0 + bb.y1) / 2.0 > row.min.y as f64
+                        && (bb.y0 + bb.y1) / 2.0 < row.max.y as f64
+                        && below_bar(bb)
+                })
+        })
+        .next()
+        .expect("inventory group chevron")
+        .click();
+    harness.run();
+
+    let (visible, rect) = {
+        let macro_node = harness
+            .query_all_by(|node| {
+                node.label()
+                    .as_deref()
+                    .is_some_and(|label| label.starts_with("Daily inventory"))
+            })
+            .max_by(|a, b| {
+                (a.rect().width() * a.rect().height())
+                    .total_cmp(&(b.rect().width() * b.rect().height()))
+            })
+            .expect("long macro name in list");
+        (
+            macro_node.accesskit_node().label().unwrap().to_string(),
+            macro_node.rect(),
+        )
+    };
+    assert!(
+        visible
+            .lines()
+            .next()
+            .is_some_and(|line| line.ends_with('…')),
+        "macro label was not elided: {visible}"
+    );
+
+    harness.hover_at(rect.center());
+    harness.run_steps(45);
+    harness.get_by_label(&format!("{full_name}\nctrl + shift + f9"));
+}
+
+#[test]
+fn stress_tree_summary_tooltip_discloses_full_type_text_at_scale_two() {
+    let full_text = "Please confirm the purchase after checking the selected inventory count. Save a screenshot of the updated shop dialog, verify the backup completed, and leave a clear note for the next maintenance run.";
+    let mut harness = build_docs_harness([640.0, 360.0], |app| {
+        app.docs_settings_mut().ui_scale = 2.0;
+        app.apply_stress_fixture_for_docs();
+        app.expand_all_branches_for_docs();
+    });
+    harness.run();
+
+    let elided_pill_rect = harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(text)
+                if text.galley.job.text.contains("Please confirm the purchase")
+                    && text.galley.elided =>
+            {
+                Some(text.visual_bounding_rect())
+            }
+            _ => None,
+        })
+        .expect("elided Type summary pill");
+    harness.hover_at(elided_pill_rect.center());
+    harness.run_steps(45);
+    harness.get_by_label(&format!("\"{full_text}\""));
+}
+
 /// Same size as the `command-palette.png` golden, where the first row sits at y≈161.
 const PALETTE_HARNESS_SIZE: [f32; 2] = [1000.0, 560.0];
 const FIRST_ROW_Y: f32 = 161.0;
@@ -260,4 +402,192 @@ fn data_editor_new_program_writes_to_catalog() {
             .is_some(),
         "second New should uniquify the name"
     );
+}
+
+fn ui_scale_appearance_harness() -> egui_kittest::Harness<'static, sqyre_app::SqyreApp> {
+    let mut harness = build_docs_harness([1280.0, 720.0], |app| {
+        app.docs_settings_mut().ui_scale = 1.4;
+        app.open_settings_appearance_for_docs();
+    });
+    harness.run_steps(3);
+    harness
+}
+
+fn ui_scale_field_rect(harness: &egui_kittest::Harness<'_, sqyre_app::SqyreApp>) -> egui::Rect {
+    harness
+        .query_all_by(|node| {
+            node.label().as_deref() == Some("1.4") || node.value().as_deref() == Some("1.4")
+        })
+        .map(|node| node.rect())
+        .max_by(|a, b| (a.width() * a.height()).total_cmp(&(b.width() * b.height())))
+        .expect("UI scale field")
+}
+
+fn ui_scale_stepper_up(harness: &egui_kittest::Harness<'_, sqyre_app::SqyreApp>) -> egui::Pos2 {
+    let field = ui_scale_field_rect(harness);
+    egui::Rect::from_min_max(
+        egui::pos2(field.right() - 13.0, field.top()),
+        egui::pos2(field.right() - 1.0, field.center().y),
+    )
+    .center()
+}
+
+fn run_at(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>, time: f64) {
+    harness.input_mut().time = Some(time);
+    harness.run_steps(1);
+}
+
+fn primary_button(
+    harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>,
+    pos: egui::Pos2,
+    pressed: bool,
+) {
+    harness.input_mut().events.push(egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: egui::Modifiers::NONE,
+    });
+}
+
+fn assert_ui_scale_and_zoom(
+    harness: &egui_kittest::Harness<'_, sqyre_app::SqyreApp>,
+    expected_scale: f32,
+    expected_zoom: f32,
+) {
+    assert!(
+        (harness.state().docs_settings().ui_scale - expected_scale).abs() < 0.001,
+        "expected UI scale {expected_scale}, got {}",
+        harness.state().docs_settings().ui_scale
+    );
+    assert!(
+        (harness.ctx.zoom_factor() - expected_zoom).abs() < 0.001,
+        "expected zoom {expected_zoom}, got {}",
+        harness.ctx.zoom_factor()
+    );
+}
+
+#[test]
+fn ui_scale_zoom_waits_for_pointer_release_after_far_stepper_drag() {
+    let mut harness = ui_scale_appearance_harness();
+    assert_ui_scale_and_zoom(&harness, 1.4, 1.4);
+
+    let dt = 1.0 / 60.0;
+    let mut time = harness.ctx.input(|input| input.time);
+    let field = ui_scale_field_rect(&harness);
+    let up = egui::pos2(field.right() - 7.0, field.top() + 0.001);
+    harness.hover_at(up);
+    time += dt;
+    run_at(&mut harness, time);
+    primary_button(&mut harness, up, true);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+
+    let outside = up + egui::vec2(500.0, 0.0);
+    for offset in [100.0, 200.0, 300.0, 400.0, 500.0] {
+        let pos = up + egui::vec2(offset, 0.0);
+        harness
+            .input_mut()
+            .events
+            .push(egui::Event::PointerMoved(pos));
+        time += dt;
+        run_at(&mut harness, time);
+        assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+        assert!(harness.ctx.input(|input| input.pointer.primary_down()));
+    }
+    for _ in 0..55 {
+        time += dt;
+        run_at(&mut harness, time);
+        assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+        assert!(harness.ctx.input(|input| input.pointer.primary_down()));
+    }
+
+    primary_button(&mut harness, outside, false);
+    time += dt;
+    run_at(&mut harness, time);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, 1.5, 1.5);
+    for _ in 0..3 {
+        time += dt;
+        run_at(&mut harness, time);
+        assert_ui_scale_and_zoom(&harness, 1.5, 1.5);
+    }
+}
+
+#[test]
+fn ui_scale_stepper_diagonal_drag_does_not_drag_the_field() {
+    let mut harness = ui_scale_appearance_harness();
+    assert_ui_scale_and_zoom(&harness, 1.4, 1.4);
+
+    let dt = 1.0 / 60.0;
+    let mut time = harness.ctx.input(|input| input.time);
+    let up = ui_scale_stepper_up(&harness);
+    harness.hover_at(up);
+    time += dt;
+    run_at(&mut harness, time);
+    primary_button(&mut harness, up, true);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+
+    for offset in [10.0, 20.0, 30.0, 40.0] {
+        let pos = up + egui::vec2(offset, offset);
+        harness
+            .input_mut()
+            .events
+            .push(egui::Event::PointerMoved(pos));
+        time += dt;
+        run_at(&mut harness, time);
+        assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+    }
+    for _ in 0..60 {
+        time += dt;
+        run_at(&mut harness, time);
+        assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+    }
+
+    let outside = up + egui::vec2(40.0, 40.0);
+    primary_button(&mut harness, outside, false);
+    time += dt;
+    run_at(&mut harness, time);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, 1.5, 1.5);
+}
+
+#[test]
+fn ui_scale_zoom_waits_for_release_during_inside_repeat() {
+    let mut harness = ui_scale_appearance_harness();
+    assert_ui_scale_and_zoom(&harness, 1.4, 1.4);
+
+    let dt = 1.0 / 60.0;
+    let mut time = harness.ctx.input(|input| input.time);
+    let up = ui_scale_stepper_up(&harness);
+    harness.hover_at(up);
+    time += dt;
+    run_at(&mut harness, time);
+    primary_button(&mut harness, up, true);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, 1.5, 1.4);
+
+    for _ in 0..48 {
+        time += dt;
+        run_at(&mut harness, time);
+        assert!(
+            (harness.ctx.zoom_factor() - 1.4).abs() < 0.001,
+            "zoom must not change while the stepper is held"
+        );
+    }
+    let final_scale = harness.state().docs_settings().ui_scale;
+    assert!(final_scale > 1.5);
+
+    primary_button(&mut harness, up, false);
+    time += dt;
+    run_at(&mut harness, time);
+    time += dt;
+    run_at(&mut harness, time);
+    assert_ui_scale_and_zoom(&harness, final_scale, final_scale);
 }

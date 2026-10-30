@@ -101,6 +101,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: Some(dir.path()),
+                click_fx: None,
             },
         )
         .unwrap();
@@ -315,6 +316,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -425,6 +427,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -490,6 +493,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -549,6 +553,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -612,6 +617,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap_err();
@@ -664,6 +670,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -723,6 +730,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap_err();
@@ -786,6 +794,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();
@@ -835,6 +844,7 @@ mod tests {
                 highlighter: None,
                 runtime_vars: None,
                 variables_dir: None,
+                click_fx: None,
             },
         )
         .unwrap();

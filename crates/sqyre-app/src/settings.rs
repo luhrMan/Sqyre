@@ -1,6 +1,7 @@
 //! User Settings window.
 
 use crate::file_dialogs::PickPurpose;
+use crate::help_text as ht;
 use crate::status_banner::StatusBanner;
 use eframe::egui::{self, Color32};
 use sqyre_domain::Macro;
@@ -10,7 +11,7 @@ use sqyre_persist::{
     backups_dir, create_backup, import_backup, list_backups, open_sqyre_dir, prune_backups,
 };
 use sqyre_persist::{
-    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ImportMode, ProgramCatalog,
+    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ImportMode, ProgramCatalog, UiDensity,
     UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
 };
 #[cfg(not(target_arch = "wasm32"))]
@@ -129,6 +130,7 @@ pub struct SettingsUi {
     pub open: bool,
     settings: UserSettings,
     dirty: bool,
+    ui_scale_apply_pending: bool,
     active_section: SettingsSection,
     /// Filter query for the settings list (case-insensitive fuzzy match).
     search: String,
@@ -158,10 +160,24 @@ impl SettingsUi {
         self.search.clear();
     }
 
+    pub fn section_labels_for_docs() -> Vec<&'static str> {
+        SettingsSection::all().map(SettingsSection::label).collect()
+    }
+
+    pub fn open_section_for_docs(&mut self, label: &str) -> bool {
+        let Some(section) = SettingsSection::all().find(|section| section.label() == label) else {
+            return false;
+        };
+        self.open = true;
+        self.active_section = section;
+        self.search.clear();
+        true
+    }
+
     /// Open the settings window (re-arms search focus).
     pub fn request_open(&mut self, ctx: &egui::Context) {
         self.open = true;
-        crate::pickers::reset_focus_search(ctx, settings_window_id());
+        crate::widgets::reset_focus_search(ctx, settings_window_id());
     }
 
     pub fn settings(&self) -> &UserSettings {
@@ -258,6 +274,65 @@ impl SettingsUi {
         // (including horizontal), instead of fully dormant until hover.
         style.spacing.scroll = crate::theme::scroll_style();
         ctx.set_global_style(style);
+        Self::apply_spacing(ctx, settings);
+    }
+
+    /// Viewport width (points) at or below which auto-compact kicks in.
+    const AUTO_COMPACT_WIDTH: f32 = 480.0;
+
+    /// Density for the current viewport: the chosen one, or Compact when the
+    /// window is narrow and `auto_compact_density` is on. Gap tokens stay in
+    /// points — they do not scale with resolution.
+    fn effective_density(ctx: &egui::Context, settings: &UserSettings) -> UiDensity {
+        Self::density_for(
+            settings.ui_density,
+            settings.auto_compact_density,
+            ctx.content_rect().width(),
+        )
+    }
+
+    /// Density after the narrow-viewport auto-compact rule.
+    fn density_for(density: UiDensity, auto_compact: bool, viewport_width: f32) -> UiDensity {
+        if auto_compact && viewport_width <= Self::AUTO_COMPACT_WIDTH {
+            UiDensity::Compact
+        } else {
+            density
+        }
+    }
+
+    fn effective_gaps(ctx: &egui::Context, settings: &UserSettings) -> crate::theme::DensityGaps {
+        let d = Self::effective_density(ctx, settings);
+        crate::theme::DensityGaps::new(d.section_gap(), d.element_gap())
+    }
+
+    /// Push the effective gaps into the egui `Spacing` (one place, instead of
+    /// per-row `spacing_mut` overrides) and into [`crate::theme::set_density`].
+    ///
+    /// Only *gaps* follow density — point sizes (hit areas, icon buttons, card
+    /// dimensions) stay fixed, with `interact_size` kept at egui's defaults so
+    /// tree/list rows don't inflate. `text_edit_width` narrows under Compact
+    /// so single-line fields fit phone-width panes instead of clipping.
+    fn apply_spacing(ctx: &egui::Context, settings: &UserSettings) {
+        let d = Self::effective_density(ctx, settings);
+        let gaps = crate::theme::DensityGaps::new(d.section_gap(), d.element_gap());
+        let mut style = (*ctx.global_style()).clone();
+        // egui's 8pt default doubled the app's 4pt element-gap convention.
+        style.spacing.item_spacing = egui::vec2(gaps.element, gaps.element);
+        style.spacing.text_edit_width = if d == UiDensity::Compact {
+            200.0
+        } else {
+            280.0
+        };
+        ctx.set_global_style(style);
+        crate::theme::set_density(ctx, gaps);
+    }
+
+    /// Keep the applied gaps in sync with the viewport size — cheap no-op until
+    /// the window crosses [`Self::AUTO_COMPACT_WIDTH`]. Runs each frame.
+    pub fn sync_density(ctx: &egui::Context, settings: &UserSettings) {
+        if crate::theme::density(ctx) != Self::effective_gaps(ctx, settings) {
+            Self::apply_spacing(ctx, settings);
+        }
     }
 
     /// Load action-color overrides from settings into the domain map.
@@ -340,14 +415,16 @@ impl SettingsUi {
         // `ui` may clear `self.open` (Esc); Window `.open` may clear `open` (titlebar).
         self.open = open && self.open;
         if !self.open {
-            crate::pickers::reset_focus_search(ctx, settings_window_id());
+            crate::widgets::reset_focus_search(ctx, settings_window_id());
         }
         if let Some(confirm) = self.confirm.clone() {
             self.draw_confirm(ctx, confirm, pending_scale, db, macros, catalog);
         }
         if self.dirty {
             self.persist();
-            Self::apply_appearance(ctx, &self.settings);
+            if !self.ui_scale_apply_pending {
+                Self::apply_appearance(ctx, &self.settings);
+            }
         }
     }
 
@@ -369,45 +446,28 @@ impl SettingsUi {
             }
         }
 
-        let has_search = !self.search.is_empty();
-        let mut clear_search = false;
         let search_focused = crate::widgets::show_overflow(ui, "settings_search", 1.0, |ui| {
-            crate::widgets::fill_row(
+            // Pinned id so focus survives the Clear ✕ appearing and disappearing.
+            let out = crate::widgets::search_field(
                 ui,
-                |ui| {
-                    clear_search = has_search && ui.small_button("Clear").clicked();
+                &mut self.search,
+                crate::widgets::SearchFieldOpts {
+                    hint: "Search settings…",
+                    focus_id: Some(settings_window_id()),
+                    clearable: true,
+                    stable_id: Some(settings_window_id().with("search")),
                 },
-                |ui| {
-                    ui.label(egui::RichText::new(
-                        egui_phosphor::regular::MAGNIFYING_GLASS,
-                    ))
-                    .on_hover_text("Search");
-                    // Infinity fill — fixed desired_width(available) ratchets the window.
-                    // Pin the id so focus survives the Clear button appearing and
-                    // disappearing (it is laid out before this field).
-                    let search_resp = ui.add(
-                        egui::TextEdit::singleline(&mut self.search)
-                            .id(settings_window_id().with("search"))
-                            .hint_text("Search settings…")
-                            .desired_width(f32::INFINITY),
-                    );
-                    crate::pickers::focus_search_once(ui, settings_window_id(), &search_resp);
-                    if search_resp.changed() && !self.search.trim().is_empty() {
-                        let q = self.search.trim().to_ascii_lowercase();
-                        if !self.active_section.visible(&q) {
-                            if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
-                                self.active_section = section;
-                            }
-                        }
+            );
+            if out.changed && !self.search.trim().is_empty() {
+                let q = self.search.trim().to_ascii_lowercase();
+                if !self.active_section.visible(&q) {
+                    if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
+                        self.active_section = section;
                     }
-                    search_resp.has_focus()
-                },
-            )
+                }
+            }
+            out.response.has_focus()
         });
-        if clear_search {
-            self.search.clear();
-        }
-        crate::widgets::section_separator(ui);
 
         let footer = if self.status_banner.status.is_some() {
             40.0
@@ -491,8 +551,10 @@ impl SettingsUi {
             crate::pickers::dialog_scroll(content_w, body_h)
                 .id_salt("user_settings_content")
                 .show(&mut right_ui, |ui| {
-                    // Soft-wrap to pane width; both-axis scroll covers hard min overflows.
-                    ui.set_max_width(content_w);
+                    // Soft-wrap to the painted clip (the reserved scrollbar
+                    // lane insets it past `max_rect`); both-axis scroll covers
+                    // hard min-width overflows.
+                    crate::widgets::clamp_row_right_to_clip(ui);
                     if visible_sections.is_empty() {
                         crate::widgets::list_vacancy(ui, &q, 0, "settings");
                         return;
@@ -526,7 +588,7 @@ impl SettingsUi {
                             if setting_visible(&q, section_hit, DATA_LOCATION)
                                 && setting_visible(&q, section_hit, DATA_BACKUP)
                             {
-                                ui.add_space(crate::theme::SPACE_12);
+                                ui.add_space(crate::theme::section_gap(ui));
                             }
                             self.draw_backup(ui, db, macros, catalog, &q, section_hit);
                         }
@@ -553,16 +615,14 @@ impl SettingsUi {
     fn draw_general(&mut self, ui: &mut egui::Ui, q: &str, section_hit: bool) {
         if setting_visible(q, section_hit, SETTING_LOG_META) {
             ui.horizontal(|ui| {
-                if ui
-                    .checkbox(&mut self.settings.save_meta_images, "Log Meta Images")
-                    .changed()
+                if crate::action_tooltip::help::tip(
+                    ui.checkbox(&mut self.settings.save_meta_images, "Log Meta Images"),
+                    crate::action_tooltip::help::SETTING_LOG_META,
+                )
+                .changed()
                 {
                     self.mark_dirty();
                 }
-                crate::action_tooltip::help::icon(
-                    ui,
-                    crate::action_tooltip::help::SETTING_LOG_META,
-                );
                 ui.label("Keep at most:");
                 let mut v = self.settings.action_log_max_entries;
                 if ui
@@ -575,9 +635,7 @@ impl SettingsUi {
                             .speed(100)
                             .suffix(" entries"),
                     )
-                    .on_hover_text(
-                        "Per-action cap for the Logs window; the oldest entries are dropped past it.",
-                    )
+                    .on_hover_text(ht::SET_LOG_CAP)
                     .changed()
                 {
                     self.settings.action_log_max_entries = v;
@@ -634,6 +692,7 @@ impl SettingsUi {
     ) {
         let hit = section_hit || query_matches(q, SUBSECTION_PLAYBACK);
         let show_highlight = setting_visible(q, hit, SETTING_HIGHLIGHT_ACTION);
+        let show_click_fx = setting_visible(q, hit, SETTING_CLICK_FX);
         let show_release = setting_visible(q, hit, SETTING_RELEASE_HELD);
         let show_overlay_stop = setting_visible(q, hit, SETTING_OVERLAY_PRESS_STOPS);
         let show_overlay_detect = setting_visible(q, hit, SETTING_OVERLAY_IN_DETECTION);
@@ -641,6 +700,7 @@ impl SettingsUi {
         let show_while = setting_visible(q, hit, SETTING_WHILE_BUDGET);
         let show_depth = setting_visible(q, hit, SETTING_RUN_MACRO_DEPTH);
         if !(show_highlight
+            || show_click_fx
             || show_release
             || show_overlay_stop
             || show_overlay_detect
@@ -658,7 +718,19 @@ impl SettingsUi {
                     &mut self.settings.highlight_active_action,
                     "Highlight the currently executing action",
                 )
-                .on_hover_text("Scroll and tint the tree row of the action running now.")
+                .on_hover_text(ht::SET_RUN_ROW_HL)
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if show_click_fx
+            && ui
+                .checkbox(
+                    &mut self.settings.click_effect,
+                    "Flash a marker where clicks land",
+                )
+                .on_hover_text(ht::SET_CLICK_MARKER)
                 .changed()
         {
             self.mark_dirty();
@@ -670,9 +742,7 @@ impl SettingsUi {
                     &mut self.settings.release_held_inputs_on_end,
                     "Release held keys and buttons when a macro ends",
                 )
-                .on_hover_text(
-                    "When enabled, any key or mouse button still held from Down/hold actions is released when the macro finishes, stops, or errors.",
-                )
+                .on_hover_text(ht::SET_RELEASE_KEYS)
                 .changed()
         {
             self.mark_dirty();
@@ -684,9 +754,7 @@ impl SettingsUi {
                     &mut self.settings.overlay_press_stops_run,
                     "Overlay buttons stop the running macro",
                 )
-                .on_hover_text(
-                    "While a macro is running, pressing an overlay button stops it. When off, a busy button lets the click through.",
-                )
+                .on_hover_text(ht::SET_OVL_STOP)
                 .changed()
         {
             self.mark_dirty();
@@ -698,9 +766,7 @@ impl SettingsUi {
                     &mut self.settings.overlay_buttons_in_detection,
                     "Overlay buttons appear in detection",
                 )
-                .on_hover_text(
-                    "Image Search, Find Pixel, and OCR captures include the buttons. When off, those captures see the screen underneath.",
-                )
+                .on_hover_text(ht::SET_CAPTURE_BUTTONS)
                 .changed()
         {
             self.mark_dirty();
@@ -712,9 +778,7 @@ impl SettingsUi {
                     &mut self.settings.overlay_buttons_over_sqyre,
                     "Show overlay buttons over Sqyre",
                 )
-                .on_hover_text(
-                    "When off, buttons hide while the Sqyre window is in front. When on, General buttons stay on top of Sqyre. Buttons for another app still show only while that app is in front. Placing a button in the Overlay editor still shows it.",
-                )
+                .on_hover_text(ht::SET_BUTTONS_FRONT)
                 .changed()
         {
             self.mark_dirty();
@@ -741,9 +805,7 @@ impl SettingsUi {
                                         .speed(1000)
                                         .suffix(" iterations"),
                                 )
-                                .on_hover_text(
-                                    "While safety budget: used when a While action has max_iterations ≤ 0. Prevents runaway loops.",
-                                )
+                                .on_hover_text(ht::SET_WHILE_BUDGET)
                                 .changed()
                             {
                                 self.settings.while_max_iterations = v;
@@ -765,9 +827,7 @@ impl SettingsUi {
                                         )
                                         .speed(1),
                                 )
-                                .on_hover_text(
-                                    "Maximum nested Run Macro calls (including the top-level macro). Cycles are always rejected.",
-                                )
+                                .on_hover_text(ht::SET_RUN_DEPTH)
                                 .changed()
                             {
                                 self.settings.run_macro_max_depth = v;
@@ -797,9 +857,7 @@ impl SettingsUi {
                 &mut self.settings.hide_app_during_recording,
                 "Hide Sqyre while recording points and search areas",
             )
-            .on_hover_text(
-                "When enabled, Sqyre windows are hidden before the desktop snapshot used by recording.",
-            )
+            .on_hover_text(ht::SET_HIDE_ON_RECORD)
             .changed()
         {
             self.mark_dirty();
@@ -823,9 +881,7 @@ impl SettingsUi {
                 &mut self.settings.hotkey_tags_while_focused,
                 "Select hotkey tags while a Program is focused",
             )
-            .on_hover_text(
-                "When enabled, focusing a Program that has macro tags sets the hotkey tag selection to those tags; otherwise hotkeys turn off. When disabled, tag selection is manual only (macro list headers).",
-            )
+            .on_hover_text(ht::SET_HOTKEY_TAGS)
             .changed()
         {
             self.mark_dirty();
@@ -853,9 +909,7 @@ impl SettingsUi {
                     &mut self.settings.image_search_variant_exit_early,
                     "Stop at the first matching icon variant",
                 )
-                .on_hover_text(
-                    "When enabled, stop trying later icon variants after one hits on the same search (or collection cell). Disable to match every variant.",
-                )
+                .on_hover_text(ht::SET_VARIANT_STOP)
                 .changed()
         {
             self.mark_dirty();
@@ -869,24 +923,22 @@ impl SettingsUi {
                 &[SETTING_IMAGE_SEARCH_DISTANCE],
                 |ui| {
                     ui.horizontal(|ui| {
-                            ui.label("Ignore nearby duplicate image matches:");
-                            let mut v = self.settings.image_search_close_matches_distance;
-                            if ui
-                                .add(
-                                    crate::widgets::num_entry(&mut v)
-                                        .range(0..=100)
-                                        .speed(1)
-                                        .suffix(" px"),
-                                )
-                                .on_hover_text(
-                                    "Image search close-match distance: ignore duplicate matches within this many pixels.",
-                                )
-                                .changed()
-                            {
-                                self.settings.image_search_close_matches_distance = v;
-                                self.mark_dirty();
-                            }
-                        });
+                        ui.label("Ignore nearby duplicate image matches:");
+                        let mut v = self.settings.image_search_close_matches_distance;
+                        if ui
+                            .add(
+                                crate::widgets::num_entry(&mut v)
+                                    .range(0..=100)
+                                    .speed(1)
+                                    .suffix(" px"),
+                            )
+                            .on_hover_text(ht::SET_DEDUP_PX)
+                            .changed()
+                        {
+                            self.settings.image_search_close_matches_distance = v;
+                            self.mark_dirty();
+                        }
+                    });
                 },
             );
         }
@@ -913,9 +965,7 @@ impl SettingsUi {
                     &mut self.settings.play_finish_sound,
                     "Play a sound when a macro finishes",
                 )
-                .on_hover_text(
-                    "Plays a short cue when a top-level macro run completes successfully.",
-                )
+                .on_hover_text(ht::SET_FINISH_CUE)
                 .changed()
         {
             self.mark_dirty();
@@ -927,9 +977,7 @@ impl SettingsUi {
                     &mut self.settings.play_ui_sounds,
                     "Play sounds when adding or deleting",
                 )
-                .on_hover_text(
-                    "Plays short cues when macros, actions, or data-editor entities are added or deleted.",
-                )
+                .on_hover_text(ht::SET_ADD_DEL_CUES)
                 .changed()
         {
             self.mark_dirty();
@@ -941,7 +989,7 @@ impl SettingsUi {
                 let mut pct = (self.settings.sound_volume * 100.0).round() as i32;
                 if ui
                     .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
-                    .on_hover_text("Volume for finish and add/delete cue sounds.")
+                    .on_hover_text(ht::SET_CUE_VOLUME)
                     .changed()
                 {
                     self.settings.sound_volume = pct as f32 / 100.0;
@@ -981,7 +1029,7 @@ impl SettingsUi {
 
             let flatpak = sqyre_update::is_flatpak_install();
             if flatpak {
-                ui.add_space(crate::theme::SPACE_4);
+                ui.add_space(crate::theme::element_gap(ui));
                 ui.label(
                     egui::RichText::new(
                         "Flatpak keeps a private data copy by default. To share macros \
@@ -993,7 +1041,7 @@ impl SettingsUi {
             }
 
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Open .sqyre folder").clicked() {
+                if ui.small_button("Open .sqyre folder").clicked() {
                     match open_sqyre_dir() {
                         Ok(()) => self.set_ok("Opened data folder."),
                         Err(e) => self.set_err(format!(
@@ -1003,30 +1051,22 @@ impl SettingsUi {
                     }
                 }
                 if crate::file_dialogs::supported(PickPurpose::SqyreLocation)
-                    && ui.button("Choose location…").clicked()
+                    && ui.small_button("Choose location…").clicked()
                 {
                     self.choose_sqyre_location();
                 }
                 if flatpak {
                     if ui
-                        .button("Use host ~/.sqyre…")
-                        .on_hover_text(
-                            "Opens a folder picker (portal grant). Select your host \
-                             ~/.sqyre folder, or its parent (Home). For a permanent \
-                             Flatpak permission you can also run:\n\
-                             flatpak override --user --filesystem=~/.sqyre:create com.sqyre.app",
-                        )
+                        .small_button("Use host ~/.sqyre…")
+                        .on_hover_text(ht::SET_HOST_FOLDER)
                         .clicked()
                     {
                         self.choose_host_sqyre_location();
                     }
                     if !self.settings.sqyre_dir.trim().is_empty()
                         && ui
-                            .button("Use Flatpak sandbox")
-                            .on_hover_text(
-                                "Clear the custom path and return to the private \
-                                 Flatpak data directory (~/.var/app/com.sqyre.app/.sqyre).",
-                            )
+                            .small_button("Use Flatpak sandbox")
+                            .on_hover_text(ht::SET_FLATPAK_RESET)
                             .clicked()
                     {
                         self.reset_sqyre_to_sandbox(db, macros, catalog);
@@ -1057,13 +1097,8 @@ impl SettingsUi {
             let _ = (db, macros, catalog);
 
             if ui
-                .checkbox(
-                    &mut self.settings.backup_enabled,
-                    "Automatic backups",
-                )
-                .on_hover_text(
-                    "Periodically zip the data directory into the backups folder when Sqyre is running.",
-                )
+                .checkbox(&mut self.settings.backup_enabled, "Automatic backups")
+                .on_hover_text(ht::SET_AUTO_BACKUP)
                 .changed()
             {
                 self.mark_dirty();
@@ -1078,7 +1113,7 @@ impl SettingsUi {
                             .range(MIN_BACKUP_INTERVAL_HOURS..=MAX_BACKUP_INTERVAL_HOURS)
                             .speed(1),
                     )
-                    .on_hover_text("Hours between automatic backups while Sqyre is open.")
+                    .on_hover_text(ht::SET_BACKUP_HOURS)
                     .changed()
                 {
                     self.settings.backup_interval_hours = v;
@@ -1099,9 +1134,7 @@ impl SettingsUi {
                             .range(MIN_BACKUP_MAX_KEEP..=MAX_BACKUP_MAX_KEEP)
                             .speed(1),
                     )
-                    .on_hover_text(
-                        "Oldest managed sqyre-backup-*.zip files are deleted beyond this count.",
-                    )
+                    .on_hover_text(ht::SET_BACKUP_KEEP)
                     .changed()
                 {
                     self.settings.backup_max_keep = v;
@@ -1113,7 +1146,7 @@ impl SettingsUi {
                 }
             });
 
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.label(
                 egui::RichText::new(format!("Backups folder: {}", backups_dir().display()))
                     .weak()
@@ -1136,12 +1169,12 @@ impl SettingsUi {
                 }
             }
 
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
-                if ui.button("Back up now").clicked() {
+                if ui.small_button("Back up now").clicked() {
                     self.run_manual_backup();
                 }
-                if ui.button("Restore from backup…").clicked() {
+                if ui.small_button("Restore from backup…").clicked() {
                     self.request_restore_backup();
                 }
             });
@@ -1253,21 +1286,19 @@ impl SettingsUi {
                     &mut self.settings.auto_update_check,
                     "Check for updates on startup",
                 )
-                .on_hover_text(
-                    "Queries GitHub Releases for a newer Sqyre build when the app starts.",
-                )
+                .on_hover_text(ht::SET_UPDATE_CHECK)
                 .changed()
         {
             self.mark_dirty();
         }
 
         if setting_visible(q, section_hit, SETTING_UPDATE_ACTIONS) {
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
                 let busy = update.is_busy();
                 if ui
-                    .add_enabled(!busy, egui::Button::new("Check now"))
-                    .on_hover_text("Query GitHub Releases for a newer build.")
+                    .add_enabled(!busy, egui::Button::new("Check now").small())
+                    .on_hover_text(ht::SET_UPDATE_NOW)
                     .clicked()
                 {
                     update.start_check();
@@ -1276,19 +1307,19 @@ impl SettingsUi {
                 match &update.state {
                     UpdateState::Available { .. }
                         if ui
-                            .add_enabled(!busy, egui::Button::new("Download & install"))
+                            .add_enabled(!busy, egui::Button::new("Download & install").small())
                             .clicked() =>
                     {
                         update.start_download();
                     }
-                    UpdateState::Ready { .. } if ui.button("Restart to finish").clicked() => {
+                    UpdateState::Ready { .. } if ui.small_button("Restart to finish").clicked() => {
                         self.restart_requested = true;
                     }
                     _ => {}
                 }
             });
 
-            ui.add_space(crate::theme::SPACE_4);
+            ui.add_space(crate::theme::element_gap(ui));
             let status = match &update.state {
                 UpdateState::Idle => "Update status: idle".to_string(),
                 UpdateState::Unavailable { reason } => reason.clone(),
@@ -1629,9 +1660,7 @@ impl SettingsUi {
                     &mut self.settings.compact_program_headers,
                     "Compact program headers with icons",
                 )
-                .on_hover_text(
-                    "When a program has a process icon, list headers show only the icon with the child count on the right (name on hover). Macro list tag headers attached to a program's Macro tags do the same.",
-                )
+                .on_hover_text(ht::SET_ICON_HEADERS)
                 .changed()
         {
             self.mark_dirty();
@@ -1643,9 +1672,7 @@ impl SettingsUi {
                     &mut self.settings.show_empty_program_headers,
                     "Show empty program headers",
                 )
-                .on_hover_text(
-                    "In the Data Editor lists, keep a header for every program even when it has nothing on that tab (for example, no items or no points).",
-                )
+                .on_hover_text(ht::SET_KEEP_HEADERS)
                 .changed()
         {
             self.mark_dirty();
@@ -1654,7 +1681,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_WINDOW_BORDER)
             && ui
                 .checkbox(&mut self.settings.window_border, "Window border")
-                .on_hover_text("Show a thin gold outline around the edge of the main window.")
+                .on_hover_text(ht::SET_WIN_OUTLINE)
                 .changed()
         {
             self.mark_dirty();
@@ -1663,22 +1690,20 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_RUN_GLOW)
             && ui
                 .checkbox(&mut self.settings.run_button_glow, "Glowing Run button")
-                .on_hover_text(
-                    "Show a green glow around the Run button when a macro is ready to run; it pulses while hovered.",
-                )
+                .on_hover_text(ht::SET_RUN_GLOW)
                 .changed()
         {
             self.mark_dirty();
         }
 
         if setting_visible(q, section_hit, SETTING_FONT_SIZE) {
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
                 ui.label("Font size:");
                 let mut v = self.settings.ui_font_size;
                 if ui
                     .add(crate::widgets::num_entry(&mut v).range(10..=28).speed(1))
-                    .on_hover_text("Base text size for labels, buttons, and form fields.")
+                    .on_hover_text(ht::SET_FONT_SIZE)
                     .changed()
                 {
                     self.settings.ui_font_size = v;
@@ -1704,18 +1729,50 @@ impl SettingsUi {
                             .speed(0.1)
                             .fixed_decimals(1),
                     )
-                    .on_hover_text(
-                        "Scale padding, icons, and other non-text UI elements relative to the \
-                         display's own scale (1.0 = default).",
-                    )
+                    .on_hover_text(ht::SET_UI_SCALE)
                     .changed()
                 {
                     self.settings.ui_scale = v;
                     self.mark_dirty();
-                    Self::apply_appearance(ctx, &self.settings);
+                    self.ui_scale_apply_pending = true;
                 }
                 if ui.small_button("Reset").clicked() {
                     self.settings.ui_scale = DEFAULT_UI_SCALE;
+                    self.mark_dirty();
+                    self.ui_scale_apply_pending = false;
+                    Self::apply_appearance(ctx, &self.settings);
+                }
+            });
+        }
+
+        if self.ui_scale_apply_pending && !ctx.input(|i| i.pointer.any_down()) {
+            Self::apply_appearance(ctx, &self.settings);
+            self.ui_scale_apply_pending = false;
+        }
+
+        if setting_visible(q, section_hit, SETTING_SPACING) {
+            ui.horizontal(|ui| {
+                ui.label("Spacing:");
+                let mut density = self.settings.ui_density;
+                egui::ComboBox::from_id_salt("settings_ui_density")
+                    .selected_text(density.label())
+                    .show_ui(ui, |ui| {
+                        for d in UiDensity::ALL {
+                            ui.selectable_value(&mut density, d, d.label());
+                        }
+                    })
+                    .response
+                    .on_hover_text(ht::SET_DENSITY);
+                if density != self.settings.ui_density {
+                    self.settings.ui_density = density;
+                    self.mark_dirty();
+                    Self::apply_appearance(ctx, &self.settings);
+                }
+                if ui
+                    .checkbox(&mut self.settings.auto_compact_density, "Auto-compact")
+                    .on_hover_text(ht::SET_AUTO_COMPACT)
+                    .changed()
+                {
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
@@ -1727,7 +1784,7 @@ impl SettingsUi {
                 .iter()
                 .any(|&(_, label)| setting_visible(q, false, &[label]));
         if show_colors {
-            ui.add_space(crate::theme::SPACE_8);
+            ui.add_space(crate::theme::element_gap(ui));
             ui.label(egui::RichText::new("Macro tree action colors").strong());
 
             let is_dark = ui.visuals().dark_mode;
@@ -1739,8 +1796,11 @@ impl SettingsUi {
                 }
                 ui.horizontal_wrapped(|ui| {
                     ui.label(label);
+                    // Reserved scrollbar lane insets the clip, not max_rect —
+                    // keep the right-aligned controls inside it.
+                    crate::widgets::clamp_row_right_to_clip(ui);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Reset").clicked() {
+                        if ui.small_button("Reset").clicked() {
                             self.settings.action_colors.set(key, String::new());
                             clear_custom_action_color(key);
                             self.mark_dirty();
@@ -1780,7 +1840,7 @@ impl SettingsUi {
             }
 
             if setting_visible(q, section_hit, SETTING_ACTION_COLORS)
-                && ui.button("Reset all action colors").clicked()
+                && ui.small_button("Reset all action colors").clicked()
             {
                 self.settings.action_colors.clear_all();
                 clear_all_custom_action_colors();
@@ -1851,6 +1911,14 @@ const SETTING_LOG_META: &[&str] = &[
 ];
 const SETTING_HIGHLIGHT_ACTION: &[&str] =
     &["highlight", "executing action", "active action", "tint"];
+const SETTING_CLICK_FX: &[&str] = &[
+    "click effect",
+    "click",
+    "flash",
+    "marker",
+    "cursor",
+    "clicks land",
+];
 const SETTING_HIDE_WHILE_RECORDING: &[&str] =
     &["hide", "recording", "points", "search areas", "snapshot"];
 const SETTING_RELEASE_HELD: &[&str] = &[
@@ -1998,6 +2066,9 @@ const SETTING_WINDOW_BORDER: &[&str] = &["window border", "border", "outline"];
 const SETTING_RUN_GLOW: &[&str] = &["run button", "glow", "pulse", "animation"];
 const SETTING_FONT_SIZE: &[&str] = &["font size", "font", "text size"];
 const SETTING_UI_SCALE: &[&str] = &["ui scale", "scale", "padding"];
+const SETTING_SPACING: &[&str] = &[
+    "spacing", "density", "padding", "margin", "gap", "compact", "spaced",
+];
 const SETTING_ACTION_COLORS: &[&str] =
     &["action colors", "macro tree", "colors", "colour", "pastel"];
 
@@ -2009,6 +2080,7 @@ const GENERAL_SETTINGS: &[&[&str]] = &[
 const MACROS_SETTINGS: &[&[&str]] = &[
     SUBSECTION_PLAYBACK,
     SETTING_HIGHLIGHT_ACTION,
+    SETTING_CLICK_FX,
     SETTING_RELEASE_HELD,
     SETTING_OVERLAY_PRESS_STOPS,
     SETTING_OVERLAY_IN_DETECTION,
@@ -2044,6 +2116,7 @@ const APPEARANCE_SETTINGS: &[&[&str]] = &[
     SETTING_RUN_GLOW,
     SETTING_FONT_SIZE,
     SETTING_UI_SCALE,
+    SETTING_SPACING,
     SETTING_ACTION_COLORS,
 ];
 
@@ -2085,7 +2158,7 @@ fn sidebar_width(ui: &egui::Ui) -> f32 {
 /// Bold title for a group of settings within a section page.
 fn subsection_heading(ui: &mut egui::Ui, first: &mut bool, title: &str) {
     if !std::mem::take(first) {
-        ui.add_space(crate::theme::SPACE_12);
+        ui.add_space(crate::theme::section_gap(ui));
     }
     ui.label(egui::RichText::new(title).strong());
 }
@@ -2099,10 +2172,8 @@ fn advanced_header(
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
     let force_open = !q.is_empty() && knobs.iter().any(|kw| query_matches(q, kw));
-    egui::CollapsingHeader::new("Advanced")
-        .default_open(false)
+    crate::widgets::collapsible_header("Advanced", id_salt)
         .open(force_open.then_some(true))
-        .id_salt(id_salt)
         .show(ui, add_contents);
 }
 
@@ -2134,6 +2205,16 @@ mod tests {
         assert!(section_visible("", SECTION_MACROS, MACROS_SETTINGS));
         assert!(section_visible("", SECTION_SOUND, SOUND_SETTINGS));
         assert!(appearance_section_visible(""));
+    }
+
+    #[test]
+    fn narrow_viewport_compacts_only_when_enabled() {
+        use UiDensity::*;
+        assert_eq!(SettingsUi::density_for(Spaced, true, 360.0), Compact);
+        assert_eq!(SettingsUi::density_for(Spaced, false, 360.0), Spaced);
+        assert_eq!(SettingsUi::density_for(Spaced, true, 960.0), Spaced);
+        // Compact is idempotent — already-compact users see no change.
+        assert_eq!(SettingsUi::density_for(Compact, true, 360.0), Compact);
     }
 
     #[test]
@@ -2247,7 +2328,7 @@ mod tests {
             field.is_focused(),
             "typing the first character should keep the search field focused"
         );
-        assert!(harness.query_by_label("Clear").is_some());
+        assert!(harness.query_by_label("Clear search").is_some());
 
         search_field(&harness).type_text("z");
         harness.run();
@@ -2272,7 +2353,7 @@ mod tests {
             field.is_focused(),
             "deleting back to an empty query should keep the search field focused"
         );
-        assert!(harness.query_by_label("Clear").is_none());
+        assert!(harness.query_by_label("Clear search").is_none());
 
         search_field(&harness).type_text("a");
         harness.run();

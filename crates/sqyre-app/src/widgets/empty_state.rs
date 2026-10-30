@@ -2,7 +2,6 @@
 //!
 //! Layout: strong title, optional weak sentence, optional primary then secondary CTA.
 
-use crate::theme::{SPACE_12, SPACE_4, SPACE_8};
 use eframe::egui;
 
 /// Which optional action button was clicked, if any.
@@ -47,15 +46,31 @@ pub fn empty_state(
     primary: Option<&str>,
     secondary: Option<&str>,
 ) -> EmptyStateAction {
-    ui.add_space(SPACE_8);
-    ui.label(egui::RichText::new(title).strong());
+    ui.add_space(crate::theme::element_gap(ui));
+    // A single word wider than the pane (extreme user-dragged splits) wraps
+    // mid-word ("collection/s yet"); truncating reads cleaner there.
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let avail = ui.available_width();
+    let splits_word = title.split_whitespace().any(|w| {
+        ui.painter()
+            .layout_no_wrap(w.to_owned(), font.clone(), egui::Color32::WHITE)
+            .size()
+            .x
+            > avail
+    });
+    let title_label = egui::Label::new(egui::RichText::new(title).strong());
+    if splits_word {
+        ui.add(title_label.truncate());
+    } else {
+        ui.add(title_label);
+    }
     if let Some(body) = body {
-        ui.add_space(SPACE_4);
+        ui.add_space(crate::theme::element_gap(ui));
         ui.label(egui::RichText::new(body).weak());
     }
     let mut clicked = EmptyStateAction::None;
     if primary.is_some() || secondary.is_some() {
-        ui.add_space(SPACE_12);
+        ui.add_space(crate::theme::element_gap(ui));
         ui.horizontal(|ui| {
             if let Some(label) = primary {
                 if ui.button(label).clicked() {

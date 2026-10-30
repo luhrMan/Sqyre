@@ -14,7 +14,7 @@ pub struct MacroMetaUi {
     tag_draft: String,
     delay_open: bool,
     /// Hotkey controls expanded beside the key toggle; kept across macro switches.
-    hotkey_open: bool,
+    pub(crate) hotkey_open: bool,
     /// Selection identity used to refresh drafts when the user switches macros.
     synced_name: String,
     synced_idx: Option<usize>,
@@ -28,6 +28,10 @@ pub struct MetaMutations {
 }
 
 impl MacroMetaUi {
+    pub(crate) fn open_delay_for_docs(&mut self) {
+        self.delay_open = true;
+    }
+
     /// Refresh draft fields when the selected macro changes.
     pub fn sync_selection(&mut self, idx: usize, m: &Macro) {
         let changed = self.synced_idx != Some(idx) || self.synced_name != m.name;
@@ -52,11 +56,22 @@ impl MacroMetaUi {
     ) -> MetaMutations {
         let mut out = MetaMutations::default();
 
-        help::label(ui, "Name:", help::META_NAME);
-        let te = egui::TextEdit::singleline(&mut self.name_draft)
-            .desired_width(220.0)
-            .hint_text("Macro name");
-        let resp = ui.add_enabled(enabled, te).on_hover_text(help::META_NAME);
+        let resp = crate::widgets::wrap_unit(ui, |ui| {
+            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
+            let name_w = crate::widgets::name_edit_width(ui, &self.name_draft, "Macro name");
+            let edit = ui.add_enabled(
+                enabled,
+                egui::TextEdit::singleline(&mut self.name_draft)
+                    .desired_width(name_w)
+                    .hint_text("Macro name"),
+            );
+            if let Some(err) = &self.name_error {
+                crate::widgets::error_icon(ui, err);
+            }
+            edit
+        })
+        .inner
+        .on_hover_text(help::META_NAME);
         // Commit on Enter, or when focus leaves with a different value.
         let enter = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         let lost_dirty = resp.lost_focus() && self.name_draft.trim() != m.name;
@@ -77,10 +92,6 @@ impl MacroMetaUi {
                 }
             }
         }
-        if let Some(err) = &self.name_error {
-            ui.colored_label(crate::theme::error_fg(), err);
-        }
-
         out
     }
 
@@ -121,11 +132,12 @@ impl MacroMetaUi {
             all_tags,
             crate::widgets::TagChipOptions {
                 enabled,
-                show_add_button: false,
+                show_add_button: true,
+                label_name: Some("Tags"),
                 draft_hover: Some(help::META_TAGS),
-                draft_first: true,
                 reorderable: false,
                 signed_filters: false,
+                single_row: true,
             },
         )
         .changed

@@ -1,6 +1,7 @@
 //! Macro recording: capture moves/clicks/keys/waits until Esc, then review/copy.
 
 use crate::action_tooltip::{self, TooltipState};
+use crate::help_text as ht;
 use crate::hotkey_record::HotkeyRecordUi;
 use crate::icon_cache::IconCache;
 use crate::key_record::KeyRecordUi;
@@ -44,6 +45,8 @@ pub(crate) struct TempPoint {
 
 /// Max Chebyshev distance (px) to surface a nearby saved-point recommendation.
 const NEARBY_POINT_PX: i32 = 24;
+/// Horizontal offset aligning the "Nearby" hint under the point fields above it.
+const SUB_ROW_INDENT: f32 = 24.0;
 
 /// Result of Copy from the review window.
 pub(crate) struct MacroRecordCopy {
@@ -320,12 +323,13 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                             ui.horizontal(|ui| {
                                 let enabled = ui
                                     .checkbox(&mut pt.save, "")
-                                    .on_hover_text("Save into catalog on Copy / Save selected");
+                                    .on_hover_text(ht::REC_SAVE_CATALOG);
                                 if enabled.changed() && pt.save {
                                     pt.link_to = None;
                                 }
+                                let name_w = crate::widgets::name_edit_width(ui, &pt.name, "");
                                 let name = ui.add(
-                                    egui::TextEdit::singleline(&mut pt.name).desired_width(120.0),
+                                    egui::TextEdit::singleline(&mut pt.name).desired_width(name_w),
                                 );
                                 // Editing the name after linking drops the link so refs
                                 // follow temporary~name again.
@@ -335,11 +339,11 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                                 ui.label("X");
                                 let x_resp = ui
                                     .add(crate::widgets::num_entry(&mut pt.x).speed(1).suffix(" px"))
-                                    .on_hover_text("Screen X (physical pixels)");
+                                    .on_hover_text(ht::REC_SCREEN_X);
                                 ui.label("Y");
                                 let y_resp = ui
                                     .add(crate::widgets::num_entry(&mut pt.y).speed(1).suffix(" px"))
-                                    .on_hover_text("Screen Y (physical pixels)");
+                                    .on_hover_text(ht::REC_SCREEN_Y);
 
                                 row_hovered = enabled.contains_pointer()
                                     || name.contains_pointer()
@@ -351,7 +355,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                             });
                             if let Some(near) = nearby {
                                 ui.horizontal(|ui| {
-                                    ui.add_space(24.0);
+                                    ui.add_space(SUB_ROW_INDENT);
                                     ui.weak(format!(
                                         "Nearby: {} ({} px)",
                                         near.display, near.dist
@@ -380,7 +384,13 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                             }
                         }
                     });
-                if ui.button("Save selected points").clicked() {
+                if crate::widgets::icon_button(
+                    ui,
+                    egui_phosphor::regular::FLOPPY_DISK,
+                    "Save selected points",
+                )
+                .clicked()
+                {
                     save_points = true;
                 }
                 crate::widgets::section_separator(ui);
@@ -420,10 +430,10 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
 
             crate::widgets::section_separator(ui);
             ui.horizontal(|ui| {
-                if ui.button("Copy").clicked() {
+                if ui.small_button("Copy").clicked() {
                     copy = true;
                 }
-                if ui.button("Close").clicked() {
+                if crate::widgets::cancel_icon_button(ui, "Close").clicked() {
                     close = true;
                 }
             });

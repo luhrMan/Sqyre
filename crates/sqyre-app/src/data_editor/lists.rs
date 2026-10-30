@@ -1,14 +1,15 @@
 //! Left entity list + program selector (cached against catalog generation).
 
-use super::helpers::{editor_program_names, is_editor_listed_program};
+use super::helpers::{default_editor_program, editor_program_names, is_editor_listed_program};
 use super::{DataEditor, EditorTab, ListCache};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::show_file_hover;
+use crate::help_text as ht;
 use crate::icon_cache::IconCache;
 use crate::overlay_icons;
 use crate::pickers::{self, PickerScrollOpts};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
-use crate::widgets::searchable_combo_with;
+use crate::widgets::searchable_combo;
 use eframe::egui;
 use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, UserSettings};
 use std::collections::HashMap;
@@ -127,6 +128,7 @@ impl DataEditor {
             let mut sort = *items_list_sort.borrow();
             crate::widgets::combo_enum(
                 ui,
+                egui_phosphor::regular::SORT_ASCENDING,
                 "Sort",
                 "Order of items in this list. Tags uses the priority list below.",
                 &mut sort,
@@ -149,12 +151,13 @@ impl DataEditor {
                 crate::widgets::TagChipOptions {
                     enabled: true,
                     show_add_button: true,
+                    label_name: None,
                     draft_hover: Some(
                         "Drag chips to set priority. Unmatched items sort by name after.",
                     ),
-                    draft_first: false,
                     reorderable: true,
                     signed_filters: false,
+                    single_row: false,
                 },
             );
         };
@@ -569,8 +572,7 @@ impl DataEditor {
                                         }
                                         let mut label = ui.selectable_label(selected, name);
                                         if !btn.enabled {
-                                            label = label
-                                                .on_hover_text("Disabled — right-click to enable.");
+                                            label = label.on_hover_text(ht::ED_ROW_DISABLED);
                                         }
                                         if thumb.clicked() || label.clicked() {
                                             clicked_overlay = Some((prog.clone(), btn.id.clone()));
@@ -747,34 +749,39 @@ impl DataEditor {
         settings: &UserSettings,
     ) {
         self.ensure_list_cache(catalog);
+        // The dropdown offers no "(none)": default to General (first listed
+        // otherwise) until the user picks a program; the choice then persists.
+        if self.selected_program.is_none() {
+            if let Some(name) = default_editor_program(catalog) {
+                self.select_program(&name, catalog, settings);
+            }
+        }
         let names = self.list_cache.program_names.clone();
         let mut current = self.selected_program.clone().unwrap_or_default();
         let before = current.clone();
         ui.horizontal(|ui| {
-            ui.label("Program");
+            crate::action_tooltip::help::label(ui, crate::model_icons::PROGRAM, "Program");
             let mut option_icon =
                 |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
-            searchable_combo_with(
-                ui,
-                "data_editor_program",
-                &mut current,
-                &names,
-                sqyre_domain::EMPTY_NONE,
-                None,
-                None,
-                None,
-                Some(&mut option_icon),
+            crate::action_tooltip::help::tip(
+                searchable_combo(
+                    ui,
+                    "data_editor_program",
+                    &mut current,
+                    crate::widgets::SearchableComboOpts {
+                        options: &names,
+                        empty_text: sqyre_domain::EMPTY_NONE,
+                        none_label: None,
+                        width: None,
+                        on_option_hover: None,
+                        option_icon: Some(&mut option_icon),
+                    },
+                ),
+                crate::action_tooltip::help::DE_PROGRAM,
             );
         });
-        if current != before {
-            if current.is_empty() {
-                self.selected_program = None;
-                self.selected_entity = None;
-                self.reset_item_form();
-                self.form_name.clear();
-            } else {
-                self.select_program(&current, catalog, settings);
-            }
+        if !current.is_empty() && current != before {
+            self.select_program(&current, catalog, settings);
         }
     }
 }

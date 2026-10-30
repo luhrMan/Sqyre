@@ -2,6 +2,7 @@
 //! keyboard navigation, follow-while-running, and hover/click "where found"
 //! find markers that highlight detections in logged images and on the desktop.
 
+use crate::help_text as ht;
 use crate::image_view::{self, ImageViewTransform};
 use crate::preview_tooltip::PreviewTooltipCache;
 use crate::theme::selection_stroke;
@@ -211,48 +212,43 @@ pub fn show_logs_window(
         ui.horizontal(|ui| {
             if ui
                 .button("Copy text")
-                .on_hover_text("Copy the filtered log lines")
+                .on_hover_text(ht::LOGS_COPY_FILTERED)
                 .clicked()
             {
                 let filtered: Vec<ActionLogEntry> =
                     visible.iter().map(|&i| entries[i].clone()).collect();
                 ui.ctx().copy_text(lines_for(&filtered).join("\n"));
             }
-            if ui
-                .button("Clear logs")
-                .on_hover_text("Clear this action's log entries")
-                .clicked()
-            {
+            if crate::widgets::cancel_icon_button(ui, "Clear this action's log entries").clicked() {
                 action_log.clear_for(action_id);
             }
-            if ui
-                .selectable_label(state.follow, "Follow")
-                .on_hover_text("Keep scrolled to the newest entries while the macro runs")
-                .clicked()
-            {
-                state.follow = !state.follow;
-            }
+            crate::widgets::icon_toggle(
+                ui,
+                &mut state.follow,
+                "Keep scrolled to the newest entries while the macro runs",
+                egui_phosphor::regular::ARROW_DOWN,
+                egui_phosphor::fill::ARROW_DOWN,
+            );
             ui.weak(&counts);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Close").clicked() {
+                if crate::widgets::cancel_icon_button(ui, "Close").clicked() {
                     nav = LogsNav::Close;
                 }
             });
         });
 
         // ── Search + kind toggles ───────────────────────────────────────
-        let search_resp = ui
-            .horizontal(|ui| {
-                ui.label(egui::RichText::new(
-                    egui_phosphor::regular::MAGNIFYING_GLASS,
-                ));
-                ui.add(
-                    egui::TextEdit::singleline(&mut state.search)
-                        .hint_text("Filter logs…  ( / )")
-                        .desired_width(f32::INFINITY),
-                )
-            })
-            .inner;
+        let search_out = crate::widgets::search_field(
+            ui,
+            &mut state.search,
+            crate::widgets::SearchFieldOpts {
+                hint: "Filter logs…  ( / )",
+                focus_id: None,
+                clearable: true,
+                stable_id: Some(egui::Id::new("action_logs_search")),
+            },
+        );
+        let search_resp = search_out.response;
         ui.horizontal(|ui| {
             if ui.selectable_label(state.kinds.text, "Text").clicked() {
                 state.kinds.text = !state.kinds.text;
@@ -764,7 +760,7 @@ fn show_list(
     hovered_now: &mut Option<(usize, usize)>,
 ) {
     if visible.is_empty() {
-        ui.weak("Nothing matches the current filter.");
+        crate::widgets::list_vacancy(ui, &state.search, 0, "entries");
         return;
     }
     let avail_w = ui.available_width().max(120.0);
@@ -891,7 +887,7 @@ fn flush_item_gallery(
     if pending.is_empty() {
         return;
     }
-    ui.add_space(crate::theme::SPACE_12);
+    ui.add_space(crate::theme::section_gap(ui));
     crate::widgets::title_with_count(
         ui,
         egui::RichText::new("Items — click an image to inspect processing & finds")
@@ -899,7 +895,7 @@ fn flush_item_gallery(
             .small(),
         pending.len(),
     );
-    ui.add_space(crate::theme::SPACE_4);
+    ui.add_space(crate::theme::element_gap(ui));
 
     let avail = crate::widgets::visible_content_width(ui);
     let (card_w, cols) = item_gallery_metrics(pending.len(), avail);
@@ -939,7 +935,7 @@ fn flush_item_gallery(
         ui.spacing_mut().item_spacing = old_spacing;
     });
     pending.clear();
-    ui.add_space(crate::theme::SPACE_8);
+    ui.add_space(crate::theme::element_gap(ui));
 }
 
 #[expect(
@@ -989,7 +985,7 @@ fn show_item_card(
                     if resp.clicked() {
                         state.selected_item = Some(entry_index);
                     }
-                    resp.on_hover_text("Click to view processing steps and where it was found");
+                    resp.on_hover_text(ht::LOGS_ITEM_STEPS);
                 }
                 if ui
                     .small_button(if selected { "Open ▸" } else { "Inspect ▸" })
@@ -1025,13 +1021,13 @@ fn show_item_detail(
 ) {
     let pos = items.iter().position(|&i| i == entry_index);
     ui.horizontal(|ui| {
-        if ui.button("← Back to items").clicked() {
+        if ui.small_button("◂ Back").clicked() {
             state.selected_item = None;
         }
         if let Some(p) = pos {
             if ui
                 .small_button("◂ Prev")
-                .on_hover_text("Previous item (←)")
+                .on_hover_text(ht::LOGS_PREV_ITEM)
                 .clicked()
             {
                 state.selected_item = step_item(items, Some(entry_index), -1);
@@ -1039,7 +1035,7 @@ fn show_item_detail(
             ui.weak(format!("{}/{}", p + 1, items.len()));
             if ui
                 .small_button("Next ▸")
-                .on_hover_text("Next item (→)")
+                .on_hover_text(ht::LOGS_NEXT_ITEM)
                 .clicked()
             {
                 state.selected_item = step_item(items, Some(entry_index), 1);
@@ -1082,7 +1078,7 @@ fn show_item_detail(
                 ));
             });
         }
-        ui.add_space(crate::theme::SPACE_8);
+        ui.add_space(crate::theme::element_gap(ui));
     }
 
     if !details.is_empty() {
@@ -1090,7 +1086,7 @@ fn show_item_detail(
         for line in details {
             ui.monospace(line);
         }
-        ui.add_space(crate::theme::SPACE_8);
+        ui.add_space(crate::theme::element_gap(ui));
     }
 
     ui.label(
@@ -1098,7 +1094,7 @@ fn show_item_detail(
             .strong()
             .small(),
     );
-    ui.add_space(crate::theme::SPACE_4);
+    ui.add_space(crate::theme::element_gap(ui));
     let avail_w = ui.available_width().max(120.0);
     for (si, step) in steps.iter().enumerate() {
         show_labeled_image(
@@ -1125,7 +1121,7 @@ fn show_labeled_image(
     image: &LogImage,
     avail_w: f32,
 ) {
-    ui.add_space(crate::theme::SPACE_8);
+    ui.add_space(crate::theme::element_gap(ui));
     ui.group(|ui| {
         ui.label(egui::RichText::new(&image.label).strong().small());
         ui.label(
@@ -1150,8 +1146,7 @@ fn show_labeled_image(
             if resp.hovered() {
                 ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
             }
-            resp.clone()
-                .on_hover_text("Click to zoom — wheel zooms, drag pans");
+            resp.clone().on_hover_text(ht::LOGS_ZOOM_TIP);
             if resp.clicked() {
                 state.zoom = Some(ZoomedImage {
                     key,
@@ -1161,7 +1156,7 @@ fn show_labeled_image(
                 state.inspect = None;
             }
         } else {
-            ui.colored_label(crate::theme::error_fg(), "(image unavailable)");
+            crate::widgets::error_icon(ui, "Image unavailable");
         }
     });
 }
@@ -1176,7 +1171,7 @@ fn show_zoom_view(
 ) {
     let start_y = ui.cursor().min.y;
     ui.horizontal(|ui| {
-        if ui.button("← Back").clicked() {
+        if ui.small_button("◂ Back").clicked() {
             state.zoom = None;
             state.inspect = None;
             return;
@@ -1189,9 +1184,9 @@ fn show_zoom_view(
             if ui
                 .add_enabled(
                     state.zoom_view.needs_reset_button(),
-                    egui::Button::new("Reset view"),
+                    egui::Button::new("Reset view").small(),
                 )
-                .on_hover_text("Fit image in viewport (0)")
+                .on_hover_text(ht::LOGS_FIT_VIEW)
                 .clicked()
             {
                 state.zoom_view.reset();
@@ -1290,13 +1285,13 @@ fn show_zoom_view(
             stroke_find_rect(&painter, content, image.width, image.height, m.rect, stroke);
         }
     } else {
-        painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(40));
+        painter.rect_filled(viewport, 0.0, crate::theme::preview_unavailable_fill());
         painter.text(
             viewport.center(),
             egui::Align2::CENTER_CENTER,
             "(image unavailable)",
             egui::TextStyle::Body.resolve(ui.style()),
-            egui::Color32::LIGHT_GRAY,
+            crate::theme::preview_unavailable_fg(),
         );
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, &mut state.zoom_view);

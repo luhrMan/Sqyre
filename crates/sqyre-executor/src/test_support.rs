@@ -227,6 +227,8 @@ impl OcrEngine for QueuedOcrEngine {
 #[derive(Debug, Default)]
 pub struct RecordingBackend {
     pub log: Vec<String>,
+    /// Last `move_to` target (what a real backend's `cursor_position` returns).
+    pub pos: Option<(i32, i32)>,
 }
 
 impl RecordingBackend {
@@ -256,8 +258,12 @@ impl AutomationBackend for RecordingBackend {
         self.log.push(format!("sleep:{ms}"));
     }
     fn move_to(&mut self, x: i32, y: i32, opts: MoveOptions) {
+        self.pos = Some((x, y));
         self.log
             .push(format!("move:{x},{y},smooth={}", opts.smooth));
+    }
+    fn cursor_position(&mut self) -> Option<(i32, i32)> {
+        self.pos
     }
     fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
         self.log.push(format!(
@@ -320,6 +326,9 @@ impl AutomationBackend for StopAfterSleeps {
     }
     fn move_to(&mut self, x: i32, y: i32, opts: MoveOptions) {
         self.inner.move_to(x, y, opts);
+    }
+    fn cursor_position(&mut self) -> Option<(i32, i32)> {
+        self.inner.cursor_position()
     }
     fn click(&mut self, button: &str, down: bool) -> Result<(), AutomationError> {
         self.inner.click(button, down)

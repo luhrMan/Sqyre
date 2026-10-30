@@ -4,7 +4,8 @@ use crate::tree_chrome;
 use crate::widgets::{save_cancel_row, SaveCancel};
 use eframe::egui::{self, Color32};
 
-/// Pill + optional subtitle + Save/Cancel, then error line and separator.
+/// Pill + optional subtitle + Save/Cancel, then separator. `error` becomes a
+/// hover-disclosed icon beside the header text instead of its own line.
 pub fn paint_action_edit_header(
     ui: &mut egui::Ui,
     label: &str,
@@ -20,13 +21,13 @@ pub fn paint_action_edit_header(
             if let Some(text) = subtitle {
                 ui.label(text);
             }
+            if let Some(err) = error {
+                crate::widgets::error_icon(ui, err);
+            }
             outcome = save_cancel_row(ui, save_enabled);
         });
         outcome
     });
-    if let Some(err) = error {
-        ui.colored_label(crate::theme::error_fg(), err);
-    }
     crate::widgets::section_separator(ui);
     outcome
 }
