@@ -6,7 +6,7 @@ use crate::overlay_icons;
 use crate::pickers::fuzzy_match_fold;
 use crate::widgets::VectorIcon;
 use crate::SqyreApp;
-use eframe::egui::{self, Color32, CornerRadius, Key, Modifiers, Sense};
+use eframe::egui::{self, Color32, CornerRadius, Sense};
 use sqyre_domain::{action_type_table, Macro};
 use sqyre_persist::{OverlayButtonConfig, ProgramCatalog};
 use sqyre_ui_model::action_picker_category;
@@ -171,33 +171,27 @@ impl CommandPaletteUi {
         .min_width(width)
         .max_width(width)
         .show(ctx, |ui| {
-            let esc = crate::widgets::consume_escape(ui);
-            let (enter, down, up) = ui.input_mut(|i| {
-                (
-                    i.consume_key(Modifiers::NONE, Key::Enter),
-                    i.consume_key(Modifiers::NONE, Key::ArrowDown),
-                    i.consume_key(Modifiers::NONE, Key::ArrowUp),
-                )
-            });
-            if esc {
+            let nav = crate::pickers::poll_list_nav(ui);
+            if nav == crate::pickers::ListNavAction::Cancel {
                 close = true;
                 return;
             }
 
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(
-                    egui_phosphor::regular::MAGNIFYING_GLASS,
-                ));
-                let edit = egui::TextEdit::singleline(&mut self.query)
-                    .hint_text("Add action, open macro, new item…")
-                    .desired_width(f32::INFINITY);
-                let resp = ui.add(edit);
-                if self.focus_search {
-                    resp.request_focus();
-                    self.focus_search = false;
-                }
-                query_changed = resp.changed();
-            });
+            let search_out = crate::widgets::search_field(
+                ui,
+                &mut self.query,
+                crate::widgets::SearchFieldOpts {
+                    hint: "Add action, open macro, new item…",
+                    focus_id: None,
+                    clearable: false,
+                    stable_id: None,
+                },
+            );
+            if self.focus_search {
+                search_out.response.request_focus();
+                self.focus_search = false;
+            }
+            query_changed = search_out.changed;
             crate::widgets::section_separator(ui);
 
             let filtered = filter_ranked(&self.query, commands);
@@ -209,18 +203,13 @@ impl CommandPaletteUi {
                 crate::widgets::list_vacancy(ui, &self.query, 0, "commands");
                 return;
             }
-            if down {
-                self.selected = (self.selected + 1).min(filtered.len() - 1);
-                self.scroll_selected = true;
-            } else if up {
-                self.selected = self.selected.saturating_sub(1);
-                self.scroll_selected = true;
-            }
-            self.selected = self.selected.min(filtered.len() - 1);
-
-            if enter {
+            let before = self.selected;
+            if crate::pickers::apply_list_nav(&mut self.selected, filtered.len(), nav) {
                 run = Some(filtered[self.selected].kind.clone());
                 return;
+            }
+            if self.selected != before {
+                self.scroll_selected = true;
             }
 
             let row_pitch = ROW_H + ui.spacing().item_spacing.y;

@@ -176,7 +176,7 @@ impl SettingsUi {
     /// Open the settings window (re-arms search focus).
     pub fn request_open(&mut self, ctx: &egui::Context) {
         self.open = true;
-        crate::pickers::reset_focus_search(ctx, settings_window_id());
+        crate::widgets::reset_focus_search(ctx, settings_window_id());
     }
 
     pub fn settings(&self) -> &UserSettings {
@@ -414,7 +414,7 @@ impl SettingsUi {
         // `ui` may clear `self.open` (Esc); Window `.open` may clear `open` (titlebar).
         self.open = open && self.open;
         if !self.open {
-            crate::pickers::reset_focus_search(ctx, settings_window_id());
+            crate::widgets::reset_focus_search(ctx, settings_window_id());
         }
         if let Some(confirm) = self.confirm.clone() {
             self.draw_confirm(ctx, confirm, pending_scale, db, macros, catalog);
@@ -445,45 +445,28 @@ impl SettingsUi {
             }
         }
 
-        let has_search = !self.search.is_empty();
-        let mut clear_search = false;
         let search_focused = crate::widgets::show_overflow(ui, "settings_search", 1.0, |ui| {
-            crate::widgets::fill_row(
+            // Pinned id so focus survives the Clear ✕ appearing and disappearing.
+            let out = crate::widgets::search_field(
                 ui,
-                |ui| {
-                    clear_search = has_search
-                        && crate::widgets::cancel_icon_button(ui, "Clear search").clicked();
+                &mut self.search,
+                crate::widgets::SearchFieldOpts {
+                    hint: "Search settings…",
+                    focus_id: Some(settings_window_id()),
+                    clearable: true,
+                    stable_id: Some(settings_window_id().with("search")),
                 },
-                |ui| {
-                    ui.label(egui::RichText::new(
-                        egui_phosphor::regular::MAGNIFYING_GLASS,
-                    ))
-                    .on_hover_text("Search");
-                    // Infinity fill — fixed desired_width(available) ratchets the window.
-                    // Pin the id so focus survives the Clear button appearing and
-                    // disappearing (it is laid out before this field).
-                    let search_resp = ui.add(
-                        egui::TextEdit::singleline(&mut self.search)
-                            .id(settings_window_id().with("search"))
-                            .hint_text("Search settings…")
-                            .desired_width(f32::INFINITY),
-                    );
-                    crate::pickers::focus_search_once(ui, settings_window_id(), &search_resp);
-                    if search_resp.changed() && !self.search.trim().is_empty() {
-                        let q = self.search.trim().to_ascii_lowercase();
-                        if !self.active_section.visible(&q) {
-                            if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
-                                self.active_section = section;
-                            }
-                        }
+            );
+            if out.changed && !self.search.trim().is_empty() {
+                let q = self.search.trim().to_ascii_lowercase();
+                if !self.active_section.visible(&q) {
+                    if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
+                        self.active_section = section;
                     }
-                    search_resp.has_focus()
-                },
-            )
+                }
+            }
+            out.response.has_focus()
         });
-        if clear_search {
-            self.search.clear();
-        }
 
         let footer = if self.status_banner.status.is_some() {
             40.0

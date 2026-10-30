@@ -336,7 +336,7 @@ fn paint_pick(
             });
 
             let painter = ui.painter();
-            painter.rect_filled(rect, 0.0, Color32::BLACK);
+            painter.rect_filled(rect, 0.0, theme::capture_underlay());
             painter.image(texture.id(), image, unit_uv(), Color32::WHITE);
             let to_screen = |p: Pos2| image.min + p.to_vec2() / px_per_point;
             match selection {
@@ -454,7 +454,7 @@ fn unit_uv() -> Rect {
 
 fn outline_strokes() -> [egui::Stroke; 2] {
     [
-        egui::Stroke::new(3.0, Color32::BLACK),
+        egui::Stroke::new(3.0, theme::capture_underlay()),
         egui::Stroke::new(1.0, theme::PRIMARY),
     ]
 }
@@ -500,7 +500,7 @@ fn paint_loupe(
         egui::pos2(point.x / size.x, point.y / size.y),
         egui::vec2(span / size.x, span / size.y),
     );
-    painter.rect_filled(loupe, 4.0, Color32::BLACK);
+    painter.rect_filled(loupe, 4.0, theme::capture_underlay());
     painter.image(texture.id(), loupe, uv, Color32::WHITE);
     paint_crosshair(painter, loupe, loupe.center());
     painter.rect_stroke(

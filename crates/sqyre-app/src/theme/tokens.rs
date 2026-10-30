@@ -73,6 +73,70 @@ pub fn match_within_fg() -> Color32 {
     Color32::from_rgb(120, 230, 180)
 }
 
+// --- Preview viewport / monitor-map fills ---
+// Dark neutrals backing rendered captures; distinct from panel chrome fills so
+// imagery reads as canvas, not UI surface.
+
+/// Backing painted under a shown capture inside an image viewport.
+pub fn preview_viewport_fill() -> Color32 {
+    Color32::from_gray(20)
+}
+
+/// Viewport fill when no image is available (behind the caption text).
+pub fn preview_unavailable_fill() -> Color32 {
+    Color32::from_gray(40)
+}
+
+/// Caption text on [`preview_unavailable_fill`].
+pub fn preview_unavailable_fg() -> Color32 {
+    Color32::LIGHT_GRAY
+}
+
+/// Status/error placeholder frame fill inside preview tips.
+pub fn preview_status_fill() -> Color32 {
+    Color32::from_gray(28)
+}
+
+/// Monitor-map desktop background.
+pub fn preview_monitor_bg() -> Color32 {
+    Color32::from_gray(22)
+}
+
+/// Monitor-map monitor fill.
+pub fn preview_monitor_fill() -> Color32 {
+    Color32::from_gray(36)
+}
+
+/// Monitor-map monitor outline.
+pub fn preview_monitor_stroke() -> Stroke {
+    Stroke::new(1.5, Color32::from_gray(90))
+}
+
+/// Monitor-map monitor label.
+pub fn preview_monitor_label() -> Color32 {
+    Color32::from_gray(200)
+}
+
+/// Label text painted over [`preview_label_dim`] chips.
+pub fn preview_label_fg() -> Color32 {
+    Color32::WHITE
+}
+
+/// Plain text painted inside the dark var-overlay edit field.
+pub fn preview_plain_fg() -> Color32 {
+    Color32::from_gray(230)
+}
+
+/// Underlay behind screen captures and capture outlines (must read over any image).
+pub fn capture_underlay() -> Color32 {
+    Color32::BLACK
+}
+
+/// Main-window clear color behind the egui surface.
+pub fn window_clear_color() -> Color32 {
+    Color32::from_rgb(0x1a, 0x1a, 0x1a)
+}
+
 /// Selected card / list stroke (Sqyre primary).
 pub fn selection_stroke() -> Stroke {
     Stroke::new(2.0, PRIMARY)

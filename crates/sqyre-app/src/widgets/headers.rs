@@ -2,9 +2,14 @@
 
 use eframe::egui;
 
+/// The `(n)` count string [`count_suffix`] paints — also for width pre-measure.
+pub fn count_text(count: usize) -> String {
+    format!("({count})")
+}
+
 /// Weak `(count)` label.
-fn paint_count(ui: &mut egui::Ui, count: usize) {
-    ui.label(egui::RichText::new(format!("({count})")).weak());
+pub fn count_suffix(ui: &mut egui::Ui, count: usize) {
+    ui.label(egui::RichText::new(count_text(count)).weak());
 }
 
 fn count_row(
@@ -20,7 +25,7 @@ fn count_row(
         ui.horizontal(|ui| {
             let resp = add_title(ui);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                paint_count(ui, count);
+                count_suffix(ui, count);
             });
             resp
         })
@@ -40,7 +45,7 @@ pub fn title_with_count(
 ) -> egui::Response {
     ui.horizontal(|ui| {
         let resp = ui.add(egui::Label::new(title).selectable(false));
-        paint_count(ui, count);
+        count_suffix(ui, count);
         resp
     })
     .inner

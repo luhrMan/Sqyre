@@ -44,6 +44,8 @@ pub(crate) struct TempPoint {
 
 /// Max Chebyshev distance (px) to surface a nearby saved-point recommendation.
 const NEARBY_POINT_PX: i32 = 24;
+/// Horizontal offset aligning the "Nearby" hint under the point fields above it.
+const SUB_ROW_INDENT: f32 = 24.0;
 
 /// Result of Copy from the review window.
 pub(crate) struct MacroRecordCopy {
@@ -352,7 +354,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                             });
                             if let Some(near) = nearby {
                                 ui.horizontal(|ui| {
-                                    ui.add_space(24.0);
+                                    ui.add_space(SUB_ROW_INDENT);
                                     ui.weak(format!(
                                         "Nearby: {} ({} px)",
                                         near.display, near.dist

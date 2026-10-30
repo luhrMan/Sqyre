@@ -237,18 +237,17 @@ pub fn show_logs_window(
         });
 
         // ── Search + kind toggles ───────────────────────────────────────
-        let search_resp = ui
-            .horizontal(|ui| {
-                ui.label(egui::RichText::new(
-                    egui_phosphor::regular::MAGNIFYING_GLASS,
-                ));
-                ui.add(
-                    egui::TextEdit::singleline(&mut state.search)
-                        .hint_text("Filter logs…  ( / )")
-                        .desired_width(f32::INFINITY),
-                )
-            })
-            .inner;
+        let search_out = crate::widgets::search_field(
+            ui,
+            &mut state.search,
+            crate::widgets::SearchFieldOpts {
+                hint: "Filter logs…  ( / )",
+                focus_id: None,
+                clearable: true,
+                stable_id: Some(egui::Id::new("action_logs_search")),
+            },
+        );
+        let search_resp = search_out.response;
         ui.horizontal(|ui| {
             if ui.selectable_label(state.kinds.text, "Text").clicked() {
                 state.kinds.text = !state.kinds.text;
@@ -1286,13 +1285,13 @@ fn show_zoom_view(
             stroke_find_rect(&painter, content, image.width, image.height, m.rect, stroke);
         }
     } else {
-        painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(40));
+        painter.rect_filled(viewport, 0.0, crate::theme::preview_unavailable_fill());
         painter.text(
             viewport.center(),
             egui::Align2::CENTER_CENTER,
             "(image unavailable)",
             egui::TextStyle::Body.resolve(ui.style()),
-            egui::Color32::LIGHT_GRAY,
+            crate::theme::preview_unavailable_fg(),
         );
     }
     let _ = image_view::handle_pan_drag(&resp, viewport, image_size, &mut state.zoom_view);

@@ -15,6 +15,9 @@ use std::collections::{BTreeMap, HashMap};
 
 /// Empty-string group key for macros with no tags.
 const UNTAGGED_KEY: &str = "";
+/// Horizontal offset for one level of nested tag groups (fixed — density gaps
+/// change row spacing, not tree indentation).
+const NEST_INDENT: f32 = SPACE_12;
 
 /// One node in the `/`-nested tag tree for the macrolist.
 #[derive(Debug, Default)]
@@ -376,7 +379,7 @@ fn paint_tag_group(
                         }
                     }
                     let font = egui::FontSelection::Default.resolve(ui.style());
-                    let count_text = format!("({count})");
+                    let count_text = crate::widgets::count_text(count);
                     if !hide_name {
                         let count_w = ui
                             .painter()
@@ -392,7 +395,7 @@ fn paint_tag_group(
                         );
                         text_hover_if(resp, label, header_text.elided);
                     }
-                    ui.label(egui::RichText::new(count_text).weak());
+                    crate::widgets::count_suffix(ui, count);
                 });
             });
         })
@@ -415,10 +418,11 @@ fn paint_tag_group(
                 // Nested headers: no root separators; slight indent without expand_to_include_x.
                 ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
-                    ui.add_space(SPACE_12);
+                    ui.add_space(NEST_INDENT);
                     // Item spacing sits between the indent and the column; leaving it
                     // out overflows the viewport and enables horizontal drag-scroll.
-                    let nested_w = (ctx.list_w - SPACE_12 - ui.spacing().item_spacing.x).max(0.0);
+                    let nested_w =
+                        (ctx.list_w - NEST_INDENT - ui.spacing().item_spacing.x).max(0.0);
                     ui.vertical(|ui| {
                         ui.set_max_width(nested_w);
                         let mut nested = PaintTagCtx {
@@ -555,24 +559,30 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             ui.set_max_width(pane_w);
 
             // Search takes the pane minus the new-macro button on its right.
-            let add_w = crate::widgets::ICON_BTN_SIDE + ui.spacing().item_spacing.x;
-            let search_resp = ui
-                .horizontal(|ui| {
-                    let w = (pane_w - add_w).max(40.0);
-                    let resp = ui.add(
-                        egui::TextEdit::singleline(&mut app.macro_list_filter)
-                            .desired_width(w)
-                            .hint_text("Search macros or tags…"),
-                    );
-                    if crate::widgets::add_button(ui, "New macro", true).clicked() {
-                        app.create_macro();
-                    }
-                    resp
-                })
-                .inner
-                .on_hover_text(
-                    "Filter by macro name or tag. ↑↓ moves the selection, Enter edits it.",
-                );
+            let mut create_macro = false;
+            let search_resp = crate::widgets::fill_row(
+                ui,
+                |ui| {
+                    create_macro = crate::widgets::add_button(ui, "New macro", true).clicked();
+                },
+                |ui| {
+                    crate::widgets::search_field(
+                        ui,
+                        &mut app.macro_list_filter,
+                        crate::widgets::SearchFieldOpts {
+                            hint: "Search macros or tags…",
+                            focus_id: None,
+                            clearable: true,
+                            stable_id: Some(egui::Id::new("macro_list_search")),
+                        },
+                    )
+                    .response
+                },
+            )
+            .on_hover_text("Filter by macro name or tag. ↑↓ moves the selection, Enter edits it.");
+            if create_macro {
+                app.create_macro();
+            }
             // True load failures only (corrupt db / undecodable macros). Per-macro
             // validation issues are shown on the macro rows and action tree.
             // List-scoped: same color/prefix rules as StatusBanner panel footers.

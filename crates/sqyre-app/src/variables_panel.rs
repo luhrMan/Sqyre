@@ -193,10 +193,15 @@ impl VariablesPanelUi {
             let _ = crate::widgets::empty_state(ui, title, body, None, None);
             return;
         }
-        ui.add(
-            egui::TextEdit::singleline(&mut self.runtime_filter)
-                .desired_width(f32::INFINITY)
-                .hint_text("Filter runtime variables…"),
+        crate::widgets::search_field(
+            ui,
+            &mut self.runtime_filter,
+            crate::widgets::SearchFieldOpts {
+                hint: "Filter runtime variables…",
+                focus_id: None,
+                clearable: true,
+                stable_id: Some(egui::Id::new("runtime_vars_filter")),
+            },
         );
         let q = self.runtime_filter.trim().to_ascii_lowercase();
         let filtered: Vec<_> = snap
@@ -252,7 +257,7 @@ impl VariablesPanelUi {
         let mut persist = false;
 
         let pane = crate::widgets::visible_width(ui);
-        let count = format!("({})", macro_.variable_decls.len());
+        let count = crate::widgets::count_text(macro_.variable_decls.len());
         let need = crate::widgets::text_width(ui, "Declared variables", egui::TextStyle::Heading)
             + crate::widgets::text_width(ui, &count, egui::TextStyle::Body)
             + crate::widgets::text_width(ui, "+ Add", egui::TextStyle::Button)
@@ -282,7 +287,7 @@ impl VariablesPanelUi {
                             });
                             self.status_banner.clear();
                         }
-                        ui.label(egui::RichText::new(&count).weak());
+                        crate::widgets::count_suffix(ui, macro_.variable_decls.len());
                     });
                 });
             });
@@ -294,7 +299,7 @@ impl VariablesPanelUi {
                         ui.heading("Declared variables"),
                         crate::action_tooltip::help::VARS_DECLARED,
                     );
-                    ui.label(egui::RichText::new(&count).weak());
+                    crate::widgets::count_suffix(ui, macro_.variable_decls.len());
                     if crate::widgets::add_button(ui, "Add variable", true).clicked() {
                         self.editing = Some(EditState {
                             index: None,
@@ -312,10 +317,15 @@ impl VariablesPanelUi {
                 });
             });
         }
-        ui.add(
-            egui::TextEdit::singleline(&mut self.declared_filter)
-                .desired_width(f32::INFINITY)
-                .hint_text("Filter declared variables…"),
+        crate::widgets::search_field(
+            ui,
+            &mut self.declared_filter,
+            crate::widgets::SearchFieldOpts {
+                hint: "Filter declared variables…",
+                focus_id: None,
+                clearable: true,
+                stable_id: Some(egui::Id::new("declared_vars_filter")),
+            },
         );
         crate::widgets::section_separator(ui);
 
@@ -420,13 +430,13 @@ impl VariablesPanelUi {
     fn edit_form(&mut self, ui: &mut egui::Ui, macro_: &mut Macro, mut edit: EditState) -> bool {
         let mut persist = false;
 
-        crate::widgets::text_field_width(
+        crate::widgets::text_field_opts(
             ui,
             egui_phosphor::regular::TEXT_T,
             "Name",
             help::VAR_NAME,
             &mut edit.name,
-            160.0,
+            crate::widgets::TextFieldOpts { width: 160.0 },
         );
         crate::widgets::wrap_unit(ui, |ui| {
             help::label(ui, egui_phosphor::regular::LIST_BULLETS, "Type");
@@ -444,22 +454,24 @@ impl VariablesPanelUi {
                 }
             }
         });
-        crate::widgets::num_text_field_width(
+        crate::widgets::num_text_field_opts(
             ui,
             egui_phosphor::regular::FUNCTION,
             "Initial",
             help::VAR_INITIAL,
             &mut edit.initial_value,
-            220.0,
-            i32::MIN..=i32::MAX,
+            crate::widgets::NumFieldOpts {
+                width: 220.0,
+                range: i32::MIN..=i32::MAX,
+            },
         );
-        crate::widgets::text_field_width(
+        crate::widgets::text_field_opts(
             ui,
             egui_phosphor::regular::CHAT_TEXT,
             "Description",
             help::VAR_DESC,
             &mut edit.description,
-            280.0,
+            crate::widgets::TextFieldOpts { width: 280.0 },
         );
 
         match crate::widgets::save_cancel_row(ui, edit.save_enabled()) {

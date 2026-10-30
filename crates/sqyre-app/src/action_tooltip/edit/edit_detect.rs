@@ -291,7 +291,7 @@ pub(super) fn paint_find_pixel_fields(
                     rect,
                     3.0,
                     tree_chrome::rgba_pub(rgba),
-                    egui::Stroke::new(1.0, egui::Color32::from_gray(80)),
+                    crate::theme::inner_stroke(),
                     egui::StrokeKind::Outside,
                 );
             }

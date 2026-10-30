@@ -14,7 +14,7 @@ use crate::tree_chrome;
 use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{
     combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
-    num_text_field, searchable_combo, searchable_combo_with, text_field, wrap_unit, wrapped_row,
+    num_text_field, searchable_combo, text_field, wrap_unit, wrapped_row, SearchableComboOpts,
     W_TEXT, W_VAR,
 };
 use eframe::egui;
@@ -293,13 +293,15 @@ pub fn paint_edit_fields(
             // Stack vertically; path wraps so long executables stay inside the tip.
             if !*previous {
                 tip_section(ui, |ui| {
-                    crate::widgets::text_field_width(
+                    crate::widgets::text_field_opts(
                         ui,
                         crate::model_icons::WINDOW,
                         "Window title",
                         h::FOCUS_TITLE,
                         window_title,
-                        f32::INFINITY,
+                        crate::widgets::TextFieldOpts {
+                            width: f32::INFINITY,
+                        },
                     );
                     let mut pick = false;
                     ui.horizontal(|ui| {
@@ -581,16 +583,18 @@ pub fn paint_edit_fields(
                     let mut option_icon =
                         |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
                     help::tip(
-                        searchable_combo_with(
+                        searchable_combo(
                             ui,
                             "nav_program",
                             &mut current,
-                            &programs,
-                            sqyre_domain::EMPTY_NONE,
-                            Some(sqyre_domain::EMPTY_NONE),
-                            None,
-                            None,
-                            Some(&mut option_icon),
+                            SearchableComboOpts {
+                                options: &programs,
+                                empty_text: sqyre_domain::EMPTY_NONE,
+                                none_label: Some(sqyre_domain::EMPTY_NONE),
+                                width: None,
+                                on_option_hover: None,
+                                option_icon: Some(&mut option_icon),
+                            },
                         ),
                         h::NAV_PROGRAM,
                     );
@@ -614,9 +618,14 @@ pub fn paint_edit_fields(
                             ui,
                             "nav_atlas",
                             &mut current,
-                            &atlases,
-                            sqyre_domain::EMPTY_NONE,
-                            None,
+                            SearchableComboOpts {
+                                options: &atlases,
+                                empty_text: sqyre_domain::EMPTY_NONE,
+                                none_label: None,
+                                width: None,
+                                on_option_hover: None,
+                                option_icon: None,
+                            },
                         ),
                         h::NAV_ATLAS,
                     );
@@ -855,7 +864,7 @@ fn targets_editor(
     wrapped_row(ui, |ui| {
         wrap_unit(ui, |ui| {
             help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
-            ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
+            crate::widgets::count_suffix(ui, targets.len());
             if !target_tags.is_empty() {
                 help::tip(
                     ui.label(
@@ -1721,7 +1730,7 @@ fn list_header(ui: &mut egui::Ui, title: &str, count: usize, add_help: &str) -> 
     // shrink horizontally — see egui-window-size-ratchet.
     ui.horizontal(|ui| {
         ui.label(title);
-        ui.label(egui::RichText::new(format!("({count})")).weak());
+        crate::widgets::count_suffix(ui, count);
         let btn = crate::widgets::add_button(ui, &format!("Add {}", title.to_lowercase()), true)
             .on_hover_text(add_help);
         if btn.clicked() {

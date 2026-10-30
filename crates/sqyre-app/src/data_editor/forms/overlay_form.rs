@@ -49,14 +49,18 @@ impl DataEditor {
         crate::widgets::wrap_unit(ui, |ui| {
             help::label(ui, crate::model_icons::MACRO, "Macro");
             help::tip(
-                searchable_combo_width(
+                searchable_combo(
                     ui,
                     "overlay_form_macro",
                     &mut selected,
-                    &macro_names,
-                    "(pick macro)",
-                    Some(sqyre_domain::EMPTY_NONE),
-                    Some(220.0),
+                    crate::widgets::SearchableComboOpts {
+                        options: &macro_names,
+                        empty_text: "(pick macro)",
+                        none_label: Some(sqyre_domain::EMPTY_NONE),
+                        width: Some(220.0),
+                        on_option_hover: None,
+                        option_icon: None,
+                    },
                 ),
                 help::DE_OVERLAY_MACRO,
             );

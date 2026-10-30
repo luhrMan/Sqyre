@@ -1089,7 +1089,7 @@ fn paint_preview_status(ui: &mut egui::Ui, caption: &str, err: &str) {
         egui::Sense::click(),
     );
     ui.painter()
-        .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
+        .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
     paint_preview_message(ui, rect, err, crate::theme::error_fg(), 0.0);
     ui.add(egui::Label::new(caption).wrap());
 }
@@ -1181,7 +1181,7 @@ fn paint_preview_panel_image(
     let content = image_view::image_content_rect(viewport, image_size, view.zoom, view.pan);
     {
         let painter = ui.painter_at(viewport);
-        painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(20));
+        painter.rect_filled(viewport, 0.0, crate::theme::preview_viewport_fill());
         painter.image(
             tex.id(),
             content,
@@ -1202,7 +1202,7 @@ fn paint_preview_panel_placeholder(
     let desired = panel_viewport_size(ui);
     let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
-        .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
+        .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
     crate::theme::paint_text_centered(
         ui,
         rect,

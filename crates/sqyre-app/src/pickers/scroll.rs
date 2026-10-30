@@ -54,21 +54,6 @@ pub fn apply_list_nav(selected: &mut usize, len: usize, action: ListNavAction) -
     }
 }
 
-/// Focus the search field once when a picker/dialog opens (`id` should be stable per window).
-pub fn focus_search_once(ui: &mut egui::Ui, id: egui::Id, resp: &egui::Response) {
-    let key = id.with("focus_search_once");
-    let needs = ui.ctx().data_mut(|d| *d.get_temp_mut_or(key, true));
-    if needs {
-        resp.request_focus();
-        ui.ctx().data_mut(|d| d.insert_temp(key, false));
-    }
-}
-
-/// Clear one-shot focus so the next open focuses again.
-pub fn reset_focus_search(ctx: &egui::Context, id: egui::Id) {
-    ctx.data_mut(|d| d.insert_temp(id.with("focus_search_once"), true));
-}
-
 pub(crate) fn maybe_scroll_to(ui: &mut egui::Ui, resp: &egui::Response, scroll: &mut bool) {
     if *scroll {
         ui.scroll_to_rect(resp.rect, Some(egui::Align::Center));
@@ -156,28 +141,19 @@ pub fn picker_searchable_scroll_ex(
                     }
                 },
                 |ui| {
-                    ui.label(egui::RichText::new(
-                        egui_phosphor::regular::MAGNIFYING_GLASS,
-                    ))
-                    .on_hover_text("Search");
-                    // egui never allocates a TextEdit narrower than 24px
-                    // (`MIN_WIDTH`), so below that the field's rect underlaps
-                    // the trailing buttons. A sliver-wide field is unusable
-                    // anyway — drop it and keep the icon + buttons.
-                    if ui.available_width() < 24.0 {
-                        return;
-                    }
                     // Fill leftover width without a fixed TextEdit min (default ~200)
                     // that would floor the data-editor left pane above the split clamp.
-                    let mut edit = egui::TextEdit::singleline(search).desired_width(f32::INFINITY);
-                    if let Some(hint) = opts.hint_text {
-                        edit = edit.hint_text(hint);
-                    }
-                    let resp = ui.add(edit);
-                    if let Some(fid) = focus_id {
-                        focus_search_once(ui, fid, &resp);
-                    }
-                    if resp.changed() {
+                    let out = crate::widgets::search_field(
+                        ui,
+                        search,
+                        crate::widgets::SearchFieldOpts {
+                            hint: opts.hint_text.unwrap_or_default(),
+                            focus_id,
+                            clearable: false,
+                            stable_id: None,
+                        },
+                    );
+                    if out.changed {
                         search_changed = true;
                     }
                 },

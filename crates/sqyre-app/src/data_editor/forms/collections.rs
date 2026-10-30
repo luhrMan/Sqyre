@@ -32,15 +32,7 @@ impl DataEditor {
             ui.weak(collection_size_label(area, rows, cols));
         }
         ui.add_space(crate::theme::element_gap(ui));
-        crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
-            let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
-            help::tip(
-                ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
-                help::DE_NAME,
-            );
-        });
-        paint_fs_name_hint(ui, &self.form_name);
+        paint_name_field(ui, &mut self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
         {
             let areas: Vec<String> = self
@@ -73,16 +65,18 @@ impl DataEditor {
             crate::widgets::wrap_unit(ui, |ui| {
                 help::label(ui, crate::model_icons::SEARCH_AREA, "Search area");
                 help::tip(
-                    searchable_combo_with(
+                    searchable_combo(
                         ui,
                         "collection_sa",
                         &mut current,
-                        &areas,
-                        sqyre_domain::EMPTY_NONE,
-                        None,
-                        None,
-                        Some(&mut on_hover),
-                        None,
+                        SearchableComboOpts {
+                            options: &areas,
+                            empty_text: sqyre_domain::EMPTY_NONE,
+                            none_label: None,
+                            width: None,
+                            on_option_hover: Some(&mut on_hover),
+                            option_icon: None,
+                        },
                     ),
                     help::DE_COLLECTION_AREA,
                 );
@@ -157,15 +151,7 @@ impl DataEditor {
         } = paint;
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
-        crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
-            let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
-            help::tip(
-                ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
-                help::DE_NAME,
-            );
-        });
-        paint_fs_name_hint(ui, &self.form_name);
+        paint_name_field(ui, &mut self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
         let available: Vec<String> = self
             .selected_program
@@ -192,16 +178,18 @@ impl DataEditor {
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::Collection);
             };
             help::tip(
-                searchable_combo_with(
+                searchable_combo(
                     ui,
                     "atlas_add_member",
                     &mut self.form_atlas_add,
-                    &available,
-                    "(add collection)",
-                    None,
-                    None,
-                    Some(&mut on_hover),
-                    None,
+                    SearchableComboOpts {
+                        options: &available,
+                        empty_text: "(add collection)",
+                        none_label: None,
+                        width: None,
+                        on_option_hover: Some(&mut on_hover),
+                        option_icon: None,
+                    },
                 ),
                 help::DE_ATLAS_MEMBERS,
             );

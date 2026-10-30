@@ -26,7 +26,7 @@ use crate::paint_ctx::VarTheme;
 use crate::pickers;
 use crate::preview_tooltip::PreviewKind;
 use crate::var_pills::{self, VarFieldOpts};
-use crate::widgets::{match_settings, searchable_combo_width, searchable_combo_with};
+use crate::widgets::{match_settings, searchable_combo, SearchableComboOpts};
 use eframe::egui;
 use sqyre_domain::{
     collect_known_variable_names, CoordinateRef, KnownVariableNames, Macro, PROGRAM_DELIMITER,
@@ -64,6 +64,23 @@ fn paint_fs_name_hint(ui: &mut egui::Ui, name: &str) {
     if let Err(e) = validate_entity_name(name) {
         crate::widgets::error_icon(ui, &e.to_string());
     }
+}
+
+/// Name label + content-sized edit + `DE_NAME` tip — the body of every
+/// catalog-entity Name row. Standalone rows go through [`paint_name_field`].
+fn name_field_body(ui: &mut egui::Ui, name: &mut String) {
+    help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
+    let name_w = crate::widgets::name_edit_width(ui, name, "");
+    help::tip(
+        ui.add(egui::TextEdit::singleline(name).desired_width(name_w)),
+        help::DE_NAME,
+    );
+}
+
+/// [`name_field_body`] as a standalone unit plus the name-validation hint line.
+fn paint_name_field(ui: &mut egui::Ui, name: &mut String) {
+    crate::widgets::wrap_unit(ui, |ui| name_field_body(ui, name));
+    paint_fs_name_hint(ui, name);
 }
 
 fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
@@ -149,14 +166,7 @@ impl DataEditor {
                     .clicked();
                 record = crate::widgets::record_icon_button(ui, record_tip, !armed).clicked();
             },
-            |ui| {
-                help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
-                let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
-                help::tip(
-                    ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
-                    help::DE_NAME,
-                );
-            },
+            |ui| name_field_body(ui, &mut self.form_name),
         );
         if cancel {
             self.save_after_record = false;

@@ -216,7 +216,7 @@ pub(crate) fn paint_preview_coord_chip(
     let inner = edit_rect.shrink(3.0);
 
     let resp = if show_overlay {
-        let plain_fg = egui::Color32::from_gray(230);
+        let plain_fg = theme::preview_plain_fg();
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(
             egui::Layout::centered_and_justified(egui::Direction::TopDown),
         ));
@@ -246,7 +246,7 @@ pub(crate) fn paint_preview_coord_chip(
             egui::Align2::CENTER_CENTER,
             n.to_string(),
             font,
-            egui::Color32::from_gray(230),
+            theme::preview_plain_fg(),
         );
         if resp.hovered() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
@@ -589,13 +589,13 @@ pub(crate) fn paint_zoomable_collection_preview(
                 egui::Color32::WHITE,
             );
         } else {
-            painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(40));
+            painter.rect_filled(viewport, 0.0, theme::preview_unavailable_fill());
             painter.text(
                 viewport.center(),
                 egui::Align2::CENTER_CENTER,
                 "No image on disk",
                 body_font,
-                egui::Color32::LIGHT_GRAY,
+                theme::preview_unavailable_fg(),
             );
         }
         paint_grid_overlay_painter(&painter, content, rows, cols);
@@ -860,12 +860,12 @@ pub(crate) fn paint_zoomable_atlas_preview(
     let small = egui::TextStyle::Small.resolve(ui.style());
     {
         let painter = ui.painter_at(viewport);
-        painter.rect_filled(viewport, 0.0, egui::Color32::from_gray(22));
+        painter.rect_filled(viewport, 0.0, theme::preview_monitor_bg());
 
         // One rectangle per monitor with identity + size label.
-        let mon_fill = egui::Color32::from_gray(36);
-        let mon_stroke = egui::Stroke::new(1.5, egui::Color32::from_gray(90));
-        let label_color = egui::Color32::from_gray(200);
+        let mon_fill = theme::preview_monitor_fill();
+        let mon_stroke = theme::preview_monitor_stroke();
+        let label_color = theme::preview_monitor_label();
         for (i, &(mx, my, mw, mh)) in monitors.iter().enumerate() {
             let rect = egui::Rect::from_min_max(
                 to_screen(mx, my),
@@ -923,7 +923,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
                 ui,
                 &label,
                 small.clone(),
-                egui::Color32::WHITE,
+                theme::preview_label_fg(),
                 (rect.width() - 6.0).max(0.0),
             );
             let chip = egui::Rect::from_min_size(label_pos, galley.size() + egui::vec2(6.0, 2.0));
@@ -931,7 +931,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
             painter.galley(
                 label_pos + egui::vec2(3.0, 1.0),
                 galley.clone(),
-                egui::Color32::WHITE,
+                theme::preview_label_fg(),
             );
             if galley.elided {
                 ui.interact(

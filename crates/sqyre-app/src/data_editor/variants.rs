@@ -44,7 +44,7 @@ impl DataEditor {
         // ScrollArea ratchets content wider than the viewport once a scrollbar
         // appears, which clips the trailing buttons.
         let row_w = ui.available_width().max(0.0);
-        let count = format!("({})", paths.len());
+        let count = crate::widgets::count_text(paths.len());
         let icon_side = ui
             .text_style_height(&egui::TextStyle::Button)
             .max(crate::widgets::ICON_BTN_SIDE);
@@ -70,7 +70,7 @@ impl DataEditor {
                                 icons.invalidate_path(path);
                             }
                         }
-                        ui.label(egui::RichText::new(&count).weak());
+                        crate::widgets::count_suffix(ui, paths.len());
                     });
                 },
             );
@@ -78,7 +78,7 @@ impl DataEditor {
             ui.horizontal(|ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.label(egui::RichText::new("Icon variants").strong());
-                ui.label(egui::RichText::new(&count).weak());
+                crate::widgets::count_suffix(ui, paths.len());
                 if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
                     icons.invalidate_target(target);
                     for path in &paths {

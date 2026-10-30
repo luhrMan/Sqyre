@@ -43,10 +43,11 @@ pub use empty_state::{empty_state, list_vacancy, list_vacancy_copy, EmptyStateAc
 pub use fields::{
     combo_condition_operator, combo_enum, combo_str, combo_str_labeled, drag_field,
     drag_field_enabled, fill_row, name_edit_width, num_text_edit, num_text_field,
-    num_text_field_width, searchable_combo, searchable_combo_width, searchable_combo_with,
-    text_field, text_field_width, W_TEXT, W_VAR,
+    num_text_field_opts, reset_focus_search, search_field, searchable_combo, text_field,
+    text_field_opts, NumFieldOpts, SearchFieldOpts, SearchableComboOpts, TextFieldOpts, W_TEXT,
+    W_VAR,
 };
-pub use headers::{heading_with_count, title_with_count};
+pub use headers::{count_suffix, count_text, heading_with_count, title_with_count};
 pub use match_settings::configure_match_blur_drag;
 pub use num_entry::{num_entry, NumEntry};
 pub use overflow::{always_bar, text_width, OverflowItem};

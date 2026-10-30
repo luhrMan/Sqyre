@@ -178,15 +178,7 @@ impl DataEditor {
         } = ctx;
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
-        crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
-            let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
-            help::tip(
-                ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
-                help::DE_NAME,
-            );
-        });
-        paint_fs_name_hint(ui, &self.form_name);
+        paint_name_field(ui, &mut self.form_name);
         let has_image = self
             .selected_program
             .as_deref()

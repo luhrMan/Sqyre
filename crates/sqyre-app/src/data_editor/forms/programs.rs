@@ -14,15 +14,7 @@ impl DataEditor {
     ) -> bool {
         let CatalogPaint { catalog, icons, .. } = paint;
         let FormCtx { macros, .. } = ctx;
-        crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
-            let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
-            help::tip(
-                ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
-                help::DE_NAME,
-            );
-        });
-        paint_fs_name_hint(ui, &self.form_name);
+        paint_name_field(ui, &mut self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
         let title = self.form_window_title.trim().to_string();
         let path = self.form_process_path.trim().to_string();
@@ -120,15 +112,7 @@ impl DataEditor {
         let CatalogPaint { catalog, icons, .. } = paint;
         self.program_selector(ui, catalog, icons, settings);
         ui.add_space(crate::theme::element_gap(ui));
-        crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
-            let name_w = crate::widgets::name_edit_width(ui, &self.form_name, "");
-            help::tip(
-                ui.add(egui::TextEdit::singleline(&mut self.form_name).desired_width(name_w)),
-                help::DE_NAME,
-            );
-        });
-        paint_fs_name_hint(ui, &self.form_name);
+        paint_name_field(ui, &mut self.form_name);
         ui.add_space(crate::theme::element_gap(ui));
         let tag_submit = self.paint_item_param_fields(ui, catalog, icons);
         if let (Some(prog), Some(item)) =
@@ -189,8 +173,13 @@ impl DataEditor {
                     0..=i32::MAX,
                 ),
             ] {
-                crate::widgets::num_text_field_width(
-                    ui, icon, label, help_text, value, 80.0, range,
+                crate::widgets::num_text_field_opts(
+                    ui,
+                    icon,
+                    label,
+                    help_text,
+                    value,
+                    crate::widgets::NumFieldOpts { width: 80.0, range },
                 );
             }
         });
@@ -221,16 +210,18 @@ impl DataEditor {
         crate::widgets::wrap_unit(ui, |ui| {
             help::label(ui, crate::model_icons::MASK, "Mask");
             help::tip(
-                searchable_combo_with(
+                searchable_combo(
                     ui,
                     "item_mask",
                     &mut current,
-                    &masks,
-                    sqyre_domain::EMPTY_NONE,
-                    Some(sqyre_domain::EMPTY_NONE),
-                    None,
-                    Some(&mut on_hover),
-                    None,
+                    crate::widgets::SearchableComboOpts {
+                        options: &masks,
+                        empty_text: sqyre_domain::EMPTY_NONE,
+                        none_label: Some(sqyre_domain::EMPTY_NONE),
+                        width: None,
+                        on_option_hover: Some(&mut on_hover),
+                        option_icon: None,
+                    },
                 ),
                 help::DE_MASK,
             );

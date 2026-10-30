@@ -94,7 +94,7 @@ impl AddActionPicker {
         self.filter.clear();
         self.selected = 0;
         // Re-arm search focus for this open.
-        // (consumed in `show` via pickers::focus_search_once)
+        // (consumed in `show` via widgets::focus_search_once)
     }
 
     pub fn load_from_settings(&mut self, settings: &UserSettings) {
@@ -264,19 +264,19 @@ impl AddActionPicker {
                 }
             }
 
-            ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(
-                    egui_phosphor::regular::MAGNIFYING_GLASS,
-                ));
-                let edit = egui::TextEdit::singleline(&mut self.filter)
-                    .hint_text("Search actions…")
-                    .desired_width(f32::INFINITY);
-                let resp = ui.add(edit);
-                pickers::focus_search_once(ui, focus_id, &resp);
-                if resp.changed() {
-                    self.selected = 0;
-                }
-            });
+            let search_out = crate::widgets::search_field(
+                ui,
+                &mut self.filter,
+                crate::widgets::SearchFieldOpts {
+                    hint: "Search actions…",
+                    focus_id: Some(focus_id),
+                    clearable: false,
+                    stable_id: None,
+                },
+            );
+            if search_out.changed {
+                self.selected = 0;
+            }
             ui.horizontal_wrapped(|ui| {
                 ui.weak(HOVER_DELAY_HINT);
                 ui.add_space(crate::theme::element_gap(ui));
@@ -349,7 +349,7 @@ impl AddActionPicker {
         });
 
         if !open || dismiss {
-            pickers::reset_focus_search(ctx, egui::Id::new("Add Action"));
+            crate::widgets::reset_focus_search(ctx, egui::Id::new("Add Action"));
             open = false;
         }
         if let Some((ty, anchor)) = edit_request {

@@ -546,7 +546,7 @@ fn paint_program_header(
     hide_name: bool,
 ) -> egui::Response {
     let row_w = ui.available_width().max(0.0);
-    let count = format!("({child_count})");
+    let count = crate::widgets::count_text(child_count);
     let gap = ui.spacing().item_spacing.x;
     let icon_w = tex.map(|_| PROCESS_ICON_SIDE + gap).unwrap_or(0.0);
     let count_w = crate::widgets::text_width(ui, &count, egui::TextStyle::Body);
@@ -565,7 +565,7 @@ fn paint_program_header(
             |ui| {
                 let title_resp = paint_program_title(ui, &display.text, tex, selected, hide_name);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(egui::RichText::new(count).weak());
+                    crate::widgets::count_suffix(ui, child_count);
                 });
                 title_resp
             },

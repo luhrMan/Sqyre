@@ -999,7 +999,7 @@ impl eframe::App for SqyreApp {
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         #[cfg(target_arch = "wasm32")]
         {
-            egui::Rgba::from(egui::Color32::from_rgb(0x1a, 0x1a, 0x1a)).to_array()
+            egui::Rgba::from(crate::theme::window_clear_color()).to_array()
         }
         #[cfg(not(target_arch = "wasm32"))]
         {

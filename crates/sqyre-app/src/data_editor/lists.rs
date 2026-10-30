@@ -8,7 +8,7 @@ use crate::icon_cache::IconCache;
 use crate::overlay_icons;
 use crate::pickers::{self, PickerScrollOpts};
 use crate::preview_tooltip::{PreviewKind, PreviewTooltipCache};
-use crate::widgets::searchable_combo_with;
+use crate::widgets::searchable_combo;
 use eframe::egui;
 use sqyre_persist::{OverlayButtonConfig, ProgramCatalog, UserSettings};
 use std::collections::HashMap;
@@ -764,16 +764,18 @@ impl DataEditor {
             let mut option_icon =
                 |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
             crate::action_tooltip::help::tip(
-                searchable_combo_with(
+                searchable_combo(
                     ui,
                     "data_editor_program",
                     &mut current,
-                    &names,
-                    sqyre_domain::EMPTY_NONE,
-                    None,
-                    None,
-                    None,
-                    Some(&mut option_icon),
+                    crate::widgets::SearchableComboOpts {
+                        options: &names,
+                        empty_text: sqyre_domain::EMPTY_NONE,
+                        none_label: None,
+                        width: None,
+                        on_option_hover: None,
+                        option_icon: Some(&mut option_icon),
+                    },
                 ),
                 crate::action_tooltip::help::DE_PROGRAM,
             );

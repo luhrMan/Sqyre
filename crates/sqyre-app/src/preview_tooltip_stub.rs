@@ -118,7 +118,7 @@ fn paint_unavailable_panel(ui: &mut egui::Ui, _view: &mut ImageViewTransform) ->
     let desired = crate::data_editor_preview::fit_panel(ui.available_width(), 220.0);
     let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
-        .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
+        .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
     crate::theme::paint_text_centered(
         ui,
         rect,
