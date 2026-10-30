@@ -42,6 +42,7 @@ pub(crate) struct DamageKick {
     pending: Arc<AtomicUsize>,
     /// When set, the kick thread skips remaining Pulse work and exits on Shutdown.
     shutting_down: Arc<std::sync::atomic::AtomicBool>,
+    kind: KickKind,
 }
 
 enum KickCmd {
@@ -91,7 +92,16 @@ impl DamageKick {
             thread: Some(thread),
             pending,
             shutting_down,
+            kind,
         })
+    }
+
+    /// Layer-shell pulses are transparent overlay surfaces — they never take
+    /// keyboard focus or activation. The windowed-xdg kick maps a toplevel that
+    /// grabs activation on Mutter, so quiet cache crops may only kick when this
+    /// returns true.
+    pub(crate) fn is_focus_safe(&self) -> bool {
+        matches!(self.kind, KickKind::LayerShell)
     }
 
     pub(crate) fn pulse_rect(&mut self, rect: DesktopRect) {

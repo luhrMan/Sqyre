@@ -275,13 +275,24 @@ fn any_missing(items: &[PermissionItem]) -> bool {
 fn apply_live_capture_status(items: &mut [PermissionItem]) {
     let portal_session = sqyre_capture::shared_capturer_open_may_block();
     let capture_granted = sqyre_capture::portal_screencast_granted();
+    let capture_dead = sqyre_capture::shared_capturer_if_ready()
+        .and_then(|r| r.ok())
+        .is_some_and(|c| c.is_dead());
     let opening = sqyre_capture::shared_capturer_is_opening();
     let input_ready = sqyre_capture::portal_input_ready();
 
     for item in items {
         match item.id {
             "screen_recording" if portal_session => {
-                if capture_granted {
+                if capture_dead && opening {
+                    item.eligibility = PermissionEligibility::Checking;
+                    item.detail = Some("Screen sharing ended. Reopening…".into());
+                    item.setup_steps.clear();
+                } else if capture_dead {
+                    item.eligibility = PermissionEligibility::Needed;
+                    item.detail = Some("Screen sharing ended. Share the screen again.".into());
+                    item.setup_steps.clear();
+                } else if capture_granted {
                     item.eligibility = PermissionEligibility::Granted;
                     item.detail = None;
                     item.setup_steps.clear();

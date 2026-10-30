@@ -88,6 +88,11 @@ impl OsCapturer {
         frames().release();
     }
 
+    /// The frame store reloads on demand — always false.
+    pub fn is_dead(&self) -> bool {
+        false
+    }
+
     pub fn cpu_frame_cache_bytes(&self) -> usize {
         frames().cached_bytes()
     }

@@ -26,7 +26,7 @@ use sqyre_ports::{DesktopRect, RgbCapture};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender, SyncSender};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
@@ -40,6 +40,10 @@ const FRESH_CAPTURE_BUDGET: Duration = Duration::from_millis(200);
 const SPONTANEOUS_WAIT: Duration = Duration::from_millis(16);
 /// Overlay visibility polls: wait this long for a spontaneous frame, never kick.
 const QUIET_CAPTURE_WAIT: Duration = Duration::from_millis(150);
+/// Post-pulse wait when a cache crop had to induce damage itself — emit-on-damage
+/// streams (COSMIC; Mutter on a fully idle output) send nothing spontaneously.
+/// The layer-shell pulse roundtrips Wayland concurrently, so keep it short.
+const QUIET_KICK_WAIT: Duration = Duration::from_millis(200);
 /// Region copy older than this → treat as stale and kick without spontaneous wait.
 const STALE_REGION_AGE: Duration = Duration::from_millis(40);
 /// Post-kick wait slices (short first; kick runs concurrently so we poll soon).
@@ -53,11 +57,27 @@ const SLOW_FRESH_LOG: Duration = Duration::from_millis(80);
 /// Minimum damage pulses before giving up when other monitors advance but the
 /// search region stays stuck.
 const EARLY_BAIL_MIN_PULSES: u32 = 1;
+/// Damage pulse max edge — emit-on-damage portals send a whole-output frame for
+/// any damage on the output, so a small rect suffices; a monitor-sized layer
+/// surface allocates a huge shm per pulse and can stall mapping it.
+const KICK_RECT_MAX: i32 = 64;
+/// Consecutive armed waits (damage pulsed, still no copy) on one stream dest
+/// before the capturer counts as dead — PipeWire can keep reporting Streaming
+/// while the producer silently stopped emitting.
+const STARVED_KICKS_DEAD: u32 = 3;
+
+/// One "no frame" log per drought — reset whenever a frame copies into cache so
+/// a stuck emit-on-damage stream does not spam stderr on every crop retry.
+static LOGGED_FRAME_DROUGHT: AtomicBool = AtomicBool::new(false);
 
 /// Portal + PipeWire capturer for Wayland sessions.
 pub struct PortalCapturer {
     frame: Arc<(Mutex<FrameSlot>, Condvar)>,
     shutdown: Arc<AtomicBool>,
+    /// PipeWire stream/loop ended (Error, Unconnected after Streaming, iterate
+    /// failure, or the pw thread exited) — captures fail fast instead of
+    /// starving on a stream that can never deliver again.
+    stream_dead: Arc<AtomicBool>,
     quit_tx: Mutex<Option<Sender<PwThreadMsg>>>,
     thread: Mutex<Option<JoinHandle<()>>>,
     /// `None` = not tried yet; `Some(None)` = unavailable; `Some(Some(_))` = ready.
@@ -73,6 +93,9 @@ struct FrameSlot {
     region_gen: Vec<(DesktopRect, u64)>,
     /// Last copy time per stream dest (stale region → kick immediately).
     region_copy_at: Vec<(DesktopRect, Instant)>,
+    /// Consecutive armed waits that produced no copy, per stream dest.
+    /// [`STARVED_KICKS_DEAD`] on any dest → capturer dead → session reopens.
+    starved_kicks: Vec<(DesktopRect, u32)>,
     /// When false, PipeWire callbacks dequeue but skip copying into `cache.pixels`.
     /// Cleared after a macro so the full-desktop RGBA buffer can be released;
     /// re-enabled when a capture waits for a frame.
@@ -103,9 +126,14 @@ fn shrink_cpu_frame_cache(cache: &mut FrameCache) {
 fn release_slot_cache(slot: &mut FrameSlot) {
     slot.buffering = false;
     let before = slot.cache.pixels.len();
+    let gen = slot.generation;
     shrink_cpu_frame_cache(&mut slot.cache);
     if before > 0 {
-        cap_log("PORTAL", "cache", &format!("release_kib={}", before / 1024));
+        cap_log(
+            "PORTAL",
+            "cache",
+            &format!("release_kib={} gen={gen}", before / 1024),
+        );
     }
 }
 
@@ -147,23 +175,33 @@ impl PortalCapturer {
                 generation: 0,
                 region_gen: Vec::new(),
                 region_copy_at: Vec::new(),
+                starved_kicks: Vec::new(),
                 buffering: true,
                 last_demand: Instant::now(),
             }),
             Condvar::new(),
         ));
         let shutdown = Arc::new(AtomicBool::new(false));
+        let stream_dead = Arc::new(AtomicBool::new(false));
         let (ready_tx, ready_rx) = mpsc::sync_channel::<Result<(), CaptureError>>(1);
         let (msg_tx, msg_rx) = mpsc::channel::<PwThreadMsg>();
 
         let frame_thread = Arc::clone(&frame);
         let shutdown_thread = Arc::clone(&shutdown);
+        let dead_thread = Arc::clone(&stream_dead);
         let handle = thread::Builder::new()
             .name("sqyre-portal-pw".into())
             .spawn(move || {
-                if let Err(e) = portal_pw_thread(frame_thread, shutdown_thread, ready_tx, msg_rx) {
+                if let Err(e) = portal_pw_thread(
+                    frame_thread,
+                    shutdown_thread,
+                    dead_thread.clone(),
+                    ready_tx,
+                    msg_rx,
+                ) {
                     cap_log("PORTAL", "fail", &format!("thread={e}"));
                 }
+                dead_thread.store(true, Ordering::SeqCst);
             })
             .map_err(|e| CaptureError::Message(format!("portal thread spawn: {e}")))?;
 
@@ -205,6 +243,7 @@ impl PortalCapturer {
         let capturer = Self {
             frame,
             shutdown,
+            stream_dead,
             quit_tx: Mutex::new(Some(msg_tx)),
             thread: Mutex::new(Some(handle)),
             kick: Mutex::new(None),
@@ -263,6 +302,9 @@ impl PortalCapturer {
                 self.capturer.release_compositor_kick_stage();
                 self.focus.restore_after_unmap();
             }
+        }
+        if self.is_dead() {
+            return;
         }
         let focus = KickFocusRestore {
             pre: Mutex::new(None),
@@ -362,6 +404,11 @@ impl PortalCapturer {
                 region_after,
                 min_gen,
             ) {
+                {
+                    let mut slot = self.frame.0.lock();
+                    let dest = overlapping_stream_dest(&slot, rect);
+                    note_starved_kick(&mut slot, dest);
+                }
                 cap_log(
                     "PORTAL",
                     "wait",
@@ -375,7 +422,9 @@ impl PortalCapturer {
         }
 
         let (now, region) = {
-            let slot = self.frame.0.lock();
+            let mut slot = self.frame.0.lock();
+            let dest = overlapping_stream_dest(&slot, rect);
+            note_starved_kick(&mut slot, dest);
             (slot.generation, region_generation(&slot, rect))
         };
         cap_log(
@@ -428,17 +477,49 @@ impl PortalCapturer {
         }
     }
 
+    /// The PipeWire side ended (stream Error/Unconnected, loop failure, or the
+    /// pw thread exited) — or damage pulses repeatedly drew no copy on a stream
+    /// dest, meaning the producer is wedged even though PipeWire still reports
+    /// Streaming. No frame can arrive on this capturer → reopen the session.
+    pub fn is_dead(&self) -> bool {
+        if self.stream_dead.load(Ordering::SeqCst)
+            || self.thread.lock().as_ref().is_some_and(|t| t.is_finished())
+        {
+            return true;
+        }
+        self.frame
+            .0
+            .lock()
+            .starved_kicks
+            .iter()
+            .any(|(_, n)| *n >= STARVED_KICKS_DEAD)
+    }
+
+    fn dead_err(&self) -> Option<CaptureError> {
+        self.is_dead()
+            .then(|| sqyre_ports::NotReady::StreamRestarting.into())
+    }
+
     /// Capture after waiting for a new PipeWire frame on the overlapping stream.
     pub fn capture_rect_fresh_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         self.wait_for_overlapping_stream_frame(rect);
         self.crop_cached_rgba_ready(rect)
     }
 
     pub fn capture_rect_ref(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         self.crop_cached_rgba(rect)
     }
 
     pub fn capture_rect_rgb_ref(&self, rect: DesktopRect) -> Result<RgbCapture, CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         self.crop_cached_rgb(rect)
     }
 
@@ -446,6 +527,9 @@ impl PortalCapturer {
         &self,
         rect: DesktopRect,
     ) -> Result<RgbCapture, CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         self.wait_for_overlapping_stream_frame(rect);
         self.crop_cached_rgb_ready(rect)
     }
@@ -456,6 +540,9 @@ impl PortalCapturer {
         &self,
         rect: DesktopRect,
     ) -> Result<(RgbCapture, bool), CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         let fresh = self.wait_for_spontaneous_stream_frame(rect);
         // Direct crop — do not re-enter quiet wait via [`Self::ensure_frame_for_crop`].
         Ok((self.crop_cached_rgb_ready(rect)?, fresh))
@@ -468,9 +555,16 @@ impl PortalCapturer {
     /// wait quietly (no compositor kick) so search keeps working. Hot path: if the
     /// cache is already `ready`, this is a single lock check.
     ///
-    /// Does not kick — fresh image-search / wait-retry paths already wait with kick;
-    /// overlay quiet polls must never steal focus.
+    /// Emit-on-damage streams (COSMIC; Mutter on a fully idle output) emit no
+    /// spontaneous frames, so an empty cache would starve forever: fall back to
+    /// one layer-shell pulse at the crop region. The windowed-xdg kick can steal
+    /// activation, so non-fresh crops only kick when
+    /// [`super::compositor_kick::DamageKick::is_focus_safe`] — overlay quiet polls
+    /// bypass this and stay silent on the cache.
     fn ensure_frame_for_crop(&self, rect: DesktopRect) -> Result<(), CaptureError> {
+        if let Some(e) = self.dead_err() {
+            return Err(e);
+        }
         let min_gen = {
             let mut slot = self.frame.0.lock();
             slot.last_demand = Instant::now();
@@ -490,10 +584,52 @@ impl PortalCapturer {
             QUIET_CAPTURE_WAIT,
         );
         if self.frame.0.lock().cache.ready {
-            Ok(())
-        } else {
-            Err(sqyre_ports::NotReady::NoFrameYet.into())
+            return Ok(());
         }
+
+        if self.focus_safe_kick() {
+            let kick_rect = {
+                let slot = self.frame.0.lock();
+                kick_damage_rect(&slot, rect)
+            };
+            self.pulse_compositor_kick(kick_rect);
+            let after = wait_until_region_after(
+                &self.frame.0,
+                &self.frame.1,
+                rect,
+                min_gen,
+                QUIET_KICK_WAIT,
+            );
+            cap_log(
+                "PORTAL",
+                "wait",
+                &format!("result=quiet-kick gen={min_gen}->{after}"),
+            );
+            let mut slot = self.frame.0.lock();
+            if slot.cache.ready {
+                return Ok(());
+            }
+            // Damage was pulsed on a focus-safe surface and nothing copied —
+            // the producer may be wedged while PipeWire still reports Streaming.
+            let dest = overlapping_stream_dest(&slot, rect);
+            note_starved_kick(&mut slot, dest);
+        }
+        if self.frame.0.lock().cache.ready {
+            return Ok(());
+        }
+        if !LOGGED_FRAME_DROUGHT.swap(true, Ordering::SeqCst) {
+            cap_log("PORTAL", "wait", &format!("result=no-frame gen={min_gen}"));
+        }
+        Err(sqyre_ports::NotReady::NoFrameYet.into())
+    }
+
+    /// Kick only when it cannot steal activation (layer-shell). The windowed-xdg
+    /// kick maps a toplevel that grabs focus on Mutter, so non-fresh crops skip it.
+    fn focus_safe_kick(&self) -> bool {
+        if !self.ensure_compositor_kick() {
+            return false;
+        }
+        matches!(self.kick.lock().as_ref(), Some(Some(k)) if k.is_focus_safe())
     }
 
     fn crop_cached_rgba(&self, rect: DesktopRect) -> Result<RgbaImage, CaptureError> {
@@ -624,6 +760,7 @@ impl Drop for PortalCapturer {
 fn portal_pw_thread(
     frame: Arc<(Mutex<FrameSlot>, Condvar)>,
     shutdown: Arc<AtomicBool>,
+    stream_dead: Arc<AtomicBool>,
     ready: SyncSender<Result<(), CaptureError>>,
     msg_rx: Receiver<PwThreadMsg>,
 ) -> Result<(), CaptureError> {
@@ -682,10 +819,14 @@ fn portal_pw_thread(
 
     let frame_cb = Arc::clone(&frame);
     let shutdown_cb = Arc::clone(&shutdown);
+    let dead_cb = Arc::clone(&stream_dead);
     let first_ready = Arc::new(AtomicBool::new(false));
     let logged_unmap = Arc::new(AtomicBool::new(false));
     let logged_copy = Arc::new(AtomicBool::new(false));
     let logged_type = Arc::new(AtomicBool::new(false));
+    // One bit per silent frame-drop reason so each logs exactly once — a benign
+    // early dequeue-empty must not mask a later corrupted/size-0 drop.
+    let logged_skip = Arc::new(AtomicU32::new(0));
     let ready_cb = Arc::clone(&ready);
 
     let values: Vec<u8> = propagate_ready(&ready, pw_video_enum_format_bytes())?;
@@ -721,10 +862,15 @@ fn portal_pw_thread(
 
         let frame_stream = Arc::clone(&frame_cb);
         let shutdown_stream = Arc::clone(&shutdown_cb);
+        let dead_state = Arc::clone(&dead_cb);
+        let saw_streaming = Arc::new(AtomicBool::new(false));
+        let saw_streaming_state = Arc::clone(&saw_streaming);
+        let ready_state = Arc::clone(&ready_cb);
         let first_ready_stream = Arc::clone(&first_ready);
         let logged_unmap_stream = Arc::clone(&logged_unmap);
         let logged_copy_stream = Arc::clone(&logged_copy);
         let logged_type_stream = Arc::clone(&logged_type);
+        let logged_skip_stream = Arc::clone(&logged_skip);
         let ready_stream = Arc::clone(&ready_cb);
         let listener = propagate_ready(
             &ready,
@@ -733,12 +879,44 @@ fn portal_pw_thread(
                     format: VideoInfoRaw::default(),
                     monitor_rect: stream_setup.rect,
                 })
-                .state_changed(move |_, _, old, new| {
+                .state_changed(move |stream, _, old, new| {
                     cap_log(
                         "PORTAL",
                         "pw",
                         &format!("stream {index} {old:?} -> {new:?}"),
                     );
+                    match &new {
+                        // PipeWire suspends idle emit-on-damage nodes; resume so
+                        // captures keep flowing instead of starving forever.
+                        pw::stream::StreamState::Paused => {
+                            if let Err(e) = stream.set_active(true) {
+                                cap_log(
+                                    "PORTAL",
+                                    "pw",
+                                    &format!("stream {index} resume failed: {e}"),
+                                );
+                            }
+                        }
+                        pw::stream::StreamState::Streaming => {
+                            saw_streaming_state.store(true, Ordering::SeqCst);
+                        }
+                        pw::stream::StreamState::Error(e) => {
+                            dead_state.store(true, Ordering::SeqCst);
+                            let _ = ready_state.try_send(Err(CaptureError::Portal(format!(
+                                "PipeWire stream {index} failed: {e}"
+                            ))));
+                        }
+                        pw::stream::StreamState::Unconnected
+                            if saw_streaming_state.load(Ordering::SeqCst) =>
+                        {
+                            // Producer dropped the stream after it streamed.
+                            dead_state.store(true, Ordering::SeqCst);
+                            let _ = ready_state.try_send(Err(CaptureError::Portal(format!(
+                                "PipeWire stream {index} disconnected"
+                            ))));
+                        }
+                        _ => {}
+                    }
                 })
                 .param_changed(move |stream, user_data, id, param| {
                     let Some(param) = param else { return };
@@ -794,9 +972,15 @@ fn portal_pw_thread(
                     if shutdown_stream.load(Ordering::SeqCst) {
                         return;
                     }
+                    let skip_once = |bit: u32, reason: &'static str| {
+                        if logged_skip_stream.fetch_or(bit, Ordering::SeqCst) & bit == 0 {
+                            cap_log("PORTAL", "pw", &format!("skip={reason}"));
+                        }
+                    };
                     let dest = user_data.monitor_rect;
                     let stream_size = user_data.format.size();
                     let Some(mut buffer) = stream.dequeue_buffer() else {
+                        skip_once(1, "dequeue-empty");
                         return;
                     };
                     let cursor_info = buffer.find_meta::<MetaCursor>().map(|c| {
@@ -829,10 +1013,12 @@ fn portal_pw_thread(
                     }
                     let datas = buffer.datas_mut();
                     if datas.is_empty() {
+                        skip_once(2, "datas-empty");
                         return;
                     }
                     let data = &mut datas[0];
                     if data.chunk().flags().contains(ChunkFlags::CORRUPTED) {
+                        skip_once(4, "corrupted");
                         return;
                     }
                     let offset = data.chunk().offset() as usize;
@@ -843,6 +1029,7 @@ fn portal_pw_thread(
                         0
                     };
                     if size == 0 {
+                        skip_once(8, "size-0");
                         return;
                     }
                     let ty = data.type_();
@@ -970,7 +1157,15 @@ fn portal_pw_thread(
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => break,
         }
-        loop_ref.iterate(pw::loop_::Timeout::Finite(Duration::from_millis(20)));
+        // pw_loop_iterate returns <0 on error (-errno); without this a hard
+        // failure would spin forever while captures starve.
+        let res = loop_ref.iterate(pw::loop_::Timeout::Finite(Duration::from_millis(20)));
+        if res < 0 && res != -libc::EINTR {
+            stream_dead.store(true, Ordering::SeqCst);
+            return Err(CaptureError::Portal(format!(
+                "PipeWire main loop iterate failed ({res})"
+            )));
+        }
     }
 
     drop(listeners);
@@ -1335,6 +1530,7 @@ fn is_sqyre_managed_window(w: &crate::WindowInfo) -> bool {
 }
 
 fn note_region_copy(slot: &mut FrameSlot, dest: DesktopRect) {
+    LOGGED_FRAME_DROUGHT.store(false, Ordering::Relaxed);
     slot.generation = slot.generation.saturating_add(1);
     let gen = slot.generation;
     let now = Instant::now();
@@ -1348,6 +1544,35 @@ fn note_region_copy(slot: &mut FrameSlot, dest: DesktopRect) {
     } else {
         slot.region_copy_at.push((dest, now));
     }
+    if let Some((_, n)) = slot.starved_kicks.iter_mut().find(|(r, _)| *r == dest) {
+        *n = 0;
+    }
+}
+
+/// A damage pulse on `dest`'s monitor produced no copy — bump its starved
+/// count. At [`STARVED_KICKS_DEAD`] the capturer reports dead so the shared
+/// portal session reopens instead of failing crops on a wedged stream forever.
+fn note_starved_kick(slot: &mut FrameSlot, dest: DesktopRect) {
+    let n = if let Some((_, n)) = slot.starved_kicks.iter_mut().find(|(r, _)| *r == dest) {
+        *n = n.saturating_add(1);
+        *n
+    } else {
+        // `overlapping_stream_dest` falls back to the crop rect when no monitor
+        // overlaps, so tracked dests can be unbounded — cap the set.
+        if slot.starved_kicks.len() >= 16 {
+            slot.starved_kicks.remove(0);
+        }
+        slot.starved_kicks.push((dest, 1));
+        1
+    };
+    cap_log(
+        "PORTAL",
+        "wait",
+        &format!(
+            "result=starved-kick n={n} dest={}x{}+{}+{}",
+            dest.w, dest.h, dest.x, dest.y
+        ),
+    );
 }
 
 fn region_copy_is_stale(slot: &FrameSlot, rect: DesktopRect) -> bool {
@@ -1382,22 +1607,26 @@ fn overlapping_stream_dest(slot: &FrameSlot, rect: DesktopRect) -> DesktopRect {
 }
 
 /// Damage region for a compositor kick: the search crop, clamped into the
-/// overlapping monitor (full-monitor overlays were slow and covered the wait).
+/// overlapping monitor and capped small. Emit-on-damage portals emit a
+/// whole-output frame for any damage on the output, so a big overlay only
+/// makes the pulse expensive (large layer-shell shm, slow map) without
+/// improving the chance a frame arrives.
 fn kick_damage_rect(slot: &FrameSlot, rect: DesktopRect) -> DesktopRect {
     let dest = overlapping_stream_dest(slot, rect);
     let left = rect.x.max(dest.x);
     let top = rect.y.max(dest.y);
     let right = (rect.x + rect.w).min(dest.x + dest.w);
     let bottom = (rect.y + rect.h).min(dest.y + dest.h);
-    if right - left < 2 || bottom - top < 2 {
-        dest
+    let (x, y, w, h) = if right - left < 2 || bottom - top < 2 {
+        (dest.x, dest.y, dest.w, dest.h)
     } else {
-        DesktopRect {
-            x: left,
-            y: top,
-            w: right - left,
-            h: bottom - top,
-        }
+        (left, top, right - left, bottom - top)
+    };
+    DesktopRect {
+        x,
+        y,
+        w: w.min(KICK_RECT_MAX),
+        h: h.min(KICK_RECT_MAX),
     }
 }
 
@@ -1579,6 +1808,7 @@ mod tests {
             generation,
             region_gen: Vec::new(),
             region_copy_at: Vec::new(),
+            starved_kicks: Vec::new(),
             buffering: true,
             last_demand: Instant::now(),
         }
@@ -1662,10 +1892,34 @@ mod tests {
             h: 50,
         };
         let kick = kick_damage_rect(&slot, search);
+        // Damage only needs to touch the output — the pulse stays small even
+        // for a wide search area (large layer surfaces stall emit-on-damage).
         assert_eq!(kick.x, 2000);
         assert_eq!(kick.y, 100);
-        assert_eq!(kick.w, 400);
+        assert_eq!(kick.w, KICK_RECT_MAX);
         assert_eq!(kick.h, 50);
+    }
+
+    #[test]
+    fn starved_kicks_reset_when_stream_copies() {
+        let mut slot = empty_slot(1);
+        let mon = monitor_rect(0, 1920, 1080);
+        slot.cache.monitor_rects = vec![mon];
+        for _ in 0..STARVED_KICKS_DEAD - 1 {
+            note_starved_kick(&mut slot, mon);
+        }
+        assert!(slot
+            .starved_kicks
+            .iter()
+            .all(|(_, n)| *n < STARVED_KICKS_DEAD));
+        note_starved_kick(&mut slot, mon);
+        assert!(slot
+            .starved_kicks
+            .iter()
+            .any(|(_, n)| *n >= STARVED_KICKS_DEAD));
+        // A copy on that dest proves the stream still emits — restart counting.
+        note_region_copy(&mut slot, mon);
+        assert!(slot.starved_kicks.iter().all(|(_, n)| *n == 0));
     }
 
     #[test]

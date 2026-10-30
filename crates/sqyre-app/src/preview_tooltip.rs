@@ -6,7 +6,7 @@ use image::{Rgba, RgbaImage};
 use sqyre_capture::{mark_site, shared_capturer_nonblocking, OsCapturer};
 use sqyre_domain::{Action, ActionKind, CoordinateRef, Macro, ScalarValue, PROGRAM_DELIMITER};
 use sqyre_persist::{ProgramCatalog, ProgramPoint, ProgramSearchArea};
-use sqyre_ports::{CaptureError, DesktopRect};
+use sqyre_ports::{clamp_search_rect, CaptureError, DesktopRect};
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, TryRecvError};
 use std::sync::Arc;
@@ -29,6 +29,9 @@ const PANEL_FILL_SLACK: f32 = 1.0;
 const CACHE_MAX: usize = 24;
 /// How long to remember a failed capture before trying again (manual ↻ clears sooner).
 const FAIL_CACHE_TTL: Duration = Duration::from_secs(60);
+/// Transient `NotReady` errors (stream restarting, first frame pending) retry
+/// after this much shorter window — the shared capturer may already be back.
+const RETRY_FAIL_TTL: Duration = Duration::from_millis(500);
 const OVERLAY: Rgba<u8> = Rgba([255, 0, 0, 255]);
 const LITERAL_COORDS_MSG: &str = "Preview needs literal coordinates";
 /// Half-size of the desktop outline box drawn around a point (px).
@@ -73,7 +76,6 @@ struct CapturedPreview {
 #[derive(Default)]
 pub struct PreviewTooltipCache {
     capturer: Option<Arc<OsCapturer>>,
-    capturer_failed: bool,
     entries: HashMap<String, CacheEntry>,
     order: Vec<String>,
     /// In-flight captures keyed like cache entries; polled on the UI frame.
@@ -437,16 +439,10 @@ impl PreviewTooltipCache {
             self.invalidate_coords(coords);
         }
         if let Some(entry) = self.entries.get(key) {
-            // Panel ScreenCap needs the exclusive crop; recapture if a stale entry lacks it.
-            if keep_region && entry.region.is_none() {
-                self.entries.remove(key);
-                self.order.retain(|k| k != key);
-            } else {
-                let tex = entry.texture.clone();
-                let caption = entry.caption.clone();
-                self.touch(key);
-                return Ok((tex, caption));
-            }
+            let tex = entry.texture.clone();
+            let caption = entry.caption.clone();
+            self.touch(key);
+            return Ok((tex, caption));
         }
 
         let now = Instant::now();
@@ -478,9 +474,14 @@ impl PreviewTooltipCache {
                 }
                 Ok(Err(e)) => {
                     let pending = self.pending.remove(key);
+                    let ttl = if e.is_retryable() {
+                        RETRY_FAIL_TTL
+                    } else {
+                        FAIL_CACHE_TTL
+                    };
                     let e = e.to_string();
                     let fail_coords = pending.map(|p| p.coords).unwrap_or(coords);
-                    self.remember_failure(key, e.clone(), now, fail_coords);
+                    self.remember_failure(key, e.clone(), now, fail_coords, ttl);
                     return Err(e.to_string());
                 }
                 Err(TryRecvError::Empty) => {
@@ -491,7 +492,7 @@ impl PreviewTooltipCache {
                     let pending = self.pending.remove(key);
                     let e = "capture failed".to_string();
                     let fail_coords = pending.map(|p| p.coords).unwrap_or(coords);
-                    self.remember_failure(key, e.clone(), now, fail_coords);
+                    self.remember_failure(key, e.clone(), now, fail_coords, FAIL_CACHE_TTL);
                     return Err(e.to_string());
                 }
             }
@@ -512,8 +513,13 @@ impl PreviewTooltipCache {
                     self.finish_texture(ctx, key, caption, coords, captured, keep_region)
                 }
                 Err(e) => {
+                    let ttl = if e.is_retryable() {
+                        RETRY_FAIL_TTL
+                    } else {
+                        FAIL_CACHE_TTL
+                    };
                     let e = e.to_string();
-                    self.remember_failure(key, e.clone(), Instant::now(), coords);
+                    self.remember_failure(key, e.clone(), Instant::now(), coords, ttl);
                     Err(e)
                 }
             }
@@ -545,12 +551,19 @@ impl PreviewTooltipCache {
         }
     }
 
-    fn remember_failure(&mut self, key: &str, error: String, now: Instant, coords: PreviewCoords) {
+    fn remember_failure(
+        &mut self,
+        key: &str,
+        error: String,
+        now: Instant,
+        coords: PreviewCoords,
+        ttl: Duration,
+    ) {
         self.failures.insert(
             key.to_string(),
             FailureEntry {
                 error,
-                expires: now + FAIL_CACHE_TTL,
+                expires: now + ttl,
                 coords,
             },
         );
@@ -595,27 +608,33 @@ impl PreviewTooltipCache {
     }
 
     fn ensure_capturer(&mut self) -> Result<(), String> {
-        if self.capturer_failed && self.capturer.is_none() {
-            return Err("screen capture unavailable".into());
-        }
-        if self.capturer.is_some() {
-            return Ok(());
+        if let Some(c) = &self.capturer {
+            if !c.is_dead() {
+                return Ok(());
+            }
+            // Portal stream ended — take the reopened shared capturer if there is
+            // one. The last Arc's Drop joins the pw thread — keep that off the UI.
+            if let Some(c) = self.capturer.take() {
+                let _ = std::thread::Builder::new()
+                    .name("sqyre-cap-drop".into())
+                    .spawn(move || drop(c));
+            }
         }
         match shared_capturer_nonblocking() {
             Ok(c) => {
+                // A reopened session serves new frames (and maybe different
+                // monitor coverage) — previews and failures captured against
+                // the old capturer are stale.
+                self.entries.clear();
+                self.order.clear();
+                self.pending.clear();
+                self.failures.clear();
                 self.capturer = Some(c);
                 Ok(())
             }
-            Err(e) => {
-                // Portal open still in flight — retry on the next hover, do not latch failure.
-                if sqyre_capture::shared_capturer_open_may_block()
-                    && sqyre_capture::shared_capturer_if_ready().is_none()
-                {
-                    return Err(e.to_string());
-                }
-                self.capturer_failed = true;
-                Err(e.to_string())
-            }
+            // Open in flight / stream restarting / picker pending all resolve on
+            // a later frame — never latch a permanent failure on the cache.
+            Err(e) => Err(e.to_string()),
         }
     }
 
@@ -737,6 +756,10 @@ fn capture_preview(
                     bottom,
                 });
             }
+            // An area fully outside the shared virtual bounds can never produce
+            // pixels — surface it like a point outside the desktop instead of
+            // silently cropping the wrong monitor and churning recaptures.
+            clamp_search_rect(lx, ty, rx, by, Some(vb))?;
             let bounds = preview_bounds_for_search_area(lx, ty, rx, by, vb);
             let mut img = capture_rect(bounds)?;
             let olx = lx - bounds.x;
