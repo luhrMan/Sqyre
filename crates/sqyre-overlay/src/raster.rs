@@ -106,6 +106,26 @@ pub struct ButtonPaint {
     pub busy_phase: f32,
 }
 
+impl ButtonPaint {
+    /// Raster input for one live button state (`w`/`h` clamped to ≥1 px).
+    pub fn from_face(face: &crate::ButtonFace, hovered: bool, busy: bool, busy_phase: f32) -> Self {
+        Self {
+            w: face.w.max(1),
+            h: face.h.max(1),
+            bg: face.bg,
+            border: face.border,
+            border_width: face.border_width,
+            corner_radius: face.corner_radius,
+            icon_glyph: face.icon_glyph,
+            icon: face.icon,
+            icon_hover: face.icon_hover,
+            hovered,
+            busy,
+            busy_phase,
+        }
+    }
+}
+
 fn phosphor_font() -> &'static Font {
     static FONT: OnceLock<Font> = OnceLock::new();
     FONT.get_or_init(|| {
