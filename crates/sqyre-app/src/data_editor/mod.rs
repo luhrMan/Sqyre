@@ -1390,30 +1390,21 @@ impl DataEditor {
             && self.overlay_icon_picker_for.is_none()
             && !ui.ctx().any_popup_open()
             && !crate::focus_nav::focused_in_layer(ui.ctx(), ui.layer_id())
-            && ui.ctx().top_layer_id() == Some(ui.layer_id())
-            && ui
-                .ctx()
-                .memory(|m| m.areas().top_layer_id(egui::Order::Foreground).is_none())
+            && crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
     }
 
     fn draw_confirm(&mut self, env: &mut DataEditorCtx<'_>, previews: &mut PreviewTooltipCache) {
         let Some(confirm) = self.confirm.clone() else {
             return;
         };
-        let (title, confirm_label, kind) = match &confirm {
+        let (title, confirm_label) = match &confirm {
             PendingConfirm::Delete { .. } | PendingConfirm::DeleteVariant { .. } => {
-                ("Delete", "Delete", crate::widgets::ConfirmKind::Destructive)
+                ("Delete", "Delete")
             }
-            PendingConfirm::DeleteMaskImage => (
-                "Remove Image",
-                "Remove",
-                crate::widgets::ConfirmKind::Destructive,
-            ),
-            PendingConfirm::Overwrite { .. } | PendingConfirm::OverwriteVariant { .. } => (
-                "Overwrite",
-                "Overwrite",
-                crate::widgets::ConfirmKind::Primary,
-            ),
+            PendingConfirm::DeleteMaskImage => ("Remove Image", "Remove"),
+            PendingConfirm::Overwrite { .. } | PendingConfirm::OverwriteVariant { .. } => {
+                ("Overwrite", "Overwrite")
+            }
         };
         let ctx = env.ctx;
         let open = crate::widgets::confirm_window(ctx, title, env.pending_scale, |ui| {

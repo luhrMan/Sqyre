@@ -405,6 +405,62 @@ fn data_editor_new_program_writes_to_catalog() {
     );
 }
 
+fn data_editor_rename_via_enter(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>) {
+    harness.get_by_label("Demo Program").click();
+    harness.run();
+
+    let name = harness
+        .query_all_by_role(eframe::egui::accesskit::Role::TextInput)
+        .find(|n| n.value().as_deref() == Some("Demo Program"))
+        .expect("program name field");
+    name.focus();
+    name.type_text(" Renamed");
+    harness.run();
+
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+
+    assert!(
+        harness
+            .state()
+            .docs_catalog()
+            .get("Demo Program Renamed")
+            .is_some(),
+        "Enter should save the dirty form like the Save button"
+    );
+}
+
+#[test]
+fn data_editor_enter_saves_dirty_program_form() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_programs_for_docs()
+    });
+    harness.run();
+    assert!(
+        harness.state().docs_catalog().get("Demo Program").is_some(),
+        "docs fixture should ship with Demo Program"
+    );
+
+    data_editor_rename_via_enter(&mut harness);
+}
+
+#[test]
+fn data_editor_enter_saves_after_foreground_dialog_closed() {
+    let mut harness = build_docs_harness(PALETTE_HARNESS_SIZE, |app| {
+        app.open_data_editor_programs_for_docs()
+    });
+    harness.run();
+
+    // Foreground-order surfaces (palette, confirm, modal pickers) keep their
+    // layer in egui's area order after closing; Enter must still reach Save.
+    open_palette_with_shortcut(&mut harness);
+    harness.key_press(egui::Key::Escape);
+    harness.run_steps(4);
+    assert!(!harness.state().docs_command_palette_open());
+
+    data_editor_rename_via_enter(&mut harness);
+}
+
 #[test]
 fn data_editor_header_search_filters_and_preserves_query() {
     let mut harness = build_docs_harness([1100.0, 640.0], |app| {
