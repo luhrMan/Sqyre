@@ -252,22 +252,50 @@ fn run_with(options: eframe::NativeOptions) -> eframe::Result<()> {
         }
     };
 
-    let result = eframe::run_native(
-        assets::APP_ID,
-        options,
-        Box::new(move |cc| {
-            let mut app = SqyreApp::load();
-            app.instance_lock = instance_lock;
-            SettingsUi::install_fonts(&cc.egui_ctx);
-            SettingsUi::apply_appearance(&cc.egui_ctx, app.settings_ui.settings());
-            app.bind_hotkey_repaint(cc.egui_ctx.clone());
-            app.tray = tray::SystemTray::install(cc.egui_ctx.clone(), cc.winit_window().cloned());
-            Ok(Box::new(app))
-        }),
-    );
+    let instance_lock = std::rc::Rc::new(std::cell::Cell::new(instance_lock));
+    let launch = |options: eframe::NativeOptions| {
+        let instance_lock = instance_lock.clone();
+        eframe::run_native(
+            assets::APP_ID,
+            options,
+            Box::new(move |cc| {
+                let mut app = SqyreApp::load();
+                app.instance_lock = instance_lock.take();
+                SettingsUi::install_fonts(&cc.egui_ctx);
+                SettingsUi::apply_appearance(&cc.egui_ctx, app.settings_ui.settings());
+                app.bind_hotkey_repaint(cc.egui_ctx.clone());
+                app.tray =
+                    tray::SystemTray::install(cc.egui_ctx.clone(), cc.winit_window().cloned());
+                Ok(Box::new(app))
+            }),
+        )
+    };
+    #[cfg(target_os = "windows")]
+    let result = match launch(options) {
+        Err(e) if is_gl_startup_error(&e) => {
+            // VMs / RDP / basic display drivers often expose only GDI's GL 1.1;
+            // wgpu (DX12, WARP fallback) still runs, with opaque overlay buttons.
+            crate::log::warn(format!("OpenGL unavailable ({e}); falling back to wgpu"));
+            let mut options = native_options();
+            options.renderer = eframe::Renderer::Wgpu;
+            launch(options)
+        }
+        other => other,
+    };
+    #[cfg(not(target_os = "windows"))]
+    let result = launch(options);
     #[cfg(feature = "native-runtime")]
     sqyre_capture::mark_site("app:run_native:returned");
     result
+}
+
+/// Glow failed before the app was created (no usable OpenGL 2.0+ context).
+#[cfg(target_os = "windows")]
+fn is_gl_startup_error(e: &eframe::Error) -> bool {
+    matches!(
+        e,
+        eframe::Error::OpenGL(_) | eframe::Error::Glutin(_) | eframe::Error::NoGlutinConfigs(..)
+    )
 }
 
 /// Handle `--version` / `--help` before starting the GUI.

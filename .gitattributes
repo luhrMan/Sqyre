@@ -1,0 +1,5 @@
+# LF everywhere so Windows checkouts (core.autocrlf=true) keep shell scripts
+# runnable under Git Bash and text goldens byte-identical to Linux.
+* text=auto eol=lf
+# Some SVG icons are committed with CRLF; keep their bytes as-is.
+*.svg -text

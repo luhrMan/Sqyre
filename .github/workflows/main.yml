@@ -367,10 +367,13 @@ jobs:
             make android-check
             sccache --show-stats || true
 
+  # Native MSVC pass: full workspace clippy + nextest (kittest/docs goldens
+  # render via wgpu on WARP), then a launch smoke of the real exe on the
+  # runner's interactive desktop (GDI capture, llhook hotkeys, single instance).
   test-windows:
     if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v6
 
@@ -387,6 +390,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.96.1
 
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
       - name: Cache Cargo
         uses: actions/cache@v6
         with:
@@ -394,17 +400,37 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-agnostic-v1-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-workspace-v1-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-cargo-agnostic-v1-
+            ${{ runner.os }}-cargo-workspace-v1-
 
-      - name: Clippy Windows-specific crates
-        run: |
-          cargo clippy -p sqyre-capture -p sqyre-hotkeys -p sqyre-input -p sqyre-overlay --all-targets -- -D warnings
+      # sqyre-vision include_bytes!()s the models.
+      - name: Cache OCR models
+        id: ocr
+        uses: actions/cache@v6
+        with:
+          path: assets/ocr-models
+          key: ocr-models-v1-${{ hashFiles('scripts/download-ocr-models.sh') }}
+          restore-keys: |
+            ocr-models-v1-
 
-      - name: Test OS-agnostic crates
-        run: |
-          cargo test -p sqyre-domain -p sqyre-varref -p sqyre-serialize -p sqyre-validate -p sqyre-persist
+      - name: Download OCR models
+        if: steps.ocr.outputs.cache-hit != 'true'
+        shell: bash
+        run: ./scripts/download-ocr-models.sh
+
+      - name: Clippy workspace
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test workspace
+        run: cargo nextest run --workspace --no-fail-fast
+
+      - name: Build sqyre.exe
+        run: cargo build -p sqyre-app --bin sqyre
+
+      - name: Launch smoke test
+        shell: pwsh
+        run: ./scripts/windows/smoke.ps1 -Exe target/debug/sqyre.exe
 
   # Dist binary + AppImage + the update-signer helper in one job: the AppImage
   # packages the same stripped binary (already on disk at target/dist), and

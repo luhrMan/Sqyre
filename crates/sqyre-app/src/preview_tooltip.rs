@@ -93,6 +93,14 @@ impl PreviewTooltipCache {
         Self::default()
     }
 
+    /// Never opens the screen capturer (headless docs/kittest: no real-desktop pixels).
+    pub fn without_capture() -> Self {
+        Self {
+            capturer_failed: true,
+            ..Self::default()
+        }
+    }
+
     pub fn invalidate_entity(&mut self, name: &str) {
         if name.is_empty() {
             self.clear();
