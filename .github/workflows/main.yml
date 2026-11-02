@@ -432,6 +432,9 @@ jobs:
         shell: pwsh
         run: ./scripts/windows/smoke.ps1 -Exe target/debug/sqyre.exe
 
+      - name: Desktop action parity test
+        run: cargo nextest run -p sqyre-app --test windows_actions --run-ignored only
+
   # Dist binary + AppImage + the update-signer helper in one job: the AppImage
   # packages the same stripped binary (already on disk at target/dist), and
   # sign_update_sums is a pure-Rust bin reused by the release job (same glibc
