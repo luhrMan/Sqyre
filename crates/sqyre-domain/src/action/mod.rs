@@ -917,6 +917,57 @@ pub struct MatchOrder {
     pub vertical: String,
 }
 
+/// Boxed payload for [`ActionKind::ImageSearch`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ImageSearchData {
+    pub name: String,
+    pub targets: Vec<String>,
+    /// Catalog item tags: every item with any of these tags is searched
+    /// (union with [`Self::targets`], resolved at run time).
+    pub target_tags: Vec<String>,
+    pub search_area: CoordinateRef,
+    pub tolerance: f64,
+    pub blur: i32,
+    pub match_method: MatchMethod,
+    /// Primary order for matching items and for the Items grid display.
+    pub sort_by: ItemSortBy,
+    /// Within-group order after [`Self::sort_by`].
+    pub sort_then: ItemSortThen,
+    /// Tag priority when sort_by is Tags.
+    pub tag_priority: Vec<String>,
+    pub detection: DetectionBranch,
+}
+
+/// Boxed payload for [`ActionKind::Ocr`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct OcrData {
+    pub name: String,
+    pub target: String,
+    pub search_area: CoordinateRef,
+    pub output_variable: String,
+    /// How recognized text must relate to [`Self::target`].
+    pub match_mode: crate::OcrMatchMode,
+    /// Match letter-for-letter casing instead of folding to lowercase.
+    pub case_sensitive: bool,
+    pub blur: i32,
+    pub min_threshold: i32,
+    pub resize: f64,
+    pub grayscale: bool,
+    pub threshold_otsu: bool,
+    pub threshold_invert: bool,
+    pub detection: DetectionBranch,
+}
+
+/// Boxed payload for [`ActionKind::FindPixel`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FindPixelData {
+    pub name: String,
+    pub search_area: CoordinateRef,
+    pub target_color: String,
+    pub color_tolerance: i32,
+    pub detection: DetectionBranch,
+}
+
 /// Shared wait / coords / branch fields for ImageSearch, OCR, and FindPixel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DetectionBranch {
@@ -1234,6 +1285,14 @@ pub struct Action {
 }
 
 impl Action {
+    /// New action with a fresh runtime id.
+    pub fn new(kind: ActionKind) -> Self {
+        Self {
+            id: ActionId::new(),
+            kind,
+        }
+    }
+
     pub fn type_key(&self) -> &'static str {
         self.kind.type_key()
     }
@@ -1277,20 +1336,18 @@ impl Action {
     /// Used when inserting a hold so the release is paired immediately below.
     pub fn matching_release(&self) -> Option<Action> {
         match &self.kind {
-            ActionKind::Click { button, state } if state.is_down() => Some(Action {
-                id: ActionId::new(),
-                kind: ActionKind::Click {
+            ActionKind::Click { button, state } if state.is_down() => {
+                Some(Action::new(ActionKind::Click {
                     button: *button,
                     state: PressState::Up,
-                },
-            }),
-            ActionKind::Key { key, state } if state.is_down() => Some(Action {
-                id: ActionId::new(),
-                kind: ActionKind::Key {
+                }))
+            }
+            ActionKind::Key { key, state } if state.is_down() => {
+                Some(Action::new(ActionKind::Key {
                     key: key.clone(),
                     state: PressState::Up,
-                },
-            }),
+                }))
+            }
             _ => None,
         }
     }
@@ -1370,13 +1427,10 @@ mod tests {
 
     #[test]
     fn matching_release_pairs_down_key_and_click() {
-        let key_down = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "shift".into(),
-                state: PressState::Down,
-            },
-        };
+        let key_down = Action::new(ActionKind::Key {
+            key: "shift".into(),
+            state: PressState::Down,
+        });
         let key_up = key_down.matching_release().expect("key down has release");
         assert_ne!(key_up.id, key_down.id);
         assert_eq!(
@@ -1387,13 +1441,10 @@ mod tests {
             }
         );
 
-        let click_down = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Click {
-                button: MouseButton::Right,
-                state: PressState::Down,
-            },
-        };
+        let click_down = Action::new(ActionKind::Click {
+            button: MouseButton::Right,
+            state: PressState::Down,
+        });
         let click_up = click_down
             .matching_release()
             .expect("click down has release");
@@ -1405,58 +1456,40 @@ mod tests {
             }
         );
 
-        let tap = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "a".into(),
-                state: PressState::Tap,
-            },
-        };
+        let tap = Action::new(ActionKind::Key {
+            key: "a".into(),
+            state: PressState::Tap,
+        });
         assert!(tap.matching_release().is_none());
     }
 
     #[test]
     fn is_press_pair_of_matches_opposite_same_key_or_button() {
-        let down = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "Ctrl".into(),
-                state: PressState::Down,
-            },
-        };
-        let up = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "ctrl".into(),
-                state: PressState::Up,
-            },
-        };
-        let other_key = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "alt".into(),
-                state: PressState::Up,
-            },
-        };
+        let down = Action::new(ActionKind::Key {
+            key: "Ctrl".into(),
+            state: PressState::Down,
+        });
+        let up = Action::new(ActionKind::Key {
+            key: "ctrl".into(),
+            state: PressState::Up,
+        });
+        let other_key = Action::new(ActionKind::Key {
+            key: "alt".into(),
+            state: PressState::Up,
+        });
         assert!(down.is_press_pair_of(&up));
         assert!(up.is_press_pair_of(&down));
         assert!(!down.is_press_pair_of(&other_key));
         assert!(!down.is_press_pair_of(&down));
 
-        let click_down = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Click {
-                button: MouseButton::Left,
-                state: PressState::Down,
-            },
-        };
-        let click_up = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Click {
-                button: MouseButton::Left,
-                state: PressState::Up,
-            },
-        };
+        let click_down = Action::new(ActionKind::Click {
+            button: MouseButton::Left,
+            state: PressState::Down,
+        });
+        let click_up = Action::new(ActionKind::Click {
+            button: MouseButton::Left,
+            state: PressState::Up,
+        });
         assert!(click_down.is_press_pair_of(&click_up));
         assert!(!click_down.is_press_pair_of(&down));
     }

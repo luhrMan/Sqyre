@@ -1499,6 +1499,15 @@ impl DataEditor {
         self.status_banner.set_err(msg);
     }
 
+    /// Selected program name; sets the UI error and returns `None` when unset.
+    pub(crate) fn selected_program_or_err(&mut self) -> Option<String> {
+        let prog = self.selected_program.clone();
+        if prog.is_none() {
+            self.set_err("Select a program first.");
+        }
+        prog
+    }
+
     pub(crate) fn clear_status(&mut self) {
         self.status_banner.clear();
     }
@@ -1563,8 +1572,10 @@ impl DataEditor {
             match rx.try_recv() {
                 Ok(Ok(result)) => {
                     self.pixel_check_pending = None;
-                    if result.fingerprint == self.pixel_check.last_inputs {
-                        if result.tolerance_matches.len() > pixel_check::MANY_MATCH_BOX_THRESHOLD {
+                    if result.data.fingerprint == self.pixel_check.last_inputs {
+                        if result.data.tolerance_matches.len()
+                            > pixel_check::MANY_MATCH_BOX_THRESHOLD
+                        {
                             self.pixel_check.show_many_match_boxes = false;
                         }
                         self.pixel_check_cache = Some(pixel_check::finish_cache(ctx, result));

@@ -345,20 +345,7 @@ impl Action {
         parent_id: ActionId,
         slot: InsertSlot,
     ) -> Result<(), TreeError> {
-        let mut seen = std::collections::HashSet::new();
-        let mut sources: Vec<ActionId> = Vec::new();
-        for &id in source_ids {
-            if id.is_root()
-                || matches!(
-                    self.resolve_tree_id(id),
-                    Some(TreeNodeRef::ElseFolder { .. })
-                )
-                || !seen.insert(id)
-            {
-                continue;
-            }
-            sources.push(id);
-        }
+        let sources = self.movable_sources(source_ids);
         if sources.is_empty() {
             return Ok(());
         }
@@ -482,6 +469,22 @@ impl Action {
         None
     }
 
+    /// Unique movable sources in order: skips root, Else-folder sentinels, and dupes.
+    fn movable_sources(&self, ids: &[ActionId]) -> Vec<ActionId> {
+        let mut seen = std::collections::HashSet::new();
+        ids.iter()
+            .copied()
+            .filter(|&id| {
+                !id.is_root()
+                    && !matches!(
+                        self.resolve_tree_id(id),
+                        Some(TreeNodeRef::ElseFolder { .. })
+                    )
+                    && seen.insert(id)
+            })
+            .collect()
+    }
+
     /// Plan a one-slot sibling shift for `ids` (`up` = toward the start of the list).
     ///
     /// All ids must share a sibling list. Sources are returned in sibling order.
@@ -490,20 +493,7 @@ impl Action {
         ids: &[ActionId],
         up: bool,
     ) -> Option<(Vec<ActionId>, ActionId, InsertSlot)> {
-        let mut seen = std::collections::HashSet::new();
-        let mut sources: Vec<ActionId> = Vec::new();
-        for &id in ids {
-            if id.is_root()
-                || matches!(
-                    self.resolve_tree_id(id),
-                    Some(TreeNodeRef::ElseFolder { .. })
-                )
-                || !seen.insert(id)
-            {
-                continue;
-            }
-            sources.push(id);
-        }
+        let mut sources = self.movable_sources(ids);
         if sources.is_empty() {
             return None;
         }
@@ -660,6 +650,20 @@ mod tests {
         ScalarValue, TreeError, TreeNodeRef,
     };
 
+    fn detect_action(id: ActionId, then_id: ActionId) -> Action {
+        Action {
+            id,
+            kind: ActionKind::FindPixel(Box::new(crate::FindPixelData {
+                target_color: "#fff".into(),
+                detection: DetectionBranch {
+                    subactions: vec![wait(then_id)],
+                    ..Default::default()
+                },
+                ..Default::default()
+            })),
+        }
+    }
+
     fn wait(id: ActionId) -> Action {
         Action {
             id,
@@ -674,19 +678,7 @@ mod tests {
         let detection_id = ActionId::new();
         let then_id = ActionId::new();
         let else_id = ActionId::new();
-        let mut root = root_loop(vec![Action {
-            id: detection_id,
-            kind: ActionKind::FindPixel {
-                name: String::new(),
-                search_area: Default::default(),
-                target_color: "#fff".into(),
-                color_tolerance: 0,
-                detection: DetectionBranch {
-                    subactions: vec![wait(then_id)],
-                    ..Default::default()
-                },
-            },
-        }]);
+        let mut root = root_loop(vec![detect_action(detection_id, then_id)]);
         root.insert_at(
             ActionId::else_folder(detection_id),
             InsertSlot::Last,
@@ -817,19 +809,7 @@ mod tests {
         let then_id = ActionId::new();
         let else_a = ActionId::new();
         let else_b = ActionId::new();
-        let mut root = root_loop(vec![Action {
-            id: detection_id,
-            kind: ActionKind::FindPixel {
-                name: String::new(),
-                search_area: Default::default(),
-                target_color: "#fff".into(),
-                color_tolerance: 0,
-                detection: DetectionBranch {
-                    subactions: vec![wait(then_id)],
-                    ..Default::default()
-                },
-            },
-        }]);
+        let mut root = root_loop(vec![detect_action(detection_id, then_id)]);
         root.insert_at(
             ActionId::else_folder(detection_id),
             InsertSlot::Last,
@@ -859,22 +839,7 @@ mod tests {
         let then_id = ActionId::new();
         let mover = ActionId::new();
         let else_id = ActionId::else_folder(detection_id);
-        let mut root = root_loop(vec![
-            wait(mover),
-            Action {
-                id: detection_id,
-                kind: ActionKind::FindPixel {
-                    name: String::new(),
-                    search_area: Default::default(),
-                    target_color: "#fff".into(),
-                    color_tolerance: 0,
-                    detection: DetectionBranch {
-                        subactions: vec![wait(then_id)],
-                        ..Default::default()
-                    },
-                },
-            },
-        ]);
+        let mut root = root_loop(vec![wait(mover), detect_action(detection_id, then_id)]);
         // Mimic egui_ltreeview: drop Before(Else) with the detection as parent.
         root.move_action(mover, detection_id, InsertSlot::Before(else_id))
             .unwrap();
@@ -897,19 +862,7 @@ mod tests {
         let else_id = ActionId::else_folder(detection_id);
         let mut root = root_loop(vec![
             wait(mover),
-            Action {
-                id: detection_id,
-                kind: ActionKind::FindPixel {
-                    name: String::new(),
-                    search_area: Default::default(),
-                    target_color: "#fff".into(),
-                    color_tolerance: 0,
-                    detection: DetectionBranch {
-                        subactions: vec![wait(then_id)],
-                        ..Default::default()
-                    },
-                },
-            },
+            detect_action(detection_id, then_id),
             wait(after),
         ]);
         // Mimic egui_ltreeview: drop After(Else) with the detection as parent.

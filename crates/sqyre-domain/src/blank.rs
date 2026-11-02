@@ -1,10 +1,11 @@
 //! Blank action factories for the Add Action picker.
 
 use crate::{
-    action_type_table, Action, ActionId, ActionKind, ConditionBlock, CoordinateRef,
-    DetectionBranch, ListColumn, LoopJumpMode, MatchMethod, MouseButton, PressState, ScalarValue,
-    VariableAssignment, CELL_COORDINATES, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
-    DEFAULT_SMOOTH_LOW, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE, PROGRAM_DELIMITER,
+    action_type_table, Action, ActionKind, ConditionBlock, CoordinateRef, DetectionBranch,
+    FindPixelData, ImageSearchData, ListColumn, LoopJumpMode, MatchMethod, MouseButton, OcrData,
+    PressState, ScalarValue, VariableAssignment, CELL_COORDINATES, DEFAULT_SMOOTH_DELAY_MS,
+    DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW, GENERAL_PROGRAM, IMAGE_SEARCH_REFERENCE,
+    PROGRAM_DELIMITER,
 };
 
 /// One picker entry: label, type key, category, and a fresh blank [`Action`].
@@ -19,10 +20,7 @@ pub struct ActionTemplate {
 
 impl ActionTemplate {
     pub fn create(&self) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: self.kind.clone(),
-        }
+        Action::new(self.kind.clone())
     }
 }
 
@@ -47,19 +45,13 @@ pub fn action_templates() -> Vec<ActionTemplate> {
 /// Build a blank action with a fresh UID for the given type key.
 pub fn blank_action(action_type: &str) -> Option<Action> {
     let kind = ActionKind::from_type_key(action_type)?;
-    Some(Action {
-        id: ActionId::new(),
-        kind,
-    })
+    Some(Action::new(kind))
 }
 
 /// Convenience for tests: wrap a kind with a fresh id.
 #[doc(hidden)]
 pub fn test_action(kind: ActionKind) -> Action {
-    Action {
-        id: ActionId::new(),
-        kind,
-    }
+    Action::new(kind)
 }
 
 /// `test_action!(ActionKind::Wait { time: ScalarValue::Int(1) })`
@@ -79,16 +71,13 @@ fn general_point_ref(name: &str) -> CoordinateRef {
 /// Starter child for actions that produce screen coordinates: follow each
 /// hit / cell with the cursor ([`Move`] to `point`).
 fn move_children(point: CoordinateRef) -> Vec<Action> {
-    vec![Action {
-        id: ActionId::new(),
-        kind: ActionKind::Move {
-            point,
-            smooth: true,
-            smooth_low: DEFAULT_SMOOTH_LOW,
-            smooth_high: DEFAULT_SMOOTH_HIGH,
-            smooth_delay_ms: DEFAULT_SMOOTH_DELAY_MS,
-        },
-    }]
+    vec![Action::new(ActionKind::Move {
+        point,
+        smooth: true,
+        smooth_low: DEFAULT_SMOOTH_LOW,
+        smooth_high: DEFAULT_SMOOTH_HIGH,
+        smooth_delay_ms: DEFAULT_SMOOTH_DELAY_MS,
+    })]
 }
 
 /// Detection branch whose child moves to each hit ([`IMAGE_SEARCH_REFERENCE`]).
@@ -155,41 +144,24 @@ pub(crate) fn blank_kind(action_type: &str) -> Option<ActionKind> {
         "loopjump" => ActionKind::LoopJump {
             mode: LoopJumpMode::Break,
         },
-        "imagesearch" => ActionKind::ImageSearch {
-            name: String::new(),
-            targets: Vec::new(),
-            target_tags: Vec::new(),
-            search_area: CoordinateRef::default(),
+        "imagesearch" => ActionKind::ImageSearch(Box::new(ImageSearchData {
             tolerance: 0.95,
             blur: 5,
             match_method: MatchMethod::CcoeffNormed,
-            sort_by: Default::default(),
-            sort_then: Default::default(),
-            tag_priority: Vec::new(),
             detection: detection_with_move(),
-        },
-        "ocr" => ActionKind::Ocr {
-            name: String::new(),
+            ..Default::default()
+        })),
+        "ocr" => ActionKind::Ocr(Box::new(OcrData {
             target: "template".into(),
-            search_area: CoordinateRef::default(),
-            output_variable: String::new(),
-            match_mode: Default::default(),
-            case_sensitive: false,
-            blur: 0,
-            min_threshold: 0,
             resize: 1.0,
-            grayscale: false,
-            threshold_otsu: false,
-            threshold_invert: false,
             detection: detection_with_move(),
-        },
-        "findpixel" => ActionKind::FindPixel {
-            name: String::new(),
-            search_area: CoordinateRef::default(),
+            ..Default::default()
+        })),
+        "findpixel" => ActionKind::FindPixel(Box::new(FindPixelData {
             target_color: "ffffff".into(),
-            color_tolerance: 0,
             detection: detection_with_move(),
-        },
+            ..Default::default()
+        })),
         "setvariable" => ActionKind::SetVariable {
             assignments: vec![VariableAssignment::default()],
         },
@@ -295,9 +267,9 @@ mod tests {
         for key in ["imagesearch", "ocr", "findpixel"] {
             let a = blank_action(key).unwrap();
             let subs = match &a.kind {
-                ActionKind::ImageSearch { detection, .. }
-                | ActionKind::Ocr { detection, .. }
-                | ActionKind::FindPixel { detection, .. } => &detection.subactions,
+                ActionKind::ImageSearch(d) => &d.detection.subactions,
+                ActionKind::Ocr(d) => &d.detection.subactions,
+                ActionKind::FindPixel(d) => &d.detection.subactions,
                 other => panic!("expected detection kind for {key}, got {other:?}"),
             };
             assert_seeded_move(subs, IMAGE_SEARCH_REFERENCE);
