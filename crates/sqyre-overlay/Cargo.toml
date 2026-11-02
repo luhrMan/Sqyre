@@ -37,7 +37,7 @@ eframe = { workspace = true, optional = true, features = ["glow"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 x11 = { workspace = true }
-libc = "0.2"
+libc = { workspace = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 sqyre-android = { path = "../sqyre-android" }
