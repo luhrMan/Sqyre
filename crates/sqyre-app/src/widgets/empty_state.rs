@@ -46,7 +46,6 @@ pub fn empty_state(
     primary: Option<&str>,
     secondary: Option<&str>,
 ) -> EmptyStateAction {
-    ui.add_space(crate::theme::element_gap(ui));
     // A single word wider than the pane (extreme user-dragged splits) wraps
     // mid-word ("collection/s yet"); truncating reads cleaner there.
     let font = egui::TextStyle::Body.resolve(ui.style());
@@ -65,12 +64,10 @@ pub fn empty_state(
         ui.add(title_label);
     }
     if let Some(body) = body {
-        ui.add_space(crate::theme::element_gap(ui));
         ui.label(egui::RichText::new(body).weak());
     }
     let mut clicked = EmptyStateAction::None;
     if primary.is_some() || secondary.is_some() {
-        ui.add_space(crate::theme::element_gap(ui));
         ui.horizontal(|ui| {
             if let Some(label) = primary {
                 if ui.button(label).clicked() {

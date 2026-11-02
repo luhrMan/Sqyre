@@ -58,11 +58,13 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             // Vertical only: action rows clip to the visible pane width, so an H-bar
             // would only reflect egui_ltreeview's min_width ratchet (see new_child
             // below). auto_shrink false keeps the viewport filled when content is short.
-            let scroll_out = egui::ScrollArea::vertical()
-                .id_salt("macro_tree_scroll")
-                .scroll_source(crate::widgets::SCROLL_SOURCE_NO_DRAG)
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
+            let scroll_out = crate::widgets::show_scroll_edge(
+                ui,
+                egui::ScrollArea::vertical()
+                    .id_salt("macro_tree_scroll")
+                    .scroll_source(crate::widgets::SCROLL_SOURCE_NO_DRAG)
+                    .auto_shrink([false, false]),
+                |ui| {
                     // Decide reorder vs drag-scroll before TreeView so
                     // allow_drag_and_drop can suppress a non-handle drag.
                     let (primary_down, primary_released, pointer_delta, pointer_vel_y, dt) = ui
@@ -335,7 +337,8 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                         }
                     }
                     tree_actions
-                });
+                },
+            );
             // Match egui ScrollArea: kill kinetic coast when offset clamps.
             // Positive scroll_with_delta.y decreases offset (toward top).
             let max_offset_y =

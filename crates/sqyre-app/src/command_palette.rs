@@ -219,7 +219,7 @@ impl CommandPaletteUi {
                 - ui.spacing().window_margin.bottomf();
             let list_h = (rows * row_pitch).min(screen_room.max(row_pitch));
             let list_w = crate::widgets::visible_width(ui);
-            crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
+            crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
                 crate::widgets::enable_dense_row_extend(ui);
                 for (i, item) in filtered.iter().enumerate() {
                     let resp = command_row(ui, item, i == self.selected);

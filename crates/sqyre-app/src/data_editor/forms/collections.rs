@@ -10,7 +10,6 @@ impl DataEditor {
         &mut self,
         ui: &mut egui::Ui,
         paint: &mut CatalogPaint<'_>,
-        settings: &mut UserSettings,
     ) {
         let CatalogPaint {
             catalog,
@@ -27,13 +26,7 @@ impl DataEditor {
         });
         let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
         let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
-        self.program_selector(ui, catalog, icons, settings);
-        if let Some(area) = collection_area {
-            ui.weak(collection_size_label(area, rows, cols));
-        }
-        ui.add_space(crate::theme::element_gap(ui));
         paint_name_field(ui, &mut self.form_name);
-        ui.add_space(crate::theme::element_gap(ui));
         {
             let areas: Vec<String> = self
                 .selected_program
@@ -76,6 +69,7 @@ impl DataEditor {
                             width: None,
                             on_option_hover: Some(&mut on_hover),
                             option_icon: None,
+                            option_label: None,
                         },
                     ),
                     help::DE_COLLECTION_AREA,
@@ -137,22 +131,14 @@ impl DataEditor {
         }
     }
 
-    pub(super) fn draw_atlases_form(
-        &mut self,
-        ui: &mut egui::Ui,
-        paint: &mut CatalogPaint<'_>,
-        settings: &mut UserSettings,
-    ) {
+    pub(super) fn draw_atlases_form(&mut self, ui: &mut egui::Ui, paint: &mut CatalogPaint<'_>) {
         let CatalogPaint {
             catalog,
             icons,
             previews,
             ..
         } = paint;
-        self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(crate::theme::element_gap(ui));
         paint_name_field(ui, &mut self.form_name);
-        ui.add_space(crate::theme::element_gap(ui));
         let available: Vec<String> = self
             .selected_program
             .as_deref()
@@ -189,6 +175,7 @@ impl DataEditor {
                         width: None,
                         on_option_hover: Some(&mut on_hover),
                         option_icon: None,
+                        option_label: None,
                     },
                 ),
                 help::DE_ATLAS_MEMBERS,

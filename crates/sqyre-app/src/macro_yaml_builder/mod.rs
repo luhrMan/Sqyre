@@ -411,11 +411,15 @@ impl MacroYamlBuilderUi {
 
         let suggestions = collect_runtime_suggestions(macros, catalog);
         let editor_id = egui::Id::new(WINDOW_ID).with("yaml");
-        crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), editor_h)
-            .id_salt("yaml_scroll")
-            .show(ui, |ui| {
+        crate::widgets::show_dialog_scroll_mod(
+            ui,
+            crate::widgets::visible_width(ui),
+            editor_h,
+            |s| s.id_salt("yaml_scroll"),
+            |ui| {
                 yaml_text_edit(ui, editor_id, &mut self.yaml, &suggestions, editor_h);
-            });
+            },
+        );
 
         if self.yaml != self.last_validated_yaml && self.validate_since.is_none() {
             self.validate_since = Some(ui.ctx().input(|i| i.time));
@@ -897,7 +901,7 @@ fn yaml_text_edit(
         };
         if needs_scroll {
             let popup_h = AC_POPUP_MAX_H;
-            crate::widgets::dialog_scroll(popup_w, popup_h).show(ui, |ui| {
+            crate::widgets::show_dialog_scroll(ui, popup_w, popup_h, |ui| {
                 crate::widgets::enable_dense_row_extend(ui);
                 paint_rows(ui);
             });

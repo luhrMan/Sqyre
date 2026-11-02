@@ -12,13 +12,9 @@ impl DataEditor {
         ui: &mut egui::Ui,
         paint: &mut CatalogPaint<'_>,
         ctx: FormCtx<'_>,
-        settings: &mut UserSettings,
     ) {
         let CatalogPaint {
-            catalog,
-            icons,
-            previews,
-            ..
+            catalog, previews, ..
         } = paint;
         let FormCtx {
             screen_click,
@@ -27,8 +23,6 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(crate::theme::element_gap(ui));
         paint_name_field(ui, &mut self.form_name);
         self.paint_monitor_slot(ui);
         let (x, y) = form_absolute_xy(
@@ -71,13 +65,9 @@ impl DataEditor {
         ui: &mut egui::Ui,
         paint: &mut CatalogPaint<'_>,
         ctx: FormCtx<'_>,
-        settings: &mut UserSettings,
     ) {
         let CatalogPaint {
-            catalog,
-            icons,
-            previews,
-            ..
+            catalog, previews, ..
         } = paint;
         let FormCtx {
             screen_click,
@@ -94,11 +84,6 @@ impl DataEditor {
             &self.form_right,
             &self.form_bottom,
         );
-        self.program_selector(ui, catalog, icons, settings);
-        if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
-            ui.weak(pixel_size_text(w, h));
-        }
-        ui.add_space(crate::theme::element_gap(ui));
         paint_name_field(ui, &mut self.form_name);
         self.paint_monitor_slot(ui);
         self.sync_coord_preview_view();
@@ -154,7 +139,6 @@ impl DataEditor {
         ui: &mut egui::Ui,
         paint: &mut CatalogPaint<'_>,
         ctx: FormCtx<'_>,
-        settings: &mut UserSettings,
     ) {
         let CatalogPaint { catalog, icons, .. } = paint;
         let FormCtx {
@@ -163,8 +147,6 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(crate::theme::element_gap(ui));
         paint_name_field(ui, &mut self.form_name);
         let has_image = self
             .selected_program
@@ -201,7 +183,6 @@ impl DataEditor {
             }
         });
         if !has_image {
-            ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
                 help::label(ui, egui_phosphor::regular::SHAPES, "Shape");
                 help::tip(
@@ -330,7 +311,6 @@ impl DataEditor {
         ui: &mut egui::Ui,
         paint: &mut CatalogPaint<'_>,
         ctx: FormCtx<'_>,
-        settings: &mut UserSettings,
     ) {
         let CatalogPaint {
             catalog,
@@ -345,11 +325,8 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        self.program_selector(ui, catalog, icons, settings);
         paint_name_field(ui, &mut self.form_name);
-        ui.add_space(crate::theme::element_gap(ui));
         self.paint_item_param_fields(ui, catalog, icons);
-        ui.add_space(crate::theme::element_gap(ui));
         help::tip(
             crate::widgets::wrap_unit(ui, |ui| {
                 self.paint_monitor_slot(ui);
@@ -365,9 +342,6 @@ impl DataEditor {
             &self.form_right,
             &self.form_bottom,
         );
-        if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
-            ui.weak(pixel_size_text(w, h));
-        }
         self.sync_coord_preview_view();
         let force = std::mem::take(&mut self.preview_force);
         // Keep the button row below the preview (panel fills remaining height);
@@ -436,7 +410,6 @@ impl DataEditor {
                 );
             },
         );
-        ui.add_space(crate::theme::element_gap(ui));
         let saving = self.screen_cap_pending.is_some();
         ui.horizontal(|ui| {
             let save_tip = if saving {

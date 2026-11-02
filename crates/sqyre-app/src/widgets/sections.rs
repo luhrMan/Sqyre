@@ -65,15 +65,19 @@ fn pane(ui: &mut egui::Ui, content: Rect, span: Rangef) -> egui::Ui {
 /// The line sits centered in a [`section_gap`] margin on each side — never add
 /// `add_space` around it; the gap already matches the inter-section gap.
 ///
-/// In horizontal layouts this is a normal vertical [`egui::Separator`].
+/// In horizontal layouts this is a compact vertical [`egui::Separator`].
 pub fn section_separator(ui: &mut egui::Ui) -> egui::Response {
     if ui.layout().main_dir().is_horizontal() {
-        return ui.separator();
+        // egui's 6px default slot + item_spacing reads as a hole in button rows.
+        return ui.add(egui::Separator::default().spacing(SPACE_2));
     }
     let Some(span) = section_span(ui) else {
         return ui.separator();
     };
-    let slot = crate::theme::section_gap(ui) * 2.0 + 1.0;
+    // `item_spacing` is applied around the allocated slot, so the slot only
+    // needs the remainder to land the line `section_gap` from each neighbour.
+    let side = (crate::theme::section_gap(ui) - ui.spacing().item_spacing.y).max(0.0);
+    let slot = side * 2.0 + 1.0;
     let (rect, response) = ui.allocate_exact_size(egui::vec2(0.0, slot), Sense::hover());
     // Test the full line, not the zero-width slot: a horizontally scrolled
     // viewport clips the slot's x even while most of the line is on screen.
@@ -124,26 +128,6 @@ pub fn advanced_section<R>(
     collapsible_section(ui, "Advanced", id_salt, add_contents)
 }
 
-/// Window chrome row: `trailing` controls pinned right, `bar` (title +
-/// navigation) in a left scroll overflow that never loses buttons. Shared by
-/// full-pane windows like the Data Editor.
-pub fn window_header(
-    ui: &mut egui::Ui,
-    overflow_id: &str,
-    trailing: impl FnOnce(&mut egui::Ui),
-    bar: impl FnOnce(&mut egui::Ui),
-) {
-    crate::widgets::fill_row(
-        ui,
-        |ui| trailing(ui),
-        |ui| {
-            crate::widgets::show_overflow(ui, overflow_id, 1.0, |ui| {
-                ui.horizontal(bar);
-            });
-        },
-    );
-}
-
 /// Floating control strip pinned inside `rect`'s bottom-right corner — replaces
 /// a reserved footer row without consuming layout height. `add_contents` paints
 /// right-to-left inside a window-frame chip (first widget at the right edge).
@@ -190,6 +174,30 @@ pub fn tinted_section<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui:
         );
     }
     inner.inner
+}
+
+/// Outer rect of the nearest framed ancestor (window, panel, card, popup)
+/// including its inner margin — the painted edge, not the content region.
+pub fn frame_outer_rect(ui: &egui::Ui) -> Option<Rect> {
+    for node in ui.stack().iter() {
+        let frame = node.frame();
+        let m = frame.inner_margin;
+        let framed = node.kind() == Some(UiKind::Frame)
+            && (m.left > 0 || m.right > 0 || !frame.stroke.is_empty());
+        if !framed {
+            continue;
+        }
+        let inner = if node.id == ui.id() {
+            ui.max_rect()
+        } else {
+            node.max_rect
+        };
+        return Some(Rect::from_min_max(
+            inner.min - egui::vec2(f32::from(m.left), f32::from(m.top)),
+            inner.max + egui::vec2(f32::from(m.right), f32::from(m.bottom)),
+        ));
+    }
+    None
 }
 
 /// Outer x-range of the section containing `ui`.

@@ -47,16 +47,15 @@ pub fn apply(ctx: &egui::Context) {
 
 /// Floating scrollbars that stay readable when content overflows.
 ///
-/// `floating_allocated_width = bar_width` reserves the full bar lane while a bar
-/// is shown, so the thin dormant bar — and the expanded hover bar — never paint
-/// or hit-test on top of widgets (egui's default of 0 draws them over content).
-/// Overflow is still measured against the outer rect for floating styles, so
-/// the reserved lane cannot trigger an extra H/V bar. Dormant handle opacity is
-/// raised so H/V bars are visible without requiring hover — otherwise narrow
-/// panels look clipped.
+/// `floating_allocated_width` stays 0: bars are a pure overlay at the viewport
+/// edge, so content keeps its full width/height and no lane is reserved. The
+/// thin dormant bar and the expanded hover bar (plus its `bar_width` hit rect)
+/// sit on top of the content edge — [`crate::widgets::visible_content_width`]
+/// subtracts that overlay where chrome must stay clear of it.
+/// Dormant handle opacity is raised so H/V bars are visible without requiring
+/// hover — otherwise narrow panels look clipped.
 pub fn scroll_style() -> egui::style::ScrollStyle {
     let mut s = egui::style::ScrollStyle::floating();
-    s.floating_allocated_width = s.bar_width;
     s.dormant_handle_opacity = 0.55;
     s.active_handle_opacity = 1.0;
     s.interact_handle_opacity = 1.0;
@@ -72,7 +71,7 @@ pub fn section_frame(style: &egui::Style) -> egui::Frame {
         .fill(frame_fill())
         .stroke(inner_stroke())
         .corner_radius(CornerRadius::same(4))
-        .inner_margin(egui::Margin::same(8))
+        .inner_margin(egui::Margin::same(6))
 }
 
 /// Full-width framed card, then a [`super::section_gap`] gap after it.
@@ -84,7 +83,7 @@ pub fn framed_section(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui
         crate::widgets::clamp_row_right_to_clip(ui);
         add_contents(ui);
     });
-    ui.add_space(super::section_gap(ui));
+    super::add_section_gap(ui);
 }
 
 #[cfg(test)]
@@ -106,15 +105,14 @@ mod tests {
     }
 
     #[test]
-    fn scrollbar_lane_is_reserved_so_bars_never_cover_widgets() {
+    fn scrollbars_overlay_the_edge_without_reserving_a_lane() {
         let s = scroll_style();
         assert!(s.floating);
-        // egui insets the content rect and clip by allocated_width() while a bar
-        // shows; reserving the full bar width keeps even the expanded hover bar
-        // (and its hit-test rect) off widgets. `floating()` defaults to 0 and
-        // paints the bar on top of content.
-        assert_eq!(s.floating_allocated_width, s.bar_width);
-        assert_eq!(s.allocated_width(), s.bar_width);
+        // Zero allocated width: egui leaves the content rect and clip
+        // untouched and paints the bar over the viewport edge, so scrollable
+        // content keeps the full extent and bars consume no space.
+        assert_eq!(s.floating_allocated_width, 0.0);
+        assert_eq!(s.allocated_width(), 0.0);
     }
 
     #[test]

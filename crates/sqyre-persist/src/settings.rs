@@ -199,7 +199,7 @@ pub enum OverlayVisibilityMode {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UiDensity {
-    /// Uniform 4 pt gaps.
+    /// 4 pt between sections, 2 pt between elements inside a section.
     Compact,
     /// 8 pt between sections, 4 pt between elements inside a section.
     #[default]
@@ -224,7 +224,8 @@ impl UiDensity {
     /// Gap between element groups inside a section (field rows, buttons, items).
     pub fn element_gap(self) -> f32 {
         match self {
-            Self::Compact | Self::Normal => 4.0,
+            Self::Compact => 2.0,
+            Self::Normal => 4.0,
             Self::Spaced => 8.0,
         }
     }
@@ -1275,11 +1276,11 @@ mod tests {
             .remove(serde_yaml::Value::String("ui_density".into()));
         let settings: UserSettings = serde_yaml::from_value(value).unwrap();
         assert_eq!(settings.ui_density, UiDensity::Normal);
-        // Section gaps scale 4/8/12; element gaps stay tight until Spaced.
+        // Section gaps scale 4/8/12; element gaps 2/4/8.
         assert_eq!(UiDensity::Compact.section_gap(), 4.0);
         assert_eq!(UiDensity::Normal.section_gap(), 8.0);
         assert_eq!(UiDensity::Spaced.section_gap(), 12.0);
-        assert_eq!(UiDensity::Compact.element_gap(), 4.0);
+        assert_eq!(UiDensity::Compact.element_gap(), 2.0);
         assert_eq!(UiDensity::Normal.element_gap(), 4.0);
         assert_eq!(UiDensity::Spaced.element_gap(), 8.0);
         assert_eq!(

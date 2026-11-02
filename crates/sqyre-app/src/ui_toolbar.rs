@@ -30,10 +30,7 @@ fn toolbar_icon_colored(
 /// Must be shown before the side panel so it spans the whole window width.
 pub fn top_bar(app: &mut SqyreApp, ui: &mut egui::Ui) {
     egui::Panel::top("app_top_bar")
-        .frame(
-            egui::Frame::side_top_panel(ui.style())
-                .inner_margin(egui::Margin::symmetric(8, theme::SPACE_4 as i8)),
-        )
+        .frame(egui::Frame::side_top_panel(ui.style()))
         .show(ui, |ui| {
             crate::widgets::show_overflow(ui, "app_top_bar", 1.0, |ui| {
                 brand_header(app, ui);
@@ -593,6 +590,5 @@ pub fn action_toolbar(
             force_openness = Some(expand);
         }
     });
-    ui.add_space(theme::element_gap(ui));
     force_openness
 }

@@ -1,8 +1,5 @@
 use eframe::egui::{self, Key, Modifiers};
 
-// Shared ScrollArea builders live in `widgets::scroll` (SSOT).
-pub use crate::widgets::dialog_scroll;
-
 /// Default search hint for popup pickers.
 pub const HINT_LIST: &str = "Search…";
 /// Default search hint for fixed left panes (data editor).
@@ -132,40 +129,52 @@ pub fn picker_searchable_scroll_ex(
     {
         let mut trailing = opts.trailing.take();
         let mut below_search = opts.below_search.take();
-        crate::widgets::show_overflow(ui, "picker_search_row", 1.0, |ui| {
-            crate::widgets::fill_row(
-                ui,
-                |ui| {
-                    if let Some(trailing) = trailing.as_mut() {
-                        trailing(ui);
-                    }
-                },
-                |ui| {
-                    // Fill leftover width without a fixed TextEdit min (default ~200)
-                    // that would floor the data-editor left pane above the split clamp.
-                    let out = crate::widgets::search_field(
-                        ui,
-                        search,
-                        crate::widgets::SearchFieldOpts {
-                            hint: opts.hint_text.unwrap_or_default(),
-                            focus_id,
-                            clearable: false,
-                            stable_id: None,
-                        },
-                    );
-                    if out.changed {
-                        search_changed = true;
-                    }
-                },
-            );
-        });
+        // `hint_text: None` hides the search field (query still filters); the
+        // row then exists only for the trailing buttons.
+        let has_search = opts.hint_text.is_some();
+        if has_search || trailing.is_some() {
+            crate::widgets::show_overflow(ui, "picker_search_row", 1.0, |ui| {
+                crate::widgets::fill_row(
+                    ui,
+                    |ui| {
+                        if let Some(trailing) = trailing.as_mut() {
+                            trailing(ui);
+                        }
+                    },
+                    |ui| {
+                        if !has_search {
+                            return;
+                        }
+                        // Fill leftover width without a fixed TextEdit min (default ~200)
+                        // that would floor the data-editor left pane above the split clamp.
+                        let out = crate::widgets::search_field(
+                            ui,
+                            search,
+                            crate::widgets::SearchFieldOpts {
+                                hint: opts.hint_text.unwrap_or_default(),
+                                focus_id,
+                                clearable: false,
+                                stable_id: None,
+                            },
+                        );
+                        if out.changed {
+                            search_changed = true;
+                        }
+                    },
+                );
+            });
+        }
         if let Some(below) = below_search.as_mut() {
             crate::widgets::show_overflow(ui, "picker_below_search", 0.45, |ui| {
                 below(ui);
             });
         }
+        // The divider is only meaningful under a painted row; with everything
+        // hidden it leaves dead space above the list.
+        if has_search || trailing.is_some() || below_search.is_some() {
+            crate::widgets::section_separator(ui);
+        }
     }
-    crate::widgets::section_separator(ui);
     let q = search.trim().to_ascii_lowercase();
     // Fixed panes (footer_reserve == 0) use remaining height only — no popup screen cap.
     let pane = opts.footer_reserve <= 0.0;
@@ -177,15 +186,20 @@ pub fn picker_searchable_scroll_ex(
     // Bidirectional: vertical-only + auto_shrink(false) expands to content width
     // and can push dialog edges off-screen when the pane is narrow.
     let max_w = ui.available_width().max(1.0);
-    let mut scroll = crate::widgets::dialog_scroll(max_w, max_h);
-    if let Some(salt) = opts.id_salt {
-        scroll = scroll.id_salt(salt);
-    }
-    scroll.show(ui, |ui| {
-        // Cap soft wrap to the viewport; hard min-widths still H-scroll via both axes.
-        ui.set_max_width(max_w);
-        body(ui, &q);
-    });
+    crate::widgets::show_dialog_scroll_mod(
+        ui,
+        max_w,
+        max_h,
+        |s| match opts.id_salt {
+            Some(salt) => s.id_salt(salt),
+            None => s,
+        },
+        |ui| {
+            // Cap soft wrap to the viewport; hard min-widths still H-scroll via both axes.
+            ui.set_max_width(max_w);
+            body(ui, &q);
+        },
+    );
     search_changed
 }
 

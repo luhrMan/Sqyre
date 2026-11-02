@@ -401,7 +401,6 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                         .weak()
                         .small(),
                     );
-                    ui.add_space(crate::theme::element_gap(ui));
                     ui.horizontal(|ui| {
                         request = ui
                             .button("Continue")
@@ -426,7 +425,6 @@ fn show_projection_run_gate(app: &mut SqyreApp, ctx: &egui::Context) {
                             .weak()
                             .small(),
                     );
-                    ui.add_space(crate::theme::element_gap(ui));
                     ui.horizontal(|ui| {
                         request = ui
                             .small_button("Try again")

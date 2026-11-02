@@ -296,9 +296,8 @@ fn stress_tree_summary_tooltip_discloses_full_type_text_at_scale_two() {
     harness.get_by_label(&format!("\"{full_text}\""));
 }
 
-/// Same size as the `command-palette.png` golden, where the first row sits at y≈161.
+/// Same size as the `command-palette.png` golden.
 const PALETTE_HARNESS_SIZE: [f32; 2] = [1000.0, 560.0];
-const FIRST_ROW_Y: f32 = 161.0;
 
 fn press_release(harness: &mut egui_kittest::Harness<'_, sqyre_app::SqyreApp>, at: egui::Pos2) {
     harness.hover_at(at);
@@ -328,7 +327,8 @@ fn command_palette_row_responds_to_mouse_click() {
     harness.get_by_label("Sqyre").click();
     harness.run_steps(4);
     assert!(harness.state().docs_command_palette_open());
-    press_release(&mut harness, egui::pos2(500.0, 190.0));
+    let row_center = harness.get_by_label("Open Data Editor").rect().center();
+    press_release(&mut harness, row_center);
     assert!(
         !harness.state().docs_command_palette_open(),
         "clicking a palette row should run it and close the palette"
@@ -357,7 +357,8 @@ fn command_palette_reopened_after_click_outside_responds_to_mouse_click() {
         .events
         .push(egui::Event::Text("settings".into()));
     harness.run_steps(2);
-    press_release(&mut harness, egui::pos2(500.0, FIRST_ROW_Y));
+    let row_center = harness.get_by_label("Open Settings").rect().center();
+    press_release(&mut harness, row_center);
     assert!(
         harness.state().docs_settings_open(),
         "reopened palette should run the clicked Open Settings row"
@@ -402,6 +403,94 @@ fn data_editor_new_program_writes_to_catalog() {
             .is_some(),
         "second New should uniquify the name"
     );
+}
+
+#[test]
+fn data_editor_header_search_filters_and_preserves_query() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_tab_for_docs("points");
+    });
+    harness.run();
+
+    // Selected-program list: the demo point row, no program headers, no pane search.
+    harness.get_by_label("center");
+    assert!(
+        harness.query_by_label("Search Points…").is_none(),
+        "search field is hidden until the magnifier is clicked"
+    );
+
+    harness.get_by_label("Search this tab's list").click();
+    harness.run();
+    harness.get_by_label("Search Points…").type_text("zzz");
+    harness.run();
+    harness.get_by_label("No matching points");
+
+    // Hiding suspends the filter but keeps the query text.
+    harness.get_by_label("Hide search").click();
+    harness.run();
+    assert!(harness.query_by_label("No matching points").is_none());
+    harness.get_by_label("center");
+
+    harness.get_by_label("Search this tab's list").click();
+    harness.run();
+    let field = harness.get_by_label("Search Points…");
+    assert_eq!(
+        field.value().as_deref(),
+        Some("zzz"),
+        "hidden search keeps its query"
+    );
+    harness.get_by_label("No matching points");
+}
+
+#[test]
+fn data_editor_scope_all_programs_restores_group_headers() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_tab_for_docs("points");
+    });
+    harness.run();
+    // Flat selected-program list: no program group header.
+    harness.get_by_label("center");
+    assert!(
+        harness.query_by_label("Demo Program").is_none(),
+        "program name only appears in the selector badge (with count)"
+    );
+
+    // The scope menu is part of the expanded search.
+    harness.get_by_label("Search this tab's list").click();
+    harness.run();
+    harness.get_by_label("List scope").click();
+    harness.run();
+    harness.get_by_label("All programs").click();
+    harness.run();
+
+    // Grouped view: the point row sits under its program header again.
+    harness.get_by_label("Demo Program");
+    harness.get_by_label("center");
+}
+
+#[test]
+fn data_editor_items_sort_menu_hosts_tag_priority() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_tab_for_docs("items");
+    });
+    harness.run();
+    assert!(
+        harness.query_by_label("Sort items").is_none(),
+        "sort icon is part of the collapsed search cluster"
+    );
+
+    harness.get_by_label("Search this tab's list").click();
+    harness.run();
+    harness.get_by_label("Sort items").click();
+    harness.run();
+    // "Tags" as a label also exists on the item form — the radio is a RadioButton.
+    harness
+        .get_by_role_and_label(eframe::egui::accesskit::Role::RadioButton, "Tags")
+        .click();
+    harness.run();
+
+    // Picking Tags keeps the popup open so the priority chips can be edited.
+    harness.get_by_label("Tag priority");
 }
 
 fn ui_scale_appearance_harness() -> egui_kittest::Harness<'static, sqyre_app::SqyreApp> {

@@ -25,9 +25,12 @@ pub const PANEL_SPLITTER_W: f32 = 6.0;
 /// see sqyre-persist, so they live here as plain `f32`s.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DensityGaps {
-    /// Gap between sections: framed cards, separator margins, subsection heads.
+    /// Total gap between sections: framed cards, separator margins, subsection
+    /// heads. Applied via [`add_section_gap`], which counts `item_spacing`
+    /// toward the total.
     pub section: f32,
-    /// Gap between element groups inside a section (field rows, buttons, items).
+    /// Total gap between element groups inside a section (field rows, buttons,
+    /// items). Also the baseline widget gap via `Spacing::item_spacing`.
     pub element: f32,
 }
 
@@ -71,6 +74,24 @@ pub fn section_gap(ui: &egui::Ui) -> f32 {
 /// rows, list items). Also the horizontal gap between elements.
 pub fn element_gap(ui: &egui::Ui) -> f32 {
     density(ui.ctx()).element
+}
+
+/// Advance the cursor so the previous and next widgets sit [`section_gap`]
+/// apart. `Ui::add_space` stacks on the `item_spacing` the layout already
+/// inserts between widgets, so only the difference is requested — the token is
+/// the *total* gap. Elements need no helper: `item_spacing` already separates
+/// widgets by [`element_gap`].
+pub fn add_section_gap(ui: &mut egui::Ui) {
+    pad_to_gap(ui, section_gap(ui));
+}
+
+fn pad_to_gap(ui: &mut egui::Ui, gap: f32) {
+    let auto = if ui.layout().main_dir().is_horizontal() {
+        ui.spacing().item_spacing.x
+    } else {
+        ui.spacing().item_spacing.y
+    };
+    ui.add_space((gap - auto).max(0.0));
 }
 
 /// Sqyre gold/yellow primary (`#dc9d2e`).

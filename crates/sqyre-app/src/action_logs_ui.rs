@@ -310,9 +310,13 @@ pub fn show_logs_window(
             show_zoom_view(ui, action_id, state, &entries, list_h, top);
         } else {
             let list_w = crate::widgets::visible_width(ui);
-            crate::pickers::dialog_scroll(list_w, list_h)
-                .stick_to_bottom(state.follow && is_running)
-                .show(ui, |ui| {
+            let stick = state.follow && is_running;
+            crate::widgets::show_dialog_scroll_mod(
+                ui,
+                list_w,
+                list_h,
+                |s| s.stick_to_bottom(stick),
+                |ui| {
                     ui.set_max_width(list_w);
                     if entries.is_empty() {
                         ui.label("No logs yet — run the macro.");
@@ -353,7 +357,8 @@ pub fn show_logs_window(
                             &mut hovered_now,
                         );
                     }
-                });
+                },
+            );
         }
 
         // ── Desktop outline feed (hover wins over pinned) ───────────────
@@ -887,7 +892,7 @@ fn flush_item_gallery(
     if pending.is_empty() {
         return;
     }
-    ui.add_space(crate::theme::section_gap(ui));
+    crate::theme::add_section_gap(ui);
     crate::widgets::title_with_count(
         ui,
         egui::RichText::new("Items — click an image to inspect processing & finds")
@@ -895,7 +900,6 @@ fn flush_item_gallery(
             .small(),
         pending.len(),
     );
-    ui.add_space(crate::theme::element_gap(ui));
 
     let avail = crate::widgets::visible_content_width(ui);
     let (card_w, cols) = item_gallery_metrics(pending.len(), avail);
@@ -935,7 +939,6 @@ fn flush_item_gallery(
         ui.spacing_mut().item_spacing = old_spacing;
     });
     pending.clear();
-    ui.add_space(crate::theme::element_gap(ui));
 }
 
 #[expect(
@@ -1078,7 +1081,6 @@ fn show_item_detail(
                 ));
             });
         }
-        ui.add_space(crate::theme::element_gap(ui));
     }
 
     if !details.is_empty() {
@@ -1086,7 +1088,6 @@ fn show_item_detail(
         for line in details {
             ui.monospace(line);
         }
-        ui.add_space(crate::theme::element_gap(ui));
     }
 
     ui.label(
@@ -1094,7 +1095,6 @@ fn show_item_detail(
             .strong()
             .small(),
     );
-    ui.add_space(crate::theme::element_gap(ui));
     let avail_w = ui.available_width().max(120.0);
     for (si, step) in steps.iter().enumerate() {
         show_labeled_image(
@@ -1121,7 +1121,6 @@ fn show_labeled_image(
     image: &LogImage,
     avail_w: f32,
 ) {
-    ui.add_space(crate::theme::element_gap(ui));
     ui.group(|ui| {
         ui.label(egui::RichText::new(&image.label).strong().small());
         ui.label(

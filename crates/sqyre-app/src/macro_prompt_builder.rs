@@ -131,11 +131,15 @@ impl MacroPromptBuilderUi {
         // nothing can overlap, and short windows scroll instead of clipping.
         let w = crate::widgets::visible_width(ui);
         let h = ui.available_height();
-        crate::widgets::dialog_scroll(w, h)
-            .id_salt("prompt_body")
-            .show(ui, |ui| {
+        crate::widgets::show_dialog_scroll_mod(
+            ui,
+            w,
+            h,
+            |s| s.id_salt("prompt_body"),
+            |ui| {
                 self.body_inner(ui, macros, catalog, suggestions, outcome);
-            });
+            },
+        );
     }
 
     fn body_inner(
@@ -160,7 +164,6 @@ impl MacroPromptBuilderUi {
             NL_ROWS,
         );
 
-        ui.add_space(crate::theme::element_gap(ui));
         crate::widgets::show_overflow(ui, "prompt_generate", 1.0, |ui| {
             ui.horizontal(|ui| {
                 if ui
@@ -420,7 +423,7 @@ fn show_at_autocomplete(
         .show(|ui| {
             ui.set_min_width(popup_width);
             ui.set_max_height(200.0);
-            crate::pickers::dialog_scroll(popup_width, 200.0).show(ui, |ui| {
+            crate::widgets::show_dialog_scroll(ui, popup_width, 200.0, |ui| {
                 ui.set_max_width(popup_width);
                 for (i, sug) in filtered.iter().enumerate() {
                     let selected = i == nav.selected;

@@ -13,8 +13,6 @@ pub fn text_width(ui: &egui::Ui, text: &str, style: egui::TextStyle) -> f32 {
 /// One entry in an [`always_bar`] row.
 #[derive(Clone, Copy, Debug)]
 pub enum OverflowItem<'a> {
-    /// Non-interactive caption (for example "Basic" / "Advanced").
-    Caption(&'a str),
     /// Visual divider between button sections.
     Separator,
     /// Clickable section or tab. Paints `icon` only — `label` stays the
@@ -30,8 +28,8 @@ pub enum OverflowItem<'a> {
 /// Callers that need off-pane content reachable wrap the row in
 /// [`super::show_overflow`].
 ///
-/// Returns the index into `items` of a choice clicked this frame. Captions and
-/// separators stay in the slice so indexes match the caller's targets.
+/// Returns the index into `items` of a choice clicked this frame. Separators
+/// stay in the slice so indexes match the caller's targets.
 pub fn always_bar(ui: &mut egui::Ui, items: &[OverflowItem<'_>]) -> Option<usize> {
     paint_items(ui, items)
 }
@@ -71,12 +69,6 @@ fn paint_items(ui: &mut egui::Ui, items: &[OverflowItem<'_>]) -> Option<usize> {
     let mut picked = None;
     for (i, item) in items.iter().enumerate() {
         match item {
-            OverflowItem::Caption(text) => {
-                if i > 0 {
-                    ui.add_space(crate::theme::element_gap(ui));
-                }
-                ui.label(egui::RichText::new(*text).weak().small());
-            }
             OverflowItem::Separator => {
                 crate::widgets::section_separator(ui);
             }
@@ -100,7 +92,7 @@ mod tests {
     use egui::accesskit::Role;
     use egui_kittest::kittest::Queryable;
 
-    fn section_items() -> [OverflowItem<'static>; 7] {
+    fn section_items() -> [OverflowItem<'static>; 6] {
         [
             OverflowItem::Choice {
                 label: "Programs",
@@ -114,7 +106,6 @@ mod tests {
                 selected: false,
             },
             OverflowItem::Separator,
-            OverflowItem::Caption("Advanced"),
             OverflowItem::Choice {
                 label: "Coordinates",
                 icon: egui_phosphor::regular::CROSSHAIR,
@@ -172,6 +163,6 @@ mod tests {
         harness.run();
         harness.get_by_label("Tools").click();
         harness.run();
-        assert_eq!(*harness.state(), Some(6));
+        assert_eq!(*harness.state(), Some(5));
     }
 }

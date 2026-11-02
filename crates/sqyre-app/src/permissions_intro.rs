@@ -90,17 +90,17 @@ impl PermissionsIntro {
                 + crate::theme::section_gap(ui);
             let scroll_h = (bounds.height() - margin.y - ui.min_rect().height() - footer_h)
                 .max(ui.spacing().interact_size.y);
-            crate::widgets::scroll_vertical()
-                .id_salt("sqyre_permissions_intro_body")
-                .max_height(scroll_h)
-                .show(ui, |ui| {
+            crate::widgets::show_scroll_edge(
+                ui,
+                crate::widgets::scroll_vertical()
+                    .id_salt("sqyre_permissions_intro_body")
+                    .max_height(scroll_h),
+                |ui| {
                     for item in &self.items {
                         paint_item(ui, ctx, item);
-                        ui.add_space(crate::theme::element_gap(ui));
                     }
                     if let Some(note) = self.note {
                         ui.label(RichText::new(note).weak().small());
-                        ui.add_space(crate::theme::element_gap(ui));
                     }
                     ui.label(
                         RichText::new("You can review these any time in Settings → Permissions.")
@@ -108,7 +108,6 @@ impl PermissionsIntro {
                             .small(),
                     );
                 });
-            ui.add_space(crate::theme::element_gap(ui));
             if self.showing() {
                 let clicked = ui
                     .button("Continue")

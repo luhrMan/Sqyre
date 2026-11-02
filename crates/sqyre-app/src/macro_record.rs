@@ -312,9 +312,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                 ));
                 let points_h = (ui.available_height() * 0.28).clamp(96.0, 220.0);
                 let points_w = crate::widgets::visible_width(ui);
-                crate::pickers::dialog_scroll(points_w, points_h)
-                    .id_salt("macro_record_points")
-                    .show(ui, |ui| {
+                crate::widgets::show_dialog_scroll_mod(ui, points_w, points_h, |s| s.id_salt("macro_record_points"), |ui| {
                         ui.set_max_width(points_w);
                         for (i, pt) in points.iter_mut().enumerate() {
                             let mut row_hovered = false;
@@ -402,9 +400,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
             let footer_reserve = if status.is_set() { 60.0 } else { 40.0 };
             let actions_h = (ui.available_height() - footer_reserve).max(80.0);
             let actions_w = crate::widgets::visible_width(ui);
-            crate::pickers::dialog_scroll(actions_w, actions_h)
-                .id_salt("macro_record_actions")
-                .show(ui, |ui| {
+            crate::widgets::show_dialog_scroll_mod(ui, actions_w, actions_h, |s| s.id_salt("macro_record_actions"), |ui| {
                     ui.set_max_width(actions_w);
                     let actions: Vec<Action> = draft.root.children().to_vec();
                     for action in &actions {

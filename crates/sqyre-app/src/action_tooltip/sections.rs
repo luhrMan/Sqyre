@@ -60,5 +60,5 @@ pub fn tip_advanced(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui))
             .data_mut(|d| d.insert_temp(edit_tip_refit_id(), true));
         ui.ctx().request_repaint();
     }
-    ui.add_space(theme::section_gap(ui));
+    theme::add_section_gap(ui);
 }

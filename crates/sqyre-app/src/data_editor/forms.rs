@@ -15,10 +15,9 @@ use super::helpers::{
 use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::{
-    area_size_from_opts, catalog_search_area_pixel_size, collection_size_label, paint_disk_preview,
-    paint_preview_coord_chip, paint_preview_floaters, paint_search_area_preview_sizes,
-    paint_zoomable_atlas_preview, paint_zoomable_collection_preview, pixel_size_text,
-    show_file_hover, CardinalEdge, RecordFloater,
+    catalog_search_area_pixel_size, paint_disk_preview, paint_preview_coord_chip,
+    paint_preview_floaters, paint_search_area_preview_sizes, paint_zoomable_atlas_preview,
+    paint_zoomable_collection_preview, show_file_hover, CardinalEdge, RecordFloater,
 };
 #[cfg(feature = "native-runtime")]
 use crate::help_text as ht;
@@ -303,36 +302,36 @@ impl DataEditor {
         };
         match self.tab {
             EditorTab::Programs => self.draw_programs_form(ui, paint, ctx),
-            EditorTab::Items => self.draw_items_form(ui, paint, settings),
+            EditorTab::Items => self.draw_items_form(ui, paint),
             EditorTab::Points => {
-                self.draw_points_form(ui, paint, ctx, settings);
+                self.draw_points_form(ui, paint, ctx);
                 false
             }
             EditorTab::SearchAreas => {
-                self.draw_search_areas_form(ui, paint, ctx, settings);
+                self.draw_search_areas_form(ui, paint, ctx);
                 false
             }
             EditorTab::Masks => {
-                self.draw_masks_form(ui, paint, ctx, settings);
+                self.draw_masks_form(ui, paint, ctx);
                 false
             }
             EditorTab::Collections => {
-                self.draw_collections_form(ui, paint, settings);
+                self.draw_collections_form(ui, paint);
                 false
             }
             EditorTab::Atlases => {
-                self.draw_atlases_form(ui, paint, settings);
+                self.draw_atlases_form(ui, paint);
                 false
             }
             EditorTab::ScreenCap => {
-                self.draw_screen_cap_form(ui, paint, ctx, settings);
+                self.draw_screen_cap_form(ui, paint, ctx);
                 false
             }
             EditorTab::PixelCheck => {
                 self.paint_pixel_check_form(ui, paint, ctx, settings);
                 false
             }
-            EditorTab::Overlay => self.draw_overlay_form(ui, paint, ctx, settings),
+            EditorTab::Overlay => self.draw_overlay_form(ui, paint, ctx),
         }
     }
 
@@ -383,7 +382,6 @@ impl DataEditor {
             use crate::widgets::match_settings;
             use sqyre_domain::CoordinateRef;
 
-            ui.add_space(crate::theme::element_gap(ui));
             if self.selected_entity.is_none() {
                 self.stop_pixel_check_compute();
                 return;
@@ -429,7 +427,6 @@ impl DataEditor {
                     };
                 }
             });
-            ui.add_space(crate::theme::element_gap(ui));
             if let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
@@ -454,7 +451,6 @@ impl DataEditor {
                     }
                 }
             }
-            ui.add_space(crate::theme::element_gap(ui));
             match_settings::paint_match_settings(
                 ui,
                 &mut self.pixel_check.tolerance,
@@ -480,9 +476,6 @@ impl DataEditor {
                 &self.form_right,
                 &self.form_bottom,
             );
-            if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
-                ui.weak(pixel_size_text(w, h));
-            }
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),

@@ -216,7 +216,7 @@ impl VariablesPanelUi {
         let list_h = (max_h - crate::widgets::FOOTER_RESERVE_ACTION).max(60.0);
         let list_w = crate::widgets::visible_width(ui);
         // Dense name=value rows: Extend so long values H-scroll instead of wrap/clip.
-        crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
+        crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
             crate::widgets::enable_dense_row_extend(ui);
             if filtered.is_empty() {
                 crate::widgets::list_vacancy(ui, &q, 0, "variables");
@@ -239,11 +239,10 @@ impl VariablesPanelUi {
             )
             .weak(),
         );
-        ui.add_space(crate::theme::element_gap(ui));
         let catalog = builtin_variable_catalog(num_monitors);
         let list_h = (max_h - 28.0).max(60.0);
         let list_w = crate::widgets::visible_width(ui);
-        crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
+        crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
             crate::widgets::enable_dense_row_extend(ui);
             for info in &catalog {
                 ui.horizontal(|ui| {
@@ -344,7 +343,7 @@ impl VariablesPanelUi {
         let list_w = crate::widgets::visible_width(ui);
         let declared_q = self.declared_filter.trim().to_ascii_lowercase();
 
-        crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
+        crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
             crate::widgets::enable_dense_row_extend(ui);
             if macro_.variable_decls.is_empty() {
                 crate::widgets::list_vacancy(ui, "", 0, "declared variables");

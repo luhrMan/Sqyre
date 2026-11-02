@@ -116,6 +116,15 @@ fn apply_dialog_bounds<'a>(window: egui::Window<'a>, ctx: &egui::Context) -> egu
     window.constrain_to(rect).max_size(rect.size())
 }
 
+/// egui's default title frame inherits `window_margin` (6pt) on every side,
+/// which inflates the bar well past the Heading row it already has to hold.
+/// Dialogs get a slim bar: horizontal margins match the window, vertical 2pt.
+/// Applies to every `fit_dialog_*` window; ignored where `title_bar` is false.
+fn compact_title_frame(style: &egui::Style) -> egui::Frame {
+    let m = style.spacing.window_margin;
+    egui::Frame::window(style).inner_margin(egui::Margin::symmetric(m.left, 2))
+}
+
 fn fit_dialog_common<'a>(
     window: egui::Window<'a>,
     ctx: &egui::Context,
@@ -124,6 +133,7 @@ fn fit_dialog_common<'a>(
 ) -> egui::Window<'a> {
     let window = window.id(id);
     let window = apply_dialog_bounds(window, ctx);
+    let window = window.title_frame(compact_title_frame(ctx.global_style().as_ref()));
     match pending_scale {
         Some(pending) => apply_pending_viewport_scale(window, ctx, id, pending),
         None => window,
@@ -178,13 +188,13 @@ pub fn visible_height(ui: &egui::Ui) -> f32 {
     visible_size(ui).y
 }
 
-/// Right-edge width still covered by a floating vertical scrollbar.
+/// Right-edge width covered by a floating vertical scrollbar.
 ///
-/// [`crate::theme::scroll_style`] reserves the full lane
-/// (`floating_allocated_width = bar_width`), so this is 0 under the app style —
-/// egui already insets the content clip past the bar. egui's default style
-/// leaves `bar_width` uncovered, so this stays nonzero in bare test contexts.
-/// Subtract when sizing columns or anchoring chrome to the visible right edge.
+/// [`crate::theme::scroll_style`] reserves no lane
+/// (`floating_allocated_width = 0`), so the bar — and its `bar_width`-wide
+/// hit rect — overlay the content edge: this returns `bar_width` under the
+/// app style. Subtract when sizing columns or anchoring chrome to the
+/// visible right edge.
 pub fn floating_scrollbar_overlay_width(ui: &egui::Ui) -> f32 {
     let scroll = &ui.spacing().scroll;
     if scroll.floating {
@@ -201,17 +211,17 @@ pub fn visible_content_width(ui: &egui::Ui) -> f32 {
 
 /// Shrink this row's `max_width` so its right edge lands on the painted clip.
 ///
-/// Inside [`super::dialog_scroll`] the reserved scrollbar lane
-/// ([`crate::theme::scroll_style`]) insets the content clip but not
-/// `max_rect`, so `Layout::right_to_left` controls anchored at
-/// `max_rect().right()` land under/past the bar. `set_max_width` anchors at
-/// the cursor, so the bound is `clip.right - cursor.left` — call after any
-/// left-side content, immediately before the right-aligned widgets.
+/// `Layout::right_to_left` controls anchored at `max_rect().right()` can land
+/// past the clip when a parent clips tighter than the layout bound (scroll
+/// viewport edges, nested panes). `set_max_width` anchors at the cursor, so
+/// the bound is `clip.right - cursor.left` — call after any left-side
+/// content, immediately before the right-aligned widgets. For rows that must
+/// also clear a floating scrollbar's overlay, see
+/// [`floating_scrollbar_overlay_width`].
 pub fn clamp_row_right_to_clip(ui: &mut egui::Ui) {
     // Clip is the paint bound, max_rect the layout bound — take the tighter of
-    // the two. In a scroll pane the clip is narrower (scrollbar lane); in bare
-    // test contexts the clip is wider, where `set_max_width` to the clip would
-    // expand the row past its pane.
+    // the two. In bare test contexts the clip can be wider, where
+    // `set_max_width` to the clip would expand the row past its pane.
     let right = ui.max_rect().right().min(ui.clip_rect().right());
     ui.set_max_width((right - ui.cursor().min.x).max(1.0));
 }
@@ -253,7 +263,7 @@ pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui))
 /// Prefer this for simple dialogs whose body is mostly one scroll region.
 /// Panels that allocate their own split/scroll layout should use
 /// [`fit_dialog_popup`] plus [`fill_resize_body`] and an inner
-/// [`crate::pickers::dialog_scroll`].
+/// [`crate::widgets::show_dialog_scroll`].
 pub fn fit_dialog_window<'a>(
     window: egui::Window<'a>,
     ctx: &egui::Context,

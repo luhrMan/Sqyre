@@ -266,9 +266,11 @@ impl SettingsUi {
         style
             .text_styles
             .insert(TextStyle::Button, egui::FontId::proportional(base));
+        // Heading also sizes the window title bar (egui allocates its buttons
+        // at the Heading row height), so a modest multiplier keeps dialogs slim.
         style.text_styles.insert(
             TextStyle::Heading,
-            egui::FontId::proportional((base * 1.35).round()),
+            egui::FontId::proportional((base * 1.15).round()),
         );
         style
             .text_styles
@@ -352,7 +354,8 @@ impl SettingsUi {
         let d = Self::effective_density(ctx, settings);
         let gaps = crate::theme::DensityGaps::new(d.section_gap(), d.element_gap());
         let mut style = (*ctx.global_style()).clone();
-        // egui's 8pt default doubled the app's 4pt element-gap convention.
+        // `item_spacing` IS the element gap: widgets sit `element` points
+        // apart with no per-row overrides. `add_section_gap` tops sections up.
         style.spacing.item_spacing = egui::vec2(gaps.element, gaps.element);
         style.spacing.text_edit_width = if d == UiDensity::Compact {
             200.0
@@ -584,9 +587,12 @@ impl SettingsUi {
         );
         {
             let content_w = right_ui.max_rect().width();
-            crate::pickers::dialog_scroll(content_w, body_h)
-                .id_salt("user_settings_content")
-                .show(&mut right_ui, |ui| {
+            crate::widgets::show_dialog_scroll_mod(
+                &mut right_ui,
+                content_w,
+                body_h,
+                |s| s.id_salt("user_settings_content"),
+                |ui| {
                     // Soft-wrap to the painted clip (the reserved scrollbar
                     // lane insets it past `max_rect`); both-axis scroll covers
                     // hard min-width overflows.
@@ -624,7 +630,7 @@ impl SettingsUi {
                             if setting_visible(&q, section_hit, DATA_LOCATION)
                                 && setting_visible(&q, section_hit, DATA_BACKUP)
                             {
-                                ui.add_space(crate::theme::section_gap(ui));
+                                crate::theme::add_section_gap(ui);
                             }
                             self.draw_backup(ui, db, macros, catalog, &q, section_hit);
                         }
@@ -634,7 +640,8 @@ impl SettingsUi {
                             self.draw_appearance(ui, ctx, &q, section_hit)
                         }
                     }
-                });
+                },
+            );
         }
 
         if footer > 0.0 {
@@ -1065,7 +1072,6 @@ impl SettingsUi {
 
             let flatpak = sqyre_update::is_flatpak_install();
             if flatpak {
-                ui.add_space(crate::theme::element_gap(ui));
                 ui.label(
                     egui::RichText::new(
                         "Flatpak keeps a private data copy by default. To share macros \
@@ -1182,7 +1188,6 @@ impl SettingsUi {
                 }
             });
 
-            ui.add_space(crate::theme::element_gap(ui));
             ui.label(
                 egui::RichText::new(format!("Backups folder: {}", backups_dir().display()))
                     .weak()
@@ -1205,7 +1210,6 @@ impl SettingsUi {
                 }
             }
 
-            ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
                 if ui.small_button("Back up now").clicked() {
                     self.run_manual_backup();
@@ -1329,7 +1333,6 @@ impl SettingsUi {
         }
 
         if setting_visible(q, section_hit, SETTING_UPDATE_ACTIONS) {
-            ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
                 let busy = update.is_busy();
                 if ui
@@ -1355,7 +1358,6 @@ impl SettingsUi {
                 }
             });
 
-            ui.add_space(crate::theme::element_gap(ui));
             let status = match &update.state {
                 UpdateState::Idle => "Update status: idle".to_string(),
                 UpdateState::Unavailable { reason } => reason.clone(),
@@ -1733,7 +1735,6 @@ impl SettingsUi {
         }
 
         if setting_visible(q, section_hit, SETTING_FONT_SIZE) {
-            ui.add_space(crate::theme::element_gap(ui));
             ui.horizontal(|ui| {
                 ui.label("Font size:");
                 let mut v = self.settings.ui_font_size;
@@ -1820,7 +1821,6 @@ impl SettingsUi {
                 .iter()
                 .any(|&(_, label)| setting_visible(q, false, &[label]));
         if show_colors {
-            ui.add_space(crate::theme::element_gap(ui));
             ui.label(egui::RichText::new("Macro tree action colors").strong());
 
             let is_dark = ui.visuals().dark_mode;
@@ -2194,7 +2194,7 @@ fn sidebar_width(ui: &egui::Ui) -> f32 {
 /// Bold title for a group of settings within a section page.
 fn subsection_heading(ui: &mut egui::Ui, first: &mut bool, title: &str) {
     if !std::mem::take(first) {
-        ui.add_space(crate::theme::section_gap(ui));
+        crate::theme::add_section_gap(ui);
     }
     ui.label(egui::RichText::new(title).strong());
 }

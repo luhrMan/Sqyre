@@ -468,6 +468,11 @@ pub type ComboOptionHover<'a> = dyn FnMut(&mut egui::Ui, &egui::Response, &str) 
 pub type ComboOptionIcon<'a> =
     dyn FnMut(&egui::Context, &str) -> Option<eframe::egui::TextureHandle> + 'a;
 
+/// Display-only label transform for combo options and the closed button in
+/// [`searchable_combo`] — e.g. appending a count ("Demo Program (3)").
+/// Fuzzy matching and the stored `value` still use the raw option string.
+pub type ComboOptionLabel<'a> = dyn FnMut(&str) -> String + 'a;
+
 /// Popup list height for searchable combos (egui default [`Spacing::combo_height`] is only 200).
 ///
 /// Sized from the window so long catalogs (programs, masks, macros) stay easy to browse.
@@ -492,6 +497,8 @@ pub struct SearchableComboOpts<'a> {
     pub on_option_hover: Option<&'a mut ComboOptionHover<'a>>,
     /// Leading icon drawn on each option row and beside the closed button.
     pub option_icon: Option<&'a mut ComboOptionIcon<'a>>,
+    /// Display label transform (counts, decorations); `None` shows the raw option.
+    pub option_label: Option<&'a mut ComboOptionLabel<'a>>,
 }
 
 /// Searchable combo for unbounded / growing option lists (programs, masks, macros, …).
@@ -511,11 +518,15 @@ pub fn searchable_combo(
         width,
         mut on_option_hover,
         mut option_icon,
+        mut option_label,
     } = opts;
     let display = if value.is_empty() {
         empty_text.to_string()
     } else {
-        value.clone()
+        option_label
+            .as_mut()
+            .map(|f| f(value.as_str()))
+            .unwrap_or_else(|| value.clone())
     };
 
     let orphan = (!value.is_empty() && !options.iter().any(|o| o == value)).then(|| value.clone());
@@ -612,8 +623,11 @@ pub fn searchable_combo(
                     continue;
                 }
                 any = true;
-                let resp =
-                    paint_combo_option(ui, value, opt.as_str(), opt.as_str(), &mut option_icon);
+                let label = option_label
+                    .as_mut()
+                    .map(|f| f(opt.as_str()))
+                    .unwrap_or_else(|| opt.clone());
+                let resp = paint_combo_option(ui, value, opt.as_str(), &label, &mut option_icon);
                 if let Some(cb) = on_option_hover.as_mut() {
                     cb(ui, &resp, opt.as_str());
                 }
@@ -741,6 +755,7 @@ mod tests {
                         width: None,
                         on_option_hover: None,
                         option_icon: None,
+                        option_label: None,
                     },
                 );
             },

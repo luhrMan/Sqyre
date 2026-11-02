@@ -417,7 +417,6 @@ fn paint_tag_group(
                     format!("{path}/{seg}")
                 };
                 // Nested headers: no root separators; slight indent without expand_to_include_x.
-                ui.add_space(crate::theme::element_gap(ui));
                 ui.horizontal(|ui| {
                     ui.add_space(NEST_INDENT);
                     // Item spacing sits between the indent and the column; leaving it
@@ -578,7 +577,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
             egui::Frame::side_top_panel(ui.style()).inner_margin(egui::Margin {
                 left: crate::theme::SPACE_8 as i8,
                 right: crate::theme::SPACE_8 as i8,
-                top: crate::theme::SPACE_4 as i8,
+                top: crate::theme::SPACE_2 as i8,
                 bottom: crate::theme::SPACE_8 as i8,
             }),
         )
@@ -649,7 +648,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     .layout(egui::Layout::top_down(egui::Align::Min)),
             );
             list_ui.set_clip_rect(list_rect.intersect(ui.clip_rect()));
-            crate::pickers::dialog_scroll(pane_w, list_h).show(&mut list_ui, |ui| {
+            crate::widgets::show_dialog_scroll(&mut list_ui, pane_w, list_h, |ui| {
                 let list_w = ui.available_width().min(pane_w);
                 ui.set_max_width(list_w);
                 let filter = app.macro_list_filter.trim().to_string();
@@ -765,9 +764,7 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     None => {}
                 }
             });
-            ui.add_space(crate::theme::element_gap(ui));
             paint_hotkey_tag_footer(app, ui);
-            ui.add_space(crate::theme::element_gap(ui));
         });
     app.macro_list_open = open;
 

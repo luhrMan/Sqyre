@@ -398,18 +398,6 @@ pub(crate) fn collection_cell_pixel_size(
     exclusive_pixel_size(lx, ty, rx, by)
 }
 
-pub(crate) fn collection_size_label(area: (i32, i32), rows: i32, cols: i32) -> String {
-    let (aw, ah) = area;
-    match collection_cell_pixel_size(aw, ah, rows, cols) {
-        Some((cw, ch)) => format!(
-            "total {} · cell {}",
-            pixel_size_text(aw, ah),
-            pixel_size_text(cw, ch)
-        ),
-        None => pixel_size_text(aw, ah),
-    }
-}
-
 pub(crate) fn area_size_from_opts(
     left: Option<i32>,
     top: Option<i32>,
@@ -1056,10 +1044,6 @@ mod tests {
     #[test]
     fn collection_cell_splits_area() {
         assert_eq!(collection_cell_pixel_size(100, 60, 2, 2), Some((50, 30)));
-        assert_eq!(
-            collection_size_label((100, 60), 2, 2),
-            "total 100×60 px · cell 50×30 px"
-        );
         assert_eq!(collection_cell_pixel_size(100, 60, 3, 2), Some((50, 20)));
     }
 

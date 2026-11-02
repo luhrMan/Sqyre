@@ -16,7 +16,6 @@ impl DataEditor {
         let CatalogPaint { catalog, icons, .. } = paint;
         let FormCtx { macros, .. } = ctx;
         paint_name_field(ui, &mut self.form_name);
-        ui.add_space(crate::theme::element_gap(ui));
         let title = self.form_window_title.trim().to_string();
         let path = self.form_process_path.trim().to_string();
         // Program name is the window title when bound; the path falls back to
@@ -91,7 +90,6 @@ impl DataEditor {
                 );
             }
         });
-        ui.add_space(crate::theme::element_gap(ui));
         let macro_tag_completions = crate::macro_meta::collect_all_macro_tags(macros);
         crate::widgets::tag_chip_editor(
             ui,
@@ -111,13 +109,9 @@ impl DataEditor {
         &mut self,
         ui: &mut egui::Ui,
         paint: &mut CatalogPaint<'_>,
-        settings: &mut UserSettings,
     ) -> bool {
         let CatalogPaint { catalog, icons, .. } = paint;
-        self.program_selector(ui, catalog, icons, settings);
-        ui.add_space(crate::theme::element_gap(ui));
         paint_name_field(ui, &mut self.form_name);
-        ui.add_space(crate::theme::element_gap(ui));
         let tag_submit = self.paint_item_param_fields(ui, catalog, icons);
         if let (Some(prog), Some(item)) =
             (self.selected_program.clone(), self.selected_entity.clone())
@@ -152,7 +146,6 @@ impl DataEditor {
             },
         )
         .submitted;
-        ui.add_space(crate::theme::element_gap(ui));
         crate::widgets::wrapped_row(ui, |ui| {
             for (icon, label, help_text, value, range) in [
                 (
@@ -187,7 +180,6 @@ impl DataEditor {
                 );
             }
         });
-        ui.add_space(crate::theme::element_gap(ui));
         let masks: Vec<String> = self
             .selected_program
             .as_deref()
@@ -225,6 +217,7 @@ impl DataEditor {
                         width: None,
                         on_option_hover: Some(&mut on_hover),
                         option_icon: None,
+                        option_label: None,
                     },
                 ),
                 help::DE_MASK,

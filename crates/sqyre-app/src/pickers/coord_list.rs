@@ -1,6 +1,6 @@
 use super::items_grid::set_collapsing_openness;
 use super::query::fuzzy_match_fold;
-use super::scroll::{dialog_scroll, maybe_scroll_to, popup_scroll_max_height};
+use super::scroll::{maybe_scroll_to, popup_scroll_max_height};
 use super::types::{CollectionCellPick, CoordKind};
 use crate::paint_ctx::CatalogPaint;
 use crate::preview_tooltip::PreviewKind;
@@ -65,7 +65,7 @@ pub fn paint_coord_ref_list(
         CoordKind::Point => "points",
         CoordKind::SearchArea => "search areas",
     };
-    dialog_scroll(list_w, list_h).show(ui, |ui| {
+    crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
         ui.set_max_width(list_w);
         let mut visible = 0usize;
         for prog in catalog.program_names() {
@@ -261,7 +261,6 @@ pub fn paint_coord_ref_list(
                         }
                     }
                 });
-            ui.add_space(crate::theme::element_gap(ui));
         }
         crate::widgets::list_vacancy(ui, &q, visible, entity_plural);
     });

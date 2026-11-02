@@ -915,7 +915,7 @@ mod inner {
             .interactable(false)
             .show(ctx, |ui| {
                 egui::Frame::popup(ui.style())
-                    .inner_margin(egui::Margin::symmetric(14, 12))
+                    .inner_margin(egui::Margin::symmetric(10, 8))
                     .show(ui, |ui| {
                         ui.label(
                             egui::RichText::new(format!("{:.1}% match", h.closeness_pct))

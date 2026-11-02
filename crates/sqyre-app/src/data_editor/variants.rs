@@ -154,7 +154,6 @@ impl DataEditor {
                         variant: variant.clone(),
                     });
                 }
-                ui.add_space(crate::theme::element_gap(ui));
             }
         });
     }

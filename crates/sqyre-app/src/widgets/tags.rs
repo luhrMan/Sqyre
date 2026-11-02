@@ -382,8 +382,10 @@ pub fn tag_chip_editor(
             .show(|ui| {
                 ui.set_min_width(popup_width);
                 ui.set_max_height(TAG_SUGGEST_POPUP_HEIGHT);
-                crate::pickers::dialog_scroll(popup_width, TAG_SUGGEST_POPUP_HEIGHT).show(
+                crate::widgets::show_dialog_scroll(
                     ui,
+                    popup_width,
+                    TAG_SUGGEST_POPUP_HEIGHT,
                     |ui| {
                         ui.set_max_width(popup_width);
                         for (i, sug) in suggestions.iter().enumerate() {

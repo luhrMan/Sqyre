@@ -501,7 +501,7 @@ pub(crate) fn show_action_view_tip(
         .constrain_to(screen)
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style())
-                .inner_margin(egui::Margin::symmetric(10, 8))
+                .inner_margin(egui::Margin::symmetric(8, 6))
                 .show(ui, |ui| {
                     // Area content is capped at last frame's size; lift both axes so
                     // the tip can grow up to the constrain rect before scrolling.
@@ -509,16 +509,17 @@ pub(crate) fn show_action_view_tip(
                     ui.set_max_height(max_body_h);
                     // V-only: tip body wraps prose and icon grids to `max_w`.
                     // Wheel claiming in `claim_view_tip_scroll` tracks Y offset.
-                    let out = crate::widgets::scroll_vertical()
-                        .id_salt("view_tip_body")
-                        .max_height(max_body_h)
-                        .vertical_scroll_offset(offset)
-                        .show(ui, |ui| {
+                    let out = crate::widgets::show_scroll_edge(
+                        ui,
+                        crate::widgets::scroll_vertical()
+                            .id_salt("view_tip_body")
+                            .max_height(max_body_h)
+                            .vertical_scroll_offset(offset),
+                        |ui| {
                             tree_chrome::paint_pill_tip(ui, label, pastel);
-                            ui.add_space(crate::theme::element_gap(ui));
                             ui.label(egui::RichText::new(description).small().weak());
                             if !summary_pills.is_empty() {
-                                ui.add_space(crate::theme::section_gap(ui));
+                                crate::theme::add_section_gap(ui);
                                 sections::tip_wrapped_section(ui, |ui| {
                                     ui.spacing_mut().item_spacing =
                                         Vec2::splat(crate::theme::SPACE_2);
@@ -607,7 +608,8 @@ pub(crate) fn show_action_view_tip(
                                     }
                                 });
                             }
-                        });
+                        },
+                    );
                     let max_offset = (out.content_size.y - out.inner_rect.height()).max(0.0);
                     ui.ctx().data_mut(|d| {
                         d.insert_temp(
@@ -721,10 +723,7 @@ fn show_edit_window(
             .min_size([crate::widgets::FLOATER_MIN_COMPACT[0], fit_min_h])
             .frame(
                 egui::Frame::popup(ctx.global_style().as_ref())
-                    .inner_margin(egui::Margin::symmetric(
-                        crate::theme::SPACE_12 as i8,
-                        crate::theme::SPACE_8 as i8,
-                    )),
+                    .inner_margin(egui::Margin::symmetric(10, 6)),
             ),
         ctx,
         area_id,
@@ -759,12 +758,12 @@ fn show_edit_window(
                     active_macro: Some(&*macro_),
                 };
                 let scroll_h = ui.available_height().max(40.0).min(max_scroll_h);
-                let measured = crate::widgets::scroll_both()
-                    .id_salt("edit_fields")
-                    .auto_shrink([true, false])
-                    .max_width(ui.available_width())
-                    .max_height(scroll_h)
-                    .show(ui, |ui| {
+                let measured = crate::widgets::show_dialog_scroll_mod(
+                    ui,
+                    ui.available_width(),
+                    scroll_h,
+                    |s| s.id_salt("edit_fields").auto_shrink([true, false]),
+                    |ui| {
                         edit::paint_edit_fields(
                             ui,
                             &mut edit.draft,

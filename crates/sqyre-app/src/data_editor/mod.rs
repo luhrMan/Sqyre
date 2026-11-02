@@ -71,19 +71,18 @@ impl EditorSection {
         }
     }
 
-    /// Tabs under this section, in row order. `Some` paints a caption before
-    /// that tab ("Advanced" before Collections).
-    fn subtabs(self) -> &'static [(Option<&'static str>, EditorTab)] {
+    /// Tabs under this section, in row order.
+    fn subtabs(self) -> &'static [EditorTab] {
         match self {
-            Self::Programs => &[(None, EditorTab::Programs), (None, EditorTab::Overlay)],
-            Self::Items => &[(None, EditorTab::Items), (None, EditorTab::Masks)],
+            Self::Programs => &[EditorTab::Programs, EditorTab::Overlay],
+            Self::Items => &[EditorTab::Items, EditorTab::Masks],
             Self::Coordinates => &[
-                (None, EditorTab::Points),
-                (None, EditorTab::SearchAreas),
-                (Some("Advanced"), EditorTab::Collections),
-                (None, EditorTab::Atlases),
+                EditorTab::Points,
+                EditorTab::SearchAreas,
+                EditorTab::Collections,
+                EditorTab::Atlases,
             ],
-            Self::Tools => &[(None, EditorTab::ScreenCap), (None, EditorTab::PixelCheck)],
+            Self::Tools => &[EditorTab::ScreenCap, EditorTab::PixelCheck],
         }
     }
 
@@ -130,21 +129,6 @@ impl EditorTab {
             Self::Collections => "Collections",
             Self::Atlases => "Atlases",
             Self::Overlay => "Overlay",
-        }
-    }
-
-    /// Intro blurb for the selected-tab label in the window header — carries
-    /// the help the removed per-form heading used to show. `""` = no tooltip.
-    fn header_tip(self) -> &'static str {
-        use crate::action_tooltip::help;
-        match self {
-            Self::Points => help::DE_POINT_COORDS,
-            Self::SearchAreas => help::DE_AREA_BOUNDS,
-            Self::ScreenCap => help::DE_SCREENCAP_INTRO,
-            #[cfg(feature = "native-runtime")]
-            Self::PixelCheck => help::DE_PIXELCHECK_INTRO,
-            Self::Overlay => help::DE_OVERLAY_INTRO,
-            _ => "",
         }
     }
 
@@ -195,6 +179,29 @@ impl EditorTab {
     }
 }
 
+/// Which programs the left list / header search covers on entity tabs.
+///
+/// The Programs tab always lists programs, so it has no scope choice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum SearchScope {
+    /// Flat list of the selected program's entities (default).
+    #[default]
+    SelectedProgram,
+    /// All listed programs grouped under collapsible headers.
+    AllPrograms,
+}
+
+impl SearchScope {
+    pub(crate) const ALL: &'static [SearchScope] = &[Self::SelectedProgram, Self::AllPrograms];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::SelectedProgram => "Selected program",
+            Self::AllPrograms => "All programs",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum PendingConfirm {
     Delete {
@@ -234,7 +241,13 @@ struct ListCache {
 pub struct DataEditor {
     pub open: bool,
     tab: EditorTab,
+    /// Header search query — applies to the left list while `search_open`,
+    /// and is preserved (unfiltered) while the field is hidden.
     search: String,
+    /// Header search field is expanded (magnifier toggle).
+    search_open: bool,
+    /// Left-list scope for entity tabs (flat selected program vs all programs).
+    search_scope: SearchScope,
     /// Sort for Items / Pixel Check left-list icon grids (UI-only).
     items_list_sort: sqyre_domain::CatalogItemSort,
     /// Tag priority when [`Self::items_list_sort`] is Tags.
@@ -386,6 +399,8 @@ impl Default for DataEditor {
             open: false,
             tab: EditorTab::Programs,
             search: String::new(),
+            search_open: false,
+            search_scope: SearchScope::default(),
             items_list_sort: sqyre_domain::CatalogItemSort::default(),
             items_tag_priority: Vec::new(),
             items_tag_priority_draft: String::new(),
@@ -753,13 +768,13 @@ impl DataEditor {
         self.poll_screen_click(env, previews);
         let mut open = self.open;
         let ctx = env.ctx;
+        let title = format!("{WINDOW_TITLE} ({})", self.tab.label());
         // Bounds only — this pane allocates body/footer and owns its ScrollAreas.
         // An outer window scroll (fit_dialog_window) caused intermittent H bars and
         // clipped header buttons when children claimed available_width as min_width.
         crate::widgets::fit_dialog_popup(
-            egui::Window::new(WINDOW_TITLE)
-                .title_bar(false)
-                .collapsible(false)
+            egui::Window::new(title)
+                .open(&mut open)
                 .default_size([880.0, 560.0])
                 .min_size(crate::widgets::FLOATER_MIN_EDITOR)
                 // No huge max_size — egui auto-expands toward max when content min_size ratchets.
@@ -770,16 +785,15 @@ impl DataEditor {
         )
         .show(ctx, |ui| {
             crate::widgets::fill_resize_body(ui, |ui| {
-                if self.ui_header(ui, env) {
-                    open = false;
-                }
+                self.ui_tab_bar(ui, env);
                 self.ui_body(ui, env, selected_macro, previews);
             });
             if crate::widgets::consume_escape(ui) {
-                open = false;
+                self.open = false;
             }
         });
-        self.open = open;
+        // `.open` reports the titlebar close; `self.open` the Esc path.
+        self.open = open && self.open;
         self.draw_variant_name_prompt(ctx, env.catalog, env.icons, env.settings, env.pending_scale);
         self.draw_confirm(env, previews);
         self.draw_overlay_icon_picker(ctx, env.settings, env.pending_scale);
@@ -918,31 +932,145 @@ impl DataEditor {
 }
 
 impl DataEditor {
-    /// Title row with section tabs and close; returns true when close was clicked.
-    fn ui_header(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) -> bool {
-        let mut close = false;
-        let tab_label = self.tab.label();
-        let tab_tip = self.tab.header_tip();
-        crate::widgets::window_header(
-            ui,
-            "de_header_main",
-            |ui| {
-                close =
-                    crate::widgets::icon_button(ui, egui_phosphor::regular::X, "Close").clicked();
-                // Right-to-left: the tab label lands left of the close icon —
-                // the selected tab's name in the top right of the header.
-                crate::action_tooltip::help::tip(
-                    ui.label(egui::RichText::new(tab_label).strong()),
-                    tab_tip,
-                );
-            },
-            |ui| {
-                ui.label(egui::RichText::new(WINDOW_TITLE).strong());
-                ui.add_space(crate::theme::element_gap(ui));
-                self.paint_section_bar(ui, env);
-            },
+    /// Tab strip under the standard window title bar: the search toggle and
+    /// program selector pinned left, then section/subtab icons in an overflow
+    /// scroll. Expanding the search pushes the selector and tab strip right.
+    fn ui_tab_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
+        ui.horizontal(|ui| {
+            self.ui_search_toggle(ui, env.catalog);
+            self.program_selector(ui, env.catalog, env.icons, env.settings);
+            crate::widgets::section_separator(ui);
+            crate::widgets::show_overflow(ui, "de_tab_bar", 1.0, |ui| {
+                ui.horizontal(|ui| self.paint_section_bar(ui, env));
+            });
+        });
+    }
+
+    /// Magnifier toggle → expanding query field → scope dropdown → item sort.
+    /// The query is kept (and keeps filtering only while visible) when the
+    /// field hides.
+    fn ui_search_toggle(&mut self, ui: &mut egui::Ui, catalog: &ProgramCatalog) {
+        let (tip, color) = if self.search_open {
+            ("Hide search", Some(crate::theme::PRIMARY))
+        } else {
+            ("Search this tab's list", None)
+        };
+        let toggle = ui.add(crate::widgets::IconButton::new(
+            egui_phosphor::regular::MAGNIFYING_GLASS,
+            tip,
+            color,
+        ));
+        let just_opened = toggle.clicked() && !self.search_open;
+        if toggle.clicked() {
+            self.search_open = !self.search_open;
+        }
+        if !self.search_open {
+            return;
+        }
+        let hint = format!("Search {}…", self.tab.label());
+        // Hug the query text but leave room for the selector + scope combo;
+        // `available_width` here is what is left in the header row.
+        let width = crate::widgets::name_edit_width(ui, &self.search, &hint)
+            .min((ui.available_width() * 0.45).max(80.0));
+        let resp = ui.add(
+            egui::TextEdit::singleline(&mut self.search)
+                // Stable id: the toggling field would otherwise drop keyboard focus.
+                .id(egui::Id::new("de_header_search"))
+                .hint_text(&hint)
+                .desired_width(width),
         );
-        close
+        resp.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::TextEdit, true, hint.clone())
+        });
+        if just_opened {
+            resp.request_focus();
+        }
+        if resp.changed() && self.selected_program.is_some() {
+            // A newly-visible selection can scroll into view after filter edits.
+            self.scroll_left_list_to_selection = true;
+        }
+        // Programs lists programs — scope only applies to entity tabs.
+        if !matches!(self.tab, EditorTab::Programs) {
+            // Funnel icon opens the scope menu; tinted while a non-default
+            // scope is active since the icon can't show the selection.
+            let scope_btn = ui.add(crate::widgets::IconButton::new(
+                egui_phosphor::regular::FUNNEL,
+                "List scope",
+                (self.search_scope != SearchScope::SelectedProgram)
+                    .then_some(crate::theme::PRIMARY),
+            ));
+            let mut scope = self.search_scope;
+            crate::widgets::context_menu_popup(
+                ui,
+                scope_btn.id.with("scope_menu"),
+                scope_btn.clicked(),
+                Some(scope_btn.rect),
+                |ui| {
+                    for &s in SearchScope::ALL {
+                        ui.radio_value(&mut scope, s, s.label());
+                    }
+                },
+            );
+            if scope != self.search_scope {
+                self.search_scope = scope;
+                // Same as a tab switch: open + scroll to the selected program's group.
+                self.scroll_left_list_to_selection = self.selected_program.is_some();
+            }
+        }
+        // Items / Pixel Check sort, next to the scope filter.
+        if matches!(self.tab, EditorTab::Items | EditorTab::PixelCheck) {
+            use sqyre_domain::CatalogItemSort as Sort;
+            let sort_btn = ui.add(crate::widgets::IconButton::new(
+                egui_phosphor::regular::SORT_ASCENDING,
+                "Sort items",
+                (self.items_list_sort != Sort::NameAsc).then_some(crate::theme::PRIMARY),
+            ));
+            // `Popup` (not `Menu`) kind + outside-click close: picking a radio
+            // or editing the tag chips inside must not dismiss it.
+            egui::Popup::new(
+                sort_btn.id.with("sort_menu"),
+                ui.ctx().clone(),
+                egui::PopupAnchor::ParentRect(sort_btn.rect),
+                ui.layer_id(),
+            )
+            .kind(egui::PopupKind::Popup)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .layout(egui::Layout::top_down_justified(egui::Align::Min))
+            .style(egui::containers::menu::menu_style)
+            .open_memory(
+                sort_btn
+                    .clicked()
+                    .then_some(egui::SetOpenCommand::Bool(true)),
+            )
+            .show(|ui| {
+                for &s in Sort::ALL {
+                    ui.radio_value(&mut self.items_list_sort, s, s.label());
+                }
+                if self.items_list_sort == Sort::Tags {
+                    ui.separator();
+                    ui.label(egui::RichText::new("Tag priority").strong().small());
+                    let suggestions = helpers::collect_all_item_tags(catalog);
+                    let _ = crate::widgets::tag_chip_editor(
+                        ui,
+                        &mut self.items_tag_priority,
+                        &mut self.items_tag_priority_draft,
+                        &suggestions,
+                        crate::widgets::TagChipOptions {
+                            enabled: true,
+                            show_add_button: true,
+                            label_name: None,
+                            draft_hover: Some(
+                                "Drag chips to set priority. Unmatched items sort by name after.",
+                            ),
+                            reorderable: true,
+                            signed_filters: false,
+                            single_row: false,
+                        },
+                    );
+                }
+            });
+        }
+        crate::widgets::section_separator(ui);
     }
 
     /// Every section's subtab buttons in one row — the subsection buttons are
@@ -966,11 +1094,7 @@ impl DataEditor {
                 // `targets` index-aligned with `items`.
                 targets.push(sec.default_tab());
             }
-            for &(caption, tab) in sec.subtabs() {
-                if let Some(caption) = caption {
-                    items.push(crate::widgets::OverflowItem::Caption(caption));
-                    targets.push(tab);
-                }
+            for &tab in sec.subtabs() {
                 items.push(crate::widgets::OverflowItem::Choice {
                     label: tab.label(),
                     icon: tab.icon(),
@@ -998,11 +1122,15 @@ impl DataEditor {
         let min_stack = ui.spacing().interact_size.y * 8.0;
         if avail_h + 1.0 < min_stack {
             let w = crate::widgets::visible_width(ui).max(1.0);
-            crate::widgets::dialog_scroll(w, avail_h.max(1.0))
-                .id_salt("data_editor_short")
-                .show(ui, |ui| {
+            crate::widgets::show_dialog_scroll_mod(
+                ui,
+                w,
+                avail_h.max(1.0),
+                |s| s.id_salt("data_editor_short"),
+                |ui| {
                     self.ui_body_inner(ui, env, selected_macro, previews, true);
-                });
+                },
+            );
         } else {
             self.ui_body_inner(ui, env, selected_macro, previews, false);
         }
@@ -1016,7 +1144,7 @@ impl DataEditor {
         previews: &mut PreviewTooltipCache,
         short: bool,
     ) {
-        crate::widgets::section_separator(ui);
+        let header_sep = crate::widgets::section_separator(ui);
 
         if let Some(msg) = env.screen_click.status_label() {
             ui.colored_label(crate::theme::PRIMARY, msg);
@@ -1070,9 +1198,15 @@ impl DataEditor {
         } else {
             crate::theme::panel_split_stroke()
         };
+        // Painted edge-to-edge: the header separator down to the window's
+        // bottom frame edge. The drag hit area stays `split_rect`.
+        let vline_top = header_sep.rect.center().y;
+        let vline_bottom = crate::widgets::frame_outer_rect(ui)
+            .map(|r| r.bottom())
+            .unwrap_or(split_rect.bottom());
         ui.painter().vline(
             split_rect.center().x,
-            split_rect.y_range(),
+            vline_top..=vline_bottom.max(vline_top),
             egui::Stroke::new(1.0, stroke.color),
         );
         if split_resp.dragged() {
@@ -1153,9 +1287,13 @@ impl DataEditor {
             };
             // The footer chip floats over the pane's bottom-right corner; the
             // form scrolls beneath it — no strip is reserved (see baseline).
-            pickers::dialog_scroll(content_w, body_rect.height().max(40.0))
-                .id_salt("data_editor_form")
-                .show(&mut right_ui, paint_form);
+            crate::widgets::show_dialog_scroll_mod(
+                &mut right_ui,
+                content_w,
+                body_rect.height().max(40.0),
+                |s| s.id_salt("data_editor_form"),
+                paint_form,
+            );
         }
 
         // Footer chrome floats over the form's bottom-right instead of

@@ -625,7 +625,7 @@ fn show_var_ref_autocomplete(
         .show(|ui| {
             ui.set_min_width(popup_width);
             ui.set_max_height(180.0);
-            crate::pickers::dialog_scroll(popup_width, 180.0).show(ui, |ui| {
+            crate::widgets::show_dialog_scroll(ui, popup_width, 180.0, |ui| {
                 ui.set_max_width(popup_width);
                 for (i, name) in suggestions.iter().enumerate() {
                     let selected = i == nav.selected;

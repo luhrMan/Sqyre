@@ -5,7 +5,7 @@ use crate::help_text as ht;
 use crate::icon_cache::IconCache;
 use eframe::egui;
 use sqyre_domain::PROGRAM_DELIMITER;
-use sqyre_persist::ProgramCatalog;
+use sqyre_persist::{ProgramCatalog, ProgramData};
 
 pub fn items_icon_grid_collapse_id(program: &str) -> egui::Id {
     egui::Id::new(("items_icon_grid", program))
@@ -63,6 +63,124 @@ pub fn collapse_all_button(
     }
 }
 
+/// One program's `prog␟item` targets after search filtering and sort/tag priority.
+///
+/// `match_program` makes a program-name hit keep every item (program-grouped
+/// lists); flat single-program lists pass `false` so only name/tag hits show.
+pub fn program_item_targets(
+    pdata: &ProgramData,
+    prog: &str,
+    q: &str,
+    match_program: bool,
+    item_sort: sqyre_domain::CatalogItemSort,
+    tag_priority: &[String],
+) -> Vec<String> {
+    let items: Vec<_> = pdata
+        .items
+        .iter()
+        .filter(|(name, item)| {
+            if q.is_empty() {
+                return true;
+            }
+            (match_program && fuzzy_match_fold(q, prog))
+                || query_matches_name_or_tags(q, name, &item.tags)
+        })
+        .map(|(name, _)| name.clone())
+        .collect();
+    let infos: Vec<sqyre_domain::ItemSortInfo> = items
+        .iter()
+        .map(|item_key| {
+            let item = pdata.items.get(item_key);
+            let display = item
+                .map(|it| {
+                    if it.name.trim().is_empty() {
+                        item_key.clone()
+                    } else {
+                        it.name.clone()
+                    }
+                })
+                .unwrap_or_else(|| item_key.clone());
+            let (rows, cols, tags) = item
+                .map(|it| (it.grid_rows, it.grid_cols, it.tags.clone()))
+                .unwrap_or((1, 1, Vec::new()));
+            sqyre_domain::ItemSortInfo::from_parts(
+                format!("{prog}{PROGRAM_DELIMITER}{item_key}"),
+                display,
+                rows,
+                cols,
+                tags,
+            )
+        })
+        .collect();
+    sqyre_domain::ordered_catalog_items(&infos, item_sort, tag_priority)
+}
+
+/// One program's icon grid body: a Select-all row when `multi`, then the even
+/// grid. Returns the number of cells painted.
+pub fn paint_program_items_grid(
+    ui: &mut egui::Ui,
+    catalog: &ProgramCatalog,
+    icons: &mut IconCache,
+    targets: &[String],
+    selected: &mut Vec<String>,
+    multi: bool,
+    item_menu: Option<&mut IconCellMenu<'_>>,
+) -> usize {
+    let selected_in_group = targets
+        .iter()
+        .filter(|t| selected.iter().any(|s| s == *t))
+        .count();
+    let all_label = if selected_in_group == targets.len() && !targets.is_empty() {
+        "Deselect all"
+    } else {
+        "Select all"
+    };
+    if multi {
+        ui.horizontal(|ui| {
+            if ui
+                .small_button(all_label)
+                .on_hover_text(ht::PICK_SELECT_ALL)
+                .clicked()
+            {
+                toggle_select_all_filtered(selected, targets);
+            }
+            if selected_in_group > 0 && selected_in_group < targets.len() {
+                ui.weak(format!("{selected_in_group}/{}", targets.len()));
+            }
+        });
+    }
+    let mut clicked: Option<String> = None;
+    let mut on_cell = |_i, t: &str| {
+        clicked = Some(t.to_string());
+    };
+    paint_even_icon_grid(
+        ui,
+        catalog,
+        icons,
+        targets,
+        |t| selected.iter().any(|s| s == t),
+        IconGridKind::Picker,
+        IconGridOps {
+            on_cell: Some(&mut on_cell),
+            ..Default::default()
+        },
+        item_menu,
+    );
+    if let Some(target) = clicked {
+        let is_sel = selected.iter().any(|t| t == &target);
+        if multi {
+            if is_sel {
+                selected.retain(|t| t != &target);
+            } else {
+                selected.push(target);
+            }
+        } else {
+            *selected = vec![target];
+        }
+    }
+    targets.len()
+}
+
 /// Program accordion of item icon grids. Click toggles membership in `selected` when
 /// `multi` is true; otherwise replaces selection with the clicked target.
 /// When `multi`, each program header includes an All control over filtered targets
@@ -105,61 +223,13 @@ pub fn paint_items_icon_grid(
         let Some(pdata) = catalog.get(prog) else {
             continue;
         };
-        let items: Vec<_> = pdata
-            .items
-            .iter()
-            .filter(|(name, item)| {
-                if q.is_empty() {
-                    return true;
-                }
-                fuzzy_match_fold(&q, prog) || query_matches_name_or_tags(&q, name, &item.tags)
-            })
-            .map(|(name, _)| name.clone())
-            .collect();
+        let targets = program_item_targets(pdata, prog, &q, true, item_sort, tag_priority);
         let keep_empty = show_empty_programs
             && pdata.items.is_empty()
             && (q.is_empty() || fuzzy_match_fold(&q, prog));
-        if items.is_empty() && !keep_empty {
+        if targets.is_empty() && !keep_empty {
             continue;
         }
-        let infos: Vec<sqyre_domain::ItemSortInfo> = items
-            .iter()
-            .map(|item_key| {
-                let item = pdata.items.get(item_key);
-                let display = item
-                    .map(|it| {
-                        if it.name.trim().is_empty() {
-                            item_key.clone()
-                        } else {
-                            it.name.clone()
-                        }
-                    })
-                    .unwrap_or_else(|| item_key.clone());
-                let (rows, cols, tags) = item
-                    .map(|it| (it.grid_rows, it.grid_cols, it.tags.clone()))
-                    .unwrap_or((1, 1, Vec::new()));
-                sqyre_domain::ItemSortInfo::from_parts(
-                    format!("{prog}{PROGRAM_DELIMITER}{item_key}"),
-                    display,
-                    rows,
-                    cols,
-                    tags,
-                )
-            })
-            .collect();
-        let targets = sqyre_domain::ordered_catalog_items(&infos, item_sort, tag_priority);
-
-        let selected_in_group = targets
-            .iter()
-            .filter(|t| selected.iter().any(|s| s == *t))
-            .count();
-        let all_label = if selected_in_group == 0 {
-            "Select all"
-        } else if selected_in_group == targets.len() {
-            "Deselect all"
-        } else {
-            "Select all"
-        };
 
         let prog_selected = selected_program == Some(prog.as_str());
         // Absolute id so expand/collapse-all (outside this ui stack) can target the same state.
@@ -196,49 +266,15 @@ pub fn paint_items_icon_grid(
             })
             .body(|ui| {
                 ui.set_max_width(pane_w);
-                if multi {
-                    ui.horizontal(|ui| {
-                        if ui
-                            .small_button(all_label)
-                            .on_hover_text(ht::PICK_SELECT_ALL)
-                            .clicked()
-                        {
-                            toggle_select_all_filtered(selected, &targets);
-                        }
-                        if selected_in_group > 0 && selected_in_group < targets.len() {
-                            ui.weak(format!("{selected_in_group}/{}", targets.len()));
-                        }
-                    });
-                }
-                let mut clicked: Option<String> = None;
-                let mut on_cell = |_i, t: &str| {
-                    clicked = Some(t.to_string());
-                };
-                paint_even_icon_grid(
+                paint_program_items_grid(
                     ui,
                     catalog,
                     icons,
                     &targets,
-                    |t| selected.iter().any(|s| s == t),
-                    IconGridKind::Picker,
-                    IconGridOps {
-                        on_cell: Some(&mut on_cell),
-                        ..Default::default()
-                    },
+                    selected,
+                    multi,
                     item_menu.as_deref_mut(),
                 );
-                if let Some(target) = clicked {
-                    let is_sel = selected.iter().any(|t| t == &target);
-                    if multi {
-                        if is_sel {
-                            selected.retain(|t| t != &target);
-                        } else {
-                            selected.push(target);
-                        }
-                    } else {
-                        *selected = vec![target];
-                    }
-                }
             });
     }
     if let Some(scroll) = scroll_to_selected_program {
@@ -273,4 +309,46 @@ pub(crate) fn sort_by_display_name(rows: &mut [(String, String)]) {
             .cmp(&b.1.to_ascii_lowercase())
             .then_with(|| a.0.cmp(&b.0))
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_persist::{ProgramData, ProgramItem};
+
+    fn pdata() -> ProgramData {
+        let mut data = ProgramData::default();
+        for (key, name, tags) in [
+            ("sword", "Sword", vec!["weapon"]),
+            ("shield", "Shield", vec!["armor"]),
+        ] {
+            data.items.insert(
+                key.to_string(),
+                ProgramItem {
+                    name: name.into(),
+                    tags: tags.iter().map(|t| t.to_string()).collect(),
+                    ..Default::default()
+                },
+            );
+        }
+        data
+    }
+
+    #[test]
+    fn program_item_targets_match_program_flag() {
+        let data = pdata();
+        let sort = sqyre_domain::CatalogItemSort::default();
+        // A query matching only the program name keeps every item when the
+        // caller is rendering program groups…
+        let grouped = program_item_targets(&data, "Game", "game", true, sort, &[]);
+        assert_eq!(grouped.len(), 2);
+        // …but filters to name/tag hits in a flat single-program list.
+        let flat = program_item_targets(&data, "Game", "game", false, sort, &[]);
+        assert!(flat.is_empty());
+        // Item name and tag hits work in both modes.
+        let by_name = program_item_targets(&data, "Game", "swo", false, sort, &[]);
+        assert_eq!(by_name, vec!["Game~sword"]);
+        let by_tag = program_item_targets(&data, "Game", "armor", false, sort, &[]);
+        assert_eq!(by_tag, vec!["Game~shield"]);
+    }
 }

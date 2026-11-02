@@ -1016,50 +1016,54 @@ impl SqyreApp {
         ui_macro_list::show(self, ui);
         self.persist_selected_macro();
 
-        egui::CentralPanel::default().show(ui, |ui| {
-            #[cfg(target_arch = "wasm32")]
-            crate::widgets::show_overflow(ui, "wasm_editor_note", 1.0, |ui| {
-                ui_toolbar::wasm_editor_note(ui);
-            });
-            if self.workspace.macros.is_empty() {
-                let clicked = crate::widgets::show_overflow(ui, "empty_macros", 1.0, |ui| {
-                    crate::widgets::empty_state(
-                        ui,
-                        "No macros yet",
-                        Some("Create a macro or import a backup to get started."),
-                        Some("New macro"),
-                        Some("Import backup"),
-                    )
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::symmetric(8, 4)),
+            )
+            .show(ui, |ui| {
+                #[cfg(target_arch = "wasm32")]
+                crate::widgets::show_overflow(ui, "wasm_editor_note", 1.0, |ui| {
+                    ui_toolbar::wasm_editor_note(ui);
                 });
-                match clicked {
-                    crate::widgets::EmptyStateAction::Primary => self.create_macro(),
-                    crate::widgets::EmptyStateAction::Secondary => {
-                        #[cfg(not(target_arch = "wasm32"))]
-                        self.settings_ui.request_restore_backup();
-                        #[cfg(target_arch = "wasm32")]
-                        self.request_db_import();
+                if self.workspace.macros.is_empty() {
+                    let clicked = crate::widgets::show_overflow(ui, "empty_macros", 1.0, |ui| {
+                        crate::widgets::empty_state(
+                            ui,
+                            "No macros yet",
+                            Some("Create a macro or import a backup to get started."),
+                            Some("New macro"),
+                            Some("Import backup"),
+                        )
+                    });
+                    match clicked {
+                        crate::widgets::EmptyStateAction::Primary => self.create_macro(),
+                        crate::widgets::EmptyStateAction::Secondary => {
+                            #[cfg(not(target_arch = "wasm32"))]
+                            self.settings_ui.request_restore_backup();
+                            #[cfg(target_arch = "wasm32")]
+                            self.request_db_import();
+                        }
+                        crate::widgets::EmptyStateAction::None => {}
                     }
-                    crate::widgets::EmptyStateAction::None => {}
-                }
-                return;
-            }
-            // Collapse state shares the tree's parent id — keep this outside the chrome strip.
-            let any_collapsed = ui_macro_tree::any_branch_collapsed(self, ui);
-            let mut force_openness = None;
-            let mut stop = false;
-            crate::widgets::show_overflow(ui, "editor_chrome", 0.7, |ui| {
-                if !ui_toolbar::show_meta_and_hotkey(self, ui) {
-                    stop = true;
                     return;
                 }
-                force_openness = ui_toolbar::action_toolbar(self, ui, any_collapsed);
+                // Collapse state shares the tree's parent id — keep this outside the chrome strip.
+                let any_collapsed = ui_macro_tree::any_branch_collapsed(self, ui);
+                let mut force_openness = None;
+                let mut stop = false;
+                crate::widgets::show_overflow(ui, "editor_chrome", 0.7, |ui| {
+                    if !ui_toolbar::show_meta_and_hotkey(self, ui) {
+                        stop = true;
+                        return;
+                    }
+                    force_openness = ui_toolbar::action_toolbar(self, ui, any_collapsed);
+                });
+                if stop {
+                    return;
+                }
+                ui_macro_tree::show(self, ui, force_openness);
+                ui_toolbar::footer_floats(self, ui);
             });
-            if stop {
-                return;
-            }
-            ui_macro_tree::show(self, ui, force_openness);
-            ui_toolbar::footer_floats(self, ui);
-        });
     }
 }
 

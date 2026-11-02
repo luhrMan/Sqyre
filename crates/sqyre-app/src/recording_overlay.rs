@@ -802,7 +802,7 @@ fn hud_frame() -> egui::Frame {
         .fill(crate::theme::overlay_panel_fill())
         .stroke(egui::Stroke::new(HUD_STROKE, theme::PRIMARY))
         .corner_radius(egui::CornerRadius::same(6))
-        .inner_margin(egui::Margin::symmetric(12, 8))
+        .inner_margin(egui::Margin::symmetric(10, 6))
 }
 
 fn paint_hud_window(ctx: &egui::Context, text: &str, at_top: bool) {

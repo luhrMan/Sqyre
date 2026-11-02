@@ -22,8 +22,8 @@ pub mod wrap;
 
 pub(crate) use action_icons::{action_glyph_font, action_icon_side, VectorIcon};
 pub use context_menu::{
-    menu_item, menu_item_danger, rect_context_menu, rect_danger_menu, response_context_menu,
-    response_danger_menu, row_context_menu, row_danger_menu,
+    context_menu_popup, menu_item, menu_item_danger, rect_context_menu, rect_danger_menu,
+    response_context_menu, response_danger_menu, row_context_menu, row_danger_menu,
 };
 pub use controls::{
     add_button, cancel_icon_button, dirty_action_button, error_badge, error_icon, icon_btn_side,
@@ -53,12 +53,12 @@ pub use num_entry::{num_entry, NumEntry};
 pub use overflow::{always_bar, text_width, OverflowItem};
 pub use row_ids::{remove_row_id, stable_row_ids};
 pub use scroll::{
-    dialog_scroll, enable_dense_row_extend, scroll_both, scroll_vertical, show_overflow,
-    SCROLL_SOURCE_NO_DRAG,
+    enable_dense_row_extend, scroll_vertical, show_dialog_scroll, show_dialog_scroll_mod,
+    show_overflow, show_scroll_edge, SCROLL_SOURCE_NO_DRAG,
 };
 pub use sections::{
     advanced_section, collapsible_header, collapsible_section, float_bottom_right,
-    section_separator, split_view, tinted_section, window_header, SplitView,
+    frame_outer_rect, section_separator, split_view, tinted_section, SplitView,
 };
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 pub(crate) use spinner::brand_spinner;

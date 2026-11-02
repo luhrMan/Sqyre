@@ -279,7 +279,6 @@ impl AddActionPicker {
             }
             ui.horizontal_wrapped(|ui| {
                 ui.weak(HOVER_DELAY_HINT);
-                ui.add_space(crate::theme::element_gap(ui));
                 crate::widgets::combo_enum(
                     ui,
                     egui_phosphor::regular::SORT_ASCENDING,
@@ -294,7 +293,7 @@ impl AddActionPicker {
 
             let list_h = pickers::popup_scroll_max_height(ui, 0.0);
             let list_w = crate::widgets::visible_width(ui);
-            crate::widgets::dialog_scroll(list_w, list_h).show(ui, |ui| {
+            crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
                 // Bound to the viewport so rows wrap instead of clipping off-screen.
                 ui.set_max_width(list_w);
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
@@ -302,7 +301,6 @@ impl AddActionPicker {
                     crate::widgets::list_vacancy(ui, &q, 0, "actions");
                     return;
                 }
-                ui.add_space(crate::theme::element_gap(ui));
                 // Uniform tile width: wrapped rows land as an aligned grid
                 // instead of ragged content-sized chips.
                 let font = egui::TextStyle::Small.resolve(ui.style());
@@ -554,7 +552,7 @@ impl AddActionPicker {
             }
             let list_h = pickers::popup_scroll_max_height(ui, 0.0);
             let list_w = crate::widgets::visible_width(ui);
-            pickers::dialog_scroll(list_w, list_h).show(ui, |ui| {
+            crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
                 ui.set_max_width(list_w);
                 if let Some(DefaultsTip::Edit(edit)) = self.tip.as_mut() {
                     let mut fields = EditFieldsCtx {
