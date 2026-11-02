@@ -18,21 +18,18 @@ pub use icons::*;
 mod tests {
     use super::*;
     use sqyre_domain::{
-        root_loop, Action, ActionId, ActionKind, ConditionBlock, ConditionOperator,
-        CoordinateOutputs, CoordinateRef, DetectionBranch, MatchMode, RepeatMode, ScalarValue,
-        VariableAssignment, WaitTilFoundConfig,
+        root_loop, Action, ActionKind, ConditionBlock, ConditionOperator, CoordinateOutputs,
+        CoordinateRef, DetectionBranch, MatchMode, RepeatMode, ScalarValue, VariableAssignment,
+        WaitTilFoundConfig,
     };
 
     #[test]
     fn loop_iterations_come_before_name() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Loop {
-                name: "batch".into(),
-                count: ScalarValue::Int(3),
-                subactions: vec![],
-            },
-        };
+        let a = Action::new(ActionKind::Loop {
+            name: "batch".into(),
+            count: ScalarValue::Int(3),
+            subactions: vec![],
+        });
         let params = a.display_params();
         let (summary, _) = split_display_params(&params);
         assert_eq!(summary[0].label, "Iterations");
@@ -42,15 +39,12 @@ mod tests {
 
     #[test]
     fn set_variable_multi_assignments_in_pills() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::SetVariable {
-                assignments: vec![
-                    VariableAssignment::new("a", ScalarValue::Int(1)),
-                    VariableAssignment::new("b", ScalarValue::String("x".into())),
-                ],
-            },
-        };
+        let a = Action::new(ActionKind::SetVariable {
+            assignments: vec![
+                VariableAssignment::new("a", ScalarValue::Int(1)),
+                VariableAssignment::new("b", ScalarValue::String("x".into())),
+            ],
+        });
         let pills = a.tree_summary_pills();
         assert!(pills
             .iter()
@@ -64,12 +58,9 @@ mod tests {
 
     #[test]
     fn wait_summary_includes_time_ms() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(250),
-            },
-        };
+        let a = Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(250),
+        });
         let pills = a.tree_summary_pills();
         assert_eq!(pills.len(), 1);
         assert_eq!(pills[0].text, "250 ms");
@@ -77,22 +68,15 @@ mod tests {
 
     #[test]
     fn image_search_tree_omits_items() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let a = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets: vec!["a".into(), "b".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         let tree = a.display_params_for_tree();
         assert!(!tree.iter().any(|p| p.label == "Items"));
         let full = a.display_params();
@@ -161,12 +145,9 @@ mod tests {
 
     #[test]
     fn set_variable_uses_binding_prefix() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::SetVariable {
-                assignments: vec![VariableAssignment::new("count", ScalarValue::Int(1))],
-            },
-        };
+        let a = Action::new(ActionKind::SetVariable {
+            assignments: vec![VariableAssignment::new("count", ScalarValue::Int(1))],
+        });
         let pills = a.tree_summary_pills();
         assert!(pills
             .iter()
@@ -212,16 +193,13 @@ mod tests {
 
     #[test]
     fn move_smooth_extras_are_tooltip_only() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Move {
-                point: CoordinateRef("Prog~Spot".into()),
-                smooth: true,
-                smooth_low: 0.05,
-                smooth_high: 0.2,
-                smooth_delay_ms: 1,
-            },
-        };
+        let a = Action::new(ActionKind::Move {
+            point: CoordinateRef("Prog~Spot".into()),
+            smooth: true,
+            smooth_low: 0.05,
+            smooth_high: 0.2,
+            smooth_delay_ms: 1,
+        });
         let params = a.display_params();
         let (summary, extra) = split_display_params(&params);
         assert!(summary.iter().any(|p| p.label == "Point"));
@@ -231,29 +209,26 @@ mod tests {
 
     #[test]
     fn conditional_summary_omits_clauses_from_pills() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Conditional {
-                condition: ConditionBlock {
-                    name: "gate".into(),
-                    match_mode: MatchMode::Any,
-                    clauses: vec![
-                        sqyre_domain::ConditionClause {
-                            left: ScalarValue::String("${a}".into()),
-                            operator: ConditionOperator::Equals,
-                            right: ScalarValue::String("1".into()),
-                        },
-                        sqyre_domain::ConditionClause {
-                            left: ScalarValue::String("${b}".into()),
-                            operator: ConditionOperator::IsSet,
-                            right: ScalarValue::Null,
-                        },
-                    ],
-                },
-                subactions: vec![],
-                else_actions: vec![],
+        let a = Action::new(ActionKind::Conditional {
+            condition: ConditionBlock {
+                name: "gate".into(),
+                match_mode: MatchMode::Any,
+                clauses: vec![
+                    sqyre_domain::ConditionClause {
+                        left: ScalarValue::String("${a}".into()),
+                        operator: ConditionOperator::Equals,
+                        right: ScalarValue::String("1".into()),
+                    },
+                    sqyre_domain::ConditionClause {
+                        left: ScalarValue::String("${b}".into()),
+                        operator: ConditionOperator::IsSet,
+                        right: ScalarValue::Null,
+                    },
+                ],
             },
-        };
+            subactions: vec![],
+            else_actions: vec![],
+        });
         let pills = a.tree_summary_pills();
         assert!(pills.iter().any(|p| p.text == "gate"));
         assert!(pills.iter().any(|p| p.text.contains("any (OR)")));
@@ -269,22 +244,19 @@ mod tests {
 
     #[test]
     fn while_summary_omits_clauses_from_pills() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::While {
-                condition: ConditionBlock {
-                    name: "spin".into(),
-                    match_mode: MatchMode::All,
-                    clauses: vec![sqyre_domain::ConditionClause {
-                        left: ScalarValue::String("${n}".into()),
-                        operator: ConditionOperator::LessThan,
-                        right: ScalarValue::Int(10),
-                    }],
-                },
-                max_iterations: 5,
-                subactions: vec![],
+        let a = Action::new(ActionKind::While {
+            condition: ConditionBlock {
+                name: "spin".into(),
+                match_mode: MatchMode::All,
+                clauses: vec![sqyre_domain::ConditionClause {
+                    left: ScalarValue::String("${n}".into()),
+                    operator: ConditionOperator::LessThan,
+                    right: ScalarValue::Int(10),
+                }],
             },
-        };
+            max_iterations: 5,
+            subactions: vec![],
+        });
         let pills = a.tree_summary_pills();
         assert!(pills.iter().any(|p| p.text == "spin"));
         assert!(pills.iter().any(|p| p.text.contains("all (AND)")));
@@ -303,9 +275,8 @@ mod tests {
 
     #[test]
     fn find_pixel_shows_color_not_outputs_or_search_area() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::FindPixel {
+        let a = Action::new(ActionKind::FindPixel(Box::new(
+            sqyre_domain::FindPixelData {
                 name: "red".into(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 target_color: "#ff0000".into(),
@@ -318,7 +289,7 @@ mod tests {
                     ..DetectionBranch::default()
                 },
             },
-        };
+        )));
         let pills = a.tree_summary_pills();
         assert!(pills.iter().any(|p| p.text == "red"));
         assert!(pills.iter().any(|p| p.text == "#ff0000"));
@@ -329,19 +300,12 @@ mod tests {
 
     #[test]
     fn image_search_tree_omits_search_area_and_outputs() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let a = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets: vec!["a".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Prog~Box".into()),
                 tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: DetectionBranch {
                     coords: CoordinateOutputs {
                         output_x_variable: "x".into(),
@@ -349,8 +313,9 @@ mod tests {
                     },
                     ..DetectionBranch::default()
                 },
+                ..Default::default()
             },
-        };
+        )));
         let pills = a.tree_summary_pills();
         assert_eq!(pills.len(), 1);
         assert_eq!(pills[0].text, "find");
@@ -361,35 +326,24 @@ mod tests {
 
     #[test]
     fn unset_search_area_and_point_show_in_tree_pills() {
-        let image = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let image = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets: vec!["a".into()],
-                target_tags: Vec::new(),
-                search_area: CoordinateRef::default(),
                 tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         let pills = image.tree_summary_pills();
         assert!(pills.iter().any(|p| p.text == CoordinateRef::UNSET_LABEL));
 
-        let mv = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Move {
-                point: CoordinateRef::default(),
-                smooth: false,
-                smooth_low: 0.05,
-                smooth_high: 0.2,
-                smooth_delay_ms: 1,
-            },
-        };
+        let mv = Action::new(ActionKind::Move {
+            point: CoordinateRef::default(),
+            smooth: false,
+            smooth_low: 0.05,
+            smooth_high: 0.2,
+            smooth_delay_ms: 1,
+        });
         let pills = mv.tree_summary_pills();
         assert!(pills.iter().any(|p| p.text == CoordinateRef::UNSET_LABEL));
     }
@@ -398,14 +352,11 @@ mod tests {
     fn empty_non_catalog_scalars_use_not_set() {
         use sqyre_domain::EMPTY_NOT_SET;
 
-        let focus = Action {
-            id: ActionId::new(),
-            kind: ActionKind::FocusWindow {
-                process_path: String::new(),
-                window_title: String::new(),
-                previous: false,
-            },
-        };
+        let focus = Action::new(ActionKind::FocusWindow {
+            process_path: String::new(),
+            window_title: String::new(),
+            previous: false,
+        });
         let params = focus.display_params();
         assert_eq!(
             params
@@ -422,26 +373,20 @@ mod tests {
             Some(EMPTY_NOT_SET)
         );
 
-        let previous = Action {
-            id: ActionId::new(),
-            kind: ActionKind::FocusWindow {
-                process_path: String::new(),
-                window_title: String::new(),
-                previous: true,
-            },
-        };
+        let previous = Action::new(ActionKind::FocusWindow {
+            process_path: String::new(),
+            window_title: String::new(),
+            previous: true,
+        });
         assert!(previous
             .display_params()
             .iter()
             .any(|p| p.label == "Window" && p.value == "previous"));
         assert_eq!(previous.kind.display_name(), "Focus previous window");
 
-        let run = Action {
-            id: ActionId::new(),
-            kind: ActionKind::RunMacro {
-                macro_name: String::new(),
-            },
-        };
+        let run = Action::new(ActionKind::RunMacro {
+            macro_name: String::new(),
+        });
         assert_eq!(
             run.display_params()
                 .iter()
@@ -450,14 +395,11 @@ mod tests {
             Some(EMPTY_NOT_SET)
         );
 
-        let pause = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Pause {
-                message: String::new(),
-                continue_key: vec![],
-                pass_through: false,
-            },
-        };
+        let pause = Action::new(ActionKind::Pause {
+            message: String::new(),
+            continue_key: vec![],
+            pass_through: false,
+        });
         assert_eq!(
             pause
                 .display_params()
@@ -470,15 +412,12 @@ mod tests {
 
     #[test]
     fn set_binding_uses_value_role() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::SetVariable {
-                assignments: vec![VariableAssignment::new(
-                    "sum",
-                    ScalarValue::String("1+2".into()),
-                )],
-            },
-        };
+        let a = Action::new(ActionKind::SetVariable {
+            assignments: vec![VariableAssignment::new(
+                "sum",
+                ScalarValue::String("1+2".into()),
+            )],
+        });
         let pills = a.tree_summary_pills();
         assert!(pills
             .iter()
@@ -534,37 +473,17 @@ mod tests {
                 "☰",
             ),
             (
-                ActionKind::Ocr {
-                    name: String::new(),
-                    target: String::new(),
-                    search_area: CoordinateRef(String::new()),
-                    output_variable: String::new(),
-                    match_mode: Default::default(),
-                    case_sensitive: false,
-                    blur: 0,
-                    min_threshold: 0,
+                ActionKind::Ocr(Box::new(sqyre_domain::OcrData {
                     resize: 1.0,
-                    grayscale: false,
-                    threshold_otsu: false,
-                    threshold_invert: false,
-                    detection: DetectionBranch::default(),
-                },
+                    ..Default::default()
+                })),
                 "🔤",
             ),
             (
-                ActionKind::ImageSearch {
-                    name: String::new(),
-                    targets: vec![],
-                    target_tags: Vec::new(),
+                ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                     search_area: CoordinateRef(String::new()),
-                    tolerance: 0.0,
-                    blur: 0,
-                    match_method: Default::default(),
-                    sort_by: Default::default(),
-                    sort_then: Default::default(),
-                    tag_priority: Vec::new(),
-                    detection: DetectionBranch::default(),
-                },
+                    ..Default::default()
+                })),
                 "🔍",
             ),
             (
@@ -578,10 +497,7 @@ mod tests {
             ),
         ];
         for (kind, want) in cases {
-            let a = Action {
-                id: ActionId::new(),
-                kind,
-            };
+            let a = Action::new(kind);
             assert_eq!(action_icon_glyph(&a), want, "{}", a.type_key());
         }
     }

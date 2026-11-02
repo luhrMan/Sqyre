@@ -315,63 +315,41 @@ impl ActionKindDisplay for ActionKind {
                     condition_summary(condition.match_mode, &condition.clauses),
                 ));
             }
-            Self::ImageSearch {
-                name,
-                targets,
-                target_tags,
-                search_area,
-                tolerance,
-                blur,
-                match_method,
-                detection,
-                ..
-            } => {
-                params.push(DisplayParam::new("Name", name.as_str()));
-                params.push(DisplayParam::new("Items", targets.len().to_string()));
-                if !target_tags.is_empty() {
-                    params.push(DisplayParam::new("Tags", target_tags.len().to_string()));
+            Self::ImageSearch(d) => {
+                params.push(DisplayParam::new("Name", d.name.as_str()));
+                params.push(DisplayParam::new("Items", d.targets.len().to_string()));
+                if !d.target_tags.is_empty() {
+                    params.push(DisplayParam::new("Tags", d.target_tags.len().to_string()));
                 }
-                params.push(search_area_display_param(search_area));
+                params.push(search_area_display_param(&d.search_area));
                 params.push(DisplayParam::extra(
                     "Wait",
-                    detection.wait.display_wait_mode("instant"),
+                    d.detection.wait.display_wait_mode("instant"),
                 ));
-                params.push(DisplayParam::extra("Method", match_method.ui_label()));
-                params.push(DisplayParam::extra("Tolerance", format_float(*tolerance)));
-                params.push(DisplayParam::extra("Blur", blur.to_string()));
+                params.push(DisplayParam::extra("Method", d.match_method.ui_label()));
+                params.push(DisplayParam::extra("Tolerance", format_float(d.tolerance)));
+                params.push(DisplayParam::extra("Blur", d.blur.to_string()));
             }
-            Self::Ocr {
-                name,
-                target,
-                search_area,
-                detection,
-                ..
-            } => {
-                params.push(DisplayParam::new("Name", name.as_str()));
-                params.push(DisplayParam::new("Target Text", target.as_str()));
-                params.push(search_area_display_param(search_area));
+            Self::Ocr(d) => {
+                params.push(DisplayParam::new("Name", d.name.as_str()));
+                params.push(DisplayParam::new("Target Text", d.target.as_str()));
+                params.push(search_area_display_param(&d.search_area));
                 params.push(DisplayParam::extra(
                     "Wait",
-                    detection.wait.display_wait_mode("instant"),
+                    d.detection.wait.display_wait_mode("instant"),
                 ));
             }
-            Self::FindPixel {
-                name,
-                search_area,
-                target_color,
-                color_tolerance,
-                detection,
-            } => {
-                params.push(DisplayParam::new("Name", name.as_str()));
-                params.push(DisplayParam::new("Color", target_color.as_str()));
+            Self::FindPixel(d) => {
+                params.push(DisplayParam::new("Name", d.name.as_str()));
+                params.push(DisplayParam::new("Color", d.target_color.as_str()));
                 params.push(DisplayParam::extra(
                     "Tolerance",
-                    format!("{color_tolerance}%"),
+                    format!("{}%", d.color_tolerance),
                 ));
-                params.push(search_area_display_param(search_area));
+                params.push(search_area_display_param(&d.search_area));
                 params.push(DisplayParam::extra(
                     "Wait",
-                    detection.wait.display_wait_mode("instant"),
+                    d.detection.wait.display_wait_mode("instant"),
                 ));
             }
             Self::ForEachRow {
