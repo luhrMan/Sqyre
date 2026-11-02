@@ -604,27 +604,7 @@ mod tests {
 
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: Some(&resolver),
-                icons: None,
-                macros: None,
-                continue_waiter: Some(&waiter),
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: None,
-            },
+            ExecDeps::new(&mut backend).resolver(&resolver).continue_waiter(&waiter),
         )
         .unwrap();
 
@@ -705,27 +685,7 @@ mod tests {
 
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: Some(&resolver),
-                icons: None,
-                macros: None,
-                continue_waiter: Some(&waiter),
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: None,
-            },
+            ExecDeps::new(&mut backend).resolver(&resolver).continue_waiter(&waiter),
         )
         .unwrap();
 
@@ -802,27 +762,7 @@ mod tests {
 
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: Some(&resolver),
-                icons: None,
-                macros: None,
-                continue_waiter: Some(&waiter),
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: None,
-            },
+            ExecDeps::new(&mut backend).resolver(&resolver).continue_waiter(&waiter),
         )
         .unwrap();
 
@@ -865,30 +805,10 @@ mod tests {
         resolver: Option<&dyn crate::backends::CoordinateResolver>,
         waiter: Option<&dyn crate::backends::ContinueKeyWaiter>,
     ) -> crate::error::Result<()> {
-        execute_macro_with(
-            macro_,
-            ExecDeps {
-                automation: backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: crate::run::DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: crate::run::DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver,
-                icons: None,
-                macros: None,
-                continue_waiter: waiter,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: None,
-            },
-        )
+        let mut deps = ExecDeps::new(backend);
+        deps.resolver = resolver;
+        deps.continue_waiter = waiter;
+        execute_macro_with(macro_, deps)
     }
 
     fn err_text(result: crate::error::Result<()>) -> String {

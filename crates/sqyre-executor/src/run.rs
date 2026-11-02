@@ -468,6 +468,31 @@ impl<'a> ExecDeps<'a> {
         self.click_fx = Some(s);
         self
     }
+
+    pub fn release_held_inputs(mut self, enabled: bool) -> Self {
+        self.release_held_inputs = enabled;
+        self
+    }
+
+    pub fn while_max_iterations(mut self, max: i32) -> Self {
+        self.while_max_iterations = max;
+        self
+    }
+
+    pub fn run_macro_max_depth(mut self, max: usize) -> Self {
+        self.run_macro_max_depth = max;
+        self
+    }
+
+    pub fn runtime_vars(mut self, v: &'a dyn RuntimeVarSink) -> Self {
+        self.runtime_vars = Some(v);
+        self
+    }
+
+    pub fn variables_dir(mut self, dir: &'a Path) -> Self {
+        self.variables_dir = Some(dir);
+        self
+    }
 }
 
 /// Run a macro from a clean runtime variable store.
@@ -1010,27 +1035,7 @@ mod tests {
         macro_.root = root_loop(vec![]);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: Some(&mut capturer),
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: None,
-            },
+            ExecDeps::new(&mut backend).capturer(&mut capturer),
         )
         .unwrap();
         assert_eq!(
@@ -1059,27 +1064,7 @@ mod tests {
         // Top-level execute_macro maps Stopped → Ok; assert we did not sleep 5s.
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: Some(&stop),
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: None,
-            },
+            ExecDeps::new(&mut backend).stop_flag(&stop),
         )
         .unwrap();
         let slept: i32 = backend
@@ -1108,27 +1093,7 @@ mod tests {
         }]);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: Some(&stop),
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: None,
-            },
+            ExecDeps::new(&mut backend).stop_flag(&stop),
         )
         .unwrap();
         backend.assert_not_logged("sleep:250");
@@ -1248,27 +1213,7 @@ mod tests {
         ]);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: false,
-                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: None,
-            },
+            ExecDeps::new(&mut backend).release_held_inputs(false),
         )
         .unwrap();
         assert_eq!(
@@ -1310,27 +1255,7 @@ mod tests {
         ]);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: Some(&resolver),
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: None,
-            },
+            ExecDeps::new(&mut backend).resolver(&resolver),
         )
         .unwrap();
         backend.assert_logged("move:42,99,smooth=false");
@@ -1365,27 +1290,7 @@ mod tests {
         ]);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: Some(&resolver),
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: Some(&fx),
-            },
+            ExecDeps::new(&mut backend).resolver(&resolver).click_fx(&fx),
         )
         .unwrap();
         assert_eq!(fx.drain(), vec![(42, 99)]);
@@ -1408,27 +1313,7 @@ mod tests {
         }]);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: Some(&fx),
-            },
+            ExecDeps::new(&mut backend).click_fx(&fx),
         )
         .unwrap();
         assert_eq!(fx.drain(), vec![(5, 6)]);
@@ -1497,27 +1382,7 @@ mod tests {
         ]);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: None,
-                logger: Some(&logger),
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: None,
-            },
+            ExecDeps::new(&mut backend).logger(&logger),
         )
         .unwrap();
         let wait_lines = lines_for(&logger.entries_for(wait_id));
@@ -1832,27 +1697,7 @@ mod tests {
         stop.store(true, Ordering::SeqCst);
         execute_macro_with(
             &mut macro_,
-            ExecDeps {
-                automation: &mut backend,
-                capturer: None,
-                close_matches_distance: 0,
-                variant_exit_early: true,
-                release_held_inputs: true,
-                while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
-                run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
-                resolver: None,
-                icons: None,
-                macros: None,
-                continue_waiter: None,
-                window_focuser: None,
-                ocr: None,
-                stop_flag: Some(&stop),
-                logger: None,
-                highlighter: None,
-                runtime_vars: None,
-                variables_dir: None,
-                click_fx: None,
-            },
+            ExecDeps::new(&mut backend).stop_flag(&stop),
         )
         .unwrap();
         assert!(
