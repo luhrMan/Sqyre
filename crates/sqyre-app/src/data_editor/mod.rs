@@ -1025,50 +1025,62 @@ impl DataEditor {
                 "Sort items",
                 (self.items_list_sort != Sort::NameAsc).then_some(crate::theme::PRIMARY),
             ));
-            // `Popup` (not `Menu`) kind + outside-click close: picking a radio
-            // or editing the tag chips inside must not dismiss it.
-            egui::Popup::new(
-                sort_btn.id.with("sort_menu"),
-                ui.ctx().clone(),
-                egui::PopupAnchor::ParentRect(sort_btn.rect),
-                ui.layer_id(),
-            )
-            .kind(egui::PopupKind::Popup)
-            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-            .layout(egui::Layout::top_down_justified(egui::Align::Min))
-            .style(egui::containers::menu::menu_style)
-            .open_memory(
-                sort_btn
-                    .clicked()
-                    .then_some(egui::SetOpenCommand::Bool(true)),
-            )
-            .show(|ui| {
-                for &s in Sort::ALL {
-                    ui.radio_value(&mut self.items_list_sort, s, s.label());
-                }
-                if self.items_list_sort == Sort::Tags {
-                    ui.separator();
-                    ui.label(egui::RichText::new("Tag priority").strong().small());
-                    let suggestions = helpers::collect_all_item_tags(catalog);
-                    let _ = crate::widgets::tag_chip_editor(
-                        ui,
-                        &mut self.items_tag_priority,
-                        &mut self.items_tag_priority_draft,
-                        &suggestions,
-                        crate::widgets::TagChipOptions {
-                            enabled: true,
-                            show_add_button: true,
-                            label_name: None,
-                            draft_hover: Some(
-                                "Drag chips to set priority. Unmatched items sort by name after.",
-                            ),
-                            reorderable: true,
-                            signed_filters: false,
-                            single_row: false,
-                        },
-                    );
-                }
-            });
+            // `Popup` (not `Menu`) kind + `parent_popup`: picking a radio,
+            // editing the tag chips, clicking a tag suggestion, or using a
+            // chip's right-click menu must not dismiss it — those nested
+            // popups live on their own egui layers, which `CloseOnClickOutside`
+            // counts as outside. It still closes on a true outside click or
+            // Escape. Temp-data bool, not `open_memory`: the chip context menus
+            // hold the single `Memory::popups` slot while open.
+            let sort_menu_id = sort_btn.id.with("sort_menu");
+            let mut open = ui
+                .ctx()
+                .data(|d| d.get_temp::<bool>(sort_menu_id.with("open")))
+                .unwrap_or(false);
+            if sort_btn.clicked() {
+                open = !open;
+            }
+            crate::widgets::parent_popup(
+                egui::Popup::new(
+                    sort_menu_id,
+                    ui.ctx().clone(),
+                    egui::PopupAnchor::ParentRect(sort_btn.rect),
+                    ui.layer_id(),
+                )
+                .kind(egui::PopupKind::Popup)
+                .layout(egui::Layout::top_down_justified(egui::Align::Min))
+                .style(egui::containers::menu::menu_style),
+                &mut open,
+                |ui| {
+                    for &s in Sort::ALL {
+                        ui.radio_value(&mut self.items_list_sort, s, s.label());
+                    }
+                    if self.items_list_sort == Sort::Tags {
+                        ui.separator();
+                        ui.label(egui::RichText::new("Tag priority").strong().small());
+                        let suggestions = helpers::collect_all_item_tags(catalog);
+                        let _ = crate::widgets::tag_chip_editor(
+                            ui,
+                            &mut self.items_tag_priority,
+                            &mut self.items_tag_priority_draft,
+                            &suggestions,
+                            crate::widgets::TagChipOptions {
+                                enabled: true,
+                                show_add_button: true,
+                                label_name: None,
+                                draft_hover: Some(
+                                    "Drag chips to set priority. Unmatched items sort by name after.",
+                                ),
+                                reorderable: true,
+                                signed_filters: false,
+                                single_row: false,
+                            },
+                        );
+                    }
+                },
+            );
+            ui.ctx()
+                .data_mut(|d| d.insert_temp(sort_menu_id.with("open"), open));
         }
         crate::widgets::section_separator(ui);
     }

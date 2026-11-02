@@ -3,7 +3,10 @@
 //! Per-element actions (edit, delete, remove, toggle) live in these menus rather
 //! than as inline buttons beside the element.
 
-use eframe::egui::{self, containers::menu::menu_style, Popup, PopupAnchor, PopupKind};
+use eframe::egui::{
+    self, containers::menu::menu_style, InnerResponse, Popup, PopupAnchor, PopupCloseBehavior,
+    PopupKind,
+};
 
 /// True when the secondary button was clicked inside `rect` on this `ui`'s layer.
 ///
@@ -64,13 +67,97 @@ pub fn context_menu_popup<R>(
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> Option<R> {
     let anchor = open_at.map_or(PopupAnchor::PointerFixed, PopupAnchor::ParentRect);
-    Popup::new(id, ui.ctx().clone(), anchor, ui.layer_id())
+    let inner = Popup::new(id, ui.ctx().clone(), anchor, ui.layer_id())
         .kind(PopupKind::Menu)
         .layout(egui::Layout::top_down_justified(egui::Align::Min))
         .style(menu_style)
         .open_memory(open_now.then_some(egui::SetOpenCommand::Bool(true)))
-        .show(add_contents)
-        .map(|r| r.inner)
+        .show(add_contents);
+    if let Some(inner) = &inner {
+        // Only once the menu is already open: the click that opened it is the
+        // ancestor's own outside click to evaluate — a menu opening at the
+        // pointer would otherwise shield that click from a `parent_popup`.
+        if !open_now {
+            register_nested_popup(ui.ctx(), inner.response.rect);
+        }
+    }
+    inner.map(|r| r.inner)
+}
+
+/// Rects of popups shown inside another popup this frame. See [`parent_popup`].
+fn nested_rects_id() -> egui::Id {
+    egui::Id::new("sqyre_nested_popup_rects")
+}
+
+/// Record the rect of a popup shown inside another popup's content.
+///
+/// Every egui `Popup`/`Area` paints on its own layer, so a click inside a
+/// nested popup (context menu, suggestion dropdown) is `clicked_elsewhere` for
+/// the ancestor that spawned it: `PopupCloseBehavior::CloseOnClickOutside`
+/// would dismiss the whole popup family. Popups nested inside a [`parent_popup`]
+/// call this each frame so the parent's outside-click check treats clicks
+/// inside them as inside the family.
+pub fn register_nested_popup(ctx: &egui::Context, rect: egui::Rect) {
+    ctx.data_mut(|d| {
+        let mut rects = d
+            .get_temp::<Vec<egui::Rect>>(nested_rects_id())
+            .unwrap_or_default();
+        rects.push(rect);
+        d.insert_temp(nested_rects_id(), rects);
+    });
+}
+
+/// Show `popup` with `open_bool` state and a nested-popup-aware outside-click
+/// close.
+///
+/// Use for a `PopupKind::Popup` whose content opens further popups (context
+/// menus via [`context_menu_popup`], tag suggestion dropdowns). egui's
+/// `CloseOnClickOutside` cannot express this: nested popups live on other
+/// layers, so clicks inside them read as "outside" and wrongly dismiss the
+/// parent. This shows the popup with `PopupCloseBehavior::IgnoreClicks` and
+/// instead writes `open = false` only when a click lands outside both the
+/// popup's own rect and every rect registered via [`register_nested_popup`]
+/// this frame. Escape / `ui.close()` still close it through egui's own
+/// handling.
+///
+/// Open state lives in `open` (a temp-data bool at the call site), not
+/// `Memory::popups`: that slot holds a single popup per viewport, so a nested
+/// `open_memory` context menu would evict the parent popup it was opened from.
+/// [`Popup::is_id_open`] / [`Popup::close_all`] therefore do not see it.
+pub fn parent_popup<'a, R>(
+    popup: egui::Popup<'a>,
+    open: &'a mut bool,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> Option<InnerResponse<R>> {
+    let ctx = popup.ctx().clone();
+    let popup_id = popup.get_id();
+    // Same guard egui applies for CloseOnClickOutside: the click that opened
+    // the popup must not immediately close it again.
+    let was_open_last_frame = ctx.read_response(popup_id).is_some();
+    ctx.data_mut(|d| d.remove_temp::<Vec<egui::Rect>>(nested_rects_id()));
+    let inner = popup
+        .open_bool(open)
+        .close_behavior(PopupCloseBehavior::IgnoreClicks)
+        .show(add_contents)?;
+    let click_pos = ctx.input(|i| {
+        if i.pointer.any_click() {
+            i.pointer.interact_pos()
+        } else {
+            None
+        }
+    });
+    if let (true, Some(pos)) = (was_open_last_frame, click_pos) {
+        let in_nested = ctx.data(|d| {
+            d.get_temp::<Vec<egui::Rect>>(nested_rects_id())
+                .unwrap_or_default()
+                .iter()
+                .any(|r| r.contains(pos))
+        });
+        if !inner.response.rect.contains(pos) && !in_nested {
+            *open = false;
+        }
+    }
+    Some(inner)
 }
 
 /// Right-click menu for whatever was painted in `rect`.
@@ -292,5 +379,122 @@ mod tests {
         });
         harness.run_steps(6);
         assert!(!*harness.state(), "a scroll drag must not open the menu");
+    }
+
+    /// `open` flag | tag chips | draft — a `parent_popup` hosting a tag editor
+    /// like the data editor's sort menu does.
+    type FamilyState = (bool, Vec<String>, String);
+
+    fn family_harness(state: FamilyState) -> egui_kittest::Harness<'static, FamilyState> {
+        egui_kittest::Harness::builder()
+            .with_size(egui::vec2(480.0, 360.0))
+            .build_ui_state(
+                |ui, (open, tags, draft): &mut FamilyState| {
+                    let btn = ui.button("Sort");
+                    if btn.clicked() {
+                        *open = !*open;
+                    }
+                    parent_popup(
+                        egui::Popup::new(
+                            btn.id.with("sort_menu"),
+                            ui.ctx().clone(),
+                            egui::PopupAnchor::ParentRect(btn.rect),
+                            ui.layer_id(),
+                        )
+                        .kind(egui::PopupKind::Popup)
+                        .layout(egui::Layout::top_down_justified(egui::Align::Min)),
+                        open,
+                        |ui| {
+                            let _ = crate::widgets::tag_chip_editor(
+                                ui,
+                                tags,
+                                draft,
+                                &["beta".to_owned()],
+                                crate::widgets::TagChipOptions::default(),
+                            );
+                        },
+                    );
+                },
+                state,
+            )
+    }
+
+    fn pointer_click(
+        harness: &mut egui_kittest::Harness<'_, FamilyState>,
+        at: egui::Pos2,
+        button: egui::PointerButton,
+    ) {
+        harness.hover_at(at);
+        harness.run_steps(2);
+        for pressed in [true, false] {
+            harness.input_mut().events.push(egui::Event::PointerButton {
+                pos: at,
+                button,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            harness.run_steps(1);
+        }
+        harness.run_steps(2);
+    }
+
+    /// Top-left of the painted galley for `text` — tag chips are painter-drawn
+    /// pills, not widgets, so their position comes from the frame output.
+    fn painted_text_pos(
+        harness: &egui_kittest::Harness<'_, FamilyState>,
+        text: &str,
+    ) -> egui::Pos2 {
+        harness
+            .output()
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(t) if t.galley.job.text == text => Some(t.pos),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("no painted text {text:?}"))
+    }
+
+    #[test]
+    fn chip_menu_inside_parent_popup_stays_open_and_removes() {
+        use egui_kittest::kittest::Queryable;
+        let mut harness = family_harness((true, vec!["alpha".to_string()], String::new()));
+        harness.run_steps(3);
+        let chip = painted_text_pos(&harness, "alpha") + egui::vec2(4.0, 4.0);
+        pointer_click(&mut harness, chip, egui::PointerButton::Secondary);
+        let remove = harness.get_by_label("Remove").rect().center();
+        pointer_click(&mut harness, remove, egui::PointerButton::Primary);
+        harness.run_steps(2);
+        assert!(harness.state().1.is_empty(), "Remove should delete the tag");
+        assert!(harness.state().0, "parent popup must stay open");
+        harness.get_by_role(egui::accesskit::Role::TextInput);
+    }
+
+    #[test]
+    fn suggestion_click_inside_parent_popup_stays_open() {
+        use egui_kittest::kittest::Queryable;
+        let mut harness = family_harness((true, Vec::new(), String::new()));
+        harness.run_steps(3);
+        let field = harness
+            .get_by_role(egui::accesskit::Role::TextInput)
+            .rect()
+            .center();
+        pointer_click(&mut harness, field, egui::PointerButton::Primary);
+        let beta = harness.get_by_label("beta").rect().center();
+        pointer_click(&mut harness, beta, egui::PointerButton::Primary);
+        assert_eq!(harness.state().1, vec!["beta".to_string()]);
+        assert!(harness.state().0, "parent popup must stay open");
+    }
+
+    #[test]
+    fn outside_click_closes_parent_popup() {
+        let mut harness = family_harness((true, Vec::new(), String::new()));
+        harness.run_steps(3);
+        pointer_click(
+            &mut harness,
+            egui::pos2(430.0, 330.0),
+            egui::PointerButton::Primary,
+        );
+        assert!(!harness.state().0, "click outside must close the popup");
     }
 }

@@ -22,8 +22,9 @@ pub mod wrap;
 
 pub(crate) use action_icons::{action_glyph_font, action_icon_side, VectorIcon};
 pub use context_menu::{
-    context_menu_popup, menu_item, menu_item_danger, rect_context_menu, rect_danger_menu,
-    response_context_menu, response_danger_menu, row_context_menu, row_danger_menu,
+    context_menu_popup, menu_item, menu_item_danger, parent_popup, rect_context_menu,
+    rect_danger_menu, register_nested_popup, response_context_menu, response_danger_menu,
+    row_context_menu, row_danger_menu,
 };
 pub use controls::{
     add_button, cancel_icon_button, dirty_action_button, error_badge, error_icon, icon_btn_side,

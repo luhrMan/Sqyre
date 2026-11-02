@@ -373,7 +373,7 @@ pub fn tag_chip_editor(
         && (was_open || tag_resp.has_focus() || nav.selected.is_some());
     if show_popup {
         let popup_width = tag_resp.rect.width().max(140.0);
-        egui::Popup::from_response(&tag_resp)
+        let shown = egui::Popup::from_response(&tag_resp)
             .id(nav_id.with("popup"))
             .open(true)
             .align(RectAlign::BOTTOM_START)
@@ -405,6 +405,12 @@ pub fn tag_chip_editor(
                     },
                 );
             });
+        if let Some(shown) = shown {
+            // Inside `parent_popup` hosts (e.g. the data editor sort menu) a
+            // suggestion click lands on this popup's own layer; registering the
+            // rect keeps the parent open.
+            crate::widgets::register_nested_popup(ui.ctx(), shown.response.rect);
+        }
     }
 
     if pending.is_none()
