@@ -1013,9 +1013,12 @@ mod tests {
 
     #[test]
     fn focus_target_skips_overlay_and_unaddressable_windows() {
-        assert!(
-            crate::focus_target_of(&win(crate::OVERLAY_WM_TITLE, "sqyre", "/bin/sqyre")).is_none()
-        );
+        assert!(crate::focus_target_of(&win(
+            crate::OVERLAY_WM_TITLE,
+            sqyre_ports::APP_ID,
+            "/bin/sqyre"
+        ))
+        .is_none());
         assert!(crate::focus_target_of(&win("", "app", "/usr/bin/app")).is_none());
         assert!(crate::focus_target_of(&win("Doc", "", "")).is_none());
     }
@@ -1228,7 +1231,7 @@ mod tests {
 
         let overlay = WindowInfo {
             title: super::OVERLAY_WM_TITLE.into(),
-            process_name: "sqyre".into(),
+            process_name: sqyre_ports::APP_ID.into(),
             process_path: String::new(),
             icon: None,
         };
@@ -1237,7 +1240,7 @@ mod tests {
 
         let tip = WindowInfo {
             title: super::OVERLAY_TIP_WM_TITLE.into(),
-            process_name: "sqyre".into(),
+            process_name: sqyre_ports::APP_ID.into(),
             process_path: String::new(),
             icon: None,
         };

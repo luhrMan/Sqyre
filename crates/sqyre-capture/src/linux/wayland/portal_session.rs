@@ -87,6 +87,19 @@ const PORTAL_APP_ID: &str = "com.sqyre.app";
 static FORCE_SCREENCAST_PICKER: AtomicBool = AtomicBool::new(false);
 static SCREENCAST_SESSION_GRANTED: AtomicBool = AtomicBool::new(false);
 
+/// Gate the grant on at least one PipeWire stream, then mark the session granted.
+fn grant_screencast_streams(
+    streams: &[ashpd::desktop::screencast::Stream],
+) -> Result<(), CaptureError> {
+    if streams.is_empty() {
+        return Err(CaptureError::Message(
+            "portal ScreenCast returned no streams".into(),
+        ));
+    }
+    SCREENCAST_SESSION_GRANTED.store(true, Ordering::SeqCst);
+    Ok(())
+}
+
 /// Portal Start succeeded this process, or a restore token is on disk from a prior grant.
 pub fn portal_screencast_granted() -> bool {
     SCREENCAST_SESSION_GRANTED.load(Ordering::SeqCst)
@@ -421,7 +434,9 @@ fn restore_token_path() -> std::path::PathBuf {
 }
 
 fn legacy_screencast_token_path() -> std::path::PathBuf {
-    dirs_home().join(APP_DIR_NAME).join("wayland-screencast.token")
+    dirs_home()
+        .join(APP_DIR_NAME)
+        .join("wayland-screencast.token")
 }
 
 fn dirs_home() -> std::path::PathBuf {
@@ -595,12 +610,7 @@ async fn open_combined_session_with_token(
         || response.devices().contains(DeviceType::Pointer);
     REMOTE_DESKTOP_GRANTED.store(has_input, Ordering::SeqCst);
     let streams_meta = response.streams();
-    if streams_meta.is_empty() {
-        return Err(CaptureError::Message(
-            "portal ScreenCast returned no streams".into(),
-        ));
-    }
-    SCREENCAST_SESSION_GRANTED.store(true, Ordering::SeqCst);
+    grant_screencast_streams(streams_meta)?;
     cap_log(
         "PORTAL",
         "grant",
@@ -775,12 +785,7 @@ async fn open_screencast_only_with_token(
         .map_err(portal_err("start response"))?;
     write_restore_token_at(&restore_token_path(), response.restore_token());
     let streams_meta = response.streams();
-    if streams_meta.is_empty() {
-        return Err(CaptureError::Message(
-            "portal ScreenCast returned no streams".into(),
-        ));
-    }
-    SCREENCAST_SESSION_GRANTED.store(true, Ordering::SeqCst);
+    grant_screencast_streams(streams_meta)?;
     cap_log(
         "PORTAL",
         "grant",
