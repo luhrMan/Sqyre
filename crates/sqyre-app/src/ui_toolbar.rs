@@ -74,7 +74,7 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             );
         }
         icon_resp.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), "Sqyre")
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), sqyre_ports::APP_NAME)
         });
         if running {
             // The shield stays; the S inside it becomes the trace spinner —
@@ -147,10 +147,10 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             }
             #[cfg(target_arch = "wasm32")]
             {
-                if toolbar_icon(ui, "⬆", "Export db.yaml", true).clicked() {
+                if toolbar_icon(ui, "⬆", &format!("Export {}", sqyre_persist::DB_FILE), true).clicked() {
                     app.export_db_yaml();
                 }
-                if toolbar_icon(ui, "⬇", "Import db.yaml", true).clicked() {
+                if toolbar_icon(ui, "⬇", &format!("Import {}", sqyre_persist::DB_FILE), true).clicked() {
                     app.request_db_import();
                 }
             }

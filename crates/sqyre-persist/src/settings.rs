@@ -91,7 +91,7 @@ pub fn default_worker_threads() -> i32 {
 
 /// Absolute path to the settings file (`{sqyre_dir}/settings.yaml`).
 pub fn settings_path() -> PathBuf {
-    crate::sqyre_dir().join("settings.yaml")
+    crate::sqyre_dir().join(crate::SETTINGS_FILE)
 }
 
 /// XDG pointer that records a relocated data directory (one path per line).
@@ -1194,7 +1194,7 @@ mod tests {
     #[test]
     fn roundtrip_settings() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("settings.yaml");
+        let path = dir.path().join(crate::SETTINGS_FILE);
         let mut s = UserSettings {
             save_meta_images: true,
             highlight_active_action: true,
@@ -1481,7 +1481,7 @@ mod tests {
         assert!(!s.remove_overlay_buttons_for_program("Missing"));
 
         let dir = tempdir().unwrap();
-        let path = dir.path().join("settings.yaml");
+        let path = dir.path().join(crate::SETTINGS_FILE);
         s.save_to_path(&path).unwrap();
         let loaded = UserSettings::load_from_path(&path).unwrap();
         assert_eq!(loaded.overlay_buttons.len(), 1);
@@ -1492,7 +1492,7 @@ mod tests {
     #[test]
     fn hotkey_tag_filters_omitted_defaults_empty() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("settings.yaml");
+        let path = dir.path().join(crate::SETTINGS_FILE);
         std::fs::write(&path, "save_meta_images: true\n").unwrap();
         let loaded = UserSettings::load_from_path(&path).unwrap();
         assert!(loaded.hotkey_tag_filters.is_empty());
@@ -1503,7 +1503,7 @@ mod tests {
     #[test]
     fn overlay_style_defaults_when_omitted() {
         let dir = tempdir().unwrap();
-        let path = dir.path().join("settings.yaml");
+        let path = dir.path().join(crate::SETTINGS_FILE);
         std::fs::write(
             &path,
             r#"
@@ -1536,7 +1536,7 @@ overlay_buttons:
     fn settings_path_is_under_sqyre_dir() {
         let dir = tempdir().unwrap();
         crate::with_sqyre_dir_override(dir.path().to_path_buf(), || {
-            assert_eq!(settings_path(), dir.path().join("settings.yaml"));
+            assert_eq!(settings_path(), dir.path().join(crate::SETTINGS_FILE));
         });
     }
 
@@ -1553,10 +1553,10 @@ overlay_buttons:
         let src = root.path().join("old");
         let dst = root.path().join("new");
         fs::create_dir_all(src.join("images")).unwrap();
-        fs::write(src.join("db.yaml"), "macros: {}\n").unwrap();
+        fs::write(src.join(crate::DB_FILE), "macros: {}\n").unwrap();
         move_dir(&src, &dst).unwrap();
         assert!(!src.exists());
-        assert!(dst.join("db.yaml").exists());
+        assert!(dst.join(crate::DB_FILE).exists());
         assert!(dst.join("images").is_dir());
     }
 }

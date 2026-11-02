@@ -434,7 +434,7 @@ fn install_inner(
 
     let tray_icon = TrayIconBuilder::new()
         .with_menu(Box::new(menu))
-        .with_tooltip("Sqyre")
+        .with_tooltip(sqyre_ports::APP_NAME)
         .with_icon(icon)
         .build()
         .map_err(|e| format!("tray build: {e}"))?;

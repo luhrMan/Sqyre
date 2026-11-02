@@ -185,7 +185,7 @@ fn native_options() -> eframe::NativeOptions {
             let builder = egui::ViewportBuilder::default()
                 .with_inner_size([960.0, 640.0])
                 .with_min_inner_size([100.0, 100.0])
-                .with_title("Sqyre")
+                .with_title(sqyre_ports::APP_NAME)
                 .with_app_id(assets::APP_ID)
                 .with_icon(assets::app_icon());
             // wgpu deferred overlay viewports inherit transparency from the root GL/VK config.

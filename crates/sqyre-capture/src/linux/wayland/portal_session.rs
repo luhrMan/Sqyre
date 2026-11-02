@@ -4,7 +4,7 @@ use crate::cap_log;
 use crate::error::CaptureError;
 use crate::linux::wayland::eis::EisInput;
 use parking_lot::Mutex;
-use sqyre_ports::{AutomationError, DesktopRect};
+use sqyre_ports::{AutomationError, DesktopRect, APP_DIR_NAME};
 use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -417,11 +417,11 @@ fn take_force_screencast_picker() -> bool {
 }
 
 fn restore_token_path() -> std::path::PathBuf {
-    dirs_home().join(".sqyre").join("wayland-remote.token")
+    dirs_home().join(APP_DIR_NAME).join("wayland-remote.token")
 }
 
 fn legacy_screencast_token_path() -> std::path::PathBuf {
-    dirs_home().join(".sqyre").join("wayland-screencast.token")
+    dirs_home().join(APP_DIR_NAME).join("wayland-screencast.token")
 }
 
 fn dirs_home() -> std::path::PathBuf {

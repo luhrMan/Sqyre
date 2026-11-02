@@ -42,6 +42,13 @@ use image::RgbaImage;
 use rayon::prelude::*;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+/// Human-readable application name (window titles, tray tooltip).
+pub const APP_NAME: &str = "Sqyre";
+/// Lowercase process/app-id name (`sqyre` binary, Wayland app_id, config dir).
+pub const APP_ID: &str = "sqyre";
+/// Per-user data directory name under the home directory.
+pub const APP_DIR_NAME: &str = ".sqyre";
+
 /// Fallback frame-identity token for backends with no frame counter: every call
 /// is a new value, so equal tokens always mean identical pixels (never dedups).
 pub fn unique_frame_token() -> u64 {

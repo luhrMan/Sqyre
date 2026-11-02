@@ -22,7 +22,7 @@ use pw::spa::buffer::{
 use pw::spa::param::video::{VideoFormat, VideoInfoRaw};
 use pw::spa::pod::Pod;
 use pw::stream::StreamRc;
-use sqyre_ports::{DesktopRect, RgbCapture};
+use sqyre_ports::{DesktopRect, RgbCapture, APP_ID};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -1526,7 +1526,7 @@ fn is_sqyre_managed_window(w: &crate::WindowInfo) -> bool {
     }
     // Kick toplevel uses empty title / app_id sqyre-kick; process name may be sqyre.
     let name = w.process_name.to_ascii_lowercase();
-    name.contains("sqyre")
+    name.contains(APP_ID)
 }
 
 fn note_region_copy(slot: &mut FrameSlot, dest: DesktopRect) {

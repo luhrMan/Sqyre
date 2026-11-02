@@ -7,20 +7,26 @@
 use crate::assets::{APP_ICON_SVG, APP_ID};
 use std::path::{Path, PathBuf};
 
-/// Keep in sync with `scripts/linux/packaging/appimage/com.sqyre.app.desktop`
+/// Render the desktop entry. Keep in sync with
+/// `scripts/linux/packaging/appimage/com.sqyre.app.desktop`
 /// (Flatpak builds only see `crates/`, so it cannot be `include_str!`'d).
-const DESKTOP_TEMPLATE: &str = "\
-[Desktop Entry]
-Type=Application
-Name=Sqyre
-Comment=Desktop macro builder — screen-aware automation
-Categories=Development;Utility;
-Keywords=sqyre;macro;automation;ocr;image-search;macro-recorder;auto-clicker;hotkey;
-Icon=com.sqyre.app
-Exec=sqyre
-Terminal=false
-StartupWMClass=sqyre
-";
+fn desktop_entry(exec: &Path) -> String {
+    format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name={name}\n\
+         Comment=Desktop macro builder — screen-aware automation\n\
+         Categories=Development;Utility;\n\
+         Keywords={id};macro;automation;ocr;image-search;macro-recorder;auto-clicker;hotkey;\n\
+         Icon={APP_ID}\n\
+         Exec={exec}\n\
+         Terminal=false\n\
+         StartupWMClass={id}\n",
+        name = sqyre_ports::APP_NAME,
+        id = sqyre_ports::APP_ID,
+        exec = quote_exec_arg(&exec.to_string_lossy()),
+    )
+}
 
 /// Write or refresh the user-local desktop entry and icon (no-op inside Flatpak).
 pub fn install() {
@@ -61,24 +67,6 @@ fn launcher_path() -> Option<PathBuf> {
     std::env::var_os("APPIMAGE")
         .map(PathBuf::from)
         .or_else(|| std::env::current_exe().ok())
-}
-
-fn desktop_entry(exec: &Path) -> String {
-    let exec_line = format!("Exec={}", quote_exec_arg(&exec.to_string_lossy()));
-    DESKTOP_TEMPLATE
-        .lines()
-        .map(|line| {
-            if line.starts_with("Exec=") {
-                exec_line.as_str()
-            } else {
-                line
-            }
-        })
-        .fold(String::new(), |mut out, line| {
-            out.push_str(line);
-            out.push('\n');
-            out
-        })
 }
 
 /// Quote per the Desktop Entry spec `Exec` rules (reserved chars, `%` field codes).

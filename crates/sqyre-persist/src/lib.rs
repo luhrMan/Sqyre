@@ -62,8 +62,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error;
 
-const SQYRE_DIR: &str = ".sqyre";
-const DB_FILE: &str = "db.yaml";
+const SQYRE_DIR: &str = sqyre_ports::APP_DIR_NAME;
+/// `db.yaml` database file name within [`sqyre_dir`].
+pub const DB_FILE: &str = "db.yaml";
+/// `settings.yaml` file name within [`sqyre_dir`].
+pub const SETTINGS_FILE: &str = "settings.yaml";
 /// Reject absurdly large `db.yaml` bodies before parsing.
 pub const MAX_DB_YAML_BYTES: usize = 32 * 1024 * 1024;
 /// Soft cap on macro count in one database.
@@ -149,7 +152,7 @@ pub fn sqyre_config_dir() -> PathBuf {
         Some(home) => home.join(".config"),
         None => dirs::config_dir().unwrap_or_else(|| home_dir().join(".config")),
     };
-    base.join("sqyre")
+    base.join(sqyre_ports::APP_ID)
 }
 
 /// Run `f` with a temporary Sqyre dir override, serialized against other override users.
@@ -594,7 +597,7 @@ programs: {}
     #[test]
     fn atomic_write_replaces_and_leaves_no_tmp() {
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("db.yaml");
+        let path = dir.path().join(DB_FILE);
         std::fs::write(&path, b"old").unwrap();
         atomic_write(&path, b"new-content").unwrap();
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new-content");
