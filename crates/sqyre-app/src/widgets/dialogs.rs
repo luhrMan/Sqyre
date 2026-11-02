@@ -352,7 +352,7 @@ pub enum ConfirmCancel {
     Cancel,
 }
 
-/// Visual role for a confirm / choice primary button.
+/// Visual role for a [`confirm_choice_row`] choice button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmKind {
     /// Neutral primary (Overwrite, Yes, Add, …).
@@ -388,14 +388,40 @@ pub fn poll_confirm_keys(ui: &mut egui::Ui) -> ConfirmCancel {
     }
 }
 
+/// Right-anchored button strip that only claims its height.
+///
+/// `with_layout(right_to_left)` would report the whole offered width as
+/// `min_size`, stretching auto-sized dialogs to the constrain rect; painting
+/// into a floating child (same trick as `float_bottom_right`) anchors the
+/// buttons to the window's own right edge while the row stays as wide as the
+/// message text alone.
+fn right_button_row(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    // Clip is the paint bound, max_rect the layout bound — anchor to the
+    // tighter of the two so the buttons land on the painted edge.
+    let right = ui.max_rect().right().min(ui.clip_rect().right());
+    let h = ui.spacing().interact_size.y;
+    let top = ui.cursor().min.y;
+    let strip = egui::Rect::from_min_max(
+        ui.cursor().min,
+        egui::pos2(right.max(ui.cursor().min.x + 1.0), top + h),
+    );
+    let mut row = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(strip)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    add(&mut row);
+    ui.add_space(h);
+}
+
 /// Cancel-only footer for record / dismiss-only dialogs.
 ///
-/// Button order matches [`confirm_cancel_row`] (Cancel on the left). When
+/// Right-aligned like [`confirm_cancel_row`] (Cancel at the right edge). When
 /// `esc_dismisses`, Esc is consumed as Cancel (same path as confirms). Pass
 /// `false` when Escape is a recordable key (single-key record modal).
 pub fn dismiss_row(ui: &mut egui::Ui, esc_dismisses: bool) -> bool {
     let mut cancel = false;
-    ui.horizontal(|ui| {
+    right_button_row(ui, |ui| {
         if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
             cancel = true;
         }
@@ -406,22 +432,20 @@ pub fn dismiss_row(ui: &mut egui::Ui, esc_dismisses: bool) -> bool {
     cancel
 }
 
-/// Cancel left + labeled primary right for destructive / overwrite prompts.
+/// Red `✕` cancel beside a green `✓` confirm at the right edge — the icon pair
+/// reads as no / yes. Right-aligned like [`save_row`].
 ///
 /// `confirm_label` is the action verb (**Delete**, **Overwrite**, …) — never
-/// generic "Confirm". `Enter` confirms and `Esc` cancels.
-pub fn confirm_cancel_row(
-    ui: &mut egui::Ui,
-    confirm_label: &str,
-    kind: ConfirmKind,
-) -> ConfirmCancel {
+/// generic "Confirm" — kept as the check button's hover text and AccessKit
+/// name. `Enter` confirms and `Esc` cancels.
+pub fn confirm_cancel_row(ui: &mut egui::Ui, confirm_label: &str) -> ConfirmCancel {
     let mut out = ConfirmCancel::None;
-    ui.horizontal(|ui| {
+    right_button_row(ui, |ui| {
+        if crate::widgets::confirm_icon_button(ui, confirm_label).clicked() {
+            out = ConfirmCancel::Confirm;
+        }
         if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
             out = ConfirmCancel::Cancel;
-        }
-        if confirm_button(ui, confirm_label, kind).clicked() {
-            out = ConfirmCancel::Confirm;
         }
     });
     if out == ConfirmCancel::None {
@@ -439,7 +463,7 @@ pub enum ConfirmChoice {
     Choice(usize),
 }
 
-/// Cancel left + one or more labeled choice buttons.
+/// Cancel + one or more labeled choice buttons, right-aligned.
 ///
 /// `Esc` → Cancel. `Enter` → `enter_choice` when `Some`.
 pub fn confirm_choice_row(
@@ -448,14 +472,14 @@ pub fn confirm_choice_row(
     enter_choice: Option<usize>,
 ) -> ConfirmChoice {
     let mut out = ConfirmChoice::None;
-    ui.horizontal(|ui| {
-        if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
-            out = ConfirmChoice::Cancel;
-        }
-        for (i, (label, kind)) in choices.iter().enumerate() {
+    right_button_row(ui, |ui| {
+        for (i, (label, kind)) in choices.iter().enumerate().rev() {
             if confirm_button(ui, label, *kind).clicked() {
                 out = ConfirmChoice::Choice(i);
             }
+        }
+        if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
+            out = ConfirmChoice::Cancel;
         }
     });
     if out == ConfirmChoice::None {
@@ -504,6 +528,38 @@ pub fn confirm_window(
 mod tests {
     use super::*;
     use egui::{Event, Key, Modifiers, RawInput};
+
+    #[test]
+    fn confirm_row_right_aligns_without_inflating_width() {
+        let ctx = egui::Context::default();
+        let mut min_right = f32::NAN;
+        let mut content_right = f32::NAN;
+        ctx.run_ui(RawInput::default(), |ui| {
+            ui.set_max_width(320.0);
+            assert_eq!(confirm_cancel_row(ui, "Delete"), ConfirmCancel::None);
+            min_right = ui.min_rect().right();
+            content_right = ui.max_rect().right();
+        })
+        .drop_without_applying_deltas();
+        // The row only claims its height: auto-sized dialogs must not widen to
+        // the offered rect just to host right-aligned buttons.
+        assert!(
+            min_right < content_right - 200.0,
+            "row min width must not reach the right edge ({min_right} vs {content_right})"
+        );
+        let button_right = ctx.viewport(|v| {
+            v.prev_pass
+                .widgets
+                .get_layer(egui::LayerId::background())
+                .filter(|w| w.sense.senses_click())
+                .map(|w| w.rect.right())
+                .fold(f32::NEG_INFINITY, f32::max)
+        });
+        assert!(
+            button_right >= content_right - 1.0,
+            "confirm button must anchor to the right edge ({button_right} vs {content_right})"
+        );
+    }
 
     #[test]
     fn save_row_places_save_at_right_edge() {

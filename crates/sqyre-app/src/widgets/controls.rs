@@ -49,6 +49,18 @@ pub fn cancel_icon_button(ui: &mut egui::Ui, tip: &str) -> egui::Response {
     icon_button_inner(ui, egui_phosphor::regular::X, tip, Some(MACRO_STOP))
 }
 
+/// Green `✓` — the yes side of confirm rows (`no` is [`cancel_icon_button`]).
+/// `tip` keeps the action verb ("Delete", "Overwrite", …) as the AccessKit
+/// name and hover text.
+pub fn confirm_icon_button(ui: &mut egui::Ui, tip: &str) -> egui::Response {
+    icon_button_inner(
+        ui,
+        egui_phosphor::regular::CHECK,
+        tip,
+        Some(crate::theme::MACRO_START),
+    )
+}
+
 fn icon_button_inner(
     ui: &mut egui::Ui,
     glyph: &str,
