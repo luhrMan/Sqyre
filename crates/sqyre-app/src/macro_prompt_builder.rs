@@ -950,7 +950,7 @@ pub(crate) fn unique_macro_name(base: &str, existing: &[String]) -> String {
 mod tests {
     use super::*;
     use sqyre_domain::{
-        root_loop, Action, ActionId, ActionKind, ScalarValue, GENERAL_PROGRAM, WIRE_TYPE_KEYS,
+        root_loop, Action, ActionKind, ScalarValue, GENERAL_PROGRAM, WIRE_TYPE_KEYS,
     };
     use sqyre_persist::{ensure_general_program, ProgramItem, ProgramPoint, ProgramSearchArea};
 
@@ -994,12 +994,9 @@ mod tests {
 
     fn sample_macro(name: &str) -> Macro {
         let mut m = Macro::new(name, 0, vec![]);
-        m.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        }]);
+        m.root = root_loop(vec![Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        })]);
         m
     }
 

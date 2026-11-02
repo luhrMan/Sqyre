@@ -2064,8 +2064,8 @@ const PERMISSIONS_PANEL: &[&str] = &[
 const DATA_LOCATION: &[&str] = &[
     "data folder",
     "data directory",
-    "sqyre",
-    ".sqyre",
+    sqyre_ports::APP_ID,
+    sqyre_ports::APP_DIR_NAME,
     "location",
     "choose location",
     "open folder",
@@ -2222,10 +2222,13 @@ fn appearance_section_visible(q: &str) -> bool {
 
 /// If the user picked `.sqyre` itself, use it; otherwise treat the pick as its parent.
 fn resolve_sqyre_dir_from_pick(picked: PathBuf) -> PathBuf {
-    if picked.file_name().is_some_and(|n| n == ".sqyre") {
+    if picked
+        .file_name()
+        .is_some_and(|n| n == sqyre_ports::APP_DIR_NAME)
+    {
         picked
     } else {
-        picked.join(".sqyre")
+        picked.join(sqyre_ports::APP_DIR_NAME)
     }
 }
 

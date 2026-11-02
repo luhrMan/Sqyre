@@ -679,12 +679,9 @@ fn events_to_actions(
     let flush_wait = |actions: &mut Vec<Action>, last_t: &mut Instant, at: Instant| {
         let ms = at.duration_since(*last_t).as_millis() as i64;
         if ms >= WAIT_THRESHOLD_MS {
-            actions.push(Action {
-                id: ActionId::new(),
-                kind: ActionKind::Wait {
-                    time: ScalarValue::Int(ms),
-                },
-            });
+            actions.push(Action::new(ActionKind::Wait {
+                time: ScalarValue::Int(ms),
+            }));
         }
         *last_t = at;
     };
@@ -711,16 +708,13 @@ fn events_to_actions(
             save: true,
             link_to: None,
         });
-        actions.push(Action {
-            id: ActionId::new(),
-            kind: ActionKind::Move {
-                point: CoordinateRef(format!("{TEMPORARY_PROGRAM}{PROGRAM_DELIMITER}{name}")),
-                smooth: true,
-                smooth_low: 0.05,
-                smooth_high: 0.20,
-                smooth_delay_ms: 1,
-            },
-        });
+        actions.push(Action::new(ActionKind::Move {
+            point: CoordinateRef(format!("{TEMPORARY_PROGRAM}{PROGRAM_DELIMITER}{name}")),
+            smooth: true,
+            smooth_low: 0.05,
+            smooth_high: 0.20,
+            smooth_delay_ms: 1,
+        }));
         *last_move = Some((x, y));
         *last_t = at;
     };
@@ -973,23 +967,17 @@ fn next_temp_point_name(used: &HashSet<String>) -> String {
 }
 
 fn click_action(button: RecordMouseButton, state: PressState) -> Action {
-    Action {
-        id: ActionId::new(),
-        kind: ActionKind::Click {
-            button: MouseButton::parse(button.as_str()),
-            state,
-        },
-    }
+    Action::new(ActionKind::Click {
+        button: MouseButton::parse(button.as_str()),
+        state,
+    })
 }
 
 fn key_action(key: &str, state: PressState) -> Action {
-    Action {
-        id: ActionId::new(),
-        kind: ActionKind::Key {
-            key: key.to_string(),
-            state,
-        },
-    }
+    Action::new(ActionKind::Key {
+        key: key.to_string(),
+        state,
+    })
 }
 
 /// Move points that would be created from the live event stream (same distance

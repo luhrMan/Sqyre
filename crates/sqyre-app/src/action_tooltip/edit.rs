@@ -69,15 +69,6 @@ pub fn paint_edit_fields(
         macros: _macros,
         active_macro,
     } = ctx;
-    let CatalogPaint {
-        catalog,
-        icons,
-        previews,
-    } = paint;
-    let VarTheme {
-        known_vars,
-        is_dark,
-    } = *theme;
     let RecordBridges {
         key_record,
         hotkey_record,
@@ -95,8 +86,8 @@ pub fn paint_edit_fields(
                     "Time (ms)",
                     h::WAIT_TIME,
                     time,
-                    known_vars,
-                    is_dark,
+                    theme.known_vars,
+                    theme.is_dark,
                     active_macro,
                 );
             });
@@ -132,10 +123,7 @@ pub fn paint_edit_fields(
                     egui_phosphor::regular::KEY,
                     "Key",
                     key,
-                    VarTheme {
-                        known_vars,
-                        is_dark,
-                    },
+                    *theme,
                     h::KEY,
                     W_VAR,
                     active_macro,
@@ -168,10 +156,7 @@ pub fn paint_edit_fields(
                     egui_phosphor::regular::KEYBOARD,
                     "Text",
                     text,
-                    VarTheme {
-                        known_vars,
-                        is_dark,
-                    },
+                    *theme,
                     h::TYPE_TEXT,
                     W_VAR,
                     active_macro,
@@ -194,17 +179,8 @@ pub fn paint_edit_fields(
             smooth_delay_ms,
         } => {
             tip_section(ui, |ui| {
-                point_picker_row(
-                    ui,
-                    &mut CatalogPaint {
-                        catalog,
-                        icons,
-                        previews,
-                    },
-                    point,
-                    picker,
-                );
-                paint_coord_preview(ui, catalog, previews, point, PreviewKind::Point);
+                point_picker_row(ui, &mut *paint, point, picker);
+                paint_coord_preview(ui, paint.catalog, paint.previews, point, PreviewKind::Point);
             });
             tip_wrapped_section(ui, |ui| {
                 help::tip(ui.checkbox(smooth, "Smooth"), h::MOVE_SMOOTH);
@@ -249,10 +225,7 @@ pub fn paint_edit_fields(
                     egui_phosphor::regular::CHAT_TEXT,
                     "Message",
                     message,
-                    VarTheme {
-                        known_vars,
-                        is_dark,
-                    },
+                    *theme,
                     h::PAUSE_MESSAGE,
                     W_TEXT,
                     active_macro,
@@ -310,7 +283,7 @@ pub fn paint_edit_fields(
                         help::label(ui, egui_phosphor::regular::TERMINAL_WINDOW, "Process path");
                         crate::icon_cache::paint_leading_process_icon(
                             ui,
-                            icons,
+                            paint.icons,
                             process_path,
                             window_title,
                         );
@@ -359,7 +332,13 @@ pub fn paint_edit_fields(
         }
         ActionKind::SetVariable { assignments } => {
             tip_section(ui, |ui| {
-                assignments_editor(ui, assignments, known_vars, is_dark, active_macro);
+                assignments_editor(
+                    ui,
+                    assignments,
+                    theme.known_vars,
+                    theme.is_dark,
+                    active_macro,
+                );
             });
         }
         ActionKind::SaveVariable {
@@ -374,8 +353,8 @@ pub fn paint_edit_fields(
                     egui_phosphor::regular::BRACKETS_CURLY,
                     "Variable",
                     variable_name,
-                    known_vars,
-                    is_dark,
+                    theme.known_vars,
+                    theme.is_dark,
                     W_VAR,
                     h::SAVE_VAR,
                 );
@@ -384,10 +363,7 @@ pub fn paint_edit_fields(
                     egui_phosphor::regular::FOLDER,
                     "Destination",
                     destination,
-                    VarTheme {
-                        known_vars,
-                        is_dark,
-                    },
+                    *theme,
                     h::SAVE_DEST,
                     W_VAR,
                     active_macro,
@@ -402,7 +378,14 @@ pub fn paint_edit_fields(
             });
         }
         ActionKind::Loop { name, count, .. } => {
-            edit_control_flow::paint_loop(ui, name, count, known_vars, is_dark, active_macro);
+            edit_control_flow::paint_loop(
+                ui,
+                name,
+                count,
+                theme.known_vars,
+                theme.is_dark,
+                active_macro,
+            );
         }
         ActionKind::While {
             condition,
@@ -413,13 +396,19 @@ pub fn paint_edit_fields(
                 ui,
                 condition,
                 max_iterations,
-                known_vars,
-                is_dark,
+                theme.known_vars,
+                theme.is_dark,
                 active_macro,
             );
         }
         ActionKind::Conditional { condition, .. } => {
-            edit_control_flow::paint_conditional(ui, condition, known_vars, is_dark, active_macro);
+            edit_control_flow::paint_conditional(
+                ui,
+                condition,
+                theme.known_vars,
+                theme.is_dark,
+                active_macro,
+            );
         }
         ActionKind::ForEachRow {
             name,
@@ -436,10 +425,7 @@ pub fn paint_edit_fields(
                     start_row,
                     end_row,
                 },
-                VarTheme {
-                    known_vars,
-                    is_dark,
-                },
+                *theme,
                 active_macro,
             );
         }
@@ -448,142 +434,42 @@ pub fn paint_edit_fields(
                 text_field(ui, egui_phosphor::regular::TEXT_T, "Name", h::NAME, name);
             });
             tip_section(ui, |ui| {
-                cells_picker_row(
+                cells_picker_row(ui, &mut *paint, cells, picker);
+                paint_coord_preview(
                     ui,
-                    &mut CatalogPaint {
-                        catalog,
-                        icons,
-                        previews,
-                    },
+                    paint.catalog,
+                    paint.previews,
                     cells,
-                    picker,
+                    PreviewKind::SearchArea,
                 );
-                paint_coord_preview(ui, catalog, previews, cells, PreviewKind::SearchArea);
             });
         }
-        ActionKind::ImageSearch {
-            name,
-            targets,
-            target_tags,
-            search_area,
-            tolerance,
-            blur,
-            match_method,
-            sort_by,
-            sort_then,
-            tag_priority,
-            detection,
-        } => {
-            edit_detect::paint_image_search_fields(
-                ui,
-                &mut CatalogPaint {
-                    catalog,
-                    icons,
-                    previews,
-                },
-                picker,
-                VarTheme {
-                    known_vars,
-                    is_dark,
-                },
-                edit_detect::ImageSearchFields {
-                    name,
-                    targets,
-                    target_tags,
-                    search_area,
-                    tolerance,
-                    blur,
-                    match_method,
-                    sort_by,
-                    sort_then,
-                    tag_priority,
-                    detection,
-                },
-            );
+        ActionKind::ImageSearch(d) => {
+            edit_detect::paint_image_search_fields(ui, &mut *paint, picker, *theme, d);
         }
-        ActionKind::Ocr {
-            name,
-            target,
-            search_area,
-            output_variable,
-            match_mode,
-            case_sensitive,
-            blur,
-            min_threshold,
-            resize,
-            grayscale,
-            threshold_otsu,
-            threshold_invert,
-            detection,
-        } => {
-            edit_detect::paint_ocr_fields(
-                ui,
-                &mut CatalogPaint {
-                    catalog,
-                    icons,
-                    previews,
-                },
-                picker,
-                VarTheme {
-                    known_vars,
-                    is_dark,
-                },
-                active_macro,
-                edit_detect::OcrFields {
-                    name,
-                    target,
-                    search_area,
-                    output_variable,
-                    match_mode,
-                    case_sensitive,
-                    blur,
-                    min_threshold,
-                    resize,
-                    grayscale,
-                    threshold_otsu,
-                    threshold_invert,
-                    detection,
-                },
-            );
+        ActionKind::Ocr(d) => {
+            edit_detect::paint_ocr_fields(ui, &mut *paint, picker, *theme, active_macro, d);
         }
-        ActionKind::FindPixel {
-            name,
-            search_area,
-            target_color,
-            color_tolerance,
-            detection,
-        } => {
+        ActionKind::FindPixel(d) => {
             edit_detect::paint_find_pixel_fields(
                 ui,
-                &mut CatalogPaint {
-                    catalog,
-                    icons,
-                    previews,
-                },
+                &mut *paint,
                 picker,
-                VarTheme {
-                    known_vars,
-                    is_dark,
-                },
+                *theme,
                 active_macro,
                 screen_click,
-                edit_detect::FindPixelFields {
-                    name,
-                    search_area,
-                    target_color,
-                    color_tolerance,
-                    detection,
-                },
+                d,
             );
         }
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
                 wrap_unit(ui, |ui| {
                     help::label(ui, crate::model_icons::PROGRAM, "Program");
-                    let programs: Vec<String> = catalog.program_names().cloned().collect();
+                    let programs: Vec<String> = paint.catalog.program_names().cloned().collect();
                     let mut current = data.program.clone();
-                    let mut option_icon =
-                        |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
+                    let mut option_icon = |ctx: &egui::Context, name: &str| {
+                        paint.icons.for_program(ctx, paint.catalog, name)
+                    };
                     help::tip(
                         searchable_combo(
                             ui,
@@ -610,7 +496,8 @@ pub fn paint_edit_fields(
                     let atlases: Vec<String> = if data.program.trim().is_empty() {
                         Vec::new()
                     } else {
-                        catalog
+                        paint
+                            .catalog
                             .get(data.program.trim())
                             .map(|p| p.atlases.keys().cloned().collect())
                             .unwrap_or_default()
@@ -1286,9 +1173,40 @@ pub(super) fn scalar_field(
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
+    scalar_value_edit(
+        ui,
+        icon,
+        label,
+        help_text,
+        value,
+        known_vars,
+        is_dark,
+        active_macro,
+        validate_numeric_expression,
+        |v, text| *v = ScalarValue::parse_edit(&text),
+    );
+}
+
+/// Shared scalar edit body: validated var-ref text field + commit on change.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "field editor: icon, label, help, value, theme, and validation/commit"
+)]
+fn scalar_value_edit(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    help_text: &str,
+    value: &mut ScalarValue,
+    known_vars: &KnownVariableNames,
+    is_dark: bool,
+    active_macro: Option<&Macro>,
+    validate: fn(&str, Option<&Macro>) -> EntryValidation,
+    commit: impl Fn(&mut ScalarValue, String),
+) {
     let mut text = value.as_display();
     let before = text.clone();
-    let validation = validate_numeric_expression(&text, active_macro);
+    let validation = validate(&text, active_macro);
     var_pills::validated_var_ref_edit(
         ui,
         label,
@@ -1305,7 +1223,7 @@ pub(super) fn scalar_field(
         },
     );
     if text != before {
-        *value = ScalarValue::parse_edit(&text);
+        commit(value, text);
     }
 }
 
@@ -1325,27 +1243,18 @@ fn condition_operand_field(
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
-    let mut text = value.as_display();
-    let before = text.clone();
-    let validation = validate_set_variable_value(&text, active_macro);
-    var_pills::validated_var_ref_edit(
+    scalar_value_edit(
         ui,
+        icon,
         label,
-        &mut text,
-        VarTheme {
-            known_vars,
-            is_dark,
-        },
-        VarFieldOpts {
-            desired_width: W_VAR,
-            validation: &validation,
-            icon,
-            help: help_text,
-        },
+        help_text,
+        value,
+        known_vars,
+        is_dark,
+        active_macro,
+        validate_set_variable_value,
+        |v, text| *v = ScalarValue::String(text),
     );
-    if text != before {
-        *value = ScalarValue::String(text);
-    }
 }
 
 #[expect(
@@ -1925,7 +1834,7 @@ fn assignments_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{ActionId, PressState};
+    use sqyre_domain::PressState;
 
     #[test]
     fn parse_scalar_int_and_string() {
@@ -1984,12 +1893,9 @@ mod tests {
 
     #[test]
     fn apply_rejects_type_change() {
-        let mut live = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        };
+        let mut live = Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        });
         let draft = Action {
             id: live.id,
             kind: ActionKind::Click {

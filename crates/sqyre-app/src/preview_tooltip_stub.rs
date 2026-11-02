@@ -138,12 +138,14 @@ pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, Pre
         ActionKind::Move { point, .. } if !point.is_empty() => {
             Some((point.clone(), PreviewKind::Point))
         }
-        ActionKind::ImageSearch { search_area, .. }
-        | ActionKind::Ocr { search_area, .. }
-        | ActionKind::FindPixel { search_area, .. }
-            if !search_area.is_empty() =>
-        {
-            Some((search_area.clone(), PreviewKind::SearchArea))
+        ActionKind::ImageSearch(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
+        }
+        ActionKind::Ocr(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
+        }
+        ActionKind::FindPixel(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
         }
         _ => None,
     }

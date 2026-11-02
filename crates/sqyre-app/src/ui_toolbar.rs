@@ -71,7 +71,11 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             );
         }
         icon_resp.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), sqyre_ports::APP_NAME)
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Button,
+                ui.is_enabled(),
+                sqyre_ports::APP_NAME,
+            )
         });
         if running {
             // The shield stays; the S inside it becomes the trace spinner —
@@ -144,10 +148,14 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             }
             #[cfg(target_arch = "wasm32")]
             {
-                if toolbar_icon(ui, "⬆", &format!("Export {}", sqyre_persist::DB_FILE), true).clicked() {
+                if toolbar_icon(ui, "⬆", &format!("Export {}", sqyre_persist::DB_FILE), true)
+                    .clicked()
+                {
                     app.export_db_yaml();
                 }
-                if toolbar_icon(ui, "⬇", &format!("Import {}", sqyre_persist::DB_FILE), true).clicked() {
+                if toolbar_icon(ui, "⬇", &format!("Import {}", sqyre_persist::DB_FILE), true)
+                    .clicked()
+                {
                     app.request_db_import();
                 }
             }
@@ -192,11 +200,7 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
                     .layout(egui::Layout::left_to_right(egui::Align::Center)),
             );
             mid.set_clip_rect(mid_rect);
-            if !app.workspace.macros.is_empty() {
-                let idx = app
-                    .workspace
-                    .selected_macro
-                    .min(app.workspace.macros.len() - 1);
+            if let Some(idx) = app.workspace.selected_macro_index() {
                 paint_name_and_tags(app, &mut mid, idx, !running);
                 let painted = mid.min_rect().height().max(1.0);
                 if (painted - stack_h).abs() > 0.5 {
@@ -366,11 +370,7 @@ pub fn wasm_editor_note(ui: &mut egui::Ui) {
 /// Returns `false` if macros became empty (caller should stop drawing the editor).
 pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
-    let idx = app
-        .workspace
-        .selected_macro
-        .min(app.workspace.macros.len() - 1);
-    app.workspace.selected_macro = idx;
+    app.workspace.selected_macro = app.workspace.selected_macro_index().unwrap_or(0);
     let meta_enabled = !running;
     let idx = app.workspace.selected_macro;
     {
@@ -388,15 +388,8 @@ pub fn show_meta_and_hotkey(app: &mut SqyreApp, ui: &mut egui::Ui) -> bool {
         crate::widgets::error_icon(ui, &format!("Validation: {e}"));
     }
     // Selection / length may have changed after rename.
-    let idx = app
-        .workspace
-        .selected_macro
-        .min(app.workspace.macros.len().saturating_sub(1));
-    app.workspace.selected_macro = idx;
-    if app.workspace.macros.is_empty() {
-        return false;
-    }
-    true
+    app.workspace.selected_macro = app.workspace.selected_macro_index().unwrap_or(0);
+    !app.workspace.macros.is_empty()
 }
 
 fn paint_hotkey_controls(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, running: bool) {
@@ -475,10 +468,7 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
         return;
     }
     let running = app.run_session.state.running.load(Ordering::SeqCst);
-    let idx = app
-        .workspace
-        .selected_macro
-        .min(app.workspace.macros.len() - 1);
+    let idx = app.workspace.selected_macro_index().unwrap_or(0);
     crate::widgets::float_bottom_right(ui, ui.clip_rect(), |ui| {
         // Right-to-left: builder menu rightmost; then hotkey controls, chord,
         // key toggle, delay — the same left-to-right order the footer strip had.

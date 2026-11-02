@@ -1010,7 +1010,7 @@ fn take_ac_keys(ui: &mut egui::Ui, ac_open: bool) -> (bool, bool, bool, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{root_loop, ActionId, ActionKind, ScalarValue};
+    use sqyre_domain::{root_loop, ActionKind, ScalarValue};
 
     #[test]
     fn popup_opens_only_while_typing() {
@@ -1120,20 +1120,14 @@ mod tests {
 
     #[test]
     fn reconcile_preserves_matching_uids() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        };
+        let a = Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        });
         let id = a.id;
         let mut old = root_loop(vec![a]);
-        let mut new = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(2),
-            },
-        }]);
+        let mut new = root_loop(vec![Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(2),
+        })]);
         // Force root ids to match type.
         reconcile_action_uids(&old, &mut new);
         assert_eq!(new.children()[0].id, id);

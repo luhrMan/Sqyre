@@ -265,11 +265,16 @@ impl DataEditor {
                         EditorTab::Collections => Some(PreviewKind::Collection),
                         _ => None,
                     };
-                    self.ensure_list_cache(catalog);
-                    let progs = if grouped {
-                        self.list_cache.program_names.clone()
-                    } else {
-                        self.selected_program.clone().into_iter().collect()
+                    let progs = self.grouped_program_list(catalog, grouped);
+                    let mut g = GroupCtx {
+                        tab,
+                        catalog,
+                        icons: &mut *icons,
+                        grouped,
+                        compact_headers: settings.compact_program_headers,
+                        scroll_to: &scroll_to,
+                        did_scroll: &did_scroll,
+                        clicked_program: &mut clicked_program,
                     };
                     for prog in &progs {
                         let entities = self.entity_names(catalog, prog);
@@ -290,7 +295,7 @@ impl DataEditor {
                         if grouped {
                             visible += 1;
                         }
-                        let mut rows = |ui: &mut egui::Ui, icons: &mut IconCache| {
+                        let rows = |ui: &mut egui::Ui, icons: &mut IconCache| {
                             visible += entity_rows(
                                 ui,
                                 tab,
@@ -310,33 +315,20 @@ impl DataEditor {
                                 &mut delete_target,
                             );
                         };
-                        if grouped {
-                            program_group_section(
-                                ui,
-                                tab,
-                                catalog,
-                                icons,
-                                settings.compact_program_headers,
-                                prog,
-                                child_count,
-                                prog_selected,
-                                &scroll_to,
-                                &did_scroll,
-                                &mut clicked_program,
-                                rows,
-                            );
-                        } else {
-                            ui.set_max_width(ui.available_width());
-                            rows(ui, icons);
-                        }
+                        program_rows_or_group(ui, &mut g, prog, child_count, prog_selected, rows);
                     }
                 }
                 EditorTab::ScreenCap => {
-                    self.ensure_list_cache(catalog);
-                    let progs = if grouped {
-                        self.list_cache.program_names.clone()
-                    } else {
-                        self.selected_program.clone().into_iter().collect()
+                    let progs = self.grouped_program_list(catalog, grouped);
+                    let mut g = GroupCtx {
+                        tab,
+                        catalog,
+                        icons: &mut *icons,
+                        grouped,
+                        compact_headers: settings.compact_program_headers,
+                        scroll_to: &scroll_to,
+                        did_scroll: &did_scroll,
+                        clicked_program: &mut clicked_program,
                     };
                     for prog in &progs {
                         let search_areas = self.entity_names(catalog, prog);
@@ -366,7 +358,7 @@ impl DataEditor {
                         if grouped {
                             visible += 1;
                         }
-                        let mut rows = |ui: &mut egui::Ui, icons: &mut IconCache| {
+                        let rows = |ui: &mut egui::Ui, icons: &mut IconCache| {
                             let in_collection =
                                 sqyre_domain::CoordinateRef(self.form_search_area.clone())
                                     .is_collection();
@@ -430,25 +422,7 @@ impl DataEditor {
                                 }
                             }
                         };
-                        if grouped {
-                            program_group_section(
-                                ui,
-                                tab,
-                                catalog,
-                                icons,
-                                settings.compact_program_headers,
-                                prog,
-                                child_count,
-                                prog_selected,
-                                &scroll_to,
-                                &did_scroll,
-                                &mut clicked_program,
-                                rows,
-                            );
-                        } else {
-                            ui.set_max_width(ui.available_width());
-                            rows(ui, icons);
-                        }
+                        program_rows_or_group(ui, &mut g, prog, child_count, prog_selected, rows);
                     }
                 }
                 EditorTab::Overlay => {
@@ -457,6 +431,16 @@ impl DataEditor {
                         editor_program_names(catalog).cloned().collect()
                     } else {
                         self.selected_program.clone().into_iter().collect()
+                    };
+                    let mut g = GroupCtx {
+                        tab,
+                        catalog,
+                        icons: &mut *icons,
+                        grouped,
+                        compact_headers: settings.compact_program_headers,
+                        scroll_to: &scroll_to,
+                        did_scroll: &did_scroll,
+                        clicked_program: &mut clicked_program,
                     };
                     for prog in &progs {
                         let mut buttons: Vec<_> = settings
@@ -487,7 +471,7 @@ impl DataEditor {
                         if grouped {
                             visible += 1;
                         }
-                        let mut rows = |ui: &mut egui::Ui, _icons: &mut IconCache| {
+                        let rows = |ui: &mut egui::Ui, _icons: &mut IconCache| {
                             visible += overlay_button_rows(
                                 ui,
                                 prog,
@@ -504,25 +488,7 @@ impl DataEditor {
                                 &mut delete_target,
                             );
                         };
-                        if grouped {
-                            program_group_section(
-                                ui,
-                                tab,
-                                catalog,
-                                icons,
-                                settings.compact_program_headers,
-                                prog,
-                                child_count,
-                                prog_selected,
-                                &scroll_to,
-                                &did_scroll,
-                                &mut clicked_program,
-                                rows,
-                            );
-                        } else {
-                            ui.set_max_width(ui.available_width());
-                            rows(ui, icons);
-                        }
+                        program_rows_or_group(ui, &mut g, prog, child_count, prog_selected, rows);
                     }
                 }
             }
@@ -611,6 +577,16 @@ impl DataEditor {
             .get(program)
             .cloned()
             .unwrap_or_default()
+    }
+
+    /// Programs to iterate for the current list scope (grouped = all, else selection).
+    fn grouped_program_list(&mut self, catalog: &ProgramCatalog, grouped: bool) -> Vec<String> {
+        self.ensure_list_cache(catalog);
+        if grouped {
+            self.list_cache.program_names.clone()
+        } else {
+            self.selected_program.clone().into_iter().collect()
+        }
     }
 
     pub(crate) fn ensure_list_cache(&mut self, catalog: &ProgramCatalog) {
@@ -869,6 +845,49 @@ fn entity_row(
         );
     }
     resp
+}
+
+/// Per-arm list context shared by every [`program_rows_or_group`] call.
+struct GroupCtx<'a> {
+    tab: EditorTab,
+    catalog: &'a ProgramCatalog,
+    icons: &'a mut IconCache,
+    grouped: bool,
+    compact_headers: bool,
+    scroll_to: &'a Cell<bool>,
+    did_scroll: &'a Cell<bool>,
+    clicked_program: &'a mut Option<String>,
+}
+
+/// Paint the program rows flat, or inside the collapsible group header when
+/// the editor is grouped by program.
+fn program_rows_or_group(
+    ui: &mut egui::Ui,
+    g: &mut GroupCtx<'_>,
+    prog: &str,
+    child_count: usize,
+    prog_selected: bool,
+    body: impl FnOnce(&mut egui::Ui, &mut IconCache),
+) {
+    if g.grouped {
+        program_group_section(
+            ui,
+            g.tab,
+            g.catalog,
+            g.icons,
+            g.compact_headers,
+            prog,
+            child_count,
+            prog_selected,
+            g.scroll_to,
+            g.did_scroll,
+            g.clicked_program,
+            body,
+        );
+    } else {
+        ui.set_max_width(ui.available_width());
+        body(ui, g.icons);
+    }
 }
 
 /// Collapsible program header (All programs scope) wrapping `body` rows.

@@ -33,13 +33,9 @@ pub(crate) struct PendingProjectionRun {
 impl SqyreApp {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn start_macro(&mut self, ctx: &egui::Context) {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let name = self.workspace.macros[idx].name.clone();
         self.start_macro_by_name(&name, ctx);
     }
@@ -282,34 +278,38 @@ mod native_run {
         fn launch_macro(&self, ctx: &egui::Context, idx: usize) {
             let settings = self.settings_ui.settings();
             MacroLaunch {
+                kit: RunKit {
+                    macros: self.workspace.macros.clone(),
+                    catalog: self.workspace.catalog.clone(),
+                    ctx: ctx.clone(),
+                    running: Arc::clone(&self.run_session.state.running),
+                    status: Arc::clone(&self.run_session.state.status),
+                    stop: self.run_session.state.stop.clone(),
+                    action_log: self.run_session.action_log.clone(),
+                    runtime_vars: self.run_session.runtime_vars.clone(),
+                    highlighter: self.run_session.highlighter.clone(),
+                    click_fx: self.run_session.click_fx.clone(),
+                    continue_wait: self.run_session.continue_wait.clone(),
+                    macro_hotkeys: self.run_session.macro_hotkeys.clone(),
+                    running_macro: self.macro_overlay.running_macro_slot(),
+                    close_matches: settings.image_search_close_matches_distance,
+                    variant_exit_early: settings.image_search_variant_exit_early,
+                    release_held_inputs: settings.release_held_inputs_on_end,
+                    while_max_iterations: settings.while_max_iterations,
+                    run_macro_max_depth: settings.run_macro_max_depth.max(1) as usize,
+                    play_finish_sound: settings.play_finish_sound,
+                    sound_volume: settings.sound_volume,
+                },
                 macro_: self.workspace.macros[idx].clone(),
-                macros: self.workspace.macros.clone(),
-                catalog: self.workspace.catalog.clone(),
-                ctx: ctx.clone(),
-                running: Arc::clone(&self.run_session.state.running),
-                status: Arc::clone(&self.run_session.state.status),
-                stop: self.run_session.state.stop.clone(),
-                action_log: self.run_session.action_log.clone(),
-                runtime_vars: self.run_session.runtime_vars.clone(),
-                highlighter: self.run_session.highlighter.clone(),
-                click_fx: self.run_session.click_fx.clone(),
-                continue_wait: self.run_session.continue_wait.clone(),
-                macro_hotkeys: self.run_session.macro_hotkeys.clone(),
-                running_macro: self.macro_overlay.running_macro_slot(),
-                close_matches: settings.image_search_close_matches_distance,
-                variant_exit_early: settings.image_search_variant_exit_early,
-                release_held_inputs: settings.release_held_inputs_on_end,
-                while_max_iterations: settings.while_max_iterations,
-                run_macro_max_depth: settings.run_macro_max_depth.max(1) as usize,
-                play_finish_sound: settings.play_finish_sound,
-                sound_volume: settings.sound_volume,
             }
             .start();
         }
     }
 
-    struct MacroLaunch {
-        macro_: Macro,
+    /// Shared run inputs (catalog, run-state bridges, settings) carried by both
+    /// the direct launch and the stashed Android overlay kit.
+    #[derive(Clone)]
+    struct RunKit {
         macros: Vec<Macro>,
         catalog: sqyre_persist::ProgramCatalog,
         ctx: egui::Context,
@@ -332,10 +332,16 @@ mod native_run {
         sound_volume: f32,
     }
 
+    struct MacroLaunch {
+        kit: RunKit,
+        macro_: Macro,
+    }
+
     impl MacroLaunch {
         fn start(self) {
-            let Self {
-                mut macro_,
+            let Self { kit, macro_ } = self;
+            let mut macro_ = macro_;
+            let RunKit {
                 macros,
                 catalog,
                 ctx,
@@ -356,7 +362,7 @@ mod native_run {
                 run_macro_max_depth,
                 play_finish_sound,
                 sound_volume,
-            } = self;
+            } = kit;
             stop.clear();
             action_log.clear();
             runtime_vars.clear();
@@ -526,39 +532,15 @@ mod native_run {
     #[cfg(target_os = "android")]
     static OVERLAY_PROJECTION: parking_lot::Mutex<Option<String>> = parking_lot::Mutex::new(None);
 
+    /// Stashed run inputs an overlay tap can launch after Sqyre backgrounds.
     #[cfg(target_os = "android")]
-    struct OverlayRunKit {
-        ctx: egui::Context,
-        macros: Vec<Macro>,
-        catalog: sqyre_persist::ProgramCatalog,
-        running: Arc<AtomicBool>,
-        status: Arc<parking_lot::Mutex<String>>,
-        stop: sqyre_hotkeys::StopFlag,
-        action_log: sqyre_ports::SharedActionLog,
-        runtime_vars: sqyre_ports::SharedRuntimeVars,
-        highlighter: sqyre_ports::SharedHighlighter,
-        click_fx: sqyre_ports::SharedClickFx,
-        continue_wait: sqyre_hotkeys::ContinueWaitBridge,
-        macro_hotkeys: sqyre_hotkeys::MacroHotkeyBridge,
-        running_macro: Arc<parking_lot::Mutex<Option<String>>>,
-        close_matches: i32,
-        variant_exit_early: bool,
-        release_held_inputs: bool,
-        while_max_iterations: i32,
-        run_macro_max_depth: usize,
-        play_finish_sound: bool,
-        sound_volume: f32,
-    }
-
-    #[cfg(target_os = "android")]
-    static OVERLAY_KIT: parking_lot::Mutex<Option<Arc<OverlayRunKit>>> =
-        parking_lot::Mutex::new(None);
+    static OVERLAY_KIT: parking_lot::Mutex<Option<Arc<RunKit>>> = parking_lot::Mutex::new(None);
 
     /// Remember the macros and settings an overlay tap can run after Sqyre leaves the screen.
     #[cfg(target_os = "android")]
     pub(crate) fn refresh_android_overlay_kit(app: &SqyreApp, ctx: &egui::Context) {
         let settings = app.settings_ui.settings();
-        let kit = OverlayRunKit {
+        let kit = RunKit {
             ctx: ctx.clone(),
             macros: app.workspace.macros.clone(),
             catalog: app.workspace.catalog.clone(),
@@ -637,27 +619,8 @@ mod native_run {
             return;
         }
         MacroLaunch {
+            kit: (*kit).clone(),
             macro_: kit.macros[idx].clone(),
-            macros: kit.macros.clone(),
-            catalog: kit.catalog.clone(),
-            ctx: kit.ctx.clone(),
-            running: Arc::clone(&kit.running),
-            status: Arc::clone(&kit.status),
-            stop: kit.stop.clone(),
-            action_log: kit.action_log.clone(),
-            runtime_vars: kit.runtime_vars.clone(),
-            highlighter: kit.highlighter.clone(),
-            click_fx: kit.click_fx.clone(),
-            continue_wait: kit.continue_wait.clone(),
-            macro_hotkeys: kit.macro_hotkeys.clone(),
-            running_macro: Arc::clone(&kit.running_macro),
-            close_matches: kit.close_matches,
-            variant_exit_early: kit.variant_exit_early,
-            release_held_inputs: kit.release_held_inputs,
-            while_max_iterations: kit.while_max_iterations,
-            run_macro_max_depth: kit.run_macro_max_depth,
-            play_finish_sound: kit.play_finish_sound,
-            sound_volume: kit.sound_volume,
         }
         .start();
     }

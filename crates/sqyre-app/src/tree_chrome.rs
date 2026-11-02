@@ -365,25 +365,17 @@ fn paint_image_search_extras(
     is_dark: bool,
     drag_handle: &mut egui::Rect,
 ) -> bool {
-    let ActionKind::ImageSearch {
-        targets,
-        target_tags,
-        sort_by,
-        sort_then,
-        tag_priority,
-        ..
-    } = &action.kind
-    else {
+    let ActionKind::ImageSearch(d) = &action.kind else {
         return false;
     };
     let targets = cached_sorted_image_search_targets(
         ui.ctx(),
         catalog,
-        targets,
-        target_tags,
-        *sort_by,
-        *sort_then,
-        tag_priority,
+        &d.targets,
+        &d.target_tags,
+        d.sort_by,
+        d.sort_then,
+        &d.tag_priority,
     );
     let mut tip_hovered = false;
     let pastel = rgba(action_pastel_color(action.type_key(), is_dark));
@@ -441,39 +433,31 @@ pub(crate) fn paint_image_search_tooltip_thumbs_pub(
     catalog: &ProgramCatalog,
     icons: &mut IconCache,
 ) {
-    let ActionKind::ImageSearch {
-        targets,
-        target_tags,
-        sort_by,
-        sort_then,
-        tag_priority,
-        ..
-    } = &action.kind
-    else {
+    let ActionKind::ImageSearch(d) = &action.kind else {
         return;
     };
-    if targets.is_empty() && target_tags.is_empty() {
+    if d.targets.is_empty() && d.target_tags.is_empty() {
         return;
     }
 
     let display = cached_sorted_image_search_targets(
         ui.ctx(),
         catalog,
-        targets,
+        &d.targets,
         &[],
-        *sort_by,
-        *sort_then,
-        tag_priority,
+        d.sort_by,
+        d.sort_then,
+        &d.tag_priority,
     );
-    ui.add(egui::Label::new(format!("🔍 {}", targets.len())).wrap());
+    ui.add(egui::Label::new(format!("🔍 {}", d.targets.len())).wrap());
 
-    if !target_tags.is_empty() {
+    if !d.target_tags.is_empty() {
         crate::widgets::title_with_count(
             ui,
             egui::RichText::new("Tags").small().strong(),
-            target_tags.len(),
+            d.target_tags.len(),
         );
-        let groups = image_search_tip_tag_groups(catalog, target_tags);
+        let groups = image_search_tip_tag_groups(catalog, &d.target_tags);
         if groups.is_empty() {
             ui.label(egui::RichText::new(sqyre_domain::EMPTY_NONE).small().weak());
         } else {
@@ -807,12 +791,12 @@ pub fn paint_action_row(
                                 }
                             }
 
-                            if let ActionKind::FindPixel { target_color, .. } = &action.kind {
-                                if let Some(swatch) = paint_color_swatch(ui, target_color) {
+                            if let ActionKind::FindPixel(d) = &action.kind {
+                                if let Some(swatch) = paint_color_swatch(ui, &d.target_color) {
                                     extend_drag_handle(&mut drag_handle_rect, swatch.rect);
                                 }
                             }
-                            if matches!(action.kind, ActionKind::ImageSearch { .. })
+                            if matches!(action.kind, ActionKind::ImageSearch(_))
                                 && paint_image_search_extras(
                                     ui,
                                     action,
@@ -947,9 +931,7 @@ pub(crate) fn paint_row_highlight(ui: &mut egui::Ui, rect: egui::Rect, highlight
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{
-        ActionId, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue,
-    };
+    use sqyre_domain::{ActionKind, CoordinateRef, PressState, ScalarValue};
 
     fn with_ui(mut f: impl FnMut(&mut egui::Ui)) {
         let ctx = egui::Context::default();
@@ -1039,48 +1021,28 @@ mod tests {
         let interact = 18.0;
         assert_eq!(default_row_height(interact), ICON_SIZE);
 
-        let wait = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(100),
-            },
-        };
+        let wait = Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(100),
+        });
         assert_eq!(action_row_height(&wait, interact), ICON_SIZE);
 
-        let empty_search = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
-                name: String::new(),
-                targets: vec![],
-                target_tags: Vec::new(),
+        let empty_search = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         assert_eq!(action_row_height(&empty_search, interact), ICON_SIZE);
 
-        let with_target = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
-                name: String::new(),
+        let with_target = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 targets: vec!["a~b".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         assert_eq!(action_row_height(&with_target, interact), ICON_SIZE);
         const { assert!(TARGET_THUMB_MAX_H <= ICON_SIZE) };
     }
@@ -1106,13 +1068,10 @@ mod tests {
             ..Default::default()
         };
         crate::settings::SettingsUi::apply_appearance(&ctx, &settings);
-        let action = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Click {
-                button: "left".into(),
-                state: PressState::Tap,
-            },
-        };
+        let action = Action::new(ActionKind::Click {
+            button: "left".into(),
+            state: PressState::Tap,
+        });
         let catalog = ProgramCatalog::default();
         let mut icons = IconCache::new();
         let known = KnownVariableNames::default();
@@ -1156,27 +1115,10 @@ mod tests {
     #[test]
     fn paint_wait_row_smoke() {
         with_ui(|ui| {
-            let action = Action {
-                id: ActionId::new(),
-                kind: ActionKind::Wait {
-                    time: ScalarValue::Int(100),
-                },
-            };
-            let catalog = ProgramCatalog::default();
-            let mut icons = IconCache::new();
-            let result = paint_action_row(
-                ui,
-                &action,
-                &catalog,
-                &mut icons,
-                &KnownVariableNames::default(),
-                false,
-                RowHighlight::None,
-                &mut HashMap::new(),
-                0,
-                None,
-                true,
-            );
+            let action = Action::new(ActionKind::Wait {
+                time: ScalarValue::Int(100),
+            });
+            let result = paint_test_row(ui, &action, false);
             assert_eq!(result.action, RowAction::None);
         });
     }
@@ -1184,31 +1126,14 @@ mod tests {
     #[test]
     fn paint_action_row_drag_handle_is_icon_and_pills_only() {
         with_ui(|ui| {
-            let action = Action {
-                id: ActionId::new(),
-                kind: ActionKind::Wait {
-                    time: ScalarValue::Int(100),
-                },
-            };
-            let catalog = ProgramCatalog::default();
-            let mut icons = IconCache::new();
+            let action = Action::new(ActionKind::Wait {
+                time: ScalarValue::Int(100),
+            });
             // Wide row so empty space exists past the pills.
             let wide = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(400.0, 40.0));
             ui.scope_builder(egui::UiBuilder::new().max_rect(wide), |ui| {
                 ui.set_clip_rect(wide);
-                let result = paint_action_row(
-                    ui,
-                    &action,
-                    &catalog,
-                    &mut icons,
-                    &KnownVariableNames::default(),
-                    false,
-                    RowHighlight::None,
-                    &mut HashMap::new(),
-                    0,
-                    None,
-                    true,
-                );
+                let result = paint_test_row(ui, &action, false);
                 assert!(
                     result.drag_handle_rect.width() > 0.0 && result.drag_handle_rect.height() > 0.0,
                     "expected icon/pill drag handle, got {:?}",
@@ -1227,73 +1152,31 @@ mod tests {
     #[test]
     fn paint_find_pixel_and_image_search_smoke() {
         with_ui(|ui| {
-            let catalog = ProgramCatalog::default();
-            let mut icons = IconCache::new();
-            let find = Action {
-                id: ActionId::new(),
-                kind: ActionKind::FindPixel {
+            let find = Action::new(ActionKind::FindPixel(Box::new(
+                sqyre_domain::FindPixelData {
                     name: "red".into(),
                     search_area: CoordinateRef("P~A".into()),
                     target_color: "#ff0000".into(),
                     color_tolerance: 5,
-                    detection: DetectionBranch::default(),
+                    ..Default::default()
                 },
-            };
-            assert_eq!(
-                paint_action_row(
-                    ui,
-                    &find,
-                    &catalog,
-                    &mut icons,
-                    &KnownVariableNames::default(),
-                    true,
-                    RowHighlight::None,
-                    &mut HashMap::new(),
-                    0,
-                    None,
-                    true,
-                )
-                .action,
-                RowAction::None
-            );
+            )));
+            assert_eq!(paint_test_row(ui, &find, true).action, RowAction::None);
 
             let mut targets = Vec::new();
             for i in 0..10 {
                 targets.push(format!("Prog~Item{i}"));
             }
-            let search = Action {
-                id: ActionId::new(),
-                kind: ActionKind::ImageSearch {
+            let search = Action::new(ActionKind::ImageSearch(Box::new(
+                sqyre_domain::ImageSearchData {
                     name: "find".into(),
                     targets,
-                    target_tags: Vec::new(),
                     search_area: CoordinateRef("P~Box".into()),
                     tolerance: 0.9,
-                    blur: 0,
-                    match_method: Default::default(),
-                    sort_by: Default::default(),
-                    sort_then: Default::default(),
-                    tag_priority: Vec::new(),
-                    detection: DetectionBranch::default(),
+                    ..Default::default()
                 },
-            };
-            assert_eq!(
-                paint_action_row(
-                    ui,
-                    &search,
-                    &catalog,
-                    &mut icons,
-                    &KnownVariableNames::default(),
-                    false,
-                    RowHighlight::None,
-                    &mut HashMap::new(),
-                    0,
-                    None,
-                    true,
-                )
-                .action,
-                RowAction::None
-            );
+            )));
+            assert_eq!(paint_test_row(ui, &search, false).action, RowAction::None);
         });
     }
 
@@ -1383,6 +1266,22 @@ mod tests {
         });
     }
 
+    fn paint_test_row(ui: &mut egui::Ui, action: &Action, is_dark: bool) -> RowInteraction {
+        paint_action_row(
+            ui,
+            action,
+            &ProgramCatalog::default(),
+            &mut IconCache::new(),
+            &KnownVariableNames::default(),
+            is_dark,
+            RowHighlight::None,
+            &mut HashMap::new(),
+            0,
+            None,
+            true,
+        )
+    }
+
     fn paint_image_search_row(ui: &mut egui::Ui) -> RowInteraction {
         paint_image_search_row_with(ui, 12)
     }
@@ -1392,22 +1291,15 @@ mod tests {
         for i in 0..n {
             targets.push(format!("Prog~WideItem{i}"));
         }
-        let search = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let search = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets,
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         paint_action_row(
             ui,
             &search,
@@ -1426,13 +1318,10 @@ mod tests {
     #[test]
     fn paint_action_icon_smoke() {
         with_ui(|ui| {
-            let action = Action {
-                id: ActionId::new(),
-                kind: ActionKind::Click {
-                    button: "left".into(),
-                    state: PressState::Down,
-                },
-            };
+            let action = Action::new(ActionKind::Click {
+                button: "left".into(),
+                state: PressState::Down,
+            });
             paint_action_icon(ui, &action, false);
         });
     }
@@ -1487,22 +1376,16 @@ mod tests {
             },
         );
 
-        let action = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let action = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "Find buttons".into(),
                 targets: vec!["Demo~Ok".into()],
                 target_tags: vec!["+button".into(), "-junk".into()],
                 search_area: CoordinateRef(String::new()),
                 tolerance: 0.95,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
 
         let mut icons = IconCache::new();
         let mut harness = Harness::builder()

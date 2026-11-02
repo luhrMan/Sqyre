@@ -803,12 +803,14 @@ pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, Pre
         ActionKind::Move { point, .. } if !point.is_empty() => {
             Some((point.clone(), PreviewKind::Point))
         }
-        ActionKind::ImageSearch { search_area, .. }
-        | ActionKind::Ocr { search_area, .. }
-        | ActionKind::FindPixel { search_area, .. }
-            if !search_area.is_empty() =>
-        {
-            Some((search_area.clone(), PreviewKind::SearchArea))
+        ActionKind::ImageSearch(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
+        }
+        ActionKind::Ocr(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
+        }
+        ActionKind::FindPixel(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
         }
         ActionKind::ForEachCell { cells, .. } if !cells.is_empty() => {
             Some((cells.clone(), PreviewKind::SearchArea))
@@ -1540,47 +1542,33 @@ mod tests {
 
     #[test]
     fn coordinate_ref_for_preview_matches_action_kinds() {
-        use sqyre_domain::{ActionId, ActionKind, CoordinateRef, DetectionBranch};
+        use sqyre_domain::{ActionKind, CoordinateRef};
 
-        assert!(coordinate_ref_for_preview(&Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        })
+        assert!(coordinate_ref_for_preview(&Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        }))
         .is_none());
 
-        let mv = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Move {
-                point: CoordinateRef("P~Spot".into()),
-                smooth: false,
-                smooth_low: 0.05,
-                smooth_high: 0.2,
-                smooth_delay_ms: 1,
-            },
-        };
+        let mv = Action::new(ActionKind::Move {
+            point: CoordinateRef("P~Spot".into()),
+            smooth: false,
+            smooth_low: 0.05,
+            smooth_high: 0.2,
+            smooth_delay_ms: 1,
+        });
         assert_eq!(
             coordinate_ref_for_preview(&mv),
             Some((CoordinateRef("P~Spot".into()), PreviewKind::Point))
         );
 
-        let search = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let search = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "find".into(),
-                targets: vec![],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         assert_eq!(
             coordinate_ref_for_preview(&search),
             Some((CoordinateRef("P~Box".into()), PreviewKind::SearchArea))

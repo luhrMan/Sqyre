@@ -545,13 +545,14 @@ impl DataEditor {
                             self.pixel_check.refresh_gen,
                             settings.image_search_close_matches_distance,
                         );
-                        if cache.fingerprint == inputs {
-                            let match_count = cache.tolerance_matches.len();
+                        if cache.data.fingerprint == inputs {
+                            let match_count = cache.data.tolerance_matches.len();
                             let show_boxes = super::pixel_check::should_paint_match_boxes(
                                 match_count,
                                 self.pixel_check.show_many_match_boxes,
                             );
-                            let image_size = egui::vec2(cache.image_w as f32, cache.image_h as f32);
+                            let image_size =
+                                egui::vec2(cache.data.image_w as f32, cache.data.image_h as f32);
                             super::pixel_check::paint_heatmap_overlay(
                                 ui,
                                 rect,
@@ -572,47 +573,22 @@ impl DataEditor {
                         known,
                         is_dark,
                         active_macro,
-                        &mut [
-                            (
-                                &mut self.form_top,
-                                CardinalEdge::Top,
-                                "TopY",
-                                help::DE_AREA_TOP,
-                            ),
-                            (
-                                &mut self.form_bottom,
-                                CardinalEdge::Bottom,
-                                "BottomY",
-                                help::DE_AREA_BOTTOM,
-                            ),
-                            (
-                                &mut self.form_left,
-                                CardinalEdge::Left,
-                                "LeftX",
-                                help::DE_AREA_LEFT,
-                            ),
-                            (
-                                &mut self.form_right,
-                                CardinalEdge::Right,
-                                "RightX",
-                                help::DE_AREA_RIGHT,
-                            ),
-                        ],
+                        &mut self.area_edge_fields(),
                     );
                 },
             );
             if let Some(cache) = &self.pixel_check_cache {
                 super::pixel_check::paint_legend(
                     ui,
-                    &cache.summary,
-                    cache.tolerance_matches.len(),
+                    &cache.data.summary,
+                    cache.data.tolerance_matches.len(),
                     &mut self.pixel_check.show_many_match_boxes,
                     hover.as_ref(),
                     self.pixel_check.tolerance as f32,
-                    cache.tmpl_w,
-                    cache.tmpl_h,
+                    cache.data.tmpl_w,
+                    cache.data.tmpl_h,
                 );
-                if cache.mask_missing {
+                if cache.data.mask_missing {
                     crate::widgets::warn_icon(
                         ui,
                         "Mask image missing or unreadable — preview ran unmasked.",

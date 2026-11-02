@@ -683,6 +683,53 @@ fn click_to_edit_hit(
     resp
 }
 
+/// Options for [`chip_or_edit`].
+struct ChipEdit<'a> {
+    /// Grow the click zone to the resolved field width (`None` keeps the chip rect).
+    target_width: Option<f32>,
+    /// Whether the unfocused field shows its chip instead of the editor.
+    show_overlay: fn(&str, bool) -> bool,
+    help: &'a str,
+}
+
+/// Paint a var chip that swaps to the real editor on click, or the editor itself.
+fn chip_or_edit(
+    ui: &mut egui::Ui,
+    key: &str,
+    label: &str,
+    value: &mut String,
+    opts: ChipEdit<'_>,
+    chip: impl FnOnce(&mut egui::Ui, &str) -> egui::Response,
+    edit: impl FnOnce(&mut egui::Ui, egui::Id, &mut String) -> egui::Response,
+) {
+    let ChipEdit {
+        target_width,
+        show_overlay,
+        help,
+    } = opts;
+    let id = ui.id().with((key, label));
+    let focused = ui.memory(|m| m.has_focus(id));
+    if show_overlay(value, focused) {
+        let resp = chip(ui, value);
+        let rect = match target_width {
+            Some(w) => resp
+                .rect
+                .expand2(Vec2::new((w - resp.rect.width()).max(0.0), 2.0)),
+            None => resp.rect,
+        };
+        if crate::action_tooltip::help::tip(
+            click_to_edit_hit(ui, rect, id.with("overlay_hit"), label, value),
+            help,
+        )
+        .clicked()
+        {
+            ui.memory_mut(|m| m.request_focus(id));
+        }
+    } else {
+        crate::action_tooltip::help::tip(edit(ui, id, value), help);
+    }
+}
+
 /// Variable-name field that becomes a nested chip when unfocused.
 #[expect(
     clippy::too_many_arguments,
@@ -701,34 +748,25 @@ pub fn var_name_text_edit(
     crate::widgets::wrap_unit(ui, |ui| {
         crate::action_tooltip::help::label(ui, icon, label);
         let width = resolve_edit_width(ui, desired_width, 0.0);
-        let id = ui.id().with(("var_name_edit", label));
-        let focused = ui.memory(|m| m.has_focus(id));
-        if should_show_var_name_overlay(value, focused) {
-            let resp = paint_nested_var_chip(ui, value, known, is_dark);
-            let resp = crate::action_tooltip::help::tip(
-                click_to_edit_hit(
-                    ui,
-                    resp.rect
-                        .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
-                    id.with("overlay_hit"),
-                    label,
-                    value,
-                ),
+        chip_or_edit(
+            ui,
+            "var_name_edit",
+            label,
+            value,
+            ChipEdit {
+                target_width: Some(width),
+                show_overlay: should_show_var_name_overlay,
                 help,
-            );
-            if resp.clicked() {
-                ui.memory_mut(|m| m.request_focus(id));
-            }
-        } else {
-            crate::action_tooltip::help::tip(
+            },
+            |ui, value| paint_nested_var_chip(ui, value, known, is_dark),
+            |ui, id, value| {
                 ui.add(
                     egui::TextEdit::singleline(value)
                         .id(id)
                         .desired_width(width),
-                ),
-                help,
-            );
-        }
+                )
+            },
+        );
     });
 }
 
@@ -799,33 +837,24 @@ pub fn validated_var_ref_edit(
     crate::widgets::wrap_unit(ui, |ui| {
         crate::action_tooltip::help::label(ui, icon, label);
         let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
-        let id = ui.id().with(("validated_var_ref", label));
-        let focused = ui.memory(|m| m.has_focus(id));
-        if should_show_var_ref_overlay(value, focused) {
-            let plain_fg = ui.visuals().text_color();
-            let resp = outer_frame(ui, Color32::TRANSPARENT, |ui| {
-                paint_var_ref_content(ui, value, known, is_dark, plain_fg);
-            });
-            let resp = crate::action_tooltip::help::tip(
-                click_to_edit_hit(
-                    ui,
-                    resp.rect
-                        .expand2(Vec2::new((width - resp.rect.width()).max(0.0), 2.0)),
-                    id.with("overlay_hit"),
-                    label,
-                    value,
-                ),
+        chip_or_edit(
+            ui,
+            "validated_var_ref",
+            label,
+            value,
+            ChipEdit {
+                target_width: Some(width),
+                show_overlay: should_show_var_ref_overlay,
                 help,
-            );
-            if resp.clicked() {
-                ui.memory_mut(|m| m.request_focus(id));
-            }
-        } else {
-            crate::action_tooltip::help::tip(
-                var_ref_text_edit(ui, id, value, known, width, None),
-                help,
-            );
-        }
+            },
+            |ui, value| {
+                let plain_fg = ui.visuals().text_color();
+                outer_frame(ui, Color32::TRANSPARENT, |ui| {
+                    paint_var_ref_content(ui, value, known, is_dark, plain_fg);
+                })
+            },
+            |ui, id, value| var_ref_text_edit(ui, id, value, known, width, None),
+        );
         paint_entry_validation_icon(ui, validation);
     });
 }
@@ -858,30 +887,27 @@ pub fn validated_var_ref_multiline_edit(
         paint_entry_validation_icon(ui, validation);
     });
     let width = resolve_edit_width(ui, desired_width, 0.0);
-    let id = ui.id().with(("validated_var_ref_multi", label));
-    let focused = ui.memory(|m| m.has_focus(id));
-    if should_show_var_ref_overlay(value, focused) {
-        let plain_fg = ui.visuals().text_color();
-        let resp = outer_frame(ui, Color32::TRANSPARENT, |ui| {
-            ui.set_max_width(width);
-            for line in value.split('\n') {
-                paint_var_ref_content(ui, line, known, is_dark, plain_fg);
-            }
-        });
-        if crate::action_tooltip::help::tip(
-            click_to_edit_hit(ui, resp.rect, id.with("overlay_hit"), label, value),
+    chip_or_edit(
+        ui,
+        "validated_var_ref_multi",
+        label,
+        value,
+        ChipEdit {
+            target_width: None,
+            show_overlay: should_show_var_ref_overlay,
             help,
-        )
-        .clicked()
-        {
-            ui.memory_mut(|m| m.request_focus(id));
-        }
-    } else {
-        crate::action_tooltip::help::tip(
-            var_ref_text_edit(ui, id, value, known, width, Some(rows)),
-            help,
-        );
-    }
+        },
+        |ui, value| {
+            let plain_fg = ui.visuals().text_color();
+            outer_frame(ui, Color32::TRANSPARENT, |ui| {
+                ui.set_max_width(width);
+                for line in value.split('\n') {
+                    paint_var_ref_content(ui, line, known, is_dark, plain_fg);
+                }
+            })
+        },
+        |ui, id, value| var_ref_text_edit(ui, id, value, known, width, Some(rows)),
+    );
 }
 
 #[cfg(test)]

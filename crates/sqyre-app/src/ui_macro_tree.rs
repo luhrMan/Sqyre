@@ -22,10 +22,7 @@ const TREE_SCROLL_STOP_SPEED: f32 = 20.0;
 const TREE_SCROLL_FRICTION: f32 = 1000.0;
 pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>) {
     let running = app.run_session.state.running.load(Ordering::SeqCst);
-    let idx = app
-        .workspace
-        .selected_macro
-        .min(app.workspace.macros.len() - 1);
+    let idx = app.workspace.selected_macro_index().unwrap_or(0);
     app.workspace.selected_macro = idx;
 
     let mut open_logs: Option<ActionId> = None;
@@ -298,18 +295,17 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
                                             .drop_allowed(true)
                                             .default_open(true),
                                     );
+                                    let mut walk = TreeWalk {
+                                        open_logs: &mut open_logs,
+                                        delete_action: &mut delete_action,
+                                        row_events: &mut row_events,
+                                        tree: &mut tree_paint,
+                                        scroll_to,
+                                        scrolled_follow: &mut scrolled_follow,
+                                        interact_y,
+                                    };
                                     for child in root_children {
-                                        build_tree(
-                                            builder,
-                                            child,
-                                            &mut open_logs,
-                                            &mut delete_action,
-                                            &mut row_events,
-                                            &mut tree_paint,
-                                            scroll_to,
-                                            &mut scrolled_follow,
-                                            interact_y,
-                                        );
+                                        build_tree(builder, child, &mut walk);
                                     }
                                     builder.close_dir();
                                 },
@@ -802,31 +798,30 @@ fn flattened_visible_index(root: &Action, target: ActionId) -> Option<usize> {
     found
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "tree walk: builder, action, selection outputs, paint ctx, and scroll follow"
-)]
+/// Mutable outputs + shared paint context threaded through the recursive
+/// action-tree walk.
+struct TreeWalk<'a> {
+    open_logs: &'a mut Option<ActionId>,
+    delete_action: &'a mut Option<ActionId>,
+    row_events: &'a mut Vec<(ActionId, RowInteraction)>,
+    tree: &'a mut TreePaint<'a>,
+    scroll_to: Option<ActionId>,
+    scrolled_follow: &'a mut bool,
+    interact_y: f32,
+}
+
 fn build_tree(
     builder: &mut TreeViewBuilder<'_, ActionId>,
     action: &Action,
-    open_logs: &mut Option<ActionId>,
-    delete_action: &mut Option<ActionId>,
-    row_events: &mut Vec<(ActionId, RowInteraction)>,
-    tree: &mut TreePaint<'_>,
-    scroll_to: Option<ActionId>,
-    scrolled_follow: &mut bool,
-    interact_y: f32,
+    walk: &mut TreeWalk<'_>,
 ) {
     let action_id = action.id;
-    let highlight = row_highlight_for(tree, action);
-    let should_scroll = scroll_to == Some(action_id);
-    let row_h = tree_chrome::action_row_height(action, interact_y);
+    let highlight = row_highlight_for(walk.tree, action);
+    let should_scroll = walk.scroll_to == Some(action_id);
+    let row_h = tree_chrome::action_row_height(action, walk.interact_y);
 
-    let mut handle_row = |ui: &mut egui::Ui,
-                          open_logs: &mut Option<ActionId>,
-                          delete_action: &mut Option<ActionId>,
-                          row_events: &mut Vec<(ActionId, RowInteraction)>,
-                          scrolled_follow: &mut bool| {
+    let handle_row = |ui: &mut egui::Ui, walk: &mut TreeWalk<'_>| {
+        let tree = &mut *walk.tree;
         let validation_error = sqyre_validate::validate_action(action, Some(tree.active_macro))
             .err()
             .map(|e| e.to_string());
@@ -856,14 +851,14 @@ fn build_tree(
         });
         if should_scroll {
             ui.scroll_to_rect(interaction.row_rect, Some(egui::Align::Center));
-            *scrolled_follow = true;
+            *walk.scrolled_follow = true;
         }
         match interaction.action {
-            RowAction::Logs => *open_logs = Some(action_id),
-            RowAction::Delete => *delete_action = Some(action_id),
+            RowAction::Logs => *walk.open_logs = Some(action_id),
+            RowAction::Delete => *walk.delete_action = Some(action_id),
             RowAction::Edit | RowAction::None => {}
         }
-        row_events.push((action_id, interaction));
+        walk.row_events.push((action_id, interaction));
     };
 
     if action.is_branch() {
@@ -872,67 +867,37 @@ fn build_tree(
                 .drop_allowed(true)
                 .height(row_h)
                 .label_ui(|ui| {
-                    handle_row(ui, open_logs, delete_action, row_events, scrolled_follow);
+                    handle_row(ui, walk);
                 }),
         );
         if is_open {
             for child in action.children() {
-                build_tree(
-                    builder,
-                    child,
-                    open_logs,
-                    delete_action,
-                    row_events,
-                    tree,
-                    scroll_to,
-                    scrolled_follow,
-                    interact_y,
-                );
+                build_tree(builder, child, walk);
             }
             if action.has_else_folder() {
-                build_else_dir(
-                    builder,
-                    action,
-                    open_logs,
-                    delete_action,
-                    row_events,
-                    tree,
-                    scroll_to,
-                    scrolled_follow,
-                    interact_y,
-                );
+                build_else_dir(builder, action, walk);
             }
         }
         builder.close_dir();
     } else {
         builder.node(NodeBuilder::leaf(action_id).height(row_h).label_ui(|ui| {
-            handle_row(ui, open_logs, delete_action, row_events, scrolled_follow);
+            handle_row(ui, walk);
         }));
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "tree walk: builder, action, selection outputs, paint ctx, and scroll follow"
-)]
 fn build_else_dir(
     builder: &mut TreeViewBuilder<'_, ActionId>,
     detection: &Action,
-    open_logs: &mut Option<ActionId>,
-    delete_action: &mut Option<ActionId>,
-    row_events: &mut Vec<(ActionId, RowInteraction)>,
-    tree: &mut TreePaint<'_>,
-    scroll_to: Option<ActionId>,
-    scrolled_follow: &mut bool,
-    interact_y: f32,
+    walk: &mut TreeWalk<'_>,
 ) {
     let else_id = ActionId::else_folder(detection.id);
     let else_count = detection
         .else_children()
         .map(|kids| kids.len())
         .unwrap_or(0);
-    let row_h = tree_chrome::default_row_height(interact_y);
-    let should_scroll = scroll_to == Some(else_id);
+    let row_h = tree_chrome::default_row_height(walk.interact_y);
+    let should_scroll = walk.scroll_to == Some(else_id);
     let is_open = builder.node(
         NodeBuilder::dir(else_id)
             .drop_allowed(true)
@@ -952,13 +917,13 @@ fn build_else_dir(
                 tree_chrome::paint_row_highlight(
                     ui,
                     row_rect,
-                    else_folder_highlight(detection.id, tree.selected.last().copied()),
+                    else_folder_highlight(detection.id, walk.tree.selected.last().copied()),
                 );
                 if should_scroll {
                     ui.scroll_to_rect(row_rect, Some(egui::Align::Center));
-                    *scrolled_follow = true;
+                    *walk.scrolled_follow = true;
                 }
-                row_events.push((
+                walk.row_events.push((
                     else_id,
                     RowInteraction {
                         action: RowAction::None,
@@ -976,17 +941,7 @@ fn build_else_dir(
     if is_open {
         if let Some(else_kids) = detection.else_children() {
             for child in else_kids {
-                build_tree(
-                    builder,
-                    child,
-                    open_logs,
-                    delete_action,
-                    row_events,
-                    tree,
-                    scroll_to,
-                    scrolled_follow,
-                    interact_y,
-                );
+                build_tree(builder, child, walk);
             }
         }
     }
@@ -1139,27 +1094,18 @@ mod highlight_ui_tests {
 
     #[test]
     fn press_pair_highlight_marks_opposite_same_key() {
-        let down = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "ctrl".into(),
-                state: PressState::Down,
-            },
-        };
-        let up = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "ctrl".into(),
-                state: PressState::Up,
-            },
-        };
-        let other = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "alt".into(),
-                state: PressState::Up,
-            },
-        };
+        let down = Action::new(ActionKind::Key {
+            key: "ctrl".into(),
+            state: PressState::Down,
+        });
+        let up = Action::new(ActionKind::Key {
+            key: "ctrl".into(),
+            state: PressState::Up,
+        });
+        let other = Action::new(ActionKind::Key {
+            key: "alt".into(),
+            state: PressState::Up,
+        });
         assert_eq!(press_pair_highlight(&up, Some(&down)), RowHighlight::Owner);
         assert_eq!(press_pair_highlight(&down, Some(&up)), RowHighlight::Owner);
         assert_eq!(

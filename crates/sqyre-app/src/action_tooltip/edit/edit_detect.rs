@@ -17,7 +17,7 @@ use crate::widgets::{
 use eframe::egui;
 use sqyre_domain::{
     clamp_color_tolerance, clamp_ocr_resize, clamp_ocr_threshold, parse_hex_color, CoordinateRef,
-    DetectionBranch, ItemSortBy, ItemSortThen, Macro, MatchMethod, OcrMatchMode,
+    DetectionBranch, FindPixelData, ImageSearchData, Macro, MatchMethod, OcrData, OcrMatchMode,
     MAX_COLOR_TOLERANCE, MAX_OCR_RESIZE, MAX_OCR_THRESHOLD, MIN_COLOR_TOLERANCE, MIN_OCR_RESIZE,
     MIN_OCR_THRESHOLD,
 };
@@ -53,65 +53,14 @@ fn match_method_editor(ui: &mut egui::Ui, match_method: &mut MatchMethod) {
     match_settings::paint_match_method(ui, match_method);
 }
 
-/// Borrowed [`ActionKind::ImageSearch`] fields, so the painter takes one
-/// argument for the action instead of one per field.
-///
-/// The caller still matches the variant, which keeps the field set statically
-/// checked; this only bundles the resulting `&mut` bindings.
-///
-/// [`ActionKind::ImageSearch`]: sqyre_domain::ActionKind::ImageSearch
-pub(super) struct ImageSearchFields<'a> {
-    pub name: &'a mut String,
-    pub targets: &'a mut Vec<String>,
-    pub target_tags: &'a mut Vec<String>,
-    pub search_area: &'a mut CoordinateRef,
-    pub tolerance: &'a mut f64,
-    pub blur: &'a mut i32,
-    pub match_method: &'a mut MatchMethod,
-    pub sort_by: &'a mut ItemSortBy,
-    pub sort_then: &'a mut ItemSortThen,
-    pub tag_priority: &'a mut Vec<String>,
-    pub detection: &'a mut DetectionBranch,
-}
-
-/// Borrowed [`ActionKind::Ocr`] fields. See [`ImageSearchFields`].
-///
-/// [`ActionKind::Ocr`]: sqyre_domain::ActionKind::Ocr
-pub(super) struct OcrFields<'a> {
-    pub name: &'a mut String,
-    pub target: &'a mut String,
-    pub search_area: &'a mut CoordinateRef,
-    pub output_variable: &'a mut String,
-    pub match_mode: &'a mut OcrMatchMode,
-    pub case_sensitive: &'a mut bool,
-    pub blur: &'a mut i32,
-    pub min_threshold: &'a mut i32,
-    pub resize: &'a mut f64,
-    pub grayscale: &'a mut bool,
-    pub threshold_otsu: &'a mut bool,
-    pub threshold_invert: &'a mut bool,
-    pub detection: &'a mut DetectionBranch,
-}
-
-/// Borrowed [`ActionKind::FindPixel`] fields. See [`ImageSearchFields`].
-///
-/// [`ActionKind::FindPixel`]: sqyre_domain::ActionKind::FindPixel
-pub(super) struct FindPixelFields<'a> {
-    pub name: &'a mut String,
-    pub search_area: &'a mut CoordinateRef,
-    pub target_color: &'a mut String,
-    pub color_tolerance: &'a mut i32,
-    pub detection: &'a mut DetectionBranch,
-}
-
 pub(super) fn paint_image_search_fields(
     ui: &mut egui::Ui,
     paint: &mut CatalogPaint<'_>,
     picker: &mut ActivePicker,
     theme: VarTheme<'_>,
-    fields: ImageSearchFields<'_>,
+    data: &mut ImageSearchData,
 ) {
-    let ImageSearchFields {
+    let ImageSearchData {
         name,
         targets,
         target_tags,
@@ -123,7 +72,7 @@ pub(super) fn paint_image_search_fields(
         sort_then,
         tag_priority,
         detection,
-    } = fields;
+    } = data;
     detection_primary_header(ui, paint, picker, name, search_area);
     tip_section(ui, |ui| {
         targets_editor(
@@ -157,9 +106,9 @@ pub(super) fn paint_ocr_fields(
     picker: &mut ActivePicker,
     theme: VarTheme<'_>,
     active_macro: Option<&Macro>,
-    fields: OcrFields<'_>,
+    data: &mut OcrData,
 ) {
-    let OcrFields {
+    let OcrData {
         name,
         target,
         search_area,
@@ -173,7 +122,7 @@ pub(super) fn paint_ocr_fields(
         threshold_otsu,
         threshold_invert,
         detection,
-    } = fields;
+    } = data;
     detection_primary_header(ui, paint, picker, name, search_area);
     tip_wrapped_section(ui, |ui| {
         var_pills::var_name_text_edit(
@@ -262,15 +211,15 @@ pub(super) fn paint_find_pixel_fields(
     theme: VarTheme<'_>,
     active_macro: Option<&Macro>,
     screen_click: &ScreenClickBridge,
-    fields: FindPixelFields<'_>,
+    data: &mut FindPixelData,
 ) {
-    let FindPixelFields {
+    let FindPixelData {
         name,
         search_area,
         target_color,
         color_tolerance,
         detection,
-    } = fields;
+    } = data;
     detection_primary_header(ui, paint, picker, name, search_area);
     tip_wrapped_section(ui, |ui| {
         wrap_unit(ui, |ui| {

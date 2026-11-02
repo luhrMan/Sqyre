@@ -68,8 +68,7 @@ impl DataEditor {
             self.set_err("Select an overlay button first.");
             return;
         };
-        let Some(prog) = self.selected_program.clone() else {
-            self.set_err("Select a program first.");
+        let Some(prog) = self.selected_program_or_err() else {
             return;
         };
         if self.form_overlay_macro.trim().is_empty() {

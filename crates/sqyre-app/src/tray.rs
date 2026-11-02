@@ -346,16 +346,16 @@ impl LinuxTray {
 #[cfg(target_os = "linux")]
 impl ksni::Tray for LinuxTray {
     fn id(&self) -> String {
-        "sqyre".into()
+        sqyre_ports::APP_ID.into()
     }
 
     fn title(&self) -> String {
-        "Sqyre".into()
+        sqyre_ports::APP_NAME.into()
     }
 
     fn tool_tip(&self) -> ksni::ToolTip {
         ksni::ToolTip {
-            title: "Sqyre".into(),
+            title: sqyre_ports::APP_NAME.into(),
             ..Default::default()
         }
     }

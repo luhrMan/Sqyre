@@ -7,6 +7,39 @@ use super::*;
 use crate::help_text as ht;
 
 impl DataEditor {
+    /// The four area-edge chips (`form_top/bottom/left/right`) shared by the
+    /// point, search-area, and collection bounds forms.
+    pub(super) fn area_edge_fields(
+        &mut self,
+    ) -> [(&mut String, CardinalEdge, &'static str, &'static str); 4] {
+        [
+            (
+                &mut self.form_top,
+                CardinalEdge::Top,
+                "TopY",
+                help::DE_AREA_TOP,
+            ),
+            (
+                &mut self.form_bottom,
+                CardinalEdge::Bottom,
+                "BottomY",
+                help::DE_AREA_BOTTOM,
+            ),
+            (
+                &mut self.form_left,
+                CardinalEdge::Left,
+                "LeftX",
+                help::DE_AREA_LEFT,
+            ),
+            (
+                &mut self.form_right,
+                CardinalEdge::Right,
+                "RightX",
+                help::DE_AREA_RIGHT,
+            ),
+        ]
+    }
+
     pub(super) fn draw_points_form(
         &mut self,
         ui: &mut egui::Ui,
@@ -105,32 +138,7 @@ impl DataEditor {
             known,
             is_dark,
             active_macro,
-            &mut [
-                (
-                    &mut self.form_top,
-                    CardinalEdge::Top,
-                    "TopY",
-                    help::DE_AREA_TOP,
-                ),
-                (
-                    &mut self.form_bottom,
-                    CardinalEdge::Bottom,
-                    "BottomY",
-                    help::DE_AREA_BOTTOM,
-                ),
-                (
-                    &mut self.form_left,
-                    CardinalEdge::Left,
-                    "LeftX",
-                    help::DE_AREA_LEFT,
-                ),
-                (
-                    &mut self.form_right,
-                    CardinalEdge::Right,
-                    "RightX",
-                    help::DE_AREA_RIGHT,
-                ),
-            ],
+            &mut self.area_edge_fields(),
         );
     }
 
@@ -381,32 +389,7 @@ impl DataEditor {
                     known,
                     is_dark,
                     active_macro,
-                    &mut [
-                        (
-                            &mut self.form_top,
-                            CardinalEdge::Top,
-                            "TopY",
-                            help::DE_AREA_TOP,
-                        ),
-                        (
-                            &mut self.form_bottom,
-                            CardinalEdge::Bottom,
-                            "BottomY",
-                            help::DE_AREA_BOTTOM,
-                        ),
-                        (
-                            &mut self.form_left,
-                            CardinalEdge::Left,
-                            "LeftX",
-                            help::DE_AREA_LEFT,
-                        ),
-                        (
-                            &mut self.form_right,
-                            CardinalEdge::Right,
-                            "RightX",
-                            help::DE_AREA_RIGHT,
-                        ),
-                    ],
+                    &mut self.area_edge_fields(),
                 );
             },
         );

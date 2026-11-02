@@ -55,23 +55,17 @@ mod tests {
     use sqyre_serialize::{action_from_map, action_to_map};
 
     fn wait(time: i64) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(time),
-            },
-        }
+        Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(time),
+        })
     }
 
     fn branch(name: &str, kids: Vec<Action>) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Loop {
-                name: name.into(),
-                count: ScalarValue::Int(1),
-                subactions: kids,
-            },
-        }
+        Action::new(ActionKind::Loop {
+            name: name.into(),
+            count: ScalarValue::Int(1),
+            subactions: kids,
+        })
     }
 
     #[test]

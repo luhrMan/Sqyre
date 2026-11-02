@@ -75,17 +75,17 @@ pub fn sync_macro_overlay(app: &mut SqyreApp, ctx: &egui::Context) {
         app.macro_overlay.last_foreign_focus(),
     );
     let preview = app.data_editor.overlay_edit_preview();
-    let running_macro = if app.run_session.state.running.load(Ordering::SeqCst)
-        && !app.workspace.macros.is_empty()
-    {
-        let idx = app
-            .workspace
-            .selected_macro
-            .min(app.workspace.macros.len() - 1);
-        Some(app.workspace.macros[idx].name.as_str())
-    } else {
-        None
-    };
+    let running_macro = app
+        .run_session
+        .state
+        .running
+        .load(Ordering::SeqCst)
+        .then(|| {
+            app.workspace
+                .selected_macro_index()
+                .map(|idx| app.workspace.macros[idx].name.as_str())
+        })
+        .flatten();
     app.macro_overlay.sync(
         ctx,
         &buttons,

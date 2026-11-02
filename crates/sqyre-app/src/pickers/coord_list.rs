@@ -78,62 +78,38 @@ pub fn paint_coord_ref_list(
                 Collection(sqyre_persist::ProgramCollection),
             }
             let mut rows: Vec<(String, Row)> = Vec::new();
-            match kind {
-                CoordKind::Point => {
-                    if let Some(m) = pdata
-                        .points
-                        .get(&res)
-                        .or_else(|| pdata.points.values().next())
-                    {
-                        for (key, pt) in m {
-                            let display = if pt.name.trim().is_empty() {
-                                key.clone()
-                            } else {
-                                pt.name.clone()
-                            };
-                            if q.is_empty()
-                                || fuzzy_match_fold(&q, key)
-                                || fuzzy_match_fold(&q, &display)
-                                || fuzzy_match_fold(&q, prog)
-                            {
-                                rows.push((
-                                    display.clone(),
-                                    Row::Coord {
-                                        key: key.clone(),
-                                        display,
-                                    },
-                                ));
-                            }
-                        }
-                    }
-                }
-                CoordKind::SearchArea => {
-                    if let Some(m) = pdata
-                        .search_areas
-                        .get(&res)
-                        .or_else(|| pdata.search_areas.values().next())
-                    {
-                        for (key, sa) in m {
-                            let display = if sa.name.trim().is_empty() {
-                                key.clone()
-                            } else {
-                                sa.name.clone()
-                            };
-                            if q.is_empty()
-                                || fuzzy_match_fold(&q, key)
-                                || fuzzy_match_fold(&q, &display)
-                                || fuzzy_match_fold(&q, prog)
-                            {
-                                rows.push((
-                                    display.clone(),
-                                    Row::Coord {
-                                        key: key.clone(),
-                                        display,
-                                    },
-                                ));
-                            }
-                        }
-                    }
+            let entries: Vec<(&String, &str)> = match kind {
+                CoordKind::Point => pdata
+                    .points
+                    .get(&res)
+                    .or_else(|| pdata.points.values().next())
+                    .map(|m| m.iter().map(|(k, pt)| (k, pt.name.as_str())).collect())
+                    .unwrap_or_default(),
+                CoordKind::SearchArea => pdata
+                    .search_areas
+                    .get(&res)
+                    .or_else(|| pdata.search_areas.values().next())
+                    .map(|m| m.iter().map(|(k, sa)| (k, sa.name.as_str())).collect())
+                    .unwrap_or_default(),
+            };
+            for (key, name) in entries {
+                let display = if name.trim().is_empty() {
+                    key.clone()
+                } else {
+                    name.to_string()
+                };
+                if q.is_empty()
+                    || fuzzy_match_fold(&q, key)
+                    || fuzzy_match_fold(&q, &display)
+                    || fuzzy_match_fold(&q, prog)
+                {
+                    rows.push((
+                        display.clone(),
+                        Row::Coord {
+                            key: key.clone(),
+                            display,
+                        },
+                    ));
                 }
             }
             for col in pdata.collections.values() {

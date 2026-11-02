@@ -971,6 +971,27 @@ mod tests {
         }
     }
 
+    /// Catalog with program "Game" containing item "Health Flask".
+    fn game_catalog(item_tags: &[&str]) -> ProgramCatalog {
+        let mut catalog = ProgramCatalog::default();
+        catalog.programs_mut().insert(
+            "Game".into(),
+            ProgramData {
+                name: "Game".into(),
+                items: BTreeMap::from([(
+                    "Flask".into(),
+                    ProgramItem {
+                        name: "Health Flask".into(),
+                        tags: item_tags.iter().map(|t| t.to_string()).collect(),
+                        ..Default::default()
+                    },
+                )]),
+                ..Default::default()
+            },
+        );
+        catalog
+    }
+
     fn titles(query: &str, items: &[CommandItem]) -> Vec<String> {
         filter_ranked(query, items)
             .iter()
@@ -981,21 +1002,7 @@ mod tests {
     #[test]
     fn empty_query_excludes_macros_and_entities() {
         let macros = vec![Macro::new("Farm gold", 0, vec![])];
-        let mut catalog = ProgramCatalog::default();
-        catalog.programs_mut().insert(
-            "Game".into(),
-            ProgramData {
-                name: "Game".into(),
-                items: BTreeMap::from([(
-                    "Flask".into(),
-                    ProgramItem {
-                        name: "Health Flask".into(),
-                        ..Default::default()
-                    },
-                )]),
-                ..Default::default()
-            },
-        );
+        let catalog = game_catalog(&[]);
         let items = collect_commands(sources(&macros, &catalog, &[], false));
         let shown = titles("", &items);
         assert!(shown.iter().any(|t| t == "Add Click"));
@@ -1054,21 +1061,7 @@ mod tests {
 
     #[test]
     fn typing_model_kind_opens_editor_before_create() {
-        let mut catalog = ProgramCatalog::default();
-        catalog.programs_mut().insert(
-            "Game".into(),
-            ProgramData {
-                name: "Game".into(),
-                items: BTreeMap::from([(
-                    "Flask".into(),
-                    ProgramItem {
-                        name: "Health Flask".into(),
-                        ..Default::default()
-                    },
-                )]),
-                ..Default::default()
-            },
-        );
+        let catalog = game_catalog(&[]);
         let items = collect_commands(sources(&[], &catalog, &[], false));
         let shown = titles("item", &items);
         assert_eq!(shown.first().map(String::as_str), Some("Open Items"));
@@ -1080,21 +1073,7 @@ mod tests {
 
     #[test]
     fn typing_model_name_opens_entity_before_create() {
-        let mut catalog = ProgramCatalog::default();
-        catalog.programs_mut().insert(
-            "Game".into(),
-            ProgramData {
-                name: "Game".into(),
-                items: BTreeMap::from([(
-                    "Flask".into(),
-                    ProgramItem {
-                        name: "Health Flask".into(),
-                        ..Default::default()
-                    },
-                )]),
-                ..Default::default()
-            },
-        );
+        let catalog = game_catalog(&[]);
         let items = collect_commands(sources(&[], &catalog, &[], false));
         let shown = titles("heal", &items);
         assert_eq!(shown.first().map(String::as_str), Some("Health Flask"));
@@ -1112,22 +1091,7 @@ mod tests {
 
     #[test]
     fn heal_matches_item_entity() {
-        let mut catalog = ProgramCatalog::default();
-        catalog.programs_mut().insert(
-            "Game".into(),
-            ProgramData {
-                name: "Game".into(),
-                items: BTreeMap::from([(
-                    "Flask".into(),
-                    ProgramItem {
-                        name: "Health Flask".into(),
-                        tags: vec!["healing".into()],
-                        ..Default::default()
-                    },
-                )]),
-                ..Default::default()
-            },
-        );
+        let catalog = game_catalog(&["healing"]);
         let items = collect_commands(sources(&[], &catalog, &[], false));
         let shown = titles("heal", &items);
         assert!(shown.iter().any(|t| t == "Health Flask"));
@@ -1212,22 +1176,8 @@ mod tests {
 
     #[test]
     fn temporary_program_is_omitted() {
-        let mut catalog = ProgramCatalog::default();
+        let mut catalog = game_catalog(&[]);
         catalog.create_program(TEMPORARY_PROGRAM).unwrap();
-        catalog.programs_mut().insert(
-            "Game".into(),
-            ProgramData {
-                name: "Game".into(),
-                items: BTreeMap::from([(
-                    "Flask".into(),
-                    ProgramItem {
-                        name: "Health Flask".into(),
-                        ..Default::default()
-                    },
-                )]),
-                ..Default::default()
-            },
-        );
         let items = collect_commands(sources(&[], &catalog, &[], false));
         assert!(!items.iter().any(|i| i.title == TEMPORARY_PROGRAM
             || matches!(&i.kind, CommandKind::OpenProgram { name } if name == TEMPORARY_PROGRAM)

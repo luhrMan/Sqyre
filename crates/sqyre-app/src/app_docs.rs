@@ -407,8 +407,8 @@ impl SqyreApp {
                 variable.description = "Stores the last verified inventory quantity and the operator who reconciled it before the nightly screenshot archive is written, so the maintenance run can resume safely after an interruption.".into();
             }
             walk_actions_mut(&mut macro_.root, &mut |action| match &mut action.kind {
-                ActionKind::ImageSearch { name, .. } => {
-                    *name = "Find the confirm purchase button in the shop dialog".into();
+                ActionKind::ImageSearch(d) => {
+                    d.name = "Find the confirm purchase button in the shop dialog".into();
                 }
                 ActionKind::Type { text, .. } => {
                     *text = "Please confirm the purchase after checking the selected inventory count. Save a screenshot of the updated shop dialog, verify the backup completed, and leave a clear note for the next maintenance run.".into();

@@ -101,24 +101,15 @@ pub fn demo_macro() -> Macro {
     }
 
     let mut image_search = blank_action("imagesearch").expect("imagesearch");
-    if let ActionKind::ImageSearch {
-        name,
-        targets,
-        search_area,
-        tolerance,
-        blur,
-        detection,
-        ..
-    } = &mut image_search.kind
-    {
-        *name = "Find button".into();
-        *targets = vec![target_ref("Find button")];
-        *search_area = prog_ref("Main area");
-        *tolerance = 0.95;
-        *blur = 5;
-        detection.coords = CoordinateOutputs::defaults();
-        detection.subactions = vec![click];
-        detection.else_actions = vec![type_act, wait];
+    if let ActionKind::ImageSearch(d) = &mut image_search.kind {
+        d.name = "Find button".into();
+        d.targets = vec![target_ref("Find button")];
+        d.search_area = prog_ref("Main area");
+        d.tolerance = 0.95;
+        d.blur = 5;
+        d.detection.coords = CoordinateOutputs::defaults();
+        d.detection.subactions = vec![click];
+        d.detection.else_actions = vec![type_act, wait];
     }
 
     let mut key = blank_action("key").expect("key");

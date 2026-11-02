@@ -548,13 +548,8 @@ pub(crate) fn show_action_view_tip(
                                     );
                                 });
                             }
-                            if let ActionKind::ImageSearch {
-                                targets,
-                                target_tags,
-                                ..
-                            } = &action.kind
-                            {
-                                if !targets.is_empty() || !target_tags.is_empty() {
+                            if let ActionKind::ImageSearch(d) = &action.kind {
+                                if !d.targets.is_empty() || !d.target_tags.is_empty() {
                                     sections::tip_section(ui, |ui| {
                                         tree_chrome::paint_image_search_tooltip_thumbs_pub(
                                             ui, action, catalog, icons,
@@ -868,15 +863,10 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
             targets,
             target_tags,
         } => {
-            if let ActionKind::ImageSearch {
-                targets: t,
-                target_tags: tags,
-                ..
-            } = &mut draft.kind
-            {
-                *t = targets;
+            if let ActionKind::ImageSearch(d) = &mut draft.kind {
+                d.targets = targets;
                 if let Some(next_tags) = target_tags {
-                    *tags = next_tags;
+                    d.target_tags = next_tags;
                 }
             }
         }
@@ -886,9 +876,9 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
             }
         }
         PickerResult::SearchArea(coord) => match &mut draft.kind {
-            ActionKind::ImageSearch { search_area, .. }
-            | ActionKind::Ocr { search_area, .. }
-            | ActionKind::FindPixel { search_area, .. } => *search_area = coord,
+            ActionKind::ImageSearch(d) => d.search_area = coord,
+            ActionKind::Ocr(d) => d.search_area = coord,
+            ActionKind::FindPixel(d) => d.search_area = coord,
             ActionKind::ForEachCell { cells, .. } => *cells = coord,
             _ => {}
         },
@@ -917,17 +907,12 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{
-        root_loop, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue,
-    };
+    use sqyre_domain::{root_loop, ActionKind, CoordinateRef, PressState, ScalarValue};
 
     fn wait_action(time: i64) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(time),
-            },
-        }
+        Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(time),
+        })
     }
 
     #[test]
@@ -988,13 +973,10 @@ mod tests {
 
     #[test]
     fn validate_failure_keeps_edit() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "a".into(),
-                state: PressState::Down,
-            },
-        };
+        let child = Action::new(ActionKind::Key {
+            key: "a".into(),
+            state: PressState::Down,
+        });
         let id = child.id;
         let mut root = root_loop(vec![child]);
         let live = root.find_by_id(id).unwrap().clone();
@@ -1019,36 +1001,29 @@ mod tests {
 
     #[test]
     fn image_search_saves_without_targets() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
-                name: String::new(),
+        let child = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 targets: vec!["Game~Item".into()],
-                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         let id = child.id;
         let mut root = root_loop(vec![child]);
         let live = root.find_by_id(id).unwrap().clone();
         let mut state = TooltipState::Hidden;
         state.open_edit(&live, egui::pos2(0.0, 0.0));
         if let TooltipState::Edit(edit) = &mut state {
-            if let ActionKind::ImageSearch { targets, .. } = &mut edit.draft.kind {
-                targets.clear();
+            if let ActionKind::ImageSearch(d) = &mut edit.draft.kind {
+                d.targets.clear();
             }
         }
         assert!(state.try_save_validated(&mut root, None, |_| {}));
         assert!(matches!(state, TooltipState::View { action_id } if action_id == id));
         match &root.find_by_id(id).unwrap().kind {
-            ActionKind::ImageSearch { targets, .. } => assert!(targets.is_empty()),
+            ActionKind::ImageSearch(d) => assert!(d.targets.is_empty()),
             other => panic!("unexpected {other:?}"),
         }
         assert!(sqyre_validate::validate_action(root.find_by_id(id).unwrap(), None).is_err());
@@ -1056,13 +1031,10 @@ mod tests {
 
     #[test]
     fn apply_recorded_key_updates_key_draft() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: String::new(),
-                state: PressState::Down,
-            },
-        };
+        let child = Action::new(ActionKind::Key {
+            key: String::new(),
+            state: PressState::Down,
+        });
         let mut state = TooltipState::Hidden;
         state.open_edit(&child, egui::pos2(0.0, 0.0));
         state.apply_recorded_key("f5".into());
@@ -1078,23 +1050,19 @@ mod tests {
     #[test]
     #[cfg(feature = "native-runtime")]
     fn apply_recorded_color_updates_find_pixel_draft() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::FindPixel {
-                name: String::new(),
-                search_area: CoordinateRef::default(),
+        let child = Action::new(ActionKind::FindPixel(Box::new(
+            sqyre_domain::FindPixelData {
                 target_color: "ffffff".into(),
-                color_tolerance: 0,
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         let mut state = TooltipState::Hidden;
         state.open_edit(&child, egui::pos2(0.0, 0.0));
         state.apply_recorded_color("ab12cd".into());
         match &state {
             TooltipState::Edit(edit) => match &edit.draft.kind {
-                ActionKind::FindPixel { target_color, .. } => {
-                    assert_eq!(target_color, "ab12cd")
+                ActionKind::FindPixel(d) => {
+                    assert_eq!(d.target_color, "ab12cd")
                 }
                 other => panic!("unexpected {other:?}"),
             },
@@ -1145,29 +1113,23 @@ mod tests {
         let id = ActionId::new();
         let mut root = root_loop(vec![Action {
             id,
-            kind: ActionKind::ImageSearch {
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets: vec!["P~A".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
-            },
+                ..Default::default()
+            })),
         }]);
         let mut draft = root.find_by_id(id).unwrap().clone();
-        if let ActionKind::ImageSearch { targets, .. } = &mut draft.kind {
-            *targets = vec!["P~B".into(), "P~C".into()];
+        if let ActionKind::ImageSearch(d) = &mut draft.kind {
+            d.targets = vec!["P~B".into(), "P~C".into()];
         }
         apply_draft_preserving_children(root.find_by_id_mut(id).unwrap(), draft).unwrap();
         match &root.find_by_id(id).unwrap().kind {
-            ActionKind::ImageSearch { targets, .. } => {
+            ActionKind::ImageSearch(d) => {
                 assert_eq!(
-                    targets.as_slice(),
+                    d.targets.as_slice(),
                     ["P~B".to_string(), "P~C".to_string()].as_slice()
                 );
             }
