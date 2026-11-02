@@ -6,15 +6,24 @@
 use crate::ProcessIcon;
 
 /// True when two executable paths refer to the same file, ignoring surrounding whitespace.
-/// Delegates to [`std::path::Path`] equality, which already normalizes per target (e.g.
-/// case-insensitive comparison on Windows).
+/// Compares via [`std::path::Path`] (component-wise, so `/` and `\` match on Windows);
+/// Windows paths also compare case-insensitively, since `Path` equality does not.
 pub(crate) fn paths_equal(a: &str, b: &str) -> bool {
-    let a = std::path::Path::new(a.trim());
-    let b = std::path::Path::new(b.trim());
-    if a.as_os_str().is_empty() || b.as_os_str().is_empty() {
+    let (a, b) = (fold_path_case(a.trim()), fold_path_case(b.trim()));
+    if a.is_empty() || b.is_empty() {
         return false;
     }
-    a == b
+    std::path::Path::new(a.as_ref()) == std::path::Path::new(b.as_ref())
+}
+
+#[cfg(windows)]
+fn fold_path_case(path: &str) -> std::borrow::Cow<'_, str> {
+    std::borrow::Cow::Owned(path.to_lowercase())
+}
+
+#[cfg(not(windows))]
+fn fold_path_case(path: &str) -> std::borrow::Cow<'_, str> {
+    std::borrow::Cow::Borrowed(path)
 }
 
 /// True when two window titles match, ignoring surrounding whitespace.
@@ -69,6 +78,29 @@ mod tests {
         assert!(!paths_equal("/usr/bin/foo", "/usr/bin/bar"));
         assert!(!paths_equal("", ""));
         assert!(titles_equal(" Hi ", "Hi"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_paths_ignore_case_and_separator_style() {
+        assert!(paths_equal(
+            r"C:\Program Files\App\app.exe",
+            r"c:\program files\app\APP.EXE"
+        ));
+        assert!(paths_equal(
+            r"C:\Program Files\App\app.exe",
+            "C:/Program Files/App/app.exe"
+        ));
+        assert!(!paths_equal(
+            r"C:\Program Files\App\app.exe",
+            r"C:\Program Files\App\other.exe"
+        ));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn unix_paths_stay_case_sensitive() {
+        assert!(!paths_equal("/usr/bin/Foo", "/usr/bin/foo"));
     }
 
     fn icon(tag: u8) -> ProcessIcon {
