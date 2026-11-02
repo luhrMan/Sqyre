@@ -400,6 +400,14 @@ pub fn add_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response
     )
 }
 
+/// Icon-only remove/delete control (`✕` in danger styling).
+pub fn remove_icon_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui::Response {
+    ui.add_enabled(
+        enabled,
+        IconButton::new(egui_phosphor::regular::X, tip, Some(MACRO_STOP)),
+    )
+}
+
 /// Visual / keyboard order for [`press_state_toggle`] (top → bottom).
 const PRESS_STATE_ORDER: &[sqyre_domain::PressState] = &[
     sqyre_domain::PressState::Up,

@@ -1309,43 +1309,59 @@ impl DataEditor {
         }
 
         // Footer chrome floats over the form's bottom-right instead of
-        // reserving a full-width strip.
-        let right_pane = egui::Rect::from_min_max(
-            egui::pos2(split_rect.right(), body_rect.top()),
-            body_rect.max,
-        );
-        crate::widgets::float_bottom_right(ui, right_pane, |ui| {
-            let dirty = self.is_dirty(env.catalog, env.settings);
-            let valid = self.form_valid(env.macros.get(selected_macro));
-            let can_save = !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-            let save_enabled = can_save && dirty && valid;
-            let save_clicked =
-                crate::widgets::dirty_action_button(ui, "Save", save_enabled).clicked();
-            // Enter submits when Save is able: this window is in front,
-            // and no confirm / picker / combo is using the key.
-            let save_enter = save_enabled
-                && self.enter_commits_update(ui)
-                && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
-            if save_clicked || save_enter || (tag_submit && save_enabled) {
-                self.on_update(env, previews);
-            }
-            let can_new = !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck);
-            let new_tip = self
-                .tab
-                .entity_noun()
-                .map(|noun| format!("New {noun}"))
-                .unwrap_or_else(|| "New".to_owned());
-            if crate::widgets::add_button(ui, &new_tip, can_new).clicked() {
-                self.on_new(env);
-            }
-        });
+        // reserving a full-width strip. Tools tabs (ScreenCap / PixelCheck)
+        // draw their own action row inside the form — no floating chip.
+        if !matches!(self.tab, EditorTab::ScreenCap | EditorTab::PixelCheck) {
+            let right_pane = egui::Rect::from_min_max(
+                egui::pos2(split_rect.right(), body_rect.top()),
+                body_rect.max,
+            );
+            crate::widgets::float_bottom_right(ui, right_pane, |ui| {
+                let dirty = self.is_dirty(env.catalog, env.settings);
+                let valid = self.form_valid(env.macros.get(selected_macro));
+                let save_enabled = dirty && valid;
+                let save_clicked =
+                    crate::widgets::dirty_action_button(ui, "Save", save_enabled).clicked();
+                // Enter submits when Save is able: this window is in front,
+                // and no confirm / picker / combo is using the key.
+                let save_enter = save_enabled
+                    && self.enter_commits_update(ui)
+                    && ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Enter));
+                if save_clicked || save_enter || (tag_submit && save_enabled) {
+                    self.on_update(env, previews);
+                }
+                let new_tip = self
+                    .tab
+                    .entity_noun()
+                    .map(|noun| format!("New {noun}"))
+                    .unwrap_or_else(|| "New".to_owned());
+                if crate::widgets::add_button(ui, &new_tip, true).clicked() {
+                    self.on_new(env);
+                }
+                // Leftmost: remove the current selection via the same confirm
+                // the list's right-click Delete uses.
+                let delete_tip = self
+                    .tab
+                    .entity_noun()
+                    .map(|noun| format!("Delete {noun}"))
+                    .unwrap_or_else(|| "Delete".to_owned());
+                if crate::widgets::remove_icon_button(
+                    ui,
+                    &delete_tip,
+                    self.selected_delete_label().is_some(),
+                )
+                .clicked()
+                {
+                    self.request_delete_selected();
+                }
+            });
+        }
     }
 
-    /// Ask to delete the selected program / entity (list row right-click → Delete).
-    pub(crate) fn request_delete_selected(&mut self) {
-        let Some(subject) = self.tab.entity_noun() else {
-            return;
-        };
+    /// `{subject} “{name}”` for the delete confirm when the current selection
+    /// is deletable on this tab; `None` on Tools tabs or with nothing selected.
+    fn selected_delete_label(&self) -> Option<String> {
+        let subject = self.tab.entity_noun()?;
         let name = if self.tab == EditorTab::Programs {
             self.selected_program.as_deref().unwrap_or("")
         } else if self.selected_program.as_deref().is_none_or(str::is_empty) {
@@ -1354,11 +1370,16 @@ impl DataEditor {
             self.selected_entity.as_deref().unwrap_or("")
         };
         if name.is_empty() {
-            return;
+            return None;
         }
-        self.confirm = Some(PendingConfirm::Delete {
-            label: format!("{subject} “{name}”"),
-        });
+        Some(format!("{subject} “{name}”"))
+    }
+
+    /// Ask to delete the selected program / entity (list row right-click → Delete).
+    pub(crate) fn request_delete_selected(&mut self) {
+        if let Some(label) = self.selected_delete_label() {
+            self.confirm = Some(PendingConfirm::Delete { label });
+        }
     }
 
     /// Enter → Update only when this window is in front and no overlay owns the key.
