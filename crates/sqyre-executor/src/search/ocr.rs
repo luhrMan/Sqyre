@@ -7,7 +7,7 @@ use super::common::{
 use crate::error::{ExecError, Result};
 use crate::log_draw::{draw_rect_rgb, scale_rect_for_log};
 use crate::run::Executor;
-use sqyre_domain::{action_type_label, Action, ActionKind, Macro, ScalarValue};
+use sqyre_domain::{action_type_label, Action, ActionKind, Macro, OcrData, ScalarValue};
 use sqyre_ports::{FindContext, ImageAnnotation, LogFind};
 use std::sync::Arc;
 use std::time::Instant;
@@ -19,7 +19,10 @@ pub(crate) fn execute_ocr(
     action: &Action,
     macro_: &mut Macro,
 ) -> Result<()> {
-    let ActionKind::Ocr {
+    let ActionKind::Ocr(d) = &action.kind else {
+        return Err(ExecError::Message("not ocr".into()));
+    };
+    let OcrData {
         target,
         search_area,
         output_variable,
@@ -33,10 +36,7 @@ pub(crate) fn execute_ocr(
         threshold_invert,
         detection,
         ..
-    } = &action.kind
-    else {
-        return Err(ExecError::Message("not ocr".into()));
-    };
+    } = d.as_ref();
     let action_id = action.id;
     let label = action_type_label(action.type_key());
     let wait = &detection.wait;

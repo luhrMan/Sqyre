@@ -545,42 +545,23 @@ fn perform_select(
 mod tests {
     use super::*;
     use crate::run::{execute_macro_with, ExecDeps};
-    use crate::test_support::{AtlasMemberSpec, FixedCollection, FixedResolver};
-    use crate::test_support::{ImmediateContinueWaiter, RecordingBackend};
+    use crate::test_support::{macro_of, ImmediateContinueWaiter, RecordingBackend};
+    use crate::test_support::{one_atlas, FixedResolver};
     use sqyre_domain::{
-        root_loop, ActionId, NavChords, NavInputs, NavOptions, NavOutputs, NavSelectAction,
-        NavigateSelectData, PressState,
+        NavChords, NavInputs, NavOptions, NavOutputs, NavSelectAction, NavigateSelectData,
+        PressState,
     };
-    use std::sync::Mutex;
 
     #[test]
     fn select_exits_and_writes_outputs() {
         let mut backend = RecordingBackend::default();
-        let waiter = ImmediateContinueWaiter {
-            any_queue: Mutex::new(vec![0]), // select is only chord
-            ..Default::default()
-        };
-        let resolver = FixedResolver::with_atlas(
-            vec![AtlasMemberSpec {
-                name: "bag".into(),
-                collection: FixedCollection {
-                    rows: 3,
-                    cols: 4,
-                    bounds: (0, 0, 120, 90),
-                },
-            }],
-            vec!["bag".into()],
-        );
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::NavigateSelect(Box::new(NavigateSelectData {
+        let waiter = ImmediateContinueWaiter::queued(&[0]); // select is only chord
+        let resolver = one_bag_resolver();
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::NavigateSelect(Box::new(
+            NavigateSelectData {
                 program: "P".into(),
                 atlas: "inventory".into(),
-                chords: NavChords {
-                    select: vec!["enter".into()],
-                    ..Default::default()
-                },
+                chords: enter_chords(),
                 options: NavOptions {
                     move_cursor_with_nav: true,
                     ..Default::default()
@@ -599,12 +580,14 @@ mod tests {
                     output_collection: "col".into(),
                 },
                 ..Default::default()
-            })),
-        }]);
+            },
+        )))]);
 
         execute_macro_with(
             &mut macro_,
-            ExecDeps::new(&mut backend).resolver(&resolver).continue_waiter(&waiter),
+            ExecDeps::new(&mut backend)
+                .resolver(&resolver)
+                .continue_waiter(&waiter),
         )
         .unwrap();
 
@@ -636,26 +619,10 @@ mod tests {
     #[test]
     fn navigate_key_branch_runs_children() {
         let mut backend = RecordingBackend::default();
-        let waiter = ImmediateContinueWaiter {
-            // index 0 = only Nav Key chord
-            any_queue: Mutex::new(vec![0]),
-            ..Default::default()
-        };
-        let resolver = FixedResolver::with_atlas(
-            vec![AtlasMemberSpec {
-                name: "bag".into(),
-                collection: FixedCollection {
-                    rows: 2,
-                    cols: 2,
-                    bounds: (0, 0, 100, 100),
-                },
-            }],
-            vec!["bag".into()],
-        );
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::NavigateSelect(Box::new(NavigateSelectData {
+        let waiter = ImmediateContinueWaiter::queued(&[0]); // index 0 = only Nav Key chord
+        let resolver = one_atlas("bag", 2, 2, (0, 0, 100, 100));
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::NavigateSelect(Box::new(
+            NavigateSelectData {
                 program: "P".into(),
                 atlas: "inventory".into(),
                 chords: NavChords::default(),
@@ -664,28 +631,24 @@ mod tests {
                     output_col: "c".into(),
                     ..Default::default()
                 },
-                subactions: vec![Action {
-                    id: ActionId::new(),
-                    kind: ActionKind::NavigateKey {
-                        name: "Inspect".into(),
-                        chord: vec!["i".into()],
-                        exit: true,
-                        subactions: vec![Action {
-                            id: ActionId::new(),
-                            kind: ActionKind::Click {
-                                button: sqyre_domain::MouseButton::Right,
-                                state: PressState::Down,
-                            },
-                        }],
-                    },
-                }],
+                subactions: vec![Action::new(ActionKind::NavigateKey {
+                    name: "Inspect".into(),
+                    chord: vec!["i".into()],
+                    exit: true,
+                    subactions: vec![Action::new(ActionKind::Click {
+                        button: sqyre_domain::MouseButton::Right,
+                        state: PressState::Down,
+                    })],
+                })],
                 ..Default::default()
-            })),
-        }]);
+            },
+        )))]);
 
         execute_macro_with(
             &mut macro_,
-            ExecDeps::new(&mut backend).resolver(&resolver).continue_waiter(&waiter),
+            ExecDeps::new(&mut backend)
+                .resolver(&resolver)
+                .continue_waiter(&waiter),
         )
         .unwrap();
 
@@ -700,35 +663,16 @@ mod tests {
     fn walks_right_into_neighbor_collection() {
         let mut backend = RecordingBackend::default();
         // chords: up, down, left, right, select — index 3 = right, then select
-        let waiter = ImmediateContinueWaiter {
-            any_queue: Mutex::new(vec![3, 4]),
-            ..Default::default()
-        };
+        let waiter = ImmediateContinueWaiter::queued(&[3, 4]);
         let resolver = FixedResolver::with_atlas(
             vec![
-                AtlasMemberSpec {
-                    name: "A".into(),
-                    collection: FixedCollection {
-                        rows: 2,
-                        cols: 2,
-                        bounds: (0, 0, 100, 100),
-                    },
-                },
-                AtlasMemberSpec {
-                    name: "B".into(),
-                    collection: FixedCollection {
-                        rows: 2,
-                        cols: 2,
-                        bounds: (120, 0, 220, 100),
-                    },
-                },
+                crate::test_support::atlas_member("A", 2, 2, (0, 0, 100, 100)),
+                crate::test_support::atlas_member("B", 2, 2, (120, 0, 220, 100)),
             ],
             vec!["A".into(), "B".into()],
         );
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::NavigateSelect(Box::new(NavigateSelectData {
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::NavigateSelect(Box::new(
+            NavigateSelectData {
                 program: "P".into(),
                 atlas: "inv".into(),
                 chords: NavChords {
@@ -757,12 +701,14 @@ mod tests {
                     ..Default::default()
                 },
                 ..Default::default()
-            })),
-        }]);
+            },
+        )))]);
 
         execute_macro_with(
             &mut macro_,
-            ExecDeps::new(&mut backend).resolver(&resolver).continue_waiter(&waiter),
+            ExecDeps::new(&mut backend)
+                .resolver(&resolver)
+                .continue_waiter(&waiter),
         )
         .unwrap();
 
@@ -776,27 +722,31 @@ mod tests {
         );
     }
 
+    fn enter_chords() -> NavChords {
+        NavChords {
+            select: vec!["enter".into()],
+            ..Default::default()
+        }
+    }
+
+    /// Standard "P~inventory" nav select; pass chords (or `NavChords::default()`).
+    fn nav_select(chords: NavChords) -> NavigateSelectData {
+        NavigateSelectData {
+            program: "P".into(),
+            atlas: "inventory".into(),
+            chords,
+            ..Default::default()
+        }
+    }
+
     fn nav_macro(data: NavigateSelectData) -> Macro {
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::NavigateSelect(Box::new(data)),
-        }]);
-        macro_
+        macro_of(vec![Action::new(ActionKind::NavigateSelect(Box::new(
+            data,
+        )))])
     }
 
     fn one_bag_resolver() -> FixedResolver {
-        FixedResolver::with_atlas(
-            vec![AtlasMemberSpec {
-                name: "bag".into(),
-                collection: FixedCollection {
-                    rows: 3,
-                    cols: 4,
-                    bounds: (0, 0, 120, 90),
-                },
-            }],
-            vec!["bag".into()],
-        )
+        one_atlas("bag", 3, 4, (0, 0, 120, 90))
     }
 
     fn run_nav(
@@ -822,10 +772,7 @@ mod tests {
         let mut macro_ = nav_macro(NavigateSelectData {
             program: "P".into(),
             atlas: String::new(),
-            chords: NavChords {
-                select: vec!["enter".into()],
-                ..Default::default()
-            },
+            chords: enter_chords(),
             ..Default::default()
         });
         assert_eq!(
@@ -837,15 +784,10 @@ mod tests {
     #[test]
     fn errors_without_coordinate_resolver() {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = nav_macro(NavigateSelectData {
-            program: "P".into(),
-            atlas: "inventory".into(),
-            chords: NavChords {
-                select: vec!["enter".into()],
-                ..Default::default()
-            },
+        let mut macro_ = nav_macro(nav_select(NavChords {
+            select: vec!["enter".into()],
             ..Default::default()
-        });
+        }));
         assert_eq!(
             err_text(run_nav(&mut macro_, &mut backend, None, None)),
             "navigate select: coordinate resolver not configured"
@@ -856,15 +798,10 @@ mod tests {
     fn errors_when_atlas_has_no_collections() {
         let mut backend = RecordingBackend::default();
         let resolver = FixedResolver::with_atlas(vec![], vec![]);
-        let mut macro_ = nav_macro(NavigateSelectData {
-            program: "P".into(),
-            atlas: "inventory".into(),
-            chords: NavChords {
-                select: vec!["enter".into()],
-                ..Default::default()
-            },
+        let mut macro_ = nav_macro(nav_select(NavChords {
+            select: vec!["enter".into()],
             ..Default::default()
-        });
+        }));
         let err = err_text(run_nav(&mut macro_, &mut backend, Some(&resolver), None));
         assert!(err.contains("has no collections"), "{err}");
     }
@@ -872,24 +809,11 @@ mod tests {
     #[test]
     fn errors_on_invalid_collection_grid() {
         let mut backend = RecordingBackend::default();
-        let resolver = FixedResolver::with_atlas(
-            vec![AtlasMemberSpec {
-                name: "flat".into(),
-                collection: FixedCollection {
-                    rows: 0,
-                    cols: 2,
-                    bounds: (0, 0, 10, 10),
-                },
-            }],
-            vec!["flat".into()],
-        );
+        let resolver = one_atlas("flat", 0, 2, (0, 0, 10, 10));
         let mut macro_ = nav_macro(NavigateSelectData {
             program: "P".into(),
             atlas: "inv".into(),
-            chords: NavChords {
-                select: vec!["enter".into()],
-                ..Default::default()
-            },
+            chords: enter_chords(),
             ..Default::default()
         });
         let err = err_text(run_nav(&mut macro_, &mut backend, Some(&resolver), None));
@@ -903,10 +827,7 @@ mod tests {
         let mut macro_ = nav_macro(NavigateSelectData {
             program: "P".into(),
             atlas: "inventory".into(),
-            chords: NavChords {
-                select: vec!["enter".into()],
-                ..Default::default()
-            },
+            chords: enter_chords(),
             inputs: NavInputs {
                 collection: "satchel".into(),
                 ..Default::default()
@@ -921,12 +842,7 @@ mod tests {
     fn errors_without_any_chords() {
         let mut backend = RecordingBackend::default();
         let resolver = one_bag_resolver();
-        let mut macro_ = nav_macro(NavigateSelectData {
-            program: "P".into(),
-            atlas: "inventory".into(),
-            chords: NavChords::default(),
-            ..Default::default()
-        });
+        let mut macro_ = nav_macro(nav_select(NavChords::default()));
         let err = err_text(run_nav(&mut macro_, &mut backend, Some(&resolver), None));
         assert!(err.contains("no chords configured"), "{err}");
     }
@@ -935,15 +851,10 @@ mod tests {
     fn errors_without_continue_waiter() {
         let mut backend = RecordingBackend::default();
         let resolver = one_bag_resolver();
-        let mut macro_ = nav_macro(NavigateSelectData {
-            program: "P".into(),
-            atlas: "inventory".into(),
-            chords: NavChords {
-                select: vec!["enter".into()],
-                ..Default::default()
-            },
+        let mut macro_ = nav_macro(nav_select(NavChords {
+            select: vec!["enter".into()],
             ..Default::default()
-        });
+        }));
         let err = err_text(run_nav(&mut macro_, &mut backend, Some(&resolver), None));
         assert!(err.contains("key wait is not available"), "{err}");
     }
@@ -981,15 +892,10 @@ mod tests {
         let waiter = FailingWaiter {
             err: PortError::Message("waiter boom".into()),
         };
-        let mut macro_ = nav_macro(NavigateSelectData {
-            program: "P".into(),
-            atlas: "inventory".into(),
-            chords: NavChords {
-                select: vec!["enter".into()],
-                ..Default::default()
-            },
+        let mut macro_ = nav_macro(nav_select(NavChords {
+            select: vec!["enter".into()],
             ..Default::default()
-        });
+        }));
         let err = err_text(run_nav(
             &mut macro_,
             &mut backend,
@@ -1008,31 +914,22 @@ mod tests {
         let waiter = FailingWaiter {
             err: PortError::Stopped,
         };
-        let mut macro_ = nav_macro(NavigateSelectData {
-            program: "P".into(),
-            atlas: "inventory".into(),
-            chords: NavChords {
-                select: vec!["enter".into()],
-                ..Default::default()
-            },
+        let mut macro_ = nav_macro(nav_select(NavChords {
+            select: vec!["enter".into()],
             ..Default::default()
-        });
+        }));
         run_nav(&mut macro_, &mut backend, Some(&resolver), Some(&waiter)).unwrap();
     }
 
     #[test]
     fn standalone_navigate_key_errors() {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::NavigateKey {
-                name: "Inspect".into(),
-                chord: vec!["i".into()],
-                exit: false,
-                subactions: vec![],
-            },
-        }]);
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::NavigateKey {
+            name: "Inspect".into(),
+            chord: vec!["i".into()],
+            exit: false,
+            subactions: vec![],
+        })]);
         let err = err_text(run_nav(&mut macro_, &mut backend, None, None));
         assert!(err.contains("only runs as a child"), "{err}");
     }
@@ -1041,12 +938,9 @@ mod tests {
     fn kind_mismatch_errors() {
         let mut backend = RecordingBackend::default();
         let mut exec = Executor::new(&mut backend);
-        let action = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        };
+        let action = Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        });
         let mut macro_ = Macro::new("t", 0, vec![]);
         let err = execute_navigate_select(&mut exec, &action, &mut macro_).unwrap_err();
         assert!(err.to_string().contains("kind mismatch"), "{err}");
@@ -1055,10 +949,7 @@ mod tests {
     #[test]
     fn walks_up_down_left_then_back() {
         // chords pushed in order: up(0), down(1), left(2), right(3), select(4), back(5)
-        let waiter = ImmediateContinueWaiter {
-            any_queue: Mutex::new(vec![0, 1, 2, 5]),
-            ..Default::default()
-        };
+        let waiter = ImmediateContinueWaiter::queued(&[0, 1, 2, 5]);
         let resolver = one_bag_resolver();
         let mut backend = RecordingBackend::default();
         let mut macro_ = nav_macro(NavigateSelectData {
@@ -1106,10 +997,7 @@ mod tests {
     #[test]
     fn wraps_around_edge_when_enabled() {
         // chords: left(0), select(1) — left at col 1 with wrap → last col (4)
-        let waiter = ImmediateContinueWaiter {
-            any_queue: Mutex::new(vec![0, 1]),
-            ..Default::default()
-        };
+        let waiter = ImmediateContinueWaiter::queued(&[0, 1]);
         let resolver = one_bag_resolver();
         let mut backend = RecordingBackend::default();
         let mut macro_ = nav_macro(NavigateSelectData {
@@ -1143,19 +1031,13 @@ mod tests {
 
     #[test]
     fn start_position_resolves_from_variables() {
-        let waiter = ImmediateContinueWaiter {
-            any_queue: Mutex::new(vec![0]),
-            ..Default::default()
-        };
+        let waiter = ImmediateContinueWaiter::queued(&[0]);
         let resolver = one_bag_resolver();
         let mut backend = RecordingBackend::default();
         let mut macro_ = nav_macro(NavigateSelectData {
             program: "P".into(),
             atlas: "inventory".into(),
-            chords: NavChords {
-                select: vec!["enter".into()],
-                ..Default::default()
-            },
+            chords: enter_chords(),
             inputs: NavInputs {
                 row: "startRow".into(),
                 col: "startCol".into(),
@@ -1196,19 +1078,13 @@ mod tests {
 
     #[test]
     fn keyboard_select_presses_key() {
-        let waiter = ImmediateContinueWaiter {
-            any_queue: Mutex::new(vec![0]),
-            ..Default::default()
-        };
+        let waiter = ImmediateContinueWaiter::queued(&[0]);
         let resolver = one_bag_resolver();
         let mut backend = RecordingBackend::default();
         let mut macro_ = nav_macro(NavigateSelectData {
             program: "P".into(),
             atlas: "inventory".into(),
-            chords: NavChords {
-                select: vec!["enter".into()],
-                ..Default::default()
-            },
+            chords: enter_chords(),
             select: NavSelectAction {
                 device: NavSelectDevice::Keyboard,
                 key: "e".into(),
@@ -1225,19 +1101,13 @@ mod tests {
 
     #[test]
     fn keyboard_select_empty_key_errors() {
-        let waiter = ImmediateContinueWaiter {
-            any_queue: Mutex::new(vec![0]),
-            ..Default::default()
-        };
+        let waiter = ImmediateContinueWaiter::queued(&[0]);
         let resolver = one_bag_resolver();
         let mut backend = RecordingBackend::default();
         let mut macro_ = nav_macro(NavigateSelectData {
             program: "P".into(),
             atlas: "inventory".into(),
-            chords: NavChords {
-                select: vec!["enter".into()],
-                ..Default::default()
-            },
+            chords: enter_chords(),
             select: NavSelectAction {
                 device: NavSelectDevice::Keyboard,
                 key: String::new(),

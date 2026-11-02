@@ -726,8 +726,8 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::SetVariable { assignments } => {
             execute_set_variable(exec, action.id, assignments, macro_)
         }
-        ActionKind::ImageSearch { .. } => execute_image_search(exec, action, macro_),
-        ActionKind::FindPixel { .. } => execute_find_pixel(exec, action, macro_),
+        ActionKind::ImageSearch(_) => execute_image_search(exec, action, macro_),
+        ActionKind::FindPixel(_) => execute_find_pixel(exec, action, macro_),
         ActionKind::FocusWindow {
             process_path,
             window_title,
@@ -810,7 +810,7 @@ fn dispatch(exec: &mut Executor<'_>, action: &Action, macro_: &mut Macro) -> Res
         ActionKind::RunMacro { macro_name } => {
             execute_run_macro(exec, action.id, macro_name, macro_)
         }
-        ActionKind::Ocr { .. } => execute_ocr(exec, action, macro_),
+        ActionKind::Ocr(_) => execute_ocr(exec, action, macro_),
         ActionKind::NavigateSelect(_) => execute_navigate_select(exec, action, macro_),
         ActionKind::NavigateKey { .. } => execute_navigate_key(exec, action, macro_),
     }
@@ -965,7 +965,7 @@ mod tests {
     use super::*;
     use crate::backends::DesktopRect;
     use crate::lines_for;
-    use crate::test_support::FixedResolver;
+    use crate::test_support::{fast_macro_of, macro_of, FixedResolver};
     use crate::test_support::{RecordingBackend, RecordingCapturer};
     use sqyre_domain::{
         root_loop, Action, ActionId, ActionKind, ConditionOperator, CoordinateRef, ScalarValue,
@@ -977,35 +977,22 @@ mod tests {
     #[test]
     fn executes_wait_loop_break() {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Wait {
-                    time: ScalarValue::Int(10),
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Loop {
-                    name: "inner".into(),
-                    count: ScalarValue::Int(3),
-                    subactions: vec![
-                        Action {
-                            id: ActionId::new(),
-                            kind: ActionKind::Wait {
-                                time: ScalarValue::Int(1),
-                            },
-                        },
-                        Action {
-                            id: ActionId::new(),
-                            kind: ActionKind::LoopJump {
-                                mode: LoopJumpMode::Break,
-                            },
-                        },
-                    ],
-                },
-            },
+        let mut macro_ = macro_of(vec![
+            Action::new(ActionKind::Wait {
+                time: ScalarValue::Int(10),
+            }),
+            Action::new(ActionKind::Loop {
+                name: "inner".into(),
+                count: ScalarValue::Int(3),
+                subactions: vec![
+                    Action::new(ActionKind::Wait {
+                        time: ScalarValue::Int(1),
+                    }),
+                    Action::new(ActionKind::LoopJump {
+                        mode: LoopJumpMode::Break,
+                    }),
+                ],
+            }),
         ]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         backend.assert_logged("sleep:10");
@@ -1031,8 +1018,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![]);
+        let mut macro_ = macro_of(vec![]);
         execute_macro_with(
             &mut macro_,
             ExecDeps::new(&mut backend).capturer(&mut capturer),
@@ -1062,11 +1048,7 @@ mod tests {
             },
         }]);
         // Top-level execute_macro maps Stopped → Ok; assert we did not sleep 5s.
-        execute_macro_with(
-            &mut macro_,
-            ExecDeps::new(&mut backend).stop_flag(&stop),
-        )
-        .unwrap();
+        execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).stop_flag(&stop)).unwrap();
         let slept: i32 = backend
             .log
             .iter()
@@ -1085,17 +1067,10 @@ mod tests {
         let mut backend = RecordingBackend::default();
         let stop = AtomicBool::new(true);
         let mut macro_ = Macro::new("t", 250, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(10),
-            },
-        }]);
-        execute_macro_with(
-            &mut macro_,
-            ExecDeps::new(&mut backend).stop_flag(&stop),
-        )
-        .unwrap();
+        macro_.root = root_loop(vec![Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(10),
+        })]);
+        execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).stop_flag(&stop)).unwrap();
         backend.assert_not_logged("sleep:250");
     }
 
@@ -1125,24 +1100,15 @@ mod tests {
     #[test]
     fn releases_held_keys_and_buttons_when_macro_ends() {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.mouse_delay = 0;
-        macro_.keyboard_delay = 0;
-        macro_.root = root_loop(vec![
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Key {
-                    key: "shift".into(),
-                    state: PressState::Down,
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Click {
-                    button: "left".into(),
-                    state: PressState::Down,
-                },
-            },
+        let mut macro_ = fast_macro_of(vec![
+            Action::new(ActionKind::Key {
+                key: "shift".into(),
+                state: PressState::Down,
+            }),
+            Action::new(ActionKind::Click {
+                button: "left".into(),
+                state: PressState::Down,
+            }),
         ]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert_eq!(
@@ -1159,24 +1125,15 @@ mod tests {
     #[test]
     fn does_not_double_release_balanced_presses() {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.mouse_delay = 0;
-        macro_.keyboard_delay = 0;
-        macro_.root = root_loop(vec![
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Key {
-                    key: "a".into(),
-                    state: PressState::Down,
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Key {
-                    key: "a".into(),
-                    state: PressState::Up,
-                },
-            },
+        let mut macro_ = fast_macro_of(vec![
+            Action::new(ActionKind::Key {
+                key: "a".into(),
+                state: PressState::Down,
+            }),
+            Action::new(ActionKind::Key {
+                key: "a".into(),
+                state: PressState::Up,
+            }),
         ]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert_eq!(
@@ -1192,24 +1149,15 @@ mod tests {
     #[test]
     fn skips_held_input_release_when_disabled() {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.mouse_delay = 0;
-        macro_.keyboard_delay = 0;
-        macro_.root = root_loop(vec![
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Key {
-                    key: "shift".into(),
-                    state: PressState::Down,
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Click {
-                    button: "left".into(),
-                    state: PressState::Down,
-                },
-            },
+        let mut macro_ = fast_macro_of(vec![
+            Action::new(ActionKind::Key {
+                key: "shift".into(),
+                state: PressState::Down,
+            }),
+            Action::new(ActionKind::Click {
+                button: "left".into(),
+                state: PressState::Down,
+            }),
         ]);
         execute_macro_with(
             &mut macro_,
@@ -1226,38 +1174,24 @@ mod tests {
     fn move_uses_coordinate_resolver() {
         let mut backend = RecordingBackend::default();
         let resolver = RUN_RESOLVER;
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Move {
-                    point: CoordinateRef("Prog~Spot".into()),
-                    smooth: false,
-                    smooth_low: 0.05,
-                    smooth_high: 0.2,
-                    smooth_delay_ms: 1,
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Click {
-                    button: "left".into(),
-                    state: PressState::Down,
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Click {
-                    button: "left".into(),
-                    state: PressState::Up,
-                },
-            },
+        let mut macro_ = macro_of(vec![
+            Action::new(ActionKind::Move {
+                point: CoordinateRef("Prog~Spot".into()),
+                smooth: false,
+                smooth_low: 0.05,
+                smooth_high: 0.2,
+                smooth_delay_ms: 1,
+            }),
+            Action::new(ActionKind::Click {
+                button: "left".into(),
+                state: PressState::Down,
+            }),
+            Action::new(ActionKind::Click {
+                button: "left".into(),
+                state: PressState::Up,
+            }),
         ]);
-        execute_macro_with(
-            &mut macro_,
-            ExecDeps::new(&mut backend).resolver(&resolver),
-        )
-        .unwrap();
+        execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).resolver(&resolver)).unwrap();
         backend.assert_logged("move:42,99,smooth=false");
         backend.assert_logged("click:left:down");
     }
@@ -1270,27 +1204,23 @@ mod tests {
         let mut macro_ = Macro::new("t", 0, vec![]);
         macro_.mouse_delay = 0;
         macro_.root = root_loop(vec![
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Move {
-                    point: CoordinateRef("Prog~Spot".into()),
-                    smooth: false,
-                    smooth_low: 0.05,
-                    smooth_high: 0.2,
-                    smooth_delay_ms: 1,
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Click {
-                    button: "left".into(),
-                    state: PressState::Tap,
-                },
-            },
+            Action::new(ActionKind::Move {
+                point: CoordinateRef("Prog~Spot".into()),
+                smooth: false,
+                smooth_low: 0.05,
+                smooth_high: 0.2,
+                smooth_delay_ms: 1,
+            }),
+            Action::new(ActionKind::Click {
+                button: "left".into(),
+                state: PressState::Tap,
+            }),
         ]);
         execute_macro_with(
             &mut macro_,
-            ExecDeps::new(&mut backend).resolver(&resolver).click_fx(&fx),
+            ExecDeps::new(&mut backend)
+                .resolver(&resolver)
+                .click_fx(&fx),
         )
         .unwrap();
         assert_eq!(fx.drain(), vec![(42, 99)]);
@@ -1303,43 +1233,26 @@ mod tests {
             ..RecordingBackend::default()
         };
         let fx = sqyre_ports::SharedClickFx::new();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Click {
-                button: "left".into(),
-                state: PressState::Down,
-            },
-        }]);
-        execute_macro_with(
-            &mut macro_,
-            ExecDeps::new(&mut backend).click_fx(&fx),
-        )
-        .unwrap();
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::Click {
+            button: "left".into(),
+            state: PressState::Down,
+        })]);
+        execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).click_fx(&fx)).unwrap();
         assert_eq!(fx.drain(), vec![(5, 6)]);
     }
 
     #[test]
     fn tap_click_and_key_press_down_then_up() {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.mouse_delay = 0;
-        macro_.keyboard_delay = 0;
-        macro_.root = root_loop(vec![
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Click {
-                    button: "left".into(),
-                    state: PressState::Tap,
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Key {
-                    key: "a".into(),
-                    state: PressState::Tap,
-                },
-            },
+        let mut macro_ = fast_macro_of(vec![
+            Action::new(ActionKind::Click {
+                button: "left".into(),
+                state: PressState::Tap,
+            }),
+            Action::new(ActionKind::Key {
+                key: "a".into(),
+                state: PressState::Tap,
+            }),
         ]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         let click_down = backend
@@ -1364,8 +1277,7 @@ mod tests {
         let logger = crate::SharedActionLog::new();
         let wait_id = ActionId::new();
         let click_id = ActionId::new();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![
+        let mut macro_ = macro_of(vec![
             Action {
                 id: wait_id,
                 kind: ActionKind::Wait {
@@ -1380,11 +1292,7 @@ mod tests {
                 },
             },
         ]);
-        execute_macro_with(
-            &mut macro_,
-            ExecDeps::new(&mut backend).logger(&logger),
-        )
-        .unwrap();
+        execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).logger(&logger)).unwrap();
         let wait_lines = lines_for(&logger.entries_for(wait_id));
         let click_lines = lines_for(&logger.entries_for(click_id));
         assert!(
@@ -1425,53 +1333,38 @@ mod tests {
             description: String::new(),
         });
         macro_.root = root_loop(vec![
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Conditional {
-                    condition: sqyre_domain::ConditionBlock {
-                        name: "ok".into(),
-                        match_mode: "all".into(),
-                        clauses: vec![sqyre_domain::ConditionClause {
-                            left: ScalarValue::String("${flag}".into()),
-                            operator: ConditionOperator::Equals,
-                            right: ScalarValue::String("yes".into()),
-                        }],
-                    },
-                    subactions: vec![Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::Wait {
-                            time: ScalarValue::Int(7),
-                        },
-                    }],
-                    else_actions: Vec::new(),
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::Conditional {
-                    condition: sqyre_domain::ConditionBlock {
-                        name: "no".into(),
-                        match_mode: "all".into(),
-                        clauses: vec![sqyre_domain::ConditionClause {
-                            left: ScalarValue::String("${flag}".into()),
-                            operator: ConditionOperator::Equals,
-                            right: ScalarValue::String("no".into()),
-                        }],
-                    },
-                    subactions: vec![Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::Wait {
-                            time: ScalarValue::Int(99),
-                        },
-                    }],
-                    else_actions: vec![Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::Wait {
-                            time: ScalarValue::Int(5),
-                        },
+            Action::new(ActionKind::Conditional {
+                condition: sqyre_domain::ConditionBlock {
+                    name: "ok".into(),
+                    match_mode: "all".into(),
+                    clauses: vec![sqyre_domain::ConditionClause {
+                        left: ScalarValue::String("${flag}".into()),
+                        operator: ConditionOperator::Equals,
+                        right: ScalarValue::String("yes".into()),
                     }],
                 },
-            },
+                subactions: vec![Action::new(ActionKind::Wait {
+                    time: ScalarValue::Int(7),
+                })],
+                else_actions: Vec::new(),
+            }),
+            Action::new(ActionKind::Conditional {
+                condition: sqyre_domain::ConditionBlock {
+                    name: "no".into(),
+                    match_mode: "all".into(),
+                    clauses: vec![sqyre_domain::ConditionClause {
+                        left: ScalarValue::String("${flag}".into()),
+                        operator: ConditionOperator::Equals,
+                        right: ScalarValue::String("no".into()),
+                    }],
+                },
+                subactions: vec![Action::new(ActionKind::Wait {
+                    time: ScalarValue::Int(99),
+                })],
+                else_actions: vec![Action::new(ActionKind::Wait {
+                    time: ScalarValue::Int(5),
+                })],
+            }),
         ]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         backend.assert_logged("sleep:7");
@@ -1649,28 +1542,22 @@ mod tests {
             initial_value: "world".into(),
             description: String::new(),
         });
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::SetVariable {
-                assignments: vec![VariableAssignment::new(
-                    "msg",
-                    sqyre_domain::ScalarValue::String("hello ${base}".into()),
-                )],
-            },
-        }]);
+        macro_.root = root_loop(vec![Action::new(ActionKind::SetVariable {
+            assignments: vec![VariableAssignment::new(
+                "msg",
+                sqyre_domain::ScalarValue::String("hello ${base}".into()),
+            )],
+        })]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert_eq!(
             macro_.variables.get("msg").map(|v| v.as_display()),
             Some("hello world".into())
         );
 
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Type {
-                text: "hi ${missing}".into(),
-                delay_ms: 0,
-            },
-        }]);
+        macro_.root = root_loop(vec![Action::new(ActionKind::Type {
+            text: "hi ${missing}".into(),
+            delay_ms: 0,
+        })]);
         let err = execute_macro(&mut macro_, &mut backend).unwrap_err();
         assert!(err.to_string().contains("unresolved"));
     }
@@ -1679,27 +1566,16 @@ mod tests {
     fn stop_flag_halts_mid_loop() {
         let mut backend = RecordingBackend::default();
         let stop = AtomicBool::new(false);
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Loop {
-                name: "many".into(),
-                count: ScalarValue::Int(5),
-                subactions: vec![Action {
-                    id: ActionId::new(),
-                    kind: ActionKind::Wait {
-                        time: ScalarValue::Int(1),
-                    },
-                }],
-            },
-        }]);
+        let mut macro_ = macro_of(vec![Action::new(ActionKind::Loop {
+            name: "many".into(),
+            count: ScalarValue::Int(5),
+            subactions: vec![Action::new(ActionKind::Wait {
+                time: ScalarValue::Int(1),
+            })],
+        })]);
         // Latch stop after construction; executor polls each iteration.
         stop.store(true, Ordering::SeqCst);
-        execute_macro_with(
-            &mut macro_,
-            ExecDeps::new(&mut backend).stop_flag(&stop),
-        )
-        .unwrap();
+        execute_macro_with(&mut macro_, ExecDeps::new(&mut backend).stop_flag(&stop)).unwrap();
         assert!(
             backend
                 .log
@@ -1717,13 +1593,10 @@ mod tests {
         macro_.global_delay = 3;
         macro_.mouse_delay = 5;
         macro_.keyboard_delay = 0;
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Click {
-                button: "left".into(),
-                state: PressState::Down,
-            },
-        }]);
+        macro_.root = root_loop(vec![Action::new(ActionKind::Click {
+            button: "left".into(),
+            state: PressState::Down,
+        })]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         backend.assert_logged("click:left:down");
         backend.assert_logged("sleep:3");
@@ -1733,30 +1606,18 @@ mod tests {
     #[test]
     fn loop_continue_skips_rest_of_iteration() {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.keyboard_delay = 0;
-        macro_.mouse_delay = 0;
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Loop {
-                name: "c".into(),
-                count: ScalarValue::Int(2),
-                subactions: vec![
-                    Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::LoopJump {
-                            mode: LoopJumpMode::Continue,
-                        },
-                    },
-                    Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::Wait {
-                            time: ScalarValue::Int(50),
-                        },
-                    },
-                ],
-            },
-        }]);
+        let mut macro_ = fast_macro_of(vec![Action::new(ActionKind::Loop {
+            name: "c".into(),
+            count: ScalarValue::Int(2),
+            subactions: vec![
+                Action::new(ActionKind::LoopJump {
+                    mode: LoopJumpMode::Continue,
+                }),
+                Action::new(ActionKind::Wait {
+                    time: ScalarValue::Int(50),
+                }),
+            ],
+        })]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         backend.assert_not_logged("sleep:50");
     }
@@ -1764,16 +1625,10 @@ mod tests {
     #[test]
     fn type_emits_chars_with_delay() {
         let mut backend = RecordingBackend::default();
-        let mut macro_ = Macro::new("t", 0, vec![]);
-        macro_.keyboard_delay = 0;
-        macro_.mouse_delay = 0;
-        macro_.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Type {
-                text: "ab".into(),
-                delay_ms: 2,
-            },
-        }]);
+        let mut macro_ = fast_macro_of(vec![Action::new(ActionKind::Type {
+            text: "ab".into(),
+            delay_ms: 2,
+        })]);
         execute_macro(&mut macro_, &mut backend).unwrap();
         assert_eq!(
             backend
