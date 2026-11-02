@@ -19,7 +19,7 @@ pub fn brand_spinner_sized(ui: &mut Ui, side: f32) -> Response {
         return response;
     }
     let glyph = egui::Rect::from_center_size(rect.center(), rect.size() * 0.92);
-    sqyre_overlay::icons::paint_trace_spinner(ui, glyph, sqyre_ui_theme::PRIMARY);
+    sqyre_overlay::icons::paint_trace_spinner(ui, glyph, sqyre_ui_theme::accent());
     // Animated — request_repaint_after, not a bare request_repaint, which can
     // be dropped on an idle window and freeze the sweep (see ui_toolbar).
     ui.ctx()

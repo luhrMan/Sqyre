@@ -86,6 +86,9 @@ pub struct PreviewTooltipCache {
     desktop_outline: Option<(i32, i32, i32, i32)>,
     /// Desktop outline from a hovered list row / coord label; wins over embedded.
     desktop_outline_hover: Option<(i32, i32, i32, i32)>,
+    /// Settings → Appearance toggle: preview tooltips may request the gold
+    /// desktop outline. Logs window pin/hover requests bypass this flag.
+    desktop_outlines_enabled: bool,
     #[cfg(target_os = "android")]
     backdrop_generation: u64,
 }
@@ -182,12 +185,26 @@ impl PreviewTooltipCache {
         }
     }
 
+    /// Sync from `UserSettings::preview_desktop_outline`; turning it off also
+    /// drops a tooltip request queued this frame so nothing stale paints.
+    pub fn set_desktop_outlines_enabled(&mut self, enabled: bool) {
+        self.desktop_outlines_enabled = enabled;
+        if !enabled {
+            self.desktop_outline = None;
+            self.desktop_outline_hover = None;
+        }
+    }
+
     fn request_desktop_outline_embedded(&mut self, coords: PreviewCoords) {
-        self.desktop_outline = Some(desktop_outline_rect(coords));
+        if self.desktop_outlines_enabled {
+            self.desktop_outline = Some(desktop_outline_rect(coords));
+        }
     }
 
     fn request_desktop_outline_hover(&mut self, coords: PreviewCoords) {
-        self.desktop_outline_hover = Some(desktop_outline_rect(coords));
+        if self.desktop_outlines_enabled {
+            self.desktop_outline_hover = Some(desktop_outline_rect(coords));
+        }
     }
 
     /// Whether hovered/pinned rects can be outlined on the real desktop.
@@ -229,7 +246,9 @@ impl PreviewTooltipCache {
         match entity_preview_spec(catalog, program, name, kind) {
             Ok((key, caption, coords)) => {
                 self.request_desktop_outline_hover(coords);
-                log_hover_outline_transition(kind, program, name, coords);
+                if self.desktop_outlines_enabled {
+                    log_hover_outline_transition(kind, program, name, coords);
+                }
                 let preview =
                     self.texture_for(ui.ctx(), &key, &caption, coords, false, TOOLTIP_MAX_DIM);
                 let show_size = matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection);
@@ -1034,15 +1053,15 @@ fn search_area_caption(sa: &ProgramSearchArea) -> String {
 }
 
 fn collection_caption(sa: &ProgramSearchArea, rows: i32, cols: i32) -> String {
-    let bounds = search_area_caption(sa);
+    let bounds = search_area_caption(sa).replace(" · ", "\n· ");
     match crate::data_editor_preview::search_area_pixel_size(sa)
         .and_then(|(w, h)| crate::data_editor_preview::collection_cell_pixel_size(w, h, rows, cols))
     {
         Some((cw, ch)) => format!(
-            "{bounds} · cell {} · {rows} rows × {cols} cols",
+            "{bounds}\n· cell {}\n· {rows} rows × {cols} cols",
             crate::data_editor_preview::pixel_size_text(cw, ch)
         ),
-        None => format!("{bounds} · {rows} rows × {cols} cols"),
+        None => format!("{bounds}\n· {rows} rows × {cols} cols"),
     }
 }
 
@@ -1085,7 +1104,7 @@ fn show_preview_hover_ui(response: &egui::Response, add_contents: impl FnOnce(&m
 
 fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_image_size: bool) {
     let [tw, th] = tex.size();
-    let size = fit_display(tw as f32, th as f32);
+    let size = fit_display(ui, tw as f32, th as f32);
     // Click sense makes the tip "interactive" so egui keeps it open while the
     // pointer is over the image — needed when a tall tip still overlaps the row.
     ui.add(egui::Image::new((tex.id(), size)).sense(egui::Sense::click()));
@@ -1109,10 +1128,13 @@ fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_ima
 /// hover tooltip can never fire — so the error stays as centered visible text
 /// rather than collapsing to an icon like interactive surfaces do.
 fn paint_preview_status(ui: &mut egui::Ui, caption: &str, err: &str) {
-    let (rect, _) = ui.allocate_exact_size(
-        Vec2::new(DISPLAY_MAX_W, DISPLAY_MAX_H),
-        egui::Sense::click(),
+    let box_size = image_view::fit_in_box_no_upscale(
+        DISPLAY_MAX_W,
+        DISPLAY_MAX_H,
+        crate::widgets::visible_content_width(ui),
+        DISPLAY_MAX_H,
     );
+    let (rect, _) = ui.allocate_exact_size(box_size, egui::Sense::click());
     ui.painter()
         .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
     paint_preview_message(ui, rect, err, crate::theme::error_fg(), 0.0);
@@ -1242,10 +1264,14 @@ fn paint_preview_panel_placeholder(
     rect
 }
 
-fn fit_display(w: f32, h: f32) -> Vec2 {
+fn fit_display(ui: &egui::Ui, w: f32, h: f32) -> Vec2 {
     let w = w.max(1.0);
     let h = h.max(1.0);
-    let scale = (DISPLAY_MAX_W / w).min(DISPLAY_MAX_H / h).min(1.0);
+    // Cap at the visible bound: tip bodies live in vertical-only scroll areas
+    // that do not clip horizontally, so a fixed-size image would paint past
+    // the tip edge when the host is narrower than DISPLAY_MAX_W.
+    let max_w = DISPLAY_MAX_W.min(crate::widgets::visible_content_width(ui));
+    let scale = (max_w / w).min(DISPLAY_MAX_H / h).min(1.0);
     Vec2::new(w * scale, h * scale)
 }
 
@@ -1470,6 +1496,48 @@ fn draw_point_marker(img: &mut RgbaImage, cx: i32, cy: i32, c: Rgba<u8>, thick: 
 mod tests {
     use super::*;
 
+    /// Tip bodies live in vertical-only scroll areas that never clip the X axis.
+    /// Fixed-size preview content must shrink to the host bound instead of
+    /// expanding the section frame — and the tip — past its right edge.
+    #[test]
+    fn preview_content_stays_within_narrow_tip_bound() {
+        let ctx = egui::Context::default();
+        let tex = ctx.load_texture(
+            "narrow-bound",
+            ColorImage::new([640, 360], vec![egui::Color32::RED; 640 * 360]),
+            TextureOptions::LINEAR,
+        );
+        // FLOATER_MIN_COMPACT is the narrowest tip bound a user can reach.
+        let bound = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(220.0, 600.0));
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(bound), |ui| {
+                crate::theme::framed_section(ui, |ui| {
+                    paint_preview(ui, &tex, "X: 1, Y: 2", true);
+                });
+                crate::theme::framed_section(ui, |ui| {
+                    paint_preview_status(ui, "cap", "failed");
+                });
+            });
+        });
+        for clipped in &out.shapes {
+            let right = match &clipped.shape {
+                egui::Shape::Mesh(mesh) => mesh
+                    .vertices
+                    .iter()
+                    .map(|v| v.pos.x)
+                    .fold(f32::NEG_INFINITY, f32::max),
+                egui::Shape::Rect(rect) => rect.rect.right(),
+                _ => continue,
+            };
+            assert!(
+                right <= bound.right() + 1.0,
+                "tooltip content paints past the tip bound: {right} > {}",
+                bound.right()
+            );
+        }
+        out.drop_without_applying_deltas();
+    }
+
     #[test]
     fn point_bounds_centered_and_clamped() {
         let vb = DesktopRect {
@@ -1598,7 +1666,7 @@ mod tests {
         );
         assert_eq!(
             collection_caption(&sa, 2, 2),
-            "Left: 10, Top: 20, Right: 110, Bottom: 80 · area 100×60 px · cell 50×30 px · 2 rows × 2 cols"
+            "Left: 10, Top: 20, Right: 110, Bottom: 80\n· area 100×60 px\n· cell 50×30 px\n· 2 rows × 2 cols"
         );
     }
 

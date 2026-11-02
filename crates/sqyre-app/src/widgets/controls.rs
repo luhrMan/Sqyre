@@ -4,7 +4,7 @@ use eframe::egui::{
     self, Color32, CornerRadius, Key, Modifiers, Pos2, Sense, Stroke, Vec2, WidgetInfo, WidgetType,
 };
 
-use crate::theme::{accent_dim, paint_galley_centered, paint_text_centered, MACRO_STOP, PRIMARY};
+use crate::theme::{accent, accent_dim, paint_galley_centered, paint_text_centered, MACRO_STOP};
 
 fn icon_btn_font(ui: &egui::Ui) -> egui::FontId {
     egui::TextStyle::Button.resolve(ui.style())
@@ -29,7 +29,7 @@ pub(crate) fn paint_keyboard_focus_ring(
     ui.painter().rect_stroke(
         rect.expand(1.5),
         CornerRadius::same(4),
-        Stroke::new(2.0, PRIMARY),
+        Stroke::new(2.0, accent()),
         egui::StrokeKind::Outside,
     );
 }
@@ -226,7 +226,7 @@ pub fn icon_toggle(
         egui::StrokeKind::Inside,
     );
     let fg = if *selected {
-        PRIMARY
+        accent()
     } else if enabled {
         visuals.text_color()
     } else {
@@ -355,7 +355,7 @@ pub fn dirty_action_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui:
     let font_id = icon_btn_font(ui);
     let galley = ui
         .painter()
-        .layout_no_wrap(glyph.to_owned(), font_id, PRIMARY);
+        .layout_no_wrap(glyph.to_owned(), font_id, accent());
     let size = Vec2::new(
         galley.size().x + 2.0 * pad.x,
         (galley.size().y + 2.0 * pad.y).max(ui.spacing().interact_size.y),
@@ -365,19 +365,19 @@ pub fn dirty_action_button(ui: &mut egui::Ui, tip: &str, enabled: bool) -> egui:
     let pulse = glow_pulse_if(ui, response.hovered());
     let painter = ui.painter();
 
-    painter.extend(glow_halo_shapes(rect, rounding, PRIMARY, pulse));
+    painter.extend(glow_halo_shapes(rect, rounding, accent(), pulse));
 
     // Opaque body covers the halo center so nothing shows through the label.
     let tint = 0.12 + pulse * 0.22;
     let fill = Color32::from_rgb(
-        ((1.0 - tint) * base_fill.r() as f32 + tint * PRIMARY.r() as f32).round() as u8,
-        ((1.0 - tint) * base_fill.g() as f32 + tint * PRIMARY.g() as f32).round() as u8,
-        ((1.0 - tint) * base_fill.b() as f32 + tint * PRIMARY.b() as f32).round() as u8,
+        ((1.0 - tint) * base_fill.r() as f32 + tint * accent().r() as f32).round() as u8,
+        ((1.0 - tint) * base_fill.g() as f32 + tint * accent().g() as f32).round() as u8,
+        ((1.0 - tint) * base_fill.b() as f32 + tint * accent().b() as f32).round() as u8,
     );
     // Keep stroke width fixed — animating Inside stroke width can tessellate a midline.
-    let stroke = Stroke::new(1.0, PRIMARY);
+    let stroke = Stroke::new(1.0, accent());
     painter.rect(rect, rounding, fill, stroke, egui::StrokeKind::Inside);
-    paint_galley_centered(ui, rect, galley, PRIMARY);
+    paint_galley_centered(ui, rect, galley, accent());
     paint_keyboard_focus_ring(ui, rect, &response);
     response.widget_info(|| WidgetInfo::labeled(WidgetType::Button, true, tip));
     response.on_hover_text(tip)
@@ -541,7 +541,7 @@ pub fn mouse_button_picker(
 
     let highlight = |b: MouseButton| -> Option<Color32> {
         if *button == b {
-            Some(PRIMARY)
+            Some(accent())
         } else if hover_btn == Some(b) {
             Some(accent_dim())
         } else {
@@ -688,7 +688,7 @@ pub fn press_state_toggle(
 
     let visuals = ui.style().interact(&response);
     let track_fill = if matches!(*state, PressState::Down) {
-        PRIMARY
+        accent()
     } else {
         visuals.bg_fill
     };
@@ -754,7 +754,7 @@ pub(crate) fn up_down_toggle(ui: &mut egui::Ui, down: &mut bool) -> egui::Respon
     }
 
     let visuals = ui.style().interact(&response);
-    let track_fill = if *down { PRIMARY } else { visuals.bg_fill };
+    let track_fill = if *down { accent() } else { visuals.bg_fill };
     let painter = ui.painter();
     let rounding = CornerRadius::same((TRACK_W / 2.0) as u8);
     painter.rect_filled(rect, rounding, track_fill);

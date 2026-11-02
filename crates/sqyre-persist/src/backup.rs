@@ -52,8 +52,11 @@ pub enum BackupError {
 
 pub type Result<T> = std::result::Result<T, BackupError>;
 
-/// `{sqyre_dir}/backups`.
+/// `{sqyre_dir}/backups`, or the user's custom backups folder.
 pub fn backups_dir() -> PathBuf {
+    if let Some(p) = crate::backup_dir_override() {
+        return p;
+    }
     sqyre_dir().join(BACKUPS_SUBDIR)
 }
 

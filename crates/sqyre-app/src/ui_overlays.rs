@@ -173,10 +173,13 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     {
         app.settings_ui.show(
             ctx,
-            &mut app.workspace.db,
-            &mut app.workspace.macros,
-            &mut app.workspace.catalog,
+            &mut crate::settings::SettingsData {
+                db: &mut app.workspace.db,
+                macros: &mut app.workspace.macros,
+                catalog: &mut app.workspace.catalog,
+            },
             &mut app.update,
+            &app.run_session.macro_hotkeys,
             pending_scale,
         );
         if app.settings_ui.restart_requested {
@@ -188,9 +191,12 @@ pub fn show_floating_windows(app: &mut SqyreApp, ctx: &egui::Context) {
     {
         app.settings_ui.show(
             ctx,
-            &mut app.workspace.db,
-            &mut app.workspace.macros,
-            &mut app.workspace.catalog,
+            &mut crate::settings::SettingsData {
+                db: &mut app.workspace.db,
+                macros: &mut app.workspace.macros,
+                catalog: &mut app.workspace.catalog,
+            },
+            &app.run_session.macro_hotkeys,
             pending_scale,
         );
     }
@@ -743,6 +749,9 @@ pub fn sync_frame_state(app: &mut SqyreApp, ctx: &egui::Context) {
             macros: &macros,
             compact_program_headers: app.settings_ui.settings().compact_program_headers,
             pending_scale: pending.as_ref(),
+            thresholds: crate::macro_record::RecordThresholds::from_settings(
+                app.settings_ui.settings(),
+            ),
         });
         if result.catalog_changed {
             if let Err(e) = app.persist_database() {

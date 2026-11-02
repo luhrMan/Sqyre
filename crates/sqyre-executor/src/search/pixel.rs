@@ -105,6 +105,7 @@ pub(crate) fn execute_find_pixel(
                                     ),
                                     state.src_w,
                                     state.src_h,
+                                    exec.deps.log_image_max_edge,
                                 ),
                             }),
                         }

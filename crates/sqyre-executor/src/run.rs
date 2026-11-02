@@ -267,7 +267,11 @@ impl<'a> Executor<'a> {
         if !logger.log_images_enabled() {
             return None;
         }
-        let mut image = crate::log_draw::image_buf_to_log_image(label.into(), image)?;
+        let mut image = crate::log_draw::image_buf_to_log_image(
+            label.into(),
+            image,
+            self.deps.log_image_max_edge,
+        )?;
         image.annotations = annotations;
         logger.log_image(action_id, &image);
         Some(image)
@@ -310,15 +314,16 @@ impl<'a> Executor<'a> {
             return;
         }
         let title = title.into();
+        let max_edge = self.deps.log_image_max_edge;
         let Some(thumbnail) =
-            crate::log_draw::image_buf_to_log_image(format!("Item — {title}"), thumbnail)
+            crate::log_draw::image_buf_to_log_image(format!("Item — {title}"), thumbnail, max_edge)
         else {
             return;
         };
         let steps: Vec<_> = steps
             .iter()
             .filter_map(|(label, img)| {
-                crate::log_draw::image_buf_to_log_image((*label).to_string(), img)
+                crate::log_draw::image_buf_to_log_image((*label).to_string(), img, max_edge)
             })
             .collect();
         logger.log_item_pipeline(
@@ -363,6 +368,8 @@ pub struct ExecDeps<'a> {
     pub while_max_iterations: i32,
     /// Max nested RunMacro depth (including the top-level macro).
     pub run_macro_max_depth: usize,
+    /// Long-edge cap for images stored in the action log.
+    pub log_image_max_edge: usize,
     pub resolver: Option<&'a dyn CoordinateResolver>,
     pub icons: Option<&'a dyn IconStore>,
     pub macros: Option<&'a dyn MacroLookup>,
@@ -389,6 +396,7 @@ impl<'a> ExecDeps<'a> {
             release_held_inputs: true,
             while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
             run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
+            log_image_max_edge: crate::log_draw::DEFAULT_LOG_IMAGE_MAX_EDGE,
             resolver: None,
             icons: None,
             macros: None,
@@ -481,6 +489,11 @@ impl<'a> ExecDeps<'a> {
 
     pub fn run_macro_max_depth(mut self, max: usize) -> Self {
         self.run_macro_max_depth = max;
+        self
+    }
+
+    pub fn log_image_max_edge(mut self, edge: usize) -> Self {
+        self.log_image_max_edge = edge;
         self
     }
 

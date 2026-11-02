@@ -121,11 +121,23 @@ impl VariablesPanelUi {
             crate::widgets::fill_resize_body(ui, |ui| {
                 // Split remaining height between declared list (top) and Runtime/Built-ins.
                 const TAB_CHROME: f32 = 48.0;
+                /// Compact Runtime strip when there is no snapshot to list
+                /// (heading + two-line empty state); the declared list takes
+                /// the leftover instead of leaving a dead band at the bottom.
+                const RUNTIME_EMPTY_H: f32 = 84.0;
+                let runtime_snap = matches!(self.bottom_tab, BottomTab::Runtime)
+                    .then(|| runtime_vars.snapshot())
+                    .unwrap_or_default();
+                let runtime_empty =
+                    matches!(self.bottom_tab, BottomTab::Runtime) && runtime_snap.is_empty();
                 let avail = ui.available_height();
                 let min_bottom = 100.0;
                 let min_top = 120.0;
                 let need = TAB_CHROME + min_bottom + min_top;
-                let (top_h, bottom_h) = if avail >= need {
+                let (top_h, bottom_h) = if runtime_empty {
+                    let bottom = RUNTIME_EMPTY_H.min((avail - TAB_CHROME - min_top).max(1.0));
+                    ((avail - TAB_CHROME - bottom).max(1.0), bottom)
+                } else if avail >= need {
                     let bottom = ((avail - TAB_CHROME) * 0.38).max(min_bottom);
                     let top = (avail - TAB_CHROME - bottom).max(min_top);
                     (top, bottom)
@@ -150,7 +162,7 @@ impl VariablesPanelUi {
                 });
                 crate::widgets::section_separator(ui);
                 match self.bottom_tab {
-                    BottomTab::Runtime => self.show_runtime(ui, runtime_vars, running, bottom_h),
+                    BottomTab::Runtime => self.show_runtime(ui, runtime_snap, running, bottom_h),
                     BottomTab::Builtins => self.show_builtins(ui, num_monitors, bottom_h),
                 }
             });
@@ -167,11 +179,10 @@ impl VariablesPanelUi {
     fn show_runtime(
         &mut self,
         ui: &mut egui::Ui,
-        runtime_vars: &SharedRuntimeVars,
+        mut snap: Vec<(String, String)>,
         running: bool,
         max_h: f32,
     ) {
-        let mut snap = runtime_vars.snapshot();
         snap.sort_by(|(a, _), (b, _)| crate::macro_meta::cmp_display_name(a, b));
         crate::widgets::heading_with_count(
             ui,

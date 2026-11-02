@@ -182,7 +182,7 @@ impl PermissionsPanel {
             ui.label(
                 RichText::new("Desktop permissions")
                     .strong()
-                    .color(crate::theme::PRIMARY),
+                    .color(crate::theme::accent()),
             );
             if self.running
                 || self.refresh_when_capture_ready
@@ -464,7 +464,7 @@ fn eligibility_color(status: PermissionEligibility) -> Color32 {
     match status {
         PermissionEligibility::Granted => crate::theme::ok_fg(),
         PermissionEligibility::Needed => crate::theme::warn_fg(),
-        PermissionEligibility::Checking => crate::theme::PRIMARY,
+        PermissionEligibility::Checking => crate::theme::accent(),
         PermissionEligibility::NotRequired => Color32::from_gray(140),
         PermissionEligibility::Unavailable => crate::theme::error_fg(),
     }

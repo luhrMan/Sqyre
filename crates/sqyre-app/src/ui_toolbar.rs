@@ -100,7 +100,7 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
                         icon_rect.height() * (104.25 / 128.0),
                     ),
             );
-            sqyre_overlay::icons::paint_trace_spinner(ui, s_rect, sqyre_ui_theme::PRIMARY);
+            sqyre_overlay::icons::paint_trace_spinner(ui, s_rect, sqyre_ui_theme::accent());
             // Pace like the run-glow pulse — a bare request_repaint can be
             // dropped on an idle window (see hotkey_wake), freezing the icon.
             ui.ctx()
@@ -499,7 +499,7 @@ pub fn footer_floats(app: &mut SqyreApp, ui: &mut egui::Ui) {
             crate::widgets::controls::status_icon(
                 ui,
                 egui_phosphor::regular::INFO,
-                sqyre_ui_theme::PRIMARY,
+                sqyre_ui_theme::accent(),
                 &status,
             );
         }

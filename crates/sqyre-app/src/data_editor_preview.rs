@@ -206,7 +206,7 @@ pub(crate) fn paint_preview_coord_chip(
     let radius = 4.0;
     ui.painter().rect_filled(edit_rect, radius, fill);
     let border = var_pills::entry_validation_stroke(validation)
-        .unwrap_or_else(|| egui::Stroke::new(1.5, theme::PRIMARY));
+        .unwrap_or_else(|| egui::Stroke::new(1.5, theme::accent()));
     ui.painter()
         .rect_stroke(edit_rect, radius, border, egui::StrokeKind::Outside);
 
@@ -236,7 +236,7 @@ pub(crate) fn paint_preview_coord_chip(
         ui.painter().rect_stroke(
             step,
             radius,
-            egui::Stroke::new(1.0, theme::PRIMARY),
+            egui::Stroke::new(1.0, theme::accent()),
             egui::StrokeKind::Inside,
         );
     }
@@ -301,14 +301,29 @@ pub(crate) fn paint_preview_coord_chip(
         }
         resp
     } else {
-        ui.place(
-            inner,
-            egui::TextEdit::singleline(value)
-                .id(id)
-                .frame(egui::Frame::NONE)
-                .hint_text(placeholder)
-                .desired_width(inner.width()),
-        )
+        // Manual child layout (same as `ui.place`) so `TextEditOutput` — and
+        // therefore `${` autocomplete — stays reachable.
+        let keys = var_pills::var_ref_autocomplete_keys(ui, id);
+        let mut edit = ui.new_child(egui::UiBuilder::new().max_rect(inner).layout(
+            egui::Layout::centered_and_justified(egui::Direction::TopDown),
+        ));
+        let output = egui::TextEdit::singleline(value)
+            .id(id)
+            .frame(egui::Frame::NONE)
+            .hint_text(placeholder)
+            .desired_width(inner.width())
+            .show(&mut edit);
+        let cursor_char = output.cursor_range.map(|r| r.primary.index.0);
+        var_pills::show_var_ref_autocomplete(
+            ui,
+            id,
+            &output.response,
+            value,
+            cursor_char,
+            known,
+            keys,
+        );
+        output.response.response
     };
 
     if show_overlay && resp.clicked() {
@@ -659,7 +674,14 @@ pub(crate) fn show_file_hover(
         Some(tex) => {
             response.clone().on_hover_ui(|ui| {
                 let [tw, th] = tex.size();
-                let size = fit_panel(tw as f32, th as f32);
+                // Cap at the visible bound so the image never paints past the
+                // tooltip edge on narrow hosts (tooltips do not clip children).
+                let size = image_view::fit_in_box_no_upscale(
+                    tw as f32,
+                    th as f32,
+                    FIT_PANEL_MAX_W.min(crate::widgets::visible_content_width(ui)),
+                    FIT_PANEL_MAX_H,
+                );
                 ui.add(egui::Image::new((tex.id(), size)));
                 ui.label(label);
             });
@@ -670,13 +692,11 @@ pub(crate) fn show_file_hover(
     }
 }
 
+const FIT_PANEL_MAX_W: f32 = 340.0;
+const FIT_PANEL_MAX_H: f32 = 240.0;
+
 pub(crate) fn fit_panel(w: f32, h: f32) -> egui::Vec2 {
-    const MAX_W: f32 = 340.0;
-    const MAX_H: f32 = 240.0;
-    let w = w.max(1.0);
-    let h = h.max(1.0);
-    let scale = (MAX_W / w).min(MAX_H / h).min(1.0);
-    egui::vec2(w * scale, h * scale)
+    image_view::fit_in_box_no_upscale(w, h, FIT_PANEL_MAX_W, FIT_PANEL_MAX_H)
 }
 
 pub(crate) fn paint_grid_overlay(ui: &mut egui::Ui, rect: egui::Rect, rows: i32, cols: i32) {
@@ -926,7 +946,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
 
         let fill = theme::preview_selection_fill();
         let stroke = egui::Stroke::new(1.5, theme::preview_selection_stroke());
-        let arrow = egui::Stroke::new(2.0, theme::PRIMARY);
+        let arrow = egui::Stroke::new(2.0, theme::accent());
 
         for (i, node) in layout.nodes().iter().enumerate() {
             let (lx, ty, rx, by) = node.bounds;

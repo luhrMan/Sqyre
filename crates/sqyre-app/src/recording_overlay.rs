@@ -596,7 +596,7 @@ impl RecordingOverlay {
         } else {
             let style = ctx.global_style();
             let font = TextStyle::Body.resolve(&style);
-            let color = theme::PRIMARY;
+            let color = theme::accent();
             let text_max_w = (max_w - HUD_PAD_X - HUD_STROKE * 2.0).max(1.0);
             let galley = ctx.fonts_mut(|f| f.layout(text.clone(), font, color, text_max_w));
             let panel_w = (galley.size().x + HUD_PAD_X)
@@ -800,7 +800,7 @@ fn hud_position(monitor: DesktopRect, at_top: bool, hud_w: f32, hud_h: f32, ppp:
 fn hud_frame() -> egui::Frame {
     egui::Frame::NONE
         .fill(crate::theme::overlay_panel_fill())
-        .stroke(egui::Stroke::new(HUD_STROKE, theme::PRIMARY))
+        .stroke(egui::Stroke::new(HUD_STROKE, theme::accent()))
         .corner_radius(egui::CornerRadius::same(6))
         .inner_margin(egui::Margin::symmetric(10, 6))
 }
@@ -823,7 +823,7 @@ fn paint_hud_window(ctx: &egui::Context, text: &str, at_top: bool) {
         .anchor(anchor, offset)
         .frame(hud_frame())
         .show(ctx, |ui| {
-            ui.label(egui::RichText::new(text).color(theme::PRIMARY).strong());
+            ui.label(egui::RichText::new(text).color(theme::accent()).strong());
         });
 }
 
@@ -842,7 +842,7 @@ fn paint_hud_label(ui: &mut egui::Ui, class: ViewportClass, text: &str, at_top: 
             (panel.y - HUD_PAD_Y).max(1.0),
         ));
         ui.centered_and_justified(|ui| {
-            ui.label(egui::RichText::new(text).color(theme::PRIMARY).strong());
+            ui.label(egui::RichText::new(text).color(theme::accent()).strong());
         });
     });
 }

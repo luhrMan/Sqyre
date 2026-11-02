@@ -80,7 +80,8 @@ impl SqyreApp {
         let settings = UserSettings {
             ui_scale: 1.0,
             // Headless kittest/docs must not touch Pulse, GitHub, or portal ScreenCast.
-            play_ui_sounds: false,
+            play_add_sound: false,
+            play_delete_sound: false,
             play_finish_sound: false,
             auto_update_check: false,
             // Continuous repaint keeps `Harness::run` from settling; goldens stay deterministic.
@@ -178,6 +179,7 @@ impl SqyreApp {
             hotkey_focus_tags: crate::hotkey_focus_tags::HotkeyFocusTagPoller::new(),
             hotkey_chooser: None,
             start_when_idle: None,
+            panic_key_slot: Arc::new(parking_lot::RwLock::new(String::new())),
             // Match product default so main-window goldens include the Macros sidebar.
             macro_list_open: true,
             macro_list_filter: String::new(),

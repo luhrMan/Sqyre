@@ -41,6 +41,10 @@ pub struct HotkeyCallbacks {
     pub on_failsafe: Arc<dyn Fn() + Send + Sync>,
     /// Fired with the macro name when a registered chord matches.
     pub on_macro_hotkey: Arc<dyn Fn(String) + Send + Sync>,
+    /// Single key that stops a running macro (rdev/vk name like `esc`, `f12`;
+    /// empty disables panic stop). Shared so Settings edits apply live without
+    /// restarting the hook.
+    pub panic_key: Arc<parking_lot::RwLock<String>>,
 }
 
 impl Default for HotkeyCallbacks {
@@ -49,6 +53,7 @@ impl Default for HotkeyCallbacks {
             on_escape_stop: Arc::new(|| {}),
             on_failsafe: Arc::new(|| {}),
             on_macro_hotkey: Arc::new(|_| {}),
+            panic_key: Arc::new(parking_lot::RwLock::new("esc".to_string())),
         }
     }
 }

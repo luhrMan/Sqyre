@@ -104,7 +104,7 @@ impl PermissionsPanel {
         ui.label(
             RichText::new("Android permissions")
                 .strong()
-                .color(crate::theme::PRIMARY),
+                .color(crate::theme::accent()),
         );
         ui.label(
             RichText::new("Grant these so macros can see the screen, tap, type, and be stopped.")

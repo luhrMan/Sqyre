@@ -20,6 +20,19 @@ pub const SPACE_12: f32 = 12.0;
 /// Not part of the spacing scale — kept fixed so drag targets stay usable.
 pub const PANEL_SPLITTER_W: f32 = 6.0;
 
+/// Painted size of the `///` corner grip on resizable `egui::Window`s.
+///
+/// egui's default is 12pt — oversized for the compact dialogs here. Smaller
+/// keeps the affordance readable without covering the widget behind it; the
+/// grip is paint/interact only and reserves no layout space either way.
+pub const WINDOW_RESIZE_CORNER_SIZE: f32 = 8.0;
+
+/// Drag radius of the `egui::Window` resize corner (egui default 10pt → a
+/// 20×20 hit rect that swallows clicks on widgets under the corner). Sized so
+/// the grab zone just covers [`WINDOW_RESIZE_CORNER_SIZE`] and widgets in the
+/// window's bottom-right keep their own clicks.
+pub const WINDOW_RESIZE_GRAB_RADIUS: f32 = 6.0;
+
 /// Resolved section/element gap pair for a UI density (Settings → Appearance →
 /// Spacing). `sqyre_persist::UiDensity` maps onto these values; ui-theme cannot
 /// see sqyre-persist, so they live here as plain `f32`s.
@@ -94,8 +107,27 @@ fn pad_to_gap(ui: &mut egui::Ui, gap: f32) {
     ui.add_space((gap - auto).max(0.0));
 }
 
-/// Sqyre gold/yellow primary (`#dc9d2e`).
+/// Sqyre gold/yellow primary (`#dc9d2e`) — the default [`accent`].
 pub const PRIMARY: Color32 = Color32::from_rgb(0xdc, 0x9d, 0x2e);
+
+/// Packed `r<<24|g<<16|b<<8|a` of the active accent (starts as [`PRIMARY`]).
+static ACCENT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0xdc9d_2eff);
+
+/// Active UI accent color — [`PRIMARY`] until [`set_accent`] runs (Settings →
+/// Appearance → Accent color). Read on every frame, so changes repaint live.
+pub fn accent() -> Color32 {
+    let p = ACCENT.load(std::sync::atomic::Ordering::Relaxed);
+    Color32::from_rgba_unmultiplied((p >> 24) as u8, (p >> 16) as u8, (p >> 8) as u8, p as u8)
+}
+
+/// Set the active accent. `None` restores the [`PRIMARY`] gold default.
+pub fn set_accent(rgb: Option<[u8; 3]>) {
+    let p = match rgb {
+        Some([r, g, b]) => ((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8) | 0xff,
+        None => 0xdc9d_2eff,
+    };
+    ACCENT.store(p, std::sync::atomic::Ordering::Relaxed);
+}
 
 /// Start macro / add controls (`#36a258`).
 pub const MACRO_START: Color32 = Color32::from_rgb(0x36, 0xa2, 0x58);
@@ -113,9 +145,10 @@ pub fn overlay_panel_fill() -> Color32 {
     rgba([20, 18, 14, 230])
 }
 
-/// Dimmed primary for selection / hover (alpha `0x40`).
+/// Dimmed accent for selection / hover (alpha `0x40`).
 pub fn accent_dim() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 0x40])
+    let c = accent();
+    rgba([c.r(), c.g(), c.b(), 0x40])
 }
 
 /// Soft error / failure text (Find Pixel dropper, status banners).
@@ -139,15 +172,17 @@ pub fn ok_fg() -> Color32 {
 
 /// Soft tag-chip fill (~11% opacity).
 pub fn chip_fill() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 28])
+    let c = accent();
+    rgba([c.r(), c.g(), c.b(), 28])
 }
 
 /// Subtle frame fill (~5% opacity).
 pub fn frame_fill() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 13])
+    let c = accent();
+    rgba([c.r(), c.g(), c.b(), 13])
 }
 
-/// Dim gold stroke for inner cards and previews (weaker than window chrome).
+/// Dim accent stroke for inner cards and previews (weaker than window chrome).
 pub fn inner_stroke() -> Stroke {
     Stroke::new(1.0, accent_dim())
 }
@@ -155,12 +190,13 @@ pub fn inner_stroke() -> Stroke {
 /// Half-opacity stroke for section separators and structural panel splitters
 /// (egui `Panel` separator, data-editor split). Stronger than [`inner_stroke`].
 pub fn panel_split_stroke() -> Stroke {
-    Stroke::new(1.0, rgba([0xdc, 0x9d, 0x2e, 0x80]))
+    let c = accent();
+    Stroke::new(1.0, rgba([c.r(), c.g(), c.b(), 0x80]))
 }
 
-/// Gilded border painted just inside the main window edge.
+/// Accent border painted just inside the main window edge.
 pub fn window_border_stroke() -> Stroke {
-    Stroke::new(1.0, PRIMARY.gamma_multiply(0.5))
+    Stroke::new(1.0, accent().gamma_multiply(0.5))
 }
 
 /// Corner radius of [`window_border_stroke`].
@@ -244,6 +280,16 @@ mod tests {
     #[test]
     fn panel_splitter_width_is_fixed() {
         assert_eq!(PANEL_SPLITTER_W, 6.0);
+    }
+
+    #[test]
+    fn window_resize_grip_is_compact_and_covers_the_glyph() {
+        assert_eq!(WINDOW_RESIZE_CORNER_SIZE, 8.0);
+        assert_eq!(WINDOW_RESIZE_GRAB_RADIUS, 6.0);
+        // The grab zone (diameter) must still cover the painted glyph.
+        const {
+            assert!(WINDOW_RESIZE_GRAB_RADIUS * 2.0 >= WINDOW_RESIZE_CORNER_SIZE);
+        }
     }
 
     #[test]

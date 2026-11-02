@@ -235,6 +235,9 @@ pub const SET_WIN_OUTLINE: &str = "Show a thin gold outline around the edge of t
 /// Run button glow.
 pub const SET_RUN_GLOW: &str =
     "Show a green glow around the Run button when a macro is ready to run; it pulses while hovered.";
+/// Preview desktop outline.
+pub const SET_PREVIEW_OUTLINE: &str =
+    "While an image preview tooltip is open, draw a gold box on the desktop at the point or search area it shows. Find markers pinned from the Logs window still outline.";
 /// Font size.
 pub const SET_FONT_SIZE: &str = "Base text size for labels, buttons, and form fields.";
 /// UI scale.
@@ -246,3 +249,116 @@ pub const SET_DENSITY: &str =
 /// Auto-compact on narrow windows.
 pub const SET_AUTO_COMPACT: &str =
     "Switch to Compact spacing automatically when the window is narrow (phones, small windows).";
+/// Accent color picker.
+pub const SET_ACCENT: &str =
+    "Gold accent used for focused outlines, the Run glow, and overlay button defaults.";
+/// UI font family.
+pub const SET_FONT_FAMILY: &str =
+    "Text font for the interface. Monospace uses the code font for everything.";
+/// Monospace font size.
+pub const SET_MONO_SIZE: &str =
+    "Text size for code/YAML editors (and the whole interface when the font family is Monospace).";
+
+// --- Settings: application ---
+
+/// Diagnostic log toggle.
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+pub const SET_DIAG_LOG: &str =
+    "Append detailed diagnostics to diag.log in the data folder (same as SQYRE_DIAG=1). Helps troubleshoot capture and input problems.";
+/// Memory log toggle.
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+pub const SET_MEM_LOG: &str =
+    "Sample process memory to mem.log in the data folder (same as SQYRE_MEM=1).";
+/// Memory sample interval.
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+pub const SET_MEM_INTERVAL: &str = "Milliseconds between memory samples.";
+/// Close-to-tray toggle.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SET_CLOSE_TO_TRAY: &str =
+    "Closing the window hides Sqyre in the system tray instead of quitting. Use Quit from the tray menu to exit.";
+/// Start minimized toggle.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SET_START_MINIMIZED: &str =
+    "Start with the window hidden in the system tray instead of shown.";
+/// Launch-on-login toggle.
+#[cfg(all(not(target_arch = "wasm32"), target_os = "linux"))]
+pub const SET_AUTOSTART: &str =
+    "Install a desktop autostart entry so Sqyre launches when you log in.";
+/// Restore last macro toggle.
+pub const SET_LAST_MACRO: &str = "Re-select the macro that was selected when Sqyre last closed.";
+
+// --- Settings: playback defaults ---
+
+/// Click marker duration.
+pub const SET_CLICK_FLASH_MS: &str =
+    "How long the click marker stays on the desktop, in milliseconds.";
+/// Cursor restore toggle.
+#[cfg(any(feature = "native-runtime", target_os = "windows"))]
+pub const SET_RESTORE_CURSOR: &str =
+    "Move the mouse cursor back to where it was when the macro run ends.";
+/// Default key/mouse delays for new macros.
+pub const SET_DEFAULT_DELAYS: &str =
+    "Delay after each key press / mouse action assigned to macros created from now on. Existing macros keep their own delays.";
+/// Logged image size cap.
+pub const SET_LOG_IMAGE_EDGE: &str =
+    "Largest edge (pixels) for annotated images saved into the action log. Smaller values save memory.";
+/// Reset saved action defaults.
+pub const SET_RESET_ACTION_DEFAULTS: &str =
+    "Forget the per-type default actions saved in the Add Action picker (right-click a tile there to edit them).";
+/// Default trigger for new macro hotkeys.
+pub const SET_DEFAULT_TRIGGER: &str =
+    "Whether a new macro's hotkey fires on key press or on release.";
+/// Panic/stop key.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SET_PANIC_KEY: &str =
+    "Key that stops a running macro (pressed alone, with no modifiers). Clear it to disable.";
+/// Hotkey-while-running policy.
+pub const SET_RETRIGGER: &str =
+    "What pressing a running macro's hotkey does: ignore it, stop the run, or restart the macro.";
+
+// --- Settings: recording ---
+
+/// Recording wait threshold.
+pub const SET_REC_WAIT: &str =
+    "Pauses at least this long are written into the recording as Wait actions.";
+/// Recording move distance.
+pub const SET_REC_MOVE: &str =
+    "Mouse moves shorter than this many pixels are dropped between recorded clicks.";
+/// Recording tap cutoff.
+pub const SET_REC_TAP: &str =
+    "Press-and-release shorter than this is recorded as a click; longer becomes down/up.";
+/// Recording snap radius.
+pub const SET_REC_SNAP: &str =
+    "Recorded clicks within this many pixels of a saved catalog point reuse that point.";
+
+// --- Settings: sound files ---
+
+/// Custom finish sound file.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SET_FINISH_FILE: &str =
+    "MP3 played when a macro finishes. Empty uses the built-in sound.";
+/// Custom add sound file.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SET_ADD_FILE: &str = "MP3 played when items are added. Empty uses the built-in sound.";
+/// Custom delete sound file.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SET_DELETE_FILE: &str =
+    "MP3 played when items are deleted. Empty uses the built-in sound.";
+
+// --- Settings: backup folder ---
+
+/// Backup destination folder.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SET_BACKUP_DIR: &str =
+    "Folder that receives automatic and manual backup zips. Empty uses <data folder>/backups.";
+
+// --- Settings: updates ---
+
+/// Update check interval.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SET_UPDATE_INTERVAL: &str =
+    "Hours between automatic update checks while Sqyre is running. 0 checks once per launch.";
+/// Prerelease update toggle.
+#[cfg(not(target_arch = "wasm32"))]
+pub const SET_UPDATE_PRERELEASE: &str =
+    "Offer beta and release-candidate builds in addition to stable releases.";

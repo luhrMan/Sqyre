@@ -58,6 +58,33 @@ impl SystemTray {
         self.application_hidden.load(Ordering::SeqCst)
     }
 
+    /// True when a tray icon was installed (close-to-tray needs a way back).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn is_active(&self) -> bool {
+        self.cmd_rx.is_some()
+    }
+
+    /// Hide the app into the tray exactly like the Hide menu item.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn hide(&self, ctx: &Context, frame: &eframe::Frame) {
+        let window = frame.winit_window().or(self.root_window.as_ref());
+        set_application_visible(ctx, window, false);
+        self.application_hidden.store(true, Ordering::SeqCst);
+        self.start_wake_poller(ctx);
+    }
+
+    /// Hide into the tray before the first frame (start-minimized preference);
+    /// no-op when no tray icon was installed.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn hide_at_start(&self, ctx: &Context) {
+        if !self.is_active() {
+            return;
+        }
+        set_application_visible(ctx, self.root_window.as_ref(), false);
+        self.application_hidden.store(true, Ordering::SeqCst);
+        self.start_wake_poller(ctx);
+    }
+
     /// Root winit window (for immediate unmap on quit).
     #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
     pub fn root_window(&self) -> Option<&Arc<winit::window::Window>> {

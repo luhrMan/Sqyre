@@ -53,7 +53,7 @@ fn paint_item_icon_tooltip(
     name: &str,
     tags: &[String],
 ) {
-    ui.set_max_width(280.0);
+    ui.set_max_width(280.0_f32.min(crate::widgets::visible_content_width(ui)));
     ui.label(egui::RichText::new(name).strong().small());
 
     let paths = crate::demo_icons::merged_variant_paths(catalog, target);
@@ -265,7 +265,7 @@ fn icon_grid_cell(
             body,
             rounding,
             egui::Stroke::new(2.0, picker_selected_stroke()),
-            egui::StrokeKind::Outside,
+            egui::StrokeKind::Inside,
         );
     } else {
         // Slight button look: the cell is a control, not a static thumbnail.
@@ -446,4 +446,42 @@ pub fn paint_even_icon_grid(
     }
 
     ui.spacing_mut().item_spacing = old_spacing;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The selection ring must not spill past the cell into the grid gap or the
+    /// enclosing pane's padding — paint it inside the cell bounds.
+    #[test]
+    fn selected_cell_stroke_stays_inside_cell() {
+        let ctx = egui::Context::default();
+        let catalog = ProgramCatalog::default();
+        let mut icons = IconCache::new();
+        let targets = vec!["p~item".to_string()];
+        for _ in 0..3 {
+            let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+                paint_even_icon_grid(
+                    ui,
+                    &catalog,
+                    &mut icons,
+                    &targets,
+                    |_| true,
+                    IconGridKind::Picker,
+                    IconGridOps::default(),
+                    None,
+                );
+            });
+            let outside = out.shapes.iter().any(|clipped| match &clipped.shape {
+                egui::Shape::Rect(rect) => {
+                    rect.stroke == egui::Stroke::new(2.0, picker_selected_stroke())
+                        && rect.stroke_kind == egui::StrokeKind::Outside
+                }
+                _ => false,
+            });
+            assert!(!outside, "selection stroke painted outside the cell");
+            out.drop_without_applying_deltas();
+        }
+    }
 }

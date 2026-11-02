@@ -180,14 +180,27 @@ fn android_main(app: winit::platform::android::activity::AndroidApp) {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn native_options() -> eframe::NativeOptions {
+    // Saved geometry needs the settings file before eframe owns the viewport.
+    let saved_window = UserSettings::load_default().unwrap_or_default();
     let options = eframe::NativeOptions {
         viewport: {
-            let builder = egui::ViewportBuilder::default()
-                .with_inner_size([960.0, 640.0])
+            let mut builder = egui::ViewportBuilder::default()
                 .with_min_inner_size([100.0, 100.0])
                 .with_title(sqyre_ports::APP_NAME)
                 .with_app_id(assets::APP_ID)
                 .with_icon(assets::app_icon());
+            builder = if saved_window.window_width > 0.0 && saved_window.window_height > 0.0 {
+                builder.with_inner_size([saved_window.window_width, saved_window.window_height])
+            } else {
+                builder.with_inner_size([960.0, 640.0])
+            };
+            if let (Some(x), Some(y)) = (saved_window.window_pos_x, saved_window.window_pos_y) {
+                builder = builder.with_position([x, y]);
+            }
+            if saved_window.window_maximized {
+                builder = builder.with_maximized(true);
+            }
+            let builder = builder;
             // wgpu deferred overlay viewports inherit transparency from the root GL/VK config.
             #[cfg(target_os = "linux")]
             let builder = builder.with_transparent(true);
@@ -262,10 +275,14 @@ fn run_with(options: eframe::NativeOptions) -> eframe::Result<()> {
         Box::new(move |cc| {
             let mut app = SqyreApp::load();
             app.instance_lock = instance_lock;
-            SettingsUi::install_fonts(&cc.egui_ctx);
+            SettingsUi::install_fonts(&cc.egui_ctx, app.settings_ui.settings());
             SettingsUi::apply_appearance(&cc.egui_ctx, app.settings_ui.settings());
             app.bind_hotkey_repaint(cc.egui_ctx.clone());
             app.tray = tray::SystemTray::install(cc.egui_ctx.clone(), cc.winit_window().cloned());
+            #[cfg(not(target_os = "android"))]
+            if app.settings_ui.settings().start_minimized {
+                app.tray.hide_at_start(&cc.egui_ctx);
+            }
             Ok(Box::new(app))
         }),
     );
@@ -441,6 +458,9 @@ pub struct SqyreApp {
     hotkey_chooser: Option<hotkey_chooser::HotkeyChooserState>,
     /// Macro to start once the current run stops (chooser pick while busy).
     start_when_idle: Option<String>,
+    /// Live panic-key name shared with the global hotkey hook; synced from
+    /// settings each frame so edits apply without restarting the hook.
+    panic_key_slot: Arc<parking_lot::RwLock<String>>,
     /// Left macro-list side panel visibility.
     macro_list_open: bool,
     /// Filter text for the macro list (name / tags fuzzy match).
@@ -491,6 +511,7 @@ impl SqyreApp {
             UserSettings::default()
         });
         settings.apply_sqyre_dir_override();
+        settings.apply_backup_dir_override();
         SettingsUi::apply_action_colors(&settings);
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
         apply_worker_thread_pool(settings.worker_threads);
@@ -528,6 +549,7 @@ impl SqyreApp {
         let pending_for_cb = Arc::clone(&pending_hotkey_macros);
         let hotkey_repaint = Arc::new(Mutex::new(None::<egui::Context>));
         let repaint_for_cb = Arc::clone(&hotkey_repaint);
+        let panic_key_slot = Arc::new(parking_lot::RwLock::new(settings.panic_key.clone()));
         #[cfg(not(target_arch = "wasm32"))]
         let hotkey_callbacks = HotkeyCallbacks {
             on_escape_stop: Arc::new(move || stop.request_stop()),
@@ -542,6 +564,7 @@ impl SqyreApp {
             on_macro_hotkey: Arc::new(move |name| {
                 crate::hotkey_wake::queue_macro_hotkey(&pending_for_cb, &repaint_for_cb, name);
             }),
+            panic_key: Arc::clone(&panic_key_slot),
         };
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
         let permissions_intro =
@@ -570,6 +593,8 @@ impl SqyreApp {
                 HotkeyCallbacks::default(),
             );
         }
+        #[cfg(target_arch = "wasm32")]
+        let _ = &panic_key_slot;
 
         let highlighter = SharedHighlighter::new();
         highlighter.set_enabled(settings.highlight_active_action);
@@ -716,6 +741,7 @@ impl SqyreApp {
             hotkey_focus_tags: hotkey_focus_tags::HotkeyFocusTagPoller::new(),
             hotkey_chooser: None,
             start_when_idle: None,
+            panic_key_slot,
             macro_list_open: true,
             macro_list_filter: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -747,8 +773,10 @@ impl SqyreApp {
         ))]
         app.macro_overlay
             .set_run_stop(app.run_session.state.stop.clone());
-        let last_selected = app.settings_ui.settings().last_selected_macro.clone();
-        app.select_macro_by_name(&last_selected);
+        if app.settings_ui.settings().restore_last_macro {
+            let last_selected = app.settings_ui.settings().last_selected_macro.clone();
+            app.select_macro_by_name(&last_selected);
+        }
         app.refresh_macro_hotkey_bindings();
         #[cfg(not(target_arch = "wasm32"))]
         app.maybe_start_update_check();
@@ -819,19 +847,62 @@ impl SqyreApp {
     /// Start a background update check when the preference is on.
     #[cfg(not(target_arch = "wasm32"))]
     fn maybe_start_update_check(&mut self) {
-        if self.settings_ui.settings().auto_update_check {
-            self.update.start_check();
+        let settings = self.settings_ui.settings();
+        if !settings.auto_update_check {
+            return;
         }
+        let interval_hours = settings.update_check_interval_hours;
+        let include_prerelease = settings.update_include_prerelease;
+        // `0` checks on every launch; otherwise skip until the interval elapses.
+        let now_unix = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        if interval_hours > 0 && settings.last_update_check_unix > 0 {
+            let elapsed_secs = now_unix - settings.last_update_check_unix;
+            if elapsed_secs < interval_hours as i64 * 3600 {
+                return;
+            }
+        }
+        if interval_hours > 0 {
+            self.settings_ui.settings_mut().last_update_check_unix = now_unix;
+            let _ = self.settings_ui.save_settings();
+        }
+        self.update.start_check(include_prerelease);
     }
 
     /// Browser entry: in-memory DB, no tray / global hotkeys / FS init.
     #[cfg(target_arch = "wasm32")]
     pub fn load_web(cc: &eframe::CreationContext<'_>) -> Self {
         let app = Self::load();
-        SettingsUi::install_fonts(&cc.egui_ctx);
+        SettingsUi::install_fonts(&cc.egui_ctx, app.settings_ui.settings());
         SettingsUi::apply_appearance(&cc.egui_ctx, app.settings_ui.settings());
         app.bind_hotkey_repaint(cc.egui_ctx.clone());
         app
+    }
+
+    /// Persist the last window size/position/maximized state; `native_options`
+    /// restores it on the next launch. While maximized the normal geometry is
+    /// left untouched so un-maximizing restores the remembered window.
+    #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+    fn save_window_geometry(&mut self) {
+        let Some(window) = self.tray.root_window().cloned() else {
+            return;
+        };
+        let settings = self.settings_ui.settings_mut();
+        let maximized = window.is_maximized();
+        settings.window_maximized = maximized;
+        if !maximized {
+            let ppp = (window.scale_factor() as f32).max(0.01);
+            let size = window.inner_size();
+            settings.window_width = size.width as f32 / ppp;
+            settings.window_height = size.height as f32 / ppp;
+            if let Ok(pos) = window.outer_position() {
+                settings.window_pos_x = Some(pos.x as f32 / ppp);
+                settings.window_pos_y = Some(pos.y as f32 / ppp);
+            }
+        }
+        let _ = self.settings_ui.save_settings();
     }
 
     /// Route a finished [`file_dialogs::request`] to the panel that asked for it.
@@ -856,7 +927,11 @@ impl SqyreApp {
             ),
             purpose @ (file_dialogs::PickPurpose::RestoreBackup
             | file_dialogs::PickPurpose::SqyreLocation
-            | file_dialogs::PickPurpose::HostSqyreLocation) => {
+            | file_dialogs::PickPurpose::HostSqyreLocation
+            | file_dialogs::PickPurpose::FinishSound
+            | file_dialogs::PickPurpose::AddSound
+            | file_dialogs::PickPurpose::DeleteSound
+            | file_dialogs::PickPurpose::BackupDir) => {
                 self.settings_ui.apply_pick(purpose, picked.path);
             }
         }
@@ -884,6 +959,16 @@ impl eframe::App for SqyreApp {
                 self.set_hotkey_tag_filters(tags);
             }
         }
+        // Sync the panic key into the hotkey hook's shared slot (Settings edits
+        // apply without restarting the hook thread).
+        {
+            let configured = &self.settings_ui.settings().panic_key;
+            if *self.panic_key_slot.read() != *configured {
+                *self.panic_key_slot.write() = configured.clone();
+            }
+        }
+        self.add_action_picker
+            .sync_from_settings(self.settings_ui.settings());
         self.drain_pending_hotkey_macros(ctx);
         #[cfg(all(target_os = "android", feature = "native-runtime"))]
         if let Some(name) = crate::app_run::take_android_overlay_started() {
@@ -909,12 +994,18 @@ impl eframe::App for SqyreApp {
         // stayed up for ~2s afterward).
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         if ctx.input(|i| i.viewport().close_requested()) {
-            sqyre_capture::set_process_exiting();
-            sqyre_capture::mark_site("app:close_requested");
-            if let Some(win) = frame.winit_window().or(self.tray.root_window()) {
-                win.set_visible(false);
+            if self.settings_ui.settings().close_to_tray && self.tray.is_active() {
+                sqyre_capture::mark_site("app:close_to_tray");
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.tray.hide(ctx, frame);
+            } else {
+                sqyre_capture::set_process_exiting();
+                sqyre_capture::mark_site("app:close_requested");
+                if let Some(win) = frame.winit_window().or(self.tray.root_window()) {
+                    win.set_visible(false);
+                }
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             }
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
     }
 
@@ -973,8 +1064,11 @@ impl eframe::App for SqyreApp {
         // After tips/panels paint so tooltip preview outlines apply this frame.
         self.sync_recording_overlay(ui.ctx());
         #[cfg(feature = "native-runtime")]
-        self.click_fx_overlay
-            .sync(ui.ctx(), &self.run_session.click_fx);
+        self.click_fx_overlay.sync(
+            ui.ctx(),
+            &self.run_session.click_fx,
+            self.settings_ui.settings().click_flash_ms,
+        );
 
         if self.settings_ui.settings().window_border {
             paint_window_border(ui.ctx());
@@ -1083,6 +1177,8 @@ fn paint_window_border(ctx: &egui::Context) {
 
 impl Drop for SqyreApp {
     fn drop(&mut self) {
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        self.save_window_geometry();
         #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
         {
             sqyre_capture::set_process_exiting();

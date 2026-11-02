@@ -283,6 +283,7 @@ fn run_ocr_once(
                     (w.left, w.top, w.right, w.bottom),
                     overlay.width,
                     overlay.height,
+                    exec.deps.log_image_max_edge,
                 ),
                 label: w.word.clone(),
                 screen: (
@@ -392,6 +393,7 @@ fn run_ocr_once(
                                     (bl, bt, br, bb),
                                     *w,
                                     *h,
+                                    exec.deps.log_image_max_edge,
                                 ),
                             }
                         }),

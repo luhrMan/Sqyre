@@ -951,7 +951,7 @@ impl DataEditor {
     /// field hides.
     fn ui_search_toggle(&mut self, ui: &mut egui::Ui, catalog: &ProgramCatalog) {
         let (tip, color) = if self.search_open {
-            ("Hide search", Some(crate::theme::PRIMARY))
+            ("Hide search", Some(crate::theme::accent()))
         } else {
             ("Search this tab's list", None)
         };
@@ -997,7 +997,7 @@ impl DataEditor {
                 egui_phosphor::regular::FUNNEL,
                 "List scope",
                 (self.search_scope != SearchScope::SelectedProgram)
-                    .then_some(crate::theme::PRIMARY),
+                    .then_some(crate::theme::accent()),
             ));
             let mut scope = self.search_scope;
             crate::widgets::context_menu_popup(
@@ -1023,7 +1023,7 @@ impl DataEditor {
             let sort_btn = ui.add(crate::widgets::IconButton::new(
                 egui_phosphor::regular::SORT_ASCENDING,
                 "Sort items",
-                (self.items_list_sort != Sort::NameAsc).then_some(crate::theme::PRIMARY),
+                (self.items_list_sort != Sort::NameAsc).then_some(crate::theme::accent()),
             ));
             // `Popup` (not `Menu`) kind + `parent_popup`: picking a radio,
             // editing the tag chips, clicking a tag suggestion, or using a
@@ -1159,7 +1159,7 @@ impl DataEditor {
         let header_sep = crate::widgets::section_separator(ui);
 
         if let Some(msg) = env.screen_click.status_label() {
-            ui.colored_label(crate::theme::PRIMARY, msg);
+            ui.colored_label(crate::theme::accent(), msg);
             ui.ctx().request_repaint();
         }
 
@@ -1204,9 +1204,14 @@ impl DataEditor {
             )
         });
         let split_resp = split_resp.on_hover_text(ht::ED_RESIZE_PANES);
+        if split_resp.is_pointer_button_down_on() || split_resp.clicked() {
+            split_resp.request_focus();
+        }
         let stroke = if split_resp.hovered() || split_resp.dragged() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
             ui.visuals().widgets.active.fg_stroke
+        } else if split_resp.has_focus() {
+            egui::Stroke::new(1.0, crate::theme::accent())
         } else {
             crate::theme::panel_split_stroke()
         };
@@ -1233,6 +1238,15 @@ impl DataEditor {
         // Keyboard equivalent of the drag: arrows nudge the divider while the
         // splitter holds focus; persist once when the key is released.
         if split_resp.has_focus() {
+            ui.memory_mut(|m| {
+                m.set_focus_lock_filter(
+                    split_resp.id,
+                    egui::EventFilter {
+                        horizontal_arrows: true,
+                        ..Default::default()
+                    },
+                );
+            });
             let dx = if ui.input(|i| i.key_pressed(egui::Key::ArrowLeft)) {
                 -SPLIT_RESIZE_KEY_STEP
             } else if ui.input(|i| i.key_pressed(egui::Key::ArrowRight)) {

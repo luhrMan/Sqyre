@@ -144,6 +144,8 @@ impl SqyreApp {
     pub(crate) fn sync_recording_overlay(&mut self, ctx: &egui::Context) {
         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
         {
+            self.preview_tooltips
+                .set_desktop_outlines_enabled(self.settings_ui.settings().preview_desktop_outline);
             let preview_outline = self.preview_tooltips.take_desktop_outline();
             self.recording_overlay.sync_with_macro_record(
                 ctx,
@@ -177,6 +179,7 @@ mod native_run {
     use sqyre_domain::Macro;
     use sqyre_executor::{execute_macro_with, ExecDeps, OcrEngine};
     use sqyre_persist::variables_path;
+    use sqyre_ports::AutomationBackend;
     use sqyre_vision::shared_ocrs;
     use std::collections::BTreeMap;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -211,6 +214,30 @@ mod native_run {
     impl SqyreApp {
         pub(crate) fn start_macro_by_name(&mut self, name: &str, ctx: &egui::Context) {
             if self.run_session.state.running.load(Ordering::SeqCst) {
+                // Re-triggering the *running* macro follows the hotkey-while-running
+                // policy; any other start still waits for the run to end.
+                let running_name = self.macro_overlay.running_macro_slot().lock().clone();
+                if running_name
+                    .as_deref()
+                    .is_some_and(|n| n.eq_ignore_ascii_case(name))
+                {
+                    match self.settings_ui.settings().hotkey_while_running {
+                        sqyre_persist::HotkeyWhileRunning::Stop => {
+                            self.request_stop();
+                            *self.run_session.state.status.lock() = "Stopping…".into();
+                            ctx.request_repaint();
+                            return;
+                        }
+                        sqyre_persist::HotkeyWhileRunning::Restart => {
+                            self.request_stop();
+                            self.start_when_idle = Some(name.to_string());
+                            *self.run_session.state.status.lock() = "Restarting…".into();
+                            ctx.request_repaint();
+                            return;
+                        }
+                        sqyre_persist::HotkeyWhileRunning::Ignore => {}
+                    }
+                }
                 sqyre_capture::mark_site("overlay:start:skip-running");
                 sqyre_capture::note(&format!(
                     "overlay: start skipped already-running name={name}"
@@ -297,7 +324,10 @@ mod native_run {
                     release_held_inputs: settings.release_held_inputs_on_end,
                     while_max_iterations: settings.while_max_iterations,
                     run_macro_max_depth: settings.run_macro_max_depth.max(1) as usize,
+                    log_image_max_edge: settings.log_image_max_edge.max(1) as usize,
+                    restore_cursor: settings.restore_cursor_on_end,
                     play_finish_sound: settings.play_finish_sound,
+                    finish_sound_file: settings.finish_sound_file.clone(),
                     sound_volume: settings.sound_volume,
                 },
                 macro_: self.workspace.macros[idx].clone(),
@@ -328,7 +358,10 @@ mod native_run {
         release_held_inputs: bool,
         while_max_iterations: i32,
         run_macro_max_depth: usize,
+        log_image_max_edge: usize,
+        restore_cursor: bool,
         play_finish_sound: bool,
+        finish_sound_file: String,
         sound_volume: f32,
     }
 
@@ -360,7 +393,10 @@ mod native_run {
                 release_held_inputs,
                 while_max_iterations,
                 run_macro_max_depth,
+                log_image_max_edge,
+                restore_cursor,
                 play_finish_sound,
+                finish_sound_file,
                 sound_volume,
             } = kit;
             stop.clear();
@@ -435,8 +471,13 @@ mod native_run {
                         stop: &stop_flag,
                     };
                     let vars_dir = variables_path();
+                    let pre_run_cursor = if restore_cursor {
+                        watched.cursor_position()
+                    } else {
+                        None
+                    };
                     sqyre_capture::mark_site("run:worker:exec");
-                    execute_macro_with(
+                    let exec_result = execute_macro_with(
                         &mut macro_,
                         ExecDeps {
                             automation: &mut watched,
@@ -446,6 +487,7 @@ mod native_run {
                             release_held_inputs,
                             while_max_iterations,
                             run_macro_max_depth,
+                            log_image_max_edge,
                             resolver: Some(&resolver),
                             icons: Some(&icons),
                             macros: Some(&macro_lookup),
@@ -460,7 +502,13 @@ mod native_run {
                             click_fx: Some(&click_fx),
                         },
                     )
-                    .map_err(|e| e.to_string())
+                    .map_err(|e| e.to_string());
+                    if let Some((x, y)) = pre_run_cursor {
+                        watched
+                            .inner
+                            .move_to(x, y, sqyre_ports::MoveOptions::default());
+                    }
+                    exec_result
                 }));
                 sqyre_capture::mark_site("run:worker:exec-done");
 
@@ -474,7 +522,7 @@ mod native_run {
                     Ok(Ok(())) if stop_flag.is_stopped() => "Stopped.".into(),
                     Ok(Ok(())) => {
                         if play_finish_sound {
-                            crate::sound::play_finish_sound(sound_volume);
+                            crate::sound::play_finish_sound(sound_volume, &finish_sound_file);
                         }
                         "Finished.".into()
                     }
@@ -559,7 +607,10 @@ mod native_run {
             release_held_inputs: settings.release_held_inputs_on_end,
             while_max_iterations: settings.while_max_iterations,
             run_macro_max_depth: settings.run_macro_max_depth.max(1) as usize,
+            log_image_max_edge: settings.log_image_max_edge.max(1) as usize,
+            restore_cursor: settings.restore_cursor_on_end,
             play_finish_sound: settings.play_finish_sound,
+            finish_sound_file: settings.finish_sound_file.clone(),
             sound_volume: settings.sound_volume,
         };
         *OVERLAY_KIT.lock() = Some(Arc::new(kit));

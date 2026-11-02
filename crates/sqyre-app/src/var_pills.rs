@@ -474,6 +474,25 @@ fn validation_icon_reserve(ui: &egui::Ui, validation: &EntryValidation) -> f32 {
     }
 }
 
+/// Nav keys for the `${` autocomplete popup owned by TextEdit `id`.
+///
+/// Call before the editor widget is shown so an open popup's nav keys never
+/// reach it; pass the result to [`show_var_ref_autocomplete`].
+pub(crate) fn var_ref_autocomplete_keys(ui: &mut egui::Ui, id: egui::Id) -> AutocompleteKeys {
+    let ac_id = id.with("var_ac");
+    let was_open = ui
+        .ctx()
+        .data(|d| d.get_temp::<bool>(ac_id.with("open")))
+        .unwrap_or(false);
+    let (down, up, accept, dismiss) = take_var_ac_keys(ui, was_open);
+    AutocompleteKeys {
+        down,
+        up,
+        accept,
+        dismiss,
+    }
+}
+
 /// TextEdit + `${` autocomplete popup.
 fn var_ref_text_edit(
     ui: &mut egui::Ui,
@@ -483,12 +502,7 @@ fn var_ref_text_edit(
     desired_width: f32,
     multiline: Option<usize>,
 ) -> egui::Response {
-    let ac_id = id.with("var_ac");
-    let was_open = ui
-        .ctx()
-        .data(|d| d.get_temp::<bool>(ac_id.with("open")))
-        .unwrap_or(false);
-    let (down, up, accept, dismiss) = take_var_ac_keys(ui, was_open);
+    let keys = var_ref_autocomplete_keys(ui, id);
 
     let output = if let Some(rows) = multiline {
         egui::TextEdit::multiline(value)
@@ -516,20 +530,7 @@ fn var_ref_text_edit(
     }
 
     let cursor_char = output.cursor_range.map(|r| r.primary.index.0);
-    show_var_ref_autocomplete(
-        ui,
-        id,
-        &output.response,
-        value,
-        cursor_char,
-        known,
-        AutocompleteKeys {
-            down,
-            up,
-            accept,
-            dismiss,
-        },
-    );
+    show_var_ref_autocomplete(ui, id, &output.response, value, cursor_char, known, keys);
     output.response.response
 }
 
@@ -537,14 +538,17 @@ fn var_ref_text_edit(
 ///
 /// Grouped because four adjacent bools are trivially transposed at the call.
 #[derive(Clone, Copy, Default)]
-struct AutocompleteKeys {
+pub(crate) struct AutocompleteKeys {
     down: bool,
     up: bool,
     accept: bool,
     dismiss: bool,
 }
 
-fn show_var_ref_autocomplete(
+/// `${` popup anchored to an already-shown TextEdit (`response`, `id`) —
+/// shared by [`var_ref_text_edit`] and overlaid editors like preview coord
+/// chips that place the widget manually.
+pub(crate) fn show_var_ref_autocomplete(
     ui: &mut egui::Ui,
     edit_id: egui::Id,
     response: &egui::Response,

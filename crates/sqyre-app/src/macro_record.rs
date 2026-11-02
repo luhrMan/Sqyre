@@ -22,12 +22,29 @@ use sqyre_ui_model::SummaryPill;
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
-/// Minimum gap (ms) before inserting a Wait between recorded actions.
-const WAIT_THRESHOLD_MS: i64 = 40;
-/// Collapse mouse-move samples closer than this (pixels).
-const MOVE_MIN_DISTANCE: i32 = 8;
-/// Collapse Tap when press→release is shorter than this.
-const TAP_MAX_MS: u128 = 200;
+/// Recording thresholds from Settings → Recording.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RecordThresholds {
+    /// Minimum gap (ms) before inserting a Wait between recorded actions.
+    pub wait_ms: i64,
+    /// Collapse mouse-move samples closer than this (pixels).
+    pub move_min_px: i32,
+    /// Collapse Tap when press→release is at most this (ms).
+    pub tap_max_ms: i64,
+    /// Max Chebyshev distance (px) to surface a nearby saved-point recommendation.
+    pub snap_point_px: i32,
+}
+
+impl RecordThresholds {
+    pub(crate) fn from_settings(s: &sqyre_persist::UserSettings) -> Self {
+        Self {
+            wait_ms: s.record_wait_threshold_ms,
+            move_min_px: s.record_move_min_distance,
+            tap_max_ms: s.record_tap_max_ms,
+            snap_point_px: s.record_snap_point_px,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct TempPoint {
@@ -43,8 +60,6 @@ pub(crate) struct TempPoint {
     pub link_to: Option<String>,
 }
 
-/// Max Chebyshev distance (px) to surface a nearby saved-point recommendation.
-const NEARBY_POINT_PX: i32 = 24;
 /// Horizontal offset aligning the "Nearby" hint under the point fields above it.
 const SUB_ROW_INDENT: f32 = 24.0;
 
@@ -75,6 +90,7 @@ pub(crate) struct MacroRecordShow<'a> {
     pub macros: &'a [(String, Vec<String>)],
     pub compact_program_headers: bool,
     pub pending_scale: Option<&'a crate::widgets::ViewportScaleEvent>,
+    pub thresholds: RecordThresholds,
 }
 
 #[derive(Debug, Clone)]
@@ -136,6 +152,7 @@ impl MacroRecordUi {
             macros,
             compact_program_headers,
             pending_scale,
+            thresholds,
         } = ui;
         match self {
             Self::Closed => MacroRecordShowResult {
@@ -162,7 +179,8 @@ impl MacroRecordUi {
                 }
                 if let Some((started, events)) = bridge.take_finished() {
                     macro_hotkeys.resume();
-                    let (actions, points) = events_to_actions(&events, started, catalog);
+                    let (actions, points) =
+                        events_to_actions(&events, started, catalog, &thresholds);
                     *self = Self::Review(Box::new(ReviewState {
                         draft: Macro {
                             name: "Recorded".into(),
@@ -190,7 +208,7 @@ impl MacroRecordUi {
                 // Live crosshairs for move points captured so far.
                 #[cfg(feature = "native-runtime")]
                 {
-                    let live = live_record_points(&bridge.peek_events());
+                    let live = live_record_points(&bridge.peek_events(), &thresholds);
                     sync_temp_point_markers(ctx, &live, None, None);
                 }
                 // Status lives on the recording HUD (main window may be hidden).
@@ -215,6 +233,7 @@ impl MacroRecordUi {
                     macros,
                     compact_program_headers,
                     pending_scale,
+                    thresholds,
                 },
             ) {
                 ReviewFrame::Continue { catalog_changed } => MacroRecordShowResult {
@@ -257,6 +276,7 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
         macros,
         compact_program_headers,
         pending_scale,
+        thresholds,
     } = ui;
     let ReviewState {
         draft,
@@ -317,7 +337,8 @@ fn paint_review(review: &mut ReviewState, ui: MacroRecordShow<'_>) -> ReviewFram
                         for (i, pt) in points.iter_mut().enumerate() {
                             let mut row_hovered = false;
                             let mut row_editing = false;
-                            let nearby = nearby_saved_point(catalog, pt);
+                            let nearby =
+                                nearby_saved_point(catalog, pt, thresholds.snap_point_px);
                             ui.horizontal(|ui| {
                                 let enabled = ui
                                     .checkbox(&mut pt.save, "")
@@ -666,6 +687,7 @@ fn events_to_actions(
     events: &[MacroRecordEvent],
     started: Instant,
     catalog: &ProgramCatalog,
+    t: &RecordThresholds,
 ) -> (Vec<Action>, Vec<TempPoint>) {
     let compressed = compress_events(events);
     let mut actions = Vec::new();
@@ -678,7 +700,7 @@ fn events_to_actions(
 
     let flush_wait = |actions: &mut Vec<Action>, last_t: &mut Instant, at: Instant| {
         let ms = at.duration_since(*last_t).as_millis() as i64;
-        if ms >= WAIT_THRESHOLD_MS {
+        if ms >= t.wait_ms {
             actions.push(Action::new(ActionKind::Wait {
                 time: ScalarValue::Int(ms),
             }));
@@ -723,7 +745,7 @@ fn events_to_actions(
         match ev {
             MacroRecordEvent::MouseMove { x, y, at } => {
                 if last_move.is_none_or(|(lx, ly)| {
-                    (x - lx).abs() >= MOVE_MIN_DISTANCE || (y - ly).abs() >= MOVE_MIN_DISTANCE
+                    (x - lx).abs() >= t.move_min_px || (y - ly).abs() >= t.move_min_px
                 }) {
                     ensure_move(
                         &mut actions,
@@ -765,7 +787,7 @@ fn events_to_actions(
                     if prev_btn == *button {
                         let held = at.duration_since(prev_at).as_millis();
                         flush_wait(&mut actions, &mut last_t, prev_at);
-                        if held <= TAP_MAX_MS {
+                        if held <= t.tap_max_ms.max(0) as u128 {
                             actions.push(click_action(*button, PressState::Tap));
                         } else {
                             actions.push(click_action(*button, PressState::Down));
@@ -802,7 +824,7 @@ fn events_to_actions(
                     if prev == *name {
                         let held = at.duration_since(prev_at).as_millis();
                         flush_wait(&mut actions, &mut last_t, prev_at);
-                        if held <= TAP_MAX_MS {
+                        if held <= t.tap_max_ms.max(0) as u128 {
                             actions.push(key_action(name, PressState::Tap));
                         } else {
                             actions.push(key_action(name, PressState::Down));
@@ -903,8 +925,12 @@ struct NearbyPoint {
     dist: i32,
 }
 
-/// Nearest saved catalog point within [`NEARBY_POINT_PX`] (Chebyshev), if any.
-fn nearby_saved_point(catalog: &ProgramCatalog, pt: &TempPoint) -> Option<NearbyPoint> {
+/// Nearest saved catalog point within `snap_px` (Chebyshev), if any.
+fn nearby_saved_point(
+    catalog: &ProgramCatalog,
+    pt: &TempPoint,
+    snap_px: i32,
+) -> Option<NearbyPoint> {
     let empty = Macro::new("", 0, vec![]);
     let mut best: Option<NearbyPoint> = None;
     for prog in catalog.program_names() {
@@ -932,7 +958,7 @@ fn nearby_saved_point(catalog: &ProgramCatalog, pt: &TempPoint) -> Option<Nearby
                 continue;
             };
             let dist = (sx - pt.x).abs().max((sy - pt.y).abs());
-            if dist > NEARBY_POINT_PX {
+            if dist > snap_px {
                 continue;
             }
             let better = best
@@ -983,7 +1009,7 @@ fn key_action(key: &str, state: PressState) -> Action {
 /// Move points that would be created from the live event stream (same distance
 /// rules as [`events_to_actions`]), for on-screen crosshairs while recording.
 #[cfg(any(test, feature = "native-runtime"))]
-fn live_record_points(events: &[MacroRecordEvent]) -> Vec<TempPoint> {
+fn live_record_points(events: &[MacroRecordEvent], t: &RecordThresholds) -> Vec<TempPoint> {
     let compressed = compress_events(events);
     let mut out = Vec::new();
     let mut last_move: Option<(i32, i32)> = None;
@@ -1006,7 +1032,7 @@ fn live_record_points(events: &[MacroRecordEvent]) -> Vec<TempPoint> {
         match ev {
             MacroRecordEvent::MouseMove { x, y, .. }
                 if last_move.is_none_or(|(lx, ly)| {
-                    (x - lx).abs() >= MOVE_MIN_DISTANCE || (y - ly).abs() >= MOVE_MIN_DISTANCE
+                    (x - lx).abs() >= t.move_min_px || (y - ly).abs() >= t.move_min_px
                 }) =>
             {
                 push(&mut out, &mut last_move, *x, *y);
@@ -1027,7 +1053,9 @@ fn live_record_points(events: &[MacroRecordEvent]) -> Vec<TempPoint> {
 
 /// Default / hover / editing colors for on-screen temp-point markers.
 #[cfg(feature = "native-runtime")]
-const MARKER_DEFAULT: egui::Color32 = crate::theme::PRIMARY;
+fn marker_default() -> egui::Color32 {
+    crate::theme::accent()
+}
 #[cfg(feature = "native-runtime")]
 const MARKER_HOVER: egui::Color32 = crate::theme::MACRO_START;
 #[cfg(feature = "native-runtime")]
@@ -1057,7 +1085,7 @@ fn sync_temp_point_markers(
         } else if hovered == Some(i) {
             MARKER_HOVER
         } else {
-            MARKER_DEFAULT
+            marker_default()
         };
         show_temp_point_marker(ctx, i, pt, color);
     }
@@ -1195,7 +1223,8 @@ mod tests {
         let compressed = compress_events(&events);
         assert_eq!(compressed.len(), 3);
         let cat = ProgramCatalog::default();
-        let (actions, points) = events_to_actions(&compressed, t0, &cat);
+        let t = RecordThresholds::from_settings(&sqyre_persist::UserSettings::default());
+        let (actions, points) = events_to_actions(&compressed, t0, &cat, &t);
         assert_eq!(points.len(), 1);
         assert!(matches!(actions[0].kind, ActionKind::Move { .. }));
         assert!(matches!(
@@ -1241,9 +1270,10 @@ mod tests {
                 at: t0 + Duration::from_millis(20),
             },
         ];
-        let live = live_record_points(&events);
+        let t = RecordThresholds::from_settings(&sqyre_persist::UserSettings::default());
+        let live = live_record_points(&events, &t);
         let cat = ProgramCatalog::default();
-        let (_, points) = events_to_actions(&events, t0, &cat);
+        let (_, points) = events_to_actions(&events, t0, &cat, &t);
         assert_eq!(live.len(), points.len());
         for (a, b) in live.iter().zip(points.iter()) {
             assert_eq!((a.x, a.y), (b.x, b.y));
@@ -1276,7 +1306,8 @@ mod tests {
             },
         ];
         let cat = ProgramCatalog::default();
-        let (actions, _) = events_to_actions(&events, t0, &cat);
+        let t = RecordThresholds::from_settings(&sqyre_persist::UserSettings::default());
+        let (actions, _) = events_to_actions(&events, t0, &cat, &t);
         let key_states: Vec<_> = actions
             .iter()
             .filter_map(|a| match &a.kind {

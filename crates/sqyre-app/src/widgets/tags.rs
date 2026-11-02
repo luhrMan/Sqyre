@@ -486,7 +486,7 @@ fn paint_tag_pill_fill(ui: &mut egui::Ui, text: &str, fill: egui::Color32) -> eg
 /// Interaction (hover text, context menu) is the caller's; the returned
 /// response covers the painted pill.
 pub fn tag_pill(ui: &mut egui::Ui, label: &str) -> egui::Response {
-    paint_tag_pill_fill(ui, label, crate::theme::PRIMARY)
+    paint_tag_pill_fill(ui, label, crate::theme::accent())
 }
 
 fn paint_tag_chips(
@@ -503,9 +503,9 @@ fn paint_tag_chips(
     let mut toggle: Option<usize> = None;
     let mut overflow: usize = 0;
     let fill = if enabled {
-        crate::theme::PRIMARY
+        crate::theme::accent()
     } else {
-        crate::theme::PRIMARY.gamma_multiply(0.5)
+        crate::theme::accent().gamma_multiply(0.5)
     };
 
     for (i, tag) in tags.iter().enumerate() {

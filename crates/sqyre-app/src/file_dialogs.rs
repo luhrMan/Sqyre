@@ -37,6 +37,14 @@ pub(crate) enum PickPurpose {
     SqyreLocation,
     /// Flatpak: host `~/.sqyre` (or its parent) through the portal.
     HostSqyreLocation,
+    /// MP3 played when a macro finishes.
+    FinishSound,
+    /// MP3 played when an item is added.
+    AddSound,
+    /// MP3 played when an item is deleted.
+    DeleteSound,
+    /// Folder that receives backup zips.
+    BackupDir,
 }
 
 impl PickPurpose {
@@ -44,7 +52,8 @@ impl PickPurpose {
         match self {
             Self::IconVariant | Self::MaskImage => PickKind::Image,
             Self::RestoreBackup => PickKind::Zip,
-            Self::SqyreLocation | Self::HostSqyreLocation => PickKind::Folder,
+            Self::SqyreLocation | Self::HostSqyreLocation | Self::BackupDir => PickKind::Folder,
+            Self::FinishSound | Self::AddSound | Self::DeleteSound => PickKind::Audio,
         }
     }
 }
@@ -54,6 +63,7 @@ enum PickKind {
     Image,
     Zip,
     Folder,
+    Audio,
 }
 
 impl PickKind {
@@ -66,6 +76,7 @@ impl PickKind {
             Self::Image => &["image/png", "image/jpeg", "image/bmp"],
             Self::Zip => &["application/zip"],
             Self::Folder => &[],
+            Self::Audio => &["audio/mpeg"],
         }
     }
 }
@@ -96,7 +107,7 @@ static PICK: Mutex<PickState> = Mutex::new(PickState {
 pub(crate) fn supported(purpose: PickPurpose) -> bool {
     match purpose.kind() {
         PickKind::Folder => !cfg!(any(target_arch = "wasm32", target_os = "android")),
-        PickKind::Image | PickKind::Zip => !cfg!(target_arch = "wasm32"),
+        PickKind::Image | PickKind::Zip | PickKind::Audio => !cfg!(target_arch = "wasm32"),
     }
 }
 
@@ -144,6 +155,7 @@ mod platform {
                 .add_filter("Images", &["png", "jpg", "jpeg", "bmp"])
                 .pick_file(),
             PickKind::Zip => dialog.add_filter("Zip archive", &["zip"]).pick_file(),
+            PickKind::Audio => dialog.add_filter("Audio", &["mp3"]).pick_file(),
             PickKind::Folder => dialog.pick_folder(),
         };
         state.done = picked;

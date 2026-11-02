@@ -10,20 +10,27 @@ use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue};
 use sqyre_persist::{
     merge_fs_warning, Database, FsWarn, OverlayButtonConfig, ProgramAtlas, ProgramCatalog,
     ProgramCollection, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea, UserSettings,
-    DEFAULT_OVERLAY_BUTTON_SIZE,
 };
 use sqyre_validate::validate_entity_name;
 
 pub(super) fn play_ui_add_sound(settings: &UserSettings) {
     #[cfg(not(target_arch = "wasm32"))]
-    crate::sound::play_add_sound_if(settings.play_ui_sounds, settings.sound_volume);
+    crate::sound::play_add_sound_if(
+        settings.play_add_sound,
+        settings.sound_volume,
+        &settings.add_sound_file,
+    );
     #[cfg(target_arch = "wasm32")]
     let _ = settings;
 }
 
 fn play_ui_delete_sound(settings: &UserSettings) {
     #[cfg(not(target_arch = "wasm32"))]
-    crate::sound::play_delete_sound_if(settings.play_ui_sounds, settings.sound_volume);
+    crate::sound::play_delete_sound_if(
+        settings.play_delete_sound,
+        settings.sound_volume,
+        &settings.delete_sound_file,
+    );
     #[cfg(target_arch = "wasm32")]
     let _ = settings;
 }
@@ -390,7 +397,20 @@ impl DataEditor {
                 let (x, y) = super::overlay::default_overlay_xy(catalog, n);
                 btn.x = x;
                 btn.y = y;
-                btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;
+                // New-button defaults from Settings → Overlays.
+                btn.size = settings.overlay_default_size;
+                btn.corner_radius = settings.overlay_default_corner_radius;
+                btn.border_width = settings.overlay_default_border_width;
+                let accent = settings.overlay_default_accent_color.trim();
+                if !accent.is_empty() {
+                    btn.border_color = accent.to_string();
+                    btn.icon_hover_color = accent.to_string();
+                }
+                let icon_color = settings.overlay_default_icon_color.trim();
+                if !icon_color.is_empty() {
+                    btn.icon_color = icon_color.to_string();
+                }
+                btn.visibility_gate.interval_ms = settings.overlay_gate_default_interval_ms;
                 if let Some(first) = macros.first() {
                     btn.macro_name = first.name.clone();
                 }

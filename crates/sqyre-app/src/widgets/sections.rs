@@ -131,6 +131,7 @@ pub fn advanced_section<R>(
 /// Floating control strip pinned inside `rect`'s bottom-right corner — replaces
 /// a reserved footer row without consuming layout height. `add_contents` paints
 /// right-to-left inside a window-frame chip (first widget at the right edge).
+/// No shadow: the chip already floats inside a shadow-casting window.
 pub fn float_bottom_right(ui: &mut egui::Ui, rect: Rect, add_contents: impl FnOnce(&mut egui::Ui)) {
     // Clear the floating-scrollbar rail so the chip never sits on the bars.
     let inset = SPACE_4 + 10.0;
@@ -146,6 +147,7 @@ pub fn float_bottom_right(ui: &mut egui::Ui, rect: Rect, add_contents: impl FnOn
     );
     egui::Frame::window(ui.style())
         .inner_margin(egui::Margin::symmetric(SPACE_4 as i8, 2))
+        .shadow(egui::Shadow::NONE)
         .show(&mut child, add_contents);
 }
 

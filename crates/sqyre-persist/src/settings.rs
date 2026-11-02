@@ -19,11 +19,8 @@ use sqyre_domain::{
 pub const DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE: i32 = 10;
 /// Skip later icon variants once one hits on the same search/placement.
 pub const DEFAULT_IMAGE_SEARCH_VARIANT_EXIT_EARLY: bool = true;
-pub const DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 150;
-pub const MIN_DRAG_PREVIEW_DEBOUNCE_MS: i32 = 25;
 pub const DEFAULT_HIDE_APP_DURING_RECORDING: bool = true;
 pub const DEFAULT_PLAY_FINISH_SOUND: bool = true;
-pub const DEFAULT_PLAY_UI_SOUNDS: bool = true;
 pub const DEFAULT_SOUND_VOLUME: f32 = 0.25;
 pub const DEFAULT_UI_FONT_SIZE: i32 = 12;
 /// Multiplier on the display's own scale (DPI / density), not absolute pixels per point.
@@ -57,6 +54,47 @@ pub const MIN_MACRO_LIST_FRAC: f32 = 0.15;
 pub const MAX_MACRO_LIST_FRAC: f32 = 0.75;
 /// Narrow viewports auto-switch to Compact spacing unless the user opts out.
 pub const DEFAULT_AUTO_COMPACT_DENSITY: bool = true;
+
+/// Key that stops a running macro (rdev key name; empty disables panic stop).
+pub const DEFAULT_PANIC_KEY: &str = "esc";
+/// Length of the desktop click-marker flash.
+pub const DEFAULT_CLICK_FLASH_MS: i32 = 360;
+pub const MIN_CLICK_FLASH_MS: i32 = 50;
+pub const MAX_CLICK_FLASH_MS: i32 = 5_000;
+/// Keyboard delay seeded into newly created macros.
+pub const DEFAULT_MACRO_KEYBOARD_DELAY_MS: i32 = 25;
+/// Mouse delay seeded into newly created macros.
+pub const DEFAULT_MACRO_MOUSE_DELAY_MS: i32 = 25;
+/// Idle gap (ms) that becomes a Wait action while recording.
+pub const DEFAULT_RECORD_WAIT_THRESHOLD_MS: i64 = 40;
+pub const MIN_RECORD_WAIT_THRESHOLD_MS: i64 = 5;
+pub const MAX_RECORD_WAIT_THRESHOLD_MS: i64 = 2_000;
+/// Minimum mouse travel (px) recorded as a point while recording.
+pub const DEFAULT_RECORD_MOVE_MIN_DISTANCE: i32 = 8;
+pub const MIN_RECORD_MOVE_MIN_DISTANCE: i32 = 1;
+pub const MAX_RECORD_MOVE_MIN_DISTANCE: i32 = 100;
+/// Press duration (ms) at or below which a recording emits a Tap.
+pub const DEFAULT_RECORD_TAP_MAX_MS: i64 = 200;
+pub const MIN_RECORD_TAP_MAX_MS: i64 = 50;
+pub const MAX_RECORD_TAP_MAX_MS: i64 = 2_000;
+/// Snap radius (px) to existing catalog points while recording.
+pub const DEFAULT_RECORD_SNAP_POINT_PX: i32 = 24;
+pub const MIN_RECORD_SNAP_POINT_PX: i32 = 0;
+pub const MAX_RECORD_SNAP_POINT_PX: i32 = 200;
+/// Hours between update checks; `0` checks on every launch.
+pub const DEFAULT_UPDATE_CHECK_INTERVAL_HOURS: i32 = 0;
+pub const MIN_UPDATE_CHECK_INTERVAL_HOURS: i32 = 0;
+pub const MAX_UPDATE_CHECK_INTERVAL_HOURS: i32 = 720;
+
+/// Milliseconds between mem.log memory samples.
+pub const DEFAULT_MEMORY_SAMPLE_INTERVAL_MS: i32 = 5_000;
+pub const MIN_MEMORY_SAMPLE_INTERVAL_MS: i32 = 250;
+pub const MAX_MEMORY_SAMPLE_INTERVAL_MS: i32 = 300_000;
+
+/// Long-edge cap (px) for images stored in the action log.
+pub const DEFAULT_LOG_IMAGE_MAX_EDGE: i32 = 640;
+pub const MIN_LOG_IMAGE_MAX_EDGE: i32 = 64;
+pub const MAX_LOG_IMAGE_MAX_EDGE: i32 = 8192;
 
 /// Default While budget when a macro sets `max_iterations` ≤ 0.
 pub const DEFAULT_WHILE_MAX_ITERATIONS: i32 = 100_000;
@@ -236,6 +274,57 @@ impl UiDensity {
             Self::Compact => "Compact",
             Self::Normal => "Normal",
             Self::Spaced => "Spaced",
+        }
+    }
+}
+
+/// What pressing a running macro's hotkey does.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HotkeyWhileRunning {
+    /// Extra presses are dropped while the macro runs.
+    #[default]
+    Ignore,
+    /// Pressing the hotkey again stops the run.
+    Stop,
+    /// Pressing the hotkey again restarts the macro.
+    Restart,
+}
+
+impl HotkeyWhileRunning {
+    /// All selectable values, in dropdown order.
+    pub const ALL: [Self; 3] = [Self::Ignore, Self::Stop, Self::Restart];
+
+    /// Dropdown display name.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Ignore => "Ignore",
+            Self::Stop => "Stop the run",
+            Self::Restart => "Restart",
+        }
+    }
+}
+
+/// Proportional font family used for UI text.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiFontFamily {
+    /// Ubuntu (egui default UI font).
+    #[default]
+    Standard,
+    /// Hack monospace for all UI text.
+    Monospace,
+}
+
+impl UiFontFamily {
+    /// All selectable values, in dropdown order.
+    pub const ALL: [Self; 2] = [Self::Standard, Self::Monospace];
+
+    /// Dropdown display name.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Standard => "Ubuntu",
+            Self::Monospace => "Monospace",
         }
     }
 }
@@ -560,6 +649,10 @@ pub struct UserSettings {
     /// Flash a marker on the desktop where each automated mouse press lands.
     #[serde(default)]
     pub click_effect: bool,
+    /// Gold box on the desktop at the location shown by a hovered/embedded
+    /// image preview tooltip (points and search areas). Off by default.
+    #[serde(default)]
+    pub preview_desktop_outline: bool,
     /// In catalog lists, programs with a process icon omit the name (icon + child count only).
     #[serde(default = "default_compact_program_headers")]
     pub compact_program_headers: bool,
@@ -597,9 +690,12 @@ pub struct UserSettings {
     /// Play an audible cue when a top-level macro run finishes successfully.
     #[serde(default = "default_play_finish_sound")]
     pub play_finish_sound: bool,
-    /// Play audible cues when the user adds or deletes macros, actions, or catalog entities.
-    #[serde(default = "default_play_ui_sounds")]
-    pub play_ui_sounds: bool,
+    /// Play an audible cue when the user adds macros, actions, or catalog entities.
+    #[serde(default = "default_play_add_sound")]
+    pub play_add_sound: bool,
+    /// Play an audible cue when the user deletes macros, actions, or catalog entities.
+    #[serde(default = "default_play_delete_sound")]
+    pub play_delete_sound: bool,
     /// Playback volume for app cue sounds (`0.0`–`1.0`).
     #[serde(default = "default_sound_volume")]
     pub sound_volume: f32,
@@ -608,8 +704,6 @@ pub struct UserSettings {
     /// When true, stop trying later icon variants after one hits on the same search.
     #[serde(default = "default_variant_exit_early")]
     pub image_search_variant_exit_early: bool,
-    #[serde(default = "default_drag_debounce")]
-    pub drag_preview_debounce_ms: i32,
     /// Absolute path override for the `.sqyre` data directory (empty = `~/.sqyre`).
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub sqyre_dir: String,
@@ -676,6 +770,124 @@ pub struct UserSettings {
     /// First-start permissions popup was confirmed; later launches skip it.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub permissions_intro_done: bool,
+    /// Write diag.log diagnostics to the data directory.
+    #[serde(default)]
+    pub diagnostic_logging: bool,
+    /// Write mem.log memory samples to the data directory.
+    #[serde(default)]
+    pub memory_logging: bool,
+    /// Milliseconds between mem.log samples when `memory_logging` is on.
+    #[serde(default = "default_memory_sample_interval")]
+    pub memory_logging_interval_ms: i32,
+    /// Reselect the macro that was selected on exit.
+    #[serde(default = "default_restore_last_macro")]
+    pub restore_last_macro: bool,
+    /// Hide to the system tray instead of quitting on window close.
+    #[serde(default)]
+    pub close_to_tray: bool,
+    /// Start Sqyre automatically on login (Linux XDG autostart).
+    #[serde(default)]
+    pub launch_on_login: bool,
+    /// Launch with the main window hidden in the system tray.
+    #[serde(default)]
+    pub start_minimized: bool,
+    /// Move the cursor back to its pre-run position when a macro ends.
+    #[serde(default)]
+    pub restore_cursor_on_end: bool,
+    /// Click-marker flash length in milliseconds.
+    #[serde(default = "default_click_flash_ms")]
+    pub click_flash_ms: i32,
+    /// Long-edge cap (px) for images stored in the action log.
+    #[serde(default = "default_log_image_max_edge")]
+    pub log_image_max_edge: i32,
+    /// Keyboard delay seeded into newly created macros.
+    #[serde(default = "default_macro_keyboard_delay")]
+    pub default_keyboard_delay_ms: i32,
+    /// Mouse delay seeded into newly created macros.
+    #[serde(default = "default_macro_mouse_delay")]
+    pub default_mouse_delay_ms: i32,
+    /// Single key that stops a running macro (rdev name like `esc`, `f12`;
+    /// empty disables panic stop).
+    #[serde(default = "default_panic_key_string")]
+    pub panic_key: String,
+    /// What a running macro's hotkey does on repeat presses.
+    #[serde(default)]
+    pub hotkey_while_running: HotkeyWhileRunning,
+    /// `press`/`release` trigger seeded into newly created macros.
+    #[serde(default = "default_hotkey_trigger")]
+    pub default_hotkey_trigger: String,
+    /// Idle gap (ms) that becomes a Wait action while recording.
+    #[serde(default = "default_record_wait_threshold")]
+    pub record_wait_threshold_ms: i64,
+    /// Minimum mouse travel (px) recorded as a point while recording.
+    #[serde(default = "default_record_move_min_distance")]
+    pub record_move_min_distance: i32,
+    /// Press duration (ms) at or below which a recording emits a Tap.
+    #[serde(default = "default_record_tap_max")]
+    pub record_tap_max_ms: i64,
+    /// Snap radius (px) to existing catalog points while recording.
+    #[serde(default = "default_record_snap_point")]
+    pub record_snap_point_px: i32,
+    /// Size (pt) seeded into newly created overlay buttons.
+    #[serde(default = "default_overlay_button_size_v")]
+    pub overlay_default_size: f32,
+    /// Corner radius (pt) seeded into newly created overlay buttons.
+    #[serde(default = "default_overlay_corner_radius_v")]
+    pub overlay_default_corner_radius: f32,
+    /// Border width (pt) seeded into newly created overlay buttons.
+    #[serde(default = "default_overlay_border_width_v")]
+    pub overlay_default_border_width: f32,
+    /// Border / hover color seeded into new overlay buttons (`#rrggbb`, empty = gold).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub overlay_default_accent_color: String,
+    /// Icon color seeded into new overlay buttons (`#rrggbb`, empty = cream).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub overlay_default_icon_color: String,
+    /// Poll interval (ms) seeded into new overlay visibility gates.
+    #[serde(default = "default_overlay_gate_interval_v")]
+    pub overlay_gate_default_interval_ms: u64,
+    /// Custom macro-finished cue file (empty = built-in).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub finish_sound_file: String,
+    /// Custom add-item cue file (empty = built-in).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub add_sound_file: String,
+    /// Custom delete-item cue file (empty = built-in).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub delete_sound_file: String,
+    /// Custom backups folder (empty = `{sqyre_dir}/backups`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub backup_dir: String,
+    /// Hours between update checks (0 = every launch).
+    #[serde(default)]
+    pub update_check_interval_hours: i32,
+    /// Offer prerelease builds in update checks.
+    #[serde(default)]
+    pub update_include_prerelease: bool,
+    /// UI accent color `#rrggbb` (empty = Sqyre gold).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub accent_color: String,
+    /// Monospace font size (0 = same as UI font).
+    #[serde(default)]
+    pub mono_font_size: i32,
+    /// UI text font family.
+    #[serde(default)]
+    pub ui_font_family: UiFontFamily,
+    /// Last main-window inner size in points (0 = startup default).
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub window_width: f32,
+    /// Last main-window inner size in points (0 = startup default).
+    #[serde(default, skip_serializing_if = "is_zero_f32")]
+    pub window_height: f32,
+    /// Last main-window outer position in points (None = platform default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_pos_x: Option<f32>,
+    /// Last main-window outer position in points (None = platform default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window_pos_y: Option<f32>,
+    /// Restore the window maximized on startup.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub window_maximized: bool,
 }
 
 fn default_hide_recording() -> bool {
@@ -705,8 +917,11 @@ fn default_run_macro_max_depth() -> i32 {
 fn default_play_finish_sound() -> bool {
     DEFAULT_PLAY_FINISH_SOUND
 }
-fn default_play_ui_sounds() -> bool {
-    DEFAULT_PLAY_UI_SOUNDS
+fn default_play_add_sound() -> bool {
+    true
+}
+fn default_play_delete_sound() -> bool {
+    true
 }
 fn default_sound_volume() -> f32 {
     DEFAULT_SOUND_VOLUME
@@ -717,8 +932,53 @@ fn default_close_matches() -> i32 {
 fn default_variant_exit_early() -> bool {
     DEFAULT_IMAGE_SEARCH_VARIANT_EXIT_EARLY
 }
-fn default_drag_debounce() -> i32 {
-    DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS
+fn default_restore_last_macro() -> bool {
+    true
+}
+fn default_memory_sample_interval() -> i32 {
+    DEFAULT_MEMORY_SAMPLE_INTERVAL_MS
+}
+fn default_log_image_max_edge() -> i32 {
+    DEFAULT_LOG_IMAGE_MAX_EDGE
+}
+fn default_click_flash_ms() -> i32 {
+    DEFAULT_CLICK_FLASH_MS
+}
+fn default_macro_keyboard_delay() -> i32 {
+    DEFAULT_MACRO_KEYBOARD_DELAY_MS
+}
+fn default_macro_mouse_delay() -> i32 {
+    DEFAULT_MACRO_MOUSE_DELAY_MS
+}
+fn default_panic_key_string() -> String {
+    DEFAULT_PANIC_KEY.to_string()
+}
+fn default_hotkey_trigger() -> String {
+    sqyre_domain::HOTKEY_TRIGGER_PRESS.to_string()
+}
+fn default_record_wait_threshold() -> i64 {
+    DEFAULT_RECORD_WAIT_THRESHOLD_MS
+}
+fn default_record_move_min_distance() -> i32 {
+    DEFAULT_RECORD_MOVE_MIN_DISTANCE
+}
+fn default_record_tap_max() -> i64 {
+    DEFAULT_RECORD_TAP_MAX_MS
+}
+fn default_record_snap_point() -> i32 {
+    DEFAULT_RECORD_SNAP_POINT_PX
+}
+fn default_overlay_button_size_v() -> f32 {
+    DEFAULT_OVERLAY_BUTTON_SIZE
+}
+fn default_overlay_corner_radius_v() -> f32 {
+    DEFAULT_OVERLAY_CORNER_RADIUS
+}
+fn default_overlay_border_width_v() -> f32 {
+    DEFAULT_OVERLAY_BORDER_WIDTH
+}
+fn default_overlay_gate_interval_v() -> u64 {
+    DEFAULT_OVERLAY_GATE_INTERVAL_MS
 }
 fn default_compact_program_headers() -> bool {
     DEFAULT_COMPACT_PROGRAM_HEADERS
@@ -757,6 +1017,10 @@ fn is_zero_i64(v: &i64) -> bool {
     *v == 0
 }
 
+fn is_zero_f32(v: &f32) -> bool {
+    *v == 0.0
+}
+
 impl Default for UserSettings {
     fn default() -> Self {
         Self {
@@ -764,6 +1028,7 @@ impl Default for UserSettings {
             action_log_max_entries: DEFAULT_ACTION_LOG_MAX_ENTRIES,
             highlight_active_action: false,
             click_effect: false,
+            preview_desktop_outline: false,
             compact_program_headers: DEFAULT_COMPACT_PROGRAM_HEADERS,
             show_empty_program_headers: false,
             window_border: DEFAULT_WINDOW_BORDER,
@@ -776,11 +1041,11 @@ impl Default for UserSettings {
             while_max_iterations: DEFAULT_WHILE_MAX_ITERATIONS,
             run_macro_max_depth: DEFAULT_RUN_MACRO_MAX_DEPTH,
             play_finish_sound: DEFAULT_PLAY_FINISH_SOUND,
-            play_ui_sounds: DEFAULT_PLAY_UI_SOUNDS,
+            play_add_sound: true,
+            play_delete_sound: true,
             sound_volume: DEFAULT_SOUND_VOLUME,
             image_search_close_matches_distance: DEFAULT_IMAGE_SEARCH_CLOSE_MATCHES_DISTANCE,
             image_search_variant_exit_early: DEFAULT_IMAGE_SEARCH_VARIANT_EXIT_EARLY,
-            drag_preview_debounce_ms: DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS,
             sqyre_dir: String::new(),
             ui_font_size: DEFAULT_UI_FONT_SIZE,
             ui_scale: DEFAULT_UI_SCALE,
@@ -802,6 +1067,45 @@ impl Default for UserSettings {
             last_selected_macro: String::new(),
             worker_threads: default_worker_threads(),
             permissions_intro_done: false,
+            diagnostic_logging: false,
+            memory_logging: false,
+            memory_logging_interval_ms: DEFAULT_MEMORY_SAMPLE_INTERVAL_MS,
+            restore_last_macro: true,
+            close_to_tray: false,
+            launch_on_login: false,
+            start_minimized: false,
+            restore_cursor_on_end: false,
+            click_flash_ms: DEFAULT_CLICK_FLASH_MS,
+            log_image_max_edge: DEFAULT_LOG_IMAGE_MAX_EDGE,
+            default_keyboard_delay_ms: DEFAULT_MACRO_KEYBOARD_DELAY_MS,
+            default_mouse_delay_ms: DEFAULT_MACRO_MOUSE_DELAY_MS,
+            panic_key: DEFAULT_PANIC_KEY.to_string(),
+            hotkey_while_running: HotkeyWhileRunning::default(),
+            default_hotkey_trigger: sqyre_domain::HOTKEY_TRIGGER_PRESS.to_string(),
+            record_wait_threshold_ms: DEFAULT_RECORD_WAIT_THRESHOLD_MS,
+            record_move_min_distance: DEFAULT_RECORD_MOVE_MIN_DISTANCE,
+            record_tap_max_ms: DEFAULT_RECORD_TAP_MAX_MS,
+            record_snap_point_px: DEFAULT_RECORD_SNAP_POINT_PX,
+            overlay_default_size: DEFAULT_OVERLAY_BUTTON_SIZE,
+            overlay_default_corner_radius: DEFAULT_OVERLAY_CORNER_RADIUS,
+            overlay_default_border_width: DEFAULT_OVERLAY_BORDER_WIDTH,
+            overlay_default_accent_color: String::new(),
+            overlay_default_icon_color: String::new(),
+            overlay_gate_default_interval_ms: DEFAULT_OVERLAY_GATE_INTERVAL_MS,
+            finish_sound_file: String::new(),
+            add_sound_file: String::new(),
+            delete_sound_file: String::new(),
+            backup_dir: String::new(),
+            update_check_interval_hours: DEFAULT_UPDATE_CHECK_INTERVAL_HOURS,
+            update_include_prerelease: false,
+            accent_color: String::new(),
+            mono_font_size: 0,
+            ui_font_family: UiFontFamily::default(),
+            window_width: 0.0,
+            window_height: 0.0,
+            window_pos_x: None,
+            window_pos_y: None,
+            window_maximized: false,
         }
     }
 }
@@ -991,12 +1295,6 @@ impl UserSettings {
     pub fn clamp(&mut self) {
         self.image_search_close_matches_distance =
             self.image_search_close_matches_distance.clamp(0, 100);
-        if self.drag_preview_debounce_ms < MIN_DRAG_PREVIEW_DEBOUNCE_MS {
-            self.drag_preview_debounce_ms = DEFAULT_DRAG_PREVIEW_DEBOUNCE_MS;
-        }
-        self.drag_preview_debounce_ms = self
-            .drag_preview_debounce_ms
-            .clamp(MIN_DRAG_PREVIEW_DEBOUNCE_MS, 1000);
         self.ui_font_size = self.ui_font_size.clamp(10, 28);
         if self.ui_scale <= 0.0 {
             self.ui_scale = DEFAULT_UI_SCALE;
@@ -1081,6 +1379,97 @@ impl UserSettings {
         self.macro_list_split = self
             .macro_list_split
             .clamp(MIN_MACRO_LIST_FRAC, MAX_MACRO_LIST_FRAC);
+        if self.click_flash_ms <= 0 {
+            self.click_flash_ms = DEFAULT_CLICK_FLASH_MS;
+        }
+        self.click_flash_ms = self
+            .click_flash_ms
+            .clamp(MIN_CLICK_FLASH_MS, MAX_CLICK_FLASH_MS);
+        self.log_image_max_edge = self
+            .log_image_max_edge
+            .clamp(MIN_LOG_IMAGE_MAX_EDGE, MAX_LOG_IMAGE_MAX_EDGE);
+        self.default_keyboard_delay_ms = self.default_keyboard_delay_ms.clamp(0, 60_000);
+        self.default_mouse_delay_ms = self.default_mouse_delay_ms.clamp(0, 60_000);
+        self.panic_key = self.panic_key.trim().to_ascii_lowercase();
+        self.default_hotkey_trigger =
+            sqyre_domain::Macro::parse_hotkey_trigger(&self.default_hotkey_trigger);
+        if self.record_wait_threshold_ms < MIN_RECORD_WAIT_THRESHOLD_MS {
+            self.record_wait_threshold_ms = DEFAULT_RECORD_WAIT_THRESHOLD_MS;
+        }
+        self.record_wait_threshold_ms = self
+            .record_wait_threshold_ms
+            .clamp(MIN_RECORD_WAIT_THRESHOLD_MS, MAX_RECORD_WAIT_THRESHOLD_MS);
+        if self.record_move_min_distance < MIN_RECORD_MOVE_MIN_DISTANCE {
+            self.record_move_min_distance = DEFAULT_RECORD_MOVE_MIN_DISTANCE;
+        }
+        self.record_move_min_distance = self
+            .record_move_min_distance
+            .clamp(MIN_RECORD_MOVE_MIN_DISTANCE, MAX_RECORD_MOVE_MIN_DISTANCE);
+        if self.record_tap_max_ms < MIN_RECORD_TAP_MAX_MS {
+            self.record_tap_max_ms = DEFAULT_RECORD_TAP_MAX_MS;
+        }
+        self.record_tap_max_ms = self
+            .record_tap_max_ms
+            .clamp(MIN_RECORD_TAP_MAX_MS, MAX_RECORD_TAP_MAX_MS);
+        self.record_snap_point_px = self
+            .record_snap_point_px
+            .clamp(MIN_RECORD_SNAP_POINT_PX, MAX_RECORD_SNAP_POINT_PX);
+        if self.overlay_default_size <= 0.0 {
+            self.overlay_default_size = DEFAULT_OVERLAY_BUTTON_SIZE;
+        }
+        self.overlay_default_size = self
+            .overlay_default_size
+            .clamp(MIN_OVERLAY_BUTTON_SIZE, MAX_OVERLAY_BUTTON_SIZE);
+        if self.overlay_default_corner_radius < 0.0 {
+            self.overlay_default_corner_radius = DEFAULT_OVERLAY_CORNER_RADIUS;
+        }
+        self.overlay_default_corner_radius = self
+            .overlay_default_corner_radius
+            .clamp(MIN_OVERLAY_CORNER_RADIUS, MAX_OVERLAY_CORNER_RADIUS);
+        if self.overlay_default_border_width < 0.0 {
+            self.overlay_default_border_width = DEFAULT_OVERLAY_BORDER_WIDTH;
+        }
+        self.overlay_default_border_width = self
+            .overlay_default_border_width
+            .clamp(MIN_OVERLAY_BORDER_WIDTH, MAX_OVERLAY_BORDER_WIDTH);
+        self.overlay_gate_default_interval_ms = self
+            .overlay_gate_default_interval_ms
+            .clamp(MIN_OVERLAY_GATE_INTERVAL_MS, MAX_OVERLAY_GATE_INTERVAL_MS);
+        if !self.accent_color.trim().is_empty()
+            && sqyre_domain::parse_hex_color(self.accent_color.trim()).is_none()
+        {
+            self.accent_color.clear();
+        }
+        if !self.overlay_default_accent_color.trim().is_empty()
+            && sqyre_domain::parse_hex_color(self.overlay_default_accent_color.trim()).is_none()
+        {
+            self.overlay_default_accent_color.clear();
+        }
+        if !self.overlay_default_icon_color.trim().is_empty()
+            && sqyre_domain::parse_hex_color(self.overlay_default_icon_color.trim()).is_none()
+        {
+            self.overlay_default_icon_color.clear();
+        }
+        self.update_check_interval_hours = self.update_check_interval_hours.clamp(
+            MIN_UPDATE_CHECK_INTERVAL_HOURS,
+            MAX_UPDATE_CHECK_INTERVAL_HOURS,
+        );
+        self.mono_font_size = self.mono_font_size.clamp(0, 40);
+        self.memory_logging_interval_ms = self
+            .memory_logging_interval_ms
+            .clamp(MIN_MEMORY_SAMPLE_INTERVAL_MS, MAX_MEMORY_SAMPLE_INTERVAL_MS);
+        if !self.window_width.is_finite() || self.window_width < 0.0 {
+            self.window_width = 0.0;
+        }
+        if !self.window_height.is_finite() || self.window_height < 0.0 {
+            self.window_height = 0.0;
+        }
+        if self.window_pos_x.is_some_and(|v| !v.is_finite()) {
+            self.window_pos_x = None;
+        }
+        if self.window_pos_y.is_some_and(|v| !v.is_finite()) {
+            self.window_pos_y = None;
+        }
     }
 
     /// Apply `sqyre_dir` override to the process-wide data directory.
@@ -1090,6 +1479,16 @@ impl UserSettings {
             crate::set_sqyre_dir_override(None);
         } else {
             crate::set_sqyre_dir_override(Some(PathBuf::from(path)));
+        }
+    }
+
+    /// Apply `backup_dir` override to the process-wide backups directory.
+    pub fn apply_backup_dir_override(&self) {
+        let path = self.backup_dir.trim();
+        if path.is_empty() {
+            crate::set_backup_dir_override(None);
+        } else {
+            crate::set_backup_dir_override(Some(PathBuf::from(path)));
         }
     }
 }
@@ -1264,6 +1663,104 @@ mod tests {
         assert!(
             (loaded.data_editor_left_split - DEFAULT_DATA_EDITOR_LEFT_FRAC).abs() < f32::EPSILON
         );
+    }
+
+    #[test]
+    fn new_customization_fields_roundtrip() {
+        let s = UserSettings {
+            diagnostic_logging: true,
+            memory_logging: true,
+            memory_logging_interval_ms: 2_000,
+            restore_last_macro: false,
+            close_to_tray: true,
+            start_minimized: true,
+            restore_cursor_on_end: true,
+            click_flash_ms: 500,
+            default_keyboard_delay_ms: 40,
+            default_mouse_delay_ms: 60,
+            panic_key: "f12".into(),
+            hotkey_while_running: HotkeyWhileRunning::Restart,
+            default_hotkey_trigger: "release".into(),
+            record_wait_threshold_ms: 100,
+            record_move_min_distance: 16,
+            record_tap_max_ms: 300,
+            record_snap_point_px: 40,
+            overlay_default_size: 40.0,
+            overlay_gate_default_interval_ms: 400,
+            finish_sound_file: "/tmp/finish.mp3".into(),
+            backup_dir: "/tmp/backups".into(),
+            update_check_interval_hours: 12,
+            update_include_prerelease: true,
+            accent_color: "#336699".into(),
+            mono_font_size: 15,
+            ui_font_family: UiFontFamily::Monospace,
+            window_width: 1100.0,
+            window_height: 750.0,
+            window_pos_x: Some(10.0),
+            window_pos_y: Some(20.0),
+            window_maximized: true,
+            ..Default::default()
+        };
+        let back: UserSettings = serde_yaml::from_str(&serde_yaml::to_string(&s).unwrap()).unwrap();
+        assert!(back.diagnostic_logging);
+        assert!(back.memory_logging);
+        assert_eq!(back.memory_logging_interval_ms, 2_000);
+        assert!(!back.restore_last_macro);
+        assert!(back.close_to_tray);
+        assert!(back.start_minimized);
+        assert!(back.restore_cursor_on_end);
+        assert_eq!(back.click_flash_ms, 500);
+        assert_eq!(back.default_keyboard_delay_ms, 40);
+        assert_eq!(back.default_mouse_delay_ms, 60);
+        assert_eq!(back.panic_key, "f12");
+        assert_eq!(back.hotkey_while_running, HotkeyWhileRunning::Restart);
+        assert_eq!(back.default_hotkey_trigger, "release");
+        assert_eq!(back.record_wait_threshold_ms, 100);
+        assert_eq!(back.record_move_min_distance, 16);
+        assert_eq!(back.record_tap_max_ms, 300);
+        assert_eq!(back.record_snap_point_px, 40);
+        assert!((back.overlay_default_size - 40.0).abs() < f32::EPSILON);
+        assert_eq!(back.overlay_gate_default_interval_ms, 400);
+        assert_eq!(back.finish_sound_file, "/tmp/finish.mp3");
+        assert_eq!(back.backup_dir, "/tmp/backups");
+        assert_eq!(back.update_check_interval_hours, 12);
+        assert!(back.update_include_prerelease);
+        assert_eq!(back.accent_color, "#336699");
+        assert_eq!(back.mono_font_size, 15);
+        assert_eq!(back.ui_font_family, UiFontFamily::Monospace);
+        assert!((back.window_width - 1100.0).abs() < f32::EPSILON);
+        assert_eq!(back.window_pos_x, Some(10.0));
+        assert!(back.window_maximized);
+    }
+
+    #[test]
+    fn clamp_normalizes_new_fields() {
+        let mut s = UserSettings {
+            panic_key: "  F12  ".into(),
+            default_hotkey_trigger: "bogus".into(),
+            accent_color: "not-a-color".into(),
+            record_wait_threshold_ms: 1,
+            update_check_interval_hours: -5,
+            ..Default::default()
+        };
+        s.clamp();
+        assert_eq!(s.panic_key, "f12");
+        assert_eq!(s.default_hotkey_trigger, "press");
+        assert!(s.accent_color.is_empty());
+        assert_eq!(s.record_wait_threshold_ms, DEFAULT_RECORD_WAIT_THRESHOLD_MS);
+        assert_eq!(s.update_check_interval_hours, 0);
+    }
+
+    #[test]
+    fn hotkey_while_running_and_font_family_have_labels() {
+        assert_eq!(HotkeyWhileRunning::default(), HotkeyWhileRunning::Ignore);
+        for p in HotkeyWhileRunning::ALL {
+            assert!(!p.label().is_empty());
+        }
+        assert_eq!(UiFontFamily::default(), UiFontFamily::Standard);
+        for f in UiFontFamily::ALL {
+            assert!(!f.label().is_empty());
+        }
     }
 
     #[test]

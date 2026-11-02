@@ -15,7 +15,6 @@ use std::time::{Duration, Instant};
 /// Square edge at flash start / end (virtual-desktop pixels).
 const FLASH_START_PX: i32 = 72;
 const FLASH_END_PX: i32 = 20;
-const FLASH_DURATION: Duration = Duration::from_millis(360);
 /// Repaint pace while a flash animates.
 const FRAME_MS: u64 = 16;
 
@@ -35,14 +34,16 @@ impl ClickFxOverlay {
     }
 
     /// Drain queued press positions and advance the flash; call once per UI frame.
-    pub fn sync(&mut self, ctx: &egui::Context, fx: &SharedClickFx) {
+    /// `flash_ms` is the marker lifetime in milliseconds (Settings → Playback).
+    pub fn sync(&mut self, ctx: &egui::Context, fx: &SharedClickFx, flash_ms: i32) {
         for (x, y) in fx.drain() {
             self.active = Some((x, y, Instant::now()));
         }
         let Some((x, y, started)) = self.active else {
             return;
         };
-        let t = started.elapsed().as_secs_f32() / FLASH_DURATION.as_secs_f32();
+        let duration = Duration::from_millis(flash_ms.max(1) as u64);
+        let t = started.elapsed().as_secs_f32() / duration.as_secs_f32();
         if t >= 1.0 {
             self.active = None;
             if let Some(outline) = self.outline.as_mut() {

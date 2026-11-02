@@ -38,6 +38,9 @@ pub struct AddActionPicker {
     pub open: bool,
     /// Overrides for blank templates keyed by action type.
     defaults: HashMap<String, Action>,
+    /// `settings.action_defaults` snapshot `defaults` was loaded from — a
+    /// Settings-side reset drifts it and triggers a reload.
+    synced_action_defaults: std::collections::BTreeMap<String, serde_yaml::Mapping>,
     /// View / edit tip for a type’s default prototype.
     tip: Option<DefaultsTip>,
     /// Tile currently under the pointer, waiting for [`DEFAULTS_HOVER_DELAY`].
@@ -97,7 +100,16 @@ impl AddActionPicker {
         // (consumed in `show` via widgets::focus_search_once)
     }
 
+    /// Reload per-type prototypes when `action_defaults` changed elsewhere
+    /// (e.g. a Settings-side reset). Cheap enough to call every frame.
+    pub fn sync_from_settings(&mut self, settings: &UserSettings) {
+        if self.synced_action_defaults != settings.action_defaults {
+            self.load_from_settings(settings);
+        }
+    }
+
     pub fn load_from_settings(&mut self, settings: &UserSettings) {
+        self.synced_action_defaults = settings.action_defaults.clone();
         self.defaults.clear();
         for (ty, map) in &settings.action_defaults {
             match action_from_map(map) {
@@ -328,7 +340,7 @@ impl AddActionPicker {
                             ui.painter().rect_stroke(
                                 resp.rect.expand(2.0),
                                 4.0,
-                                egui::Stroke::new(1.5, crate::theme::PRIMARY),
+                                egui::Stroke::new(1.5, crate::theme::accent()),
                                 egui::StrokeKind::Outside,
                             );
                         }

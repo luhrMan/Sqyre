@@ -6,11 +6,12 @@
 use eframe::egui::{Color32, Stroke};
 
 pub use sqyre_ui_theme::{
-    accent_dim, add_section_gap, chip_fill, contrast_fg, density, element_gap, error_fg,
+    accent, accent_dim, add_section_gap, chip_fill, contrast_fg, density, element_gap, error_fg,
     frame_fill, inner_stroke, ok_fg, overlay_panel_fill, paint_galley_centered,
     paint_text_centered, panel_split_stroke, rgba, section_gap, set_density, warn_fg,
     window_border_stroke, DensityGaps, MACRO_START, MACRO_STOP, PANEL_SPLITTER_W, PRIMARY,
-    SPACE_12, SPACE_2, SPACE_4, SPACE_8, WINDOW_BORDER_RADIUS,
+    SPACE_12, SPACE_2, SPACE_4, SPACE_8, WINDOW_BORDER_RADIUS, WINDOW_RESIZE_CORNER_SIZE,
+    WINDOW_RESIZE_GRAB_RADIUS,
 };
 
 /// Dark scrim behind preview overlay chips / editors.
@@ -137,14 +138,15 @@ pub fn window_clear_color() -> Color32 {
     Color32::from_rgb(0x1a, 0x1a, 0x1a)
 }
 
-/// Selected card / list stroke (Sqyre primary).
+/// Selected card / list stroke (active accent).
 pub fn selection_stroke() -> Stroke {
-    Stroke::new(2.0, PRIMARY)
+    Stroke::new(2.0, accent())
 }
 
-/// Soft primary tint for related-row owner highlight.
+/// Soft accent tint for related-row owner highlight.
 pub fn highlight_owner_fill() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 0x28])
+    let c = accent();
+    rgba([c.r(), c.g(), c.b(), 0x28])
 }
 
 /// Soft error tint behind invalid tree rows (from [`error_fg`]).

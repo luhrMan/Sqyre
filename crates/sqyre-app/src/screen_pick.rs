@@ -421,7 +421,7 @@ fn paint_bar(ctx: &egui::Context, add: impl FnOnce(&mut egui::Ui) -> Choice) -> 
         .show(ctx, |ui| {
             egui::Frame::NONE
                 .fill(theme::overlay_panel_fill())
-                .stroke(egui::Stroke::new(1.0, theme::PRIMARY))
+                .stroke(egui::Stroke::new(1.0, theme::accent()))
                 .corner_radius(egui::CornerRadius::same(6))
                 .inner_margin(egui::Margin::same(BAR_PAD))
                 .show(ui, |ui| {
@@ -456,7 +456,7 @@ fn unit_uv() -> Rect {
 fn outline_strokes() -> [egui::Stroke; 2] {
     [
         egui::Stroke::new(3.0, theme::capture_underlay()),
-        egui::Stroke::new(1.0, theme::PRIMARY),
+        egui::Stroke::new(1.0, theme::accent()),
     ]
 }
 
@@ -507,7 +507,7 @@ fn paint_loupe(
     painter.rect_stroke(
         loupe,
         4.0,
-        egui::Stroke::new(2.0, theme::PRIMARY),
+        egui::Stroke::new(2.0, theme::accent()),
         egui::StrokeKind::Outside,
     );
 }

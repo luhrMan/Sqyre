@@ -55,6 +55,38 @@ pub fn install() {
     }
 }
 
+/// Install or remove the XDG autostart entry (`~/.config/autostart`). No-op
+/// inside Flatpak — sandboxed apps use the portal instead.
+pub fn set_autostart(enabled: bool) {
+    if std::env::var_os("FLATPAK_ID").is_some() {
+        return;
+    }
+    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")));
+    let Some(config_home) = config_home else {
+        return;
+    };
+    let desktop = config_home
+        .join("autostart")
+        .join(format!("{APP_ID}.desktop"));
+    if !enabled {
+        if desktop.exists() {
+            if let Err(e) = std::fs::remove_file(&desktop) {
+                crate::log::warn(format!("autostart entry: {}: {e}", desktop.display()));
+            }
+        }
+        return;
+    }
+    let Some(exec) = launcher_path() else {
+        return;
+    };
+    if let Err(e) = write_if_changed(&desktop, desktop_entry(&exec).as_bytes()) {
+        crate::log::warn(format!("autostart entry: {}: {e}", desktop.display()));
+    }
+}
+
 fn data_home() -> Option<PathBuf> {
     std::env::var_os("XDG_DATA_HOME")
         .map(PathBuf::from)

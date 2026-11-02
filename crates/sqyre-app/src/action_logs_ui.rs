@@ -720,7 +720,12 @@ fn show_find_chip(
                     img,
                 ) {
                     let [tw, th] = tex.size();
-                    let size = image_view::fit_in_box(tw as f32, th as f32, 360.0, 270.0);
+                    let size = image_view::fit_in_box(
+                        tw as f32,
+                        th as f32,
+                        360.0_f32.min(crate::widgets::visible_content_width(ui)),
+                        270.0,
+                    );
                     let (disp, _) = ui.allocate_exact_size(size, egui::Sense::hover());
                     ui.painter().image(
                         tex.id(),

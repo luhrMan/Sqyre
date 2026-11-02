@@ -1061,7 +1061,7 @@ mod tests {
     #[test]
     fn wrapped_summary_pill_cells_share_vertical_band() {
         let ctx = egui::Context::default();
-        crate::settings::SettingsUi::install_fonts(&ctx);
+        crate::settings::SettingsUi::install_fonts(&ctx, &sqyre_persist::UserSettings::default());
         let settings = sqyre_persist::UserSettings {
             ui_scale: 1.25,
             ui_font_size: 16,

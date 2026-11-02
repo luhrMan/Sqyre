@@ -28,7 +28,7 @@ pub fn build_docs_harness(
         .with_os(OperatingSystem::Nix)
         .wgpu()
         .build_eframe(move |cc| {
-            SettingsUi::install_fonts(&cc.egui_ctx);
+            SettingsUi::install_fonts(&cc.egui_ctx, &settings);
             SettingsUi::apply_appearance(&cc.egui_ctx, &settings);
             theme::apply(&cc.egui_ctx);
             app

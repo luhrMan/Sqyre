@@ -4,7 +4,7 @@
 //! taller; a trailing spacer atom keeps the value text clear of the glyphs.
 
 use crate::assets;
-use crate::theme::{accent_dim, PRIMARY};
+use crate::theme::{accent, accent_dim};
 use eframe::egui::{
     self, Atom, Atoms, IntoAtoms, Key, Modifiers, Response, Sense, Stroke, TextureHandle,
     TextureOptions, Ui, Widget, WidgetInfo, WidgetType,
@@ -446,7 +446,7 @@ pub(crate) fn paint_steppers(
             painter.rect_filled(zone, 2.0, accent_dim());
         }
         let glyph_color = if enabled {
-            PRIMARY
+            accent()
         } else {
             ui.visuals().weak_text_color()
         };
@@ -484,7 +484,7 @@ pub(crate) fn paint_steppers(
             painter.rect_stroke(
                 zone.shrink(0.5),
                 egui::CornerRadius::same(2),
-                Stroke::new(1.0, PRIMARY),
+                Stroke::new(1.0, accent()),
                 egui::StrokeKind::Inside,
             );
         }

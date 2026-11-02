@@ -681,6 +681,7 @@ fn capture_and_match(
                             (tlx, tly, brx, bry),
                             search_raw.width,
                             search_raw.height,
+                            exec.deps.log_image_max_edge,
                         ),
                     }),
                 })

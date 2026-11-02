@@ -35,7 +35,7 @@ impl SqyreApp {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn play_ui_add_sound(&self) {
         let s = self.settings_ui.settings();
-        crate::sound::play_add_sound_if(s.play_ui_sounds, s.sound_volume);
+        crate::sound::play_add_sound_if(s.play_add_sound, s.sound_volume, &s.add_sound_file);
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -44,7 +44,11 @@ impl SqyreApp {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn play_ui_delete_sound(&self) {
         let s = self.settings_ui.settings();
-        crate::sound::play_delete_sound_if(s.play_ui_sounds, s.sound_volume);
+        crate::sound::play_delete_sound_if(
+            s.play_delete_sound,
+            s.sound_volume,
+            &s.delete_sound_file,
+        );
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -257,7 +261,13 @@ impl SqyreApp {
 
     pub(crate) fn create_macro(&mut self) {
         let name = self.unique_macro_name("new macro");
-        let m = Macro::new(name.clone(), 0, vec![]);
+        let mut m = Macro::new(name.clone(), 0, vec![]);
+        {
+            let s = self.settings_ui.settings();
+            m.keyboard_delay = s.default_keyboard_delay_ms;
+            m.mouse_delay = s.default_mouse_delay_ms;
+            m.hotkey_trigger = s.default_hotkey_trigger.clone();
+        }
         self.workspace.macros.push(m);
         self.workspace
             .macros

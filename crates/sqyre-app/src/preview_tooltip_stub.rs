@@ -81,6 +81,13 @@ impl PreviewTooltipCache {
         false
     }
 
+    /// Mirrors the native signature; there is no desktop to outline on.
+    #[expect(
+        dead_code,
+        reason = "the only caller is the native runtime overlay sync"
+    )]
+    pub fn set_desktop_outlines_enabled(&mut self, _enabled: bool) {}
+
     pub fn request_outline_abs(&mut self, _rect: (i32, i32, i32, i32)) {}
 
     pub fn request_outline_abs_hover(&mut self, _rect: (i32, i32, i32, i32)) {}
