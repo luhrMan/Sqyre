@@ -746,10 +746,7 @@ mod tests {
         fs::create_dir_all(&data)?;
         fs::write(data.join(DB_FILE), "macros: {}\nprograms: {}\n")?;
         // A legitimately relocated data dir must survive restore.
-        fs::write(
-            data.join(SETTINGS_FILE),
-            "sqyre_dir: /tmp/live-sqyre-dir\n",
-        )?;
+        fs::write(data.join(SETTINGS_FILE), "sqyre_dir: /tmp/live-sqyre-dir\n")?;
 
         let zip_path = tmp.path().join("redirect.zip");
         {
