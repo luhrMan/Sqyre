@@ -35,7 +35,7 @@ impl SqyreApp {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn play_ui_add_sound(&self) {
         let s = self.settings_ui.settings();
-        crate::sound::play_add_sound_if(s.play_ui_sounds, s.sound_volume);
+        crate::sound::play_add_sound_if(s.play_add_sound, s.sound_volume, &s.add_sound_file);
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -44,7 +44,11 @@ impl SqyreApp {
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn play_ui_delete_sound(&self) {
         let s = self.settings_ui.settings();
-        crate::sound::play_delete_sound_if(s.play_ui_sounds, s.sound_volume);
+        crate::sound::play_delete_sound_if(
+            s.play_delete_sound,
+            s.sound_volume,
+            &s.delete_sound_file,
+        );
     }
 
     #[cfg(target_arch = "wasm32")]
@@ -257,7 +261,13 @@ impl SqyreApp {
 
     pub(crate) fn create_macro(&mut self) {
         let name = self.unique_macro_name("new macro");
-        let m = Macro::new(name.clone(), 0, vec![]);
+        let mut m = Macro::new(name.clone(), 0, vec![]);
+        {
+            let s = self.settings_ui.settings();
+            m.keyboard_delay = s.default_keyboard_delay_ms;
+            m.mouse_delay = s.default_mouse_delay_ms;
+            m.hotkey_trigger = s.default_hotkey_trigger.clone();
+        }
         self.workspace.macros.push(m);
         self.workspace
             .macros
@@ -298,13 +308,9 @@ impl SqyreApp {
 
     /// Replace the selected macro from the YAML Macro Builder (transactional).
     pub(crate) fn apply_macro_from_yaml_builder(&mut self, mut incoming: Macro) {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let old_name = self.workspace.macros[idx].name.clone();
         let new_name = incoming.name.trim().to_string();
         if new_name.is_empty() {
@@ -412,13 +418,9 @@ impl SqyreApp {
     }
 
     pub(crate) fn duplicate_selected_macro(&mut self) {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let src_name = self.workspace.macros[idx].name.clone();
         let mut dup = self.workspace.macros[idx].clone();
         dup.name = self.unique_macro_name(&format!("{src_name} copy"));
@@ -460,10 +462,7 @@ impl SqyreApp {
             self.tree.tooltip.cancel();
             return;
         }
-        self.workspace.selected_macro = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        self.workspace.selected_macro = self.workspace.selected_macro_index().unwrap_or(0);
         self.clear_selected_actions();
         self.tree.tooltip.cancel();
         self.workspace.macro_meta.sync_selection(
@@ -474,13 +473,9 @@ impl SqyreApp {
 
     /// Rename the selected macro and rewrite Run Macro / overlay button refs.
     pub(crate) fn rename_selected_macro(&mut self, new_name: String) {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let old_name = self.workspace.macros[idx].name.clone();
         if old_name == new_name {
             return;
@@ -565,13 +560,9 @@ impl SqyreApp {
         chord: Vec<String>,
         trigger: Option<HotkeyTrigger>,
     ) {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let trigger = trigger
             .unwrap_or_else(|| HotkeyTrigger::parse(&self.workspace.macros[idx].hotkey_trigger));
         let binding =
@@ -582,13 +573,9 @@ impl SqyreApp {
     }
 
     pub(crate) fn record_tree_mutation(&mut self) {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let selected = self.tree.selected_actions.clone();
         let name = self.workspace.macros[idx].name.clone();
         let Ok(snap) = TreeHistory::take_snapshot(&self.workspace.macros[idx], selected) else {
@@ -603,17 +590,29 @@ impl SqyreApp {
     }
 
     pub(crate) fn undo_tree(&mut self) {
-        if self.workspace.macros.is_empty() {
+        self.apply_tree_history(true);
+    }
+
+    pub(crate) fn redo_tree(&mut self) {
+        self.apply_tree_history(false);
+    }
+
+    /// Apply an undo (`was_undo`) or redo step for the selected macro, then
+    /// refresh UI/persist state. `was_undo` also selects the reversal on
+    /// persist failure.
+    fn apply_tree_history(&mut self, was_undo: bool) {
+        let label = if was_undo { "Undo" } else { "Redo" };
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let name = self.workspace.macros[idx].name.clone();
         let mut selected = self.tree.selected_actions.clone();
         let mut history = self.tree.histories.remove(&name).unwrap_or_default();
-        let result = history.undo(&mut self.workspace.macros[idx], &mut selected);
+        let result = if was_undo {
+            history.undo(&mut self.workspace.macros[idx], &mut selected)
+        } else {
+            history.redo(&mut self.workspace.macros[idx], &mut selected)
+        };
         self.tree.histories.insert(name.clone(), history);
         match result {
             Ok(()) => {
@@ -632,63 +631,17 @@ impl SqyreApp {
                 self.tree.tooltip.cancel();
                 self.tree.invalidate_paint_cache();
                 if let Err(e) = self.persist_database() {
-                    // Persist failed after undo — reverse so memory matches disk.
-                    self.reverse_last_undo_redo(/*was_undo=*/ true);
-                    self.report_persist_failure("Undo", &e);
+                    // Persist failed after undo/redo — reverse so memory matches disk.
+                    self.reverse_last_undo_redo(was_undo);
+                    self.report_persist_failure(label, &e);
                     return;
                 }
                 self.refresh_macro_hotkey_bindings();
             }
             Err(e) => {
-                crate::log::warn(format_args!("undo: {e}"));
+                crate::log::warn(format_args!("{}: {e}", label.to_lowercase()));
                 *self.run_session.state.status.lock() = format!(
-                    "Undo failed: {}",
-                    crate::status_banner::user_error_detail(&e)
-                );
-            }
-        }
-    }
-
-    pub(crate) fn redo_tree(&mut self) {
-        if self.workspace.macros.is_empty() {
-            return;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
-        let name = self.workspace.macros[idx].name.clone();
-        let mut selected = self.tree.selected_actions.clone();
-        let mut history = self.tree.histories.remove(&name).unwrap_or_default();
-        let result = history.redo(&mut self.workspace.macros[idx], &mut selected);
-        self.tree.histories.insert(name.clone(), history);
-        match result {
-            Ok(()) => {
-                let new_name = self.workspace.macros[idx].name.clone();
-                if new_name != name {
-                    if let Some(h) = self.tree.histories.remove(&name) {
-                        self.tree.histories.insert(new_name.clone(), h);
-                    }
-                    self.workspace
-                        .macros
-                        .sort_by(|a, b| crate::macro_meta::cmp_display_name(&a.name, &b.name));
-                    self.select_macro_by_name(&new_name);
-                }
-                self.set_selected_actions(selected);
-                self.tree.tooltip.cancel();
-                self.tree.invalidate_paint_cache();
-                if let Err(e) = self.persist_database() {
-                    // Persist failed after redo — reverse so memory matches disk.
-                    self.reverse_last_undo_redo(/*was_undo=*/ false);
-                    self.report_persist_failure("Redo", &e);
-                    return;
-                }
-                self.refresh_macro_hotkey_bindings();
-            }
-            Err(e) => {
-                crate::log::warn(format_args!("redo: {e}"));
-                *self.run_session.state.status.lock() = format!(
-                    "Redo failed: {}",
+                    "{label} failed: {}",
                     crate::status_banner::user_error_detail(&e)
                 );
             }
@@ -699,13 +652,9 @@ impl SqyreApp {
     ///
     /// Does not call `persist_database` — disk already holds the pre-op state.
     fn reverse_last_undo_redo(&mut self, was_undo: bool) {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let name = self.workspace.macros[idx].name.clone();
         let mut selected = self.tree.selected_actions.clone();
         let mut history = self.tree.histories.remove(&name).unwrap_or_default();
@@ -734,13 +683,9 @@ impl SqyreApp {
     }
 
     pub(crate) fn can_undo(&self) -> bool {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return false;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         self.tree
             .histories
             .get(&self.workspace.macros[idx].name)
@@ -748,13 +693,9 @@ impl SqyreApp {
     }
 
     pub(crate) fn can_redo(&self) -> bool {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return false;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         self.tree
             .histories
             .get(&self.workspace.macros[idx].name)
@@ -763,13 +704,9 @@ impl SqyreApp {
 
     /// Shift selected actions one slot among siblings (`up` = Alt+Up).
     pub(crate) fn nudge_selection(&mut self, up: bool) -> bool {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return false;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let selected = self.tree.selected_actions.clone();
         if self.workspace.macros[idx]
             .root
@@ -790,13 +727,9 @@ impl SqyreApp {
     }
 
     pub(crate) fn can_copy_selection(&self) -> bool {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return false;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let Some(aid) = self.selected_action_id().filter(|a| !a.is_root()) else {
             return false;
         };
@@ -809,13 +742,9 @@ impl SqyreApp {
     }
 
     pub(crate) fn copy_selection(&mut self, ctx: &egui::Context) -> bool {
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return false;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let Some(aid) = self.selected_action_id().filter(|a| !a.is_root()) else {
             return false;
         };
@@ -900,10 +829,9 @@ impl SqyreApp {
                     return false;
                 }
             };
-            let idx = self
-                .workspace
-                .selected_macro
-                .min(self.workspace.macros.len() - 1);
+            let Some(idx) = self.workspace.selected_macro_index() else {
+                return false;
+            };
             if let Err(e) = sqyre_validate::validate_action_tree_persist(
                 &new_action,
                 Some(&self.workspace.macros[idx]),
@@ -916,10 +844,9 @@ impl SqyreApp {
             }
             new_actions.push(new_action);
         }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        let Some(idx) = self.workspace.selected_macro_index() else {
+            return false;
+        };
         let selected = self.selected_action_id();
         let Some((parent, slot)) = tree_clipboard::insert_location_below_selection(
             &self.workspace.macros[idx].root,
@@ -960,14 +887,10 @@ impl SqyreApp {
     /// Key/click actions inserted as [`PressState::Down`] also get a matching `Up`
     /// sibling inserted immediately below (discarded together if Cancel).
     pub(crate) fn insert_blank_action(&mut self, action: Action, edit_anchor: egui::Pos2) -> bool {
-        if self.workspace.macros.is_empty() {
-            return false;
-        }
         let new_id = action.id;
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        let Some(idx) = self.workspace.selected_macro_index() else {
+            return false;
+        };
         let selected = self.selected_action_id();
         let Some((parent, slot)) = tree_clipboard::insert_location_below_selection(
             &self.workspace.macros[idx].root,
@@ -1005,13 +928,12 @@ impl SqyreApp {
     }
 
     pub(crate) fn discard_provisional_actions(&mut self, action_ids: &[ActionId]) {
-        if self.workspace.macros.is_empty() || action_ids.is_empty() {
+        if action_ids.is_empty() {
             return;
         }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        let Some(idx) = self.workspace.selected_macro_index() else {
+            return;
+        };
         for &action_id in action_ids {
             let _ = self.workspace.macros[idx].root.remove_by_id(action_id);
             self.remove_from_selection(action_id);
@@ -1031,13 +953,9 @@ impl SqyreApp {
         if !self.copy_selection(ctx) {
             return false;
         }
-        if self.workspace.macros.is_empty() {
+        let Some(idx) = self.workspace.selected_macro_index() else {
             return false;
-        }
-        let idx = self
-            .workspace
-            .selected_macro
-            .min(self.workspace.macros.len() - 1);
+        };
         let Some(aid) = self.selected_action_id().filter(|a| !a.is_root()) else {
             return false;
         };

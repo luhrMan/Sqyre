@@ -1,9 +1,9 @@
 //! Layered topmost buttons on a dedicated thread.
 //!
 //! The window thread owns every HWND. Clicks enqueue a macro or request stop
-//! without waiting for an egui frame. Detection captures exclude the windows
-//! with `WDA_EXCLUDEFROMCAPTURE` when that setting is off, so they stay visible
-//! and clickable while GDI reads the pixels underneath.
+//! without waiting for an egui frame. When overlay buttons are left out of
+//! detection, they are hidden for the whole macro (and excluded from capture
+//! with `WDA_EXCLUDEFROMCAPTURE` until the hide lands).
 
 use crate::brand_s::SWEEP_PER_SEC;
 use crate::raster::{self, ButtonPaint, TIP_CORNER_PX};
@@ -69,17 +69,7 @@ thread_local! {
 pub struct WinButtonSpec {
     pub id: String,
     pub macro_name: String,
-    pub x: i32,
-    pub y: i32,
-    pub w: u32,
-    pub h: u32,
-    pub bg: [u8; 4],
-    pub border: [u8; 4],
-    pub border_width: f32,
-    pub corner_radius: f32,
-    pub icon_glyph: char,
-    pub icon: [u8; 4],
-    pub icon_hover: [u8; 4],
+    pub face: crate::ButtonFace,
     pub tip: String,
     pub busy: bool,
     pub visibility_gated: bool,
@@ -354,29 +344,29 @@ fn update_button(state: &mut HostState, spec: WinButtonSpec) {
     };
     let dragging = state.drag.as_ref().is_some_and(|d| d.id == id);
     let (x, y) = if dragging {
-        (live.spec.x, live.spec.y)
+        (live.spec.face.x, live.spec.face.y)
     } else {
-        (spec.x, spec.y)
+        (spec.face.x, spec.face.y)
     };
-    let geom = live.spec.w != spec.w
-        || live.spec.h != spec.h
-        || (live.spec.corner_radius - spec.corner_radius).abs() > f32::EPSILON
-        || live.spec.x != x
-        || live.spec.y != y;
-    let style = live.spec.bg != spec.bg
-        || live.spec.border != spec.border
-        || live.spec.icon != spec.icon
-        || live.spec.icon_glyph != spec.icon_glyph
+    let geom = live.spec.face.w != spec.face.w
+        || live.spec.face.h != spec.face.h
+        || sqyre_domain::f32_changed(live.spec.face.corner_radius, spec.face.corner_radius)
+        || live.spec.face.x != x
+        || live.spec.face.y != y;
+    let style = live.spec.face.bg != spec.face.bg
+        || live.spec.face.border != spec.face.border
+        || live.spec.face.icon != spec.face.icon
+        || live.spec.face.icon_glyph != spec.face.icon_glyph
         || live.spec.busy != spec.busy;
     live.spec = spec;
-    live.spec.x = x;
-    live.spec.y = y;
+    live.spec.face.x = x;
+    live.spec.face.y = y;
     if geom {
         // Region uses the new size. Recreate it before the next paint.
         let hwnd = live.hwnd;
-        let w = live.spec.w;
-        let h = live.spec.h;
-        let radius = live.spec.corner_radius;
+        let w = live.spec.face.w;
+        let h = live.spec.face.h;
+        let radius = live.spec.face.corner_radius;
         set_round_region(hwnd, w, h, radius);
     }
     if geom || style {
@@ -386,17 +376,18 @@ fn update_button(state: &mut HostState, spec: WinButtonSpec) {
 }
 
 fn create_button(state: &mut HostState, spec: WinButtonSpec) -> Option<LiveButton> {
-    let w = spec.w.max(1);
-    let h = spec.h.max(1);
+    let w = spec.face.w.max(1);
+    let h = spec.face.h.max(1);
+    let title = windows::core::HSTRING::from(sqyre_ports::APP_NAME);
     // SAFETY: class is registered; the popup is owned by this thread until `destroy_hwnd`.
     let hwnd = unsafe {
         CreateWindowExW(
             WS_EX_LAYERED | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
             CLASS_NAME,
-            w!("Sqyre"),
+            &title,
             WS_POPUP,
-            spec.x,
-            spec.y,
+            spec.face.x,
+            spec.face.y,
             w as i32,
             h as i32,
             None,
@@ -406,7 +397,7 @@ fn create_button(state: &mut HostState, spec: WinButtonSpec) -> Option<LiveButto
         )
         .ok()?
     };
-    set_round_region(hwnd, w, h, spec.corner_radius);
+    set_round_region(hwnd, w, h, spec.face.corner_radius);
     if sqyre_capture::overlay_capture_omitted() {
         apply_affinity(&[ShareHwnd(hwnd)], true);
     }
@@ -456,8 +447,8 @@ fn apply_visibility(state: &mut HostState) {
         let Some(btn) = state.buttons.get(&id) else {
             continue;
         };
-        let show =
-            relocate || !btn.spec.visibility_gated || found.get(&id).copied().unwrap_or(false);
+        let show = !sqyre_capture::overlay_capture_omitted()
+            && (relocate || !btn.spec.visibility_gated || found.get(&id).copied().unwrap_or(false));
         if show == btn.mapped {
             continue;
         }
@@ -483,24 +474,16 @@ fn repaint_button(state: &mut HostState, id: &str) {
 }
 
 fn paint_live(btn: &mut LiveButton) {
-    let w = btn.spec.w.max(1);
-    let h = btn.spec.h.max(1);
-    let rgba = raster::rasterize_argb(&ButtonPaint {
-        w,
-        h,
-        bg: btn.spec.bg,
-        border: btn.spec.border,
-        border_width: btn.spec.border_width,
-        corner_radius: btn.spec.corner_radius,
-        icon_glyph: btn.spec.icon_glyph,
-        icon: btn.spec.icon,
-        icon_hover: btn.spec.icon_hover,
-        hovered: btn.hovered,
-        busy: btn.spec.busy,
-        busy_phase: btn.phase,
-    });
+    let w = btn.spec.face.w.max(1);
+    let h = btn.spec.face.h.max(1);
+    let rgba = raster::rasterize_argb(&ButtonPaint::from_face(
+        &btn.spec.face,
+        btn.hovered,
+        btn.spec.busy,
+        btn.phase,
+    ));
     btn.bgra = rgba_to_bgra(&rgba);
-    blit_layered(btn.hwnd, btn.spec.x, btn.spec.y, w, h, &btn.bgra);
+    blit_layered(btn.hwnd, btn.spec.face.x, btn.spec.face.y, w, h, &btn.bgra);
 }
 
 fn show_tip(state: &mut HostState, id: &str) {
@@ -520,7 +503,7 @@ fn show_tip(state: &mut HostState, id: &str) {
         hide_tip(state);
         return;
     }
-    let (x, y, h) = (btn.spec.x, btn.spec.y, btn.spec.h);
+    let (x, y, h) = (btn.spec.face.x, btn.spec.face.y, btn.spec.face.h);
     if state
         .tip
         .as_ref()
@@ -546,7 +529,7 @@ fn show_tip(state: &mut HostState, id: &str) {
                     | WS_EX_TOOLWINDOW
                     | WS_EX_TRANSPARENT,
                 CLASS_NAME,
-                w!("Sqyre tip"),
+                &windows::core::HSTRING::from(format!("{} tip", sqyre_ports::APP_NAME)),
                 WS_POPUP,
                 tip_x,
                 tip_y,
@@ -667,12 +650,12 @@ fn on_drag_move(state: &mut HostState) {
     let Some(btn) = state.buttons.get_mut(&id) else {
         return;
     };
-    btn.spec.x = x;
-    btn.spec.y = y;
+    btn.spec.face.x = x;
+    btn.spec.face.y = y;
     let (hwnd, w, h, bgra) = (
         btn.hwnd,
-        btn.spec.w.max(1),
-        btn.spec.h.max(1),
+        btn.spec.face.w.max(1),
+        btn.spec.face.h.max(1),
         btn.bgra.clone(),
     );
     blit_layered(hwnd, x, y, w, h, &bgra);
@@ -693,8 +676,8 @@ fn on_button_up(state: &mut HostState) {
     };
     state.pending_moves.lock().push(OverlayButtonMove {
         id: drag.id,
-        x: btn.spec.x,
-        y: btn.spec.y,
+        x: btn.spec.face.x,
+        y: btn.spec.face.y,
     });
     if let Some(ctx) = &state.wake {
         ctx.request_repaint();
@@ -753,14 +736,14 @@ fn hit_test(state: &HostState, hwnd: HWND, screen_x: i32, screen_y: i32) -> LRES
     if pass {
         return LRESULT(HTTRANSPARENT as isize);
     }
-    let local_x = screen_x - btn.spec.x;
-    let local_y = screen_y - btn.spec.y;
+    let local_x = screen_x - btn.spec.face.x;
+    let local_y = screen_y - btn.spec.face.y;
     if inside_rounded(
         local_x,
         local_y,
-        btn.spec.w,
-        btn.spec.h,
-        btn.spec.corner_radius,
+        btn.spec.face.w,
+        btn.spec.face.h,
+        btn.spec.face.corner_radius,
     ) {
         LRESULT(HTCLIENT as isize)
     } else {

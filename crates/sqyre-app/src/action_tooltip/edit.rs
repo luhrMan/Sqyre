@@ -14,7 +14,7 @@ use crate::tree_chrome;
 use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{
     combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
-    num_text_field, searchable_combo, searchable_combo_with, text_field, wrap_unit, wrapped_row,
+    num_text_field, searchable_combo, text_field, wrap_unit, wrapped_row, SearchableComboOpts,
     W_TEXT, W_VAR,
 };
 use eframe::egui;
@@ -69,15 +69,6 @@ pub fn paint_edit_fields(
         macros: _macros,
         active_macro,
     } = ctx;
-    let CatalogPaint {
-        catalog,
-        icons,
-        previews,
-    } = paint;
-    let VarTheme {
-        known_vars,
-        is_dark,
-    } = *theme;
     let RecordBridges {
         key_record,
         hotkey_record,
@@ -91,11 +82,12 @@ pub fn paint_edit_fields(
             tip_wrapped_section(ui, |ui| {
                 scalar_field(
                     ui,
+                    egui_phosphor::regular::TIMER,
                     "Time (ms)",
                     h::WAIT_TIME,
                     time,
-                    known_vars,
-                    is_dark,
+                    theme.known_vars,
+                    theme.is_dark,
                     active_macro,
                 );
             });
@@ -106,8 +98,6 @@ pub fn paint_edit_fields(
                 // mouse/slider — not `with_layout(… Align::Center)`, which fills
                 // ScrollArea's unbounded height and ratchets the tip to the screen.
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing =
-                        egui::vec2(crate::theme::SPACE_8, crate::theme::SPACE_8);
                     help::tip(
                         crate::widgets::mouse_button_picker(ui, button),
                         h::CLICK_BUTTON,
@@ -128,19 +118,19 @@ pub fn paint_edit_fields(
         }
         ActionKind::Key { key, state } => {
             tip_wrapped_section(ui, |ui| {
+                var_ref_field(
+                    ui,
+                    egui_phosphor::regular::KEY,
+                    "Key",
+                    key,
+                    *theme,
+                    h::KEY,
+                    W_VAR,
+                    active_macro,
+                );
+                // Own unit so the button wraps below the field instead of
+                // overflowing the tip's clip on narrow panels.
                 wrap_unit(ui, |ui| {
-                    var_ref_field(
-                        ui,
-                        "Key",
-                        key,
-                        VarTheme {
-                            known_vars,
-                            is_dark,
-                        },
-                        h::KEY,
-                        W_VAR,
-                        active_macro,
-                    );
                     if crate::widgets::record_icon_button(ui, "Record a key", !key_record.is_open())
                         .clicked()
                     {
@@ -163,19 +153,22 @@ pub fn paint_edit_fields(
             tip_wrapped_section(ui, |ui| {
                 var_ref_field(
                     ui,
+                    egui_phosphor::regular::KEYBOARD,
                     "Text",
                     text,
-                    VarTheme {
-                        known_vars,
-                        is_dark,
-                    },
+                    *theme,
                     h::TYPE_TEXT,
                     W_VAR,
                     active_macro,
                 );
-                drag_field(ui, "Delay ms", h::TYPE_DELAY, delay_ms, |d| {
-                    d.speed(1).range(MIN_TYPE_DELAY_MS..=MAX_TYPE_DELAY_MS)
-                });
+                drag_field(
+                    ui,
+                    egui_phosphor::regular::TIMER,
+                    "Delay ms",
+                    h::TYPE_DELAY,
+                    delay_ms,
+                    |d| d.speed(1).range(MIN_TYPE_DELAY_MS..=MAX_TYPE_DELAY_MS),
+                );
             });
         }
         ActionKind::Move {
@@ -186,31 +179,33 @@ pub fn paint_edit_fields(
             smooth_delay_ms,
         } => {
             tip_section(ui, |ui| {
-                point_picker_row(
-                    ui,
-                    &mut CatalogPaint {
-                        catalog,
-                        icons,
-                        previews,
-                    },
-                    point,
-                    picker,
-                );
-                paint_coord_preview(ui, catalog, previews, point, PreviewKind::Point);
+                point_picker_row(ui, &mut *paint, point, picker);
+                paint_coord_preview(ui, paint.catalog, paint.previews, point, PreviewKind::Point);
             });
             tip_wrapped_section(ui, |ui| {
                 help::tip(ui.checkbox(smooth, "Smooth"), h::MOVE_SMOOTH);
             });
             tip_advanced(ui, |ui| {
                 tip_wrapped_section(ui, |ui| {
-                    drag_field(ui, "Smooth low", h::MOVE_SMOOTH_LOW, smooth_low, |d| {
-                        d.speed(0.01).range(0.0..=1.0)
-                    });
-                    drag_field(ui, "Smooth high", h::MOVE_SMOOTH_HIGH, smooth_high, |d| {
-                        d.speed(0.01).range(0.0..=1.0)
-                    });
                     drag_field(
                         ui,
+                        egui_phosphor::regular::TIMER,
+                        "Smooth low",
+                        h::MOVE_SMOOTH_LOW,
+                        smooth_low,
+                        |d| d.speed(0.01).range(0.0..=1.0),
+                    );
+                    drag_field(
+                        ui,
+                        egui_phosphor::regular::TIMER,
+                        "Smooth high",
+                        h::MOVE_SMOOTH_HIGH,
+                        smooth_high,
+                        |d| d.speed(0.01).range(0.0..=1.0),
+                    );
+                    drag_field(
+                        ui,
+                        egui_phosphor::regular::TIMER,
                         "Smooth delay ms",
                         h::MOVE_SMOOTH_DELAY,
                         smooth_delay_ms,
@@ -227,12 +222,10 @@ pub fn paint_edit_fields(
             tip_section(ui, |ui| {
                 var_ref_field(
                     ui,
+                    egui_phosphor::regular::CHAT_TEXT,
                     "Message",
                     message,
-                    VarTheme {
-                        known_vars,
-                        is_dark,
-                    },
+                    *theme,
                     h::PAUSE_MESSAGE,
                     W_TEXT,
                     active_macro,
@@ -240,7 +233,11 @@ pub fn paint_edit_fields(
             });
             tip_section(ui, |ui| {
                 ui.horizontal(|ui| {
-                    help::label(ui, "Continue keys (one per line)", h::PAUSE_CONTINUE);
+                    help::label(
+                        ui,
+                        egui_phosphor::regular::KEYBOARD,
+                        "Continue keys (one per line)",
+                    );
                     if crate::widgets::record_icon_button(
                         ui,
                         "Record continue chord",
@@ -251,7 +248,7 @@ pub fn paint_edit_fields(
                         hotkey_record.open(macro_hotkeys);
                     }
                 });
-                string_list_field(ui, "", continue_key, h::PAUSE_CONTINUE);
+                string_list_field(ui, "", "", continue_key, h::PAUSE_CONTINUE);
             });
             tip_wrapped_section(ui, |ui| {
                 help::tip(
@@ -271,23 +268,26 @@ pub fn paint_edit_fields(
             // Stack vertically; path wraps so long executables stay inside the tip.
             if !*previous {
                 tip_section(ui, |ui| {
-                    crate::widgets::text_field_width(
+                    crate::widgets::text_field_opts(
                         ui,
+                        crate::model_icons::WINDOW,
                         "Window title",
                         h::FOCUS_TITLE,
                         window_title,
-                        f32::INFINITY,
+                        crate::widgets::TextFieldOpts {
+                            width: f32::INFINITY,
+                        },
                     );
                     let mut pick = false;
                     ui.horizontal(|ui| {
-                        help::label(ui, "Process path", h::FOCUS_PROCESS);
+                        help::label(ui, egui_phosphor::regular::TERMINAL_WINDOW, "Process path");
                         crate::icon_cache::paint_leading_process_icon(
                             ui,
-                            icons,
+                            paint.icons,
                             process_path,
                             window_title,
                         );
-                        if pick_icon_btn(ui).clicked() {
+                        if pick_icon_btn(ui, crate::model_icons::WINDOW).clicked() {
                             pick = true;
                         }
                     });
@@ -315,7 +315,13 @@ pub fn paint_edit_fields(
         }
         ActionKind::RunMacro { macro_name } => {
             tip_wrapped_section(ui, |ui| {
-                if picker_display_row(ui, "Macro", h::RUN_MACRO, macro_name.as_str()) {
+                if picker_display_row(
+                    ui,
+                    crate::model_icons::MACRO,
+                    "Macro",
+                    h::RUN_MACRO,
+                    macro_name.as_str(),
+                ) {
                     *picker = ActivePicker::Macro {
                         search: String::new(),
                         value: macro_name.clone(),
@@ -326,7 +332,13 @@ pub fn paint_edit_fields(
         }
         ActionKind::SetVariable { assignments } => {
             tip_section(ui, |ui| {
-                assignments_editor(ui, assignments, known_vars, is_dark, active_macro);
+                assignments_editor(
+                    ui,
+                    assignments,
+                    theme.known_vars,
+                    theme.is_dark,
+                    active_macro,
+                );
             });
         }
         ActionKind::SaveVariable {
@@ -338,21 +350,20 @@ pub fn paint_edit_fields(
             tip_wrapped_section(ui, |ui| {
                 var_pills::var_name_text_edit(
                     ui,
+                    egui_phosphor::regular::BRACKETS_CURLY,
                     "Variable",
                     variable_name,
-                    known_vars,
-                    is_dark,
+                    theme.known_vars,
+                    theme.is_dark,
                     W_VAR,
                     h::SAVE_VAR,
                 );
                 var_ref_field(
                     ui,
+                    egui_phosphor::regular::FOLDER,
                     "Destination",
                     destination,
-                    VarTheme {
-                        known_vars,
-                        is_dark,
-                    },
+                    *theme,
                     h::SAVE_DEST,
                     W_VAR,
                     active_macro,
@@ -367,7 +378,14 @@ pub fn paint_edit_fields(
             });
         }
         ActionKind::Loop { name, count, .. } => {
-            edit_control_flow::paint_loop(ui, name, count, known_vars, is_dark, active_macro);
+            edit_control_flow::paint_loop(
+                ui,
+                name,
+                count,
+                theme.known_vars,
+                theme.is_dark,
+                active_macro,
+            );
         }
         ActionKind::While {
             condition,
@@ -378,13 +396,19 @@ pub fn paint_edit_fields(
                 ui,
                 condition,
                 max_iterations,
-                known_vars,
-                is_dark,
+                theme.known_vars,
+                theme.is_dark,
                 active_macro,
             );
         }
         ActionKind::Conditional { condition, .. } => {
-            edit_control_flow::paint_conditional(ui, condition, known_vars, is_dark, active_macro);
+            edit_control_flow::paint_conditional(
+                ui,
+                condition,
+                theme.known_vars,
+                theme.is_dark,
+                active_macro,
+            );
         }
         ActionKind::ForEachRow {
             name,
@@ -401,187 +425,100 @@ pub fn paint_edit_fields(
                     start_row,
                     end_row,
                 },
-                VarTheme {
-                    known_vars,
-                    is_dark,
-                },
+                *theme,
                 active_macro,
             );
         }
         ActionKind::ForEachCell { name, cells, .. } => {
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Name", h::NAME, name);
+                text_field(ui, egui_phosphor::regular::TEXT_T, "Name", h::NAME, name);
             });
             tip_section(ui, |ui| {
-                cells_picker_row(
+                cells_picker_row(ui, &mut *paint, cells, picker);
+                paint_coord_preview(
                     ui,
-                    &mut CatalogPaint {
-                        catalog,
-                        icons,
-                        previews,
-                    },
+                    paint.catalog,
+                    paint.previews,
                     cells,
-                    picker,
+                    PreviewKind::SearchArea,
                 );
-                paint_coord_preview(ui, catalog, previews, cells, PreviewKind::SearchArea);
             });
         }
-        ActionKind::ImageSearch {
-            name,
-            targets,
-            target_tags,
-            search_area,
-            tolerance,
-            blur,
-            match_method,
-            sort_by,
-            sort_then,
-            tag_priority,
-            detection,
-        } => {
-            edit_detect::paint_image_search_fields(
-                ui,
-                &mut CatalogPaint {
-                    catalog,
-                    icons,
-                    previews,
-                },
-                picker,
-                VarTheme {
-                    known_vars,
-                    is_dark,
-                },
-                edit_detect::ImageSearchFields {
-                    name,
-                    targets,
-                    target_tags,
-                    search_area,
-                    tolerance,
-                    blur,
-                    match_method,
-                    sort_by,
-                    sort_then,
-                    tag_priority,
-                    detection,
-                },
-            );
+        ActionKind::ImageSearch(d) => {
+            edit_detect::paint_image_search_fields(ui, &mut *paint, picker, *theme, d);
         }
-        ActionKind::Ocr {
-            name,
-            target,
-            search_area,
-            output_variable,
-            match_mode,
-            case_sensitive,
-            blur,
-            min_threshold,
-            resize,
-            grayscale,
-            threshold_otsu,
-            threshold_invert,
-            detection,
-        } => {
-            edit_detect::paint_ocr_fields(
-                ui,
-                &mut CatalogPaint {
-                    catalog,
-                    icons,
-                    previews,
-                },
-                picker,
-                VarTheme {
-                    known_vars,
-                    is_dark,
-                },
-                active_macro,
-                edit_detect::OcrFields {
-                    name,
-                    target,
-                    search_area,
-                    output_variable,
-                    match_mode,
-                    case_sensitive,
-                    blur,
-                    min_threshold,
-                    resize,
-                    grayscale,
-                    threshold_otsu,
-                    threshold_invert,
-                    detection,
-                },
-            );
+        ActionKind::Ocr(d) => {
+            edit_detect::paint_ocr_fields(ui, &mut *paint, picker, *theme, active_macro, d);
         }
-        ActionKind::FindPixel {
-            name,
-            search_area,
-            target_color,
-            color_tolerance,
-            detection,
-        } => {
+        ActionKind::FindPixel(d) => {
             edit_detect::paint_find_pixel_fields(
                 ui,
-                &mut CatalogPaint {
-                    catalog,
-                    icons,
-                    previews,
-                },
+                &mut *paint,
                 picker,
-                VarTheme {
-                    known_vars,
-                    is_dark,
-                },
+                *theme,
                 active_macro,
                 screen_click,
-                edit_detect::FindPixelFields {
-                    name,
-                    search_area,
-                    target_color,
-                    color_tolerance,
-                    detection,
-                },
+                d,
             );
         }
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
                 wrap_unit(ui, |ui| {
-                    help::label(ui, "Program", h::NAV_PROGRAM);
-                    let programs: Vec<String> = catalog.program_names().cloned().collect();
+                    help::label(ui, crate::model_icons::PROGRAM, "Program");
+                    let programs: Vec<String> = paint.catalog.program_names().cloned().collect();
                     let mut current = data.program.clone();
-                    let mut option_icon =
-                        |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
-                    searchable_combo_with(
-                        ui,
-                        "nav_program",
-                        &mut current,
-                        &programs,
-                        sqyre_domain::EMPTY_NONE,
-                        Some(sqyre_domain::EMPTY_NONE),
-                        None,
-                        None,
-                        Some(&mut option_icon),
+                    let mut option_icon = |ctx: &egui::Context, name: &str| {
+                        paint.icons.for_program(ctx, paint.catalog, name)
+                    };
+                    help::tip(
+                        searchable_combo(
+                            ui,
+                            "nav_program",
+                            &mut current,
+                            SearchableComboOpts {
+                                options: &programs,
+                                empty_text: sqyre_domain::EMPTY_NONE,
+                                none_label: Some(sqyre_domain::EMPTY_NONE),
+                                width: None,
+                                on_option_hover: None,
+                                option_icon: Some(&mut option_icon),
+                                option_label: None,
+                            },
+                        ),
+                        h::NAV_PROGRAM,
                     );
                     if current != data.program {
                         data.program = current;
                     }
                 });
                 wrap_unit(ui, |ui| {
-                    help::label(ui, "Atlas", h::NAV_ATLAS);
+                    help::label(ui, crate::model_icons::ATLAS, "Atlas");
                     let atlases: Vec<String> = if data.program.trim().is_empty() {
                         Vec::new()
                     } else {
-                        catalog
+                        paint
+                            .catalog
                             .get(data.program.trim())
                             .map(|p| p.atlases.keys().cloned().collect())
                             .unwrap_or_default()
                     };
                     let mut current = data.atlas.clone();
-                    searchable_combo(
-                        ui,
-                        "nav_atlas",
-                        &mut current,
-                        &atlases,
-                        sqyre_domain::EMPTY_NONE,
-                        None,
+                    help::tip(
+                        searchable_combo(
+                            ui,
+                            "nav_atlas",
+                            &mut current,
+                            SearchableComboOpts {
+                                options: &atlases,
+                                empty_text: sqyre_domain::EMPTY_NONE,
+                                none_label: None,
+                                width: None,
+                                on_option_hover: None,
+                                option_icon: None,
+                                option_label: None,
+                            },
+                        ),
+                        h::NAV_ATLAS,
                     );
                     if current != data.atlas {
                         data.atlas = current;
@@ -589,32 +526,58 @@ pub fn paint_edit_fields(
                 });
             });
             tip_section(ui, |ui| {
-                string_list_field(ui, "Chord up", &mut data.chords.up, h::NAV_CHORD_UP);
-                string_list_field(ui, "Chord down", &mut data.chords.down, h::NAV_CHORD_DOWN);
-                string_list_field(ui, "Chord left", &mut data.chords.left, h::NAV_CHORD_LEFT);
                 string_list_field(
                     ui,
+                    egui_phosphor::regular::ARROW_UP,
+                    "Chord up",
+                    &mut data.chords.up,
+                    h::NAV_CHORD_UP,
+                );
+                string_list_field(
+                    ui,
+                    egui_phosphor::regular::ARROW_DOWN,
+                    "Chord down",
+                    &mut data.chords.down,
+                    h::NAV_CHORD_DOWN,
+                );
+                string_list_field(
+                    ui,
+                    egui_phosphor::regular::ARROW_LEFT,
+                    "Chord left",
+                    &mut data.chords.left,
+                    h::NAV_CHORD_LEFT,
+                );
+                string_list_field(
+                    ui,
+                    egui_phosphor::regular::ARROW_RIGHT,
                     "Chord right",
                     &mut data.chords.right,
                     h::NAV_CHORD_RIGHT,
                 );
                 string_list_field(
                     ui,
+                    egui_phosphor::regular::CHECK,
                     "Chord select",
                     &mut data.chords.select,
                     h::NAV_CHORD_SELECT,
                 );
-                string_list_field(ui, "Chord back", &mut data.chords.back, h::NAV_CHORD_BACK);
+                string_list_field(
+                    ui,
+                    egui_phosphor::regular::ARROW_COUNTER_CLOCKWISE,
+                    "Chord back",
+                    &mut data.chords.back,
+                    h::NAV_CHORD_BACK,
+                );
             });
             tip_section(ui, |ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "Nav Key children: nest Navigate Key actions under this node in the tree.",
-                    )
-                    .small()
-                    .weak(),
-                )
-                .on_hover_text(h::NAV_KEY_CHILDREN);
+                help::tip(
+                    help::label(
+                        ui,
+                        egui_phosphor::regular::TREE_STRUCTURE,
+                        "Nav Key children",
+                    ),
+                    h::NAV_KEY_CHILDREN,
+                );
             });
             tip_advanced(ui, |ui| {
                 tip_wrapped_section(ui, |ui| {
@@ -645,6 +608,7 @@ pub fn paint_edit_fields(
                 tip_wrapped_section(ui, |ui| {
                     combo_enum(
                         ui,
+                        egui_phosphor::regular::MOUSE,
                         "Select device",
                         h::NAV_SELECT_DEVICE,
                         &mut data.select.device,
@@ -653,15 +617,23 @@ pub fn paint_edit_fields(
                     );
                     combo_enum(
                         ui,
+                        egui_phosphor::regular::MOUSE,
                         "Select button",
                         h::NAV_SELECT_BUTTON,
                         &mut data.select.button,
                         MouseButton::ALL,
                         MouseButton::label,
                     );
-                    text_field(ui, "Select key", h::NAV_SELECT_KEY, &mut data.select.key);
+                    text_field(
+                        ui,
+                        egui_phosphor::regular::KEY,
+                        "Select key",
+                        h::NAV_SELECT_KEY,
+                        &mut data.select.key,
+                    );
                     combo_enum(
                         ui,
+                        egui_phosphor::regular::HAND_POINTING,
                         "Select press mode",
                         h::NAV_SELECT_PRESS,
                         &mut data.select.press_mode,
@@ -670,9 +642,16 @@ pub fn paint_edit_fields(
                     );
                 });
                 tip_wrapped_section(ui, |ui| {
-                    text_field(ui, "In atlas", h::NAV_IN_ATLAS, &mut data.inputs.atlas);
+                    text_field(
+                        ui,
+                        crate::model_icons::ATLAS,
+                        "In atlas",
+                        h::NAV_IN_ATLAS,
+                        &mut data.inputs.atlas,
+                    );
                     num_text_field(
                         ui,
+                        egui_phosphor::regular::ROWS,
                         "In row",
                         h::NAV_IN_ROW,
                         &mut data.inputs.row,
@@ -680,6 +659,7 @@ pub fn paint_edit_fields(
                     );
                     num_text_field(
                         ui,
+                        egui_phosphor::regular::COLUMNS,
                         "In col",
                         h::NAV_IN_COL,
                         &mut data.inputs.col,
@@ -687,6 +667,7 @@ pub fn paint_edit_fields(
                     );
                     text_field(
                         ui,
+                        crate::model_icons::COLLECTION,
                         "In collection",
                         h::NAV_IN_COLLECTION,
                         &mut data.inputs.collection,
@@ -695,30 +676,35 @@ pub fn paint_edit_fields(
                 tip_wrapped_section(ui, |ui| {
                     text_field(
                         ui,
+                        egui_phosphor::regular::BRACKETS_CURLY,
                         "Output ref",
                         h::NAV_OUT_REF,
                         &mut data.outputs.output_ref,
                     );
                     text_field(
                         ui,
+                        crate::model_icons::ATLAS,
                         "Output atlas",
                         h::NAV_OUT_ATLAS,
                         &mut data.outputs.output_atlas,
                     );
                     text_field(
                         ui,
+                        egui_phosphor::regular::ROWS,
                         "Output row",
                         h::NAV_OUT_ROW,
                         &mut data.outputs.output_row,
                     );
                     text_field(
                         ui,
+                        egui_phosphor::regular::COLUMNS,
                         "Output col",
                         h::NAV_OUT_COL,
                         &mut data.outputs.output_col,
                     );
                     text_field(
                         ui,
+                        crate::model_icons::COLLECTION,
                         "Output collection",
                         h::NAV_OUT_COLLECTION,
                         &mut data.outputs.output_collection,
@@ -733,14 +719,20 @@ pub fn paint_edit_fields(
             subactions: _,
         } => {
             tip_wrapped_section(ui, |ui| {
-                text_field(ui, "Name", h::NAME, name);
+                text_field(ui, egui_phosphor::regular::TEXT_T, "Name", h::NAME, name);
                 help::tip(
                     ui.checkbox(exit, "Exit Navigate Select after branch"),
                     h::NAV_KEY_EXIT,
                 );
             });
             tip_section(ui, |ui| {
-                string_list_field(ui, "Chord", chord, h::NAV_KEY_CHORD);
+                string_list_field(
+                    ui,
+                    egui_phosphor::regular::KEYBOARD,
+                    "Chord",
+                    chord,
+                    h::NAV_KEY_CHORD,
+                );
             });
         }
     }
@@ -763,7 +755,7 @@ fn targets_editor(
     wrapped_row(ui, |ui| {
         wrap_unit(ui, |ui| {
             help::tip(ui.label(egui::RichText::new("Items").strong()), h::IS_ITEMS);
-            ui.label(egui::RichText::new(format!("({})", targets.len())).weak());
+            crate::widgets::count_suffix(ui, targets.len());
             if !target_tags.is_empty() {
                 help::tip(
                     ui.label(
@@ -773,11 +765,7 @@ fn targets_editor(
                 );
             }
         });
-        if ui
-            .button(egui::RichText::new("Add / edit…").color(theme::MACRO_START))
-            .on_hover_text(h::IS_ITEMS)
-            .clicked()
-        {
+        if crate::widgets::icon_button(ui, crate::model_icons::ITEM, h::IS_ITEMS).clicked() {
             *picker = ActivePicker::Items {
                 search: String::new(),
                 staged: targets.clone(),
@@ -786,6 +774,7 @@ fn targets_editor(
         }
         combo_enum(
             ui,
+            egui_phosphor::regular::SORT_ASCENDING,
             "Sort by",
             h::IS_SEARCH_SORTING,
             sort_by,
@@ -795,6 +784,7 @@ fn targets_editor(
         if *sort_by != ItemSortBy::Manual {
             combo_enum(
                 ui,
+                egui_phosphor::regular::ARROWS_DOWN_UP,
                 "Then",
                 h::IS_SORT_THEN,
                 sort_then,
@@ -822,10 +812,11 @@ fn targets_editor(
             crate::widgets::TagChipOptions {
                 enabled: true,
                 show_add_button: true,
+                label_name: None,
                 draft_hover: Some(h::IS_TAG_PRIORITY),
-                draft_first: false,
                 reorderable: true,
                 signed_filters: false,
+                single_row: false,
             },
         );
         let _ = edit;
@@ -954,8 +945,8 @@ fn item_tag_suggestions(
     tags
 }
 
-fn pick_icon_btn(ui: &mut egui::Ui) -> egui::Response {
-    crate::widgets::icon_button(ui, "☰", "Pick…")
+fn pick_icon_btn(ui: &mut egui::Ui, icon: &str) -> egui::Response {
+    crate::widgets::icon_button(ui, icon, "Pick…")
 }
 
 /// Soft-wrap row count for a process path in the Focus Window tip.
@@ -967,17 +958,26 @@ fn path_wrap_rows(available_width: f32, path: &str) -> usize {
     len.div_ceil(chars_per_line).clamp(1, 4)
 }
 
-/// Label + read-only value + pick button. Returns true when pick was clicked.
-fn picker_display_row(ui: &mut egui::Ui, label: &str, help_text: &str, display: &str) -> bool {
+/// Icon label + read-only value + pick button. Returns true when pick was clicked.
+fn picker_display_row(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    help_text: &str,
+    display: &str,
+) -> bool {
     let mut clicked = false;
     wrap_unit(ui, |ui| {
-        help::label(ui, label, help_text);
-        ui.label(if display.is_empty() {
-            sqyre_domain::EMPTY_UNSET
-        } else {
-            display
-        });
-        if pick_icon_btn(ui).clicked() {
+        help::label(ui, icon, label);
+        help::tip(
+            ui.label(if display.is_empty() {
+                sqyre_domain::EMPTY_UNSET
+            } else {
+                display
+            }),
+            help_text,
+        );
+        if pick_icon_btn(ui, icon).clicked() {
             clicked = true;
         }
     });
@@ -1001,7 +1001,7 @@ fn paint_coord_preview(
             force = true;
         }
     });
-    previews.paint_for_coordinate_ref(ui, catalog, coord, kind, force);
+    previews.paint_for_coordinate_ref(ui, catalog, coord, kind, force, true);
 }
 
 fn point_picker_row(
@@ -1012,6 +1012,7 @@ fn point_picker_row(
 ) {
     coord_picker_row(
         ui,
+        crate::model_icons::POINT,
         "Point",
         h::MOVE_POINT,
         paint,
@@ -1029,6 +1030,7 @@ fn search_area_picker_row(
 ) {
     coord_picker_row(
         ui,
+        crate::model_icons::SEARCH_AREA,
         "Search area",
         h::SEARCH_AREA,
         paint,
@@ -1046,6 +1048,7 @@ fn cells_picker_row(
 ) {
     coord_picker_row(
         ui,
+        crate::model_icons::COLLECTION,
         "Cells",
         h::FOREACH_CELLS,
         paint,
@@ -1055,8 +1058,13 @@ fn cells_picker_row(
     );
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "coord picker row: icon, label, help, paint context, and picker state"
+)]
 fn coord_picker_row(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     paint: &mut CatalogPaint<'_>,
@@ -1072,7 +1080,7 @@ fn coord_picker_row(
     let display = coord.display_label();
     let validation = coord_unset_validation(kind, coord);
     ui.horizontal(|ui| {
-        help::label(ui, label, help_text);
+        help::label(ui, icon, label);
         if let Some(prog) = coord.program() {
             crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
         }
@@ -1083,14 +1091,27 @@ fn coord_picker_row(
         } else {
             ui.visuals().text_color()
         };
-        let resp = ui.label(egui::RichText::new(display).monospace().color(color));
+        let trailing_width = ui.spacing().interact_size.x * 2.0 + ui.spacing().item_spacing.x * 2.0;
+        let label_width = (ui.available_width() - trailing_width).max(0.0);
+        let resp = ui
+            .scope(|ui| {
+                ui.set_max_width(label_width);
+                ui.add(
+                    egui::Label::new(egui::RichText::new(display).monospace().color(color))
+                        .truncate()
+                        .show_tooltip_when_elided(false),
+                )
+            })
+            .inner;
         if !coord.is_empty() {
-            attach_coord_hover(ui, &resp, catalog, previews, coord, kind);
+            attach_coord_hover(ui, &resp, catalog, previews, coord, kind, help_text);
         } else if let Some(tip) = var_pills::entry_validation_tip(&validation) {
             let _ = resp.on_hover_text(tip);
+        } else {
+            help::tip(resp, help_text);
         }
         var_pills::paint_entry_validation_icon(ui, &validation);
-        if pick_icon_btn(ui).clicked() {
+        if pick_icon_btn(ui, icon).clicked() {
             *picker = ActivePicker::Coord {
                 kind,
                 search: String::new(),
@@ -1125,6 +1146,7 @@ fn attach_coord_hover(
     previews: &mut PreviewTooltipCache,
     coord: &CoordinateRef,
     kind: CoordKind,
+    help: &str,
 ) {
     let preview_kind = if coord.is_collection() {
         PreviewKind::Collection
@@ -1134,11 +1156,16 @@ fn attach_coord_hover(
             CoordKind::SearchArea => PreviewKind::SearchArea,
         }
     };
-    previews.show_for_coordinate_ref(ui, response, catalog, coord, preview_kind);
+    previews.show_for_coordinate_ref(ui, response, catalog, coord, preview_kind, help);
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "field editor: icon, label, help, value, and shared var theme context"
+)]
 pub(super) fn scalar_field(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut ScalarValue,
@@ -1146,9 +1173,40 @@ pub(super) fn scalar_field(
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
+    scalar_value_edit(
+        ui,
+        icon,
+        label,
+        help_text,
+        value,
+        known_vars,
+        is_dark,
+        active_macro,
+        validate_numeric_expression,
+        |v, text| *v = ScalarValue::parse_edit(&text),
+    );
+}
+
+/// Shared scalar edit body: validated var-ref text field + commit on change.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "field editor: icon, label, help, value, theme, and validation/commit"
+)]
+fn scalar_value_edit(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    help_text: &str,
+    value: &mut ScalarValue,
+    known_vars: &KnownVariableNames,
+    is_dark: bool,
+    active_macro: Option<&Macro>,
+    validate: fn(&str, Option<&Macro>) -> EntryValidation,
+    commit: impl Fn(&mut ScalarValue, String),
+) {
     let mut text = value.as_display();
     let before = text.clone();
-    let validation = validate_numeric_expression(&text, active_macro);
+    let validation = validate(&text, active_macro);
     var_pills::validated_var_ref_edit(
         ui,
         label,
@@ -1160,18 +1218,24 @@ pub(super) fn scalar_field(
         VarFieldOpts {
             desired_width: W_VAR,
             validation: &validation,
+            icon,
             help: help_text,
         },
     );
     if text != before {
-        *value = ScalarValue::parse_edit(&text);
+        commit(value, text);
     }
 }
 
 /// Condition L/R operands: plain text (including spaces) is allowed; only
 /// arithmetic-looking values are expression-checked — same rules as Set value.
+#[expect(
+    clippy::too_many_arguments,
+    reason = "field editor: icon, label, help, value, and shared var theme context"
+)]
 fn condition_operand_field(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     help_text: &str,
     value: &mut ScalarValue,
@@ -1179,30 +1243,27 @@ fn condition_operand_field(
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
-    let mut text = value.as_display();
-    let before = text.clone();
-    let validation = validate_set_variable_value(&text, active_macro);
-    var_pills::validated_var_ref_edit(
+    scalar_value_edit(
         ui,
+        icon,
         label,
-        &mut text,
-        VarTheme {
-            known_vars,
-            is_dark,
-        },
-        VarFieldOpts {
-            desired_width: W_VAR,
-            validation: &validation,
-            help: help_text,
-        },
+        help_text,
+        value,
+        known_vars,
+        is_dark,
+        active_macro,
+        validate_set_variable_value,
+        |v, text| *v = ScalarValue::String(text),
     );
-    if text != before {
-        *value = ScalarValue::String(text);
-    }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "var-ref editor: icon, label, theme, help, width, and validation context"
+)]
 pub(super) fn var_ref_field(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     value: &mut String,
     theme: VarTheme<'_>,
@@ -1219,15 +1280,22 @@ pub(super) fn var_ref_field(
         VarFieldOpts {
             desired_width,
             validation: &validation,
+            icon,
             help: help_text,
         },
     );
 }
 
-fn string_list_field(ui: &mut egui::Ui, label: &str, values: &mut Vec<String>, help_text: &str) {
+fn string_list_field(
+    ui: &mut egui::Ui,
+    icon: &str,
+    label: &str,
+    values: &mut Vec<String>,
+    help_text: &str,
+) {
     let mut text = values.join("\n");
     if !label.is_empty() {
-        help::label(ui, label, help_text);
+        help::label(ui, icon, label);
     }
     if help::tip(
         ui.add(
@@ -1255,6 +1323,7 @@ fn set_value_edit_text(value: &ScalarValue) -> String {
 
 fn yaml_value_field(
     ui: &mut egui::Ui,
+    icon: &str,
     label: &str,
     value: &mut ScalarValue,
     known_vars: &KnownVariableNames,
@@ -1267,7 +1336,6 @@ fn yaml_value_field(
     // Expression builder toolbar.
     let mut insert: Option<String> = None;
     ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
         ui.menu_button("f(x)", |ui| {
             for f in EXPRESSION_FUNCTIONS {
                 if ui.button(format!("{f}( )")).clicked() {
@@ -1309,6 +1377,7 @@ fn yaml_value_field(
         VarFieldOpts {
             desired_width: f32::INFINITY,
             validation: &validation,
+            icon,
             help: h::SET_VALUE,
         },
     );
@@ -1343,7 +1412,13 @@ pub(super) fn condition_editor(
     extra: impl FnOnce(&mut egui::Ui),
 ) {
     tip_wrapped_section(ui, |ui| {
-        text_field(ui, "Name", h::NAME, &mut condition.name);
+        text_field(
+            ui,
+            egui_phosphor::regular::TEXT_T,
+            "Name",
+            h::NAME,
+            &mut condition.name,
+        );
         let mut all = condition.match_mode != MatchMode::Any;
         if help::tip(
             ui.checkbox(&mut all, "Match all (uncheck = any)"),
@@ -1427,37 +1502,53 @@ fn repeat_mode_label(ui: &egui::Ui, mode: RepeatMode) -> egui::WidgetText {
     job.into()
 }
 
+fn repeat_mode_plain(mode: RepeatMode) -> &'static str {
+    match mode {
+        RepeatMode::Once => "Once",
+        RepeatMode::WaitUntilFound => "Wait Until Found",
+        RepeatMode::WaitWhileFound => "Wait While Found",
+        RepeatMode::RepeatUntilFound => "Repeat Until Found",
+        RepeatMode::RepeatWhileFound => "Repeat While Found",
+    }
+}
+
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     wrap_unit(ui, |ui| {
-        help::label(ui, "Repeat mode", h::REPEAT_MODE);
-        help::tip(
-            egui::ComboBox::from_id_salt("Repeat mode")
-                .selected_text(repeat_mode_label(ui, wait.repeat_mode))
-                .show_ui(ui, |ui| {
-                    for mode in [
-                        RepeatMode::Once,
-                        RepeatMode::WaitUntilFound,
-                        RepeatMode::WaitWhileFound,
-                        RepeatMode::RepeatUntilFound,
-                        RepeatMode::RepeatWhileFound,
-                    ] {
-                        if ui
-                            .selectable_label(wait.repeat_mode == mode, repeat_mode_label(ui, mode))
-                            .clicked()
-                        {
-                            wait.repeat_mode = mode;
-                        }
+        help::label(ui, egui_phosphor::regular::REPEAT, "Repeat mode");
+        let selected = repeat_mode_label(ui, wait.repeat_mode);
+        let selected_plain = repeat_mode_plain(wait.repeat_mode);
+        let response = egui::ComboBox::from_id_salt("Repeat mode")
+            .selected_text(selected)
+            .truncate()
+            .show_ui(ui, |ui| {
+                for mode in [
+                    RepeatMode::Once,
+                    RepeatMode::WaitUntilFound,
+                    RepeatMode::WaitWhileFound,
+                    RepeatMode::RepeatUntilFound,
+                    RepeatMode::RepeatWhileFound,
+                ] {
+                    if ui
+                        .selectable_label(wait.repeat_mode == mode, repeat_mode_label(ui, mode))
+                        .clicked()
+                    {
+                        wait.repeat_mode = mode;
                     }
-                })
-                .response,
-            h::REPEAT_MODE,
-        );
+                }
+            })
+            .response;
+        if crate::widgets::elide::combo_text_elided(ui, &response, selected_plain) {
+            response.on_hover_text(format!("{selected_plain}\n\n{}", h::REPEAT_MODE));
+        } else {
+            help::tip(response, h::REPEAT_MODE);
+        }
     });
     // Once → timing off; wait modes → timing only; repeat modes → timing + max iterations.
     let timing_enabled = wait.uses_timing();
     let max_enabled = wait.uses_max_iterations();
     drag_field_enabled(
         ui,
+        egui_phosphor::regular::CLOCK,
         "Wait seconds",
         h::WAIT_SECONDS,
         &mut wait.wait_til_found_seconds,
@@ -1466,6 +1557,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     );
     drag_field_enabled(
         ui,
+        egui_phosphor::regular::TIMER,
         "Interval ms",
         h::WAIT_INTERVAL,
         &mut wait.wait_til_found_interval_ms,
@@ -1477,6 +1569,7 @@ fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
     );
     drag_field_enabled(
         ui,
+        egui_phosphor::regular::REPEAT,
         "Max iterations",
         h::WAIT_MAX_ITER,
         &mut wait.max_iterations,
@@ -1493,6 +1586,7 @@ fn coords_editor(
 ) {
     var_pills::var_name_text_edit(
         ui,
+        egui_phosphor::regular::CROSSHAIR,
         "Output X",
         &mut coords.output_x_variable,
         known_vars,
@@ -1502,6 +1596,7 @@ fn coords_editor(
     );
     var_pills::var_name_text_edit(
         ui,
+        egui_phosphor::regular::CROSSHAIR,
         "Output Y",
         &mut coords.output_y_variable,
         known_vars,
@@ -1514,6 +1609,7 @@ fn coords_editor(
 fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
     combo_enum(
         ui,
+        egui_phosphor::regular::SQUARES_FOUR,
         "Grouping",
         h::ORDER_GROUPING,
         &mut order.grouping,
@@ -1522,6 +1618,7 @@ fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
     );
     combo_str_labeled(
         ui,
+        egui_phosphor::regular::ARROWS_LEFT_RIGHT,
         "Horizontal",
         h::ORDER_HORIZONTAL,
         &mut order.horizontal,
@@ -1530,6 +1627,7 @@ fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
     );
     combo_str_labeled(
         ui,
+        egui_phosphor::regular::ARROWS_DOWN_UP,
         "Vertical",
         h::ORDER_VERTICAL,
         &mut order.vertical,
@@ -1542,20 +1640,12 @@ fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
 fn list_header(ui: &mut egui::Ui, title: &str, count: usize, add_help: &str) -> bool {
     let mut add = false;
     // Content-sized row (no `set_min_width(available)`) so the edit tip can
-    // shrink horizontally — see egui-window-size-ratchet.
+    // shrink horizontally — see egui-layout-gotchas.
     ui.horizontal(|ui| {
         ui.label(title);
-        ui.label(egui::RichText::new(format!("({count})")).weak());
-        let btn = ui
-            .add(egui::Button::new(egui::RichText::new("+").color(theme::MACRO_START)).small())
+        crate::widgets::count_suffix(ui, count);
+        let btn = crate::widgets::add_button(ui, &format!("Add {}", title.to_lowercase()), true)
             .on_hover_text(add_help);
-        btn.widget_info(|| {
-            egui::WidgetInfo::labeled(
-                egui::WidgetType::Button,
-                true,
-                format!("Add {}", title.to_lowercase()),
-            )
-        });
         if btn.clicked() {
             add = true;
         }
@@ -1593,6 +1683,7 @@ fn clauses_editor(
             let row = ui.horizontal(|ui| {
                 condition_operand_field(
                     ui,
+                    egui_phosphor::regular::FUNCTION,
                     "L",
                     h::CLAUSE_LEFT,
                     &mut clause.left,
@@ -1600,9 +1691,16 @@ fn clauses_editor(
                     is_dark,
                     active_macro,
                 );
-                combo_condition_operator(ui, "op", h::CLAUSE_OP, &mut clause.operator);
+                combo_condition_operator(
+                    ui,
+                    egui_phosphor::regular::EQUALS,
+                    "op",
+                    h::CLAUSE_OP,
+                    &mut clause.operator,
+                );
                 condition_operand_field(
                     ui,
+                    egui_phosphor::regular::FUNCTION,
                     "R",
                     h::CLAUSE_RIGHT,
                     &mut clause.right,
@@ -1642,6 +1740,7 @@ pub(super) fn list_columns_editor(
             let frame = theme::section_frame(ui.style()).show(ui, |ui| {
                 var_ref_field(
                     ui,
+                    egui_phosphor::regular::LIST_BULLETS,
                     "Source",
                     &mut col.source,
                     VarTheme {
@@ -1654,6 +1753,7 @@ pub(super) fn list_columns_editor(
                 );
                 var_pills::var_name_text_edit(
                     ui,
+                    egui_phosphor::regular::BRACKETS_CURLY,
                     "Output var",
                     &mut col.output_var,
                     known_vars,
@@ -1699,6 +1799,7 @@ fn assignments_editor(
             let frame = theme::section_frame(ui.style()).show(ui, |ui| {
                 var_pills::var_name_text_edit(
                     ui,
+                    egui_phosphor::regular::BRACKETS_CURLY,
                     "Variable",
                     &mut a.variable_name,
                     known_vars,
@@ -1708,6 +1809,7 @@ fn assignments_editor(
                 );
                 yaml_value_field(
                     ui,
+                    egui_phosphor::regular::FUNCTION,
                     "Value (text, ${ref}, or expression)",
                     &mut a.value,
                     known_vars,
@@ -1732,7 +1834,7 @@ fn assignments_editor(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{ActionId, PressState};
+    use sqyre_domain::PressState;
 
     #[test]
     fn parse_scalar_int_and_string() {
@@ -1791,12 +1893,9 @@ mod tests {
 
     #[test]
     fn apply_rejects_type_change() {
-        let mut live = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        };
+        let mut live = Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        });
         let draft = Action {
             id: live.id,
             kind: ActionKind::Click {

@@ -11,6 +11,7 @@ use eframe::egui::{self, Key, Modifiers, Order, Vec2};
 use sqyre_domain::{
     action_type_description, action_type_label, Action, ActionId, ActionKind, CoordinateRef, Macro,
 };
+use sqyre_persist::ProgramCatalog;
 use sqyre_ui_model::{action_pastel_color, split_display_params, ActionDisplay};
 use sqyre_validate::validate_action_persist;
 
@@ -383,6 +384,89 @@ fn tip_max_width(screen_w: f32) -> f32 {
     (screen_w * TIP_MAX_WIDTH_FRACTION).max(crate::widgets::FLOATER_MIN_COMPACT[0])
 }
 
+/// Comfortable prose column inside a view tip. Wrap-capable content
+/// (descriptions, captions, status text) claims at most this — letting it
+/// measure against `tip_max_width` made every tip balloon to half the window.
+const TIP_WRAP_W: f32 = 380.0;
+
+/// Floor for tips whose content is only a short line (avoids a sliver tip).
+const TIP_MIN_W: f32 = 200.0;
+
+/// Icon + chip padding allowance when measuring `extra` param rows as text.
+const PARAM_ICON_PAD: f32 = 36.0;
+
+/// Width the view-tip body wants: wrap-capable text capped at [`TIP_WRAP_W`],
+/// plus intrinsic room for content that cannot wrap (param rows, target grids,
+/// previews). Always ≤ `max_w`.
+fn tip_preferred_width(
+    ctx: &egui::Context,
+    action: &Action,
+    extra: &[&sqyre_ui_model::DisplayParam],
+    catalog: &ProgramCatalog,
+    max_w: f32,
+) -> f32 {
+    let type_key = action.type_key();
+    let font = egui::TextStyle::Small.resolve(ctx.global_style().as_ref());
+    let text_w = |s: String| {
+        ctx.fonts_mut(|f| f.layout_no_wrap(s, font.clone(), egui::Color32::WHITE))
+            .size()
+            .x
+    };
+    let mut w = text_w(action_type_description(type_key).to_owned())
+        .max(text_w(action_type_label(type_key).to_owned()) + 40.0)
+        .clamp(TIP_MIN_W, TIP_WRAP_W);
+    for p in extra {
+        w = w.max(text_w(format!("{}: {}", p.label, p.minimal())) + PARAM_ICON_PAD);
+    }
+    if crate::preview_tooltip::coordinate_ref_for_preview(action).is_some() {
+        w = w.max(crate::preview_tooltip::DISPLAY_MAX_W);
+    }
+    if let ActionKind::ImageSearch(d) = &action.kind {
+        if !d.targets.is_empty() || !d.target_tags.is_empty() {
+            let display = tree_chrome::cached_sorted_image_search_targets(
+                ctx,
+                catalog,
+                &d.targets,
+                &[],
+                d.sort_by,
+                d.sort_then,
+                &d.tag_priority,
+            );
+            // Widest grid the section paints: tag grids size as `display` when
+            // it exists, else as the largest tag group; the items grid uses
+            // `display.len()`. Mirror `paint_image_search_tooltip_thumbs_pub`.
+            let count = if display.is_empty() {
+                tree_chrome::image_search_tip_tag_groups(catalog, &d.target_tags)
+                    .iter()
+                    .map(|g| g.members.len())
+                    .max()
+                    .unwrap_or(0)
+            } else {
+                display.len()
+            };
+            if count > 0 {
+                let cell = crate::pickers::adaptive_icon_cell(
+                    count,
+                    max_w,
+                    crate::pickers::EDIT_CELL,
+                    crate::pickers::EDIT_CELL_MAX,
+                    crate::pickers::EDIT_GAP,
+                );
+                let cols = crate::pickers::grid_column_count_for_width(
+                    max_w,
+                    cell,
+                    crate::pickers::EDIT_GAP,
+                )
+                .min(count);
+                w = w.max(
+                    cols as f32 * cell + cols.saturating_sub(1) as f32 * crate::pickers::EDIT_GAP,
+                );
+            }
+        }
+    }
+    w.clamp(TIP_MIN_W, max_w)
+}
+
 /// True when the user is dragging any window edge/corner resize handle.
 fn edit_window_user_resized(ctx: &egui::Context, area_id: egui::Id) -> bool {
     let dragged = |id: egui::Id| {
@@ -478,6 +562,7 @@ pub(crate) fn show_action_view_tip(
     // to slide the tip over the hovered row (which would steal hover).
     let screen = crate::widgets::dialog_constrain_rect(ctx);
     let max_w = tip_max_width(screen.width());
+    let preferred_w = tip_preferred_width(ctx, action, &extra, catalog, max_w);
     let near_right = pointer.x + 14.0 + max_w > screen.right();
     let (pivot, pos) = if near_right {
         (egui::Align2::RIGHT_TOP, pointer + Vec2::new(-8.0, 14.0))
@@ -501,24 +586,28 @@ pub(crate) fn show_action_view_tip(
         .constrain_to(screen)
         .show(ctx, |ui| {
             egui::Frame::popup(ui.style())
-                .inner_margin(egui::Margin::symmetric(10, 8))
+                .inner_margin(egui::Margin::symmetric(8, 6))
                 .show(ui, |ui| {
                     // Area content is capped at last frame's size; lift both axes so
                     // the tip can grow up to the constrain rect before scrolling.
-                    ui.set_max_width(max_w);
+                    // Width uses the content-derived preferred width, not `max_w`,
+                    // so wrap-capable children (prose, captions, error labels)
+                    // cannot inflate the tip to the half-viewport cap.
+                    ui.set_max_width(preferred_w);
                     ui.set_max_height(max_body_h);
-                    // V-only: tip body wraps prose and icon grids to `max_w`.
+                    // V-only: tip body wraps prose and icon grids to the body width.
                     // Wheel claiming in `claim_view_tip_scroll` tracks Y offset.
-                    let out = crate::widgets::scroll_vertical()
-                        .id_salt("view_tip_body")
-                        .max_height(max_body_h)
-                        .vertical_scroll_offset(offset)
-                        .show(ui, |ui| {
-                            tree_chrome::paint_pill_pub(ui, label, pastel);
-                            ui.add_space(crate::theme::SPACE_4);
+                    let out = crate::widgets::show_scroll_edge_fit(
+                        ui,
+                        crate::widgets::scroll_vertical()
+                            .id_salt("view_tip_body")
+                            .max_height(max_body_h)
+                            .vertical_scroll_offset(offset),
+                        |ui| {
+                            tree_chrome::paint_pill_tip(ui, label, pastel);
                             ui.label(egui::RichText::new(description).small().weak());
                             if !summary_pills.is_empty() {
-                                ui.add_space(crate::theme::SPACE_4);
+                                crate::theme::add_section_gap(ui);
                                 sections::tip_wrapped_section(ui, |ui| {
                                     ui.spacing_mut().item_spacing =
                                         Vec2::splat(crate::theme::SPACE_2);
@@ -535,6 +624,7 @@ pub(crate) fn show_action_view_tip(
                                                 is_dark,
                                             },
                                             band_h,
+                                            true,
                                         );
                                     }
                                 });
@@ -542,17 +632,12 @@ pub(crate) fn show_action_view_tip(
                             if let Some((coord_ref, kind)) = coord_preview {
                                 sections::tip_section(ui, |ui| {
                                     previews.paint_for_coordinate_ref(
-                                        ui, catalog, &coord_ref, kind, false,
+                                        ui, catalog, &coord_ref, kind, false, false,
                                     );
                                 });
                             }
-                            if let ActionKind::ImageSearch {
-                                targets,
-                                target_tags,
-                                ..
-                            } = &action.kind
-                            {
-                                if !targets.is_empty() || !target_tags.is_empty() {
+                            if let ActionKind::ImageSearch(d) = &action.kind {
+                                if !d.targets.is_empty() || !d.target_tags.is_empty() {
                                     sections::tip_section(ui, |ui| {
                                         tree_chrome::paint_image_search_tooltip_thumbs_pub(
                                             ui, action, catalog, icons,
@@ -606,7 +691,8 @@ pub(crate) fn show_action_view_tip(
                                     }
                                 });
                             }
-                        });
+                        },
+                    );
                     let max_offset = (out.content_size.y - out.inner_rect.height()).max(0.0);
                     ui.ctx().data_mut(|d| {
                         d.insert_temp(
@@ -720,10 +806,7 @@ fn show_edit_window(
             .min_size([crate::widgets::FLOATER_MIN_COMPACT[0], fit_min_h])
             .frame(
                 egui::Frame::popup(ctx.global_style().as_ref())
-                    .inner_margin(egui::Margin::symmetric(
-                        crate::theme::SPACE_12 as i8,
-                        crate::theme::SPACE_8 as i8,
-                    )),
+                    .inner_margin(egui::Margin::symmetric(10, 6)),
             ),
         ctx,
         area_id,
@@ -758,12 +841,12 @@ fn show_edit_window(
                     active_macro: Some(&*macro_),
                 };
                 let scroll_h = ui.available_height().max(40.0).min(max_scroll_h);
-                let measured = crate::widgets::scroll_both()
-                    .id_salt("edit_fields")
-                    .auto_shrink([true, false])
-                    .max_width(ui.available_width())
-                    .max_height(scroll_h)
-                    .show(ui, |ui| {
+                let measured = crate::widgets::show_dialog_scroll_mod(
+                    ui,
+                    ui.available_width(),
+                    scroll_h,
+                    |s| s.id_salt("edit_fields").auto_shrink([true, false]),
+                    |ui| {
                         edit::paint_edit_fields(
                             ui,
                             &mut edit.draft,
@@ -868,15 +951,10 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
             targets,
             target_tags,
         } => {
-            if let ActionKind::ImageSearch {
-                targets: t,
-                target_tags: tags,
-                ..
-            } = &mut draft.kind
-            {
-                *t = targets;
+            if let ActionKind::ImageSearch(d) = &mut draft.kind {
+                d.targets = targets;
                 if let Some(next_tags) = target_tags {
-                    *tags = next_tags;
+                    d.target_tags = next_tags;
                 }
             }
         }
@@ -886,9 +964,9 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
             }
         }
         PickerResult::SearchArea(coord) => match &mut draft.kind {
-            ActionKind::ImageSearch { search_area, .. }
-            | ActionKind::Ocr { search_area, .. }
-            | ActionKind::FindPixel { search_area, .. } => *search_area = coord,
+            ActionKind::ImageSearch(d) => d.search_area = coord,
+            ActionKind::Ocr(d) => d.search_area = coord,
+            ActionKind::FindPixel(d) => d.search_area = coord,
             ActionKind::ForEachCell { cells, .. } => *cells = coord,
             _ => {}
         },
@@ -917,17 +995,12 @@ pub(crate) fn apply_picker_result(draft: &mut Action, result: PickerResult) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{
-        root_loop, ActionKind, CoordinateRef, DetectionBranch, PressState, ScalarValue,
-    };
+    use sqyre_domain::{root_loop, ActionKind, CoordinateRef, PressState, ScalarValue};
 
     fn wait_action(time: i64) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(time),
-            },
-        }
+        Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(time),
+        })
     }
 
     #[test]
@@ -988,13 +1061,10 @@ mod tests {
 
     #[test]
     fn validate_failure_keeps_edit() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: "a".into(),
-                state: PressState::Down,
-            },
-        };
+        let child = Action::new(ActionKind::Key {
+            key: "a".into(),
+            state: PressState::Down,
+        });
         let id = child.id;
         let mut root = root_loop(vec![child]);
         let live = root.find_by_id(id).unwrap().clone();
@@ -1019,36 +1089,29 @@ mod tests {
 
     #[test]
     fn image_search_saves_without_targets() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
-                name: String::new(),
+        let child = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 targets: vec!["Game~Item".into()],
-                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         let id = child.id;
         let mut root = root_loop(vec![child]);
         let live = root.find_by_id(id).unwrap().clone();
         let mut state = TooltipState::Hidden;
         state.open_edit(&live, egui::pos2(0.0, 0.0));
         if let TooltipState::Edit(edit) = &mut state {
-            if let ActionKind::ImageSearch { targets, .. } = &mut edit.draft.kind {
-                targets.clear();
+            if let ActionKind::ImageSearch(d) = &mut edit.draft.kind {
+                d.targets.clear();
             }
         }
         assert!(state.try_save_validated(&mut root, None, |_| {}));
         assert!(matches!(state, TooltipState::View { action_id } if action_id == id));
         match &root.find_by_id(id).unwrap().kind {
-            ActionKind::ImageSearch { targets, .. } => assert!(targets.is_empty()),
+            ActionKind::ImageSearch(d) => assert!(d.targets.is_empty()),
             other => panic!("unexpected {other:?}"),
         }
         assert!(sqyre_validate::validate_action(root.find_by_id(id).unwrap(), None).is_err());
@@ -1056,13 +1119,10 @@ mod tests {
 
     #[test]
     fn apply_recorded_key_updates_key_draft() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: String::new(),
-                state: PressState::Down,
-            },
-        };
+        let child = Action::new(ActionKind::Key {
+            key: String::new(),
+            state: PressState::Down,
+        });
         let mut state = TooltipState::Hidden;
         state.open_edit(&child, egui::pos2(0.0, 0.0));
         state.apply_recorded_key("f5".into());
@@ -1078,23 +1138,19 @@ mod tests {
     #[test]
     #[cfg(feature = "native-runtime")]
     fn apply_recorded_color_updates_find_pixel_draft() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::FindPixel {
-                name: String::new(),
-                search_area: CoordinateRef::default(),
+        let child = Action::new(ActionKind::FindPixel(Box::new(
+            sqyre_domain::FindPixelData {
                 target_color: "ffffff".into(),
-                color_tolerance: 0,
-                detection: DetectionBranch::default(),
+                ..Default::default()
             },
-        };
+        )));
         let mut state = TooltipState::Hidden;
         state.open_edit(&child, egui::pos2(0.0, 0.0));
         state.apply_recorded_color("ab12cd".into());
         match &state {
             TooltipState::Edit(edit) => match &edit.draft.kind {
-                ActionKind::FindPixel { target_color, .. } => {
-                    assert_eq!(target_color, "ab12cd")
+                ActionKind::FindPixel(d) => {
+                    assert_eq!(d.target_color, "ab12cd")
                 }
                 other => panic!("unexpected {other:?}"),
             },
@@ -1145,29 +1201,23 @@ mod tests {
         let id = ActionId::new();
         let mut root = root_loop(vec![Action {
             id,
-            kind: ActionKind::ImageSearch {
+            kind: ActionKind::ImageSearch(Box::new(sqyre_domain::ImageSearchData {
                 name: "find".into(),
                 targets: vec!["P~A".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("P~Box".into()),
                 tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
-            },
+                ..Default::default()
+            })),
         }]);
         let mut draft = root.find_by_id(id).unwrap().clone();
-        if let ActionKind::ImageSearch { targets, .. } = &mut draft.kind {
-            *targets = vec!["P~B".into(), "P~C".into()];
+        if let ActionKind::ImageSearch(d) = &mut draft.kind {
+            d.targets = vec!["P~B".into(), "P~C".into()];
         }
         apply_draft_preserving_children(root.find_by_id_mut(id).unwrap(), draft).unwrap();
         match &root.find_by_id(id).unwrap().kind {
-            ActionKind::ImageSearch { targets, .. } => {
+            ActionKind::ImageSearch(d) => {
                 assert_eq!(
-                    targets.as_slice(),
+                    d.targets.as_slice(),
                     ["P~B".to_string(), "P~C".to_string()].as_slice()
                 );
             }

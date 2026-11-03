@@ -4,6 +4,7 @@ mod context;
 mod highlight;
 
 use crate::data_editor::helpers::is_editor_listed_program;
+use crate::help_text as ht;
 use crate::status_banner::StatusBanner;
 use context::{
     enter_edit, find_yaml_context, shift_lines, Completion, EnterEdit, EntityKind, YamlContext,
@@ -374,7 +375,7 @@ impl MacroYamlBuilderUi {
                 "A saved draft no longer matches the current macro. Choose which to load.",
             );
             ui.horizontal(|ui| {
-                if ui.button("Reload from Tree").clicked() {
+                if ui.small_button("Reload from Tree").clicked() {
                     self.yaml = self.base_yaml.clone();
                     self.draft_choice = DraftChoice::None;
                     self.stale_draft = None;
@@ -382,7 +383,7 @@ impl MacroYamlBuilderUi {
                         self.drafts.remove(name);
                     }
                 }
-                if ui.button("Restore Draft").clicked() {
+                if ui.small_button("Restore Draft").clicked() {
                     if let Some(entry) = self.stale_draft.take() {
                         self.yaml = entry.yaml;
                         self.base_yaml = entry.base_yaml;
@@ -410,11 +411,15 @@ impl MacroYamlBuilderUi {
 
         let suggestions = collect_runtime_suggestions(macros, catalog);
         let editor_id = egui::Id::new(WINDOW_ID).with("yaml");
-        crate::widgets::dialog_scroll(crate::widgets::visible_width(ui), editor_h)
-            .id_salt("yaml_scroll")
-            .show(ui, |ui| {
+        crate::widgets::show_dialog_scroll_mod(
+            ui,
+            crate::widgets::visible_width(ui),
+            editor_h,
+            |s| s.id_salt("yaml_scroll"),
+            |ui| {
                 yaml_text_edit(ui, editor_id, &mut self.yaml, &suggestions, editor_h);
-            });
+            },
+        );
 
         if self.yaml != self.last_validated_yaml && self.validate_since.is_none() {
             self.validate_since = Some(ui.ctx().input(|i| i.time));
@@ -423,7 +428,7 @@ impl MacroYamlBuilderUi {
         crate::widgets::section_separator(ui);
         crate::widgets::show_overflow(ui, "yaml_footer", 1.0, |ui| {
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Validate").clicked() {
+                if ui.small_button("Validate").clicked() {
                     self.last_report = report_macro_yaml(&self.yaml);
                     self.last_validated_yaml = self.yaml.clone();
                     if self.last_report.is_ok() {
@@ -440,9 +445,10 @@ impl MacroYamlBuilderUi {
                         has_yaml,
                         egui::Button::new(
                             egui::RichText::new("Import as New").color(crate::theme::MACRO_START),
-                        ),
+                        )
+                        .small(),
                     )
-                    .on_hover_text("Add this YAML as a new macro")
+                    .on_hover_text(ht::YAML_IMPORT_NEW)
                     .clicked()
                 {
                     match prepare_import_macro_yaml(&self.yaml, &existing) {
@@ -455,7 +461,7 @@ impl MacroYamlBuilderUi {
                 let can_apply =
                     !running && self.bound_name.is_some() && has_yaml && self.is_dirty();
                 if crate::widgets::dirty_action_button(ui, "Apply", can_apply)
-                    .on_hover_text("Replace the selected macro with this YAML")
+                    .on_hover_text(ht::YAML_IMPORT_REPLACE)
                     .on_disabled_hover_text(if running {
                         "Cannot apply while a macro is running"
                     } else if self.bound_name.is_none() {
@@ -895,7 +901,7 @@ fn yaml_text_edit(
         };
         if needs_scroll {
             let popup_h = AC_POPUP_MAX_H;
-            crate::widgets::dialog_scroll(popup_w, popup_h).show(ui, |ui| {
+            crate::widgets::show_dialog_scroll(ui, popup_w, popup_h, |ui| {
                 crate::widgets::enable_dense_row_extend(ui);
                 paint_rows(ui);
             });
@@ -1004,7 +1010,7 @@ fn take_ac_keys(ui: &mut egui::Ui, ac_open: bool) -> (bool, bool, bool, bool) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqyre_domain::{root_loop, ActionId, ActionKind, ScalarValue};
+    use sqyre_domain::{root_loop, ActionKind, ScalarValue};
 
     #[test]
     fn popup_opens_only_while_typing() {
@@ -1114,20 +1120,14 @@ mod tests {
 
     #[test]
     fn reconcile_preserves_matching_uids() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        };
+        let a = Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        });
         let id = a.id;
         let mut old = root_loop(vec![a]);
-        let mut new = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(2),
-            },
-        }]);
+        let mut new = root_loop(vec![Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(2),
+        })]);
         // Force root ids to match type.
         reconcile_action_uids(&old, &mut new);
         assert_eq!(new.children()[0].id, id);

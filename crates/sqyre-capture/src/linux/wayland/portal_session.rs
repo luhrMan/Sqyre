@@ -4,7 +4,7 @@ use crate::cap_log;
 use crate::error::CaptureError;
 use crate::linux::wayland::eis::EisInput;
 use parking_lot::Mutex;
-use sqyre_ports::{AutomationError, DesktopRect};
+use sqyre_ports::{AutomationError, DesktopRect, APP_DIR_NAME};
 use std::os::fd::OwnedFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -86,6 +86,19 @@ const PORTAL_APP_ID: &str = "com.sqyre.app";
 
 static FORCE_SCREENCAST_PICKER: AtomicBool = AtomicBool::new(false);
 static SCREENCAST_SESSION_GRANTED: AtomicBool = AtomicBool::new(false);
+
+/// Gate the grant on at least one PipeWire stream, then mark the session granted.
+fn grant_screencast_streams(
+    streams: &[ashpd::desktop::screencast::Stream],
+) -> Result<(), CaptureError> {
+    if streams.is_empty() {
+        return Err(CaptureError::Message(
+            "portal ScreenCast returned no streams".into(),
+        ));
+    }
+    SCREENCAST_SESSION_GRANTED.store(true, Ordering::SeqCst);
+    Ok(())
+}
 
 /// Portal Start succeeded this process, or a restore token is on disk from a prior grant.
 pub fn portal_screencast_granted() -> bool {
@@ -417,11 +430,13 @@ fn take_force_screencast_picker() -> bool {
 }
 
 fn restore_token_path() -> std::path::PathBuf {
-    dirs_home().join(".sqyre").join("wayland-remote.token")
+    dirs_home().join(APP_DIR_NAME).join("wayland-remote.token")
 }
 
 fn legacy_screencast_token_path() -> std::path::PathBuf {
-    dirs_home().join(".sqyre").join("wayland-screencast.token")
+    dirs_home()
+        .join(APP_DIR_NAME)
+        .join("wayland-screencast.token")
 }
 
 fn dirs_home() -> std::path::PathBuf {
@@ -595,12 +610,7 @@ async fn open_combined_session_with_token(
         || response.devices().contains(DeviceType::Pointer);
     REMOTE_DESKTOP_GRANTED.store(has_input, Ordering::SeqCst);
     let streams_meta = response.streams();
-    if streams_meta.is_empty() {
-        return Err(CaptureError::Message(
-            "portal ScreenCast returned no streams".into(),
-        ));
-    }
-    SCREENCAST_SESSION_GRANTED.store(true, Ordering::SeqCst);
+    grant_screencast_streams(streams_meta)?;
     cap_log(
         "PORTAL",
         "grant",
@@ -775,12 +785,7 @@ async fn open_screencast_only_with_token(
         .map_err(portal_err("start response"))?;
     write_restore_token_at(&restore_token_path(), response.restore_token());
     let streams_meta = response.streams();
-    if streams_meta.is_empty() {
-        return Err(CaptureError::Message(
-            "portal ScreenCast returned no streams".into(),
-        ));
-    }
-    SCREENCAST_SESSION_GRANTED.store(true, Ordering::SeqCst);
+    grant_screencast_streams(streams_meta)?;
     cap_log(
         "PORTAL",
         "grant",
@@ -910,7 +915,9 @@ pub(super) fn union_rect(a: DesktopRect, b: DesktopRect) -> DesktopRect {
 ///
 /// A bare click uses the live cursor. The last Move is used only while
 /// ScreenCast metadata can still be behind that warp, so Move-then-Click
-/// still lands on the target.
+/// still lands on the target. A stale warp is never a click target: without
+/// live metadata the button applies at the seat pointer, which is the real
+/// cursor — warping to an old Move would click the wrong spot.
 fn click_reseat() -> (Option<(i32, i32)>, &'static str) {
     let sent = *LAST_ABS.lock();
     let warp_fresh = LAST_ABS_AT
@@ -936,8 +943,8 @@ fn reseat_target(
     match (sent, live) {
         (Some(sent), Some(live)) if sent != live && warp_fresh => (Some(sent), "warp"),
         (_, Some(live)) => (Some(live), "cursor"),
-        (Some(sent), None) => (Some(sent), "warp"),
-        (None, None) => (None, "none"),
+        (Some(sent), None) if warp_fresh => (Some(sent), "warp"),
+        _ => (None, "none"),
     }
 }
 
@@ -990,9 +997,11 @@ mod tests {
             (Some((5, 6)), "cursor")
         );
         assert_eq!(
-            reseat_target(Some((1, 2)), None, false),
+            reseat_target(Some((1, 2)), None, true),
             (Some((1, 2)), "warp")
         );
+        // A stale warp must not move the pointer when no live cursor is known.
+        assert_eq!(reseat_target(Some((1, 2)), None, false), (None, "none"));
         assert_eq!(reseat_target(None, None, false), (None, "none"));
     }
 

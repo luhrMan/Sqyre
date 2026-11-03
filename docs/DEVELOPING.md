@@ -250,6 +250,18 @@ make docs-media
 
 Needs wgpu (lavapipe in the dev container / CI image).
 
+### Layout sweep
+
+The `layout_sweep` integration test exercises docs-only UI scenes at `1920x1080`, `1280x720`, `1024x640`, `800x600`, `640x480`, `480x360`, and phone sizes `412x915` and `915x412`. Zoom cases model a 1280x720 physical window at 1.5× and 2×.
+It checks `word_split`, `clipped_h`/`clipped_screen_*`, `offscreen`, `overlap`, `window_overflow`, `ratchet`, and `no_settle`.
+
+```bash
+cargo nextest run -p sqyre-app -E 'binary(layout_sweep)'
+SQYRE_LAYOUT_AUDIT=1 cargo nextest run -p sqyre-app -E 'binary(layout_sweep)'
+```
+
+Audit mode writes scene PNGs, annotated PNGs, and `findings.jsonl` under `target/layout-audit/`. The known-findings list is `crates/sqyre-app/tests/layout_baseline.txt`; update it with `SQYRE_UPDATE_LAYOUT_BASELINE=1` before the same nextest command. The list should only shrink as findings are fixed.
+
 ---
 
 ## Packaging

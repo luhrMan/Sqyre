@@ -34,16 +34,19 @@ Rules live in [`.cursor/rules/`](.cursor/rules/), skills in [`.cursor/skills/`](
 |-------|------|
 | Ask before consequential guesses | `ask-on-ambiguity.mdc` |
 | No compat shims | `no-backwards-compatibility.mdc` |
+| Commit per bullet/surface — bisectable | `incremental-commits.mdc` |
 | Git identity (local, gitignored) | `git-identity.mdc` |
 | Platforms, `#[cfg]`, features, FFI | `cross-platform.mdc` |
 | Rust style, errors, unsafe, logging | `rust-style.mdc` |
 | Quality gate | `verify-new-code.mdc` |
 | Tests, coverage floors, perf budgets | `testing.mdc` |
 | WASM editor constraints | `wasm-editor.mdc` |
-| egui dialog sizing | `egui-window-size-ratchet.mdc` |
+| egui layout/popup/focus/scroll pitfalls | `egui-layout-gotchas.mdc` |
+| Persisted UI state write-back | `persisted-ui-state.mdc` |
 | UI usability/consistency | `ui-usability.mdc` |
 | Devcontainer release parity | `devcontainer-release-parity.mdc` |
 | Debugging from logs | `skills/debug-from-logs` |
+| Headless tooltip/popup/focus/persist tests | `skills/egui-interaction-testing` |
 | Wayland/desktop parity, probe | `skills/linux-desktop-parity` |
 | Search/OCR/pixel hot path, benchmarking | `skills/search-timing-consistency` |
 | Commit review | `skills/commit-quality-review` |

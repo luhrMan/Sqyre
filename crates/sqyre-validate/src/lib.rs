@@ -638,21 +638,16 @@ fn validate_action_with(
         ActionKind::Conditional { condition, .. } => {
             validate_condition_block("conditional", condition, macro_)?;
         }
-        ActionKind::ImageSearch {
-            targets,
-            target_tags,
-            search_area,
-            detection,
-            ..
-        } => {
-            validate_wait_config("image search", &detection.wait)?;
+        ActionKind::ImageSearch(d) => {
+            validate_wait_config("image search", &d.detection.wait)?;
             if mode == ActionValidationMode::Complete {
                 let mut issues = Vec::new();
-                if search_area.is_empty() {
+                if d.search_area.is_empty() {
                     issues.push("set a search area");
                 }
-                let has_targets = targets.iter().any(|t| !t.trim().is_empty());
-                let has_include_tag = target_tags
+                let has_targets = d.targets.iter().any(|t| !t.trim().is_empty());
+                let has_include_tag = d
+                    .target_tags
                     .iter()
                     .any(|t| sqyre_domain::parse_tag_filter(t).is_some_and(|(include, _)| include));
                 if !has_targets && !has_include_tag {
@@ -666,44 +661,32 @@ fn validate_action_with(
                 }
             }
         }
-        ActionKind::Ocr {
-            search_area,
-            detection,
-            blur,
-            min_threshold,
-            resize,
-            ..
-        } => {
-            validate_wait_config("ocr", &detection.wait)?;
+        ActionKind::Ocr(d) => {
+            validate_wait_config("ocr", &d.detection.wait)?;
             if mode == ActionValidationMode::Complete {
-                require_search_area("ocr", search_area)?;
+                require_search_area("ocr", &d.search_area)?;
             }
-            if *blur < 0 {
+            if d.blur < 0 {
                 return Err(ValidateError::Message(
                     "ocr: blur cannot be negative".into(),
                 ));
             }
-            if !(*min_threshold >= 0 && *min_threshold <= 255) {
+            if !(d.min_threshold >= 0 && d.min_threshold <= 255) {
                 return Err(ValidateError::Message(
                     "ocr: min threshold must be between 0 and 255".into(),
                 ));
             }
-            if *resize <= 0.0 {
+            if d.resize <= 0.0 {
                 return Err(ValidateError::Message(
                     "ocr: resize must be positive".into(),
                 ));
             }
         }
-        ActionKind::FindPixel {
-            search_area,
-            target_color,
-            detection,
-            ..
-        } => {
-            validate_target_color("find pixel", target_color)?;
-            validate_wait_config("find pixel", &detection.wait)?;
+        ActionKind::FindPixel(d) => {
+            validate_target_color("find pixel", &d.target_color)?;
+            validate_wait_config("find pixel", &d.detection.wait)?;
             if mode == ActionValidationMode::Complete {
-                require_search_area("find pixel", search_area)?;
+                require_search_area("find pixel", &d.search_area)?;
             }
         }
         ActionKind::ForEachRow {
@@ -887,9 +870,21 @@ pub fn validate_macro(macro_: &Macro) -> Result<()> {
 mod tests {
     use super::*;
     use sqyre_domain::{
-        ActionId, CoordinateRef, PressState, ScalarValue, VariableAssignment, VariableDecl,
-        VariableType,
+        CoordinateRef, PressState, ScalarValue, VariableAssignment, VariableDecl, VariableType,
     };
+
+    /// Detection branch whose wait config is an all-zero WaitUntilFound (invalid).
+    fn bad_wait_detection() -> sqyre_domain::DetectionBranch {
+        sqyre_domain::DetectionBranch {
+            wait: sqyre_domain::WaitTilFoundConfig {
+                repeat_mode: sqyre_domain::RepeatMode::WaitUntilFound,
+                wait_til_found_seconds: 0.0,
+                wait_til_found_interval_ms: 0,
+                max_iterations: 0,
+            },
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn parse_int_helpers_reject_empty_and_bad_input() {
@@ -1067,33 +1062,24 @@ mod tests {
     }
 
     fn pause(keys: &[&str]) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Pause {
-                message: String::new(),
-                continue_key: keys.iter().map(|s| (*s).to_string()).collect(),
-                pass_through: false,
-            },
-        }
+        Action::new(ActionKind::Pause {
+            message: String::new(),
+            continue_key: keys.iter().map(|s| (*s).to_string()).collect(),
+            pass_through: false,
+        })
     }
 
     fn key(k: &str) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Key {
-                key: k.into(),
-                state: PressState::Down,
-            },
-        }
+        Action::new(ActionKind::Key {
+            key: k.into(),
+            state: PressState::Down,
+        })
     }
 
     fn set_var(name: &str, value: sqyre_domain::ScalarValue) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::SetVariable {
-                assignments: vec![VariableAssignment::new(name, value)],
-            },
-        }
+        Action::new(ActionKind::SetVariable {
+            assignments: vec![VariableAssignment::new(name, value)],
+        })
     }
 
     #[test]
@@ -1103,14 +1089,11 @@ mod tests {
 
     #[test]
     fn validate_action_tree_walks_children() {
-        let root = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Loop {
-                name: "root".into(),
-                count: ScalarValue::Int(1),
-                subactions: vec![key("a"), key("")],
-            },
-        };
+        let root = Action::new(ActionKind::Loop {
+            name: "root".into(),
+            count: ScalarValue::Int(1),
+            subactions: vec![key("a"), key("")],
+        });
         assert!(validate_action(&root, None).is_ok());
         let err = validate_action_tree(&root, None).unwrap_err();
         assert!(err.to_string().contains("key:"), "{err}");
@@ -1118,13 +1101,12 @@ mod tests {
 
     #[test]
     fn validate_action_focus_window_previous_needs_no_target() {
-        let focus = |previous| Action {
-            id: ActionId::new(),
-            kind: ActionKind::FocusWindow {
+        let focus = |previous| {
+            Action::new(ActionKind::FocusWindow {
                 process_path: String::new(),
                 window_title: String::new(),
                 previous,
-            },
+            })
         };
         assert!(validate_action(&focus(false), None).is_err());
         assert!(validate_action(&focus(true), None).is_ok());
@@ -1198,7 +1180,7 @@ mod tests {
 
     #[test]
     fn preview_calculate_examples() {
-        use sqyre_domain::{root_loop, Action, ActionId, ActionKind, VariableAssignment};
+        use sqyre_domain::{root_loop, Action, ActionKind, VariableAssignment};
 
         let mut m = Macro::new("t", 0, vec![]);
         m.variable_decls.push(VariableDecl {
@@ -1213,15 +1195,12 @@ mod tests {
             initial_value: String::new(),
             description: String::new(),
         });
-        m.root = root_loop(vec![Action {
-            id: ActionId::new(),
-            kind: ActionKind::SetVariable {
-                assignments: vec![VariableAssignment::new(
-                    "result",
-                    sqyre_domain::ScalarValue::String("0".into()),
-                )],
-            },
-        }]);
+        m.root = root_loop(vec![Action::new(ActionKind::SetVariable {
+            assignments: vec![VariableAssignment::new(
+                "result",
+                sqyre_domain::ScalarValue::String("0".into()),
+            )],
+        })]);
         m.init_runtime_variables();
 
         assert_eq!(preview_calculate("", &m).unwrap(), "");
@@ -1243,15 +1222,12 @@ mod tests {
 
     #[test]
     fn validate_action_rejects_bad_variable_name() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::SetVariable {
-                assignments: vec![VariableAssignment::new(
-                    "a+b",
-                    sqyre_domain::ScalarValue::String("1+1".into()),
-                )],
-            },
-        };
+        let a = Action::new(ActionKind::SetVariable {
+            assignments: vec![VariableAssignment::new(
+                "a+b",
+                sqyre_domain::ScalarValue::String("1+1".into()),
+            )],
+        });
         let err = validate_action(&a, None).unwrap_err();
         assert!(err.to_string().contains("variable \"a+b\""), "{err}");
     }
@@ -1284,23 +1260,14 @@ mod tests {
 
     #[test]
     fn validate_image_search_requires_target_and_wait_timeout() {
-        use sqyre_domain::{RepeatMode, WaitTilFoundConfig};
-        let empty = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
-                name: String::new(),
-                targets: vec![],
-                target_tags: Vec::new(),
+        let empty = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: Default::default(),
+                ..Default::default()
             },
-        };
+        )));
         assert!(validate_action(&empty, None)
             .unwrap_err()
             .to_string()
@@ -1308,48 +1275,27 @@ mod tests {
         // Persist allows saving without items; tree/run still flag via Complete.
         assert!(validate_action_persist(&empty, None).is_ok());
 
-        let tags_only = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
-                name: String::new(),
-                targets: vec![],
+        let tags_only = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 target_tags: vec!["+weapon".into()],
                 search_area: CoordinateRef("Game~Box".into()),
                 tolerance: 0.95,
                 blur: 5,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: Default::default(),
+                ..Default::default()
             },
-        };
+        )));
         assert!(validate_action(&tags_only, None).is_ok());
 
-        let bad_wait = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
-                name: String::new(),
+        let bad_wait = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 targets: vec!["Game~Item".into()],
-                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: sqyre_domain::DetectionBranch {
-                    wait: WaitTilFoundConfig {
-                        repeat_mode: RepeatMode::WaitUntilFound,
-                        wait_til_found_seconds: 0.0,
-                        wait_til_found_interval_ms: 0,
-                        max_iterations: 0,
-                    },
-                    ..Default::default()
-                },
+                detection: bad_wait_detection(),
+                ..Default::default()
             },
-        };
+        )));
         assert!(validate_action(&bad_wait, None)
             .unwrap_err()
             .to_string()
@@ -1360,30 +1306,15 @@ mod tests {
             .contains("timeout"));
 
         // Empty targets must not mask a bad wait on persist.
-        let empty_bad_wait = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
-                name: String::new(),
-                targets: vec![],
-                target_tags: Vec::new(),
+        let empty_bad_wait = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: sqyre_domain::DetectionBranch {
-                    wait: WaitTilFoundConfig {
-                        repeat_mode: RepeatMode::WaitUntilFound,
-                        wait_til_found_seconds: 0.0,
-                        wait_til_found_interval_ms: 0,
-                        max_iterations: 0,
-                    },
-                    ..Default::default()
-                },
+                detection: bad_wait_detection(),
+                ..Default::default()
             },
-        };
+        )));
         assert!(validate_action_persist(&empty_bad_wait, None)
             .unwrap_err()
             .to_string()
@@ -1392,16 +1323,11 @@ mod tests {
 
     #[test]
     fn validate_find_pixel_requires_color() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::FindPixel {
-                name: String::new(),
-                search_area: Default::default(),
-                target_color: String::new(),
-                color_tolerance: 0,
-                detection: Default::default(),
+        let a = Action::new(ActionKind::FindPixel(Box::new(
+            sqyre_domain::FindPixelData {
+                ..Default::default()
             },
-        };
+        )));
         assert!(validate_action(&a, None)
             .unwrap_err()
             .to_string()
@@ -1410,15 +1336,12 @@ mod tests {
 
     #[test]
     fn validate_navigate_key_requires_chord() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::NavigateKey {
-                name: String::new(),
-                chord: vec![],
-                exit: false,
-                subactions: vec![],
-            },
-        };
+        let a = Action::new(ActionKind::NavigateKey {
+            name: String::new(),
+            chord: vec![],
+            exit: false,
+            subactions: vec![],
+        });
         assert!(validate_action(&a, None)
             .unwrap_err()
             .to_string()
@@ -1427,55 +1350,43 @@ mod tests {
 
     #[test]
     fn validate_for_each_cell_requires_collection_range() {
-        let empty = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ForEachCell {
-                name: String::new(),
-                cells: CoordinateRef(String::new()),
-                subactions: vec![],
-            },
-        };
+        let empty = Action::new(ActionKind::ForEachCell {
+            name: String::new(),
+            cells: CoordinateRef(String::new()),
+            subactions: vec![],
+        });
         assert!(validate_action(&empty, None)
             .unwrap_err()
             .to_string()
             .contains("Collection cell range"));
 
-        let desktop = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ForEachCell {
-                name: String::new(),
-                cells: CoordinateRef("Game~Box".into()),
-                subactions: vec![],
-            },
-        };
+        let desktop = Action::new(ActionKind::ForEachCell {
+            name: String::new(),
+            cells: CoordinateRef("Game~Box".into()),
+            subactions: vec![],
+        });
         assert!(validate_action(&desktop, None)
             .unwrap_err()
             .to_string()
             .contains("Collection range"));
 
-        let ok = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ForEachCell {
-                name: String::new(),
-                cells: CoordinateRef::collection("Game", "Grid", 1, 1, 2, 2),
-                subactions: vec![],
-            },
-        };
+        let ok = Action::new(ActionKind::ForEachCell {
+            name: String::new(),
+            cells: CoordinateRef::collection("Game", "Grid", 1, 1, 2, 2),
+            subactions: vec![],
+        });
         assert!(validate_action(&ok, None).is_ok());
     }
 
     #[test]
     fn validate_move_requires_point() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Move {
-                point: CoordinateRef(String::new()),
-                smooth: false,
-                smooth_low: 0.05,
-                smooth_high: 0.2,
-                smooth_delay_ms: 1,
-            },
-        };
+        let a = Action::new(ActionKind::Move {
+            point: CoordinateRef(String::new()),
+            smooth: false,
+            smooth_low: 0.05,
+            smooth_high: 0.2,
+            smooth_delay_ms: 1,
+        });
         assert!(validate_action(&a, None)
             .unwrap_err()
             .to_string()
@@ -1484,77 +1395,50 @@ mod tests {
 
     #[test]
     fn validate_move_accepts_catalog_point_ref() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Move {
-                point: CoordinateRef("General~Windows".into()),
-                smooth: false,
-                smooth_low: 0.05,
-                smooth_high: 0.2,
-                smooth_delay_ms: 1,
-            },
-        };
+        let a = Action::new(ActionKind::Move {
+            point: CoordinateRef("General~Windows".into()),
+            smooth: false,
+            smooth_low: 0.05,
+            smooth_high: 0.2,
+            smooth_delay_ms: 1,
+        });
         assert!(validate_action(&a, None).is_ok());
     }
 
     #[test]
     fn validate_detection_requires_search_area_on_complete() {
-        let image = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
-                name: String::new(),
+        let image = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 targets: vec!["Game~Item".into()],
-                target_tags: Vec::new(),
                 search_area: Default::default(),
                 tolerance: 0.95,
                 blur: 5,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: Default::default(),
+                ..Default::default()
             },
-        };
+        )));
         assert!(validate_action_persist(&image, None).is_ok());
         assert!(validate_action(&image, None)
             .unwrap_err()
             .to_string()
             .contains("search area"));
 
-        let ocr = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Ocr {
-                name: String::new(),
-                target: "ok".into(),
-                search_area: Default::default(),
-                output_variable: String::new(),
-                match_mode: Default::default(),
-                case_sensitive: false,
-                blur: 0,
-                min_threshold: 0,
-                resize: 1.0,
-                grayscale: false,
-                threshold_otsu: false,
-                threshold_invert: false,
-                detection: Default::default(),
-            },
-        };
+        let ocr = Action::new(ActionKind::Ocr(Box::new(sqyre_domain::OcrData {
+            target: "ok".into(),
+            resize: 1.0,
+            ..Default::default()
+        })));
         assert!(validate_action_persist(&ocr, None).is_ok());
         assert!(validate_action(&ocr, None)
             .unwrap_err()
             .to_string()
             .contains("search area"));
 
-        let pixel = Action {
-            id: ActionId::new(),
-            kind: ActionKind::FindPixel {
-                name: String::new(),
-                search_area: Default::default(),
+        let pixel = Action::new(ActionKind::FindPixel(Box::new(
+            sqyre_domain::FindPixelData {
                 target_color: "ffffff".into(),
-                color_tolerance: 0,
-                detection: Default::default(),
+                ..Default::default()
             },
-        };
+        )));
         assert!(validate_action_persist(&pixel, None).is_ok());
         assert!(validate_action(&pixel, None)
             .unwrap_err()
@@ -1564,12 +1448,9 @@ mod tests {
 
     #[test]
     fn validate_run_macro_requires_name() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::RunMacro {
-                macro_name: String::new(),
-            },
-        };
+        let a = Action::new(ActionKind::RunMacro {
+            macro_name: String::new(),
+        });
         assert!(validate_action(&a, None)
             .unwrap_err()
             .to_string()
@@ -1578,22 +1459,19 @@ mod tests {
 
     #[test]
     fn validate_conditional_requires_clause_operands() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Conditional {
-                condition: sqyre_domain::ConditionBlock {
-                    name: "c".into(),
-                    match_mode: sqyre_domain::MatchMode::All,
-                    clauses: vec![sqyre_domain::ConditionClause {
-                        left: ScalarValue::String(String::new()),
-                        operator: sqyre_domain::ConditionOperator::Equals,
-                        right: ScalarValue::String("x".into()),
-                    }],
-                },
-                subactions: vec![],
-                else_actions: vec![],
+        let a = Action::new(ActionKind::Conditional {
+            condition: sqyre_domain::ConditionBlock {
+                name: "c".into(),
+                match_mode: sqyre_domain::MatchMode::All,
+                clauses: vec![sqyre_domain::ConditionClause {
+                    left: ScalarValue::String(String::new()),
+                    operator: sqyre_domain::ConditionOperator::Equals,
+                    right: ScalarValue::String("x".into()),
+                }],
             },
-        };
+            subactions: vec![],
+            else_actions: vec![],
+        });
         assert!(validate_action(&a, None)
             .unwrap_err()
             .to_string()
@@ -1602,22 +1480,19 @@ mod tests {
 
     #[test]
     fn validate_conditional_allows_spaced_string_literals() {
-        let a = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Conditional {
-                condition: sqyre_domain::ConditionBlock {
-                    name: "c".into(),
-                    match_mode: sqyre_domain::MatchMode::All,
-                    clauses: vec![sqyre_domain::ConditionClause {
-                        left: ScalarValue::String("${ItemName}".into()),
-                        operator: sqyre_domain::ConditionOperator::Equals,
-                        right: ScalarValue::String("Mistfall Hunter Item Top".into()),
-                    }],
-                },
-                subactions: vec![],
-                else_actions: vec![],
+        let a = Action::new(ActionKind::Conditional {
+            condition: sqyre_domain::ConditionBlock {
+                name: "c".into(),
+                match_mode: sqyre_domain::MatchMode::All,
+                clauses: vec![sqyre_domain::ConditionClause {
+                    left: ScalarValue::String("${ItemName}".into()),
+                    operator: sqyre_domain::ConditionOperator::Equals,
+                    right: ScalarValue::String("Mistfall Hunter Item Top".into()),
+                }],
             },
-        };
+            subactions: vec![],
+            else_actions: vec![],
+        });
         assert!(validate_action(&a, None).is_ok());
     }
 }

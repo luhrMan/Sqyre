@@ -20,8 +20,114 @@ pub const SPACE_12: f32 = 12.0;
 /// Not part of the spacing scale — kept fixed so drag targets stay usable.
 pub const PANEL_SPLITTER_W: f32 = 6.0;
 
-/// Sqyre gold/yellow primary (`#dc9d2e`).
+/// Painted size of the `///` corner grip on resizable `egui::Window`s.
+///
+/// egui's default is 12pt — oversized for the compact dialogs here. Smaller
+/// keeps the affordance readable without covering the widget behind it; the
+/// grip is paint/interact only and reserves no layout space either way.
+pub const WINDOW_RESIZE_CORNER_SIZE: f32 = 8.0;
+
+/// Drag radius of the `egui::Window` resize corner (egui default 10pt → a
+/// 20×20 hit rect that swallows clicks on widgets under the corner). Sized so
+/// the grab zone just covers [`WINDOW_RESIZE_CORNER_SIZE`] and widgets in the
+/// window's bottom-right keep their own clicks.
+pub const WINDOW_RESIZE_GRAB_RADIUS: f32 = 6.0;
+
+/// Resolved section/element gap pair for a UI density (Settings → Appearance →
+/// Spacing). `sqyre_persist::UiDensity` maps onto these values; ui-theme cannot
+/// see sqyre-persist, so they live here as plain `f32`s.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DensityGaps {
+    /// Total gap between sections: framed cards, separator margins, subsection
+    /// heads. Applied via [`add_section_gap`], which counts `item_spacing`
+    /// toward the total.
+    pub section: f32,
+    /// Total gap between element groups inside a section (field rows, buttons,
+    /// items). Also the baseline widget gap via `Spacing::item_spacing`.
+    pub element: f32,
+}
+
+impl DensityGaps {
+    /// `UiDensity::Normal` — default before [`set_density`] runs on the context.
+    pub const NORMAL: Self = Self::new(8.0, 4.0);
+
+    pub const fn new(section: f32, element: f32) -> Self {
+        Self { section, element }
+    }
+}
+
+impl Default for DensityGaps {
+    fn default() -> Self {
+        Self::NORMAL
+    }
+}
+
+fn density_id() -> egui::Id {
+    egui::Id::new("sqyre_ui_density")
+}
+
+/// Store the active density gaps on this egui context.
+pub fn set_density(ctx: &egui::Context, gaps: DensityGaps) {
+    ctx.data_mut(|d| d.insert_temp(density_id(), gaps));
+}
+
+/// Active density gaps ([`DensityGaps::NORMAL`] before `set_density` runs).
+pub fn density(ctx: &egui::Context) -> DensityGaps {
+    ctx.data(|d| d.get_temp::<DensityGaps>(density_id()))
+        .unwrap_or_default()
+}
+
+/// Vertical gap between sections: framed cards, section separators, subsection
+/// headings, and page-level blocks.
+pub fn section_gap(ui: &egui::Ui) -> f32 {
+    density(ui.ctx()).section
+}
+
+/// Gap between element groups inside a section (labeled field rows, button
+/// rows, list items). Also the horizontal gap between elements.
+pub fn element_gap(ui: &egui::Ui) -> f32 {
+    density(ui.ctx()).element
+}
+
+/// Advance the cursor so the previous and next widgets sit [`section_gap`]
+/// apart. `Ui::add_space` stacks on the `item_spacing` the layout already
+/// inserts between widgets, so only the difference is requested — the token is
+/// the *total* gap. Elements need no helper: `item_spacing` already separates
+/// widgets by [`element_gap`].
+pub fn add_section_gap(ui: &mut egui::Ui) {
+    pad_to_gap(ui, section_gap(ui));
+}
+
+fn pad_to_gap(ui: &mut egui::Ui, gap: f32) {
+    let auto = if ui.layout().main_dir().is_horizontal() {
+        ui.spacing().item_spacing.x
+    } else {
+        ui.spacing().item_spacing.y
+    };
+    ui.add_space((gap - auto).max(0.0));
+}
+
+/// Sqyre gold/yellow primary (`#dc9d2e`) — the default [`accent`].
 pub const PRIMARY: Color32 = Color32::from_rgb(0xdc, 0x9d, 0x2e);
+
+/// Packed `r<<24|g<<16|b<<8|a` of the active accent (starts as [`PRIMARY`]).
+static ACCENT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0xdc9d_2eff);
+
+/// Active UI accent color — [`PRIMARY`] until [`set_accent`] runs (Settings →
+/// Appearance → Accent color). Read on every frame, so changes repaint live.
+pub fn accent() -> Color32 {
+    let p = ACCENT.load(std::sync::atomic::Ordering::Relaxed);
+    Color32::from_rgba_unmultiplied((p >> 24) as u8, (p >> 16) as u8, (p >> 8) as u8, p as u8)
+}
+
+/// Set the active accent. `None` restores the [`PRIMARY`] gold default.
+pub fn set_accent(rgb: Option<[u8; 3]>) {
+    let p = match rgb {
+        Some([r, g, b]) => ((r as u32) << 24) | ((g as u32) << 16) | ((b as u32) << 8) | 0xff,
+        None => 0xdc9d_2eff,
+    };
+    ACCENT.store(p, std::sync::atomic::Ordering::Relaxed);
+}
 
 /// Start macro / add controls (`#36a258`).
 pub const MACRO_START: Color32 = Color32::from_rgb(0x36, 0xa2, 0x58);
@@ -39,9 +145,10 @@ pub fn overlay_panel_fill() -> Color32 {
     rgba([20, 18, 14, 230])
 }
 
-/// Dimmed primary for selection / hover (alpha `0x40`).
+/// Dimmed accent for selection / hover (alpha `0x40`).
 pub fn accent_dim() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 0x40])
+    let c = accent();
+    rgba([c.r(), c.g(), c.b(), 0x40])
 }
 
 /// Soft error / failure text (Find Pixel dropper, status banners).
@@ -65,15 +172,17 @@ pub fn ok_fg() -> Color32 {
 
 /// Soft tag-chip fill (~11% opacity).
 pub fn chip_fill() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 28])
+    let c = accent();
+    rgba([c.r(), c.g(), c.b(), 28])
 }
 
 /// Subtle frame fill (~5% opacity).
 pub fn frame_fill() -> Color32 {
-    rgba([0xdc, 0x9d, 0x2e, 13])
+    let c = accent();
+    rgba([c.r(), c.g(), c.b(), 13])
 }
 
-/// Dim gold stroke for inner cards and previews (weaker than window chrome).
+/// Dim accent stroke for inner cards and previews (weaker than window chrome).
 pub fn inner_stroke() -> Stroke {
     Stroke::new(1.0, accent_dim())
 }
@@ -81,12 +190,13 @@ pub fn inner_stroke() -> Stroke {
 /// Half-opacity stroke for section separators and structural panel splitters
 /// (egui `Panel` separator, data-editor split). Stronger than [`inner_stroke`].
 pub fn panel_split_stroke() -> Stroke {
-    Stroke::new(1.0, rgba([0xdc, 0x9d, 0x2e, 0x80]))
+    let c = accent();
+    Stroke::new(1.0, rgba([c.r(), c.g(), c.b(), 0x80]))
 }
 
-/// Gilded border painted just inside the main window edge.
+/// Accent border painted just inside the main window edge.
 pub fn window_border_stroke() -> Stroke {
-    Stroke::new(1.0, PRIMARY.gamma_multiply(0.5))
+    Stroke::new(1.0, accent().gamma_multiply(0.5))
 }
 
 /// Corner radius of [`window_border_stroke`].
@@ -170,5 +280,24 @@ mod tests {
     #[test]
     fn panel_splitter_width_is_fixed() {
         assert_eq!(PANEL_SPLITTER_W, 6.0);
+    }
+
+    #[test]
+    fn window_resize_grip_is_compact_and_covers_the_glyph() {
+        assert_eq!(WINDOW_RESIZE_CORNER_SIZE, 8.0);
+        assert_eq!(WINDOW_RESIZE_GRAB_RADIUS, 6.0);
+        // The grab zone (diameter) must still cover the painted glyph.
+        const {
+            assert!(WINDOW_RESIZE_GRAB_RADIUS * 2.0 >= WINDOW_RESIZE_CORNER_SIZE);
+        }
+    }
+
+    #[test]
+    fn density_defaults_to_normal_and_round_trips() {
+        let ctx = egui::Context::default();
+        assert_eq!(density(&ctx), DensityGaps::NORMAL);
+        let spaced = DensityGaps::new(12.0, 8.0);
+        set_density(&ctx, spaced);
+        assert_eq!(density(&ctx), spaced);
     }
 }

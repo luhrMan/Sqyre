@@ -73,20 +73,7 @@ const BUTTON_LEFT: c_uint = 1;
 pub struct NativeButtonSpec {
     pub id: String,
     pub macro_name: String,
-    pub x: i32,
-    pub y: i32,
-    pub w: u32,
-    pub h: u32,
-    /// Fill RGBA. On ARGB faces this is real translucency. On the 24-bit
-    /// fallback alpha 0 = no fill (Shape punch-out from chrome ink only)
-    /// and any alpha > 0 paints opaque.
-    pub bg: [u8; 4],
-    pub border: [u8; 4],
-    pub border_width: f32,
-    pub corner_radius: f32,
-    pub icon_glyph: char,
-    pub icon: [u8; 4],
-    pub icon_hover: [u8; 4],
+    pub face: crate::ButtonFace,
     /// Hover tip text (label / display name). Empty = no tip.
     pub tip: String,
     pub busy: bool,
@@ -272,6 +259,22 @@ struct LiveButton {
     /// the busy-union cache (see [`FaceBounding`]).
     face_bounding: Cell<FaceBounding>,
     mapped: bool,
+}
+
+/// Destroy a live button's face+hit windows and free their colormaps.
+/// SAFETY: windows/colormaps were created on `display`.
+unsafe fn destroy_live_button(display: *mut Display, live: &LiveButton) {
+    // SAFETY: `live`'s windows/colormaps were created on `display`.
+    unsafe {
+        x_destroy_window(display, live.win);
+        x_destroy_window(display, live.hit);
+        if live.face_colormap != 0 {
+            XFreeColormap(display, live.face_colormap);
+        }
+        if live.hit_colormap != 0 {
+            XFreeColormap(display, live.hit_colormap);
+        }
+    }
 }
 
 /// Which Bounding the face window currently has.
@@ -787,17 +790,20 @@ struct SpecDelta {
 }
 
 fn spec_delta(old: &NativeButtonSpec, new: &NativeButtonSpec) -> SpecDelta {
-    let radius = sqyre_domain::f32_changed(old.corner_radius, new.corner_radius);
+    let radius = sqyre_domain::f32_changed(old.face.corner_radius, new.face.corner_radius);
     SpecDelta {
-        geom: old.x != new.x || old.y != new.y || old.w != new.w || old.h != new.h,
+        geom: old.face.x != new.face.x
+            || old.face.y != new.face.y
+            || old.face.w != new.face.w
+            || old.face.h != new.face.h,
         radius,
-        style: old.bg != new.bg
-            || old.border != new.border
-            || sqyre_domain::f32_changed(old.border_width, new.border_width)
+        style: old.face.bg != new.face.bg
+            || old.face.border != new.face.border
+            || sqyre_domain::f32_changed(old.face.border_width, new.face.border_width)
             || radius
-            || old.icon_glyph != new.icon_glyph
-            || old.icon != new.icon
-            || old.icon_hover != new.icon_hover
+            || old.face.icon_glyph != new.face.icon_glyph
+            || old.face.icon != new.face.icon
+            || old.face.icon_hover != new.face.icon_hover
             || old.tip != new.tip
             || old.busy != new.busy,
     }
@@ -807,9 +813,12 @@ fn spec_delta(old: &NativeButtonSpec, new: &NativeButtonSpec) -> SpecDelta {
 /// A zero-dimension spec hits a 1×1 box on purpose: window creation clamps to
 /// `max(1)` too, so the test covers the window that actually exists.
 fn spec_contains(spec: &NativeButtonSpec, x: i32, y: i32) -> bool {
-    let w = spec.w.max(1) as i32;
-    let h = spec.h.max(1) as i32;
-    x >= spec.x && y >= spec.y && x < spec.x.saturating_add(w) && y < spec.y.saturating_add(h)
+    let w = spec.face.w.max(1) as i32;
+    let h = spec.face.h.max(1) as i32;
+    x >= spec.face.x
+        && y >= spec.face.y
+        && x < spec.face.x.saturating_add(w)
+        && y < spec.face.y.saturating_add(h)
 }
 
 fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
@@ -829,15 +838,29 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             if geom_changed && !dragging {
                 // SAFETY: HostState display invariant; face+hit created on this display.
                 unsafe {
-                    x_move_resize(state.display, hit, spec.x, spec.y, spec.w, spec.h);
-                    x_move_resize(state.display, win, spec.x, spec.y, spec.w, spec.h);
+                    x_move_resize(
+                        state.display,
+                        hit,
+                        spec.face.x,
+                        spec.face.y,
+                        spec.face.w,
+                        spec.face.h,
+                    );
+                    x_move_resize(
+                        state.display,
+                        win,
+                        spec.face.x,
+                        spec.face.y,
+                        spec.face.w,
+                        spec.face.h,
+                    );
                 }
             }
-            let (keep_x, keep_y) = (live.spec.x, live.spec.y);
+            let (keep_x, keep_y) = (live.spec.face.x, live.spec.face.y);
             live.spec = spec;
             if dragging {
-                live.spec.x = keep_x;
-                live.spec.y = keep_y;
+                live.spec.face.x = keep_x;
+                live.spec.face.y = keep_y;
             }
             if geom_changed || style_changed {
                 // The applied union no longer matches the new style/size —
@@ -854,9 +877,9 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                 // separate shape pass).
                 geom_applied || radius_changed,
                 style_changed || geom_applied,
-                live.spec.w,
-                live.spec.h,
-                live.spec.corner_radius,
+                live.spec.face.w,
+                live.spec.face.h,
+                live.spec.face.corner_radius,
             ))
         } else {
             // Create here so `spec` is not used after the update arm moves it.
@@ -864,9 +887,9 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
                 apply_hit_rounded_input(
                     state.display,
                     live.hit,
-                    live.spec.w,
-                    live.spec.h,
-                    live.spec.corner_radius,
+                    live.spec.face.w,
+                    live.spec.face.h,
+                    live.spec.face.corner_radius,
                 );
                 paint_button(state, &live, true);
                 apply_button_cursor(state, live.hit, live.hovered);
@@ -883,13 +906,13 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             if need_paint {
                 if let Some(live) = state.buttons.get(&id) {
                     paint_button(state, live, true);
-                    if live.spec.bg[3] == 0 {
+                    if live.spec.face.bg[3] == 0 {
                         apply_hit_rounded_input(
                             state.display,
                             live.hit,
-                            live.spec.w,
-                            live.spec.h,
-                            live.spec.corner_radius,
+                            live.spec.face.w,
+                            live.spec.face.h,
+                            live.spec.face.corner_radius,
                         );
                     }
                     // Do not XMapRaised here — restacking after busy/style updates
@@ -915,14 +938,7 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             }
             // SAFETY: HostState display invariant; face+hit created on this display.
             unsafe {
-                x_destroy_window(state.display, live.win);
-                x_destroy_window(state.display, live.hit);
-                if live.face_colormap != 0 {
-                    XFreeColormap(state.display, live.face_colormap);
-                }
-                if live.hit_colormap != 0 {
-                    XFreeColormap(state.display, live.hit_colormap);
-                }
+                destroy_live_button(state.display, &live);
             }
         }
     }
@@ -964,7 +980,7 @@ fn set_relocate_mode(state: &mut HostState, enabled: bool) {
         let mut newly = 0usize;
         let raise = state.relocate_keep_above;
         for btn in state.buttons.values_mut() {
-            if btn.mapped {
+            if btn.mapped || state.capture_omit {
                 continue;
             }
             // SAFETY: HostState display invariant; face+hit created on this display.
@@ -1037,14 +1053,14 @@ fn cancel_drag(state: &mut HostState) {
     ));
     mark_site(&format!("overlay-x11:relocate-cancel:{}", drag.id));
     if let Some(btn) = state.buttons.get_mut(&drag.id) {
-        btn.spec.x = drag.start_x;
-        btn.spec.y = drag.start_y;
+        btn.spec.face.x = drag.start_x;
+        btn.spec.face.y = drag.start_y;
         let (hit, face, w, h, radius) = (
             btn.hit,
             btn.win,
-            btn.spec.w,
-            btn.spec.h,
-            btn.spec.corner_radius,
+            btn.spec.face.w,
+            btn.spec.face.h,
+            btn.spec.face.corner_radius,
         );
         // SAFETY: HostState display invariant; face+hit are this button's.
         unsafe {
@@ -1067,13 +1083,13 @@ fn commit_drag(state: &mut HostState) {
         return;
     };
     let (nx, ny, hit, face, w, h, radius) = (
-        btn.spec.x,
-        btn.spec.y,
+        btn.spec.face.x,
+        btn.spec.face.y,
         btn.hit,
         btn.win,
-        btn.spec.w,
-        btn.spec.h,
-        btn.spec.corner_radius,
+        btn.spec.face.w,
+        btn.spec.face.h,
+        btn.spec.face.corner_radius,
     );
     if nx == drag.start_x && ny == drag.start_y {
         // Click without move — park hit (may still be at start) and restore shape.
@@ -1130,11 +1146,11 @@ fn relocate_drag_to(state: &mut HostState, root_x: i32, root_y: i32) {
     let Some(btn) = state.buttons.get_mut(&id) else {
         return;
     };
-    if btn.spec.x == nx && btn.spec.y == ny {
+    if btn.spec.face.x == nx && btn.spec.face.y == ny {
         return;
     }
-    btn.spec.x = nx;
-    btn.spec.y = ny;
+    btn.spec.face.x = nx;
+    btn.spec.face.y = ny;
     let motion_n = state
         .drag
         .as_mut()
@@ -1164,7 +1180,13 @@ fn flush_relocate_visual(state: &mut HostState) {
     let Some(btn) = state.buttons.get(&id) else {
         return;
     };
-    let (nx, ny, face, w, h) = (btn.spec.x, btn.spec.y, btn.win, btn.spec.w, btn.spec.h);
+    let (nx, ny, face, w, h) = (
+        btn.spec.face.x,
+        btn.spec.face.y,
+        btn.win,
+        btn.spec.face.w,
+        btn.spec.face.h,
+    );
     if drag.face_x == nx && drag.face_y == ny {
         return;
     }
@@ -1223,7 +1245,7 @@ fn begin_relocate_drag(state: &mut HostState, id: &str, root_x: i32, root_y: i32
     let Some(btn) = state.buttons.get(id) else {
         return;
     };
-    let (bx, by, bhit) = (btn.spec.x, btn.spec.y, btn.hit);
+    let (bx, by, bhit) = (btn.spec.face.x, btn.spec.face.y, btn.hit);
     // Implicit ButtonPress grab over a fullscreen XWayland game freezes that
     // client until the pointer leaves. Ungrab if we had one; no-op for poll-hit.
     // SAFETY: release any automatic grab from a ButtonPress.
@@ -1292,11 +1314,11 @@ fn button_root_rects(state: &HostState) -> Vec<(i32, i32, u32, u32)> {
         .values()
         .filter(|b| b.mapped)
         .map(|b| {
-            let w = b.spec.w.max(1) as i32;
-            let h = b.spec.h.max(1) as i32;
+            let w = b.spec.face.w.max(1) as i32;
+            let h = b.spec.face.h.max(1) as i32;
             (
-                b.spec.x.saturating_sub(PAD),
-                b.spec.y.saturating_sub(PAD),
+                b.spec.face.x.saturating_sub(PAD),
+                b.spec.face.y.saturating_sub(PAD),
                 (w + PAD * 2).max(1) as u32,
                 (h + PAD * 2).max(1) as u32,
             )
@@ -1425,10 +1447,7 @@ fn sync_relocate_shield(state: &mut HostState) {
             if win == 0 {
                 None
             } else {
-                let c_title = std::ffi::CString::new(OVERLAY_WM_TITLE).unwrap_or_default();
-                XStoreName(state.display, win, c_title.as_ptr());
-                set_net_wm_type_notification(state.display, win);
-                set_skip_taskbar_state(state.display, state.root, win);
+                register_overlay_window(state.display, state.root, win, OVERLAY_WM_TITLE);
                 // Keep full Bounding (ARGB bg=0 is invisible). ShapeInput = buttons only.
                 if state.move_cursor != 0 {
                     XDefineCursor(state.display, win, state.move_cursor);
@@ -1571,7 +1590,7 @@ unsafe fn query_pointer_root(display: *mut Display) -> Option<(i32, i32, bool)> 
 /// # Safety
 /// `state.display` must be the host-thread open Display.
 unsafe fn create_hit_window(state: &HostState, spec: &NativeButtonSpec) -> (Window, c_ulong) {
-    let (w, h) = (spec.w.max(1), spec.h.max(1));
+    let (w, h) = (spec.face.w.max(1), spec.face.h.max(1));
     // ARGB only pays off under a compositor (`state.argb` — XWayland or
     // X11 + picom); bare X11 would show the cover as an opaque black box.
     let Some(av) = state.argb else {
@@ -1584,8 +1603,8 @@ unsafe fn create_hit_window(state: &HostState, spec: &NativeButtonSpec) -> (Wind
             XCreateWindow(
                 state.display,
                 state.root,
-                spec.x,
-                spec.y,
+                spec.face.x,
+                spec.face.y,
                 w,
                 h,
                 0,
@@ -1612,8 +1631,8 @@ unsafe fn create_hit_window(state: &HostState, spec: &NativeButtonSpec) -> (Wind
         let hit = XCreateWindow(
             state.display,
             state.root,
-            spec.x,
-            spec.y,
+            spec.face.x,
+            spec.face.y,
             w,
             h,
             0,
@@ -1635,10 +1654,7 @@ unsafe fn create_hit_window(state: &HostState, spec: &NativeButtonSpec) -> (Wind
             return (0, 0);
         }
         // Never painted: ARGB bg 0 keeps the cover invisible with full Bounding.
-        let c_title = std::ffi::CString::new(OVERLAY_WM_TITLE).unwrap_or_default();
-        XStoreName(state.display, hit, c_title.as_ptr());
-        set_net_wm_type_notification(state.display, hit);
-        set_skip_taskbar_state(state.display, state.root, hit);
+        register_overlay_window(state.display, state.root, hit, OVERLAY_WM_TITLE);
         (hit, colormap)
     }
 }
@@ -1656,7 +1672,7 @@ unsafe fn create_face_window(
     state: &HostState,
     spec: &NativeButtonSpec,
 ) -> Option<(Window, bool, c_ulong)> {
-    let (w, h) = (spec.w.max(1), spec.h.max(1));
+    let (w, h) = (spec.face.w.max(1), spec.face.h.max(1));
     if let Some(av) = state.argb {
         // SAFETY: HostState display invariant; `attrs` fields all set below.
         unsafe {
@@ -1673,8 +1689,8 @@ unsafe fn create_face_window(
             let win = XCreateWindow(
                 state.display,
                 state.root,
-                spec.x,
-                spec.y,
+                spec.face.x,
+                spec.face.y,
                 w,
                 h,
                 0,
@@ -1699,8 +1715,8 @@ unsafe fn create_face_window(
     }
     // 24-bit fallback. Transparent fill still needs a backing pixel for any
     // unshaped flecks / Expose.
-    let bg_rgb = if spec.bg[3] > 0 {
-        [spec.bg[0], spec.bg[1], spec.bg[2]]
+    let bg_rgb = if spec.face.bg[3] > 0 {
+        [spec.face.bg[0], spec.face.bg[1], spec.face.bg[2]]
     } else {
         [0, 0, 0]
     };
@@ -1718,8 +1734,8 @@ unsafe fn create_face_window(
         let win = XCreateWindow(
             state.display,
             state.root,
-            spec.x,
-            spec.y,
+            spec.face.x,
+            spec.face.y,
             w,
             h,
             0,
@@ -1758,10 +1774,7 @@ fn create_button(
             }
             return Err(OverlayError::CreateWindow("button face"));
         };
-        let c_title = std::ffi::CString::new(OVERLAY_WM_TITLE).unwrap_or_default();
-        XStoreName(state.display, win, c_title.as_ptr());
-        set_net_wm_type_notification(state.display, win);
-        set_skip_taskbar_state(state.display, state.root, win);
+        register_overlay_window(state.display, state.root, win, OVERLAY_WM_TITLE);
         apply_empty_input_shape(state.display, win);
         x_select_button_input(state.display, hit, state.relocate_mode);
         (hit, hit_colormap, win, argb, face_colormap)
@@ -1775,14 +1788,17 @@ fn create_button(
     // Do not MapRaised gated buttons until the found-map says so — mapping here
     // then relying on apply_gate_visibility left a visible flash (and ghosts if
     // the mapped flag ever drifted).
-    let map_now = state.relocate_mode
-        || !spec.visibility_gated
-        || state
-            .visibility
-            .lock()
-            .get(&spec.id)
-            .copied()
-            .unwrap_or(false);
+    // Mapping during capture-omit, then unmapping in apply_gate_visibility,
+    // flashes the button while a macro is hiding it.
+    let map_now = !state.capture_omit
+        && (state.relocate_mode
+            || !spec.visibility_gated
+            || state
+                .visibility
+                .lock()
+                .get(&spec.id)
+                .copied()
+                .unwrap_or(false));
     if map_now {
         // MapRaised when relocate keep-above: buttons must sit above the Sqyre
         // editor (same XWayland stack). Plain Map otherwise — raising over a
@@ -1800,13 +1816,13 @@ fn create_button(
         mark_site(&format!("overlay-x11:map:{}", spec.id));
         note(&format!(
             "overlay-x11: mapped id={} {}x{}+{}+{} (face+hit)",
-            spec.id, spec.w, spec.h, spec.x, spec.y
+            spec.id, spec.face.w, spec.face.h, spec.face.x, spec.face.y
         ));
     } else {
         mark_site(&format!("overlay-x11:create-hidden:{}", spec.id));
         note(&format!(
             "overlay-x11: created-hidden id={} {}x{}+{}+{} (gated)",
-            spec.id, spec.w, spec.h, spec.x, spec.y
+            spec.id, spec.face.w, spec.face.h, spec.face.x, spec.face.y
         ));
     }
     Ok(LiveButton {
@@ -1825,20 +1841,7 @@ fn create_button(
 }
 
 fn paint_button(state: &HostState, btn: &LiveButton, update_shape: bool) {
-    let paint = ButtonPaint {
-        w: btn.spec.w.max(1),
-        h: btn.spec.h.max(1),
-        bg: btn.spec.bg,
-        border: btn.spec.border,
-        border_width: btn.spec.border_width,
-        corner_radius: btn.spec.corner_radius,
-        icon_glyph: btn.spec.icon_glyph,
-        icon: btn.spec.icon,
-        icon_hover: btn.spec.icon_hover,
-        hovered: btn.hovered,
-        busy: btn.spec.busy,
-        busy_phase: btn.busy_phase,
-    };
+    let paint = ButtonPaint::from_face(&btn.spec.face, btn.hovered, btn.spec.busy, btn.busy_phase);
     let rgba = if btn.argb {
         raster::rasterize_argb(&paint)
     } else {
@@ -2026,7 +2029,12 @@ fn sync_press_stops(state: &mut HostState) {
             continue;
         }
         changed = true;
-        let (hit, w, h, radius) = (btn.hit, btn.spec.w, btn.spec.h, btn.spec.corner_radius);
+        let (hit, w, h, radius) = (
+            btn.hit,
+            btn.spec.face.w,
+            btn.spec.face.h,
+            btn.spec.face.corner_radius,
+        );
         apply_busy_hit_shape(state.display, state.press_stops, hit, w, h, radius);
     }
     if changed {
@@ -2080,9 +2088,9 @@ fn apply_running_busy(state: &mut HostState, running: Option<&str>) {
         flipped = true;
         let (hit, w, h, radius, press_stops) = (
             btn.hit,
-            btn.spec.w,
-            btn.spec.h,
-            btn.spec.corner_radius,
+            btn.spec.face.w,
+            btn.spec.face.h,
+            btn.spec.face.corner_radius,
             state.press_stops,
         );
         if want {
@@ -2119,10 +2127,10 @@ fn show_tip_for(state: &mut HostState, button_id: &str) {
         hide_tip(state);
         return;
     }
-    let btn_x = btn.spec.x;
-    let btn_y = btn.spec.y;
-    let btn_w = btn.spec.w as i32;
-    let btn_h = btn.spec.h as i32;
+    let btn_x = btn.spec.face.x;
+    let btn_y = btn.spec.face.y;
+    let btn_w = btn.spec.face.w as i32;
+    let btn_h = btn.spec.face.h as i32;
     let (tw, th, rgba) = raster::rasterize_tip(&tip_text);
     if tw == 0 || th == 0 || rgba.is_empty() {
         hide_tip(state);
@@ -2470,10 +2478,7 @@ fn create_chooser_window(
         if face == 0 {
             return Err("XCreateWindow chooser failed".into());
         }
-        let c_title = std::ffi::CString::new(OVERLAY_WM_TITLE).unwrap_or_default();
-        XStoreName(state.display, face, c_title.as_ptr());
-        set_net_wm_type_notification(state.display, face);
-        set_skip_taskbar_state(state.display, state.root, face);
+        register_overlay_window(state.display, state.root, face, OVERLAY_WM_TITLE);
         let radius = TIP_CORNER_PX.round().max(0.0) as i32;
         let mut rects = rounded_rect_xrectangles(w as i32, h as i32, radius);
         apply_shape_region(state.display, face, SHAPE_BOUNDING, &mut rects);
@@ -2533,10 +2538,7 @@ fn create_tip_window(
         if win == 0 {
             return Err(OverlayError::CreateWindow("tip"));
         }
-        let c_title = std::ffi::CString::new(OVERLAY_TIP_WM_TITLE).unwrap_or_default();
-        XStoreName(state.display, win, c_title.as_ptr());
-        set_net_wm_type_notification(state.display, win);
-        set_skip_taskbar_state(state.display, state.root, win);
+        register_overlay_window(state.display, state.root, win, OVERLAY_TIP_WM_TITLE);
         apply_tip_shape(state.display, win, w, h);
         // Map without raising — show_tip stacks tip below button hits.
         XMapWindow(state.display, win);
@@ -2965,14 +2967,7 @@ fn destroy_all(state: &mut HostState) {
     for (_, live) in state.buttons.drain() {
         // SAFETY: HostState display invariant; face+hit created on this display.
         unsafe {
-            x_destroy_window(state.display, live.win);
-            x_destroy_window(state.display, live.hit);
-            if live.face_colormap != 0 {
-                XFreeColormap(state.display, live.face_colormap);
-            }
-            if live.hit_colormap != 0 {
-                XFreeColormap(state.display, live.hit_colormap);
-            }
+            destroy_live_button(state.display, &live);
         }
     }
     if !state.argb_gc.is_null() {
@@ -3114,6 +3109,18 @@ unsafe fn x_close_display(display: *mut Display) {
 
 /// # Safety
 /// `display` is a live host-thread connection and `win` was created on it.
+/// Overlay window `title` plus the EWMH notification-type and skip-taskbar props.
+// SAFETY: caller guarantees a live `display` and a created `win` on `root`.
+unsafe fn register_overlay_window(display: *mut Display, root: Window, win: Window, title: &str) {
+    let c_title = std::ffi::CString::new(title).unwrap_or_default();
+    // SAFETY: `display`/`win`/`root` invariants come from the caller; `c_title` is NUL-terminated.
+    unsafe {
+        XStoreName(display, win, c_title.as_ptr());
+        set_net_wm_type_notification(display, win);
+        set_skip_taskbar_state(display, root, win);
+    }
+}
+
 unsafe fn set_net_wm_type_notification(display: *mut Display, win: Window) {
     // SAFETY: caller guarantees live `display`/`win`; atom names are NUL-terminated C
     // literals and `val` outlives the XChangeProperty call (1 element, format 32).
@@ -3366,17 +3373,19 @@ mod tests {
         NativeButtonSpec {
             id: "b1".into(),
             macro_name: "m".into(),
-            x: 100,
-            y: 200,
-            w: 48,
-            h: 48,
-            bg: [10, 20, 30, 200],
-            border: [255, 255, 255, 255],
-            border_width: 2.0,
-            corner_radius: 8.0,
-            icon_glyph: '+',
-            icon: [255, 255, 255, 255],
-            icon_hover: [200, 200, 200, 255],
+            face: crate::ButtonFace {
+                x: 100,
+                y: 200,
+                w: 48,
+                h: 48,
+                bg: [10, 20, 30, 200],
+                border: [255, 255, 255, 255],
+                border_width: 2.0,
+                corner_radius: 8.0,
+                icon_glyph: '+',
+                icon: [255, 255, 255, 255],
+                icon_hover: [200, 200, 200, 255],
+            },
             tip: "run m".into(),
             busy: false,
             visibility_gated: false,
@@ -3397,7 +3406,10 @@ mod tests {
 
         // Geometry-only move/resize.
         let moved = NativeButtonSpec {
-            x: base.x + 10,
+            face: crate::ButtonFace {
+                x: base.face.x + 10,
+                ..base.face
+            },
             ..base.clone()
         };
         let d = spec_delta(&base, &moved);
@@ -3405,7 +3417,10 @@ mod tests {
 
         // Radius is style + radius (input shape depends on it), not geom.
         let rounded = NativeButtonSpec {
-            corner_radius: base.corner_radius + 4.0,
+            face: crate::ButtonFace {
+                corner_radius: base.face.corner_radius + 4.0,
+                ..base.face
+            },
             ..base.clone()
         };
         let d = spec_delta(&base, &rounded);
@@ -3413,7 +3428,10 @@ mod tests {
 
         // Sub-epsilon radius changes do not churn repaints.
         let near = NativeButtonSpec {
-            corner_radius: base.corner_radius + f32::EPSILON / 2.0,
+            face: crate::ButtonFace {
+                corner_radius: base.face.corner_radius + f32::EPSILON / 2.0,
+                ..base.face
+            },
             ..base.clone()
         };
         assert_eq!(spec_delta(&base, &near), spec_delta(&base, &base));
@@ -3421,11 +3439,17 @@ mod tests {
         // But the compare scales with the value: a sub-EPSILON diff is a real
         // change for thin widths (absolute EPSILON would have missed it).
         let thin = NativeButtonSpec {
-            border_width: 0.25,
+            face: crate::ButtonFace {
+                border_width: 0.25,
+                ..base.face
+            },
             ..base.clone()
         };
         let thinner = NativeButtonSpec {
-            border_width: 0.25 + f32::EPSILON / 2.0,
+            face: crate::ButtonFace {
+                border_width: 0.25 + f32::EPSILON / 2.0,
+                ..base.face
+            },
             ..base.clone()
         };
         assert!(spec_delta(&thin, &thinner).style);
@@ -3439,7 +3463,10 @@ mod tests {
         assert!(d.style && !d.geom && !d.radius);
 
         let tinted = NativeButtonSpec {
-            icon_hover: [1, 2, 3, 4],
+            face: crate::ButtonFace {
+                icon_hover: [1, 2, 3, 4],
+                ..base.face
+            },
             ..base.clone()
         };
         assert!(spec_delta(&base, &tinted).style);
@@ -3456,8 +3483,11 @@ mod tests {
         assert!(!spec_contains(&s, 100, 199));
         // Zero/negative-dim specs still hit a 1px box.
         let zero = NativeButtonSpec {
-            w: 0,
-            h: 0,
+            face: crate::ButtonFace {
+                w: 0,
+                h: 0,
+                ..spec().face
+            },
             ..spec()
         };
         assert!(spec_contains(&zero, 100, 200));

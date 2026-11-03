@@ -5,7 +5,7 @@
 
 use super::app_resolve::{desktop_app_id_for_pid, desktop_label_for_pid, process_from_pid};
 use crate::{CaptureError, WindowInfo};
-use sqyre_ports::AutomationError;
+use sqyre_ports::{AutomationError, APP_ID};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -181,7 +181,7 @@ const SKIP_NAMES: &[&str] = &[
     "ibus-",
     "mutter",
     "pipewire",
-    "sqyre",
+    APP_ID,
     "wireplumber",
     "xwayland",
 ];

@@ -21,8 +21,8 @@ pub const FLOATER_MIN_EDITOR: [f32; 2] = [520.0, 280.0];
 pub const FLOATER_MIN_PICKER: [f32; 2] = [400.0, 280.0];
 /// Command palette floor.
 pub const FLOATER_MIN_PALETTE: [f32; 2] = [400.0, 200.0];
-/// Space reserved below a picker scroll for a Save/Cancel footer row.
-pub const FOOTER_RESERVE_SAVE_CANCEL: f32 = 52.0;
+/// Space reserved below a picker scroll for the floating Save chip / action row.
+pub const FOOTER_RESERVE_ACTION: f32 = 52.0;
 
 /// Old/new [`egui::Context::content_rect`] for one frame after an OS window resize.
 ///
@@ -116,6 +116,15 @@ fn apply_dialog_bounds<'a>(window: egui::Window<'a>, ctx: &egui::Context) -> egu
     window.constrain_to(rect).max_size(rect.size())
 }
 
+/// egui's default title frame inherits `window_margin` (6pt) on every side,
+/// which inflates the bar well past the Heading row it already has to hold.
+/// Dialogs get a slim bar: horizontal margins match the window, vertical 2pt.
+/// Applies to every `fit_dialog_*` window; ignored where `title_bar` is false.
+fn compact_title_frame(style: &egui::Style) -> egui::Frame {
+    let m = style.spacing.window_margin;
+    egui::Frame::window(style).inner_margin(egui::Margin::symmetric(m.left, 2))
+}
+
 fn fit_dialog_common<'a>(
     window: egui::Window<'a>,
     ctx: &egui::Context,
@@ -124,6 +133,7 @@ fn fit_dialog_common<'a>(
 ) -> egui::Window<'a> {
     let window = window.id(id);
     let window = apply_dialog_bounds(window, ctx);
+    let window = window.title_frame(compact_title_frame(ctx.global_style().as_ref()));
     match pending_scale {
         Some(pending) => apply_pending_viewport_scale(window, ctx, id, pending),
         None => window,
@@ -180,9 +190,11 @@ pub fn visible_height(ui: &egui::Ui) -> f32 {
 
 /// Right-edge width covered by a floating vertical scrollbar.
 ///
-/// egui's default `floating_allocated_width` is 0, so the bar overlays content
-/// without shrinking `available_width`. Subtract this when sizing columns or
-/// anchoring chrome to the visible right edge.
+/// [`crate::theme::scroll_style`] reserves no lane
+/// (`floating_allocated_width = 0`), so the bar — and its `bar_width`-wide
+/// hit rect — overlay the content edge: this returns `bar_width` under the
+/// app style. Subtract when sizing columns or anchoring chrome to the
+/// visible right edge.
 pub fn floating_scrollbar_overlay_width(ui: &egui::Ui) -> f32 {
     let scroll = &ui.spacing().scroll;
     if scroll.floating {
@@ -197,17 +209,43 @@ pub fn visible_content_width(ui: &egui::Ui) -> f32 {
     (visible_width(ui) - floating_scrollbar_overlay_width(ui)).max(1.0)
 }
 
+/// Shrink this row's `max_width` so its right edge lands on the painted clip.
+///
+/// `Layout::right_to_left` controls anchored at `max_rect().right()` can land
+/// past the clip when a parent clips tighter than the layout bound (scroll
+/// viewport edges, nested panes). `set_max_width` anchors at the cursor, so
+/// the bound is `clip.right - cursor.left` — call after any left-side
+/// content, immediately before the right-aligned widgets. For rows that must
+/// also clear a floating scrollbar's overlay, see
+/// [`floating_scrollbar_overlay_width`].
+pub fn clamp_row_right_to_clip(ui: &mut egui::Ui) {
+    // Clip is the paint bound, max_rect the layout bound — take the tighter of
+    // the two. In bare test contexts the clip can be wider, where
+    // `set_max_width` to the clip would expand the row past its pane.
+    let right = ui.max_rect().right().min(ui.clip_rect().right());
+    ui.set_max_width((right - ui.cursor().min.x).max(1.0));
+}
+
 /// Fill a resizable [`egui::Window`] body without ratcheting its Resize state.
 ///
-/// Allocates exactly the painted window region ([`visible_size`]) and runs
-/// `add_body` in a [`Ui::new_child`] so child `min_size` cannot advance the
-/// parent (unlike [`Ui::scope_builder`], which would push edges off-screen).
+/// Allocates exactly the Resize target — `available_size` is already bounded
+/// by the window's `inner_rect` (`desired_size`), clamped to the dialog
+/// region — and runs `add_body` in a [`Ui::new_child`] so child `min_size`
+/// cannot advance the parent (unlike [`Ui::scope_builder`], which would push
+/// edges off-screen).
+///
+/// Do not bound the body by `clip_rect`: the painted window lags a frame
+/// behind `desired_size` while a dialog settles open, so a clip-bounded body
+/// reports a shrinking `min_size` and the window stair-steps toward its final
+/// size a few points per frame.
 ///
 /// Use with [`fit_dialog_popup`] (not [`fit_dialog_window`]): an outer Window
 /// scroll makes `available_size` track `max_size` and defeats this.
-pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui)) {
-    let size = visible_size(ui).max(egui::vec2(1.0, 1.0));
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui)) -> egui::Response {
+    let cap = dialog_constrain_rect(ui.ctx()).size();
+    let avail = ui.available_size();
+    let size = egui::vec2(avail.x.min(cap.x).max(1.0), avail.y.min(cap.y).max(1.0));
+    let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::hover());
     let mut body = ui.new_child(
         egui::UiBuilder::new()
             .max_rect(rect)
@@ -216,6 +254,7 @@ pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui))
     body.set_clip_rect(rect.intersect(ui.clip_rect()));
     body.set_max_size(rect.size());
     add_body(&mut body);
+    resp
 }
 
 /// Keep a floating dialog inside [`dialog_constrain_rect`], scrolling overflow
@@ -224,7 +263,7 @@ pub fn fill_resize_body(ui: &mut egui::Ui, add_body: impl FnOnce(&mut egui::Ui))
 /// Prefer this for simple dialogs whose body is mostly one scroll region.
 /// Panels that allocate their own split/scroll layout should use
 /// [`fit_dialog_popup`] plus [`fill_resize_body`] and an inner
-/// [`crate::pickers::dialog_scroll`].
+/// [`crate::widgets::show_dialog_scroll`].
 pub fn fit_dialog_window<'a>(
     window: egui::Window<'a>,
     ctx: &egui::Context,
@@ -279,45 +318,31 @@ fn poll_save_keys(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
     }
 }
 
-/// Right-aligned footer: **Cancel left, Save right**.
+/// Right-aligned **Save** action. Esc is the only cancel — every surface that
+/// uses this row also has a window ✕ / ◂ Back, so no painted Cancel repeats it.
 ///
-/// Sole Save/Cancel footer (audit D1 / P1-9). Uses `right_to_left` and allocates
-/// **Save first** so it sits on the right; Cancel is allocated next (to Save's
-/// left). Do not add a second helper (`save_cancel_row_ltr` or similar) or reverse
-/// the allocation order — that flips the visual order.
-///
-/// Save glows while `save_enabled` (dirty pending work). `Esc` cancels; `Enter`
-/// saves only when `save_enabled` and egui is not routing keys to a text field.
-pub fn save_cancel_row(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
-    paint_save_cancel_row(ui, save_enabled).0
+/// Uses `right_to_left` so Save sits on the right. Save glows while
+/// `save_enabled` (dirty pending work). `Esc` cancels; `Enter` saves only when
+/// `save_enabled` and egui is not routing keys to a text field.
+pub fn save_row(ui: &mut egui::Ui, save_enabled: bool) -> SaveCancel {
+    paint_save_row(ui, save_enabled).0
 }
 
-/// Shared paint path for [`save_cancel_row`]; also returns Cancel/Save rects for tests.
-fn paint_save_cancel_row(
-    ui: &mut egui::Ui,
-    save_enabled: bool,
-) -> (SaveCancel, egui::Rect, egui::Rect) {
+/// Shared paint path for [`save_row`]; also returns the Save rect for tests.
+fn paint_save_row(ui: &mut egui::Ui, save_enabled: bool) -> (SaveCancel, egui::Rect) {
     let mut out = SaveCancel::None;
-    let mut cancel_rect = egui::Rect::NOTHING;
     let mut save_rect = egui::Rect::NOTHING;
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        // First in RTL = rightmost → Save on the right, Cancel on its left.
         let save = crate::widgets::dirty_action_button(ui, "Save", save_enabled);
-        let cancel = ui.button("Cancel");
         save_rect = save.rect;
-        cancel_rect = cancel.rect;
-        // Prefer Cancel if both somehow click in one frame (matches prior).
         if save.clicked() {
             out = SaveCancel::Save;
-        }
-        if cancel.clicked() {
-            out = SaveCancel::Cancel;
         }
     });
     if out == SaveCancel::None {
         out = poll_save_keys(ui, save_enabled);
     }
-    (out, cancel_rect, save_rect)
+    (out, save_rect)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -327,7 +352,7 @@ pub enum ConfirmCancel {
     Cancel,
 }
 
-/// Visual role for a confirm / choice primary button.
+/// Visual role for a [`confirm_choice_row`] choice button.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConfirmKind {
     /// Neutral primary (Overwrite, Yes, Add, …).
@@ -363,15 +388,41 @@ pub fn poll_confirm_keys(ui: &mut egui::Ui) -> ConfirmCancel {
     }
 }
 
+/// Right-anchored button strip that only claims its height.
+///
+/// `with_layout(right_to_left)` would report the whole offered width as
+/// `min_size`, stretching auto-sized dialogs to the constrain rect; painting
+/// into a floating child (same trick as `float_bottom_right`) anchors the
+/// buttons to the window's own right edge while the row stays as wide as the
+/// message text alone.
+fn right_button_row(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
+    // Clip is the paint bound, max_rect the layout bound — anchor to the
+    // tighter of the two so the buttons land on the painted edge.
+    let right = ui.max_rect().right().min(ui.clip_rect().right());
+    let h = ui.spacing().interact_size.y;
+    let top = ui.cursor().min.y;
+    let strip = egui::Rect::from_min_max(
+        ui.cursor().min,
+        egui::pos2(right.max(ui.cursor().min.x + 1.0), top + h),
+    );
+    let mut row = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(strip)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    add(&mut row);
+    ui.add_space(h);
+}
+
 /// Cancel-only footer for record / dismiss-only dialogs.
 ///
-/// Button order matches [`confirm_cancel_row`] (Cancel on the left). When
+/// Right-aligned like [`confirm_cancel_row`] (Cancel at the right edge). When
 /// `esc_dismisses`, Esc is consumed as Cancel (same path as confirms). Pass
 /// `false` when Escape is a recordable key (single-key record modal).
 pub fn dismiss_row(ui: &mut egui::Ui, esc_dismisses: bool) -> bool {
     let mut cancel = false;
-    ui.horizontal(|ui| {
-        if ui.button("Cancel").clicked() {
+    right_button_row(ui, |ui| {
+        if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
             cancel = true;
         }
     });
@@ -381,22 +432,20 @@ pub fn dismiss_row(ui: &mut egui::Ui, esc_dismisses: bool) -> bool {
     cancel
 }
 
-/// Cancel left + labeled primary right for destructive / overwrite prompts.
+/// Red `✕` cancel beside a green `✓` confirm at the right edge — the icon pair
+/// reads as no / yes. Right-aligned like [`save_row`].
 ///
 /// `confirm_label` is the action verb (**Delete**, **Overwrite**, …) — never
-/// generic "Confirm". `Enter` confirms and `Esc` cancels.
-pub fn confirm_cancel_row(
-    ui: &mut egui::Ui,
-    confirm_label: &str,
-    kind: ConfirmKind,
-) -> ConfirmCancel {
+/// generic "Confirm" — kept as the check button's hover text and AccessKit
+/// name. `Enter` confirms and `Esc` cancels.
+pub fn confirm_cancel_row(ui: &mut egui::Ui, confirm_label: &str) -> ConfirmCancel {
     let mut out = ConfirmCancel::None;
-    ui.horizontal(|ui| {
-        if ui.button("Cancel").clicked() {
-            out = ConfirmCancel::Cancel;
-        }
-        if confirm_button(ui, confirm_label, kind).clicked() {
+    right_button_row(ui, |ui| {
+        if crate::widgets::confirm_icon_button(ui, confirm_label).clicked() {
             out = ConfirmCancel::Confirm;
+        }
+        if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
+            out = ConfirmCancel::Cancel;
         }
     });
     if out == ConfirmCancel::None {
@@ -414,7 +463,7 @@ pub enum ConfirmChoice {
     Choice(usize),
 }
 
-/// Cancel left + one or more labeled choice buttons.
+/// Cancel + one or more labeled choice buttons, right-aligned.
 ///
 /// `Esc` → Cancel. `Enter` → `enter_choice` when `Some`.
 pub fn confirm_choice_row(
@@ -423,14 +472,14 @@ pub fn confirm_choice_row(
     enter_choice: Option<usize>,
 ) -> ConfirmChoice {
     let mut out = ConfirmChoice::None;
-    ui.horizontal(|ui| {
-        if ui.button("Cancel").clicked() {
-            out = ConfirmChoice::Cancel;
-        }
-        for (i, (label, kind)) in choices.iter().enumerate() {
+    right_button_row(ui, |ui| {
+        for (i, (label, kind)) in choices.iter().enumerate().rev() {
             if confirm_button(ui, label, *kind).clicked() {
                 out = ConfirmChoice::Choice(i);
             }
+        }
+        if crate::widgets::cancel_icon_button(ui, "Cancel").clicked() {
+            out = ConfirmChoice::Cancel;
         }
     });
     if out == ConfirmChoice::None {
@@ -481,29 +530,61 @@ mod tests {
     use egui::{Event, Key, Modifiers, RawInput};
 
     #[test]
-    fn save_cancel_row_places_cancel_left_of_save() {
+    fn confirm_row_right_aligns_without_inflating_width() {
         let ctx = egui::Context::default();
-        let mut cancel_min_x = f32::NAN;
-        let mut save_min_x = f32::NAN;
+        let mut min_right = f32::NAN;
+        let mut content_right = f32::NAN;
         ctx.run_ui(RawInput::default(), |ui| {
-            ui.set_width(320.0);
-            let (outcome, cancel_rect, save_rect) = paint_save_cancel_row(ui, true);
-            assert_eq!(outcome, SaveCancel::None);
-            cancel_min_x = cancel_rect.min.x;
-            save_min_x = save_rect.min.x;
+            ui.set_max_width(320.0);
+            assert_eq!(confirm_cancel_row(ui, "Delete"), ConfirmCancel::None);
+            min_right = ui.min_rect().right();
+            content_right = ui.max_rect().right();
         })
         .drop_without_applying_deltas();
+        // The row only claims its height: auto-sized dialogs must not widen to
+        // the offered rect just to host right-aligned buttons.
         assert!(
-            cancel_min_x < save_min_x,
-            "Cancel ({cancel_min_x}) must be left of Save ({save_min_x})"
+            min_right < content_right - 200.0,
+            "row min width must not reach the right edge ({min_right} vs {content_right})"
+        );
+        let button_right = ctx.viewport(|v| {
+            v.prev_pass
+                .widgets
+                .get_layer(egui::LayerId::background())
+                .filter(|w| w.sense.senses_click())
+                .map(|w| w.rect.right())
+                .fold(f32::NEG_INFINITY, f32::max)
+        });
+        assert!(
+            button_right >= content_right - 1.0,
+            "confirm button must anchor to the right edge ({button_right} vs {content_right})"
         );
     }
 
     #[test]
-    fn save_cancel_row_esc_cancels_enter_saves_when_enabled() {
+    fn save_row_places_save_at_right_edge() {
+        let ctx = egui::Context::default();
+        let mut save_max_x = f32::NAN;
+        let mut content_max_x = f32::NAN;
+        ctx.run_ui(RawInput::default(), |ui| {
+            ui.set_width(320.0);
+            let (outcome, save_rect) = paint_save_row(ui, true);
+            assert_eq!(outcome, SaveCancel::None);
+            save_max_x = save_rect.max.x;
+            content_max_x = ui.max_rect().max.x;
+        })
+        .drop_without_applying_deltas();
+        assert!(
+            save_max_x >= content_max_x - 1.0,
+            "Save ({save_max_x}) must be right-aligned (content max {content_max_x})"
+        );
+    }
+
+    #[test]
+    fn save_row_esc_cancels_enter_saves_when_enabled() {
         let ctx = egui::Context::default();
         ctx.run_ui(RawInput::default(), |ui| {
-            assert_eq!(save_cancel_row(ui, false), SaveCancel::None);
+            assert_eq!(save_row(ui, false), SaveCancel::None);
         })
         .drop_without_applying_deltas();
 
@@ -516,7 +597,7 @@ mod tests {
             modifiers: Modifiers::NONE,
         });
         ctx.run_ui(esc, |ui| {
-            assert_eq!(save_cancel_row(ui, true), SaveCancel::Cancel);
+            assert_eq!(save_row(ui, true), SaveCancel::Cancel);
         })
         .drop_without_applying_deltas();
 
@@ -529,8 +610,8 @@ mod tests {
             modifiers: Modifiers::NONE,
         });
         ctx.run_ui(enter, |ui| {
-            assert_eq!(save_cancel_row(ui, true), SaveCancel::Save);
-            assert_eq!(save_cancel_row(ui, false), SaveCancel::None);
+            assert_eq!(save_row(ui, true), SaveCancel::Save);
+            assert_eq!(save_row(ui, false), SaveCancel::None);
         })
         .drop_without_applying_deltas();
     }
@@ -596,7 +677,7 @@ mod tests {
                 bg_id = Some(ui.button("background").id);
                 let ctx = ui.ctx().clone();
                 egui::Window::new("modal").show(&ctx, |ui| {
-                    out = save_cancel_row(ui, true);
+                    out = save_row(ui, true);
                 });
             })
             .drop_without_applying_deltas();
@@ -606,7 +687,7 @@ mod tests {
             let _ = ui.button("background");
             let ctx = ui.ctx().clone();
             egui::Window::new("modal").show(&ctx, |ui| {
-                out = save_cancel_row(ui, true);
+                out = save_row(ui, true);
             });
         })
         .drop_without_applying_deltas();
@@ -625,7 +706,7 @@ mod tests {
                 let ctx = ui.ctx().clone();
                 egui::Window::new("modal").show(&ctx, |ui| {
                     inside_id = Some(ui.button("inside").id);
-                    out = save_cancel_row(ui, true);
+                    out = save_row(ui, true);
                 });
             })
             .drop_without_applying_deltas();
@@ -635,7 +716,7 @@ mod tests {
             let ctx = ui.ctx().clone();
             egui::Window::new("modal").show(&ctx, |ui| {
                 let _ = ui.button("inside");
-                out = save_cancel_row(ui, true);
+                out = save_row(ui, true);
             });
         })
         .drop_without_applying_deltas();
@@ -650,10 +731,10 @@ mod tests {
             ctx.run_ui(input, |ui| {
                 let ctx = ui.ctx().clone();
                 egui::Window::new("lower").show(&ctx, |ui| {
-                    hits.0 = save_cancel_row(ui, true);
+                    hits.0 = save_row(ui, true);
                 });
                 egui::Window::new("upper").show(&ctx, |ui| {
-                    hits.1 = save_cancel_row(ui, true);
+                    hits.1 = save_row(ui, true);
                 });
             })
             .drop_without_applying_deltas();
@@ -681,6 +762,6 @@ mod tests {
         assert_eq!(FLOATER_MIN_PICKER, [400.0, 280.0]);
         assert_eq!(FLOATER_MIN_PALETTE, [400.0, 200.0]);
         assert_eq!(FLOATER_MIN_EDITOR, [520.0, 280.0]);
-        assert_eq!(FOOTER_RESERVE_SAVE_CANCEL, 52.0);
+        assert_eq!(FOOTER_RESERVE_ACTION, 52.0);
     }
 }

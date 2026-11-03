@@ -3,8 +3,8 @@
 use eframe::egui::{self, Color32, CornerRadius, Stroke, Visuals};
 
 use super::tokens::{
-    accent_dim, chip_fill, error_fg, frame_fill, inner_stroke, panel_split_stroke, rgba, warn_fg,
-    PRIMARY,
+    accent, accent_dim, chip_fill, error_fg, frame_fill, inner_stroke, panel_split_stroke, rgba,
+    warn_fg, WINDOW_RESIZE_CORNER_SIZE,
 };
 
 /// Selected-text stroke — light cream readable on dim gold fill.
@@ -14,8 +14,10 @@ const SELECTION_FG: Color32 = Color32::from_rgb(0xf5, 0xe6, 0xc0);
 pub fn dark_visuals() -> Visuals {
     let mut v = Visuals::dark();
     let dim = accent_dim();
+    let acc = accent();
+    let acc_rgba = |a: u8| rgba([acc.r(), acc.g(), acc.b(), a]);
 
-    v.hyperlink_color = PRIMARY;
+    v.hyperlink_color = acc;
     v.error_fg_color = error_fg();
     v.warn_fg_color = warn_fg();
     v.selection.bg_fill = dim;
@@ -24,17 +26,22 @@ pub fn dark_visuals() -> Visuals {
     // Separators + panel split lines — half-opacity structural stroke (not dim inner cards).
     v.widgets.noninteractive.bg_stroke = panel_split_stroke();
 
-    v.widgets.hovered.bg_stroke = Stroke::new(1.0, PRIMARY);
+    v.widgets.hovered.bg_stroke = Stroke::new(1.0, acc);
     v.widgets.hovered.weak_bg_fill = chip_fill();
-    v.widgets.hovered.bg_fill = rgba([0xdc, 0x9d, 0x2e, 0x35]);
+    v.widgets.hovered.bg_fill = acc_rgba(0x35);
 
-    v.widgets.active.bg_stroke = Stroke::new(1.0, PRIMARY);
-    v.widgets.active.weak_bg_fill = rgba([0xdc, 0x9d, 0x2e, 0x50]);
+    v.widgets.active.bg_stroke = Stroke::new(1.0, acc);
+    v.widgets.active.weak_bg_fill = acc_rgba(0x50);
 
-    v.widgets.open.bg_stroke = Stroke::new(1.0, rgba([0xdc, 0x9d, 0x2e, 0x80]));
+    v.widgets.open.bg_stroke = Stroke::new(1.0, acc_rgba(0x80));
 
-    v.window_stroke = Stroke::new(1.0, PRIMARY);
-    v.text_cursor.stroke = Stroke::new(2.0, PRIMARY);
+    v.window_stroke = Stroke::new(1.0, acc);
+    v.text_cursor.stroke = Stroke::new(2.0, acc);
+
+    // Small corner grip: egui's 12pt `///` glyph covers too much of whatever
+    // sits at a dialog's bottom-right. The hit zone is tightened in
+    // `SettingsUi::apply_appearance` (`resize_grab_radius_corner`).
+    v.resize_corner_size = WINDOW_RESIZE_CORNER_SIZE;
 
     v
 }
@@ -47,9 +54,13 @@ pub fn apply(ctx: &egui::Context) {
 
 /// Floating scrollbars that stay readable when content overflows.
 ///
-/// Keeps `floating_allocated_width = 0` (avoids a 1px H-bar feedback loop when a
-/// vertical bar appears) but raises dormant handle opacity so H/V bars are visible
-/// without requiring hover — otherwise narrow panels look clipped.
+/// `floating_allocated_width` stays 0: bars are a pure overlay at the viewport
+/// edge, so content keeps its full width/height and no lane is reserved. The
+/// thin dormant bar and the expanded hover bar (plus its `bar_width` hit rect)
+/// sit on top of the content edge — [`crate::widgets::visible_content_width`]
+/// subtracts that overlay where chrome must stay clear of it.
+/// Dormant handle opacity is raised so H/V bars are visible without requiring
+/// hover — otherwise narrow panels look clipped.
 pub fn scroll_style() -> egui::style::ScrollStyle {
     let mut s = egui::style::ScrollStyle::floating();
     s.dormant_handle_opacity = 0.55;
@@ -67,36 +78,19 @@ pub fn section_frame(style: &egui::Style) -> egui::Frame {
         .fill(frame_fill())
         .stroke(inner_stroke())
         .corner_radius(CornerRadius::same(4))
-        .inner_margin(egui::Margin::same(8))
+        .inner_margin(egui::Margin::same(6))
 }
 
-/// Full-width framed card, then vertical `gap` after it.
-pub fn framed_section(ui: &mut egui::Ui, gap: f32, add_contents: impl FnOnce(&mut egui::Ui)) {
+/// Full-width framed card, then a [`super::section_gap`] gap after it.
+pub fn framed_section(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui)) {
     // Cap width *inside* the frame. Measuring outside and then applying
     // `set_max_width` ignores inner_margin/stroke, so the right border clips.
+    // Clip-anchored: the reserved scrollbar lane insets the clip, not max_rect.
     section_frame(ui.style()).show(ui, |ui| {
-        ui.set_max_width(crate::widgets::visible_width(ui));
+        crate::widgets::clamp_row_right_to_clip(ui);
         add_contents(ui);
     });
-    ui.add_space(gap);
-}
-
-/// [`framed_section`] with a strong title, optional weak subtitle, and separator.
-pub fn titled_section(
-    ui: &mut egui::Ui,
-    title: &str,
-    subtitle: &str,
-    gap: f32,
-    add_contents: impl FnOnce(&mut egui::Ui),
-) {
-    framed_section(ui, gap, |ui| {
-        ui.label(egui::RichText::new(title).strong().heading());
-        if !subtitle.is_empty() {
-            ui.label(egui::RichText::new(subtitle).weak());
-        }
-        crate::widgets::section_separator(ui);
-        add_contents(ui);
-    });
+    super::add_section_gap(ui);
 }
 
 #[cfg(test)]
@@ -115,6 +109,18 @@ mod tests {
         assert_eq!(v.widgets.hovered.bg_stroke.color, PRIMARY);
         assert_eq!(v.window_stroke.color, PRIMARY);
         assert_eq!(v.widgets.noninteractive.bg_stroke, panel_split_stroke());
+        assert_eq!(v.resize_corner_size, WINDOW_RESIZE_CORNER_SIZE);
+    }
+
+    #[test]
+    fn scrollbars_overlay_the_edge_without_reserving_a_lane() {
+        let s = scroll_style();
+        assert!(s.floating);
+        // Zero allocated width: egui leaves the content rect and clip
+        // untouched and paints the bar over the viewport edge, so scrollable
+        // content keeps the full extent and bars consume no space.
+        assert_eq!(s.floating_allocated_width, 0.0);
+        assert_eq!(s.allocated_width(), 0.0);
     }
 
     #[test]

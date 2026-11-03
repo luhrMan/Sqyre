@@ -17,21 +17,22 @@ pub fn wrapped_row<R>(
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> egui::InnerResponse<R> {
     ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = egui::Vec2::splat(crate::theme::SPACE_8);
+        ui.spacing_mut().item_spacing = egui::Vec2::splat(crate::theme::element_gap(ui));
         add_contents(ui)
     })
 }
 
 /// Lays out `add_contents` left-to-right as one unit that never splits across rows.
 ///
-/// Inside a wrapping parent the unit starts a new row when its width (remembered
-/// from the previous pass) does not fit the space left on the current row. An
-/// unmeasured unit that is not at the row start goes to a new row and the pass is
-/// discarded, so neither a split nor an overflow is ever shown. Outside wrapping
-/// layouts this is a plain `ui.horizontal`.
+/// Inside a wrapping parent the unit starts a new row when its width does not fit
+/// the space left on the current row. An unmeasured unit that is not at the row
+/// start is measured in an invisible probe (instead of discarding the frame — a
+/// discarded frame three passes in a row paints egui's PERF WARNING overlay), so
+/// neither a split nor an overflow is ever shown. Outside wrapping layouts this
+/// is a plain `ui.horizontal`.
 pub fn wrap_unit<R>(
     ui: &mut egui::Ui,
-    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+    mut add_contents: impl FnMut(&mut egui::Ui) -> R,
 ) -> egui::InnerResponse<R> {
     let layout = ui.layout();
     if !(layout.main_wrap && layout.main_dir == egui::Direction::LeftToRight) {
@@ -40,16 +41,20 @@ pub fn wrap_unit<R>(
     let width_id = ui.next_auto_id().with("wrap_unit_width");
     let at_row_start = ui.cursor().min.x <= ui.max_rect().left() + 0.5;
     if !at_row_start {
-        match ui.ctx().data(|d| d.get_temp::<f32>(width_id)) {
-            Some(w) if w <= ui.available_size_before_wrap().x + 0.5 => {}
-            Some(_) => ui.end_row(),
+        let w = match ui.ctx().data(|d| d.get_temp::<f32>(width_id)) {
+            Some(w) => w,
             None => {
-                ui.end_row();
-                ui.ctx().request_discard("new wrap_unit");
+                let mut probe = ui.new_child(egui::UiBuilder::new().invisible());
+                let w = probe.horizontal(&mut add_contents).response.rect.width();
+                ui.ctx().data_mut(|d| d.insert_temp(width_id, w));
+                w
             }
+        };
+        if w > ui.available_size_before_wrap().x + 0.5 {
+            ui.end_row();
         }
     }
-    let inner = ui.horizontal(add_contents);
+    let inner = ui.horizontal(&mut add_contents);
     let w = inner.response.rect.width();
     ui.ctx().data_mut(|d| d.insert_temp(width_id, w));
     inner

@@ -154,7 +154,7 @@ mod tests {
         assert!(matches!(resolve(None), FocusResolve::Hold));
         let overlay = WindowInfo {
             title: sqyre_capture::OVERLAY_WM_TITLE.into(),
-            process_name: "sqyre".into(),
+            process_name: sqyre_ports::APP_ID.into(),
             process_path: "/opt/sqyre".into(),
             icon: None,
         };

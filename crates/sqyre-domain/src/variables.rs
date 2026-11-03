@@ -189,7 +189,7 @@ pub fn collect_known_variable_names_with_monitors(
 
     macro_.root.walk(&mut |action: &Action| {
         match &action.kind {
-            ActionKind::ImageSearch { .. } => has_image_search = true,
+            ActionKind::ImageSearch(_) => has_image_search = true,
             ActionKind::ForEachRow { .. } => has_for_each_row = true,
             ActionKind::ForEachCell { .. } => has_for_each_cell = true,
             _ => {}
@@ -396,7 +396,7 @@ impl VariableStore {
 #[cfg(test)]
 mod known_tests {
     use super::*;
-    use crate::{root_loop, Action, ActionId, ActionKind};
+    use crate::{root_loop, Action, ActionKind};
 
     #[test]
     fn collect_includes_decls_bindings_and_builtins() {
@@ -406,22 +406,16 @@ mod known_tests {
             ..Default::default()
         });
         m.root = root_loop(vec![
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::SetVariable {
-                    assignments: vec![crate::VariableAssignment::new("Count", ScalarValue::Null)],
-                },
-            },
-            Action {
-                id: ActionId::new(),
-                kind: ActionKind::ForEachRow {
-                    name: "rows".into(),
-                    sources: vec![],
-                    start_row: ScalarValue::Null,
-                    end_row: ScalarValue::Null,
-                    subactions: vec![],
-                },
-            },
+            Action::new(ActionKind::SetVariable {
+                assignments: vec![crate::VariableAssignment::new("Count", ScalarValue::Null)],
+            }),
+            Action::new(ActionKind::ForEachRow {
+                name: "rows".into(),
+                sources: vec![],
+                start_row: ScalarValue::Null,
+                end_row: ScalarValue::Null,
+                subactions: vec![],
+            }),
         ]);
         let known = collect_known_variable_names(&m);
         assert!(is_known_variable(&known, "seed"));

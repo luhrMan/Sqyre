@@ -1,7 +1,8 @@
 //! Concise hover help for action editor fields.
 //!
-//! One short sentence per setting. Empty string means no tip.
-//! Prefer a `?` icon ([`icon`] / [`label`]) over inline weak helper paragraphs.
+//! One short sentence per setting. Empty string means no description.
+//! Field labels are semantic icons ([`label`]) whose tooltip is the field
+//! `name`; the paired widget carries the description via [`tip`].
 
 use eframe::egui;
 
@@ -14,52 +15,16 @@ pub fn tip(resp: egui::Response, help: &str) -> egui::Response {
     }
 }
 
-/// Small `?` that shows `help` on hover. Draws nothing when `help` is empty.
-pub fn icon(ui: &mut egui::Ui, help: &str) -> Option<egui::Response> {
-    if help.is_empty() {
-        return None;
-    }
-    let size = ui.text_style_height(&egui::TextStyle::Small);
-    Some(
-        ui.add(
-            egui::Label::new(
-                egui::RichText::new(egui_phosphor::regular::QUESTION)
-                    .weak()
-                    .size(size),
-            )
-            .sense(egui::Sense::hover()),
-        )
-        .on_hover_text(help),
-    )
-}
-
-/// Label with an adjacent `?` help icon when `help` is non-empty.
-pub fn label(ui: &mut egui::Ui, text: &str, help: &str) -> egui::Response {
-    if help.is_empty() {
-        return ui.label(text);
-    }
-    crate::widgets::wrap_unit(ui, |ui| {
-        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_2;
-        let resp = ui.label(text);
-        icon(ui, help);
-        resp
-    })
-    .inner
-}
-
-/// Heading with an adjacent `?` help icon when `help` is non-empty.
-///
-/// `ui.heading` wraps to the pane. The icon follows on the same line when it fits.
-pub fn heading(ui: &mut egui::Ui, text: &str, help: &str) {
-    if help.is_empty() {
-        ui.heading(text);
-        return;
-    }
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_4;
-        ui.heading(text);
-        icon(ui, help);
-    });
+/// Semantic icon standing in for a field's text label. Hovering shows the
+/// field `name` so the icon always identifies what it labels; the field's
+/// description lives on the paired widget via [`tip`]. The icon's accessible
+/// name is `name`.
+pub fn label(ui: &mut egui::Ui, icon: &str, name: &str) -> egui::Response {
+    let resp = ui
+        .add(egui::Label::new(egui::RichText::new(icon)).sense(egui::Sense::hover()))
+        .on_hover_text(name);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, name.to_string()));
+    resp
 }
 
 // --- Shared / common ---
@@ -261,8 +226,10 @@ pub const NAV_KEY_CHORD: &str = "Keys that trigger this branch (one per line).";
 
 pub const DE_NAME: &str =
     "Unique name within this program. Cannot contain < > : \" / \\ | ? * or end with a period.";
+pub const DE_PROGRAM: &str = "Program whose catalog data this form edits.";
 pub const DE_RUNNING_PROGRAM: &str =
     "Process and window title that must own focus for this program's overlay buttons to show.";
+pub const DE_MONITOR: &str = "Monitor slot the bounds read geometry from (1–8).";
 pub const DE_PROGRAM_MACRO_TAGS: &str =
     "When Settings → Macros → Hotkeys → while focused is on, these tags become the hotkey selection while this program owns focus. Same labels as macro tags.";
 pub const DE_COLS: &str =
@@ -272,28 +239,19 @@ pub const DE_ROWS: &str =
 pub const DE_STACK_MAX: &str = "Max stacked instances when capturing variants (0 = unset).";
 pub const DE_MASK: &str = "Optional mask applied during image search.";
 pub const DE_TAGS: &str = "Labels for filtering items in pickers.";
-pub const DE_POINT_COORDS: &str =
-    "X/Y are relative to the monitor; integers or ${var} expressions.";
 pub const DE_POINT_X: &str = "X coordinate (number or expression).";
 pub const DE_POINT_Y: &str = "Y coordinate (number or expression).";
-pub const DE_AREA_BOUNDS: &str =
-    "Bounds are relative to one monitor; integers or ${var} expressions.";
 pub const DE_AREA_LEFT: &str = "Left edge X of the search area.";
 pub const DE_AREA_TOP: &str = "Top edge Y of the search area.";
 pub const DE_AREA_RIGHT: &str = "Right edge X of the search area.";
 pub const DE_AREA_BOTTOM: &str = "Bottom edge Y of the search area.";
 pub const DE_BOUNDS_PREVIEW: &str =
     "Bounds overlay the preview edges; they are relative to one monitor.";
-pub const DE_SCREENCAP_INTRO: &str =
-    "Set monitor-relative LeftX/TopY/RightX/BottomY (type or screen-record), name the capture, then Save writes the framed preview to images/ScreenCap. New Item creates a catalog item with Name, Tags, Cols/Rows/Stack max, and Mask, using the capture as Original.";
 #[cfg(feature = "native-runtime")]
 pub const DE_SCREENCAP_REF: &str =
     "Optional. Picking a search area or collection cell loads its bounds into LeftX/TopY/RightX/BottomY and suggests a filename.";
 pub const DE_SCREENCAP_NEW_ITEM: &str =
     "Create a catalog item in the selected program using Name, Tags, Cols/Rows/Stack max, and Mask, with the preview screenshot as the Original icon.";
-#[cfg(feature = "native-runtime")]
-pub const DE_PIXELCHECK_INTRO: &str =
-    "Select an item, set a search area (reference or inline coords), tune match settings, then inspect the similarity heatmap.";
 #[cfg(feature = "native-runtime")]
 pub const DE_PIXELCHECK_BOUNDS: &str =
     "Bounds overlay the preview edges; relative to one monitor; integers or ${var}.";
@@ -310,10 +268,11 @@ pub const DE_MASK_IMAGE_MODE: &str =
     "Image mask mode — shape fields are hidden while a PNG is on disk.";
 pub const DE_MASK_INVERSE: &str = "When on, only the shape region is kept; the rest is masked out.";
 pub const DE_PREVIEW_ZOOM: &str = "Scroll to zoom; drag to pan when zoomed.";
+/// Declared Variables section (Variables panel).
+pub const VARS_DECLARED: &str =
+    "Initial values seed the runtime store at macro start. Action outputs appear in Live runtime while running.";
 pub const DE_COLLECTION_CELL_ZOOM: &str =
     "Scroll to zoom; drag to pan when zoomed; click/drag selects cells at 100%.";
-pub const DE_OVERLAY_INTRO: &str =
-    "General buttons stay on screen when enabled. Other programs show only while their bound process and window title own focus (bind a window on the Programs tab). The selected button is previewed on screen while you edit.";
 pub const DE_OVERLAY_MACRO: &str =
     "Macro launched when the overlay button is clicked (also used as the button name).";
 pub const DE_OVERLAY_ENABLED: &str =

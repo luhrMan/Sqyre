@@ -9,9 +9,8 @@ pub(crate) const PREFIX_SAVE_ERROR: &str = "Save error";
 ///
 /// Internal dumps (multi-line serde/schema reports, backend debug strings)
 /// still reach the diagnostic log in full; the UI gets the first non-empty
-/// line, whitespace-collapsed and capped, so banners stay readable.
+/// line and whitespace-collapsed, so banners stay readable.
 pub(crate) fn user_error_detail(e: impl std::fmt::Display) -> String {
-    const MAX_CHARS: usize = 160;
     let text = e.to_string();
     let first = text
         .lines()
@@ -19,13 +18,7 @@ pub(crate) fn user_error_detail(e: impl std::fmt::Display) -> String {
         .find(|l| !l.is_empty())
         .unwrap_or("unknown error");
     let collapsed = first.split_whitespace().collect::<Vec<_>>().join(" ");
-    let mut chars = collapsed.chars();
-    if collapsed.chars().count() > MAX_CHARS {
-        let cut: String = chars.by_ref().take(MAX_CHARS - 1).collect();
-        format!("{cut}…")
-    } else {
-        collapsed
-    }
+    collapsed
 }
 
 #[derive(Debug, Clone, Default)]
@@ -62,24 +55,26 @@ impl StatusBanner {
         Self::paint_line(ui, msg, self.status_error);
     }
 
-    /// Paint an ok/err line with the shared status colors (panel footer or list-scoped).
+    /// Paint an ok line, or an error icon whose hover tooltip carries `msg`.
     pub(crate) fn paint_line(ui: &mut egui::Ui, msg: impl AsRef<str>, error: bool) {
-        let color = if error {
-            crate::theme::error_fg()
+        if error {
+            crate::widgets::error_icon(ui, msg.as_ref());
         } else {
-            crate::theme::ok_fg()
-        };
-        ui.colored_label(color, msg.as_ref());
+            ui.add(
+                egui::Label::new(egui::RichText::new(msg.as_ref()).color(crate::theme::ok_fg()))
+                    .wrap(),
+            );
+        }
     }
 
-    /// Paint a prefixed error (`"{prefix}: {detail}"`) with error color.
+    /// Paint a prefixed error (`"{prefix}: {detail}"`) as an icon + tooltip.
     pub(crate) fn paint_prefixed_error(ui: &mut egui::Ui, prefix: &str, detail: &str) {
         Self::paint_line(ui, format!("{prefix}: {detail}"), true);
     }
 
-    /// Paint a warning advisory with theme warn color.
+    /// Paint a warning advisory as an icon + tooltip.
     pub(crate) fn paint_warn(ui: &mut egui::Ui, msg: impl AsRef<str>) {
-        ui.colored_label(crate::theme::warn_fg(), msg.as_ref());
+        crate::widgets::warn_icon(ui, msg.as_ref());
     }
 }
 
@@ -119,5 +114,11 @@ mod tests {
             format!("{PREFIX_SAVE_ERROR}: disk full"),
             "Save error: disk full"
         );
+    }
+
+    #[test]
+    fn user_error_detail_keeps_long_first_line() {
+        let long = "x".repeat(200);
+        assert_eq!(user_error_detail(format!("{long}\nsecond line")), long);
     }
 }

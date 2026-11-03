@@ -39,18 +39,16 @@ impl DataEditor {
         item: &str,
     ) {
         let paths = crate::demo_icons::merged_variant_paths(catalog, target);
-        ui.add_space(crate::theme::SPACE_8);
         crate::widgets::section_separator(ui);
         // Cap to the visible row width — `set_min_width(available_width)` inside a
         // ScrollArea ratchets content wider than the viewport once a scrollbar
         // appears, which clips the trailing buttons.
         let row_w = ui.available_width().max(0.0);
-        let count = format!("({})", paths.len());
+        let count = crate::widgets::count_text(paths.len());
+        let icon_side = crate::widgets::icon_btn_side(ui);
         let need = crate::widgets::text_width(ui, "Icon variants", egui::TextStyle::Button)
             + crate::widgets::text_width(ui, &count, egui::TextStyle::Body)
-            + crate::widgets::text_width(ui, "Add Icon Variant", egui::TextStyle::Button)
-            + ui.spacing().button_padding.x * 2.0
-            + 36.0
+            + icon_side * 2.0
             + ui.spacing().item_spacing.x * 4.0
             + 16.0;
         if need <= row_w {
@@ -59,14 +57,9 @@ impl DataEditor {
                 egui::Layout::left_to_right(egui::Align::Center),
                 |ui| {
                     ui.label(egui::RichText::new("Icon variants").strong());
+                    crate::widgets::clamp_row_right_to_clip(ui);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .button(
-                                egui::RichText::new("Add Icon Variant")
-                                    .color(crate::theme::MACRO_START),
-                            )
-                            .clicked()
-                        {
+                        if crate::widgets::add_button(ui, "Add Icon Variant", true).clicked() {
                             self.request_variant_pick();
                         }
                         if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
@@ -75,7 +68,7 @@ impl DataEditor {
                                 icons.invalidate_path(path);
                             }
                         }
-                        ui.label(egui::RichText::new(&count).weak());
+                        crate::widgets::count_suffix(ui, paths.len());
                     });
                 },
             );
@@ -83,19 +76,14 @@ impl DataEditor {
             ui.horizontal(|ui| {
                 ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 ui.label(egui::RichText::new("Icon variants").strong());
-                ui.label(egui::RichText::new(&count).weak());
+                crate::widgets::count_suffix(ui, paths.len());
                 if crate::widgets::icon_button(ui, "↻", "Refresh").clicked() {
                     icons.invalidate_target(target);
                     for path in &paths {
                         icons.invalidate_path(path);
                     }
                 }
-                if ui
-                    .button(
-                        egui::RichText::new("Add Icon Variant").color(crate::theme::MACRO_START),
-                    )
-                    .clicked()
-                {
+                if crate::widgets::add_button(ui, "Add Icon Variant", true).clicked() {
                     self.request_variant_pick();
                 }
             });
@@ -166,7 +154,6 @@ impl DataEditor {
                         variant: variant.clone(),
                     });
                 }
-                ui.add_space(crate::theme::SPACE_8);
             }
         });
     }
@@ -229,7 +216,11 @@ impl DataEditor {
                 icons.invalidate_target(&target);
                 self.set_ok(format!("Added variant “{added}”."));
                 #[cfg(not(target_arch = "wasm32"))]
-                crate::sound::play_add_sound_if(settings.play_ui_sounds, settings.sound_volume);
+                crate::sound::play_add_sound_if(
+                    settings.play_add_sound,
+                    settings.sound_volume,
+                    &settings.add_sound_file,
+                );
                 #[cfg(target_arch = "wasm32")]
                 let _ = settings;
             }
@@ -298,7 +289,11 @@ impl DataEditor {
                 icons.invalidate_target(&target);
                 self.set_ok(format!("Deleted variant “{variant}”."));
                 #[cfg(not(target_arch = "wasm32"))]
-                crate::sound::play_delete_sound_if(settings.play_ui_sounds, settings.sound_volume);
+                crate::sound::play_delete_sound_if(
+                    settings.play_delete_sound,
+                    settings.sound_volume,
+                    &settings.delete_sound_file,
+                );
                 #[cfg(target_arch = "wasm32")]
                 let _ = settings;
             }
@@ -626,8 +621,9 @@ impl DataEditor {
                     } else {
                         #[cfg(not(target_arch = "wasm32"))]
                         crate::sound::play_add_sound_if(
-                            settings.play_ui_sounds,
+                            settings.play_add_sound,
                             settings.sound_volume,
+                            &settings.add_sound_file,
                         );
                         #[cfg(target_arch = "wasm32")]
                         let _ = settings;

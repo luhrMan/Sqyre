@@ -14,6 +14,9 @@ pub enum NotReady {
     AwaitingFirstFrame,
     #[error("portal capture: no frame yet from PipeWire")]
     NoFrameYet,
+    /// The portal PipeWire stream ended; the shared capturer is reopening.
+    #[error("portal capture: PipeWire stream ended; reopening")]
+    StreamRestarting,
     #[error("screen capture is waiting for screen-recording permission")]
     AwaitingProjection,
 }
@@ -101,6 +104,7 @@ mod tests {
             NotReady::AwaitingPortalPermission,
             NotReady::AwaitingFirstFrame,
             NotReady::NoFrameYet,
+            NotReady::StreamRestarting,
             NotReady::AwaitingProjection,
         ] {
             assert!(CaptureError::from(r).is_retryable(), "{r:?}");

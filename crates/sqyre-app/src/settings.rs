@@ -1,6 +1,7 @@
 //! User Settings window.
 
 use crate::file_dialogs::PickPurpose;
+use crate::help_text as ht;
 use crate::status_banner::StatusBanner;
 use eframe::egui::{self, Color32};
 use sqyre_domain::Macro;
@@ -10,8 +11,9 @@ use sqyre_persist::{
     backups_dir, create_backup, import_backup, list_backups, open_sqyre_dir, prune_backups,
 };
 use sqyre_persist::{
-    move_dir, set_sqyre_dir_override, sqyre_dir, Database, ImportMode, ProgramCatalog,
-    UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+    move_dir, set_sqyre_dir_override, sqyre_dir, Database, HotkeyWhileRunning, ImportMode,
+    ProgramCatalog, UiDensity, UiFontFamily, UserSettings, DEFAULT_UI_FONT_SIZE, DEFAULT_UI_SCALE,
+    MAX_UI_SCALE, MIN_UI_SCALE,
 };
 #[cfg(not(target_arch = "wasm32"))]
 use sqyre_persist::{
@@ -28,6 +30,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 fn settings_window_id() -> egui::Id {
     egui::Id::new("User Settings")
+}
+
+/// Borrowed workspace data the Settings window edits (backups, restores,
+/// data-dir moves, overlay buttons).
+pub struct SettingsData<'a> {
+    pub db: &'a mut Database,
+    pub macros: &'a mut Vec<Macro>,
+    pub catalog: &'a mut ProgramCatalog,
 }
 
 #[derive(Debug, Clone)]
@@ -129,6 +139,7 @@ pub struct SettingsUi {
     pub open: bool,
     settings: UserSettings,
     dirty: bool,
+    ui_scale_apply_pending: bool,
     active_section: SettingsSection,
     /// Filter query for the settings list (case-insensitive fuzzy match).
     search: String,
@@ -139,6 +150,8 @@ pub struct SettingsUi {
     /// Set when the user asks to restart after applying an update.
     #[cfg(not(target_arch = "wasm32"))]
     pub restart_requested: bool,
+    /// Single-key capture for the panic/stop key (global hotkeys are native-only).
+    panic_record: crate::key_record::KeyRecordUi,
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     permissions: crate::permissions_panel::PermissionsPanel,
 }
@@ -158,10 +171,24 @@ impl SettingsUi {
         self.search.clear();
     }
 
+    pub fn section_labels_for_docs() -> Vec<&'static str> {
+        SettingsSection::all().map(SettingsSection::label).collect()
+    }
+
+    pub fn open_section_for_docs(&mut self, label: &str) -> bool {
+        let Some(section) = SettingsSection::all().find(|section| section.label() == label) else {
+            return false;
+        };
+        self.open = true;
+        self.active_section = section;
+        self.search.clear();
+        true
+    }
+
     /// Open the settings window (re-arms search focus).
     pub fn request_open(&mut self, ctx: &egui::Context) {
         self.open = true;
-        crate::pickers::reset_focus_search(ctx, settings_window_id());
+        crate::widgets::reset_focus_search(ctx, settings_window_id());
     }
 
     pub fn settings(&self) -> &UserSettings {
@@ -197,7 +224,12 @@ impl SettingsUi {
     /// Ensure Hack is in the proportional fallback chain so geometric/arrow
     /// symbols (e.g. ➔ ◫) are available — egui's default omits Hack there.
     /// Also registers Phosphor for overlay button icons.
-    pub fn install_fonts(ctx: &egui::Context) {
+    ///
+    /// `UiFontFamily::Monospace` moves Hack to the front of the proportional
+    /// family so all UI text renders mono; `Standard` keeps it as a fallback.
+    /// Rebuilt from `FontDefinitions::default()` every call, so switching the
+    /// family just re-runs this.
+    pub fn install_fonts(ctx: &egui::Context, settings: &UserSettings) {
         let mut fonts = egui::FontDefinitions::default();
         egui_phosphor::add_to_fonts(&mut fonts, egui_phosphor::Variant::Regular);
         // Fill variant as a named family so outline vs filled icons can coexist
@@ -210,12 +242,17 @@ impl SettingsUi {
         crate::overlay_icons::register_phosphor_family(&mut fonts);
         if let Some(prop) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
             if !prop.iter().any(|n| n == "Hack") {
-                // After Ubuntu (UI text), before emoji fallbacks.
-                let insert_at = prop
-                    .iter()
-                    .position(|n| n == "Ubuntu-Light")
-                    .map(|i| i + 1)
-                    .unwrap_or(0);
+                // After Ubuntu (UI text), before emoji fallbacks; first overall
+                // when the whole UI renders monospace.
+                let insert_at = if settings.ui_font_family == sqyre_persist::UiFontFamily::Monospace
+                {
+                    0
+                } else {
+                    prop.iter()
+                        .position(|n| n == "Ubuntu-Light")
+                        .map(|i| i + 1)
+                        .unwrap_or(0)
+                };
                 prop.insert(insert_at, "Hack".to_owned());
             }
         }
@@ -229,13 +266,38 @@ impl SettingsUi {
         } else {
             DEFAULT_UI_SCALE
         };
+        // Ctrl+`+`/`-`/`0` edit `ui_scale` via `handle_zoom_keys`; egui's
+        // built-in keyboard zoom would bypass the persisted setting.
+        ctx.options_mut(|o| o.zoom_with_keyboard = false);
         // Multiplies the OS scale (monitor DPI, Android density, browser pixel ratio).
         ctx.set_zoom_factor(scale);
 
+        // Accent feeds `theme::apply` visuals and every `theme::accent()` draw.
+        sqyre_ui_theme::set_accent(
+            sqyre_domain::parse_hex_color(settings.accent_color.trim())
+                .map(|[r, g, b, _]| [r, g, b]),
+        );
+        #[cfg(all(feature = "native-runtime", not(target_arch = "wasm32")))]
+        {
+            // `Some(true)` when the toggle is on; `None` keeps `SQYRE_DIAG` honored.
+            sqyre_capture::set_disk_logging(settings.diagnostic_logging.then_some(true));
+            crate::mem_diag::set_enabled(
+                settings.memory_logging,
+                settings.memory_logging_interval_ms,
+            );
+            #[cfg(target_os = "linux")]
+            crate::desktop_entry::set_autostart(settings.launch_on_login);
+        }
+        Self::install_fonts(ctx, settings);
         crate::theme::apply(ctx);
 
         let mut style = (*ctx.global_style()).clone();
         let base = settings.ui_font_size.max(10) as f32;
+        let mono_base = if settings.mono_font_size > 0 {
+            settings.mono_font_size.max(8) as f32
+        } else {
+            base
+        };
         use egui::TextStyle;
         style.text_styles.insert(
             TextStyle::Small,
@@ -247,17 +309,117 @@ impl SettingsUi {
         style
             .text_styles
             .insert(TextStyle::Button, egui::FontId::proportional(base));
+        // Heading also sizes the window title bar (egui allocates its buttons
+        // at the Heading row height), so a modest multiplier keeps dialogs slim.
         style.text_styles.insert(
             TextStyle::Heading,
-            egui::FontId::proportional((base * 1.35).round()),
+            egui::FontId::proportional((base * 1.15).round()),
         );
         style
             .text_styles
-            .insert(TextStyle::Monospace, egui::FontId::monospace(base));
+            .insert(TextStyle::Monospace, egui::FontId::monospace(mono_base));
         // Thin opaque floating bars: always visible when content overflows
         // (including horizontal), instead of fully dormant until hover.
         style.spacing.scroll = crate::theme::scroll_style();
+        // egui's 10pt corner grab radius puts a 20×20 hit rect on top of any
+        // widget near a dialog's bottom-right corner — shrink it so widgets
+        // there keep their clicks. The grip stays paint/interact only and
+        // takes no layout space.
+        style.interaction.resize_grab_radius_corner = crate::theme::WINDOW_RESIZE_GRAB_RADIUS;
         ctx.set_global_style(style);
+        Self::apply_spacing(ctx, settings);
+    }
+
+    /// Browser-style Ctrl+`+`/`=`/`-`/`0`: edits and persists `ui_scale`
+    /// (egui's own `zoom_with_keyboard` is off — it would bypass the setting).
+    /// `persist` (not `mark_dirty`) so the change lands even with the
+    /// Settings window closed.
+    pub fn handle_zoom_keys(&mut self, ctx: &egui::Context) {
+        use egui::gui_zoom::kb_shortcuts;
+        let mut scale = self.settings.ui_scale;
+        if !ctx.input_mut(|i| {
+            if i.consume_shortcut(&kb_shortcuts::ZOOM_RESET) {
+                scale = DEFAULT_UI_SCALE;
+            } else {
+                let up = i.consume_shortcut(&kb_shortcuts::ZOOM_IN)
+                    || i.consume_shortcut(&kb_shortcuts::ZOOM_IN_SECONDARY);
+                let down = i.consume_shortcut(&kb_shortcuts::ZOOM_OUT);
+                match (up, down) {
+                    (true, false) => scale += 0.1,
+                    (false, true) => scale -= 0.1,
+                    _ => return false,
+                }
+            }
+            true
+        }) {
+            return;
+        }
+        let scale = ((scale * 10.0).round() / 10.0).clamp(MIN_UI_SCALE, MAX_UI_SCALE);
+        if scale == self.settings.ui_scale {
+            return;
+        }
+        self.settings.ui_scale = scale;
+        self.persist();
+        Self::apply_appearance(ctx, &self.settings);
+    }
+
+    /// Viewport width (points) at or below which auto-compact kicks in.
+    const AUTO_COMPACT_WIDTH: f32 = 480.0;
+
+    /// Density for the current viewport: the chosen one, or Compact when the
+    /// window is narrow and `auto_compact_density` is on. Gap tokens stay in
+    /// points — they do not scale with resolution.
+    fn effective_density(ctx: &egui::Context, settings: &UserSettings) -> UiDensity {
+        Self::density_for(
+            settings.ui_density,
+            settings.auto_compact_density,
+            ctx.content_rect().width(),
+        )
+    }
+
+    /// Density after the narrow-viewport auto-compact rule.
+    fn density_for(density: UiDensity, auto_compact: bool, viewport_width: f32) -> UiDensity {
+        if auto_compact && viewport_width <= Self::AUTO_COMPACT_WIDTH {
+            UiDensity::Compact
+        } else {
+            density
+        }
+    }
+
+    fn effective_gaps(ctx: &egui::Context, settings: &UserSettings) -> crate::theme::DensityGaps {
+        let d = Self::effective_density(ctx, settings);
+        crate::theme::DensityGaps::new(d.section_gap(), d.element_gap())
+    }
+
+    /// Push the effective gaps into the egui `Spacing` (one place, instead of
+    /// per-row `spacing_mut` overrides) and into [`crate::theme::set_density`].
+    ///
+    /// Only *gaps* follow density — point sizes (hit areas, icon buttons, card
+    /// dimensions) stay fixed, with `interact_size` kept at egui's defaults so
+    /// tree/list rows don't inflate. `text_edit_width` narrows under Compact
+    /// so single-line fields fit phone-width panes instead of clipping.
+    fn apply_spacing(ctx: &egui::Context, settings: &UserSettings) {
+        let d = Self::effective_density(ctx, settings);
+        let gaps = crate::theme::DensityGaps::new(d.section_gap(), d.element_gap());
+        let mut style = (*ctx.global_style()).clone();
+        // `item_spacing` IS the element gap: widgets sit `element` points
+        // apart with no per-row overrides. `add_section_gap` tops sections up.
+        style.spacing.item_spacing = egui::vec2(gaps.element, gaps.element);
+        style.spacing.text_edit_width = if d == UiDensity::Compact {
+            200.0
+        } else {
+            280.0
+        };
+        ctx.set_global_style(style);
+        crate::theme::set_density(ctx, gaps);
+    }
+
+    /// Keep the applied gaps in sync with the viewport size — cheap no-op until
+    /// the window crosses [`Self::AUTO_COMPACT_WIDTH`]. Runs each frame.
+    pub fn sync_density(ctx: &egui::Context, settings: &UserSettings) {
+        if crate::theme::density(ctx) != Self::effective_gaps(ctx, settings) {
+            Self::apply_spacing(ctx, settings);
+        }
     }
 
     /// Load action-color overrides from settings into the domain map.
@@ -307,10 +469,9 @@ impl SettingsUi {
     pub fn show(
         &mut self,
         ctx: &egui::Context,
-        db: &mut Database,
-        macros: &mut Vec<Macro>,
-        catalog: &mut ProgramCatalog,
+        data: &mut SettingsData<'_>,
         #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
+        macro_hotkeys: &sqyre_hotkeys::MacroHotkeyBridge,
         pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
     ) {
         if !self.open {
@@ -332,22 +493,28 @@ impl SettingsUi {
         .show(ctx, |ui| {
             crate::widgets::fill_resize_body(ui, |ui| {
                 #[cfg(not(target_arch = "wasm32"))]
-                self.ui(ui, ctx, db, macros, catalog, update);
+                self.ui(ui, ctx, data, update, macro_hotkeys);
                 #[cfg(target_arch = "wasm32")]
-                self.ui(ui, ctx, db, macros, catalog);
+                self.ui(ui, ctx, data, macro_hotkeys);
             });
         });
         // `ui` may clear `self.open` (Esc); Window `.open` may clear `open` (titlebar).
         self.open = open && self.open;
         if !self.open {
-            crate::pickers::reset_focus_search(ctx, settings_window_id());
+            crate::widgets::reset_focus_search(ctx, settings_window_id());
         }
         if let Some(confirm) = self.confirm.clone() {
-            self.draw_confirm(ctx, confirm, pending_scale, db, macros, catalog);
+            self.draw_confirm(ctx, confirm, pending_scale, data);
+        }
+        if let Some(key) = self.panic_record.show(ctx, macro_hotkeys, pending_scale) {
+            self.settings.panic_key = key;
+            self.mark_dirty();
         }
         if self.dirty {
             self.persist();
-            Self::apply_appearance(ctx, &self.settings);
+            if !self.ui_scale_apply_pending {
+                Self::apply_appearance(ctx, &self.settings);
+            }
         }
     }
 
@@ -355,10 +522,9 @@ impl SettingsUi {
         &mut self,
         ui: &mut egui::Ui,
         ctx: &egui::Context,
-        db: &mut Database,
-        macros: &mut Vec<Macro>,
-        catalog: &mut ProgramCatalog,
+        data: &mut SettingsData<'_>,
         #[cfg(not(target_arch = "wasm32"))] update: &mut crate::update::UpdateManager,
+        macro_hotkeys: &sqyre_hotkeys::MacroHotkeyBridge,
     ) {
         // Esc: clear search first, then close (window already has titlebar close).
         if crate::widgets::consume_escape(ui) {
@@ -369,45 +535,28 @@ impl SettingsUi {
             }
         }
 
-        let has_search = !self.search.is_empty();
-        let mut clear_search = false;
         let search_focused = crate::widgets::show_overflow(ui, "settings_search", 1.0, |ui| {
-            crate::widgets::fill_row(
+            // Pinned id so focus survives the Clear ✕ appearing and disappearing.
+            let out = crate::widgets::search_field(
                 ui,
-                |ui| {
-                    clear_search = has_search && ui.small_button("Clear").clicked();
+                &mut self.search,
+                crate::widgets::SearchFieldOpts {
+                    hint: "Search settings…",
+                    focus_id: Some(settings_window_id()),
+                    clearable: true,
+                    stable_id: Some(settings_window_id().with("search")),
                 },
-                |ui| {
-                    ui.label(egui::RichText::new(
-                        egui_phosphor::regular::MAGNIFYING_GLASS,
-                    ))
-                    .on_hover_text("Search");
-                    // Infinity fill — fixed desired_width(available) ratchets the window.
-                    // Pin the id so focus survives the Clear button appearing and
-                    // disappearing (it is laid out before this field).
-                    let search_resp = ui.add(
-                        egui::TextEdit::singleline(&mut self.search)
-                            .id(settings_window_id().with("search"))
-                            .hint_text("Search settings…")
-                            .desired_width(f32::INFINITY),
-                    );
-                    crate::pickers::focus_search_once(ui, settings_window_id(), &search_resp);
-                    if search_resp.changed() && !self.search.trim().is_empty() {
-                        let q = self.search.trim().to_ascii_lowercase();
-                        if !self.active_section.visible(&q) {
-                            if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
-                                self.active_section = section;
-                            }
-                        }
+            );
+            if out.changed && !self.search.trim().is_empty() {
+                let q = self.search.trim().to_ascii_lowercase();
+                if !self.active_section.visible(&q) {
+                    if let Some(section) = SettingsSection::all().find(|s| s.visible(&q)) {
+                        self.active_section = section;
                     }
-                    search_resp.has_focus()
-                },
-            )
+                }
+            }
+            out.response.has_focus()
         });
-        if clear_search {
-            self.search.clear();
-        }
-        crate::widgets::section_separator(ui);
 
         let footer = if self.status_banner.status.is_some() {
             40.0
@@ -488,11 +637,16 @@ impl SettingsUi {
         );
         {
             let content_w = right_ui.max_rect().width();
-            crate::pickers::dialog_scroll(content_w, body_h)
-                .id_salt("user_settings_content")
-                .show(&mut right_ui, |ui| {
-                    // Soft-wrap to pane width; both-axis scroll covers hard min overflows.
-                    ui.set_max_width(content_w);
+            crate::widgets::show_dialog_scroll_mod(
+                &mut right_ui,
+                content_w,
+                body_h,
+                |s| s.id_salt("user_settings_content"),
+                |ui| {
+                    // Soft-wrap to the painted clip (the reserved scrollbar
+                    // lane insets it past `max_rect`); both-axis scroll covers
+                    // hard min-width overflows.
+                    crate::widgets::clamp_row_right_to_clip(ui);
                     if visible_sections.is_empty() {
                         crate::widgets::list_vacancy(ui, &q, 0, "settings");
                         return;
@@ -514,21 +668,30 @@ impl SettingsUi {
                     };
                     match section {
                         SettingsSection::General => self.draw_general(ui, &q, section_hit),
-                        SettingsSection::Macros => self.draw_macros(ui, &q, section_hit),
+                        SettingsSection::Macros => {
+                            self.draw_macros(ui, &q, section_hit, macro_hotkeys)
+                        }
                         SettingsSection::Sound => self.draw_sound(ui, &q, section_hit),
                         #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
                         SettingsSection::Permissions => {
                             self.draw_permissions(ui, ctx, &q, section_hit)
                         }
                         SettingsSection::Data => {
-                            self.draw_data(ui, db, macros, catalog, &q, section_hit);
+                            self.draw_data(ui, data.db, data.macros, data.catalog, &q, section_hit);
                             #[cfg(not(target_arch = "wasm32"))]
                             if setting_visible(&q, section_hit, DATA_LOCATION)
                                 && setting_visible(&q, section_hit, DATA_BACKUP)
                             {
-                                ui.add_space(crate::theme::SPACE_12);
+                                crate::theme::add_section_gap(ui);
                             }
-                            self.draw_backup(ui, db, macros, catalog, &q, section_hit);
+                            self.draw_backup(
+                                ui,
+                                data.db,
+                                data.macros,
+                                data.catalog,
+                                &q,
+                                section_hit,
+                            );
                         }
                         #[cfg(not(target_arch = "wasm32"))]
                         SettingsSection::Updates => self.draw_updates(ui, update, &q, section_hit),
@@ -536,7 +699,8 @@ impl SettingsUi {
                             self.draw_appearance(ui, ctx, &q, section_hit)
                         }
                     }
-                });
+                },
+            );
         }
 
         if footer > 0.0 {
@@ -553,16 +717,14 @@ impl SettingsUi {
     fn draw_general(&mut self, ui: &mut egui::Ui, q: &str, section_hit: bool) {
         if setting_visible(q, section_hit, SETTING_LOG_META) {
             ui.horizontal(|ui| {
-                if ui
-                    .checkbox(&mut self.settings.save_meta_images, "Log Meta Images")
-                    .changed()
+                if crate::action_tooltip::help::tip(
+                    ui.checkbox(&mut self.settings.save_meta_images, "Log Meta Images"),
+                    crate::action_tooltip::help::SETTING_LOG_META,
+                )
+                .changed()
                 {
                     self.mark_dirty();
                 }
-                crate::action_tooltip::help::icon(
-                    ui,
-                    crate::action_tooltip::help::SETTING_LOG_META,
-                );
                 ui.label("Keep at most:");
                 let mut v = self.settings.action_log_max_entries;
                 if ui
@@ -575,9 +737,7 @@ impl SettingsUi {
                             .speed(100)
                             .suffix(" entries"),
                     )
-                    .on_hover_text(
-                        "Per-action cap for the Logs window; the oldest entries are dropped past it.",
-                    )
+                    .on_hover_text(ht::SET_LOG_CAP)
                     .changed()
                 {
                     self.settings.action_log_max_entries = v;
@@ -615,14 +775,116 @@ impl SettingsUi {
                     .weak(),
             );
         }
+
+        if setting_visible(q, section_hit, SETTING_LAST_MACRO)
+            && ui
+                .checkbox(
+                    &mut self.settings.restore_last_macro,
+                    "Re-select the last used macro on launch",
+                )
+                .on_hover_text(ht::SET_LAST_MACRO)
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if setting_visible(q, section_hit, SETTING_CLOSE_TO_TRAY)
+                && ui
+                    .checkbox(
+                        &mut self.settings.close_to_tray,
+                        "Closing the window minimizes to the tray",
+                    )
+                    .on_hover_text(ht::SET_CLOSE_TO_TRAY)
+                    .changed()
+            {
+                self.mark_dirty();
+            }
+
+            if setting_visible(q, section_hit, SETTING_START_MINIMIZED)
+                && ui
+                    .checkbox(&mut self.settings.start_minimized, "Start in the tray")
+                    .on_hover_text(ht::SET_START_MINIMIZED)
+                    .changed()
+            {
+                self.mark_dirty();
+            }
+
+            #[cfg(target_os = "linux")]
+            if setting_visible(q, section_hit, SETTING_AUTOSTART)
+                && ui
+                    .checkbox(&mut self.settings.launch_on_login, "Launch on login")
+                    .on_hover_text(ht::SET_AUTOSTART)
+                    .changed()
+            {
+                self.mark_dirty();
+            }
+        }
+
+        #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+        {
+            let show_diag = setting_visible(q, section_hit, SETTING_DIAGNOSTICS);
+            let show_mem = setting_visible(q, section_hit, SETTING_MEMORY_LOG);
+            if show_diag || show_mem {
+                ui.label(egui::RichText::new("Diagnostics").strong());
+            }
+            if show_diag
+                && ui
+                    .checkbox(
+                        &mut self.settings.diagnostic_logging,
+                        "Write diagnostic log (diag.log)",
+                    )
+                    .on_hover_text(ht::SET_DIAG_LOG)
+                    .changed()
+            {
+                self.mark_dirty();
+            }
+            if show_mem {
+                ui.horizontal(|ui| {
+                    if ui
+                        .checkbox(&mut self.settings.memory_logging, "Sample memory (mem.log)")
+                        .on_hover_text(ht::SET_MEM_LOG)
+                        .changed()
+                    {
+                        self.mark_dirty();
+                    }
+                    ui.label("every");
+                    let mut v = self.settings.memory_logging_interval_ms;
+                    if ui
+                        .add(
+                            crate::widgets::num_entry(&mut v)
+                                .range(
+                                    sqyre_persist::MIN_MEMORY_SAMPLE_INTERVAL_MS
+                                        ..=sqyre_persist::MAX_MEMORY_SAMPLE_INTERVAL_MS,
+                                )
+                                .speed(500)
+                                .suffix(" ms"),
+                        )
+                        .on_hover_text(ht::SET_MEM_INTERVAL)
+                        .changed()
+                    {
+                        self.settings.memory_logging_interval_ms = v;
+                        self.mark_dirty();
+                    }
+                });
+            }
+        }
     }
 
-    fn draw_macros(&mut self, ui: &mut egui::Ui, q: &str, section_hit: bool) {
+    fn draw_macros(
+        &mut self,
+        ui: &mut egui::Ui,
+        q: &str,
+        section_hit: bool,
+        macro_hotkeys: &sqyre_hotkeys::MacroHotkeyBridge,
+    ) {
         let mut first = true;
         self.draw_macro_playback(ui, q, section_hit, &mut first);
         self.draw_macro_recording(ui, q, section_hit, &mut first);
-        self.draw_macro_hotkeys(ui, q, section_hit, &mut first);
+        self.draw_macro_hotkeys(ui, q, section_hit, &mut first, macro_hotkeys);
         self.draw_macro_image_search(ui, q, section_hit, &mut first);
+        self.draw_macro_action_defaults(ui, q, section_hit, &mut first);
     }
 
     fn draw_macro_playback(
@@ -634,19 +896,25 @@ impl SettingsUi {
     ) {
         let hit = section_hit || query_matches(q, SUBSECTION_PLAYBACK);
         let show_highlight = setting_visible(q, hit, SETTING_HIGHLIGHT_ACTION);
+        let show_click_fx = setting_visible(q, hit, SETTING_CLICK_FX);
         let show_release = setting_visible(q, hit, SETTING_RELEASE_HELD);
         let show_overlay_stop = setting_visible(q, hit, SETTING_OVERLAY_PRESS_STOPS);
         let show_overlay_detect = setting_visible(q, hit, SETTING_OVERLAY_IN_DETECTION);
         let show_overlay_over = setting_visible(q, hit, SETTING_OVERLAY_OVER_SQYRE);
+        let show_cursor = setting_visible(q, hit, SETTING_RESTORE_CURSOR);
         let show_while = setting_visible(q, hit, SETTING_WHILE_BUDGET);
         let show_depth = setting_visible(q, hit, SETTING_RUN_MACRO_DEPTH);
+        let show_flash_ms = setting_visible(q, hit, SETTING_CLICK_FLASH_MS);
         if !(show_highlight
+            || show_click_fx
             || show_release
+            || show_cursor
             || show_overlay_stop
             || show_overlay_detect
             || show_overlay_over
             || show_while
-            || show_depth)
+            || show_depth
+            || show_flash_ms)
         {
             return;
         }
@@ -658,7 +926,19 @@ impl SettingsUi {
                     &mut self.settings.highlight_active_action,
                     "Highlight the currently executing action",
                 )
-                .on_hover_text("Scroll and tint the tree row of the action running now.")
+                .on_hover_text(ht::SET_RUN_ROW_HL)
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if show_click_fx
+            && ui
+                .checkbox(
+                    &mut self.settings.click_effect,
+                    "Flash a marker where clicks land",
+                )
+                .on_hover_text(ht::SET_CLICK_MARKER)
                 .changed()
         {
             self.mark_dirty();
@@ -670,9 +950,20 @@ impl SettingsUi {
                     &mut self.settings.release_held_inputs_on_end,
                     "Release held keys and buttons when a macro ends",
                 )
-                .on_hover_text(
-                    "When enabled, any key or mouse button still held from Down/hold actions is released when the macro finishes, stops, or errors.",
+                .on_hover_text(ht::SET_RELEASE_KEYS)
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        #[cfg(any(feature = "native-runtime", target_os = "windows"))]
+        if show_cursor
+            && ui
+                .checkbox(
+                    &mut self.settings.restore_cursor_on_end,
+                    "Restore the mouse position when a macro ends",
                 )
+                .on_hover_text(ht::SET_RESTORE_CURSOR)
                 .changed()
         {
             self.mark_dirty();
@@ -684,9 +975,7 @@ impl SettingsUi {
                     &mut self.settings.overlay_press_stops_run,
                     "Overlay buttons stop the running macro",
                 )
-                .on_hover_text(
-                    "While a macro is running, pressing an overlay button stops it. When off, a busy button lets the click through.",
-                )
+                .on_hover_text(ht::SET_OVL_STOP)
                 .changed()
         {
             self.mark_dirty();
@@ -698,9 +987,7 @@ impl SettingsUi {
                     &mut self.settings.overlay_buttons_in_detection,
                     "Overlay buttons appear in detection",
                 )
-                .on_hover_text(
-                    "Image Search, Find Pixel, and OCR captures include the buttons. When off, those captures see the screen underneath.",
-                )
+                .on_hover_text(ht::SET_CAPTURE_BUTTONS)
                 .changed()
         {
             self.mark_dirty();
@@ -712,21 +999,46 @@ impl SettingsUi {
                     &mut self.settings.overlay_buttons_over_sqyre,
                     "Show overlay buttons over Sqyre",
                 )
-                .on_hover_text(
-                    "When off, buttons hide while the Sqyre window is in front. When on, General buttons stay on top of Sqyre. Buttons for another app still show only while that app is in front. Placing a button in the Overlay editor still shows it.",
-                )
+                .on_hover_text(ht::SET_BUTTONS_FRONT)
                 .changed()
         {
             self.mark_dirty();
         }
 
-        if show_while || show_depth {
+        if show_while || show_depth || show_flash_ms {
             advanced_header(
                 ui,
                 "settings_macros_playback_advanced",
                 q,
-                &[SETTING_WHILE_BUDGET, SETTING_RUN_MACRO_DEPTH],
+                &[
+                    SETTING_WHILE_BUDGET,
+                    SETTING_RUN_MACRO_DEPTH,
+                    SETTING_CLICK_FLASH_MS,
+                ],
                 |ui| {
+                    if show_flash_ms {
+                        ui.horizontal(|ui| {
+                            ui.label("Click marker stays visible for:");
+                            let mut v = self.settings.click_flash_ms;
+                            if ui
+                                .add(
+                                    crate::widgets::num_entry(&mut v)
+                                        .range(
+                                            sqyre_persist::MIN_CLICK_FLASH_MS
+                                                ..=sqyre_persist::MAX_CLICK_FLASH_MS,
+                                        )
+                                        .speed(50)
+                                        .suffix(" ms"),
+                                )
+                                .on_hover_text(ht::SET_CLICK_FLASH_MS)
+                                .changed()
+                            {
+                                self.settings.click_flash_ms = v;
+                                self.mark_dirty();
+                            }
+                        });
+                    }
+
                     if show_while {
                         ui.horizontal(|ui| {
                             ui.label("Stop endless loops after:");
@@ -741,9 +1053,7 @@ impl SettingsUi {
                                         .speed(1000)
                                         .suffix(" iterations"),
                                 )
-                                .on_hover_text(
-                                    "While safety budget: used when a While action has max_iterations ≤ 0. Prevents runaway loops.",
-                                )
+                                .on_hover_text(ht::SET_WHILE_BUDGET)
                                 .changed()
                             {
                                 self.settings.while_max_iterations = v;
@@ -765,9 +1075,7 @@ impl SettingsUi {
                                         )
                                         .speed(1),
                                 )
-                                .on_hover_text(
-                                    "Maximum nested Run Macro calls (including the top-level macro). Cycles are always rejected.",
-                                )
+                                .on_hover_text(ht::SET_RUN_DEPTH)
                                 .changed()
                             {
                                 self.settings.run_macro_max_depth = v;
@@ -788,21 +1096,113 @@ impl SettingsUi {
         first: &mut bool,
     ) {
         let hit = section_hit || query_matches(q, SUBSECTION_RECORDING);
-        if !setting_visible(q, hit, SETTING_HIDE_WHILE_RECORDING) {
+        let show_hide = setting_visible(q, hit, SETTING_HIDE_WHILE_RECORDING);
+        let show_thresholds = setting_visible(q, hit, SETTING_RECORD_THRESHOLDS);
+        if !(show_hide || show_thresholds) {
             return;
         }
         subsection_heading(ui, first, "Recording");
-        if ui
-            .checkbox(
-                &mut self.settings.hide_app_during_recording,
-                "Hide Sqyre while recording points and search areas",
-            )
-            .on_hover_text(
-                "When enabled, Sqyre windows are hidden before the desktop snapshot used by recording.",
-            )
-            .changed()
+        if show_hide
+            && ui
+                .checkbox(
+                    &mut self.settings.hide_app_during_recording,
+                    "Hide Sqyre while recording points and search areas",
+                )
+                .on_hover_text(ht::SET_HIDE_ON_RECORD)
+                .changed()
         {
             self.mark_dirty();
+        }
+
+        if show_thresholds {
+            advanced_header(
+                ui,
+                "settings_macros_recording_advanced",
+                q,
+                &[SETTING_RECORD_THRESHOLDS],
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Write a Wait after a pause of:");
+                        let mut v = self.settings.record_wait_threshold_ms;
+                        if ui
+                            .add(
+                                crate::widgets::num_entry(&mut v)
+                                    .range(
+                                        sqyre_persist::MIN_RECORD_WAIT_THRESHOLD_MS
+                                            ..=sqyre_persist::MAX_RECORD_WAIT_THRESHOLD_MS,
+                                    )
+                                    .speed(5)
+                                    .suffix(" ms"),
+                            )
+                            .on_hover_text(ht::SET_REC_WAIT)
+                            .changed()
+                        {
+                            self.settings.record_wait_threshold_ms = v;
+                            self.mark_dirty();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Drop mouse moves shorter than:");
+                        let mut v = self.settings.record_move_min_distance;
+                        if ui
+                            .add(
+                                crate::widgets::num_entry(&mut v)
+                                    .range(
+                                        sqyre_persist::MIN_RECORD_MOVE_MIN_DISTANCE
+                                            ..=sqyre_persist::MAX_RECORD_MOVE_MIN_DISTANCE,
+                                    )
+                                    .speed(1)
+                                    .suffix(" px"),
+                            )
+                            .on_hover_text(ht::SET_REC_MOVE)
+                            .changed()
+                        {
+                            self.settings.record_move_min_distance = v;
+                            self.mark_dirty();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Clicks held longer than this become down/up:");
+                        let mut v = self.settings.record_tap_max_ms;
+                        if ui
+                            .add(
+                                crate::widgets::num_entry(&mut v)
+                                    .range(
+                                        sqyre_persist::MIN_RECORD_TAP_MAX_MS
+                                            ..=sqyre_persist::MAX_RECORD_TAP_MAX_MS,
+                                    )
+                                    .speed(10)
+                                    .suffix(" ms"),
+                            )
+                            .on_hover_text(ht::SET_REC_TAP)
+                            .changed()
+                        {
+                            self.settings.record_tap_max_ms = v;
+                            self.mark_dirty();
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Snap recorded points to saved points within:");
+                        let mut v = self.settings.record_snap_point_px;
+                        if ui
+                            .add(
+                                crate::widgets::num_entry(&mut v)
+                                    .range(
+                                        sqyre_persist::MIN_RECORD_SNAP_POINT_PX
+                                            ..=sqyre_persist::MAX_RECORD_SNAP_POINT_PX,
+                                    )
+                                    .speed(1)
+                                    .suffix(" px"),
+                            )
+                            .on_hover_text(ht::SET_REC_SNAP)
+                            .changed()
+                        {
+                            self.settings.record_snap_point_px = v;
+                            self.mark_dirty();
+                        }
+                    });
+                },
+            );
         }
     }
 
@@ -812,23 +1212,204 @@ impl SettingsUi {
         q: &str,
         section_hit: bool,
         first: &mut bool,
+        macro_hotkeys: &sqyre_hotkeys::MacroHotkeyBridge,
     ) {
         let hit = section_hit || query_matches(q, SUBSECTION_HOTKEYS);
-        if !setting_visible(q, hit, SETTING_HOTKEY_TAGS_FOCUSED) {
+        let show_tags = setting_visible(q, hit, SETTING_HOTKEY_TAGS_FOCUSED);
+        #[cfg(not(target_arch = "wasm32"))]
+        let show_panic = setting_visible(q, hit, SETTING_PANIC_KEY);
+        let show_retrigger = setting_visible(q, hit, SETTING_RETRIGGER);
+        let show_trigger = setting_visible(q, hit, SETTING_DEFAULT_TRIGGER);
+        let _ = macro_hotkeys;
+        #[cfg(not(target_arch = "wasm32"))]
+        if !(show_tags || show_retrigger || show_trigger || show_panic) {
+            return;
+        }
+        #[cfg(target_arch = "wasm32")]
+        if !(show_tags || show_retrigger || show_trigger) {
             return;
         }
         subsection_heading(ui, first, "Hotkeys");
-        if ui
-            .checkbox(
-                &mut self.settings.hotkey_tags_while_focused,
-                "Select hotkey tags while a Program is focused",
-            )
-            .on_hover_text(
-                "When enabled, focusing a Program that has macro tags sets the hotkey tag selection to those tags; otherwise hotkeys turn off. When disabled, tag selection is manual only (macro list headers).",
-            )
-            .changed()
+        if show_tags
+            && ui
+                .checkbox(
+                    &mut self.settings.hotkey_tags_while_focused,
+                    "Select hotkey tags while a Program is focused",
+                )
+                .on_hover_text(ht::SET_HOTKEY_TAGS)
+                .changed()
         {
             self.mark_dirty();
+        }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        if show_panic {
+            ui.horizontal(|ui| {
+                ui.label("Panic/stop key:").on_hover_text(ht::SET_PANIC_KEY);
+                let label = if self.settings.panic_key.trim().is_empty() {
+                    "(disabled)".to_string()
+                } else {
+                    self.settings.panic_key.trim().to_string()
+                };
+                ui.label(egui::RichText::new(label).monospace());
+                if ui
+                    .small_button("Record…")
+                    .on_hover_text(ht::SET_PANIC_KEY)
+                    .clicked()
+                {
+                    self.panic_record.open(macro_hotkeys);
+                }
+                if ui.small_button("Reset").clicked() {
+                    self.settings.panic_key = "esc".to_string();
+                    self.mark_dirty();
+                }
+                if ui.small_button("Disable").clicked() {
+                    self.settings.panic_key.clear();
+                    self.mark_dirty();
+                }
+            });
+        }
+
+        if show_retrigger {
+            ui.horizontal(|ui| {
+                ui.label("Hotkey pressed while its macro is running:")
+                    .on_hover_text(ht::SET_RETRIGGER);
+                let mut policy = self.settings.hotkey_while_running;
+                egui::ComboBox::from_id_salt("settings_hotkey_while_running")
+                    .selected_text(policy.label())
+                    .show_ui(ui, |ui| {
+                        for p in HotkeyWhileRunning::ALL {
+                            ui.selectable_value(&mut policy, p, p.label());
+                        }
+                    });
+                if policy != self.settings.hotkey_while_running {
+                    self.settings.hotkey_while_running = policy;
+                    self.mark_dirty();
+                }
+            });
+        }
+
+        if show_trigger {
+            ui.horizontal(|ui| {
+                ui.label("New macro hotkeys fire on:")
+                    .on_hover_text(ht::SET_DEFAULT_TRIGGER);
+                let mut trigger =
+                    sqyre_hotkeys::HotkeyTrigger::parse(&self.settings.default_hotkey_trigger);
+                egui::ComboBox::from_id_salt("settings_default_hotkey_trigger")
+                    .selected_text(trigger.as_str())
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(
+                            &mut trigger,
+                            sqyre_hotkeys::HotkeyTrigger::Press,
+                            "press",
+                        );
+                        ui.selectable_value(
+                            &mut trigger,
+                            sqyre_hotkeys::HotkeyTrigger::Release,
+                            "release",
+                        );
+                    });
+                if trigger.as_str() != self.settings.default_hotkey_trigger {
+                    self.settings.default_hotkey_trigger = trigger.as_str().to_string();
+                    self.mark_dirty();
+                }
+            });
+        }
+    }
+
+    /// Defaults stamped onto new macros; action defaults are edited per type
+    /// in the Add Action picker.
+    fn draw_macro_action_defaults(
+        &mut self,
+        ui: &mut egui::Ui,
+        q: &str,
+        section_hit: bool,
+        first: &mut bool,
+    ) {
+        let hit = section_hit || query_matches(q, SUBSECTION_ACTION_DEFAULTS);
+        let show_delays = setting_visible(q, hit, SETTING_DEFAULT_DELAYS);
+        let show_log_edge = setting_visible(q, hit, SETTING_LOG_IMAGE_EDGE);
+        let show_saved = setting_visible(q, hit, SETTING_ACTION_DEFAULTS_RESET);
+        if !(show_delays || show_log_edge || show_saved) {
+            return;
+        }
+        subsection_heading(ui, first, "New macros & actions");
+
+        if show_delays {
+            ui.horizontal(|ui| {
+                ui.label("New macro delays — key:")
+                    .on_hover_text(ht::SET_DEFAULT_DELAYS);
+                let mut v = self.settings.default_keyboard_delay_ms;
+                if ui
+                    .add(
+                        crate::widgets::num_entry(&mut v)
+                            .range(0..=60_000)
+                            .speed(5)
+                            .suffix(" ms"),
+                    )
+                    .on_hover_text(ht::SET_DEFAULT_DELAYS)
+                    .changed()
+                {
+                    self.settings.default_keyboard_delay_ms = v;
+                    self.mark_dirty();
+                }
+                ui.label("mouse:");
+                let mut v = self.settings.default_mouse_delay_ms;
+                if ui
+                    .add(
+                        crate::widgets::num_entry(&mut v)
+                            .range(0..=60_000)
+                            .speed(5)
+                            .suffix(" ms"),
+                    )
+                    .on_hover_text(ht::SET_DEFAULT_DELAYS)
+                    .changed()
+                {
+                    self.settings.default_mouse_delay_ms = v;
+                    self.mark_dirty();
+                }
+            });
+        }
+
+        if show_log_edge {
+            ui.horizontal(|ui| {
+                ui.label("Logged search images capped at:");
+                let mut v = self.settings.log_image_max_edge;
+                if ui
+                    .add(
+                        crate::widgets::num_entry(&mut v)
+                            .range(
+                                sqyre_persist::MIN_LOG_IMAGE_MAX_EDGE
+                                    ..=sqyre_persist::MAX_LOG_IMAGE_MAX_EDGE,
+                            )
+                            .speed(32)
+                            .suffix(" px"),
+                    )
+                    .on_hover_text(ht::SET_LOG_IMAGE_EDGE)
+                    .changed()
+                {
+                    self.settings.log_image_max_edge = v;
+                    self.mark_dirty();
+                }
+            });
+        }
+
+        if show_saved {
+            let saved = self.settings.action_defaults.len();
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        saved > 0,
+                        egui::Button::new("Reset saved action defaults").small(),
+                    )
+                    .on_hover_text(ht::SET_RESET_ACTION_DEFAULTS)
+                    .clicked()
+                {
+                    self.settings.action_defaults.clear();
+                    self.mark_dirty();
+                }
+                ui.label(egui::RichText::new(format!("{saved} saved")).weak().small());
+            });
         }
     }
 
@@ -853,9 +1434,7 @@ impl SettingsUi {
                     &mut self.settings.image_search_variant_exit_early,
                     "Stop at the first matching icon variant",
                 )
-                .on_hover_text(
-                    "When enabled, stop trying later icon variants after one hits on the same search (or collection cell). Disable to match every variant.",
-                )
+                .on_hover_text(ht::SET_VARIANT_STOP)
                 .changed()
         {
             self.mark_dirty();
@@ -869,24 +1448,22 @@ impl SettingsUi {
                 &[SETTING_IMAGE_SEARCH_DISTANCE],
                 |ui| {
                     ui.horizontal(|ui| {
-                            ui.label("Ignore nearby duplicate image matches:");
-                            let mut v = self.settings.image_search_close_matches_distance;
-                            if ui
-                                .add(
-                                    crate::widgets::num_entry(&mut v)
-                                        .range(0..=100)
-                                        .speed(1)
-                                        .suffix(" px"),
-                                )
-                                .on_hover_text(
-                                    "Image search close-match distance: ignore duplicate matches within this many pixels.",
-                                )
-                                .changed()
-                            {
-                                self.settings.image_search_close_matches_distance = v;
-                                self.mark_dirty();
-                            }
-                        });
+                        ui.label("Ignore nearby duplicate image matches:");
+                        let mut v = self.settings.image_search_close_matches_distance;
+                        if ui
+                            .add(
+                                crate::widgets::num_entry(&mut v)
+                                    .range(0..=100)
+                                    .speed(1)
+                                    .suffix(" px"),
+                            )
+                            .on_hover_text(ht::SET_DEDUP_PX)
+                            .changed()
+                        {
+                            self.settings.image_search_close_matches_distance = v;
+                            self.mark_dirty();
+                        }
+                    });
                 },
             );
         }
@@ -913,26 +1490,30 @@ impl SettingsUi {
                     &mut self.settings.play_finish_sound,
                     "Play a sound when a macro finishes",
                 )
-                .on_hover_text(
-                    "Plays a short cue when a top-level macro run completes successfully.",
-                )
+                .on_hover_text(ht::SET_FINISH_CUE)
                 .changed()
         {
             self.mark_dirty();
         }
 
-        if setting_visible(q, section_hit, SETTING_UI_SOUNDS)
-            && ui
+        if setting_visible(q, section_hit, SETTING_UI_SOUNDS) {
+            let mut changed = ui
                 .checkbox(
-                    &mut self.settings.play_ui_sounds,
-                    "Play sounds when adding or deleting",
+                    &mut self.settings.play_add_sound,
+                    "Play a sound when adding",
                 )
-                .on_hover_text(
-                    "Plays short cues when macros, actions, or data-editor entities are added or deleted.",
+                .on_hover_text(ht::SET_ADD_DEL_CUES)
+                .changed();
+            changed |= ui
+                .checkbox(
+                    &mut self.settings.play_delete_sound,
+                    "Play a sound when deleting",
                 )
-                .changed()
-        {
-            self.mark_dirty();
+                .on_hover_text(ht::SET_ADD_DEL_CUES)
+                .changed();
+            if changed {
+                self.mark_dirty();
+            }
         }
 
         if setting_visible(q, section_hit, SETTING_SOUND_VOLUME) {
@@ -941,7 +1522,7 @@ impl SettingsUi {
                 let mut pct = (self.settings.sound_volume * 100.0).round() as i32;
                 if ui
                     .add(egui::Slider::new(&mut pct, 0..=100).suffix("%"))
-                    .on_hover_text("Volume for finish and add/delete cue sounds.")
+                    .on_hover_text(ht::SET_CUE_VOLUME)
                     .changed()
                 {
                     self.settings.sound_volume = pct as f32 / 100.0;
@@ -949,6 +1530,64 @@ impl SettingsUi {
                 }
             });
         }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        if setting_visible(q, section_hit, SETTING_SOUND_FILES) {
+            self.sound_file_row(
+                ui,
+                "Finish sound:",
+                PickPurpose::FinishSound,
+                ht::SET_FINISH_FILE,
+                |s| &mut s.finish_sound_file,
+            );
+            self.sound_file_row(
+                ui,
+                "Add sound:",
+                PickPurpose::AddSound,
+                ht::SET_ADD_FILE,
+                |s| &mut s.add_sound_file,
+            );
+            self.sound_file_row(
+                ui,
+                "Delete sound:",
+                PickPurpose::DeleteSound,
+                ht::SET_DELETE_FILE,
+                |s| &mut s.delete_sound_file,
+            );
+        }
+    }
+
+    /// Cue-sound file row: current file name, a picker, and a built-in reset.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn sound_file_row(
+        &mut self,
+        ui: &mut egui::Ui,
+        label: &str,
+        purpose: PickPurpose,
+        help: &str,
+        field: impl Fn(&mut UserSettings) -> &mut String,
+    ) {
+        ui.horizontal(|ui| {
+            ui.label(label).on_hover_text(help);
+            let path = field(&mut self.settings);
+            let name = if path.trim().is_empty() {
+                "built-in".to_string()
+            } else {
+                std::path::Path::new(path.trim())
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| path.trim().to_string())
+            };
+            ui.label(egui::RichText::new(name).weak().small());
+            if crate::file_dialogs::supported(purpose) && ui.small_button("Choose…").clicked() {
+                crate::file_dialogs::request(purpose, "Choose cue sound", None);
+            }
+            if !field(&mut self.settings).trim().is_empty() && ui.small_button("Built-in").clicked()
+            {
+                field(&mut self.settings).clear();
+                self.mark_dirty();
+            }
+        });
     }
 
     fn draw_data(
@@ -981,7 +1620,6 @@ impl SettingsUi {
 
             let flatpak = sqyre_update::is_flatpak_install();
             if flatpak {
-                ui.add_space(crate::theme::SPACE_4);
                 ui.label(
                     egui::RichText::new(
                         "Flatpak keeps a private data copy by default. To share macros \
@@ -993,7 +1631,7 @@ impl SettingsUi {
             }
 
             ui.horizontal_wrapped(|ui| {
-                if ui.button("Open .sqyre folder").clicked() {
+                if ui.small_button("Open .sqyre folder").clicked() {
                     match open_sqyre_dir() {
                         Ok(()) => self.set_ok("Opened data folder."),
                         Err(e) => self.set_err(format!(
@@ -1003,30 +1641,22 @@ impl SettingsUi {
                     }
                 }
                 if crate::file_dialogs::supported(PickPurpose::SqyreLocation)
-                    && ui.button("Choose location…").clicked()
+                    && ui.small_button("Choose location…").clicked()
                 {
                     self.choose_sqyre_location();
                 }
                 if flatpak {
                     if ui
-                        .button("Use host ~/.sqyre…")
-                        .on_hover_text(
-                            "Opens a folder picker (portal grant). Select your host \
-                             ~/.sqyre folder, or its parent (Home). For a permanent \
-                             Flatpak permission you can also run:\n\
-                             flatpak override --user --filesystem=~/.sqyre:create com.sqyre.app",
-                        )
+                        .small_button("Use host ~/.sqyre…")
+                        .on_hover_text(ht::SET_HOST_FOLDER)
                         .clicked()
                     {
                         self.choose_host_sqyre_location();
                     }
                     if !self.settings.sqyre_dir.trim().is_empty()
                         && ui
-                            .button("Use Flatpak sandbox")
-                            .on_hover_text(
-                                "Clear the custom path and return to the private \
-                                 Flatpak data directory (~/.var/app/com.sqyre.app/.sqyre).",
-                            )
+                            .small_button("Use Flatpak sandbox")
+                            .on_hover_text(ht::SET_FLATPAK_RESET)
                             .clicked()
                     {
                         self.reset_sqyre_to_sandbox(db, macros, catalog);
@@ -1057,13 +1687,8 @@ impl SettingsUi {
             let _ = (db, macros, catalog);
 
             if ui
-                .checkbox(
-                    &mut self.settings.backup_enabled,
-                    "Automatic backups",
-                )
-                .on_hover_text(
-                    "Periodically zip the data directory into the backups folder when Sqyre is running.",
-                )
+                .checkbox(&mut self.settings.backup_enabled, "Automatic backups")
+                .on_hover_text(ht::SET_AUTO_BACKUP)
                 .changed()
             {
                 self.mark_dirty();
@@ -1078,7 +1703,7 @@ impl SettingsUi {
                             .range(MIN_BACKUP_INTERVAL_HOURS..=MAX_BACKUP_INTERVAL_HOURS)
                             .speed(1),
                     )
-                    .on_hover_text("Hours between automatic backups while Sqyre is open.")
+                    .on_hover_text(ht::SET_BACKUP_HOURS)
                     .changed()
                 {
                     self.settings.backup_interval_hours = v;
@@ -1099,9 +1724,7 @@ impl SettingsUi {
                             .range(MIN_BACKUP_MAX_KEEP..=MAX_BACKUP_MAX_KEEP)
                             .speed(1),
                     )
-                    .on_hover_text(
-                        "Oldest managed sqyre-backup-*.zip files are deleted beyond this count.",
-                    )
+                    .on_hover_text(ht::SET_BACKUP_KEEP)
                     .changed()
                 {
                     self.settings.backup_max_keep = v;
@@ -1113,12 +1736,35 @@ impl SettingsUi {
                 }
             });
 
-            ui.add_space(crate::theme::SPACE_8);
-            ui.label(
-                egui::RichText::new(format!("Backups folder: {}", backups_dir().display()))
-                    .weak()
-                    .small(),
-            );
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(format!("Backups folder: {}", backups_dir().display()))
+                        .weak()
+                        .small(),
+                );
+                if crate::file_dialogs::supported(PickPurpose::BackupDir)
+                    && ui
+                        .small_button("Choose…")
+                        .on_hover_text(ht::SET_BACKUP_DIR)
+                        .clicked()
+                {
+                    crate::file_dialogs::request(
+                        PickPurpose::BackupDir,
+                        "Choose backups folder",
+                        Some(&backups_dir()),
+                    );
+                }
+                if !self.settings.backup_dir.trim().is_empty()
+                    && ui
+                        .small_button("Reset")
+                        .on_hover_text(ht::SET_BACKUP_DIR)
+                        .clicked()
+                {
+                    self.settings.backup_dir.clear();
+                    self.settings.apply_backup_dir_override();
+                    self.mark_dirty();
+                }
+            });
             ui.label(
                 egui::RichText::new(format_last_backup(self.settings.last_backup_unix))
                     .weak()
@@ -1136,12 +1782,11 @@ impl SettingsUi {
                 }
             }
 
-            ui.add_space(crate::theme::SPACE_8);
             ui.horizontal(|ui| {
-                if ui.button("Back up now").clicked() {
+                if ui.small_button("Back up now").clicked() {
                     self.run_manual_backup();
                 }
-                if ui.button("Restore from backup…").clicked() {
+                if ui.small_button("Restore from backup…").clicked() {
                     self.request_restore_backup();
                 }
             });
@@ -1214,6 +1859,23 @@ impl SettingsUi {
             PickPurpose::SqyreLocation | PickPurpose::HostSqyreLocation => {
                 self.confirm_sqyre_location(resolve_sqyre_dir_from_pick(path));
             }
+            PickPurpose::FinishSound => {
+                self.settings.finish_sound_file = path.to_string_lossy().into_owned();
+                self.mark_dirty();
+            }
+            PickPurpose::AddSound => {
+                self.settings.add_sound_file = path.to_string_lossy().into_owned();
+                self.mark_dirty();
+            }
+            PickPurpose::DeleteSound => {
+                self.settings.delete_sound_file = path.to_string_lossy().into_owned();
+                self.mark_dirty();
+            }
+            PickPurpose::BackupDir => {
+                self.settings.backup_dir = path.to_string_lossy().into_owned();
+                self.settings.apply_backup_dir_override();
+                self.mark_dirty();
+            }
             PickPurpose::IconVariant | PickPurpose::MaskImage => return,
         }
         if self.confirm.is_some() {
@@ -1253,42 +1915,78 @@ impl SettingsUi {
                     &mut self.settings.auto_update_check,
                     "Check for updates on startup",
                 )
-                .on_hover_text(
-                    "Queries GitHub Releases for a newer Sqyre build when the app starts.",
+                .on_hover_text(ht::SET_UPDATE_CHECK)
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if setting_visible(q, section_hit, SETTING_UPDATE_INTERVAL) {
+            ui.horizontal(|ui| {
+                ui.label("Check for updates every:");
+                let mut v = self.settings.update_check_interval_hours;
+                if ui
+                    .add(
+                        crate::widgets::num_entry(&mut v)
+                            .range(
+                                sqyre_persist::MIN_UPDATE_CHECK_INTERVAL_HOURS
+                                    ..=sqyre_persist::MAX_UPDATE_CHECK_INTERVAL_HOURS,
+                            )
+                            .speed(1)
+                            .suffix(" hours"),
+                    )
+                    .on_hover_text(ht::SET_UPDATE_INTERVAL)
+                    .changed()
+                {
+                    self.settings.update_check_interval_hours = v;
+                    self.mark_dirty();
+                }
+            });
+            ui.label(
+                egui::RichText::new("0 hours checks once per launch.")
+                    .small()
+                    .weak(),
+            );
+        }
+
+        if setting_visible(q, section_hit, SETTING_UPDATE_PRERELEASE)
+            && ui
+                .checkbox(
+                    &mut self.settings.update_include_prerelease,
+                    "Include pre-release versions",
                 )
+                .on_hover_text(ht::SET_UPDATE_PRERELEASE)
                 .changed()
         {
             self.mark_dirty();
         }
 
         if setting_visible(q, section_hit, SETTING_UPDATE_ACTIONS) {
-            ui.add_space(crate::theme::SPACE_8);
             ui.horizontal(|ui| {
                 let busy = update.is_busy();
                 if ui
-                    .add_enabled(!busy, egui::Button::new("Check now"))
-                    .on_hover_text("Query GitHub Releases for a newer build.")
+                    .add_enabled(!busy, egui::Button::new("Check now").small())
+                    .on_hover_text(ht::SET_UPDATE_NOW)
                     .clicked()
                 {
-                    update.start_check();
+                    update.start_check(self.settings.update_include_prerelease);
                     ui.ctx().request_repaint();
                 }
                 match &update.state {
                     UpdateState::Available { .. }
                         if ui
-                            .add_enabled(!busy, egui::Button::new("Download & install"))
+                            .add_enabled(!busy, egui::Button::new("Download & install").small())
                             .clicked() =>
                     {
                         update.start_download();
                     }
-                    UpdateState::Ready { .. } if ui.button("Restart to finish").clicked() => {
+                    UpdateState::Ready { .. } if ui.small_button("Restart to finish").clicked() => {
                         self.restart_requested = true;
                     }
                     _ => {}
                 }
             });
 
-            ui.add_space(crate::theme::SPACE_4);
             let status = match &update.state {
                 UpdateState::Idle => "Update status: idle".to_string(),
                 UpdateState::Unavailable { reason } => reason.clone(),
@@ -1367,9 +2065,7 @@ impl SettingsUi {
         ctx: &egui::Context,
         confirm: PendingConfirm,
         pending_scale: Option<&crate::widgets::ViewportScaleEvent>,
-        db: &mut Database,
-        macros: &mut Vec<Macro>,
-        catalog: &mut ProgramCatalog,
+        data: &mut SettingsData<'_>,
     ) {
         match &confirm {
             PendingConfirm::MoveData { old_dir, new_dir } => {
@@ -1399,13 +2095,27 @@ impl SettingsUi {
                                 let old = old_dir.clone();
                                 let new = new_dir.clone();
                                 self.confirm = None;
-                                self.apply_sqyre_location(old, new, false, db, macros, catalog);
+                                self.apply_sqyre_location(
+                                    old,
+                                    new,
+                                    false,
+                                    data.db,
+                                    data.macros,
+                                    data.catalog,
+                                );
                             }
                             crate::widgets::ConfirmChoice::Choice(1) => {
                                 let old = old_dir.clone();
                                 let new = new_dir.clone();
                                 self.confirm = None;
-                                self.apply_sqyre_location(old, new, true, db, macros, catalog);
+                                self.apply_sqyre_location(
+                                    old,
+                                    new,
+                                    true,
+                                    data.db,
+                                    data.macros,
+                                    data.catalog,
+                                );
                             }
                             crate::widgets::ConfirmChoice::Choice(_)
                             | crate::widgets::ConfirmChoice::None => {}
@@ -1444,9 +2154,9 @@ impl SettingsUi {
                                 self.apply_restore_backup(
                                     path,
                                     ImportMode::Overwrite,
-                                    db,
-                                    macros,
-                                    catalog,
+                                    data.db,
+                                    data.macros,
+                                    data.catalog,
                                 );
                             }
                             crate::widgets::ConfirmChoice::Choice(1) => {
@@ -1455,9 +2165,9 @@ impl SettingsUi {
                                 self.apply_restore_backup(
                                     path,
                                     ImportMode::Merge,
-                                    db,
-                                    macros,
-                                    catalog,
+                                    data.db,
+                                    data.macros,
+                                    data.catalog,
                                 );
                             }
                             crate::widgets::ConfirmChoice::Choice(_)
@@ -1629,9 +2339,7 @@ impl SettingsUi {
                     &mut self.settings.compact_program_headers,
                     "Compact program headers with icons",
                 )
-                .on_hover_text(
-                    "When a program has a process icon, list headers show only the icon with the child count on the right (name on hover). Macro list tag headers attached to a program's Macro tags do the same.",
-                )
+                .on_hover_text(ht::SET_ICON_HEADERS)
                 .changed()
         {
             self.mark_dirty();
@@ -1643,9 +2351,7 @@ impl SettingsUi {
                     &mut self.settings.show_empty_program_headers,
                     "Show empty program headers",
                 )
-                .on_hover_text(
-                    "In the Data Editor lists, keep a header for every program even when it has nothing on that tab (for example, no items or no points).",
-                )
+                .on_hover_text(ht::SET_KEEP_HEADERS)
                 .changed()
         {
             self.mark_dirty();
@@ -1654,7 +2360,7 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_WINDOW_BORDER)
             && ui
                 .checkbox(&mut self.settings.window_border, "Window border")
-                .on_hover_text("Show a thin gold outline around the edge of the main window.")
+                .on_hover_text(ht::SET_WIN_OUTLINE)
                 .changed()
         {
             self.mark_dirty();
@@ -1663,22 +2369,105 @@ impl SettingsUi {
         if setting_visible(q, section_hit, SETTING_RUN_GLOW)
             && ui
                 .checkbox(&mut self.settings.run_button_glow, "Glowing Run button")
-                .on_hover_text(
-                    "Show a green glow around the Run button when a macro is ready to run; it pulses while hovered.",
-                )
+                .on_hover_text(ht::SET_RUN_GLOW)
                 .changed()
         {
             self.mark_dirty();
         }
 
+        if setting_visible(q, section_hit, SETTING_PREVIEW_OUTLINE)
+            && ui
+                .checkbox(
+                    &mut self.settings.preview_desktop_outline,
+                    "Outline preview locations on the desktop",
+                )
+                .on_hover_text(ht::SET_PREVIEW_OUTLINE)
+                .changed()
+        {
+            self.mark_dirty();
+        }
+
+        if setting_visible(q, section_hit, SETTING_ACCENT) {
+            ui.horizontal(|ui| {
+                ui.label("Accent color:").on_hover_text(ht::SET_ACCENT);
+                let mut color = sqyre_ui_theme::accent();
+                if ui.color_edit_button_srgba(&mut color).changed() {
+                    self.settings.accent_color =
+                        format_hex_color([color.r(), color.g(), color.b(), 255]);
+                    self.mark_dirty();
+                    Self::apply_appearance(ctx, &self.settings);
+                }
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(22.0, 22.0), egui::Sense::hover());
+                ui.painter().rect_filled(rect, 3.0, color);
+                ui.painter().rect_stroke(
+                    rect,
+                    3.0,
+                    egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
+                    egui::StrokeKind::Outside,
+                );
+                if !self.settings.accent_color.trim().is_empty()
+                    && ui.small_button("Reset").clicked()
+                {
+                    self.settings.accent_color.clear();
+                    self.mark_dirty();
+                    Self::apply_appearance(ctx, &self.settings);
+                }
+            });
+        }
+
+        if setting_visible(q, section_hit, SETTING_FONT_FAMILY) {
+            ui.horizontal(|ui| {
+                ui.label("Font family:").on_hover_text(ht::SET_FONT_FAMILY);
+                let mut family = self.settings.ui_font_family;
+                egui::ComboBox::from_id_salt("settings_ui_font_family")
+                    .selected_text(family.label())
+                    .show_ui(ui, |ui| {
+                        for f in UiFontFamily::ALL {
+                            ui.selectable_value(&mut family, f, f.label());
+                        }
+                    });
+                if family != self.settings.ui_font_family {
+                    self.settings.ui_font_family = family;
+                    self.mark_dirty();
+                    Self::apply_appearance(ctx, &self.settings);
+                }
+            });
+        }
+
+        if setting_visible(q, section_hit, SETTING_MONO_SIZE) {
+            ui.horizontal(|ui| {
+                ui.label("Code font size:").on_hover_text(ht::SET_MONO_SIZE);
+                let mut v = self.settings.mono_font_size;
+                if ui
+                    .add(crate::widgets::num_entry(&mut v).range(0..=40).speed(1))
+                    .on_hover_text(ht::SET_MONO_SIZE)
+                    .changed()
+                {
+                    self.settings.mono_font_size = v;
+                    self.mark_dirty();
+                    Self::apply_appearance(ctx, &self.settings);
+                }
+                if ui.small_button("Reset").clicked() {
+                    self.settings.mono_font_size = 0;
+                    self.mark_dirty();
+                    Self::apply_appearance(ctx, &self.settings);
+                }
+            });
+            ui.label(
+                egui::RichText::new("0 matches the UI font size.")
+                    .small()
+                    .weak(),
+            );
+        }
+
         if setting_visible(q, section_hit, SETTING_FONT_SIZE) {
-            ui.add_space(crate::theme::SPACE_8);
             ui.horizontal(|ui| {
                 ui.label("Font size:");
                 let mut v = self.settings.ui_font_size;
                 if ui
                     .add(crate::widgets::num_entry(&mut v).range(10..=28).speed(1))
-                    .on_hover_text("Base text size for labels, buttons, and form fields.")
+                    .on_hover_text(ht::SET_FONT_SIZE)
                     .changed()
                 {
                     self.settings.ui_font_size = v;
@@ -1700,22 +2489,54 @@ impl SettingsUi {
                 if ui
                     .add(
                         crate::widgets::num_entry(&mut v)
-                            .range(0.5..=2.5)
+                            .range(MIN_UI_SCALE..=MAX_UI_SCALE)
                             .speed(0.1)
                             .fixed_decimals(1),
                     )
-                    .on_hover_text(
-                        "Scale padding, icons, and other non-text UI elements relative to the \
-                         display's own scale (1.0 = default).",
-                    )
+                    .on_hover_text(ht::SET_UI_SCALE)
                     .changed()
                 {
                     self.settings.ui_scale = v;
                     self.mark_dirty();
-                    Self::apply_appearance(ctx, &self.settings);
+                    self.ui_scale_apply_pending = true;
                 }
                 if ui.small_button("Reset").clicked() {
                     self.settings.ui_scale = DEFAULT_UI_SCALE;
+                    self.mark_dirty();
+                    self.ui_scale_apply_pending = false;
+                    Self::apply_appearance(ctx, &self.settings);
+                }
+            });
+        }
+
+        if self.ui_scale_apply_pending && !ctx.input(|i| i.pointer.any_down()) {
+            Self::apply_appearance(ctx, &self.settings);
+            self.ui_scale_apply_pending = false;
+        }
+
+        if setting_visible(q, section_hit, SETTING_SPACING) {
+            ui.horizontal(|ui| {
+                ui.label("Spacing:");
+                let mut density = self.settings.ui_density;
+                egui::ComboBox::from_id_salt("settings_ui_density")
+                    .selected_text(density.label())
+                    .show_ui(ui, |ui| {
+                        for d in UiDensity::ALL {
+                            ui.selectable_value(&mut density, d, d.label());
+                        }
+                    })
+                    .response
+                    .on_hover_text(ht::SET_DENSITY);
+                if density != self.settings.ui_density {
+                    self.settings.ui_density = density;
+                    self.mark_dirty();
+                    Self::apply_appearance(ctx, &self.settings);
+                }
+                if ui
+                    .checkbox(&mut self.settings.auto_compact_density, "Auto-compact")
+                    .on_hover_text(ht::SET_AUTO_COMPACT)
+                    .changed()
+                {
                     self.mark_dirty();
                     Self::apply_appearance(ctx, &self.settings);
                 }
@@ -1727,7 +2548,6 @@ impl SettingsUi {
                 .iter()
                 .any(|&(_, label)| setting_visible(q, false, &[label]));
         if show_colors {
-            ui.add_space(crate::theme::SPACE_8);
             ui.label(egui::RichText::new("Macro tree action colors").strong());
 
             let is_dark = ui.visuals().dark_mode;
@@ -1739,8 +2559,11 @@ impl SettingsUi {
                 }
                 ui.horizontal_wrapped(|ui| {
                     ui.label(label);
+                    // Reserved scrollbar lane insets the clip, not max_rect —
+                    // keep the right-aligned controls inside it.
+                    crate::widgets::clamp_row_right_to_clip(ui);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Reset").clicked() {
+                        if ui.small_button("Reset").clicked() {
                             self.settings.action_colors.set(key, String::new());
                             clear_custom_action_color(key);
                             self.mark_dirty();
@@ -1780,7 +2603,7 @@ impl SettingsUi {
             }
 
             if setting_visible(q, section_hit, SETTING_ACTION_COLORS)
-                && ui.button("Reset all action colors").clicked()
+                && ui.small_button("Reset all action colors").clicked()
             {
                 self.settings.action_colors.clear_all();
                 clear_all_custom_action_colors();
@@ -1851,6 +2674,14 @@ const SETTING_LOG_META: &[&str] = &[
 ];
 const SETTING_HIGHLIGHT_ACTION: &[&str] =
     &["highlight", "executing action", "active action", "tint"];
+const SETTING_CLICK_FX: &[&str] = &[
+    "click effect",
+    "click",
+    "flash",
+    "marker",
+    "cursor",
+    "clicks land",
+];
 const SETTING_HIDE_WHILE_RECORDING: &[&str] =
     &["hide", "recording", "points", "search areas", "snapshot"];
 const SETTING_RELEASE_HELD: &[&str] = &[
@@ -1938,6 +2769,142 @@ const SETTING_VARIANT_EXIT_EARLY: &[&str] = &[
 const SETTING_FINISH_SOUND: &[&str] = &["finish sound", "macro finishes", "complete"];
 const SETTING_UI_SOUNDS: &[&str] = &["ui sounds", "adding", "deleting", "add/delete"];
 const SETTING_SOUND_VOLUME: &[&str] = &["volume", "sound volume"];
+#[cfg(not(target_arch = "wasm32"))]
+const SETTING_SOUND_FILES: &[&str] = &["sound file", "custom sound", "mp3", "cue file", "built-in"];
+
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+const SETTING_DIAGNOSTICS: &[&str] = &[
+    "diagnostic",
+    "diagnostics",
+    "diag",
+    "diag.log",
+    "debug",
+    "troubleshoot",
+    "crash",
+    "log file",
+];
+#[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+const SETTING_MEMORY_LOG: &[&str] = &[
+    "memory",
+    "memory log",
+    "mem.log",
+    "rss",
+    "leak",
+    "sample",
+    "interval",
+];
+#[cfg(not(target_arch = "wasm32"))]
+const SETTING_CLOSE_TO_TRAY: &[&str] =
+    &["close", "close to tray", "tray", "minimize", "quit", "exit"];
+#[cfg(not(target_arch = "wasm32"))]
+const SETTING_START_MINIMIZED: &[&str] =
+    &["start minimized", "tray", "startup", "launch", "hidden"];
+#[cfg(target_os = "linux")]
+const SETTING_AUTOSTART: &[&str] = &["autostart", "launch on login", "login", "boot", "startup"];
+const SETTING_LAST_MACRO: &[&str] = &["restore", "last macro", "remember", "reopen", "selected"];
+
+const SETTING_RESTORE_CURSOR: &[&str] = &["cursor", "restore cursor", "mouse position", "restore"];
+const SETTING_CLICK_FLASH_MS: &[&str] = &[
+    "click",
+    "flash",
+    "marker",
+    "duration",
+    "milliseconds",
+    "advanced",
+];
+const SETTING_RECORD_THRESHOLDS: &[&str] = &[
+    "recording",
+    "record",
+    "threshold",
+    "wait",
+    "pause",
+    "move",
+    "tap",
+    "snap",
+    "distance",
+    "advanced",
+];
+#[cfg(not(target_arch = "wasm32"))]
+const SETTING_PANIC_KEY: &[&str] = &[
+    "panic",
+    "panic key",
+    "stop key",
+    "esc",
+    "escape",
+    "abort",
+    "emergency",
+    "record",
+];
+const SETTING_RETRIGGER: &[&str] = &[
+    "hotkey",
+    "while running",
+    "restart",
+    "retrigger",
+    "already running",
+    "running macro",
+];
+const SETTING_DEFAULT_TRIGGER: &[&str] =
+    &["hotkey", "trigger", "press", "release", "new macro", "fire"];
+
+const SUBSECTION_ACTION_DEFAULTS: &[&str] =
+    &["defaults", "new actions", "new macros", "action defaults"];
+const SETTING_DEFAULT_DELAYS: &[&str] = &[
+    "delay",
+    "delays",
+    "keyboard",
+    "mouse",
+    "new macro",
+    "default",
+];
+const SETTING_LOG_IMAGE_EDGE: &[&str] = &[
+    "log image",
+    "max edge",
+    "image size",
+    "meta image",
+    "annotated",
+    "advanced",
+];
+const SETTING_ACTION_DEFAULTS_RESET: &[&str] = &[
+    "reset",
+    "saved defaults",
+    "action defaults",
+    "save as default",
+];
+
+#[cfg(not(target_arch = "wasm32"))]
+const SETTING_BACKUP_DIR: &[&str] = &[
+    "backup folder",
+    "backup directory",
+    "backups folder",
+    "destination",
+    "backup location",
+];
+#[cfg(not(target_arch = "wasm32"))]
+const SETTING_UPDATE_INTERVAL: &[&str] = &[
+    "interval",
+    "check every",
+    "hours",
+    "frequency",
+    "update check",
+];
+#[cfg(not(target_arch = "wasm32"))]
+const SETTING_UPDATE_PRERELEASE: &[&str] = &[
+    "prerelease",
+    "pre-release",
+    "beta",
+    "release candidate",
+    "rc",
+];
+
+const SETTING_ACCENT: &[&str] = &[
+    "accent",
+    "accent color",
+    "gold",
+    "theme color",
+    "highlight color",
+];
+const SETTING_FONT_FAMILY: &[&str] = &["font family", "monospace", "font", "typeface", "hack"];
+const SETTING_MONO_SIZE: &[&str] = &["mono", "monospace", "code font", "font size", "yaml"];
 
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 const PERMISSIONS_PANEL: &[&str] = &[
@@ -1960,8 +2927,8 @@ const PERMISSIONS_PANEL: &[&str] = &[
 const DATA_LOCATION: &[&str] = &[
     "data folder",
     "data directory",
-    "sqyre",
-    ".sqyre",
+    sqyre_ports::APP_ID,
+    sqyre_ports::APP_DIR_NAME,
     "location",
     "choose location",
     "open folder",
@@ -1996,8 +2963,21 @@ const SETTING_COMPACT_HEADERS: &[&str] = &["compact", "program headers", "icons"
 const SETTING_EMPTY_HEADERS: &[&str] = &["empty", "program headers", "headers", "hide"];
 const SETTING_WINDOW_BORDER: &[&str] = &["window border", "border", "outline"];
 const SETTING_RUN_GLOW: &[&str] = &["run button", "glow", "pulse", "animation"];
+const SETTING_PREVIEW_OUTLINE: &[&str] = &[
+    "preview",
+    "preview outline",
+    "desktop outline",
+    "location",
+    "location box",
+    "tooltip",
+    "monitor",
+    "gold box",
+];
 const SETTING_FONT_SIZE: &[&str] = &["font size", "font", "text size"];
 const SETTING_UI_SCALE: &[&str] = &["ui scale", "scale", "padding"];
+const SETTING_SPACING: &[&str] = &[
+    "spacing", "density", "padding", "margin", "gap", "compact", "spaced",
+];
 const SETTING_ACTION_COLORS: &[&str] =
     &["action colors", "macro tree", "colors", "colour", "pastel"];
 
@@ -2005,45 +2985,82 @@ const GENERAL_SETTINGS: &[&[&str]] = &[
     SETTING_LOG_META,
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     SETTING_WORKER_THREADS,
+    SETTING_LAST_MACRO,
+    #[cfg(not(target_arch = "wasm32"))]
+    SETTING_CLOSE_TO_TRAY,
+    #[cfg(not(target_arch = "wasm32"))]
+    SETTING_START_MINIMIZED,
+    #[cfg(target_os = "linux")]
+    SETTING_AUTOSTART,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    SETTING_DIAGNOSTICS,
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    SETTING_MEMORY_LOG,
 ];
 const MACROS_SETTINGS: &[&[&str]] = &[
     SUBSECTION_PLAYBACK,
     SETTING_HIGHLIGHT_ACTION,
+    SETTING_CLICK_FX,
     SETTING_RELEASE_HELD,
+    SETTING_RESTORE_CURSOR,
     SETTING_OVERLAY_PRESS_STOPS,
     SETTING_OVERLAY_IN_DETECTION,
     SETTING_OVERLAY_OVER_SQYRE,
     SETTING_WHILE_BUDGET,
     SETTING_RUN_MACRO_DEPTH,
+    SETTING_CLICK_FLASH_MS,
     SUBSECTION_RECORDING,
     SETTING_HIDE_WHILE_RECORDING,
+    SETTING_RECORD_THRESHOLDS,
     SUBSECTION_HOTKEYS,
     SETTING_HOTKEY_TAGS_FOCUSED,
+    #[cfg(not(target_arch = "wasm32"))]
+    SETTING_PANIC_KEY,
+    SETTING_RETRIGGER,
+    SETTING_DEFAULT_TRIGGER,
     SUBSECTION_IMAGE_SEARCH,
     SETTING_VARIANT_EXIT_EARLY,
     SETTING_IMAGE_SEARCH_DISTANCE,
+    SUBSECTION_ACTION_DEFAULTS,
+    SETTING_DEFAULT_DELAYS,
+    SETTING_LOG_IMAGE_EDGE,
+    SETTING_ACTION_DEFAULTS_RESET,
 ];
 const SOUND_SETTINGS: &[&[&str]] = &[
     SETTING_FINISH_SOUND,
     SETTING_UI_SOUNDS,
     SETTING_SOUND_VOLUME,
+    #[cfg(not(target_arch = "wasm32"))]
+    SETTING_SOUND_FILES,
 ];
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 const PERMISSIONS_SETTINGS: &[&[&str]] = &[PERMISSIONS_PANEL];
-const DATA_SETTINGS: &[&[&str]] = &[DATA_LOCATION, DATA_BACKUP];
+const DATA_SETTINGS: &[&[&str]] = &[
+    DATA_LOCATION,
+    DATA_BACKUP,
+    #[cfg(not(target_arch = "wasm32"))]
+    SETTING_BACKUP_DIR,
+];
 #[cfg(not(target_arch = "wasm32"))]
 const UPDATES_SETTINGS: &[&[&str]] = &[
     SETTING_UPDATE_VERSION,
     SETTING_AUTO_UPDATE,
     SETTING_UPDATE_ACTIONS,
+    SETTING_UPDATE_INTERVAL,
+    SETTING_UPDATE_PRERELEASE,
 ];
 const APPEARANCE_SETTINGS: &[&[&str]] = &[
     SETTING_COMPACT_HEADERS,
     SETTING_EMPTY_HEADERS,
     SETTING_WINDOW_BORDER,
     SETTING_RUN_GLOW,
+    SETTING_PREVIEW_OUTLINE,
+    SETTING_ACCENT,
+    SETTING_FONT_FAMILY,
+    SETTING_MONO_SIZE,
     SETTING_FONT_SIZE,
     SETTING_UI_SCALE,
+    SETTING_SPACING,
     SETTING_ACTION_COLORS,
 ];
 
@@ -2085,7 +3102,7 @@ fn sidebar_width(ui: &egui::Ui) -> f32 {
 /// Bold title for a group of settings within a section page.
 fn subsection_heading(ui: &mut egui::Ui, first: &mut bool, title: &str) {
     if !std::mem::take(first) {
-        ui.add_space(crate::theme::SPACE_12);
+        crate::theme::add_section_gap(ui);
     }
     ui.label(egui::RichText::new(title).strong());
 }
@@ -2099,10 +3116,8 @@ fn advanced_header(
     add_contents: impl FnOnce(&mut egui::Ui),
 ) {
     let force_open = !q.is_empty() && knobs.iter().any(|kw| query_matches(q, kw));
-    egui::CollapsingHeader::new("Advanced")
-        .default_open(false)
+    crate::widgets::collapsible_header("Advanced", id_salt)
         .open(force_open.then_some(true))
-        .id_salt(id_salt)
         .show(ui, add_contents);
 }
 
@@ -2115,10 +3130,13 @@ fn appearance_section_visible(q: &str) -> bool {
 
 /// If the user picked `.sqyre` itself, use it; otherwise treat the pick as its parent.
 fn resolve_sqyre_dir_from_pick(picked: PathBuf) -> PathBuf {
-    if picked.file_name().is_some_and(|n| n == ".sqyre") {
+    if picked
+        .file_name()
+        .is_some_and(|n| n == sqyre_ports::APP_DIR_NAME)
+    {
         picked
     } else {
-        picked.join(".sqyre")
+        picked.join(sqyre_ports::APP_DIR_NAME)
     }
 }
 
@@ -2134,6 +3152,16 @@ mod tests {
         assert!(section_visible("", SECTION_MACROS, MACROS_SETTINGS));
         assert!(section_visible("", SECTION_SOUND, SOUND_SETTINGS));
         assert!(appearance_section_visible(""));
+    }
+
+    #[test]
+    fn narrow_viewport_compacts_only_when_enabled() {
+        use UiDensity::*;
+        assert_eq!(SettingsUi::density_for(Spaced, true, 360.0), Compact);
+        assert_eq!(SettingsUi::density_for(Spaced, false, 360.0), Spaced);
+        assert_eq!(SettingsUi::density_for(Spaced, true, 960.0), Spaced);
+        // Compact is idempotent — already-compact users see no change.
+        assert_eq!(SettingsUi::density_for(Compact, true, 360.0), Compact);
     }
 
     #[test]
@@ -2217,13 +3245,17 @@ mod tests {
                     let mut catalog = ProgramCatalog::default();
                     #[cfg(not(target_arch = "wasm32"))]
                     let mut update = crate::update::UpdateManager::default();
+                    let macro_hotkeys = sqyre_hotkeys::MacroHotkeyBridge::new();
                     settings.show(
                         ui.ctx(),
-                        &mut db,
-                        &mut macros,
-                        &mut catalog,
+                        &mut SettingsData {
+                            db: &mut db,
+                            macros: &mut macros,
+                            catalog: &mut catalog,
+                        },
                         #[cfg(not(target_arch = "wasm32"))]
                         &mut update,
+                        &macro_hotkeys,
                         None,
                     );
                 },
@@ -2247,7 +3279,7 @@ mod tests {
             field.is_focused(),
             "typing the first character should keep the search field focused"
         );
-        assert!(harness.query_by_label("Clear").is_some());
+        assert!(harness.query_by_label("Clear search").is_some());
 
         search_field(&harness).type_text("z");
         harness.run();
@@ -2272,7 +3304,7 @@ mod tests {
             field.is_focused(),
             "deleting back to an empty query should keep the search field focused"
         );
-        assert!(harness.query_by_label("Clear").is_none());
+        assert!(harness.query_by_label("Clear search").is_none());
 
         search_field(&harness).type_text("a");
         harness.run();

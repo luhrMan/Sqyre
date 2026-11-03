@@ -130,21 +130,15 @@ mod tests {
 
     #[test]
     fn action_to_map_with_uid_preserves_nested_uids() {
-        let child = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        };
+        let child = Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        });
         let child_id = child.id;
-        let nested = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Loop {
-                name: "inner".into(),
-                count: ScalarValue::Int(1),
-                subactions: vec![child],
-            },
-        };
+        let nested = Action::new(ActionKind::Loop {
+            name: "inner".into(),
+            count: ScalarValue::Int(1),
+            subactions: vec![child],
+        });
         let nested_id = nested.id;
         let root = root_loop(vec![nested]);
         let m = action_to_map_with_uid(&root).unwrap();
@@ -155,59 +149,50 @@ mod tests {
 
     #[test]
     fn navigate_select_with_key_branch_roundtrips() {
-        let kid = Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(1),
-            },
-        };
-        let branch = Action {
-            id: ActionId::new(),
-            kind: ActionKind::NavigateKey {
-                name: "Inspect".into(),
-                chord: vec!["i".into()],
-                exit: true,
-                subactions: vec![kid],
-            },
-        };
+        let kid = Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(1),
+        });
+        let branch = Action::new(ActionKind::NavigateKey {
+            name: "Inspect".into(),
+            chord: vec!["i".into()],
+            exit: true,
+            subactions: vec![kid],
+        });
         let branch_id = branch.id;
-        let nav = Action {
-            id: ActionId::new(),
-            kind: ActionKind::NavigateSelect(Box::new(NavigateSelectData {
-                program: "P".into(),
-                atlas: "inventory".into(),
-                chords: sqyre_domain::NavChords {
-                    up: vec!["up".into()],
-                    down: vec!["down".into()],
-                    left: vec![],
-                    right: vec![],
-                    select: vec!["enter".into()],
-                    back: vec!["esc".into()],
-                },
-                options: sqyre_domain::NavOptions {
-                    wrap_edges: true,
-                    move_cursor_with_nav: true,
-                    smooth: false,
-                    pass_through: false,
-                    hold_repeat: true,
-                },
-                select: sqyre_domain::NavSelectAction {
-                    device: sqyre_domain::NavSelectDevice::Mouse,
-                    button: sqyre_domain::MouseButton::Left,
-                    key: String::new(),
-                    press_mode: sqyre_domain::NavPressMode::Click,
-                },
-                inputs: sqyre_domain::NavInputs::default(),
-                outputs: sqyre_domain::NavOutputs {
-                    output_ref: "ref".into(),
-                    output_atlas: String::new(),
-                    output_row: "r".into(),
-                    output_col: "c".into(),
-                    output_collection: String::new(),
-                },
-                subactions: vec![branch],
-            })),
-        };
+        let nav = Action::new(ActionKind::NavigateSelect(Box::new(NavigateSelectData {
+            program: "P".into(),
+            atlas: "inventory".into(),
+            chords: sqyre_domain::NavChords {
+                up: vec!["up".into()],
+                down: vec!["down".into()],
+                left: vec![],
+                right: vec![],
+                select: vec!["enter".into()],
+                back: vec!["esc".into()],
+            },
+            options: sqyre_domain::NavOptions {
+                wrap_edges: true,
+                move_cursor_with_nav: true,
+                smooth: false,
+                pass_through: false,
+                hold_repeat: true,
+            },
+            select: sqyre_domain::NavSelectAction {
+                device: sqyre_domain::NavSelectDevice::Mouse,
+                button: sqyre_domain::MouseButton::Left,
+                key: String::new(),
+                press_mode: sqyre_domain::NavPressMode::Click,
+            },
+            inputs: sqyre_domain::NavInputs::default(),
+            outputs: sqyre_domain::NavOutputs {
+                output_ref: "ref".into(),
+                output_atlas: String::new(),
+                output_row: "r".into(),
+                output_col: "c".into(),
+                output_collection: String::new(),
+            },
+            subactions: vec![branch],
+        })));
         let nav_id = nav.id;
         let m = action_to_map_with_uid(&nav).unwrap();
         let restored = action_from_map(&m).unwrap();
@@ -328,19 +313,13 @@ mod tests {
     #[test]
     fn image_search_populated_fields_roundtrip() {
         use sqyre_domain::{MatchGrouping, MatchOrder, RepeatMode, WaitTilFoundConfig};
-        let action = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let action = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "find sword".into(),
                 targets: vec!["Game~Sword".into(), "Game~Shield".into()],
-                target_tags: Vec::new(),
                 search_area: CoordinateRef("Game~Arena".into()),
                 tolerance: 0.87,
                 blur: 3,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::WaitUntilFound,
@@ -357,21 +336,16 @@ mod tests {
                         horizontal: "ltr".into(),
                         vertical: "ttb".into(),
                     },
-                    subactions: vec![Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::Wait {
-                            time: ScalarValue::Int(1),
-                        },
-                    }],
-                    else_actions: vec![Action {
-                        id: ActionId::new(),
-                        kind: ActionKind::Wait {
-                            time: ScalarValue::Int(2),
-                        },
-                    }],
+                    subactions: vec![Action::new(ActionKind::Wait {
+                        time: ScalarValue::Int(1),
+                    })],
+                    else_actions: vec![Action::new(ActionKind::Wait {
+                        time: ScalarValue::Int(2),
+                    })],
                 },
+                ..Default::default()
             },
-        };
+        )));
         let map = action_to_map_with_uid(&action).unwrap();
         assert!(
             !map.contains_key(Value::String("detection".into())),
@@ -389,19 +363,11 @@ mod tests {
     #[test]
     fn while_found_preserves_max_iterations() {
         use sqyre_domain::{RepeatMode, WaitTilFoundConfig};
-        let action = Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
+        let action = Action::new(ActionKind::ImageSearch(Box::new(
+            sqyre_domain::ImageSearchData {
                 name: "x".into(),
                 targets: vec!["t".into()],
-                target_tags: Vec::new(),
-                search_area: CoordinateRef::default(),
-                tolerance: 0.0,
                 blur: 5,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
                 detection: DetectionBranch {
                     wait: WaitTilFoundConfig {
                         repeat_mode: RepeatMode::RepeatWhileFound,
@@ -414,13 +380,14 @@ mod tests {
                     subactions: Vec::new(),
                     else_actions: Vec::new(),
                 },
+                ..Default::default()
             },
-        };
+        )));
         let map = action_to_map(&action).unwrap();
         let restored = action_from_map(&map).unwrap();
         match restored.kind {
-            ActionKind::ImageSearch { detection, .. } => {
-                assert_eq!(detection.wait.max_iterations, 42);
+            ActionKind::ImageSearch(d) => {
+                assert_eq!(d.detection.wait.max_iterations, 42);
             }
             other => panic!("expected ImageSearch, got {other:?}"),
         }
@@ -440,17 +407,11 @@ blur: 5
         let map = value.as_mapping().unwrap();
         let action = action_from_map(map).unwrap();
         match action.kind {
-            ActionKind::ImageSearch {
-                targets,
-                search_area,
-                sort_by,
-                sort_then,
-                ..
-            } => {
-                assert_eq!(targets, vec!["Game~Sword".to_string()]);
-                assert_eq!(search_area.as_str(), "Game~Arena");
-                assert_eq!(sort_by, sqyre_domain::ItemSortBy::Name);
-                assert_eq!(sort_then, sqyre_domain::ItemSortThen::NameAsc);
+            ActionKind::ImageSearch(d) => {
+                assert_eq!(d.targets, vec!["Game~Sword".to_string()]);
+                assert_eq!(d.search_area.as_str(), "Game~Arena");
+                assert_eq!(d.sort_by, sqyre_domain::ItemSortBy::Name);
+                assert_eq!(d.sort_then, sqyre_domain::ItemSortThen::NameAsc);
             }
             other => panic!("expected ImageSearch, got {other:?}"),
         }
@@ -471,12 +432,9 @@ tagpriority: [rare, heal]
         let map = value.as_mapping().unwrap();
         let action = action_from_map(map).unwrap();
         match &action.kind {
-            ActionKind::ImageSearch {
-                sort_by,
-                sort_then,
-                tag_priority,
-                ..
-            } => {
+            ActionKind::ImageSearch(d) => {
+                let (sort_by, sort_then, tag_priority) =
+                    (&d.sort_by, &d.sort_then, &d.tag_priority);
                 assert_eq!(*sort_by, sqyre_domain::ItemSortBy::Tags);
                 assert_eq!(*sort_then, sqyre_domain::ItemSortThen::NameAsc);
                 assert_eq!(tag_priority, &vec!["rare".to_string(), "heal".to_string()]);
@@ -491,15 +449,10 @@ tagpriority: [rare, heal]
         );
         let restored = action_from_map(&map).unwrap();
         match restored.kind {
-            ActionKind::ImageSearch {
-                sort_by,
-                sort_then,
-                tag_priority,
-                ..
-            } => {
-                assert_eq!(sort_by, sqyre_domain::ItemSortBy::Tags);
-                assert_eq!(sort_then, sqyre_domain::ItemSortThen::NameAsc);
-                assert_eq!(tag_priority, vec!["rare".to_string(), "heal".to_string()]);
+            ActionKind::ImageSearch(d) => {
+                assert_eq!(d.sort_by, sqyre_domain::ItemSortBy::Tags);
+                assert_eq!(d.sort_then, sqyre_domain::ItemSortThen::NameAsc);
+                assert_eq!(d.tag_priority, vec!["rare".to_string(), "heal".to_string()]);
             }
             other => panic!("expected ImageSearch, got {other:?}"),
         }
@@ -517,15 +470,11 @@ searcharea: Game~Arena
         let map = value.as_mapping().unwrap();
         let action = action_from_map(map).unwrap();
         match &action.kind {
-            ActionKind::ImageSearch {
-                targets,
-                target_tags,
-                ..
-            } => {
-                assert!(targets.is_empty());
+            ActionKind::ImageSearch(d) => {
+                assert!(d.targets.is_empty());
                 assert_eq!(
-                    target_tags,
-                    &vec![
+                    d.target_tags,
+                    vec![
                         "+weapon".to_string(),
                         "-holy".to_string(),
                         "heal".to_string()
@@ -545,9 +494,9 @@ searcharea: Game~Arena
         );
         let restored = action_from_map(&map).unwrap();
         match restored.kind {
-            ActionKind::ImageSearch { target_tags, .. } => {
+            ActionKind::ImageSearch(d) => {
                 assert_eq!(
-                    target_tags,
+                    d.target_tags,
                     vec![
                         "+weapon".to_string(),
                         "-holy".to_string(),
@@ -597,8 +546,8 @@ waittilfoundseconds: 0.25
         let map = value.as_mapping().unwrap();
         let action = action_from_map(map).unwrap();
         match action.kind {
-            ActionKind::ImageSearch { detection, .. } => {
-                assert_eq!(detection.wait.wait_til_found_seconds, 0.25);
+            ActionKind::ImageSearch(d) => {
+                assert_eq!(d.detection.wait.wait_til_found_seconds, 0.25);
             }
             other => panic!("expected ImageSearch, got {other:?}"),
         }

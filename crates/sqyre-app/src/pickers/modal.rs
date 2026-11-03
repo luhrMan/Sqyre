@@ -3,15 +3,15 @@ use super::coord_list::paint_coord_ref_list;
 use super::items_grid::paint_items_icon_grid;
 use super::query::{query_matches_name_or_tags, query_matches_window};
 use super::scroll::{
-    apply_list_nav, focus_search_once, maybe_scroll_to, picker_searchable_scroll_ex, poll_list_nav,
-    reset_focus_search, ListNavAction, PickerScrollOpts, HINT_LIST,
+    apply_list_nav, maybe_scroll_to, picker_searchable_scroll_ex, poll_list_nav, ListNavAction,
+    PickerScrollOpts, HINT_LIST,
 };
 use super::types::{ActivePicker, CoordKind, PickerResult};
 #[cfg(feature = "native-runtime")]
 use super::window::fetch_open_windows;
 use super::window::poll_window_picker_load;
 use crate::paint_ctx::CatalogPaint;
-use crate::widgets::list_vacancy;
+use crate::widgets::{list_vacancy, reset_focus_search};
 use eframe::egui;
 use sqyre_domain::CoordinateRef;
 use std::sync::mpsc;
@@ -82,6 +82,7 @@ pub fn show_active_picker(
     )
     .show(ctx, |ui| {
         crate::widgets::fill_resize_body(ui, |ui| {
+            let body_rect = ui.max_rect();
             // Local Esc/Enter/↑↓ before body widgets.
             let nav = poll_list_nav(ui);
             if nav == ListNavAction::Cancel {
@@ -109,13 +110,19 @@ pub fn show_active_picker(
                     // Selected-count row + optional tag filters + Save/Cancel.
                     opts.footer_reserve = if staged_tags.is_some() { 160.0 } else { 80.0 };
                     let mut trailing = |ui: &mut egui::Ui| {
-                        super::collapse_all_buttons(ui, |ctx, open| {
-                            super::set_items_icon_grid_openness(
-                                ctx,
-                                program_names.iter().map(|n| n.as_str()),
-                                open,
-                            );
-                        });
+                        super::collapse_all_button(
+                            ui,
+                            program_names
+                                .iter()
+                                .map(|n| super::items_icon_grid_collapse_id(n)),
+                            |ctx, open| {
+                                super::set_items_icon_grid_openness(
+                                    ctx,
+                                    program_names.iter().map(|n| n.as_str()),
+                                    open,
+                                );
+                            },
+                        );
                     };
                     opts.trailing = Some(&mut trailing);
                     picker_searchable_scroll_ex(ui, search, opts, Some(focus_id), |ui, q| {
@@ -176,10 +183,11 @@ pub fn show_active_picker(
                             crate::widgets::TagChipOptions {
                                 enabled: true,
                                 show_add_button: true,
+                                label_name: None,
                                 draft_hover: Some(crate::action_tooltip::help::IS_TARGET_TAGS),
-                                draft_first: false,
                                 reorderable: false,
                                 signed_filters: true,
+                                single_row: false,
                             },
                         );
                         ui.ctx().data_mut(|d| d.insert_temp(draft_id, draft));
@@ -226,7 +234,13 @@ pub fn show_active_picker(
                     scroll_to_selection,
                 } => {
                     if let Some(pick) = cell_pick.as_mut() {
-                        paint_collection_cell_picker(ui, paint.catalog, paint.icons, pick);
+                        paint_collection_cell_picker(
+                            ui,
+                            paint.catalog,
+                            paint.icons,
+                            pick,
+                            &mut back,
+                        );
                     } else {
                         let kind = *kind;
                         let program_names: Vec<String> =
@@ -234,26 +248,33 @@ pub fn show_active_picker(
                         crate::widgets::fill_row(
                             ui,
                             |ui| {
-                                super::collapse_all_buttons(ui, |ctx, open| {
-                                    super::set_coord_list_openness(
-                                        ctx,
-                                        kind,
-                                        program_names.iter().map(|n| n.as_str()),
-                                        open,
-                                    );
-                                });
+                                super::collapse_all_button(
+                                    ui,
+                                    program_names.iter().map(|n| {
+                                        super::coord_list::coord_list_collapse_id(kind, n)
+                                    }),
+                                    |ctx, open| {
+                                        super::set_coord_list_openness(
+                                            ctx,
+                                            kind,
+                                            program_names.iter().map(|n| n.as_str()),
+                                            open,
+                                        );
+                                    },
+                                );
                             },
                             |ui| {
-                                ui.label(egui::RichText::new(
-                                    egui_phosphor::regular::MAGNIFYING_GLASS,
-                                ))
-                                .on_hover_text("Search");
-                                let edit = egui::TextEdit::singleline(search)
-                                    .desired_width(f32::INFINITY)
-                                    .hint_text(HINT_LIST);
-                                let resp = ui.add(edit);
-                                focus_search_once(ui, focus_id, &resp);
-                                if resp.changed() {
+                                let out = crate::widgets::search_field(
+                                    ui,
+                                    search,
+                                    crate::widgets::SearchFieldOpts {
+                                        hint: HINT_LIST,
+                                        focus_id: Some(focus_id),
+                                        clearable: false,
+                                        stable_id: None,
+                                    },
+                                );
+                                if out.changed {
                                     *scroll_to_selection = true;
                                 }
                             },
@@ -383,12 +404,12 @@ pub fn show_active_picker(
                     }
                     let mut opts = PickerScrollOpts::list(ui).with_hint(Some("Search windows…"));
                     let mut trailing = |ui: &mut egui::Ui| {
+                        if let Some(err) = load_error.as_ref() {
+                            crate::widgets::error_icon(ui, err.as_str());
+                        }
                         let tip = if loading { "Refreshing…" } else { "Refresh" };
                         refresh_clicked = ui
-                            .add_enabled_ui(!loading, |ui| {
-                                crate::widgets::icon_button(ui, "↻", tip)
-                            })
-                            .inner
+                            .add_enabled(!loading, crate::widgets::IconButton::new("↻", tip, None))
                             .clicked();
                     };
                     opts.trailing = Some(&mut trailing);
@@ -396,9 +417,6 @@ pub fn show_active_picker(
                         picker_searchable_scroll_ex(ui, search, opts, Some(focus_id), |ui, q| {
                             if loading {
                                 ui.label("Loading windows…");
-                            }
-                            if let Some(err) = load_error.as_ref() {
-                                ui.colored_label(crate::theme::error_fg(), err.as_str());
                             }
                             let mut visible = 0usize;
                             for w in windows.iter() {
@@ -477,27 +495,23 @@ pub fn show_active_picker(
                 ActivePicker::None => {}
             }
 
-            crate::widgets::section_separator(ui);
+            // Save floats over the list's bottom-right corner; Esc (and ◂ Back
+            // in the cell-picker header) covers cancel — no painted repeat.
             let cell_has_sel = picker
                 .cell_pick_mut()
                 .and_then(|c| c.as_ref())
                 .and_then(|p| p.sel)
                 .is_some();
-            ui.horizontal(|ui| {
-                if in_cell_pick && ui.button("Back").clicked() {
-                    back = true;
-                }
-                let save_enabled = if in_cell_pick {
-                    cell_has_sel
-                } else if let ActivePicker::Window { process_path, .. } = picker {
-                    !process_path.trim().is_empty()
-                } else {
-                    true
-                };
-                match crate::widgets::save_cancel_row(ui, save_enabled) {
-                    crate::widgets::SaveCancel::Cancel => cancel = true,
-                    crate::widgets::SaveCancel::Save => save = true,
-                    crate::widgets::SaveCancel::None => {}
+            let save_enabled = if in_cell_pick {
+                cell_has_sel
+            } else if let ActivePicker::Window { process_path, .. } = picker {
+                !process_path.trim().is_empty()
+            } else {
+                true
+            };
+            crate::widgets::float_bottom_right(ui, body_rect, |ui| {
+                if crate::widgets::dirty_action_button(ui, "Save", save_enabled).clicked() {
+                    save = true;
                 }
             });
         });

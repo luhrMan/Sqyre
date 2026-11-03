@@ -207,12 +207,9 @@ mod tests {
     use sqyre_domain::{root_loop, ActionKind, ScalarValue};
 
     fn wait(ms: i64) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Wait {
-                time: ScalarValue::Int(ms),
-            },
-        }
+        Action::new(ActionKind::Wait {
+            time: ScalarValue::Int(ms),
+        })
     }
 
     fn child_ids(root: &Action) -> Vec<ActionId> {

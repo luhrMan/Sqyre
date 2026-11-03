@@ -5,6 +5,7 @@
 //! still is the projection backdrop (last frame seen while Sqyre was hidden); Retake
 //! sends Sqyre to the back, captures the app that comes to the front, and returns.
 
+use crate::help_text as ht;
 use crate::theme;
 use eframe::egui::{self, Color32, ColorImage, Order, Pos2, Rect, TextureHandle, TextureOptions};
 use sqyre_android::{bridge, frames, AndroidError, Frame, Projection};
@@ -24,7 +25,7 @@ const APP_SETTLE: Duration = Duration::from_millis(800);
 const FRAME_WAIT: Duration = Duration::from_secs(3);
 const POLL: Duration = Duration::from_millis(50);
 const MARGIN: f32 = 12.0;
-const BAR_PAD: i8 = 12;
+const BAR_PAD: i8 = 8;
 const LOUPE_SIDE: f32 = 128.0;
 const LOUPE_ZOOM: f32 = 4.0;
 const RING_RADIUS: f32 = 10.0;
@@ -143,9 +144,9 @@ impl ScreenPick {
             State::Failed(message) => {
                 let message = message.clone();
                 paint_bar(ctx, |ui| {
-                    ui.colored_label(theme::error_fg(), message);
+                    crate::widgets::error_icon(ui, &message);
                     let mut choice = cancel_row(ui);
-                    if ui.button("Try again").clicked() {
+                    if ui.small_button("Try again").clicked() {
                         choice = Choice::Retake;
                     }
                     choice
@@ -336,7 +337,7 @@ fn paint_pick(
             });
 
             let painter = ui.painter();
-            painter.rect_filled(rect, 0.0, Color32::BLACK);
+            painter.rect_filled(rect, 0.0, theme::capture_underlay());
             painter.image(texture.id(), image, unit_uv(), Color32::WHITE);
             let to_screen = |p: Pos2| image.min + p.to_vec2() / px_per_point;
             match selection {
@@ -392,13 +393,13 @@ fn paint_pick(
         let mut choice = Choice::None;
         ui.horizontal(|ui| {
             if ui
-                .button("Retake")
-                .on_hover_text("Switch to the previous app and take a new picture of it")
+                .small_button("Retake")
+                .on_hover_text(ht::PICK_RETAKE_APP)
                 .clicked()
             {
                 choice = Choice::Retake;
             }
-            match crate::widgets::save_cancel_row(ui, can_save) {
+            match crate::widgets::save_row(ui, can_save) {
                 crate::widgets::SaveCancel::Save => choice = Choice::Save,
                 crate::widgets::SaveCancel::Cancel => choice = Choice::Cancel,
                 crate::widgets::SaveCancel::None => {}
@@ -420,7 +421,7 @@ fn paint_bar(ctx: &egui::Context, add: impl FnOnce(&mut egui::Ui) -> Choice) -> 
         .show(ctx, |ui| {
             egui::Frame::NONE
                 .fill(theme::overlay_panel_fill())
-                .stroke(egui::Stroke::new(1.0, theme::PRIMARY))
+                .stroke(egui::Stroke::new(1.0, theme::accent()))
                 .corner_radius(egui::CornerRadius::same(6))
                 .inner_margin(egui::Margin::same(BAR_PAD))
                 .show(ui, |ui| {
@@ -432,8 +433,10 @@ fn paint_bar(ctx: &egui::Context, add: impl FnOnce(&mut egui::Ui) -> Choice) -> 
         .inner
 }
 
+/// Esc is the cancel — the pick already tells the user (record floater tip /
+/// capture hint) and the bar has no window chrome to repeat it on.
 fn cancel_row(ui: &mut egui::Ui) -> Choice {
-    if crate::widgets::consume_escape(ui) || ui.button("Cancel").clicked() {
+    if crate::widgets::consume_escape(ui) {
         Choice::Cancel
     } else {
         Choice::None
@@ -452,8 +455,8 @@ fn unit_uv() -> Rect {
 
 fn outline_strokes() -> [egui::Stroke; 2] {
     [
-        egui::Stroke::new(3.0, Color32::BLACK),
-        egui::Stroke::new(1.0, theme::PRIMARY),
+        egui::Stroke::new(3.0, theme::capture_underlay()),
+        egui::Stroke::new(1.0, theme::accent()),
     ]
 }
 
@@ -498,13 +501,13 @@ fn paint_loupe(
         egui::pos2(point.x / size.x, point.y / size.y),
         egui::vec2(span / size.x, span / size.y),
     );
-    painter.rect_filled(loupe, 4.0, Color32::BLACK);
+    painter.rect_filled(loupe, 4.0, theme::capture_underlay());
     painter.image(texture.id(), loupe, uv, Color32::WHITE);
     paint_crosshair(painter, loupe, loupe.center());
     painter.rect_stroke(
         loupe,
         4.0,
-        egui::Stroke::new(2.0, theme::PRIMARY),
+        egui::Stroke::new(2.0, theme::accent()),
         egui::StrokeKind::Outside,
     );
 }

@@ -7,6 +7,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
+type AbsolutePosFn = Arc<dyn Fn() -> Option<(i32, i32)> + Send + Sync>;
+
 /// Fast path for OS hooks: skip mouse-move work unless macro recording is armed.
 #[cfg(feature = "hooks")]
 static HOOK_WANTS_MOVES: AtomicBool = AtomicBool::new(false);
@@ -63,7 +65,7 @@ pub enum MacroRecordEvent {
     },
 }
 
-#[derive(Debug, Default)]
+#[derive(Default)]
 struct Inner {
     armed: bool,
     last_pos: (i32, i32),
@@ -74,6 +76,21 @@ struct Inner {
     started_at: Option<Instant>,
     /// Last focused-key set (Windows Raw Input path).
     prev_keys: HashSet<String>,
+    /// Compositor-absolute pointer (portal cursor on Wayland). Sampled on arm /
+    /// move / click — Wayland evdev REL moves are raw counts, not screen pixels.
+    absolute_pos: Option<AbsolutePosFn>,
+}
+
+impl std::fmt::Debug for Inner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Inner")
+            .field("armed", &self.armed)
+            .field("events", &self.events)
+            .field("finished", &self.finished)
+            .field("cancelled", &self.cancelled)
+            .field("absolute_pos", &self.absolute_pos.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 /// Shared bridge between the hotkey thread and the macro-record UI.
@@ -89,7 +106,11 @@ impl MacroRecordBridge {
 
     pub fn arm(&self) {
         let mut g = self.inner.lock();
-        let pos = g.last_pos;
+        let absolute_pos = g.absolute_pos.clone();
+        let pos = absolute_pos
+            .as_ref()
+            .and_then(|f| f())
+            .unwrap_or(g.last_pos);
         *g = Inner {
             armed: true,
             last_pos: pos,
@@ -98,8 +119,15 @@ impl MacroRecordBridge {
             cancelled: false,
             started_at: Some(Instant::now()),
             prev_keys: HashSet::new(),
+            absolute_pos,
         };
         sync_hook_wants_moves(true);
+    }
+
+    /// Compositor-absolute pointer sampled on each move/click (portal cursor on
+    /// Wayland, where hook mouse coordinates are relative counts, not pixels).
+    pub fn set_absolute_pos(&self, f: impl Fn() -> Option<(i32, i32)> + Send + Sync + 'static) {
+        self.inner.lock().absolute_pos = Some(Arc::new(f));
     }
 
     pub fn disarm(&self) {
@@ -145,11 +173,12 @@ impl MacroRecordBridge {
     /// Hotkey thread: track pointer (always, so arm starts with a real position).
     pub fn on_mouse_move(&self, x: i32, y: i32) {
         let mut g = self.inner.lock();
-        g.last_pos = (x, y);
+        let pos = g.absolute_pos.as_ref().and_then(|f| f()).unwrap_or((x, y));
+        g.last_pos = pos;
         if g.armed {
             g.events.push(MacroRecordEvent::MouseMove {
-                x,
-                y,
+                x: pos.0,
+                y: pos.1,
                 at: Instant::now(),
             });
         }
@@ -160,6 +189,9 @@ impl MacroRecordBridge {
         let mut g = self.inner.lock();
         if !g.armed {
             return;
+        }
+        if let Some(pos) = g.absolute_pos.as_ref().and_then(|f| f()) {
+            g.last_pos = pos;
         }
         let (x, y) = g.last_pos;
         g.events.push(MacroRecordEvent::Button {
@@ -370,5 +402,55 @@ mod tests {
         let msg = b.status_label().expect("armed");
         assert!(msg.contains("(5, 6)"), "{msg}");
         assert!(msg.contains("Esc to finish"), "{msg}");
+    }
+
+    #[test]
+    fn mouse_move_uses_absolute_pos_when_available() {
+        let b = MacroRecordBridge::new();
+        b.set_absolute_pos(|| Some((500, 600)));
+        b.arm();
+        // Wayland evdev REL counts are not screen coordinates.
+        b.on_mouse_move(3, 4);
+        assert_eq!(b.last_pos(), (500, 600));
+        assert!(b.on_escape());
+        let (_, events) = b.take_finished().expect("finished");
+        assert!(events
+            .iter()
+            .any(|e| matches!(e, MacroRecordEvent::MouseMove { x: 500, y: 600, .. })));
+    }
+
+    #[test]
+    fn button_stamps_absolute_pos_without_prior_move() {
+        let b = MacroRecordBridge::new();
+        b.set_absolute_pos(|| Some((3212, 528)));
+        b.arm();
+        b.on_button(RecordMouseButton::Left, true);
+        assert!(b.on_escape());
+        let (_, events) = b.take_finished().expect("finished");
+        assert!(events.iter().any(|e| matches!(
+            e,
+            MacroRecordEvent::Button {
+                x: 3212,
+                y: 528,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn arm_seeds_last_pos_from_absolute_pos() {
+        let b = MacroRecordBridge::new();
+        b.set_absolute_pos(|| Some((40, 50)));
+        b.arm();
+        assert_eq!(b.last_pos(), (40, 50));
+    }
+
+    #[test]
+    fn hook_coords_used_when_absolute_pos_missing() {
+        let b = MacroRecordBridge::new();
+        b.set_absolute_pos(|| None);
+        b.arm();
+        b.on_mouse_move(7, 9);
+        assert_eq!(b.last_pos(), (7, 9));
     }
 }

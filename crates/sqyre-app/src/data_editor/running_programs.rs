@@ -18,7 +18,8 @@ pub(super) struct NewRunningProgram {
     pub icon: Option<ProcessIcon>,
 }
 
-/// Programs to create from `windows`: named by process name, first window per process.
+/// Programs to create from `windows`: named by process name, first window per
+/// process — icon-bearing windows only (iconless windows get no catalog entry).
 ///
 /// Skips names that are invalid, reserved, or already in the catalog, and processes
 /// already bound to a catalog program.
@@ -38,6 +39,7 @@ pub(super) fn plan_running_programs(
         let name = w.process_name.trim();
         let key = w.process_key();
         if name.is_empty()
+            || w.icon.is_none()
             || !is_editor_listed_program(name)
             || sqyre_validate::validate_entity_name(name).is_err()
             || catalog.get(name).is_some()
@@ -158,12 +160,20 @@ impl DataEditor {
 mod tests {
     use super::*;
 
+    fn icon() -> Option<ProcessIcon> {
+        Some(ProcessIcon {
+            width: 1,
+            height: 1,
+            rgba: vec![0; 4],
+        })
+    }
+
     fn win(title: &str, name: &str, path: &str) -> WindowInfo {
         WindowInfo {
             title: title.into(),
             process_name: name.into(),
             process_path: path.into(),
-            icon: None,
+            icon: icon(),
         }
     }
 
@@ -174,6 +184,10 @@ mod tests {
         cat.create_program("Mail").unwrap();
         cat.set_process_binding("Mail", "/usr/bin/thunderbird", "")
             .unwrap();
+        let iconless = WindowInfo {
+            icon: None,
+            ..win("NoIcon", "noicon", "/usr/bin/noicon")
+        };
         let windows = [
             win("Docs", "code", "/usr/bin/code"),
             win("Other", "code", "/usr/bin/code"),
@@ -182,6 +196,7 @@ mod tests {
             win("Bad", "a/b", "/opt/ab"),
             win("Nameless", "", "/opt/nameless"),
             win("Term", "kitty", ""),
+            iconless,
         ];
         let plan = plan_running_programs(&windows, &cat);
         let got: Vec<(&str, &str, &str)> = plan

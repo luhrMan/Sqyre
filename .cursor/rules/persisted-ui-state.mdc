@@ -1,0 +1,21 @@
+---
+description: Persist UI state (splits, sizes, toggles) only on explicit user gestures — never recompute-and-save derived values per frame
+globs: crates/sqyre-app/**/*.rs, crates/sqyre-persist/**/*.rs
+alwaysApply: false
+---
+
+# Persisted UI state
+
+Settings round-trips have already regressed once: a split fraction recomputed `pixels / win_w` and **saved every frame** silently rewrote itself on every WM startup transient, maximize, or manual resize — the next launch restored whatever corrupted value was last written.
+
+## Rules
+
+- **Write on user gestures only** — drag release, click, Enter, explicit Save, or a debounced "settled" signal. Never `settings.save()` inside unconditional per-frame draw code.
+- **Persist semantic values, not transient measurements** — store a fraction/ratio/enumerated state, not raw pixels sampled mid-layout. If pixels are what you have, convert at gesture time from the final dragged position, not from whatever the current frame happens to report.
+- **No writes during settling** — first frames, one-frame transient window sizes, and restore-in-progress must not write back. Loading a value and immediately persisting a re-derived copy is a corruption path.
+- **Restore clamps are read-side only** — clamp/validate when loading; never feed the clamped value back into the store as a write.
+- **`#[serde(default)]` on the settings struct, not sprinkled `unwrap_or`** at read sites — one place defines the fallback.
+
+## Test
+
+Every new persisted field gets a round-trip test (precedent: `crates/sqyre-app/tests/macro_list_split.rs`): set via the same code path the UI uses → save → fresh load → assert the restored value. For gesture-gated writes, also assert an idle frame with a different window size does **not** alter the stored value.

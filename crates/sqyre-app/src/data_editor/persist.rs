@@ -10,20 +10,27 @@ use sqyre_domain::{Macro, ProgramEntityKind, ScalarValue};
 use sqyre_persist::{
     merge_fs_warning, Database, FsWarn, OverlayButtonConfig, ProgramAtlas, ProgramCatalog,
     ProgramCollection, ProgramItem, ProgramMask, ProgramPoint, ProgramSearchArea, UserSettings,
-    DEFAULT_OVERLAY_BUTTON_SIZE,
 };
 use sqyre_validate::validate_entity_name;
 
 pub(super) fn play_ui_add_sound(settings: &UserSettings) {
     #[cfg(not(target_arch = "wasm32"))]
-    crate::sound::play_add_sound_if(settings.play_ui_sounds, settings.sound_volume);
+    crate::sound::play_add_sound_if(
+        settings.play_add_sound,
+        settings.sound_volume,
+        &settings.add_sound_file,
+    );
     #[cfg(target_arch = "wasm32")]
     let _ = settings;
 }
 
 fn play_ui_delete_sound(settings: &UserSettings) {
     #[cfg(not(target_arch = "wasm32"))]
-    crate::sound::play_delete_sound_if(settings.play_ui_sounds, settings.sound_volume);
+    crate::sound::play_delete_sound_if(
+        settings.play_delete_sound,
+        settings.sound_volume,
+        &settings.delete_sound_file,
+    );
     #[cfg(target_arch = "wasm32")]
     let _ = settings;
 }
@@ -140,6 +147,13 @@ fn new_entity_name(form_name: &str, default_base: &str, exists: impl Fn(&str) ->
 }
 
 impl DataEditor {
+    /// Selected program name as a `PersistError` when unset.
+    fn selected_program_persist(&self) -> Result<String, sqyre_persist::PersistError> {
+        self.selected_program
+            .clone()
+            .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))
+    }
+
     pub(crate) fn on_new(&mut self, env: &mut DataEditorCtx<'_>) {
         let DataEditorCtx {
             db,
@@ -175,8 +189,7 @@ impl DataEditor {
                 }
             }
             EditorTab::Items => {
-                let Some(prog) = self.selected_program.clone() else {
-                    self.set_err("Select a program first.");
+                let Some(prog) = self.selected_program_or_err() else {
                     return;
                 };
                 let name = new_entity_name(&self.form_name, "New Item", |n| {
@@ -200,8 +213,7 @@ impl DataEditor {
                 }
             }
             EditorTab::Points => {
-                let Some(prog) = self.selected_program.clone() else {
-                    self.set_err("Select a program first.");
+                let Some(prog) = self.selected_program_or_err() else {
                     return;
                 };
                 let name = new_entity_name(&self.form_name, "New Point", |n| {
@@ -228,8 +240,7 @@ impl DataEditor {
                 }
             }
             EditorTab::SearchAreas => {
-                let Some(prog) = self.selected_program.clone() else {
-                    self.set_err("Select a program first.");
+                let Some(prog) = self.selected_program_or_err() else {
                     return;
                 };
                 let name = new_entity_name(&self.form_name, "New Search Area", |n| {
@@ -258,8 +269,7 @@ impl DataEditor {
                 }
             }
             EditorTab::Masks => {
-                let Some(prog) = self.selected_program.clone() else {
-                    self.set_err("Select a program first.");
+                let Some(prog) = self.selected_program_or_err() else {
                     return;
                 };
                 let name = new_entity_name(&self.form_name, "New Mask", |n| {
@@ -279,8 +289,7 @@ impl DataEditor {
                 }
             }
             EditorTab::Collections => {
-                let Some(prog) = self.selected_program.clone() else {
-                    self.set_err("Select a program first.");
+                let Some(prog) = self.selected_program_or_err() else {
                     return;
                 };
                 let name = new_entity_name(&self.form_name, "New Collection", |n| {
@@ -337,8 +346,7 @@ impl DataEditor {
                 }
             }
             EditorTab::Atlases => {
-                let Some(prog) = self.selected_program.clone() else {
-                    self.set_err("Select a program first.");
+                let Some(prog) = self.selected_program_or_err() else {
                     return;
                 };
                 if self.form_atlas_members.is_empty() {
@@ -376,8 +384,7 @@ impl DataEditor {
                 return;
             }
             EditorTab::Overlay => {
-                let Some(prog) = self.selected_program.clone() else {
-                    self.set_err("Select a program first.");
+                let Some(prog) = self.selected_program_or_err() else {
                     return;
                 };
                 let n = settings
@@ -390,7 +397,20 @@ impl DataEditor {
                 let (x, y) = super::overlay::default_overlay_xy(catalog, n);
                 btn.x = x;
                 btn.y = y;
-                btn.size = DEFAULT_OVERLAY_BUTTON_SIZE;
+                // New-button defaults from Settings → Overlays.
+                btn.size = settings.overlay_default_size;
+                btn.corner_radius = settings.overlay_default_corner_radius;
+                btn.border_width = settings.overlay_default_border_width;
+                let accent = settings.overlay_default_accent_color.trim();
+                if !accent.is_empty() {
+                    btn.border_color = accent.to_string();
+                    btn.icon_hover_color = accent.to_string();
+                }
+                let icon_color = settings.overlay_default_icon_color.trim();
+                if !icon_color.is_empty() {
+                    btn.icon_color = icon_color.to_string();
+                }
+                btn.visibility_gate.interval_ms = settings.overlay_gate_default_interval_ms;
                 if let Some(first) = macros.first() {
                     btn.macro_name = first.name.clone();
                 }
@@ -663,10 +683,7 @@ impl DataEditor {
         new_name: &str,
         overwrite: bool,
     ) -> Result<FsWarn, sqyre_persist::PersistError> {
-        let prog = self
-            .selected_program
-            .clone()
-            .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
+        let prog = self.selected_program_persist()?;
         let cols = parse_i32(&self.form_cols).unwrap_or(1);
         let rows = parse_i32(&self.form_rows).unwrap_or(1);
         let stack = parse_i32(&self.form_stack_max).unwrap_or(0);
@@ -711,10 +728,7 @@ impl DataEditor {
         new_name: &str,
         overwrite: bool,
     ) -> Result<FsWarn, sqyre_persist::PersistError> {
-        let prog = self
-            .selected_program
-            .clone()
-            .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
+        let prog = self.selected_program_persist()?;
         let pt = ProgramPoint {
             name: new_name.to_string(),
             monitor: self.form_monitor.max(1),
@@ -752,10 +766,7 @@ impl DataEditor {
         new_name: &str,
         overwrite: bool,
     ) -> Result<FsWarn, sqyre_persist::PersistError> {
-        let prog = self
-            .selected_program
-            .clone()
-            .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
+        let prog = self.selected_program_persist()?;
         let sa = ProgramSearchArea {
             name: new_name.to_string(),
             monitor: self.form_monitor.max(1),
@@ -792,10 +803,7 @@ impl DataEditor {
         new_name: &str,
         overwrite: bool,
     ) -> Result<FsWarn, sqyre_persist::PersistError> {
-        let prog = self
-            .selected_program
-            .clone()
-            .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
+        let prog = self.selected_program_persist()?;
         let shape = if self.form_shape == "circle" {
             sqyre_domain::MaskShape::Circle
         } else {
@@ -837,10 +845,7 @@ impl DataEditor {
         new_name: &str,
         overwrite: bool,
     ) -> Result<FsWarn, sqyre_persist::PersistError> {
-        let prog = self
-            .selected_program
-            .clone()
-            .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
+        let prog = self.selected_program_persist()?;
         let rows = parse_i32(&self.form_rows).unwrap_or(1).max(1);
         let cols = parse_i32(&self.form_cols).unwrap_or(1).max(1);
         let col = ProgramCollection {
@@ -881,10 +886,7 @@ impl DataEditor {
         new_name: &str,
         overwrite: bool,
     ) -> Result<FsWarn, sqyre_persist::PersistError> {
-        let prog = self
-            .selected_program
-            .clone()
-            .ok_or_else(|| sqyre_persist::PersistError::Message("no program".into()))?;
+        let prog = self.selected_program_persist()?;
         if self.form_atlas_members.is_empty() {
             return Err(sqyre_persist::PersistError::Message(
                 "atlas needs at least one collection".into(),

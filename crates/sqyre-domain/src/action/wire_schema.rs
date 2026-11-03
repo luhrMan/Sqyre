@@ -233,7 +233,28 @@ const CONDITIONAL_FIELDS: &[WireField] = &[
     f!("elseactions", WireFieldKind::ActionList),
 ];
 
-const IMAGE_SEARCH_FIELDS: &[WireField] = &[
+/// Wrap an action's specific wire fields in the shared [`DetectionBranch`]
+/// wait/output/subaction tail used by image search, OCR, and find pixel.
+macro_rules! detection_fields {
+    ($($f:expr),* $(,)?) => {
+        &[
+            $($f,)*
+            f!("repeatmode", WireFieldKind::Enum(REPEAT_MODE_VALUES)),
+            f!("waittilfoundseconds", WireFieldKind::Number),
+            f!("waittilfoundintervalms", WireFieldKind::Number),
+            f!("maxiterations", WireFieldKind::Number),
+            f!("outputxvariable", WireFieldKind::String),
+            f!("outputyvariable", WireFieldKind::String),
+            f!("grouping", WireFieldKind::Enum(MATCH_GROUPING_VALUES)),
+            f!("horizontal", WireFieldKind::String),
+            f!("vertical", WireFieldKind::String),
+            f!("subactions", WireFieldKind::ActionList),
+            f!("elseactions", WireFieldKind::ActionList),
+        ]
+    };
+}
+
+const IMAGE_SEARCH_FIELDS: &[WireField] = detection_fields![
     f!(req "name", WireFieldKind::String),
     f!("targets", WireFieldKind::StringList),
     f!("targettags", WireFieldKind::StringList),
@@ -244,20 +265,9 @@ const IMAGE_SEARCH_FIELDS: &[WireField] = &[
     f!("sortby", WireFieldKind::Enum(ITEM_SORT_BY_VALUES)),
     f!("sortthen", WireFieldKind::Enum(ITEM_SORT_THEN_VALUES)),
     f!("tagpriority", WireFieldKind::StringList),
-    f!("repeatmode", WireFieldKind::Enum(REPEAT_MODE_VALUES)),
-    f!("waittilfoundseconds", WireFieldKind::Number),
-    f!("waittilfoundintervalms", WireFieldKind::Number),
-    f!("maxiterations", WireFieldKind::Number),
-    f!("outputxvariable", WireFieldKind::String),
-    f!("outputyvariable", WireFieldKind::String),
-    f!("grouping", WireFieldKind::Enum(MATCH_GROUPING_VALUES)),
-    f!("horizontal", WireFieldKind::String),
-    f!("vertical", WireFieldKind::String),
-    f!("subactions", WireFieldKind::ActionList),
-    f!("elseactions", WireFieldKind::ActionList),
 ];
 
-const OCR_FIELDS: &[WireField] = &[
+const OCR_FIELDS: &[WireField] = detection_fields![
     f!("name", WireFieldKind::String),
     f!("target", WireFieldKind::String),
     f!("searcharea", WireFieldKind::CoordRef),
@@ -268,35 +278,13 @@ const OCR_FIELDS: &[WireField] = &[
     f!("grayscale", WireFieldKind::Bool),
     f!("thresholdotsu", WireFieldKind::Bool),
     f!("thresholdinvert", WireFieldKind::Bool),
-    f!("repeatmode", WireFieldKind::Enum(REPEAT_MODE_VALUES)),
-    f!("waittilfoundseconds", WireFieldKind::Number),
-    f!("waittilfoundintervalms", WireFieldKind::Number),
-    f!("maxiterations", WireFieldKind::Number),
-    f!("outputxvariable", WireFieldKind::String),
-    f!("outputyvariable", WireFieldKind::String),
-    f!("grouping", WireFieldKind::Enum(MATCH_GROUPING_VALUES)),
-    f!("horizontal", WireFieldKind::String),
-    f!("vertical", WireFieldKind::String),
-    f!("subactions", WireFieldKind::ActionList),
-    f!("elseactions", WireFieldKind::ActionList),
 ];
 
-const FIND_PIXEL_FIELDS: &[WireField] = &[
+const FIND_PIXEL_FIELDS: &[WireField] = detection_fields![
     f!("name", WireFieldKind::String),
     f!("searcharea", WireFieldKind::CoordRef),
     f!("targetcolor", WireFieldKind::String),
     f!("colortolerance", WireFieldKind::Number),
-    f!("repeatmode", WireFieldKind::Enum(REPEAT_MODE_VALUES)),
-    f!("waittilfoundseconds", WireFieldKind::Number),
-    f!("waittilfoundintervalms", WireFieldKind::Number),
-    f!("maxiterations", WireFieldKind::Number),
-    f!("outputxvariable", WireFieldKind::String),
-    f!("outputyvariable", WireFieldKind::String),
-    f!("grouping", WireFieldKind::Enum(MATCH_GROUPING_VALUES)),
-    f!("horizontal", WireFieldKind::String),
-    f!("vertical", WireFieldKind::String),
-    f!("subactions", WireFieldKind::ActionList),
-    f!("elseactions", WireFieldKind::ActionList),
 ];
 
 const FOREACH_ROW_FIELDS: &[WireField] = &[

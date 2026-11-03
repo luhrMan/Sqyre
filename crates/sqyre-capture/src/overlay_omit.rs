@@ -1,8 +1,10 @@
 //! Keep overlay buttons out of detection captures when the user turns that off.
 //!
-//! The grab calls [`detection_omit_guard`] around one search-area capture. The
-//! installed hook hides or excludes the buttons. A short idle keeps them omitted
-//! across a wait/retry loop so they do not strobe once per interval.
+//! Each search-area grab calls [`detection_omit_guard`]. The app also holds a
+//! [`sqyre_ports::OverlayMacroHide`] from macro start until the run thread exits.
+//! A grab alone restores after a short idle, which is shorter than the gap
+//! between attempts, so the buttons flash back on during the macro. The macro
+//! span keeps them hidden the whole run.
 
 use parking_lot::{Condvar, Mutex};
 use std::sync::Arc;
@@ -40,20 +42,27 @@ static WORKER: std::sync::Once = std::sync::Once::new();
 
 /// Publish the user setting. `true` means detection captures include the buttons.
 pub fn set_overlay_buttons_in_detection(include: bool) {
+    ensure_span_hooks();
     let _gate = GATE.lock();
-    let hook = {
+    let pending = {
         let mut state = STATE.lock();
         if state.include == include {
             return;
         }
         state.include = include;
         if include && state.omitted && state.depth == 0 {
-            begin_restore(&mut state)
+            Pending::Show(begin_restore(&mut state))
+        } else if !include
+            && !state.omitted
+            && state.depth == 0
+            && sqyre_ports::overlay_macro_hide_held()
+        {
+            Pending::Hide(arm_omit(&mut state))
         } else {
-            None
+            Pending::None
         }
     };
-    finish_restore(hook);
+    dispatch(pending);
 }
 
 pub fn overlay_buttons_in_detection() -> bool {
@@ -67,29 +76,25 @@ pub fn overlay_capture_omitted() -> bool {
 
 /// `hook(true)` omits buttons; `hook(false)` shows them again. Replaces any previous hook.
 pub fn set_overlay_omit_hook(hook: Option<Hook>) {
+    ensure_span_hooks();
     STATE.lock().hook = hook;
 }
 
 /// Omit overlay buttons for this detection grab when the setting is off.
 ///
-/// Dropping the guard schedules a restore 150 ms later so a retry loop does not
-/// flash the buttons between captures.
+/// Dropping the guard schedules a restore 150 ms later unless an
+/// [`sqyre_ports::OverlayMacroHide`] is still open. That span keeps the buttons
+/// hidden for the whole macro instead of flashing them between attempts.
 pub fn detection_omit_guard() -> DetectionOmitGuard {
+    ensure_span_hooks();
     ensure_worker();
     let _gate = GATE.lock();
     let mut state = STATE.lock();
     if state.include {
         return DetectionOmitGuard { active: false };
     }
-    state.restore_at = None;
-    state.generation = state.generation.wrapping_add(1);
     state.depth += 1;
-    let hook = if state.omitted {
-        None
-    } else {
-        state.omitted = true;
-        state.hook.clone()
-    };
+    let hook = arm_omit(&mut state);
     drop(state);
     if let Some(hook) = hook {
         hook(true);
@@ -116,13 +121,56 @@ impl Drop for DetectionOmitGuard {
         if !self.active {
             return;
         }
+        let _gate = GATE.lock();
         let mut state = STATE.lock();
         state.depth = state.depth.saturating_sub(1);
-        if state.depth == 0 && state.omitted {
-            state.generation = state.generation.wrapping_add(1);
-            state.restore_at = Some(Instant::now() + RESTORE_IDLE);
-            WAKE.notify_one();
-        }
+        let pending = release_omit(&mut state);
+        drop(state);
+        dispatch(pending);
+    }
+}
+
+/// Caller holds `STATE`. Cancel a pending show and hide if the buttons are up.
+fn arm_omit(state: &mut State) -> Option<Hook> {
+    state.restore_at = None;
+    state.generation = state.generation.wrapping_add(1);
+    if state.omitted {
+        None
+    } else {
+        state.omitted = true;
+        state.hook.clone()
+    }
+}
+
+/// Caller holds `STATE`. Show now when the setting is on; otherwise wait out the
+/// idle unless a macro hide span is still open.
+fn release_omit(state: &mut State) -> Pending {
+    if state.depth > 0 || !state.omitted {
+        return Pending::None;
+    }
+    if sqyre_ports::overlay_macro_hide_held() && !state.include {
+        return Pending::None;
+    }
+    if state.include {
+        return Pending::Show(begin_restore(state));
+    }
+    state.generation = state.generation.wrapping_add(1);
+    state.restore_at = Some(Instant::now() + RESTORE_IDLE);
+    WAKE.notify_one();
+    Pending::None
+}
+
+enum Pending {
+    None,
+    Hide(Option<Hook>),
+    Show(Option<Hook>),
+}
+
+fn dispatch(pending: Pending) {
+    match pending {
+        Pending::Hide(Some(hook)) => hook(true),
+        Pending::Show(Some(hook)) => hook(false),
+        Pending::None | Pending::Hide(None) | Pending::Show(None) => {}
     }
 }
 
@@ -136,9 +184,42 @@ fn begin_restore(state: &mut State) -> Option<Hook> {
 }
 
 fn finish_restore(hook: Option<Hook>) {
-    if let Some(hook) = hook {
-        hook(false);
+    dispatch(Pending::Show(hook));
+}
+
+fn ensure_span_hooks() {
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        sqyre_ports::set_overlay_macro_hide_hooks(
+            Some(Arc::new(enter_macro_hide)),
+            Some(Arc::new(leave_macro_hide)),
+        );
+    });
+}
+
+fn enter_macro_hide() {
+    ensure_worker();
+    let _gate = GATE.lock();
+    let mut state = STATE.lock();
+    if state.include {
+        return;
     }
+    let hook = arm_omit(&mut state);
+    drop(state);
+    if let Some(hook) = hook {
+        hook(true);
+    }
+}
+
+fn leave_macro_hide() {
+    let _gate = GATE.lock();
+    if sqyre_ports::overlay_macro_hide_held() {
+        return;
+    }
+    let mut state = STATE.lock();
+    let pending = release_omit(&mut state);
+    drop(state);
+    dispatch(pending);
 }
 
 fn ensure_worker() {
@@ -158,6 +239,7 @@ fn ensure_worker() {
                 let mut state = STATE.lock();
                 let hook = if state.depth == 0
                     && state.omitted
+                    && !sqyre_ports::overlay_macro_hide_held()
                     && state.generation == generation
                     && state.restore_at.is_some_and(|at| Instant::now() >= at)
                 {
@@ -176,7 +258,7 @@ pub fn restore_overlay_omit_now() {
     let _gate = GATE.lock();
     let hook = {
         let mut state = STATE.lock();
-        if state.omitted && state.depth == 0 {
+        if state.omitted && state.depth == 0 && !sqyre_ports::overlay_macro_hide_held() {
             begin_restore(&mut state)
         } else {
             None
@@ -189,8 +271,14 @@ pub fn restore_overlay_omit_now() {
 mod tests {
     use super::*;
 
+    fn lock_state() -> parking_lot::MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock()
+    }
+
     #[test]
     fn omit_guard_calls_the_hook_and_restore_shows_buttons() {
+        let _lock = lock_state();
         set_overlay_buttons_in_detection(true);
         set_overlay_omit_hook(None);
         let log = Arc::new(Mutex::new(Vec::new()));
@@ -220,6 +308,46 @@ mod tests {
             drop(inner);
             drop(outer);
         }
+        assert!(overlay_capture_omitted());
+        restore_overlay_omit_now();
+        assert_eq!(log.lock().as_slice(), &[true, false]);
+        assert!(!overlay_capture_omitted());
+
+        set_overlay_buttons_in_detection(true);
+        set_overlay_omit_hook(None);
+    }
+
+    #[test]
+    fn macro_hide_keeps_buttons_down_for_the_whole_run() {
+        let _lock = lock_state();
+        set_overlay_buttons_in_detection(true);
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let log_hook = Arc::clone(&log);
+        set_overlay_omit_hook(Some(Arc::new(move |omit| {
+            log_hook.lock().push(omit);
+        })));
+
+        let shown = sqyre_ports::OverlayMacroHide::enter();
+        assert!(
+            log.lock().is_empty(),
+            "buttons stay up when detection includes them"
+        );
+        drop(shown);
+
+        set_overlay_buttons_in_detection(false);
+        let hidden = sqyre_ports::OverlayMacroHide::enter();
+        assert_eq!(log.lock().as_slice(), &[true]);
+        {
+            let grab = detection_omit_guard();
+            drop(grab);
+        }
+        assert_eq!(
+            log.lock().as_slice(),
+            &[true],
+            "a grab must not show the buttons again while the macro is running"
+        );
+        assert!(overlay_capture_omitted());
+        drop(hidden);
         assert!(overlay_capture_omitted());
         restore_overlay_omit_now();
         assert_eq!(log.lock().as_slice(), &[true, false]);

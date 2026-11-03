@@ -15,19 +15,19 @@ use super::helpers::{
 use super::{DataEditor, EditorTab};
 use crate::action_tooltip::help;
 use crate::data_editor_preview::{
-    area_size_from_opts, catalog_search_area_pixel_size, collection_size_label, paint_disk_preview,
-    paint_preview_coord_chip, paint_preview_toolbar, paint_search_area_preview_sizes,
-    paint_zoomable_atlas_preview, paint_zoomable_collection_preview, pixel_size_text,
-    show_file_hover, CardinalEdge,
+    catalog_search_area_pixel_size, paint_disk_preview, paint_preview_coord_chip,
+    paint_preview_floaters, paint_search_area_preview_sizes, paint_zoomable_atlas_preview,
+    paint_zoomable_collection_preview, show_file_hover, CardinalEdge, RecordFloater,
 };
+#[cfg(feature = "native-runtime")]
+use crate::help_text as ht;
 use crate::overlay_icons;
 use crate::paint_ctx::CatalogPaint;
 use crate::paint_ctx::VarTheme;
 use crate::pickers;
 use crate::preview_tooltip::PreviewKind;
-use crate::theme;
 use crate::var_pills::{self, VarFieldOpts};
-use crate::widgets::{match_settings, searchable_combo_width, searchable_combo_with};
+use crate::widgets::{match_settings, searchable_combo, SearchableComboOpts};
 use eframe::egui;
 use sqyre_domain::{
     collect_known_variable_names, CoordinateRef, KnownVariableNames, Macro, PROGRAM_DELIMITER,
@@ -63,21 +63,40 @@ fn paint_fs_name_hint(ui: &mut egui::Ui, name: &str) {
         return;
     }
     if let Err(e) = validate_entity_name(name) {
-        ui.colored_label(crate::theme::error_fg(), e.to_string());
+        crate::widgets::error_icon(ui, &e.to_string());
     }
+}
+
+/// Name label + content-sized edit + `DE_NAME` tip — the body of every
+/// catalog-entity Name row. Standalone rows go through [`paint_name_field`].
+fn name_field_body(ui: &mut egui::Ui, name: &mut String) {
+    help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
+    let name_w = crate::widgets::name_edit_width(ui, name, "");
+    help::tip(
+        ui.add(egui::TextEdit::singleline(name).desired_width(name_w)),
+        help::DE_NAME,
+    );
+}
+
+/// [`name_field_body`] as a standalone unit plus the name-validation hint line.
+fn paint_name_field(ui: &mut egui::Ui, name: &mut String) {
+    crate::widgets::wrap_unit(ui, |ui| name_field_body(ui, name));
+    paint_fs_name_hint(ui, name);
 }
 
 fn color_alpha_drag(ui: &mut egui::Ui, label: &str, color: &mut egui::Color32) {
     ui.label(label);
     ui.color_edit_button_srgba(color);
     let mut alpha = color.a();
-    if ui
-        .add(
+    if help::tip(
+        ui.add(
             crate::widgets::num_entry(&mut alpha)
                 .range(0..=255)
                 .prefix("α "),
-        )
-        .changed()
+        ),
+        help::DE_OVERLAY_ALPHA_NONE,
+    )
+    .changed()
     {
         *color = egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), alpha);
     }
@@ -121,54 +140,50 @@ impl DataEditor {
         }
     }
 
-    /// Name field + optional screen-record arm/cancel controls.
-    fn paint_name_record_row(
+    /// Preview chrome for a coord panel: refresh / fit / zoom / record on one
+    /// chip at `rect`'s top-left. Refresh re-captures on the next pass; record
+    /// arms `screen_click` (cancellation is keyboard-only — the app is not the
+    /// click target while armed, and `status_label` teaches Esc).
+    fn paint_preview_controls(
         &mut self,
         ui: &mut egui::Ui,
+        rect: egui::Rect,
         screen_click: &ScreenClickBridge,
-        record_tip: &str,
-        recording_msg: &str,
+        record_tip: &'static str,
+        recording_msg: &'static str,
         arm: impl FnOnce(&ScreenClickBridge),
     ) {
-        let armed = screen_click.is_armed();
-        let mut record = false;
-        let mut cancel = false;
-        crate::widgets::fill_row(
+        let clicks = paint_preview_floaters(
             ui,
-            |ui| {
-                cancel = armed && ui.button("Cancel").clicked();
-                record = crate::widgets::record_icon_button(ui, record_tip, !armed).clicked();
-            },
-            |ui| {
-                help::label(ui, "Name", help::DE_NAME);
-                help::tip(
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.form_name)
-                            .desired_width(f32::INFINITY),
-                    ),
-                    help::DE_NAME,
-                );
-            },
+            rect,
+            true,
+            Some(&mut self.coord_preview),
+            "Fit image in viewport",
+            Some(RecordFloater {
+                tip: record_tip,
+                enabled: !screen_click.is_armed(),
+            }),
         );
-        if cancel {
-            self.save_after_record = false;
-            screen_click.disarm();
+        if clicks.refresh {
+            self.preview_force = true;
         }
-        if record {
+        if clicks.record {
             self.save_after_record = false;
             arm(screen_click);
             self.set_ok(recording_msg);
         }
-        paint_fs_name_hint(ui, &self.form_name);
     }
 
     fn paint_monitor_slot(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label("Monitor");
-            ui.add(
-                crate::widgets::num_entry(&mut self.form_monitor)
-                    .speed(1)
-                    .range(1..=8),
+            help::label(ui, egui_phosphor::regular::MONITOR, "Monitor");
+            help::tip(
+                ui.add(
+                    crate::widgets::num_entry(&mut self.form_monitor)
+                        .speed(1)
+                        .range(1..=8),
+                ),
+                help::DE_MONITOR,
             );
         });
     }
@@ -287,36 +302,36 @@ impl DataEditor {
         };
         match self.tab {
             EditorTab::Programs => self.draw_programs_form(ui, paint, ctx),
-            EditorTab::Items => self.draw_items_form(ui, paint, settings),
+            EditorTab::Items => self.draw_items_form(ui, paint),
             EditorTab::Points => {
-                self.draw_points_form(ui, paint, ctx, settings);
+                self.draw_points_form(ui, paint, ctx);
                 false
             }
             EditorTab::SearchAreas => {
-                self.draw_search_areas_form(ui, paint, ctx, settings);
+                self.draw_search_areas_form(ui, paint, ctx);
                 false
             }
             EditorTab::Masks => {
-                self.draw_masks_form(ui, paint, ctx, settings);
+                self.draw_masks_form(ui, paint, ctx);
                 false
             }
             EditorTab::Collections => {
-                self.draw_collections_form(ui, paint, settings);
+                self.draw_collections_form(ui, paint);
                 false
             }
             EditorTab::Atlases => {
-                self.draw_atlases_form(ui, paint, settings);
+                self.draw_atlases_form(ui, paint);
                 false
             }
             EditorTab::ScreenCap => {
-                self.draw_screen_cap_form(ui, paint, ctx, settings);
+                self.draw_screen_cap_form(ui, paint, ctx);
                 false
             }
             EditorTab::PixelCheck => {
                 self.paint_pixel_check_form(ui, paint, ctx, settings);
                 false
             }
-            EditorTab::Overlay => self.draw_overlay_form(ui, paint, ctx, settings),
+            EditorTab::Overlay => self.draw_overlay_form(ui, paint, ctx),
         }
     }
 
@@ -340,10 +355,6 @@ impl DataEditor {
             is_dark,
             ..
         } = ctx;
-        #[cfg(feature = "native-runtime")]
-        help::heading(ui, EditorTab::PixelCheck.label(), help::DE_PIXELCHECK_INTRO);
-        #[cfg(not(feature = "native-runtime"))]
-        ui.heading(EditorTab::PixelCheck.label());
         #[cfg(not(feature = "native-runtime"))]
         {
             let _ = (
@@ -356,9 +367,9 @@ impl DataEditor {
                 is_dark,
                 settings,
             );
-            ui.colored_label(
-                crate::theme::error_fg(),
-                format!(
+            crate::widgets::error_icon(
+                ui,
+                &format!(
                     "{} requires the desktop app.",
                     EditorTab::PixelCheck.label()
                 ),
@@ -371,41 +382,41 @@ impl DataEditor {
             use crate::widgets::match_settings;
             use sqyre_domain::CoordinateRef;
 
-            ui.add_space(crate::theme::SPACE_4);
             if self.selected_entity.is_none() {
                 self.stop_pixel_check_compute();
-                ui.weak("Select an item from the list.");
                 return;
             }
-            self.paint_name_record_row(
-                ui,
-                screen_click,
-                "Two clicks: opposite corners of the search area",
-                "Recording… click two corners.",
-                ScreenClickBridge::arm_search_area,
-            );
+            paint_name_field(ui, &mut self.form_name);
             let reference = CoordinateRef(self.form_search_area.clone());
-            let display = if reference.is_empty() {
-                "(optional — seed coords from a search area or cell)"
-            } else {
-                reference.as_str()
-            };
             ui.horizontal(|ui| {
-                help::label(ui, "Reference", help::DE_SCREENCAP_REF);
+                help::label(ui, crate::model_icons::SEARCH_AREA, "Reference");
                 if let Some(prog) = reference.program() {
                     crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
-                let resp = ui.monospace(display);
+                let resp = ui.monospace(reference.as_str());
                 if !reference.is_empty() {
                     let kind = if reference.is_collection() {
                         PreviewKind::Collection
                     } else {
                         PreviewKind::SearchArea
                     };
-                    previews.show_for_coordinate_ref(ui, &resp, catalog, &reference, kind);
+                    previews.show_for_coordinate_ref(
+                        ui,
+                        &resp,
+                        catalog,
+                        &reference,
+                        kind,
+                        help::DE_SCREENCAP_REF,
+                    );
+                } else {
+                    help::tip(resp, help::DE_SCREENCAP_REF);
                 }
-                if crate::widgets::icon_button(ui, "☰", "Pick search area or collection cell…")
-                    .clicked()
+                if crate::widgets::icon_button(
+                    ui,
+                    crate::model_icons::SEARCH_AREA,
+                    "Pick search area or collection cell…",
+                )
+                .clicked()
                 {
                     self.window_picker = ActivePicker::Coord {
                         kind: CoordKind::SearchArea,
@@ -416,7 +427,6 @@ impl DataEditor {
                     };
                 }
             });
-            ui.add_space(crate::theme::SPACE_4);
             if let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
@@ -425,7 +435,14 @@ impl DataEditor {
                 if !variants.is_empty() {
                     let mut label = variant_display_label(&self.pixel_check.variant).to_string();
                     let labels: Vec<&str> = variants.iter().map(|(_, l)| l.as_str()).collect();
-                    crate::widgets::combo_str(ui, "Variant", "", &mut label, &labels);
+                    crate::widgets::combo_str(
+                        ui,
+                        egui_phosphor::regular::STACK,
+                        "Variant",
+                        "",
+                        &mut label,
+                        &labels,
+                    );
                     if let Some((name, _)) = variants.iter().find(|(_, l)| l == &label) {
                         if name != &self.pixel_check.variant {
                             self.pixel_check.variant = name.clone();
@@ -434,7 +451,6 @@ impl DataEditor {
                     }
                 }
             }
-            ui.add_space(crate::theme::SPACE_4);
             match_settings::paint_match_settings(
                 ui,
                 &mut self.pixel_check.tolerance,
@@ -442,11 +458,16 @@ impl DataEditor {
                 &mut self.pixel_check.match_method,
                 false,
             );
-            ui.collapsing("Advanced", |ui| {
+            crate::widgets::advanced_section(ui, "de_pixelcheck_match", |ui| {
                 match_settings::paint_match_method(ui, &mut self.pixel_check.match_method);
             });
-            help::label(ui, "Bounds", help::DE_PIXELCHECK_BOUNDS);
-            self.paint_monitor_slot(ui);
+            help::tip(
+                crate::widgets::wrap_unit(ui, |ui| {
+                    self.paint_monitor_slot(ui);
+                })
+                .response,
+                help::DE_PIXELCHECK_BOUNDS,
+            );
             let (lx, ty, rx, by) = form_desktop_area(
                 catalog,
                 self.form_monitor,
@@ -455,9 +476,6 @@ impl DataEditor {
                 &self.form_right,
                 &self.form_bottom,
             );
-            if let Some((w, h)) = area_size_from_opts(lx, ty, rx, by) {
-                ui.weak(pixel_size_text(w, h));
-            }
             let (Some(prog), Some(item)) = (
                 self.selected_program.as_deref(),
                 self.selected_entity.as_deref(),
@@ -479,7 +497,7 @@ impl DataEditor {
                 self.stop_pixel_check_compute();
             }
             self.sync_coord_preview_view();
-            let force = paint_preview_toolbar(ui, Some(&mut self.coord_preview));
+            let force = std::mem::take(&mut self.preview_force);
             let computing = self.pixel_check_pending.is_some() && can_compute;
             if computing {
                 ui.horizontal(|ui| {
@@ -504,6 +522,14 @@ impl DataEditor {
                         force,
                         &mut self.coord_preview,
                     );
+                    self.paint_preview_controls(
+                        ui,
+                        rect,
+                        screen_click,
+                        ht::ED_REC_SEARCH,
+                        "Recording… click two corners.",
+                        ScreenClickBridge::arm_search_area,
+                    );
                     if let Some(cache) = &self.pixel_check_cache {
                         let inputs = super::pixel_check::inputs_key(
                             self.selected_program.as_deref().unwrap_or(""),
@@ -519,13 +545,14 @@ impl DataEditor {
                             self.pixel_check.refresh_gen,
                             settings.image_search_close_matches_distance,
                         );
-                        if cache.fingerprint == inputs {
-                            let match_count = cache.tolerance_matches.len();
+                        if cache.data.fingerprint == inputs {
+                            let match_count = cache.data.tolerance_matches.len();
                             let show_boxes = super::pixel_check::should_paint_match_boxes(
                                 match_count,
                                 self.pixel_check.show_many_match_boxes,
                             );
-                            let image_size = egui::vec2(cache.image_w as f32, cache.image_h as f32);
+                            let image_size =
+                                egui::vec2(cache.data.image_w as f32, cache.data.image_h as f32);
                             super::pixel_check::paint_heatmap_overlay(
                                 ui,
                                 rect,
@@ -546,49 +573,24 @@ impl DataEditor {
                         known,
                         is_dark,
                         active_macro,
-                        &mut [
-                            (
-                                &mut self.form_top,
-                                CardinalEdge::Top,
-                                "TopY",
-                                help::DE_AREA_TOP,
-                            ),
-                            (
-                                &mut self.form_bottom,
-                                CardinalEdge::Bottom,
-                                "BottomY",
-                                help::DE_AREA_BOTTOM,
-                            ),
-                            (
-                                &mut self.form_left,
-                                CardinalEdge::Left,
-                                "LeftX",
-                                help::DE_AREA_LEFT,
-                            ),
-                            (
-                                &mut self.form_right,
-                                CardinalEdge::Right,
-                                "RightX",
-                                help::DE_AREA_RIGHT,
-                            ),
-                        ],
+                        &mut self.area_edge_fields(),
                     );
                 },
             );
             if let Some(cache) = &self.pixel_check_cache {
                 super::pixel_check::paint_legend(
                     ui,
-                    &cache.summary,
-                    cache.tolerance_matches.len(),
+                    &cache.data.summary,
+                    cache.data.tolerance_matches.len(),
                     &mut self.pixel_check.show_many_match_boxes,
                     hover.as_ref(),
                     self.pixel_check.tolerance as f32,
-                    cache.tmpl_w,
-                    cache.tmpl_h,
+                    cache.data.tmpl_w,
+                    cache.data.tmpl_h,
                 );
-                if cache.mask_missing {
-                    ui.colored_label(
-                        crate::theme::warn_fg(),
+                if cache.data.mask_missing {
+                    crate::widgets::warn_icon(
+                        ui,
                         "Mask image missing or unreadable — preview ran unmasked.",
                     );
                 }

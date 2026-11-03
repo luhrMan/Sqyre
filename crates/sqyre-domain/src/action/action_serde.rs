@@ -9,9 +9,10 @@ use super::{
     is_default_image_blur, is_default_item_sort_by, is_default_item_sort_then,
     is_default_match_method, is_default_ocr_blur, is_default_ocr_match_mode, is_default_ocr_text,
     is_default_resize, is_default_target_color, is_false, is_true, is_zero_i32, Action, ActionKind,
-    ConditionBlock, CoordinateRef, DetectionBranch, ItemSortBy, ItemSortThen, ListColumn,
-    LoopJumpMode, MatchMethod, MouseButton, NavigateSelectData, PressState, ScalarValue,
-    VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH, DEFAULT_SMOOTH_LOW,
+    ConditionBlock, CoordinateRef, DetectionBranch, FindPixelData, ImageSearchData, ItemSortBy,
+    ItemSortThen, ListColumn, LoopJumpMode, MatchMethod, MouseButton, NavigateSelectData, OcrData,
+    PressState, ScalarValue, VariableAssignment, DEFAULT_SMOOTH_DELAY_MS, DEFAULT_SMOOTH_HIGH,
+    DEFAULT_SMOOTH_LOW,
 };
 use serde::{Deserialize, Serialize};
 
@@ -398,7 +399,7 @@ impl From<ActionKindWire> for ActionKind {
                 tag_priority,
                 detection,
                 ..
-            } => Self::ImageSearch {
+            } => Self::ImageSearch(Box::new(ImageSearchData {
                 name,
                 targets,
                 target_tags,
@@ -410,7 +411,7 @@ impl From<ActionKindWire> for ActionKind {
                 sort_then,
                 tag_priority,
                 detection,
-            },
+            })),
             ActionKindWire::Ocr {
                 name,
                 target,
@@ -430,7 +431,7 @@ impl From<ActionKindWire> for ActionKind {
                 if blur < 1 {
                     blur = 1;
                 }
-                Self::Ocr {
+                Self::Ocr(Box::new(OcrData {
                     name,
                     target,
                     search_area,
@@ -444,7 +445,7 @@ impl From<ActionKindWire> for ActionKind {
                     threshold_otsu,
                     threshold_invert,
                     detection,
-                }
+                }))
             }
             ActionKindWire::FindPixel {
                 name,
@@ -457,13 +458,13 @@ impl From<ActionKindWire> for ActionKind {
                 if !(0..=100).contains(&color_tolerance) {
                     color_tolerance = 0;
                 }
-                Self::FindPixel {
+                Self::FindPixel(Box::new(FindPixelData {
                     name,
                     search_area,
                     target_color,
                     color_tolerance,
                     detection,
-                }
+                }))
             }
             ActionKindWire::ForEachRow {
                 name,
@@ -920,75 +921,43 @@ impl<'a> From<&'a ActionKind> for ActionKindWireRef<'a> {
                 subactions,
                 else_actions,
             },
-            ActionKind::ImageSearch {
-                name,
-                targets,
-                target_tags,
-                search_area,
-                tolerance,
-                blur,
-                match_method,
-                sort_by,
-                sort_then,
-                tag_priority,
-                detection,
-            } => Self::ImageSearch {
+            ActionKind::ImageSearch(d) => Self::ImageSearch {
                 type_: TagImageSearch::Tag,
-                name,
-                targets,
-                target_tags,
-                search_area,
-                tolerance: *tolerance,
-                blur: *blur,
-                match_method: *match_method,
-                sort_by: *sort_by,
-                sort_then: *sort_then,
-                tag_priority,
-                detection,
+                name: &d.name,
+                targets: &d.targets,
+                target_tags: &d.target_tags,
+                search_area: &d.search_area,
+                tolerance: d.tolerance,
+                blur: d.blur,
+                match_method: d.match_method,
+                sort_by: d.sort_by,
+                sort_then: d.sort_then,
+                tag_priority: &d.tag_priority,
+                detection: &d.detection,
             },
-            ActionKind::Ocr {
-                name,
-                target,
-                search_area,
-                output_variable,
-                match_mode,
-                case_sensitive,
-                blur,
-                min_threshold,
-                resize,
-                grayscale,
-                threshold_otsu,
-                threshold_invert,
-                detection,
-            } => Self::Ocr {
+            ActionKind::Ocr(d) => Self::Ocr {
                 type_: TagOcr::Tag,
-                name,
-                target,
-                search_area,
-                output_variable,
-                match_mode: *match_mode,
-                case_sensitive: *case_sensitive,
-                blur: *blur,
-                min_threshold: *min_threshold,
-                resize: *resize,
-                grayscale: *grayscale,
-                threshold_otsu: *threshold_otsu,
-                threshold_invert: *threshold_invert,
-                detection,
+                name: &d.name,
+                target: &d.target,
+                search_area: &d.search_area,
+                output_variable: &d.output_variable,
+                match_mode: d.match_mode,
+                case_sensitive: d.case_sensitive,
+                blur: d.blur,
+                min_threshold: d.min_threshold,
+                resize: d.resize,
+                grayscale: d.grayscale,
+                threshold_otsu: d.threshold_otsu,
+                threshold_invert: d.threshold_invert,
+                detection: &d.detection,
             },
-            ActionKind::FindPixel {
-                name,
-                search_area,
-                target_color,
-                color_tolerance,
-                detection,
-            } => Self::FindPixel {
+            ActionKind::FindPixel(d) => Self::FindPixel {
                 type_: TagFindPixel::Tag,
-                name,
-                search_area,
-                target_color,
-                color_tolerance: *color_tolerance,
-                detection,
+                name: &d.name,
+                search_area: &d.search_area,
+                target_color: &d.target_color,
+                color_tolerance: d.color_tolerance,
+                detection: &d.detection,
             },
             ActionKind::ForEachRow {
                 name,

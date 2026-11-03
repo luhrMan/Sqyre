@@ -3,6 +3,7 @@
 use crate::assets;
 use crate::demo_icons;
 use crate::image_view;
+use crate::widgets::elide::{elide_to_width, text_hover_if};
 use crate::window_types::ProcessIcon;
 use eframe::egui::{self, Color32, ColorImage, TextureHandle, TextureOptions, Vec2};
 use sqyre_domain::PROGRAM_DELIMITER;
@@ -501,16 +502,37 @@ pub fn paint_program_label(
         } => paint_program_header(ui, program, tex.as_ref(), selected, child_count, hide_name),
         ProgramLabelStyle::Selectable { selected } => {
             // Flat program rows have no child count; always keep the name.
-            let rich = egui::RichText::new(program);
             let icon = tex.as_ref().map(|tex| {
                 egui::Image::new((tex.id(), Vec2::splat(PROCESS_ICON_SIDE)))
                     .fit_to_exact_size(Vec2::splat(PROCESS_ICON_SIDE))
                     .maintain_aspect_ratio(true)
             });
-            match icon {
-                Some(icon) => ui.selectable_label(selected, (icon, rich)),
-                None => ui.selectable_label(selected, rich),
-            }
+            let width = ui.available_width().max(0.0);
+            let icon_width = if icon.is_some() {
+                PROCESS_ICON_SIDE + ui.spacing().item_spacing.x
+            } else {
+                0.0
+            };
+            let display = elide_to_width(
+                ui,
+                program,
+                (width - icon_width - ui.spacing().button_padding.x * 2.0).max(0.0),
+                egui::TextStyle::Button.resolve(ui.style()),
+            );
+            let rich = egui::RichText::new(display.text);
+            let button = match icon {
+                Some(icon) => egui::Button::image_and_text(icon, rich),
+                None => egui::Button::new(rich),
+            };
+            let response = ui.add(
+                button
+                    .selected(selected)
+                    .frame_when_inactive(selected)
+                    .frame(true)
+                    .wrap_mode(egui::TextWrapMode::Extend)
+                    .min_size(egui::vec2(width, ui.spacing().interact_size.y)),
+            );
+            text_hover_if(response, program, display.elided)
         }
     }
 }
@@ -524,62 +546,37 @@ fn paint_program_header(
     hide_name: bool,
 ) -> egui::Response {
     let row_w = ui.available_width().max(0.0);
-    let count = format!("({child_count})");
-    let response = if program_header_fits(ui, program, tex.is_some(), hide_name, &count, row_w) {
-        ui.allocate_ui_with_layout(
+    let count = crate::widgets::count_text(child_count);
+    let gap = ui.spacing().item_spacing.x;
+    let icon_w = tex.map(|_| PROCESS_ICON_SIDE + gap).unwrap_or(0.0);
+    let count_w = crate::widgets::text_width(ui, &count, egui::TextStyle::Body);
+    let name_budget =
+        (row_w - icon_w - count_w - gap * 2.0 - ui.spacing().button_padding.x * 2.0).max(0.0);
+    let display = elide_to_width(
+        ui,
+        program,
+        name_budget,
+        egui::TextStyle::Button.resolve(ui.style()),
+    );
+    let response = ui
+        .allocate_ui_with_layout(
             egui::vec2(row_w, ui.spacing().interact_size.y),
             egui::Layout::left_to_right(egui::Align::Center),
             |ui| {
-                let title_resp = paint_program_title(ui, program, tex, selected, hide_name);
+                let title_resp = paint_program_title(ui, &display.text, tex, selected, hide_name);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(egui::RichText::new(count).weak());
+                    crate::widgets::count_suffix(ui, child_count);
                 });
                 title_resp
             },
         )
-        .inner
-    } else {
-        // Content-sized row so the parent list scroll can reach the name and count.
-        ui.horizontal(|ui| {
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-            let title_resp = paint_program_title(ui, program, tex, selected, hide_name);
-            ui.label(egui::RichText::new(count).weak());
-            title_resp
-        })
-        .inner
-    };
+        .inner;
 
     if hide_name {
         response.on_hover_text(program)
     } else {
-        response
+        text_hover_if(response, program, display.elided)
     }
-}
-
-fn program_header_fits(
-    ui: &egui::Ui,
-    program: &str,
-    has_icon: bool,
-    hide_name: bool,
-    count: &str,
-    row_w: f32,
-) -> bool {
-    let gap = ui.spacing().item_spacing.x;
-    let name_w = if hide_name {
-        0.0
-    } else {
-        // Bold is a little wider than the button galley.
-        crate::widgets::text_width(ui, program, egui::TextStyle::Button)
-            + ui.spacing().button_padding.x * 2.0
-            + 8.0
-    };
-    let icon_w = if has_icon {
-        PROCESS_ICON_SIDE + gap
-    } else {
-        0.0
-    };
-    let count_w = crate::widgets::text_width(ui, count, egui::TextStyle::Body);
-    icon_w + name_w + count_w + gap * 2.0 <= row_w
 }
 
 fn paint_program_title(
@@ -597,18 +594,26 @@ fn paint_program_title(
     // `hide_name` is only set when an icon is present.
     match (selected, hide_name, icon) {
         (Some(selected), true, Some(icon)) => ui.selectable_label(selected, icon),
-        (Some(selected), false, Some(icon)) => {
-            ui.selectable_label(selected, (icon, egui::RichText::new(program).strong()))
-        }
-        (Some(selected), _, None) => {
-            ui.selectable_label(selected, egui::RichText::new(program).strong())
-        }
+        (Some(selected), false, Some(icon)) => ui.add(
+            egui::Button::selectable(selected, (icon, egui::RichText::new(program).strong()))
+                .wrap_mode(egui::TextWrapMode::Extend),
+        ),
+        (Some(selected), _, None) => ui.add(
+            egui::Button::selectable(selected, egui::RichText::new(program).strong())
+                .wrap_mode(egui::TextWrapMode::Extend),
+        ),
         (None, true, Some(icon)) => ui.add(icon),
         (None, false, Some(icon)) => {
             ui.add(icon);
-            ui.label(egui::RichText::new(program).strong())
+            ui.add(
+                egui::Label::new(egui::RichText::new(program).strong())
+                    .wrap_mode(egui::TextWrapMode::Extend),
+            )
         }
-        (None, _, None) => ui.label(egui::RichText::new(program).strong()),
+        (None, _, None) => ui.add(
+            egui::Label::new(egui::RichText::new(program).strong())
+                .wrap_mode(egui::TextWrapMode::Extend),
+        ),
     }
 }
 

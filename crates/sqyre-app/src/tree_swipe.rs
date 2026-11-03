@@ -38,7 +38,7 @@ impl SwipeAction {
     fn color(self) -> egui::Color32 {
         match self {
             Self::Delete => theme::MACRO_STOP,
-            Self::Edit => theme::PRIMARY,
+            Self::Edit => theme::accent(),
         }
     }
 

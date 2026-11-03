@@ -7,6 +7,10 @@ use sqyre_persist::ProgramCatalog;
 
 const UNAVAILABLE: &str = "Live screen preview requires the desktop app.";
 
+/// Display footprint of a coordinate preview; mirrors the native constant used
+/// by the view-tip preferred-width measurement.
+pub(crate) const DISPLAY_MAX_W: f32 = 260.0;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewKind {
     Point,
@@ -40,6 +44,8 @@ impl PreviewTooltipCache {
         }
     }
 
+    /// `interactive` mirrors the native signature: hover-capable surfaces get
+    /// the icon + tooltip; the non-interactive view tip keeps visible text.
     pub fn paint_for_coordinate_ref(
         &mut self,
         ui: &mut egui::Ui,
@@ -47,8 +53,13 @@ impl PreviewTooltipCache {
         _coord_ref: &CoordinateRef,
         _kind: PreviewKind,
         _force: bool,
+        interactive: bool,
     ) {
-        ui.colored_label(crate::theme::error_fg(), UNAVAILABLE);
+        if interactive {
+            crate::widgets::error_icon(ui, UNAVAILABLE);
+        } else {
+            ui.colored_label(crate::theme::error_fg(), UNAVAILABLE);
+        }
     }
 
     pub fn show_for_coordinate_ref(
@@ -58,11 +69,14 @@ impl PreviewTooltipCache {
         _catalog: &ProgramCatalog,
         coord_ref: &CoordinateRef,
         _kind: PreviewKind,
+        help: &str,
     ) {
         if response.hovered() {
-            response
-                .clone()
-                .on_hover_text(format!("{}\n{UNAVAILABLE}", coord_ref.as_str()));
+            let mut text = format!("{}\n{UNAVAILABLE}", coord_ref.as_str());
+            if !help.is_empty() {
+                text.push_str(&format!("\n{help}"));
+            }
+            response.clone().on_hover_text(text);
         }
     }
 
@@ -70,6 +84,13 @@ impl PreviewTooltipCache {
     pub fn desktop_outlines_supported(&self) -> bool {
         false
     }
+
+    /// Mirrors the native signature; there is no desktop to outline on.
+    #[expect(
+        dead_code,
+        reason = "the only caller is the native runtime overlay sync"
+    )]
+    pub fn set_desktop_outlines_enabled(&mut self, _enabled: bool) {}
 
     pub fn request_outline_abs(&mut self, _rect: (i32, i32, i32, i32)) {}
 
@@ -106,17 +127,20 @@ impl PreviewTooltipCache {
 
 fn paint_unavailable_panel(ui: &mut egui::Ui, _view: &mut ImageViewTransform) -> egui::Rect {
     let desired = crate::data_editor_preview::fit_panel(ui.available_width(), 220.0);
-    let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
-        .rect_filled(rect, 4.0, egui::Color32::from_gray(28));
-    crate::data_editor_preview::paint_preview_message(
+        .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
+    crate::theme::paint_text_centered(
         ui,
         rect,
-        UNAVAILABLE,
+        egui_phosphor::regular::X_CIRCLE,
+        egui::FontId::proportional(ui.text_style_height(&egui::TextStyle::Heading)),
         crate::theme::error_fg(),
-        crate::data_editor_preview::PREVIEW_CHIP_INSET,
     );
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
+    let enabled = ui.is_enabled();
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, UNAVAILABLE));
+    resp.on_hover_text(UNAVAILABLE);
     rect
 }
 
@@ -125,12 +149,14 @@ pub fn coordinate_ref_for_preview(action: &Action) -> Option<(CoordinateRef, Pre
         ActionKind::Move { point, .. } if !point.is_empty() => {
             Some((point.clone(), PreviewKind::Point))
         }
-        ActionKind::ImageSearch { search_area, .. }
-        | ActionKind::Ocr { search_area, .. }
-        | ActionKind::FindPixel { search_area, .. }
-            if !search_area.is_empty() =>
-        {
-            Some((search_area.clone(), PreviewKind::SearchArea))
+        ActionKind::ImageSearch(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
+        }
+        ActionKind::Ocr(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
+        }
+        ActionKind::FindPixel(d) if !d.search_area.is_empty() => {
+            Some((d.search_area.clone(), PreviewKind::SearchArea))
         }
         _ => None,
     }

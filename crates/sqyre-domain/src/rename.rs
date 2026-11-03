@@ -43,10 +43,14 @@ impl Macro {
                     }
                 }
             }
-            ProgramEntityKind::SearchArea => match &mut a.kind {
-                ActionKind::ImageSearch { search_area, .. }
-                | ActionKind::Ocr { search_area, .. }
-                | ActionKind::FindPixel { search_area, .. } => {
+            ProgramEntityKind::SearchArea => {
+                let search_area = match &mut a.kind {
+                    ActionKind::ImageSearch(d) => Some(&mut d.search_area),
+                    ActionKind::Ocr(d) => Some(&mut d.search_area),
+                    ActionKind::FindPixel(d) => Some(&mut d.search_area),
+                    _ => None,
+                };
+                if let Some(search_area) = search_area {
                     if search_area.is_collection() {
                         return;
                     }
@@ -56,8 +60,7 @@ impl Macro {
                         changed = true;
                     }
                 }
-                _ => {}
-            },
+            }
             ProgramEntityKind::Collection => match &mut a.kind {
                 ActionKind::Move { point, .. } => {
                     if !point.is_collection() {
@@ -69,18 +72,27 @@ impl Macro {
                         changed = true;
                     }
                 }
-                ActionKind::ImageSearch { search_area, .. }
-                | ActionKind::Ocr { search_area, .. }
-                | ActionKind::FindPixel { search_area, .. } => {
-                    if !search_area.is_collection() {
-                        return;
-                    }
-                    let next = rename_coordinate_entity(search_area, program, old_name, new_name);
-                    if next != *search_area {
-                        *search_area = next;
-                        changed = true;
-                    }
-                }
+                ActionKind::ImageSearch(d) => rename_collection_search_area(
+                    &mut d.search_area,
+                    program,
+                    old_name,
+                    new_name,
+                    &mut changed,
+                ),
+                ActionKind::Ocr(d) => rename_collection_search_area(
+                    &mut d.search_area,
+                    program,
+                    old_name,
+                    new_name,
+                    &mut changed,
+                ),
+                ActionKind::FindPixel(d) => rename_collection_search_area(
+                    &mut d.search_area,
+                    program,
+                    old_name,
+                    new_name,
+                    &mut changed,
+                ),
                 ActionKind::ForEachCell { cells, .. } => {
                     if !cells.is_collection() {
                         return;
@@ -112,8 +124,8 @@ impl Macro {
                 }
             }
             ProgramEntityKind::Item => {
-                if let ActionKind::ImageSearch { targets, .. } = &mut a.kind {
-                    for target in targets.iter_mut() {
+                if let ActionKind::ImageSearch(d) = &mut a.kind {
+                    for target in d.targets.iter_mut() {
                         let renamed =
                             rename_item_target_entity(target, program, old_name, new_name);
                         if renamed != *target {
@@ -144,17 +156,14 @@ impl Macro {
                     changed = true;
                 }
             }
-            ActionKind::ImageSearch {
-                search_area,
-                targets,
-                ..
-            } => {
-                let next = rename_coordinate_program(search_area, old_program, new_program);
-                if next != *search_area {
-                    *search_area = next;
-                    changed = true;
-                }
-                for target in targets.iter_mut() {
+            ActionKind::ImageSearch(d) => {
+                rename_program_search_area(
+                    &mut d.search_area,
+                    old_program,
+                    new_program,
+                    &mut changed,
+                );
+                for target in d.targets.iter_mut() {
                     let renamed = rename_item_target_program(target, old_program, new_program);
                     if renamed != *target {
                         *target = renamed;
@@ -162,13 +171,18 @@ impl Macro {
                     }
                 }
             }
-            ActionKind::Ocr { search_area, .. } | ActionKind::FindPixel { search_area, .. } => {
-                let next = rename_coordinate_program(search_area, old_program, new_program);
-                if next != *search_area {
-                    *search_area = next;
-                    changed = true;
-                }
-            }
+            ActionKind::Ocr(d) => rename_program_search_area(
+                &mut d.search_area,
+                old_program,
+                new_program,
+                &mut changed,
+            ),
+            ActionKind::FindPixel(d) => rename_program_search_area(
+                &mut d.search_area,
+                old_program,
+                new_program,
+                &mut changed,
+            ),
             ActionKind::ForEachCell { cells, .. } => {
                 let next = rename_coordinate_program(cells, old_program, new_program);
                 if next != *cells {
@@ -239,6 +253,37 @@ pub fn rename_coordinate_program(
     ref_.with_entity_name(new_program, ref_.name())
 }
 
+/// Rename the collection a search-area ref points at; sets `changed` on write.
+fn rename_collection_search_area(
+    search_area: &mut CoordinateRef,
+    program: &str,
+    old_name: &str,
+    new_name: &str,
+    changed: &mut bool,
+) {
+    if search_area.is_collection() {
+        let next = rename_coordinate_entity(search_area, program, old_name, new_name);
+        if next != *search_area {
+            *search_area = next;
+            *changed = true;
+        }
+    }
+}
+
+/// Rename the program a search-area ref points at; sets `changed` on write.
+fn rename_program_search_area(
+    search_area: &mut CoordinateRef,
+    old_program: &str,
+    new_program: &str,
+    changed: &mut bool,
+) {
+    let next = rename_coordinate_program(search_area, old_program, new_program);
+    if next != *search_area {
+        *search_area = next;
+        *changed = true;
+    }
+}
+
 fn rename_item_target_entity(
     target: &str,
     program: &str,
@@ -275,38 +320,25 @@ fn rename_item_target_program(target: &str, old_program: &str, new_program: &str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{root_loop, Action, ActionId, ActionKind, DetectionBranch};
+    use crate::{root_loop, Action, ActionKind};
 
     fn move_action(point: &str) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::Move {
-                point: CoordinateRef(point.into()),
-                smooth: false,
-                smooth_low: 0.0,
-                smooth_high: 0.0,
-                smooth_delay_ms: 0,
-            },
-        }
+        Action::new(ActionKind::Move {
+            point: CoordinateRef(point.into()),
+            smooth: false,
+            smooth_low: 0.0,
+            smooth_high: 0.0,
+            smooth_delay_ms: 0,
+        })
     }
 
     fn image_search(targets: Vec<&str>, area: &str) -> Action {
-        Action {
-            id: ActionId::new(),
-            kind: ActionKind::ImageSearch {
-                name: String::new(),
-                targets: targets.into_iter().map(str::to_string).collect(),
-                target_tags: Vec::new(),
-                search_area: CoordinateRef(area.into()),
-                tolerance: 0.9,
-                blur: 0,
-                match_method: Default::default(),
-                sort_by: Default::default(),
-                sort_then: Default::default(),
-                tag_priority: Vec::new(),
-                detection: DetectionBranch::default(),
-            },
-        }
+        Action::new(ActionKind::ImageSearch(Box::new(crate::ImageSearchData {
+            targets: targets.into_iter().map(str::to_string).collect(),
+            search_area: CoordinateRef(area.into()),
+            tolerance: 0.9,
+            ..Default::default()
+        })))
     }
 
     #[test]
@@ -325,14 +357,9 @@ mod tests {
             if let ActionKind::Move { point, .. } = &a.kind {
                 points.push(point.as_str().to_string());
             }
-            if let ActionKind::ImageSearch {
-                targets,
-                search_area,
-                ..
-            } = &a.kind
-            {
-                assert_eq!(targets, &vec!["Game~Elixir".to_string()]);
-                assert_eq!(search_area.as_str(), "Game~Area");
+            if let ActionKind::ImageSearch(d) = &a.kind {
+                assert_eq!(d.targets, vec!["Game~Elixir".to_string()]);
+                assert_eq!(d.search_area.as_str(), "Game~Area");
             }
         });
         assert_eq!(points, vec!["Game~Spawn".to_string()]);
@@ -348,13 +375,9 @@ mod tests {
         assert!(m.rename_program("Old", "New"));
         m.root.walk(&mut |a| match &a.kind {
             ActionKind::Move { point, .. } => assert_eq!(point.as_str(), "New~Spot"),
-            ActionKind::ImageSearch {
-                targets,
-                search_area,
-                ..
-            } => {
-                assert_eq!(targets, &vec!["New~Item~v1".to_string()]);
-                assert_eq!(search_area.as_str(), "New~Box");
+            ActionKind::ImageSearch(d) => {
+                assert_eq!(d.targets, vec!["New~Item~v1".to_string()]);
+                assert_eq!(d.search_area.as_str(), "New~Box");
             }
             _ => {}
         });

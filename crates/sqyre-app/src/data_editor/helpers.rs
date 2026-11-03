@@ -1,6 +1,6 @@
 //! Shared parsing / naming helpers for the data editor.
 
-use sqyre_domain::TEMPORARY_PROGRAM;
+use sqyre_domain::{GENERAL_PROGRAM, TEMPORARY_PROGRAM};
 use sqyre_persist::ProgramCatalog;
 use web_time::{SystemTime, UNIX_EPOCH};
 
@@ -13,6 +13,15 @@ pub(crate) fn editor_program_names(catalog: &ProgramCatalog) -> impl Iterator<It
     catalog
         .program_names()
         .filter(|n| is_editor_listed_program(n))
+}
+
+/// Program a program dropdown defaults to: `General` when seeded, else the
+/// first listed program.
+pub(crate) fn default_editor_program(catalog: &ProgramCatalog) -> Option<String> {
+    if catalog.get(GENERAL_PROGRAM).is_some() {
+        return Some(GENERAL_PROGRAM.to_string());
+    }
+    editor_program_names(catalog).next().cloned()
 }
 
 pub(crate) fn new_overlay_button_id() -> String {
