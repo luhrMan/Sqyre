@@ -1640,7 +1640,7 @@ fn order_editor(ui: &mut egui::Ui, order: &mut MatchOrder) {
 fn list_header(ui: &mut egui::Ui, title: &str, count: usize, add_help: &str) -> bool {
     let mut add = false;
     // Content-sized row (no `set_min_width(available)`) so the edit tip can
-    // shrink horizontally — see egui-window-size-ratchet.
+    // shrink horizontally — see egui-layout-gotchas.
     ui.horizontal(|ui| {
         ui.label(title);
         crate::widgets::count_suffix(ui, count);

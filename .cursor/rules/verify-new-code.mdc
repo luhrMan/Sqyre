@@ -14,7 +14,9 @@ After writing or materially changing Rust, build, or packaging files, run from t
 All must exit 0 before saying the work is done or opening a PR. On failure, fix the cause and re-run from `make fmt`. Do not silence Clippy with broad `#[allow]` or weaken workspace lint policy.
 
 Also run when relevant (CI enforces the first three):
-- Dependencies changed → `make machete`
+- Dependencies / `Cargo.lock` changed → `make machete` **and** regenerate `scripts/linux/packaging/flatpak/cargo-sources.json` (`generate-cargo-sources.sh`); CI's `check-cargo-sources.sh` fails otherwise — it is not part of `make check`
+- `sqyre-app` UI changed → enumerate the **dynamic states** you touched (hover tooltips, popups/menus, keyboard focus, drag, persisted sizes) and add a headless test per state — `layout_sweep` only covers static clipping. Cookbook: `egui-interaction-testing` skill
+- `sqyre-app` spacing tokens / shared layout constants changed → state how Android, WASM, and narrow viewports were verified, or flag them unverified
 - Code in a crate listed in `scripts/coverage-floors.json` → `make coverage-floors`
 - `sqyre-app` UI or crates it uses → `make wasm-check` (see `wasm-editor`)
 - `portal-capture` / Wayland code → `cargo clippy -p sqyre-capture --features portal-capture --all-targets -- -D warnings`
