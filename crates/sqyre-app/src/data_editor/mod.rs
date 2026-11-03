@@ -246,6 +246,9 @@ pub struct DataEditor {
     search: String,
     /// Header search field is expanded (magnifier toggle).
     search_open: bool,
+    /// Header program selector is expanded (program-icon toggle). Exclusive
+    /// with `search_open` — the two pairs share the same header slot.
+    program_open: bool,
     /// Left-list scope for entity tabs (flat selected program vs all programs).
     search_scope: SearchScope,
     /// Sort for Items / Pixel Check left-list icon grids (UI-only).
@@ -400,6 +403,7 @@ impl Default for DataEditor {
             tab: EditorTab::Programs,
             search: String::new(),
             search_open: false,
+            program_open: false,
             search_scope: SearchScope::default(),
             items_list_sort: sqyre_domain::CatalogItemSort::default(),
             items_tag_priority: Vec::new(),
@@ -932,13 +936,14 @@ impl DataEditor {
 }
 
 impl DataEditor {
-    /// Tab strip under the standard window title bar: the search toggle and
-    /// program selector pinned left, then section/subtab icons in an overflow
-    /// scroll. Expanding the search pushes the selector and tab strip right.
+    /// Tab strip under the standard window title bar: the search and program
+    /// toggles pinned left, then section/subtab icons in an overflow scroll.
+    /// Each collapses to an icon; expanding one replaces the other's pair so
+    /// the pair (icon + field/combo) never crowds the tab strip.
     fn ui_tab_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
         ui.horizontal(|ui| {
             self.ui_search_toggle(ui, env.catalog);
-            self.program_selector(ui, env.catalog, env.icons, env.settings);
+            self.program_toggle(ui, env.catalog, env.icons, env.settings);
             crate::widgets::section_separator(ui);
             crate::widgets::show_overflow(ui, "de_tab_bar", 1.0, |ui| {
                 ui.horizontal(|ui| self.paint_section_bar(ui, env));
@@ -963,6 +968,9 @@ impl DataEditor {
         let just_opened = toggle.clicked() && !self.search_open;
         if toggle.clicked() {
             self.search_open = !self.search_open;
+            if self.search_open {
+                self.program_open = false;
+            }
         }
         if !self.search_open {
             return;

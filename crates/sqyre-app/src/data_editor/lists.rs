@@ -696,7 +696,10 @@ impl DataEditor {
         };
     }
 
-    pub(crate) fn program_selector(
+    /// Program-icon toggle ↔ expanded selector combo in the tab bar. Exclusive
+    /// with the search pair — expanding one collapses the other. Picking a
+    /// program collapses back to the icon.
+    pub(crate) fn program_toggle(
         &mut self,
         ui: &mut egui::Ui,
         catalog: &ProgramCatalog,
@@ -712,6 +715,46 @@ impl DataEditor {
             if let Some(name) = default_editor_program(catalog) {
                 self.select_program(&name, catalog, settings);
             }
+        }
+        let tip = match self.selected_program.as_deref() {
+            Some(p) => format!("Program: {p}"),
+            None => "Program".to_string(),
+        };
+        // The collapsed icon doubles as the selection readout: the bound
+        // app's process icon when the catalog has one, the program glyph else.
+        let tex = self
+            .selected_program
+            .as_deref()
+            .and_then(|p| icons.for_program(ui.ctx(), catalog, p));
+        let resp = match &tex {
+            Some(tex) => {
+                let resp = ui.add(
+                    egui::Button::image(egui::Image::new((
+                        tex.id(),
+                        egui::Vec2::splat(crate::icon_cache::PROCESS_ICON_SIDE),
+                    )))
+                    .selected(self.program_open),
+                );
+                resp.widget_info(|| {
+                    egui::WidgetInfo::labeled(egui::WidgetType::Button, true, tip.clone())
+                });
+                resp
+            }
+            None => ui.add(crate::widgets::IconButton::new(
+                crate::model_icons::PROGRAM,
+                &tip,
+                self.program_open.then_some(crate::theme::accent()),
+            )),
+        };
+        let resp = resp.on_hover_text(&tip);
+        if resp.clicked() {
+            self.program_open = !self.program_open;
+            if self.program_open {
+                self.search_open = false;
+            }
+        }
+        if !self.program_open {
+            return;
         }
         let names = self.list_cache.program_names.clone();
         // Per-tab model count appended to each option ("Demo Program (3)");
@@ -730,30 +773,28 @@ impl DataEditor {
         };
         let mut current = self.selected_program.clone().unwrap_or_default();
         let before = current.clone();
-        ui.horizontal(|ui| {
-            crate::action_tooltip::help::label(ui, crate::model_icons::PROGRAM, "Program");
-            let mut option_icon =
-                |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
-            crate::action_tooltip::help::tip(
-                searchable_combo(
-                    ui,
-                    "data_editor_program",
-                    &mut current,
-                    crate::widgets::SearchableComboOpts {
-                        options: &names,
-                        empty_text: sqyre_domain::EMPTY_NONE,
-                        none_label: None,
-                        width: None,
-                        on_option_hover: None,
-                        option_icon: Some(&mut option_icon),
-                        option_label: Some(&mut option_label),
-                    },
-                ),
-                crate::action_tooltip::help::DE_PROGRAM,
-            );
-        });
+        let mut option_icon =
+            |ctx: &egui::Context, name: &str| icons.for_program(ctx, catalog, name);
+        crate::action_tooltip::help::tip(
+            searchable_combo(
+                ui,
+                "data_editor_program",
+                &mut current,
+                crate::widgets::SearchableComboOpts {
+                    options: &names,
+                    empty_text: sqyre_domain::EMPTY_NONE,
+                    none_label: None,
+                    width: None,
+                    on_option_hover: None,
+                    option_icon: Some(&mut option_icon),
+                    option_label: Some(&mut option_label),
+                },
+            ),
+            crate::action_tooltip::help::DE_PROGRAM,
+        );
         if !current.is_empty() && current != before {
             self.select_program(&current, catalog, settings);
+            self.program_open = false;
         }
     }
 }

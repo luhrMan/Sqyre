@@ -524,6 +524,47 @@ fn data_editor_scope_all_programs_restores_group_headers() {
     harness.get_by_label("center");
 }
 
+/// The header search and program selector share one slot: both collapse to
+/// icons, and expanding one replaces the other's pair.
+#[test]
+fn data_editor_search_and_program_pairs_swap() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_tab_for_docs("points");
+    });
+    harness.run();
+    use eframe::egui::accesskit::Role;
+    let combo = |h: &egui_kittest::Harness<'_, sqyre_app::SqyreApp>| {
+        h.query_all_by_role(Role::ComboBox).next().is_some()
+    };
+
+    // Collapsed: magnifier + program icon only — no field, no combo.
+    harness.get_by_label("Search this tab's list");
+    harness.get_by_label("Program: Demo Program");
+    assert!(harness.query_by_label("Search Points…").is_none());
+    assert!(
+        !combo(&harness),
+        "program combo is part of the expanded pair"
+    );
+
+    // Expanding the program pair shows the combo; the magnifier stays as the
+    // collapsed form of the search pair.
+    harness.get_by_label("Program: Demo Program").click();
+    harness.run();
+    assert!(combo(&harness));
+
+    // Opening search replaces the program pair.
+    harness.get_by_label("Search this tab's list").click();
+    harness.run();
+    harness.get_by_label("Search Points…");
+    assert!(!combo(&harness), "search pair replaced the program pair");
+
+    // Closing search restores both collapsed icons.
+    harness.get_by_label("Hide search").click();
+    harness.run();
+    harness.get_by_label("Program: Demo Program");
+    assert!(harness.query_by_label("Search Points…").is_none());
+}
+
 #[test]
 fn data_editor_items_sort_menu_hosts_tag_priority() {
     let mut harness = build_docs_harness([1100.0, 640.0], |app| {
