@@ -782,3 +782,50 @@ fn ctrl_zoom_keys_clamp_to_ui_scale_range() {
     }
     assert_ui_scale_and_zoom(&harness, 2.5, 2.5);
 }
+
+#[test]
+fn view_tip_hugs_narrow_content() {
+    let mut harness = build_docs_harness([1200.0, 700.0], |app| {
+        app.expand_all_branches_for_docs();
+    });
+    harness.run();
+    harness
+        .ctx
+        .all_styles_mut(|s| s.interaction.tooltip_delay = 0.0);
+    let row = harness
+        .output()
+        .shapes
+        .iter()
+        .find_map(|clipped| match &clipped.shape {
+            egui::Shape::Text(t) if t.galley.job.text.contains("Find button") => {
+                Some(t.visual_bounding_rect())
+            }
+            _ => None,
+        })
+        .expect("image search row text");
+    harness.hover_at(row.center());
+    harness.run_steps(45);
+    // The tip frame is a bordered popup rect near the row; it must hug its
+    // content (a single-target Image Search tip ~200px) rather than stretch
+    // toward the 0.5*screen cap (~600px).
+    let tip_w = harness
+        .output()
+        .shapes
+        .iter()
+        .filter_map(|clipped| match &clipped.shape {
+            egui::Shape::Rect(r)
+                if r.rect.width() > 150.0
+                    && r.rect.height() > 60.0
+                    && r.rect.top() > row.bottom() =>
+            {
+                Some(r.rect.width())
+            }
+            _ => None,
+        })
+        .fold(0.0_f32, f32::max);
+    assert!(tip_w > 150.0, "no view tip rendered (widest rect {tip_w})");
+    assert!(
+        tip_w < 400.0,
+        "view tip stretched to {tip_w} despite narrow content"
+    );
+}

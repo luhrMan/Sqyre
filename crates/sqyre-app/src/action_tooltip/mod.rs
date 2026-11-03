@@ -11,6 +11,7 @@ use eframe::egui::{self, Key, Modifiers, Order, Vec2};
 use sqyre_domain::{
     action_type_description, action_type_label, Action, ActionId, ActionKind, CoordinateRef, Macro,
 };
+use sqyre_persist::ProgramCatalog;
 use sqyre_ui_model::{action_pastel_color, split_display_params, ActionDisplay};
 use sqyre_validate::validate_action_persist;
 
@@ -383,6 +384,89 @@ fn tip_max_width(screen_w: f32) -> f32 {
     (screen_w * TIP_MAX_WIDTH_FRACTION).max(crate::widgets::FLOATER_MIN_COMPACT[0])
 }
 
+/// Comfortable prose column inside a view tip. Wrap-capable content
+/// (descriptions, captions, status text) claims at most this — letting it
+/// measure against `tip_max_width` made every tip balloon to half the window.
+const TIP_WRAP_W: f32 = 380.0;
+
+/// Floor for tips whose content is only a short line (avoids a sliver tip).
+const TIP_MIN_W: f32 = 200.0;
+
+/// Icon + chip padding allowance when measuring `extra` param rows as text.
+const PARAM_ICON_PAD: f32 = 36.0;
+
+/// Width the view-tip body wants: wrap-capable text capped at [`TIP_WRAP_W`],
+/// plus intrinsic room for content that cannot wrap (param rows, target grids,
+/// previews). Always ≤ `max_w`.
+fn tip_preferred_width(
+    ctx: &egui::Context,
+    action: &Action,
+    extra: &[&sqyre_ui_model::DisplayParam],
+    catalog: &ProgramCatalog,
+    max_w: f32,
+) -> f32 {
+    let type_key = action.type_key();
+    let font = egui::TextStyle::Small.resolve(ctx.global_style().as_ref());
+    let text_w = |s: String| {
+        ctx.fonts_mut(|f| f.layout_no_wrap(s, font.clone(), egui::Color32::WHITE))
+            .size()
+            .x
+    };
+    let mut w = text_w(action_type_description(type_key).to_owned())
+        .max(text_w(action_type_label(type_key).to_owned()) + 40.0)
+        .clamp(TIP_MIN_W, TIP_WRAP_W);
+    for p in extra {
+        w = w.max(text_w(format!("{}: {}", p.label, p.minimal())) + PARAM_ICON_PAD);
+    }
+    if crate::preview_tooltip::coordinate_ref_for_preview(action).is_some() {
+        w = w.max(crate::preview_tooltip::DISPLAY_MAX_W);
+    }
+    if let ActionKind::ImageSearch(d) = &action.kind {
+        if !d.targets.is_empty() || !d.target_tags.is_empty() {
+            let display = tree_chrome::cached_sorted_image_search_targets(
+                ctx,
+                catalog,
+                &d.targets,
+                &[],
+                d.sort_by,
+                d.sort_then,
+                &d.tag_priority,
+            );
+            // Widest grid the section paints: tag grids size as `display` when
+            // it exists, else as the largest tag group; the items grid uses
+            // `display.len()`. Mirror `paint_image_search_tooltip_thumbs_pub`.
+            let count = if display.is_empty() {
+                tree_chrome::image_search_tip_tag_groups(catalog, &d.target_tags)
+                    .iter()
+                    .map(|g| g.members.len())
+                    .max()
+                    .unwrap_or(0)
+            } else {
+                display.len()
+            };
+            if count > 0 {
+                let cell = crate::pickers::adaptive_icon_cell(
+                    count,
+                    max_w,
+                    crate::pickers::EDIT_CELL,
+                    crate::pickers::EDIT_CELL_MAX,
+                    crate::pickers::EDIT_GAP,
+                );
+                let cols = crate::pickers::grid_column_count_for_width(
+                    max_w,
+                    cell,
+                    crate::pickers::EDIT_GAP,
+                )
+                .min(count);
+                w = w.max(
+                    cols as f32 * cell + cols.saturating_sub(1) as f32 * crate::pickers::EDIT_GAP,
+                );
+            }
+        }
+    }
+    w.clamp(TIP_MIN_W, max_w)
+}
+
 /// True when the user is dragging any window edge/corner resize handle.
 fn edit_window_user_resized(ctx: &egui::Context, area_id: egui::Id) -> bool {
     let dragged = |id: egui::Id| {
@@ -478,6 +562,7 @@ pub(crate) fn show_action_view_tip(
     // to slide the tip over the hovered row (which would steal hover).
     let screen = crate::widgets::dialog_constrain_rect(ctx);
     let max_w = tip_max_width(screen.width());
+    let preferred_w = tip_preferred_width(ctx, action, &extra, catalog, max_w);
     let near_right = pointer.x + 14.0 + max_w > screen.right();
     let (pivot, pos) = if near_right {
         (egui::Align2::RIGHT_TOP, pointer + Vec2::new(-8.0, 14.0))
@@ -505,11 +590,14 @@ pub(crate) fn show_action_view_tip(
                 .show(ui, |ui| {
                     // Area content is capped at last frame's size; lift both axes so
                     // the tip can grow up to the constrain rect before scrolling.
-                    ui.set_max_width(max_w);
+                    // Width uses the content-derived preferred width, not `max_w`,
+                    // so wrap-capable children (prose, captions, error labels)
+                    // cannot inflate the tip to the half-viewport cap.
+                    ui.set_max_width(preferred_w);
                     ui.set_max_height(max_body_h);
-                    // V-only: tip body wraps prose and icon grids to `max_w`.
+                    // V-only: tip body wraps prose and icon grids to the body width.
                     // Wheel claiming in `claim_view_tip_scroll` tracks Y offset.
-                    let out = crate::widgets::show_scroll_edge(
+                    let out = crate::widgets::show_scroll_edge_fit(
                         ui,
                         crate::widgets::scroll_vertical()
                             .id_salt("view_tip_body")

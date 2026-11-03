@@ -113,8 +113,8 @@ fn scroll_edge_expand(ui: &egui::Ui) -> Option<(egui::Rect, egui::Margin)> {
         return Some((
             egui::Rect::from_min_max(avail.min, max),
             egui::Margin {
-                right: (max.x - avail.max.x).round() as i8,
-                bottom: (max.y - avail.max.y).round() as i8,
+                right: (max.x - avail.max.x).max(0.0).round() as i8,
+                bottom: (max.y - avail.max.y).max(0.0).round() as i8,
                 ..Default::default()
             },
         ));
@@ -126,17 +126,38 @@ fn scroll_edge_expand(ui: &egui::Ui) -> Option<(egui::Rect, egui::Margin)> {
 /// claim that fits the original `bound` back to the parent. `new_child` does
 /// not merge `min_rect`, so the expanded viewport can't ratchet auto-sized
 /// windows open; siblings still advance past the scroll's real footprint.
+///
+/// `shrink_to_content` picks, per axis, whether the claim follows the painted
+/// content (`content_size`) or the full inner rect. egui auto-shrinks the
+/// painted viewport — and the floating bar anchor — to `content_size`, but
+/// `ScrollAreaOutput::inner_rect` is captured before that shrink, so claiming
+/// it verbatim leaves dead space between the bar and the frame edge when
+/// content under-fills the bound.
 fn show_expanded<R>(
     ui: &mut egui::Ui,
     bound: egui::Rect,
     rect: egui::Rect,
     scroll: egui::ScrollArea,
+    shrink_to_content: egui::Vec2b,
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> egui::containers::scroll_area::ScrollAreaOutput<R> {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     let out = scroll.show(&mut child, add_contents);
-    let claimed =
-        egui::Rect::from_min_max(bound.min, out.inner_rect.max.clamp(bound.min, bound.max));
+    let used = egui::pos2(
+        if shrink_to_content.x {
+            out.inner_rect.min.x + out.content_size.x
+        } else {
+            out.inner_rect.max.x
+        }
+        .clamp(bound.min.x, bound.max.x),
+        if shrink_to_content.y {
+            out.inner_rect.min.y + out.content_size.y
+        } else {
+            out.inner_rect.max.y
+        }
+        .clamp(bound.min.y, bound.max.y),
+    );
+    let claimed = egui::Rect::from_min_max(bound.min, used);
     ui.expand_to_include_rect(claimed);
     ui.advance_cursor_after_rect(claimed);
     out
@@ -155,7 +176,37 @@ pub fn show_scroll_edge<R>(
     let Some((rect, margin)) = scroll_edge_expand(ui) else {
         return scroll.show(ui, add_contents);
     };
-    show_expanded(ui, bound, rect, scroll.content_margin(margin), add_contents)
+    show_expanded(
+        ui,
+        bound,
+        rect,
+        scroll.content_margin(margin),
+        egui::Vec2b::FALSE,
+        add_contents,
+    )
+}
+
+/// [`show_scroll_edge`] that claims the painted content size on each axis: a
+/// floating bar hugs the shrunk viewport, so a scroll whose children do not
+/// fill the bound keeps the bar flush with the frame edge instead of floating
+/// in dead space.
+pub fn show_scroll_edge_fit<R>(
+    ui: &mut egui::Ui,
+    scroll: egui::ScrollArea,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::containers::scroll_area::ScrollAreaOutput<R> {
+    let bound = ui.available_rect_before_wrap();
+    let Some((rect, margin)) = scroll_edge_expand(ui) else {
+        return scroll.show(ui, add_contents);
+    };
+    show_expanded(
+        ui,
+        bound,
+        rect,
+        scroll.content_margin(margin),
+        egui::Vec2b::TRUE,
+        add_contents,
+    )
 }
 
 /// [`dialog_scroll`] shown via [`show_scroll_edge`].
@@ -206,6 +257,7 @@ pub fn show_dialog_scroll_mod<R>(
             bottom: grow.y as i8,
             ..Default::default()
         }),
+        egui::Vec2b::FALSE,
         add_contents,
     )
 }
@@ -369,6 +421,7 @@ pub fn show_overflow<R>(
                     bottom: grow.y as i8,
                     ..Default::default()
                 }),
+            egui::Vec2b::FALSE,
             |ui| {
                 enable_dense_row_extend(ui);
                 add_contents(ui)
@@ -531,6 +584,58 @@ mod tests {
             .drop_without_applying_deltas();
         }
         assert!(clipped.is_empty(), "H-bar clipped buttons: {clipped:?}");
+    }
+
+    /// egui auto-shrinks the painted viewport — and the floating-bar anchor —
+    /// to `content_size`, but `ScrollAreaOutput::inner_rect` is captured
+    /// before that shrink. Claiming the pre-shrink rect would leave the bar
+    /// floating left of the frame edge; `show_scroll_edge_fit` must claim the
+    /// shrunk size instead.
+    #[test]
+    fn scroll_edge_fit_claims_shrunk_content_width() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| style.spacing.scroll = crate::theme::scroll_style());
+        let mut fit_w = f32::MAX;
+        let mut edge_w = f32::MAX;
+        for _ in 0..3 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(400.0, 600.0));
+                let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                pane_ui.set_clip_rect(pane);
+                egui::Frame::popup(pane_ui.style())
+                    .inner_margin(egui::Margin::symmetric(8, 6))
+                    .show(&mut pane_ui, |ui| {
+                        ui.set_max_height(200.0);
+                        show_scroll_edge_fit(ui, scroll_vertical().max_height(200.0), |ui| {
+                            ui.label("narrow");
+                            // Tall content so the v-bar paints.
+                            ui.allocate_space(egui::vec2(80.0, 500.0));
+                        });
+                    });
+                fit_w = pane_ui.min_rect().width();
+            })
+            .drop_without_applying_deltas();
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(400.0, 600.0));
+                let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                pane_ui.set_clip_rect(pane);
+                egui::Frame::popup(pane_ui.style())
+                    .inner_margin(egui::Margin::symmetric(8, 6))
+                    .show(&mut pane_ui, |ui| {
+                        ui.set_max_height(200.0);
+                        show_scroll_edge(ui, scroll_vertical().max_height(200.0), |ui| {
+                            ui.label("narrow");
+                            ui.allocate_space(egui::vec2(80.0, 500.0));
+                        });
+                    });
+                edge_w = pane_ui.min_rect().width();
+            })
+            .drop_without_applying_deltas();
+        }
+        // Fit hugs the shrunk viewport (~content + margins); the un-shrunk
+        // claim keeps the full bound (~300 + margins), which is exactly the
+        // dead space the bar used to float inside.
+        assert!(fit_w < 200.0 && edge_w > 290.0, "fit={fit_w} edge={edge_w}");
     }
 
     #[test]

@@ -7,6 +7,10 @@ use sqyre_persist::ProgramCatalog;
 
 const UNAVAILABLE: &str = "Live screen preview requires the desktop app.";
 
+/// Display footprint of a coordinate preview; mirrors the native constant used
+/// by the view-tip preferred-width measurement.
+pub(crate) const DISPLAY_MAX_W: f32 = 260.0;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PreviewKind {
     Point,

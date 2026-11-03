@@ -56,7 +56,7 @@ pub use overflow::{always_bar, text_width, OverflowItem};
 pub use row_ids::{remove_row_id, stable_row_ids};
 pub use scroll::{
     enable_dense_row_extend, scroll_vertical, show_dialog_scroll, show_dialog_scroll_mod,
-    show_overflow, show_scroll_edge, SCROLL_SOURCE_NO_DRAG,
+    show_overflow, show_scroll_edge, show_scroll_edge_fit, SCROLL_SOURCE_NO_DRAG,
 };
 pub use sections::{
     advanced_section, collapsible_header, collapsible_section, float_bottom_right,

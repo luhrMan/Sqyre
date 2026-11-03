@@ -20,7 +20,7 @@ const CAPTURE_PADDING: i32 = 48;
 const TOOLTIP_MAX_DIM: u32 = 640;
 /// Data-editor panel previews stretch with the window and support zoom.
 const PANEL_MAX_DIM: u32 = 1600;
-const DISPLAY_MAX_W: f32 = 260.0;
+pub(crate) const DISPLAY_MAX_W: f32 = 260.0;
 const DISPLAY_MAX_H: f32 = 195.0;
 const PANEL_MIN_W: f32 = 160.0;
 const PANEL_MIN_H: f32 = 120.0;
