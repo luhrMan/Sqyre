@@ -753,9 +753,17 @@ impl DataEditor {
                 self.search_open = false;
             }
         }
-        if !self.program_open {
-            return;
-        }
+    }
+
+    /// The expanded program pair's searchable combo, drawn to the right of
+    /// both toggle icons; collapses back to the icon after a pick.
+    pub(crate) fn ui_program_combo(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: &ProgramCatalog,
+        icons: &mut IconCache,
+        settings: &UserSettings,
+    ) {
         let names = self.list_cache.program_names.clone();
         // Per-tab model count appended to each option ("Demo Program (3)");
         // Programs has no entity kind to count.

@@ -937,13 +937,19 @@ impl DataEditor {
 
 impl DataEditor {
     /// Tab strip under the standard window title bar: the search and program
-    /// toggles pinned left, then section/subtab icons in an overflow scroll.
-    /// Each collapses to an icon; expanding one replaces the other's pair so
-    /// the pair (icon + field/combo) never crowds the tab strip.
+    /// toggle icons stay adjacent on the left so expanding a pair never moves
+    /// the other icon — its controls open to the right of both toggles. The
+    /// section/subtab icons follow in an overflow scroll.
     fn ui_tab_bar(&mut self, ui: &mut egui::Ui, env: &mut DataEditorCtx<'_>) {
         ui.horizontal(|ui| {
-            self.ui_search_toggle(ui, env.catalog);
+            let just_opened = self.ui_search_toggle(ui);
             self.program_toggle(ui, env.catalog, env.icons, env.settings);
+            if self.search_open {
+                self.ui_search_controls(ui, env.catalog, just_opened);
+            }
+            if self.program_open {
+                self.ui_program_combo(ui, env.catalog, env.icons, env.settings);
+            }
             crate::widgets::section_separator(ui);
             crate::widgets::show_overflow(ui, "de_tab_bar", 1.0, |ui| {
                 ui.horizontal(|ui| self.paint_section_bar(ui, env));
@@ -951,10 +957,9 @@ impl DataEditor {
         });
     }
 
-    /// Magnifier toggle → expanding query field → scope dropdown → item sort.
-    /// The query is kept (and keeps filtering only while visible) when the
-    /// field hides.
-    fn ui_search_toggle(&mut self, ui: &mut egui::Ui, catalog: &ProgramCatalog) {
+    /// Magnifier toggle; returns true on the click that opened the search pair
+    /// (so the caller can focus the freshly-shown field).
+    fn ui_search_toggle(&mut self, ui: &mut egui::Ui) -> bool {
         let (tip, color) = if self.search_open {
             ("Hide search", Some(crate::theme::accent()))
         } else {
@@ -972,11 +977,20 @@ impl DataEditor {
                 self.program_open = false;
             }
         }
-        if !self.search_open {
-            return;
-        }
+        just_opened
+    }
+
+    /// The expanded search pair: query field → scope dropdown → item sort.
+    /// The query is kept (and keeps filtering only while visible) when the
+    /// field hides.
+    fn ui_search_controls(
+        &mut self,
+        ui: &mut egui::Ui,
+        catalog: &ProgramCatalog,
+        just_opened: bool,
+    ) {
         let hint = format!("Search {}…", self.tab.label());
-        // Hug the query text but leave room for the selector + scope combo;
+        // Hug the query text but stay clear of the tab strip;
         // `available_width` here is what is left in the header row.
         let width = crate::widgets::name_edit_width(ui, &self.search, &hint)
             .min((ui.available_width() * 0.45).max(80.0));
@@ -1090,7 +1104,6 @@ impl DataEditor {
             ui.ctx()
                 .data_mut(|d| d.insert_temp(sort_menu_id.with("open"), open));
         }
-        crate::widgets::section_separator(ui);
     }
 
     /// Every section's subtab buttons in one row — the subsection buttons are

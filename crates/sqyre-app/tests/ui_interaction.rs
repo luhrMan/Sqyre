@@ -524,8 +524,9 @@ fn data_editor_scope_all_programs_restores_group_headers() {
     harness.get_by_label("center");
 }
 
-/// The header search and program selector share one slot: both collapse to
-/// icons, and expanding one replaces the other's pair.
+/// The header search and program selector share one toggle cluster: both
+/// collapse to adjacent icons, expanding one replaces the other's pair, and
+/// the expanded controls open to the right of both icons.
 #[test]
 fn data_editor_search_and_program_pairs_swap() {
     let mut harness = build_docs_harness([1100.0, 640.0], |app| {
@@ -552,11 +553,18 @@ fn data_editor_search_and_program_pairs_swap() {
     harness.run();
     assert!(combo(&harness));
 
-    // Opening search replaces the program pair.
+    // Opening search replaces the program pair — but the program toggle stays
+    // adjacent to the magnifier, left of the expanded field.
     harness.get_by_label("Search this tab's list").click();
     harness.run();
     harness.get_by_label("Search Points…");
     assert!(!combo(&harness), "search pair replaced the program pair");
+    let program_x = harness.get_by_label("Program: Demo Program").rect().min.x;
+    let field_x = harness.get_by_label("Search Points…").rect().min.x;
+    assert!(
+        program_x < field_x,
+        "program toggle must stay adjacent to the magnifier ({program_x} !< {field_x})"
+    );
 
     // Closing search restores both collapsed icons.
     harness.get_by_label("Hide search").click();
