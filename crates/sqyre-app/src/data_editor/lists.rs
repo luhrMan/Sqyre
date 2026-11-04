@@ -796,6 +796,8 @@ impl DataEditor {
                     width: None,
                     on_option_hover: None,
                     option_icon: Some(&mut option_icon),
+                    // The toggle icon beside it already shows the selection.
+                    closed_icon: false,
                     option_label: Some(&mut option_label),
                 },
             ),

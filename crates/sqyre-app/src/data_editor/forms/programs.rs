@@ -220,6 +220,7 @@ impl DataEditor {
                         width: None,
                         on_option_hover: Some(&mut on_hover),
                         option_icon: None,
+                        closed_icon: true,
                         option_label: None,
                     },
                 ),

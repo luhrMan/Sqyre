@@ -495,8 +495,12 @@ pub struct SearchableComboOpts<'a> {
     /// Per-option hover callback (also on the closed button when `value` is
     /// non-empty). Use for image/preview tooltips while browsing the popup.
     pub on_option_hover: Option<&'a mut ComboOptionHover<'a>>,
-    /// Leading icon drawn on each option row and beside the closed button.
+    /// Leading icon drawn on each option row and, when `closed_icon` is set,
+    /// beside the closed button.
     pub option_icon: Option<&'a mut ComboOptionIcon<'a>>,
+    /// Paint the selected option's icon beside the closed button too. Turn
+    /// off when an adjacent control already shows the selection's icon.
+    pub closed_icon: bool,
     /// Display label transform (counts, decorations); `None` shows the raw option.
     pub option_label: Option<&'a mut ComboOptionLabel<'a>>,
 }
@@ -518,6 +522,7 @@ pub fn searchable_combo(
         width,
         mut on_option_hover,
         mut option_icon,
+        closed_icon,
         mut option_label,
     } = opts;
     let display = if value.is_empty() {
@@ -531,10 +536,14 @@ pub fn searchable_combo(
 
     let orphan = (!value.is_empty() && !options.iter().any(|o| o == value)).then(|| value.clone());
 
-    let closed_icon = option_icon
-        .as_mut()
-        .filter(|_| !value.is_empty())
-        .and_then(|cb| cb(ui.ctx(), value.as_str()));
+    let closed_tex = closed_icon
+        .then(|| {
+            option_icon
+                .as_mut()
+                .filter(|_| !value.is_empty())
+                .and_then(|cb| cb(ui.ctx(), value.as_str()))
+        })
+        .flatten();
 
     let mut changed = false;
     ui.horizontal(|ui| {
@@ -546,7 +555,7 @@ pub fn searchable_combo(
         let search_id = button_id.with("search");
         let focused_id = button_id.with("search_focused");
 
-        if let Some(tex) = closed_icon.as_ref() {
+        if let Some(tex) = closed_tex.as_ref() {
             crate::icon_cache::paint_process_icon(ui, tex, crate::icon_cache::PROCESS_ICON_SIDE);
         }
         let mut combo = egui::ComboBox::from_id_salt(&id_salt)
@@ -755,6 +764,7 @@ mod tests {
                         width: None,
                         on_option_hover: None,
                         option_icon: None,
+                        closed_icon: true,
                         option_label: None,
                     },
                 );

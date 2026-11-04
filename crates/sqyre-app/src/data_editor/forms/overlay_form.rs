@@ -56,6 +56,7 @@ impl DataEditor {
                         width: Some(220.0),
                         on_option_hover: None,
                         option_icon: None,
+                        closed_icon: true,
                         option_label: None,
                     },
                 ),
