@@ -93,6 +93,7 @@ Each `egui::Popup`/menu/context menu is its own `Area` on its own layer.
 - `StrokeKind::Outside` extends past the widget rect into grid gaps, margins, and pane padding — selection/focus rings on cells inside grids, lists, or panes must use `StrokeKind::Inside` (the unselected-cell stroke already is).
 - A **vertical-only** `ScrollArea` never clips the X axis, and `expand_to_include_rect` lets oversized children grow the parent's `min_rect` past its bound — fixed-size content (preview images, canvases) inside tips/popups must size itself to `visible_size`/`visible_content_width`, never to a hardcoded display cap.
 - Scroll helpers must claim `min(content_size, viewport)`, not full `content_size` — a capped `ScrollArea` whose claimed height ignores the cap balloons its self-sizing parent window (`show_scroll_edge_fit`, not the legacy claim behavior).
+- egui anchors a **floating bar at the shrunk `inner_rect` edge**, not the offered bound — `auto_shrink[0] = true` inside a fixed-width surface (resizable `Window`, fixed-width `Modal`) parks the V-bar at the content edge with a dead strip to the frame. Fixed surfaces use `auto_shrink([false, …])` (`dialog_scroll` already does); x-shrink is only for self-sizing tips that hug content anyway.
 
 ## Helpers
 
