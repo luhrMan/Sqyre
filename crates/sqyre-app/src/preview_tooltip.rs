@@ -409,7 +409,7 @@ impl PreviewTooltipCache {
         let caption =
             match crate::data_editor_preview::exclusive_pixel_size(left, top, right, bottom) {
                 Some((w, h)) => format!(
-                    "Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom} · area {}",
+                    "Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}\n· area {}",
                     crate::data_editor_preview::pixel_size_text(w, h)
                 ),
                 None => format!("Left: {left}, Top: {top}, Right: {right}, Bottom: {bottom}"),
@@ -1045,7 +1045,7 @@ fn search_area_caption(sa: &ProgramSearchArea) -> String {
     );
     match crate::data_editor_preview::search_area_pixel_size(sa) {
         Some((w, h)) => format!(
-            "{bounds} · area {}",
+            "{bounds}\n· area {}",
             crate::data_editor_preview::pixel_size_text(w, h)
         ),
         None => bounds,
@@ -1053,7 +1053,7 @@ fn search_area_caption(sa: &ProgramSearchArea) -> String {
 }
 
 fn collection_caption(sa: &ProgramSearchArea, rows: i32, cols: i32) -> String {
-    let bounds = search_area_caption(sa).replace(" · ", "\n· ");
+    let bounds = search_area_caption(sa);
     match crate::data_editor_preview::search_area_pixel_size(sa)
         .and_then(|(w, h)| crate::data_editor_preview::collection_cell_pixel_size(w, h, rows, cols))
     {
@@ -1663,7 +1663,7 @@ mod tests {
         };
         assert_eq!(
             search_area_caption(&sa),
-            "Left: 10, Top: 20, Right: 110, Bottom: 80 · area 100×60 px"
+            "Left: 10, Top: 20, Right: 110, Bottom: 80\n· area 100×60 px"
         );
         assert_eq!(
             collection_caption(&sa, 2, 2),

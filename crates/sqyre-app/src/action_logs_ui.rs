@@ -747,7 +747,7 @@ fn show_find_chip(
         }
         let (l, t, r, b) = find.screen;
         ui.small(format!(
-            "screen ({l},{t})–({r},{b}) · {}×{}",
+            "screen ({l},{t})–({r},{b})\n· {}×{}",
             (r - l).max(0),
             (b - t).max(0)
         ));
@@ -1340,7 +1340,7 @@ fn show_zoom_view(
                             }
                             let (l, t, r, b) = screen;
                             ui.weak(format!(
-                                "screen ({l},{t})–({r},{b}) · {}×{}",
+                                "screen ({l},{t})–({r},{b})\n· {}×{}",
                                 (r - l).max(0),
                                 (b - t).max(0)
                             ));
