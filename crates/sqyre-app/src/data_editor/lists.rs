@@ -733,6 +733,7 @@ impl DataEditor {
                         tex.id(),
                         egui::Vec2::splat(crate::icon_cache::PROCESS_ICON_SIDE),
                     )))
+                    .frame_when_inactive(false)
                     .selected(self.program_open),
                 );
                 resp.widget_info(|| {

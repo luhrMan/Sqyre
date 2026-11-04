@@ -46,10 +46,13 @@ impl DataEditor {
                     });
                 match tex {
                     Some(tex) => ui
-                        .add(egui::Button::image(egui::Image::new((
-                            tex.id(),
-                            egui::Vec2::splat(icon_side),
-                        ))))
+                        .add(
+                            egui::Button::image(egui::Image::new((
+                                tex.id(),
+                                egui::Vec2::splat(icon_side),
+                            )))
+                            .frame_when_inactive(false),
+                        )
                         .on_hover_text(ht::ED_PICK_WINDOW),
                     None => crate::widgets::icon_button(
                         ui,

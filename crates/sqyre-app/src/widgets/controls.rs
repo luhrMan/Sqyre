@@ -34,9 +34,30 @@ pub(crate) fn paint_keyboard_focus_ring(
     );
 }
 
-/// Icon-only button with optically centered glyph. A subtle frame separates it
-/// from decorative [`crate::action_tooltip::help::label`] glyphs: at rest a
-/// faint fill + hairline, on hover the standard interactive chrome.
+/// Hover and press fill for icon buttons. Resting and disabled glyphs stay bare.
+fn paint_icon_button_chrome(ui: &egui::Ui, rect: egui::Rect, response: &egui::Response) {
+    if !response.enabled() {
+        return;
+    }
+    if matches!(
+        response.widget_state(),
+        egui::widget_style::WidgetState::Inactive | egui::widget_style::WidgetState::Noninteractive
+    ) {
+        return;
+    }
+    let visuals = ui.style().interact(response);
+    ui.painter().rect(
+        rect,
+        CornerRadius::same(4),
+        visuals.weak_bg_fill,
+        visuals.bg_stroke,
+        egui::StrokeKind::Inside,
+    );
+}
+
+/// Icon-only button with an optically centered glyph and no resting frame.
+/// Hover and press draw the same interactive fill as the brand button
+/// (`frame_when_inactive(false)`).
 ///
 /// `tip` is the AccessKit name and hover text (required for actionable icons).
 pub fn icon_button(ui: &mut egui::Ui, glyph: &str, tip: &str) -> egui::Response {
@@ -71,15 +92,8 @@ fn icon_button_inner(
     let font_id = icon_btn_font(ui);
     let desired = Vec2::splat(icon_btn_side(ui));
     let (rect, response) = ui.allocate_exact_size(desired, Sense::click());
+    paint_icon_button_chrome(ui, rect, &response);
     let visuals = ui.style().interact(&response);
-    ui.painter()
-        .rect_filled(rect, CornerRadius::same(4), visuals.weak_bg_fill);
-    ui.painter().rect_stroke(
-        rect,
-        CornerRadius::same(4),
-        visuals.bg_stroke,
-        egui::StrokeKind::Inside,
-    );
     let fg = color.unwrap_or(visuals.text_color());
     paint_text_centered(ui, rect, glyph, font_id, fg);
     paint_keyboard_focus_ring(ui, rect, &response);
@@ -198,6 +212,7 @@ pub fn icon_toggle(
         *selected = !*selected;
         response.mark_changed();
     }
+    paint_icon_button_chrome(ui, rect, &response);
     let visuals = ui.style().interact(&response);
     let glyph = if *selected {
         filled_glyph
@@ -212,19 +227,6 @@ pub fn icon_toggle(
     } else {
         icon_btn_font(ui)
     };
-    let body_fill = if *selected {
-        visuals.bg_fill
-    } else {
-        visuals.weak_bg_fill
-    };
-    ui.painter()
-        .rect_filled(rect, CornerRadius::same(4), body_fill);
-    ui.painter().rect_stroke(
-        rect,
-        CornerRadius::same(4),
-        visuals.bg_stroke,
-        egui::StrokeKind::Inside,
-    );
     let fg = if *selected {
         accent()
     } else if enabled {
@@ -819,6 +821,64 @@ mod tests {
                 pane_ui.min_rect()
             );
         });
+    }
+
+    /// Icon buttons are bare glyphs at rest. Hover paints the interactive fill.
+    #[test]
+    fn icon_button_chrome_only_on_hover() {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 300.0));
+
+        let mut idle_rect = egui::Rect::NOTHING;
+        let mut toggle_rect = egui::Rect::NOTHING;
+        let idle = ctx.run_ui(
+            RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            },
+            |ui| {
+                idle_rect = icon_button(ui, "↻", "Refresh").rect;
+                let mut on = false;
+                toggle_rect = icon_toggle(ui, &mut on, "Pin", "☆", "★").rect;
+            },
+        );
+        assert!(
+            !button_fill_on(&idle.shapes, idle_rect),
+            "resting icon button painted a fill"
+        );
+        assert!(
+            !button_fill_on(&idle.shapes, toggle_rect),
+            "resting icon toggle painted a fill"
+        );
+        idle.drop_without_applying_deltas();
+
+        let mut hover_rect = egui::Rect::NOTHING;
+        let hover = ctx.run_ui(
+            RawInput {
+                screen_rect: Some(screen),
+                events: vec![egui::Event::PointerMoved(idle_rect.center())],
+                ..Default::default()
+            },
+            |ui| {
+                hover_rect = icon_button(ui, "↻", "Refresh").rect;
+            },
+        );
+        assert!(
+            button_fill_on(&hover.shapes, hover_rect),
+            "hovered icon button painted no fill"
+        );
+        hover.drop_without_applying_deltas();
+    }
+
+    fn button_fill_on(shapes: &[egui::epaint::ClippedShape], button: egui::Rect) -> bool {
+        shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Rect(rect) => {
+                (rect.rect.center() - button.center()).length() < 2.0
+                    && (rect.rect.width() - button.width()).abs() < 4.0
+                    && rect.fill.a() > 0
+            }
+            _ => false,
+        })
     }
 
     /// Icon buttons share rows with entry boxes — [`icon_btn_side`] must track
