@@ -180,15 +180,19 @@ fn transparency_texture(ctx: &egui::Context) -> egui::TextureHandle {
 /// Checkerboard painted under image content so transparent pixels — and hence
 /// the real image edges — are visible. Paint before the image; `corner_radius`
 /// matches whatever rounding the image on top applies.
+///
+/// The board pads one square past each edge of `rect` so the boundary between
+/// image and surrounding UI is also marked, not just the transparent pixels.
 pub fn paint_checkerboard(painter: &egui::Painter, rect: egui::Rect, corner_radius: f32) {
     if !rect.is_positive() {
         return;
     }
+    let board = rect.expand(TRANSPARENCY_TILE);
     let tex = transparency_texture(painter.ctx());
     // One texture repeat covers two squares in each axis.
-    let uv = egui::Rect::from_min_size(egui::Pos2::ZERO, rect.size() / (2.0 * TRANSPARENCY_TILE));
+    let uv = egui::Rect::from_min_size(egui::Pos2::ZERO, board.size() / (2.0 * TRANSPARENCY_TILE));
     painter.add(
-        egui::epaint::RectShape::filled(rect, corner_radius, egui::Color32::WHITE)
+        egui::epaint::RectShape::filled(board, corner_radius, egui::Color32::WHITE)
             .with_texture(tex.id(), uv),
     );
 }
@@ -380,17 +384,18 @@ mod tests {
         let out = ctx.run_ui(egui::RawInput::default(), |ui| {
             paint_checkerboard(ui.painter(), rect, 0.0);
         });
+        let board = rect.expand(TRANSPARENCY_TILE);
         let expected_uv =
-            egui::Rect::from_min_size(egui::Pos2::ZERO, rect.size() / (2.0 * TRANSPARENCY_TILE));
+            egui::Rect::from_min_size(egui::Pos2::ZERO, board.size() / (2.0 * TRANSPARENCY_TILE));
         let painted = out.shapes.iter().any(|clipped| match &clipped.shape {
             egui::Shape::Rect(r) => {
-                r.rect == rect && r.brush.as_ref().is_some_and(|b| b.uv == expected_uv)
+                r.rect == board && r.brush.as_ref().is_some_and(|b| b.uv == expected_uv)
             }
             _ => false,
         });
         assert!(
             painted,
-            "checkerboard did not paint a textured rect over {rect:?}"
+            "checkerboard did not paint a padded textured rect over {rect:?}"
         );
         out.drop_without_applying_deltas();
     }
