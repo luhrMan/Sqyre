@@ -727,6 +727,7 @@ fn show_find_chip(
                         270.0,
                     );
                     let (disp, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                    image_view::paint_checkerboard(ui.painter(), disp, 0.0);
                     ui.painter().image(
                         tex.id(),
                         disp,
@@ -982,7 +983,10 @@ fn show_item_card(
                 {
                     let [tw, th] = tex.size();
                     let size = fit_thumb(tw as f32, th as f32, thumb_edge);
-                    let resp = ui.add(
+                    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::click());
+                    image_view::paint_checkerboard(ui.painter(), rect, 4.0);
+                    let resp = ui.put(
+                        rect,
                         egui::Image::new((tex.id(), size))
                             .sense(egui::Sense::click())
                             .corner_radius(4.0),
@@ -1136,7 +1140,12 @@ fn show_labeled_image(
         if let Some(tex) = state.texture(ui.ctx(), action_id, key, image) {
             let [tw, th] = tex.size();
             let size = fit_width(tw as f32, th as f32, avail_w - 16.0);
-            let resp = ui.add(egui::Image::new((tex.id(), size)).sense(egui::Sense::click()));
+            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::click());
+            image_view::paint_checkerboard(ui.painter(), rect, 0.0);
+            let resp = ui.put(
+                rect,
+                egui::Image::new((tex.id(), size)).sense(egui::Sense::click()),
+            );
             for mark in find_marks_for_image(entries, state, image) {
                 stroke_find_rect(
                     ui.painter(),
@@ -1278,6 +1287,7 @@ fn show_zoom_view(
 
     let painter = ui.painter_at(viewport);
     if let Some(tex) = state.texture(ui.ctx(), action_id, key, &image) {
+        image_view::paint_checkerboard(&painter, content, 0.0);
         painter.image(
             tex.id(),
             content,

@@ -98,6 +98,16 @@ pub fn preview_status_fill() -> Color32 {
     Color32::from_gray(28)
 }
 
+/// Light square of the checkerboard under image previews (transparency cue).
+pub fn preview_checker_light() -> Color32 {
+    Color32::from_gray(200)
+}
+
+/// Dark square of the checkerboard under image previews (transparency cue).
+pub fn preview_checker_dark() -> Color32 {
+    Color32::from_gray(120)
+}
+
 /// Monitor-map desktop background.
 pub fn preview_monitor_bg() -> Color32 {
     Color32::from_gray(22)

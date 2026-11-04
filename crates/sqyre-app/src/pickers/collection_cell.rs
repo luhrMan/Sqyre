@@ -79,6 +79,7 @@ pub fn paint_collection_cell_picker(
     {
         let painter = ui.painter_at(viewport);
         if let Some(tex) = &tex {
+            image_view::paint_checkerboard(&painter, content, 0.0);
             painter.image(
                 tex.id(),
                 content,

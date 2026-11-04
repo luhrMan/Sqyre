@@ -447,6 +447,7 @@ pub fn paint_icon_thumb_at(
         let slot = egui::Rect::from_center_size(center, Vec2::new(max_w, max_h));
         ui.painter().rect_filled(slot, corner_radius, bg);
     }
+    image_view::paint_checkerboard(ui.painter(), rect, corner_radius);
     ui.painter().image(
         tex.id(),
         rect,

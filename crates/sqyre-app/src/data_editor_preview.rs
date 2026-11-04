@@ -522,7 +522,9 @@ pub(crate) fn paint_disk_preview(
         Some(tex) => {
             let [tw, th] = tex.size();
             let size = fit_panel(tw as f32, th as f32);
-            let resp = ui.add(egui::Image::new((tex.id(), size)));
+            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+            image_view::paint_checkerboard(ui.painter(), rect, 0.0);
+            let resp = ui.put(rect, egui::Image::new((tex.id(), size)));
             paint_preview_frame(ui.painter(), resp.rect);
             if let Some((rows, cols)) = grid {
                 paint_grid_overlay(ui, resp.rect, rows, cols);
@@ -617,6 +619,7 @@ pub(crate) fn paint_zoomable_collection_preview(
     {
         let painter = ui.painter_at(viewport);
         if let Some(tex) = &tex {
+            image_view::paint_checkerboard(&painter, content, 0.0);
             painter.image(
                 tex.id(),
                 content,
@@ -682,7 +685,9 @@ pub(crate) fn show_file_hover(
                     FIT_PANEL_MAX_W.min(crate::widgets::visible_content_width(ui)),
                     FIT_PANEL_MAX_H,
                 );
-                ui.add(egui::Image::new((tex.id(), size)));
+                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+                image_view::paint_checkerboard(ui.painter(), rect, 0.0);
+                ui.put(rect, egui::Image::new((tex.id(), size)));
                 ui.label(label);
             });
         }
@@ -954,6 +959,7 @@ pub(crate) fn paint_zoomable_atlas_preview(
             let br = to_screen(rx, by);
             let rect = egui::Rect::from_min_max(tl, br);
             if let Some(Some(tex)) = textures.get(i) {
+                image_view::paint_checkerboard(&painter, rect, 0.0);
                 painter.image(
                     tex.id(),
                     rect,

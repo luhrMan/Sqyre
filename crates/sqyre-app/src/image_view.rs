@@ -147,6 +147,52 @@ pub fn zoom_image_at_cursor(
     (new_zoom, pan)
 }
 
+/// Screen-space edge of one checkerboard square, in points.
+const TRANSPARENCY_TILE: f32 = 8.0;
+const TRANSPARENCY_TEX_NAME: &str = "sqyre_transparency_grid";
+
+/// Lazily uploaded 2×2 checkerboard (power-of-two so `Repeat` wrap works on
+/// WebGL). Cached in [`egui::Context`] data so every preview shares one texture.
+fn transparency_texture(ctx: &egui::Context) -> egui::TextureHandle {
+    let key = egui::Id::new(TRANSPARENCY_TEX_NAME);
+    // `load_texture` itself locks the Context — never call it inside `data_mut`.
+    if let Some(tex) = ctx.data_mut(|d| d.get_persisted::<egui::TextureHandle>(key)) {
+        return tex;
+    }
+    let (light, dark) = (
+        crate::theme::preview_checker_light(),
+        crate::theme::preview_checker_dark(),
+    );
+    let tex = ctx.load_texture(
+        TRANSPARENCY_TEX_NAME,
+        egui::ColorImage::new([2, 2], vec![light, dark, dark, light]),
+        egui::TextureOptions {
+            magnification: egui::TextureFilter::Nearest,
+            minification: egui::TextureFilter::Nearest,
+            wrap_mode: egui::TextureWrapMode::Repeat,
+            mipmap_mode: None,
+        },
+    );
+    ctx.data_mut(|d| d.insert_persisted(key, tex.clone()));
+    tex
+}
+
+/// Checkerboard painted under image content so transparent pixels — and hence
+/// the real image edges — are visible. Paint before the image; `corner_radius`
+/// matches whatever rounding the image on top applies.
+pub fn paint_checkerboard(painter: &egui::Painter, rect: egui::Rect, corner_radius: f32) {
+    if !rect.is_positive() {
+        return;
+    }
+    let tex = transparency_texture(painter.ctx());
+    // One texture repeat covers two squares in each axis.
+    let uv = egui::Rect::from_min_size(egui::Pos2::ZERO, rect.size() / (2.0 * TRANSPARENCY_TILE));
+    painter.add(
+        egui::epaint::RectShape::filled(rect, corner_radius, egui::Color32::WHITE)
+            .with_texture(tex.id(), uv),
+    );
+}
+
 /// Aspect-preserving scale that fits `w`×`h` inside a `max_w`×`max_h` box.
 ///
 /// Dimensions below 1.0 are treated as 1.0 to avoid a divide-by-zero or
@@ -305,6 +351,28 @@ mod tests {
         let shrunk = fit_in_box_no_upscale(200.0, 100.0, 96.0, 96.0);
         assert!((shrunk.x - 96.0).abs() < 0.01);
         assert!((shrunk.y - 48.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn checkerboard_tiles_the_preview_rect() {
+        let ctx = egui::Context::default();
+        let rect = egui::Rect::from_min_size(egui::pos2(10.0, 8.0), egui::vec2(40.0, 24.0));
+        let out = ctx.run_ui(egui::RawInput::default(), |ui| {
+            paint_checkerboard(ui.painter(), rect, 0.0);
+        });
+        let expected_uv =
+            egui::Rect::from_min_size(egui::Pos2::ZERO, rect.size() / (2.0 * TRANSPARENCY_TILE));
+        let painted = out.shapes.iter().any(|clipped| match &clipped.shape {
+            egui::Shape::Rect(r) => {
+                r.rect == rect && r.brush.as_ref().is_some_and(|b| b.uv == expected_uv)
+            }
+            _ => false,
+        });
+        assert!(
+            painted,
+            "checkerboard did not paint a textured rect over {rect:?}"
+        );
+        out.drop_without_applying_deltas();
     }
 
     #[test]
