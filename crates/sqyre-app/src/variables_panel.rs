@@ -27,6 +27,10 @@ pub struct VariablesPanelUi {
     cached_monitor_count: Option<usize>,
     declared_filter: String,
     runtime_filter: String,
+    /// Painted height of each bottom tab section, measured last frame so the
+    /// declared list can reclaim whatever the bottom does not need.
+    runtime_section_h: Option<f32>,
+    builtins_section_h: Option<f32>,
 }
 
 #[derive(Debug, Clone)]
@@ -130,17 +134,26 @@ impl VariablesPanelUi {
                     .unwrap_or_default();
                 let runtime_empty =
                     matches!(self.bottom_tab, BottomTab::Runtime) && runtime_snap.is_empty();
+                // The bottom tab hugs its measured height (capped at the share
+                // it used to claim); the declared list absorbs the slack, so a
+                // short bottom section no longer leaves a dead band above the
+                // window edge.
+                let measured_bottom = match self.bottom_tab {
+                    BottomTab::Runtime => self.runtime_section_h,
+                    BottomTab::Builtins => self.builtins_section_h,
+                };
                 let avail = ui.available_height();
                 let min_bottom = 100.0;
                 let min_top = 120.0;
                 let need = TAB_CHROME + min_bottom + min_top;
                 let (top_h, bottom_h) = if runtime_empty {
-                    let bottom = RUNTIME_EMPTY_H.min((avail - TAB_CHROME - min_top).max(1.0));
+                    let cap = RUNTIME_EMPTY_H.min((avail - TAB_CHROME - min_top).max(1.0));
+                    let bottom = measured_bottom.map(|h| h.min(cap)).unwrap_or(cap);
                     ((avail - TAB_CHROME - bottom).max(1.0), bottom)
                 } else if avail >= need {
-                    let bottom = ((avail - TAB_CHROME) * 0.38).max(min_bottom);
-                    let top = (avail - TAB_CHROME - bottom).max(min_top);
-                    (top, bottom)
+                    let cap = ((avail - TAB_CHROME) * 0.38).max(min_bottom);
+                    let bottom = measured_bottom.map(|h| h.min(cap)).unwrap_or(cap);
+                    ((avail - TAB_CHROME - bottom).max(min_top), bottom)
                 } else {
                     let body = (avail - TAB_CHROME).max(1.0);
                     let bottom = (body * 0.38).max(1.0);
@@ -161,9 +174,19 @@ impl VariablesPanelUi {
                     });
                 });
                 crate::widgets::section_separator(ui);
-                match self.bottom_tab {
+                let section_h = match self.bottom_tab {
                     BottomTab::Runtime => self.show_runtime(ui, runtime_snap, running, bottom_h),
                     BottomTab::Builtins => self.show_builtins(ui, num_monitors, bottom_h),
+                };
+                let slot = match self.bottom_tab {
+                    BottomTab::Runtime => &mut self.runtime_section_h,
+                    BottomTab::Builtins => &mut self.builtins_section_h,
+                };
+                // Converge the split on the real painted height (one frame lag,
+                // like the edit tip's `fields_height`).
+                if slot.map(|h| (h - section_h).abs() > 1.0).unwrap_or(true) {
+                    *slot = Some(section_h);
+                    ui.ctx().request_repaint();
                 }
             });
             // After the body so an inline variable edit cancels first.
@@ -176,13 +199,16 @@ impl VariablesPanelUi {
         persist
     }
 
+    /// Paints the Runtime section; returns its painted height (chrome plus the
+    /// scroll's real content height, not the claimed viewport).
     fn show_runtime(
         &mut self,
         ui: &mut egui::Ui,
         mut snap: Vec<(String, String)>,
         running: bool,
         max_h: f32,
-    ) {
+    ) -> f32 {
+        let start = ui.min_rect().height();
         snap.sort_by(|(a, _), (b, _)| crate::macro_meta::cmp_display_name(a, b));
         crate::widgets::heading_with_count(
             ui,
@@ -203,7 +229,7 @@ impl VariablesPanelUi {
                 )
             };
             let _ = crate::widgets::empty_state(ui, title, body, None, None);
-            return;
+            return ui.min_rect().height() - start;
         }
         crate::widgets::search_field(
             ui,
@@ -226,8 +252,9 @@ impl VariablesPanelUi {
             .collect();
         let list_h = (max_h - crate::widgets::FOOTER_RESERVE_ACTION).max(60.0);
         let list_w = crate::widgets::visible_width(ui);
+        let chrome = ui.min_rect().height() - start;
         // Dense name=value rows: Extend so long values H-scroll instead of wrap/clip.
-        crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
+        let out = crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
             crate::widgets::enable_dense_row_extend(ui);
             if filtered.is_empty() {
                 crate::widgets::list_vacancy(ui, &q, 0, "variables");
@@ -241,9 +268,13 @@ impl VariablesPanelUi {
                 });
             }
         });
+        chrome + out.content_size.y
     }
 
-    fn show_builtins(&self, ui: &mut egui::Ui, num_monitors: usize, max_h: f32) {
+    /// Paints the Built-ins section; returns its painted height like
+    /// [`show_runtime`].
+    fn show_builtins(&self, ui: &mut egui::Ui, num_monitors: usize, max_h: f32) -> f32 {
+        let start = ui.min_rect().height();
         ui.label(
             egui::RichText::new(
                 "Set automatically by the runtime or certain actions. Names are fixed.",
@@ -253,7 +284,8 @@ impl VariablesPanelUi {
         let catalog = builtin_variable_catalog(num_monitors);
         let list_h = (max_h - 28.0).max(60.0);
         let list_w = crate::widgets::visible_width(ui);
-        crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
+        let chrome = ui.min_rect().height() - start;
+        let out = crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
             crate::widgets::enable_dense_row_extend(ui);
             for info in &catalog {
                 ui.horizontal(|ui| {
@@ -262,6 +294,7 @@ impl VariablesPanelUi {
                 });
             }
         });
+        chrome + out.content_size.y
     }
 
     fn body(&mut self, ui: &mut egui::Ui, macro_: &mut Macro, max_h: f32) -> bool {
@@ -535,5 +568,76 @@ impl VariablesPanelUi {
         }
 
         persist
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqyre_ports::RuntimeVarSink;
+
+    fn run_panel(
+        builtins: bool,
+        vars: &[(&str, &str)],
+        screen: egui::Vec2,
+    ) -> (egui::Context, Vec<egui::epaint::ClippedShape>) {
+        let ctx = egui::Context::default();
+        crate::theme::apply(&ctx);
+        let mut panel = VariablesPanelUi::default();
+        panel.open_for_docs(builtins);
+        let mut macro_ = crate::docs_fixture::demo_macro();
+        let runtime = SharedRuntimeVars::new();
+        runtime.publish(
+            &vars
+                .iter()
+                .map(|(n, v)| (n.to_string(), v.to_string()))
+                .collect::<Vec<_>>(),
+        );
+        let mut last = None;
+        // Extra frames let the measured bottom-section split converge.
+        for frame in 0..8 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::pos2(0.0, 0.0), screen)),
+                time: Some(frame as f64 * 0.1),
+                predicted_dt: 0.1,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| {
+                panel.show(ui.ctx(), &mut macro_, true, &runtime, false, None);
+            });
+            last = Some(std::mem::take(&mut out.shapes));
+            out.drop_without_applying_deltas();
+        }
+        (ctx, last.unwrap())
+    }
+
+    fn window_rect(ctx: &egui::Context) -> egui::Rect {
+        ctx.memory(|m| m.area_rect(egui::Id::new("sqyre_variables_panel")))
+            .expect("variables window painted")
+    }
+
+    /// The bottom tab hugs its content: a couple of runtime rows must not
+    /// leave a dead band between the list viewport and the window edge.
+    #[test]
+    fn short_runtime_list_reaches_window_bottom() {
+        let (ctx, shapes) = run_panel(
+            false,
+            &[("alpha", "1"), ("beta", "two")],
+            egui::vec2(900.0, 700.0),
+        );
+        let win = window_rect(&ctx);
+        // The bottom section's scroll clip starts well below the declared
+        // list's; its viewport should end at the frame edge (float slop only).
+        let bottom = shapes
+            .iter()
+            .map(|c| c.clip_rect)
+            .filter(|r| r.min.y > 200.0 && r.max.y < win.bottom() && r.width() > 200.0)
+            .map(|r| r.max.y)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert!(
+            bottom.is_finite() && win.bottom() - bottom <= 12.0,
+            "bottom section viewport ends {bottom} but window ends {} — dead band below the list",
+            win.bottom()
+        );
     }
 }
