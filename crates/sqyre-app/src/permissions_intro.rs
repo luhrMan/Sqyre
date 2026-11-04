@@ -90,7 +90,7 @@ impl PermissionsIntro {
                 + crate::theme::section_gap(ui);
             let scroll_h = (bounds.height() - margin.y - ui.min_rect().height() - footer_h)
                 .max(ui.spacing().interact_size.y);
-            crate::widgets::show_scroll_edge(
+            crate::widgets::show_scroll_edge_fit(
                 ui,
                 crate::widgets::scroll_vertical()
                     .id_salt("sqyre_permissions_intro_body")
@@ -355,6 +355,34 @@ mod tests {
         assert!(intro.showing());
         assert!(!intro.finished());
         assert!(!intro.items.is_empty());
+    }
+
+    /// The body scroll caps at `scroll_h` ≈ the window, but must claim only
+    /// what it paints — the pre-shrink `inner_rect` claim left the popup
+    /// filling the whole window even with a short permission list.
+    #[test]
+    fn hugs_content_instead_of_filling_window() {
+        let ctx = egui::Context::default();
+        let mut intro = PermissionsIntro::new();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            };
+            ctx.run_ui(input, |ui| {
+                intro.show(ui.ctx());
+            })
+            .drop_without_applying_deltas();
+        }
+        let rect = ctx
+            .memory(|m| m.area_rect(egui::Id::new("sqyre_permissions_intro")))
+            .expect("intro area painted");
+        let bounds = crate::widgets::dialog_constrain_rect(&ctx);
+        assert!(
+            rect.height() < bounds.height() * 0.4,
+            "intro {rect:?} must hug content, not fill {bounds:?}"
+        );
     }
 
     #[test]

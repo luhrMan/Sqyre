@@ -143,15 +143,17 @@ fn show_expanded<R>(
 ) -> egui::containers::scroll_area::ScrollAreaOutput<R> {
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect));
     let out = scroll.show(&mut child, add_contents);
+    // egui's auto-shrink paints `content_size.min(inner.size())`; mirror it so
+    // overflowing content claims the capped viewport, not the full content.
     let used = egui::pos2(
         if shrink_to_content.x {
-            out.inner_rect.min.x + out.content_size.x
+            out.inner_rect.min.x + out.content_size.x.min(out.inner_rect.width())
         } else {
             out.inner_rect.max.x
         }
         .clamp(bound.min.x, bound.max.x),
         if shrink_to_content.y {
-            out.inner_rect.min.y + out.content_size.y
+            out.inner_rect.min.y + out.content_size.y.min(out.inner_rect.height())
         } else {
             out.inner_rect.max.y
         }
