@@ -123,7 +123,7 @@ On a bare host (no container), install once:
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cargo install --locked trunk
+cargo install --locked trunk@0.21.14  # 0.22+ needs rustc 1.96.1; this repo pins 1.95.0
 ```
 
 Uses `--no-default-features` (no global hotkey hooks). Native `make` / `make release` are unchanged.
