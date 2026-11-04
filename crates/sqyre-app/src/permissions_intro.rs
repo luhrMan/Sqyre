@@ -94,6 +94,9 @@ impl PermissionsIntro {
                 ui,
                 crate::widgets::scroll_vertical()
                     .id_salt("sqyre_permissions_intro_body")
+                    // Modal width is fixed; shrinking X would float the V-bar
+                    // off the frame edge. Y still hugs the content height.
+                    .auto_shrink([false, true])
                     .max_height(scroll_h),
                 |ui| {
                     for item in &self.items {

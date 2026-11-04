@@ -841,11 +841,13 @@ fn show_edit_window(
                     active_macro: Some(&*macro_),
                 };
                 let scroll_h = ui.available_height().max(40.0).min(max_scroll_h);
+                // No x-shrink: the window is user-resized, not content-sized, so
+                // a shrunk viewport would float the V-bar left of the frame edge.
                 let measured = crate::widgets::show_dialog_scroll_mod(
                     ui,
                     ui.available_width(),
                     scroll_h,
-                    |s| s.id_salt("edit_fields").auto_shrink([true, false]),
+                    |s| s.id_salt("edit_fields"),
                     |ui| {
                         edit::paint_edit_fields(
                             ui,
@@ -1253,6 +1255,101 @@ mod tests {
         // Otherwise half the constrain width.
         assert!((tip_max_width(1200.0) - 600.0).abs() < 0.5);
         assert!((tip_max_width(4000.0) - 2000.0).abs() < 0.5);
+    }
+
+    /// The fields scroll's floating V-bar must sit on the window's right edge.
+    /// Anything narrower (content edge, un-expanded bound) leaves a dead strip.
+    #[test]
+    fn edit_tip_scrollbar_stays_at_window_edge() {
+        let ctx = egui::Context::default();
+        crate::theme::apply(&ctx);
+
+        let mut macro_ = crate::docs_fixture::demo_macro();
+        let image_search = macro_
+            .root
+            .children()
+            .iter()
+            .find(|a| matches!(a.kind, ActionKind::ImageSearch(_)))
+            .cloned()
+            .expect("demo macro has an image search action");
+        let mut state = TooltipState::Hidden;
+        state.open_edit(&image_search, egui::pos2(80.0, 60.0));
+
+        let catalog = sqyre_persist::ProgramCatalog::default();
+        let mut icons = crate::icon_cache::IconCache::new();
+        let mut previews = crate::preview_tooltip::PreviewTooltipCache::new();
+        let mut key_record = crate::key_record::KeyRecordUi::default();
+        let mut hotkey_record = crate::hotkey_record::HotkeyRecordUi::default();
+        let macro_hotkeys = sqyre_hotkeys::MacroHotkeyBridge::new();
+        let screen_click = sqyre_hotkeys::ScreenClickBridge::new();
+        let known_vars = sqyre_domain::collect_known_variable_names(&macro_);
+        let macros = vec![(macro_.name.clone(), macro_.tags.clone())];
+
+        let mut gap = f32::NAN;
+        let mut bar_seen = false;
+        for frame in 0..12 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::pos2(0.0, 0.0),
+                    egui::vec2(640.0, 360.0),
+                )),
+                time: Some(frame as f64 * 0.1),
+                predicted_dt: 0.1,
+                ..Default::default()
+            };
+            let out = ctx.run_ui(input, |ui| {
+                let mut tip = TipUiCtx {
+                    paint: CatalogPaint {
+                        catalog: &catalog,
+                        icons: &mut icons,
+                        previews: &mut previews,
+                    },
+                    theme: VarTheme {
+                        known_vars: &known_vars,
+                        is_dark: true,
+                    },
+                    bridges: RecordBridges {
+                        key_record: &mut key_record,
+                        hotkey_record: &mut hotkey_record,
+                        macro_hotkeys: &macro_hotkeys,
+                        screen_click: &screen_click,
+                    },
+                    compact_program_headers: false,
+                    pending_scale: None,
+                };
+                let _ = show(&mut state, ui.ctx(), &mut macro_, &macros, &mut tip, |_| {});
+            });
+            let win = ctx.memory(|m| m.area_rect(edit_tip_area_id(image_search.id)));
+            // The floating V-bar (background + handle) paints as tall thin
+            // rects; the theme leaves their fills transparent, so match on
+            // shape alone and take the rightmost one inside the window.
+            if let Some(win) = win {
+                let bar_right = out
+                    .shapes
+                    .iter()
+                    .filter_map(|c| match &c.shape {
+                        egui::Shape::Rect(r)
+                            if r.rect.width() <= 12.0
+                                && r.rect.height() > 120.0
+                                && r.rect.min.x >= win.left() =>
+                        {
+                            Some(r.rect.max.x)
+                        }
+                        _ => None,
+                    })
+                    .fold(f32::NEG_INFINITY, f32::max);
+                if bar_right.is_finite() {
+                    bar_seen = true;
+                    gap = win.right() - bar_right;
+                }
+            }
+            out.drop_without_applying_deltas();
+        }
+        assert!(bar_seen, "fields scroll never showed a vertical bar");
+        assert!(
+            gap <= 20.0,
+            "scrollbar floats {gap:.1}pt left of the window edge"
+        );
     }
 
     #[test]
