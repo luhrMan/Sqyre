@@ -272,7 +272,8 @@ impl VariablesPanelUi {
     }
 
     /// Paints the Built-ins section; returns its painted height like
-    /// [`show_runtime`].
+    /// [`show_runtime`]. Descriptions are fixed prose, so they wrap — the
+    /// Extend+H-scroll treatment is only for user data rows.
     fn show_builtins(&self, ui: &mut egui::Ui, num_monitors: usize, max_h: f32) -> f32 {
         let start = ui.min_rect().height();
         ui.label(
@@ -286,11 +287,13 @@ impl VariablesPanelUi {
         let list_w = crate::widgets::visible_width(ui);
         let chrome = ui.min_rect().height() - start;
         let out = crate::widgets::show_dialog_scroll(ui, list_w, list_h, |ui| {
-            crate::widgets::enable_dense_row_extend(ui);
             for info in &catalog {
                 ui.horizontal(|ui| {
                     ui.monospace(&info.name);
-                    ui.weak(info.description);
+                    // Wrap at the row's remaining width: `ui.horizontal` forces
+                    // Extend on children, which would otherwise report the full
+                    // sentence and trip a useless H-bar for a few px.
+                    ui.add(egui::Label::new(egui::RichText::new(info.description).weak()).wrap());
                 });
             }
         });
@@ -639,5 +642,23 @@ mod tests {
             "bottom section viewport ends {bottom} but window ends {} — dead band below the list",
             win.bottom()
         );
+    }
+
+    /// Fixed-prose descriptions wrap instead of overflowing a few px — the
+    /// Built-ins list must not paint a horizontal scrollbar.
+    #[test]
+    fn builtins_list_has_no_horizontal_scrollbar() {
+        let (ctx, shapes) = run_panel(true, &[], egui::vec2(900.0, 700.0));
+        let win = window_rect(&ctx);
+        let hbar = shapes.iter().any(|c| match &c.shape {
+            egui::Shape::Rect(r) => {
+                r.rect.height() <= 6.0
+                    && r.rect.width() > 60.0
+                    && r.rect.width() < win.width()
+                    && r.rect.min.y > win.top()
+            }
+            _ => false,
+        });
+        assert!(!hbar, "built-ins list painted a horizontal scrollbar");
     }
 }
