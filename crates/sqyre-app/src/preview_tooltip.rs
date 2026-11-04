@@ -1107,12 +1107,7 @@ fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_ima
     let size = fit_display(ui, tw as f32, th as f32);
     // Click sense makes the tip "interactive" so egui keeps it open while the
     // pointer is over the image — needed when a tall tip still overlaps the row.
-    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::click());
-    image_view::paint_checkerboard(ui.painter(), rect, 0.0);
-    ui.put(
-        rect,
-        egui::Image::new((tex.id(), size)).sense(egui::Sense::click()),
-    );
+    image_view::add_checkered_image(ui, tex, size, egui::Sense::click(), 0.0);
     ui.add(egui::Label::new(caption).wrap());
     if show_image_size {
         ui.label(

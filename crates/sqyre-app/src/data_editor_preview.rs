@@ -522,9 +522,7 @@ pub(crate) fn paint_disk_preview(
         Some(tex) => {
             let [tw, th] = tex.size();
             let size = fit_panel(tw as f32, th as f32);
-            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-            image_view::paint_checkerboard(ui.painter(), rect, 0.0);
-            let resp = ui.put(rect, egui::Image::new((tex.id(), size)));
+            let resp = image_view::add_checkered_image(ui, &tex, size, egui::Sense::hover(), 0.0);
             paint_preview_frame(ui.painter(), resp.rect);
             if let Some((rows, cols)) = grid {
                 paint_grid_overlay(ui, resp.rect, rows, cols);
@@ -685,9 +683,7 @@ pub(crate) fn show_file_hover(
                     FIT_PANEL_MAX_W.min(crate::widgets::visible_content_width(ui)),
                     FIT_PANEL_MAX_H,
                 );
-                let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
-                image_view::paint_checkerboard(ui.painter(), rect, 0.0);
-                ui.put(rect, egui::Image::new((tex.id(), size)));
+                image_view::add_checkered_image(ui, &tex, size, egui::Sense::hover(), 0.0);
                 ui.label(label);
             });
         }

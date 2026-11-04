@@ -983,14 +983,8 @@ fn show_item_card(
                 {
                     let [tw, th] = tex.size();
                     let size = fit_thumb(tw as f32, th as f32, thumb_edge);
-                    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::click());
-                    image_view::paint_checkerboard(ui.painter(), rect, 4.0);
-                    let resp = ui.put(
-                        rect,
-                        egui::Image::new((tex.id(), size))
-                            .sense(egui::Sense::click())
-                            .corner_radius(4.0),
-                    );
+                    let resp =
+                        image_view::add_checkered_image(ui, &tex, size, egui::Sense::click(), 4.0);
                     if resp.hovered() {
                         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
                     }
@@ -1140,12 +1134,7 @@ fn show_labeled_image(
         if let Some(tex) = state.texture(ui.ctx(), action_id, key, image) {
             let [tw, th] = tex.size();
             let size = fit_width(tw as f32, th as f32, avail_w - 16.0);
-            let (rect, _) = ui.allocate_exact_size(size, egui::Sense::click());
-            image_view::paint_checkerboard(ui.painter(), rect, 0.0);
-            let resp = ui.put(
-                rect,
-                egui::Image::new((tex.id(), size)).sense(egui::Sense::click()),
-            );
+            let resp = image_view::add_checkered_image(ui, &tex, size, egui::Sense::click(), 0.0);
             for mark in find_marks_for_image(entries, state, image) {
                 stroke_find_rect(
                     ui.painter(),

@@ -193,6 +193,26 @@ pub fn paint_checkerboard(painter: &egui::Painter, rect: egui::Rect, corner_radi
     );
 }
 
+/// Widget form of [`paint_checkerboard`]: allocate `size`, draw the board under
+/// it, then `ui.put` an `egui::Image` on top. Used by previews outside the
+/// zoomable viewports, which paint `Painter::image` directly.
+pub fn add_checkered_image(
+    ui: &mut egui::Ui,
+    tex: &egui::TextureHandle,
+    size: Vec2,
+    sense: egui::Sense,
+    corner_radius: f32,
+) -> egui::Response {
+    let (rect, _) = ui.allocate_exact_size(size, sense);
+    paint_checkerboard(ui.painter(), rect, corner_radius);
+    ui.put(
+        rect,
+        egui::Image::new((tex.id(), size))
+            .sense(sense)
+            .corner_radius(corner_radius),
+    )
+}
+
 /// Aspect-preserving scale that fits `w`×`h` inside a `max_w`×`max_h` box.
 ///
 /// Dimensions below 1.0 are treated as 1.0 to avoid a divide-by-zero or
