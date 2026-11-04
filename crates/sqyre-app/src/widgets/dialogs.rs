@@ -152,8 +152,20 @@ fn fit_dialog_common<'a>(
 /// Prefer the painted region (`clip_rect` ∩ `max_rect`), then clamp to available
 /// and the dialog constrain rect. Prefer [`fill_resize_body`] for Window bodies
 /// whose children size themselves from available space.
+///
+/// Popup surfaces ([`egui::UiKind::Tooltip`]/[`egui::UiKind::Popup`]/
+/// [`egui::UiKind::Menu`]) are self-sizing `Area`s: `max_rect` is last frame's
+/// own size and `clip_rect` the constrain rect, so clip ∩ max_rect ratchets
+/// narrower every frame — wrapped text collapses to one-character rows. Their
+/// real bound is the constrain rect the surface positions within.
 pub fn visible_size(ui: &egui::Ui) -> egui::Vec2 {
     let constrain = dialog_constrain_rect(ui.ctx()).size();
+    if ui.stack().contained_in(egui::UiKind::Tooltip)
+        || ui.stack().contained_in(egui::UiKind::Popup)
+        || ui.stack().contained_in(egui::UiKind::Menu)
+    {
+        return egui::vec2(constrain.x.max(1.0), constrain.y.max(1.0));
+    }
     let clip = ui.clip_rect().size();
     let max_rect = ui.max_rect().size();
     let avail = ui.available_size();

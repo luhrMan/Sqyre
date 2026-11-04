@@ -484,4 +484,54 @@ mod tests {
             out.drop_without_applying_deltas();
         }
     }
+
+    /// Hover tips are self-sizing egui `Area`s: a width bound derived from the
+    /// tip's own painted size ratchets narrower every frame until text wraps
+    /// into single-character rows. The name galley must keep the width it
+    /// measured on the first open frame.
+    #[test]
+    fn item_tooltip_width_does_not_ratchet() {
+        let ctx = egui::Context::default();
+        let catalog = ProgramCatalog::default();
+        let mut icons = IconCache::new();
+        let target = "prog~a_fairly_long_item_name_to_wrap";
+        let cell = egui::Rect::from_min_size(egui::pos2(40.0, 40.0), egui::vec2(24.0, 24.0));
+        let mut widths = Vec::new();
+        for frame in 0..10 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::pos2(0.0, 0.0),
+                    egui::vec2(1024.0, 768.0),
+                )),
+                time: Some(frame as f64 * 0.25),
+                predicted_dt: 0.25,
+                events: if frame == 0 {
+                    vec![egui::Event::PointerMoved(cell.center())]
+                } else {
+                    Vec::new()
+                },
+                ..Default::default()
+            };
+            let out = ctx.run_ui(input, |ui| {
+                let resp = ui.put(cell, egui::Button::new(""));
+                attach_item_icon_tooltip(&resp, &catalog, &mut icons, target);
+            });
+            let tip_w = out.shapes.iter().find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(t) if t.galley.text().contains("a_fairly") => {
+                    Some(t.galley.size().x)
+                }
+                _ => None,
+            });
+            if let Some(w) = tip_w {
+                widths.push(w);
+            }
+            out.drop_without_applying_deltas();
+        }
+        assert!(widths.len() >= 2, "item tooltip never opened");
+        let (first, last) = (widths[0], *widths.last().unwrap());
+        assert!(
+            (last - first).abs() <= 1.0,
+            "item tooltip width ratcheted across frames: {first:.1} -> {last:.1} ({widths:?})"
+        );
+    }
 }
