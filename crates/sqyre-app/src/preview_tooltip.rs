@@ -1248,20 +1248,13 @@ fn paint_preview_panel_placeholder(
     _view: &mut ImageViewTransform,
 ) -> egui::Rect {
     let desired = panel_viewport_size(ui);
-    let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::hover());
+    // Hover-only on the panel so a drag still scrolls the form. The icon in
+    // the middle is what opens the error (see `attach_preview_error_icon`).
+    let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
-    crate::theme::paint_text_centered(
-        ui,
-        rect,
-        egui_phosphor::regular::X_CIRCLE,
-        egui::FontId::proportional(ui.text_style_height(&egui::TextStyle::Heading)),
-        crate::theme::error_fg(),
-    );
+    crate::data_editor_preview::attach_preview_error_icon(ui, rect, err);
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
-    let enabled = ui.is_enabled();
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, err));
-    resp.on_hover_text(err);
     rect
 }
 
@@ -1496,6 +1489,153 @@ fn draw_point_marker(img: &mut RgbaImage, cx: i32, cy: i32, c: Rgba<u8>, thick: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn phone_screen() -> egui::Rect {
+        egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 640.0))
+    }
+
+    fn input(screen: egui::Rect, time: f64, events: Vec<egui::Event>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(screen),
+            time: Some(time),
+            predicted_dt: 0.1,
+            events,
+            ..Default::default()
+        }
+    }
+
+    fn text_on_screen(
+        shapes: &[egui::epaint::ClippedShape],
+        screen: egui::Rect,
+        needle: &str,
+    ) -> bool {
+        fn walk(shape: &egui::Shape, clip: egui::Rect, screen: egui::Rect, needle: &str) -> bool {
+            match shape {
+                egui::Shape::Text(text) if text.galley.text().contains(needle) => {
+                    let painted =
+                        egui::Rect::from_min_size(text.pos, text.galley.size()).intersect(clip);
+                    let visible = painted.intersect(screen);
+                    visible.width() > 8.0 && visible.height() > 8.0
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().any(|s| walk(s, clip, screen, needle)),
+                _ => false,
+            }
+        }
+        shapes
+            .iter()
+            .any(|clipped| walk(&clipped.shape, clipped.clip_rect, screen, needle))
+    }
+
+    /// The preview fills a phone, so a tip hung off the panel itself sits under
+    /// the screen. Hovering the icon must paint the message inside the screen.
+    #[test]
+    fn preview_error_is_on_screen_when_the_icon_is_hovered() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| {
+            style.interaction.tooltip_delay = 0.0;
+            style.interaction.show_tooltips_only_when_still = false;
+        });
+        let screen = phone_screen();
+        let mut cache = PreviewTooltipCache::new();
+        let mut view = ImageViewTransform::default();
+        let mut center = egui::Pos2::ZERO;
+        ctx.run_ui(input(screen, 0.0, vec![]), |ui| {
+            center = cache
+                .paint_point_panel(ui, None, None, false, &mut view)
+                .center();
+        })
+        .drop_without_applying_deltas();
+
+        let mut shown = false;
+        for frame in 1..6 {
+            let events = if frame == 1 {
+                vec![egui::Event::PointerMoved(center)]
+            } else {
+                Vec::new()
+            };
+            let out = ctx.run_ui(input(screen, frame as f64 * 0.2, events), |ui| {
+                let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+            });
+            shown = text_on_screen(&out.shapes, screen, LITERAL_COORDS_MSG);
+            out.drop_without_applying_deltas();
+        }
+        assert!(
+            shown,
+            "hovering the preview error icon did not paint the message on screen"
+        );
+    }
+
+    /// A tap is not a hover: the message has to show while the finger is down
+    /// and stay after it lifts, without waiting out the hover delay.
+    #[test]
+    fn preview_error_stays_on_screen_after_tap() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| {
+            style.interaction.tooltip_delay = 30.0;
+        });
+        let screen = phone_screen();
+        let mut cache = PreviewTooltipCache::new();
+        let mut view = ImageViewTransform::default();
+        let mut center = egui::Pos2::ZERO;
+        ctx.run_ui(input(screen, 0.0, vec![]), |ui| {
+            center = cache
+                .paint_point_panel(ui, None, None, false, &mut view)
+                .center();
+        })
+        .drop_without_applying_deltas();
+
+        let press = pointer_button(center, true);
+        ctx.run_ui(
+            input(screen, 0.2, vec![egui::Event::PointerMoved(center), press]),
+            |ui| {
+                let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+            },
+        )
+        .drop_without_applying_deltas();
+        // The opening frame is a sizing pass. The next frame, still held, paints.
+        let held = ctx.run_ui(input(screen, 0.4, vec![]), |ui| {
+            let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+        });
+        let held_ok = text_on_screen(&held.shapes, screen, LITERAL_COORDS_MSG);
+        held.drop_without_applying_deltas();
+        assert!(
+            held_ok,
+            "holding the preview error icon did not paint the message"
+        );
+
+        let release = ctx.run_ui(
+            input(
+                screen,
+                0.6,
+                vec![pointer_button(center, false), egui::Event::PointerGone],
+            ),
+            |ui| {
+                let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+            },
+        );
+        let release_ok = text_on_screen(&release.shapes, screen, LITERAL_COORDS_MSG);
+        release.drop_without_applying_deltas();
+        assert!(
+            release_ok,
+            "lifting off the preview error icon hid the message"
+        );
+
+        let stay = ctx.run_ui(input(screen, 0.8, vec![]), |ui| {
+            let _ = cache.paint_point_panel(ui, None, None, false, &mut view);
+        });
+        let stay_ok = text_on_screen(&stay.shapes, screen, LITERAL_COORDS_MSG);
+        stay.drop_without_applying_deltas();
+        assert!(stay_ok, "the preview error disappeared after the tap");
+    }
+
+    fn pointer_button(pos: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
 
     /// Tip bodies live in vertical-only scroll areas that never clip the X axis.
     /// Fixed-size preview content must shrink to the host bound instead of

@@ -127,20 +127,11 @@ impl PreviewTooltipCache {
 
 fn paint_unavailable_panel(ui: &mut egui::Ui, _view: &mut ImageViewTransform) -> egui::Rect {
     let desired = crate::data_editor_preview::fit_panel(ui.available_width(), 220.0);
-    let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
-    crate::theme::paint_text_centered(
-        ui,
-        rect,
-        egui_phosphor::regular::X_CIRCLE,
-        egui::FontId::proportional(ui.text_style_height(&egui::TextStyle::Heading)),
-        crate::theme::error_fg(),
-    );
+    crate::data_editor_preview::attach_preview_error_icon(ui, rect, UNAVAILABLE);
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
-    let enabled = ui.is_enabled();
-    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, UNAVAILABLE));
-    resp.on_hover_text(UNAVAILABLE);
     rect
 }
 

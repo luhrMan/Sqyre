@@ -513,6 +513,41 @@ pub(crate) fn paint_preview_frame(painter: &egui::Painter, rect: egui::Rect) {
     painter.rect_stroke(rect, 0.0, theme::inner_stroke(), egui::StrokeKind::Inside);
 }
 
+/// Centered `⊗` for a failed preview, with `err` on hover, press, or tap.
+///
+/// The tip is anchored to the icon, not the whole preview. A tooltip hung off
+/// the panel is placed under it, which is off the bottom of a phone. The icon
+/// senses clicks so a finger press counts — a hover-only widget is not hovered
+/// while the finger is down, and the tip closes again on release.
+pub(crate) fn attach_preview_error_icon(ui: &mut egui::Ui, rect: egui::Rect, err: &str) {
+    crate::theme::paint_text_centered(
+        ui,
+        rect,
+        egui_phosphor::regular::X_CIRCLE,
+        egui::FontId::proportional(ui.text_style_height(&egui::TextStyle::Heading)),
+        crate::theme::error_fg(),
+    );
+    // Row height (`interact_size.y`) is shorter than a finger. The icon sits in
+    // empty preview space, so the hit uses the wider interact axis.
+    let hit = ui
+        .style()
+        .spacing
+        .interact_size
+        .max_elem()
+        .min(rect.width())
+        .min(rect.height())
+        .max(1.0);
+    let icon_rect = egui::Rect::from_center_size(rect.center(), egui::Vec2::splat(hit));
+    let resp = ui.interact(
+        icon_rect,
+        ui.id().with(("preview_error_icon", err)),
+        egui::Sense::CLICK,
+    );
+    let enabled = ui.is_enabled();
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, enabled, err));
+    crate::widgets::controls::reveal_status_tip(ui, &resp, err);
+}
+
 pub(crate) fn paint_disk_preview(
     ui: &mut egui::Ui,
     icons: &mut IconCache,
