@@ -878,3 +878,103 @@ fn view_tip_hugs_narrow_content() {
         "view tip stretched to {tip_w} despite narrow content"
     );
 }
+
+fn delete_confirm_visible(harness: &egui_kittest::Harness<'_, sqyre_app::SqyreApp>) -> bool {
+    // Confirm body copy is not an AccessKit label; Cancel exists only on that dialog.
+    harness.query_all_by_label("Cancel").next().is_some()
+}
+
+#[test]
+fn delete_key_removes_selected_macro_action() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |_| {});
+    harness.run();
+    let before = harness.state().docs_selected_root_child_count();
+    assert!(before >= 2, "demo macro should have root actions");
+
+    harness.get_by_label("Mouse Move").click();
+    harness.run();
+    harness.key_press(egui::Key::Delete);
+    harness.run();
+
+    assert_eq!(
+        harness.state().docs_selected_root_child_count(),
+        before - 1,
+        "Delete should remove the selected action"
+    );
+    assert!(
+        harness.query_all_by_label("Mouse Move").next().is_none(),
+        "Mouse Move row should be gone"
+    );
+}
+
+#[test]
+fn delete_key_confirms_removal_of_selected_model() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_programs_for_docs()
+    });
+    harness.run();
+    let actions_before = harness.state().docs_selected_root_child_count();
+    assert!(
+        harness.state().docs_catalog().get("Demo Program").is_some(),
+        "docs fixture should ship with Demo Program"
+    );
+
+    harness.get_by_label("Demo Program").click();
+    harness.run();
+    harness.key_press(egui::Key::Delete);
+    harness.run();
+
+    assert!(
+        delete_confirm_visible(&harness),
+        "Delete should open the same remove confirm as the model remove button"
+    );
+    assert_eq!(
+        harness.state().docs_selected_root_child_count(),
+        actions_before,
+        "model Delete should not also remove the selected macro action"
+    );
+    assert!(
+        harness.state().docs_catalog().get("Demo Program").is_some(),
+        "confirm should still be pending"
+    );
+
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+
+    assert!(
+        harness.state().docs_catalog().get("Demo Program").is_none(),
+        "confirming should delete the selected program"
+    );
+    assert!(
+        !delete_confirm_visible(&harness),
+        "confirm should close after Delete"
+    );
+}
+
+#[test]
+fn delete_key_in_model_name_field_does_not_remove_model() {
+    let mut harness = build_docs_harness([1100.0, 640.0], |app| {
+        app.open_data_editor_programs_for_docs()
+    });
+    harness.run();
+    harness.get_by_label("Demo Program").click();
+    harness.run();
+
+    let name = harness
+        .query_all_by_role(eframe::egui::accesskit::Role::TextInput)
+        .find(|n| n.value().as_deref() == Some("Demo Program"))
+        .expect("program name field");
+    name.focus();
+    harness.run();
+    harness.key_press(egui::Key::Delete);
+    harness.run();
+
+    assert!(
+        !delete_confirm_visible(&harness),
+        "Delete inside the name field should edit text, not remove the model"
+    );
+    assert!(
+        harness.state().docs_catalog().get("Demo Program").is_some(),
+        "unsaved name edit must not delete the program"
+    );
+}

@@ -393,29 +393,9 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
         state.set_selected(vec![aid]);
         app.set_selected_actions(vec![aid]);
     }
-    state.store(ui, id);
     if let Some(aid) = delete_action {
-        if !aid.is_root()
-            && !matches!(
-                app.workspace.macros[idx].root.resolve_tree_id(aid),
-                Some(sqyre_domain::TreeNodeRef::ElseFolder { .. })
-            )
-        {
-            app.record_tree_mutation();
-            let cleared_sel = app.tree.selected_actions.contains(&aid);
-            let _ = app.workspace.macros[idx].root.remove_by_id(aid);
-            if cleared_sel {
-                app.remove_from_selection(aid);
-            }
-            if app.run_session.logs_window == Some(aid) {
-                app.run_session.logs_window = None;
-                app.run_session.logs_state.clear();
-            }
-            if app.tree.tooltip.action_id() == Some(aid) {
-                app.tree.tooltip.cancel();
-            }
-            app.persist_macro_at(idx);
-            app.play_ui_delete_sound();
+        if remove_actions(app, idx, &[aid]) {
+            state.set_selected(app.tree.selected_actions.clone());
         }
     }
 
@@ -617,6 +597,127 @@ pub fn show(app: &mut SqyreApp, ui: &mut egui::Ui, force_openness: Option<bool>)
             }
         }
     }
+
+    // Delete removes the current selection (same nodes the row menu deletes).
+    // Runs after TreeView selection changes so the key sees this frame's rows.
+    if tree_delete_key(app, ui, id) {
+        let ids = app.tree.selected_actions.clone();
+        if remove_actions(app, idx, &ids) {
+            state.set_selected(app.tree.selected_actions.clone());
+        }
+    }
+    state.store(ui, id);
+}
+
+/// True when `id` is a real action the row menu is allowed to delete.
+fn action_deletable(root: &Action, id: ActionId) -> bool {
+    !id.is_root()
+        && matches!(
+            root.resolve_tree_id(id),
+            Some(sqyre_domain::TreeNodeRef::Action(_))
+        )
+}
+
+/// Drop `ids` from the selected macro. One undo step. Returns whether anything
+/// was removed.
+fn remove_actions(app: &mut SqyreApp, idx: usize, ids: &[ActionId]) -> bool {
+    let doomed: Vec<ActionId> = {
+        let root = &app.workspace.macros[idx].root;
+        ids.iter()
+            .copied()
+            .filter(|id| action_deletable(root, *id))
+            .collect()
+    };
+    if doomed.is_empty() {
+        return false;
+    }
+    app.record_tree_mutation();
+    let mut removed = false;
+    for aid in doomed {
+        if app.workspace.macros[idx].root.remove_by_id(aid).is_some() {
+            removed = true;
+        }
+    }
+    if !removed {
+        let name = app.workspace.macros[idx].name.clone();
+        if let Some(hist) = app.tree.histories.get_mut(&name) {
+            hist.pop_last_undo();
+        }
+        return false;
+    }
+    let alive: Vec<ActionId> = app
+        .tree
+        .selected_actions
+        .iter()
+        .copied()
+        .filter(|id| {
+            app.workspace.macros[idx]
+                .root
+                .resolve_tree_id(*id)
+                .is_some()
+        })
+        .collect();
+    app.set_selected_actions(alive);
+    if let Some(logs) = app.run_session.logs_window {
+        if app.workspace.macros[idx].root.find_by_id(logs).is_none() {
+            app.run_session.logs_window = None;
+            app.run_session.logs_state.clear();
+        }
+    }
+    if app
+        .tree
+        .tooltip
+        .action_id()
+        .is_some_and(|id| app.workspace.macros[idx].root.find_by_id(id).is_none())
+    {
+        app.tree.tooltip.cancel();
+    }
+    app.persist_macro_at(idx);
+    app.play_ui_delete_sound();
+    true
+}
+
+/// Delete key removes the tree selection when this tree owns the keyboard.
+fn tree_delete_key(app: &SqyreApp, ui: &mut egui::Ui, tree_id: egui::Id) -> bool {
+    let Some(idx) = app.workspace.selected_macro_index() else {
+        return false;
+    };
+    let deletable = app
+        .tree
+        .selected_actions
+        .iter()
+        .any(|id| action_deletable(&app.workspace.macros[idx].root, *id));
+    if !deletable || !tree_owns_delete(app, ui, tree_id) {
+        return false;
+    }
+    ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Delete))
+}
+
+fn tree_owns_delete(app: &SqyreApp, ui: &egui::Ui, tree_id: egui::Id) -> bool {
+    if app.run_session.state.running.load(Ordering::SeqCst)
+        || app.tree.tooltip.is_editing()
+        || app.hotkey_record.is_open()
+        || app.key_record.is_open()
+        || app.macro_record.is_open()
+        || app.command_palette.is_open()
+        || app.add_action_picker.open
+        || app.macro_yaml_builder.is_open()
+        || app.macro_prompt_builder.is_open()
+        || ui.ctx().text_edit_focused()
+        || ui.ctx().any_popup_open()
+    {
+        return false;
+    }
+    #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
+    if app.permissions_intro.is_some() {
+        return false;
+    }
+    // Row click requests this id; arrow keys only move selection while it is focused.
+    if ui.memory(|m| m.has_focus(tree_id)) {
+        return true;
+    }
+    ui.memory(|m| m.focused().is_none())
+        && crate::focus_nav::is_top_layer(ui.ctx(), egui::LayerId::background())
 }
 
 /// Apply Ctrl/Cmd toggle, Shift range, or plain single-select for tip-covered rows.

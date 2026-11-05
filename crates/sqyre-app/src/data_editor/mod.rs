@@ -792,6 +792,10 @@ impl DataEditor {
                 self.ui_tab_bar(ui, env);
                 self.ui_body(ui, env, selected_macro, previews);
             });
+            // Delete matches the footer remove button: confirm, then delete.
+            // Consume even with nothing selected so the key does not fall
+            // through to the macro tree while this window is in front.
+            self.consume_delete_selection(ui);
             if crate::widgets::consume_escape(ui) {
                 self.open = false;
             }
@@ -1415,6 +1419,28 @@ impl DataEditor {
         if let Some(label) = self.selected_delete_label() {
             self.confirm = Some(PendingConfirm::Delete { label });
         }
+    }
+
+    /// Delete key activates the same remove as the footer button, when this
+    /// window is in front and a text field is not using the key.
+    fn consume_delete_selection(&mut self, ui: &mut egui::Ui) {
+        if !self.owns_delete_key(ui) {
+            return;
+        }
+        let pressed = ui.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Delete));
+        if pressed {
+            self.request_delete_selected();
+        }
+    }
+
+    fn owns_delete_key(&self, ui: &egui::Ui) -> bool {
+        self.confirm.is_none()
+            && self.variant_prompt.is_none()
+            && !self.window_picker.is_open()
+            && self.overlay_icon_picker_for.is_none()
+            && !ui.ctx().any_popup_open()
+            && !ui.ctx().text_edit_focused()
+            && crate::focus_nav::is_top_layer(ui.ctx(), ui.layer_id())
     }
 
     /// Enter → Update only when this window is in front and no overlay owns the key.
