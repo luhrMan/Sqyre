@@ -20,6 +20,7 @@ Sqyre is a Rust Cargo workspace (egui desktop automation app + WASM editor); the
 ## Essentials
 
 - Done means `make fmt && make check && make test` pass on the tip (plus `make wasm-check` when touching `sqyre-app` or crates it uses).
+- Commit during the change: when a unit is independently correct, commit it before the next unit starts (`incremental-commits.mdc`). One concern per commit. Do not wait to be asked, and do not batch a list into one uncommitted diff.
 - No backwards compatibility: change APIs and call sites directly; no shims, aliases, or dual code paths.
 - Platform code uses `#[cfg(...)]` modules, never platform APIs inside `if cfg!(...)`. One OS-neutral public surface (`OsCapturer`, `OsWindowFocuser`).
 - Library errors use `thiserror`; logging uses `sqyre_capture` diag / executor logs, not `println!` / `tracing`.

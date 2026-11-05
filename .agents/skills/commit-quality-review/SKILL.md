@@ -42,7 +42,7 @@ Skip drive-by refactors of untouched code and naming/format nits that match surr
 
 ## Act
 
-- **Your uncommitted work:** fix Block and Should items, then commit if asked.
+- **Your uncommitted work:** fix Block and Should items, then commit that unit before starting the next one (`incremental-commits` — during the change, without waiting to be asked).
 - **Existing commits:** report only; do not rewrite history unless asked (except `git-identity` author/trailer fixes on unpushed commits).
 
 ## Verdict

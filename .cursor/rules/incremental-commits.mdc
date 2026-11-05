@@ -1,5 +1,5 @@
 ---
-description: Commit early and often — one bullet/surface/concern per commit so regressions stay bisectable
+description: Commit during the change — one bullet/surface/concern per commit, without waiting to be asked
 alwaysApply: true
 ---
 
@@ -9,6 +9,7 @@ Regressions hide inside megacommits: a single 60-file `+1880` commit that mixed 
 
 ## Rules
 
+- **Commit during the change, without a separate request.** Finishing a unit includes committing it. Do not hold a correct diff until the user says "commit".
 - **Commit after each independently-correct unit** — one bullet of a batch request, one surface, one concern. If the subject line needs "and", split it.
 - **Never accumulate a multi-topic uncommitted tree** across items of a list request, and never carry uncommitted work between items — commit or stop. The tree at `HEAD` should always be reviewable as a sequence of single-purpose diffs.
 - **Per commit:** `make fmt` plus a compile of what you touched (`cargo check -p <crate>` or the relevant `make` target). The full `make check && make test` gate still applies before declaring the batch done (verify-new-code) — but do not batch ten items to save one gate run.
