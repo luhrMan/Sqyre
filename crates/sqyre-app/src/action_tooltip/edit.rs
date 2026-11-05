@@ -14,8 +14,8 @@ use crate::tree_chrome;
 use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{
     combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
-    num_text_field, pair_labeled, searchable_combo, text_field, wrap_unit, wrapped_row,
-    SearchableComboOpts, W_TEXT, W_VAR,
+    num_or_var_field, pair_labeled, searchable_combo, text_field, wrap_unit, wrapped_row,
+    NumOrVarOpts, SearchableComboOpts, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
@@ -689,21 +689,32 @@ pub fn paint_edit_fields(
                         h::NAV_IN_ATLAS,
                         &mut data.inputs.atlas,
                     );
-                    num_text_field(
+                    let no_block = EntryValidation::default();
+                    num_or_var_field(
                         ui,
                         egui_phosphor::regular::ROWS,
                         "In row",
-                        h::NAV_IN_ROW,
                         &mut data.inputs.row,
-                        1..=i32::MAX,
+                        NumOrVarOpts {
+                            width: W_TEXT,
+                            range: Some(1.0..=i32::MAX as f64),
+                            theme: *theme,
+                            validation: &no_block,
+                            help: h::NAV_IN_ROW,
+                        },
                     );
-                    num_text_field(
+                    num_or_var_field(
                         ui,
                         egui_phosphor::regular::COLUMNS,
                         "In col",
-                        h::NAV_IN_COL,
                         &mut data.inputs.col,
-                        1..=i32::MAX,
+                        NumOrVarOpts {
+                            width: W_TEXT,
+                            range: Some(1.0..=i32::MAX as f64),
+                            theme: *theme,
+                            validation: &no_block,
+                            help: h::NAV_IN_COL,
+                        },
                     );
                     text_field(
                         ui,
@@ -1211,18 +1222,28 @@ pub(super) fn scalar_field(
     is_dark: bool,
     active_macro: Option<&Macro>,
 ) {
-    scalar_value_edit(
+    let mut text = value.as_display();
+    let before = text.clone();
+    let validation = validate_numeric_expression(&text, active_macro);
+    num_or_var_field(
         ui,
         icon,
         label,
-        help_text,
-        value,
-        known_vars,
-        is_dark,
-        active_macro,
-        validate_numeric_expression,
-        |v, text| *v = ScalarValue::parse_edit(&text),
+        &mut text,
+        NumOrVarOpts {
+            width: W_VAR,
+            range: None,
+            theme: VarTheme {
+                known_vars,
+                is_dark,
+            },
+            validation: &validation,
+            help: help_text,
+        },
     );
+    if text != before {
+        *value = ScalarValue::parse_edit(&text);
+    }
 }
 
 /// Shared scalar edit body: validated var-ref text field + commit on change.

@@ -458,7 +458,7 @@ fn take_var_ac_keys(ui: &mut egui::Ui, was_open: bool) -> (bool, bool, bool, boo
 /// infinite min size and ratchets parent windows forever. Use
 /// [`crate::widgets::visible_width`] (not `available_width`) so fill does not
 /// claim leftover room toward Window `max_size`.
-fn resolve_edit_width(ui: &egui::Ui, desired_width: f32, reserve_trailing: f32) -> f32 {
+pub(crate) fn resolve_edit_width(ui: &egui::Ui, desired_width: f32, reserve_trailing: f32) -> f32 {
     if desired_width.is_finite() {
         desired_width.max(0.0)
     } else {
@@ -466,7 +466,7 @@ fn resolve_edit_width(ui: &egui::Ui, desired_width: f32, reserve_trailing: f32) 
     }
 }
 
-fn validation_icon_reserve(ui: &egui::Ui, validation: &EntryValidation) -> f32 {
+pub(crate) fn validation_icon_reserve(ui: &egui::Ui, validation: &EntryValidation) -> f32 {
     if validation.error.is_empty() && validation.warning.is_empty() {
         0.0
     } else {
@@ -705,7 +705,7 @@ fn chip_or_edit(
     opts: ChipEdit<'_>,
     chip: impl FnOnce(&mut egui::Ui, &str) -> egui::Response,
     edit: impl FnOnce(&mut egui::Ui, egui::Id, &mut String) -> egui::Response,
-) {
+) -> egui::Response {
     let ChipEdit {
         target_width,
         show_overlay,
@@ -721,16 +721,16 @@ fn chip_or_edit(
                 .expand2(Vec2::new((w - resp.rect.width()).max(0.0), 2.0)),
             None => resp.rect,
         };
-        if crate::action_tooltip::help::tip(
+        let hit = crate::action_tooltip::help::tip(
             click_to_edit_hit(ui, rect, id.with("overlay_hit"), label, value),
             help,
-        )
-        .clicked()
-        {
+        );
+        if hit.clicked() {
             ui.memory_mut(|m| m.request_focus(id));
         }
+        hit
     } else {
-        crate::action_tooltip::help::tip(edit(ui, id, value), help);
+        crate::action_tooltip::help::tip(edit(ui, id, value), help)
     }
 }
 
@@ -751,7 +751,7 @@ pub fn var_name_text_edit(
 ) {
     crate::widgets::pair_labeled(ui, icon, label, |ui| {
         let width = resolve_edit_width(ui, desired_width, 0.0);
-        chip_or_edit(
+        let _resp = chip_or_edit(
             ui,
             "var_name_edit",
             label,
@@ -829,17 +829,17 @@ pub fn validated_var_ref_edit(
 ) {
     let VarFieldOpts { icon, .. } = opts;
     crate::widgets::pair_labeled(ui, icon, label, |ui| {
-        paint_validated_var_ref(ui, label, value, theme, opts);
+        let _resp = paint_validated_var_ref(ui, label, value, theme, opts);
     });
 }
 
-fn paint_validated_var_ref(
+pub(crate) fn paint_validated_var_ref(
     ui: &mut egui::Ui,
     label: &str,
     value: &mut String,
     theme: VarTheme<'_>,
     opts: VarFieldOpts<'_>,
-) {
+) -> egui::Response {
     let VarTheme {
         known_vars: known,
         is_dark,
@@ -851,7 +851,7 @@ fn paint_validated_var_ref(
         ..
     } = opts;
     let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
-    chip_or_edit(
+    let resp = chip_or_edit(
         ui,
         "validated_var_ref",
         label,
@@ -870,6 +870,7 @@ fn paint_validated_var_ref(
         |ui, id, value| var_ref_text_edit(ui, id, value, known, width, None),
     );
     paint_entry_validation_icon(ui, validation);
+    resp
 }
 
 /// Multiline var-ref field with live validation icon.

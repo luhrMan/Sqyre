@@ -211,87 +211,62 @@ impl DataEditor {
                 );
             });
             crate::widgets::advanced_section(ui, "de_mask_geometry", |ui| {
-                let cx = validate_numeric_expression(&self.form_center_x, active_macro);
-                var_pills::validated_var_ref_edit(
+                let numeric =
+                    |ui: &mut egui::Ui, icon: &str, label: &str, value: &mut String, help: &str| {
+                        let validation = validate_numeric_expression(value, active_macro);
+                        crate::widgets::num_or_var_field(
+                            ui,
+                            icon,
+                            label,
+                            value,
+                            crate::widgets::NumOrVarOpts {
+                                width: f32::INFINITY,
+                                range: None,
+                                theme: VarTheme {
+                                    known_vars: known,
+                                    is_dark,
+                                },
+                                validation: &validation,
+                                help,
+                            },
+                        );
+                    };
+                numeric(
                     ui,
+                    egui_phosphor::regular::CROSSHAIR,
                     "Center X %",
                     &mut self.form_center_x,
-                    VarTheme {
-                        known_vars: known,
-                        is_dark,
-                    },
-                    VarFieldOpts {
-                        desired_width: f32::INFINITY,
-                        validation: &cx,
-                        icon: egui_phosphor::regular::CROSSHAIR,
-                        help: "Horizontal center of the shape (0–100%).",
-                    },
+                    "Horizontal center of the shape (0–100%).",
                 );
-                let cy = validate_numeric_expression(&self.form_center_y, active_macro);
-                var_pills::validated_var_ref_edit(
+                numeric(
                     ui,
+                    egui_phosphor::regular::CROSSHAIR,
                     "Center Y %",
                     &mut self.form_center_y,
-                    VarTheme {
-                        known_vars: known,
-                        is_dark,
-                    },
-                    VarFieldOpts {
-                        desired_width: f32::INFINITY,
-                        validation: &cy,
-                        icon: egui_phosphor::regular::CROSSHAIR,
-                        help: "Vertical center of the shape (0–100%).",
-                    },
+                    "Vertical center of the shape (0–100%).",
                 );
                 if self.form_shape == "circle" {
-                    let radius = validate_numeric_expression(&self.form_radius, active_macro);
-                    var_pills::validated_var_ref_edit(
+                    numeric(
                         ui,
+                        egui_phosphor::regular::CIRCLE,
                         "Radius",
                         &mut self.form_radius,
-                        VarTheme {
-                            known_vars: known,
-                            is_dark,
-                        },
-                        VarFieldOpts {
-                            desired_width: f32::INFINITY,
-                            validation: &radius,
-                            icon: egui_phosphor::regular::CIRCLE,
-                            help: "Circle radius as a percent of the search area.",
-                        },
+                        "Circle radius as a percent of the search area.",
                     );
                 } else {
-                    let base = validate_numeric_expression(&self.form_base, active_macro);
-                    var_pills::validated_var_ref_edit(
+                    numeric(
                         ui,
+                        egui_phosphor::regular::ARROWS_LEFT_RIGHT,
                         "Base",
                         &mut self.form_base,
-                        VarTheme {
-                            known_vars: known,
-                            is_dark,
-                        },
-                        VarFieldOpts {
-                            desired_width: f32::INFINITY,
-                            validation: &base,
-                            icon: egui_phosphor::regular::ARROWS_LEFT_RIGHT,
-                            help: "Rectangle width as a percent of the search area.",
-                        },
+                        "Rectangle width as a percent of the search area.",
                     );
-                    let height = validate_numeric_expression(&self.form_height, active_macro);
-                    var_pills::validated_var_ref_edit(
+                    numeric(
                         ui,
+                        egui_phosphor::regular::ARROWS_DOWN_UP,
                         "Height",
                         &mut self.form_height,
-                        VarTheme {
-                            known_vars: known,
-                            is_dark,
-                        },
-                        VarFieldOpts {
-                            desired_width: f32::INFINITY,
-                            validation: &height,
-                            icon: egui_phosphor::regular::ARROWS_DOWN_UP,
-                            help: "Rectangle height as a percent of the search area.",
-                        },
+                        "Rectangle height as a percent of the search area.",
                     );
                 }
             });

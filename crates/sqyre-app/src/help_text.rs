@@ -8,6 +8,17 @@
 //!
 //! Convention: `ht::CONST`, one short sentence per string, grouped by surface.
 
+// --- Number or variable fields ---
+
+/// Appended to a number-or-variable field's hover help.
+pub const NUM_OR_VAR_SWITCH: &str = "Right-click to switch between a number and a variable.";
+/// Menu entry: show the numeric stepper.
+pub const NUM_OR_VAR_NUMBER: &str = "Edit as a number.";
+/// Menu entry when the current text is not a plain number.
+pub const NUM_OR_VAR_NUMBER_REPLACE: &str = "Replace this with a number.";
+/// Menu entry: show the variable text field.
+pub const NUM_OR_VAR_VARIABLE: &str = "Edit as a variable or expression.";
+
 // --- Action edit tooltip ---
 
 /// Close button on the pinned action editor.

@@ -129,8 +129,8 @@ pub(crate) enum CardinalEdge {
 }
 
 /// Coord chip overlaid on a preview edge: sizes to text, Sqyre yellow border,
-/// and when the value is a pure integer: drag-to-adjust + a stacked S-stroke
-/// stepper column on the right, same as [`crate::widgets::num_entry`].
+/// and in number mode a pure integer drags and steps like [`crate::widgets::num_entry`].
+/// Right-click switches to the variable text entry and stays there.
 #[expect(
     clippy::too_many_arguments,
     reason = "chip overlays one preview edge with edit + validation"
@@ -154,8 +154,10 @@ pub(crate) fn paint_preview_coord_chip(
     const EDGE_PAD: f32 = 6.0;
 
     let id = ui.id().with(("preview_coord", placeholder));
+    let mode_id = id.with("num_or_var_mode");
+    let use_var = crate::widgets::variable_entry(ui, mode_id, value);
     let focused = ui.memory(|m| m.has_focus(id));
-    let pure = crate::widgets::num_entry::pure_i32(value);
+    let pure = crate::widgets::num_entry::pure_i32(value).filter(|_| !use_var);
     let has_steppers = pure.is_some();
 
     let font = egui::TextStyle::Body.resolve(ui.style());
@@ -243,6 +245,7 @@ pub(crate) fn paint_preview_coord_chip(
 
     let show_overlay = !focused && !value.is_empty() && sqyre_varref::contains(value.as_str());
     let inner = edit_rect.shrink(3.0);
+    let focus_editor = crate::widgets::take_var_focus(ui, mode_id);
 
     let resp = if show_overlay {
         let plain_fg = theme::preview_plain_fg();
@@ -259,6 +262,9 @@ pub(crate) fn paint_preview_coord_chip(
                 format!("{placeholder} — click to edit"),
             )
         });
+        if focus_editor {
+            ui.memory_mut(|m| m.request_focus(id));
+        }
         resp
     } else if let Some(n) = pure.filter(|_| !focused) {
         // Unfocused pure number: drag to adjust, click to edit.
@@ -323,16 +329,24 @@ pub(crate) fn paint_preview_coord_chip(
             known,
             keys,
         );
+        if focus_editor {
+            output.response.request_focus();
+        }
         output.response.response
     };
 
     if show_overlay && resp.clicked() {
         ui.memory_mut(|m| m.request_focus(id));
     }
-    if let Some(tip) = var_pills::entry_validation_tip(validation) {
-        resp.on_hover_text(tip);
-    } else if !help.is_empty() {
-        resp.on_hover_text(help);
+    let base = var_pills::entry_validation_tip(validation).unwrap_or(help);
+    let resp = resp.on_hover_text(crate::widgets::num_or_var_hover(base));
+    if let Some(choice) =
+        crate::widgets::rect_context_menu(ui, mode_id.with("menu"), group, Some(&resp), |ui| {
+            crate::widgets::num_or_var_menu(ui, use_var, crate::widgets::non_literal(value))
+        })
+        .flatten()
+    {
+        crate::widgets::apply_num_or_var_choice(ui, mode_id, value, None, choice);
     }
 }
 
@@ -1113,5 +1127,74 @@ mod tests {
         h.get_by_label("Decrement").click();
         h.run_steps(2);
         assert_eq!(h.state().as_str(), "959");
+    }
+
+    /// Right-click Variable keeps the text entry after the chip loses focus,
+    /// instead of falling back to the integer drag.
+    #[test]
+    fn chip_right_click_sticks_on_variable_text() {
+        use egui_kittest::kittest::Queryable;
+
+        let preview = egui::Rect::from_min_size(egui::pos2(20.0, 20.0), egui::vec2(160.0, 60.0));
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([240.0, 160.0])
+            .build_ui_state(
+                move |ui, v: &mut String| {
+                    paint_preview_coord_chip(
+                        ui,
+                        preview,
+                        CardinalEdge::Top,
+                        "left",
+                        v,
+                        &KnownVariableNames::default(),
+                        true,
+                        &EntryValidation::default(),
+                        "",
+                    );
+                },
+                "960".to_owned(),
+            );
+        h.run_steps(2);
+        let at = h
+            .get_by_label("left — drag to adjust, click to edit")
+            .rect()
+            .center();
+        h.hover_at(at);
+        h.run_steps(1);
+        for pressed in [true, false] {
+            h.input_mut().events.push(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Secondary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.run_steps(1);
+        }
+        h.run_steps(2);
+        h.get_by_label("Variable").click();
+        h.run_steps(2);
+        assert_eq!(h.state().as_str(), "960");
+        assert!(h.query_all_by_label("Increment").next().is_none());
+        h.hover_at(egui::pos2(200.0, 140.0));
+        h.run_steps(1);
+        for pressed in [true, false] {
+            h.input_mut().events.push(egui::Event::PointerButton {
+                pos: egui::pos2(200.0, 140.0),
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            });
+            h.run_steps(1);
+        }
+        h.run_steps(2);
+        assert_eq!(h.state().as_str(), "960");
+        assert!(
+            h.query_all_by_label("Increment").next().is_none(),
+            "variable mode sticks after the chip loses focus"
+        );
+        assert!(h
+            .query_all_by_role(egui::accesskit::Role::TextInput)
+            .next()
+            .is_some());
     }
 }

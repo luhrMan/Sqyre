@@ -26,7 +26,6 @@ use crate::paint_ctx::CatalogPaint;
 use crate::paint_ctx::VarTheme;
 use crate::pickers;
 use crate::preview_tooltip::PreviewKind;
-use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{match_settings, searchable_combo, SearchableComboOpts};
 use eframe::egui;
 use sqyre_domain::{

@@ -111,28 +111,6 @@ pub struct NumFieldOpts {
 }
 
 /// Labeled integer-capable text field (see [`num_text_edit`]).
-pub fn num_text_field(
-    ui: &mut egui::Ui,
-    icon: &str,
-    label: &str,
-    help_text: &str,
-    value: &mut String,
-    range: RangeInclusive<i32>,
-) {
-    num_text_field_opts(
-        ui,
-        icon,
-        label,
-        help_text,
-        value,
-        NumFieldOpts {
-            width: W_TEXT,
-            range,
-        },
-    );
-}
-
-/// [`num_text_field`] with explicit options.
 pub fn num_text_field_opts(
     ui: &mut egui::Ui,
     icon: &str,
