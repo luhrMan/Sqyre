@@ -55,6 +55,8 @@ struct CacheEntry {
 
 struct FailureEntry {
     error: String,
+    /// [`CaptureError::NoSavedScreen`]: the preview offers an app dropdown instead.
+    no_saved_screen: bool,
     expires: Instant,
     coords: PreviewCoords,
 }
@@ -91,6 +93,9 @@ pub struct PreviewTooltipCache {
     desktop_outlines_enabled: bool,
     #[cfg(target_os = "android")]
     backdrop_generation: u64,
+    /// App dropdown shown when Android has no saved screen yet.
+    #[cfg(target_os = "android")]
+    shot: PreviewShot,
 }
 
 impl PreviewTooltipCache {
@@ -283,10 +288,15 @@ impl PreviewTooltipCache {
         interactive: bool,
     ) {
         let macro_ = Macro::new("", 0, vec![]);
+        let mut choose_app = false;
         let preview = match ref_preview_spec(catalog, &macro_, coord_ref, kind) {
             Ok((key, caption, coords)) => {
                 self.request_desktop_outline_embedded(coords);
-                self.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM)
+                let preview =
+                    self.texture_for(ui.ctx(), &key, &caption, coords, force, TOOLTIP_MAX_DIM);
+                choose_app =
+                    interactive && preview.is_err() && self.failure_is_no_saved_screen(&key);
+                preview
             }
             Err(err) => Err(err),
         };
@@ -299,6 +309,7 @@ impl PreviewTooltipCache {
                 &cap,
                 matches!(kind, PreviewKind::SearchArea | PreviewKind::Collection),
             ),
+            Err(err) if choose_app => self.paint_no_saved_screen_inline(ui, &err),
             Err(err) => {
                 if interactive {
                     crate::widgets::error_icon(ui, err.as_str());
@@ -378,6 +389,9 @@ impl PreviewTooltipCache {
         );
         match preview {
             Ok((tex, _)) => paint_preview_panel_image(ui, &tex, view),
+            Err(err) if self.failure_is_no_saved_screen(&key) => {
+                self.paint_no_saved_screen_panel(ui, &err, view)
+            }
             Err(err) => paint_preview_panel_placeholder(ui, &err, view),
         }
     }
@@ -434,6 +448,10 @@ impl PreviewTooltipCache {
                 let rect = paint_preview_panel_image(ui, &tex, view);
                 (rect, egui::vec2(tw as f32, th as f32))
             }
+            Err(err) if self.failure_is_no_saved_screen(&key) => (
+                self.paint_no_saved_screen_panel(ui, &err, view),
+                egui::Vec2::ZERO,
+            ),
             Err(err) => (
                 paint_preview_panel_placeholder(ui, &err, view),
                 egui::Vec2::ZERO,
@@ -450,6 +468,8 @@ impl PreviewTooltipCache {
         force: bool,
         max_dim: u32,
     ) -> Result<(TextureHandle, String), String> {
+        #[cfg(target_os = "android")]
+        self.poll_app_shot(ctx);
         #[cfg(target_os = "android")]
         self.drop_stale_backdrop_previews();
         let keep_region = max_dim >= PANEL_MAX_DIM
@@ -493,6 +513,7 @@ impl PreviewTooltipCache {
                 }
                 Ok(Err(e)) => {
                     let pending = self.pending.remove(key);
+                    let no_saved = matches!(e, CaptureError::NoSavedScreen);
                     let ttl = if e.is_retryable() {
                         RETRY_FAIL_TTL
                     } else {
@@ -500,8 +521,8 @@ impl PreviewTooltipCache {
                     };
                     let e = e.to_string();
                     let fail_coords = pending.map(|p| p.coords).unwrap_or(coords);
-                    self.remember_failure(key, e.clone(), now, fail_coords, ttl);
-                    return Err(e.to_string());
+                    self.remember_failure(key, e.clone(), no_saved, now, fail_coords, ttl);
+                    return Err(e);
                 }
                 Err(TryRecvError::Empty) => {
                     ctx.request_repaint();
@@ -511,8 +532,8 @@ impl PreviewTooltipCache {
                     let pending = self.pending.remove(key);
                     let e = "capture failed".to_string();
                     let fail_coords = pending.map(|p| p.coords).unwrap_or(coords);
-                    self.remember_failure(key, e.clone(), now, fail_coords, FAIL_CACHE_TTL);
-                    return Err(e.to_string());
+                    self.remember_failure(key, e.clone(), false, now, fail_coords, FAIL_CACHE_TTL);
+                    return Err(e);
                 }
             }
         }
@@ -532,13 +553,14 @@ impl PreviewTooltipCache {
                     self.finish_texture(ctx, key, caption, coords, captured, keep_region)
                 }
                 Err(e) => {
+                    let no_saved = matches!(e, CaptureError::NoSavedScreen);
                     let ttl = if e.is_retryable() {
                         RETRY_FAIL_TTL
                     } else {
                         FAIL_CACHE_TTL
                     };
                     let e = e.to_string();
-                    self.remember_failure(key, e.clone(), Instant::now(), coords, ttl);
+                    self.remember_failure(key, e.clone(), no_saved, Instant::now(), coords, ttl);
                     Err(e)
                 }
             }
@@ -570,10 +592,17 @@ impl PreviewTooltipCache {
         }
     }
 
+    fn failure_is_no_saved_screen(&self, key: &str) -> bool {
+        self.failures
+            .get(key)
+            .is_some_and(|fail| fail.no_saved_screen)
+    }
+
     fn remember_failure(
         &mut self,
         key: &str,
         error: String,
+        no_saved_screen: bool,
         now: Instant,
         coords: PreviewCoords,
         ttl: Duration,
@@ -582,6 +611,7 @@ impl PreviewTooltipCache {
             key.to_string(),
             FailureEntry {
                 error,
+                no_saved_screen,
                 expires: now + ttl,
                 coords,
             },
@@ -675,6 +705,128 @@ impl PreviewTooltipCache {
             self.order.push(k);
         }
     }
+
+    #[cfg(target_os = "android")]
+    fn poll_app_shot(&mut self, ctx: &egui::Context) {
+        self.shot.list.poll(ctx);
+        let Some(rx) = self.shot.capture.as_ref() else {
+            return;
+        };
+        match rx.try_recv() {
+            Ok(Ok(_)) => {
+                self.shot.capture = None;
+                self.shot.status.clear();
+            }
+            Ok(Err(err)) => {
+                self.shot.status = err.to_string();
+                self.shot.capture = None;
+            }
+            Err(TryRecvError::Empty) => ctx.request_repaint(),
+            Err(TryRecvError::Disconnected) => {
+                self.shot.status = "Taking the picture failed.".into();
+                self.shot.capture = None;
+            }
+        }
+    }
+
+    fn paint_no_saved_screen_inline(&mut self, ui: &mut egui::Ui, err: &str) {
+        #[cfg(target_os = "android")]
+        {
+            let _ = err;
+            self.paint_app_shot_inline(ui);
+        }
+        #[cfg(not(target_os = "android"))]
+        crate::widgets::error_icon(ui, err);
+    }
+
+    fn paint_no_saved_screen_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        err: &str,
+        view: &mut ImageViewTransform,
+    ) -> egui::Rect {
+        #[cfg(target_os = "android")]
+        {
+            let _ = err;
+            self.paint_app_shot_panel(ui, view)
+        }
+        #[cfg(not(target_os = "android"))]
+        paint_preview_panel_placeholder(ui, err, view)
+    }
+
+    #[cfg(target_os = "android")]
+    fn paint_app_shot_inline(&mut self, ui: &mut egui::Ui) {
+        self.prepare_app_shot(ui.ctx());
+        self.paint_app_shot_status(ui);
+        self.start_app_shot_if_chosen(ui, "inline_app_shot", None);
+    }
+
+    #[cfg(target_os = "android")]
+    fn paint_app_shot_panel(
+        &mut self,
+        ui: &mut egui::Ui,
+        _view: &mut ImageViewTransform,
+    ) -> egui::Rect {
+        let desired = panel_viewport_size(ui);
+        let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
+        ui.painter()
+            .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
+        let body = rect.shrink(12.0);
+        let combo_w = (body.width() - 8.0).clamp(120.0, 360.0);
+        ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
+            ui.set_max_width(combo_w);
+            ui.add_space((body.height() * 0.3).min(72.0));
+            if self.shot.status.is_empty() && self.shot.capture.is_none() {
+                ui.label(crate::app_shot::CHOOSE_HEADING);
+            } else {
+                self.paint_app_shot_status(ui);
+            }
+            self.prepare_app_shot(ui.ctx());
+            self.start_app_shot_if_chosen(ui, "panel_app_shot", Some(combo_w));
+        });
+        crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
+        rect
+    }
+
+    #[cfg(target_os = "android")]
+    fn prepare_app_shot(&mut self, ctx: &egui::Context) {
+        self.shot.list.ensure_loading(ctx);
+        self.shot.list.poll(ctx);
+    }
+
+    #[cfg(target_os = "android")]
+    fn paint_app_shot_status(&self, ui: &mut egui::Ui) {
+        if self.shot.capture.is_some() {
+            ui.label(self.shot.status.as_str());
+        } else if !self.shot.status.is_empty() {
+            ui.colored_label(crate::theme::error_fg(), self.shot.status.as_str());
+        }
+    }
+
+    #[cfg(target_os = "android")]
+    fn start_app_shot_if_chosen(&mut self, ui: &mut egui::Ui, id_salt: &str, width: Option<f32>) {
+        let Some(app) = self.shot.list.show(ui, id_salt, width) else {
+            return;
+        };
+        if self.shot.capture.is_some() {
+            return;
+        }
+        self.shot.status = crate::app_shot::taking_picture_of(app.shown());
+        self.shot.capture = Some(crate::screen_pick::spawn_app_shot(
+            ui.ctx(),
+            app.package,
+            app.label,
+        ));
+    }
+}
+
+/// Android: app dropdown and the in-flight screenshot it starts.
+#[cfg(target_os = "android")]
+#[derive(Default)]
+struct PreviewShot {
+    list: crate::app_shot::AppList,
+    capture: Option<crate::screen_pick::ShotRx>,
+    status: String,
 }
 
 #[derive(Clone, Copy)]
@@ -1962,6 +2114,7 @@ mod tests {
             "panel:pt:10:20".into(),
             FailureEntry {
                 error: "a".into(),
+                no_saved_screen: false,
                 expires: now + FAIL_CACHE_TTL,
                 coords,
             },
@@ -1970,6 +2123,7 @@ mod tests {
             "ref:pt:Game~Spot:10:20".into(),
             FailureEntry {
                 error: "b".into(),
+                no_saved_screen: false,
                 expires: now + FAIL_CACHE_TTL,
                 coords,
             },
@@ -1978,6 +2132,7 @@ mod tests {
             "panel:pt:99:99".into(),
             FailureEntry {
                 error: "c".into(),
+                no_saved_screen: false,
                 expires: now + FAIL_CACHE_TTL,
                 coords: other,
             },

@@ -7,6 +7,8 @@ mod app_backends;
 mod app_docs;
 mod app_macro_ops;
 mod app_run;
+#[cfg(any(target_os = "android", test))]
+mod app_shot;
 mod assets;
 mod catalog;
 mod chord_record;

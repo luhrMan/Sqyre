@@ -1,10 +1,12 @@
 //! Android stand-in for the desktop point / search-area grab.
 //!
 //! Sqyre fills the phone and never sees touches meant for other apps, so recording
-//! shows a still of the app used before Sqyre to place the point or area on. The
-//! still is the projection backdrop (last frame seen while Sqyre was hidden); Retake
-//! sends Sqyre to the back, captures the app that comes to the front, and returns.
+//! shows a still of another app to place the point or area on. The still is the
+//! projection backdrop (last frame seen while Sqyre was hidden). When none is saved,
+//! the user picks an app to screenshot. Retake sends Sqyre to the back and captures
+//! whatever comes to the front.
 
+use crate::app_shot::{shot_follow_up, taking_picture_of, AppList, ShotFollowUp};
 use crate::help_text as ht;
 use crate::theme;
 use eframe::egui::{self, Color32, ColorImage, Order, Pos2, Rect, TextureHandle, TextureOptions};
@@ -74,7 +76,15 @@ impl Selection {
 enum State {
     #[default]
     Idle,
-    Capturing(Receiver<Result<Frame, String>>),
+    /// No saved screen: the user picks which app to screenshot.
+    Choose,
+    Capturing {
+        rx: Receiver<Result<Frame, CaptureFail>>,
+        /// [`taking_picture_of`] subject: an app name, or "the previous app".
+        of: String,
+        /// Started from the app dropdown, so a miss returns there.
+        from_choice: bool,
+    },
     Picking {
         texture: TextureHandle,
         /// Frame size in display pixels.
@@ -84,16 +94,43 @@ enum State {
     Failed(String),
 }
 
+/// Why a still could not be taken.
+pub(crate) enum CaptureFail {
+    /// `showPrevious` found nothing in front of Sqyre.
+    NoPreviousApp,
+    Message(String),
+}
+
+impl std::fmt::Display for CaptureFail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoPreviousApp => f.write_str("The previous app did not come to the front."),
+            Self::Message(message) => f.write_str(message),
+        }
+    }
+}
+
+pub(crate) type ShotRx = Receiver<Result<Frame, CaptureFail>>;
+
+enum CaptureJob {
+    Previous,
+    App { package: String, label: String },
+}
+
 enum Choice {
     None,
     Save,
     Cancel,
     Retake,
+    Shot { package: String, label: String },
 }
 
 #[derive(Default)]
 pub struct ScreenPick {
     state: State,
+    apps: AppList,
+    /// Launch failure shown above the app dropdown.
+    notice: String,
 }
 
 impl ScreenPick {
@@ -105,37 +142,88 @@ impl ScreenPick {
             Mode::Area
         } else {
             self.state = State::Idle;
+            self.apps = AppList::default();
+            self.notice.clear();
             return;
         };
         if matches!(self.state, State::Idle) {
             self.state = match frames().backdrop() {
                 Some((_, frame)) => picking(ctx, &frame, mode),
-                None => retake(ctx),
+                None => {
+                    self.notice.clear();
+                    State::Choose
+                }
             };
         }
-        let choice = match &mut self.state {
-            State::Idle => Choice::None,
-            State::Capturing(rx) => match rx.try_recv() {
-                Ok(Ok(frame)) => {
-                    self.state = picking(ctx, &frame, mode);
-                    Choice::None
+        let choice = if matches!(self.state, State::Choose) {
+            self.apps.ensure_loading(ctx);
+            self.apps.poll(ctx);
+            paint_choose(ctx, &mut self.apps, &self.notice)
+        } else {
+            self.paint_active(ctx, mode)
+        };
+        match choice {
+            Choice::None => {}
+            Choice::Save => {
+                if let State::Picking { selection, .. } = &self.state {
+                    save(screen_click, selection);
                 }
-                Ok(Err(message)) => {
-                    self.state = State::Failed(message);
-                    Choice::None
+                self.state = State::Idle;
+            }
+            Choice::Cancel => {
+                screen_click.on_escape();
+                self.state = State::Idle;
+            }
+            Choice::Retake => {
+                self.notice.clear();
+                self.state = spawn_state(ctx, CaptureJob::Previous, false);
+            }
+            Choice::Shot { package, label } => {
+                self.notice.clear();
+                self.state = spawn_state(ctx, CaptureJob::App { package, label }, true);
+            }
+        }
+    }
+
+    fn paint_active(&mut self, ctx: &egui::Context, mode: Mode) -> Choice {
+        match &mut self.state {
+            State::Idle | State::Choose => Choice::None,
+            State::Capturing {
+                rx,
+                of,
+                from_choice,
+            } => {
+                let of = of.clone();
+                let from_choice = *from_choice;
+                match rx.try_recv() {
+                    Ok(Ok(frame)) => {
+                        self.state = picking(ctx, &frame, mode);
+                        Choice::None
+                    }
+                    Ok(Err(fail)) => {
+                        let (state, notice) = state_after_fail(fail, from_choice);
+                        self.notice = notice;
+                        self.state = state;
+                        Choice::None
+                    }
+                    Err(TryRecvError::Disconnected) => {
+                        let (state, notice) = state_after_fail(
+                            CaptureFail::Message("Taking the picture failed.".into()),
+                            from_choice,
+                        );
+                        self.notice = notice;
+                        self.state = state;
+                        Choice::None
+                    }
+                    Err(TryRecvError::Empty) => {
+                        ctx.request_repaint_after(POLL);
+                        paint_bar(ctx, |ui| {
+                            ui.label(taking_picture_of(&of));
+                            cancel_row(ui)
+                        })
+                    }
                 }
-                Err(TryRecvError::Disconnected) => {
-                    self.state = State::Failed("Taking the picture failed.".into());
-                    Choice::None
-                }
-                Err(TryRecvError::Empty) => {
-                    ctx.request_repaint_after(POLL);
-                    paint_bar(ctx, |ui| {
-                        ui.label("Taking a picture of the previous app…");
-                        cancel_row(ui)
-                    })
-                }
-            },
+            }
             State::Picking {
                 texture,
                 size,
@@ -152,21 +240,19 @@ impl ScreenPick {
                     choice
                 })
             }
-        };
-        match choice {
-            Choice::None => {}
-            Choice::Save => {
-                if let State::Picking { selection, .. } = &self.state {
-                    save(screen_click, selection);
-                }
-                self.state = State::Idle;
-            }
-            Choice::Cancel => {
-                screen_click.on_escape();
-                self.state = State::Idle;
-            }
-            Choice::Retake => self.state = retake(ctx),
         }
+    }
+}
+
+fn state_after_fail(fail: CaptureFail, from_choice: bool) -> (State, String) {
+    let (no_previous, message) = match fail {
+        CaptureFail::NoPreviousApp => (true, String::new()),
+        CaptureFail::Message(message) => (false, message),
+    };
+    match shot_follow_up(no_previous, from_choice, message) {
+        ShotFollowUp::Choose => (State::Choose, String::new()),
+        ShotFollowUp::ChooseWithNotice(message) => (State::Choose, message),
+        ShotFollowUp::ShowError(message) => (State::Failed(message), String::new()),
     }
 }
 
@@ -203,33 +289,97 @@ fn picking(ctx: &egui::Context, frame: &Frame, mode: Mode) -> State {
     }
 }
 
-/// Take a new still of the previous app on a worker thread.
-fn retake(ctx: &egui::Context) -> State {
+/// Screenshot `package` on a worker thread. The backdrop updates while Sqyre is covered.
+pub(crate) fn spawn_app_shot(ctx: &egui::Context, package: String, label: String) -> ShotRx {
+    let (_, rx) = spawn_capture(ctx, CaptureJob::App { package, label });
+    rx
+}
+
+fn spawn_state(ctx: &egui::Context, job: CaptureJob, from_choice: bool) -> State {
+    let (of, rx) = spawn_capture(ctx, job);
+    State::Capturing {
+        rx,
+        of,
+        from_choice,
+    }
+}
+
+fn spawn_capture(ctx: &egui::Context, job: CaptureJob) -> (String, ShotRx) {
+    let of = match &job {
+        CaptureJob::Previous => "the previous app".to_string(),
+        CaptureJob::App { package, label } => {
+            if label.is_empty() {
+                package.clone()
+            } else {
+                label.clone()
+            }
+        }
+    };
     let (tx, rx) = mpsc::channel();
     let ctx = ctx.clone();
     thread::spawn(move || {
-        let result = capture_previous_app();
+        let result = match job {
+            CaptureJob::Previous => capture_previous_app(),
+            CaptureJob::App { package, label } => capture_chosen_app(&package, &label),
+        };
         // A failed send means the recording was cancelled meanwhile.
         let _ = tx.send(result);
         ctx.request_repaint();
     });
-    State::Capturing(rx)
+    (of, rx)
 }
 
 /// Worker thread: send Sqyre to the back, take the app now in front, then return.
-fn capture_previous_app() -> Result<Frame, String> {
-    ensure_projection()?;
-    bridge::show_previous().map_err(|e| format!("Could not switch to the previous app: {e}."))?;
+fn capture_previous_app() -> Result<Frame, CaptureFail> {
+    ensure_projection().map_err(CaptureFail::Message)?;
+    bridge::show_previous()
+        .map_err(|e| CaptureFail::Message(format!("Could not switch to the previous app: {e}.")))?;
     if !wait_until(SWITCH_WAIT, || !frames().shell_visible()) {
-        return Err("The previous app did not come to the front.".into());
+        return Err(CaptureFail::NoPreviousApp);
     }
+    finish_still()
+}
+
+/// Worker thread: open `package`, take its screen, then return to Sqyre.
+fn capture_chosen_app(package: &str, label: &str) -> Result<Frame, CaptureFail> {
+    ensure_projection().map_err(CaptureFail::Message)?;
+    let shown = if label.is_empty() { package } else { label };
+    bridge::launch(package, label)
+        .map_err(|e| CaptureFail::Message(format!("Could not open {shown}: {e}.")))?;
+    if !wait_until(SWITCH_WAIT, || !frames().shell_visible()) {
+        return Err(CaptureFail::Message(format!(
+            "{shown} did not come to the front."
+        )));
+    }
+    finish_still()
+}
+
+fn finish_still() -> Result<Frame, CaptureFail> {
     thread::sleep(APP_SETTLE);
-    let frame = settled_frame();
+    let frame = settled_frame().map_err(CaptureFail::Message)?;
     if let Err(e) = bridge::show_shell() {
         // The still is ready either way; switching back to Sqyre by hand shows it.
         crate::log::warn(format_args!("could not bring Sqyre back: {e}"));
     }
-    frame
+    Ok(frame)
+}
+
+fn paint_choose(ctx: &egui::Context, apps: &mut AppList, notice: &str) -> Choice {
+    paint_bar(ctx, |ui| {
+        ui.label(egui::RichText::new(crate::app_shot::CHOOSE_HEADING).strong());
+        if !notice.is_empty() {
+            ui.colored_label(theme::error_fg(), notice);
+        }
+        let shot = apps.show(ui, "screen_pick_app", Some(ui.available_width()));
+        let mut choice = cancel_row(ui);
+        if let Some(app) = shot {
+            choice = Choice::Shot {
+                package: app.package,
+                label: app.label,
+            };
+        }
+        choice
+    })
 }
 
 /// Ask for screen recording when it is not running and wait for the answer.

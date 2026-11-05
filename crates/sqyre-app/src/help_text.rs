@@ -117,6 +117,9 @@ pub const PICK_SELECT_ALL: &str =
 /// Screen-pick retry using the previous app.
 #[cfg(target_os = "android")]
 pub const PICK_RETAKE_APP: &str = "Switch to the previous app and take a new picture of it";
+/// App dropdown when no previous screen has been saved.
+#[cfg(any(target_os = "android", test))]
+pub const PICK_CHOOSE_APP: &str = "Choose which app to take a screenshot of";
 
 // --- Overlay panel ---
 
