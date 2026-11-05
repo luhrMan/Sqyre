@@ -557,6 +557,7 @@ impl AddActionPicker {
                 Some("New actions of this type start with these values"),
                 err_msg.as_deref(),
                 save_enabled,
+                false,
             ) {
                 SaveCancel::Cancel => cancel = true,
                 SaveCancel::Save => save = true,

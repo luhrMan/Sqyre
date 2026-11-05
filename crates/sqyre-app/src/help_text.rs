@@ -8,6 +8,11 @@
 //!
 //! Convention: `ht::CONST`, one short sentence per string, grouped by surface.
 
+// --- Action edit tooltip ---
+
+/// Close button on the pinned action editor.
+pub const EDIT_TIP_CLOSE: &str = "Close the editor without saving";
+
 // --- Action logs ---
 
 /// Copy button in the logs header.

@@ -491,6 +491,46 @@ fn edit_window_user_resized(ctx: &egui::Context, area_id: egui::Id) -> bool {
     dragged(area_id.with("resize").with("__resize_corner"))
 }
 
+/// Primary click outside the edit window, once it has already been on screen.
+///
+/// `blocked` skips the check while a record modal or screen click owns the
+/// pointer. Layers above the window (combo menus, suggestion lists, pickers)
+/// and sublayers of the window itself are not outside.
+fn edit_tip_clicked_outside(ctx: &egui::Context, area_id: egui::Id, blocked: bool) -> bool {
+    if blocked {
+        return false;
+    }
+    let layer = egui::LayerId::new(Order::Middle, area_id);
+    let was_open = ctx.memory(|m| m.areas().visible_last_frame(&layer));
+    if !was_open {
+        return false;
+    }
+    let Some(pos) = ctx.input(|i| {
+        if i.pointer.button_clicked(egui::PointerButton::Primary) {
+            i.pointer.interact_pos()
+        } else {
+            None
+        }
+    }) else {
+        return false;
+    };
+    if ctx
+        .memory(|m| m.area_rect(area_id))
+        .is_some_and(|rect| rect.contains(pos))
+    {
+        return false;
+    }
+    if let Some(hit) = ctx.layer_id_at(pos) {
+        if hit.order > Order::Middle {
+            return false;
+        }
+        if hit == layer || ctx.memory(|m| m.areas().parent_layer(hit) == Some(layer)) {
+            return false;
+        }
+    }
+    true
+}
+
 /// Vertical popup chrome around the view tip body (inner margin + stroke).
 const VIEW_TIP_CHROME_H: f32 = 20.0;
 
@@ -818,7 +858,7 @@ fn show_edit_window(
                 TooltipState::Edit(edit) => (edit.error.as_deref(), edit.save_enabled()),
                 _ => (None, false),
             };
-            match paint_action_edit_header(ui, label, pastel, None, err, save_enabled) {
+            match paint_action_edit_header(ui, label, pastel, None, err, save_enabled, true) {
                 SaveCancel::Cancel => cancel = true,
                 SaveCancel::Save => save = true,
                 SaveCancel::None => {}
@@ -922,6 +962,18 @@ fn show_edit_window(
         if let TooltipState::Edit(edit) = state {
             edit.auto_fit = false;
         }
+    }
+
+    // Click outside the window cancels, same as the Close button and Escape.
+    // The click that opened the editor is still in this frame's input, and the
+    // window was not visible last frame, so that click does not dismiss it.
+    // Clicks on a popup, menu, or picker (layers above the window) stay with
+    // that surface. Record modals and an armed screen click own the pointer.
+    let record_busy = bridges.key_record.is_open()
+        || bridges.hotkey_record.is_open()
+        || bridges.screen_click.is_armed();
+    if !cancel && edit_tip_clicked_outside(ctx, area_id, record_busy) {
+        cancel = true;
     }
 
     if !open || cancel {
@@ -1378,5 +1430,280 @@ mod tests {
             }
             other => panic!("unexpected {other:?}"),
         }
+    }
+
+    /// Hosts one edit tooltip across frames so pointer events can dismiss it.
+    struct EditTipHost {
+        ctx: egui::Context,
+        state: TooltipState,
+        macro_: sqyre_domain::Macro,
+        catalog: sqyre_persist::ProgramCatalog,
+        icons: crate::icon_cache::IconCache,
+        previews: crate::preview_tooltip::PreviewTooltipCache,
+        key_record: crate::key_record::KeyRecordUi,
+        hotkey_record: crate::hotkey_record::HotkeyRecordUi,
+        macro_hotkeys: sqyre_hotkeys::MacroHotkeyBridge,
+        screen_click: sqyre_hotkeys::ScreenClickBridge,
+        known_vars: sqyre_domain::KnownVariableNames,
+        macros: Vec<(String, Vec<String>)>,
+        time: f64,
+        discarded: Vec<ActionId>,
+        /// Foreground shield at the origin, covering clicks that must not dismiss.
+        shield: bool,
+    }
+
+    impl EditTipHost {
+        fn open(action: &Action, anchor: egui::Pos2, provisional: bool) -> Self {
+            let macro_ = sqyre_domain::Macro {
+                name: "m".into(),
+                root: root_loop(vec![action.clone()]),
+                global_delay: 0,
+                keyboard_delay: 25,
+                mouse_delay: 25,
+                hotkey: Vec::new(),
+                hotkey_trigger: String::new(),
+                tags: Vec::new(),
+                variable_decls: Vec::new(),
+                variables: Default::default(),
+            };
+            let known_vars = sqyre_domain::collect_known_variable_names(&macro_);
+            let macros = vec![(macro_.name.clone(), macro_.tags.clone())];
+            let mut state = TooltipState::Hidden;
+            if provisional {
+                state.open_edit_new(action, anchor, Vec::new());
+            } else {
+                state.open_edit(action, anchor);
+            }
+            let ctx = egui::Context::default();
+            crate::theme::apply(&ctx);
+            Self {
+                ctx,
+                state,
+                macro_,
+                catalog: sqyre_persist::ProgramCatalog::default(),
+                icons: crate::icon_cache::IconCache::new(),
+                previews: crate::preview_tooltip::PreviewTooltipCache::new(),
+                key_record: crate::key_record::KeyRecordUi::default(),
+                hotkey_record: crate::hotkey_record::HotkeyRecordUi::default(),
+                macro_hotkeys: sqyre_hotkeys::MacroHotkeyBridge::new(),
+                screen_click: sqyre_hotkeys::ScreenClickBridge::new(),
+                known_vars,
+                macros,
+                time: 0.0,
+                discarded: Vec::new(),
+                shield: false,
+            }
+        }
+
+        fn frame(&mut self, events: Vec<egui::Event>) {
+            self.time += 0.1;
+            let ctx = self.ctx.clone();
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900.0, 700.0),
+                )),
+                time: Some(self.time),
+                predicted_dt: 0.1,
+                events,
+                ..Default::default()
+            };
+            let shield = self.shield;
+            let out = ctx.run_ui(input, |ui| {
+                if shield {
+                    egui::Area::new(egui::Id::new("edit_tip_test_shield"))
+                        .order(egui::Order::Foreground)
+                        .fixed_pos(egui::Pos2::ZERO)
+                        .interactable(true)
+                        .show(ui.ctx(), |ui| {
+                            ui.allocate_exact_size(egui::vec2(64.0, 64.0), egui::Sense::click());
+                        });
+                }
+                let mut tip = TipUiCtx {
+                    paint: CatalogPaint {
+                        catalog: &self.catalog,
+                        icons: &mut self.icons,
+                        previews: &mut self.previews,
+                    },
+                    theme: VarTheme {
+                        known_vars: &self.known_vars,
+                        is_dark: true,
+                    },
+                    bridges: RecordBridges {
+                        key_record: &mut self.key_record,
+                        hotkey_record: &mut self.hotkey_record,
+                        macro_hotkeys: &self.macro_hotkeys,
+                        screen_click: &self.screen_click,
+                    },
+                    compact_program_headers: false,
+                    pending_scale: None,
+                };
+                self.discarded = show(
+                    &mut self.state,
+                    ui.ctx(),
+                    &mut self.macro_,
+                    &self.macros,
+                    &mut tip,
+                    |_| {},
+                );
+            });
+            out.drop_without_applying_deltas();
+        }
+
+        fn pointer(pos: egui::Pos2, pressed: bool) -> Vec<egui::Event> {
+            vec![
+                egui::Event::PointerMoved(pos),
+                egui::Event::PointerButton {
+                    pos,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ]
+        }
+
+        /// Press and release in one frame — the shape of the click that opens the editor.
+        fn click_same_frame(&mut self, pos: egui::Pos2) {
+            let mut events = Self::pointer(pos, true);
+            events.extend(Self::pointer(pos, false));
+            self.frame(events);
+        }
+
+        fn click(&mut self, pos: egui::Pos2) {
+            self.frame(Self::pointer(pos, true));
+            self.frame(Self::pointer(pos, false));
+        }
+
+        fn editing(&self) -> bool {
+            self.state.is_editing()
+        }
+
+        fn window_rect(&self) -> egui::Rect {
+            let id = self.state.action_id().expect("edit open");
+            self.ctx
+                .memory(|m| m.area_rect(edit_tip_area_id(id)))
+                .expect("edit window rect")
+        }
+
+        fn close_button_center(&self) -> egui::Pos2 {
+            let id = self.state.action_id().expect("edit open");
+            let layer = egui::LayerId::new(egui::Order::Middle, edit_tip_area_id(id));
+            let win = self.window_rect();
+            // Header band: the Close icon is the rightmost roughly-square button.
+            // Resize grips are thin strips and sit outside this filter.
+            let header_bottom = win.top() + 64.0;
+            self.ctx
+                .viewport(|v| {
+                    v.prev_pass
+                        .widgets
+                        .get_layer(layer)
+                        .filter(|w| {
+                            let size = w.rect.size();
+                            w.sense.senses_click()
+                                && w.enabled
+                                && w.rect.center().y <= header_bottom
+                                && size.x >= 12.0
+                                && size.y >= 12.0
+                                && (size.x - size.y).abs() < 16.0
+                        })
+                        .max_by(|a, b| a.rect.right().total_cmp(&b.rect.right()))
+                        .map(|w| w.rect.center())
+                })
+                .expect("close button in the edit header")
+        }
+    }
+
+    #[test]
+    fn edit_tip_close_button_discards_provisional_edit() {
+        let action = wait_action(40);
+        let id = action.id;
+        let mut host = EditTipHost::open(&action, egui::pos2(280.0, 160.0), true);
+        host.frame(Vec::new());
+        host.frame(Vec::new());
+        let at = host.close_button_center();
+        assert!(
+            host.window_rect().contains(at),
+            "close button sits inside the edit window"
+        );
+        host.click(at);
+        assert!(!host.editing(), "Close dismisses the editor");
+        assert_eq!(host.discarded, vec![id]);
+    }
+
+    #[test]
+    fn edit_tip_click_outside_closes_after_it_is_open() {
+        let action = wait_action(40);
+        let id = action.id;
+        let outside = egui::pos2(8.0, 8.0);
+        let mut host = EditTipHost::open(&action, egui::pos2(280.0, 160.0), true);
+
+        // The opening click arrives on the first frame the window is shown.
+        host.click_same_frame(outside);
+        assert!(
+            host.editing(),
+            "the click that opens the editor must not close it"
+        );
+
+        host.frame(Vec::new());
+        let win = host.window_rect();
+        assert!(
+            !win.contains(outside),
+            "test click {outside:?} landed inside the window {win:?}"
+        );
+        // Same press+release shape as the opening click, now that the window
+        // was on screen last frame.
+        host.click_same_frame(outside);
+        assert!(!host.editing(), "a later click outside closes the editor");
+        assert_eq!(host.discarded, vec![id]);
+
+        host.state.open_edit(&action, egui::pos2(280.0, 160.0));
+        host.frame(Vec::new());
+        host.frame(Vec::new());
+        let inside = host.window_rect().center();
+        host.click(inside);
+        assert!(host.editing(), "a click inside the editor leaves it open");
+    }
+
+    #[test]
+    fn edit_tip_click_on_foreground_popup_stays_open() {
+        let action = wait_action(40);
+        let mut host = EditTipHost::open(&action, egui::pos2(400.0, 240.0), false);
+        host.shield = true;
+        host.frame(Vec::new());
+        host.frame(Vec::new());
+        let on_popup = egui::pos2(16.0, 16.0);
+        let win = host.window_rect();
+        assert!(
+            !win.contains(on_popup),
+            "popup click {on_popup:?} should be outside the editor {win:?}"
+        );
+        host.click(on_popup);
+        assert!(
+            host.editing(),
+            "a click on a popup above the editor does not close it"
+        );
+
+        let outside = egui::pos2(120.0, 16.0);
+        assert!(!host.window_rect().contains(outside));
+        host.click(outside);
+        assert!(
+            !host.editing(),
+            "a click outside both surfaces still closes"
+        );
+    }
+
+    #[test]
+    fn edit_tip_click_outside_ignored_while_recording_a_key() {
+        let action = wait_action(40);
+        let mut host = EditTipHost::open(&action, egui::pos2(280.0, 160.0), false);
+        let hotkeys = sqyre_hotkeys::MacroHotkeyBridge::new();
+        host.key_record.open(&hotkeys);
+        host.frame(Vec::new());
+        host.frame(Vec::new());
+        host.click(egui::pos2(8.0, 8.0));
+        assert!(
+            host.editing(),
+            "an outside click while a key is being recorded leaves the editor open"
+        );
     }
 }
