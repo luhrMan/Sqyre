@@ -485,8 +485,7 @@ impl VariablesPanelUi {
             &mut edit.name,
             crate::widgets::TextFieldOpts { width: 160.0 },
         );
-        crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::LIST_BULLETS, "Type");
+        crate::widgets::pair_labeled(ui, egui_phosphor::regular::LIST_BULLETS, "Type", |ui| {
             for (label, ty) in [
                 ("auto", VariableType::Auto),
                 ("text", VariableType::Text),

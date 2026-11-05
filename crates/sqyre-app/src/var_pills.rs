@@ -749,8 +749,7 @@ pub fn var_name_text_edit(
     desired_width: f32,
     help: &str,
 ) {
-    crate::widgets::wrap_unit(ui, |ui| {
-        crate::action_tooltip::help::label(ui, icon, label);
+    crate::widgets::pair_labeled(ui, icon, label, |ui| {
         let width = resolve_edit_width(ui, desired_width, 0.0);
         chip_or_edit(
             ui,
@@ -828,6 +827,19 @@ pub fn validated_var_ref_edit(
     theme: VarTheme<'_>,
     opts: VarFieldOpts<'_>,
 ) {
+    let VarFieldOpts { icon, .. } = opts;
+    crate::widgets::pair_labeled(ui, icon, label, |ui| {
+        paint_validated_var_ref(ui, label, value, theme, opts);
+    });
+}
+
+fn paint_validated_var_ref(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &mut String,
+    theme: VarTheme<'_>,
+    opts: VarFieldOpts<'_>,
+) {
     let VarTheme {
         known_vars: known,
         is_dark,
@@ -835,32 +847,29 @@ pub fn validated_var_ref_edit(
     let VarFieldOpts {
         desired_width,
         validation,
-        icon,
         help,
+        ..
     } = opts;
-    crate::widgets::wrap_unit(ui, |ui| {
-        crate::action_tooltip::help::label(ui, icon, label);
-        let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
-        chip_or_edit(
-            ui,
-            "validated_var_ref",
-            label,
-            value,
-            ChipEdit {
-                target_width: Some(width),
-                show_overlay: should_show_var_ref_overlay,
-                help,
-            },
-            |ui, value| {
-                let plain_fg = ui.visuals().text_color();
-                outer_frame(ui, Color32::TRANSPARENT, |ui| {
-                    paint_var_ref_content(ui, value, known, is_dark, plain_fg);
-                })
-            },
-            |ui, id, value| var_ref_text_edit(ui, id, value, known, width, None),
-        );
-        paint_entry_validation_icon(ui, validation);
-    });
+    let width = resolve_edit_width(ui, desired_width, validation_icon_reserve(ui, validation));
+    chip_or_edit(
+        ui,
+        "validated_var_ref",
+        label,
+        value,
+        ChipEdit {
+            target_width: Some(width),
+            show_overlay: should_show_var_ref_overlay,
+            help,
+        },
+        |ui, value| {
+            let plain_fg = ui.visuals().text_color();
+            outer_frame(ui, Color32::TRANSPARENT, |ui| {
+                paint_var_ref_content(ui, value, known, is_dark, plain_fg);
+            })
+        },
+        |ui, id, value| var_ref_text_edit(ui, id, value, known, width, None),
+    );
+    paint_entry_validation_icon(ui, validation);
 }
 
 /// Multiline var-ref field with live validation icon.
@@ -884,34 +893,35 @@ pub fn validated_var_ref_multiline_edit(
         icon,
         help,
     } = opts;
-    // Wrapped row keeps the validation icon from being pushed past the clip.
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = crate::theme::SPACE_2;
-        crate::action_tooltip::help::label(ui, icon, label);
+    crate::widgets::pair_labeled(ui, icon, label, |ui| {
         paint_entry_validation_icon(ui, validation);
+        let mut width = resolve_edit_width(ui, desired_width, 0.0);
+        let avail = ui.available_width();
+        if avail.is_finite() {
+            width = width.min(avail).max(40.0);
+        }
+        chip_or_edit(
+            ui,
+            "validated_var_ref_multi",
+            label,
+            value,
+            ChipEdit {
+                target_width: None,
+                show_overlay: should_show_var_ref_overlay,
+                help,
+            },
+            |ui, value| {
+                let plain_fg = ui.visuals().text_color();
+                outer_frame(ui, Color32::TRANSPARENT, |ui| {
+                    ui.set_max_width(width);
+                    for line in value.split('\n') {
+                        paint_var_ref_content(ui, line, known, is_dark, plain_fg);
+                    }
+                })
+            },
+            |ui, id, value| var_ref_text_edit(ui, id, value, known, width, Some(rows)),
+        );
     });
-    let width = resolve_edit_width(ui, desired_width, 0.0);
-    chip_or_edit(
-        ui,
-        "validated_var_ref_multi",
-        label,
-        value,
-        ChipEdit {
-            target_width: None,
-            show_overlay: should_show_var_ref_overlay,
-            help,
-        },
-        |ui, value| {
-            let plain_fg = ui.visuals().text_color();
-            outer_frame(ui, Color32::TRANSPARENT, |ui| {
-                ui.set_max_width(width);
-                for line in value.split('\n') {
-                    paint_var_ref_content(ui, line, known, is_dark, plain_fg);
-                }
-            })
-        },
-        |ui, id, value| var_ref_text_edit(ui, id, value, known, width, Some(rows)),
-    );
 }
 
 #[cfg(test)]

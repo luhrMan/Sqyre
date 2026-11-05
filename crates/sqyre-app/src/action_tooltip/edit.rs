@@ -14,8 +14,8 @@ use crate::tree_chrome;
 use crate::var_pills::{self, VarFieldOpts};
 use crate::widgets::{
     combo_condition_operator, combo_enum, combo_str_labeled, drag_field, drag_field_enabled,
-    num_text_field, searchable_combo, text_field, wrap_unit, wrapped_row, SearchableComboOpts,
-    W_TEXT, W_VAR,
+    num_text_field, pair_labeled, searchable_combo, text_field, wrap_unit, wrapped_row,
+    SearchableComboOpts, W_TEXT, W_VAR,
 };
 use eframe::egui;
 use sqyre_domain::{
@@ -232,23 +232,49 @@ pub fn paint_edit_fields(
                 );
             });
             tip_section(ui, |ui| {
-                ui.horizontal(|ui| {
-                    help::label(
-                        ui,
-                        egui_phosphor::regular::KEYBOARD,
-                        "Continue keys (one per line)",
-                    );
-                    if crate::widgets::record_icon_button(
-                        ui,
-                        "Record continue chord",
-                        !hotkey_record.is_open() && !key_record.is_open(),
-                    )
-                    .clicked()
-                    {
-                        hotkey_record.open(macro_hotkeys);
-                    }
-                });
-                string_list_field(ui, "", "", continue_key, h::PAUSE_CONTINUE);
+                let mut text = continue_key.join("\n");
+                let mut changed = false;
+                let reserve = crate::widgets::icon_btn_side(ui) + crate::widgets::PAIR_SLOT_GAP;
+                crate::widgets::pair_icon(
+                    ui,
+                    |ui| {
+                        help::label(
+                            ui,
+                            egui_phosphor::regular::KEYBOARD,
+                            "Continue keys (one per line)",
+                        );
+                    },
+                    |ui| {
+                        let width = (crate::widgets::fields::finite_room(ui) - reserve).max(24.0);
+                        changed = help::tip(
+                            ui.add(
+                                egui::TextEdit::multiline(&mut text)
+                                    .desired_width(width)
+                                    .desired_rows(3),
+                            ),
+                            h::PAUSE_CONTINUE,
+                        )
+                        .changed();
+                    },
+                    |ui| {
+                        if crate::widgets::record_icon_button(
+                            ui,
+                            "Record continue chord",
+                            !hotkey_record.is_open() && !key_record.is_open(),
+                        )
+                        .clicked()
+                        {
+                            hotkey_record.open(macro_hotkeys);
+                        }
+                    },
+                );
+                if changed {
+                    *continue_key = text
+                        .lines()
+                        .map(|l| l.trim().to_string())
+                        .filter(|l| !l.is_empty())
+                        .collect();
+                }
             });
             tip_wrapped_section(ui, |ui| {
                 help::tip(
@@ -279,33 +305,47 @@ pub fn paint_edit_fields(
                         },
                     );
                     let mut pick = false;
-                    ui.horizontal(|ui| {
-                        help::label(ui, egui_phosphor::regular::TERMINAL_WINDOW, "Process path");
-                        crate::icon_cache::paint_leading_process_icon(
-                            ui,
-                            paint.icons,
-                            process_path,
-                            window_title,
-                        );
-                        if pick_icon_btn(ui, crate::model_icons::WINDOW).clicked() {
-                            pick = true;
-                        }
-                    });
-                    // Paths never contain newlines; disable Return so Enter doesn't
-                    // insert one. Multiline still wraps soft-breaks for display.
-                    if process_path.contains(['\n', '\r']) {
-                        process_path.retain(|c| c != '\n' && c != '\r');
-                    }
-                    let path_rows = path_wrap_rows(crate::widgets::visible_width(ui), process_path);
-                    help::tip(
-                        ui.add(
-                            egui::TextEdit::multiline(process_path)
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(path_rows)
-                                .return_key(None)
-                                .hint_text("/path/to/app"),
-                        ),
-                        h::FOCUS_PROCESS,
+                    let reserve = crate::widgets::icon_btn_side(ui) + crate::widgets::PAIR_SLOT_GAP;
+                    crate::widgets::pair_icon(
+                        ui,
+                        |ui| {
+                            help::label(
+                                ui,
+                                egui_phosphor::regular::TERMINAL_WINDOW,
+                                "Process path",
+                            );
+                        },
+                        |ui| {
+                            crate::icon_cache::paint_leading_process_icon(
+                                ui,
+                                paint.icons,
+                                process_path,
+                                window_title,
+                            );
+                            // Paths never contain newlines; disable Return so Enter
+                            // doesn't insert one. Multiline still wraps soft-breaks.
+                            if process_path.contains(['\n', '\r']) {
+                                process_path.retain(|c| c != '\n' && c != '\r');
+                            }
+                            let width =
+                                (crate::widgets::fields::finite_room(ui) - reserve).max(24.0);
+                            let path_rows = path_wrap_rows(width, process_path);
+                            help::tip(
+                                ui.add(
+                                    egui::TextEdit::multiline(process_path)
+                                        .desired_width(width)
+                                        .desired_rows(path_rows)
+                                        .return_key(None)
+                                        .hint_text("/path/to/app"),
+                                ),
+                                h::FOCUS_PROCESS,
+                            );
+                        },
+                        |ui| {
+                            if pick_icon_btn(ui, crate::model_icons::WINDOW).clicked() {
+                                pick = true;
+                            }
+                        },
                     );
                     if pick {
                         *picker = pickers::open_window_picker(process_path, window_title);
@@ -463,8 +503,7 @@ pub fn paint_edit_fields(
         }
         ActionKind::NavigateSelect(data) => {
             tip_wrapped_section(ui, |ui| {
-                wrap_unit(ui, |ui| {
-                    help::label(ui, crate::model_icons::PROGRAM, "Program");
+                pair_labeled(ui, crate::model_icons::PROGRAM, "Program", |ui| {
                     let programs: Vec<String> = paint.catalog.program_names().cloned().collect();
                     let mut current = data.program.clone();
                     let mut option_icon = |ctx: &egui::Context, name: &str| {
@@ -492,8 +531,7 @@ pub fn paint_edit_fields(
                         data.program = current;
                     }
                 });
-                wrap_unit(ui, |ui| {
-                    help::label(ui, crate::model_icons::ATLAS, "Atlas");
+                pair_labeled(ui, crate::model_icons::ATLAS, "Atlas", |ui| {
                     let atlases: Vec<String> = if data.program.trim().is_empty() {
                         Vec::new()
                     } else {
@@ -969,8 +1007,7 @@ fn picker_display_row(
     display: &str,
 ) -> bool {
     let mut clicked = false;
-    wrap_unit(ui, |ui| {
-        help::label(ui, icon, label);
+    pair_labeled(ui, icon, label, |ui| {
         help::tip(
             ui.label(if display.is_empty() {
                 sqyre_domain::EMPTY_UNSET
@@ -1081,8 +1118,7 @@ fn coord_picker_row(
     } = paint;
     let display = coord.display_label();
     let validation = coord_unset_validation(kind, coord);
-    ui.horizontal(|ui| {
-        help::label(ui, icon, label);
+    pair_labeled(ui, icon, label, |ui| {
         if let Some(prog) = coord.program() {
             crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
         }
@@ -1296,20 +1332,28 @@ fn string_list_field(
     help_text: &str,
 ) {
     let mut text = values.join("\n");
-    if !label.is_empty() {
-        help::label(ui, icon, label);
-    }
-    if help::tip(
-        ui.add(
-            egui::TextEdit::multiline(&mut text)
-                // Fill the tip section; a fixed width locks horizontal resize.
-                .desired_width(f32::INFINITY)
-                .desired_rows(3),
-        ),
-        help_text,
-    )
-    .changed()
-    {
+    let mut edit = |ui: &mut egui::Ui| {
+        let avail = ui.available_width();
+        let width = if avail.is_finite() {
+            avail.max(24.0)
+        } else {
+            crate::widgets::visible_width(ui).max(24.0)
+        };
+        help::tip(
+            ui.add(
+                egui::TextEdit::multiline(&mut text)
+                    .desired_width(width)
+                    .desired_rows(3),
+            ),
+            help_text,
+        )
+    };
+    let changed = if label.is_empty() {
+        edit(ui).changed()
+    } else {
+        pair_labeled(ui, icon, label, edit).inner.changed()
+    };
+    if changed {
         *values = text
             .lines()
             .map(|l| l.trim().to_string())
@@ -1515,8 +1559,7 @@ fn repeat_mode_plain(mode: RepeatMode) -> &'static str {
 }
 
 fn wait_editor(ui: &mut egui::Ui, wait: &mut WaitTilFoundConfig) {
-    wrap_unit(ui, |ui| {
-        help::label(ui, egui_phosphor::regular::REPEAT, "Repeat mode");
+    pair_labeled(ui, egui_phosphor::regular::REPEAT, "Repeat mode", |ui| {
         let selected = repeat_mode_label(ui, wait.repeat_mode);
         let selected_plain = repeat_mode_plain(wait.repeat_mode);
         let response = egui::ComboBox::from_id_salt("Repeat mode")

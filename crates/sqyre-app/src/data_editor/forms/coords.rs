@@ -191,8 +191,7 @@ impl DataEditor {
             }
         });
         if !has_image {
-            ui.horizontal(|ui| {
-                help::label(ui, egui_phosphor::regular::SHAPES, "Shape");
+            crate::widgets::pair_labeled(ui, egui_phosphor::regular::SHAPES, "Shape", |ui| {
                 help::tip(
                     ui.selectable_value(&mut self.form_shape, "rectangle".into(), "Rectangle"),
                     help::DE_MASK_SHAPE,

@@ -71,10 +71,14 @@ pub fn text_field_opts(
     value: &mut String,
     opts: TextFieldOpts,
 ) {
-    super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label);
+    super::pair_labeled(ui, icon, label, |ui| {
+        let width = if opts.width.is_finite() {
+            opts.width
+        } else {
+            finite_room(ui).max(24.0)
+        };
         help::tip(
-            ui.add(egui::TextEdit::singleline(value).desired_width(opts.width)),
+            ui.add(egui::TextEdit::singleline(value).desired_width(width)),
             help_text,
         );
     });
@@ -137,8 +141,7 @@ pub fn num_text_field_opts(
     value: &mut String,
     opts: NumFieldOpts,
 ) {
-    super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label);
+    super::pair_labeled(ui, icon, label, |ui| {
         help::tip(
             num_text_edit(ui, value, opts.width, opts.range.clone()),
             help_text,
@@ -216,10 +219,9 @@ pub struct SearchFieldResp {
 /// Magnifier + fill-width filter field (+ optional trailing ✕) — the one
 /// search row for lists, pickers, dialogs, and panels.
 ///
-/// Emits a self-contained row: a plain `ui.horizontal` normally, a `fill_row`
-/// when `clearable` so the ✕ pins right while the field fills. Wrap it in
-/// [`super::show_overflow`] or another `fill_row` slot when siblings share the
-/// row.
+/// The magnifier, the edit, and the ✕ share one [`super::pair_icon`] frame.
+/// Wrap the row in [`super::show_overflow`] or a [`fill_row`] slot when
+/// siblings share the row.
 pub fn search_field(
     ui: &mut egui::Ui,
     value: &mut String,
@@ -233,53 +235,40 @@ pub fn search_field(
     } = opts;
     // `body` holds the `&mut String`, so snapshot emptiness before it is built.
     let has_text = !value.is_empty();
-    let mut body = |ui: &mut egui::Ui| -> egui::Response {
-        let icon = ui
-            .label(egui::RichText::new(
-                egui_phosphor::regular::MAGNIFYING_GLASS,
-            ))
-            .on_hover_text(ht::FIELD_SEARCH);
-        icon.widget_info(|| {
-            egui::WidgetInfo::labeled(egui::WidgetType::Label, true, "Search".to_owned())
-        });
-        // egui never allocates a TextEdit narrower than 24px (`MIN_WIDTH`), so
-        // below that the field's rect underlaps what follows it. A sliver-wide
-        // field is unusable anyway — drop it and keep the icon.
-        if ui.available_width() < 24.0 {
-            return icon;
-        }
-        let mut edit = egui::TextEdit::singleline(value).desired_width(f32::INFINITY);
-        if let Some(id) = stable_id {
-            edit = edit.id(id);
-        }
-        if !hint.is_empty() {
-            edit = edit.hint_text(hint);
-        }
-        let resp = ui.add(edit);
-        if let Some(fid) = focus_id {
-            focus_search_once(ui, fid, &resp);
-        }
-        resp
-    };
-    if !clearable {
-        let response = ui.horizontal(&mut body).inner;
+    // egui never allocates a TextEdit narrower than 24px (`MIN_WIDTH`), so
+    // below that the field's rect underlaps what follows it. A sliver-wide
+    // field is unusable anyway — drop it and keep the icon.
+    if ui.available_width() < 24.0 {
+        let response = search_icon(ui);
         return SearchFieldResp {
-            changed: response.changed(),
+            changed: false,
             response,
         };
     }
+    let show_clear = clearable && has_text;
     let mut cleared = false;
-    let response = fill_row(
-        ui,
-        |ui| {
-            // The ✕ only exists while the field has text; it is drawn before
-            // the field in id space (right_to_left), hence `stable_id`.
-            if has_text {
+    let response = if show_clear {
+        super::pair_icon(
+            ui,
+            |ui| {
+                search_icon(ui);
+            },
+            |ui| search_edit(ui, value, hint, stable_id, focus_id, true),
+            |ui| {
                 cleared = crate::widgets::cancel_icon_button(ui, "Clear search").clicked();
-            }
-        },
-        |ui| body(ui),
-    );
+            },
+        )
+        .inner
+    } else {
+        super::pair_leading(
+            ui,
+            |ui| {
+                search_icon(ui);
+            },
+            |ui| search_edit(ui, value, hint, stable_id, focus_id, false),
+        )
+        .inner
+    };
     if cleared {
         value.clear();
     }
@@ -287,6 +276,65 @@ pub fn search_field(
         changed: cleared || response.changed(),
         response,
     }
+}
+
+/// Remaining width that is actually finite: layout budget, else the clip.
+pub(crate) fn finite_room(ui: &egui::Ui) -> f32 {
+    let avail = ui.available_width();
+    let clip = (ui.clip_rect().right() - ui.cursor().left()).max(0.0);
+    if avail.is_finite() && clip.is_finite() {
+        avail.min(clip)
+    } else if avail.is_finite() {
+        avail
+    } else if clip.is_finite() && clip > 1.0 {
+        clip
+    } else {
+        240.0
+    }
+}
+
+fn search_icon(ui: &mut egui::Ui) -> egui::Response {
+    let icon = ui
+        .label(egui::RichText::new(
+            egui_phosphor::regular::MAGNIFYING_GLASS,
+        ))
+        .on_hover_text(ht::FIELD_SEARCH);
+    icon.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Label, true, "Search".to_owned())
+    });
+    icon
+}
+
+fn search_edit(
+    ui: &mut egui::Ui,
+    value: &mut String,
+    hint: &str,
+    stable_id: Option<egui::Id>,
+    focus_id: Option<egui::Id>,
+    reserve_clear: bool,
+) -> egui::Response {
+    // A finite width, never `INFINITY`. Inside an overflow scroller
+    // `available_width()` is infinite, and an infinite edit makes the row
+    // wider than the pane so the scroller turns on and off every frame.
+    // `stable_id` keeps focus when the trailing ✕ appears and disappears.
+    let room = finite_room(ui);
+    let width = if reserve_clear {
+        (room - crate::widgets::icon_btn_side(ui) - super::PAIR_SLOT_GAP).max(24.0)
+    } else {
+        room.max(24.0)
+    };
+    let mut edit = egui::TextEdit::singleline(value).desired_width(width);
+    if let Some(id) = stable_id {
+        edit = edit.id(id);
+    }
+    if !hint.is_empty() {
+        edit = edit.hint_text(hint);
+    }
+    let resp = ui.add(edit);
+    if let Some(fid) = focus_id {
+        focus_search_once(ui, fid, &resp);
+    }
+    resp
 }
 
 /// Labeled numeric entry (no `.prefix`); configure speed/range/etc via `configure`.
@@ -310,8 +358,7 @@ pub fn drag_field_enabled<Num: egui::emath::Numeric>(
     enabled: bool,
     configure: impl Fn(NumEntry<'_, Num>) -> NumEntry<'_, Num>,
 ) {
-    super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label);
+    super::pair_labeled(ui, icon, label, |ui| {
         help::tip(
             ui.add_enabled(enabled, configure(num_entry(value))),
             help_text,
@@ -327,8 +374,7 @@ pub fn combo_str(
     value: &mut String,
     options: &[&str],
 ) {
-    super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label);
+    super::pair_labeled(ui, icon, label, |ui| {
         let display = if value.is_empty() {
             sqyre_domain::EMPTY_UNSET.to_string()
         } else {
@@ -389,8 +435,7 @@ pub fn combo_enum<T: Copy + PartialEq>(
     options: &[T],
     display: impl Fn(T) -> &'static str,
 ) {
-    super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label);
+    super::pair_labeled(ui, icon, label, |ui| {
         let selected = display(*value);
         let response = egui::ComboBox::from_id_salt(label)
             .selected_text(selected)
@@ -418,8 +463,7 @@ pub fn combo_str_labeled(
     options: &[(&str, &str)],
     empty_default: &str,
 ) {
-    super::wrap_unit(ui, |ui| {
-        help::label(ui, icon, label);
+    super::pair_labeled(ui, icon, label, |ui| {
         let empty_label = options
             .iter()
             .find(|(v, _)| *v == empty_default)
@@ -847,7 +891,13 @@ mod tests {
                 "abc".to_owned(),
             );
         h.run_steps(2);
-        h.get_by_label("Clear search").click();
+        let clear = h.get_by_label("Clear search");
+        assert!(
+            clear.rect().right() <= 300.0 + 1.0,
+            "clear icon fell outside the search pair: {:?}",
+            clear.rect()
+        );
+        clear.click();
         h.run_steps(2);
         assert_eq!(h.state().as_str(), "");
     }
@@ -872,6 +922,63 @@ mod tests {
                 0,
                 "steppers shown for {value:?}"
             );
+        }
+    }
+
+    /// Fill-width search must keep one width. A frame that spills past the pane
+    /// turns the overflow strip on and off, and the field jumps every frame.
+    #[test]
+    fn search_field_width_holds_across_frames() {
+        let ctx = egui::Context::default();
+        crate::theme::apply(&ctx);
+        let pane_w = 360.0;
+        for clearable_text in [String::new(), String::from("query")] {
+            let mut value = clearable_text.clone();
+            let mut widths = Vec::new();
+            for frame in 0..8 {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(800.0, 400.0),
+                    )),
+                    time: Some(frame as f64 * 0.05),
+                    predicted_dt: 0.05,
+                    ..Default::default()
+                };
+                ctx.run_ui(input, |ui| {
+                    let pane =
+                        egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(pane_w, 64.0));
+                    let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                    pane_ui.set_clip_rect(pane);
+                    crate::widgets::show_overflow(&mut pane_ui, "search_stable", 1.0, |ui| {
+                        let out = search_field(
+                            ui,
+                            &mut value,
+                            SearchFieldOpts {
+                                hint: "Filter…",
+                                focus_id: None,
+                                clearable: true,
+                                stable_id: Some(egui::Id::new("stable_search")),
+                            },
+                        );
+                        widths.push(out.response.rect.width());
+                    });
+                    let row_right = pane_ui.min_rect().right();
+                    assert!(
+                        row_right <= pane.right() + 1.0,
+                        "frame {frame} text {value:?} row {row_right} past {}",
+                        pane.right()
+                    );
+                })
+                .drop_without_applying_deltas();
+            }
+            let settled = widths[3];
+            for (i, w) in widths.iter().enumerate().skip(3) {
+                assert!(
+                    (w - settled).abs() < 0.75,
+                    "search width jitter frame {i} text {value:?}: {widths:?}"
+                );
+            }
         }
     }
 }

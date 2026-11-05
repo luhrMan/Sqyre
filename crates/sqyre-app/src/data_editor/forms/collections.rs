@@ -55,41 +55,43 @@ impl DataEditor {
                 };
                 previews.show_for_entity(ui, resp, catalog, prog, name, PreviewKind::SearchArea);
             };
-            crate::widgets::wrap_unit(ui, |ui| {
-                help::label(ui, crate::model_icons::SEARCH_AREA, "Search area");
-                help::tip(
-                    searchable_combo(
-                        ui,
-                        "collection_sa",
-                        &mut current,
-                        SearchableComboOpts {
-                            options: &areas,
-                            empty_text: sqyre_domain::EMPTY_NONE,
-                            none_label: None,
-                            width: None,
-                            on_option_hover: Some(&mut on_hover),
-                            option_icon: None,
-                            closed_icon: true,
-                            option_label: None,
-                        },
-                    ),
-                    help::DE_COLLECTION_AREA,
-                );
-            });
+            crate::widgets::pair_labeled(
+                ui,
+                crate::model_icons::SEARCH_AREA,
+                "Search area",
+                |ui| {
+                    help::tip(
+                        searchable_combo(
+                            ui,
+                            "collection_sa",
+                            &mut current,
+                            SearchableComboOpts {
+                                options: &areas,
+                                empty_text: sqyre_domain::EMPTY_NONE,
+                                none_label: None,
+                                width: None,
+                                on_option_hover: Some(&mut on_hover),
+                                option_icon: None,
+                                closed_icon: true,
+                                option_label: None,
+                            },
+                        ),
+                        help::DE_COLLECTION_AREA,
+                    );
+                },
+            );
             if current != self.form_search_area {
                 self.form_search_area = current;
             }
         }
         ui.horizontal_wrapped(|ui| {
-            crate::widgets::wrap_unit(ui, |ui| {
-                help::label(ui, egui_phosphor::regular::ROWS, "Rows");
+            crate::widgets::pair_labeled(ui, egui_phosphor::regular::ROWS, "Rows", |ui| {
                 help::tip(
                     crate::widgets::num_text_edit(ui, &mut self.form_rows, 80.0, 1..=i32::MAX),
                     help::DE_COLLECTION_ROWS,
                 );
             });
-            crate::widgets::wrap_unit(ui, |ui| {
-                help::label(ui, egui_phosphor::regular::COLUMNS, "Cols");
+            crate::widgets::pair_labeled(ui, egui_phosphor::regular::COLUMNS, "Cols", |ui| {
                 help::tip(
                     crate::widgets::num_text_edit(ui, &mut self.form_cols, 80.0, 1..=i32::MAX),
                     help::DE_COLLECTION_COLS,
@@ -152,8 +154,7 @@ impl DataEditor {
                     .collect()
             })
             .unwrap_or_default();
-        ui.horizontal(|ui| {
-            help::label(ui, crate::model_icons::COLLECTION, "Collections");
+        crate::widgets::pair_labeled(ui, crate::model_icons::COLLECTION, "Collections", |ui| {
             let prog = self.selected_program.clone();
             let mut on_hover = |ui: &mut egui::Ui, resp: &egui::Response, name: &str| {
                 if name.is_empty() {

@@ -11,6 +11,7 @@ pub mod headers;
 pub mod match_settings;
 pub mod num_entry;
 pub mod overflow;
+mod pair;
 mod row_ids;
 pub mod scroll;
 pub mod sections;
@@ -53,6 +54,7 @@ pub use headers::{count_suffix, count_text, heading_with_count, title_with_count
 pub use match_settings::configure_match_blur_drag;
 pub use num_entry::{num_entry, NumEntry};
 pub use overflow::{always_bar, text_width, OverflowItem};
+pub use pair::{pair_icon, pair_labeled, pair_leading, PAIR_SLOT_GAP};
 pub use row_ids::{remove_row_id, stable_row_ids};
 pub use scroll::{
     enable_dense_row_extend, scroll_vertical, show_dialog_scroll, show_dialog_scroll_mod,

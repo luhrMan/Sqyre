@@ -28,8 +28,7 @@ impl DataEditor {
             title
         };
         let has_bound = !path.is_empty() || !name.is_empty();
-        ui.horizontal(|ui| {
-            help::label(ui, crate::model_icons::PROGRAM, "Running program");
+        crate::widgets::pair_labeled(ui, crate::model_icons::PROGRAM, "Running program", |ui| {
             // The icon IS the selector — click the program's own icon (or the
             // window glyph when unbound) to pick a window.
             let icon_side = crate::icon_cache::PROCESS_ICON_SIDE * 1.25;
@@ -83,7 +82,7 @@ impl DataEditor {
                 self.form_window_title.clear();
             }
             help::tip(
-                ui.label(egui::RichText::new(name).monospace()),
+                ui.label(egui::RichText::new(name.as_str()).monospace()),
                 help::DE_RUNNING_PROGRAM,
             );
             if !path.is_empty() {
@@ -206,8 +205,7 @@ impl DataEditor {
                 &format!("{prog}~{name}"),
             );
         };
-        crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, crate::model_icons::MASK, "Mask");
+        crate::widgets::pair_labeled(ui, crate::model_icons::MASK, "Mask", |ui| {
             help::tip(
                 searchable_combo(
                     ui,

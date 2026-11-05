@@ -19,6 +19,9 @@ pub fn tip(resp: egui::Response, help: &str) -> egui::Response {
 /// field `name` so the icon always identifies what it labels; the field's
 /// description lives on the paired widget via [`tip`]. The icon's accessible
 /// name is `name`.
+///
+/// Put it in [`crate::widgets::pair_labeled`] (field helpers already do) so the
+/// glyph and the control share one frame.
 pub fn label(ui: &mut egui::Ui, icon: &str, name: &str) -> egui::Response {
     let resp = ui
         .add(egui::Label::new(egui::RichText::new(icon)).sense(egui::Sense::hover()))

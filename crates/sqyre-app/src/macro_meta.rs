@@ -56,8 +56,7 @@ impl MacroMetaUi {
     ) -> MetaMutations {
         let mut out = MetaMutations::default();
 
-        let resp = crate::widgets::wrap_unit(ui, |ui| {
-            help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
+        let resp = crate::widgets::pair_labeled(ui, egui_phosphor::regular::TEXT_T, "Name", |ui| {
             let name_w = crate::widgets::name_edit_width(ui, &self.name_draft, "Macro name");
             let edit = ui.add_enabled(
                 enabled,

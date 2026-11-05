@@ -285,10 +285,14 @@ pub fn tag_chip_editor(
     // `single_row` contexts (top bar) where overflow clips at the pane edge.
     let mut paint_row = |ui: &mut egui::Ui| {
         ui.set_max_width(wrap_cap);
-        if let Some(name) = opts.label_name {
-            crate::action_tooltip::help::label(ui, egui_phosphor::regular::TAG, name);
-        }
-        let resp = paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags);
+        let resp = if let Some(name) = opts.label_name {
+            crate::widgets::pair_labeled(ui, egui_phosphor::regular::TAG, name, |ui| {
+                paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags)
+            })
+            .inner
+        } else {
+            paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags)
+        };
         paint_tag_chips(
             ui,
             tags,

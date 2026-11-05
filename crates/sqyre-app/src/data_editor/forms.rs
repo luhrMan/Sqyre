@@ -70,17 +70,18 @@ fn paint_fs_name_hint(ui: &mut egui::Ui, name: &str) {
 /// Name label + content-sized edit + `DE_NAME` tip — the body of every
 /// catalog-entity Name row. Standalone rows go through [`paint_name_field`].
 fn name_field_body(ui: &mut egui::Ui, name: &mut String) {
-    help::label(ui, egui_phosphor::regular::TEXT_T, "Name");
-    let name_w = crate::widgets::name_edit_width(ui, name, "");
-    help::tip(
-        ui.add(egui::TextEdit::singleline(name).desired_width(name_w)),
-        help::DE_NAME,
-    );
+    crate::widgets::pair_labeled(ui, egui_phosphor::regular::TEXT_T, "Name", |ui| {
+        let name_w = crate::widgets::name_edit_width(ui, name, "");
+        help::tip(
+            ui.add(egui::TextEdit::singleline(name).desired_width(name_w)),
+            help::DE_NAME,
+        );
+    });
 }
 
 /// [`name_field_body`] as a standalone unit plus the name-validation hint line.
 fn paint_name_field(ui: &mut egui::Ui, name: &mut String) {
-    crate::widgets::wrap_unit(ui, |ui| name_field_body(ui, name));
+    name_field_body(ui, name);
     paint_fs_name_hint(ui, name);
 }
 
@@ -175,8 +176,7 @@ impl DataEditor {
     }
 
     fn paint_monitor_slot(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            help::label(ui, egui_phosphor::regular::MONITOR, "Monitor");
+        crate::widgets::pair_labeled(ui, egui_phosphor::regular::MONITOR, "Monitor", |ui| {
             help::tip(
                 ui.add(
                     crate::widgets::num_entry(&mut self.form_monitor)
@@ -388,8 +388,7 @@ impl DataEditor {
             }
             paint_name_field(ui, &mut self.form_name);
             let reference = CoordinateRef(self.form_search_area.clone());
-            ui.horizontal(|ui| {
-                help::label(ui, crate::model_icons::SEARCH_AREA, "Reference");
+            crate::widgets::pair_labeled(ui, crate::model_icons::SEARCH_AREA, "Reference", |ui| {
                 if let Some(prog) = reference.program() {
                     crate::icon_cache::paint_program_icon(ui, catalog, icons, prog);
                 }
