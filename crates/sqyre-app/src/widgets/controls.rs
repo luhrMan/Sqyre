@@ -157,21 +157,62 @@ pub fn error_badge(ui: &mut egui::Ui, rect: egui::Rect) {
     );
 }
 
-/// Severity glyph with the message it replaces in the hover tooltip / AccessKit
+/// Severity glyph with the message it replaces in the tooltip / AccessKit
 /// name — the icon-first replacement for an always-visible status line. `tip`
 /// is required: an unexplained icon is dead chrome.
+///
+/// Hover shows the message. A press or tap does too, and the tap keeps it
+/// open: a finger is not a hover, and egui will not open a hover tooltip for
+/// a [`Sense::hover`] widget while a button is down, then hides it on release.
 ///
 /// Uses Phosphor glyphs (Proportional fallback) — emoji ✕/⚠ often render as
 /// missing-glyph tofu with the Ubuntu/Hack chain.
 pub fn status_icon(ui: &mut egui::Ui, glyph: &str, color: Color32, tip: &str) -> egui::Response {
     let enabled = ui.is_enabled();
-    let resp =
-        ui.add(egui::Label::new(egui::RichText::new(glyph).color(color)).sense(Sense::hover()));
+    let resp = ui.add(
+        egui::Label::new(egui::RichText::new(glyph).color(color))
+            .sense(Sense::CLICK)
+            .selectable(false),
+    );
     resp.widget_info(|| WidgetInfo::labeled(WidgetType::Label, enabled, tip));
-    resp.on_hover_text(tip)
+    reveal_status_tip(ui, &resp, tip);
+    resp
 }
 
-/// `⊗` error marker — hover shows the error text.
+/// Show `tip` for `resp` on hover, while it is pressed, and after a tap until
+/// another click. The press path does not wait out `tooltip_delay` and does
+/// not use the hover-only early-out that drops a finger press.
+pub(crate) fn reveal_status_tip(ui: &egui::Ui, resp: &egui::Response, tip: &str) {
+    let id = resp.id.with("status_tip_open");
+    if resp.clicked() {
+        let open = ui.ctx().data(|d| d.get_temp::<bool>(id).unwrap_or(false));
+        ui.ctx().data_mut(|d| d.insert_temp(id, !open));
+    } else if resp.clicked_elsewhere() {
+        ui.ctx().data_mut(|d| d.insert_temp(id, false));
+    }
+    let pinned = ui.ctx().data(|d| d.get_temp::<bool>(id).unwrap_or(false));
+    if pinned || resp.is_pointer_button_down_on() {
+        // The first frame only sizes the tip. Ask for the frame that paints it,
+        // then stop so a tip left open does not repaint forever.
+        if !resp.is_tooltip_open() {
+            resp.ctx.request_repaint();
+        }
+        show_status_tip(resp, tip);
+    } else {
+        let _ = resp.clone().on_hover_text(tip);
+    }
+}
+
+fn show_status_tip(resp: &egui::Response, tip: &str) {
+    let screen_w = resp.ctx.content_rect().width();
+    let max_w = (screen_w.min(resp.ctx.global_style().spacing.tooltip_width) - 24.0).max(80.0);
+    egui::Tooltip::for_widget(resp).show(|ui| {
+        ui.set_max_width(max_w);
+        ui.label(tip);
+    });
+}
+
+/// `⊗` error marker — hover, press, or tap shows the error text.
 pub fn error_icon(ui: &mut egui::Ui, tip: &str) -> egui::Response {
     status_icon(
         ui,
@@ -181,7 +222,7 @@ pub fn error_icon(ui: &mut egui::Ui, tip: &str) -> egui::Response {
     )
 }
 
-/// `⚠` warning marker — hover shows the warning text.
+/// `⚠` warning marker — hover, press, or tap shows the warning text.
 pub fn warn_icon(ui: &mut egui::Ui, tip: &str) -> egui::Response {
     status_icon(
         ui,
@@ -868,6 +909,106 @@ mod tests {
             "hovered icon button painted no fill"
         );
         hover.drop_without_applying_deltas();
+    }
+
+    /// A finger is not a hover, and the hover delay must not hide the message.
+    #[test]
+    fn error_icon_shows_its_message_on_tap() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| {
+            style.interaction.tooltip_delay = 30.0;
+        });
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 640.0));
+        let tip = "Image unavailable";
+        let mut icon = egui::Pos2::ZERO;
+        run_frame(&ctx, screen, 0.0, vec![], |ui| {
+            icon = error_icon(ui, tip).rect.center();
+        })
+        .drop_without_applying_deltas();
+
+        run_frame(
+            &ctx,
+            screen,
+            0.2,
+            vec![egui::Event::PointerMoved(icon), pointer_button(icon, true)],
+            |ui| {
+                let _ = error_icon(ui, tip);
+            },
+        )
+        .drop_without_applying_deltas();
+        // Opening frame is a sizing pass; the held frame is what the user sees.
+        let pressed = run_frame(&ctx, screen, 0.4, vec![], |ui| {
+            let _ = error_icon(ui, tip);
+        });
+        let press_ok = text_on_screen(&pressed.shapes, screen, tip);
+        pressed.drop_without_applying_deltas();
+        assert!(press_ok, "holding the error icon did not show its message");
+
+        let stayed = run_frame(
+            &ctx,
+            screen,
+            0.6,
+            vec![pointer_button(icon, false), egui::Event::PointerGone],
+            |ui| {
+                let _ = error_icon(ui, tip);
+            },
+        );
+        let stay_ok = text_on_screen(&stayed.shapes, screen, tip);
+        stayed.drop_without_applying_deltas();
+        assert!(
+            stay_ok,
+            "the error icon message disappeared when the tap ended"
+        );
+    }
+
+    fn pointer_button(pos: egui::Pos2, pressed: bool) -> Event {
+        Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        }
+    }
+
+    fn run_frame(
+        ctx: &egui::Context,
+        screen: egui::Rect,
+        time: f64,
+        events: Vec<Event>,
+        add: impl FnMut(&mut egui::Ui),
+    ) -> egui::FullOutput {
+        ctx.run_ui(
+            RawInput {
+                screen_rect: Some(screen),
+                time: Some(time),
+                predicted_dt: 0.1,
+                events,
+                ..Default::default()
+            },
+            add,
+        )
+    }
+
+    fn text_on_screen(
+        shapes: &[egui::epaint::ClippedShape],
+        screen: egui::Rect,
+        needle: &str,
+    ) -> bool {
+        fn walk(shape: &egui::Shape, clip: egui::Rect, screen: egui::Rect, needle: &str) -> bool {
+            match shape {
+                egui::Shape::Text(text) if text.galley.text().contains(needle) => {
+                    let painted =
+                        egui::Rect::from_min_size(text.pos, text.galley.size()).intersect(clip);
+                    let visible = painted.intersect(screen);
+                    visible.width() > 8.0 && visible.height() > 8.0
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().any(|s| walk(s, clip, screen, needle)),
+                _ => false,
+            }
+        }
+        shapes
+            .iter()
+            .any(|clipped| walk(&clipped.shape, clipped.clip_rect, screen, needle))
     }
 
     fn button_fill_on(shapes: &[egui::epaint::ClippedShape], button: egui::Rect) -> bool {
