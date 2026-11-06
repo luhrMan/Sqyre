@@ -941,18 +941,26 @@ fn portal_pw_thread(
                         "PORTAL",
                         "pw",
                         &format!(
-                            "format={:?} {}x{} fps={}/{} max={}/{}",
+                            "format={:?} {}x{} fps={}/{} max={}/{} modifier={:#x}",
                             user_data.format.format(),
                             size.width,
                             size.height,
                             fps.num,
                             fps.denom,
                             max_fps.num,
-                            max_fps.denom
+                            max_fps.denom,
+                            user_data.format.modifier()
                         ),
                     );
-                    let width = size.width.max(1) as i32;
-                    let height = size.height.max(1) as i32;
+                    // An empty size is an intermediate pod. Advertising a 1×1
+                    // buffer fails to intersect COSMIC's real frame size and
+                    // errors that stream while a sibling stream stays up.
+                    if size.width == 0 || size.height == 0 {
+                        cap_log("PORTAL", "pw", &format!("stream {index} size empty"));
+                        return;
+                    }
+                    let width = size.width as i32;
+                    let height = size.height as i32;
                     let stride = width.saturating_mul(4);
                     let bytes = stride.saturating_mul(height);
                     match apply_stream_buffer_params(stream, bytes, stride) {
@@ -1409,10 +1417,16 @@ fn pw_header_meta_bytes() -> Result<Vec<u8>, CaptureError> {
     serialize_spa_object(obj)
 }
 
+/// CPU-readable buffer types. COSMIC's DMA-BUF frames set `maxsize` to 0 and
+/// are not mapped; requesting `SPA_DATA_DmaBuf` makes that path win on some
+/// streams so those frames never copy, while a MemFd stream in the same
+/// session still works. Mutter and wlroots deliver MemFd when DMA-BUF is absent.
+fn cpu_buffer_type_mask() -> i32 {
+    (1 << DataType::MemPtr.as_raw()) | (1 << DataType::MemFd.as_raw())
+}
+
 fn pw_buffers_param_bytes(size: i32, stride: i32) -> Result<Vec<u8>, CaptureError> {
-    let data_mask = (1 << DataType::MemPtr.as_raw())
-        | (1 << DataType::MemFd.as_raw())
-        | (1 << DataType::DmaBuf.as_raw());
+    let data_mask = cpu_buffer_type_mask();
     let obj = pw::spa::pod::Object {
         type_: pw::spa::utils::SpaTypes::ObjectParamBuffers.as_raw(),
         id: pw::spa::param::ParamType::Buffers.as_raw(),
@@ -1816,6 +1830,14 @@ mod tests {
 
     fn monitor_rect(x: i32, w: i32, h: i32) -> DesktopRect {
         DesktopRect { x, y: 0, w, h }
+    }
+
+    #[test]
+    fn cpu_buffer_types_exclude_dmabuf() {
+        let mask = cpu_buffer_type_mask();
+        assert_eq!(mask & (1 << DataType::DmaBuf.as_raw()), 0);
+        assert_ne!(mask & (1 << DataType::MemFd.as_raw()), 0);
+        assert_ne!(mask & (1 << DataType::MemPtr.as_raw()), 0);
     }
 
     #[test]
