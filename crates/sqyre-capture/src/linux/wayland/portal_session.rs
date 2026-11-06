@@ -676,6 +676,16 @@ async fn finish_pipewire_setup(
             rect: stream_rect(s),
         })
         .collect();
+    // COSMIC advertises logical positions and physical sizes. Sqyre's desktop
+    // (and the PipeWire frame) is physical, so shift the origin before the
+    // overlap pack — a vertical pair overlaps in logical space and would
+    // otherwise be laid out side by side.
+    if sqyre_ports::cosmic_desktop_session() {
+        place_cosmic_streams(
+            &mut streams,
+            &super::compositor_kick::snapshot_output_geoms(),
+        );
+    }
     let x11_layout = crate::x11_capture::query_x11_monitor_rects();
     let monitor_rects = shared_monitor_rects(&mut streams, &x11_layout);
     cap_log(
@@ -862,6 +872,40 @@ fn take_layout_match(remaining: &[DesktopRect], hint: DesktopRect) -> Option<usi
         return None;
     }
     remaining.first().map(|_| 0)
+}
+
+/// Move a COSMIC stream from its logical portal position onto the physical
+/// pixel grid when `wl_output` scale is greater than 1 and the stream size is
+/// the hardware mode. A logical-sized stream (GNOME) does not match the mode
+/// and is left alone.
+fn place_cosmic_stream(
+    rect: DesktopRect,
+    outputs: &[super::compositor_kick::WlOutputGeom],
+) -> DesktopRect {
+    let Some(output) = outputs.iter().find(|output| {
+        output.scale > 1
+            && output.x == rect.x
+            && output.y == rect.y
+            && output.width == rect.w
+            && output.height == rect.h
+    }) else {
+        return rect;
+    };
+    DesktopRect {
+        x: output.x.saturating_mul(output.scale),
+        y: output.y.saturating_mul(output.scale),
+        w: rect.w,
+        h: rect.h,
+    }
+}
+
+fn place_cosmic_streams(
+    streams: &mut [PwStreamSetup],
+    outputs: &[super::compositor_kick::WlOutputGeom],
+) {
+    for stream in streams.iter_mut() {
+        stream.rect = place_cosmic_stream(stream.rect, outputs);
+    }
 }
 
 fn layout_stream_rects(streams: &mut [PwStreamSetup]) {
@@ -1096,6 +1140,64 @@ mod tests {
         assert_eq!(rects[0].w, 2560);
         assert_eq!(rects[0].h, 1440);
         assert_eq!(rects[0].x, 1920);
+    }
+
+    #[test]
+    fn cosmic_vertical_pair_keeps_physical_rows() {
+        use super::super::compositor_kick::WlOutputGeom;
+        let outputs = [
+            WlOutputGeom {
+                x: 0,
+                y: 0,
+                width: 3840,
+                height: 2160,
+                scale: 2,
+            },
+            WlOutputGeom {
+                x: 0,
+                y: 1080,
+                width: 3840,
+                height: 2160,
+                scale: 2,
+            },
+        ];
+        let mut streams = vec![
+            PwStreamSetup {
+                node_id: 1,
+                rect: DesktopRect {
+                    x: 0,
+                    y: 0,
+                    w: 3840,
+                    h: 2160,
+                },
+            },
+            PwStreamSetup {
+                node_id: 2,
+                rect: DesktopRect {
+                    x: 0,
+                    y: 1080,
+                    w: 3840,
+                    h: 2160,
+                },
+            },
+        ];
+        place_cosmic_streams(&mut streams, &outputs);
+        assert_eq!(streams[1].rect.y, 2160);
+        // Logical positions overlap once the size is physical; after the
+        // scale shift they stack and must not be packed onto one row.
+        layout_stream_rects(&mut streams);
+        assert_eq!(streams[0].rect.y, 0);
+        assert_eq!(streams[1].rect.y, 2160);
+        assert_eq!(streams[1].rect.x, 0);
+
+        // A logical-sized stream (not the hardware mode) is not shifted.
+        let logical = DesktopRect {
+            x: 0,
+            y: 1080,
+            w: 1920,
+            h: 1080,
+        };
+        assert_eq!(place_cosmic_stream(logical, &outputs), logical);
     }
 
     #[test]
