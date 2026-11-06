@@ -845,14 +845,7 @@ fn portal_pw_thread(
             ),
         );
 
-        let mut props = properties! {
-            *pw::keys::MEDIA_TYPE => "Video",
-            *pw::keys::MEDIA_CATEGORY => "Capture",
-            *pw::keys::MEDIA_ROLE => "Screen",
-        };
-        if let Some(serial) = serial.as_deref() {
-            props.insert("target.object", serial);
-        }
+        let props = screencast_stream_props(serial.as_deref());
 
         let stream = propagate_ready(
             &ready,
@@ -886,8 +879,9 @@ fn portal_pw_thread(
                         &format!("stream {index} {old:?} -> {new:?}"),
                     );
                     match &new {
-                        // PipeWire suspends idle emit-on-damage nodes; resume so
-                        // captures keep flowing instead of starving forever.
+                        // Pause-on-idle stops the node. Reactivate so the next frame
+                        // is delivered. Suspend stays off (`node.suspend-on-idle`),
+                        // so this is a state flip rather than a driver restart.
                         pw::stream::StreamState::Paused => {
                             if let Err(e) = stream.set_active(true) {
                                 cap_log(
@@ -1262,6 +1256,25 @@ fn pw_collect_node_serials(
     }
     let map = serials.borrow().clone();
     Ok(map)
+}
+
+/// Stream properties for a portal ScreenCast consumer.
+///
+/// `node.suspend-on-idle=false`: after the desktop sits still, PipeWire
+/// suspends an idle node. The next capture then waits out driver restart
+/// (often well past the fresh-frame budget) before the first buffer arrives.
+/// A paused node resumes on `set_active` in one cycle.
+fn screencast_stream_props(target_serial: Option<&str>) -> pw::properties::PropertiesBox {
+    let mut props = properties! {
+        *pw::keys::MEDIA_TYPE => "Video",
+        *pw::keys::MEDIA_CATEGORY => "Capture",
+        *pw::keys::MEDIA_ROLE => "Screen",
+        "node.suspend-on-idle" => "false",
+    };
+    if let Some(serial) = target_serial {
+        props.insert("target.object", serial);
+    }
+    props
 }
 
 fn pw_video_enum_format_bytes() -> Result<Vec<u8>, CaptureError> {
@@ -1830,6 +1843,15 @@ mod tests {
 
     fn monitor_rect(x: i32, w: i32, h: i32) -> DesktopRect {
         DesktopRect { x, y: 0, w, h }
+    }
+
+    #[test]
+    fn screencast_stream_does_not_suspend_when_idle() {
+        let props = screencast_stream_props(Some("42"));
+        assert_eq!(props.get("node.suspend-on-idle"), Some("false"));
+        assert_eq!(props.get("target.object"), Some("42"));
+        assert_eq!(props.get(*pw::keys::MEDIA_ROLE), Some("Screen"));
+        assert_eq!(screencast_stream_props(None).get("target.object"), None);
     }
 
     #[test]
