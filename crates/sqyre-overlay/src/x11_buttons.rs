@@ -5,6 +5,12 @@
 //! window per button and reads ButtonPress/Release on its own `Display`, so
 //! clicks do not wait for the egui ROOT frame.
 //!
+//! On a Wayland session the hit window's ShapeInput stays empty. Cosmic (and
+//! other compositors) reject a confined pointer move when hit-testing would
+//! land on a different surface, so a button-sized input region is a wall the
+//! game cursor cannot cross. Clicks and hover are polled from the cursor
+//! position instead.
+//!
 //! # X11 safety (`HostState`)
 //!
 //! All Xlib/`xfixes` use on the host thread assumes:
@@ -61,6 +67,9 @@ const SHAPE_INPUT: c_int = 2;
 
 const POLL_IDLE_MS: u64 = 16;
 const BUSY_TICK_MS: u64 = 50;
+/// Hover this long before a polled (Wayland) tip appears, so a game cursor
+/// crossing the button does not flash one.
+const PASSTHROUGH_TIP_DWELL: Duration = Duration::from_millis(300);
 const TIP_GAP_PX: i32 = 6;
 /// X11 cursorfont fleur (four-way move arrow).
 const XC_FLEUR: c_uint = 52;
@@ -407,6 +416,18 @@ struct HostState {
     running_label: Option<String>,
     /// Detection grab asked the buttons to leave the screen until it finishes.
     capture_omit: bool,
+    /// Wayland session: hit ShapeInput stays empty so a confined game pointer
+    /// can cross the button. Clicks come from [`poll_passthrough_pointer`].
+    passthrough_hits: bool,
+    /// Button under the polled cursor, when the hover started, and whether the
+    /// dwell tip was already shown for this visit.
+    passthrough_hover: Option<PassthroughHover>,
+}
+
+struct PassthroughHover {
+    id: String,
+    since: Instant,
+    tip_done: bool,
 }
 
 /// 32-bit visual info shared by every ARGB window on this display.
@@ -509,6 +530,13 @@ fn host_loop(
         }
     };
 
+    // Wayland compositors confine an X11 game pointer to the surface under the
+    // cursor. A hit window with ShapeInput is a different surface, so the cursor
+    // stops at the button edge. Empty input lets the hit-test fall through to
+    // the game; presses are sampled from the pointer instead.
+    let passthrough_hits =
+        sqyre_capture::LinuxSessionInfo::detect().has_wayland && xfixes_supported(display);
+
     let mut state = HostState {
         display,
         ptr_display,
@@ -538,16 +566,29 @@ fn host_loop(
         press_stops_flag,
         running_label: None,
         capture_omit: false,
+        passthrough_hits,
+        passthrough_hover: None,
     };
 
     note(&format!(
-        "overlay-x11: host thread started (override-redirect buttons; ptr_conn={})",
+        "overlay-x11: host thread started (override-redirect buttons; ptr_conn={}; hit_input={})",
         if ptr_display.is_null() {
             "shared"
         } else {
             "separate"
-        }
+        },
+        if passthrough_hits { "empty" } else { "shape" }
     ));
+    event_log(
+        "SQYRE_OVERLAY",
+        &[
+            (
+                "hit_input",
+                if passthrough_hits { "empty" } else { "shape" },
+            ),
+            ("session", if passthrough_hits { "wayland" } else { "x11" }),
+        ],
+    );
     let mut last_busy_tick = Instant::now();
     let mut last_x_growth = Instant::now();
     let mut stall_raised = false;
@@ -650,7 +691,10 @@ fn host_loop(
                     }
                     last_btn1 = btn1;
                 }
-            } else if let Some((_, _, btn1)) = ptr {
+            } else if let Some((x, y, btn1)) = ptr {
+                if state.passthrough_hits && state.chooser.as_ref().is_none_or(|c| !c.mapped) {
+                    poll_passthrough_pointer(&mut state, x, y, btn1, last_btn1);
+                }
                 last_btn1 = btn1;
             }
             if state.drag.is_some() {
@@ -872,9 +916,8 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
             }
             let geom_applied = geom_changed && !dragging;
             Some((
-                // Hit keeps the full rounded Input (paint re-derives the face
-                // Bounding from painted alpha, so style/fill flips need no
-                // separate shape pass).
+                // Hit input tracks geometry. Paint re-derives the face Bounding
+                // from painted alpha, so style/fill flips need no separate shape pass.
                 geom_applied || radius_changed,
                 style_changed || geom_applied,
                 live.spec.face.w,
@@ -884,8 +927,8 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
         } else {
             // Create here so `spec` is not used after the update arm moves it.
             if let Ok(live) = create_button(state, spec) {
-                apply_hit_rounded_input(
-                    state.display,
+                sync_hit_input(
+                    state,
                     live.hit,
                     live.spec.face.w,
                     live.spec.face.h,
@@ -900,15 +943,15 @@ fn apply_specs(state: &mut HostState, specs: Vec<NativeButtonSpec>) {
         if let Some((need_hit_input, need_paint, w, h, radius)) = updated {
             if need_hit_input {
                 if let Some(live) = state.buttons.get(&id) {
-                    apply_hit_rounded_input(state.display, live.hit, w, h, radius);
+                    sync_hit_input(state, live.hit, w, h, radius);
                 }
             }
             if need_paint {
                 if let Some(live) = state.buttons.get(&id) {
                     paint_button(state, live, true);
                     if live.spec.face.bg[3] == 0 {
-                        apply_hit_rounded_input(
-                            state.display,
+                        sync_hit_input(
+                            state,
                             live.hit,
                             live.spec.face.w,
                             live.spec.face.h,
@@ -1067,7 +1110,7 @@ fn cancel_drag(state: &mut HostState) {
             x_move_resize(state.display, face, drag.start_x, drag.start_y, w, h);
             x_move_resize(state.display, hit, drag.start_x, drag.start_y, w, h);
         }
-        apply_hit_rounded_input(state.display, hit, w, h, radius);
+        sync_hit_input(state, hit, w, h, radius);
         // SAFETY: HostState display invariant: `state.display` is open on this thread.
         unsafe {
             x_flush(state.display);
@@ -1097,7 +1140,7 @@ fn commit_drag(state: &mut HostState) {
         unsafe {
             x_move_resize(state.display, hit, nx, ny, w, h);
         }
-        apply_hit_rounded_input(state.display, hit, w, h, radius);
+        sync_hit_input(state, hit, w, h, radius);
         // SAFETY: HostState display invariant: `state.display` is open on this thread.
         unsafe {
             x_flush(state.display);
@@ -1115,7 +1158,7 @@ fn commit_drag(state: &mut HostState) {
         x_move_resize(state.display, hit, nx, ny, w, h);
         x_flush(state.display);
     }
-    apply_hit_rounded_input(state.display, hit, w, h, radius);
+    sync_hit_input(state, hit, w, h, radius);
     let mv = OverlayButtonMove {
         id: drag.id.clone(),
         x: nx,
@@ -1776,6 +1819,11 @@ fn create_button(
         };
         register_overlay_window(state.display, state.root, win, OVERLAY_WM_TITLE);
         apply_empty_input_shape(state.display, win);
+        // Empty the hit before map on Wayland so the first commit is not a
+        // full-window input region (that region is the cursor wall).
+        if state.passthrough_hits {
+            apply_empty_input_shape(state.display, hit);
+        }
         x_select_button_input(state.display, hit, state.relocate_mode);
         (hit, hit_colormap, win, argb, face_colormap)
     };
@@ -2035,7 +2083,15 @@ fn sync_press_stops(state: &mut HostState) {
             btn.spec.face.h,
             btn.spec.face.corner_radius,
         );
-        apply_busy_hit_shape(state.display, state.press_stops, hit, w, h, radius);
+        apply_busy_hit_shape(
+            state.display,
+            state.press_stops,
+            state.passthrough_hits,
+            hit,
+            w,
+            h,
+            radius,
+        );
     }
     if changed {
         // SAFETY: HostState display invariant.
@@ -2048,15 +2104,18 @@ fn sync_press_stops(state: &mut HostState) {
 fn apply_busy_hit_shape(
     display: *mut Display,
     press_stops: bool,
+    passthrough: bool,
     hit: Window,
     w: u32,
     h: u32,
     radius: f32,
 ) {
-    if press_stops {
-        apply_hit_rounded_input(display, hit, w, h, radius);
-    } else {
+    // Wayland hits stay empty for the whole session — polling decides whether
+    // a press stops the run. Restoring ShapeInput would put the wall back.
+    if passthrough || !press_stops {
         apply_empty_input_shape(display, hit);
+    } else {
+        apply_hit_rounded_input(display, hit, w, h, radius);
     }
 }
 
@@ -2094,9 +2153,17 @@ fn apply_running_busy(state: &mut HostState, running: Option<&str>) {
             state.press_stops,
         );
         if want {
-            apply_busy_hit_shape(state.display, press_stops, hit, w, h, radius);
+            apply_busy_hit_shape(
+                state.display,
+                press_stops,
+                state.passthrough_hits,
+                hit,
+                w,
+                h,
+                radius,
+            );
         } else {
-            apply_hit_rounded_input(state.display, hit, w, h, radius);
+            sync_hit_input(state, hit, w, h, radius);
         }
     }
     if !flipped {
@@ -2850,36 +2917,7 @@ fn drain_x_events(state: &mut HostState) -> bool {
                 begin_relocate_drag(state, &id, root_x, root_y, "ungrab+poll");
                 continue;
             }
-            if state.press_stops
-                && state
-                    .running_label
-                    .as_deref()
-                    .is_some_and(|n| !n.trim().is_empty())
-            {
-                mark_site(&format!("overlay-x11:press-stop:{id}"));
-                note(&format!("overlay-x11: press-stop id={id}"));
-                state.run_stop.lock().request_stop();
-                continue;
-            }
-            // Fire on press. Waiting for ButtonRelease lost clicks when the game
-            // restacked or hide_tip unmapped under the pointer (no grab).
-            let queued = if let Some(btn) = state.buttons.get_mut(&id) {
-                if btn.spec.busy {
-                    mark_site(&format!("overlay-x11:press-busy:{id}"));
-                    note(&format!("overlay-x11: press-busy-ignore id={id}"));
-                    None
-                } else if btn.armed {
-                    None
-                } else {
-                    btn.armed = true;
-                    Some((btn.spec.id.clone(), btn.spec.macro_name.clone()))
-                }
-            } else {
-                None
-            };
-            if let Some((click_id, macro_name)) = queued {
-                fire_overlay_click(state, &click_id, macro_name);
-            }
+            on_overlay_press(state, &id);
             continue;
         }
         if ty == ButtonRelease {
@@ -3235,6 +3273,185 @@ fn apply_face_chrome_bounding(display: *mut Display, win: Window, w: u32, h: u32
     apply_empty_input_shape(display, win);
 }
 
+/// What a left press on a button should do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OverlayPressKind {
+    /// A macro is running and press-to-stop is on.
+    Stop,
+    /// This button is the busy one and press-to-stop is off.
+    IgnoreBusy,
+    /// Press already consumed; wait for release.
+    IgnoreArmed,
+    /// Enqueue the button's macro.
+    Fire,
+}
+
+fn overlay_press_kind(
+    press_stops: bool,
+    running: bool,
+    busy: bool,
+    armed: bool,
+) -> OverlayPressKind {
+    if press_stops && running {
+        OverlayPressKind::Stop
+    } else if busy {
+        OverlayPressKind::IgnoreBusy
+    } else if armed {
+        OverlayPressKind::IgnoreArmed
+    } else {
+        OverlayPressKind::Fire
+    }
+}
+
+/// Point inside the button's rounded rect (corners outside the radius miss).
+fn spec_contains_rounded(spec: &NativeButtonSpec, x: i32, y: i32) -> bool {
+    if !spec_contains(spec, x, y) {
+        return false;
+    }
+    let w = spec.face.w.max(1) as i32;
+    let h = spec.face.h.max(1) as i32;
+    let r = (spec.face.corner_radius.round().max(0.0) as i32)
+        .min(w / 2)
+        .min(h / 2);
+    if r <= 0 {
+        return true;
+    }
+    let lx = x - spec.face.x;
+    let ly = y - spec.face.y;
+    let (cx, cy) = if lx < r && ly < r {
+        (r, r)
+    } else if lx >= w - r && ly < r {
+        (w - r, r)
+    } else if lx < r && ly >= h - r {
+        (r, h - r)
+    } else if lx >= w - r && ly >= h - r {
+        (w - r, h - r)
+    } else {
+        return true;
+    };
+    let dx = lx - cx;
+    let dy = ly - cy;
+    dx * dx + dy * dy <= r * r
+}
+
+/// Wayland: keep ShapeInput empty. X11: rounded disk so ButtonPress lands here.
+fn sync_hit_input(state: &HostState, hit: Window, w: u32, h: u32, radius: f32) {
+    if state.passthrough_hits {
+        apply_empty_input_shape(state.display, hit);
+    } else {
+        apply_hit_rounded_input(state.display, hit, w, h, radius);
+    }
+}
+
+/// Sample hover and the left-button edge while hit windows are click-through.
+fn poll_passthrough_pointer(state: &mut HostState, x: i32, y: i32, btn1: bool, was_btn1: bool) {
+    let id = state
+        .buttons
+        .values()
+        .filter(|b| b.mapped)
+        .find(|b| spec_contains_rounded(&b.spec, x, y))
+        .map(|b| b.spec.id.clone());
+    sync_passthrough_hover(state, id.as_deref());
+    if btn1 && !was_btn1 {
+        if let Some(id) = id {
+            on_overlay_press(state, &id);
+        }
+    } else if !btn1 && was_btn1 {
+        for btn in state.buttons.values_mut() {
+            btn.armed = false;
+        }
+    }
+}
+
+fn sync_passthrough_hover(state: &mut HostState, id: Option<&str>) {
+    let same = match (&state.passthrough_hover, id) {
+        (Some(hover), Some(id)) => hover.id == id,
+        (None, None) => true,
+        _ => false,
+    };
+    if same {
+        let show = id.is_some_and(|id| {
+            state.passthrough_hover.as_ref().is_some_and(|hover| {
+                !hover.tip_done && hover.since.elapsed() >= PASSTHROUGH_TIP_DWELL
+            }) && !state
+                .tip
+                .as_ref()
+                .is_some_and(|t| t.mapped && t.for_id == id)
+        });
+        if show {
+            if let Some(hover) = state.passthrough_hover.as_mut() {
+                hover.tip_done = true;
+            }
+            if let Some(id) = id {
+                show_tip_for(state, id);
+            }
+        }
+        return;
+    }
+    let prev = state.passthrough_hover.take().map(|hover| hover.id);
+    if let Some(prev) = prev {
+        if let Some(btn) = state.buttons.get_mut(&prev) {
+            btn.hovered = false;
+        }
+        if let Some(btn) = state.buttons.get(&prev) {
+            paint_button(state, btn, true);
+        }
+        if state.tip.as_ref().is_some_and(|t| t.for_id == prev) {
+            hide_tip(state);
+        }
+    }
+    if let Some(id) = id {
+        state.passthrough_hover = Some(PassthroughHover {
+            id: id.to_string(),
+            since: Instant::now(),
+            tip_done: false,
+        });
+        if let Some(btn) = state.buttons.get_mut(id) {
+            btn.hovered = true;
+        }
+        if let Some(btn) = state.buttons.get(id) {
+            paint_button(state, btn, true);
+        }
+    }
+}
+
+/// Shared press path for X events and Wayland cursor polling.
+fn on_overlay_press(state: &mut HostState, id: &str) {
+    hide_tip(state);
+    let running = state
+        .running_label
+        .as_deref()
+        .is_some_and(|name| !name.trim().is_empty());
+    let (busy, armed) = state
+        .buttons
+        .get(id)
+        .map(|btn| (btn.spec.busy, btn.armed))
+        .unwrap_or((false, false));
+    match overlay_press_kind(state.press_stops, running, busy, armed) {
+        OverlayPressKind::Stop => {
+            mark_site(&format!("overlay-x11:press-stop:{id}"));
+            note(&format!("overlay-x11: press-stop id={id}"));
+            state.run_stop.lock().request_stop();
+        }
+        OverlayPressKind::IgnoreBusy => {
+            mark_site(&format!("overlay-x11:press-busy:{id}"));
+            note(&format!("overlay-x11: press-busy-ignore id={id}"));
+        }
+        OverlayPressKind::IgnoreArmed => {}
+        OverlayPressKind::Fire => {
+            // Fire on press. Waiting for release lost clicks when the game
+            // restacked or hide_tip unmapped under the pointer (no grab).
+            let queued = state.buttons.get_mut(id).map(|btn| {
+                btn.armed = true;
+                (btn.spec.id.clone(), btn.spec.macro_name.clone())
+            });
+            if let Some((click_id, macro_name)) = queued {
+                fire_overlay_click(state, &click_id, macro_name);
+            }
+        }
+    }
+}
+
 /// Hit cover: rounded ShapeInput matching the button disk.
 fn apply_hit_rounded_input(display: *mut Display, hit: Window, w: u32, h: u32, radius_px: f32) {
     if w == 0 || h == 0 || w > u32::from(u16::MAX) || h > u32::from(u16::MAX) {
@@ -3492,6 +3709,49 @@ mod tests {
         };
         assert!(spec_contains(&zero, 100, 200));
         assert!(!spec_contains(&zero, 101, 200));
+    }
+
+    #[test]
+    fn spec_contains_rounded_skips_corners() {
+        let mut s = spec();
+        s.face.corner_radius = 24.0; // disk: radius is half of 48
+        assert!(spec_contains_rounded(&s, 124, 224), "center");
+        assert!(!spec_contains_rounded(&s, 100, 200), "top-left corner");
+        assert!(!spec_contains_rounded(&s, 147, 200), "top-right corner");
+        assert!(
+            spec_contains_rounded(&s, 124, 200),
+            "top middle of the disk"
+        );
+        // Radius 0 keeps the full rect, including corners.
+        s.face.corner_radius = 0.0;
+        assert!(spec_contains_rounded(&s, 100, 200));
+        assert!(!spec_contains_rounded(&s, 99, 200));
+    }
+
+    #[test]
+    fn overlay_press_kind_matches_click_policy() {
+        assert_eq!(
+            overlay_press_kind(true, true, true, false),
+            OverlayPressKind::Stop,
+            "press-to-stop wins over busy"
+        );
+        assert_eq!(
+            overlay_press_kind(false, true, true, false),
+            OverlayPressKind::IgnoreBusy
+        );
+        assert_eq!(
+            overlay_press_kind(false, false, false, true),
+            OverlayPressKind::IgnoreArmed
+        );
+        assert_eq!(
+            overlay_press_kind(false, false, false, false),
+            OverlayPressKind::Fire
+        );
+        assert_eq!(
+            overlay_press_kind(true, false, false, false),
+            OverlayPressKind::Fire,
+            "press-to-stop does nothing while idle"
+        );
     }
 
     #[test]
