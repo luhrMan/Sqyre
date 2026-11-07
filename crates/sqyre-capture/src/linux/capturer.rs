@@ -182,6 +182,13 @@ impl OsCapturer {
             Inner::Portal(c) => c.is_dead(),
         }
     }
+
+    #[cfg(feature = "portal-capture")]
+    pub(crate) fn apply_pipewire_suspend_on_idle(&self, suspend: bool) {
+        if let Inner::Portal(c) = &self.0 {
+            c.apply_pipewire_suspend_on_idle(suspend);
+        }
+    }
 }
 
 fn open_wayland_portal() -> Result<OsCapturer, CaptureError> {

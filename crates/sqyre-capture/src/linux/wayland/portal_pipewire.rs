@@ -70,6 +70,65 @@ const STARVED_KICKS_DEAD: u32 = 3;
 /// a stuck emit-on-damage stream does not spam stderr on every crop retry.
 static LOGGED_FRAME_DROUGHT: AtomicBool = AtomicBool::new(false);
 
+/// `node.suspend-on-idle` for portal streams. On by default: an idle node
+/// suspends, and the next capture waits out the driver restart.
+static SUSPEND_ON_IDLE: AtomicBool = AtomicBool::new(true);
+/// Streams currently in [`pw::stream::StreamState::Streaming`].
+static STREAMING: AtomicU32 = AtomicU32::new(0);
+/// In-flight captures that started while no stream was streaming.
+static WAKE_REQUESTS: AtomicU32 = AtomicU32::new(0);
+
+/// True while idle-suspend is on and a capture is waiting for a stream
+/// that is not streaming yet.
+pub(crate) fn pipewire_stream_waking() -> bool {
+    wake_visible(
+        SUSPEND_ON_IDLE.load(Ordering::SeqCst),
+        WAKE_REQUESTS.load(Ordering::SeqCst),
+        STREAMING.load(Ordering::SeqCst),
+    )
+}
+
+fn wake_visible(suspend_on_idle: bool, wake_requests: u32, streaming: u32) -> bool {
+    suspend_on_idle && wake_requests > 0 && streaming == 0
+}
+
+/// Apply the settings toggle. An open session is updated on the PipeWire thread.
+pub(crate) fn set_pipewire_suspend_on_idle(suspend: bool) {
+    SUSPEND_ON_IDLE.store(suspend, Ordering::SeqCst);
+    if let Some(Ok(capturer)) = crate::shared_capturer_if_ready() {
+        capturer.apply_pipewire_suspend_on_idle(suspend);
+    }
+}
+
+fn account_stream_state(old: &pw::stream::StreamState, new: &pw::stream::StreamState) {
+    let was = matches!(old, pw::stream::StreamState::Streaming);
+    let now = matches!(new, pw::stream::StreamState::Streaming);
+    if now && !was {
+        STREAMING.fetch_add(1, Ordering::SeqCst);
+    } else if was && !now {
+        let _ = STREAMING.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |n| n.checked_sub(1));
+    }
+}
+
+/// Held for one capture wait that began with every stream asleep.
+struct WakeTicket(bool);
+
+fn arm_wake_if_asleep() -> WakeTicket {
+    if !SUSPEND_ON_IDLE.load(Ordering::SeqCst) || STREAMING.load(Ordering::SeqCst) > 0 {
+        return WakeTicket(false);
+    }
+    WAKE_REQUESTS.fetch_add(1, Ordering::SeqCst);
+    WakeTicket(true)
+}
+
+impl Drop for WakeTicket {
+    fn drop(&mut self) {
+        if self.0 {
+            WAKE_REQUESTS.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+}
+
 /// Portal + PipeWire capturer for Wayland sessions.
 pub struct PortalCapturer {
     frame: Arc<(Mutex<FrameSlot>, Condvar)>,
@@ -145,6 +204,7 @@ fn idle_release_remaining(slot: &FrameSlot, idle: Duration, now: Instant) -> Opt
 
 enum PwThreadMsg {
     Quit,
+    SetSuspendOnIdle(bool),
 }
 
 impl PortalCapturer {
@@ -253,6 +313,13 @@ impl PortalCapturer {
         Ok(capturer)
     }
 
+    pub(crate) fn apply_pipewire_suspend_on_idle(&self, suspend: bool) {
+        if let Some(tx) = self.quit_tx.lock().as_ref() {
+            // The thread may already have exited; the next open reads the flag.
+            let _ = tx.send(PwThreadMsg::SetSuspendOnIdle(suspend));
+        }
+    }
+
     /// Wait until a PipeWire stream that overlaps `rect` copies a frame newer than
     /// the cache at the start of this call. Prefers a spontaneous frame (no kick);
     /// then pulses layer-shell or windowed-xdg damage when available.
@@ -260,6 +327,7 @@ impl PortalCapturer {
     /// If other streams advance while the search region stays stuck, bail early
     /// (same cache as a full timeout).
     fn wait_for_overlapping_stream_frame(&self, rect: DesktopRect) {
+        let _wake = arm_wake_if_asleep();
         // Unmap staged xdg kick and restore the window that had focus before the
         // pulse — GNOME activates the kick toplevel and EIS clicks otherwise miss.
         struct KickFocusRestore {
@@ -439,6 +507,7 @@ impl PortalCapturer {
 
     /// Wait for a newer overlapping PipeWire frame without mapping a kick surface.
     fn wait_for_spontaneous_stream_frame(&self, rect: DesktopRect) -> bool {
+        let _wake = arm_wake_if_asleep();
         self.enable_cpu_frame_buffering();
         let min_gen = {
             let slot = self.frame.0.lock();
@@ -576,6 +645,7 @@ impl PortalCapturer {
             slot.buffering = true;
             min
         };
+        let _wake = arm_wake_if_asleep();
         let _ = wait_until_region_after(
             &self.frame.0,
             &self.frame.1,
@@ -764,6 +834,8 @@ fn portal_pw_thread(
     ready: SyncSender<Result<(), CaptureError>>,
     msg_rx: Receiver<PwThreadMsg>,
 ) -> Result<(), CaptureError> {
+    STREAMING.store(0, Ordering::SeqCst);
+    let _clear_streaming = ClearStreaming;
     let ready = Arc::new(ready);
     let (portal_hold, setup) = propagate_ready(&ready, pollster::block_on(open_portal_session()))?;
     let eis_fd = PENDING_EIS_FD.lock().take();
@@ -845,7 +917,8 @@ fn portal_pw_thread(
             ),
         );
 
-        let props = screencast_stream_props(serial.as_deref());
+        let props =
+            screencast_stream_props(serial.as_deref(), SUSPEND_ON_IDLE.load(Ordering::SeqCst));
 
         let stream = propagate_ready(
             &ready,
@@ -878,10 +951,11 @@ fn portal_pw_thread(
                         "pw",
                         &format!("stream {index} {old:?} -> {new:?}"),
                     );
+                    account_stream_state(&old, &new);
                     match &new {
                         // Pause-on-idle stops the node. Reactivate so the next frame
-                        // is delivered. Suspend stays off (`node.suspend-on-idle`),
-                        // so this is a state flip rather than a driver restart.
+                        // is delivered. With suspend disabled this is a state flip;
+                        // with it enabled the node may still be restarting its driver.
                         pw::stream::StreamState::Paused => {
                             if let Err(e) = stream.set_active(true) {
                                 cap_log(
@@ -1156,6 +1230,9 @@ fn portal_pw_thread(
     while !shutdown.load(Ordering::SeqCst) {
         match msg_rx.try_recv() {
             Ok(PwThreadMsg::Quit) => break,
+            Ok(PwThreadMsg::SetSuspendOnIdle(suspend)) => {
+                apply_suspend_property(&stream_holds, suspend);
+            }
             Err(mpsc::TryRecvError::Empty) => {}
             Err(mpsc::TryRecvError::Disconnected) => break,
         }
@@ -1258,18 +1335,71 @@ fn pw_collect_node_serials(
     Ok(map)
 }
 
+struct ClearStreaming;
+
+impl Drop for ClearStreaming {
+    fn drop(&mut self) {
+        STREAMING.store(0, Ordering::SeqCst);
+    }
+}
+
+extern "C" {
+    fn pw_stream_update_properties(
+        stream: *mut pw::sys::pw_stream,
+        dict: *const pw::spa::sys::spa_dict,
+    ) -> i32;
+}
+
+fn apply_suspend_property(streams: &[StreamRc], suspend: bool) {
+    let value = if suspend { "true" } else { "false" };
+    let props = properties! {
+        "node.suspend-on-idle" => value,
+    };
+    for stream in streams {
+        // SAFETY: `props` owns the dict for this call. Each stream was created
+        // on this PipeWire thread and is still held. The C function copies the
+        // dict items before it returns.
+        let rc =
+            unsafe { pw_stream_update_properties(stream.as_raw_ptr(), props.dict().as_raw_ptr()) };
+        if rc < 0 {
+            cap_log(
+                "PORTAL",
+                "pw",
+                &format!("suspend-on-idle={value} update failed ({rc})"),
+            );
+        }
+        if !suspend {
+            if let Err(e) = stream.set_active(true) {
+                cap_log(
+                    "PORTAL",
+                    "pw",
+                    &format!("resume after suspend off failed: {e}"),
+                );
+            }
+        }
+    }
+    cap_log(
+        "PORTAL",
+        "pw",
+        &format!("suspend-on-idle={value} streams={}", streams.len()),
+    );
+}
+
 /// Stream properties for a portal ScreenCast consumer.
 ///
-/// `node.suspend-on-idle=false`: after the desktop sits still, PipeWire
-/// suspends an idle node. The next capture then waits out driver restart
-/// (often well past the fresh-frame budget) before the first buffer arrives.
-/// A paused node resumes on `set_active` in one cycle.
-fn screencast_stream_props(target_serial: Option<&str>) -> pw::properties::PropertiesBox {
+/// `suspend_on_idle`: after the desktop sits still, PipeWire suspends an idle
+/// node. The next capture then waits out driver restart before the first
+/// buffer arrives. Off keeps the node paused so `set_active` resumes in one cycle.
+fn screencast_stream_props(
+    target_serial: Option<&str>,
+    suspend_on_idle: bool,
+) -> pw::properties::PropertiesBox {
+    let suspend = if suspend_on_idle { "true" } else { "false" };
     let mut props = properties! {
         *pw::keys::MEDIA_TYPE => "Video",
         *pw::keys::MEDIA_CATEGORY => "Capture",
         *pw::keys::MEDIA_ROLE => "Screen",
-        "node.suspend-on-idle" => "false",
+        "node.suspend-on-idle" => suspend,
     };
     if let Some(serial) = target_serial {
         props.insert("target.object", serial);
@@ -1846,12 +1976,22 @@ mod tests {
     }
 
     #[test]
-    fn screencast_stream_does_not_suspend_when_idle() {
-        let props = screencast_stream_props(Some("42"));
-        assert_eq!(props.get("node.suspend-on-idle"), Some("false"));
-        assert_eq!(props.get("target.object"), Some("42"));
-        assert_eq!(props.get(*pw::keys::MEDIA_ROLE), Some("Screen"));
-        assert_eq!(screencast_stream_props(None).get("target.object"), None);
+    fn screencast_stream_suspend_follows_the_setting() {
+        let asleep = screencast_stream_props(Some("42"), true);
+        assert_eq!(asleep.get("node.suspend-on-idle"), Some("true"));
+        assert_eq!(asleep.get("target.object"), Some("42"));
+        assert_eq!(asleep.get(*pw::keys::MEDIA_ROLE), Some("Screen"));
+        let awake = screencast_stream_props(None, false);
+        assert_eq!(awake.get("node.suspend-on-idle"), Some("false"));
+        assert_eq!(awake.get("target.object"), None);
+    }
+
+    #[test]
+    fn wake_icon_only_while_suspend_is_on_and_no_stream_is_up() {
+        assert!(wake_visible(true, 1, 0));
+        assert!(!wake_visible(false, 1, 0));
+        assert!(!wake_visible(true, 0, 0));
+        assert!(!wake_visible(true, 1, 1));
     }
 
     #[test]

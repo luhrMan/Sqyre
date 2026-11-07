@@ -773,6 +773,10 @@ pub struct UserSettings {
     /// Write diag.log diagnostics to the data directory.
     #[serde(default)]
     pub diagnostic_logging: bool,
+    /// Sleep Wayland screen sharing after the desktop sits still.
+    /// The next capture shows a loading icon while the stream wakes.
+    #[serde(default = "default_suspend_screen_capture")]
+    pub suspend_screen_capture_when_idle: bool,
     /// Write mem.log memory samples to the data directory.
     #[serde(default)]
     pub memory_logging: bool,
@@ -986,6 +990,9 @@ fn default_compact_program_headers() -> bool {
 fn default_window_border() -> bool {
     DEFAULT_WINDOW_BORDER
 }
+fn default_suspend_screen_capture() -> bool {
+    true
+}
 fn default_run_button_glow() -> bool {
     DEFAULT_RUN_BUTTON_GLOW
 }
@@ -1068,6 +1075,7 @@ impl Default for UserSettings {
             worker_threads: default_worker_threads(),
             permissions_intro_done: false,
             diagnostic_logging: false,
+            suspend_screen_capture_when_idle: true,
             memory_logging: false,
             memory_logging_interval_ms: DEFAULT_MEMORY_SAMPLE_INTERVAL_MS,
             restore_last_macro: true,
@@ -1703,6 +1711,7 @@ mod tests {
         };
         let back: UserSettings = serde_yaml::from_str(&serde_yaml::to_string(&s).unwrap()).unwrap();
         assert!(back.diagnostic_logging);
+        assert!(back.suspend_screen_capture_when_idle);
         assert!(back.memory_logging);
         assert_eq!(back.memory_logging_interval_ms, 2_000);
         assert!(!back.restore_last_macro);
@@ -1731,6 +1740,19 @@ mod tests {
         assert!((back.window_width - 1100.0).abs() < f32::EPSILON);
         assert_eq!(back.window_pos_x, Some(10.0));
         assert!(back.window_maximized);
+    }
+
+    #[test]
+    fn suspend_screen_capture_defaults_on_and_roundtrips_off() {
+        let missing: UserSettings = serde_yaml::from_str("{}\n").unwrap();
+        assert!(missing.suspend_screen_capture_when_idle);
+        let off = UserSettings {
+            suspend_screen_capture_when_idle: false,
+            ..Default::default()
+        };
+        let back: UserSettings =
+            serde_yaml::from_str(&serde_yaml::to_string(&off).unwrap()).unwrap();
+        assert!(!back.suspend_screen_capture_when_idle);
     }
 
     #[test]

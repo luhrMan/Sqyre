@@ -436,6 +436,34 @@ pub fn portal_remote_desktop_granted() -> bool {
     }
 }
 
+/// Whether portal PipeWire nodes suspend after the desktop sits idle.
+///
+/// Default is on. An open Wayland session applies the change on its stream
+/// thread; the next session reads it at connect. No-op without portal capture.
+pub fn set_pipewire_suspend_on_idle(suspend: bool) {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::set_pipewire_suspend_on_idle(suspend);
+    }
+    #[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+    {
+        let _ = suspend;
+    }
+}
+
+/// True while idle-suspend is on and a capture is waiting for a PipeWire
+/// stream that is not streaming yet.
+pub fn pipewire_stream_waking() -> bool {
+    #[cfg(all(target_os = "linux", feature = "portal-capture"))]
+    {
+        linux::wayland::pipewire_stream_waking()
+    }
+    #[cfg(not(all(target_os = "linux", feature = "portal-capture")))]
+    {
+        false
+    }
+}
+
 /// EIS input backend is connected (Wayland combined portal session).
 pub fn portal_input_ready() -> bool {
     #[cfg(all(target_os = "linux", feature = "portal-capture"))]
