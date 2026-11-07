@@ -27,6 +27,27 @@ pub struct MetaMutations {
     pub persist: bool,
 }
 
+/// Painted geometry of the name field, tag field, and created-tag row.
+pub(crate) struct NameTagLayout {
+    pub mutations: MetaMutations,
+    /// Read by the header layout test; production only needs [`Self::mutations`].
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "asserted by the header layout test")
+    )]
+    pub name_rect: egui::Rect,
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "asserted by the header layout test")
+    )]
+    pub tag_rect: egui::Rect,
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "asserted by the header layout test")
+    )]
+    pub chips_rect: Option<egui::Rect>,
+}
+
 impl MacroMetaUi {
     pub(crate) fn open_delay_for_docs(&mut self) {
         self.delay_open = true;
@@ -46,31 +67,38 @@ impl MacroMetaUi {
         self.delay_open = false;
     }
 
-    /// Name entry row.
+    /// Name entry row. `edit_limit` caps the field; past that the text scrolls.
     pub fn paint_name_row(
         &mut self,
         ui: &mut egui::Ui,
         m: &mut Macro,
         other_macro_names: &[String],
         enabled: bool,
-    ) -> MetaMutations {
+        edit_limit: f32,
+    ) -> (MetaMutations, egui::Rect) {
         let mut out = MetaMutations::default();
 
-        let resp = crate::widgets::pair_labeled(ui, egui_phosphor::regular::TEXT_T, "Name", |ui| {
-            let name_w = crate::widgets::name_edit_width(ui, &self.name_draft, "Macro name");
-            let edit = ui.add_enabled(
-                enabled,
-                egui::TextEdit::singleline(&mut self.name_draft)
-                    .desired_width(name_w)
-                    .hint_text("Macro name"),
-            );
-            if let Some(err) = &self.name_error {
-                crate::widgets::error_icon(ui, err);
-            }
-            edit
-        })
-        .inner
-        .on_hover_text(help::META_NAME);
+        let framed =
+            crate::widgets::pair_labeled(ui, egui_phosphor::regular::TEXT_T, "Name", |ui| {
+                let name_w = crate::widgets::fields::name_edit_width_limited(
+                    ui,
+                    &self.name_draft,
+                    "Macro name",
+                    edit_limit,
+                );
+                let edit = ui.add_enabled(
+                    enabled,
+                    egui::TextEdit::singleline(&mut self.name_draft)
+                        .desired_width(name_w)
+                        .hint_text("Macro name"),
+                );
+                if let Some(err) = &self.name_error {
+                    crate::widgets::error_icon(ui, err);
+                }
+                edit
+            });
+        let name_rect = framed.response.rect;
+        let resp = framed.inner.on_hover_text(help::META_NAME);
         // Commit on Enter, or when focus leaves with a different value.
         let enter = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         let lost_dirty = resp.lost_focus() && self.name_draft.trim() != m.name;
@@ -91,7 +119,70 @@ impl MacroMetaUi {
                 }
             }
         }
-        out
+        (out, name_rect)
+    }
+
+    /// Name field and tag field on one row; created tags wrap on the rows below.
+    ///
+    /// The name hugs its text and pushes the tag field right. When the tag
+    /// field reaches the pane edge the name stops growing and the text scrolls
+    /// inside the field.
+    pub(crate) fn paint_name_and_tags(
+        &mut self,
+        ui: &mut egui::Ui,
+        m: &mut Macro,
+        other_macro_names: &[String],
+        all_tags: &[String],
+        enabled: bool,
+    ) -> NameTagLayout {
+        ui.vertical(|ui| {
+            let (mut meta, name_rect, tag_rect, draft_changed) = ui
+                .horizontal(|ui| {
+                    let gap = ui.spacing().item_spacing.x;
+                    let avail = ui.available_width();
+                    let tag_w = tag_input_width(ui);
+                    let chrome = name_chrome(ui, self.name_error.is_some());
+                    // One point of slack so rounding cannot push the tag past the clip.
+                    let budget = (avail - gap - tag_w - 1.0).max(1.0);
+                    let edit_limit = (budget - chrome).max(1.0);
+                    let (meta, name_rect) =
+                        self.paint_name_row(ui, m, other_macro_names, enabled, edit_limit);
+                    let (tag_edit, tag_rect) = crate::widgets::tag_draft_editor(
+                        ui,
+                        &mut m.tags,
+                        &mut self.tag_draft,
+                        all_tags,
+                        crate::widgets::TagChipOptions {
+                            enabled,
+                            show_add_button: true,
+                            label_name: Some("Tags"),
+                            draft_hover: Some(help::META_TAGS),
+                            reorderable: false,
+                            signed_filters: false,
+                            single_row: false,
+                        },
+                    );
+                    (meta, name_rect, tag_rect, tag_edit.changed)
+                })
+                .inner;
+            let (chips_changed, chips_rect) = if m.tags.is_empty() {
+                (false, None)
+            } else {
+                let (changed, rect) =
+                    crate::widgets::tag_chip_list(ui, &mut m.tags, enabled, false, false);
+                (changed, Some(rect))
+            };
+            if draft_changed || chips_changed {
+                meta.persist = true;
+            }
+            NameTagLayout {
+                mutations: meta,
+                name_rect,
+                tag_rect,
+                chips_rect,
+            }
+        })
+        .inner
     }
 
     /// Icon button toggling the delay popup ([`Self::paint_delay_popup`]).
@@ -114,32 +205,6 @@ impl MacroMetaUi {
             egui_phosphor::fill::KEY,
         );
         self.hotkey_open
-    }
-
-    /// Tag chips + draft entry (draft before `Tags:` label).
-    pub fn paint_tags_row(
-        &mut self,
-        ui: &mut egui::Ui,
-        m: &mut Macro,
-        all_tags: &[String],
-        enabled: bool,
-    ) -> bool {
-        crate::widgets::tag_chip_editor(
-            ui,
-            &mut m.tags,
-            &mut self.tag_draft,
-            all_tags,
-            crate::widgets::TagChipOptions {
-                enabled,
-                show_add_button: true,
-                label_name: Some("Tags"),
-                draft_hover: Some(help::META_TAGS),
-                reorderable: false,
-                signed_filters: false,
-                single_row: true,
-            },
-        )
-        .changed
     }
 
     pub fn paint_delay_popup(
@@ -216,6 +281,37 @@ fn format_delay_tooltip(m: &Macro) -> String {
         parts.push(format!("Mouse: {} ms", m.mouse_delay));
     }
     parts.join("\n")
+}
+
+fn glyph_width(ui: &egui::Ui, glyph: &str) -> f32 {
+    ui.painter()
+        .layout_no_wrap(
+            glyph.to_owned(),
+            egui::TextStyle::Body.resolve(ui.style()),
+            egui::Color32::WHITE,
+        )
+        .size()
+        .x
+}
+
+/// Width of a label+widget pair aside from the widget: frame margin, stroke, icon, gap.
+fn pair_chrome(ui: &egui::Ui, glyph: &str) -> f32 {
+    glyph_width(ui, glyph) + 8.0 + 2.0 + crate::widgets::PAIR_SLOT_GAP
+}
+
+fn name_chrome(ui: &egui::Ui, show_error: bool) -> f32 {
+    let mut chrome = pair_chrome(ui, egui_phosphor::regular::TEXT_T);
+    if show_error {
+        chrome += glyph_width(ui, egui_phosphor::regular::X_CIRCLE);
+    }
+    chrome
+}
+
+/// Width of the tag field (icon, draft, Add) so the name can stop before it.
+fn tag_input_width(ui: &egui::Ui) -> f32 {
+    pair_chrome(ui, egui_phosphor::regular::TAG)
+        + crate::widgets::tags::TAG_DRAFT_WIDTH
+        + crate::widgets::icon_btn_side(ui)
 }
 
 fn validate_rename(
@@ -302,5 +398,132 @@ mod tests {
             format_delay_tooltip(&macro_),
             "Action delays (ms)\nGlobal: 10 ms\nMouse: 5 ms"
         );
+    }
+
+    /// Layout plus the widest name galley that contains `name_needle`, if any.
+    fn paint_header(
+        width: f32,
+        name: &str,
+        tags: &[&str],
+        name_needle: &str,
+    ) -> (NameTagLayout, f32, Option<(String, f32)>) {
+        let ctx = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(width + 80.0, 280.0));
+        let mut layout = None;
+        let mut pane_right = 0.0;
+        let all_tags: Vec<String> = tags.iter().map(|s| (*s).to_string()).collect();
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen),
+                ..Default::default()
+            },
+            |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(width, 220.0));
+                pane_right = pane.right();
+                let mut mid = ui.new_child(
+                    egui::UiBuilder::new()
+                        .max_rect(pane)
+                        .layout(egui::Layout::top_down(egui::Align::Min)),
+                );
+                mid.set_clip_rect(pane);
+                let mut meta = MacroMetaUi::default();
+                let mut macro_ = m(name, tags);
+                meta.sync_selection(0, &macro_);
+                layout =
+                    Some(meta.paint_name_and_tags(&mut mid, &mut macro_, &[], &all_tags, true));
+            },
+        );
+        let galley = output
+            .shapes
+            .iter()
+            .find_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) if text.galley.job.text.contains(name_needle) => {
+                    Some((text.galley.job.text.clone(), text.galley.size().x))
+                }
+                _ => None,
+            });
+        output.drop_without_applying_deltas();
+        (layout.expect("header painted"), pane_right, galley)
+    }
+
+    #[test]
+    fn name_pushes_tags_until_the_edge_then_scrolls() {
+        let pane_w = 480.0;
+        let (short, pane_right, _) = paint_header(pane_w, "Alpha", &["demo", "desktop"], "Alpha");
+        let long_name = "Inventory restock and backup ".repeat(8);
+        let (long, long_right, long_galley) = paint_header(
+            pane_w,
+            &long_name,
+            &["demo", "desktop"],
+            "Inventory restock",
+        );
+        assert!((pane_right - long_right).abs() < 0.5);
+
+        let short_gap = short.tag_rect.left() - short.name_rect.right();
+        assert!(
+            (-1.0..24.0).contains(&short_gap),
+            "tag field should sit against the name, gap {short_gap}, name {:?} tag {:?}",
+            short.name_rect,
+            short.tag_rect
+        );
+        assert!(
+            short.tag_rect.right() < pane_right - 40.0,
+            "short name pushed the tag field to the pane edge: {:?} pane_right {pane_right}",
+            short.tag_rect
+        );
+
+        assert!(
+            long.tag_rect.left() + 1.0 >= long.name_rect.right(),
+            "tag overlapped the name: name {:?} tag {:?}",
+            long.name_rect,
+            long.tag_rect
+        );
+        assert!(
+            long.tag_rect.right() <= pane_right + 1.0,
+            "tag field past the pane: {:?} pane_right {pane_right}",
+            long.tag_rect
+        );
+        assert!(
+            long.tag_rect.right() > pane_right - 16.0,
+            "long name did not push the tag field to the limit: {:?} pane_right {pane_right}",
+            long.tag_rect
+        );
+        assert!(
+            long.name_rect.width() > short.name_rect.width() + 8.0,
+            "name did not grow before the tag field hit the edge"
+        );
+        assert!(
+            long.tag_rect.left() > short.tag_rect.left() + 8.0,
+            "tag field was not pushed right"
+        );
+
+        let (galley_text, galley_w) = long_galley.expect("name galley");
+        assert!(
+            !galley_text.contains('…'),
+            "name was elided instead of scrolling: {galley_text}"
+        );
+        assert!(
+            long.name_rect.width() < galley_w,
+            "name field grew to the full text ({galley_w}) instead of scrolling: {:?}",
+            long.name_rect
+        );
+
+        for (label, layout) in [("short", &short), ("long", &long)] {
+            let chips = layout
+                .chips_rect
+                .unwrap_or_else(|| panic!("{label} header painted no tag chips"));
+            let row_bottom = layout.name_rect.bottom().max(layout.tag_rect.bottom());
+            assert!(
+                chips.top() + 1.0 >= row_bottom,
+                "{label} chips are not below the name/tag row: chips {chips:?} row_bottom {row_bottom}"
+            );
+            assert!(
+                chips.left() <= layout.name_rect.left() + 2.0,
+                "{label} chips did not start under the name row"
+            );
+        }
+
+        let (bare, _, _) = paint_header(pane_w, "Alpha", &[], "Alpha");
+        assert!(bare.chips_rect.is_none(), "empty tags reserved a chip row");
     }
 }

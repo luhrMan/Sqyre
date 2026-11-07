@@ -68,5 +68,5 @@ pub use sections::{
     frame_outer_rect, section_separator, split_view, tinted_section, SplitView,
 };
 pub(crate) use spinner::{brand_spinner, loading_line};
-pub use tags::{tag_chip_editor, TagChipOptions};
+pub use tags::{tag_chip_editor, tag_chip_list, tag_draft_editor, TagChipOptions};
 pub use wrap::{wrap_unit, wrapped_row};

@@ -88,6 +88,14 @@ pub fn text_field_opts(
 /// grows as the text fills, and stops at the row's visible width — the
 /// singleline scrolls inside the box past that.
 pub fn name_edit_width(ui: &egui::Ui, text: &str, hint: &str) -> f32 {
+    name_edit_width_limited(ui, text, hint, f32::INFINITY)
+}
+
+/// [`name_edit_width`] that also stops at `limit`.
+///
+/// Below the usual floor the field still shrinks so a neighbor can stay on
+/// the row; past the cap the singleline scrolls inside the box.
+pub(crate) fn name_edit_width_limited(ui: &egui::Ui, text: &str, hint: &str, limit: f32) -> f32 {
     let shown = if text.trim().is_empty() { hint } else { text };
     let font = egui::TextStyle::Body.resolve(ui.style());
     let text_w = ui
@@ -98,7 +106,18 @@ pub fn name_edit_width(ui: &egui::Ui, text: &str, hint: &str) -> f32 {
     // TextEdit margin (8) + frame stroke (~2) + caret/selection slop.
     let w = text_w + 18.0;
     let min = ui.spacing().interact_size.y * 4.0;
-    w.clamp(min, super::visible_width(ui).max(min))
+    let visible = super::visible_width(ui);
+    let room = if limit.is_finite() {
+        visible.min(limit).max(1.0)
+    } else {
+        visible.max(min)
+    };
+    let floor = if limit.is_finite() {
+        min.min(room)
+    } else {
+        min
+    };
+    w.clamp(floor, room)
 }
 
 /// Options for [`num_text_field_opts`].

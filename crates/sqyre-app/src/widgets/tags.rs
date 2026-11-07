@@ -6,6 +6,9 @@ use eframe::egui::{self, Key, Modifiers, PopupCloseBehavior, RectAlign, Sense};
 /// Max height of the tag suggestion dropdown popup.
 const TAG_SUGGEST_POPUP_HEIGHT: f32 = 180.0;
 
+/// Draft field width inside the tag pair (icon and Add sit outside this).
+pub(crate) const TAG_DRAFT_WIDTH: f32 = 140.0;
+
 /// Collapse `/`-separated tag paths: trim, drop empty segments, rejoin.
 /// `" combat/pve/ "` → `"combat/pve"`; `"///"` → `""`.
 pub fn normalize_tag_path(tag: &str) -> String {
@@ -250,6 +253,62 @@ pub fn tag_chip_editor(
     all_suggestions: &[String],
     opts: TagChipOptions<'_>,
 ) -> TagChipEdit {
+    tag_chip_editor_impl(ui, tags, draft, all_suggestions, opts, true).0
+}
+
+/// Tag draft field (icon, entry, Add) without chips.
+///
+/// Same ids, suggestions, and commit behavior as [`tag_chip_editor`]. The rect
+/// is the pair (or the draft row when there is no label icon). Chips are
+/// painted separately with [`tag_chip_list`].
+pub fn tag_draft_editor(
+    ui: &mut egui::Ui,
+    tags: &mut Vec<String>,
+    draft: &mut String,
+    all_suggestions: &[String],
+    opts: TagChipOptions<'_>,
+) -> (TagChipEdit, egui::Rect) {
+    tag_chip_editor_impl(ui, tags, draft, all_suggestions, opts, false)
+}
+
+/// Created-tag chips, wrapping within the row. Returns whether `tags` changed
+/// and the row's rectangle (empty tags still occupy no caller-visible row —
+/// callers should skip this when `tags` is empty).
+pub fn tag_chip_list(
+    ui: &mut egui::Ui,
+    tags: &mut Vec<String>,
+    enabled: bool,
+    reorderable: bool,
+    signed_filters: bool,
+) -> (bool, egui::Rect) {
+    let wrap_cap = (ui.clip_rect().right() - ui.cursor().left()).max(20.0);
+    let mut changed = false;
+    let rect = ui
+        .horizontal_wrapped(|ui| {
+            ui.set_max_width(wrap_cap);
+            paint_tag_chips(
+                ui,
+                tags,
+                enabled,
+                reorderable,
+                signed_filters,
+                false,
+                &mut changed,
+            );
+        })
+        .response
+        .rect;
+    (changed, rect)
+}
+
+fn tag_chip_editor_impl(
+    ui: &mut egui::Ui,
+    tags: &mut Vec<String>,
+    draft: &mut String,
+    all_suggestions: &[String],
+    opts: TagChipOptions<'_>,
+    include_chips: bool,
+) -> (TagChipEdit, egui::Rect) {
     let mut edit = TagChipEdit::default();
     // Stable across chip-count changes so focus survives add/remove + Update/load_form.
     let draft_id = ui.id().with("tag_draft_edit");
@@ -282,29 +341,37 @@ pub fn tag_chip_editor(
     // clip their labels. Cap the row to the clip so wraps land inside the pane.
     let wrap_cap = (ui.clip_rect().right() - ui.cursor().left()).max(20.0);
     // icon | entrybox | add | tags — chips wrap after the add button, except
-    // `single_row` contexts (top bar) where overflow clips at the pane edge.
+    // `single_row` where overflow collapses into a `+N` pill.
+    let mut widget_rect = egui::Rect::NOTHING;
     let mut paint_row = |ui: &mut egui::Ui| {
         ui.set_max_width(wrap_cap);
         let resp = if let Some(name) = opts.label_name {
-            crate::widgets::pair_labeled(ui, egui_phosphor::regular::TAG, name, |ui| {
-                paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags)
-            })
-            .inner
+            let framed =
+                crate::widgets::pair_labeled(ui, egui_phosphor::regular::TAG, name, |ui| {
+                    paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags)
+                });
+            widget_rect = framed.response.rect;
+            framed.inner
         } else {
-            paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags)
+            let row =
+                ui.horizontal(|ui| paint_tag_draft(ui, draft_id, draft, &opts, &mut edit, tags));
+            widget_rect = row.response.rect;
+            row.inner
         };
-        paint_tag_chips(
-            ui,
-            tags,
-            opts.enabled,
-            opts.reorderable,
-            opts.signed_filters,
-            opts.single_row,
-            &mut edit.changed,
-        );
+        if include_chips {
+            paint_tag_chips(
+                ui,
+                tags,
+                opts.enabled,
+                opts.reorderable,
+                opts.signed_filters,
+                opts.single_row,
+                &mut edit.changed,
+            );
+        }
         resp
     };
-    let tag_resp = if opts.single_row {
+    let tag_resp = if opts.single_row || !include_chips {
         ui.horizontal(|ui| paint_row(ui)).inner
     } else {
         ui.horizontal_wrapped(|ui| paint_row(ui)).inner
@@ -460,7 +527,7 @@ pub fn tag_chip_editor(
         d.insert_temp(open_id, open);
     });
 
-    edit
+    (edit, widget_rect)
 }
 
 /// Allocate + paint a Small-text pill: `fill` rounded rect, `SPACE_2` padding,
@@ -697,7 +764,7 @@ fn paint_tag_draft(
     };
     let tag_te = egui::TextEdit::singleline(draft)
         .id(draft_id)
-        .desired_width(140.0)
+        .desired_width(TAG_DRAFT_WIDTH)
         .hint_text(hint);
     let mut tag_resp = ui.add_enabled(opts.enabled, tag_te);
     if let Some(tip) = opts.draft_hover {
@@ -733,8 +800,8 @@ pub struct TagChipOptions<'a> {
     pub reorderable: bool,
     /// When true, chips are Image Search `+`/`−` filters with a polarity toggle.
     pub signed_filters: bool,
-    /// When true, keep one horizontal row (top-bar editor); chips past the
-    /// pane edge clip instead of wrapping onto extra rows.
+    /// When true, keep one horizontal row; chips past the pane edge collapse
+    /// into a `+N` pill instead of wrapping.
     pub single_row: bool,
 }
 

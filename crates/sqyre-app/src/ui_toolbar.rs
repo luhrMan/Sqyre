@@ -179,13 +179,13 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             show_update_banner(app, ui);
         });
 
-        // Selected macro name + tags fill the gap between the brand icon and
-        // the right-side buttons; an explicit child rect keeps them clear of
-        // both (the rtl block's bounding box is its widget span). The name row
-        // stacks above the tags row, so the region is two rows tall — reserve
-        // the *painted* height (remembered like `show_overflow` does): a fixed
-        // estimate under-reserves the TextEdit's frame margin and the tag row's
-        // bottom row of pixels clips.
+        // Selected macro name + tag field fill the gap between the brand icon
+        // and the right-side buttons; an explicit child rect keeps them clear
+        // of both (the rtl block's bounding box is its widget span). Created
+        // tags wrap under that row, so the region is at least two rows tall
+        // when the macro has tags — reserve the *painted* height (remembered
+        // like `show_overflow` does): a fixed estimate under-reserves the
+        // TextEdit's frame margin and the tag row's bottom pixels clip.
         let gap = ui.spacing().item_spacing.x;
         let stack_id = ui.make_persistent_id("name_tag_stack_h");
         let estimate = ui.spacing().interact_size.y * 2.0
@@ -226,7 +226,7 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
     });
 }
 
-/// Selected macro's name entry with tag chips below it.
+/// Selected macro's name entry, tag field to its right, created tags below.
 fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_enabled: bool) {
     app.workspace
         .macro_meta
@@ -239,23 +239,14 @@ fn paint_name_and_tags(app: &mut SqyreApp, ui: &mut egui::Ui, idx: usize, meta_e
         .collect();
     let all_tags = collect_all_macro_tags(&app.workspace.macros);
     let m = &mut app.workspace.macros[idx];
-    let (meta, persist_tags) = ui
-        .vertical(|ui| {
-            let meta = app
-                .workspace
-                .macro_meta
-                .paint_name_row(ui, m, &other_names, meta_enabled);
-            let persist_tags =
-                app.workspace
-                    .macro_meta
-                    .paint_tags_row(ui, m, &all_tags, meta_enabled);
-            (meta, persist_tags)
-        })
-        .inner;
-    if persist_tags {
+    let laid =
+        app.workspace
+            .macro_meta
+            .paint_name_and_tags(ui, m, &other_names, &all_tags, meta_enabled);
+    if laid.mutations.persist {
         app.persist_macro_at(idx);
     }
-    if let Some(new_name) = meta.rename_to {
+    if let Some(new_name) = laid.mutations.rename_to {
         app.rename_selected_macro(new_name);
     }
 }
