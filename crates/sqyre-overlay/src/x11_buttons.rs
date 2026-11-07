@@ -691,10 +691,15 @@ fn host_loop(
                     }
                     last_btn1 = btn1;
                 }
-            } else if let Some((x, y, btn1)) = ptr {
-                if state.passthrough_hits && state.chooser.as_ref().is_none_or(|c| !c.mapped) {
+            } else if state.passthrough_hits && state.chooser.as_ref().is_none_or(|c| !c.mapped) {
+                // Button rects are X root coordinates. Portal cursor metadata is a
+                // different space on Cosmic (and stays stale after the stream
+                // suspends), so hit-testing it never lands on the button.
+                if let Some((x, y, btn1)) = poll_passthrough_sample(&state) {
                     poll_passthrough_pointer(&mut state, x, y, btn1, last_btn1);
+                    last_btn1 = btn1;
                 }
+            } else if let Some((_, _, btn1)) = ptr {
                 last_btn1 = btn1;
             }
             if state.drag.is_some() {
@@ -3343,6 +3348,57 @@ fn sync_hit_input(state: &HostState, hit: Window, w: u32, h: u32, radius: f32) {
     }
 }
 
+/// Pointer sample for click-through buttons.
+///
+/// X11 root coordinates match the override-redirect windows. Portal metadata is
+/// only a fallback when `XQueryPointer` cannot see the pointer (native Wayland
+/// surface under the cursor). Button state unions the X mask with evdev so a
+/// game pointer grab does not hide the physical click.
+fn poll_passthrough_sample(state: &HostState) -> Option<(i32, i32, bool)> {
+    let dpy = if !state.ptr_display.is_null() {
+        state.ptr_display
+    } else {
+        state.display
+    };
+    // SAFETY: quiet or host display is open on this thread.
+    let x11 = unsafe { query_pointer_root(dpy) };
+    let portal = sqyre_capture::portal_cursor_position();
+    note_passthrough_sample_once(x11, portal);
+    choose_passthrough_pointer(x11, portal, sqyre_hotkeys::left_button_down())
+}
+
+fn note_passthrough_sample_once(x11: Option<(i32, i32, bool)>, portal: Option<(i32, i32)>) {
+    static LOGGED: AtomicBool = AtomicBool::new(false);
+    if LOGGED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let msg = match (x11, portal) {
+        (Some((x, y, down)), Some((px, py))) => format!(
+            "overlay-x11: passthrough sample x11={x},{y} down={down} portal={px},{py} (hit-test uses x11)"
+        ),
+        (Some((x, y, down)), None) => {
+            format!("overlay-x11: passthrough sample x11={x},{y} down={down} portal=none")
+        }
+        (None, Some((px, py))) => {
+            format!("overlay-x11: passthrough sample x11=none portal={px},{py}")
+        }
+        (None, None) => "overlay-x11: passthrough sample unavailable".to_string(),
+    };
+    note(&msg);
+}
+
+/// Pick the pointer sample whose coordinates match the X11 button windows.
+fn choose_passthrough_pointer(
+    x11: Option<(i32, i32, bool)>,
+    portal: Option<(i32, i32)>,
+    evdev_down: bool,
+) -> Option<(i32, i32, bool)> {
+    if let Some((x, y, x_down)) = x11 {
+        return Some((x, y, x_down || evdev_down));
+    }
+    portal.map(|(x, y)| (x, y, evdev_down))
+}
+
 /// Sample hover and the left-button edge while hit windows are click-through.
 fn poll_passthrough_pointer(state: &mut HostState, x: i32, y: i32, btn1: bool, was_btn1: bool) {
     let id = state
@@ -3351,6 +3407,18 @@ fn poll_passthrough_pointer(state: &mut HostState, x: i32, y: i32, btn1: bool, w
         .filter(|b| b.mapped)
         .find(|b| spec_contains_rounded(&b.spec, x, y))
         .map(|b| b.spec.id.clone());
+    let hover_changed = state
+        .passthrough_hover
+        .as_ref()
+        .map(|hover| hover.id.as_str())
+        != id.as_deref();
+    if hover_changed {
+        if let Some(id) = id.as_deref() {
+            note(&format!(
+                "overlay-x11: passthrough-hover id={id} at {x},{y}"
+            ));
+        }
+    }
     sync_passthrough_hover(state, id.as_deref());
     if btn1 && !was_btn1 {
         if let Some(id) = id {
@@ -3752,6 +3820,25 @@ mod tests {
             OverlayPressKind::Fire,
             "press-to-stop does nothing while idle"
         );
+    }
+
+    #[test]
+    fn passthrough_pointer_prefers_x11_root_space() {
+        // Portal can disagree with the X windows (Cosmic scale, or a stale
+        // sample after the stream suspends). Hit-testing must use X11.
+        assert_eq!(
+            choose_passthrough_pointer(Some((10, 20, false)), Some((100, 200)), true),
+            Some((10, 20, true))
+        );
+        assert_eq!(
+            choose_passthrough_pointer(Some((10, 20, true)), None, false),
+            Some((10, 20, true))
+        );
+        assert_eq!(
+            choose_passthrough_pointer(None, Some((100, 200)), true),
+            Some((100, 200, true))
+        );
+        assert_eq!(choose_passthrough_pointer(None, None, true), None);
     }
 
     #[test]
