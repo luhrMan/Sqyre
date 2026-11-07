@@ -1026,6 +1026,11 @@ impl eframe::App for SqyreApp {
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         focus_nav::lock_to_window(ui.ctx());
+        #[cfg(feature = "native-runtime")]
+        if sqyre_capture::pipewire_stream_waking() {
+            ui.ctx()
+                .request_repaint_after(sqyre_overlay::icons::SPINNER_TICK);
+        }
         // Re-fit spacing when the viewport crosses the auto-compact threshold.
         SettingsUi::sync_density(ui.ctx(), self.settings_ui.settings());
         self.take_pending_db_import();

@@ -44,6 +44,16 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
         // While a macro runs the shield is replaced by the animated S trace —
         // the same busy spinner the overlay buttons and loading slots show.
         let running = app.run_session.state.running.load(Ordering::SeqCst);
+        #[cfg(feature = "native-runtime")]
+        let waking = sqyre_capture::pipewire_stream_waking();
+        #[cfg(not(feature = "native-runtime"))]
+        let waking = false;
+        let busy = running || waking;
+        let brand_tip = if waking {
+            ht::CAPTURE_WAKE
+        } else {
+            ht::TB_PALETTE
+        };
         let size = egui::vec2(28.0, 28.0);
         // Pad the hit rect so the hover frame doesn't hug the icon edge.
         let (hit_rect, icon_resp) = ui.allocate_exact_size(
@@ -52,7 +62,7 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
         );
         let icon_rect = egui::Rect::from_center_size(hit_rect.center(), size);
         let icon_resp = icon_resp
-            .on_hover_text(ht::TB_PALETTE)
+            .on_hover_text(brand_tip)
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         // Same hover/press frame a `frame_when_inactive(false)` button draws.
         let state = icon_resp.widget_state();
@@ -74,10 +84,14 @@ fn brand_header(app: &mut SqyreApp, ui: &mut egui::Ui) {
             egui::WidgetInfo::labeled(
                 egui::WidgetType::Button,
                 ui.is_enabled(),
-                sqyre_ports::APP_NAME,
+                if waking {
+                    ht::CAPTURE_WAKE
+                } else {
+                    sqyre_ports::APP_NAME
+                },
             )
         });
-        if running {
+        if busy {
             // The shield stays; the S inside it becomes the trace spinner —
             // drawn into a hollow cut by `sqyre_shell` at the S's exact
             // viewBox region (`40.5 20.25 46.75 84` of the 128×128 shield).

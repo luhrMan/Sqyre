@@ -280,6 +280,12 @@ pub const SET_MONO_SIZE: &str =
 
 // --- Settings: application ---
 
+/// Idle screen-capture suspend.
+#[cfg(all(target_os = "linux", feature = "native-runtime"))]
+pub const SET_SUSPEND_CAPTURE: &str =
+    "After the screen sits still, Wayland screen sharing sleeps. The next capture shows a loading icon while it wakes. Turn this off to keep sharing ready.";
+/// Shown while a slept screen-share stream is waking for a capture.
+pub const CAPTURE_WAKE: &str = "Waking screen capture…";
 /// Diagnostic log toggle.
 #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
 pub const SET_DIAG_LOG: &str =

@@ -34,6 +34,8 @@ const FAIL_CACHE_TTL: Duration = Duration::from_secs(60);
 const RETRY_FAIL_TTL: Duration = Duration::from_millis(500);
 const OVERLAY: Rgba<u8> = Rgba([255, 0, 0, 255]);
 const LITERAL_COORDS_MSG: &str = "Preview needs literal coordinates";
+/// In-flight preview capture. A slept PipeWire stream shows a spinner instead.
+const CAPTURE_PENDING: &str = "Capturing…";
 /// Half-size of the desktop outline box drawn around a point (px).
 const POINT_OUTLINE_HALF: i32 = 10;
 
@@ -526,7 +528,7 @@ impl PreviewTooltipCache {
                 }
                 Err(TryRecvError::Empty) => {
                     ctx.request_repaint();
-                    return Err("Capturing…".into());
+                    return Err(CAPTURE_PENDING.into());
                 }
                 Err(TryRecvError::Disconnected) => {
                     let pending = self.pending.remove(key);
@@ -588,7 +590,7 @@ impl PreviewTooltipCache {
                 },
             );
             ctx.request_repaint();
-            Err("Capturing…".into())
+            Err(CAPTURE_PENDING.into())
         }
     }
 
@@ -1280,6 +1282,15 @@ fn paint_preview(ui: &mut egui::Ui, tex: &TextureHandle, caption: &str, show_ima
 /// hover tooltip can never fire — so the error stays as centered visible text
 /// rather than collapsing to an icon like interactive surfaces do.
 fn paint_preview_status(ui: &mut egui::Ui, caption: &str, err: &str) {
+    paint_preview_status_waking(
+        ui,
+        caption,
+        err,
+        err == CAPTURE_PENDING && sqyre_capture::pipewire_stream_waking(),
+    );
+}
+
+fn paint_preview_status_waking(ui: &mut egui::Ui, caption: &str, err: &str, waking: bool) {
     let box_size = image_view::fit_in_box_no_upscale(
         DISPLAY_MAX_W,
         DISPLAY_MAX_H,
@@ -1289,8 +1300,37 @@ fn paint_preview_status(ui: &mut egui::Ui, caption: &str, err: &str) {
     let (rect, _) = ui.allocate_exact_size(box_size, egui::Sense::click());
     ui.painter()
         .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
-    paint_preview_message(ui, rect, err, crate::theme::error_fg(), 0.0);
+    if waking {
+        paint_wake_spinner(ui, rect);
+    } else {
+        paint_preview_message(ui, rect, err, crate::theme::error_fg(), 0.0);
+    }
     ui.add(egui::Label::new(caption).wrap());
+}
+
+fn paint_wake_spinner(ui: &mut egui::Ui, rect: egui::Rect) {
+    let side = ui.spacing().interact_size.y;
+    let at = egui::Rect::from_center_size(rect.center(), egui::vec2(side, side));
+    let resp = ui.interact(
+        at,
+        ui.id()
+            .with(("pw_wake", at.left().to_bits(), at.top().to_bits())),
+        egui::Sense::hover(),
+    );
+    resp.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::ProgressIndicator,
+            true,
+            crate::help_text::CAPTURE_WAKE,
+        )
+    });
+    resp.on_hover_text(crate::help_text::CAPTURE_WAKE);
+    if ui.is_rect_visible(at) {
+        let glyph = egui::Rect::from_center_size(at.center(), at.size() * 0.92);
+        sqyre_overlay::icons::paint_trace_spinner(ui, glyph, sqyre_ui_theme::accent());
+        ui.ctx()
+            .request_repaint_after(sqyre_overlay::icons::SPINNER_TICK);
+    }
 }
 
 /// Centered status/error text inside a preview placeholder, word-wrapped to
@@ -1405,7 +1445,11 @@ fn paint_preview_panel_placeholder(
     let (rect, _) = ui.allocate_exact_size(desired, egui::Sense::hover());
     ui.painter()
         .rect_filled(rect, 4.0, crate::theme::preview_status_fill());
-    crate::data_editor_preview::attach_preview_error_icon(ui, rect, err);
+    if err == CAPTURE_PENDING && sqyre_capture::pipewire_stream_waking() {
+        paint_wake_spinner(ui, rect);
+    } else {
+        crate::data_editor_preview::attach_preview_error_icon(ui, rect, err);
+    }
     crate::data_editor_preview::paint_preview_frame(ui.painter(), rect);
     rect
 }
@@ -1644,6 +1688,18 @@ mod tests {
 
     fn phone_screen() -> egui::Rect {
         egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(360.0, 640.0))
+    }
+
+    #[test]
+    fn pending_capture_shows_a_spinner_while_the_stream_wakes() {
+        use egui_kittest::kittest::Queryable;
+        let mut h = egui_kittest::Harness::builder()
+            .with_size([320.0, 240.0])
+            .build_ui(|ui| {
+                paint_preview_status_waking(ui, "point", CAPTURE_PENDING, true);
+            });
+        h.run_steps(1);
+        h.get_by_label(crate::help_text::CAPTURE_WAKE);
     }
 
     fn input(screen: egui::Rect, time: f64, events: Vec<egui::Event>) -> egui::RawInput {

@@ -281,6 +281,7 @@ impl SettingsUi {
         {
             // `Some(true)` when the toggle is on; `None` keeps `SQYRE_DIAG` honored.
             sqyre_capture::set_disk_logging(settings.diagnostic_logging.then_some(true));
+            sqyre_capture::set_pipewire_suspend_on_idle(settings.suspend_screen_capture_when_idle);
             crate::mem_diag::set_enabled(
                 settings.memory_logging,
                 settings.memory_logging_interval_ms,
@@ -816,6 +817,19 @@ impl SettingsUi {
                 && ui
                     .checkbox(&mut self.settings.launch_on_login, "Launch on login")
                     .on_hover_text(ht::SET_AUTOSTART)
+                    .changed()
+            {
+                self.mark_dirty();
+            }
+
+            #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+            if setting_visible(q, section_hit, SETTING_SUSPEND_CAPTURE)
+                && ui
+                    .checkbox(
+                        &mut self.settings.suspend_screen_capture_when_idle,
+                        "Sleep screen capture when idle",
+                    )
+                    .on_hover_text(ht::SET_SUSPEND_CAPTURE)
                     .changed()
             {
                 self.mark_dirty();
@@ -2801,6 +2815,16 @@ const SETTING_START_MINIMIZED: &[&str] =
     &["start minimized", "tray", "startup", "launch", "hidden"];
 #[cfg(target_os = "linux")]
 const SETTING_AUTOSTART: &[&str] = &["autostart", "launch on login", "login", "boot", "startup"];
+#[cfg(all(target_os = "linux", feature = "native-runtime"))]
+const SETTING_SUSPEND_CAPTURE: &[&str] = &[
+    "sleep",
+    "idle",
+    "screen capture",
+    "screen sharing",
+    "wake",
+    "suspend",
+    "pipewire",
+];
 const SETTING_LAST_MACRO: &[&str] = &["restore", "last macro", "remember", "reopen", "selected"];
 
 const SETTING_RESTORE_CURSOR: &[&str] = &["cursor", "restore cursor", "mouse position", "restore"];
@@ -2992,6 +3016,8 @@ const GENERAL_SETTINGS: &[&[&str]] = &[
     SETTING_START_MINIMIZED,
     #[cfg(target_os = "linux")]
     SETTING_AUTOSTART,
+    #[cfg(all(target_os = "linux", feature = "native-runtime"))]
+    SETTING_SUSPEND_CAPTURE,
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
     SETTING_DIAGNOSTICS,
     #[cfg(all(not(target_arch = "wasm32"), feature = "native-runtime"))]
