@@ -366,9 +366,27 @@ pub fn show_overflow<R>(
         .ctx()
         .data(|d| d.get_temp::<egui::Vec2>(size_id))
         .unwrap_or(egui::Vec2::ZERO);
+    // Pane width this strip was last laid out in. A central panel expands
+    // `min_rect` to the whole pane before content, so an in-place width
+    // measurement *is* that pane. When a neighbor slides open (macro list),
+    // the pane narrows and the stale width looks like overflow. The strip
+    // would then reserve `max_height_frac` of the pane and shove whatever
+    // follows (the macro tree) toward the bottom until the width settles.
+    let budget_id = size_id.with("budget");
+    let prev_budget = ui.ctx().data(|d| d.get_temp::<f32>(budget_id));
     let width_over = |size: f32| w.is_finite() && size > w + OVERFLOW_SLOP;
     let height_over = |size: f32| max_h.is_finite() && size > max_h + OVERFLOW_SLOP;
-    let overflow = remembered.x > 0.0 && (width_over(remembered.x) || height_over(remembered.y));
+    let mut overflow =
+        remembered.x > 0.0 && (width_over(remembered.x) || height_over(remembered.y));
+    if overflow
+        && !height_over(remembered.y)
+        && prev_budget.is_some_and(|prev| remembered.x <= prev + OVERFLOW_SLOP)
+    {
+        overflow = false;
+    }
+    if w.is_finite() {
+        ui.ctx().data_mut(|d| d.insert_temp(budget_id, w));
+    }
 
     if overflow {
         let row = ui.spacing().interact_size.y.max(1.0);
@@ -423,7 +441,10 @@ pub fn show_overflow<R>(
                     bottom: grow.y as i8,
                     ..Default::default()
                 }),
-            egui::Vec2b::FALSE,
+            // Y follows the painted content. `inner_rect` is captured before
+            // egui auto-shrinks, so claiming it would reserve `max_height` even
+            // when the row only overflows sideways.
+            egui::Vec2b::new(false, true),
             |ui| {
                 enable_dense_row_extend(ui);
                 add_contents(ui)
@@ -841,5 +862,72 @@ mod tests {
                 });
         })
         .drop_without_applying_deltas();
+    }
+
+    /// A central panel pre-expands `min_rect` to the pane, so the in-place width
+    /// measurement is the pane itself. Narrowing that pane (macro list sliding
+    /// open) must not look like overflow and push the following widget down by
+    /// `max_height_frac` of the pane.
+    #[test]
+    fn shrinking_pane_does_not_push_following_content_down() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| style.spacing.scroll = crate::theme::scroll_style());
+        let mut tree_y = Vec::new();
+        for width in [800.0, 800.0, 640.0, 480.0, 360.0, 360.0] {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(width, 600.0));
+                let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                pane_ui.set_clip_rect(pane);
+                pane_ui.expand_to_include_rect(pane);
+                show_overflow(&mut pane_ui, "editor_chrome", 0.7, |ui| {
+                    ui.horizontal(|ui| {
+                        let _ = ui.button("Run");
+                        let _ = ui.button("Add");
+                    });
+                });
+                tree_y.push(pane_ui.label("tree").rect.min.y);
+            })
+            .drop_without_applying_deltas();
+        }
+        let settled = tree_y[1];
+        for (i, y) in tree_y.iter().enumerate() {
+            assert!(
+                (y - settled).abs() < 8.0,
+                "tree jumped to {y} (settled {settled}) at step {i}: {tree_y:?}"
+            );
+        }
+    }
+
+    /// A row that really is wider than the pane scrolls sideways, but the strip
+    /// stays as tall as the row. Claiming the pre-shrink viewport would reserve
+    /// `max_height_frac` and park the next widget near the bottom of the pane.
+    #[test]
+    fn horizontal_overflow_does_not_claim_max_height() {
+        let ctx = egui::Context::default();
+        ctx.all_styles_mut(|style| style.spacing.scroll = crate::theme::scroll_style());
+        let mut gap = 0.0_f32;
+        for _ in 0..4 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                let pane = egui::Rect::from_min_size(ui.max_rect().min, egui::vec2(120.0, 600.0));
+                let mut pane_ui = ui.new_child(egui::UiBuilder::new().max_rect(pane));
+                pane_ui.set_clip_rect(pane);
+                pane_ui.expand_to_include_rect(pane);
+                let y0 = pane_ui.cursor().min.y;
+                show_overflow(&mut pane_ui, "row", 0.7, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        for label in ["Programs", "Items", "Coordinates", "Tools"] {
+                            let _ = ui.button(label);
+                        }
+                    });
+                });
+                gap = pane_ui.label("tree").rect.min.y - y0;
+            })
+            .drop_without_applying_deltas();
+        }
+        assert!(
+            gap < 80.0,
+            "horizontal overflow reserved the max-height viewport ({gap}px)"
+        );
     }
 }
